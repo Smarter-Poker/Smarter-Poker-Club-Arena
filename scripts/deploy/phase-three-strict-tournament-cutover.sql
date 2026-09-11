@@ -28,7 +28,8 @@ BEGIN
   END IF;
   IF EXISTS(SELECT 1 FROM (VALUES
     ('public.fn_complete_tournament_terminal(uuid,uuid,text)','96a61ea5e16560735bcb70b355aa79ab'),
-    ('public.fn_complete_tournament_terminal_pre_seat_guard(uuid,uuid,text)','f4275f9fa8cb2711f19ffdf7b16a04e6'),
+    ('public.fn_complete_tournament_terminal_pre_seat_guard(uuid,uuid,text)','90f7506df2f1a94fe22952714fcd9f85'),
+   ('public.fn_ca_tournament_terminal_receipt(uuid,uuid)','bb4b0e1d1c758943fca29f9a83d064e4'),
     ('public.fn_settle_tournament_final_table_deal(uuid)','b1941b2e55dade307ecd74068ab3e500'),
     ('public.fn_guard_tournament_completing_claim()','82078938fd926c94a0ab778acd77dd61'),
     ('public.trg_lock_atomic_final_table_deal_status()','ddc5e3121ed9cc73d41525e6c1ba6c34'),

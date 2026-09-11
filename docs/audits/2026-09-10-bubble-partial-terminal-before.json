@@ -1,12 +1,9 @@
 {
-  "recorded_at": "2026-09-10T18:53:27.531086+00:00",
-  "database": "full_stage1",
-  "baseline": "full_stage1|postgres|true|15|12|0|false",
-  "production_ddl_applied": false,
+  "recorded_at": "2026-09-10T18:37:39.830981+00:00",
+  "baseline": "full_stage1|postgres|true|15|12|0",
+  "production_mutations": false,
   "whole_stage_b_executed": false,
-  "entire_final_deal_bundle_applied_twice": true,
   "synthetic_opening_fixture_only": true,
-  "runtime_session_replication_role": "origin",
   "guards_enabled": [
     "aa_guard_tournament_completing_claim",
     "zzzz_freeze_finalized_tournament_prize_pool",
@@ -19,7 +16,7 @@
   "before": {
     "pg_proc": "87e8e18ca72ae9436fd4e3ea0b419d3f",
     "pg_trigger": "ca78c99683c6f915be978798c332e0af",
-    "pg_class": "aa2a142f9d18c1e49d3f9818f3676e75",
+    "pg_class": "070ce81570ea90a7e801f9f1b2a38c26",
     "pg_attribute": "ba471572827a80efdca94ec814a55d05",
     "pg_attrdef": "6c3bb43814d85300233d207f986fa9fa",
     "pg_constraint": "3bb7c52ef36be5c40cd5e402f805f899",
@@ -73,142 +70,32 @@
     {
       "variant": "paid",
       "exit_code": 0,
-      "assertions": 41,
-      "sql_sha256": "3e4bf5699435b78260a4b62baa6b1280e5c0b4bd90f0e2a9af9424f296db2bc6",
+      "assertion_notices": 33,
       "exact_rollback": true,
+      "snapshot_changes": [],
+      "sql_sha256": "caf834397d92001556079ea061263fe2f61030b240169f9893e7cf8378b02335",
       "terminal_evidence": {
         "batch": {
-          "plan": [
-            {
-              "kind": "final_table_deal",
-              "cents": 3168,
-              "place": 1,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
-            },
-            {
-              "kind": "final_table_deal",
-              "cents": 2533,
-              "place": 2,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
-            },
-            {
-              "kind": "final_table_deal",
-              "cents": 1900,
-              "place": 3,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
-            },
-            {
-              "kind": "final_table_deal",
-              "cents": 1266,
-              "place": 4,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
-            },
-            {
-              "kind": "final_table_deal",
-              "cents": 633,
-              "place": 5,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
-            },
-            {
-              "kind": "place",
-              "cents": 500,
-              "place": 6,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "23fafd63-bdd2-0fc1-9cb7-d0d754c3c626"
-            }
-          ],
-          "source": "engine.fn_settle_tournament_final_table_deal",
-          "live_count": 5,
-          "settled_at": "2026-09-10T13:53:27.577942-05:00",
-          "amount_owed": 100.0,
-          "chip_leader": "fb93f802-2713-0498-7ad7-894ea4701ec4",
-          "deal_amount": 95.0,
-          "field_count": 6,
-          "prepared_at": "2026-09-10T13:53:27.577942-05:00",
-          "amount_moved": 95.0,
-          "place_amount": 5.0,
-          "bubble_source": null,
-          "deal_table_id": "87200000-0000-0000-0000-000000000001",
-          "tournament_id": "87000000-0000-0000-0000-000000000001",
-          "bubble_user_id": null,
-          "deal_line_count": 5,
+          "mode": "structure",
+          "source": "engine.fn_settle_tournament_places",
+          "settled_at": "2026-09-10T13:37:39.8828-05:00",
+          "amount_owed": 9.0,
+          "place_count": 1,
+          "prepared_at": "2026-09-10T13:37:39.8828-05:00",
+          "bubble_source": "engine.fn_settle_tournament_bubble_protection",
+          "tournament_id": "98010000-0000-0000-0000-000000000001",
+          "bubble_user_id": "10000000-0000-0000-0000-000000000002",
+          "escrow_required": 9.0,
           "contract_version": 2,
-          "place_line_count": 1,
-          "plan_fingerprint": "f13235ab194f49997051c02f3d595e1a",
-          "bubble_amount_owed": 0.0,
-          "escrow_prize_after": 0.0,
-          "escrow_prize_before": 95.0,
-          "live_input_snapshot": [
-            {
-              "chips": 500,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4",
-              "registered_at": 1789005238.476655
-            },
-            {
-              "chips": 400,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636",
-              "registered_at": 1789005238.476655
-            },
-            {
-              "chips": 300,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85",
-              "registered_at": 1789005238.476655
-            },
-            {
-              "chips": 200,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71",
-              "registered_at": 1789005238.476655
-            },
-            {
-              "chips": 100,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a",
-              "registered_at": 1789005238.476655
-            }
-          ],
-          "bubble_obligation_id": null,
-          "structure_place_count": 6,
-          "live_input_fingerprint": "508da461d2cbaf8b4072283a3c838fa9",
-          "bubble_contract_required": false,
-          "bubble_amount_paid_before": 0.0,
-          "prior_standings_fingerprint": "313e3f21435f41e3254cebe082634b50"
+          "escrow_available": 9.0,
+          "plan_fingerprint": "cf6aecdccc54de3b1c10a67e130cdaab",
+          "bubble_amount_owed": 1.0,
+          "bubble_obligation_id": "35338128-3d9e-422f-9d15-1c7097aefb25",
+          "bubble_contract_required": true,
+          "bubble_amount_paid_before": 1.0
         },
-        "claim": {
-          "evidence": {
-            "ok": true,
-            "reason": null,
-            "failures": [],
-            "financials": {
-              "fee_balance": 0.0,
-              "prize_balance": 0.0,
-              "rake_expected": 0.0,
-              "bounty_balance": 0.0,
-              "place_obligations": 0,
-              "unsettled_obligations": 0
-            },
-            "finish_kind": "final_table_deal",
-            "tournament_id": "87000000-0000-0000-0000-000000000001",
-            "winner_user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
-          },
-          "claimed_at": "2026-09-10T13:53:27.577942-05:00",
-          "updated_at": "2026-09-10T13:53:27.577942-05:00",
-          "finish_kind": "final_table_deal",
-          "certified_at": "2026-09-10T13:53:27.577942-05:00",
-          "claim_source": "engine.fn_settle_tournament_final_table_deal",
-          "completed_at": "2026-09-10T13:53:27.577942-05:00",
-          "tournament_id": "87000000-0000-0000-0000-000000000001",
-          "winner_user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4",
-          "certification_version": 1
-        },
+        "state": "paid",
+        "status": "COMPLETED",
         "receipt": {
           "ok": true,
           "cash": {
@@ -217,74 +104,26 @@
             "payouts": [
               {
                 "place": 1,
-                "amount": 31.68,
-                "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
-              },
-              {
-                "place": 2,
-                "amount": 25.33,
-                "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
-              },
-              {
-                "place": 3,
-                "amount": 19.0,
-                "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
-              },
-              {
-                "place": 4,
-                "amount": 12.66,
-                "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
-              },
-              {
-                "place": 5,
-                "amount": 6.33,
-                "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
-              },
-              {
-                "place": 6,
-                "amount": 5.0,
-                "user_id": "23fafd63-bdd2-0fc1-9cb7-d0d754c3c626"
+                "amount": 9.0,
+                "user_id": "10000000-0000-0000-0000-000000000001"
               }
             ],
-            "money_path": "fn_settle_tournament_final_table_deal",
-            "deal_shares": [
-              {
-                "place": 1,
-                "amount": 31.68,
-                "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
-              },
-              {
-                "place": 2,
-                "amount": 25.33,
-                "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
-              },
-              {
-                "place": 3,
-                "amount": 19.0,
-                "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
-              },
-              {
-                "place": 4,
-                "amount": 12.66,
-                "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
-              },
-              {
-                "place": 5,
-                "amount": 6.33,
-                "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
-              }
-            ],
+            "deal_shares": [],
             "fully_settled": true,
-            "winner_amount": 31.68,
-            "bubble_protection": null
+            "winner_amount": 9.0,
+            "bubble_protection": {
+              "amount": 1.0,
+              "user_id": "10000000-0000-0000-0000-000000000002",
+              "position": 2
+            }
           },
-          "mode": "final_table_deal",
+          "mode": "places",
           "rake": {
             "amount": 0.0,
             "attributed": true,
-            "settled_at": "2026-09-10T13:53:27.577942-05:00",
+            "settled_at": "2026-09-10T13:37:39.8828-05:00",
             "destination": "none",
-            "attributed_at": "2026-09-10T13:53:27.577942-05:00",
+            "attributed_at": "2026-09-10T13:37:39.8828-05:00",
             "attributed_users": 0
           },
           "bounty": {
@@ -294,7 +133,7 @@
             "residual": 0
           },
           "escrow": {
-            "closed_at": "2026-09-10T13:53:27.577942-05:00",
+            "closed_at": "2026-09-10T13:37:39.8828-05:00",
             "close_note": "terminal receipt: exact zero",
             "fee_balance": 0.0,
             "prize_balance": 0.0,
@@ -304,89 +143,24 @@
           "payouts": [
             {
               "place": 1,
-              "amount": 31.68,
-              "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
-            },
-            {
-              "place": 2,
-              "amount": 25.33,
-              "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
-            },
-            {
-              "place": 3,
-              "amount": 19.0,
-              "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
-            },
-            {
-              "place": 4,
-              "amount": 12.66,
-              "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
-            },
-            {
-              "place": 5,
-              "amount": 6.33,
-              "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
-            },
-            {
-              "place": 6,
-              "amount": 5.0,
-              "user_id": "23fafd63-bdd2-0fc1-9cb7-d0d754c3c626"
+              "amount": 9.0,
+              "user_id": "10000000-0000-0000-0000-000000000001"
             }
           ],
-          "revision": "e4d7912feba6303eaa3784098a2f718d570add13be5725041f081598bc7c8620",
-          "winner_id": "fb93f802-2713-0498-7ad7-894ea4701ec4",
-          "settled_at": "2026-09-10T13:53:27.577942-05:00",
-          "deal_shares": [
-            {
-              "place": 1,
-              "amount": 31.68,
-              "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
-            },
-            {
-              "place": 2,
-              "amount": 25.33,
-              "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
-            },
-            {
-              "place": 3,
-              "amount": 19.0,
-              "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
-            },
-            {
-              "place": 4,
-              "amount": 12.66,
-              "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
-            },
-            {
-              "place": 5,
-              "amount": 6.33,
-              "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
-            }
-          ],
-          "proposal_id": "b8d23eee-af72-414a-85c2-988d3f1839e2",
+          "winner_id": "10000000-0000-0000-0000-000000000001",
+          "settled_at": "2026-09-10T13:37:39.8828-05:00",
+          "deal_shares": [],
           "fully_settled": true,
           "table_closure": {
-            "source_seat_ids": [
-              "3ee1cc43-5eed-93c9-0a0a-dc88a025b16e",
-              "40b8f24a-a534-4592-0c31-2a49b89a0aac",
-              "655f33a8-6860-9614-18e2-ddf0e0154a03",
-              "ac151685-cb70-6425-cf96-9e2f50e91197",
-              "b446e659-d0ab-7d1d-228f-042a815df3cf"
-            ],
-            "closed_table_ids": ["87200000-0000-0000-0000-000000000001"],
-            "released_seat_ids": [
-              "3ee1cc43-5eed-93c9-0a0a-dc88a025b16e",
-              "40b8f24a-a534-4592-0c31-2a49b89a0aac",
-              "655f33a8-6860-9614-18e2-ddf0e0154a03",
-              "ac151685-cb70-6425-cf96-9e2f50e91197",
-              "b446e659-d0ab-7d1d-228f-042a815df3cf"
-            ],
-            "source_seat_count": 5,
+            "source_seat_ids": ["98040000-0000-0000-0000-000000000001"],
+            "closed_table_ids": ["98030000-0000-0000-0000-000000000001"],
+            "released_seat_ids": ["98040000-0000-0000-0000-000000000001"],
+            "source_seat_count": 1,
             "closed_table_count": 1,
-            "released_seat_count": 5
+            "released_seat_count": 1
           },
-          "tournament_id": "87000000-0000-0000-0000-000000000001",
-          "winner_amount": 31.68,
+          "tournament_id": "98010000-0000-0000-0000-000000000001",
+          "winner_amount": 9.0,
           "mystery_bounty": {
             "ok": true,
             "reason": "not_a_mystery_tournament",
@@ -398,18 +172,69 @@
             "residual_paid_cents": 0
           },
           "receipt_version": 1,
-          "settlement_mode": "final_table_deal",
-          "bubble_protection": null,
-          "cash_payout_total": 100.0,
-          "source_seat_count": 5,
+          "settlement_mode": "places",
+          "bubble_protection": {
+            "amount": 1.0,
+            "user_id": "10000000-0000-0000-0000-000000000002",
+            "position": 2
+          },
+          "cash_payout_total": 10.0,
+          "source_seat_count": 1,
           "closed_table_count": 1,
           "bounty_payout_total": 0.0,
-          "released_seat_count": 5
+          "released_seat_count": 1
         },
-        "batch_receipts": null,
-        "expected_seats": 5,
-        "authority_deletes": 5,
-        "authority_inserts": 5,
+        "assertions": [
+          "owned reusable baseline and unused synthetic event",
+          "all seven financial guards active",
+          "all payments run with native triggers active",
+          "genuine finish claim admits the cash winner",
+          "paid-before fixture uses the actual native payer and credit journals",
+          "initial unpaid/partial/paid Bubble amount exactly matches native evidence and custody",
+          "NULL Bubble source refuses with exact money, batch and custody rollback",
+          "NULL Bubble user_id refuses with exact money, batch and custody rollback",
+          "late fault reaches the actual terminal receipt after money and closure",
+          "late receipt failure rolls back every payment, batch, capability and lifecycle row",
+          "actual terminal authority returns one completed Bubble receipt",
+          "real Bubble terminal lifecycle completes",
+          "one genuine finish claim and one immutable terminal settlement exist",
+          "exact 9.00 place plus 1.00 Bubble uses actual payout and wallet evidence",
+          "immutable batch records canonical Bubble source and exact paid-before funding",
+          "canonical batch verifies actual money and terminal closure",
+          "every obligation is fully paid with settlement evidence",
+          "prize, bounty and fee escrow close at exact zero",
+          "the actual winner seat and tournament table close",
+          "one actual live seat receives and consumes exact terminal exit authority",
+          "terminal wrapper restores prior seat capability settings",
+          "lost-response replay and serialized resolver preserve every row and exact receipt",
+          "terminal money proof remains valid across session timezones",
+          "all deferred constraints forced before rollback"
+        ],
+        "place_total": 9.0,
+        "bubble_total": 1.0,
+        "wallet_total": 10.0,
+        "null_refusals": [
+          {
+            "field": "source",
+            "message": "new row for relation \"tournament_place_settlement_batches\" violates check constraint \"tournament_place_settlement_batches_check1\"",
+            "sqlstate": "23514",
+            "refusal_layer": "existing_batch_constraint",
+            "constraint_name": "tournament_place_settlement_batches_check1"
+          },
+          {
+            "field": "user_id",
+            "message": "new row for relation \"tournament_obligations\" violates check constraint \"tournament_obligations_check1\"",
+            "sqlstate": "23514",
+            "refusal_layer": "existing_obligation_constraint",
+            "constraint_name": "tournament_obligations_check1"
+          }
+        ],
+        "expected_seats": 1,
+        "assertion_count": 24,
+        "authority_deletes": 1,
+        "authority_inserts": 1,
+        "initial_bubble_paid": 1,
+        "initial_bubble_source": "engine.fn_settle_tournament_bubble_protection",
         "deferred_constraints_checked": true
       },
       "runtime_composition": {
@@ -519,15 +344,6 @@
           {
             "acl": ["postgres=X/postgres"],
             "owner": "postgres",
-            "config": ["search_path=public", "statement_timeout=30s"],
-            "body_md5": "bb4b0e1d1c758943fca29f9a83d064e4",
-            "signature": "fn_ca_tournament_terminal_receipt(uuid,uuid)",
-            "definition_md5": "185dcb02134aa1f1fd2d87cdddbcfd26",
-            "security_definer": true
-          },
-          {
-            "acl": ["postgres=X/postgres"],
-            "owner": "postgres",
             "config": ["search_path=public, pg_temp"],
             "body_md5": "260c94b41d7f2bb021a88a546a1714ac",
             "signature": "fn_ca_verify_terminal_final_deal_batch(uuid,boolean)",
@@ -565,9 +381,9 @@
             "acl": ["postgres=X/postgres"],
             "owner": "postgres",
             "config": ["search_path=public", "statement_timeout=45s"],
-            "body_md5": "90f7506df2f1a94fe22952714fcd9f85",
+            "body_md5": "f4275f9fa8cb2711f19ffdf7b16a04e6",
             "signature": "fn_complete_tournament_terminal_pre_seat_guard(uuid,uuid,text)",
-            "definition_md5": "8397b4f24c6d1a072d7b2d946f45e3d6",
+            "definition_md5": "1550e55722cfc64a2dd76c3aa4399a2e",
             "security_definer": true
           },
           {
@@ -847,142 +663,32 @@
     {
       "variant": "unpaid",
       "exit_code": 0,
-      "assertions": 41,
-      "sql_sha256": "7ae9d00a7a870054f20a595a2768f90c4a27f22a25a360d4e5a596affeead700",
+      "assertion_notices": 32,
       "exact_rollback": true,
+      "snapshot_changes": [],
+      "sql_sha256": "421192785720b0e91aaf841cb985160f4e610cf8894a6c9da521a5aa913dc153",
       "terminal_evidence": {
         "batch": {
-          "plan": [
-            {
-              "kind": "final_table_deal",
-              "cents": 3168,
-              "place": 1,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
-            },
-            {
-              "kind": "final_table_deal",
-              "cents": 2533,
-              "place": 2,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
-            },
-            {
-              "kind": "final_table_deal",
-              "cents": 1900,
-              "place": 3,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
-            },
-            {
-              "kind": "final_table_deal",
-              "cents": 1266,
-              "place": 4,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
-            },
-            {
-              "kind": "final_table_deal",
-              "cents": 633,
-              "place": 5,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
-            },
-            {
-              "kind": "place",
-              "cents": 500,
-              "place": 6,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "23fafd63-bdd2-0fc1-9cb7-d0d754c3c626"
-            }
-          ],
-          "source": "engine.fn_settle_tournament_final_table_deal",
-          "live_count": 5,
-          "settled_at": "2026-09-10T13:53:29.514826-05:00",
-          "amount_owed": 100.0,
-          "chip_leader": "fb93f802-2713-0498-7ad7-894ea4701ec4",
-          "deal_amount": 95.0,
-          "field_count": 6,
-          "prepared_at": "2026-09-10T13:53:29.514826-05:00",
-          "amount_moved": 100.0,
-          "place_amount": 5.0,
-          "bubble_source": null,
-          "deal_table_id": "87200000-0000-0000-0000-000000000001",
-          "tournament_id": "87000000-0000-0000-0000-000000000001",
-          "bubble_user_id": null,
-          "deal_line_count": 5,
+          "mode": "structure",
+          "source": "engine.fn_settle_tournament_places",
+          "settled_at": "2026-09-10T13:37:41.595813-05:00",
+          "amount_owed": 9.0,
+          "place_count": 1,
+          "prepared_at": "2026-09-10T13:37:41.595813-05:00",
+          "bubble_source": "engine.fn_settle_tournament_bubble_protection",
+          "tournament_id": "98010000-0000-0000-0000-000000000001",
+          "bubble_user_id": "10000000-0000-0000-0000-000000000002",
+          "escrow_required": 10.0,
           "contract_version": 2,
-          "place_line_count": 1,
-          "plan_fingerprint": "f13235ab194f49997051c02f3d595e1a",
-          "bubble_amount_owed": 0.0,
-          "escrow_prize_after": 0.0,
-          "escrow_prize_before": 100.0,
-          "live_input_snapshot": [
-            {
-              "chips": 500,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4",
-              "registered_at": 1789005238.476655
-            },
-            {
-              "chips": 400,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636",
-              "registered_at": 1789005238.476655
-            },
-            {
-              "chips": 300,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85",
-              "registered_at": 1789005238.476655
-            },
-            {
-              "chips": 200,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71",
-              "registered_at": 1789005238.476655
-            },
-            {
-              "chips": 100,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a",
-              "registered_at": 1789005238.476655
-            }
-          ],
-          "bubble_obligation_id": null,
-          "structure_place_count": 6,
-          "live_input_fingerprint": "508da461d2cbaf8b4072283a3c838fa9",
-          "bubble_contract_required": false,
-          "bubble_amount_paid_before": 0.0,
-          "prior_standings_fingerprint": "c12351ed44f82e93aca188a5fc9c455b"
+          "escrow_available": 10.0,
+          "plan_fingerprint": "cf6aecdccc54de3b1c10a67e130cdaab",
+          "bubble_amount_owed": 1.0,
+          "bubble_obligation_id": "59bcdf12-e3dd-4b63-b7a8-dfda194d34e3",
+          "bubble_contract_required": true,
+          "bubble_amount_paid_before": 0.0
         },
-        "claim": {
-          "evidence": {
-            "ok": true,
-            "reason": null,
-            "failures": [],
-            "financials": {
-              "fee_balance": 0.0,
-              "prize_balance": 0.0,
-              "rake_expected": 0.0,
-              "bounty_balance": 0.0,
-              "place_obligations": 0,
-              "unsettled_obligations": 0
-            },
-            "finish_kind": "final_table_deal",
-            "tournament_id": "87000000-0000-0000-0000-000000000001",
-            "winner_user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
-          },
-          "claimed_at": "2026-09-10T13:53:29.514826-05:00",
-          "updated_at": "2026-09-10T13:53:29.514826-05:00",
-          "finish_kind": "final_table_deal",
-          "certified_at": "2026-09-10T13:53:29.514826-05:00",
-          "claim_source": "engine.fn_settle_tournament_final_table_deal",
-          "completed_at": "2026-09-10T13:53:29.514826-05:00",
-          "tournament_id": "87000000-0000-0000-0000-000000000001",
-          "winner_user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4",
-          "certification_version": 1
-        },
+        "state": "unpaid",
+        "status": "COMPLETED",
         "receipt": {
           "ok": true,
           "cash": {
@@ -991,74 +697,26 @@
             "payouts": [
               {
                 "place": 1,
-                "amount": 31.68,
-                "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
-              },
-              {
-                "place": 2,
-                "amount": 25.33,
-                "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
-              },
-              {
-                "place": 3,
-                "amount": 19.0,
-                "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
-              },
-              {
-                "place": 4,
-                "amount": 12.66,
-                "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
-              },
-              {
-                "place": 5,
-                "amount": 6.33,
-                "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
-              },
-              {
-                "place": 6,
-                "amount": 5.0,
-                "user_id": "23fafd63-bdd2-0fc1-9cb7-d0d754c3c626"
+                "amount": 9.0,
+                "user_id": "10000000-0000-0000-0000-000000000001"
               }
             ],
-            "money_path": "fn_settle_tournament_final_table_deal",
-            "deal_shares": [
-              {
-                "place": 1,
-                "amount": 31.68,
-                "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
-              },
-              {
-                "place": 2,
-                "amount": 25.33,
-                "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
-              },
-              {
-                "place": 3,
-                "amount": 19.0,
-                "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
-              },
-              {
-                "place": 4,
-                "amount": 12.66,
-                "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
-              },
-              {
-                "place": 5,
-                "amount": 6.33,
-                "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
-              }
-            ],
+            "deal_shares": [],
             "fully_settled": true,
-            "winner_amount": 31.68,
-            "bubble_protection": null
+            "winner_amount": 9.0,
+            "bubble_protection": {
+              "amount": 1.0,
+              "user_id": "10000000-0000-0000-0000-000000000002",
+              "position": 2
+            }
           },
-          "mode": "final_table_deal",
+          "mode": "places",
           "rake": {
             "amount": 0.0,
             "attributed": true,
-            "settled_at": "2026-09-10T13:53:29.514826-05:00",
+            "settled_at": "2026-09-10T13:37:41.595813-05:00",
             "destination": "none",
-            "attributed_at": "2026-09-10T13:53:29.514826-05:00",
+            "attributed_at": "2026-09-10T13:37:41.595813-05:00",
             "attributed_users": 0
           },
           "bounty": {
@@ -1068,7 +726,7 @@
             "residual": 0
           },
           "escrow": {
-            "closed_at": "2026-09-10T13:53:29.514826-05:00",
+            "closed_at": "2026-09-10T13:37:41.595813-05:00",
             "close_note": "terminal receipt: exact zero",
             "fee_balance": 0.0,
             "prize_balance": 0.0,
@@ -1078,89 +736,24 @@
           "payouts": [
             {
               "place": 1,
-              "amount": 31.68,
-              "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
-            },
-            {
-              "place": 2,
-              "amount": 25.33,
-              "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
-            },
-            {
-              "place": 3,
-              "amount": 19.0,
-              "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
-            },
-            {
-              "place": 4,
-              "amount": 12.66,
-              "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
-            },
-            {
-              "place": 5,
-              "amount": 6.33,
-              "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
-            },
-            {
-              "place": 6,
-              "amount": 5.0,
-              "user_id": "23fafd63-bdd2-0fc1-9cb7-d0d754c3c626"
+              "amount": 9.0,
+              "user_id": "10000000-0000-0000-0000-000000000001"
             }
           ],
-          "revision": "86ac360db3aa6a2fb2dfcba0146c12e9e48e32a3317f663572ee08eb17b332c1",
-          "winner_id": "fb93f802-2713-0498-7ad7-894ea4701ec4",
-          "settled_at": "2026-09-10T13:53:29.514826-05:00",
-          "deal_shares": [
-            {
-              "place": 1,
-              "amount": 31.68,
-              "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
-            },
-            {
-              "place": 2,
-              "amount": 25.33,
-              "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
-            },
-            {
-              "place": 3,
-              "amount": 19.0,
-              "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
-            },
-            {
-              "place": 4,
-              "amount": 12.66,
-              "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
-            },
-            {
-              "place": 5,
-              "amount": 6.33,
-              "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
-            }
-          ],
-          "proposal_id": "49751353-cac2-4f32-8dbb-350bc06c194d",
+          "winner_id": "10000000-0000-0000-0000-000000000001",
+          "settled_at": "2026-09-10T13:37:41.595813-05:00",
+          "deal_shares": [],
           "fully_settled": true,
           "table_closure": {
-            "source_seat_ids": [
-              "3ee1cc43-5eed-93c9-0a0a-dc88a025b16e",
-              "40b8f24a-a534-4592-0c31-2a49b89a0aac",
-              "655f33a8-6860-9614-18e2-ddf0e0154a03",
-              "ac151685-cb70-6425-cf96-9e2f50e91197",
-              "b446e659-d0ab-7d1d-228f-042a815df3cf"
-            ],
-            "closed_table_ids": ["87200000-0000-0000-0000-000000000001"],
-            "released_seat_ids": [
-              "3ee1cc43-5eed-93c9-0a0a-dc88a025b16e",
-              "40b8f24a-a534-4592-0c31-2a49b89a0aac",
-              "655f33a8-6860-9614-18e2-ddf0e0154a03",
-              "ac151685-cb70-6425-cf96-9e2f50e91197",
-              "b446e659-d0ab-7d1d-228f-042a815df3cf"
-            ],
-            "source_seat_count": 5,
+            "source_seat_ids": ["98040000-0000-0000-0000-000000000001"],
+            "closed_table_ids": ["98030000-0000-0000-0000-000000000001"],
+            "released_seat_ids": ["98040000-0000-0000-0000-000000000001"],
+            "source_seat_count": 1,
             "closed_table_count": 1,
-            "released_seat_count": 5
+            "released_seat_count": 1
           },
-          "tournament_id": "87000000-0000-0000-0000-000000000001",
-          "winner_amount": 31.68,
+          "tournament_id": "98010000-0000-0000-0000-000000000001",
+          "winner_amount": 9.0,
           "mystery_bounty": {
             "ok": true,
             "reason": "not_a_mystery_tournament",
@@ -1172,18 +765,68 @@
             "residual_paid_cents": 0
           },
           "receipt_version": 1,
-          "settlement_mode": "final_table_deal",
-          "bubble_protection": null,
-          "cash_payout_total": 100.0,
-          "source_seat_count": 5,
+          "settlement_mode": "places",
+          "bubble_protection": {
+            "amount": 1.0,
+            "user_id": "10000000-0000-0000-0000-000000000002",
+            "position": 2
+          },
+          "cash_payout_total": 10.0,
+          "source_seat_count": 1,
           "closed_table_count": 1,
           "bounty_payout_total": 0.0,
-          "released_seat_count": 5
+          "released_seat_count": 1
         },
-        "batch_receipts": null,
-        "expected_seats": 5,
-        "authority_deletes": 5,
-        "authority_inserts": 5,
+        "assertions": [
+          "owned reusable baseline and unused synthetic event",
+          "all seven financial guards active",
+          "all payments run with native triggers active",
+          "genuine finish claim admits the cash winner",
+          "initial unpaid/partial/paid Bubble amount exactly matches native evidence and custody",
+          "NULL Bubble source refuses with exact money, batch and custody rollback",
+          "NULL Bubble user_id refuses with exact money, batch and custody rollback",
+          "late fault reaches the actual terminal receipt after money and closure",
+          "late receipt failure rolls back every payment, batch, capability and lifecycle row",
+          "actual terminal authority returns one completed Bubble receipt",
+          "real Bubble terminal lifecycle completes",
+          "one genuine finish claim and one immutable terminal settlement exist",
+          "exact 9.00 place plus 1.00 Bubble uses actual payout and wallet evidence",
+          "immutable batch records canonical Bubble source and exact paid-before funding",
+          "canonical batch verifies actual money and terminal closure",
+          "every obligation is fully paid with settlement evidence",
+          "prize, bounty and fee escrow close at exact zero",
+          "the actual winner seat and tournament table close",
+          "one actual live seat receives and consumes exact terminal exit authority",
+          "terminal wrapper restores prior seat capability settings",
+          "lost-response replay and serialized resolver preserve every row and exact receipt",
+          "terminal money proof remains valid across session timezones",
+          "all deferred constraints forced before rollback"
+        ],
+        "place_total": 9.0,
+        "bubble_total": 1.0,
+        "wallet_total": 10.0,
+        "null_refusals": [
+          {
+            "field": "source",
+            "message": "new row for relation \"tournament_place_settlement_batches\" violates check constraint \"tournament_place_settlement_batches_check1\"",
+            "sqlstate": "23514",
+            "refusal_layer": "existing_batch_constraint",
+            "constraint_name": "tournament_place_settlement_batches_check1"
+          },
+          {
+            "field": "user_id",
+            "message": "new row for relation \"tournament_obligations\" violates check constraint \"tournament_obligations_check1\"",
+            "sqlstate": "23514",
+            "refusal_layer": "existing_obligation_constraint",
+            "constraint_name": "tournament_obligations_check1"
+          }
+        ],
+        "expected_seats": 1,
+        "assertion_count": 23,
+        "authority_deletes": 1,
+        "authority_inserts": 1,
+        "initial_bubble_paid": 0,
+        "initial_bubble_source": "engine.fn_settle_tournament_places",
         "deferred_constraints_checked": true
       },
       "runtime_composition": {
@@ -1293,15 +936,6 @@
           {
             "acl": ["postgres=X/postgres"],
             "owner": "postgres",
-            "config": ["search_path=public", "statement_timeout=30s"],
-            "body_md5": "bb4b0e1d1c758943fca29f9a83d064e4",
-            "signature": "fn_ca_tournament_terminal_receipt(uuid,uuid)",
-            "definition_md5": "185dcb02134aa1f1fd2d87cdddbcfd26",
-            "security_definer": true
-          },
-          {
-            "acl": ["postgres=X/postgres"],
-            "owner": "postgres",
             "config": ["search_path=public, pg_temp"],
             "body_md5": "260c94b41d7f2bb021a88a546a1714ac",
             "signature": "fn_ca_verify_terminal_final_deal_batch(uuid,boolean)",
@@ -1339,9 +973,9 @@
             "acl": ["postgres=X/postgres"],
             "owner": "postgres",
             "config": ["search_path=public", "statement_timeout=45s"],
-            "body_md5": "90f7506df2f1a94fe22952714fcd9f85",
+            "body_md5": "f4275f9fa8cb2711f19ffdf7b16a04e6",
             "signature": "fn_complete_tournament_terminal_pre_seat_guard(uuid,uuid,text)",
-            "definition_md5": "8397b4f24c6d1a072d7b2d946f45e3d6",
+            "definition_md5": "1550e55722cfc64a2dd76c3aa4399a2e",
             "security_definer": true
           },
           {
@@ -1620,346 +1254,12 @@
     },
     {
       "variant": "partial",
-      "exit_code": 0,
-      "assertions": 41,
-      "sql_sha256": "59bdb30779d7150e10c680292cf76613f008ae6e1d0402a29b3dc33a7ebe24eb",
+      "exit_code": 3,
+      "assertion_notices": 8,
       "exact_rollback": true,
-      "terminal_evidence": {
-        "batch": {
-          "plan": [
-            {
-              "kind": "final_table_deal",
-              "cents": 3168,
-              "place": 1,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
-            },
-            {
-              "kind": "final_table_deal",
-              "cents": 2533,
-              "place": 2,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
-            },
-            {
-              "kind": "final_table_deal",
-              "cents": 1900,
-              "place": 3,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
-            },
-            {
-              "kind": "final_table_deal",
-              "cents": 1266,
-              "place": 4,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
-            },
-            {
-              "kind": "final_table_deal",
-              "cents": 633,
-              "place": 5,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
-            },
-            {
-              "kind": "place",
-              "cents": 500,
-              "place": 6,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "23fafd63-bdd2-0fc1-9cb7-d0d754c3c626"
-            }
-          ],
-          "source": "engine.fn_settle_tournament_final_table_deal",
-          "live_count": 5,
-          "settled_at": "2026-09-10T13:53:31.59918-05:00",
-          "amount_owed": 100.0,
-          "chip_leader": "fb93f802-2713-0498-7ad7-894ea4701ec4",
-          "deal_amount": 95.0,
-          "field_count": 6,
-          "prepared_at": "2026-09-10T13:53:31.59918-05:00",
-          "amount_moved": 98.0,
-          "place_amount": 5.0,
-          "bubble_source": null,
-          "deal_table_id": "87200000-0000-0000-0000-000000000001",
-          "tournament_id": "87000000-0000-0000-0000-000000000001",
-          "bubble_user_id": null,
-          "deal_line_count": 5,
-          "contract_version": 2,
-          "place_line_count": 1,
-          "plan_fingerprint": "f13235ab194f49997051c02f3d595e1a",
-          "bubble_amount_owed": 0.0,
-          "escrow_prize_after": 0.0,
-          "escrow_prize_before": 98.0,
-          "live_input_snapshot": [
-            {
-              "chips": 500,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4",
-              "registered_at": 1789005238.476655
-            },
-            {
-              "chips": 400,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636",
-              "registered_at": 1789005238.476655
-            },
-            {
-              "chips": 300,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85",
-              "registered_at": 1789005238.476655
-            },
-            {
-              "chips": 200,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71",
-              "registered_at": 1789005238.476655
-            },
-            {
-              "chips": 100,
-              "club_id": "20000000-0000-0000-0000-000000000001",
-              "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a",
-              "registered_at": 1789005238.476655
-            }
-          ],
-          "bubble_obligation_id": null,
-          "structure_place_count": 6,
-          "live_input_fingerprint": "508da461d2cbaf8b4072283a3c838fa9",
-          "bubble_contract_required": false,
-          "bubble_amount_paid_before": 0.0,
-          "prior_standings_fingerprint": "211cd231308ec50c9f4557b9e029d77b"
-        },
-        "claim": {
-          "evidence": {
-            "ok": true,
-            "reason": null,
-            "failures": [],
-            "financials": {
-              "fee_balance": 0.0,
-              "prize_balance": 0.0,
-              "rake_expected": 0.0,
-              "bounty_balance": 0.0,
-              "place_obligations": 0,
-              "unsettled_obligations": 0
-            },
-            "finish_kind": "final_table_deal",
-            "tournament_id": "87000000-0000-0000-0000-000000000001",
-            "winner_user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
-          },
-          "claimed_at": "2026-09-10T13:53:31.59918-05:00",
-          "updated_at": "2026-09-10T13:53:31.59918-05:00",
-          "finish_kind": "final_table_deal",
-          "certified_at": "2026-09-10T13:53:31.59918-05:00",
-          "claim_source": "engine.fn_settle_tournament_final_table_deal",
-          "completed_at": "2026-09-10T13:53:31.59918-05:00",
-          "tournament_id": "87000000-0000-0000-0000-000000000001",
-          "winner_user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4",
-          "certification_version": 1
-        },
-        "receipt": {
-          "ok": true,
-          "cash": {
-            "ok": true,
-            "status": "COMPLETING",
-            "payouts": [
-              {
-                "place": 1,
-                "amount": 31.68,
-                "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
-              },
-              {
-                "place": 2,
-                "amount": 25.33,
-                "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
-              },
-              {
-                "place": 3,
-                "amount": 19.0,
-                "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
-              },
-              {
-                "place": 4,
-                "amount": 12.66,
-                "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
-              },
-              {
-                "place": 5,
-                "amount": 6.33,
-                "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
-              },
-              {
-                "place": 6,
-                "amount": 5.0,
-                "user_id": "23fafd63-bdd2-0fc1-9cb7-d0d754c3c626"
-              }
-            ],
-            "money_path": "fn_settle_tournament_final_table_deal",
-            "deal_shares": [
-              {
-                "place": 1,
-                "amount": 31.68,
-                "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
-              },
-              {
-                "place": 2,
-                "amount": 25.33,
-                "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
-              },
-              {
-                "place": 3,
-                "amount": 19.0,
-                "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
-              },
-              {
-                "place": 4,
-                "amount": 12.66,
-                "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
-              },
-              {
-                "place": 5,
-                "amount": 6.33,
-                "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
-              }
-            ],
-            "fully_settled": true,
-            "winner_amount": 31.68,
-            "bubble_protection": null
-          },
-          "mode": "final_table_deal",
-          "rake": {
-            "amount": 0.0,
-            "attributed": true,
-            "settled_at": "2026-09-10T13:53:31.59918-05:00",
-            "destination": "none",
-            "attributed_at": "2026-09-10T13:53:31.59918-05:00",
-            "attributed_users": 0
-          },
-          "bounty": {
-            "ok": true,
-            "funded": true,
-            "reason": "not_a_bounty_tournament",
-            "residual": 0
-          },
-          "escrow": {
-            "closed_at": "2026-09-10T13:53:31.59918-05:00",
-            "close_note": "terminal receipt: exact zero",
-            "fee_balance": 0.0,
-            "prize_balance": 0.0,
-            "bounty_balance": 0.0
-          },
-          "status": "COMPLETED",
-          "payouts": [
-            {
-              "place": 1,
-              "amount": 31.68,
-              "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
-            },
-            {
-              "place": 2,
-              "amount": 25.33,
-              "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
-            },
-            {
-              "place": 3,
-              "amount": 19.0,
-              "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
-            },
-            {
-              "place": 4,
-              "amount": 12.66,
-              "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
-            },
-            {
-              "place": 5,
-              "amount": 6.33,
-              "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
-            },
-            {
-              "place": 6,
-              "amount": 5.0,
-              "user_id": "23fafd63-bdd2-0fc1-9cb7-d0d754c3c626"
-            }
-          ],
-          "revision": "a387dc1246d60738ae31b8869c192b652c25d27f382d964e5da6605d5995e52e",
-          "winner_id": "fb93f802-2713-0498-7ad7-894ea4701ec4",
-          "settled_at": "2026-09-10T13:53:31.59918-05:00",
-          "deal_shares": [
-            {
-              "place": 1,
-              "amount": 31.68,
-              "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
-            },
-            {
-              "place": 2,
-              "amount": 25.33,
-              "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
-            },
-            {
-              "place": 3,
-              "amount": 19.0,
-              "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
-            },
-            {
-              "place": 4,
-              "amount": 12.66,
-              "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
-            },
-            {
-              "place": 5,
-              "amount": 6.33,
-              "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
-            }
-          ],
-          "proposal_id": "0546f69c-fa21-47aa-b8c1-6345101bb466",
-          "fully_settled": true,
-          "table_closure": {
-            "source_seat_ids": [
-              "3ee1cc43-5eed-93c9-0a0a-dc88a025b16e",
-              "40b8f24a-a534-4592-0c31-2a49b89a0aac",
-              "655f33a8-6860-9614-18e2-ddf0e0154a03",
-              "ac151685-cb70-6425-cf96-9e2f50e91197",
-              "b446e659-d0ab-7d1d-228f-042a815df3cf"
-            ],
-            "closed_table_ids": ["87200000-0000-0000-0000-000000000001"],
-            "released_seat_ids": [
-              "3ee1cc43-5eed-93c9-0a0a-dc88a025b16e",
-              "40b8f24a-a534-4592-0c31-2a49b89a0aac",
-              "655f33a8-6860-9614-18e2-ddf0e0154a03",
-              "ac151685-cb70-6425-cf96-9e2f50e91197",
-              "b446e659-d0ab-7d1d-228f-042a815df3cf"
-            ],
-            "source_seat_count": 5,
-            "closed_table_count": 1,
-            "released_seat_count": 5
-          },
-          "tournament_id": "87000000-0000-0000-0000-000000000001",
-          "winner_amount": 31.68,
-          "mystery_bounty": {
-            "ok": true,
-            "reason": "not_a_mystery_tournament",
-            "balanced": true,
-            "pool_cents": 0,
-            "settled_cents": 0,
-            "variance_cents": 0,
-            "unclaimed_cents": 0,
-            "residual_paid_cents": 0
-          },
-          "receipt_version": 1,
-          "settlement_mode": "final_table_deal",
-          "bubble_protection": null,
-          "cash_payout_total": 100.0,
-          "source_seat_count": 5,
-          "closed_table_count": 1,
-          "bounty_payout_total": 0.0,
-          "released_seat_count": 5
-        },
-        "batch_receipts": null,
-        "expected_seats": 5,
-        "authority_deletes": 5,
-        "authority_inserts": 5,
-        "deferred_constraints_checked": true
-      },
+      "snapshot_changes": [],
+      "sql_sha256": "ad66940ee829d91d16e26016228ecd04b17a83e11e555ff20447ba2420d14165",
+      "terminal_evidence": null,
       "runtime_composition": {
         "guards": [
           {
@@ -2067,15 +1367,6 @@
           {
             "acl": ["postgres=X/postgres"],
             "owner": "postgres",
-            "config": ["search_path=public", "statement_timeout=30s"],
-            "body_md5": "bb4b0e1d1c758943fca29f9a83d064e4",
-            "signature": "fn_ca_tournament_terminal_receipt(uuid,uuid)",
-            "definition_md5": "185dcb02134aa1f1fd2d87cdddbcfd26",
-            "security_definer": true
-          },
-          {
-            "acl": ["postgres=X/postgres"],
-            "owner": "postgres",
             "config": ["search_path=public, pg_temp"],
             "body_md5": "260c94b41d7f2bb021a88a546a1714ac",
             "signature": "fn_ca_verify_terminal_final_deal_batch(uuid,boolean)",
@@ -2113,9 +1404,9 @@
             "acl": ["postgres=X/postgres"],
             "owner": "postgres",
             "config": ["search_path=public", "statement_timeout=45s"],
-            "body_md5": "90f7506df2f1a94fe22952714fcd9f85",
+            "body_md5": "f4275f9fa8cb2711f19ffdf7b16a04e6",
             "signature": "fn_complete_tournament_terminal_pre_seat_guard(uuid,uuid,text)",
-            "definition_md5": "8397b4f24c6d1a072d7b2d946f45e3d6",
+            "definition_md5": "1550e55722cfc64a2dd76c3aa4399a2e",
             "security_definer": true
           },
           {
@@ -2390,14 +1681,46 @@
           "not_null": true
         }
       },
-      "passed": true
+      "passed": false,
+      "failure_tail": [
+        "psql: NOTICE:  [autorevoke] stripped PUBLIC/anon EXECUTE from public.fn_complete_tournament_terminal_pre_seat_guard(pg_catalog.uuid,pg_catalog.uuid,pg_catalog.text) (tag CREATE FUNCTION, named=f, behaviour=t)",
+        "psql: NOTICE:  [autorevoke] stripped PUBLIC/anon EXECUTE from public.fn_ca_settle_tournament_place_raw(pg_catalog.uuid,integer,pg_catalog.uuid,numeric) (tag CREATE FUNCTION, named=t, behaviour=f)",
+        "psql: NOTICE:  [autorevoke] stripped PUBLIC/anon EXECUTE from public.fn_ca_settle_tournament_bubble_raw(pg_catalog.uuid,pg_catalog.uuid,numeric) (tag CREATE FUNCTION, named=t, behaviour=f)",
+        "psql: NOTICE:  [autorevoke] stripped PUBLIC/anon EXECUTE from public.fn_ca_settle_final_table_deal_share_raw(pg_catalog.uuid,pg_catalog.uuid,numeric) (tag CREATE FUNCTION, named=t, behaviour=f)",
+        "psql: NOTICE:  [autorevoke] stripped PUBLIC/anon EXECUTE from public.fn_settle_tournament_final_table_deal(pg_catalog.uuid) (tag CREATE FUNCTION, named=t, behaviour=t)",
+        "psql: NOTICE:  [autorevoke] stripped PUBLIC/anon EXECUTE from public.trg_freeze_atomic_final_table_deal_obligation() (tag CREATE FUNCTION, named=f, behaviour=t)",
+        "psql: NOTICE:  [autorevoke] stripped PUBLIC/anon EXECUTE from public.trg_freeze_canonical_final_deal_batch() (tag CREATE FUNCTION, named=f, behaviour=t)",
+        "psql: NOTICE:  trigger \"zzzz_freeze_canonical_final_deal_batch\" for relation \"public.tournament_final_table_deal_batches\" does not exist, skipping",
+        "psql: NOTICE:  [autorevoke] stripped PUBLIC/anon EXECUTE from public.fn_guard_tournament_completed_certificate() (tag CREATE FUNCTION, named=f, behaviour=t)",
+        "psql: NOTICE:  [autorevoke] stripped PUBLIC/anon EXECUTE from public.trg_tournament_atomic_place_completion_guard() (tag CREATE FUNCTION, named=f, behaviour=t)",
+        "psql: NOTICE:  column \"contract_version\" of relation \"tournament_final_table_deal_batches\" already exists, skipping",
+        "psql: NOTICE:  [autorevoke] stripped PUBLIC/anon EXECUTE from public.trg_freeze_canonical_final_deal_batch() (tag CREATE FUNCTION, named=f, behaviour=t)",
+        "psql: NOTICE:  [autorevoke] stripped PUBLIC/anon EXECUTE from public.fn_settle_tournament_places(pg_catalog.uuid,pg_catalog.uuid) (tag CREATE FUNCTION, named=t, behaviour=t)",
+        "psql: NOTICE:  [autorevoke] stripped PUBLIC/anon EXECUTE from public.trg_tournament_atomic_place_completion_guard() (tag CREATE FUNCTION, named=f, behaviour=t)",
+        "psql: NOTICE:  [autorevoke] stripped PUBLIC/anon EXECUTE from public.trg_freeze_batched_tournament_place() (tag CREATE FUNCTION, named=f, behaviour=t)",
+        "psql: NOTICE:  [autorevoke] stripped PUBLIC/anon EXECUTE from public.fn_settle_tournament_obligation(pg_catalog.uuid,pg_catalog.text,integer,pg_catalog.uuid,numeric,pg_catalog.text,pg_catalog.text,pg_catalog.uuid) (tag CREATE FUNCTION, named=t, behaviour=f)",
+        "psql: NOTICE:  PASS owned reusable baseline and unused synthetic event",
+        "psql: NOTICE:  PASS all seven financial guards active",
+        "psql: NOTICE:  PASS all payments run with native triggers active",
+        "psql: NOTICE:  PASS genuine finish claim admits the cash winner",
+        "psql: NOTICE:  PASS paid-before fixture uses the actual native payer and credit journals",
+        "psql: NOTICE:  PASS initial unpaid/partial/paid Bubble amount exactly matches native evidence and custody",
+        "psql: NOTICE:  PASS NULL Bubble source refuses with exact money, batch and custody rollback",
+        "psql: NOTICE:  PASS NULL Bubble user_id refuses with exact money, batch and custody rollback",
+        "psql: ERROR:  tournament 98010000-0000-0000-0000-000000000001 has more than one durable bubble payout line",
+        "CONTEXT:  PL/pgSQL function fn_complete_tournament_terminal_pre_seat_guard(uuid,uuid,text) line 474 at RAISE",
+        "PL/pgSQL function fn_complete_tournament_terminal(uuid,uuid,text) line 14 at assignment",
+        "SQL statement \"SELECT public.fn_complete_tournament_terminal('98010000-0000-0000-0000-000000000001',",
+        "   '10000000-0000-0000-0000-000000000001','places')\"",
+        "PL/pgSQL function inline_code_block line 5 at PERFORM"
+      ]
     }
   ],
-  "output_directory": "/tmp/codex-final-deal-v2-native-7or4lql2",
+  "output_directory": "/tmp/codex-bubble-terminal-0f9jbtsg",
   "after": {
     "pg_proc": "87e8e18ca72ae9436fd4e3ea0b419d3f",
     "pg_trigger": "ca78c99683c6f915be978798c332e0af",
-    "pg_class": "aa2a142f9d18c1e49d3f9818f3676e75",
+    "pg_class": "070ce81570ea90a7e801f9f1b2a38c26",
     "pg_attribute": "ba471572827a80efdca94ec814a55d05",
     "pg_attrdef": "6c3bb43814d85300233d207f986fa9fa",
     "pg_constraint": "3bb7c52ef36be5c40cd5e402f805f899",
@@ -2447,12 +1770,12 @@
     "public.wallet_transactions": "{\"count\" : 30, \"md5\" : \"00e280de048284ddc9c36c24668af128\"}",
     "public.wallets": "{\"count\" : 0, \"md5\" : \"d41d8cd98f00b204e9800998ecf8427e\"}"
   },
-  "status": "passed",
+  "status": "failed",
   "source_sha256": {
-    "scripts/ci/rehearse-final-deal-current-terminal.py": "43cdefa38c7a699840c7767b22622560caad4911a2b9e6d3b999ce133e655756",
-    "scripts/ci/probes/final-deal-current-terminal-native.sql": "8be0add8344d7b3916a94cbc0b0522497996b96d7a945196f3854b41b3fd9d8f",
-    "scripts/deploy/phase-three-final-deal-terminal-v2.sql": "b4af55173b825be5ecf48c6c3bbcca1e828493cdafc47becf00d73ad3186c871",
-    "scripts/deploy/phase-three-strict-tournament-cutover.sql": "cb0e3c460ae2a650c6f0b18a9609f0192813aab07509d9b9f183e781abfaaf36",
-    "scripts/dev/build-versioned-final-deal-probe.py": "e75bb5e19be5ff787caa8cda53782f3ca62cee06007b53af1167a68e6e171a8e"
+    "scripts/ci/rehearse-bubble-current-terminal.py": "030525df882d7b37629973d56776e93b7f9d583469023f27c79607199d3c0854",
+    "scripts/ci/probes/bubble-current-terminal-native.sql": "50f23899b08d3bc1bc65dce3018d8a381b34c964a73d8d94b1e1b94cbf0eee34",
+    "scripts/ci/rehearse-final-deal-current-terminal.py": "7f3f077c9fa6993022da9e2899f8d6b61fca46b04ccc12d1f2eb19c10eb31977",
+    "scripts/deploy/phase-three-final-deal-terminal-v2.sql": "d294a20a507a8ca6608cc494660bd0812c0181a43922d49e85450f68315c4972",
+    "scripts/deploy/phase-three-strict-tournament-cutover.sql": "e4bcd3cca10309b153da5382f1d8c55f0f0419df87fc60960309f909dfb0e928"
   }
 }

@@ -82,13 +82,13 @@ DO $final_deal_terminal_seat_composition$
 DECLARE
  v_public oid := 'public.fn_complete_tournament_terminal(uuid,uuid,text)'::regprocedure;
  v_private oid := to_regprocedure('public.fn_complete_tournament_terminal_pre_seat_guard(uuid,uuid,text)');
- v_src text; v_def text;
+ v_src text; v_def text; v_patched text; v_private_metadata jsonb;
 BEGIN
  SELECT prosrc,pg_get_functiondef(oid) INTO v_src,v_def FROM pg_proc WHERE oid=v_public;
  IF md5(v_src) NOT IN ('f4275f9fa8cb2711f19ffdf7b16a04e6','96a61ea5e16560735bcb70b355aa79ab')
     OR NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid=v_public AND proowner='postgres'::regrole AND prosecdef)
     OR (v_private IS NOT NULL AND NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid=v_private
-       AND md5(prosrc)='f4275f9fa8cb2711f19ffdf7b16a04e6' AND prosecdef
+       AND md5(prosrc) IN ('f4275f9fa8cb2711f19ffdf7b16a04e6','90f7506df2f1a94fe22952714fcd9f85') AND prosecdef
        AND proowner='postgres'::regrole))
     OR NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid=
        'public.fn_ca_open_tournament_seat_exit_authority(uuid,text,uuid)'::regprocedure
@@ -102,6 +102,58 @@ BEGIN
   EXECUTE replace(v_def,
     'CREATE OR REPLACE FUNCTION public.fn_complete_tournament_terminal(',
     'CREATE OR REPLACE FUNCTION public.fn_complete_tournament_terminal_pre_seat_guard(');
+ END IF;
+ -- Preserve every existing terminal money check. Only the receipt projection
+ -- aggregates verified partial Bubble payments into their single recipient.
+ v_private := 'public.fn_complete_tournament_terminal_pre_seat_guard(uuid,uuid,text)'::regprocedure;
+ SELECT prosrc,pg_get_functiondef(oid),to_jsonb(p)-'prosrc'
+  INTO v_src,v_def,v_private_metadata FROM pg_proc p WHERE oid=v_private;
+ IF md5(v_src)='f4275f9fa8cb2711f19ffdf7b16a04e6' THEN
+  v_patched:=replace(v_src,$bubble_before$  SELECT count(*) INTO v_bubble_line_count
+    FROM public.tournament_payouts p
+   WHERE p.tournament_id = p_tournament_id
+     AND p.source = 'bubble_protection';
+  IF v_bubble_line_count > 1 THEN
+    RAISE EXCEPTION 'tournament % has more than one durable bubble payout line',
+      p_tournament_id USING ERRCODE = 'P0404';
+  END IF;
+  SELECT jsonb_build_object(
+           'user_id',p.user_id,'position',tp.position,'amount',p.amount)
+    INTO v_cash_bubble
+    FROM public.tournament_payouts p
+    JOIN public.tournament_players tp
+      ON tp.tournament_id = p_tournament_id AND tp.user_id = p.user_id
+   WHERE p.tournament_id = p_tournament_id
+     AND p.source = 'bubble_protection';
+$bubble_before$,$bubble_after$  -- A partly paid obligation has several immutable credit intervals, but
+  -- exactly one Bubble recipient. Reconstruct that recipient's total from
+  -- the durable payouts already verified against their exact credit keys.
+  SELECT count(DISTINCT p.user_id) INTO v_bubble_line_count
+    FROM public.tournament_payouts p
+   WHERE p.tournament_id = p_tournament_id
+     AND p.source = 'bubble_protection';
+  IF v_bubble_line_count > 1 THEN
+    RAISE EXCEPTION 'tournament % has more than one durable bubble payout recipient',
+      p_tournament_id USING ERRCODE = 'P0404';
+  END IF;
+  SELECT jsonb_build_object(
+           'user_id',p.user_id,'position',tp.position,'amount',round(sum(p.amount),2))
+    INTO v_cash_bubble
+    FROM public.tournament_payouts p
+    JOIN public.tournament_players tp
+      ON tp.tournament_id = p_tournament_id AND tp.user_id = p.user_id
+   WHERE p.tournament_id = p_tournament_id
+     AND p.source = 'bubble_protection'
+   GROUP BY p.user_id,tp.position;
+$bubble_after$);
+  IF md5(v_patched)<>'90f7506df2f1a94fe22952714fcd9f85' THEN
+   RAISE EXCEPTION 'final deal terminal Bubble receipt source differs';
+  END IF;
+  EXECUTE replace(v_def,v_src,v_patched);
+  IF (SELECT to_jsonb(p)-'prosrc' FROM pg_proc p WHERE oid=v_private)
+     IS DISTINCT FROM v_private_metadata THEN
+   RAISE EXCEPTION 'final deal terminal Bubble correction changed metadata';
+  END IF;
  END IF;
  REVOKE ALL ON FUNCTION public.fn_complete_tournament_terminal_pre_seat_guard(uuid,uuid,text)
   FROM PUBLIC,anon,authenticated,service_role;
@@ -146,13 +198,73 @@ $terminal_with_seat_authority$;$terminal_wrapper$;
     AND proacl::text='{postgres=X/postgres,service_role=X/postgres}')
  OR NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid=
     'public.fn_complete_tournament_terminal_pre_seat_guard(uuid,uuid,text)'::regprocedure
-    AND md5(prosrc)='f4275f9fa8cb2711f19ffdf7b16a04e6'
+    AND md5(prosrc)='90f7506df2f1a94fe22952714fcd9f85'
     AND proconfig=ARRAY['search_path=public','statement_timeout=45s']::text[]
     AND proowner='postgres'::regrole AND prosecdef AND proacl::text='{postgres=X/postgres}') THEN
   RAISE EXCEPTION 'final deal terminal seat composition postflight differs';
  END IF;
 END;
 $final_deal_terminal_seat_composition$;
+
+-- A partial Bubble obligation may have several immutable payout intervals.
+-- Read them as the same verified recipient total the terminal writer stores.
+DO $terminal_bubble_receipt_reader$
+DECLARE
+ v_oid oid := 'public.fn_ca_tournament_terminal_receipt(uuid,uuid)'::regprocedure;
+ v_src text; v_def text; v_patched text; v_metadata jsonb;
+BEGIN
+ SELECT prosrc,pg_get_functiondef(oid),to_jsonb(p)-'prosrc'
+  INTO v_src,v_def,v_metadata FROM pg_proc p WHERE oid=v_oid;
+ IF md5(v_src) NOT IN ('56ac90a5ed092d1e34fe65b6bbb6606a','bb4b0e1d1c758943fca29f9a83d064e4')
+  OR NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid=v_oid AND proowner='postgres'::regrole
+    AND prosecdef AND proconfig=ARRAY['search_path=public','statement_timeout=30s']::text[]
+    AND proacl::text='{postgres=X/postgres}') THEN
+  RAISE EXCEPTION 'terminal Bubble receipt reader source or privileges differ';
+ END IF;
+ IF md5(v_src)='56ac90a5ed092d1e34fe65b6bbb6606a' THEN
+  v_patched:=replace(v_src,$reader_before$  IF (SELECT count(*) FROM public.tournament_payouts p
+       WHERE p.tournament_id = p_tournament_id
+         AND p.source = 'bubble_protection') > 1 THEN
+    RAISE EXCEPTION 'tournament % has multiple durable bubble payout lines',
+      p_tournament_id USING ERRCODE = 'P0404';
+  END IF;
+  SELECT jsonb_build_object(
+           'user_id',p.user_id,'position',tp.position,'amount',p.amount)
+    INTO v_durable_bubble
+    FROM public.tournament_payouts p
+    JOIN public.tournament_players tp
+      ON tp.tournament_id = p_tournament_id AND tp.user_id = p.user_id
+   WHERE p.tournament_id = p_tournament_id
+     AND p.source = 'bubble_protection';
+$reader_before$,$reader_after$  -- Match the terminal writer's one-recipient receipt across every verified
+  -- partial credit interval. The exact credit-key and total checks still apply.
+  IF (SELECT count(DISTINCT p.user_id) FROM public.tournament_payouts p
+       WHERE p.tournament_id = p_tournament_id
+         AND p.source = 'bubble_protection') > 1 THEN
+    RAISE EXCEPTION 'tournament % has multiple durable bubble payout recipients',
+      p_tournament_id USING ERRCODE = 'P0404';
+  END IF;
+  SELECT jsonb_build_object(
+           'user_id',p.user_id,'position',tp.position,'amount',round(sum(p.amount),2))
+    INTO v_durable_bubble
+    FROM public.tournament_payouts p
+    JOIN public.tournament_players tp
+      ON tp.tournament_id = p_tournament_id AND tp.user_id = p.user_id
+   WHERE p.tournament_id = p_tournament_id
+     AND p.source = 'bubble_protection'
+   GROUP BY p.user_id,tp.position;
+$reader_after$);
+  IF md5(v_patched)<>'bb4b0e1d1c758943fca29f9a83d064e4' THEN
+   RAISE EXCEPTION 'terminal Bubble receipt reader transformation differs';
+  END IF;
+  EXECUTE replace(v_def,v_src,v_patched);
+ END IF;
+ IF NOT EXISTS(SELECT 1 FROM pg_proc p WHERE oid=v_oid
+  AND md5(prosrc)='bb4b0e1d1c758943fca29f9a83d064e4' AND to_jsonb(p)-'prosrc'=v_metadata) THEN
+  RAISE EXCEPTION 'terminal Bubble receipt reader metadata or postimage differs';
+ END IF;
+END;
+$terminal_bubble_receipt_reader$;
 
 
 ALTER TABLE public.tournament_final_table_deal_batches

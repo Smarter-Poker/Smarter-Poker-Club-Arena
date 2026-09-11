@@ -22,7 +22,7 @@ PROBE = ROOT / "scripts/ci/probes/tournament-current-entry-hand-acceptance.sql"
 SOURCES = {
  "seater": "supabase/migrations/20260828023513_fix_late_registrant_seating_and_seat_first_guard.sql",
  "blinds": "supabase/migrations/20260910132723_booked_spin_continuation_preserves_floating_point_rounding.sql",
- "entry_fix": "supabase/migrations/20260910172228_late_entry_uses_canonical_capacity_and_charged_wallet_receip.sql",
+ "entry_fix": "supabase/migrations/20260910190537_late_entry_uses_canonical_capacity_and_charged_wallet_receip.sql",
  "request": "supabase/migrations/20260909210701_tournament_registration_retains_original_operation_receipt.sql",
  "resolver": "supabase/migrations/20260910020626_the_host_club_is_in_its_own_union.sql",
  "wallet": "supabase/migrations/20260910023919_the_entry_is_charged_to_the_wallet_the_entry_is_stamped_with.sql",

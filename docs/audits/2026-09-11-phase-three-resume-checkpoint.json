@@ -1,0 +1,49 @@
+{
+  "recorded_at": "2026-09-11T05:01:52.933340+00:00",
+  "phase_complete": false,
+  "entry_migration": {
+    "reserved_version": "20260910172228",
+    "actual_applied_version": "20260910190537",
+    "file": "supabase/migrations/20260910190537_late_entry_uses_canonical_capacity_and_charged_wallet_receip.sql",
+    "applied_via": "Supabase apply_migration, success true",
+    "deployed_seater_md5": "9311ef4ed0c2fa6fbb0f1d8fa169137f",
+    "deployed_logger_md5": "d1dd7af2ba51d15355f05d10057ec04a",
+    "postconditions_verified": true,
+    "reverified_2026_09_11": true
+  },
+  "whole_stage_b_native": "docs/audits/2026-09-11-whole-phase-three-cutover-native.json",
+  "whole_stage_b_assertions": 45,
+  "whole_stage_b_rollback_exact": true,
+  "remaining": [
+    "bounty terminal and generation deployment",
+    "full satellite source terminal with Stage B compatibility",
+    "funded cancellation after full source receipt",
+    "production Stage B and exact-consent activation",
+    "engine and frontend adoption",
+    "push merge publish verification"
+  ],
+  "native_verified": {
+    "whole_stage_b": {
+      "assertions": 45,
+      "exact_rollback": true
+    },
+    "normal_overlay": {
+      "assertions": 38,
+      "exact_rollback": true
+    },
+    "zero_prize": {
+      "assertions": 37,
+      "exact_rollback": true
+    },
+    "existing_ticket": {
+      "groups": 6,
+      "exact_rollback": true
+    },
+    "versioned_final_deal_activation": {
+      "variants": ["paid", "unpaid", "partial"],
+      "assertions_each": 41,
+      "fresh_and_repeat": true,
+      "exact_rollback": true
+    }
+  }
+}

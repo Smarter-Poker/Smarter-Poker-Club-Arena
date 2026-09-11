@@ -1,0 +1,29 @@
+{
+  "url": "https://engine.smarter.poker/health",
+  "observed_at_unix": 1789159573.893773,
+  "response": {
+    "version": "a8be599e",
+    "running": true,
+    "uptime": 6635,
+    "maintenance": {
+      "active": false,
+      "phase": "idle",
+      "durableConfirmed": false,
+      "breakEndsAt": null,
+      "remainingMs": 0,
+      "unparkedTables": 0,
+      "readyForRestart": false,
+      "reason": "Scheduled Engine Maintenance",
+      "resumeWaves": {
+        "total": 8,
+        "done": 8,
+        "startedAt": 1789157054108,
+        "finishedAt": 1789157064951,
+        "tables": 1400,
+        "tablesResumed": 1400,
+        "gapMs": 1500
+      },
+      "dbClockSkewMs": -139
+    }
+  }
+}

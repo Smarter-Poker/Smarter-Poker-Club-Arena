@@ -1,0 +1,67 @@
+{
+  "revision": 4,
+  "source_filename": "Club_Arena_All_In_One_Start_Here.md",
+  "source_bytes": 600042,
+  "source_sha256": "da7f5bb24393d7a30145509d669d5b64925eaf1cae70ffcf0990402d5fe184a6",
+  "payload_bytes": 584144,
+  "payload_sha256": "12904b8264d125e72949ceab6cf87d45f135e2cc062e8afb6946688705867550",
+  "begin_end_final_markers_verified": true,
+  "read_method": "Complete file read; all distinct paragraphs read in full; repeated exact paragraphs compared byte-for-byte. No summary substituted for project requirements.",
+  "distinct_paragraphs": 337,
+  "total_paragraphs": 921,
+  "prompts": [
+    {
+      "project": "G1",
+      "path": "handoff/G1-full-prompt.rev4.txt",
+      "bytes": 72006,
+      "sha256": "10705e78338af2f33a0167964e7e73f0fa2905b1a1227b1c3008e43542c9c488"
+    },
+    {
+      "project": "G2",
+      "path": "handoff/G2-full-prompt.rev4.txt",
+      "bytes": 72466,
+      "sha256": "c54de7b859cf29b84d948ac74bc322adfad23e3326bbf91b235b94564f44a37c"
+    },
+    {
+      "project": "G3",
+      "path": "handoff/G3-full-prompt.rev4.txt",
+      "bytes": 72859,
+      "sha256": "72181f6f0a7523efd902d7b9a6702f76881c1aab351573fd54ff1db812de2b14"
+    },
+    {
+      "project": "G4",
+      "path": "handoff/G4-full-prompt.rev4.txt",
+      "bytes": 71461,
+      "sha256": "c151265d3d47a515f75cb369ad6421b43e30d892b9664ccf2480846ffbbda997"
+    },
+    {
+      "project": "G5",
+      "path": "handoff/G5-full-prompt.rev4.txt",
+      "bytes": 75080,
+      "sha256": "434f8f3dbe1ac520d4d7a00023f061fb7b2cb0abaea96595d33cadbdeb8c62e9"
+    },
+    {
+      "project": "G6",
+      "path": "handoff/G6-full-prompt.rev4.txt",
+      "bytes": 72531,
+      "sha256": "e000df0c5fbcd5350761de28806b77ddeb06062147b78cedf6f0e4e32a22b5bb"
+    },
+    {
+      "project": "G7",
+      "path": "handoff/G7-full-prompt.rev4.txt",
+      "bytes": 75254,
+      "sha256": "9e78d21a4774c61297adf72f1713f96f659a709ebeafa4104fc1f4f09e08e423"
+    },
+    {
+      "project": "G8",
+      "path": "handoff/G8-full-prompt.rev4.txt",
+      "bytes": 65375,
+      "sha256": "72a4ba2b62303c71ae8fac3fbba4cd55ee7a9809b4b8a5d7bd974707d7385a97"
+    }
+  ],
+  "verified_at": "2026-09-11T20:48:10.974806+00:00",
+  "original_acquisition_path": "/Users/smarter.poker/Downloads/Club_Arena_All_In_One_Start_Here.md",
+  "archived_path": "handoff/Club_Arena_All_In_One_Start_Here.rev4.txt",
+  "preparation_copy": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/handoff/complete-handoff.md",
+  "payload_byte_range_zero_based_half_open": [15829, 599973]
+}

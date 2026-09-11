@@ -111,7 +111,34 @@ describe('a prefetched move still goes through the authoritative executor', () =
     ]);
     expect(rpc).toHaveBeenCalledTimes(1);
     expect(rpc).toHaveBeenCalledWith('fn_cash_seat_move_execute', { p_move_id: 'move' });
-    expect(result).toEqual({ done: [], held: [] });
+    /* PIN MOVED 2026-09-09 (must-move audit lane D, CLAUDE.md 5.8). The
+       behaviour this guards is unchanged - the candidate is executed once and
+       nothing lands - but the outcome now also REPORTS the refusal, because a
+       player who was promised "Moving After This Hand" and then was not moved
+       used to be told nothing at all. `player_not_seated` is terminal, so it
+       belongs in `refused`; the freeze and a retryable deadlock never do. */
+    expect(result).toEqual({
+      done: [],
+      held: [],
+      refused: [{ move_id: 'move', player_id: 'player', reason: 'player_not_seated' }],
+    });
+  });
+
+  it('a read that FAILED throws out of the boundary rather than reading as empty', async () => {
+    /* D1, through main's contract (merged 2026-09-10): an unreadable
+       enumeration must never be mistaken for "no moves pending", because the
+       announce path PRUNES from that answer and would release a swap hold -
+       the only thing keeping a player out of a hand the OTHER table's
+       transaction is about to move them out of. The service throws; the
+       engine translates that into "change nothing" at its two call sites, and
+       settlement's runStep owns it as a reported, alerted step failure. */
+    const rpc = vi
+      .spyOn(db.supabase, 'rpc')
+      .mockResolvedValue({ data: null, error: { message: 'read failed' } } as any);
+    await expect(moves.executePendingSeatMoves('table', { announcedOnly: true })).rejects.toThrow(
+      'read failed'
+    );
+    expect(rpc).toHaveBeenCalledWith('fn_cash_seat_moves_pending', { p_table_id: 'table' });
   });
   it('does not execute unannounced candidates or re-read a known empty boundary', async () => {
     const rpc = vi.spyOn(db.supabase, 'rpc');

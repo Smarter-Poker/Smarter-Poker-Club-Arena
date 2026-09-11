@@ -113,7 +113,8 @@ vi.mock('../../src/components/lobby/lobbyViewPrefs', async (original) => ({
   ...(await original<any>()),
   fetchRemoteViewPrefs: async () => null,
 }));
-import ClubHomePage from '../../src/pages/ClubHomePage';
+import ClubHomePage, { CLUB_HOME_CACHE_VER } from '../../src/pages/ClubHomePage';
+import { CLUB_HOME_CACHE_PREFIX } from '../../src/utils/clearUserCaches';
 
 const deferred = <T = any,>(): Deferred<T> => {
   let resolve!: (value: T) => void;
@@ -313,7 +314,11 @@ async function mountCachedTable(patch: Record<string, unknown> = {}) {
     ...patch,
   };
   localStorage.setItem(
-    'club_home_cache_v3_club-a',
+    // The key is BUILT from the version the page actually reads. Hardcoding it
+    // meant a deliberate cache bump (v3 -> v4, 2026-09-09) silently orphaned
+    // this fixture: the page found nothing, rendered nothing, and four pins
+    // went red for a reason that had nothing to do with what they guard.
+    `${CLUB_HOME_CACHE_PREFIX}${CLUB_HOME_CACHE_VER}_club-a`,
     JSON.stringify({
       at: Date.now(),
       data: {

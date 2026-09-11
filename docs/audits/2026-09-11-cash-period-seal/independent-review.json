@@ -1,0 +1,27 @@
+{
+  "reviewer": "/root/legacy_races_closeout",
+  "mode": "Independent read-only source and saved-evidence review; no SQL or test execution by reviewer",
+  "result": "No additional blocker within the explicitly private receipt-prefix primitive scope",
+  "native_groups": 30,
+  "observed_wait_groups": 4,
+  "verified_files": {
+    "01-private-prefix-seals.sql": "3fd64f56bef5e3ad8b570504673ace6f43d95cdd9a129cb4515e45569a477fb9",
+    "native-probe.py": "2da1e66d75b058a634825642cda7141026fe6da3b4261f2e506398aa4c93b3c4",
+    "run-local.sh": "187329099309574ea6816ef9b3f6122925ea24089aad76b2db269a7fa0f1cdc4",
+    "native-proof.json": "e020dd2f3bcc09a6e7870b608dbd7cc65f8bb6d1709bad90c17047833d6b4b48",
+    "native.log": "261a38e94995505e2831ec941c6dabe0c7541de4e250f72f2d7dbb69d3d8e05c"
+  },
+  "reviewed_contract": [
+    "Sealers and their pinned assertion dependency acquire no financial row locks.",
+    "Original accepted and actual money timestamps are checked after shared admission waits.",
+    "Read Committed is required for fresh post-wait snapshots.",
+    "Generation-one producer manifests are disjoint increments.",
+    "Each bank manifest covers its captured source set, not a complete global period.",
+    "No funding, payment, invoice or periodic finality is certified.",
+    "Future combined transactions preserve producer-before-bank lock ordering.",
+    "Three real role refusals match service_role, authenticated and anon.",
+    "Saved legacy bank replay runs in a fresh post-cutoff transaction with its real GUC behavior.",
+    "Changed-Union refusal is credited to the existing spendable-identity guard."
+  ],
+  "production_applied": false
+}

@@ -1,0 +1,31 @@
+# Private Cash Receipt Seal Primitives
+
+Candidate only. This directory does not activate a migration, public RPC, engine path, or settlement-period close. `period_closed` is always false, including a database constraint that prevents changing it to true.
+
+The SQL adds two private, immutable evidence stages. `ca_accounting_seal_private.seal_producer(cutoff)` captures all generation-one accepted cash sources and contributor facts in the interval after the prior producer cutoff through the requested cutoff. These are disjoint increments. The first prefix includes every generation-one receipt through its cutoff. Original hand, table, requested club, booked club, Union, accepted timestamp, route, rates, source hash and facts remain in the immutable JSON manifest. Unknown, NULL-envelope, noncash, missing-fact or invalid-fact receipts refuse this private cash stage. That refusal is not a claim that the current 12-argument accepted owner normally commits incomplete envelopes. Its complete envelope is written in the same transaction.
+
+`ca_accounting_seal_private.seal_bank(producer_cutoff, bank_cutoff)` requires every positive source in that producer increment to have its exact actual bank receipt and positive contributor receipts. It invokes the unchanged installed bank-receipt assertion, including the original money transaction, amount, destination, identity and timestamp. Zero-rake sources require no invented bank payment. A primary-key lookup on the immutable banked-source index protects the per-insert path from scanning cumulative manifest JSON. The bank cutoff has its own index.
+
+Neither a single increment nor an arbitrary collection of known-source manifests proves a complete global bank or weekly settlement period. The future canonical coordinator must prove the complete required producer scope, all bank windows, funding lots, exact cumulative release and agent/player payment receipts, absence of unpaid residuals, and its period/invoice finality contract. These primitives do not create any of those financial receipts and do not write settlement status. Raw fractions remain owed; no residual distribution policy is invented.
+
+## Admission And Lock Order
+
+Accepted receipt insert/first-envelope triggers take the shared producer advisory lock, including callers whose owner body predates these triggers. The exclusive producer sealer cannot pass an admitted in-flight writer. After the wait, the trigger checks the original `NEW.committed_at`; its default was evaluated before the trigger waited. An inadmissible original timestamp returns the installed owner's existing atomic rollback result with SQLSTATE 40001. It is never changed to the wake-up time.
+
+Bank record, spendable-leg, actual money-journal, bank-receipt and contributor-receipt inserts share a separate bank advisory lock. Record and leg timestamps are not treated as money timestamps. The check uses `chip_ledger.created_at`, `union_wallet_transactions.created_at`, and their exact `bank_credit_at` acknowledgment. A late refusal rolls back preceding money and all other public rows. Existing identity-matching record/leg/contributor retry inserts remain usable, while a second money journal or new acknowledgment for an already sealed source refuses.
+
+The two sealers themselves take no wallet, club or seat row locks. They require Read Committed so queries after admission waits see newly committed receipts. Locks last through transaction end. Future composition must acquire producer before bank when both are needed, and must never take financial row locks while holding an exclusive seal phase. Complete each short receipt-only phase before draining funding or payments under their existing money-owner locks. Production batch sizing, cash/noncash scope classification and coordinator adoption still require review before activation.
+
+All new functions and tables are in a private schema, with schema/table/function access revoked from PUBLIC, anon, authenticated and service_role. Tables also enable RLS. Security-definer functions are trigger-only and have a fixed search path. No public mutation endpoint is added.
+
+## Reproduce The Native Proof
+
+Run `bash docs/audits/2026-09-11-cash-period-seal/run-local.sh` from this isolated worktree on the reviewed Mac. The runner pins the payer fixture archive at `7adbfb02544b68ccc1754c51f11d2f61fa406180`, initializes its own fresh PG17 data directory, listens only on its own Unix socket, clears inherited libpq targeting/credentials, and verifies cluster identity with a read-only query before any SQL mutation. No production rows or credentials are copied.
+
+The fixture preserves 122 tables, 231 functions, 175 triggers, and its complete captured foreign-key graph before candidate activation. `native-proof.json` records every generated/copied fixture input hash and the candidate, runner and probe hashes. `cluster-identity.json` and `native.log` are the raw execution receipts.
+
+The proof uses actual accepted and bank owners. Synthetic request/lease preparation is committed before the actual owner's rollback baseline. It observes both writer/sealer orders for producer and bank via `pg_locks`, checks every public row on rollback, verifies original Union routing after current routing changes, checks native ACL refusals, and proves exact replay. Separate deliberate duplicate-journal faults verify whole-transaction rollback after a preceding balance mutation; they are not labeled as actual payment-owner behavior. The saved pre-capture bank function is executed with only its name changed so it can coexist with the current owner. This is honest saved-definition replay evidence, not a claim of a function suspended across production DDL.
+
+PostgreSQL's transaction-level advisory-lock and row-lock semantics were checked against the [PostgreSQL 17 primary documentation](https://www.postgresql.org/docs/17/explicit-locking.html). Supabase changelog retrieval was attempted but unavailable; no new Supabase product or SDK feature is used here.
+
+The independently completed source-exclusion successor is `d5300be77e19d08b887b3b851946c5c244b77ad9` on `backup/resume-poker-sep11/source-exclusion`. Combined outer proof must pin that successor. This seal proof deliberately retains its recorded archived inputs and does not claim the later source-exclusion cutover was part of this run.

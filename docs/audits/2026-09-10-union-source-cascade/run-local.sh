@@ -25,7 +25,7 @@ if [[ "${CASCADE_OUTER_MODE:-0}" == 1 ]]; then
  readonly SOURCE_REPO=/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-accounting-legacy-exclusion-sep10
  readonly SOURCE_COMMIT=d5300be77e19d08b887b3b851946c5c244b77ad9
  readonly COMPLETION_REPO=/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-payer-legacy-sep10
- readonly COMPLETION_COMMIT=f39368fefe22b4385e9e89e5350bb671c587fb4a
+ readonly COMPLETION_COMMIT=c12f993244b1f6b01dd950a8e8fee2b0de07ffef
  mkdir "$proof_tmp/source-archive" "$proof_tmp/payer-archive"
  git -C "$SOURCE_REPO" archive "$SOURCE_COMMIT" docs/audits/2026-09-10-accounting-legacy-exclusion | tar -x -C "$proof_tmp/source-archive"
  git -C "$COMPLETION_REPO" archive "$COMPLETION_COMMIT" docs/audits/2026-09-10-legacy-rakeback-completion | tar -x -C "$proof_tmp/payer-archive"

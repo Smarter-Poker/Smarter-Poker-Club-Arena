@@ -18,19 +18,28 @@ OUTER INPUTS FROZEN: 221 actual function definitions
 (1 row)
 
 Loaded unchanged accepted/bank owners and prospective Round1 with actual money graph
+PASS: Actor compatibility and diagnostic replacement preserve established outer and cron ACLs
 COMPOSITION INSTALLED: actual R1, R2, R3, captured payments and outer owner
-PASS: Actor-less service dispatch refuses before cache or money
+PASS: Anon SQL role cannot call outer with coherent anon claims
+PASS: Anon SQL role cannot bypass outer ACL by supplying a service claim
+PASS: Authenticated claims without a subject refuse before cache or money
+PASS: Authenticated owner of another Union cannot dispatch the original Union
+PASS: Authenticated JWT scope controls authorization even under service SQL role
+PASS: Browser SQL role cannot call the service-only cron wrapper
 PASS: Actual rolling bank owner accepts the original pre-capture hand
 PASS: Round 1 missing success rolls back actual bank and treasury writes
 PASS: Round 1 negative amount rolls back actual bank and treasury writes
 PASS: Round 1 fractional count rolls back actual bank and treasury writes
 PASS: Round 1 string success rolls back actual bank and treasury writes
-LEGACY BANK RESULT {"applied": true, "already_processed": false, "recovered": false, "rake_record_id": "8ef1160e-79fa-490d-9366-f81c5617ab97", "club_net_credit": 2, "spendable_route": "union_rake_wallet", "spendable_amount": 2, "union_id_out": "00000000-0000-4000-8000-000000000901"}
-ROUND1 RESULT {"success": true, "clubs_paid": 1, "period_rake": "2.00", "conservation": "asserted", "settlement_id": "0d0a9f0b-7cdf-405d-8d77-8c1d88f1b022", "total_rakeback": "1.80", "union_retained": "0.20", "retained_to_bank": "0.20", "rake_wallet_after": "20.00", "chip_balance_after": "0.20"}
+LEGACY BANK RESULT {"applied": true, "already_processed": false, "recovered": false, "rake_record_id": "524ba9ae-9182-408d-9267-efdb9d5f8bc9", "club_net_credit": 2, "spendable_route": "union_rake_wallet", "spendable_amount": 2, "union_id_out": "00000000-0000-4000-8000-000000000901"}
+ROUND1 RESULT {"success": true, "clubs_paid": 1, "period_rake": "2.00", "conservation": "asserted", "settlement_id": "b4de70b4-e765-4e71-9343-32e4c599aa00", "total_rakeback": "1.80", "union_retained": "0.20", "retained_to_bank": "0.20", "rake_wallet_after": "20.00", "chip_balance_after": "0.20"}
 OUTER ROUND AMOUNTS ["1.80", "0.50", "0.15"]
 PASS: Full original outer invokes captured payment and preserves finality hold
 PASS: Actual mixed legacy rounds pay only historical basis
+PASS: Actorless service release requests retain NULL actor and existing ledger attribution
 PASS: Whole outer replay adds no cash or money receipts
+PASS: Authenticated original Union owner retains authorized replay access
+PASS: Inherited absent-request-context trust is explicit even under authenticated SQL role
 PASS: Round1 real replay negative total refuses before summary writes
 PASS: Round1 real replay fractional count refuses before summary writes
 PASS: Round1 real replay string total refuses before summary writes
@@ -44,6 +53,9 @@ PASS: Round 3 fractional count rolls back actual money and all public rows
 PASS: Round 3 missing shortfalls rolls back actual money and all public rows
 PASS: Unsupported common finality rolls back actual helper payments and all legacy rounds
 PASS: Last captured receipt failure rolls back legacy rounds and all captured money
+PASS: Actual no-request cron wrapper preserves nonfinal results after real payments
+PASS: Cron alert no longer asserts zero movement for a nonfinal paid dispatch
+PASS: Actual service cron due caller retains calendar guards and nonfinal dispatch semantics
 PASS: Whole dispatch retry pays historical and captured amounts exactly once
 PASS: All captured legacy projections remain unsettled and excluded
 PASS: Paid legacy periods share one exact wallet receipt per beneficiary

@@ -1,0 +1,19 @@
+{
+  "scope": "Tracked source parity only, not a current live catalog attestation",
+  "definitions": [
+    {
+      "path": "supabase/migrations/20260907162037_a_deadlock_is_retried_and_says_what_it_hit.sql",
+      "function": "fn_union_settlement_cascade_all",
+      "file_sha256": "396cc018171ffee8fd229b0bc253219b21a1b1442bc20e32d27daf4cd1839b61",
+      "definition_sha256": "9e00adb08e35e5ab388965466a97ab7509b1dc2bec476b430463c3bbaa66a57d"
+    },
+    {
+      "path": "supabase/migrations/20260907224856_union_periods_settle_only_after_zero_recipient_shortfalls.sql",
+      "function": "fn_union_settlement_cascade_due",
+      "file_sha256": "dd33757542c084ae536f3e9c3924868497aa7c31ed62b698cfdbfbfc10585c65",
+      "definition_sha256": "2f2b9b28f9cf417a961f78101354262d576982241dee6047df2243adebe1d9a0"
+    }
+  ],
+  "outer_acl_source": "supabase/migrations/20260907224856_union_periods_settle_only_after_zero_recipient_shortfalls.sql",
+  "all_acl_source": "supabase/migrations/20260901232323_definer_lockdown_phase1_server_machinery.sql"
+}

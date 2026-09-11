@@ -1,26 +1,64 @@
 {
-  "reviewed_at": "2026-09-11T05:29:52.435576+00:00",
-  "scope": "Independent read-only source and saved evidence review of the dormant candidate",
-  "reviewers": {
-    "seal_closeout": "Original/current/departed scope, sorted lock ownership and rechecks, private ACLs, helper15 and one observed wait",
-    "legacy_races_closeout": "Outer actors/contracts/conservation/finality/preflight; corrected replay and unsupported finality gaps; final28 evidence and exact source hashes"
+  "schema_version": 2,
+  "scope": "Dormant actor-compatible captured dispatcher, outer cascade and accurate cron diagnostics",
+  "predecessor_review": {
+    "reviewed_at": "2026-09-11T05:29:52.435576+00:00",
+    "scope": "Independent read-only source and saved evidence review of the dormant candidate",
+    "reviewers": {
+      "seal_closeout": "Original/current/departed scope, sorted lock ownership and rechecks, private ACLs, helper15 and one observed wait",
+      "legacy_races_closeout": "Outer actors/contracts/conservation/finality/preflight; corrected replay and unsupported finality gaps; final28 evidence and exact source hashes"
+    },
+    "reviewer_runtime_execution": false,
+    "unresolved_within_reviewed_candidate": [],
+    "production_applied": false,
+    "programme_or_period_finality_certified": false,
+    "sha256": {
+      "01-source-dispatch.sql": "a79212add5575dc666019ad3a97148f9580e6ac3658baec694348bd666815956",
+      "02-outer-cascade.sql": "8e1af317d2083e69944841f67a22b263824877c445df495e8c0f9e9152f0edee",
+      "native-proof.json": "9f8ffcc7621d46328142a4da565be359c433f6bc29568489afa15520e4e205ad",
+      "outer-native-proof.json": "3d54a504b204549d6405ebaf3a00e8cb458125dffaead3abfe78ea82ad91065f",
+      "native.log": "3e59a7d24a25ecf85d749ba52196e36c27629d2536719b5cad43e8b46b2eaea6",
+      "outer-native.log": "b2d2f020924a16fdb42a34a8de38687924ef9d8693d23f17e7517c3c68f41ee5"
+    },
+    "whitespace_note": "Raw psql logs and the exact tracked finalizer fixture preserve original whitespace; candidate Python, shell and SQL edits passed their targeted whitespace checks.",
+    "holds": [
+      "Complete producer/bank/legacy/funding/payment finality is unavailable.",
+      "Actor-less service/cron invocation requires a reviewed actor contract.",
+      "No coordinated database/capability/browser activation or current-live parity certification."
+    ]
   },
-  "reviewer_runtime_execution": false,
-  "unresolved_within_reviewed_candidate": [],
+  "source_review": {
+    "reviewer": "seal_closeout",
+    "read_only": true,
+    "runtime_executed_by_reviewer": false,
+    "source_sha256": {
+      "01-source-dispatch.sql": "a1a7f1acef38716f30e3ddb717dc59fb0923afb8780836e80f4f5d8caa137222",
+      "02-outer-cascade.sql": "f97b2ad55438b54e6ef30777c6b8a0f0c4067f552112ea0b7de05c4257b23361",
+      "03-cron-diagnostics.sql": "04a9bebdec427c3d355a6428e5f670abbadeb39b9597661c6a74289754d95a82"
+    },
+    "result": "No additional blocker within the explicitly inherited identity and dormant finality scope."
+  },
+  "helper_evidence_review": {
+    "reviewer": "legacy_races_closeout",
+    "read_only": true,
+    "passing": 15,
+    "observed_waits": 1,
+    "proof_sha256": "8ce9f76543e4539a909138173aa0f9a64a3dbf1bd9b328c757fb7a3009d9e6a2",
+    "raw_log_sha256": "41c42c49cdda19c2c718b74c8096d4c7c30cf0f8c211f0ad54dfd8abbc767c63",
+    "labels_and_source_hash_match": true
+  },
   "production_applied": false,
-  "programme_or_period_finality_certified": false,
-  "sha256": {
-    "01-source-dispatch.sql": "a79212add5575dc666019ad3a97148f9580e6ac3658baec694348bd666815956",
-    "02-outer-cascade.sql": "8e1af317d2083e69944841f67a22b263824877c445df495e8c0f9e9152f0edee",
-    "native-proof.json": "9f8ffcc7621d46328142a4da565be359c433f6bc29568489afa15520e4e205ad",
-    "outer-native-proof.json": "3d54a504b204549d6405ebaf3a00e8cb458125dffaead3abfe78ea82ad91065f",
-    "native.log": "3e59a7d24a25ecf85d749ba52196e36c27629d2536719b5cad43e8b46b2eaea6",
-    "outer-native.log": "b2d2f020924a16fdb42a34a8de38687924ef9d8693d23f17e7517c3c68f41ee5"
-  },
-  "whitespace_note": "Raw psql logs and the exact tracked finalizer fixture preserve original whitespace; candidate Python, shell and SQL edits passed their targeted whitespace checks.",
-  "holds": [
-    "Complete producer/bank/legacy/funding/payment finality is unavailable.",
-    "Actor-less service/cron invocation requires a reviewed actor contract.",
-    "No coordinated database/capability/browser activation or current-live parity certification."
-  ]
+  "outer_evidence_review": {
+    "reviewer": "legacy_races_closeout",
+    "read_only": true,
+    "runtime_executed_by_reviewer": false,
+    "passing": 40,
+    "observed_role_contexts": 11,
+    "executed_source_hashes_match": 8,
+    "proof_sha256": "9a3daf85437600693e351dc3be001d4e8922950f09698a74e3cfdb5f2304ccf9",
+    "raw_log_sha256": "72fe0ec66af0b8d8187ce1d3b28e99045b395556662462d6147f2bf59fb43058",
+    "input_manifest_sha256": "cdec18d708c4adcd959a1d55ebf0b45a2eadf97e12fd4c3d5b1befc7de1e7198",
+    "labels_match_raw_log": true,
+    "result": "No additional blocker within dormant candidate scope; actual service and no-request all-caller payments remain nonfinal. Due caller only observed its real three-day calendar skip. Inherited absent-context trust and SQL-only authentication limits are explicit."
+  }
 }

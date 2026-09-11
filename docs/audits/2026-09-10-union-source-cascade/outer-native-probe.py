@@ -15,6 +15,9 @@ def load(p):sql(p.read_text())
 def refused(name,q,error):
  before=state();e=sql(q,False);check(name,error in e and before==state())
 setup()
+# The isolated auth fixture must contain the existing money owners' fixed
+# ledger attribution identity. No membership, balance or caller subject is made.
+sql("INSERT INTO auth.users(id) VALUES('2d1cd6c3-5700-4af9-a271-d4863fdab20d'::uuid) ON CONFLICT DO NOTHING;")
 for name in ['fixture-view.sql','00-expand.sql'] :load(source_input/name)
 subprocess.run([os.environ['COMMISSION_PSQL'],'-X','-q','-v','ON_ERROR_STOP=1','-f',str(source_input/'00-online-index.sql')],check=True)
 for name in ['00-preflight.sql','01-source-exclusion.sql','02-excluded-owners.sql','03-excluded-unpaid-rollups.sql']:load(source_input/name)
@@ -23,7 +26,27 @@ load(Path(os.environ['ROUND1_INPUT'])/'capacity-owner/04-agent-payment.sql')
 load(Path(os.environ['ROUND1_HERE']).parent/'player-capacity-proposal.sql')
 load(here/'installed-period-finalizer.sql')
 load(here/'01-source-dispatch.sql')
+load(here/'tracked-cron-callers.sql')
+acl_query="SELECT jsonb_object_agg(p.proname,p.proacl::text) FROM pg_proc p WHERE p.oid IN ('fn_union_settlement_cascade(uuid,timestamptz,timestamptz)'::regprocedure,'fn_union_settlement_cascade_all(timestamptz,timestamptz)'::regprocedure,'fn_union_settlement_cascade_due()'::regprocedure);"
+acl_before=value(acl_query)
 load(here/'02-outer-cascade.sql')
+load(here/'03-cron-diagnostics.sql')
+check('Actor compatibility and diagnostic replacement preserve established outer and cron ACLs',acl_before==value(acl_query))
+role_contexts=[]
+def role_query(db_role,jwt_role,actor,q):
+ assert db_role in ['postgres','anon','authenticated','service_role']
+ sub='' if actor is None else sql(f'SELECT test_id({actor});')
+ claims={} if jwt_role is None else {'role':jwt_role}
+ if sub:claims['sub']=sub
+ # Both scalar and JSON claims are coherent. The fixture auth shim reads the
+ # scalar forms; no HTTP JWT signing or PostgREST authentication is simulated.
+ prefix="SELECT set_config('request.jwt.claim.role','"+(jwt_role or '')+"',false);SELECT set_config('request.jwt.claim.sub','"+sub+"',false);SELECT set_config('request.jwt.claims','"+json.dumps(claims)+"',false);SET ROLE "+db_role+";"
+ observed=value(prefix+"SELECT json_build_object('database_role',current_user,'jwt_role',nullif(current_setting('request.jwt.claim.role',true),''),'subject',nullif(current_setting('request.jwt.claim.sub',true),''),'claims',current_setting('request.jwt.claims',true)::jsonb);")
+ assert observed['database_role']==db_role and observed['jwt_role']==jwt_role and observed['subject']==(sub or None),observed
+ role_contexts.append(observed)
+ return prefix+q
+outer="SELECT fn_union_settlement_cascade(test_id(901),'2026-08-31T07:00Z','2026-09-07T07:00Z');"
+
 print('COMPOSITION INSTALLED: actual R1, R2, R3, captured payments and outer owner',flush=True)
 sql("""INSERT INTO unions(id,name,owner_id,slug) VALUES(test_id(901),'Outer Proof Union',test_id(100),'outer-proof-union');
 INSERT INTO union_clubs(union_id,club_id,rate_cash) VALUES(test_id(901),test_id(900),.90);
@@ -31,7 +54,14 @@ UPDATE tables SET union_id=test_id(901) WHERE id=test_id(950);
 UPDATE agents SET commission_rate=.25,player_rakeback_rate=.15 WHERE id=test_id(103);
 UPDATE club_members SET player_rakeback_pct=.15 WHERE club_id=test_id(900) AND user_id IN(test_id(201),test_id(202));
 ALTER TABLE agent_commissions ALTER COLUMN created_at SET DEFAULT '2026-08-31T12:00:00Z'::timestamptz;""")
-refused('Actor-less service dispatch refuses before cache or money',"SELECT set_config('request.jwt.claim.sub','',false);SELECT fn_union_settlement_cascade(test_id(901),'2026-08-31T07:00Z','2026-09-07T07:00Z');",'captured_union_actor_required')
+sql("INSERT INTO unions(id,name,owner_id,slug) VALUES(test_id(902),'Other Owner Union',test_id(201),'other-owner-union');")
+refused('Anon SQL role cannot call outer with coherent anon claims',role_query('anon','anon',100,outer),'permission denied')
+refused('Anon SQL role cannot bypass outer ACL by supplying a service claim',role_query('anon','service_role',None,outer),'permission denied')
+refused('Authenticated claims without a subject refuse before cache or money',role_query('authenticated','authenticated',None,outer),'not_authorised')
+refused('Authenticated owner of another Union cannot dispatch the original Union',role_query('authenticated','authenticated',201,outer),'not_authorised')
+refused('Authenticated JWT scope controls authorization even under service SQL role',role_query('service_role','authenticated',201,outer),'not_authorised')
+refused('Browser SQL role cannot call the service-only cron wrapper',role_query('authenticated','authenticated',100,"SELECT fn_union_settlement_cascade_due();"),'permission denied')
+
 # Actual pre-cutover accepted hand, banked by the real rolling legacy owner.
 # Only closed calendar stamps and the historical payable rows below are fixtures.
 sql("CREATE TRIGGER aaa_test_funding_clock BEFORE INSERT ON rake_records FOR EACH ROW EXECUTE FUNCTION test_funding_clock();")
@@ -56,18 +86,25 @@ for label,patch in [('missing success',"actual-'success'"),('negative amount',"a
  sql(f"CREATE OR REPLACE FUNCTION fn_union_weekly_rakeback_close(u uuid,s timestamptz,e timestamptz) RETURNS jsonb LANGUAGE plpgsql AS $fault$ DECLARE actual jsonb; BEGIN actual:=test_actual_round1(u,s,e); RETURN {patch}; END $fault$;")
  refused('Round 1 '+label+' rolls back actual bank and treasury writes',outer,'round1_contract_violated_or_failed')
 sql('DROP FUNCTION fn_union_weekly_rakeback_close(uuid,timestamptz,timestamptz);ALTER FUNCTION test_actual_round1(uuid,timestamptz,timestamptz) RENAME TO fn_union_weekly_rakeback_close;')
-r=value("SELECT fn_union_settlement_cascade(test_id(901),'2026-08-31T07:00Z','2026-09-07T07:00Z');")
+r=value(role_query('service_role','service_role',None,outer))
 print('LEGACY BANK RESULT',json.dumps(legacy_bank,default=str),flush=True)
 print('ROUND1 RESULT',json.dumps(r['round1_union_to_clubs'],default=str),flush=True)
 print('OUTER ROUND AMOUNTS',json.dumps([r.get('round1_union_to_clubs',{}).get('total_rakeback'),r.get('round2_club_to_agents',{}).get('amount'),r.get('round3_agents_to_players',{}).get('amount')],default=str),flush=True)
 check('Full original outer invokes captured payment and preserves finality hold',r['source_final'] is False and r['captured_source']['new_club_release']==18 and sql("SELECT count(*) FROM settlement_periods WHERE union_id=test_id(901);")=='0')
 check('Actual mixed legacy rounds pay only historical basis',r['round1_union_to_clubs']['total_rakeback']==Decimal('1.8') and r['round2_club_to_agents']['amount']==Decimal('.5') and r['round3_agents_to_players']['amount']==Decimal('.15'))
+check('Actorless service release requests retain NULL actor and existing ledger attribution',sql("SELECT count(*)>0 AND bool_and(r.actor_id IS NULL) FROM ca_source_club_release_requests r JOIN ca_source_funding_pools p ON p.id=r.pool_id WHERE p.funding_union_id=test_id(901);")=='t' and sql("SELECT count(*)>0 AND bool_and(l.performed_by='2d1cd6c3-5700-4af9-a271-d4863fdab20d'::uuid) FROM chip_ledger l WHERE l.id IN (SELECT ledger_id FROM ca_source_club_cash_releases UNION SELECT ledger_id FROM ca_source_agent_cash_payments UNION SELECT ledger_id FROM ca_source_player_cash_payments);")=='t')
+
 
 def money_state():
  return value("SELECT jsonb_build_object('members',(SELECT jsonb_agg(to_jsonb(x) ORDER BY to_jsonb(x)::text) FROM club_members x),'clubs',(SELECT jsonb_agg(to_jsonb(x) ORDER BY to_jsonb(x)::text) FROM clubs x),'union',(SELECT jsonb_agg(to_jsonb(x) ORDER BY to_jsonb(x)::text) FROM union_wallets x),'wallets',(SELECT jsonb_agg(to_jsonb(x) ORDER BY to_jsonb(x)::text) FROM wallets x),'ledger',(SELECT count(*) FROM chip_ledger),'wallet_receipts',(SELECT count(*) FROM wallet_transactions),'treasury_receipts',(SELECT count(*) FROM chip_transactions),'bank_receipts',(SELECT count(*) FROM union_wallet_transactions),'agent_payments',(SELECT count(*) FROM ca_source_agent_cash_payments),'player_payments',(SELECT count(*) FROM ca_source_player_cash_payments),'legacy_payouts',(SELECT count(*) FROM rakeback_period_payouts));")
 outer="SELECT fn_union_settlement_cascade(test_id(901),'2026-08-31T07:00Z','2026-09-07T07:00Z');"
 before=money_state();replay=value(outer)
 check('Whole outer replay adds no cash or money receipts',before==money_state() and replay['captured_source']['new_club_release']==0)
+before=money_state();browser_replay=value(role_query('authenticated','authenticated',100,outer))
+check('Authenticated original Union owner retains authorized replay access',before==money_state() and browser_replay['source_final'] is False)
+before=money_state();absent_context=value(role_query('authenticated',None,None,outer))
+check('Inherited absent-request-context trust is explicit even under authenticated SQL role',before==money_state() and absent_context['source_final'] is False)
+
 sql('ALTER FUNCTION fn_union_weekly_rakeback_close(uuid,timestamptz,timestamptz) RENAME TO test_actual_replay_round1;')
 for label,patch in [('negative total',"actual||jsonb_build_object('total_rakeback',-1)"),('fractional count',"actual||jsonb_build_object('clubs_paid',.5)"),('string total',"actual||jsonb_build_object('total_rakeback','1'::text)")]:
  sql(f"CREATE OR REPLACE FUNCTION fn_union_weekly_rakeback_close(u uuid,s timestamptz,e timestamptz) RETURNS jsonb LANGUAGE plpgsql AS $fault$ DECLARE actual jsonb;BEGIN actual:=test_actual_replay_round1(u,s,e);RETURN {patch};END $fault$;")
@@ -102,7 +139,13 @@ sql('DROP FUNCTION fn_ca_dispatch_union_captured_funding(uuid,timestamptz,date,u
 sql("CREATE FUNCTION test_fail_outer_player_receipt() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN RAISE EXCEPTION 'injected outer final player receipt';END$$; CREATE TRIGGER zzz_outer_player_fault BEFORE INSERT ON ca_source_player_cash_payments FOR EACH ROW EXECUTE FUNCTION test_fail_outer_player_receipt();")
 refused('Last captured receipt failure rolls back legacy rounds and all captured money',outer,'injected outer final player receipt')
 sql('DROP TRIGGER zzz_outer_player_fault ON ca_source_player_cash_payments;')
-retry=value(outer)
+cron_result=value(role_query('postgres',None,None,"SELECT fn_union_settlement_cascade_all('2026-08-31T07:00Z','2026-09-07T07:00Z');"))
+retry=next(x for x in cron_result['detail'] if x.get('union_id')==sql('SELECT test_id(901);'))
+check('Actual no-request cron wrapper preserves nonfinal results after real payments',cron_result['success'] is False and retry['error']=='source_finality_pending' and retry['source_final'] is False)
+check('Cron alert no longer asserts zero movement for a nonfinal paid dispatch',sql("SELECT count(*)>0 AND bool_and(message LIKE '%Payments may already have moved%' AND message NOT LIKE '%No rakeback moved%') FROM financial_alerts WHERE source='fn_union_settlement_cascade_all';")=='t')
+due=value(role_query('service_role','service_role',None,"SELECT fn_union_settlement_cascade_due();"))
+check('Actual service cron due caller retains calendar guards and nonfinal dispatch semantics',(due.get('success') is True and due.get('skipped') is True and due.get('reason') in ['platform_frozen','too_close_to_maintenance_break','period_closed_more_than_three_days_ago','before_settlement_floor','already_settled']) or (due.get('success') is False and len(due.get('detail',[]))>0 and all(x.get('error')=='source_finality_pending' and x.get('source_final') is False for x in due['detail'])))
+
 check('Whole dispatch retry pays historical and captured amounts exactly once',retry['round2_club_to_agents']['amount']==Decimal('.2') and retry['round3_agents_to_players']['amount']==Decimal('.15') and retry['captured_source']['new_club_release']==18 and retry['captured_source']['new_agent_payout']==14 and retry['captured_source']['new_player_payout']==3)
 check('All captured legacy projections remain unsettled and excluded',sql("SELECT bool_and(settled_at IS NULL AND commission_capture_version=1) FROM agent_commissions WHERE source_id IN(test_id(2500001),test_id(2500002));")=='t')
 check('Paid legacy periods share one exact wallet receipt per beneficiary',sql("SELECT count(*)=2 AND bool_and(p.wallet_transaction_id=w.id AND p.payout_amount=w.amount AND p.user_id=w.user_id AND rp.status='paid') FROM rakeback_period_payouts p JOIN wallet_transactions w ON w.related_entity_id=p.id JOIN rakeback_periods rp ON rp.id=p.rakeback_period_id;")=='t')
@@ -121,4 +164,4 @@ before=state();run=subprocess.run([os.environ['COMMISSION_PSQL'],'-X','-qAt','-v
 check('Old bank and direct Round1 cannot commit a captured credit without its exact bank receipt',run.returncode!=0 and 'Captured cash bank receipt is missing or conflicts with credited source' in run.stderr and before==state())
 provisional=[json.loads(line) for line in run.stdout.splitlines() if line.startswith('{') and 'provisional_round1' in line]
 check('Direct Round1 provisional retained income is fully rolled back by the actual bank barrier',len(provisional)==1 and provisional[0]['provisional_round1']['union_retained']==20 and sql("SELECT count(*) FROM union_wallet_transactions WHERE union_id=test_id(901) AND created_at>='2026-08-24T07:00Z' AND created_at<'2026-08-31T07:00Z';")=='0')
-(here/'outer-native-proof.json').write_text(json.dumps({'checks':checks,'passing':len(checks),'production_applied':False,'source_commit':'d5300be77e19d08b887b3b851946c5c244b77ad9','payer_commit':'f39368fefe22b4385e9e89e5350bb671c587fb4a','first_result':r,'retry_result':retry,'source_sha256':{n:hashlib.sha256((here/n).read_bytes()).hexdigest() for n in ['01-source-dispatch.sql','02-outer-cascade.sql','outer-native-probe.py','prepare-outer-fixture.py','run-local.sh','installed-period-finalizer.sql']},'limits':['Historical commission and player payable rows plus attribution projections are explicit fixture inputs; accepted and bank owners are actual.','No complete producer, bank, fractional liability or common period finality is claimed.','No production activation or present-live owner hash equivalence is claimed.']},indent=2,default=str)+'\n')
+(here/'outer-native-proof.json').write_text(json.dumps({'checks':checks,'passing':len(checks),'production_applied':False,'source_commit':'d5300be77e19d08b887b3b851946c5c244b77ad9','payer_commit':'c12f993244b1f6b01dd950a8e8fee2b0de07ffef','first_result':r,'retry_result':retry,'cron_result':cron_result,'due_result':due,'role_contexts':role_contexts,'acl_snapshot':acl_before,'source_sha256':{n:hashlib.sha256((here/n).read_bytes()).hexdigest() for n in ['01-source-dispatch.sql','02-outer-cascade.sql','outer-native-probe.py','prepare-outer-fixture.py','run-local.sh','installed-period-finalizer.sql','03-cron-diagnostics.sql','tracked-cron-callers.sql']},'limits':['Historical commission and player payable rows plus attribution projections are explicit fixture inputs; accepted and bank owners are actual.','No complete producer, bank, fractional liability or common period finality is claimed.','No production activation or present-live owner hash equivalence is claimed.','Role tests use real SET ROLE with coherent scalar and JSON claim fixtures; HTTP JWT verification is outside this SQL proof.','The inherited no-request-context engine contract trusts absent claims even under authenticated SQL role; this is not reported as a denial.']},indent=2,default=str)+'\n')

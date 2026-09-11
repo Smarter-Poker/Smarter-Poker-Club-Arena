@@ -4,7 +4,7 @@
   "source_final": false,
   "production_applied": false,
   "checks": [
-    "Actor-less captured dispatch refuses before admission or money",
+    "Authenticated claims without a subject refuse before source admission or money",
     "No club lock means no source admission or money mutation",
     "A player cannot dispatch the original Union source",
     "Authenticated RPC role cannot call the private captured dispatcher",
@@ -23,7 +23,7 @@
   "passing": 15,
   "observed_waits": 1,
   "input_commit": "7adbfb02544b68ccc1754c51f11d2f61fa406180",
-  "source_sha256": "a79212add5575dc666019ad3a97148f9580e6ac3658baec694348bd666815956",
+  "source_sha256": "a1a7f1acef38716f30e3ddb717dc59fb0923afb8780836e80f4f5d8caa137222",
   "final_money": {
     "agent": "5.60000000000000000000",
     "ledger": 28,

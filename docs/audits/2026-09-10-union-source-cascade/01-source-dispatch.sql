@@ -65,7 +65,8 @@ BEGIN
  IF NOT public.fn_caller_is_engine() AND (v_actor IS NULL OR NOT public.fn_is_union_overseer(p_union,v_actor)) THEN
   RAISE EXCEPTION 'not_authorised_for_original_union' USING ERRCODE='42501';
  END IF;
- IF v_actor IS NULL THEN RAISE EXCEPTION 'captured_union_actor_required' USING ERRCODE='42501';END IF;
+ -- Existing engine/no-request-context calls retain a NULL actor. The release
+ -- owner binds that exact nullable identity and owns its established ledger fallback.
  PERFORM public.fn_ca_assert_union_captured_locks(p_union,p_clubs);
  IF public.fn_platform_frozen() THEN RAISE EXCEPTION 'platform_frozen' USING ERRCODE='55000';END IF;
 

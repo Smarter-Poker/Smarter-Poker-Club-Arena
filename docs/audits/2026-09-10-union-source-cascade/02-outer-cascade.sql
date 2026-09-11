@@ -39,11 +39,8 @@ BEGIN
     RAISE EXCEPTION 'not_authorised';
   END IF;
 
-  -- Captured releases bind their request to the actual authenticated actor.
-  -- Trusted service callers without a subject need a reviewed actor contract.
-  IF auth.uid() IS NULL THEN
-    RAISE EXCEPTION 'captured_union_actor_required' USING ERRCODE='42501';
-  END IF;
+  -- Preserve the installed engine and no-request-context identity contract.
+  -- Low-level captured owners accept that nullable actor; no actor is invented here.
 
   -- THE FLOOR, checked before anything moves. Round 1 has always honoured it;
   -- nothing above round 1 did, so three further rounds ran on a floored week.

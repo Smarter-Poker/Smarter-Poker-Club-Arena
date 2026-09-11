@@ -19,8 +19,8 @@
   "2026-09-10-accounting-legacy-exclusion/fixture-view.sql": "ec8840e0eaf48ce23c442c0833627089f0d192585cf9f47fbcfa6aef002d1e1b",
   "2026-09-10-legacy-rakeback-completion/01-shared-basis.sql": "92b7960dfba8be63a80e02786bda98ed384de32fe87c4e7edf600088dea76987",
   "2026-09-10-legacy-rakeback-completion/02-legacy-round1.sql": "8137f28d8698aaea6647fa6d0a2842af9cc046535ea4edfda6c481bd7fa976fb",
-  "2026-09-10-legacy-rakeback-completion/03-legacy-claim.sql": "02d0bf1dcf824f4bf3060ac18e91f4d9da07c01509092c80f8170f912272a14c",
-  "2026-09-10-legacy-rakeback-completion/04-legacy-round3.sql": "22018ebac025c00ad5d24d1e642421f089008f9f9711008a15aa3e3c9548c148",
+  "2026-09-10-legacy-rakeback-completion/03-legacy-claim.sql": "01c5a4143d88f0120f029398361e3144de957b228049eab312faf6289262eb9f",
+  "2026-09-10-legacy-rakeback-completion/04-legacy-round3.sql": "2843621fcd8fcf538a007cc2f6b9c35062c279ae1198d4afbc42cbf07b7e17ae",
   "2026-09-10-legacy-rakeback-completion/basis-fixture.sql": "02679fb194a0b08d4af7dd839d0e142eaed2dbfc25b8178e404c5a3de9918688",
   "2026-09-10-legacy-rakeback-completion/fixture.sql": "72b2a77c0d805989e7b3bb48593321258dfd79dc698d42d167397d57394ca42d",
   "2026-09-10-legacy-rakeback-completion/money-guards.sql": "e7ac35f1cc08f6b947c386532a39bcc460a94e0c75949b5071e4098cbf3b9958"

@@ -1,6 +1,6 @@
 {
-  "data_directory": "/tmp/ca-union-cascade-native.Jv0Yoh/data",
-  "unix_socket_directories": "/tmp/ca-union-cascade-native.Jv0Yoh/socket",
+  "data_directory": "/tmp/ca-union-cascade-native.Z5LZ2j/data",
+  "unix_socket_directories": "/tmp/ca-union-cascade-native.Z5LZ2j/socket",
   "listen_addresses": "",
   "database": "postgres",
   "user": "postgres",

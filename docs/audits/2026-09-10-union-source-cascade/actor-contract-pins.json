@@ -1,0 +1,34 @@
+{
+  "source_references": [
+    {
+      "path": "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-payer-legacy-sep10/docs/audits/2026-09-10-legacy-rakeback-completion/installed-catalog.json",
+      "purpose": "installed engine helper",
+      "sha256": "fae4231842dc23c60338467b1d0894673c6106d44ca8c01a9e4e6f075db041ae"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-rakeback-payers-sep10/docs/audits/2026-09-10-rakeback-payer-proof/round1-owner/01-release-writer.sql",
+      "purpose": "nullable release actor",
+      "sha256": "c273641757388a1e6019b052e72f66aac6c6ca4db2deaa83ed6140a59f5378ce"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-rakeback-payers-sep10/docs/audits/2026-09-10-rakeback-payer-proof/round1-owner/vendor/capacity-owner/04-agent-payment.sql",
+      "purpose": "low-level captured agent payer",
+      "sha256": "ff11ff483820d93fca2c04e825f548dbc435e59996d52d1134d0a4651743dd04"
+    },
+    {
+      "path": "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-rakeback-payers-sep10/docs/audits/2026-09-10-rakeback-payer-proof/player-capacity-proposal.sql",
+      "purpose": "low-level captured player payer",
+      "sha256": "25c4e565990ec519e5449df59d8e178058ba18626aaa98942d7c1a44e9ea6483"
+    }
+  ],
+  "contract": "Preserve fn_caller_is_engine based on auth.role, never current_user inside SECURITY DEFINER. Exact NULL expected actor is valid for trusted callers; existing low-level owners retain ledger fallback.",
+  "inherited_limit": "Absent all JWT context is trusted SQL even after SET ROLE authenticated. Normal PostgREST verified browser requests supply coherent claims; SQL proof does not test HTTP signing.",
+  "production_applied": false,
+  "minimal_live_prerequisite": {
+    "checked_at_utc": "2026-09-11T06:10:20.090Z",
+    "project_id": "kuklfnapbkmacvwxktbh",
+    "query": "SELECT EXISTS (SELECT 1 FROM auth.users WHERE id = '2d1cd6c3-5700-4af9-a271-d4863fdab20d'::uuid) AS established_ledger_actor_exists;",
+    "established_ledger_actor_exists": true,
+    "scope": "Only identity existence returned; no record content, credentials, mutation or current owner/ACL parity attestation."
+  }
+}

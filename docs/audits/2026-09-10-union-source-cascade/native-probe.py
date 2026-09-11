@@ -36,7 +36,7 @@ UPDATE tables SET union_id=test_id(901) WHERE id=test_id(950);
 UPDATE agents SET commission_rate=.25,player_rakeback_rate=.15 WHERE id=test_id(103);
 UPDATE club_members SET player_rakeback_pct=.15 WHERE club_id=test_id(900) AND user_id IN(test_id(201),test_id(202));""")
 captured(2400001)
-refused('Actor-less captured dispatch refuses before admission or money',"SELECT set_config('request.jwt.claim.sub','',false);SELECT fn_ca_dispatch_union_captured_funding(test_id(901),'2026-09-07T07:00Z','2026-09-07',ARRAY[test_id(900)]);",'captured_union_actor_required')
+refused('Authenticated claims without a subject refuse before source admission or money',"SELECT set_config('request.jwt.claim.sub','',false);SELECT set_config('request.jwt.claim.role','authenticated',false);SELECT set_config('request.jwt.claims','{\"role\":\"authenticated\"}',false);SELECT fn_ca_dispatch_union_captured_funding(test_id(901),'2026-09-07T07:00Z','2026-09-07',ARRAY[test_id(900)]);",'not_authorised')
 refused('No club lock means no source admission or money mutation',"SELECT fn_ca_dispatch_union_captured_funding(test_id(901),'2026-09-07T07:00Z','2026-09-07',ARRAY[test_id(900)]);",'lock_not_owned')
 refused('A player cannot dispatch the original Union source',"SELECT set_config('request.jwt.claim.role','authenticated',false);SELECT set_config('request.jwt.claims','{\"role\":\"authenticated\"}',false);SELECT fn_ca_dispatch_union_captured_funding(test_id(901),'2026-09-07T07:00Z','2026-09-07',ARRAY[test_id(900)]);",'not_authorised',201)
 refused('Authenticated RPC role cannot call the private captured dispatcher',"SET ROLE authenticated;SELECT fn_ca_dispatch_union_captured_funding(test_id(901),'2026-09-07T07:00Z','2026-09-07',ARRAY[test_id(900)]);",'permission denied',201)

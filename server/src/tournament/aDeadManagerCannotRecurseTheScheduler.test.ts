@@ -167,4 +167,48 @@ describe('a dead manager cannot recurse the elimination scheduler', () => {
     expect(scheduler.snapshot()).toMatchObject({ registered: 0, queued: 0, running: 0 });
     scheduler.stop();
   });
+
+  it('a manager that dies while the due batch is being enqueued cannot pump the batch half-built', async () => {
+    // 2026-09-11. The case above dies inside pump(), after the whole batch is
+    // queued. This one dies on its FIRST isActive() call - the one enqueue()
+    // makes while the timer is still building the batch. Its unregister
+    // closure pumped right there, outside any pump pass, and the routine sweep
+    // queued before it took the only slot while the urgent sweep due in the
+    // same firing had not been enqueued yet: R ran before U. Urgent goes first.
+    vi.useFakeTimers();
+    const scheduler = new TournamentEliminationScheduler({
+      maxConcurrent: 1,
+      sweepWarnMs: 0,
+      startTimers: false,
+    });
+    const ran: string[] = [];
+    let leaseLost = false;
+    scheduler.register({ tournamentId: 'R', run: async () => void ran.push('R') });
+    let unregisterDying: () => void = () => undefined;
+    unregisterDying = scheduler.register({
+      tournamentId: 'D',
+      run: async () => void ran.push('D'),
+      isActive: () => {
+        if (!leaseLost) return true;
+        unregisterDying(); // lifecycleIsCurrent() -> ... -> unregisterEliminationScheduler()
+        return false;
+      },
+    });
+    scheduler.register({ tournamentId: 'U', run: async () => void ran.push('U') });
+    for (let turn = 0; turn < 20 && ran.length < 3; turn++) await flush();
+    expect(ran).toEqual(['R', 'D', 'U']); // the three admission sweeps
+    ran.length = 0;
+
+    // All due in one firing, in this order: routine R, routine D, urgent U.
+    scheduler.wakeAfter('R', 1_000);
+    scheduler.wakeAfter('D', 1_000);
+    scheduler.wakeUrgentAfter('U', 1_000);
+    leaseLost = true;
+    vi.advanceTimersByTime(1_000);
+    for (let turn = 0; turn < 20 && ran.length < 2; turn++) await flush();
+
+    expect(ran).toEqual(['U', 'R']);
+    expect(scheduler.snapshot()).toMatchObject({ registered: 2, queued: 0 });
+    scheduler.stop();
+  });
 });

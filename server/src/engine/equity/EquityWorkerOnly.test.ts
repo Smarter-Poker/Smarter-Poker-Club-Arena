@@ -8,6 +8,7 @@ import { insuranceEquity } from '../InsuranceEquity.js';
 import {
   EquityWorkerPool,
   EquityWorkerPoolAbortedError,
+  EquityWorkerTimeoutError,
   EquityWorkerUnavailableError,
 } from './EquityWorkerPool.js';
 import { computeInsuranceComponentsForHands } from './equityWorker.js';
@@ -226,7 +227,98 @@ describe('EquityWorkerPool fail-closed lifecycle', () => {
     await pool.shutdown();
   });
 
-  it('bounds queue plus compute time and terminates the wedged worker', async () => {
+  it('does not dispatch expired queued work when a result arrives before delayed timers', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const worker = new FakeWorker();
+    const pool = new EquityWorkerPool({ size: 1, workerFactory: () => worker, jobTimeoutMs: 100 });
+    try {
+      const ready = pool.ready();
+      worker.emitMessage({ type: 'READY' });
+      await ready;
+      const active = pool.estimateEquity(hands, []);
+      const expired = pool.estimateEquity(hands, []).catch((error) => error);
+      const activeId = (worker.sent[0] as { id: number }).id;
+      vi.setSystemTime(50);
+      const urgent = pool.estimateInsurance(hands, [], 'nlh');
+      worker.emitMessage({ type: 'EQUITY_RESULT', id: activeId, equities: [0.5, 0.5] });
+      await expect(active).resolves.toEqual([0.5, 0.5]);
+      const urgentId = (worker.sent[1] as { id: number }).id;
+      const components = hands.map(() => ({
+        equity: 50,
+        strictLossPct: 50,
+        pushPct: 0,
+        exact: false,
+        runouts: 100,
+      }));
+      // A stalled event loop can receive a worker result before its overdue
+      // timer callbacks run. Advancing the wall clock does not run the timers.
+      vi.setSystemTime(100);
+      worker.emitMessage({ type: 'INSURANCE_RESULT', id: urgentId, components });
+      await expect(urgent).resolves.toEqual(components);
+      expect(worker.sent).toHaveLength(2);
+      await expect(expired).resolves.toBeInstanceOf(EquityWorkerTimeoutError);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(worker.terminateCalls).toBe(0);
+      const fresh = pool.estimateEquity(hands, []);
+      const freshId = (worker.sent[2] as { id: number }).id;
+      worker.emitMessage({ type: 'EQUITY_RESULT', id: freshId, equities: [0.4, 0.6] });
+      await expect(fresh).resolves.toEqual([0.4, 0.6]);
+      expect(pool.status()).toMatchObject({
+        phase: 'ready',
+        readyWorkers: 1,
+        queueDepth: 0,
+        queueExpirations: 1,
+        executionTimeouts: 0,
+      });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      await pool.shutdown();
+    }
+  });
+
+  it('does not spend a replacement worker on work that expired before its READY message', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const workers: FakeWorker[] = [];
+    const pool = new EquityWorkerPool({
+      size: 1,
+      jobTimeoutMs: 100,
+      respawnBudget: 1,
+      workerFactory: () => {
+        const worker = new FakeWorker();
+        workers.push(worker);
+        return worker;
+      },
+    });
+    try {
+      const ready = pool.ready();
+      workers[0].emitMessage({ type: 'READY' });
+      await ready;
+      workers[0].emitExit();
+      await vi.advanceTimersByTimeAsync(250);
+      expect(workers).toHaveLength(2);
+      const expired = pool.estimateEquity(hands, []).catch((error) => error);
+      vi.setSystemTime(350);
+      workers[1].emitMessage({ type: 'READY' });
+      expect(workers[1].sent).toEqual([]);
+      await expect(expired).resolves.toBeInstanceOf(EquityWorkerTimeoutError);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(workers[1].terminateCalls).toBe(0);
+      expect(pool.status()).toMatchObject({
+        phase: 'ready',
+        readyWorkers: 1,
+        queueDepth: 0,
+        queueExpirations: 1,
+        executionTimeouts: 0,
+      });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      await pool.shutdown();
+    }
+  });
+
+  it('bounds compute time from dispatch and terminates the wedged worker', async () => {
     vi.useFakeTimers();
     const worker = new FakeWorker();
     const pool = new EquityWorkerPool({
@@ -242,7 +334,9 @@ describe('EquityWorkerPool fail-closed lifecycle', () => {
 
     const pending = pool.estimateEquity(hands, [], [], 1000);
     const rejection = expect(pending).rejects.toThrow('timed out after 25ms');
-    await vi.advanceTimersByTimeAsync(25);
+    // The 25ms execution deadline, then the one poll turn of grace the pool
+    // gives an answer already on its way (a fake clock runs that turn 1ms on).
+    await vi.advanceTimersByTimeAsync(26);
     await rejection;
     expect(worker.terminateCalls).toBe(1);
     await pool.shutdown();

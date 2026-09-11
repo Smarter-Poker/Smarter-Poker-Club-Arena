@@ -197,30 +197,56 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     if (now - this.lastChipCapRefreshAt < 60_000) return;
     this.lastChipCapRefreshAt = now;
 
+    /**
+     * THREE COUNTS, ONE ROUND TRIP (2026-09-11).
+     *
+     * These were three awaited reads in a row at the head of every full
+     * sweep. The once-a-minute throttle is per manager, and in a backlog a
+     * manager is admitted far less often than once a minute - after the 06:57
+     * boot on 2026-09-11 the scheduler held 553 of 597 managers in its queue
+     * and its oldest entry waited up to 24 minutes - so in practice every
+     * sweep paid all three trips, each one also waiting out a main event-loop
+     * delay that read 142 ms p50 at 07:22 and 490 ms at 07:51, before it
+     * looked at a single bust. The counts are independent high-water marks, so
+     * they are read together; each one still only ever raises its mark, and a
+     * failed one still leaves its previous value in place.
+     */
     try {
-      const { count: entrants, error: entrantsErr } = await supabase
-        .from('tournament_players')
-        .select('*', { count: 'exact', head: true })
-        .eq('tournament_id', this.tournamentId);
-      if (!entrantsErr && typeof entrants === 'number' && entrants > this.entrantCountForChipCap) {
+      const [entrantsRead, rebuysRead, addonsRead] = await Promise.allSettled([
+        supabase
+          .from('tournament_players')
+          .select('*', { count: 'exact', head: true })
+          .eq('tournament_id', this.tournamentId),
+        supabase
+          .from('wallet_transactions')
+          .select('*', { count: 'exact', head: true })
+          .eq('related_entity_id', this.tournamentId)
+          .eq('category', 'rebuy'),
+        supabase
+          .from('wallet_transactions')
+          .select('*', { count: 'exact', head: true })
+          .eq('related_entity_id', this.tournamentId)
+          .eq('category', 'addon'),
+      ]);
+      const settledCount = (read: typeof entrantsRead): number | null => {
+        if (read.status === 'rejected') {
+          reportError(read.reason, 'Tournament.refresh_chip_cap_inputs');
+          return null;
+        }
+        const { count, error } = read.value;
+        return !error && typeof count === 'number' ? count : null;
+      };
+
+      const entrants = settledCount(entrantsRead);
+      if (entrants !== null && entrants > this.entrantCountForChipCap) {
         this.entrantCountForChipCap = entrants;
       }
-
-      const { count: rebuys, error: rebuysErr } = await supabase
-        .from('wallet_transactions')
-        .select('*', { count: 'exact', head: true })
-        .eq('related_entity_id', this.tournamentId)
-        .eq('category', 'rebuy');
-      if (!rebuysErr && typeof rebuys === 'number' && rebuys > this.rebuysGrantedForChipCap) {
+      const rebuys = settledCount(rebuysRead);
+      if (rebuys !== null && rebuys > this.rebuysGrantedForChipCap) {
         this.rebuysGrantedForChipCap = rebuys;
       }
-
-      const { count: addons, error: addonsErr } = await supabase
-        .from('wallet_transactions')
-        .select('*', { count: 'exact', head: true })
-        .eq('related_entity_id', this.tournamentId)
-        .eq('category', 'addon');
-      if (!addonsErr && typeof addons === 'number' && addons > this.addonsGrantedForChipCap) {
+      const addons = settledCount(addonsRead);
+      if (addons !== null && addons > this.addonsGrantedForChipCap) {
         this.addonsGrantedForChipCap = addons;
       }
     } catch (err) {
@@ -500,29 +526,20 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
          * defence in depth against corruption; it is not a delayed-credit gate.
          */
         if (busted && busted.length > 0) {
-          const { count: liveCount, error: liveErr } = await supabase
-            .from('tournament_players')
-            .select('*', { count: 'exact', head: true })
-            .eq('tournament_id', this.tournamentId)
-            .eq('status', 'playing');
-          if (sweepStopped()) return;
-          if (
-            !liveErr &&
-            typeof liveCount === 'number' &&
-            liveCount > 0 &&
-            busted.length >= liveCount
-          ) {
-            reportError(
-              new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] all ${liveCount} live player(s) read 0 chips - uncredited stacks, not a bust. Eliminating nobody this sweep.`
-              ),
-              'Tournament.zero_chip_field_refused'
-            );
-            return; // the finally block clears isProcessingEliminations
-          }
-        }
-
-        if (busted && busted.length > 0) {
+          /**
+           * ONE QUESTION, ONE ROUND TRIP (2026-09-11).
+           *
+           * This guard and the ladder seed below each read the same
+           * `status='playing'` count, back to back, with nothing written in
+           * between. A sweep is a chain of awaited PostgREST calls, and on
+           * 2026-09-11 each link cost the network trip plus a main event-loop
+           * delay of 142 ms p50 at 07:22 and 490 ms at 07:51; a sweep with a
+           * bust to record spent its whole 5 s budget on reads before its first
+           * elimination 161 times in the 38 minutes after the 06:57 boot. So
+           * the count is read once and answers both questions. A failed read
+           * now defers the batch instead of skipping the guard and reading
+           * again - the fail-closed direction the second read already took.
+           */
           // Get current remaining count BEFORE processing any eliminations
           const { count: playingCount, error: playingErr } = await supabase
             .from('tournament_players')
@@ -530,6 +547,20 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             .eq('tournament_id', this.tournamentId)
             .eq('status', 'playing');
           if (sweepStopped()) return;
+          if (
+            !playingErr &&
+            typeof playingCount === 'number' &&
+            playingCount > 0 &&
+            busted.length >= playingCount
+          ) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] all ${playingCount} live player(s) read 0 chips - uncredited stacks, not a bust. Eliminating nobody this sweep.`
+              ),
+              'Tournament.zero_chip_field_refused'
+            );
+            return; // the finally block clears isProcessingEliminations
+          }
 
           // PAYOUT-INTEGRITY 2026-08-20: finishing positions are derived from
           // this count, and a wrong count produces COLLIDING positions (see
@@ -871,12 +902,28 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
            *     a failed query into "every place is free", which is the
            *     collision this block exists to prevent. An unreadable list is
            *     UNKNOWN — defer the eliminations to the next sweep.
+           *
+           * The two ladder inputs are independent reads, so they share one
+           * round trip (2026-09-11, see ONE QUESTION, ONE ROUND TRIP above).
+           * Both are still checked, in the same order, before anybody is
+           * placed; sequential reads were never a consistent snapshot either.
            */
-          const { data: takenRows, error: takenErr } = await supabase
-            .from('tournament_players')
-            .select('position')
-            .eq('tournament_id', this.tournamentId)
-            .not('position', 'is', null);
+          const [takenRead, unplacedRead] = await Promise.all([
+            supabase
+              .from('tournament_players')
+              .select('position')
+              .eq('tournament_id', this.tournamentId)
+              .not('position', 'is', null),
+            // Players who hold no finishing place yet. Monotonic, and immune to
+            // the late-reg promotion that made `playingCount` drift.
+            supabase
+              .from('tournament_players')
+              .select('*', { count: 'exact', head: true })
+              .eq('tournament_id', this.tournamentId)
+              .is('position', null),
+          ]);
+          const { data: takenRows, error: takenErr } = takenRead;
+          const { count: unplacedCount, error: unplacedErr } = unplacedRead;
           if (sweepStopped()) return;
 
           if (takenErr || !takenRows) {
@@ -894,15 +941,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               .map((r) => Number((r as { position: unknown }).position))
               .filter((n) => Number.isFinite(n))
           );
-
-          // Players who hold no finishing place yet. Monotonic, and immune to
-          // the late-reg promotion that made `playingCount` drift.
-          const { count: unplacedCount, error: unplacedErr } = await supabase
-            .from('tournament_players')
-            .select('*', { count: 'exact', head: true })
-            .eq('tournament_id', this.tournamentId)
-            .is('position', null);
-          if (sweepStopped()) return;
 
           if (unplacedErr || unplacedCount === null || unplacedCount === undefined) {
             reportError(

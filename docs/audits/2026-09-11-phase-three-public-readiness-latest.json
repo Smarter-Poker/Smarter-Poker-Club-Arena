@@ -1,0 +1,65 @@
+{
+  "observed_at": "2026-09-11T08:44:36.293302+00:00",
+  "url": "https://engine.smarter.poker/health",
+  "http_status": 503,
+  "health": {
+    "liveness": "ok",
+    "blockedSettlements": [],
+    "stats": {
+      "checkedAt": "2026-09-11T08:44:12.386219+00:00",
+      "indexCeil": "2026-09-11T08:30:09.377849+00:00",
+      "indexLagSeconds": 843,
+      "indexBackfillComplete": true,
+      "indexRows": 26060790,
+      "recentHands": 733,
+      "recentHandsWithoutStat": 0,
+      "repair": {
+        "done": true,
+        "cursorAt": "2026-09-03T19:28:15.567327+00:00",
+        "ceilingAt": "2026-09-03T19:28:15.567327+00:00",
+        "handsSeen": 2324000,
+        "rowsChanged": 18214,
+        "updatedAt": "2026-09-04T18:54:00.208218+00:00"
+      },
+      "seatBackfill": {
+        "done": true,
+        "cursorAt": "2026-09-04T09:48:00.616769+00:00",
+        "rowsAdded": 481141
+      },
+      "evCoverage7d": {
+        "allInShowdowns": 363783,
+        "withoutEquity": 5603,
+        "ratio": 0.9846
+      },
+      "lastAudit": {
+        "ranAt": "2026-09-11T08:39:00.239756+00:00",
+        "hands": 3386,
+        "buttonDisagree": 0,
+        "showdownDisagree": 0,
+        "handsWithoutStat": 0,
+        "playerHandsWithoutIdx": 0,
+        "humanPlayerHands": 0,
+        "humanWithoutFacts": 0,
+        "durationMs": 9044
+      },
+      "stale": false,
+      "ageMs": 23728,
+      "lastError": null
+    },
+    "equityWorkerPool": {
+      "phase": "failed",
+      "configuredWorkers": 1,
+      "readyWorkers": 0,
+      "busyWorkers": 0,
+      "queueDepth": 0,
+      "oldestQueuedAgeMs": 0,
+      "lastCompletionAgeMs": 6249934,
+      "lastError": "Equity worker operation timed out after 2500ms"
+    },
+    "stalledTables": [],
+    "status": "degraded",
+    "version": "c58dfafd",
+    "instanceId": "1-941a631f",
+    "uptime": 6439
+  }
+}

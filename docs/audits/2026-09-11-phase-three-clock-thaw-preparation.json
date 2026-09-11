@@ -1,0 +1,30 @@
+{
+  "status": "composition_only_passed",
+  "python_ast": true,
+  "sql_native_parser_used": false,
+  "native_database_executed": false,
+  "production_database_executed": false,
+  "source_composition_verified": true,
+  "source_files_from_github": true,
+  "sql_sha256": "a068daad466e1754560e74b3d6b9378e77c006497191ae7fe1e90d5beb28667e",
+  "actual_database_assertions_passed": 0,
+  "mac_repo_copy_completed": true,
+  "approval_review_rejections": [
+    "live thaw identity/hash metadata",
+    "local native identity/hash metadata"
+  ],
+  "unknown_fixture_compatibility": true,
+  "metadata_json_parse": true,
+  "scratch_composed_sql_sha256": "018eee1932a8c783d508900b77ec23b35de5b2c4b31a2cb5d035be587a930908",
+  "repository_source_composition_verified": true,
+  "source_sha256": {
+    "scripts/ci/probes/phase-three-clock-thaw-native.sql": "2a152dc1546799ca152357d156b4494f23ed3646c79ccedab07fcd9323ffedfa",
+    "supabase/tests/reconnect_allowance_maintenance.sql": "970dbf08a960330dba282ca96ccbb6a089e797efc579cb13472cb4bab92e6e61",
+    "supabase/migrations/20260908032311_reconnect_allowance_survives_maintenance.sql": "8385d20650eea033d49ca36980d0cdc86fe8b39e498d10eaa1408da282347a2e",
+    "docs/audits/2026-09-10-phase3-clock-deadline-evidence.json": "0858db44d9cbe6565d6460a7e50f182bd3ba459c46e89f865857e4d24a8b2d9f",
+    "scripts/ci/prepare-phase-three-clock-thaw-native.py": "93c37e2d73fd7b46036f717e7c7b8fa505ceb4fb1a18376439e071d0b4a0ecc2"
+  },
+  "reconnect_helper_tracked_source_md5": "189080931555259ca2a6e9961dec8bf3",
+  "prepared_output": "/private/tmp/codex-phase3-ca09-clock-thaw.sql",
+  "execution_ready": false
+}

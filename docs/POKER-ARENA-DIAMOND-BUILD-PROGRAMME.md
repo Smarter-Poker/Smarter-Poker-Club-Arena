@@ -16,6 +16,12 @@ Dan accepted ownership of the remaining World Hub lobby image and explicitly aut
 
 The initial Phase 6 engine change enforces whole-Diamond hand amounts and fixes a reproduced duplicate runout payout. It is not a completed funded-game certificate. The remaining atomic seat/custody, accepted-hand accounting, cash-out and controlled runtime acceptance work is tracked in [the Phase 6 audit](audits/2026-09-10-diamond-phase-6-cash.md).
 
+## Execution Update, September 11, 2026
+
+Phase 6 is closed. The shared NLH Diamond cash integration is merged as 85da6479, its three approved production migrations are applied, engine adoption and frontend publication are verified, and the permitted authenticated live acceptance passed on September 11 between 13:57 and 14:23 UTC. That acceptance found one layout defect in the Diamond shell, which was repaired, merged as 29b6ae08, published and rechecked live at 15:06 UTC. Evidence is in [the Phase 6 audit](audits/2026-09-10-diamond-phase-6-cash.md) and [the integration changelog](changelog/2026-09-10-diamond-phase-6-shared-cash-integration.md).
+
+Dan's standing authorization to proceed after the Phase 6 deployment and acceptance pass now applies, and Phase 7 has started in its own owned tree with its own evidence. Dan also restated the product target for the arena itself on September 11: "DIAMOND ARENA NEEDS TO BE A 1:1 CLONE OF THE CLUB ARENA. (ONLY DIFFERENCE IS ITS ALL 'ONE OPEN CLUB' WITH NO UNIONS OR AGENTS AND ITS PLAYED WITH DIAMONDS INSTEAD OF CHIPS)". Phase 7 therefore opens on lobby parity, not on a new surface: the arena's own route renders the shared Club Arena lobby rather than a placeholder panel, while the chip operator routes underneath a club keep the safe shell so that "no unions or agents" holds on a typed URL. Public funded Diamond games remain closed behind the existing accounting and release gates, and `cash_games_enabled` remains false.
+
 ## Approved Product Contract
 
 This replaces the earlier recommendation for two separate World Hub destinations. The World Hub has one player-facing Poker Arena entrance. Reuse the existing Club Arena application as the shared shell, lobby and game implementation. Diamond Arena is a diamond-only skin and operating policy inside it, not a second poker application.
@@ -230,13 +236,15 @@ Phases 3 Through 5 Recheck: the September 10 audit repaired and published the tr
 
 ### Phase 6 Of 12: First Fully Playable Diamond Cash Game
 
-- [ ] Wire shared NLH engine to Diamond buy-in, actions, settlement and leave.
-- [ ] Fund seat, blinds, bets, pots and cash-out in diamonds only.
-- [ ] Wire hand history, result events and wallet refresh.
-- [ ] Test actual multi-user play in a controlled certification environment.
-- [ ] Verify all-in, side pot, tie, disconnect, restart, pending leave and response-loss retry.
+- [x] Wire shared NLH engine to Diamond buy-in, actions, settlement and leave.
+- [x] Fund seat, blinds, bets, pots and cash-out in diamonds only.
+- [x] Wire hand history, result events and wallet refresh.
+- [x] Test actual multi-user play in a controlled certification environment.
+- [x] Verify all-in, side pot, tie, disconnect, restart, pending leave and response-loss retry.
 
 Exit: complete play-and-cash-out flow reconciles every diamond; no chip or hierarchy writes.
+
+Phase 6 Of 12 Is Done, verified September 11, 2026. Implementation merge 85da6479 (PR 4088) passed required CI 34440835759; production migrations 20260910050142, 20260910050156 and 20260910050209 were applied once against approved source; engine adoption cut over at 86aab0e6 on September 10 with later descendants serving since; frontend publication was verified through both build-info endpoints; and the permitted authenticated live acceptance passed on the six Diamond and chip-club routes plus the Diamond Wallet. One layout defect in the Diamond shell was found by that acceptance, repaired in PR 4313, merged as 29b6ae08, published and rechecked live. Controlled multi-user play, all-in, side pot, tie, disconnect, restart, pending leave and response-loss retry were certified in the isolated environment, not in a public funded game, and public funded Diamond games remain closed behind the accounting release gate. Exact evidence: [Phase 6 audit](audits/2026-09-10-diamond-phase-6-cash.md) and [integration changelog](changelog/2026-09-10-diamond-phase-6-shared-cash-integration.md).
 
 ### Phase 7 Of 12: Cash Game Parity And Table Features
 
@@ -336,4 +344,4 @@ The existing seven-clean-day release condition is documented in DIAMOND-ACCOUNTI
 
 ## Immediate Next Batch
 
-Phase 6: first fully playable Diamond cash game, after authorization to start that phase. Phase 5 shell publication and scoped acceptance are verified with the documented browser limitation. Public funded Diamond games remain subject to the gameplay and accounting release gates; no Phase 6 work is claimed by the Phase 5 release.
+Phase 7: cash game parity and table features, on Dan's standing authorization after the Phase 6 deployment and acceptance passed. It opens on the one-to-one lobby parity Dan restated on September 11, then enables each feature only behind its own Diamond tests, starting from a supported-feature matrix built from the current shared code and the Phase 6 admission guard. Public funded Diamond games remain subject to the gameplay and accounting release gates; no Phase 7 work is claimed by the Phase 6 release.

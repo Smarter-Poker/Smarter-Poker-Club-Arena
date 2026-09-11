@@ -209,19 +209,20 @@ not only the final key-share artifact. For each of
    tests, manifests, and runbooks, then prove no stale path reference remains.
 
 Commit and push the complete six-artifact source seal. After the PR is merged,
-first verify and record its exact 40-character merge SHA. A protected-main push
-that changes an eligible engine path is the dispatch: before any workflow wait
-or status poll, identify the single `auto-deploy-hetzner.yml` receiver for that
-SHA. Do not submit a duplicate manual dispatch while that run, or a newer run
-which contains it, is active or queued. If no eligible receiver exists, first
-prove current main still equals the recorded SHA and no active or queued
-descendant contains it, then dispatch the canonical workflow once on current
-main.
+first verify and record its exact 40-character merge SHA. Before any workflow
+wait or status poll, identify the source-owned release run for that SHA. On the
+pre-authority-cutover workflow, the eligible protected-main push creates the
+single `auto-deploy-hetzner.yml` receiver directly. After the release-authority
+cutover, `stage-engine-release.yml` classifies the same push and delivers its
+exact-SHA event to that receiver. Both routes stage the durable Hetzner host
+transaction immediately.
 
-Never wait for the maintenance window or a later observer to dispatch this
-release. Dispatching and waiting for the protected break are separate: the
-release enters the train immediately, while its receiver alone owns the bounded
-production window.
+There is no manual, scheduled, observer, or World Hub release path. An absent
+or ambiguous source-owned run is a failed release that needs a reviewed source
+repair, not an alternate dispatch command. Never wait for the maintenance
+window or a later observer to start the release. Staging and waiting for the
+protected break are separate: the release enters the train immediately, while
+its receiver alone owns the bounded production window.
 
 Completion requires the public engine health response to serve the exact merged
 release SHA. If the client bundle changed, both the Club Arena origin

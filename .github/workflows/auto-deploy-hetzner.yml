@@ -332,15 +332,24 @@ jobs:
           REMOTE
           }
           observe_remote_release() {
-            local remaining invocation_wait transport_timeout
+            local remaining invocation_wait observe_seconds transport_timeout
+            # The host observer rejects budgets above 10,200 seconds. Keep its
+            # hard contract explicit here and reserve five seconds for SSH to
+            # return after the observer reaches its own deadline.
+            local observer_max_seconds=10200
+            local observer_transport_grace_seconds=5
             remaining=$((RELEASE_DISPATCH_DEADLINE_EPOCH - $(date +%s) - DISPATCH_FINALIZE_RESERVE_SECONDS))
-            [ "$remaining" -gt 5 ] \
+            [ "$remaining" -gt $((observer_transport_grace_seconds * 2)) ] \
               || { echo 'release observation exhausted its shared wall-clock budget' >&2; return 70; }
-            transport_timeout=$((remaining - 5))
+            transport_timeout=$((remaining - observer_transport_grace_seconds))
+            if [ "$transport_timeout" -gt $((observer_max_seconds + observer_transport_grace_seconds)) ]; then
+              transport_timeout=$((observer_max_seconds + observer_transport_grace_seconds))
+            fi
+            observe_seconds=$((transport_timeout - observer_transport_grace_seconds))
             invocation_wait=900
-            [ "$invocation_wait" -le "$transport_timeout" ] || invocation_wait="$transport_timeout"
+            [ "$invocation_wait" -le "$observe_seconds" ] || invocation_wait="$observe_seconds"
             timeout --signal=TERM --kill-after=5s "${transport_timeout}s" \
-              "$HSSH" "ENGINE_RELEASE_OBSERVE_SECONDS='$transport_timeout' ENGINE_RELEASE_INVOCATION_WAIT_SECONDS='$invocation_wait' exec '/var/lib/club-arena/control-staging/$RUN_KEY/server/scripts/observe-engine-release.sh' --sha '$SHA' --run-id '$RUN_KEY'"
+              "$HSSH" "ENGINE_RELEASE_OBSERVE_SECONDS='$observe_seconds' ENGINE_RELEASE_INVOCATION_WAIT_SECONDS='$invocation_wait' exec '/var/lib/club-arena/control-staging/$RUN_KEY/server/scripts/observe-engine-release.sh' --sha '$SHA' --run-id '$RUN_KEY'"
           }
           set +e
           run_remote_intake | tee "$RUNNER_TEMP/engine-release-$RUN_KEY.log"

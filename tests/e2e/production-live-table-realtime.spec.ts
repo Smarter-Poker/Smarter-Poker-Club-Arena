@@ -11,6 +11,7 @@ import {
   CASH_TABLE_CARD_SELECTOR,
   collectVisibleCashCandidates,
 } from './support/cashTableCandidates';
+import { createProgressSilenceGuard } from './support/progressSilence';
 
 const CERTIFICATION_ENABLED = process.env.LIVE_TABLE_REALTIME_CERTIFICATION === '1';
 const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
@@ -232,21 +233,28 @@ async function proveTableProgressedBeforeNavigation(
 ): Promise<PreNavigationEngineEvidence> {
   let after = before;
   let afterTable = beforeTable;
+  const continuouslyActive = createProgressSilenceGuard(MAX_GAMEPLAY_SILENCE_MS);
   await expect
     .poll(
       async () => {
         after = await readEngineHealth(request);
+        if (
+          !continuouslyActive(after.tableLiveness.find((table) => table.tableId === candidate.id))
+        )
+          return -1;
         const current = healthyRunningTable(after, candidate.id, candidate.gameFormat);
         if (!current) return -1;
         afterTable = current;
         return current.handCount;
       },
       {
-        timeout: MAX_GAMEPLAY_SILENCE_MS,
+        // A live hand can keep progressing beyond the 45s inactivity limit.
+        // Wait for the next deal using the same full-hand bound as the socket proof.
+        timeout: CAUSAL_HAND_TIMEOUT_MS,
         intervals: [2_000, 3_000, 5_000, 5_000],
         message:
-          `table ${candidate.name} existed before observation but did not complete another hand ` +
-          `inside ${MAX_GAMEPLAY_SILENCE_MS}ms`,
+          `table ${candidate.name} (${candidate.id}) existed before observation but did not start its next hand ` +
+          `inside ${CAUSAL_HAND_TIMEOUT_MS}ms`,
       }
     )
     .toBeGreaterThan(beforeTable.handCount);
@@ -255,7 +263,7 @@ async function proveTableProgressedBeforeNavigation(
 
 /**
  * Pick only from tables that were live before the browser existed, then wait
- * for one of those exact tables to finish another hand. Selecting the first
+ * for one of those exact tables to start its next hand. Selecting the first
  * table that progresses avoids making a natural table close look like a
  * transport failure while retaining the pre-navigation proof.
  */
@@ -295,11 +303,18 @@ async function selectProgressingTournamentTable(
   let after = before;
   let beforeTable: EngineTableLiveness | null = null;
   let afterTable: EngineTableLiveness | null = null;
+  const continuouslyActive = createProgressSilenceGuard(MAX_GAMEPLAY_SILENCE_MS);
   await expect
     .poll(
       async () => {
         after = await readEngineHealth(request);
         for (const baseline of baselines) {
+          if (
+            !continuouslyActive(
+              after.tableLiveness.find((table) => table.tableId === baseline.tableId)
+            )
+          )
+            continue;
           const current = healthyRunningTable(after, baseline.tableId, gameFormat);
           if (current && current.handCount > baseline.handCount) {
             beforeTable = baseline;
@@ -310,11 +325,11 @@ async function selectProgressingTournamentTable(
         return false;
       },
       {
-        timeout: MAX_GAMEPLAY_SILENCE_MS,
+        timeout: CAUSAL_HAND_TIMEOUT_MS,
         intervals: [2_000, 3_000, 5_000, 5_000],
         message:
           `none of ${baselines.length} already-running ${gameFormat.toUpperCase()} tables ` +
-          `completed another hand inside ${MAX_GAMEPLAY_SILENCE_MS}ms`,
+          `started their next hand inside ${CAUSAL_HAND_TIMEOUT_MS}ms`,
       }
     )
     .toBe(true);
@@ -749,6 +764,22 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
     const journal = new EngineSocketJournal(page);
     const selected = await selectOccupiedRunningCashTable(page, request);
     const { candidate } = selected;
+    // Keep the exact table identity even when the next-hand proof times out.
+    await testInfo.attach('cash-selected-before-progress', {
+      body: Buffer.from(
+        JSON.stringify(
+          {
+            selectedAt: new Date().toISOString(),
+            expectedVersion: EXPECTED_ENGINE_SHA,
+            candidate,
+            health: compactHealthEvidence(selected.health, selected.table),
+          },
+          null,
+          2
+        )
+      ),
+      contentType: 'application/json',
+    });
     const engineBeforeNavigation = await proveTableProgressedBeforeNavigation(
       request,
       candidate,

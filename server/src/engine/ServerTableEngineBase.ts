@@ -780,6 +780,9 @@ export abstract class ServerTableEngineBase {
    * heartbeat success may move only the conservative monotonic deadline.
    */
   renewEngineLeaseProof(authority: EngineLeaseAuthority): boolean {
+    // An event-loop stall can delay the expiry callback. Incoming proof cannot
+    // bridge a gap in the previously proven authority, even for this generation.
+    if (!this.engineLeaseAuthorityIsCurrent()) return false;
     if (
       !this.engineLeaseScope ||
       !this.engineLeaseVerified ||

@@ -21,7 +21,7 @@ function bareServer(): any {
   server.tournamentManagerAdmissionOperations = new Map<string, Promise<void>>();
   server.tournamentManagerLeaseReleaseOperations = new Map<string, Promise<boolean>>();
   server.tournamentManagerPendingLeaseReleases = new Map<string, string>();
-  server.ownershipLeaseRenewalOperation = null;
+  server.ownershipLeaseRenewalScopes = new Map();
   server.discoveryJobs = new Set<Promise<void>>();
   server.serverLifecycleJobs = new Set<Promise<void>>();
   return server;
@@ -335,23 +335,23 @@ describe('direct table admission lifecycle', () => {
     expect(admissionsDrained).toBe(true);
   });
 
-  it('serializes primary and shutdown heartbeat callers through one ownership pass', async () => {
+  it('shares scope admission between primary and shutdown callers in the same cadence', async () => {
     const server = bareServer();
     const pass = deferred();
     server.performOwnedEngineLeaseProofRenewal = vi.fn(() => pass.promise);
 
     const primary = server.renewOwnedEngineLeaseProofs() as Promise<void>;
-    const shutdown = server.renewOwnedEngineLeaseProofs() as Promise<void>;
-    expect(shutdown).toBe(primary);
-    expect(server.performOwnedEngineLeaseProofRenewal).toHaveBeenCalledTimes(1);
-
+    await server.renewOwnedEngineLeaseProofs();
+    expect(server.performOwnedEngineLeaseProofRenewal.mock.calls).toEqual([
+      ['cash'],
+      ['tournament'],
+    ]);
+    expect(server.ownershipLeaseRenewalScopes.get('cash').pending.size).toBe(1);
+    expect(server.ownershipLeaseRenewalScopes.get('tournament').pending.size).toBe(1);
     pass.resolve();
     await primary;
-    expect(server.ownershipLeaseRenewalOperation).toBeNull();
-
-    server.performOwnedEngineLeaseProofRenewal.mockResolvedValue(undefined);
-    await server.renewOwnedEngineLeaseProofs();
-    expect(server.performOwnedEngineLeaseProofRenewal).toHaveBeenCalledTimes(2);
+    expect(server.ownershipLeaseRenewalScopes.get('cash').pending.size).toBe(0);
+    expect(server.ownershipLeaseRenewalScopes.get('tournament').pending.size).toBe(0);
   });
 
   it('renews ownership beyond the proof window while discovery remains blocked', async () => {

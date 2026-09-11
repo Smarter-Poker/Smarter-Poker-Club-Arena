@@ -596,6 +596,9 @@ export abstract class TournamentManagerBase {
    * response cannot resurrect an expired lifecycle.
    */
   renewTournamentLeaseProof(leaseGeneration: string, proofDeadlineMonotonicMs: number): boolean {
+    // An event-loop stall can delay the expiry callback. Incoming proof cannot
+    // bridge a gap in the previously proven authority, even for this generation.
+    if (!this.tournamentLeaseAuthorityIsCurrent()) return false;
     if (
       !this.tournamentLeaseGeneration ||
       this.tournamentLeaseGeneration.toLowerCase() !== leaseGeneration.toLowerCase() ||

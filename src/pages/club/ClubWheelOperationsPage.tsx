@@ -17,8 +17,8 @@
  * the owner's diamonds are the two figures at the top of this page.
  *
  * THE FREE SPIN (2026-09-09) has its own console here: the switch and the
- * daily pot post to fn_wheel_set_free_spin, the day's count and what it has
- * paid come from fn_wheel_free_state. It pays diamonds only, out of the
+ * budget and window post to fn_wheel_set_welcome_spin, the count and what the
+ * window has paid come from fn_wheel_welcome_state. It pays out of the
  * owner's own balance, so it never touches the promo wallet, the exposure or
  * the invariant printed above it.
  *
@@ -43,8 +43,8 @@ import { ErrorState, LoadingState } from '../../components/common/EmptyState';
 import { SpadeConsole, type ConsoleInk } from '../../components/console/SpadeConsole';
 import DiamondWheelService, {
   type WheelConfigPatch,
-  type WheelFreeSpinPatch,
-  type WheelFreeState,
+  type WheelWelcomePatch,
+  type WheelWelcomeState,
   type WheelMetrics,
 } from '../../services/DiamondWheelService';
 import DiamondGamesService from '../../services/DiamondGamesService';
@@ -68,6 +68,7 @@ interface Draft {
   purchased_only: boolean;
   allow_fixture_accounts: boolean;
   welcome_budget_chips: string;
+  welcome_budget_period_days: string;
 }
 
 function draftFrom(m: WheelMetrics | null): Draft {
@@ -81,6 +82,7 @@ function draftFrom(m: WheelMetrics | null): Draft {
     purchased_only: c?.purchased_only ?? true,
     allow_fixture_accounts: c?.allow_fixture_accounts ?? false,
     welcome_budget_chips: String(c?.welcome_budget_chips ?? 0),
+    welcome_budget_period_days: String(c?.welcome_budget_period_days ?? 30),
   };
 }
 
@@ -166,7 +168,7 @@ export default function ClubWheelOperationsPage() {
 
   const [clubUuid, setClubUuid] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<WheelMetrics | null>(null);
-  const [free, setFree] = useState<WheelFreeState | null>(null);
+  const [welcome, setWelcome] = useState<WheelWelcomeState | null>(null);
   const [draft, setDraft] = useState<Draft>(draftFrom(null));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -192,8 +194,8 @@ export default function ClubWheelOperationsPage() {
       setClubUuid(uuid);
       const [m, f] = await Promise.all([
         DiamondWheelService.metrics(uuid),
-        DiamondWheelService.freeState(uuid).catch((err) => {
-          reportError(err, 'ClubWheelOperationsPage.free');
+        DiamondWheelService.welcomeState(uuid).catch((err) => {
+          reportError(err, 'ClubWheelOperationsPage.welcome');
           return null;
         }),
       ]);
@@ -203,7 +205,7 @@ export default function ClubWheelOperationsPage() {
         return;
       }
       setMetrics(m);
-      setFree(f);
+      setWelcome(f);
       setDraft(draftFrom(m));
     } catch (err) {
       reportError(err, 'ClubWheelOperationsPage.load');
@@ -240,12 +242,12 @@ export default function ClubWheelOperationsPage() {
     [clubUuid, isMountedRef, toast, load]
   );
 
-  const applyFree = useCallback(
-    async (patch: WheelFreeSpinPatch, done: string) => {
+  const applyWelcome = useCallback(
+    async (patch: WheelWelcomePatch, done: string) => {
       if (!clubUuid) return;
       setSaving(true);
       try {
-        const res = await DiamondWheelService.setFreeSpin(clubUuid, patch);
+        const res = await DiamondWheelService.setWelcomeSpin(clubUuid, patch);
         if (!isMountedRef.current) return;
         if (!res.ok) {
           toast.error(res.error || 'That Change Was Refused');
@@ -254,7 +256,7 @@ export default function ClubWheelOperationsPage() {
         toast.success(done);
         await load();
       } catch (err) {
-        reportError(err, 'ClubWheelOperationsPage.applyFree');
+        reportError(err, 'ClubWheelOperationsPage.applyWelcome');
         if (isMountedRef.current) toast.error('That Change Did Not Go Through');
       } finally {
         if (isMountedRef.current) setSaving(false);
@@ -307,11 +309,17 @@ export default function ClubWheelOperationsPage() {
     [clubUuid, isMountedRef, toast, load]
   );
 
-  const saveFreePot = () => {
+  const saveWelcomeBudget = () => {
     const budget = Number(draft.welcome_budget_chips);
     if (!Number.isFinite(budget) || budget < 0)
       return toast.error('The Welcome Budget Must Be Zero Or More Chips');
-    void applyFree({ welcome_budget_chips: budget }, 'The Welcome Budget Is Saved');
+    const days = Number(draft.welcome_budget_period_days);
+    if (!Number.isInteger(days) || days < 0)
+      return toast.error('The Window Must Be A Whole Number Of Days, Or Zero');
+    void applyWelcome(
+      { welcome_budget_chips: budget, welcome_budget_period_days: days },
+      'The Welcome Budget Is Saved'
+    );
   };
 
   const saveNumbers = () => {
@@ -357,7 +365,13 @@ export default function ClubWheelOperationsPage() {
   const pool = metrics?.pool;
   const enabled = Boolean(cfg?.enabled);
   const promoDry = (metrics?.promo_chips ?? 0) <= 0;
-  const freeOn = Boolean(cfg?.free_spin_enabled);
+  const welcomeOn = Boolean(cfg?.welcome_spin_enabled);
+  /* The window the budget is spent against, said in words rather than a number
+     an operator has to interpret. Zero is a lifetime budget, not a zero-day one. */
+  const windowWord =
+    (welcome?.budget_period_days ?? 0) > 0
+      ? `Chips From The Promo Wallet, In The Last ${welcome?.budget_period_days} Days`
+      : 'Chips From The Promo Wallet, All Time';
   const hostWord = metrics?.host_kind === 'union' ? 'Union' : 'Club';
   const set = (key: keyof Draft) => (v: string) => setDraft((d) => ({ ...d, [key]: v }));
 
@@ -643,50 +657,63 @@ export default function ClubWheelOperationsPage() {
       <SpadeConsole
         eyebrow="On The Club"
         title="The Welcome Spin"
-        pill={freeOn ? 'On' : 'Off'}
-        pillInk={freeOn ? 'green' : 'red'}
+        pill={welcomeOn ? 'On' : 'Off'}
+        pillInk={welcomeOn ? 'green' : 'red'}
         plates={{
           secondary: {
-            label: freeOn ? 'Turn It Off' : 'Turn It On',
-            ink: freeOn ? 'red' : 'gold',
+            label: welcomeOn ? 'Turn It Off' : 'Turn It On',
+            ink: welcomeOn ? 'red' : 'gold',
             disabled: saving,
             onClick: () =>
-              void applyFree(
-                { free_spin_enabled: !freeOn },
-                freeOn ? 'The Welcome Spin Is Off' : 'The Welcome Spin Is On'
+              void applyWelcome(
+                { welcome_spin_enabled: !welcomeOn },
+                welcomeOn ? 'The Welcome Spin Is Off' : 'The Welcome Spin Is On'
               ),
           },
           primary: {
             label: saving ? 'Saving' : 'Save The Budget',
             ink: 'white',
-            onClick: saveFreePot,
+            onClick: saveWelcomeBudget,
             disabled: saving,
           },
         }}
       >
         <p className="sc-copy">
-          Every New Member May Take One Spin On The Real Wheel, Once, Free. You Take No Diamonds In
-          For It, And Whatever It Pays Comes Out Of The Promo Wallet. The Budget Is The Most The
-          Welcome Spins May Ever Cost You; When It Is Spent, The Offer Closes Until You Raise It.
+          Every New Member May Take One Spin On The Real Wheel, Once, On The Club. You Take No
+          Diamonds In For It, And Whatever It Pays Comes Out Of The Promo Wallet. The Budget Is The
+          Most The Welcome Spins May Cost You Inside The Window, And The Window Slides: Spend Older
+          Than It Stops Counting, So The Budget Comes Back On Its Own. A Welcome Spin Is The Whole
+          Wheel Or It Is Not Offered, So When What Is Left Can No Longer Cover The Top Prize The
+          Offer Closes Rather Than Handing A New Member A Wheel With Its Best Tiers Locked.
           {enabled ? '' : ' The Wheel Is Closed, So The Welcome Spin Is Closed With It.'}
         </p>
         <div className={`${styles.rows} ${styles.rowsCompact}`}>
           <Row
             label="Welcome Spins Given"
-            value={compactChips(free?.welcome_spins ?? 0)}
-            meta={`Each One Is A ${compactChips(free?.spin_price_diamonds ?? 0)} Diamond Spin You Did Not Charge For`}
+            value={compactChips(welcome?.welcome_spins ?? 0)}
+            meta={`Each One Is A ${compactChips(welcome?.spin_price_diamonds ?? 0)} Diamond Spin You Did Not Charge For`}
           />
           <Row
             label="Budget Spent"
-            value={`${compactChips(free?.budget_paid_chips ?? 0)} Of ${compactChips(free?.budget_chips ?? 0)}`}
-            ink={free?.reason === 'pot_empty' || free?.reason === 'unfunded' ? 'red' : 'blue'}
+            value={`${compactChips(welcome?.budget_paid_chips ?? 0)} Of ${compactChips(welcome?.budget_chips ?? 0)}`}
+            ink={welcome?.reason === 'pot_empty' || welcome?.reason === 'unfunded' ? 'red' : 'blue'}
             meta={
-              free?.reason === 'unfunded'
+              welcome?.reason === 'unfunded'
                 ? 'Set A Budget And The Welcome Spin Opens'
-                : free?.reason === 'pot_empty'
-                  ? 'The Budget Is Spent, So The Offer Is Closed'
-                  : 'Chips From The Promo Wallet'
+                : welcome?.reason === 'pot_empty'
+                  ? 'What Is Left Cannot Cover The Top Prize, So The Offer Is Closed'
+                  : windowWord
             }
+          />
+          <Row
+            label="Top Prize"
+            value={compactChips(welcome?.top_prize_chips ?? 0)}
+            meta="What The Window Must Be Able To Cover Before A Spin Is Offered"
+          />
+          <Row
+            label="Given Away, All Time"
+            value={compactChips(welcome?.lifetime_chips_paid ?? 0)}
+            meta="Across Every Window, Since The Welcome Spin Opened"
           />
         </div>
         <div className={styles.fields}>
@@ -696,6 +723,12 @@ export default function ClubWheelOperationsPage() {
             value={draft.welcome_budget_chips}
             onChange={set('welcome_budget_chips')}
             hint="Zero Closes The Welcome Spin Without Turning It Off."
+          />
+          <Field
+            label="Budget Window (Days)"
+            value={draft.welcome_budget_period_days}
+            onChange={set('welcome_budget_period_days')}
+            hint="The Budget Is Spent Per Window And Comes Back As Spend Ages Out. Zero Means It Never Turns."
           />
         </div>
       </SpadeConsole>

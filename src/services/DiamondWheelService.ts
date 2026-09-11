@@ -19,9 +19,9 @@
  *
  * THE FREE SPIN (2026-09-09, supabase/migrations/20260909234101). One spin a
  * day on the house, per player per host, paying diamonds only and never
- * chips: a free spin takes nothing in, and the games never pay out more than
- * they take in. It has its own table (fn_wheel_free_state hands it back), its
- * own door (fn_wheel_free_spin) and the SAME commit
+ * chips: a welcome spin takes nothing in, and the games never pay out more than
+ * they take in. It has its own state (fn_wheel_welcome_state hands it back), its
+ * own door (fn_wheel_welcome_spin) and the SAME commit
  * and derivation as a paid spin, so the verifier below checks it unchanged.
  */
 
@@ -122,7 +122,13 @@ export interface WheelCommit {
  * had theirs, which is once and for all now, not once a day; 'unfunded' means
  * the host has not set a welcome budget; 'pot_empty' means it is spent.
  */
-export type WheelFreeReason = 'closed' | 'unfunded' | 'used' | 'pot_empty' | 'not_member' | 'owner';
+export type WheelWelcomeReason =
+  | 'closed'
+  | 'unfunded'
+  | 'used'
+  | 'pot_empty'
+  | 'not_member'
+  | 'owner';
 
 /**
  * THE WELCOME SPIN (Dan 2026-09-10): "free spin should be once for a new user
@@ -131,32 +137,46 @@ export type WheelFreeReason = 'closed' | 'unfunded' | 'used' | 'pot_empty' | 'no
  * real wheel at the real price, with the payout coming out of the promo wallet
  * against a budget the host declares.
  */
-export interface WheelFreeState {
+export interface WheelWelcomeState {
   ok: boolean;
   error?: string;
   /** The host offers a welcome spin at all (the wheel and the switch both on). */
   enabled: boolean;
   /** This member may take theirs right now. */
   available: boolean;
-  reason: WheelFreeReason | null;
+  reason: WheelWelcomeReason | null;
   /** This member has already had theirs. Once, ever, not once a day. */
   used: boolean;
   /** Always true: it is stated so the page never has to assume it. */
   once_only: boolean;
   /** What the spin would have cost, which is what the host is giving up. */
   spin_price_diamonds: number;
-  /** The host's welcome budget in chips, what it has spent, and what is left. */
+  /**
+   * The host's welcome budget in chips, and what the CURRENT WINDOW has spent
+   * and has left. budget_period_days is that window (0 meaning for ever), and
+   * the window slides: nothing resets it, it is summed from the spins inside it.
+   */
   budget_chips: number;
+  budget_period_days: number;
   budget_paid_chips: number;
   budget_left_chips: number;
+  /**
+   * The biggest prize this table can pay. A welcome spin is the whole wheel or
+   * it is not offered, so this is what the window has to be able to cover.
+   */
+  top_prize_chips: number;
+  /** Every welcome chip this host has ever given away, across all windows. */
+  lifetime_chips_paid: number;
   /** How many welcome spins this host has given away. */
   welcome_spins: number;
   segments: WheelSegment[];
 }
 
-export interface WheelFreeSpinPatch {
-  free_spin_enabled?: boolean;
+export interface WheelWelcomePatch {
+  welcome_spin_enabled?: boolean;
   welcome_budget_chips?: number;
+  /** The budget's window in days. 0 means it never turns. */
+  welcome_budget_period_days?: number;
 }
 
 export interface WheelFairness {
@@ -177,7 +197,7 @@ export interface WheelSpinResult {
   detail?: string;
   replayed?: boolean;
   /** True for a spin on the house: paid in diamonds, priced at nothing. */
-  free: boolean;
+  welcome: boolean;
   spin_id: string;
   club_id: string;
   host_id: string;
@@ -224,8 +244,9 @@ export interface WheelMetrics {
     allow_fixture_accounts: boolean;
     max_spins_per_player_per_day: number;
     min_seconds_between_spins: number;
-    free_spin_enabled: boolean;
+    welcome_spin_enabled: boolean;
     welcome_budget_chips: number;
+    welcome_budget_period_days: number;
     updated_at: string;
   };
   pool?: {
@@ -392,7 +413,7 @@ function normaliseSpin(raw: Record<string, unknown>): WheelSpinResult {
     error: raw.error ? String(raw.error) : undefined,
     detail: raw.detail ? String(raw.detail) : undefined,
     replayed: Boolean(raw.replayed),
-    free: Boolean(raw.free),
+    welcome: Boolean(raw.welcome),
     spin_id: String(raw.spin_id ?? ''),
     club_id: String(raw.club_id ?? ''),
     host_id: String(raw.host_id ?? ''),
@@ -435,9 +456,9 @@ function normaliseSpin(raw: Record<string, unknown>): WheelSpinResult {
   };
 }
 
-/** Paid and free spins in one list, newest first, for the player's own history. */
+/** Paid and welcome spins in one list, newest first, for the player's own history. */
 
-function normaliseFreeState(raw: Record<string, unknown>): WheelFreeState {
+function normaliseWelcomeState(raw: Record<string, unknown>): WheelWelcomeState {
   const reason = raw.reason ? String(raw.reason) : null;
   return {
     ok: Boolean(raw.ok),
@@ -457,8 +478,11 @@ function normaliseFreeState(raw: Record<string, unknown>): WheelFreeState {
     once_only: raw.once_only === undefined ? true : Boolean(raw.once_only),
     spin_price_diamonds: num(raw.spin_price_diamonds),
     budget_chips: num(raw.budget_chips),
+    budget_period_days: num(raw.budget_period_days),
     budget_paid_chips: num(raw.budget_paid_chips),
     budget_left_chips: num(raw.budget_left_chips),
+    top_prize_chips: num(raw.top_prize_chips),
+    lifetime_chips_paid: num(raw.lifetime_chips_paid),
     welcome_spins: num(raw.welcome_spins),
     segments: Array.isArray(raw.segments)
       ? (raw.segments as Record<string, unknown>[]).map(normaliseSegment)
@@ -511,20 +535,24 @@ const DiamondWheelService = {
     return Array.isArray(data) ? (data as Record<string, unknown>[]).map(normaliseSpin) : [];
   },
 
-  /** Today's free spin: whether this player has one, and the table it pays from. */
-  async freeState(clubId: string): Promise<WheelFreeState> {
-    const { data, error } = await supabase.rpc('fn_wheel_free_state', { p_club_id: clubId });
+  /** The welcome spin: whether this member still has theirs, and the table it pays from. */
+  async welcomeState(clubId: string): Promise<WheelWelcomeState> {
+    const { data, error } = await supabase.rpc('fn_wheel_welcome_state', { p_club_id: clubId });
     if (error) throw error;
-    return normaliseFreeState((data ?? {}) as Record<string, unknown>);
+    return normaliseWelcomeState((data ?? {}) as Record<string, unknown>);
   },
 
   /**
-   * The free spin. The same commit as a paid spin, the same derivation over
-   * the free table's weights, idempotent on the commit, and one a day: the
+   * The welcome spin. The same commit as a paid spin, the same derivation over
+   * the SAME table's weights, idempotent on the commit, and once per member: the
    * server refuses the second with its reason.
    */
-  async freeSpin(clubId: string, commitId: string, clientSeed: string): Promise<WheelSpinResult> {
-    const { data, error } = await supabase.rpc('fn_wheel_free_spin', {
+  async welcomeSpin(
+    clubId: string,
+    commitId: string,
+    clientSeed: string
+  ): Promise<WheelSpinResult> {
+    const { data, error } = await supabase.rpc('fn_wheel_welcome_spin', {
       p_club_id: clubId,
       p_commit_id: commitId,
       p_client_seed: clientSeed,
@@ -533,12 +561,12 @@ const DiamondWheelService = {
     return normaliseSpin((data ?? {}) as Record<string, unknown>);
   },
 
-  /** The operator's switch and daily pot for the free spin. The RPC decides who may. */
-  async setFreeSpin(
+  /** The operator's switch, budget and window for the welcome spin. The RPC decides who may. */
+  async setWelcomeSpin(
     clubId: string,
-    patch: WheelFreeSpinPatch
+    patch: WheelWelcomePatch
   ): Promise<{ ok: boolean; error?: string }> {
-    const { data, error } = await supabase.rpc('fn_wheel_set_free_spin', {
+    const { data, error } = await supabase.rpc('fn_wheel_set_welcome_spin', {
       p_club_id: clubId,
       p_patch: patch,
     });
@@ -584,8 +612,9 @@ const DiamondWheelService = {
             allow_fixture_accounts: Boolean(cfg.allow_fixture_accounts),
             max_spins_per_player_per_day: num(cfg.max_spins_per_player_per_day),
             min_seconds_between_spins: num(cfg.min_seconds_between_spins),
-            free_spin_enabled: Boolean(cfg.free_spin_enabled),
+            welcome_spin_enabled: Boolean(cfg.welcome_spin_enabled),
             welcome_budget_chips: num(cfg.welcome_budget_chips),
+            welcome_budget_period_days: num(cfg.welcome_budget_period_days),
             updated_at: String(cfg.updated_at ?? ''),
           }
         : undefined,

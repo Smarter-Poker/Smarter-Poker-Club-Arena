@@ -36,11 +36,6 @@
     "fn_diamond_game_metrics",
     "fn_wheel_pool_seed",
     "fn_diamond_game_floor",
-    "fn_wheel_free_history",
-    "fn_wheel_free_spin_result",
-    "fn_wheel_free_state",
-    "fn_wheel_free_spin",
-    "fn_wheel_set_free_spin",
     "fn_diamond_game_owner",
     "fn_diamond_game_promo",
     "fn_diamond_game_pay_diamonds",
@@ -50,17 +45,29 @@
     "fn_diamond_game_cover_lock",
     "fn_diamond_game_pay_chips",
     "fn_diamond_game_fund_promo",
-    "fn_wheel_spin_core"
+    "fn_wheel_spin_core",
+    "fn_wheel_welcome_state",
+    "fn_wheel_welcome_spin",
+    "fn_wheel_set_welcome_spin",
+    "fn_wheel_welcome_spent"
   ],
   "columns": {
     "wheel_configs": [
       "diamond_seed",
-      "free_spin_daily_budget_diamonds",
-      "free_spin_enabled",
-      "welcome_budget_chips"
+      "welcome_budget_chips",
+      "welcome_budget_period_days",
+      "welcome_spin_enabled"
     ],
     "wheel_pools": ["diamond_seed", "welcome_chips_paid", "welcome_spins"],
     "wheel_spins": ["is_welcome"]
   },
-  "removedFunctions": ["fn_diamond_game_mint_leg", "fn_diamond_game_promo_lock"]
+  "removedFunctions": [
+    "fn_diamond_game_mint_leg",
+    "fn_diamond_game_promo_lock",
+    "fn_wheel_free_history",
+    "fn_wheel_free_spin",
+    "fn_wheel_free_spin_result",
+    "fn_wheel_free_state",
+    "fn_wheel_set_free_spin"
+  ]
 }

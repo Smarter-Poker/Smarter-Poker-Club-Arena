@@ -24,7 +24,7 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import { ErrorState } from '../components/common/EmptyState';
 import { SpadeConsole, type ConsoleInk } from '../components/console/SpadeConsole';
 import DiamondWheelService, {
-  type WheelFreeState,
+  type WheelWelcomeState,
   type WheelState,
 } from '../services/DiamondWheelService';
 import DiamondGamesService, { type GameState } from '../services/DiamondGamesService';
@@ -82,7 +82,7 @@ export default function DiamondGamesPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [wheel, setWheel] = useState<WheelState | null>(null);
-  const [wheelFree, setWheelFree] = useState<WheelFreeState | null>(null);
+  const [wheelWelcome, setWheelWelcome] = useState<WheelWelcomeState | null>(null);
   const [plinko, setPlinko] = useState<GameState | null>(null);
   const [crash, setCrash] = useState<GameState | null>(null);
   const [explained, setExplained] = useState<GameKey | null>(null);
@@ -104,8 +104,8 @@ export default function DiamondGamesPage() {
             reportError(err, 'DiamondGamesPage.wheel');
             return null;
           }),
-          DiamondWheelService.freeState(uuid).catch((err) => {
-            reportError(err, 'DiamondGamesPage.wheelFree');
+          DiamondWheelService.welcomeState(uuid).catch((err) => {
+            reportError(err, 'DiamondGamesPage.wheelWelcome');
             return null;
           }),
           DiamondGamesService.getState(uuid, 'plinko').catch((err) => {
@@ -119,7 +119,7 @@ export default function DiamondGamesPage() {
         ]);
         if (cancelled || !live()) return;
         setWheel(w);
-        setWheelFree(wf);
+        setWheelWelcome(wf);
         setPlinko(p);
         setCrash(c);
         if (!w && !p && !c) setLoadError('The Diamond Games Could Not Be Loaded');
@@ -159,18 +159,18 @@ export default function DiamondGamesPage() {
     ? Math.max(...plinko.tables.map((t) => t.max_multiplier_cents))
     : 100000;
   const crashTop = crash?.config?.max_multiplier_cents ?? 100000;
-  const freeReady = Boolean(wheel?.available && !wheel?.frozen && wheelFree?.available);
-  const wheelPill = freeReady
-    ? { pill: 'Free Spin', ink: 'gold' as ConsoleInk }
+  const welcomeReady = Boolean(wheel?.available && !wheel?.frozen && wheelWelcome?.available);
+  const wheelPill = welcomeReady
+    ? { pill: 'Welcome Spin', ink: 'gold' as ConsoleInk }
     : pillFor(wheel?.available, wheel?.reason, wheel?.frozen);
-  /* The free spin's line on the glass: ready, spent, or gone for the day. */
-  const freeRow: { value: string; ink: ConsoleInk } | null =
-    wheel?.available && wheelFree?.enabled
-      ? freeReady
+  /* The welcome spin's line on the glass: ready, spent, or gone for this window. */
+  const welcomeRow: { value: string; ink: ConsoleInk } | null =
+    wheel?.available && wheelWelcome?.enabled
+      ? welcomeReady
         ? { value: 'Ready', ink: 'gold' }
-        : wheelFree.reason === 'used'
+        : wheelWelcome.reason === 'used'
           ? { value: 'Tomorrow', ink: 'muted' }
-          : wheelFree.reason === 'pot_empty'
+          : wheelWelcome.reason === 'pot_empty'
             ? { value: 'Gone For Today', ink: 'muted' }
             : null
       : null;
@@ -228,19 +228,19 @@ export default function DiamondGamesPage() {
         plates={{
           secondary: { label: 'How It Pays', onClick: () => explain('wheel') },
           primary: {
-            label: freeReady ? 'Free Spin' : 'Spin',
-            ink: freeReady ? 'gold' : 'white',
+            label: welcomeReady ? 'Welcome Spin' : 'Spin',
+            ink: welcomeReady ? 'gold' : 'white',
             onClick: () => navigate(`/clubs/${routeClubId}/wheel`),
             disabled: !wheel?.available,
           },
         }}
       >
         <div className={styles.rows}>
-          {freeRow ? (
+          {welcomeRow ? (
             <Row
-              label="Free Spin"
-              value={freeRow.value}
-              ink={freeRow.ink}
+              label="Welcome Spin"
+              value={welcomeRow.value}
+              ink={welcomeRow.ink}
               meta="One A Day, On The House"
             />
           ) : null}
@@ -261,8 +261,8 @@ export default function DiamondGamesPage() {
           <p className="sc-copy">
             Eleven Prizes In Chips And Diamonds. The Wheel Lands Where The Server’s Sealed Seed
             Says, You Can Check Every Spin, And The Prizes Are Trimmed To What The Pool Can Pay.
-            {wheelFree?.enabled
-              ? ' Every Member Also Gets One Free Spin A Day, Paid In Diamonds.'
+            {wheelWelcome?.enabled
+              ? ' Every New Member Also Gets One Welcome Spin, On The Club.'
               : ''}
           </p>
         ) : null}

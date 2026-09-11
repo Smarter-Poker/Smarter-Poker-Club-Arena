@@ -65,17 +65,57 @@ function body(sql: string, fn: string): string {
   return sql.slice(start, end);
 }
 
+/**
+ * THE LAW READS WHAT IS DEPLOYED, NOT A MIGRATION IT WAS WRITTEN AGAINST
+ * (2026-09-11). This pinned `latest('the_welcome_spin_keeps_its_own_books')`
+ * by name, so when the next migration rewrote fn_wheel_spin_core the law went
+ * on reading the OLD file and went on passing green while production
+ * contradicted three of its claims. That is the SECOND time a law here has
+ * gone stale that way, and a law nobody can trust is worse than no law.
+ *
+ * So the migration is resolved by what it DEFINES: the last one to declare the
+ * function is the one in force, which is exactly how Postgres sees it. A
+ * rewrite of any of these functions now has to bring the law with it.
+ */
+const inForceCache = new Map<string, { name: string; sql: string }>();
+function inForce(fn: string): { name: string; sql: string } {
+  const hit = inForceCache.get(fn);
+  if (hit) return hit;
+  const hits = files
+    .filter((f) => f.endsWith('.sql'))
+    .filter((f) => {
+      const sql = readFileSync(resolve(DIR, f), 'utf8');
+      return (
+        sql.includes(`CREATE OR REPLACE FUNCTION public.${fn}(`) ||
+        sql.includes(`CREATE FUNCTION public.${fn}(`)
+      );
+    })
+    .sort();
+  expect(hits.length, `no migration defines ${fn}`).toBeGreaterThan(0);
+  const name = hits[hits.length - 1];
+  const found = { name, sql: readFileSync(resolve(DIR, name), 'utf8') };
+  inForceCache.set(fn, found);
+  return found;
+}
+
 const bank = latest('the_bank_backs_the_promo_wallet');
-const doors = latest('the_wheel_doors_ask_who_is_calling');
 const books = latest('the_welcome_spin_keeps_its_own_books');
 
-/** The audit's corrected core is the one in force. */
-const CORE = body(books.sql, 'fn_wheel_spin_core');
+/** Whichever migration currently declares each of these is the one that governs. */
+const coreFile = inForce('fn_wheel_spin_core');
+const resultFile = inForce('fn_wheel_spin_result');
+const metricsFile = inForce('fn_wheel_metrics');
+const paidDoor = inForce('fn_wheel_spin');
+const welcomeDoor = inForce('fn_wheel_welcome_spin');
+const CORE = body(coreFile.sql, 'fn_wheel_spin_core');
 
 describe('a welcome spin says that it is one', () => {
   it('the result carries the flag the page reads, and a paid spin does not', () => {
-    const result = body(books.sql, 'fn_wheel_spin_result');
-    expect(result).toContain("'free', COALESCE(s.is_welcome, false)");
+    const result = body(resultFile.sql, 'fn_wheel_spin_result');
+    expect(result).toContain("'welcome', COALESCE(s.is_welcome, false)");
+    // `free` was the retired daily spin's word. A payload that still said it
+    // would be describing a feature that no longer exists.
+    expect(result).not.toContain("'free',");
     // It is the same function the history is built from, so a past welcome
     // spin is labelled wherever it is shown.
     expect(books.sql).toContain('a spin still does not say whether it was the welcome one');
@@ -90,7 +130,12 @@ describe('the two sets of books never touch', () => {
     expect(CORE).toContain(
       'welcome_chips_paid = welcome_chips_paid + CASE WHEN p_welcome THEN v_value_chips ELSE 0 END,'
     );
-    expect(CORE).toContain('IF pool.welcome_chips_paid > cfg.welcome_budget_chips THEN');
+    // The bound is the WINDOW, not the lifetime total (2026-09-11), and the
+    // spin's own row is not written when this fires, so the assertion is made
+    // on the figure the gate used plus what this spin just paid.
+    expect(CORE).toContain(
+      'IF p_welcome AND v_welcome_spent + v_value_chips > cfg.welcome_budget_chips THEN'
+    );
   });
 
   it('it takes nothing in, so the intake does not grow', () => {
@@ -109,7 +154,7 @@ describe('the two sets of books never touch', () => {
   });
 
   it('it is not a data point about the paid wheel', () => {
-    const metrics = body(books.sql, 'fn_wheel_metrics');
+    const metrics = body(metricsFile.sql, 'fn_wheel_metrics');
     expect(metrics).toContain('NOT COALESCE(s.is_welcome, false)');
     expect(books.sql).toContain('the realised-return windows still count welcome spins');
   });
@@ -138,24 +183,73 @@ describe('once per member per host, ever', () => {
   });
 });
 
-describe('the free flag is not a thing a browser can ask for', () => {
+describe('a welcome spin is the whole wheel or it is not offered', () => {
+  it('the budget is asked once, about the biggest prize, before anything is offered', () => {
+    expect(CORE).toContain(
+      'v_welcome_spent := public.fn_wheel_welcome_spent(v_host, cfg.welcome_budget_period_days);'
+    );
+    expect(CORE).toContain('IF v_welcome_spent + v_welcome_top > cfg.welcome_budget_chips THEN');
+    expect(CORE).toContain('The Welcome Spins Here Are Gone For Now');
+  });
+
+  it('no tier is ever locked for costing too much against the budget', () => {
+    // This is the defect the 2026-09-11 audit found: the budget was checked
+    // tier by tier, so the later a member joined the worse their wheel got.
+    expect(CORE).not.toContain("'reason', 'welcome_budget'");
+    // The budget still appears, as the ONE gate up top. What must never come
+    // back is a per-segment test of it inside the eligibility loop.
+    const loop = CORE.slice(
+      CORE.indexOf('FOR seg IN SELECT'),
+      CORE.indexOf('v_eligible := v_eligible')
+    );
+    expect(loop).not.toContain('welcome_budget');
+    expect(loop).not.toContain('welcome_chips_paid');
+    // The exposure gate is the PAID wheel's alone, which is what frees the
+    // welcome spin from it without giving it the paid game's intake to spend.
+    expect(CORE).toContain(
+      'IF NOT p_welcome AND pool.chips_paid + seg.amount * v_mult > v_intake_chips'
+    );
+  });
+
+  it('the page asks the same question the door asks, from the same helper', () => {
+    const state = body(inForce('fn_wheel_welcome_state').sql, 'fn_wheel_welcome_state');
+    expect(state).toContain(
+      'public.fn_wheel_welcome_spent(v_host, cfg.welcome_budget_period_days)'
+    );
+    expect(state).toContain("v_reason := 'pot_empty'");
+    expect(state).toContain("'top_prize_chips', v_top");
+  });
+
+  it('the window is derived from the spins, never a counter something has to reset', () => {
+    const spent = body(inForce('fn_wheel_welcome_spent').sql, 'fn_wheel_welcome_spent');
+    expect(spent).toContain('FROM public.wheel_spins s');
+    expect(spent).toContain('AND s.is_welcome');
+    expect(spent).toContain('s.created_at >= now() - make_interval(days => p_days)');
+    // 0 means for ever. A reset job would be a cron presented as the
+    // resolution, which CLAUDE.md 10.12 forbids outright.
+    expect(spent).toContain('COALESCE(p_days, 0) <= 0');
+  });
+});
+
+describe('the welcome flag is not a thing a browser can ask for', () => {
   it('the core takes it, only the two doors set it, and both ask who is calling', () => {
     expect(bank.sql).toContain(
       'REVOKE ALL ON FUNCTION public.fn_wheel_spin_core(uuid, uuid, text, boolean) FROM PUBLIC, anon, authenticated;'
     );
-    expect(doors.sql).toContain(
+    expect(body(paidDoor.sql, 'fn_wheel_spin')).toContain(
       'RETURN public.fn_wheel_spin_core(p_club_id, p_commit_id, p_client_seed, false);'
     );
-    expect(doors.sql).toContain(
+    expect(body(welcomeDoor.sql, 'fn_wheel_welcome_spin')).toContain(
       'RETURN public.fn_wheel_spin_core(p_club_id, p_commit_id, p_client_seed, true);'
     );
-    expect(body(doors.sql, 'fn_wheel_spin')).toContain('IF auth.uid() IS NULL THEN');
-    expect(body(doors.sql, 'fn_wheel_free_spin')).toContain('IF auth.uid() IS NULL THEN');
+    expect(body(paidDoor.sql, 'fn_wheel_spin')).toContain('IF auth.uid() IS NULL THEN');
+    expect(body(welcomeDoor.sql, 'fn_wheel_welcome_spin')).toContain('IF auth.uid() IS NULL THEN');
   });
 
   it('never mentions is_horse: a horse is a player (CLAUDE.md 10.5)', () => {
     expect(bank.sql).not.toMatch(/is_horse/);
     expect(books.sql).not.toMatch(/is_horse/);
-    expect(doors.sql).not.toMatch(/is_horse/);
+    expect(coreFile.sql).not.toMatch(/is_horse/);
+    expect(welcomeDoor.sql).not.toMatch(/is_horse/);
   });
 });

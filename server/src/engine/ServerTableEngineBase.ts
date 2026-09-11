@@ -101,6 +101,7 @@ import {
 import { headsUpButtonSeat } from './headsUpButton.js';
 import type { StateMachine } from './StateMachine.js';
 import type { TableStatus } from '../types.js';
+import { assertDiamondCashTable } from '../domain/DiamondCashBoundary.js';
 
 export type EngineLeaseAuthority =
   | {
@@ -5665,6 +5666,31 @@ export abstract class ServerTableEngineBase {
         )
         .eq('id', this.tableId)
         .maybeSingle();
+      /* A DIAMOND TABLE'S RULES DO NOT CHANGE UNDER IT (2026-09-11).
+         Everything below re-reads the row roughly once a minute and applies
+         it, which is right for a chip club: the rules follow the row. For an
+         arena table it is a hole, because admission is the ONLY place the
+         Diamond boundary is checked. A column flipped after admission would be
+         honoured here, and while HandController still parks the table for
+         bombs, run-it, insurance, rake and the jackpot, a straddle flag is
+         validated for nothing but whole amounts and would simply start being
+         collected.
+
+         So an arena table re-validates against the same boundary that admitted
+         it, and a row that would no longer be admitted is not applied. The
+         table keeps dealing under the rules its players sat down to, and the
+         refusal is recorded rather than silently swallowed. */
+      if (tableRow && this.tableInfo && (this.tableInfo as any).arena?.asset === 'diamonds') {
+        try {
+          assertDiamondCashTable(tableRow as unknown as Record<string, unknown>);
+        } catch (error) {
+          console.error(
+            `[refreshRakeConfig] Diamond table ${this.tableId} rules changed to something the ` +
+              `arena boundary refuses; keeping the admitted rules. ${String(error)}`
+          );
+          return;
+        }
+      }
       if (tableRow && this.tableInfo) {
         this.tableInfo.rake_percent = tableRow.rake_percent ?? undefined;
         this.tableInfo.rake_cap_bb = tableRow.rake_cap_bb ?? undefined;

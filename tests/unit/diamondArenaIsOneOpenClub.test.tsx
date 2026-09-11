@@ -161,6 +161,19 @@ describe('One open club: the arena asks no chip-only feed a question it cannot a
     expect(subscription).toContain('enabled: !!resolvedClubId && !isAutomaticArena');
   });
 
+  /* The third jackpot read hid inside a Promise.all rather than beside the
+     two named feeds, which is how it survived the first pass. */
+  it('does not read the jackpot pool row in the arena', () => {
+    const query = sliceStatement(page, "supabase.from('bbj_pools')");
+    expect(query).toBeTruthy();
+    const guard = page.indexOf(
+      'if (automaticMembershipRef.current) return { data: null, error: null };'
+    );
+    const read = page.indexOf("supabase.from('bbj_pools')");
+    expect(guard, 'the jackpot pool read lost its arena guard').toBeGreaterThan(-1);
+    expect(read).toBeGreaterThan(guard);
+  });
+
   it('does not start the jackpot feeds in the arena', () => {
     const guard = page.indexOf('if (!automaticMembershipRef.current) {\n        stopBbjPool');
     const pool = page.indexOf('watchBbjPool(resolvedId');

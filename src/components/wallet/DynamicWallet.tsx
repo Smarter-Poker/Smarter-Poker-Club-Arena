@@ -747,13 +747,14 @@ export default function DynamicWallet({
      its device cache on whatever it is handed, so a surface passing the slug
      and one passing the UUID kept two divergent cached answers for one club.
      Which OWNER the id resolves to is still the API's decision, untouched. */
-  const spins = useSpinsWallet(resolvedId, variant !== 'union' && !isClubInUnion);
   /* Every club row this component can draw is a chip ledger. Inside an arena
      the server says holds no chip wallet, none of them exist to be shown, and
      a "Player Wallet 0.00" beside the Diamonds row is a chip balance on a
      Diamond screen. Defaults to true everywhere else, so no chip surface
-     changes. */
+     changes. Declared above the reads below, because it now decides whether
+     they are ISSUED, not only whether their answer is rendered. */
   const hasChipWallet = useArenaHasChipWallet();
+  const spins = useSpinsWallet(resolvedId, variant !== 'union' && !isClubInUnion && hasChipWallet);
   const animSpins = useAnimatedCounter(spins.balance);
   const animUnionBank = useAnimatedCounter(data.unionBank);
   const animUnionRake = useAnimatedCounter(data.unionRake);
@@ -783,24 +784,38 @@ export default function DynamicWallet({
       // dedupedFetch: two wallet surfaces mounting in the same window (e.g.
       // the Cashier's panel plus a modal's) share ONE set of queries instead
       // of racing duplicates.
+      /* WITHHOLDING THE ROW IS NOT WITHHOLDING THE QUERY (2026-09-11).
+         `hasChipWallet` decides which rows render, and that was read as
+         enough. It is not: the three chip reads below still went out on mount
+         and on all eight wallet bus events, asking an arena with no
+         `club_members` row, no agent row and no club money panel for figures
+         that cannot exist. An empty answer resolves to the same zeros the row
+         filter already hides, so the only thing they bought was load. */
+      const chipEmpty = { data: null, error: null } as never;
       const [profileRes, memberRes, agentRes, panelRes] = await dedupedFetch(
-        `dw_fetch_${userId}_${resolvedId}`,
+        `dw_fetch_${userId}_${resolvedId}_${hasChipWallet ? 'chips' : 'arena'}`,
         () =>
           Promise.all([
             supabase.from('profiles').select('diamonds').eq('id', userId).maybeSingle(),
-            supabase
-              .from('club_members')
-              .select('chip_balance')
-              .eq('club_id', resolvedId)
-              .eq('user_id', userId)
-              .maybeSingle(),
-            supabase
-              .from('agents')
-              .select('agent_wallet_balance, promo_wallet_balance')
-              .eq('club_id', resolvedId)
-              .eq('user_id', userId)
-              .maybeSingle(),
-            supabase.rpc('fn_club_money_panel', { p_club_id: resolvedId }),
+            hasChipWallet
+              ? supabase
+                  .from('club_members')
+                  .select('chip_balance')
+                  .eq('club_id', resolvedId)
+                  .eq('user_id', userId)
+                  .maybeSingle()
+              : Promise.resolve(chipEmpty),
+            hasChipWallet
+              ? supabase
+                  .from('agents')
+                  .select('agent_wallet_balance, promo_wallet_balance')
+                  .eq('club_id', resolvedId)
+                  .eq('user_id', userId)
+                  .maybeSingle()
+              : Promise.resolve(chipEmpty),
+            hasChipWallet
+              ? supabase.rpc('fn_club_money_panel', { p_club_id: resolvedId })
+              : Promise.resolve(chipEmpty),
           ])
       );
 
@@ -929,20 +944,25 @@ export default function DynamicWallet({
         setLoading(false);
       }
     }
-  }, [userId, resolvedId, variant, cacheKey]);
+  }, [userId, resolvedId, variant, cacheKey, hasChipWallet]);
 
   /* THE JACKPOT FIGURE, FROM THE ONE SHARED SOURCE (BBJ phase 3.2).
      Replaces this widget's own bbj_pools subscription; see the note where that
      binding used to be. One poll per club serves every jackpot surface. */
+  /* Not in an arena that holds no chip wallet. The jackpot is a chip pool
+     banked by chip rake and a Diamond hand pays neither, so there is nothing
+     to poll; this is the same read that was removed from the lobby on
+     2026-09-11 for timing out and 500ing there, and leaving it here would have
+     re-opened it from the wallet on every arena load. */
   useEffect(() => {
-    if (!resolvedId) return;
+    if (!resolvedId || !hasChipWallet) return;
     return watchBbjPool(resolvedId, (snap) => {
       if (!isMounted.current) return;
       setData((prev) =>
         prev.bbjPool === snap.mainBalance ? prev : { ...prev, bbjPool: snap.mainBalance }
       );
     });
-  }, [resolvedId]);
+  }, [resolvedId, hasChipWallet]);
 
   useEffect(() => {
     if (!resolvedId) return;

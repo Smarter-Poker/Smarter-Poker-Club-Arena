@@ -27,6 +27,23 @@
  *   7. the engine ordered a bust by the EARLIEST pending generation while the
  *      door records the LATEST, and read the generations with no row-cap guard.
  *
+ * Found by two verifications of the second pass (2026-09-11):
+ *
+ *   8. the hand-history prune deletes a horse-only hand's commit row after
+ *      seven days, and the finish then fell back to eliminated_at - the
+ *      RECORDING time for every bust recorded before this change; it now reads
+ *      the generation's capture time, which the prune never deletes;
+ *   9. a door refusal that cannot clear by itself left the player 'playing' at
+ *      zero chips, so the event could never finish, and nothing said so; both
+ *      doors now write one critical financial alert per player for it;
+ *  10. the bounty door resolved an older generation no obligation names, whose
+ *      head was never collected, handing that head to the player's next
+ *      knocker; it now requires the head collected.
+ *
+ * Satellites and final-table deals keep their own authorities and still rank
+ * by recording order; the header says so rather than claiming them. The
+ * reviewed inverse is docs/changelog/2026-09-11-a-bust-is-ranked-by-when-it-happened.rollback.sql.
+ *
  * These pins are on the migration text and the engine source. The behaviour is
  * proved in PostgreSQL 17 by scripts/dev/probe-a-bust-is-ranked-by-when-it-happened-pg17.sh
  * (every FIXED scenario must fail on a byte-exact capture of the live bodies and
@@ -91,6 +108,12 @@ const LIVE_PREPARE = fnIn(INSTALLED, 'fn_prepare_tournament_place_obligations');
 const LIVE_SETTLE = fnIn(INSTALLED, 'fn_settle_tournament_places');
 const LIVE_BOUNTY_LEGACY = fnIn(INSTALLED, 'fn_claim_bounty_legacy_candidate_20260907');
 const LIVE_ALARM = fnIn(INSTALLED, 'fn_ca_tournament_finished_but_not_completed');
+const ROLLBACK_PATH = join(
+  ROOT,
+  'docs/changelog/2026-09-11-a-bust-is-ranked-by-when-it-happened.rollback.sql'
+);
+const ROLLBACK = readFileSync(ROLLBACK_PATH, 'utf8');
+const HEADER = SQL.slice(0, SQL.indexOf('BEGIN;'));
 
 describe('a bust is ranked by when it happened', () => {
   describe('the migration is one reviewed transaction', () => {
@@ -207,6 +230,25 @@ describe('a bust is ranked by when it happened', () => {
       expect(count(SETTLE, "* interval '1 microsecond'")).toBe(2);
       // no witness: the row's own eliminated_at
       expect(count(SETTLE, '), tp.eliminated_at) AS bust_at')).toBe(2);
+    });
+
+    it('times a hand by its first capture when the prune has taken its commit', () => {
+      // the generation rows are never pruned; the hand's commit row can be
+      expect(count(SETTLE, 'LEFT JOIN public.hand_atomic_commits a')).toBe(2);
+      // one time for the whole hand - the earliest capture of its generations -
+      // so the same-hand stack rank still decides within it
+      expect(
+        SETTLE.match(
+          /SELECT COALESCE\(a\.committed_at,\s+\(SELECT min\(g\.created_at\)\s+FROM public\.tournament_knockout_candidates g\s+WHERE g\.tournament_id = c\.tournament_id\s+AND g\.table_id = c\.table_id\s+AND g\.hand_number = c\.hand_number\s+AND g\.hand_id = c\.hand_id\)\)/g
+        ) ?? []
+      ).toHaveLength(2);
+      // never one generation's own capture (a hand's captures are seconds apart
+      // and out of stack order), never an inner join that turns a pruned commit
+      // into the recording order
+      expect(SETTLE).not.toMatch(/\bc\.created_at\b/);
+      expect(SETTLE).not.toMatch(/^\s+JOIN public\.hand_atomic_commits a/m);
+      expect(SETTLE).not.toMatch(/SELECT a\.committed_at\s/);
+      expect(HEADER).toContain('sp_prune_hand_history');
     });
 
     it('decides whether anything moves by the same order it renumbers by', () => {
@@ -435,7 +477,7 @@ describe('a bust is ranked by when it happened', () => {
 
       it(`the ${label} door still refuses every older generation it cannot prove`, () => {
         expect(body).toMatch(
-          /AND c\.hand_number<v_candidate\.hand_number\s+AND c\.state<>'rebought'\s+AND c\.id<>ALL\(v_rebought_generations\)\s+\) THEN\s+RETURN jsonb_build_object\(\s+'ok',false,'reason','unresolved_knockout_generation_chain'\);/
+          /AND c\.hand_number<v_candidate\.hand_number\s+AND c\.state<>'rebought'\s+AND c\.id<>ALL\(v_rebought_generations\)\s+\) THEN\s+INSERT INTO public\.financial_alerts\(severity,source,message,context\)[\s\S]*?\);\s+RETURN jsonb_build_object\(\s+'ok',false,'reason','unresolved_knockout_generation_chain'\);/
         );
       });
 
@@ -454,11 +496,17 @@ describe('a bust is ranked by when it happened', () => {
       });
     }
 
-    it('the bounty door resolves a generation only once its head is closed', () => {
+    it('the bounty door resolves a generation only once its head was collected', () => {
       const proof = BOUNTY_DOOR.slice(
         BOUNTY_DOOR.indexOf('INTO v_rebought_generations'),
         BOUNTY_DOOR.indexOf("'unresolved_knockout_generation_chain'")
       );
+      // its own obligation exists: a head no obligation names was never
+      // collected, and resolving it would hand it to the next knocker
+      expect(proof).toMatch(
+        /AND EXISTS \(\s*SELECT 1 FROM public\.tournament_bounty_obligations o\s+WHERE o\.tournament_id=p_tournament_id\s+AND o\.eliminated_user_id=p_eliminated_user_id\s+AND o\.table_id=c\.table_id\s+AND o\.hand_id=c\.hand_id\s+AND o\.hand_number=c\.hand_number\)/
+      );
+      // ... and every obligation naming its hand or chair is settled and complete
       expect(proof).toMatch(
         /AND NOT EXISTS \(\s*SELECT 1 FROM public\.tournament_bounty_obligations o\s+WHERE o\.tournament_id=p_tournament_id\s+AND o\.eliminated_user_id=p_eliminated_user_id\s+AND \(o\.hand_number=c\.hand_number\s+OR o\.seat_joined_at=c\.seat_joined_at\)\s+AND NOT \(o\.state='settled'\s+AND public\.fn_bounty_obligation_has_complete_marker\(o\.id\)\)\)/
       );
@@ -467,6 +515,39 @@ describe('a bust is ranked by when it happened', () => {
       const block = BOUNTY_DOOR.slice(BOUNTY_DOOR.lastIndexOf('IF', resolve), resolve);
       expect(block).toContain("coalesce((v_result->>'claimed')::boolean,false)");
     });
+  });
+
+  describe('4b. a refusal that cannot clear by itself raises one alert per player', () => {
+    const SOURCE = "'critical','knockout_door.payout_blocked_by_unrecordable_bust'";
+    for (const [label, body, user, reason] of [
+      ['non-bounty write half', LEGACY, 'p_user_id', 'knockout_bust_time_unproven'],
+      ['bounty write half', BOUNTY_LEGACY, 'p_eliminated_user_id', 'knockout_bust_time_unproven'],
+      ['non-bounty door', DOOR, 'p_user_id', 'unresolved_knockout_generation_chain'],
+      ['bounty door', BOUNTY_DOOR, 'p_eliminated_user_id', 'unresolved_knockout_generation_chain'],
+    ] as const) {
+      it(`the ${label} names the player it cannot record, once while the alert is open`, () => {
+        expect(
+          count(body, 'INSERT INTO public.financial_alerts(severity,source,message,context)')
+        ).toBe(label === 'bounty write half' ? 2 : 1);
+        const at = body.indexOf(SOURCE);
+        expect(at).toBeGreaterThan(-1);
+        const insert = body.slice(at, body.indexOf('RETURN jsonb_build_object', at));
+        expect(insert).toContain(`'reason','${reason}'`);
+        expect(insert).toContain(`'tournament_id',p_tournament_id,'user_id',${user}`);
+        expect(insert).toMatch(
+          new RegExp(
+            `WHERE NOT EXISTS \\(\\s*SELECT 1 FROM public\\.financial_alerts fa\\s+WHERE fa\\.source='knockout_door\\.payout_blocked_by_unrecordable_bust'\\s+AND NOT fa\\.resolved\\s+AND fa\\.context->>'tournament_id'=p_tournament_id::text\\s+AND fa\\.context->>'user_id'=${user}::text\\);`
+          )
+        );
+        // the refusal it announces is the very next statement
+        expect(
+          body.slice(
+            body.indexOf('RETURN jsonb_build_object', at),
+            body.indexOf(';', body.indexOf('RETURN jsonb_build_object', at))
+          )
+        ).toContain(`'${reason}'`);
+      });
+    }
   });
 
   describe('5. the unfinished-finish alarm counts from when the last bust was recorded', () => {
@@ -521,6 +602,68 @@ describe('a bust is ranked by when it happened', () => {
     });
   });
 
+  describe('what it does not cover is said, and it can be undone', () => {
+    it('says satellites and final-table deals keep their own recording-order authorities', () => {
+      expect(HEADER).toContain('NOT CHANGED HERE: SATELLITES AND FINAL-TABLE DEALS');
+      expect(HEADER).toContain('fn_settle_satellite_tournament_pre_money_path_gate');
+      expect(HEADER).toContain('fn_settle_tournament_final_table_deal');
+      expect(HEADER).not.toMatch(/Every tournament finishes through/);
+      expect(count(SQL, 'CREATE OR REPLACE FUNCTION public.fn_settle_satellite')).toBe(0);
+      expect(
+        count(SQL, 'CREATE OR REPLACE FUNCTION public.fn_settle_tournament_final_table_deal')
+      ).toBe(0);
+    });
+
+    it('ships a reviewed rollback that restores every live body byte for byte', () => {
+      expect(HEADER).toContain(
+        'docs/changelog/2026-09-11-a-bust-is-ranked-by-when-it-happened.rollback.sql'
+      );
+      expect(ROLLBACK.match(/^BEGIN;$/gm) ?? []).toHaveLength(1);
+      expect(ROLLBACK.match(/^COMMIT;$/gm) ?? []).toHaveLength(1);
+      expect(ROLLBACK).toMatch(/^SET LOCAL lock_timeout = '5s';$/m);
+      expect(count(ROLLBACK, 'CREATE OR REPLACE FUNCTION')).toBe(Object.keys(REPLACED).length);
+      for (const name of Object.keys(REPLACED)) {
+        expect(fnIn(ROLLBACK, name), `${name} is its captured live body`).toBe(
+          fnIn(INSTALLED, name)
+        );
+      }
+      // the preflight accepts the migration's result or its own; the postflight only the live body
+      const pre = ROLLBACK.slice(
+        ROLLBACK.indexOf('$preflight$'),
+        ROLLBACK.lastIndexOf('$preflight$')
+      );
+      const post = ROLLBACK.slice(
+        ROLLBACK.indexOf('$postflight$'),
+        ROLLBACK.lastIndexOf('$postflight$')
+      );
+      const migPost = SQL.slice(SQL.indexOf('$postflight$'), SQL.lastIndexOf('$postflight$'));
+      for (const [name, md5] of Object.entries(REPLACED)) {
+        expect(pre).toContain(`'${md5}'`);
+        expect(post).toContain(`'${md5}'`);
+        const mine = new RegExp(
+          `public\\.${name}\\([^']*'\\)\\n\\s+AND md5\\(p\\.prosrc\\) IN \\('([0-9a-f]{32})'\\)`
+        ).exec(migPost);
+        expect(mine, `${name} has a postflight md5`).not.toBeNull();
+        expect(pre, `${name}: the rollback accepts what the migration leaves`).toContain(
+          `'${mine![1]}'`
+        );
+        expect(post).not.toContain(`'${mine![1]}'`);
+      }
+      // it writes no data either
+      const outside = ROLLBACK.replace(/\$function\$[\s\S]*?\$function\$/g, '')
+        .replace(/\$preflight\$[\s\S]*?\$preflight\$/g, '')
+        .replace(/\$postflight\$[\s\S]*?\$postflight\$/g, '');
+      expect(code(outside)).not.toMatch(
+        /\b(INSERT\s+INTO|UPDATE\s+public\.|DELETE\s+FROM|TRUNCATE)\b/i
+      );
+      // and the PostgreSQL 17 probe applies it twice and re-applies the migration
+      const probe = readFileSync(PROBE, 'utf8');
+      expect(probe.match(/psql_db fx_rolled -f "\$rollback"/g) ?? []).toHaveLength(2);
+      expect(probe).toContain('psql_db fx_rolled -f "$root/manifest-check.sql"');
+      expect(probe).toContain('psql_db fx_rolled -f "$migration"');
+    });
+  });
+
   describe('the behaviour gate is real and runs in CI', () => {
     it('the PostgreSQL 17 probe exists, is executable, and runs every scenario both ways', () => {
       expect(() => accessSync(PROBE, constants.X_OK)).not.toThrow();
@@ -531,7 +674,7 @@ describe('a bust is ranked by when it happened', () => {
       // accepts its own result
       expect(probe.match(/psql_db fx_fixed -f "\$migration"/g) ?? []).toHaveLength(2);
       const scenarios = readdirSync(join(FIXTURE, 'scenarios')).filter((f) => f.endsWith('.sql'));
-      expect(scenarios.length).toBeGreaterThanOrEqual(25);
+      expect(scenarios.length).toBeGreaterThanOrEqual(27);
       for (const s of scenarios) {
         expect(readFileSync(join(FIXTURE, 'scenarios', s), 'utf8'), s).toMatch(
           /^-- (FIXED|KEPT)\./

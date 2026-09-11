@@ -1,9 +1,12 @@
--- KEPT. The same orphan shape, but the older generation's head is not closed:
--- r's obligation is still pending (owed to its knocker), s's says settled but
--- has no complete marker, and t's generation has no rebuy leg at all. A head
--- still owed would be collected against a player this claim is about to record
--- under a newer head, so the door keeps refusing all three exactly as before,
--- and writes nothing.
+-- KEPT. The same orphan shape, but the older generation's head was not
+-- collected: r's obligation is still pending (owed to its knocker), s's says
+-- settled but has no complete marker, t's generation has no rebuy leg at all,
+-- and u's has a rebuy leg but no bounty obligation - its head was never
+-- claimed, and the rebuy added the new head on top of it, so closing the
+-- generation would pay both heads to u's next knocker. A head still owed would
+-- be collected against a player this claim is about to record under a newer
+-- head. The door keeps refusing all four exactly as before, and changes no
+-- generation, roster row or obligation.
 \set ON_ERROR_STOP on
 \set t '22000000-0000-4000-8000-000000000001'
 \set tb '22000000-0000-4000-8000-0000000000ab'
@@ -22,7 +25,8 @@ BEGIN
   FOR r IN SELECT * FROM (VALUES
       ('22000000-0000-4000-8000-000000000011'::uuid, 'an owed head', 'pending', true),
       ('22000000-0000-4000-8000-000000000012'::uuid, 'a settled head with no complete marker', 'incomplete', true),
-      ('22000000-0000-4000-8000-000000000013'::uuid, 'no rebuy leg', 'none', false)) x(uid, why, head, leg) LOOP
+      ('22000000-0000-4000-8000-000000000013'::uuid, 'no rebuy leg', 'none', false),
+      ('22000000-0000-4000-8000-000000000014'::uuid, 'a rebuy leg but a head no obligation names', 'none', true)) x(uid, why, head, leg) LOOP
     PERFORM probe.player(v_t, r.uid);
     h := h + 10;
     v_older := probe.bust(v_t, v_tb, r.uid, h, 100, '2026-09-10 10:00:00+00');
@@ -60,5 +64,8 @@ BEGIN
                           WHERE tournament_id = '22000000-0000-4000-8000-000000000001'
                             AND user_id = u.user_id), u.why || ': the roster row is untouched');
   END LOOP;
+  PERFORM probe.check((SELECT count(*) FROM public.tournament_bounty_obligations
+                        WHERE tournament_id = '22000000-0000-4000-8000-000000000001') = 2,
+                      'no obligation was written or collected');
 END;
 $check$;

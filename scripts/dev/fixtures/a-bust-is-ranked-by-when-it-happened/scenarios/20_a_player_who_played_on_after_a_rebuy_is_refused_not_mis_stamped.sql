@@ -6,9 +6,11 @@
 -- the door binds is still that old one, so its hand is not the bust. The doors
 -- accepted it and stamped the clock; stamping its hand instead would rank the
 -- player at a bust they came back from. Both doors now refuse it
--- (knockout_bust_time_unproven) and write nothing. A leg after the bust with no
--- later hand (a purchase that never seated the player) proves nothing about a
--- later bust and is still recorded at its hand.
+-- (knockout_bust_time_unproven) and write nothing but one critical alert per
+-- player: nothing newer can bind them, so the event cannot finish until an
+-- operator rules, and the refusal says so where the money board reads. A leg
+-- after the bust with no later hand (a purchase that never seated the player)
+-- proves nothing about a later bust and is still recorded at its hand.
 \set ON_ERROR_STOP on
 \set t '20000000-2000-4000-8000-000000000001'
 \set k '20000000-2000-4000-8000-000000000002'
@@ -86,3 +88,28 @@ SELECT probe.door(:'t', 'dca6c345-0000-4000-8000-000000000001', 70) AS unseated 
 SELECT probe.check((:'unseated'::jsonb->>'claimed')::boolean, 'a rebuy that never dealt the player in does not block the bust: ' || :'unseated');
 SELECT probe.check(probe.eliminated_at(:'t', 'dca6c345-0000-4000-8000-000000000001') = '2026-09-09 06:13:09.079372+00',
                    'and the bust keeps its hand''s time');
+
+-- one critical alert per refused player, none for the one recorded
+SELECT probe.check((SELECT count(*) FROM public.financial_alerts
+                     WHERE source = 'knockout_door.payout_blocked_by_unrecordable_bust'
+                       AND severity = 'critical' AND NOT resolved
+                       AND context->>'reason' = 'knockout_bust_time_unproven'
+                       AND context->>'detail' = 'played_on_after_a_rebuy') = 7
+                   AND (SELECT count(DISTINCT (context->>'tournament_id', context->>'user_id'))
+                          FROM public.financial_alerts
+                         WHERE source = 'knockout_door.payout_blocked_by_unrecordable_bust') = 7,
+                   'each of the seven refused players is named in one critical alert: '
+                   || (SELECT count(*) FROM public.financial_alerts)::text);
+SELECT probe.check(EXISTS (SELECT 1 FROM public.financial_alerts
+                            WHERE context->>'tournament_id' = :'k'
+                              AND context->>'user_id' = '22af2652-0000-4000-8000-00000000000b'
+                              AND (context->>'hand_number')::bigint = 8540579),
+                   'the bounty door names its player and the generation it would not record');
+SELECT probe.check(NOT EXISTS (SELECT 1 FROM public.financial_alerts
+                                WHERE context->>'user_id' = 'dca6c345-0000-4000-8000-000000000001'),
+                   'a bust the door recorded raises nothing');
+-- refused again while the alert is open: nothing is added
+SELECT probe.door(:'t', '22af2652-0000-4000-8000-000000000001', 60) AS again \gset
+SELECT probe.check(:'again'::jsonb->>'reason' = 'knockout_bust_time_unproven'
+                   AND (SELECT count(*) FROM public.financial_alerts) = 7,
+                   'a refusal repeated while its alert is open adds none');

@@ -15,6 +15,11 @@
 #         a broken script), and PASS after the migration;
 #   KEPT  scenarios must pass on both.
 #
+# Last, it applies the reviewed rollback
+# (docs/changelog/2026-09-11-a-bust-is-ranked-by-when-it-happened.rollback.sql)
+# twice over the migrated database: every captured body must come back to its
+# live md5, and the migration must then apply again.
+#
 # A disposable cluster in a temporary directory; no database URL is accepted and
 # nothing outside that directory is touched.
 set -euo pipefail
@@ -120,8 +125,29 @@ for s in "${scenarios[@]}"; do
   fi
 done
 
+# The reviewed inverse, twice, then the migration once more over its result.
+rollback="$repo/docs/changelog/2026-09-11-a-bust-is-ranked-by-when-it-happened.rollback.sql"
+echo "== after $(basename "$rollback")"
+psql_db postgres -c 'CREATE DATABASE fx_rolled TEMPLATE fx_fixed' >/dev/null
+if psql_db fx_rolled -f "$rollback" >"$root/out.log" 2>&1 \
+   && psql_db fx_rolled -f "$rollback" >>"$root/out.log" 2>&1; then
+  echo "ok   the rollback applies twice"
+else
+  echo "FAIL the rollback:"; sed 's/^/     /' "$root/out.log" | tail -5; failures=$((failures + 1))
+fi
+if psql_db fx_rolled -f "$root/manifest-check.sql" >"$root/out.log" 2>&1; then
+  echo "ok   every body is its captured live body again"
+else
+  echo "FAIL a body is not its live body after the rollback:"; sed 's/^/     /' "$root/out.log" | tail -5; failures=$((failures + 1))
+fi
+if psql_db fx_rolled -f "$migration" >"$root/out.log" 2>&1; then
+  echo "ok   the migration applies again over the rolled-back bodies"
+else
+  echo "FAIL the migration over the rolled-back bodies:"; sed 's/^/     /' "$root/out.log" | tail -5; failures=$((failures + 1))
+fi
+
 if [[ "$failures" -ne 0 ]]; then
   echo "$failures scenario check(s) failed" >&2
   exit 1
 fi
-echo "all ${#scenarios[@]} scenarios behave as reviewed"
+echo "all ${#scenarios[@]} scenarios behave as reviewed, and the rollback restores the live bodies"

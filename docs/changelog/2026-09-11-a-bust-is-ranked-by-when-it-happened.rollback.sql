@@ -1,200 +1,27 @@
--- 20260911062048_a_bust_is_ranked_by_when_it_happened
+-- ROLLBACK for supabase/migrations/20260911062048_a_bust_is_ranked_by_when_it_happened.sql
 --
--- Reserved by scripts/reserve-migration-version.sh on 2026-09-11 06:20:48 UTC.
--- Written, proved, NOT applied. Amended on 2026-09-11 (second pass, after an
--- adversarial review; third pass, after two verifications of the second) so
--- that it is still one change in one transaction. Its inverse, proved by the
--- same PostgreSQL 17 probe, is
--- docs/changelog/2026-09-11-a-bust-is-ranked-by-when-it-happened.rollback.sql.
+-- Restores the seven functions that migration replaces to the bodies production
+-- ran before it. Each body below is pg_get_functiondef read from production
+-- (read-only) at 2026-09-11 10:50 UTC, byte for byte; the md5 of each prosrc is
+-- the migration's own "live" pin, and the postflight proves it.
 --
--- DO NOT APPLY INSIDE MINUTE :50-:03 UTC. That is the hourly break window: the
--- database refuses DDL in it (ca_break_window_refuses_ddl) and a migration
--- there lands on the break announcement. Apply once, after :03, never in a
--- retry loop (CLAUDE.md, production DDL policy, rules 2 and 8).
+-- It writes no data, because the migration wrote none. What the new bodies did
+-- while they ran stays as it is: eliminated_at values they stamped with a bust
+-- time (the column stays mixed), older generations they resolved to 'rebought'
+-- (the old doors read 'rebought' as resolved), places the settlement numbered
+-- by bust time, and knockout_door.payout_blocked_by_unrecordable_bust alerts they raised.
 --
--- THE RULE (decided 2026-09-11). A finishing place is decided by when the bust
--- happened: the commit time of the accepted hand that took the stack,
--- hand_atomic_commits.committed_at. Busts in different hands are ordered by
--- those commit times, not by hand number (the global deal order, which
--- disagrees with commit order for about a third of cross-table busts). Busts
--- in one hand rank the smaller hand-start stack first - it busts first and
--- finishes lower (TDA) - then user id, one microsecond apart. Two busts in one
--- hand from EQUAL starting stacks are ordered by user id, as decided; TDA
--- would tie them and split the two places' prize, which this does not model.
--- Hand-for-hand play, where TDA treats busts at different tables in one
--- hand-for-hand hand as simultaneous, is out of scope: those busts are ordered
--- by commit time.
--- The engine still records busts in hand-number order, because the PKO
--- watermark settles bounties in that order; the place it hands out while
--- recording is provisional, and the finish below re-derives every place.
---
--- WHAT WAS WRONG (read from production 2026-09-11, read-only).
---
--- 1. THE FINISH PAID RECORDING ORDER. Every cash-ladder tournament - ordinary,
---    bounty, PKO, mystery bounty, Spin - finishes through
---    fn_complete_tournament_terminal -> fn_complete_tournament_terminal_pre_seat_guard
---    -> fn_settle_tournament_places, which renumbered the eliminated rows by
---    elimination_sequence - a trigger stamps it when the knockout door RECORDS
---    a bust - and paid the ladder by those positions. A bust the door recorded
---    hours late was paid a place it did not finish in: 15 COMPLETED events in
---    34 hours misallocated about 1,437-1,659 chips, 11 of them bounty events.
--- 2. BOTH KNOCKOUT DOORS STAMPED THE CLOCK. The write halves of the non-bounty
---    door (fn_eliminate_player_legacy_candidate_20260907) and of the bounty
---    door (fn_claim_bounty_legacy_candidate_20260907) set eliminated_at =
---    now(), the moment they ACCEPTED a bust: in 798866ae 64 of 83 busts were
---    recorded more than a minute late, 26 more than an hour, one 26h42m late.
--- 3. THE NORMALIZER MOVED PLACES WITHOUT MOVING THEIR PRICE (the prepare and
---    ruling path, which the server does not call): it renumbered positions and
---    left tp.prize behind, so fn_prepare_tournament_place_obligations refused
---    the event for ever with recorded_prize_disagrees_with_structure.
--- 4. AN ORPHANED GENERATION BLOCKED A REAL BUST FOR EVER. The 2026-09-08/09
---    rebuy chain bought players back in without resolving the busted knockout
---    generation to 'rebought', and both doors then refused the player's next,
---    real bust with unresolved_knockout_generation_chain (356 refusals of one
---    player in 798866ae in 39 minutes). Data repairs at 07:04 and 07:23 UTC
---    resolved the four players held at 06:20 UTC; at ~11:00 UTC no event in
---    any status holds an older non-rebought generation. The rule below is
---    protection for the next one.
--- 5. A PLAYER WHO PLAYED ON AFTER A REBUY COULD BE RECORDED AT A BUST THEY
---    CAME BACK FROM. When that chain left the generation 'pending' and the
---    player kept playing, the generation the door binds is still the old one.
---    Seven eliminated rows have that shape (none in the money): 798866ae
---    22af2652, 6d6b3cc2, 20a40df1, 45a5e770 (COMPLETED); 7aa16fa7 71efcdb3
---    and a5aa6984 55256246 (RUNNING); 2e7240ea 2a763abd (COMPLETED). This
---    migration writes no data; they are listed, not repaired.
--- 6. THE UNFINISHED-FINISH ALARM (cron 304, fn_ca_tournament_finished_but_not_completed)
---    measured from max(eliminated_at); with a bust-time stamp, a final bust
---    recorded late would raise a critical alarm the moment the event became
---    finishable.
--- Found by two verifications of the second pass:
--- 7. A PRUNED HAND FELL BACK TO THE RECORDING ORDER. The prune below deletes
---    the commit row a consumed generation points at; the second pass then
---    ranked that bust by eliminated_at, the recording time of every row
---    recorded before this migration. The earliest RUNNING witness hand
---    (09-08 17:53) becomes prunable 09-15 17:53 UTC.
--- 8. A REFUSAL THAT CANNOT CLEAR STRANDED ITS EVENT IN SILENCE: the player
---    stays 'playing' at zero chips, the engine skips them after three
---    refusals with a log line, and cron 304 only looks at events with one
---    player left.
--- 9. THE BOUNTY DOOR RESOLVED A GENERATION WHOSE HEAD WAS NEVER COLLECTED,
---    handing that head to the player's next knocker.
---
--- WHAT THIS CHANGES. Seven existing functions; same signatures, owner,
--- SECURITY DEFINER, settings and grants (restated below); nothing else in
--- them touched.
---
---   fn_settle_tournament_places ranks every eliminated row by when its bust
---     happened, derived in the statements that use it from what the knockout
---     door proved: the commit time of the accepted hand of the player's
---     latest 'eliminated' knockout generation, plus the same-hand microsecond
---     rank. The hand-history prune (sp_prune_hand_history, cron 117) deletes a
---     horse-only hand's commit row after seven days and spares only hands a
---     PENDING generation names; a generation row is never deleted, so when
---     the commit row is gone the hand is timed by its first capture - the
---     earliest created_at of that hand's generations, one time for the whole
---     hand so the same-hand stack rank still decides within it (a hand's
---     captures are up to 2.1 s apart, in stack order in only 545 of 1,313
---     multi-bust hands) - never by the recording order. Across the 33,318
---     generations that have both, capture precedes commit by 4 ms at the
---     median, 236 ms at p99 and 6.9 s at most, and never follows it. A row
---     with no such generation falls back to its eliminated_at; a row with
---     neither is refused (P0404), never guessed. Equal times fall back to
---     elimination_sequence, then id. elimination_sequence still alone names the
---     last elimination, and so the winner when the whole field reads
---     eliminated. The check that decides whether places move uses the same
---     order, so a ladder already in true order is not touched. Every refusal is
---     kept: places that carry money (a positioned payout or a place obligation)
---     are never relabelled - the one case that is not a relabel is a
---     COMPLETING event whose places are exactly the recording-order ladder,
---     which the rule this replaces already paid, and which is replayed as paid;
---     COMPLETED events are exact replays and are never renumbered.
---   fn_eliminate_player_legacy_candidate_20260907 (non-bounty write half) and
---   fn_claim_bounty_legacy_candidate_20260907 (bounty write half) stamp
---     eliminated_at with the bust by the same rule, and refuse
---     (knockout_bust_time_unproven) a bust whose hand cannot be read, and a
---     generation the player provably played on from: a posted rebuy leg after
---     it AND a later hand of this event that deals the player in. Nothing
---     newer can bind that player, who stays 'playing' at zero chips, so the
---     event could never finish and nothing would say so (cron 304 only looks
---     at events with one player left): the refusal writes one critical
---     financial_alerts row per player (source
---     knockout_door.payout_blocked_by_unrecordable_bust), which the money
---     board promotes to an incident (classified settlement_error).
---   fn_eliminate_tournament_player_atomic (non-bounty door) and
---   fn_claim_tournament_bounty_elimination (bounty door) resolve an older
---     PENDING generation to 'rebought' when, and only when, a posted 'rebuy'
---     leg from this player's wallet to this event's prize liability was
---     written after that generation was captured and before the player's next
---     generation was. The bounty door also requires that generation's head to
---     have been COLLECTED: its own bounty obligation exists, and every
---     obligation naming its hand or its chair is settled with its complete
---     marker. A generation no obligation names never had its head collected -
---     a rebuy adds the new head on top of it (current_bounty + head), so
---     resolving it would pay both heads to the player's next knocker - and an
---     obligation still owed would be collected against a player recorded
---     under a newer head; both keep the generation refused. The resolution
---     commits with the newer bust (rebought_generations). The refusal that
---     remains (unresolved_knockout_generation_chain) cannot clear by itself
---     either, so both doors now write the same one-per-player alert for it.
---   fn_normalize_tournament_final_standings re-prices every row it moves by
---     fn_prepare_tournament_place_obligations's own ladder rule, in the same
---     write; refuses (moved_places_cannot_be_repriced_after_money_moved) only
---     once PLACE money moved - a payout from any source but a bounty or a
---     satellite seat, or a place or Bubble Protection obligation - and refuses
---     (moved_places_cannot_be_priced) when no ladder can be derived.
---   fn_ca_tournament_finished_but_not_completed measures from when the last
---     bust was RECORDED: GREATEST(max(eliminated_at), the latest resolved_at
---     of a knockout generation the door consumed).
---
--- NOT CHANGED HERE: SATELLITES AND FINAL-TABLE DEALS. They do not finish through
--- fn_settle_tournament_places: the terminal guard refuses a satellite and sends
--- a deal event to its own authority. fn_settle_satellite_tournament ->
--- fn_settle_satellite_tournament_pre_money_path_gate and
--- fn_settle_tournament_final_table_deal still number places by
--- elimination_sequence DESC - the recording order - and award seats, the
--- remainder and a deal's fixed tail by it. Measured read-only 2026-09-11: no
--- RUNNING satellite would award a seat or remainder differently (01f1a800 swaps
--- 4th and 7th; its 600.00 buys exactly three 200.00 tickets, remainder 0.00),
--- nor would any of the 159 satellites completed in the prior 48 hours; one
--- event settled a final-table deal in seven days. They are a follow-up, not
--- silently covered.
---
--- NO DATA IS WRITTEN AND NO BACKFILL IS NEEDED. The settlement derives each
--- bust from the witnesses the door already proved (the consumed generation and
--- its hand's commit), so rows recorded before this migration are ranked by
--- their hands exactly like rows recorded after it.
---
--- eliminated_at IS A MIXED COLUMN FROM HERE ON. Rows recorded before this
--- migration carry the moment they were recorded; rows recorded after it carry
--- the bust. Nothing that decides a place relies on it where a witness exists.
--- The normalizer and the place prepare (the ruling path, not called by the
--- server) still rank by eliminated_at, so on an event recorded across this
--- migration their order is only as good as the older rows' recording times.
---
--- MEASURED ON PRODUCTION: see the changelog,
--- docs/changelog/2026-09-11-a-bust-is-ranked-by-when-it-happened.md.
---
--- DEPLOY ORDER. The engine half of this change (server/src/tournament/bustOrder.ts
--- and TournamentManagerEliminations.ts on this branch) deploys WITH OR BEFORE
--- this migration: the doors now resolve orphaned generations, and an engine
--- still ordering by the earliest pending generation would record such a player
--- out of hand order and advance the PKO watermark past earlier busts.
---
--- PROVED in PostgreSQL 17 against byte-exact captures of the live bodies:
--- scripts/dev/probe-a-bust-is-ranked-by-when-it-happened-pg17.sh runs every
--- scenario against the old bodies (each FIXED behaviour must fail there, on a
--- probe assertion), then applies this file twice and runs them all again, then
--- applies the rollback twice (every body back to its live md5) and this file
--- once more.
---
--- One transaction (CLAUDE.md production DDL policy). The preflight refuses to
--- apply over any body, owner, grant or setting it was not reviewed against,
--- including the three functions it reads without replacing
--- (fn_ca_latest_committed_knockout_candidate, the generation the doors bind;
--- fn_prepare_tournament_place_obligations, whose ladder rule is copied;
--- fn_bounty_obligation_has_complete_marker, which proves a head closed). Each
--- replaced body is accepted as the live body or as this file's own result, so
--- a second apply is a proven no-op; the postflight proves the result.
+-- Apply only to undo that migration: ONE transaction, outside minute :50-:03
+-- UTC, once, never in a retry loop (CLAUDE.md production DDL policy). The
+-- preflight accepts each body only as the migration left it or as this file
+-- leaves it (so a second apply is a proven no-op), with the reviewed owner,
+-- grants and settings; anything else means production is not in a state this
+-- was reviewed against, and it refuses (55000) before changing anything.
+-- The engine half (server/src/tournament/bustOrder.ts) reads the same latest
+-- generation either set of doors binds, so it does not roll back with this.
+-- Proved in PostgreSQL 17 by scripts/dev/probe-a-bust-is-ranked-by-when-it-happened-pg17.sh
+-- (applied twice after the migration; every body must come back to its
+-- captured live md5, and the migration must then apply again).
 
 BEGIN;
 SET LOCAL lock_timeout = '5s';
@@ -205,7 +32,7 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_catalog.pg_proc p
      WHERE p.oid = to_regprocedure('public.fn_settle_tournament_places(uuid,uuid)')
-       AND md5(p.prosrc) IN ('d0262f4928b12eea1cc5e9175cbf2737', '6181734ff98555ecc04648186f6ebf24')
+       AND md5(p.prosrc) IN ('6181734ff98555ecc04648186f6ebf24', 'd0262f4928b12eea1cc5e9175cbf2737')
        AND p.proowner = 'postgres'::regrole
        AND p.proacl::text = '{postgres=X/postgres,service_role=X/postgres}'
        AND p.prosecdef AND NOT p.proisstrict AND p.provolatile = 'v'
@@ -213,13 +40,13 @@ BEGIN
        AND p.prolang = (SELECT oid FROM pg_catalog.pg_language WHERE lanname = 'plpgsql')
        AND p.proconfig::text = '{search_path=public,statement_timeout=30s}'
   ) THEN
-    RAISE EXCEPTION 'Source function body or authority changed; review before applying: public.fn_settle_tournament_places(uuid,uuid)'
+    RAISE EXCEPTION 'Function body or authority is not what 20260911062048 left; review before rolling back: public.fn_settle_tournament_places(uuid,uuid)'
       USING ERRCODE = '55000';
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_catalog.pg_proc p
      WHERE p.oid = to_regprocedure('public.fn_eliminate_player_legacy_candidate_20260907(uuid,uuid,integer,numeric,numeric)')
-       AND md5(p.prosrc) IN ('f596d731cacf8d7e62a4549204ce73fc', '97abb184dc27e3c7a333a6160636f473')
+       AND md5(p.prosrc) IN ('97abb184dc27e3c7a333a6160636f473', 'f596d731cacf8d7e62a4549204ce73fc')
        AND p.proowner = 'postgres'::regrole
        AND p.proacl::text = '{postgres=X/postgres}'
        AND p.prosecdef AND NOT p.proisstrict AND p.provolatile = 'v'
@@ -227,13 +54,13 @@ BEGIN
        AND p.prolang = (SELECT oid FROM pg_catalog.pg_language WHERE lanname = 'plpgsql')
        AND p.proconfig::text = '{"search_path=public, pg_temp"}'
   ) THEN
-    RAISE EXCEPTION 'Source function body or authority changed; review before applying: public.fn_eliminate_player_legacy_candidate_20260907(uuid,uuid,integer,numeric,numeric)'
+    RAISE EXCEPTION 'Function body or authority is not what 20260911062048 left; review before rolling back: public.fn_eliminate_player_legacy_candidate_20260907(uuid,uuid,integer,numeric,numeric)'
       USING ERRCODE = '55000';
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_catalog.pg_proc p
      WHERE p.oid = to_regprocedure('public.fn_claim_bounty_legacy_candidate_20260907(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)')
-       AND md5(p.prosrc) IN ('590f0f782e127288f33763bbab8c89f0', 'ea7b6236b7c5c844dbc16ce2e78d2764')
+       AND md5(p.prosrc) IN ('ea7b6236b7c5c844dbc16ce2e78d2764', '590f0f782e127288f33763bbab8c89f0')
        AND p.proowner = 'postgres'::regrole
        AND p.proacl::text = '{postgres=X/postgres}'
        AND p.prosecdef AND NOT p.proisstrict AND p.provolatile = 'v'
@@ -241,13 +68,13 @@ BEGIN
        AND p.prolang = (SELECT oid FROM pg_catalog.pg_language WHERE lanname = 'plpgsql')
        AND p.proconfig::text = '{"search_path=public, pg_temp"}'
   ) THEN
-    RAISE EXCEPTION 'Source function body or authority changed; review before applying: public.fn_claim_bounty_legacy_candidate_20260907(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)'
+    RAISE EXCEPTION 'Function body or authority is not what 20260911062048 left; review before rolling back: public.fn_claim_bounty_legacy_candidate_20260907(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)'
       USING ERRCODE = '55000';
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_catalog.pg_proc p
      WHERE p.oid = to_regprocedure('public.fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)')
-       AND md5(p.prosrc) IN ('b4937067d9bf337e1466095b9e1d5424', '9447da284f1a3beb6d51dd87151c080f')
+       AND md5(p.prosrc) IN ('9447da284f1a3beb6d51dd87151c080f', 'b4937067d9bf337e1466095b9e1d5424')
        AND p.proowner = 'postgres'::regrole
        AND p.proacl::text = '{postgres=X/postgres,service_role=X/postgres}'
        AND p.prosecdef AND NOT p.proisstrict AND p.provolatile = 'v'
@@ -255,13 +82,13 @@ BEGIN
        AND p.prolang = (SELECT oid FROM pg_catalog.pg_language WHERE lanname = 'plpgsql')
        AND p.proconfig::text = '{"search_path=public, pg_temp"}'
   ) THEN
-    RAISE EXCEPTION 'Source function body or authority changed; review before applying: public.fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)'
+    RAISE EXCEPTION 'Function body or authority is not what 20260911062048 left; review before rolling back: public.fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)'
       USING ERRCODE = '55000';
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_catalog.pg_proc p
      WHERE p.oid = to_regprocedure('public.fn_claim_tournament_bounty_elimination(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)')
-       AND md5(p.prosrc) IN ('876456f79250a307292dc6f2ae1564f3', 'e099757eb087ef222e2fc92030ececaf')
+       AND md5(p.prosrc) IN ('e099757eb087ef222e2fc92030ececaf', '876456f79250a307292dc6f2ae1564f3')
        AND p.proowner = 'postgres'::regrole
        AND p.proacl::text = '{postgres=X/postgres,service_role=X/postgres}'
        AND p.prosecdef AND NOT p.proisstrict AND p.provolatile = 'v'
@@ -269,13 +96,13 @@ BEGIN
        AND p.prolang = (SELECT oid FROM pg_catalog.pg_language WHERE lanname = 'plpgsql')
        AND p.proconfig::text = '{"search_path=public, pg_temp"}'
   ) THEN
-    RAISE EXCEPTION 'Source function body or authority changed; review before applying: public.fn_claim_tournament_bounty_elimination(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)'
+    RAISE EXCEPTION 'Function body or authority is not what 20260911062048 left; review before rolling back: public.fn_claim_tournament_bounty_elimination(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)'
       USING ERRCODE = '55000';
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_catalog.pg_proc p
      WHERE p.oid = to_regprocedure('public.fn_normalize_tournament_final_standings(uuid)')
-       AND md5(p.prosrc) IN ('ad865880f99bc28896bec03c66ae55a9', '45b06c3f8be02940d130c427d5a32519')
+       AND md5(p.prosrc) IN ('45b06c3f8be02940d130c427d5a32519', 'ad865880f99bc28896bec03c66ae55a9')
        AND p.proowner = 'postgres'::regrole
        AND p.proacl::text = '{postgres=X/postgres,service_role=X/postgres}'
        AND p.prosecdef AND NOT p.proisstrict AND p.provolatile = 'v'
@@ -283,13 +110,13 @@ BEGIN
        AND p.prolang = (SELECT oid FROM pg_catalog.pg_language WHERE lanname = 'plpgsql')
        AND p.proconfig::text = '{search_path=public}'
   ) THEN
-    RAISE EXCEPTION 'Source function body or authority changed; review before applying: public.fn_normalize_tournament_final_standings(uuid)'
+    RAISE EXCEPTION 'Function body or authority is not what 20260911062048 left; review before rolling back: public.fn_normalize_tournament_final_standings(uuid)'
       USING ERRCODE = '55000';
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_catalog.pg_proc p
      WHERE p.oid = to_regprocedure('public.fn_ca_tournament_finished_but_not_completed(integer)')
-       AND md5(p.prosrc) IN ('e1eebfe28f393f2617c0a1ac93c2583a', '6f153669e4b6b149bfccd36ad575bda8')
+       AND md5(p.prosrc) IN ('6f153669e4b6b149bfccd36ad575bda8', 'e1eebfe28f393f2617c0a1ac93c2583a')
        AND p.proowner = 'postgres'::regrole
        AND p.proacl::text = '{postgres=X/postgres,service_role=X/postgres}'
        AND p.prosecdef AND NOT p.proisstrict AND p.provolatile = 'v'
@@ -297,40 +124,12 @@ BEGIN
        AND p.prolang = (SELECT oid FROM pg_catalog.pg_language WHERE lanname = 'plpgsql')
        AND p.proconfig::text = '{search_path=public,statement_timeout=60s}'
   ) THEN
-    RAISE EXCEPTION 'Source function body or authority changed; review before applying: public.fn_ca_tournament_finished_but_not_completed(integer)'
-      USING ERRCODE = '55000';
-  END IF;
-  -- Read, not replaced: the generation the doors bind, the ladder rule the
-  -- normalizer prices with, and the marker that proves a bounty head closed.
-  -- Any of them changing means this was not the change that was reviewed.
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_catalog.pg_proc p
-     WHERE p.oid = to_regprocedure('public.fn_ca_latest_committed_knockout_candidate(uuid,uuid)')
-       AND md5(p.prosrc) = '0602827901be20bbb6e0dce6ece17f94'
-  ) THEN
-    RAISE EXCEPTION 'A function this change reads was redefined; review before applying: public.fn_ca_latest_committed_knockout_candidate(uuid,uuid)'
-      USING ERRCODE = '55000';
-  END IF;
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_catalog.pg_proc p
-     WHERE p.oid = to_regprocedure('public.fn_prepare_tournament_place_obligations(uuid,text)')
-       AND md5(p.prosrc) = 'ca0abbc6d297f3009143676261d8cf19'
-  ) THEN
-    RAISE EXCEPTION 'A function this change reads was redefined; review before applying: public.fn_prepare_tournament_place_obligations(uuid,text)'
-      USING ERRCODE = '55000';
-  END IF;
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_catalog.pg_proc p
-     WHERE p.oid = to_regprocedure('public.fn_bounty_obligation_has_complete_marker(uuid)')
-       AND md5(p.prosrc) = 'bd29069e8d07bedf84e24e57242c2afe'
-  ) THEN
-    RAISE EXCEPTION 'A function this change reads was redefined; review before applying: public.fn_bounty_obligation_has_complete_marker(uuid)'
+    RAISE EXCEPTION 'Function body or authority is not what 20260911062048 left; review before rolling back: public.fn_ca_tournament_finished_but_not_completed(integer)'
       USING ERRCODE = '55000';
   END IF;
 END;
 $preflight$;
 
--- The finish: every place is ranked by when its bust happened, derived from the door's witnesses.
 CREATE OR REPLACE FUNCTION public.fn_settle_tournament_places(p_tournament_id uuid, p_observed_winner_id uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -368,8 +167,6 @@ DECLARE
   v_result jsonb;
   v_guarantee_result jsonb;
   v_rows integer;
-  v_unwitnessed_busts integer;
-  v_misplaced_busts integer;
 BEGIN
   -- Every rolling and terminal money authority enters one transaction lane
   -- before it can own an event, obligation, bank, or recipient row.
@@ -609,83 +406,19 @@ BEGIN
         USING ERRCODE = 'P0404';
     END IF;
 
-    /* A BUST IS RANKED BY WHEN IT HAPPENED (2026-09-11). Places were
-       numbered in elimination_sequence order, which a trigger stamps when
-       the knockout door RECORDS a bust, so a bust the door recorded hours
-       late was paid a place it did not finish in. Each eliminated row is now
-       ranked by when its bust happened, derived in the statement that uses
-       it from what the door proved: the commit time of the accepted hand of
-       the player's latest 'eliminated' knockout generation, plus one
-       microsecond per earlier rank in that hand (smaller hand-start stack
-       first, then user id - the rule the door stamps eliminated_at with).
-       Busts in different hands are ordered by those hands' commit times.
-       The hand-history prune deletes a horse-only hand's commit row after
-       its retention window, and only a PENDING generation protects it; the
-       generation rows themselves are never pruned, so a hand whose commit
-       is gone is timed by when its first generation was captured (the
-       earliest created_at of that hand's generations, written before the
-       commit) - one time for the whole hand, so the same-hand stack rank
-       still decides within it - never by when a bust was recorded. A row
-       with no such witness keeps its eliminated_at; a row with neither is
-       refused, never guessed. Equal times fall back to
-       elimination_sequence, then id. elimination_sequence alone still names
-       the last elimination, and so the winner, above. The same order decides
-       whether anything moves, so a ladder already in true order is left
-       exactly as it is. */
-    WITH busts AS (
-      SELECT tp.id, tp.position, tp.elimination_sequence,
-             COALESCE((
-               SELECT COALESCE(a.committed_at,
-                               (SELECT min(g.created_at)
-                                  FROM public.tournament_knockout_candidates g
-                                 WHERE g.tournament_id = c.tournament_id
-                                   AND g.table_id = c.table_id
-                                   AND g.hand_number = c.hand_number
-                                   AND g.hand_id = c.hand_id))
-                      + (SELECT count(*)
-                           FROM public.tournament_knockout_candidates s
-                          WHERE s.tournament_id = c.tournament_id
-                            AND s.table_id = c.table_id
-                            AND s.hand_number = c.hand_number
-                            AND s.hand_id = c.hand_id
-                            AND (s.stack_before, s.eliminated_user_id)
-                                < (c.stack_before, c.eliminated_user_id))::integer
-                        * interval '1 microsecond'
-                 FROM (SELECT k.tournament_id, k.table_id, k.hand_number,
-                              k.hand_id, k.stack_before, k.eliminated_user_id
-                         FROM public.tournament_knockout_candidates k
-                        WHERE k.tournament_id = tp.tournament_id
-                          AND k.eliminated_user_id = tp.user_id
-                          AND k.state = 'eliminated'
-                        ORDER BY k.hand_number DESC, k.id DESC
-                        LIMIT 1) c
-                 LEFT JOIN public.hand_atomic_commits a
-                   ON a.table_id = c.table_id
-                  AND a.hand_number = c.hand_number
-                  AND a.hand_id = c.hand_id
-             ), tp.eliminated_at) AS bust_at
-        FROM public.tournament_players tp
-       WHERE tp.tournament_id = p_tournament_id
-         AND tp.status::text = 'eliminated'
-    ),
-    ranked AS (
-      SELECT b.id, b.position, b.bust_at,
-             row_number() OVER (
-               ORDER BY b.bust_at DESC, b.elimination_sequence DESC, b.id ASC
-             )::integer + 1 AS expected_position
-        FROM busts b
-    )
-    SELECT count(*) FILTER (WHERE ranked.bust_at IS NULL),
-           count(*) FILTER (WHERE ranked.position IS DISTINCT FROM ranked.expected_position)
-      INTO v_unwitnessed_busts, v_misplaced_busts
-      FROM ranked;
-    IF v_unwitnessed_busts > 0 THEN
-      RAISE EXCEPTION
-        'tournament % has % eliminated player(s) with no bust witness and no eliminated_at',
-        p_tournament_id, v_unwitnessed_busts USING ERRCODE = 'P0404';
-    END IF;
-
-    IF v_misplaced_busts > 0 THEN
+    IF EXISTS (
+      SELECT 1
+        FROM (
+          SELECT tp.id, tp.position,
+                 row_number() OVER (
+                   ORDER BY tp.elimination_sequence DESC, tp.id ASC
+                 )::integer + 1 AS expected_position
+            FROM public.tournament_players tp
+           WHERE tp.tournament_id = p_tournament_id
+             AND tp.status::text = 'eliminated'
+        ) ranked
+       WHERE ranked.position IS DISTINCT FROM ranked.expected_position
+    ) THEN
       IF EXISTS (
         SELECT 1 FROM public.tournament_payouts p
          WHERE p.tournament_id = p_tournament_id
@@ -695,80 +428,29 @@ BEGIN
          WHERE o.tournament_id = p_tournament_id
            AND o.kind = 'place'
       ) THEN
-        /* Paid places are never relabelled. A COMPLETING event whose
-           places are exactly the recording-order ladder was settled by the
-           rule this replaces, and is replayed as it was paid, not refused. */
-        IF v_status <> 'COMPLETING' OR EXISTS (
-          SELECT 1
-            FROM (
-              SELECT tp.position,
-                     row_number() OVER (
-                       ORDER BY tp.elimination_sequence DESC, tp.id ASC
-                     )::integer + 1 AS expected_position
-                FROM public.tournament_players tp
-               WHERE tp.tournament_id = p_tournament_id
-                 AND tp.status::text = 'eliminated'
-            ) recorded
-           WHERE recorded.position IS DISTINCT FROM recorded.expected_position
-        ) THEN
-          RAISE EXCEPTION
-            'tournament % needs a late-entry position normalization but already carries settled place evidence',
-            p_tournament_id USING ERRCODE = 'P0404';
-        END IF;
-      ELSE
-        UPDATE public.tournament_players tp
-           SET position = NULL
-         WHERE tp.tournament_id = p_tournament_id
-           AND tp.status::text = 'eliminated';
+        RAISE EXCEPTION
+          'tournament % needs a late-entry position normalization but already carries settled place evidence',
+          p_tournament_id USING ERRCODE = 'P0404';
+      END IF;
 
-        WITH busts AS (
-        SELECT tp.id, tp.position, tp.elimination_sequence,
-               COALESCE((
-                 SELECT COALESCE(a.committed_at,
-                                 (SELECT min(g.created_at)
-                                    FROM public.tournament_knockout_candidates g
-                                   WHERE g.tournament_id = c.tournament_id
-                                     AND g.table_id = c.table_id
-                                     AND g.hand_number = c.hand_number
-                                     AND g.hand_id = c.hand_id))
-                        + (SELECT count(*)
-                             FROM public.tournament_knockout_candidates s
-                            WHERE s.tournament_id = c.tournament_id
-                              AND s.table_id = c.table_id
-                              AND s.hand_number = c.hand_number
-                              AND s.hand_id = c.hand_id
-                              AND (s.stack_before, s.eliminated_user_id)
-                                  < (c.stack_before, c.eliminated_user_id))::integer
-                          * interval '1 microsecond'
-                   FROM (SELECT k.tournament_id, k.table_id, k.hand_number,
-                                k.hand_id, k.stack_before, k.eliminated_user_id
-                           FROM public.tournament_knockout_candidates k
-                          WHERE k.tournament_id = tp.tournament_id
-                            AND k.eliminated_user_id = tp.user_id
-                            AND k.state = 'eliminated'
-                          ORDER BY k.hand_number DESC, k.id DESC
-                          LIMIT 1) c
-                   LEFT JOIN public.hand_atomic_commits a
-                     ON a.table_id = c.table_id
-                    AND a.hand_number = c.hand_number
-                    AND a.hand_id = c.hand_id
-               ), tp.eliminated_at) AS bust_at
+      UPDATE public.tournament_players tp
+         SET position = NULL
+       WHERE tp.tournament_id = p_tournament_id
+         AND tp.status::text = 'eliminated';
+
+      WITH ranked AS (
+        SELECT tp.id,
+               row_number() OVER (
+                 ORDER BY tp.elimination_sequence DESC, tp.id ASC
+               )::integer + 1 AS expected_position
           FROM public.tournament_players tp
          WHERE tp.tournament_id = p_tournament_id
            AND tp.status::text = 'eliminated'
-        ),
-        ranked AS (
-          SELECT b.id,
-                 row_number() OVER (
-                   ORDER BY b.bust_at DESC, b.elimination_sequence DESC, b.id ASC
-                 )::integer + 1 AS expected_position
-            FROM busts b
-        )
-        UPDATE public.tournament_players tp
-           SET position = ranked.expected_position
-          FROM ranked
-         WHERE tp.id = ranked.id;
-      END IF;
+      )
+      UPDATE public.tournament_players tp
+         SET position = ranked.expected_position
+        FROM ranked
+       WHERE tp.id = ranked.id;
     END IF;
   END IF;
 
@@ -1210,7 +892,6 @@ BEGIN
 END;
 $function$;
 
--- The non-bounty write half: eliminated_at is the bust, and a bust that cannot be proved is refused.
 CREATE OR REPLACE FUNCTION public.fn_eliminate_player_legacy_candidate_20260907(p_tournament_id uuid, p_user_id uuid, p_position integer, p_prize numeric, p_bubble_refund numeric DEFAULT 0)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -1222,9 +903,6 @@ DECLARE
   v_p public.tournament_players%ROWTYPE;
   v_changed integer;
   v_released_tables uuid[] := ARRAY[]::uuid[];
-  v_bust_at timestamptz;
-  v_bust_hand bigint;
-  v_bust_captured_at timestamptz;
 BEGIN
   IF p_position < 2 OR p_prize IS NULL OR p_prize < 0
      OR p_bubble_refund IS NULL OR p_bubble_refund < 0 THEN
@@ -1258,87 +936,8 @@ BEGIN
   IF v_p.status <> 'playing' OR COALESCE(v_p.chips,0) > 0 THEN
     RETURN jsonb_build_object('ok',false,'reason','not_busted');
   END IF;
-  /* A BUST IS RANKED BY WHEN IT HAPPENED (2026-09-11). eliminated_at was
-     now(), the moment the door ACCEPTED a bust, so a bust the door refused
-     for a while - an orphaned generation, a stale seat - was stamped later
-     than busts that came after it. It is now the time of the bust: the
-     commit time of the accepted hand of the generation the calling door has
-     just bound and proved (the latest committed zero-stack generation), plus
-     one microsecond per earlier rank in that hand - smaller hand-start stack
-     first (it busts first and finishes lower), then user id. That is the
-     rule fn_settle_tournament_places ranks places by: busts in different
-     hands are ordered by those hands' commit times. A bust whose hand cannot
-     be read is refused, never stamped with the clock; so is a generation the
-     player provably played on from - a posted rebuy leg after it AND a later
-     hand of this event that deals the player in - since its hand is then not
-     the bust and nothing here can say which one is. */
-  SELECT a.committed_at
-         + (SELECT count(*)
-              FROM public.tournament_knockout_candidates s
-             WHERE s.tournament_id=c.tournament_id
-               AND s.table_id=c.table_id
-               AND s.hand_number=c.hand_number
-               AND s.hand_id=c.hand_id
-               AND (s.stack_before,s.eliminated_user_id)
-                   <(c.stack_before,c.eliminated_user_id))::integer
-           * interval '1 microsecond',
-         c.hand_number,c.created_at
-    INTO v_bust_at,v_bust_hand,v_bust_captured_at
-    FROM public.tournament_knockout_candidates c
-    JOIN public.hand_atomic_commits a
-      ON a.table_id=c.table_id
-     AND a.hand_number=c.hand_number
-     AND a.hand_id=c.hand_id
-   WHERE c.id=public.fn_ca_latest_committed_knockout_candidate(
-           p_tournament_id,p_user_id)
-     AND c.tournament_id=p_tournament_id
-     AND c.eliminated_user_id=p_user_id
-     AND c.state='pending';
-  IF v_bust_at IS NULL THEN
-    RETURN jsonb_build_object('ok',false,'reason','knockout_bust_time_unproven');
-  END IF;
-  IF EXISTS (
-       SELECT 1 FROM public.chip_ledger l
-        WHERE l.from_entity_id=p_user_id
-          AND l.tournament_id=p_tournament_id
-          AND l.category='rebuy'
-          AND l.from_type='player_wallet'
-          AND l.to_type='prize_liability'
-          AND l.status='posted'
-          AND l.amount>0
-          AND l.created_at>v_bust_captured_at)
-     AND EXISTS (
-       SELECT 1 FROM public.hand_history h
-        WHERE h.tournament_id=p_tournament_id
-          AND h.hand_number>v_bust_hand
-          AND (h.players @> jsonb_build_array(jsonb_build_object(
-                 'userId',p_user_id::text))
-               OR h.players @> jsonb_build_array(jsonb_build_object(
-                 'user_id',p_user_id::text)))) THEN
-    /* Nothing newer can bind this player, who stays 'playing' at zero
-       chips, so this refusal would hold the event open for ever without a
-       word. It is written where the money board reads - once: one open alert
-       per player. */
-    INSERT INTO public.financial_alerts(severity,source,message,context)
-    SELECT 'critical','knockout_door.payout_blocked_by_unrecordable_bust',
-      'A busted player cannot be recorded, so the tournament cannot finish: '
-        ||'the only knockout generation left to record them by is one they '
-        ||'rebought from and played on after, and no later bust was captured. '
-        ||'Their place needs a ruling from their last hand.',
-      jsonb_build_object('tournament_id',p_tournament_id,'user_id',p_user_id,
-        'reason','knockout_bust_time_unproven',
-        'detail','played_on_after_a_rebuy','hand_number',v_bust_hand)
-     WHERE NOT EXISTS (
-       SELECT 1 FROM public.financial_alerts fa
-        WHERE fa.source='knockout_door.payout_blocked_by_unrecordable_bust'
-          AND NOT fa.resolved
-          AND fa.context->>'tournament_id'=p_tournament_id::text
-          AND fa.context->>'user_id'=p_user_id::text);
-    RETURN jsonb_build_object('ok',false,'reason','knockout_bust_time_unproven',
-                              'detail','played_on_after_a_rebuy');
-  END IF;
   UPDATE public.tournament_players
-     SET status='eliminated',position=p_position,prize=round(p_prize,2),eliminated_at=v_bust_at
+     SET status='eliminated',position=p_position,prize=round(p_prize,2),eliminated_at=now()
    WHERE tournament_id=p_tournament_id AND user_id=p_user_id
      AND status='playing' AND COALESCE(chips,0)<=0;
   GET DIAGNOSTICS v_changed=ROW_COUNT;
@@ -1365,7 +964,6 @@ BEGIN
 END;
 $function$;
 
--- The bounty write half: the same stamp and the same refusals.
 CREATE OR REPLACE FUNCTION public.fn_claim_bounty_legacy_candidate_20260907(p_tournament_id uuid, p_eliminated_user_id uuid, p_position integer, p_prize numeric, p_table_id uuid, p_hand_id uuid, p_hand_number bigint, p_seat_joined_at timestamp with time zone, p_knocker_user_id uuid, p_claimants jsonb, p_bubble_refund numeric DEFAULT 0, p_allow_existing_eliminated boolean DEFAULT false)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -1394,7 +992,6 @@ DECLARE
   v_activation_generation bigint := 0;
   v_pko_watermark bigint;
   v_bounty_blocked text := NULL;
-  v_bust_at timestamptz;
 BEGIN
   IF p_tournament_id IS NULL OR p_eliminated_user_id IS NULL
      OR p_table_id IS NULL OR p_hand_id IS NULL OR p_hand_number IS NULL
@@ -1702,84 +1299,9 @@ BEGIN
     v_bounty_blocked:=COALESCE(v_bounty_blocked,'exact_head_value_not_found');
   END IF;
 
-  /* A BUST IS RANKED BY WHEN IT HAPPENED (2026-09-11). eliminated_at was
-     now(), the moment this claim was accepted, so a bust accepted late was
-     stamped later than busts that came after it. It is now the time of the
-     bust, by the rule the non-bounty door stamps and
-     fn_settle_tournament_places ranks with: the commit time of the accepted
-     hand this claim is bound to, plus one microsecond per earlier rank in
-     that hand - smaller hand-start stack first, then user id. A bust whose
-     hand cannot be read is refused, never stamped with the clock; so is a
-     generation the player provably played on from - a posted rebuy leg
-     after it AND a later hand of this event that deals the player in - since
-     its hand is then not the bust and nothing here can say which one is. */
-  SELECT a.committed_at
-         + (SELECT count(*)
-              FROM public.tournament_knockout_candidates s
-             WHERE s.tournament_id=c.tournament_id
-               AND s.table_id=c.table_id
-               AND s.hand_number=c.hand_number
-               AND s.hand_id=c.hand_id
-               AND (s.stack_before,s.eliminated_user_id)
-                   <(c.stack_before,c.eliminated_user_id))::integer
-           * interval '1 microsecond'
-    INTO v_bust_at
-    FROM public.tournament_knockout_candidates c
-    JOIN public.hand_atomic_commits a
-      ON a.table_id=c.table_id
-     AND a.hand_number=c.hand_number
-     AND a.hand_id=c.hand_id
-   WHERE c.id=v_candidate.id
-     AND c.tournament_id=p_tournament_id
-     AND c.eliminated_user_id=p_eliminated_user_id
-     AND c.state='pending';
-  IF v_bust_at IS NULL THEN
-    RETURN jsonb_build_object('ok',false,'reason','knockout_bust_time_unproven');
-  END IF;
-  IF EXISTS (
-       SELECT 1 FROM public.chip_ledger l
-        WHERE l.from_entity_id=p_eliminated_user_id
-          AND l.tournament_id=p_tournament_id
-          AND l.category='rebuy'
-          AND l.from_type='player_wallet'
-          AND l.to_type='prize_liability'
-          AND l.status='posted'
-          AND l.amount>0
-          AND l.created_at>v_candidate.created_at)
-     AND EXISTS (
-       SELECT 1 FROM public.hand_history h
-        WHERE h.tournament_id=p_tournament_id
-          AND h.hand_number>p_hand_number
-          AND (h.players @> jsonb_build_array(jsonb_build_object(
-                 'userId',p_eliminated_user_id::text))
-               OR h.players @> jsonb_build_array(jsonb_build_object(
-                 'user_id',p_eliminated_user_id::text)))) THEN
-    /* Nothing newer can bind this player, who stays 'playing' at zero
-       chips, so this refusal would hold the event open for ever without a
-       word. It is written where the money board reads - once: one open alert
-       per player. */
-    INSERT INTO public.financial_alerts(severity,source,message,context)
-    SELECT 'critical','knockout_door.payout_blocked_by_unrecordable_bust',
-      'A busted player cannot be recorded, so the tournament cannot finish: '
-        ||'the only knockout generation left to record them by is one they '
-        ||'rebought from and played on after, and no later bust was captured. '
-        ||'Their place needs a ruling from their last hand.',
-      jsonb_build_object('tournament_id',p_tournament_id,'user_id',p_eliminated_user_id,
-        'reason','knockout_bust_time_unproven',
-        'detail','played_on_after_a_rebuy','hand_number',p_hand_number)
-     WHERE NOT EXISTS (
-       SELECT 1 FROM public.financial_alerts fa
-        WHERE fa.source='knockout_door.payout_blocked_by_unrecordable_bust'
-          AND NOT fa.resolved
-          AND fa.context->>'tournament_id'=p_tournament_id::text
-          AND fa.context->>'user_id'=p_eliminated_user_id::text);
-    RETURN jsonb_build_object('ok',false,'reason','knockout_bust_time_unproven',
-                              'detail','played_on_after_a_rebuy');
-  END IF;
-
   UPDATE public.tournament_players tp
      SET status='eliminated',position=p_position,prize=p_prize,
-         eliminated_at=v_bust_at
+         eliminated_at=now()
    WHERE tp.tournament_id=p_tournament_id
      AND tp.user_id=p_eliminated_user_id
      AND tp.status='playing' AND tp.chips<=0;
@@ -1850,7 +1372,6 @@ BEGIN
 END;
 $function$;
 
--- The non-bounty door: a generation a rebuy paid for is not a live bust.
 CREATE OR REPLACE FUNCTION public.fn_eliminate_tournament_player_atomic(p_tournament_id uuid, p_user_id uuid, p_position integer, p_prize numeric, p_bubble_refund numeric DEFAULT 0)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -1869,7 +1390,6 @@ DECLARE
   v_live_count integer;
   v_changed integer;
   v_result jsonb;
-  v_rebought_generations uuid[] := ARRAY[]::uuid[];
 BEGIN
   IF p_position IS NULL OR p_position<2 OR p_prize IS NULL OR p_prize<0
      OR p_bubble_refund IS NULL OR p_bubble_refund<0 THEN
@@ -1985,70 +1505,13 @@ BEGIN
     RETURN jsonb_build_object(
       'ok',false,'reason','latest_knockout_evidence_chain_conflict');
   END IF;
-  /* A GENERATION A REBUY PAID FOR IS NOT A LIVE BUST (2026-09-11).
-     The 2026-09-08/09 rebuy chain bought players back in without marking the
-     busted generation 'rebought', so each left an older 'pending' row, and
-     this check then refused every later, real bust of the same player for
-     ever. A pending generation is proven bought back - not a bust anybody still
-     owes a place - when a posted 'rebuy' leg moved this player's own wallet
-     into this event's prize liability AFTER that generation was captured and
-     BEFORE the player's next generation was: the chips busted at the next
-     hand are the chips that leg paid for. Only such rows are resolved to
-     'rebought', and only in the transaction that records the newer bust. A
-     leg outside that window proves nothing, a generation in any other state
-     is not touched, and anything unproven is refused exactly as before. */
-  SELECT COALESCE(array_agg(c.id ORDER BY c.hand_number,c.id),ARRAY[]::uuid[])
-    INTO v_rebought_generations
-    FROM public.tournament_knockout_candidates c
-   WHERE c.tournament_id=p_tournament_id
-     AND c.eliminated_user_id=p_user_id
-     AND c.hand_number<v_candidate.hand_number
-     AND c.state='pending'
-     AND EXISTS (
-       SELECT 1 FROM public.chip_ledger l
-        WHERE l.from_entity_id=p_user_id
-          AND l.tournament_id=p_tournament_id
-          AND l.category='rebuy'
-          AND l.from_type='player_wallet'
-          AND l.to_type='prize_liability'
-          AND l.status='posted'
-          AND l.amount>0
-          AND l.created_at>c.created_at
-          AND l.created_at<(
-            SELECT n.created_at
-              FROM public.tournament_knockout_candidates n
-             WHERE n.tournament_id=p_tournament_id
-               AND n.eliminated_user_id=p_user_id
-               AND n.hand_number>c.hand_number
-             ORDER BY n.hand_number,n.id
-             LIMIT 1));
   IF EXISTS (
     SELECT 1 FROM public.tournament_knockout_candidates c
      WHERE c.tournament_id=p_tournament_id
        AND c.eliminated_user_id=p_user_id
        AND c.hand_number<v_candidate.hand_number
        AND c.state<>'rebought'
-       AND c.id<>ALL(v_rebought_generations)
   ) THEN
-    /* This refusal cannot clear by itself - no newer generation will make
-       the older one proven - so it would hold the event open for ever
-       without a word. It is written where the money board reads - once: one
-       open alert per player. */
-    INSERT INTO public.financial_alerts(severity,source,message,context)
-    SELECT 'critical','knockout_door.payout_blocked_by_unrecordable_bust',
-      'A busted player cannot be recorded, so the tournament cannot finish: '
-        ||'an older knockout generation of theirs is neither rebought nor '
-        ||'proven bought back (a posted rebuy leg after it and, in a bounty '
-        ||'event, its head collected). That generation needs a ruling.',
-      jsonb_build_object('tournament_id',p_tournament_id,'user_id',p_user_id,
-        'reason','unresolved_knockout_generation_chain',
-        'hand_number',v_candidate.hand_number)
-     WHERE NOT EXISTS (
-       SELECT 1 FROM public.financial_alerts fa
-        WHERE fa.source='knockout_door.payout_blocked_by_unrecordable_bust'
-          AND NOT fa.resolved
-          AND fa.context->>'tournament_id'=p_tournament_id::text
-          AND fa.context->>'user_id'=p_user_id::text);
     RETURN jsonb_build_object(
       'ok',false,'reason','unresolved_knockout_generation_chain');
   END IF;
@@ -2111,28 +1574,10 @@ BEGIN
         USING ERRCODE='serialization_failure';
     END IF;
   END IF;
-  -- The proven older generations close with the bust that proved them.
-  IF coalesce((v_result->>'ok')::boolean,false)
-     AND cardinality(v_rebought_generations)>0 THEN
-    UPDATE public.tournament_knockout_candidates c
-       SET state='rebought',resolved_at=clock_timestamp()
-     WHERE c.id=ANY(v_rebought_generations)
-       AND c.tournament_id=p_tournament_id
-       AND c.eliminated_user_id=p_user_id
-       AND c.state='pending';
-    GET DIAGNOSTICS v_changed=ROW_COUNT;
-    IF v_changed<>cardinality(v_rebought_generations) THEN
-      RAISE EXCEPTION 'a bought-back knockout generation changed while elimination committed'
-        USING ERRCODE='serialization_failure';
-    END IF;
-    v_result:=v_result||jsonb_build_object(
-      'rebought_generations',to_jsonb(v_rebought_generations));
-  END IF;
   RETURN v_result;
 END;
 $function$;
 
--- The bounty door: the same, and only once that generation's head is closed.
 CREATE OR REPLACE FUNCTION public.fn_claim_tournament_bounty_elimination(p_tournament_id uuid, p_eliminated_user_id uuid, p_position integer, p_prize numeric, p_table_id uuid, p_hand_id uuid, p_hand_number bigint, p_seat_joined_at timestamp with time zone, p_knocker_user_id uuid, p_claimants jsonb, p_bubble_refund numeric DEFAULT 0, p_allow_existing_eliminated boolean DEFAULT false)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -2151,7 +1596,6 @@ DECLARE
   v_live_count integer;
   v_changed integer;
   v_result jsonb;
-  v_rebought_generations uuid[] := ARRAY[]::uuid[];
 BEGIN
   -- Exact replay is permitted after the player, seat and tournament have moved
   -- on. The immutable obligation itself is the receipt, and the private core
@@ -2271,95 +1715,13 @@ BEGIN
     RETURN jsonb_build_object(
       'ok',false,'reason','latest_knockout_evidence_chain_conflict');
   END IF;
-  /* A GENERATION A REBUY PAID FOR IS NOT A LIVE BUST (2026-09-11).
-     The 2026-09-08/09 rebuy chain bought players back in without marking the
-     busted generation 'rebought', so each left an older 'pending' row, and
-     this check then refused every later, real bust of the same player for
-     ever. The non-bounty door's rule applies here too: a pending generation
-     is proven bought back when a posted 'rebuy' leg moved this player's own
-     wallet into this event's prize liability AFTER that generation was
-     captured and BEFORE the player's next generation was. A bounty adds one
-     condition: the older generation's head must already be COLLECTED. A
-     bounty rebuy settles the replaced generation's head before the purchase
-     completes (fn_ca_settle_bounty_rebuy_generation_v1), so a proven
-     generation is resolved only when its own bounty obligation exists and
-     every obligation that names its hand or its chair is settled with its
-     complete marker. A generation no obligation names never had its head
-     collected: that head is still owed to whoever took the stack in that
-     hand, and a rebuy adds the new head on top of it, so resolving it here
-     would hand both heads to the player's next knocker. An obligation still
-     owed would be collected against a player this claim is about to record
-     under a newer head. Both stay refused, and the refusal raises an alert
-     for a ruling. Only proven rows are resolved, only in the transaction
-     that records the newer bust; anything unproven is refused exactly as
-     before. */
-  SELECT COALESCE(array_agg(c.id ORDER BY c.hand_number,c.id),ARRAY[]::uuid[])
-    INTO v_rebought_generations
-    FROM public.tournament_knockout_candidates c
-   WHERE c.tournament_id=p_tournament_id
-     AND c.eliminated_user_id=p_eliminated_user_id
-     AND c.hand_number<v_candidate.hand_number
-     AND c.state='pending'
-     AND EXISTS (
-       SELECT 1 FROM public.chip_ledger l
-        WHERE l.from_entity_id=p_eliminated_user_id
-          AND l.tournament_id=p_tournament_id
-          AND l.category='rebuy'
-          AND l.from_type='player_wallet'
-          AND l.to_type='prize_liability'
-          AND l.status='posted'
-          AND l.amount>0
-          AND l.created_at>c.created_at
-          AND l.created_at<(
-            SELECT n.created_at
-              FROM public.tournament_knockout_candidates n
-             WHERE n.tournament_id=p_tournament_id
-               AND n.eliminated_user_id=p_eliminated_user_id
-               AND n.hand_number>c.hand_number
-             ORDER BY n.hand_number,n.id
-             LIMIT 1))
-     AND EXISTS (
-       SELECT 1 FROM public.tournament_bounty_obligations o
-        WHERE o.tournament_id=p_tournament_id
-          AND o.eliminated_user_id=p_eliminated_user_id
-          AND o.table_id=c.table_id
-          AND o.hand_id=c.hand_id
-          AND o.hand_number=c.hand_number)
-     AND NOT EXISTS (
-       SELECT 1 FROM public.tournament_bounty_obligations o
-        WHERE o.tournament_id=p_tournament_id
-          AND o.eliminated_user_id=p_eliminated_user_id
-          AND (o.hand_number=c.hand_number
-               OR o.seat_joined_at=c.seat_joined_at)
-          AND NOT (o.state='settled'
-                   AND public.fn_bounty_obligation_has_complete_marker(o.id)));
   IF EXISTS (
     SELECT 1 FROM public.tournament_knockout_candidates c
      WHERE c.tournament_id=p_tournament_id
        AND c.eliminated_user_id=p_eliminated_user_id
        AND c.hand_number<v_candidate.hand_number
        AND c.state<>'rebought'
-       AND c.id<>ALL(v_rebought_generations)
   ) THEN
-    /* This refusal cannot clear by itself - no newer generation will make
-       the older one proven - so it would hold the event open for ever
-       without a word. It is written where the money board reads - once: one
-       open alert per player. */
-    INSERT INTO public.financial_alerts(severity,source,message,context)
-    SELECT 'critical','knockout_door.payout_blocked_by_unrecordable_bust',
-      'A busted player cannot be recorded, so the tournament cannot finish: '
-        ||'an older knockout generation of theirs is neither rebought nor '
-        ||'proven bought back (a posted rebuy leg after it and, in a bounty '
-        ||'event, its head collected). That generation needs a ruling.',
-      jsonb_build_object('tournament_id',p_tournament_id,'user_id',p_eliminated_user_id,
-        'reason','unresolved_knockout_generation_chain',
-        'hand_number',v_candidate.hand_number)
-     WHERE NOT EXISTS (
-       SELECT 1 FROM public.financial_alerts fa
-        WHERE fa.source='knockout_door.payout_blocked_by_unrecordable_bust'
-          AND NOT fa.resolved
-          AND fa.context->>'tournament_id'=p_tournament_id::text
-          AND fa.context->>'user_id'=p_eliminated_user_id::text);
     RETURN jsonb_build_object(
       'ok',false,'reason','unresolved_knockout_generation_chain');
   END IF;
@@ -2423,30 +1785,10 @@ BEGIN
         USING ERRCODE='serialization_failure';
     END IF;
   END IF;
-  -- The proven older generations close with the bust that proved them.
-  IF coalesce((v_result->>'ok')::boolean,false)
-     AND coalesce((v_result->>'claimed')::boolean,false)
-     AND cardinality(v_rebought_generations)>0 THEN
-    UPDATE public.tournament_knockout_candidates c
-       SET state='rebought',resolved_at=clock_timestamp()
-     WHERE c.id=ANY(v_rebought_generations)
-       AND c.tournament_id=p_tournament_id
-       AND c.eliminated_user_id=p_eliminated_user_id
-       AND c.state='pending';
-    GET DIAGNOSTICS v_changed=ROW_COUNT;
-    IF v_changed<>cardinality(v_rebought_generations) THEN
-      RAISE EXCEPTION
-        'a bought-back knockout generation changed while the bounty claim committed'
-        USING ERRCODE='serialization_failure';
-    END IF;
-    v_result:=v_result||jsonb_build_object(
-      'rebought_generations',to_jsonb(v_rebought_generations));
-  END IF;
   RETURN v_result;
 END;
 $function$;
 
--- The standings normalizer: a moved place is re-priced in the same write; only place money holds it.
 CREATE OR REPLACE FUNCTION public.fn_normalize_tournament_final_standings(p_tournament_id uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -2472,26 +1814,6 @@ DECLARE
   v_batch_exists        boolean := false;
   v_failure             text;
   v_failure_state       text;
-  v_t                   record;
-  v_struct              jsonb := '[]'::jsonb;
-  v_trimmed             jsonb := '[]'::jsonb;
-  v_prices              jsonb := '{}'::jsonb;
-  v_reprice             jsonb := '{}'::jsonb;
-  v_price_failure       text;
-  v_pool_cents          bigint := 0;
-  v_remaining_cents     bigint := 0;
-  v_expected_cents      bigint := 0;
-  v_total_bp            bigint := 0;
-  v_price_places        integer := 0;
-  v_price_distinct      integer := 0;
-  v_price_first         integer := 0;
-  v_price_last          integer := 0;
-  v_reprice_rows        integer := 0;
-  v_repriced            integer := 0;
-  v_price_mismatches    integer := 0;
-  v_money_payouts       integer := 0;
-  v_money_obligations   integer := 0;
-  r                     record;
 BEGIN
   IF p_tournament_id IS NULL THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'tournament_id_required',
@@ -2677,166 +1999,6 @@ BEGIN
                               'already_normalized', true, 'retryable', false);
   END IF;
 
-  /* A MOVED PLACE IS RE-PRICED IN THE SAME WRITE (2026-09-11).
-     This renumbered positions and left tp.prize where it was, so the prize a
-     player was provisionally stamped with at one place travelled with them to
-     another, and fn_prepare_tournament_place_obligations - which demands that
-     every paid place holds exactly its structure amount - then refused the
-     event for ever with recorded_prize_disagrees_with_structure. Every row
-     this assignment moves is priced here with prepare's own rule: the
-     structure trimmed to the field, bp = round(percentage * 100), each place
-     least(remaining, round(pool_cents * bp / total_bp)), the last paid place
-     takes the remainder, a Spin's drawn ladder by spin_multiplier. A place
-     outside the ladder is worth zero. Satellites pay seats, not this ladder,
-     and are renumbered exactly as before.
-     It prices only while no PLACE money has moved for the event. A payout
-     from the place ladder (any source but a bounty or a satellite seat) or a
-     place or Bubble Protection obligation means a place was paid or promised
-     against the old order; re-pricing under it could pay a place twice or
-     take one back, so that is refused, loudly, and nothing is renumbered.
-     Bounty money is paid by its own authority for a knockout, not for a
-     place, and does not hold the ladder. (A prepared batch already returned
-     above as frozen.) A ladder that cannot be derived is refused the same
-     way rather than guessed. */
-  SELECT round(COALESCE(t.prize_pool, 0), 2) AS prize_pool,
-         round(COALESCE(t.guaranteed_prize, 0), 2) AS guaranteed_prize,
-         COALESCE(t.prize_pool_finalized, false) AS prize_pool_finalized,
-         t.payout_structure, t.variant, t.tournament_type,
-         t.satellite_target_id, t.spin_multiplier
-    INTO v_t
-    FROM public.tournaments t
-   WHERE t.id = p_tournament_id;
-
-  IF NOT (lower(COALESCE(v_t.variant, '')) = 'satellite'
-          OR upper(COALESCE(v_t.tournament_type, '')) = 'SATELLITE'
-          OR v_t.satellite_target_id IS NOT NULL) THEN
-    IF NOT v_t.prize_pool_finalized
-       OR v_t.prize_pool + 0.005 < v_t.guaranteed_prize THEN
-      v_price_failure := 'prize_pool_is_not_funded_and_finalized';
-    ELSE
-      v_pool_cents := round(v_t.prize_pool * 100)::bigint;
-    END IF;
-
-    IF v_price_failure IS NULL AND v_pool_cents > 0 THEN
-      BEGIN
-        IF lower(COALESCE(v_t.variant, '')) = 'spin'
-           OR upper(COALESCE(v_t.tournament_type, '')) = 'SPIN' THEN
-          IF v_t.spin_multiplier IS NULL OR v_t.spin_multiplier <= 0 THEN
-            v_price_failure := 'spin_multiplier_is_not_persisted';
-          ELSE
-            SELECT l.structure INTO v_struct
-              FROM public.spin_payout_ladder l
-             WHERE l.multiplier = v_t.spin_multiplier;
-            IF NOT FOUND THEN
-              v_price_failure := 'spin_multiplier_has_no_canonical_ladder';
-            END IF;
-          END IF;
-        ELSE
-          v_struct := public.fn_safe_jsonb_array(v_t.payout_structure);
-        END IF;
-        IF v_price_failure IS NULL AND (jsonb_array_length(v_struct) = 0 OR EXISTS (
-          SELECT 1
-            FROM jsonb_array_elements(v_struct) e
-           WHERE jsonb_typeof(e) <> 'object'
-              OR COALESCE(e->>'place', '') !~ '^[1-9][0-9]*$'
-              OR COALESCE(e->>'percentage', '') !~ '^[0-9]+([.][0-9]+)?$'
-              OR (e->>'percentage')::numeric < 0
-        )) THEN
-          v_price_failure := 'payout_structure_is_invalid';
-        END IF;
-        IF v_price_failure IS NULL THEN
-          SELECT COALESCE(jsonb_agg(e ORDER BY (e->>'place')::integer), '[]'::jsonb)
-            INTO v_trimmed
-            FROM jsonb_array_elements(v_struct) e
-           WHERE (e->>'place')::integer <= v_player_count;
-
-          SELECT count(*), count(DISTINCT (e->>'place')::integer),
-                 COALESCE(min((e->>'place')::integer), 0),
-                 COALESCE(max((e->>'place')::integer), 0),
-                 COALESCE(sum(round((e->>'percentage')::numeric * 100)::bigint), 0)
-            INTO v_price_places, v_price_distinct, v_price_first, v_price_last,
-                 v_total_bp
-            FROM jsonb_array_elements(v_trimmed) e;
-
-          IF v_price_places = 0 OR v_price_distinct <> v_price_places
-             OR v_price_first <> 1 OR v_price_last <> v_price_places
-             OR v_total_bp <= 0 THEN
-            v_price_failure := 'payout_places_are_not_contiguous';
-          END IF;
-        END IF;
-      EXCEPTION WHEN OTHERS THEN
-        v_price_failure := 'payout_structure_is_invalid';
-      END;
-
-      IF v_price_failure IS NULL THEN
-        v_remaining_cents := v_pool_cents;
-        FOR r IN
-          SELECT (e->>'place')::integer AS place,
-                 round((e->>'percentage')::numeric * 100)::bigint AS bp
-            FROM jsonb_array_elements(v_trimmed) e
-           ORDER BY (e->>'place')::integer
-        LOOP
-          IF r.place = v_price_last THEN
-            v_expected_cents := GREATEST(v_remaining_cents, 0);
-          ELSE
-            v_expected_cents := GREATEST(
-              LEAST(v_remaining_cents, round(v_pool_cents * r.bp::numeric / v_total_bp)::bigint), 0);
-          END IF;
-          v_remaining_cents := v_remaining_cents - v_expected_cents;
-          v_prices := v_prices || jsonb_build_object(r.place::text, v_expected_cents);
-        END LOOP;
-      END IF;
-    END IF;
-
-    WITH eliminated AS (
-      SELECT tp.id, tp.position AS old_position,
-             round(COALESCE(tp.prize, 0) * 100)::bigint AS old_cents,
-             v_player_count - (row_number() OVER (
-               ORDER BY tp.eliminated_at ASC, tp.id ASC
-             ))::integer + 1 AS canonical_position
-        FROM public.tournament_players tp
-       WHERE tp.tournament_id = p_tournament_id
-         AND tp.status = 'eliminated'
-    )
-    SELECT count(*),
-           COALESCE(jsonb_object_agg(e.id::text,
-             COALESCE((v_prices->>e.canonical_position::text)::bigint, 0)), '{}'::jsonb)
-      INTO v_reprice_rows, v_reprice
-      FROM eliminated e
-     WHERE e.old_position IS DISTINCT FROM e.canonical_position
-       AND (v_price_failure IS NOT NULL
-            OR e.old_cents <> COALESCE((v_prices->>e.canonical_position::text)::bigint, 0));
-
-    IF v_reprice_rows > 0 AND v_price_failure IS NOT NULL THEN
-      RAISE WARNING 'tournament %: % moved place(s) cannot be priced (%); final standings left as they were',
-        p_tournament_id, v_reprice_rows, v_price_failure;
-      RETURN jsonb_build_object('ok', false, 'reason', 'moved_places_cannot_be_priced',
-                                'detail', v_price_failure, 'rows', v_reprice_rows,
-                                'retryable', false);
-    END IF;
-
-    IF v_reprice_rows > 0 THEN
-      SELECT count(*) INTO v_money_payouts
-        FROM public.tournament_payouts p
-       WHERE p.tournament_id = p_tournament_id
-         AND COALESCE(p.source, '') NOT IN ('bounty', 'own_bounty', 'mystery_bounty',
-                                            'mystery_bounty_residual', 'bounty_residual',
-                                            'satellite_seat');
-      SELECT count(*) INTO v_money_obligations
-        FROM public.tournament_obligations o
-       WHERE o.tournament_id = p_tournament_id
-         AND o.kind IN ('place', 'bubble_protection');
-      IF v_money_payouts > 0 OR v_money_obligations > 0 THEN
-        RAISE WARNING 'tournament %: % moved place(s) would be re-priced after place money moved (% place payout row(s), % place or bubble obligation(s)); refused, final standings left as they were',
-          p_tournament_id, v_reprice_rows, v_money_payouts, v_money_obligations;
-        RETURN jsonb_build_object('ok', false,
-                                  'reason', 'moved_places_cannot_be_repriced_after_money_moved',
-                                  'rows', v_reprice_rows, 'payouts', v_money_payouts,
-                                  'obligations', v_money_obligations, 'retryable', false);
-      END IF;
-    END IF;
-  END IF;
-
   BEGIN
     /* Clear every eliminated position first. Besides making the assignment
        deterministic even when the old ladder happened to be contiguous-but-
@@ -2862,27 +2024,6 @@ BEGIN
       FROM assignments a
      WHERE tp.id = a.id AND tp.position IS DISTINCT FROM a.position;
     GET DIAGNOSTICS v_updated = ROW_COUNT;
-
-    IF v_reprice_rows > 0 THEN
-      UPDATE public.tournament_players tp
-         SET prize = round((v_reprice->>tp.id::text)::numeric / 100, 2)
-       WHERE tp.tournament_id = p_tournament_id
-         AND tp.status = 'eliminated'
-         AND v_reprice ? tp.id::text;
-      GET DIAGNOSTICS v_repriced = ROW_COUNT;
-      SELECT count(*) INTO v_price_mismatches
-        FROM public.tournament_players tp
-       WHERE tp.tournament_id = p_tournament_id
-         AND tp.status = 'eliminated'
-         AND v_reprice ? tp.id::text
-         AND round(COALESCE(tp.prize, 0) * 100)::bigint
-             <> COALESCE((v_prices->>tp.position::text)::bigint, 0);
-      IF v_repriced <> v_reprice_rows OR v_price_mismatches <> 0 THEN
-        RAISE EXCEPTION USING
-          MESSAGE = 'the moved places were not re-priced to the ladder',
-          ERRCODE = '23514';
-      END IF;
-    END IF;
 
     SELECT count(*), count(tp.position), count(DISTINCT tp.position),
            COALESCE(min(tp.position), 0), COALESCE(max(tp.position), 0),
@@ -2929,11 +2070,10 @@ BEGIN
   END IF;
   RETURN jsonb_build_object('ok', true, 'tournament_id', p_tournament_id,
                             'players', v_player_count, 'updated', v_updated,
-                            'repriced', v_repriced, 'retryable', false);
+                            'retryable', false);
 END;
 $function$;
 
--- The unfinished-finish alarm (cron 304) counts from when the last bust was recorded.
 CREATE OR REPLACE FUNCTION public.fn_ca_tournament_finished_but_not_completed(p_minutes integer DEFAULT 15)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -2954,16 +2094,8 @@ BEGIN
            (SELECT count(*) FROM public.tournament_players tp
              WHERE tp.tournament_id = t.id
                AND tp.status IN ('playing', 'active', 'registered')) AS alive,
-           -- When the last bust was RECORDED. eliminated_at is the time of
-           -- the bust (20260911062048), and a bust can be recorded long after
-           -- it happened; the knockout door's own recording time is the
-           -- resolved_at of the generation it consumed. Rows recorded without
-           -- a generation still carry their recording time in eliminated_at.
-           GREATEST(
-             (SELECT max(tp.eliminated_at) FROM public.tournament_players tp
-               WHERE tp.tournament_id = t.id AND tp.eliminated_at IS NOT NULL),
-             (SELECT max(c.resolved_at) FROM public.tournament_knockout_candidates c
-               WHERE c.tournament_id = t.id AND c.state = 'eliminated')) AS last_elimination,
+           (SELECT max(tp.eliminated_at) FROM public.tournament_players tp
+             WHERE tp.tournament_id = t.id AND tp.eliminated_at IS NOT NULL) AS last_elimination,
            (SELECT count(*) FROM public.tournament_players tp
              WHERE tp.tournament_id = t.id) AS entrants
       FROM public.tournaments t
@@ -3057,7 +2189,7 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_catalog.pg_proc p
      WHERE p.oid = to_regprocedure('public.fn_settle_tournament_places(uuid,uuid)')
-       AND md5(p.prosrc) IN ('6181734ff98555ecc04648186f6ebf24')
+       AND md5(p.prosrc) IN ('d0262f4928b12eea1cc5e9175cbf2737')
        AND p.proowner = 'postgres'::regrole
        AND p.proacl::text = '{postgres=X/postgres,service_role=X/postgres}'
        AND p.prosecdef AND NOT p.proisstrict AND p.provolatile = 'v'
@@ -3065,13 +2197,13 @@ BEGIN
        AND p.prolang = (SELECT oid FROM pg_catalog.pg_language WHERE lanname = 'plpgsql')
        AND p.proconfig::text = '{search_path=public,statement_timeout=30s}'
   ) THEN
-    RAISE EXCEPTION 'Reviewed function body or authority changed during migration: public.fn_settle_tournament_places(uuid,uuid)'
+    RAISE EXCEPTION 'Rolled-back function body or authority is not the pre-migration one: public.fn_settle_tournament_places(uuid,uuid)'
       USING ERRCODE = '55000';
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_catalog.pg_proc p
      WHERE p.oid = to_regprocedure('public.fn_eliminate_player_legacy_candidate_20260907(uuid,uuid,integer,numeric,numeric)')
-       AND md5(p.prosrc) IN ('97abb184dc27e3c7a333a6160636f473')
+       AND md5(p.prosrc) IN ('f596d731cacf8d7e62a4549204ce73fc')
        AND p.proowner = 'postgres'::regrole
        AND p.proacl::text = '{postgres=X/postgres}'
        AND p.prosecdef AND NOT p.proisstrict AND p.provolatile = 'v'
@@ -3079,13 +2211,13 @@ BEGIN
        AND p.prolang = (SELECT oid FROM pg_catalog.pg_language WHERE lanname = 'plpgsql')
        AND p.proconfig::text = '{"search_path=public, pg_temp"}'
   ) THEN
-    RAISE EXCEPTION 'Reviewed function body or authority changed during migration: public.fn_eliminate_player_legacy_candidate_20260907(uuid,uuid,integer,numeric,numeric)'
+    RAISE EXCEPTION 'Rolled-back function body or authority is not the pre-migration one: public.fn_eliminate_player_legacy_candidate_20260907(uuid,uuid,integer,numeric,numeric)'
       USING ERRCODE = '55000';
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_catalog.pg_proc p
      WHERE p.oid = to_regprocedure('public.fn_claim_bounty_legacy_candidate_20260907(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)')
-       AND md5(p.prosrc) IN ('ea7b6236b7c5c844dbc16ce2e78d2764')
+       AND md5(p.prosrc) IN ('590f0f782e127288f33763bbab8c89f0')
        AND p.proowner = 'postgres'::regrole
        AND p.proacl::text = '{postgres=X/postgres}'
        AND p.prosecdef AND NOT p.proisstrict AND p.provolatile = 'v'
@@ -3093,13 +2225,13 @@ BEGIN
        AND p.prolang = (SELECT oid FROM pg_catalog.pg_language WHERE lanname = 'plpgsql')
        AND p.proconfig::text = '{"search_path=public, pg_temp"}'
   ) THEN
-    RAISE EXCEPTION 'Reviewed function body or authority changed during migration: public.fn_claim_bounty_legacy_candidate_20260907(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)'
+    RAISE EXCEPTION 'Rolled-back function body or authority is not the pre-migration one: public.fn_claim_bounty_legacy_candidate_20260907(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)'
       USING ERRCODE = '55000';
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_catalog.pg_proc p
      WHERE p.oid = to_regprocedure('public.fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)')
-       AND md5(p.prosrc) IN ('9447da284f1a3beb6d51dd87151c080f')
+       AND md5(p.prosrc) IN ('b4937067d9bf337e1466095b9e1d5424')
        AND p.proowner = 'postgres'::regrole
        AND p.proacl::text = '{postgres=X/postgres,service_role=X/postgres}'
        AND p.prosecdef AND NOT p.proisstrict AND p.provolatile = 'v'
@@ -3107,13 +2239,13 @@ BEGIN
        AND p.prolang = (SELECT oid FROM pg_catalog.pg_language WHERE lanname = 'plpgsql')
        AND p.proconfig::text = '{"search_path=public, pg_temp"}'
   ) THEN
-    RAISE EXCEPTION 'Reviewed function body or authority changed during migration: public.fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)'
+    RAISE EXCEPTION 'Rolled-back function body or authority is not the pre-migration one: public.fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)'
       USING ERRCODE = '55000';
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_catalog.pg_proc p
      WHERE p.oid = to_regprocedure('public.fn_claim_tournament_bounty_elimination(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)')
-       AND md5(p.prosrc) IN ('e099757eb087ef222e2fc92030ececaf')
+       AND md5(p.prosrc) IN ('876456f79250a307292dc6f2ae1564f3')
        AND p.proowner = 'postgres'::regrole
        AND p.proacl::text = '{postgres=X/postgres,service_role=X/postgres}'
        AND p.prosecdef AND NOT p.proisstrict AND p.provolatile = 'v'
@@ -3121,13 +2253,13 @@ BEGIN
        AND p.prolang = (SELECT oid FROM pg_catalog.pg_language WHERE lanname = 'plpgsql')
        AND p.proconfig::text = '{"search_path=public, pg_temp"}'
   ) THEN
-    RAISE EXCEPTION 'Reviewed function body or authority changed during migration: public.fn_claim_tournament_bounty_elimination(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)'
+    RAISE EXCEPTION 'Rolled-back function body or authority is not the pre-migration one: public.fn_claim_tournament_bounty_elimination(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)'
       USING ERRCODE = '55000';
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_catalog.pg_proc p
      WHERE p.oid = to_regprocedure('public.fn_normalize_tournament_final_standings(uuid)')
-       AND md5(p.prosrc) IN ('45b06c3f8be02940d130c427d5a32519')
+       AND md5(p.prosrc) IN ('ad865880f99bc28896bec03c66ae55a9')
        AND p.proowner = 'postgres'::regrole
        AND p.proacl::text = '{postgres=X/postgres,service_role=X/postgres}'
        AND p.prosecdef AND NOT p.proisstrict AND p.provolatile = 'v'
@@ -3135,13 +2267,13 @@ BEGIN
        AND p.prolang = (SELECT oid FROM pg_catalog.pg_language WHERE lanname = 'plpgsql')
        AND p.proconfig::text = '{search_path=public}'
   ) THEN
-    RAISE EXCEPTION 'Reviewed function body or authority changed during migration: public.fn_normalize_tournament_final_standings(uuid)'
+    RAISE EXCEPTION 'Rolled-back function body or authority is not the pre-migration one: public.fn_normalize_tournament_final_standings(uuid)'
       USING ERRCODE = '55000';
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_catalog.pg_proc p
      WHERE p.oid = to_regprocedure('public.fn_ca_tournament_finished_but_not_completed(integer)')
-       AND md5(p.prosrc) IN ('6f153669e4b6b149bfccd36ad575bda8')
+       AND md5(p.prosrc) IN ('e1eebfe28f393f2617c0a1ac93c2583a')
        AND p.proowner = 'postgres'::regrole
        AND p.proacl::text = '{postgres=X/postgres,service_role=X/postgres}'
        AND p.prosecdef AND NOT p.proisstrict AND p.provolatile = 'v'
@@ -3149,7 +2281,7 @@ BEGIN
        AND p.prolang = (SELECT oid FROM pg_catalog.pg_language WHERE lanname = 'plpgsql')
        AND p.proconfig::text = '{search_path=public,statement_timeout=60s}'
   ) THEN
-    RAISE EXCEPTION 'Reviewed function body or authority changed during migration: public.fn_ca_tournament_finished_but_not_completed(integer)'
+    RAISE EXCEPTION 'Rolled-back function body or authority is not the pre-migration one: public.fn_ca_tournament_finished_but_not_completed(integer)'
       USING ERRCODE = '55000';
   END IF;
 END;

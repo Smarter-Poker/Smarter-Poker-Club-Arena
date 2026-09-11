@@ -73,6 +73,9 @@ class FakeEngine {
 }
 
 class FakeStore implements MaintenanceBreakStore {
+  async loadReleaseBoundary(): Promise<number | null> {
+    return null;
+  }
   row: PersistedMaintenanceBreak | null = null;
   clears = 0;
   async load() {
@@ -217,7 +220,7 @@ describe('an adopted last-hand break', () => {
     }
   });
 
-  it('refuses a row from an hour that has already finished', async () => {
+  it('retains an expired durable row until its recovery runs', async () => {
     const boot = new Date('2026-09-06T21:07:00.000Z').getTime();
     vi.setSystemTime(boot);
     const { mb, engines, store } = build();
@@ -236,11 +239,11 @@ describe('an adopted last-hand break', () => {
     await mb.start();
 
     for (const [id, e] of engines) {
-      expect(e.paused, `${id} was frozen by a stale announcement`).toBe(false);
+      expect(e.paused, `${id} was frozen by a stale announcement`).toBe(true);
     }
-    expect(mb.isActive()).toBe(false);
-    expect(store.clears).toBeGreaterThan(0);
-    expect(store.row).toBeNull();
+    expect(mb.isActive()).toBe(true);
+    expect(store.clears).toBe(0);
+    expect(store.row).not.toBeNull();
   });
 
   it('still adopts a row from the hour it belongs to', async () => {

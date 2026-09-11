@@ -11,6 +11,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { getFreshAccessToken } from '../lib/authToken';
 import EngineStateClient, {
   type EngineConnectionStatus,
@@ -101,8 +102,16 @@ export function useEngineTableState(
       },
       onStatus: (s) => setStatus(s),
       onError: (e) => setLastError(e),
-      onEvent: (payload) => setLastEvent(payload),
-      onUserEvent: (payload) => setLastUserEvent(payload),
+      // A timer boundary does not guarantee a React commit. Discrete events
+      // must reach consumers before a later event replaces their state slot.
+      onEvent: (payload) => {
+        if (clientRef.current !== client) return;
+        flushSync(() => setLastEvent(payload));
+      },
+      onUserEvent: (payload) => {
+        if (clientRef.current !== client) return;
+        flushSync(() => setLastUserEvent(payload));
+      },
     });
 
     clientRef.current = client;

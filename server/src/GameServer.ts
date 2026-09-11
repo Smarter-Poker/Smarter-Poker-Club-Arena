@@ -1,3 +1,4 @@
+import { bindToProcessRoot } from './services/supabase/dataActorContext.js';
 /**
  * GameServer — server-side game orchestration.
  *
@@ -174,7 +175,7 @@ import { raiseEngineAlert, resolveEngineAlert } from './services/engineAlerts.js
 import { MaintenanceBreak } from './maintenance/MaintenanceBreak.js';
 import { createSupabaseMaintenanceBreakStore } from './maintenance/maintenanceBreakStore.js';
 import { StatsHealthMonitor } from './observability/StatsHealthMonitor.js';
-import { runThawInstallments } from './maintenance/thawInstallments.js';
+import { runMaintenanceThawV3 } from './maintenance/maintenanceThawV3.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
 import {
   RunningResumeCooldowns,
@@ -1747,26 +1748,21 @@ export class GameServer {
     // returns complete:false when it has used its own ~4s budget, so no single
     // call can hit PostgREST's 8s cap the way the one-statement thaw did
     // (19.9s before the #2703 indexes; a timeout still at 20:00 after them).
-    // runThawInstallments calls again until complete, and retries a call that
-    // died - a timed-out call committed nothing, so the retry is exactly
-    // right. Idempotent per freeze and per step on the database side.
-    thaw: async (freezeStartedAtMs, frozenSeconds) => {
-      const args = {
-        p_freeze_started: new Date(freezeStartedAtMs).toISOString(),
-        p_frozen_seconds: frozenSeconds,
-        p_thawed_by: ENGINE_RELEASE_IDENTITY.version,
-      };
-      const summary = await runThawInstallments(
-        async () => {
+    // The v3 client retries the exact owner and freeze identity. A lost response
+    // can recover its committed receipt. Completion schedules a future release;
+    // MaintenanceBreak keeps the pause until that certified boundary.
+    thaw: bindToProcessRoot(async (request, signal) => {
+      const release = await runMaintenanceThawV3(
+        {
+          ...request,
+          thawedBy: ENGINE_RELEASE_IDENTITY.version,
+        },
+        async (args) => {
           const { data, error } = await supabase.rpc('fn_thaw_platform', args);
           if (error) throw new Error(error.message);
-          return (data ?? {}) as Record<string, unknown>;
+          return data;
         },
-        { log: (line) => console.log(line) }
-      );
-      console.log(
-        `[MaintenanceBreak] thaw: complete in ${summary.calls} call(s), ${summary.errors} error(s):`,
-        JSON.stringify(summary.last?.shifted ?? null)
+        { signal, log: (line) => console.log(line) }
       );
 
       /* fn_thaw_platform has just moved every open add-on deadline. Managers
@@ -1784,7 +1780,8 @@ export class GameServer {
           }
         })
       );
-    },
+      return release;
+    }),
   });
 
   /**

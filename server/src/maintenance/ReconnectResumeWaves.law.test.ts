@@ -1,3 +1,4 @@
+import type { MaintenanceThawRequest } from './maintenanceThawV3.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   MaintenanceBreak,
@@ -66,6 +67,7 @@ describe('maintenance resume waves preserve the remaining reconnect allowance', 
       let row: PersistedMaintenanceBreak | null = null;
       const mb = new MaintenanceBreak({
         store: {
+          loadReleaseBoundary: async () => null,
           load: async () => row,
           save: async (state) => {
             row = { ...state };
@@ -85,9 +87,15 @@ describe('maintenance resume waves preserve the remaining reconnect allowance', 
         ...(thawMode === 'no-hook'
           ? {}
           : {
-              thaw: async () => {
+              thaw: async (request: MaintenanceThawRequest) => {
                 await thawWait;
                 if (thawMode === 'failure') throw new Error('isolated thaw failure');
+                row = null;
+                return {
+                  ...request,
+                  creditedThroughAt: Date.now(),
+                  effectiveFrozenSeconds: (Date.now() - request.freezeStartedAt) / 1000,
+                };
               },
             }),
       });
@@ -102,6 +110,12 @@ describe('maintenance resume waves preserve the remaining reconnect allowance', 
       if (thawMode !== 'no-hook') vi.setSystemTime(Date.now() + 8_000);
       releaseThaw();
       await ending;
+      if (thawMode === 'failure') {
+        expect(deadlineAtResume.size).toBe(0);
+        expect(mb.isActive()).toBe(true);
+        expect(row).not.toBeNull();
+        return;
+      }
       expect(deadlineAtResume.size).toBe(25);
       // Reading a waiting table must not prevent its later wave compensation.
       const partial = disconnect.getFsmStatesForTable('wave-table-199');

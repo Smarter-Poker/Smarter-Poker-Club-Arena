@@ -781,20 +781,33 @@ const DiamondGamesService = {
    * the float where it belongs should be able to put it there from the console
    * they are already looking at. Union owners and club owners alike; the server
    * decides who may.
+   *
+   * `key` is the caller's idempotency token and is REQUIRED. The server spends
+   * it once: a press whose reply was lost must be retried under the same key or
+   * the chips move twice. Mint one per intent and hold it across a failure.
    */
   async fundPromo(
     clubId: string,
-    amountChips: number
-  ): Promise<{ ok: boolean; error?: string; promo_chips?: number; bank_chips?: number }> {
+    amountChips: number,
+    key: string
+  ): Promise<{
+    ok: boolean;
+    error?: string;
+    replayed?: boolean;
+    promo_chips?: number;
+    bank_chips?: number;
+  }> {
     const { data, error } = await supabase.rpc('fn_diamond_game_fund_promo', {
       p_club_id: clubId,
       p_amount: amountChips,
+      p_key: key,
     });
     if (error) throw error;
     const raw = rec(data);
     return {
       ok: Boolean(raw.ok),
       error: raw.error ? String(raw.error) : undefined,
+      replayed: Boolean(raw.replayed),
       promo_chips: raw.promo_chips === undefined ? undefined : Number(raw.promo_chips),
       bank_chips: raw.bank_chips === undefined ? undefined : Number(raw.bank_chips),
     };

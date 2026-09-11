@@ -36,7 +36,7 @@
  * registry. The player's page is /clubs/:clubId/wheel.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useToast } from '../../components/common/Toast';
 import { ErrorState, LoadingState } from '../../components/common/EmptyState';
@@ -51,6 +51,7 @@ import DiamondGamesService from '../../services/DiamondGamesService';
 import { compactChips } from '../../utils/format';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
+import { uuid } from '../../utils/uuid';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import styles from '../diamondGames.module.css';
 
@@ -172,6 +173,14 @@ export default function ClubWheelOperationsPage() {
   const [saving, setSaving] = useState(false);
   const [fundChips, setFundChips] = useState('');
   const [funding, setFunding] = useState(false);
+  /**
+   * ONE KEY PER INTENT, HELD ACROSS A FAILURE (2026-09-11). The server spends a
+   * funding key once and answers a second press under the same key with
+   * replayed = true, having moved nothing. So a press whose reply was lost has
+   * to be retried under the SAME key: mint on a new amount, keep on a thrown
+   * request, clear only once the server has actually answered.
+   */
+  const fundKeyRef = useRef<{ amount: number; key: string } | null>(null);
 
   const load = useCallback(async () => {
     if (!routeClubId) return;
@@ -260,19 +269,30 @@ export default function ClubWheelOperationsPage() {
       if (!clubUuid) return;
       if (!Number.isFinite(amount) || amount <= 0)
         return toast.error('Enter How Many Chips To Move');
+      const held = fundKeyRef.current;
+      const intent = held && held.amount === amount ? held : { amount, key: uuid() };
+      fundKeyRef.current = intent;
       setFunding(true);
       try {
-        const res = await DiamondGamesService.fundPromo(clubUuid, amount);
+        const res = await DiamondGamesService.fundPromo(clubUuid, amount, intent.key);
+        // The server answered, so this intent is closed either way: a refusal
+        // moved nothing, and a success must never be sent a second time.
+        fundKeyRef.current = null;
+        if (!isMountedRef.current) return;
         if (!res.ok) {
           toast.error(res.error ?? 'Those Chips Could Not Be Moved');
         } else {
-          toast.success('The Promo Wallet Is Funded');
+          toast.success(
+            res.replayed ? 'Those Chips Were Already Moved' : 'The Promo Wallet Is Funded'
+          );
           setFundChips('');
           await load();
         }
-      } catch (e) {
-        reportError(e, 'ClubWheelOperationsPage.fundPromo', { clubId: clubUuid });
-        toast.error('Those Chips Could Not Be Moved');
+      } catch (err) {
+        // No answer came back, so nobody knows whether the chips moved. The key
+        // is deliberately kept: the next press is the same intent, not a new one.
+        reportError(err, 'ClubWheelOperationsPage.fundPromo', { clubId: clubUuid });
+        if (isMountedRef.current) toast.error('Those Chips Could Not Be Moved');
       } finally {
         if (isMountedRef.current) setFunding(false);
       }

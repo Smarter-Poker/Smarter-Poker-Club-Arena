@@ -42,6 +42,9 @@ const VARIANT_ROWS: Array<{ key: string; games: string }> = [
   { key: 'plo4', games: 'PLO4 / FLO4' },
   { key: 'plo8', games: 'PLO8 (Hi-Lo)' },
   { key: 'plo5', games: 'PLO5 / FLO5' },
+  /* Live variants that this table omitted entirely until 2026-09-11: a
+     Pineapple or FLO8 player found no row describing their own game. */
+  { key: 'pineapple', games: 'Pineapple' },
   { key: 'plo6', games: 'PLO6' },
   { key: 'short_deck', games: 'Short Deck' },
 ];
@@ -268,7 +271,15 @@ export function BBJRulesPanel({ poolAmount = 0, mini = null }: BBJRulesPanelProp
           <ul className="bbj-rules__list">
             <li>Drop Collected On Every Flop With {BBJ_RULES.minPlayersDealt}+ Players Dealt In</li>
             <li>Minimum Pot To Win The Jackpot: {BBJ_RULES.minPotBB} Big Blinds</li>
-            <li>Minimum Players Dealt In: {BBJ_RULES.minPlayersDealt}</li>
+            <li>
+              Minimum Players Dealt In: {BBJ_RULES.minPlayersDealt}
+              {/* The mini has its own floor since phase 3. It ships equal to the
+                  main's, so this says nothing extra until somebody sets it -
+                  and says the right thing the moment they do, rather than
+                  printing the main's number for both jackpots. */}
+              {BBJ_RULES.miniMinPlayersDealt !== BBJ_RULES.minPlayersDealt &&
+                ` (Mini: ${BBJ_RULES.miniMinPlayersDealt})`}
+            </li>
             {BBJ_RULES.requireBothHoleCards && (
               <li>
                 Both Hole Cards Must Play (In Omaha Games, Exactly Two) - For Both The Losing And

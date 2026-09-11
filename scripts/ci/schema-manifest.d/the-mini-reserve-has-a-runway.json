@@ -1,0 +1,4 @@
+{
+  "_owner": "feat/one-qualifying-rule. BBJ programme phase 3 of 5. Applied to production 2026-09-11 as 20260911162600 (fn_bbj_mini_for_club gains the runway; fn_bbj_set_club_mini_floor makes the per-pool reserve floor a control with a derived lower bound), 20260911162733 (the runway window is never longer than the mini has existed) and the operator gate that follows it (the reserve and the runway are NULL unless the caller is club staff; pre-login roles revoked).",
+  "functions": ["fn_bbj_mini_for_club", "fn_bbj_set_club_mini_floor"]
+}

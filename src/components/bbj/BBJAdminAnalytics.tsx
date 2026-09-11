@@ -25,7 +25,6 @@ export interface BBJAdminAnalyticsProps {
 interface Analytics {
   main_balance: number;
   backup_balance: number;
-  promo_balance: number;
   contributions_24h: number;
   contributions_7d: number;
   contributions_30d: number;
@@ -196,15 +195,26 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
         )}
       </div>
 
+      {/* THE BANKS THE JACKPOT HOLDS - TWO, NOT THREE (phase 5, 2026-09-11).
+          This bar used to read "Pool Split - Main / Backup / Promo" and size a
+          promo segment from `promo_balance`. That is a STAGING SLOT which
+          `fn_sweep_bbj_promo` empties continuously: measured that day it held
+          14.61 against a union promo wallet of 56,291.01, so the promo segment
+          rendered at 0.007% of the bar and told every operator that promo gets
+          essentially nothing. It gets 26.1% of every raked chip - 134,595 so
+          far - and it is not here because it has already been swept to the
+          purse. A flow drawn as a slice of two balances is a false statement
+          about where a club's rake goes, so the bar now shows only the two
+          banks the jackpot actually holds, and the promo slice is reported as
+          a flow on the jackpot page (fn_bbj_promo_facts). */}
       <div className="bbj-admin__bar">
         <div className="bbj-admin__bar-label">
-          Pool Split - Main ${money(data.main_balance, 0)} / Backup ${money(data.backup_balance, 0)}{' '}
-          / Promo ${money(data.promo_balance, 0)}
+          Jackpot Banks - Main ${money(data.main_balance, 0)} / Backup $
+          {money(data.backup_balance, 0)}
         </div>
         <div className="bbj-admin__bar-track">
           {(() => {
-            const total =
-              Number(data.main_balance) + Number(data.backup_balance) + Number(data.promo_balance);
+            const total = Number(data.main_balance) + Number(data.backup_balance);
             const pct = (v: number) => (total > 0 ? (Number(v) / total) * 100 : 0);
             return (
               <>
@@ -216,13 +226,12 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
                   className="bbj-admin__bar-seg bbj-admin__bar-backup"
                   style={{ width: `${pct(data.backup_balance)}%` }}
                 />
-                <div
-                  className="bbj-admin__bar-seg bbj-admin__bar-promo"
-                  style={{ width: `${pct(data.promo_balance)}%` }}
-                />
               </>
             );
           })()}
+        </div>
+        <div className="bbj-admin__bar-label" style={{ marginTop: 6, opacity: 0.75 }}>
+          Promo Is Not A Bank Here - It Is Swept To The Club Or Union Promo Wallet As It Arrives.
         </div>
       </div>
     </div>

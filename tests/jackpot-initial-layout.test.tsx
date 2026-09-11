@@ -1,4 +1,5 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 
 const io = vi.hoisted(() => ({
@@ -34,8 +35,6 @@ vi.mock('../src/utils/clubIdResolver', () => ({ resolveClubUUID: async (id: stri
 vi.mock('../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../src/hooks/useVisibilityRefresh', () => ({ useVisibilityRefresh: vi.fn() }));
 vi.mock('../src/lib/bbjPoolFeed', () => ({ watchBbjPool: () => () => {} }));
-vi.mock('../src/services/BBJService', () => ({ default: {} }));
-vi.mock('../src/components/common/confirmDialog', () => ({ confirmDialog: vi.fn() }));
 vi.mock('../src/components/club-buttons', () => ({
   ArenaJackpotDisplay: () => <div>Jackpot Display</div>,
 }));
@@ -80,7 +79,7 @@ const pool = {
   total_contributed: 129,
 };
 let requests: Record<string, ReturnType<typeof deferred>>;
-let owner: ReturnType<typeof deferred>;
+let promo: ReturnType<typeof deferred>;
 beforeEach(() => {
   __resetBbjMiniFeedForTests();
   io.clubId = 'club-a';
@@ -89,26 +88,26 @@ beforeEach(() => {
   io.from.mockReset();
   io.hand = null;
   io.hit = null;
-  owner = deferred();
+  promo = deferred();
+  promo.resolve(result([{ is_operator: false }]));
   requests = Object.fromEntries(
     ['fn_bbj_recent_hits', 'fn_bbj_analytics', 'fn_bbj_mini_for_club'].map((k) => [k, deferred()])
   );
-  io.rpc.mockImplementation(
-    (name: string) => requests[name]?.promise ?? Promise.resolve(result([]))
+  io.rpc.mockImplementation((name: string) =>
+    name === 'fn_bbj_promo_facts'
+      ? promo.promise
+      : (requests[name]?.promise ?? Promise.resolve(result([])))
   );
   io.from.mockImplementation((table: string) => {
-    let columns = '';
     const q = {
       select: (s: string) => {
-        columns = s;
+        expect(s).not.toContain('owner_id');
         return q;
       },
       eq: () => q,
       maybeSingle: () =>
         table === 'clubs'
-          ? columns.includes('owner_id')
-            ? owner.promise
-            : Promise.resolve(result({ union_id: null }))
+          ? Promise.resolve(result({ union_id: null }))
           : Promise.resolve(result(pool)),
     };
     return q;
@@ -118,14 +117,29 @@ afterEach(() => __resetBbjMiniFeedForTests());
 const root = (c: HTMLElement) => c.querySelector('.bbj-page')!;
 const pending = (c: HTMLElement) => c.querySelectorAll('[data-initial-layout="pending"]');
 
-it('keeps first-layout pending for the actual owner, mini, analytics and recent-hit reads', async () => {
+it('settles after StrictMode retires and restarts the initial scope effect', async () => {
+  const { container } = render(
+    <StrictMode>
+      <Page />
+    </StrictMode>
+  );
+  await act(async () => Object.values(requests).forEach((r) => r.resolve(result([]))));
+  await screen.findByText('Jackpot Display');
+  expect(root(container)).toHaveAttribute('data-initial-layout', 'settled');
+});
+
+it('keeps first-layout pending for the actual promo, mini, analytics and recent-hit reads', async () => {
+  promo = deferred();
   const { container } = render(<Page />);
+  await waitFor(() =>
+    expect(io.rpc).toHaveBeenCalledWith('fn_bbj_promo_facts', { p_pool_id: 'pool-a' })
+  );
+  expect(root(container)).toHaveAttribute('data-initial-layout', 'pending');
+  expect(screen.queryByText('Jackpot Display')).not.toBeInTheDocument();
+  await act(async () => promo.resolve(result([{ is_operator: false }])));
   await screen.findByText('Jackpot Display');
   expect(root(container)).toHaveAttribute('data-initial-layout', 'pending');
   expect(pending(container)).toHaveLength(3);
-  await act(async () => {
-    owner.resolve(result({ owner_id: 'viewer', union_id: null }));
-  });
   expect(root(container)).toHaveAttribute('data-initial-layout', 'pending');
   await act(async () => {
     requests.fn_bbj_mini_for_club.resolve(
@@ -151,7 +165,6 @@ it.each(['empty', 'error', 'rejected'] as const)(
     const { container } = render(<Page />);
     await screen.findByText('Jackpot Display');
     await act(async () => {
-      owner.reject(new Error('offline'));
       for (const request of Object.values(requests)) {
         if (outcome === 'rejected') request.reject(new Error('offline'));
         else
@@ -178,7 +191,6 @@ it('keeps pending child reads mounted across routine hand refreshes', async () =
   expect(io.rpc.mock.calls.filter(([name]) => name === 'fn_bbj_recent_hits')).toHaveLength(1);
   expect(io.rpc.mock.calls.filter(([name]) => name === 'fn_bbj_analytics')).toHaveLength(1);
   await act(async () => {
-    owner.resolve(result(null));
     Object.values(requests).forEach((r) => r.resolve(result([])));
   });
   expect(pending(container)).toHaveLength(0);
@@ -299,45 +311,107 @@ it('re-enters pending when returning to a prior pool before the intervening read
   expect(pending(container)).toHaveLength(0);
 });
 
+const operatorFacts = (amount: number) =>
+  result([
+    {
+      is_operator: true,
+      purse_kind: 'club',
+      purse_available: amount,
+      contributed_all_time: 100,
+      swept_all_time: 90,
+      observed_rate_pct: 26.1,
+    },
+  ]);
+
 it.each(['club', 'user'] as const)(
-  'hides the prior owner control while a new %s permission is pending',
+  'hides prior operator facts immediately while a new %s permission is pending',
   async (scope) => {
+    promo = deferred();
     const { container, rerender } = render(<Page />);
     await act(async () => {
-      owner.resolve(result({ owner_id: 'viewer' }));
+      promo.resolve(operatorFacts(98765));
       Object.values(requests).forEach((r) => r.resolve(result([])));
     });
-    expect(
-      await screen.findByRole('button', { name: 'Rain To Active Players' })
-    ).toBeInTheDocument();
-    owner = deferred();
+    expect(await screen.findByText('The Promo Slice')).toBeInTheDocument();
+    expect(screen.getByText('98,765 Chips')).toBeInTheDocument();
+    promo = deferred();
     if (scope === 'club') io.clubId = 'club-b';
     else io.userId = 'other-viewer';
     rerender(<Page />);
-    await screen.findByText('Jackpot Display');
-    expect(
-      screen.queryByRole('button', { name: 'Rain To Active Players' })
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText('The Promo Slice')).not.toBeInTheDocument();
+    expect(screen.queryByText('98,765 Chips')).not.toBeInTheDocument();
     expect(root(container)).toHaveAttribute('data-initial-layout', 'pending');
-    await act(async () => owner.resolve(result({ owner_id: 'unrelated-owner' })));
+    await waitFor(() =>
+      expect(io.rpc.mock.calls.filter(([name]) => name === 'fn_bbj_promo_facts')).toHaveLength(2)
+    );
+    await act(async () => promo.resolve(result([{ is_operator: false }])));
+    await screen.findByText('Jackpot Display');
     expect(root(container)).toHaveAttribute('data-initial-layout', 'settled');
+    expect(screen.queryByText('The Promo Slice')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Promo Rain Amount')).not.toBeInTheDocument();
   }
 );
 
-it('ignores a late old-club owner approval after the new club denied ownership', async () => {
+it.each(['club', 'user'] as const)(
+  'ignores a late old-%s operator result after the new scope denied access',
+  async (scope) => {
+    promo = deferred();
+    const oldPromo = promo;
+    const { container, rerender } = render(<Page />);
+    await waitFor(() =>
+      expect(io.rpc.mock.calls.filter(([name]) => name === 'fn_bbj_promo_facts')).toHaveLength(1)
+    );
+    promo = deferred();
+    if (scope === 'club') io.clubId = 'club-b';
+    else io.userId = 'other-viewer';
+    rerender(<Page />);
+    await waitFor(() =>
+      expect(io.rpc.mock.calls.filter(([name]) => name === 'fn_bbj_promo_facts')).toHaveLength(2)
+    );
+    await act(async () => {
+      promo.resolve(result([{ is_operator: false }]));
+      Object.values(requests).forEach((r) => r.resolve(result([])));
+    });
+    await screen.findByText('Jackpot Display');
+    await act(async () => oldPromo.resolve(operatorFacts(98765)));
+    expect(root(container)).toHaveAttribute('data-initial-layout', 'settled');
+    expect(screen.queryByText('The Promo Slice')).not.toBeInTheDocument();
+    expect(screen.queryByText('98,765 Chips')).not.toBeInTheDocument();
+  }
+);
+
+it('does not let a retired A request settle a later A after an A to B to A switch', async () => {
+  promo = deferred();
+  const firstA = promo;
   const { container, rerender } = render(<Page />);
-  await screen.findByText('Jackpot Display');
-  const oldOwner = owner;
-  owner = deferred();
-  io.clubId = 'club-b';
+  await waitFor(() =>
+    expect(io.rpc.mock.calls.filter(([name]) => name === 'fn_bbj_promo_facts')).toHaveLength(1)
+  );
+  promo = deferred();
+  const pendingB = promo;
+  io.userId = 'other-viewer';
   rerender(<Page />);
-  await screen.findByText('Jackpot Display');
+  await waitFor(() =>
+    expect(io.rpc.mock.calls.filter(([name]) => name === 'fn_bbj_promo_facts')).toHaveLength(2)
+  );
+  promo = deferred();
+  io.userId = 'viewer';
+  rerender(<Page />);
+  await waitFor(() =>
+    expect(io.rpc.mock.calls.filter(([name]) => name === 'fn_bbj_promo_facts')).toHaveLength(3)
+  );
   await act(async () => {
-    owner.resolve(result({ owner_id: 'unrelated-owner' }));
+    firstA.resolve(operatorFacts(98765));
+    pendingB.resolve(operatorFacts(87654));
     Object.values(requests).forEach((r) => r.resolve(result([])));
   });
-  await act(async () => oldOwner.resolve(result({ owner_id: 'viewer' })));
+  await act(async () => io.hand!());
+  expect(io.rpc.mock.calls.filter(([name]) => name === 'fn_bbj_promo_facts')).toHaveLength(3);
+  expect(root(container)).toHaveAttribute('data-initial-layout', 'pending');
+  expect(screen.queryByText('The Promo Slice')).not.toBeInTheDocument();
+  await act(async () => promo.resolve(operatorFacts(12345)));
+  expect(await screen.findByText('12,345 Chips')).toBeInTheDocument();
+  expect(screen.queryByText('98,765 Chips')).not.toBeInTheDocument();
+  expect(screen.queryByText('87,654 Chips')).not.toBeInTheDocument();
   expect(root(container)).toHaveAttribute('data-initial-layout', 'settled');
-  expect(screen.queryByLabelText('Promo Rain Amount')).not.toBeInTheDocument();
 });

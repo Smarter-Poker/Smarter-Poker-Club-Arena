@@ -62,6 +62,20 @@ const BLOCKS: VariantBlock[] = [
     note: 'An 8-High Straight Flush Or Better Must Lose. Exactly Two Cards From The Hand Must Play, For Both Players.',
   },
   {
+    /* PINEAPPLE IS A LIVE VARIANT AND HAD NO ROW HERE (2026-09-11).
+       Before the rule was unified, `normalizeVariantKey('pineapple')` fell
+       through to 'nlh' and this strip highlighted the HOLD'EM row - the wrong
+       bar, but a row. Giving the client its real `pineapple` entry made the bar
+       correct everywhere else and left this strip with nothing to highlight:
+       `blockKeyFor` returned 'pineapple' and no block had that key. It cannot
+       collapse onto PLO4 either - same Quad Kings bar, but PLO4's note states
+       Omaha's exactly-two-cards rule, which Pineapple does not have. */
+    key: 'pineapple',
+    games: 'Pineapple',
+    cards: [c('K', 's'), c('K', 'h'), c('K', 'c'), c('K', 'd'), c('2', 's')],
+    note: 'Quad Kings Or Better Must Lose. Both Of The Player\u2019s Hole Cards Must Play.',
+  },
+  {
     key: 'plo6',
     games: 'PLO6',
     cards: [],
@@ -93,6 +107,9 @@ const MINI_BLOCKS: VariantBlock[] = BLOCKS.map((b) => {
   if (!info.eligible) return { ...b, cards: [], note: '' };
   const holdem = info.rule === 'holdem_aces_full';
   const hiLo = b.key === 'plo8';
+  /* Pineapple's MAIN bar is Quad Kings, so `info.rule` is plo_quads and it
+     takes the "not only Quad Kings" note below - which is exactly right for
+     it. Nothing here assumes an Omaha table. */
   return {
     ...b,
     cards: info.minLosingHandCards,
@@ -111,6 +128,12 @@ function blockKeyFor(variantKey: string | null | undefined): string | null {
   if (raw === 'flh') return 'nlh';
   if (raw === 'plo') return 'plo4';
   if (raw === 'plo_hilo') return 'plo8';
+  /* FLO8 is the same GAME as PLO8 - four cards, exactly-two, 8-or-better low;
+     only the betting differs, and betting has nothing to do with which hand
+     qualifies. It had no block and no alias, so an FLO8 table highlighted
+     nothing. (`pineapple` is NOT aliased: it has its own block above, because
+     its note is not PLO4's.) */
+  if (raw === 'flo8') return 'plo8';
   return raw;
 }
 

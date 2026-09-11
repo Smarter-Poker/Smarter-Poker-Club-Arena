@@ -18,8 +18,6 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { reportError } from '../utils/errorReporter';
-import BBJService from '../services/BBJService';
-import { confirmDialog } from '../components/common/confirmDialog';
 import BBJAdminAnalytics from '../components/bbj/BBJAdminAnalytics';
 import { BBJRecentHits } from '../components/bbj/BBJRecentHits';
 import { BBJHandDetail } from '../components/bbj/BBJHandDetail';
@@ -33,7 +31,6 @@ interface JackpotInfo {
   pool_amount?: number; // Legacy — not in schema, kept for backward compat
   main_balance: number;
   backup_balance: number;
-  promo_balance: number;
   total_contributed: number;
   last_hit_at?: string;
   last_hit_amount?: number;
@@ -44,6 +41,18 @@ export default function BadBeatJackpotPage() {
   const { clubId } = useParams();
   const { user } = useAuthUser();
   const toast = useToast();
+  const scopeKey = `${clubId ?? ''}:${user?.id ?? ''}`;
+  const scopeRef = useRef({ key: scopeKey });
+  if (scopeRef.current.key !== scopeKey) scopeRef.current = { key: scopeKey };
+  // Object identity also retires an old A request after an A -> B -> A switch.
+  const scope = scopeRef.current;
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const [jackpot, setJackpot] = useState<JackpotInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -54,8 +63,7 @@ export default function BadBeatJackpotPage() {
      today the page never said so. */
   const [pageMini, setPageMini] = useState<BbjMiniSnapshot | null>(null);
   const [miniFirstRead, setMiniFirstRead] = useState<BbjMiniReadOutcome | null>(null);
-  const [ownerCheckedKey, setOwnerCheckedKey] = useState<string | null>(null);
-  const ownerKey = `${clubId}:${user?.id ?? ''}`;
+  const [settledScope, setSettledScope] = useState<object | null>(null);
   /* Which winners the history lists. Dan 2026-09-11: main and mini winners
      are separate lists, the mini one tap away rather than mixed in. */
   const [historyKind, setHistoryKind] = useState<'main' | 'mini'>('main');
@@ -66,84 +74,53 @@ export default function BadBeatJackpotPage() {
   // 2026-08-18: real hand count + own-contribution facts, from the ledger.
   const [poolFacts, setPoolFacts] = useState<{ hands: number; chips: number } | null>(null);
   const [myHands, setMyHands] = useState(0);
-  const [canManagePromo, setCanManagePromo] = useState(false);
-  const [promoAmount, setPromoAmount] = useState('');
-  const [distributingPromo, setDistributingPromo] = useState(false);
+  /* WHERE THE PROMO SLICE ACTUALLY IS (phase 5). Never `bbj_pools.promo_balance`
+     - that is a staging slot the sweep empties continuously. */
+  const [promoFacts, setPromoFacts] = useState<{
+    purseKind: 'union' | 'club';
+    purseAvailable: number;
+    contributedAllTime: number;
+    sweptAllTime: number;
+    observedRatePct: number;
+  } | null>(null);
 
-  // Only the pool's club/union owner sees the promo-rain control (the RPC also
-  // enforces this server-side).
-  useEffect(() => {
-    let alive = true;
-    setCanManagePromo(false);
-    setOwnerCheckedKey(null);
-    (async () => {
-      if (!clubId || !user?.id) {
-        setCanManagePromo(false);
-        setOwnerCheckedKey(ownerKey);
-        return;
-      }
-      try {
-        const resolvedId = await resolveClubUUID(clubId);
-        const { data: clubRow } = await supabase
-          .from('clubs')
-          .select('owner_id, union_id')
-          .eq('id', resolvedId)
-          .maybeSingle();
-        if (!alive) return;
-        let owner = clubRow?.owner_id === user.id;
-        if (!owner && clubRow?.union_id) {
-          const { data: unionRow } = await supabase
-            .from('unions')
-            .select('owner_id')
-            .eq('id', clubRow.union_id)
-            .maybeSingle();
-          owner = unionRow?.owner_id === user.id;
-        }
-        if (alive) setCanManagePromo(owner);
-      } catch (e) {
-        reportError(e, 'BadBeatJackpotPage.ownerCheck');
-        if (alive) setCanManagePromo(false);
-      } finally {
-        if (alive) setOwnerCheckedKey(ownerKey);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [clubId, user?.id, ownerKey]);
+  /* ONE GATE, AND IT IS THE DATABASE'S (2026-09-11).
+     This page ran its own owner probe - `clubs.owner_id === me`, or the
+     union's owner - and rendered the promo panel on that, while the panel's
+     CONTENT came from `fn_bbj_promo_facts`, which gates on
+     `fn_is_club_admin_uid`: owner, co_owner, admin or manager WITH AN ACTIVE
+     MEMBERSHIP. Two different predicates, disagreeing both ways:
 
-  const runPromoRain = async () => {
-    if (!jackpot?.id || distributingPromo) return;
-    const amount = Number(promoAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      toast.error('Enter a valid amount to distribute.');
-      return;
-    }
-    if (amount > (jackpot.promo_balance || 0)) {
-      toast.error('Amount exceeds the promo pool balance.');
-      return;
-    }
-    if (
-      !(await confirmDialog({
-        title: 'Distribute Promo Pool',
-        message: `Rain ${amount.toLocaleString()} chips from the promo pool, split evenly among all currently-active players? This can't be undone.`,
-        confirmText: 'Rain it',
-        variant: 'default',
-      }))
-    )
-      return;
-    setDistributingPromo(true);
-    try {
-      const count = await BBJService.executePromoRain(jackpot.id, amount, 'Promo rain');
-      toast.success(`Rained ${amount.toLocaleString()} chips to ${count} active player(s)!`);
-      setPromoAmount('');
-      loadJackpotData();
-    } catch (e: any) {
-      toast.error(e?.message || 'Promo rain failed');
-    } finally {
-      setDistributingPromo(false);
-    }
-  };
+       - a union owner with no `club_members` row, or an owner whose membership
+         had lapsed, passed the client check and failed the RPC's - so the
+         panel rendered and sat on "Reading The Promo Wallet" for ever;
+       - a club admin or manager who is not the owner failed the client check
+         and passed the RPC's - the figures had no reader at all.
+
+     The RPC already answers the question, in `is_operator`, and it is the
+     authority on it. The probe is gone: there is no second opinion to keep in
+     step, one fewer round trip before the page can paint, and the panel now
+     renders exactly when there is something true to put in it. */
+
+  /* THE PROMO RAIN IS NOT BUILT, AND THIS PAGE USED TO PRETEND IT WAS.
+     Dan, 2026-09-03, in `fn_bbj_promo_rain` itself: "the splash pot has never
+     been built or specified and is to be added later ... Until its rules exist
+     - eligibility, size, frequency, and what stops a single click emptying a
+     union's promo float - THIS MOVES NO CHIPS." The function is a deliberate
+     stub returning `not_built_yet`.
+
+     This page nonetheless rendered an amount field, a Max button, a "Rain it"
+     button and a confirm dialog reading "This can't be undone" - and
+     `BBJService.executePromoRain` did not even map `not_built_yet`, so the
+     operator's reward for confirming was a toast reading, literally,
+     "not_built_yet". The control is gone rather than disabled: a disabled
+     control still advertises a feature, and 10.12 is explicit that a thing
+     which looks live and is not is the defect.
+
+     What IS built and ruled on is `fn_promo_disburse` - an owner sends promo
+     to a member club or to a player - reached from the wallet page, and
+     leaderboards, which are the one automatic promo payout. The panel below
+     says so instead of offering a button that cannot work. */
   const prevAmountRef = useRef<number>(0);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -180,7 +157,6 @@ export default function BadBeatJackpotPage() {
          club's mini would otherwise sit under this one's heading. */
       setPageMini(null);
       setMiniFirstRead(null);
-      loadJackpotData(() => isMounted);
 
       const channelKey = 'jackpot-live';
 
@@ -280,10 +256,10 @@ export default function BadBeatJackpotPage() {
     }
   }, [clubId]);
 
-  const loadingRef = useRef(false);
+  const loadingRef = useRef<{ scope: object } | null>(null);
 
   /**
-   * RESET PER-CLUB STATE WHEN NAVIGATING BETWEEN CLUBS.
+   * RESET ACCOUNT AND CLUB STATE BEFORE READING THE NEW SCOPE.
    *
    * This cleared three things and left four behind: `jackpot`, `poolFacts`,
    * `myHands` and `loadFailed`. The load below only assigns `if (jackpotData)`,
@@ -299,24 +275,40 @@ export default function BadBeatJackpotPage() {
     setPlayerContribution(0);
     setJackpot(null);
     setPoolFacts(null);
+    /* One club's purse under another club's name is exactly the failure the
+       comment above names as the worst this page has. The effect cleared six
+       things and not this one. */
+    setPromoFacts(null);
     setMyHands(0);
     setLoadFailed(false);
     prevAmountRef.current = 0;
-    loadingRef.current = false;
-  }, [clubId]);
+    let active = true;
+    loadRef.current(() => active);
+    return () => {
+      active = false;
+      if (loadingRef.current?.scope === scope) loadingRef.current = null;
+    };
+  }, [clubId, scope]);
 
   const loadJackpotData = useCallback(
     async (getIsMounted?: () => boolean) => {
+      const isCurrentScope = () =>
+        mounted.current && scopeRef.current === scope && (!getIsMounted || getIsMounted());
+      if (!isCurrentScope()) return;
       if (!clubId) {
         setLoading(false);
+        setSettledScope(scope);
         return;
       }
-      if (loadingRef.current) return;
-      loadingRef.current = true;
+      if (loadingRef.current?.scope === scope) return;
+      const request = { scope };
+      loadingRef.current = request;
+      const isCurrent = () => isCurrentScope() && loadingRef.current === request;
       // Initial scope/retry owns the skeleton. Routine live refreshes keep
       // children mounted so their first reads can finish and geometry stays put.
       try {
         const resolvedId = await resolveClubUUID(clubId);
+        if (!isCurrent()) return;
 
         // RAKE-AUDIT 2026-07-24: read the pool where the server actually banks
         // the money — union-level pool when the club belongs to a union, else
@@ -327,17 +319,18 @@ export default function BadBeatJackpotPage() {
           .select('union_id')
           .eq('id', resolvedId)
           .maybeSingle();
+        if (!isCurrent()) return;
         let jackpotQuery = supabase
           .from('bbj_pools')
           .select(
-            'id, club_id, main_balance, backup_balance, promo_balance, total_contributed, last_hit_at, last_hit_amount'
+            'id, club_id, main_balance, backup_balance, total_contributed, last_hit_at, last_hit_amount'
           );
         jackpotQuery = clubUnionRow?.union_id
           ? jackpotQuery.eq('union_id', clubUnionRow.union_id)
           : jackpotQuery.eq('club_id', resolvedId);
         const { data: jackpotData } = await jackpotQuery.maybeSingle();
 
-        if (getIsMounted && !getIsMounted()) return;
+        if (!isCurrent()) return;
         if (jackpotData) {
           setJackpot(jackpotData);
           prevAmountRef.current = jackpotData.main_balance || 0;
@@ -360,15 +353,35 @@ export default function BadBeatJackpotPage() {
          * returns, for the calling user only.
          */
         const wantsMine = Boolean(user?.id && jackpotData?.id);
-        const [factsRes, mineRes] = await Promise.all([
+        const [factsRes, mineRes, promoRes] = await Promise.all([
           jackpotData?.id
             ? supabase.rpc('fn_bbj_pool_facts', { p_pool_id: jackpotData.id })
             : Promise.resolve({ data: null }),
           wantsMine
             ? supabase.rpc('fn_bbj_my_contribution', { p_pool_id: jackpotData!.id, p_days: 90 })
             : Promise.resolve({ data: null }),
+          /* The purse, not the pool. Returns NULLs for a caller who is not
+             staff of this pool's club, so there is nothing to hide client-side. */
+          jackpotData?.id
+            ? supabase.rpc('fn_bbj_promo_facts', { p_pool_id: jackpotData.id })
+            : Promise.resolve({ data: null }),
         ]);
-        if (getIsMounted && !getIsMounted()) return;
+        if (!isCurrent()) return;
+
+        {
+          const promoRow = Array.isArray(promoRes.data) ? promoRes.data[0] : promoRes.data;
+          if (promoRow && promoRow.is_operator === true && promoRow.purse_available !== null) {
+            setPromoFacts({
+              purseKind: promoRow.purse_kind === 'union' ? 'union' : 'club',
+              purseAvailable: Number(promoRow.purse_available) || 0,
+              contributedAllTime: Number(promoRow.contributed_all_time) || 0,
+              sweptAllTime: Number(promoRow.swept_all_time) || 0,
+              observedRatePct: Number(promoRow.observed_rate_pct) || 0,
+            });
+          } else {
+            setPromoFacts(null);
+          }
+        }
 
         {
           const factRows = factsRes.data;
@@ -389,16 +402,19 @@ export default function BadBeatJackpotPage() {
             setMyHands(Number(mine.hands_contributed) || 0);
           }
         }
-        if (!getIsMounted || getIsMounted()) setLoadFailed(false);
+        if (isCurrent()) setLoadFailed(false);
       } catch (error) {
-        reportError(error, 'BadBeatJackpotPage.Failed_to_load_jackpot');
-        if (!getIsMounted || getIsMounted()) {
+        if (isCurrent()) {
+          reportError(error, 'BadBeatJackpotPage.Failed_to_load_jackpot');
           setLoadFailed(true);
           toast.error('Failed to load jackpot data.');
         }
       } finally {
-        loadingRef.current = false;
-        if (!getIsMounted || getIsMounted()) setLoading(false);
+        if (isCurrent()) {
+          setLoading(false);
+          setSettledScope(scope);
+        }
+        if (loadingRef.current === request) loadingRef.current = null;
       }
     },
     // `user?.id` is READ in this body (the fn_bbj_my_contribution block), and
@@ -407,7 +423,7 @@ export default function BadBeatJackpotPage() {
     // when auth resolved, every later caller kept invoking the stale version.
     // "Your Contribution (90D)" therefore never appeared until the club id
     // itself changed. `toast` is captured for the same reason.
-    [clubId, user?.id, toast]
+    [clubId, user?.id, toast, scope]
   );
 
   // Keep the realtime handler pointed at the newest loader. See loadRef above.
@@ -426,7 +442,7 @@ export default function BadBeatJackpotPage() {
     return unsubHand;
   }, [clubId, loadJackpotData]);
 
-  if (loading) {
+  if (loading || settledScope !== scope) {
     return (
       <div className="bbj-page" data-initial-layout="pending">
         <div className="loading-state">
@@ -476,12 +492,7 @@ export default function BadBeatJackpotPage() {
   }
 
   return (
-    <div
-      className="bbj-page"
-      data-initial-layout={
-        ownerCheckedKey === ownerKey && miniFirstRead !== null ? 'settled' : 'pending'
-      }
-    >
+    <div className="bbj-page" data-initial-layout={miniFirstRead !== null ? 'settled' : 'pending'}>
       {/* Current Jackpot — Main Balance */}
       <div className="bbj-clubbuttons-hero-wrap">
         <ArenaJackpotDisplay
@@ -597,26 +608,21 @@ export default function BadBeatJackpotPage() {
               : 'Flat By Stakes'}
           </span>
         </div>
-        <div
-          className="info-card"
-          style={{
-            border: '1px solid rgba(175, 82, 222, 0.3)',
-            background: 'rgba(175, 82, 222, 0.08)',
-          }}
-        >
-          <span className="info-label">Promo Pool</span>
-          <span className="info-value" style={{ color: '#af52de' }}>
-            {(jackpot?.promo_balance || 0).toLocaleString()} Chips
-          </span>
-        </div>
+        {/* The "Promo Pool" card used to print `bbj_pools.promo_balance` - a
+            staging slot the sweep empties continuously, 14.61 chips against a
+            56,291 purse. It is shown to the people who can act on it, as the
+            PURSE, in the panel below; a number nobody can spend is not a fact
+            worth putting on a card. */}
       </div>
 
       {/* Admin-only jackpot health panel (server-gated; renders nothing for
           non-admins). 2026-08-18 */}
       <BBJAdminAnalytics poolId={jackpot?.id || null} />
 
-      {/* Owner-only: distribute the promo pool to active players */}
-      {ownerCheckedKey === ownerKey && canManagePromo && (jackpot?.promo_balance || 0) > 0 && (
+      {/* WHERE THE PROMO SLICE ACTUALLY GOES (phase 5, 2026-09-11).
+          This was a promo-rain control calling a function Dan ruled unbuilt.
+          It is replaced by the truth, for the people who can act on it. */}
+      {promoFacts && (
         <div
           style={{
             margin: '4px 0 16px',
@@ -634,68 +640,26 @@ export default function BadBeatJackpotPage() {
               marginBottom: '8px',
             }}
           >
-            Distribute Promo Pool
+            The Promo Slice
           </div>
-          <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '10px' }}>
-            Rain Promo Chips To Everyone Currently Seated. Split Evenly.
+          <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+            Every Raked Hand Sends {promoFacts.observedRatePct.toFixed(1)}% To Promo -{' '}
+            {Math.round(promoFacts.contributedAllTime).toLocaleString()} Chips So Far. It Does Not
+            Sit In This Pool: It Is Swept To{' '}
+            {promoFacts.purseKind === 'union' ? 'The Union' : 'The Club'} Promo Wallet, Which Holds{' '}
+            <strong>{Math.round(promoFacts.purseAvailable).toLocaleString()} Chips</strong> Right
+            Now.
           </div>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-            <input
-              type="number"
-              inputMode="numeric"
-              min={1}
-              max={jackpot?.promo_balance || 0}
-              value={promoAmount}
-              onChange={(e) => setPromoAmount(e.target.value)}
-              placeholder="Amount"
-              aria-label="Promo Rain Amount"
-              style={{
-                flex: '1 1 120px',
-                minWidth: 0,
-                padding: '10px 12px',
-                borderRadius: '10px',
-                border: '1px solid rgba(255,255,255,0.15)',
-                background: 'rgba(255,255,255,0.04)',
-                color: '#fff',
-                fontSize: '14px',
-              }}
-            />
-            <button
-              onClick={() => setPromoAmount(String(jackpot?.promo_balance || 0))}
-              style={{
-                padding: '10px 12px',
-                minHeight: '44px',
-                touchAction: 'manipulation',
-                borderRadius: '10px',
-                border: '1px solid rgba(255,255,255,0.12)',
-                background: 'rgba(255,255,255,0.04)',
-                color: 'rgba(255,255,255,0.7)',
-                fontSize: '13px',
-                fontWeight: 700,
-                cursor: 'pointer',
-              }}
-            >
-              Max
-            </button>
-            <button
-              onClick={runPromoRain}
-              disabled={distributingPromo}
-              style={{
-                padding: '10px 18px',
-                minHeight: '44px',
-                touchAction: 'manipulation',
-                borderRadius: '10px',
-                border: 'none',
-                background: 'linear-gradient(135deg,#af52de,#8e44ad)',
-                color: '#fff',
-                fontSize: '13px',
-                fontWeight: 800,
-                cursor: distributingPromo ? 'wait' : 'pointer',
-                opacity: distributingPromo ? 0.6 : 1,
-              }}
-            >
-              {distributingPromo ? 'Raining…' : 'Rain To Active Players'}
-            </button>
+          <div
+            style={{
+              fontSize: '12px',
+              color: 'var(--text-secondary)',
+              marginTop: '8px',
+              lineHeight: 1.6,
+            }}
+          >
+            Promo Is Paid Out Two Ways: An Owner Sends It From The Wallet Page, And Leaderboards Pay
+            It Automatically. The Splash Pot Is Not Built Yet.
           </div>
         </div>
       )}

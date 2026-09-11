@@ -15,7 +15,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { HorseLogic, type HorseStyle, type HorseDecision } from '../../src/engine/HorseLogic';
 import { RakeService } from '../../src/services/RakeService';
-import { BBJService } from '../../src/services/BBJService';
 import type { SeatPlayer, Card } from '../../src/types/database.types';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -287,87 +286,11 @@ describe('RakeService.calculateRake() — Rake Calculation', () => {
 // BBJ SERVICE TESTS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-describe('BBJService — BBJ Contribution & Trigger', () => {
-  it('should calculate contribution as 0.5x BB', () => {
-    const bb = 10;
-    const contribution = BBJService.calculateContribution(bb);
-
-    expect(contribution).toBe(5); // 0.5 * 10
-  });
-
-  it('should calculate contribution for various BB amounts', () => {
-    const testCases = [
-      { bb: 1, expected: 0.5 },
-      { bb: 2, expected: 1 },
-      { bb: 5, expected: 2.5 },
-      { bb: 100, expected: 50 },
-    ];
-
-    testCases.forEach(({ bb, expected }) => {
-      const contribution = BBJService.calculateContribution(bb);
-      expect(contribution).toBe(expected);
-    });
-  });
-
-  it('should allocate ratios based on pool size', () => {
-    const smallPoolRatios = BBJService.getAllocationRatios(50000);
-    expect(smallPoolRatios.MAIN).toBe(0.5);
-
-    const largePoolRatios = BBJService.getAllocationRatios(100001);
-    expect(largePoolRatios.MAIN).toBe(0.3); // PIVOT mode
-  });
-
-  it('should check BBJ trigger for qualifying hand', () => {
-    const losingHand = {
-      ranking: 8, // Four of a kind
-      name: 'Quad Kings',
-      kickers: [13, 13, 13, 13],
-    };
-    const winningHand = {
-      ranking: 9, // Straight Flush
-      name: 'Straight Flush',
-      kickers: [14, 13, 12, 11, 10],
-    };
-
-    const result = BBJService.checkBBJTrigger(losingHand as any, winningHand as any, 'nlh');
-
-    expect(result.triggered).toBe(true);
-  });
-
-  it('should not trigger BBJ for weak losing hand', () => {
-    const losingHand = {
-      ranking: 2, // Pair
-      name: 'Pair of Twos',
-      kickers: [2, 2],
-    };
-    const winningHand = {
-      ranking: 3,
-      name: 'Two Pair',
-      kickers: [3, 3, 2, 2],
-    };
-
-    const result = BBJService.checkBBJTrigger(losingHand as any, winningHand as any, 'nlh');
-
-    expect(result.triggered).toBe(false);
-  });
-
-  it('should not trigger BBJ for excluded variants', () => {
-    const losingHand = {
-      ranking: 8, // Quad 2s
-      name: 'Quad Deuces',
-      kickers: [2, 2, 2, 2],
-    };
-    const winningHand = {
-      ranking: 9,
-      name: 'Straight Flush',
-      kickers: [],
-    };
-
-    const result = BBJService.checkBBJTrigger(losingHand as any, winningHand as any, 'plo6');
-
-    expect(result.triggered).toBe(false);
-  });
-});
+/* The `BBJService` block was removed on 2026-09-11 with the service itself.
+   It asserted `calculateContribution`, `getAllocationRatios` and
+   `checkBBJTrigger`, none of which had existed for months - this file is
+   excluded from vitest and tsconfig, so it broke nothing, but it pinned a
+   fee schedule and a trigger rule the platform no longer has. */
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // INTEGRATION TESTS

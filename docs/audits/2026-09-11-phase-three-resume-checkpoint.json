@@ -1,5 +1,5 @@
 {
-  "recorded_at": "2026-09-11T07:55:57.817715+00:00",
+  "recorded_at": "2026-09-11T08:19:21.355781+00:00",
   "phase_complete": false,
   "entry_migration": {
     "reserved_version": "20260910172228",
@@ -175,12 +175,14 @@
     "browser_complete": false
   },
   "exact_terminal_activation_bundle": {
-    "status": "native_passed_not_applied",
+    "status": "native_passed_production_approval_rejected",
     "assertions": 138,
     "exact_rollback": true,
     "evidence": "docs/audits/2026-09-11-exact-terminal-activation-native.json",
-    "sha256": "9e0771e13df999bcf4fc3809865afa53d6b70f2eb947be531c4894dca9e148b0",
-    "production_break_bootstrap_covered": false
+    "sha256": "62c98c9b9f18e0c9738c3173fc3b345bee9d6ffad72de63653be1a27548a9544",
+    "production_break_bootstrap_covered": false,
+    "output_directory": "/tmp/codex-whole-phase-three-iyxtlb6h",
+    "approval_evidence": "docs/audits/2026-09-11-phase-three-activation-approval-status.json"
   },
   "engine_current_adoption": {
     "status": "source_and_fresh_leader_verified_health_degraded",
@@ -198,5 +200,17 @@
     "url": "https://smarter.poker/hub/club-arena/clubs/shark-club",
     "signed_in": true,
     "terms_agreed": false
+  },
+  "durable_resume_commits": ["c2fa4c585", "076d54a0b"],
+  "active_coordinator_verified_review": {
+    "at": "2026-09-11T09:54:18.405555+00:00",
+    "source_merge_commit": "ef93a89b698ea138d2ab9bbc2d89150a78b4e179",
+    "phase_three_complete": false,
+    "approval_gates": "2026-09-11-phase-three-specific-approval-gates.json",
+    "prepared_sha256": "1f6c8ac88ead4612085c8c6de0da258914d50eb06d94300cf9931bb343eafb40",
+    "prepared_bytes": 276794,
+    "native_assertions": 138,
+    "exact_rollback": true,
+    "production_applied": false
   }
 }

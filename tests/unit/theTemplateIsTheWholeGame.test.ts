@@ -89,7 +89,9 @@ describe('the reconciler edit composes with the other lane that rewrites it', ()
     /* Lane E (20260909181230) replaces that whole body in the same audit.
        Retyping it here would drop its run-it-N-times work, or lose this,
        depending on apply order. */
-    expect(SQL).toMatch(/pg_get_functiondef\('public\.fn_cash_apply_ruleset\(uuid\)'::regprocedure\)/);
+    expect(SQL).toMatch(
+      /pg_get_functiondef\('public\.fn_cash_apply_ruleset\(uuid\)'::regprocedure\)/
+    );
     expect(SQL).not.toMatch(/CREATE OR REPLACE FUNCTION public\.fn_cash_apply_ruleset/);
   });
 

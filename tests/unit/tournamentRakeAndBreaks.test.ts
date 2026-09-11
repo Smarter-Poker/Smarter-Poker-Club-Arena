@@ -185,7 +185,10 @@ describe('neither reaper treats a deliberately paused table as a zombie', () => 
       GAME_SERVER.indexOf('const shouldBeDealing'),
       GAME_SERVER.indexOf('const shouldBeDealing') + 3000
     );
-    expect(reaper).toMatch(/engine\.isPausedByDesign\(\)/);
+    // 2026-09-11: it asks whether the pause has TAKEN EFFECT. A table the
+    // break is holding between hands is still skipped; a hand that froze
+    // under a next-hand fence is not (tests/a-parked-table-is-not-a-stalled-one).
+    expect(reaper).toMatch(/engine\.isParkedByDesign\(\)/);
     // The pause check must gate the SAME condition as the staleness check.
     expect(reaper).toMatch(
       /shouldBeDealing && !parkedOnPurpose && engine\.msSinceProgress\(\) > 180_000/

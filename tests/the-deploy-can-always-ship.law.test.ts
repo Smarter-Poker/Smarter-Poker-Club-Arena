@@ -269,6 +269,36 @@ describe('nothing defers a run that has something to ship', () => {
     );
   });
 
+  it('the same engine tree is live: a control-plane-only run restarts nothing (2026-09-11)', () => {
+    // The control plane starts its own run now (on.push.paths), and such a
+    // run usually carries nothing for the engine. The image is built from
+    // `$SHA:server` alone - the builder labels it with exactly that tree - so
+    // an identical tree means an identical image: skip, never for a rollback.
+    const step = dedupeStep();
+    expect(imageBuilder).toMatch(/rev-parse --verify "\$\{TARGET_SHA\}:server"/);
+    expect(step).toMatch(/SHA_TREE=\$\(git rev-parse --verify -q "\$\{SHA\}:server"/);
+    expect(step).toMatch(
+      /if \[ "\$ROLLBACK_REQUESTED" != "true" \] && \[ -n "\$VER" \] && \[ -n "\$SHA_TREE" \][\s\S]{0,200}?\[ "\$\(git rev-parse --verify -q "\$\{VER\}:server" 2>\/dev\/null\)" = "\$SHA_TREE" \]; then\s*\n\s*echo "skip=true" >> \$GITHUB_OUTPUT\s*\n\s*echo "reason=already_live"/
+    );
+  });
+
+  it('a fix to the deploy control plane starts a run of its own (2026-09-11)', () => {
+    const triggers = yml.slice(yml.indexOf('\non:'), yml.indexOf('\nconcurrency:'));
+    const paths = triggers.slice(
+      triggers.indexOf('    paths:'),
+      triggers.indexOf('workflow_dispatch:')
+    );
+    for (const path of [
+      "- 'server/**'",
+      "- '!server/**/*.test.ts'",
+      "- '!server/sim/**'",
+      "- '.github/workflows/auto-deploy-hetzner.yml'",
+      "- 'scripts/ci/**'",
+    ]) {
+      expect(paths).toContain(path);
+    }
+  });
+
   it('a rollback is never live by inclusion (review, 2026-09-11)', () => {
     // A rollback target is by definition contained in the build it rolls back
     // from. Without this exemption every audited rollback stopped here as

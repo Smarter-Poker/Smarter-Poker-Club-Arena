@@ -25,24 +25,34 @@ import path from 'path';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 
-const MIG = read('supabase/migrations/20260910183043_the_join_door_holds_the_chair_it_hands_out.sql');
+const MIG = read(
+  'supabase/migrations/20260910183043_the_join_door_holds_the_chair_it_hands_out.sql'
+);
 
 describe('the join door holds the chair it hands out', () => {
   it('writes the same hold the open-seat offer writes', () => {
-    expect(MIG).toMatch(/INSERT INTO public\.table_waitlist \(table_id, user_id, position, status, notified_at, hold_expires_at\)/);
+    expect(MIG).toMatch(
+      /INSERT INTO public\.table_waitlist \(table_id, user_id, position, status, notified_at, hold_expires_at\)/
+    );
     expect(MIG).toMatch(/VALUES \(t\.id, v_uid, 0, 'notified', now\(\), v_hold_until\)/);
     expect(MIG).toMatch(/v_hold_ttl CONSTANT interval := interval '60 seconds'/);
   });
 
-  it('locks each candidate on the buy-in gate\'s own key before writing the hold', () => {
-    expect(MIG).toMatch(/pg_advisory_xact_lock\(hashtextextended\('table_seat:' \|\| t\.id::text, 0\)\)/);
+  it("locks each candidate on the buy-in gate's own key before writing the hold", () => {
+    expect(MIG).toMatch(
+      /pg_advisory_xact_lock\(hashtextextended\('table_seat:' \|\| t\.id::text, 0\)\)/
+    );
     // and re-reads under the lock: the second of two same-instant callers moves on
     expect(MIG).toMatch(/CONTINUE WHEN public\.fn_cash_game_open_seats\(t\.id\) <= 0;/);
   });
 
   it('asking twice is one hold: an existing live hold is returned and refreshed', () => {
-    expect(MIG).toMatch(/w\.user_id = v_uid AND w\.status = 'notified' AND w\.hold_expires_at > now\(\)/);
-    expect(MIG).toMatch(/UPDATE public\.table_waitlist SET hold_expires_at = v_hold_until WHERE id = h\.id;/);
+    expect(MIG).toMatch(
+      /w\.user_id = v_uid AND w\.status = 'notified' AND w\.hold_expires_at > now\(\)/
+    );
+    expect(MIG).toMatch(
+      /UPDATE public\.table_waitlist SET hold_expires_at = v_hold_until WHERE id = h\.id;/
+    );
   });
 
   it('one live hold per player per game, on both branches', () => {
@@ -81,7 +91,9 @@ describe('the join door holds the chair it hands out', () => {
   });
 
   it('asserts the two readers it relies on still honour the row (10.86 rule 3)', () => {
-    expect(MIG).toMatch(/the buy-in gate no longer honours a notified hold the way this door relies on/);
+    expect(MIG).toMatch(
+      /the buy-in gate no longer honours a notified hold the way this door relies on/
+    );
     expect(MIG).toMatch(/fn_cash_game_open_seats no longer subtracts a live hold/);
   });
 

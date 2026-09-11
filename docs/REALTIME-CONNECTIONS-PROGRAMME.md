@@ -145,6 +145,10 @@ not lost: Log Out scope (global today; local by default with an explicit
 today; 1 hour surfaces a revoked session within the hour); a second engine
 upstream (the standby was collapsed on 2026-08-23 and there is no failover).
 
+The final entry-read audit also repairs Daily Bonus host and account lifetime.
+See `docs/changelog/2026-09-11-daily-bonus-entry-read-lifetime.md` for the seven
+reproduced regressions and the unchanged wider acceptance gates.
+
 ## Found during Phase 1: the alert rules on the box are not the ones in this repo
 
 **This is the biggest single finding of the phase and it is not a Phase 1

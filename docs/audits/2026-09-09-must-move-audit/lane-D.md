@@ -27,29 +27,29 @@ check they did not conclude something was missing from the empty database.
 
 ## Coverage: read line by line
 
-| file | what was read |
-| --- | --- |
-| `server/src/cluster/ClusterController.ts` (681) | whole file: `wakeCluster`, lifecycle jobs/generation fence, `start`/`stop`, `wake` + debounce, `tickGame`, `frozenSkip`, `tick` (pass), `afterGameTick` (18.4 dealer wake), `rowByGame` staleness prune |
-| `server/src/cluster/ClusterMetrics.ts` (255) | whole file: `actionKind` label folding, every gauge/counter, `recordPass`/`recordStalled`/`recordSkippedFrozen`, `healthSnapshot` |
-| `server/src/cluster/ClusterController.test.ts` (616) | all 28 tests, shapes and helpers |
-| `server/src/cluster/ClusterMetrics.test.ts` (286) | all tests |
-| `server/src/cluster/theClusterPages.law.test.ts` (289) | all 5 laws incl. the alert-rule pins |
-| `server/src/cluster/TheTablesOpenAndCloseThemselves.law.test.ts` (1286) | every `it` title; the move/announce/held/wake/balance blocks in full |
-| `server/src/services/supabase/seatMoves.ts` (230) | whole file |
-| `server/src/services/supabase/seatChange.ts` (87) | whole file |
-| `server/src/engine/SeatMovePresence.ts` (160) | whole file: deposit/claim/prune, `MOVED_PRESENCE_FRESH_MS`, `MOVED_PRESENCE_MAX` |
-| `server/src/engine/PresenceFollowsTheMove.test.ts` (265) | all 14 tests |
-| `server/src/engine/ServerTableEngineBase.ts` | the start loop (2311-2620), `announcePendingSeatMoves` / `heldForSwap` / `wakeClusterGame` / `executePendingSeatMoves` / `depositPresenceForMove` / `adoptMovedPresence` / `stopIfClusterTableClosed` (2893-3210), `dealableCount` / `humansSeated` (3644-3690), `predictButtonSeat` / `getBBSeatIndex` (4591-4660), `persistEntryHold` / `restoreEntryHoldsFromSeats` (5478-5622) |
-| `server/src/engine/ServerTableEngineDealing.ts` | the dealing loop 200-830: `adoptMovedPresence` order, arrival classification (`entry_hold` moved/waiting), the gone-player prune, `rosterChanged` wake, the natural-BB release, `postBBWhenClear` replay, the idle branch (`idle_seat_moves`, `idle_cluster_closed`), `announce_seat_moves` before `dealHand`, `activePlayers` filter |
-| `server/src/engine/ServerTableEngineSettlement.ts` | `runStep`/`STEP_LANE` (1520-1600), step 6 `leave_pending` + `executePendingSeatMoves({announcedOnly:true})`, `table_unlock`, `wakeClusterGame('hand_complete')`, `readCashHandDepartures` (3225-3352) |
-| `server/src/engine/ServerTableEngineRunout.ts` | grepped for every lane keyword: **no seat-move, cluster, entry-hold or lifecycle code at all**. Nothing to audit; the runout never touches a move. |
-| `server/src/GameServer.ts` | the `ClusterController` construction + deps (1455-1475), `start()` wiring (2004), the owned-stop list (2228), `/health` `cluster` key (3019), the thaw installment driver (1595-1640) |
-| `server/src/types.ts` | the cluster fields on the table row (287-290) |
-| `server/src/transport/TableStateHub.ts` | `emitEvent`, `retainIfReplayable`, `replayRetained`, the D3 retention caps |
-| `server/src/engine/DisconnectEngine.ts` | `registerPlayer` / `unregisterPlayer` / `restoreFsmStates` / `getFsmState` / `getFsmStatesForTable` / `checkStaleHeartbeats` / `tickSitOutsAndCollectEvictions` |
-| `server/src/engine/ChipContinuity.ts` | `forget` / `welcome` / the roster reconcile |
-| SQL, live bodies | `fn_cash_seat_move_execute`, `fn_cash_seat_move_execute_before_maintenance_gate`, `fn_cash_seat_swap_execute_before_maintenance_gate`, `fn_cash_seat_moves_pending`, `fn_cash_seat_move_announce`, `fn_cash_seat_move_window`, `fn_cash_seat_move_set_window`, `fn_thaw_platform`, `fn_thaw_platform_checkpointed` (the `cluster_move_expires_at` step) |
-| client, read only to confirm the engine's events have a reader | `src/pages/TablePage.tsx` (`SEAT_MOVE_PENDING` / `SEAT_MOVED` / `SEAT_MOVE_HELD`, `movedToTableId`), `src/pages/MultiTablePage.tsx` (`updateTableInfo` tab-follow), `src/components/table/CashClusterHUD.tsx`, `src/services/cashGameLobby.ts` |
+| file                                                                    | what was read                                                                                                                                                                                                                                                                                                                                                                      |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server/src/cluster/ClusterController.ts` (681)                         | whole file: `wakeCluster`, lifecycle jobs/generation fence, `start`/`stop`, `wake` + debounce, `tickGame`, `frozenSkip`, `tick` (pass), `afterGameTick` (18.4 dealer wake), `rowByGame` staleness prune                                                                                                                                                                            |
+| `server/src/cluster/ClusterMetrics.ts` (255)                            | whole file: `actionKind` label folding, every gauge/counter, `recordPass`/`recordStalled`/`recordSkippedFrozen`, `healthSnapshot`                                                                                                                                                                                                                                                  |
+| `server/src/cluster/ClusterController.test.ts` (616)                    | all 28 tests, shapes and helpers                                                                                                                                                                                                                                                                                                                                                   |
+| `server/src/cluster/ClusterMetrics.test.ts` (286)                       | all tests                                                                                                                                                                                                                                                                                                                                                                          |
+| `server/src/cluster/theClusterPages.law.test.ts` (289)                  | all 5 laws incl. the alert-rule pins                                                                                                                                                                                                                                                                                                                                               |
+| `server/src/cluster/TheTablesOpenAndCloseThemselves.law.test.ts` (1286) | every `it` title; the move/announce/held/wake/balance blocks in full                                                                                                                                                                                                                                                                                                               |
+| `server/src/services/supabase/seatMoves.ts` (230)                       | whole file                                                                                                                                                                                                                                                                                                                                                                         |
+| `server/src/services/supabase/seatChange.ts` (87)                       | whole file                                                                                                                                                                                                                                                                                                                                                                         |
+| `server/src/engine/SeatMovePresence.ts` (160)                           | whole file: deposit/claim/prune, `MOVED_PRESENCE_FRESH_MS`, `MOVED_PRESENCE_MAX`                                                                                                                                                                                                                                                                                                   |
+| `server/src/engine/PresenceFollowsTheMove.test.ts` (265)                | all 14 tests                                                                                                                                                                                                                                                                                                                                                                       |
+| `server/src/engine/ServerTableEngineBase.ts`                            | the start loop (2311-2620), `announcePendingSeatMoves` / `heldForSwap` / `wakeClusterGame` / `executePendingSeatMoves` / `depositPresenceForMove` / `adoptMovedPresence` / `stopIfClusterTableClosed` (2893-3210), `dealableCount` / `humansSeated` (3644-3690), `predictButtonSeat` / `getBBSeatIndex` (4591-4660), `persistEntryHold` / `restoreEntryHoldsFromSeats` (5478-5622) |
+| `server/src/engine/ServerTableEngineDealing.ts`                         | the dealing loop 200-830: `adoptMovedPresence` order, arrival classification (`entry_hold` moved/waiting), the gone-player prune, `rosterChanged` wake, the natural-BB release, `postBBWhenClear` replay, the idle branch (`idle_seat_moves`, `idle_cluster_closed`), `announce_seat_moves` before `dealHand`, `activePlayers` filter                                              |
+| `server/src/engine/ServerTableEngineSettlement.ts`                      | `runStep`/`STEP_LANE` (1520-1600), step 6 `leave_pending` + `executePendingSeatMoves({announcedOnly:true})`, `table_unlock`, `wakeClusterGame('hand_complete')`, `readCashHandDepartures` (3225-3352)                                                                                                                                                                              |
+| `server/src/engine/ServerTableEngineRunout.ts`                          | grepped for every lane keyword: **no seat-move, cluster, entry-hold or lifecycle code at all**. Nothing to audit; the runout never touches a move.                                                                                                                                                                                                                                 |
+| `server/src/GameServer.ts`                                              | the `ClusterController` construction + deps (1455-1475), `start()` wiring (2004), the owned-stop list (2228), `/health` `cluster` key (3019), the thaw installment driver (1595-1640)                                                                                                                                                                                              |
+| `server/src/types.ts`                                                   | the cluster fields on the table row (287-290)                                                                                                                                                                                                                                                                                                                                      |
+| `server/src/transport/TableStateHub.ts`                                 | `emitEvent`, `retainIfReplayable`, `replayRetained`, the D3 retention caps                                                                                                                                                                                                                                                                                                         |
+| `server/src/engine/DisconnectEngine.ts`                                 | `registerPlayer` / `unregisterPlayer` / `restoreFsmStates` / `getFsmState` / `getFsmStatesForTable` / `checkStaleHeartbeats` / `tickSitOutsAndCollectEvictions`                                                                                                                                                                                                                    |
+| `server/src/engine/ChipContinuity.ts`                                   | `forget` / `welcome` / the roster reconcile                                                                                                                                                                                                                                                                                                                                        |
+| SQL, live bodies                                                        | `fn_cash_seat_move_execute`, `fn_cash_seat_move_execute_before_maintenance_gate`, `fn_cash_seat_swap_execute_before_maintenance_gate`, `fn_cash_seat_moves_pending`, `fn_cash_seat_move_announce`, `fn_cash_seat_move_window`, `fn_cash_seat_move_set_window`, `fn_thaw_platform`, `fn_thaw_platform_checkpointed` (the `cluster_move_expires_at` step)                            |
+| client, read only to confirm the engine's events have a reader          | `src/pages/TablePage.tsx` (`SEAT_MOVE_PENDING` / `SEAT_MOVED` / `SEAT_MOVE_HELD`, `movedToTableId`), `src/pages/MultiTablePage.tsx` (`updateTableInfo` tab-follow), `src/components/table/CashClusterHUD.tsx`, `src/services/cashGameLobby.ts`                                                                                                                                     |
 
 ---
 
@@ -60,7 +60,7 @@ check they did not conclude something was missing from the empty database.
 `announcePendingSeatMoves` rebuilds the held set from the pending list:
 
 ```ts
-const pending = await pendingSeatMoves(this.tableId);   // [] on ANY error
+const pending = await pendingSeatMoves(this.tableId); // [] on ANY error
 const liveHeld = new Set(pending.filter((m) => m.ready_at != null).map((m) => m.player_id));
 for (const uid of this.heldForSwap) if (!liveHeld.has(uid)) this.heldForSwap.delete(uid);
 ```
@@ -107,15 +107,15 @@ Test: `server/src/engine/TheMoveIsNeverMidHand.law.test.ts`.
 
 Measured on production, 24 hours of `cash_seat_moves`:
 
-| state | reason | note | count |
-| --- | --- | --- | --- |
-| cancelled | balance | destination_unavailable | 126 |
-| cancelled | must_move | player_not_seated | 85 |
-| cancelled | must_move | destination_full | 68 |
-| cancelled | balance | player_not_seated | 52 |
-| cancelled | balance | destination_full | 47 |
-| cancelled | must_move | original_occupancy_not_recorded | 9 |
-| cancelled | seat_change | destination_full / destination_unavailable | 3 |
+| state     | reason      | note                                       | count |
+| --------- | ----------- | ------------------------------------------ | ----- |
+| cancelled | balance     | destination_unavailable                    | 126   |
+| cancelled | must_move   | player_not_seated                          | 85    |
+| cancelled | must_move   | destination_full                           | 68    |
+| cancelled | balance     | player_not_seated                          | 52    |
+| cancelled | balance     | destination_full                           | 47    |
+| cancelled | must_move   | original_occupancy_not_recorded            | 9     |
+| cancelled | seat_change | destination_full / destination_unavailable | 3     |
 
 Every one of those players had been told, at the start of the hand, "Seat Open
 On Main 2. Moving After This Hand." (a toast, plus the corner notice in
@@ -126,13 +126,14 @@ poll, with no explanation, while they stayed in the chair they had been told
 they were leaving.
 
 Fix (engine): `executePendingSeatMoves` in the service now returns `refused[]`
+
 - terminal outcomes only, filtered by `SEAT_MOVE_NON_TERMINAL_REASONS`
-(`transient`, `frozen`, `platform_frozen`, `waiting_partner`, `done`), so the
-maintenance freeze and a retryable deadlock are never reported to a player as a
-cancellation. The engine emits `seat_move_cancelled` with a Title Case,
-em-dash-free sentence from `seatMoveCancelledNotice(reason)` ("The Seat Was
-Taken. You Keep Your Chair." / "That Table Has Closed. ..." / "The Seat Change
-Was Cancelled. ..."), clears the announcement and any swap hold, and logs.
+  (`transient`, `frozen`, `platform_frozen`, `waiting_partner`, `done`), so the
+  maintenance freeze and a retryable deadlock are never reported to a player as a
+  cancellation. The engine emits `seat_move_cancelled` with a Title Case,
+  em-dash-free sentence from `seatMoveCancelledNotice(reason)` ("The Seat Was
+  Taken. You Keep Your Chair." / "That Table Has Closed. ..." / "The Seat Change
+  Was Cancelled. ..."), clears the announcement and any swap hold, and logs.
 
 Fix (client): `src/pages/TablePage.tsx` gained a `SEAT_MOVE_CANCELLED` case
 beside `SEAT_MOVE_HELD` - refresh the cluster HUD, and show the sentence to the
@@ -322,14 +323,14 @@ nothing on the engine side, and this is why:
    announcement or the swap hold for it. The move stays `pending`.
 2. **A held move survives the park.** `fn_thaw_platform_checkpointed` carries a
    `cluster_move_expires_at` step - `UPDATE cash_seat_moves SET expires_at =
-   expires_at + v_shift WHERE state = 'pending' AND expires_at > p_freeze_started`
+expires_at + v_shift WHERE state = 'pending' AND expires_at > p_freeze_started`
    - so the five frozen minutes are given back rather than burned, which is
-   CLAUDE.md 13 rule 4. Verified in the live body, not the migration.
+     CLAUDE.md 13 rule 4. Verified in the live body, not the migration.
 3. **The engine mostly does not even ask during the park.** Both loops park at
    `awaitPauseGate` before their seat sweep, and settlement does not run
    because no hand is running. The freeze branch is the belt to that braces.
 4. `announcePendingSeatMoves` extends expiry with `GREATEST(expires_at, now +
-   5 min)`, so an announce that lands either side of the park can only ever
+5 min)`, so an announce that lands either side of the park can only ever
    lengthen the window, never shorten one the thaw has just extended.
 
 The one thing worth watching after lane A's SQL lands: if the tick stops
@@ -359,7 +360,7 @@ and needs no change here.
   the locks) and the receipt is returned verbatim, so a move executed twice
   lands once. The engine's own re-run is therefore safe.
 - **Entry state by reason.** `v_hold := CASE WHEN m.reason = 'seat_change' THEN
-  'waiting' ELSE 'moved' END`, `v_agreed := (m.reason = 'seat_change')`. The
+'waiting' ELSE 'moved' END`, `v_agreed := (m.reason = 'seat_change')`. The
   engine's arrival path reads exactly that: `'moved'` clears and is dealt in
   owing nothing; `'waiting'` + agreed goes to `postBBWhenClear`, which replays
   the agreement until the seat clears or the big blind reaches them. Both
@@ -413,21 +414,21 @@ and needs no change here.
 Verified against `git diff` on the host. **Four files are 100% lane D** - no
 other lane has a hunk in them:
 
-| file | hunks (`git diff -U0`) | what |
-| --- | --- | --- |
-| `server/src/cluster/ClusterController.ts` | `@213,9` `@481,1` `@616,3` | D7, the latch serial |
-| `server/src/services/supabase/seatMoves.ts` | `@86` `@97` `@135` `@176` `@183` `@188` `@240` `@247` | D1 (null read), D3 (`refused` + `SEAT_MOVE_NON_TERMINAL_REASONS` + `seatMoveCancelledNotice`) |
-| `server/src/engine/ServerTableEngineBase.ts` | `@70` `@2456` `@2494` `@2508` `@2927` `@2930` `@2945` `@2957` `@3043` `@3047` `@3059` `@3120` `@3138` `@3159` `@3277` | D1/D2 (`reconcileSeatMoveHolds`, null guards), D3 (the cancelled arm), D6 (`replay_until` x2), D8, D9 |
-| `server/src/engine/ServerTableEngineDealing.ts` | `@291,21` `@382,22` | D4, D5 |
+| file                                            | hunks (`git diff -U0`)                                                                                                | what                                                                                                  |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `server/src/cluster/ClusterController.ts`       | `@213,9` `@481,1` `@616,3`                                                                                            | D7, the latch serial                                                                                  |
+| `server/src/services/supabase/seatMoves.ts`     | `@86` `@97` `@135` `@176` `@183` `@188` `@240` `@247`                                                                 | D1 (null read), D3 (`refused` + `SEAT_MOVE_NON_TERMINAL_REASONS` + `seatMoveCancelledNotice`)         |
+| `server/src/engine/ServerTableEngineBase.ts`    | `@70` `@2456` `@2494` `@2508` `@2927` `@2930` `@2945` `@2957` `@3043` `@3047` `@3059` `@3120` `@3138` `@3159` `@3277` | D1/D2 (`reconcileSeatMoveHolds`, null guards), D3 (the cancelled arm), D6 (`replay_until` x2), D8, D9 |
+| `server/src/engine/ServerTableEngineDealing.ts` | `@291,21` `@382,22`                                                                                                   | D4, D5                                                                                                |
 
 **Files shared with other lanes - my hunks named exactly, all surgical:**
 
-| file | MY hunks | not mine |
-| --- | --- | --- |
-| `server/src/engine/ServerTableEngineSettlement.ts` | `@3330` `@3333` `@3345` - the three lines that carry a failed move read through `readCashHandDepartures` as `null` instead of `[]` (D1) | nothing else in the file is touched |
-| `server/src/transport/TableStateHub.ts` | `@208,14` `@223` - one constant (`HUB_MAX_RETAINED_EVENTS_PER_TABLE` 8 -> 16) and the arithmetic comment above it (D10) | - |
-| `server/src/engine/CashDepartureReadOverlap.test.ts` | `@117,22` - a PIN MOVED with its mechanism (CLAUDE.md 5.8): the outcome shape now carries `refused`, plus a new case for the null read | - |
-| `src/pages/TablePage.tsx` | `@15229,15` ONLY - the `SEAT_MOVE_CANCELLED` case arm (D3) | `@26262` and `@26283` are another lane's; I did not touch them |
+| file                                                 | MY hunks                                                                                                                                | not mine                                                       |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `server/src/engine/ServerTableEngineSettlement.ts`   | `@3330` `@3333` `@3345` - the three lines that carry a failed move read through `readCashHandDepartures` as `null` instead of `[]` (D1) | nothing else in the file is touched                            |
+| `server/src/transport/TableStateHub.ts`              | `@208,14` `@223` - one constant (`HUB_MAX_RETAINED_EVENTS_PER_TABLE` 8 -> 16) and the arithmetic comment above it (D10)                 | -                                                              |
+| `server/src/engine/CashDepartureReadOverlap.test.ts` | `@117,22` - a PIN MOVED with its mechanism (CLAUDE.md 5.8): the outcome shape now carries `refused`, plus a new case for the null read  | -                                                              |
+| `src/pages/TablePage.tsx`                            | `@15229,15` ONLY - the `SEAT_MOVE_CANCELLED` case arm (D3)                                                                              | `@26262` and `@26283` are another lane's; I did not touch them |
 
 **New files (lane D):**
 
@@ -506,8 +507,8 @@ wrote both call sites.
 
 **Adopted: main's THROW contract. Kept: this lane's invariant and `refused[]`.**
 
-The invariant was never "returns null" - it is *a read that FAILED must never
-cause a held swap side to be pruned*, because the first half of a swap is
+The invariant was never "returns null" - it is _a read that FAILED must never
+cause a held swap side to be pruned_, because the first half of a swap is
 landed by the OTHER table's transaction and a released hold is a player that
 transaction can move out of a live hand. A throw enforces that MORE strongly
 than a null did: a caller cannot ignore it by accident, because there is no
@@ -516,14 +517,14 @@ receipt work (#3974) and its own tests depend on it (CLAUDE.md 10.8: deployed
 code is evidence, and here the written law and the shipped mechanism agree once
 you state the law properly).
 
-| hunk | resolution |
-| --- | --- |
-| `SeatMoveOutcome.held` | MAIN's shape, with `source_occupancy_id` |
-| `pendingSeatMoves` signature | MAIN's `Promise<PendingSeatMove[]>` |
-| the error branch | MAIN's `throw new Error(... 'Seat move enumeration failed')` |
-| `SEAT_MOVE_NON_TERMINAL_REASONS`, `refused[]`, `seatMoveCancelledNotice` | MINE, kept - main did not do D3 |
-| the refusal arm | BOTH, composed: main's `Seat move outcome was not confirmed` throw proves the reason is real, and only then does this lane classify it terminal or not. `res.reason ?? 'unknown'` is gone, because by that line the reason is proven to be a non-empty string |
-| the service's `prefetched` | main's non-nullable shape; `| null` now lives only in the engine |
+| hunk                                                                     | resolution                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| `SeatMoveOutcome.held`                                                   | MAIN's shape, with `source_occupancy_id`                                                                                                                                                                                                                      |
+| `pendingSeatMoves` signature                                             | MAIN's `Promise<PendingSeatMove[]>`                                                                                                                                                                                                                           |
+| the error branch                                                         | MAIN's `throw new Error(... 'Seat move enumeration failed')`                                                                                                                                                                                                  |
+| `SEAT_MOVE_NON_TERMINAL_REASONS`, `refused[]`, `seatMoveCancelledNotice` | MINE, kept - main did not do D3                                                                                                                                                                                                                               |
+| the refusal arm                                                          | BOTH, composed: main's `Seat move outcome was not confirmed` throw proves the reason is real, and only then does this lane classify it terminal or not. `res.reason ?? 'unknown'` is gone, because by that line the reason is proven to be a non-empty string |
+| the service's `prefetched`                                               | main's non-nullable shape; `                                                                                                                                                                                                                                  | null` now lives only in the engine |
 
 **Call sites changed (2), and one deliberately NOT changed:**
 
@@ -604,7 +605,7 @@ root by rewriting the comment to name the real authority:
 
 - `20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt`
   - the accepted hand closes the exact seat generation in the same transaction
-  as the zero stack and the knockout evidence;
+    as the zero stack and the knockout evidence;
 - `20260909014545_tournament_seat_exits_stay_inside_tournament_authority` -
   every ordinary and bounty elimination holds a scoped seat-exit capability.
 
@@ -648,4 +649,3 @@ it.
    D2 remove two ways the engine could stop executing at a table that is
    otherwise fine; whether they account for all of that population can only be
    measured after this ships, by re-running the expiry-by-note query.
-

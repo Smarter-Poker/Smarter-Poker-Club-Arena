@@ -1,5 +1,0 @@
-{
-  "_owner": "agent/cowork-bbj-audit/phase-4-prove-it-live - BBJ phase 4.1: a platform admin arms a single-shot drill on one table and the engine treats the next real showdown as a jackpot hit, so the whole path downstream of detection can be watched in minutes instead of the fortnight between real hits. It arms a TABLE, never a deck",
-  "tables": ["bbj_drill_arms"],
-  "functions": ["fn_bbj_arm_drill", "fn_bbj_claim_drill", "fn_bbj_drill_arms"]
-}

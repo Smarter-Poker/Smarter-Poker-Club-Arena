@@ -1,4 +1,0 @@
-{
-  "_owner": "fix/a-tournament-with-one-player-left-is-not-still-running",
-  "functions": ["fn_ca_tournament_finished_but_not_completed"]
-}

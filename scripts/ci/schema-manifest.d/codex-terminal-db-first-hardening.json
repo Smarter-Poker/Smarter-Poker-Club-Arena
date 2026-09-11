@@ -6,17 +6,13 @@
     "tournament_positive_orphan_cutover_receipts"
   ],
   "functions": [
-    "fn_ca_tournament_rebuy_window",
-    "fn_claim_bounty_legacy_candidate_20260907",
     "fn_tournament_seat_exit_cutover_receipts_append_only"
   ],
   "removedFunctions": [
-    "fn_ca_spin_cancel_returns_draw",
     "fn_clear_seats_on_game_end",
     "fn_reconcile_tournament_denormals",
     "fn_release_seats_on_tournament_finish",
     "fn_spin_reap_stale_boards",
-    "fn_sync_tournament_chips",
-    "process_tournament_rebuy_before_one_minute_addon"
+    "fn_sync_tournament_chips"
   ]
 }

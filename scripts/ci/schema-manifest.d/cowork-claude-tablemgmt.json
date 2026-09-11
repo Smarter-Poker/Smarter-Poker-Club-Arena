@@ -1,6 +1,0 @@
-{
-  "_owner": "fix/the-board-must-survive-its-own-event-feed",
-  "tables": [],
-  "functions": ["fn_emit_managed_schedule_event"],
-  "columns": {}
-}

@@ -1,4 +1,0 @@
-{
-  "_owner": "fix/the-freeze-is-total",
-  "functions": ["fn_refuse_new_entries_while_frozen"]
-}

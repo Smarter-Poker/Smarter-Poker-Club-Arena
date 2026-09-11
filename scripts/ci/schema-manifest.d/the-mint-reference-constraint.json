@@ -1,7 +1,0 @@
-{
-  "_owner": "fix/the-mint-reference-gets-its-constraint-back",
-  "_comment": "Phase 5: ca_mint_ledger.chip_ledger_id gets the foreign key it lost (20260907053216). No new tables, columns or functions.",
-  "tables": [],
-  "functions": [],
-  "columns": {}
-}

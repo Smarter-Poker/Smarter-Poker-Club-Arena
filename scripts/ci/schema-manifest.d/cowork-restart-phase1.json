@@ -1,17 +1,11 @@
 {
   "_owner": "feat/engine-restart-programme-phase-1",
   "tables": [
-    "ca_break_scorecards",
-    "ca_freeze_circulation_marks",
     "ca_deploy_dispatch_config",
     "ca_deploy_dispatch_log",
     "ca_engine_deploy_runs_started"
   ],
   "functions": [
-    "fn_ca_circulation_total",
-    "fn_ca_capture_freeze_mark",
-    "fn_ca_record_break_scorecard",
-    "fn_ca_break_scorecard_push",
     "fn_ca_deploy_run_exists_this_hour",
     "fn_ca_deploy_dispatch_tick",
     "fn_ca_record_engine_deploy_start",

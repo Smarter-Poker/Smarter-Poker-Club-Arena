@@ -1,5 +1,0 @@
-{
-  "_owner": "feat/deletion-journal",
-  "tables": ["ca_profile_deletions"],
-  "functions": ["fn_ca_journal_profile_deletion"]
-}

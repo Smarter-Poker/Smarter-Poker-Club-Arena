@@ -1,9 +1,0 @@
-{
-  "_owner": "fix/phase-6-verification - the Phase 6 deep-dive (migrations 20260908020401 / 20260908021809 / 20260908021928). The open week's rake basis is snapshotted hourly by the integrity sweep; one ghost-twin rule; the tournament fee rule at the source table.",
-  "tables": ["union_rake_basis_snapshot"],
-  "functions": [
-    "fn_union_rake_basis_refresh",
-    "fn_rake_record_is_ghost_twin",
-    "fn_tournament_fee_names_its_player"
-  ]
-}

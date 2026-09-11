@@ -1,6 +1,0 @@
-{
-  "_owner": "fix/diamond-challenges (Diamond Accounting Standard, ruling 3 as amended; 2026-09-08). Applied to production as 20260908024742_daily_challenges_claimed_for_horses_capped_by_the_line_and_e: the seven-day claim window and its stamp, the horse claim inside the event recorder, the fixture predicate corrected so a horse is never a fixture, and apply-time patches of the two claim bodies and the dashboard. fn_ca_is_fixture_account already existed (20260907220229); it is redeclared here.",
-  "tables": [],
-  "functions": ["fn_expire_daily_challenge_rewards"],
-  "columns": { "user_daily_challenges": ["expired_at"] }
-}

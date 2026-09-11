@@ -1,9 +1,0 @@
-{
-  "_owner": "fix/the-board-opens-on-the-live-floor + tabs are queries",
-  "tables": [],
-  "functions": [
-    "fn_list_managed_games"
-  ],
-  "columns": {},
-  "_comment": "Indexes are not tracked by this manifest (KNOWN_KEYS is tables/functions/columns), so idx_tournaments_live_unfinalized_guarantee needs no declaration here."
-}

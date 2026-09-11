@@ -1,6 +1,0 @@
-{
-  "_owner": "fix/arena-is-always-the-alias — fn_arena_name is the SQL mirror of playerDisplayName's arena branch, applied to production by 20260903120000_the_arena_name_is_the_alias_in_sql_too.sql and confirmed present in pg_proc before this fragment was written; the base snapshot simply predates it",
-  "tables": [],
-  "functions": ["fn_arena_name"],
-  "columns": {}
-}

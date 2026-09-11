@@ -1,4 +1,0 @@
-{
-  "_owner": "feat/engine-restart-programme-phase-4",
-  "functions": ["fn_stamp_sit_out_at", "fn_thaw_platform"]
-}

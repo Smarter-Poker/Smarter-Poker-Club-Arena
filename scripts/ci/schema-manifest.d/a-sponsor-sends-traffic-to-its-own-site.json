@@ -1,7 +1,0 @@
-{
-  "_owner": "agent/cowork-ads4/feat/sponsor-campaigns. Applied to production as migration 20260909071146_a_sponsor_sends_traffic_to_its_own_site: an outside advertiser's destination lives on the campaign and is reached through an opaque /c/<code>, the click is counted server-side by the redirect, flights are paced, and the review queue can finally see a campaign that has no club.",
-  "functions": ["fn_sponsor_campaign_create", "fn_ad_click_redirect", "fn_ad_campaign_report"],
-  "columns": {
-    "ad_campaign": ["external_url", "click_code", "pacing", "goal_impressions"]
-  }
-}

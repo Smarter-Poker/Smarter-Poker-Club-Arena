@@ -1,7 +1,0 @@
-{
-  "_owner": "fix/a-mission-pays-diamonds",
-  "columns": {
-    "daily_challenge_milestones": ["reward_diamonds"],
-    "daily_challenge_milestone_claims": ["reward_diamonds"]
-  }
-}

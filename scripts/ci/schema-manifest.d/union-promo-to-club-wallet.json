@@ -1,8 +1,0 @@
-{
-  "_owner": "fix/union-promo-to-club-wallet",
-  "functions": [
-    "fn_club_promo_wallet_send",
-    "fn_promo_wallet_ledger",
-    "fn_union_clawback_promo_from_club"
-  ]
-}

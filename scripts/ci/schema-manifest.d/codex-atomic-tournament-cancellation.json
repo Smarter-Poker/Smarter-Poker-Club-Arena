@@ -1,72 +1,10 @@
 {
   "_owner": "agent/codex-atomic-prize/fix/atomic-tournament-settlement",
   "_comment": "One immutable receipt for evidence-derived tournament cancellation refunds, fee reversals, and tournament/player/table closeout. Empty managed-game cancellation is routed through that same atomic authority under the global terminal lock, including the browser command gateway, while union governance and the private service-role boundary remain exact.",
-  "tables": ["tournament_cancellation_receipts", "tournament_spin_cancellation_unwinds"],
-  "functions": [
-    "atomic_cancel_tournament",
-    "fn_ca_tournament_cancellation_receipt",
-    "fn_cancelled_tournament_evidence_is_immutable",
-    "fn_cancelled_tournament_parent_is_immutable",
-    "fn_cancelled_tournament_seat_is_immutable",
-    "fn_cancelled_tournament_wallet_is_immutable",
-    "fn_close_managed_game",
-    "fn_execute_managed_game_command",
-    "fn_spin_reserve_receipt_is_immutable",
-    "fn_spin_reserve_row_requires_exact_journal",
-    "fn_spin_tournament_contract_is_draw",
-    "fn_tournament_cancellation_receipts_append_only",
-    "trg_tournaments_cancel_must_refund"
+  "tables": [],
+  "functions": [],
+  "removedFunctions": [
+    "fn_release_tournament_holds"
   ],
-  "removedFunctions": ["fn_release_tournament_holds"],
-  "columns": {
-    "tournament_cancellation_receipts": [
-      "actor_id",
-      "closed_table_count",
-      "closed_table_ids",
-      "escrow_close_note",
-      "escrow_closed_at",
-      "fee_reversal_ids",
-      "fees_reversed",
-      "receipt",
-      "receipt_version",
-      "refund_line_count",
-      "refunded_count",
-      "refunded_registration_ids",
-      "released_seat_count",
-      "released_seat_ids",
-      "settled_at",
-      "source_player_count",
-      "source_player_ids",
-      "source_seat_count",
-      "source_seat_ids",
-      "spin_unwind_tournament_id",
-      "ticket_return_count",
-      "ticket_return_ids",
-      "total_rake_after",
-      "total_rake_before",
-      "total_refunded",
-      "total_ticket_returned",
-      "tournament_id",
-      "zero_refund_count",
-      "zero_refund_registration_ids"
-    ],
-    "tournament_spin_cancellation_unwinds": [
-      "contribution_amount",
-      "contribution_reversal_id",
-      "contribution_reversal_journal_id",
-      "draw_amount",
-      "draw_reversal_id",
-      "draw_reversal_journal_id",
-      "original_contribution_id",
-      "original_draw_id",
-      "original_draw_journal_id",
-      "original_entry_journal_id",
-      "pool_balance_after",
-      "pool_balance_before",
-      "pool_id",
-      "reserve_owner_id",
-      "settled_at",
-      "tournament_id"
-    ]
-  }
+  "columns": {}
 }

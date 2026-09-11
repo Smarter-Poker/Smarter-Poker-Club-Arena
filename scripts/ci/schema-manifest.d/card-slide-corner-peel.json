@@ -1,5 +1,0 @@
-{
-  "_owner": "feat/card-slide-corner-peel",
-  "tables": ["card_slide_usage"],
-  "functions": ["fn_record_card_slide_usage", "fn_card_slide_adoption"]
-}

@@ -1,7 +1,0 @@
-{
-  "_owner": "fix/stats-phase-3-live-and-exact",
-  "functions": ["ca_player_stats_pulse"],
-  "columns": {
-    "ca_stats_witness_audit_log": ["allin_showdown_7d", "allin_showdown_without_equity_7d"]
-  }
-}

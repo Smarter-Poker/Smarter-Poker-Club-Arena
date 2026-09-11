@@ -1,6 +1,0 @@
-{
-  "_owner": "fix/chip-std-cash-latent (Lane D of the Chip Accounting Standard swarm, 2026-09-02). Applied to production as 20260902174500_cash_one_cashout_path_one_seat_creator (17:51 UTC), 20260902174600_the_seat_guard_watches_before_it_refuses (18:43 UTC, dry-run trigger on table_seats) and 20260902185000_mirror_production_only_cash_rpcs (18:46 UTC, byte-exact mirror, no behaviour change) and 20260902192000_the_cash_definers_say_who_may_call (19:15 UTC, GRANT/REVOKE only). seat_horse(uuid,uuid,integer,numeric) was DROPPED by the first of these; the nightly refresh will remove it from the base snapshot.",
-  "tables": ["ca_seat_guard_dryrun"],
-  "functions": ["fn_ca_guard_seat_creation"],
-  "columns": { "table_pending_addons": ["kind"] }
-}

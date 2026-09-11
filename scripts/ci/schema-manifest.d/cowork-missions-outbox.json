@@ -1,4 +1,0 @@
-{
-  "_owner": "fix/a-hand-is-recorded-in-milliseconds",
-  "functions": ["fn_enqueue_hand_daily_missions", "fn_drain_daily_challenge_event_outbox"]
-}

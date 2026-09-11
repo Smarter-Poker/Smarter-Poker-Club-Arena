@@ -1,6 +1,0 @@
-{
-  "_owner": "fix/chip-std-escrow",
-  "_comment": "Lane B escrow shadow. tournament_escrow_shadow is a view; the manifest keeps tables and views in one list.",
-  "tables": ["ca_escrow_shadow_results", "ca_escrow_shadow_runs", "tournament_escrow_shadow"],
-  "functions": ["fn_ca_tournament_escrow", "fn_ca_escrow_vs_counter_check"]
-}

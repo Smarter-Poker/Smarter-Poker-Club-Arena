@@ -1,5 +1,0 @@
-{
-  "_owner": "feat/previous-hand-phase-5",
-  "tables": ["ca_hand_notes"],
-  "functions": ["fn_ca_hand_notes_touch", "fn_ca_hand_tags_ok"]
-}

@@ -1,5 +1,0 @@
-{
-  "_owner": "agent/codex-atomic-prize/fix/atomic-tournament-settlement",
-  "_comment": "Read-only production catalog verification on 2026-09-09 confirmed both service-only tournament RPCs are live; this fragment closes snapshot lag until the nightly generated base absorbs them.",
-  "functions": ["fn_ca_resolve_unbound_pending_addons", "fn_close_empty_tournament_table"]
-}

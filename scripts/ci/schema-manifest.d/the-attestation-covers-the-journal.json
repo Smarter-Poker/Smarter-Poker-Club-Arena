@@ -1,7 +1,0 @@
-{
-  "_owner": "fix/the-attestation-covers-the-journal",
-  "_comment": "Phase 6 deep dive: the manifest backfill, so attestation coverage follows the journal rather than the date the cron started (20260907164321).",
-  "tables": [],
-  "functions": ["fn_ca_ledger_day_manifest_backfill"],
-  "columns": {}
-}

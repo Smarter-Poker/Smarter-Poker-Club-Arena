@@ -1,4 +1,0 @@
-{
-  "_owner": "chore/the-test-accounts-are-swept",
-  "functions": ["fn_sweep_test_account"]
-}

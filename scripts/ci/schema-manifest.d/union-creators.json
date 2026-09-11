@@ -1,7 +1,0 @@
-{
-  "_owner": "fix/cashier-one-discoverability-rule",
-  "_comment": "Union creation allowlist (20260904223000_union_creation_is_an_allowlist.sql).",
-  "tables": ["union_creators"],
-  "functions": ["fn_can_create_union", "fn_can_i_create_a_union", "fn_guard_union_creation"],
-  "columns": {}
-}

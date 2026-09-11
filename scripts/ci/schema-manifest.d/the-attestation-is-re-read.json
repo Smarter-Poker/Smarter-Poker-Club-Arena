@@ -1,7 +1,0 @@
-{
-  "_owner": "fix/every-attested-day-is-re-read",
-  "_comment": "Phase 6: every attested day is re-read daily and a changed day is restated with its old value kept (20260907161921).",
-  "tables": ["ca_ledger_day_manifest_restatements"],
-  "functions": ["fn_ca_ledger_day_manifest_verify_all"],
-  "columns": {}
-}

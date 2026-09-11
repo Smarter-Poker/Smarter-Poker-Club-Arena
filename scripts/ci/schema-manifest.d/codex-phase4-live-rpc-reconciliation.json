@@ -1,5 +1,0 @@
-{
-  "_owner": "agent/codex-phase4-cycle-club/fix/v31-input-bundle-bootstrap",
-  "_comment": "Production readback on 2026-09-09 proved both functions exist and remain service-role executable. This branch-owned fragment closes current-main manifest drift without mutating the shared nightly snapshot or allowlisting a real RPC.",
-  "functions": ["fn_ca_resolve_unbound_pending_addons", "fn_close_empty_tournament_table"]
-}

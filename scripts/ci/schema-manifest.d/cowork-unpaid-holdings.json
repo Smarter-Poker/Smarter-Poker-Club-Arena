@@ -1,4 +1,0 @@
-{
-  "_owner": "fix/no-cards-for-hands-nobody-paid-into",
-  "functions": ["fn_ca_hand_facts_strip_unpaid_holding"]
-}

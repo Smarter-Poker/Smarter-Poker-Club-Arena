@@ -1,5 +1,0 @@
-{
-  "_owner": "Not this branch's function: fn_consume_rabbit_hunt_v2 is declared by 20260907234436_the_daily_club_arena_bonus_has_a_ledger.sql and is live in production (verified 2026-09-08), but no fragment declared it, so check-phantom-tables reported it as a phantom rpc against every branch - server/src/engine/ServerTableEngineSettlement.ts:206 calls it. Declared here so the tree is green for everyone (CLAUDE.md section 4, fix-first); it belongs to whoever owns the Rabbit Hunt receipts work and can move to their fragment freely.",
-  "tables": [],
-  "functions": ["fn_consume_rabbit_hunt_v2"]
-}

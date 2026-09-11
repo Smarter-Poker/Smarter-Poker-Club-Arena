@@ -1,4 +1,0 @@
-{
-  "_owner": "fix/mobile-table-eleven — migration 20260907180900_lobby_view_prefs_follow_the_player.sql. Dan 2026-09-07 item 5: the lobby's tab, sort and Favorites chip follow the player across devices. Applied via the Supabase MCP; verified live as jsonb NOT NULL DEFAULT '{}' with select/insert/update granted to authenticated (5 columns, 5 granted).",
-  "columns": { "user_lobby_filters": ["view_prefs"] }
-}

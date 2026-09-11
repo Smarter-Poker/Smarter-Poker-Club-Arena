@@ -1,4 +1,0 @@
-{
-  "_owner": "fix/active-means-who-is-on-the-floor",
-  "functions": ["fn_batch_club_realtime_active_counts", "fn_batch_union_realtime_active_counts"]
-}

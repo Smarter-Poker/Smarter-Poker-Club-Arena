@@ -1,4 +1,0 @@
-{
-  "_owner": "perf/one-tick-rpc-per-pass-and-a-wake-on-seat-change",
-  "functions": ["fn_cash_clusters_tick_all"]
-}

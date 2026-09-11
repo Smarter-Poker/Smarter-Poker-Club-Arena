@@ -1,7 +1,0 @@
-{
-  "_owner": "fix/the-tuner-stops-fighting-the-floor",
-  "_comment": "20260906021958 the_drop_is_the_rake_and_the_jackpot, 20260906022346 tuner_health_reads_the_whole_drop and 20260906022655 the_drop_identity_costs_one_small_table, all applied to production 2026-09-06 via the Supabase MCP. horse_daily_nets.bbj_bb is the jackpot half of the house drop, allocated by weighted contribution exactly as rake_bb is, so the regression rule judges net + rake + jackpot.",
-  "tables": [],
-  "functions": ["fn_audit_fleet_drop_identity"],
-  "columns": { "horse_daily_nets": ["bbj_bb"] }
-}

@@ -1,5 +1,0 @@
-{
-  "_owner": "fix/chip-std-obligations",
-  "tables": ["ca_money_path_violations"],
-  "functions": ["fn_tournament_obligation_paid_so_far", "fn_ca_money_path_log"]
-}

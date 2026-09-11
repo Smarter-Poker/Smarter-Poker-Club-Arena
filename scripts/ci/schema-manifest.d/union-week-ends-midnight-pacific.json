@@ -1,8 +1,0 @@
-{
-  "_owner": "fix/union-week-ends-midnight-pacific",
-  "functions": [
-    "fn_union_prev_week_start",
-    "fn_union_settlement_cascade_due",
-    "fn_union_enforce_stop_loss"
-  ]
-}

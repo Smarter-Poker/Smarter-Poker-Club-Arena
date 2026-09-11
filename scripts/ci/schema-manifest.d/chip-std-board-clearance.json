@@ -1,5 +1,0 @@
-{
-  "_owner": "fix/chip-std-phases-5-to-8 (chip standard, the board clearance of 2026-09-06). Applied as 20260906015217 (the overlay is read from the journal), 20260906015837 + 20260906020707 (the two indexes that keep the conservation check fast), 20260906021514 (the pre-trigger guarantees are acknowledged), 20260906021758 (a retired detector and a superseded run do not hold the board open), 20260906022011 (the frozen pool baseline moves only with a reason), 20260906023024 (a hand that cannot name itself by id still names itself by table and number), 20260906023900 (every leg the journal was refused is written back).",
-  "tables": ["ca_frozen_pool_baseline_changes"],
-  "functions": ["fn_ca_frozen_baseline_needs_a_reason"]
-}

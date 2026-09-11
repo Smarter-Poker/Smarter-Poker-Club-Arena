@@ -1,4 +1,0 @@
-{
-  "_owner": "feat/native-push-db",
-  "columns": { "push_subscriptions": ["transport", "platform"] }
-}

@@ -1,4 +1,0 @@
-{
-  "_owner": "fix/a-band-with-no-game-gets-no-horses",
-  "functions": ["fn_available_stake_bands", "fn_project_stake_band"]
-}

@@ -1,4 +1,0 @@
-{
-  "_owner": "Phase 2 seat-expiry lock order; existing signature and service-only permission preserved.",
-  "functions": ["player_leave_table"]
-}

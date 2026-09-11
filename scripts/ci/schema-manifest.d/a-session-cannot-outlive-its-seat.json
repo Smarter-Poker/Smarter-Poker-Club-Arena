@@ -1,4 +1,0 @@
-{
-  "_owner": "fix/a-session-cannot-outlive-its-seat-landing. Applied to production as migrations 20260910011838_a_closed_table_closes_its_sessions (trigger on tables closes every open cash_player_sessions row as table_closed) and 20260910012522_a_vacated_seat_closes_its_session_at_commit (deferred constraint trigger on table_seats closes the vacated seat's session as seat_vacated).",
-  "functions": ["trg_fn_close_sessions_when_table_closes", "trg_fn_close_session_when_seat_vacated"]
-}

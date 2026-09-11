@@ -1,8 +1,0 @@
-{
-  "_owner": "Diamond Phase 3. Production migration 20260909065458 applied with explicit user approval; see docs/audits/2026-09-08-diamond-phase-3-custody.md.",
-  "functions": [
-    "fn_poker_diamond_custody_balance",
-    "fn_poker_diamond_reserve",
-    "fn_poker_diamond_release"
-  ]
-}

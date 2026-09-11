@@ -1,5 +1,0 @@
-{
-  "_owner": "Club Arena Accounting Phase 3",
-  "_comment": "Function and authenticated-only execution verified in production 2026-09-09. Full phase acceptance remains open.",
-  "functions": ["fn_register_for_tournament_request"]
-}

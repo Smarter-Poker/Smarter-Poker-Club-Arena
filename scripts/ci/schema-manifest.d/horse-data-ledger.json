@@ -1,5 +1,0 @@
-{
-  "_owner": "agent/claude-p1/feat/horse-data-ledger",
-  "tables": ["horse_data_ledger"],
-  "functions": ["fn_ledger_fires", "fn_audit_data_receipts", "ca_horse_data_ledger"]
-}

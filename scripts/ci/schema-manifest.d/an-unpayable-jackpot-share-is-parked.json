@@ -1,5 +1,0 @@
-{
-  "_owner": "agent/cowork-bbj-audit/phase-2-never-lost - BBJ phase 2.3: a jackpot share that cannot be delivered is parked and recorded rather than raising, which used to roll back the whole payout for everyone at the table",
-  "tables": ["bbj_unclaimed_shares"],
-  "functions": ["fn_bbj_unclaimed_shares"]
-}

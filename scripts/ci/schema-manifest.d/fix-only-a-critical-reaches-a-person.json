@@ -1,4 +1,0 @@
-{
-  "_owner": "fix/only-a-critical-reaches-a-person",
-  "functions": ["fn_ca_escrow_on_close", "fn_ca_incident_notify"]
-}

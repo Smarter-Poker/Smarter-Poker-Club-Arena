@@ -1,8 +1,0 @@
-{
-  "_owner": "fix/chip-std-phase-3 (chip standard Phase 3, 2026-09-04). Applied as 20260904183408 (one Mint), 20260904185104 (no negatives), 20260904184201 (legacy doors closed).",
-  "functions": [
-    "fn_ca_register_issuance_leg",
-    "fn_ca_issuance_leg_is_registered",
-    "fn_ca_mint_register_vs_supply"
-  ]
-}

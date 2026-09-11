@@ -1,4 +1,0 @@
-{
-  "_owner": "fix/cluster-autonomy-audit (Operation Table Stakes, Gate 3 live audit, 2026-09-05). Applied to production as 20260905030000_cluster_tick_survives_safeupdate: composite type cash_cluster_census_row, fn_cash_cluster_census, fn_cash_cluster_tick re-created on an array census (no temp table, nothing safeupdate refuses).",
-  "functions": ["fn_cash_cluster_census"]
-}

@@ -1,7 +1,0 @@
-{
-  "_owner": "fix/an-expired-move-says-what-it-was-waiting-for",
-  "_comment": "20260907171945: cash_seat_moves.expires_at stopped being a flat 3-minute column default and became four hand-lengths of the table's own recent cadence, floored at 3 and capped at 15 minutes. fn_cash_seat_move_window reads the last four hands; fn_cash_seat_move_set_window is the BEFORE INSERT trigger that applies it, and the column default is dropped so one authority owns the value. The deadline had been shorter than the average hand (226.7s measured across 114 live cluster tables), so every planned promotion expired and was re-planned. Applied to production 2026-09-07 17:19 UTC.",
-  "tables": [],
-  "functions": ["fn_cash_seat_move_window", "fn_cash_seat_move_set_window"],
-  "columns": {}
-}

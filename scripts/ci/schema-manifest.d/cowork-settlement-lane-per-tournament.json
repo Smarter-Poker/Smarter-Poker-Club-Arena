@@ -1,9 +1,0 @@
-{
-  "_owner": "fix/settlement-lane-is-per-tournament-v3",
-  "_comment": "20260910035245: the three lane helpers (G->B, G->T, B/T shared) that the 30 tournament money authorities and the accepted-hand authority now enter the settlement lane through. Applied to production 2026-09-10 03:54 UTC.",
-  "functions": [
-    "fn_ca_lock_settlement_lane_global",
-    "fn_ca_lock_settlement_lane_for_tournament",
-    "fn_ca_share_settlement_lane_for_table"
-  ]
-}

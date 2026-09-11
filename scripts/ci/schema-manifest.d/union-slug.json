@@ -1,7 +1,0 @@
-{
-  "_owner": "fix/union-create-table-in-union-context",
-  "_comment": "unions.slug + its trigger (20260904210000_a_union_has_a_slug.sql). Union routes read /unions/<slug>.",
-  "tables": [],
-  "functions": ["fn_union_slugify", "fn_unions_set_slug"],
-  "columns": { "unions": ["slug"] }
-}

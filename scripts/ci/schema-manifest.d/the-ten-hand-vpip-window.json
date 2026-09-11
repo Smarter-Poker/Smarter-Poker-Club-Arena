@@ -1,4 +1,0 @@
-{
-  "_owner": "fix/templated-rules-visible-and-the-ten-hand-floor (Dan 2026-09-04: the ten-hand VPIP window, the hero's tracker, the engine's status reader). Applied to production as 20260904231353_the_ten_hand_vpip_window_and_the_status_readers.",
-  "functions": ["fn_nit_status", "fn_cash_vpip_status"]
-}

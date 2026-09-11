@@ -1,7 +1,0 @@
-{
-  "_owner": "feat/gate-5-the-snapshot-is-the-rule",
-  "_comment": "20260905034937: Gate 7 cutover - fn_cash_game_ensure (the Stable Hand's open order), 41 games adopted from their tables, the CHECK tables_cash_needs_a_game. Applied to production 2026-09-05 03:56 UTC.",
-  "tables": [],
-  "functions": ["fn_cash_game_ensure"],
-  "columns": {}
-}

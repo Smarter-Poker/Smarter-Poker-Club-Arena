@@ -1,4 +1,0 @@
-{
-  "_owner": "fix/club-members-reads-name-their-columns - migration 20260908024019. EngineDashboard counted the horse fleet with browser filters on profiles.is_horse, which a player is not granted (42501 since 2026-09-02), so admins saw nothing. fn_admin_horse_fleet_counts answers admins only (fn_is_horse_admin) with sizes, never a roster. Probed: player 42501, god {available:1000, seated:0}.",
-  "functions": ["fn_admin_horse_fleet_counts"]
-}

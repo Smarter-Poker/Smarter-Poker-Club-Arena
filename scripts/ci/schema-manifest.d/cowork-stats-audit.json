@@ -1,5 +1,0 @@
-{
-  "_owner": "fix/stats-page-full-audit",
-  "tables": ["ca_hand_player_stat_repair_state"],
-  "functions": ["trg_ca_stats_live_from_hand", "ca_repair_hand_player_stat_money"]
-}

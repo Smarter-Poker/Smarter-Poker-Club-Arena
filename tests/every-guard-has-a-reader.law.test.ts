@@ -132,6 +132,6 @@ describe('the three that had no reader now do', () => {
     expect(job).toContain('for code in "$RT" "$BBJ" "$COS"');
     expect(job).toContain('[[ "$code" =~ ^[0-9]+$ ]]');
     expect(job).toContain('[ "$RT" = 0 ] && [ "$BBJ" = 0 ] && [ "$COS" = 0 ]');
-    expect(job).toContain('LIVE DRIFT OR UNKNOWN');
+    expect(job).toContain('INTEGRITY DRIFT OR UNKNOWN');
   });
 });

@@ -264,7 +264,14 @@ describe('EquityWorkerPool fail-closed lifecycle', () => {
       const freshId = (worker.sent[2] as { id: number }).id;
       worker.emitMessage({ type: 'EQUITY_RESULT', id: freshId, equities: [0.4, 0.6] });
       await expect(fresh).resolves.toEqual([0.4, 0.6]);
-      expect(pool.status()).toMatchObject({ phase: 'ready', readyWorkers: 1, queueDepth: 0 });
+      expect(pool.status()).toMatchObject({
+        phase: 'ready',
+        readyWorkers: 1,
+        queueDepth: 0,
+        queueExpirations: 1,
+        executionTimeouts: 0,
+      });
+      expect(vi.getTimerCount()).toBe(0);
     } finally {
       await pool.shutdown();
     }
@@ -298,13 +305,20 @@ describe('EquityWorkerPool fail-closed lifecycle', () => {
       await expect(expired).resolves.toBeInstanceOf(EquityWorkerTimeoutError);
       await vi.advanceTimersByTimeAsync(100);
       expect(workers[1].terminateCalls).toBe(0);
-      expect(pool.status()).toMatchObject({ phase: 'ready', readyWorkers: 1, queueDepth: 0 });
+      expect(pool.status()).toMatchObject({
+        phase: 'ready',
+        readyWorkers: 1,
+        queueDepth: 0,
+        queueExpirations: 1,
+        executionTimeouts: 0,
+      });
+      expect(vi.getTimerCount()).toBe(0);
     } finally {
       await pool.shutdown();
     }
   });
 
-  it('bounds queue plus compute time and terminates the wedged worker', async () => {
+  it('bounds compute time from dispatch and terminates the wedged worker', async () => {
     vi.useFakeTimers();
     const worker = new FakeWorker();
     const pool = new EquityWorkerPool({
@@ -320,7 +334,9 @@ describe('EquityWorkerPool fail-closed lifecycle', () => {
 
     const pending = pool.estimateEquity(hands, [], [], 1000);
     const rejection = expect(pending).rejects.toThrow('timed out after 25ms');
-    await vi.advanceTimersByTimeAsync(25);
+    // The 25ms execution deadline, then the one poll turn of grace the pool
+    // gives an answer already on its way (a fake clock runs that turn 1ms on).
+    await vi.advanceTimersByTimeAsync(26);
     await rejection;
     expect(worker.terminateCalls).toBe(1);
     await pool.shutdown();

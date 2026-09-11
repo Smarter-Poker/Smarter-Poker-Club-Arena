@@ -17,6 +17,46 @@ PREFIX = 'operations/release/fixture/'
 CONTROL_FILES = tuple('operations/release/native/' + name for name in (
     'component-observation-protocol.mjs', 'component-observation-client.mjs',
     'component-semantic-observations.mjs'))
+NATIVE_STAGES = frozenset((
+    'initialization', 'observer-user-isolation', 'native-observation-bridge',
+    'chromium-native-read-and-rls', 'postgresql-17-extensions',
+    'postgresql-wal2json-native-slot', 'gotrue-genuine-migrations-and-mfa',
+    'postgrest-14-5-authentication-and-rls', 'realtime-genuine-migrations-and-change',
+    'native-observation-bridge-start', 'observer-and-browser-handoff'))
+NATIVE_ERROR_NAMES = frozenset(('Error', 'AssertionError', 'TypeError', 'RangeError',
+                                'SyntaxError', 'TimeoutError', 'AggregateError'))
+
+
+def native_failures(output):
+    # Enumerated labels only. Never retain messages, stacks, arbitrary error
+    # names, SQL, service logs, or additional fields from child output.
+    records = []
+    for line in output.splitlines():
+        if len(line) > 512:
+            continue
+        try:
+            row = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        if (not isinstance(row, dict) or row.get('status') != 'failed'
+                or not isinstance(row.get('stage'), str) or row['stage'] not in NATIVE_STAGES):
+            continue
+        if (set(row) == {'status', 'stage', 'error'} and isinstance(row['error'], str)
+                and row['error'] in NATIVE_ERROR_NAMES):
+            record = {'stage': row['stage'], 'category': row['error']}
+        elif set(row) == {'status', 'stage', 'reason'} and row['reason'] == 'deadline':
+            record = {'stage': row['stage'], 'category': 'deadline'}
+        else:
+            continue
+        if record not in records:
+            records.append(record)
+    return records
+
+
+class NativeSmokeFailure(RuntimeError):
+    def __init__(self, output):
+        super().__init__('native_fixture_services_failed')
+        self.diagnostics = native_failures(output)
 
 
 def require(value):
@@ -52,6 +92,8 @@ def command(args, cwd, env, timeout=120):
             with os.fdopen(fd, 'w') as log:
                 log.write('Reviewed image build only; no native service output.\n')
                 log.write((stdout + '\n' + stderr)[-131072:])
+    if process.returncode != 0 and args[:2] == ['bash', PREFIX + 'smoke-image.sh']:
+        raise NativeSmokeFailure(stdout + '\n' + stderr)
     require(process.returncode == 0)
     return stdout
 
@@ -127,8 +169,10 @@ def execute(repo, output, expected, run=command):
         receipt['stage'] = 'native-services-and-browser'
         result = run(['bash', PREFIX + 'smoke-image.sh', image_id], repo, env, timeout=420)
         receipt['observations'] = smoke_records(result)
-    except Exception:
+    except Exception as error:
         # Never serialize command output, environment, service logs, or tokens.
+        if isinstance(error, NativeSmokeFailure):
+            receipt['native_failures'] = error.diagnostics
         failed = True
     finally:
         try:

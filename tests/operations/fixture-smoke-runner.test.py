@@ -51,6 +51,29 @@ class RunnerTests(unittest.TestCase):
             self.assertFalse(diagnostic.exists())
             self.assertNotIn('PRIVATE RUNTIME', str(raised.exception))
 
+    def test_actual_native_service_failure_retains_only_fixed_stage(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            script = root / m.PREFIX / 'smoke-image.sh'
+            script.parent.mkdir(parents=True)
+            row = {'status': 'failed', 'stage': 'gotrue-genuine-migrations-and-mfa', 'error': 'Error'}
+            script.write_text("printf '%s\\n' 'PRIVATE RUNTIME TOKEN' '" + json.dumps(row) + "' >&2\nexit 7\n")
+            with self.assertRaises(m.NativeSmokeFailure) as raised:
+                m.command(['bash', m.PREFIX + 'smoke-image.sh'], root, {'PATH': os.environ['PATH']})
+            self.assertEqual(raised.exception.diagnostics, [{'stage': row['stage'], 'category': 'Error'}])
+            self.assertNotIn('PRIVATE RUNTIME', repr(vars(raised.exception)))
+
+    def test_native_diagnostics_reject_arbitrary_data(self):
+        valid = {'status': 'failed', 'stage': 'initialization', 'reason': 'deadline'}
+        rows = [valid, {**valid, 'extra': 'PRIVATE TOKEN'}, {**valid, 'stage': 'PRIVATE TOKEN'},
+                {**valid, 'reason': 'PRIVATE TOKEN'},
+                {'status': 'failed', 'stage': 'initialization', 'error': 'PRIVATE TOKEN'},
+                {'status': 'failed', 'stage': 'initialization', 'error': ['Error']},
+                {'status': 'failed', 'stage': ['initialization'], 'reason': 'deadline'},
+                [], None, 'PRIVATE TOKEN']
+        self.assertEqual(m.native_failures('\n'.join(map(json.dumps, rows))),
+                         [{'stage': 'initialization', 'category': 'deadline'}])
+
     def exercise(self, fault=None):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -79,6 +102,8 @@ class RunnerTests(unittest.TestCase):
                     return json.dumps([{'Id': IMAGE, 'Os': 'linux', 'Architecture': 'amd64', 'Config': {'Labels': labels}}])
                 if args[:2] == ['bash', m.PREFIX + 'smoke-image.sh']:
                     if fault == 'timeout': raise TimeoutError('PRIVATE TOKEN MUST NOT LEAK')
+                    if fault == 'native-stage':
+                        raise m.NativeSmokeFailure(json.dumps({'status': 'failed', 'stage': 'initialization', 'error': 'Error'}) + '\nPRIVATE TOKEN')
                     return SMOKE if fault != 'missing-service' else json.dumps(RECORDS[0])
                 if args[:3] == ['docker', 'container', 'ls']:
                     return 'container-id' if present else ''
@@ -111,6 +136,12 @@ class RunnerTests(unittest.TestCase):
 
     def test_missing_service_observation_refused(self):
         self.assertEqual(self.exercise('missing-service')[0], 1)
+
+    def test_native_failure_receipt_includes_only_safe_stage_and_cleanup(self):
+        code, receipt, _ = self.exercise('native-stage')
+        self.assertEqual(code, 1)
+        self.assertEqual(receipt['native_failures'], [{'stage': 'initialization', 'category': 'Error'}])
+        self.assertTrue(all(receipt['cleanup'].values()))
 
     def test_timeout_cleans_exact_container_without_success(self):
         code, receipt, calls = self.exercise('timeout')

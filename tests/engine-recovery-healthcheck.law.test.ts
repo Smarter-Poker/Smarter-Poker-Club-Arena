@@ -27,6 +27,9 @@ const supervisor = read('server/scripts/engine-supervisor.sh');
 const verifier = read('server/scripts/verify-recovery-stack.sh');
 const autoheal = read('infra/monitoring/autoheal-compose.yml');
 const caddyfiles = [read('server/Caddyfile'), read('infra/monitoring/engine-01/Caddyfile')];
+const releaseTransaction = read('server/scripts/engine-release-transaction.sh');
+const releaseObserver = read('server/scripts/observe-engine-release.sh');
+const deployWorkflow = read('.github/workflows/auto-deploy-hetzner.yml');
 
 const seconds = (source: string, pattern: RegExp, label: string): number => {
   const match = source.match(pattern);
@@ -121,8 +124,27 @@ describe('health verdicts tolerate load but still recover a sustained wedge', ()
     expect(supervisor).toContain('ENGINE_SUPERVISOR_REQUIRE_EXACT_HEALTH');
     expect(supervisor).toContain('ENGINE_SUPERVISOR_LOCK_HELD');
     expect(supervisor).toContain('d.get("running") is True');
-    expect(supervisor).toContain('d.get("releaseSha")==os.environ["EXPECTED_SHA"]');
     expect(supervisor).toContain('d.get("liveness")=="ok"');
+    // EXACT, AND PROVABLE BY THE RELEASE BEING RESTORED (2026-09-11). The pin
+    // used to be the literal `d.get("releaseSha")==os.environ["EXPECTED_SHA"]`.
+    // That field arrived with releaseIdentity.ts, and this function restores
+    // the release ALREADY RUNNING, which predates it - so every deploy from
+    // 15:37 UTC that day died restoring a healthy, exact, serving engine, and
+    // the build that would publish the field was the build that could not
+    // ship. A sealed release with no `releaseSha` proves itself with
+    // `version`, the first eight characters of the same commit from the same
+    // build. The two halves of that are pinned separately below so neither can
+    // be dropped: a release that DOES publish the field must still match it
+    // exactly, and the short road is open only when the field is absent.
+    expect(supervisor).toContain('sha==expected');
+    expect(supervisor).toContain('sha is None and d.get("version")==expected[:8]');
+    // The fallback belongs to recovery alone. A new candidate is built from
+    // source that has the field, so every candidate and publication proof
+    // keeps the strict form.
+    for (const strict of [releaseTransaction, releaseObserver, deployWorkflow]) {
+      expect(strict).toContain('d.get("releaseSha")==os.environ["EXPECTED_SHA"]');
+      expect(strict).not.toContain('d.get("version")==expected[:8]');
+    }
     expect(supervisor).toContain('public_instance" = "$local_instance');
     expect(supervisor).not.toContain('BOOT_GRACE_SEC');
     expect(supervisor).not.toContain('FAIL_THRESHOLD');

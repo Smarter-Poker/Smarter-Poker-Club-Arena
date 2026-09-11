@@ -136,11 +136,37 @@ health_identity() {
     200|503) ;;
     *) return 1 ;;
   esac
+  # A SEALED RELEASE IS PROVED WITH WHAT IT PUBLISHES (2026-09-11).
+  #
+  # `releaseSha` arrived with server/src/releaseIdentity.ts. The release it
+  # shipped in could not deploy, because THIS function was asked to restore
+  # the release already running - which predates the field - and refused it.
+  # Every engine release from 15:37 UTC onward died at "sealed desired runtime
+  # could not be restored before release work" while the engine on the box was
+  # healthy, exact and serving. Four merges' worth of engine fixes sat on main
+  # with no way onto the floor, and the loop is self-sustaining: the build that
+  # would publish the field is the build that cannot ship.
+  #
+  # So an older sealed release proves itself with `version`, which is the first
+  # eight characters of the same commit and is set by the same build. This is
+  # not a weaker proof by accident: the container is separately proved to carry
+  # the exact image id AND the exact `sp.release.sha` label before this is even
+  # called, and the fallback is accepted ONLY when `releaseSha` is absent
+  # entirely. A release that publishes the field must still match it exactly,
+  # so a mismatched new build can never take the short road.
+  #
+  # RECOVERY ONLY. Every new-candidate and publication proof - in
+  # engine-release-transaction.sh, observe-engine-release.sh and the workflow -
+  # keeps the strict form, because a candidate is by definition built from
+  # source that has the field.
   instance="$(printf '%s' "$body" | EXPECTED_SHA="$DESIRED_SHA" python3 -c '
 import json, os, re, sys
 d=json.load(sys.stdin)
 instance=d.get("instanceId")
-ok=(d.get("running") is True and d.get("releaseSha")==os.environ["EXPECTED_SHA"] and d.get("liveness")=="ok" and isinstance(instance,str) and re.fullmatch(r"[1-9][0-9]*-[0-9a-f]{8}",instance))
+expected=os.environ["EXPECTED_SHA"]
+sha=d.get("releaseSha")
+identity=(sha==expected) or (sha is None and d.get("version")==expected[:8])
+ok=(d.get("running") is True and identity and d.get("liveness")=="ok" and isinstance(instance,str) and re.fullmatch(r"[1-9][0-9]*-[0-9a-f]{8}",instance))
 if not ok: raise SystemExit(1)
 print(instance)
 ' 2>/dev/null)" || return 1

@@ -1,0 +1,9 @@
+# Round 3 permission record
+
+The normal release gate requires an explicit branch permission record for the replacement Round 3 function. The deployed function already has server-only execution privileges; this is a packaging correction, not a repair of exposed runtime access.
+
+The companion migration restates that same authority for the exact adopted Round 3 signature. Its pre/post guards require the adopted body, postgres owner, SECURITY DEFINER mode, search path, argument names/default count, and normalized postgres/service_role-only ACL. The transaction has a one-second lock timeout and ten-second statement timeout. It changes no function body or financial data. The original a55 repair, checker, allowlist, and frozen UI/backend evidence remain unchanged.
+
+The four-case proof uses the actual exported checker on exact a55 and the companion: the original declaration fails the explicit-grant gate; the companion passes; omitting the PUBLIC revoke fails; a later authenticated grant fails. The unchanged existing checker suite passes 41 cases. This static checker matches grants by function name and does not prove arbitrary overload resolution or runtime authority.
+
+The root release owner applied the companion and verified all six functions and two triggers at 08:21:31 UTC. The 08:23:41 UTC ledger readback contains exactly the original repair at version 20260911072837 and companion at version 20260911081721, each with one exact source statement. A guarded metadata-only alignment reconciled the tool-generated companion version without reapplying SQL or changing the statements array. See adoption.json and the exact raw receipt. The archived alignment SQL is evidence, not an additional migration to execute. The companion guard itself checks one function and does not duplicate the complete six-function/two-trigger runtime receipt. UI publication still requires normal commit, push, CI, and release gates.

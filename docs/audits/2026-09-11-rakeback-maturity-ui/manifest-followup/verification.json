@@ -1,0 +1,37 @@
+{
+  "head_before_fragment": "54b2801af338313c4120572067ec5967b3b16570",
+  "fragment": {
+    "path": "scripts/ci/schema-manifest.d/legacy-rakeback-closed-period-single-payer.json",
+    "sha256": "42fd1423a752b62c413186dd13f4211da7e0efc6789ec05104891f7335d056d7"
+  },
+  "helper_catalogue_sha256": "f6950d498ff87d26d8acee1c8ab8649062d6aad81a7b4a659ba0bf1e144586be",
+  "catalogue_scope": "Read-only existence and signatures; definition_md5 hashes pg_get_functiondef, not prosrc.",
+  "checker_command": "node scripts/ci/check-migrations-applied.mjs origin/main",
+  "before": {
+    "exit_code": 1,
+    "missing_functions": [
+      "fn_ca_legacy_period_maturity",
+      "fn_ca_legacy_round3_wallet_receipt",
+      "fn_lock_rakeback_payer_clubs"
+    ]
+  },
+  "after": {
+    "exit_code": 0
+  },
+  "unchanged_focused_test": {
+    "command": "node_modules/.bin/vitest run tests/unit/tableManagementPhase3Recertification.test.ts --reporter=verbose",
+    "files_passed": 1,
+    "tests_passed": 8,
+    "browser_mutation_door_case_ms": 508,
+    "file_total_duration_ms": 1490,
+    "test_sha256": "83daf1ca2feb144ad6782949bc0df1ab300309a79159b21b10e29d297f7e093c",
+    "timeouts_assertions_setup_changed": false
+  },
+  "artifacts": {
+    "helper-existence.json.txt": "f6950d498ff87d26d8acee1c8ab8649062d6aad81a7b4a659ba0bf1e144586be",
+    "manifest-after.txt": "7eae5a8f340d1ea2e6399b91cff9c71ea7652d4899f6ffeb4c1339d5f62ffed0",
+    "manifest-before.txt": "7f2daac686f391e0a1e2a6cb9bac609f7d17ee6f8c687d9792b51b12c920fae8",
+    "phase3-unchanged-focused.txt": "9696e60d905336f886befba9646b7fd4d28a5161875babaa95b14ef0fd738e9b"
+  },
+  "limits": "Focused local timing does not reproduce CI resource load. New commit needs normal CI. No SQL execution, function change, base manifest or gate change."
+}

@@ -13,53 +13,53 @@ treats the empty answer from the wrong database as evidence (CLAUDE.md 10.86).
 
 ## 0. Status of the work (final, 2026-09-09 23:45 UTC)
 
-| item | state |
-| --- | --- |
-| Live bodies read (section 1) on the correct database | DONE |
-| I1 (P1) rules step offered ante / bomb controls the server ignores | DONE, tested |
-| I2 (P1) `GAME_EXISTS` copy lied for the band case | DONE: migration written and probed rolled back, copy written, tested |
-| I3 (P1) a locked key that arrived DIFFERENT was silently ignored | DONE: same migration, probed |
-| I4 (P1) two taps could create twice; a failed create left no clean retry | DONE, tested |
-| I5 (P2) the stakes ladder offered rungs the club already holds | DONE, tested |
-| I6 (P3) the flow's own brown palette | DONE (CSS), realism / hover / classNames laws green |
-| I7 (P2) refusal-code parity, every live code has copy | DONE, pinned by a row-per-code test |
-| I8 (P2) law test mock shaped like an old server | DONE |
-| I9 (P2) `bombPotGuards` pinned the removed "Bomb Ante" slider | DONE, pin moved with its mechanism |
-| I10 (P2) `reportError` rewrote the caller's error message, so an unknown failure toasted "[CashGameCreateFlow.create_failed] ..." | DONE (shared-file edit, section 8), tested |
-| I11 (P3) stay-clock / rejoin tooltips and refusal copy hard-coded the floors | DONE: tooltips read the snapshot, copy reads the server's "the minimum is N" |
-| Migration `20260909181309` probed rolled back on `kuklfnapbkmacvwxktbh` | DONE (section 5) |
-| `npx tsc --noEmit` root, vitest on 21 files, the three copy gates | DONE, all green (section 6) |
-| #ClubArenaConsole painted chassis (`SpadeConsole`) for the flow | BLOCKED, kit not on `origin/main` (section 7) |
-| Idempotency key on `fn_cash_game_create` (a lost success response) | NOT DONE, Tier-3 SQL signature change, recorded (section 7) |
+| item                                                                                                                              | state                                                                        |
+| --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Live bodies read (section 1) on the correct database                                                                              | DONE                                                                         |
+| I1 (P1) rules step offered ante / bomb controls the server ignores                                                                | DONE, tested                                                                 |
+| I2 (P1) `GAME_EXISTS` copy lied for the band case                                                                                 | DONE: migration written and probed rolled back, copy written, tested         |
+| I3 (P1) a locked key that arrived DIFFERENT was silently ignored                                                                  | DONE: same migration, probed                                                 |
+| I4 (P1) two taps could create twice; a failed create left no clean retry                                                          | DONE, tested                                                                 |
+| I5 (P2) the stakes ladder offered rungs the club already holds                                                                    | DONE, tested                                                                 |
+| I6 (P3) the flow's own brown palette                                                                                              | DONE (CSS), realism / hover / classNames laws green                          |
+| I7 (P2) refusal-code parity, every live code has copy                                                                             | DONE, pinned by a row-per-code test                                          |
+| I8 (P2) law test mock shaped like an old server                                                                                   | DONE                                                                         |
+| I9 (P2) `bombPotGuards` pinned the removed "Bomb Ante" slider                                                                     | DONE, pin moved with its mechanism                                           |
+| I10 (P2) `reportError` rewrote the caller's error message, so an unknown failure toasted "[CashGameCreateFlow.create_failed] ..." | DONE (shared-file edit, section 8), tested                                   |
+| I11 (P3) stay-clock / rejoin tooltips and refusal copy hard-coded the floors                                                      | DONE: tooltips read the snapshot, copy reads the server's "the minimum is N" |
+| Migration `20260909181309` probed rolled back on `kuklfnapbkmacvwxktbh`                                                           | DONE (section 5)                                                             |
+| `npx tsc --noEmit` root, vitest on 21 files, the three copy gates                                                                 | DONE, all green (section 6)                                                  |
+| #ClubArenaConsole painted chassis (`SpadeConsole`) for the flow                                                                   | BLOCKED, kit not on `origin/main` (section 7)                                |
+| Idempotency key on `fn_cash_game_create` (a lost success response)                                                                | NOT DONE, Tier-3 SQL signature change, recorded (section 7)                  |
 
 ## 1. Files and functions read line by line
 
 Repo (worktree):
 
-* `src/components/cash/CashGameCreateFlow.tsx` (724 lines, all)
-* `src/components/cash/CashGameCreateFlow.css` (171 lines, all)
-* `src/config/cashGames.ts` (186 lines, all)
-* `src/components/table-config/controls.tsx` (154 lines, all)
-* `src/pages/TableConfigPage.tsx` - header, the access gate (470-500), the
+- `src/components/cash/CashGameCreateFlow.tsx` (724 lines, all)
+- `src/components/cash/CashGameCreateFlow.css` (171 lines, all)
+- `src/config/cashGames.ts` (186 lines, all)
+- `src/components/table-config/controls.tsx` (154 lines, all)
+- `src/pages/TableConfigPage.tsx` - header, the access gate (470-500), the
   Regular tab render (1030-1170), the footer (1705-1728); grep for every
   `regular` / `CashGameCreateFlow` / `localStorage` / `draft` reference
-* `src/components/cash/CashGameCard.tsx` - `rulesLineFor` (250-287)
-* `src/config/blindsPresets.ts` (all), `src/lib/bettingStructure.ts` (`stakesLabel`, `isFixedLimitVariant`)
-* `src/styles/club-engine.css` 1260-1420 (the `--realism-*` block)
-* `src/pages/TableConfigPage.css` 115-175, 300-330, 795-870 (the controls' paint)
-* `tests/cash-games-are-created-from-a-template.law.test.tsx` (all)
-* `tests/unit/cashGamesVocabulary.test.ts` (all), `tests/unit/cashGameCard.test.tsx` (all)
-* `tests/unit/bombPotGuards.test.ts` 785-830, `tests/unit/theCreateTableFormOffersOnlyLiveSwitches.test.ts` 25-200,
+- `src/components/cash/CashGameCard.tsx` - `rulesLineFor` (250-287)
+- `src/config/blindsPresets.ts` (all), `src/lib/bettingStructure.ts` (`stakesLabel`, `isFixedLimitVariant`)
+- `src/styles/club-engine.css` 1260-1420 (the `--realism-*` block)
+- `src/pages/TableConfigPage.css` 115-175, 300-330, 795-870 (the controls' paint)
+- `tests/cash-games-are-created-from-a-template.law.test.tsx` (all)
+- `tests/unit/cashGamesVocabulary.test.ts` (all), `tests/unit/cashGameCard.test.tsx` (all)
+- `tests/unit/bombPotGuards.test.ts` 785-830, `tests/unit/theCreateTableFormOffersOnlyLiveSwitches.test.ts` 25-200,
   `tests/a-control-that-says-none-must-mean-none.law.test.ts` 95-185, and the FLOW-reading
   lines of `variantSwitchesTellTheTruth`, `tableLifecycleSwitches`, `limitUserIntent`,
   `tableConfigSeatLawClamp`, `fixedLimitTableOffersOnlyWhatItHonours`,
   `theFormSaysWhatTheTableWillCharge`
-* `tests/actionAndMadnessAreOnePerBand.law.test.ts` 1-110, `tests/realism-is-one-vocabulary.law.test.ts` 1-80
-* `supabase/migrations/20260909035303_a_classic_game_has_no_antes_and_no_bombs.sql` (all)
-* `docs/changelog/2026-09-09-a-classic-game-has-no-antes-and-no-bombs.md`,
+- `tests/actionAndMadnessAreOnePerBand.law.test.ts` 1-110, `tests/realism-is-one-vocabulary.law.test.ts` 1-80
+- `supabase/migrations/20260909035303_a_classic_game_has_no_antes_and_no_bombs.sql` (all)
+- `docs/changelog/2026-09-09-a-classic-game-has-no-antes-and-no-bombs.md`,
   `docs/changelog/2026-09-05-action-and-madness-are-one-game-per-blind-category.md`
-* `docs/audits/2026-09-09-must-move-audit/lane-C.md` (C1, C2, section 5-8)
-* `.claude/skills/club-arena-console/SKILL.md` in the sibling
+- `docs/audits/2026-09-09-must-move-audit/lane-C.md` (C1, C2, section 5-8)
+- `.claude/skills/club-arena-console/SKILL.md` in the sibling
   `Smarter-Poker-Club-Arena` mount (sections 0-4) - it does not exist in this
   worktree or on `origin/main`
 
@@ -75,16 +75,16 @@ Live production (`pg_get_functiondef`, `kuklfnapbkmacvwxktbh`, 2026-09-09 ~18:05
 
 `fn_cash_template_defaults`:
 
-| | classic | action | madness |
-| --- | --- | --- | --- |
-| holdem (nlh, flh) seats / choices | 9, `[9, 6]` | 6, `[2..9]` | 6, `[2..9]` |
-| plo family (plo4/5/6/8, flo8) | 6 locked `[6]` | 6 locked | 6 locked |
-| short_deck / pineapple | 6, `[2..8]` | 6, `[2..8]` | 6, `[2..8]` |
-| min / max buy-in bb | 40 / 200 | 50 / 200 | 100 / 200 |
-| regular_ante | none | sb | bb |
-| vpip_floor / window | 0 / 10 | 30 / 10 | 50 / 10 |
-| bombs | off (trigger, ante_bb, boards NULL) | on, timed_15m, 2 bb, 2 boards | on, every_orbit, 3 bb, 2 boards |
-| stay_clock_min / rejoin_window_min | 10 / 120 | 10 / 120 | 10 / 120 |
+|                                    | classic                             | action                        | madness                         |
+| ---------------------------------- | ----------------------------------- | ----------------------------- | ------------------------------- |
+| holdem (nlh, flh) seats / choices  | 9, `[9, 6]`                         | 6, `[2..9]`                   | 6, `[2..9]`                     |
+| plo family (plo4/5/6/8, flo8)      | 6 locked `[6]`                      | 6 locked                      | 6 locked                        |
+| short_deck / pineapple             | 6, `[2..8]`                         | 6, `[2..8]`                   | 6, `[2..8]`                     |
+| min / max buy-in bb                | 40 / 200                            | 50 / 200                      | 100 / 200                       |
+| regular_ante                       | none                                | sb                            | bb                              |
+| vpip_floor / window                | 0 / 10                              | 30 / 10                       | 50 / 10                         |
+| bombs                              | off (trigger, ante_bb, boards NULL) | on, timed_15m, 2 bb, 2 boards | on, every_orbit, 3 bb, 2 boards |
+| stay_clock_min / rejoin_window_min | 10 / 120                            | 10 / 120                      | 10 / 120                        |
 
 `fn_cash_game_create` (wrapper): authenticated caller, `fn_caller_session_is_live`,
 `CLUB_REQUIRED`, `fn_can_create_games` -> `NOT_AUTHORIZED: this club is managed by
@@ -136,17 +136,18 @@ no ante. The VPIP readout had already been converted on 09-07; the ante and
 bombs had not.
 
 Fix:
-* `src/config/cashGames.ts` - `TEMPLATE_LOCKED_RULES` names the four keys;
+
+- `src/config/cashGames.ts` - `TEMPLATE_LOCKED_RULES` names the four keys;
   `CashGameOverrides` and `overridesFromSnapshot` no longer carry them;
   `templatePromiseLines(snapshot)` returns the three Title Case readouts (Ante,
   VPIP Floor, Bomb Pots) each ending "Set By The <Template> Template";
   `templateLabel()`.
-* `src/components/cash/CashGameCreateFlow.tsx` - the five controls are replaced
+- `src/components/cash/CashGameCreateFlow.tsx` - the five controls are replaced
   by a read-only `cash-create__promise` group (`role="group"`,
   `aria-readonly`, `data-testid="cash-create-promise"`) printed from the
   snapshot; the preview card's rules line takes ante / VPIP / bombs from the
   snapshot; the header comment says why.
-* `src/components/cash/CashGameCreateFlow.css` - the readout rows are engraved
+- `src/components/cash/CashGameCreateFlow.css` - the readout rows are engraved
   rows on the glass (label, value, note, a rule between rows), no control.
 
 ### I2 (P1) - `GAME_EXISTS` named the wrong game for the band case. FIXED (SQL + copy)
@@ -224,26 +225,26 @@ bundle in and the tournament tab's chips keep their dress.
 
 Every code the live impl and wrapper can raise, against `cashGameCreateRefusalText`:
 
-| code (live body) | house copy |
-| --- | --- |
-| `requires an authenticated caller` (no code) | "Sign In To Create A Game" (ADDED) |
-| `SESSION_REVOKED` | Your Session Is Signed Out. Sign In Again. |
-| `CLUB_REQUIRED` | This Screen Needs A Club |
-| `NOT_AUTHORIZED` | You Cannot Create Games In This Club |
-| `TEMPLATE_UNKNOWN` | Pick A Template First |
-| `VARIANT_UNAVAILABLE` | This Variant Is Not Available Yet |
-| `STAKES_INVALID` | Those Stakes Are Not Valid |
-| `OVERRIDE_INVALID: <key> ...` | The <Key> Setting Is Not Valid |
-| `HANDEDNESS_INVALID` | That Table Size Is Not Offered For This Game |
-| `BUYIN_BAND_INVALID` | The Buy In Range Is Not Valid |
-| `ANTE_INVALID` | The Ante Setting Is Not Valid |
-| `VPIP_INVALID` / `VPIP_WINDOW_INVALID` | (both present) |
-| `BOMB_TRIGGER_INVALID` / `BOMB_ANTE_INVALID` / `BOMB_BOARDS_INVALID` | The Bomb Pot Settings Are Not Valid |
-| `STAY_CLOCK_BELOW_FLOOR` / `REJOIN_WINDOW_BELOW_FLOOR` | (floor wording, pinned) |
-| `CLOCK_TOO_LONG` | The Stay Clock Or Rejoin Window Is Too Long |
-| `GAME_EXISTS` | This Club Already Runs <x>. Join That Game Instead. |
-| `ONE_GAME_PER_BLIND_CATEGORY` (trigger, passes through after 181309) | ADDED, section I2 |
-| `OVERRIDE_LOCKED` (181309) | ADDED, section I3 |
+| code (live body)                                                     | house copy                                          |
+| -------------------------------------------------------------------- | --------------------------------------------------- |
+| `requires an authenticated caller` (no code)                         | "Sign In To Create A Game" (ADDED)                  |
+| `SESSION_REVOKED`                                                    | Your Session Is Signed Out. Sign In Again.          |
+| `CLUB_REQUIRED`                                                      | This Screen Needs A Club                            |
+| `NOT_AUTHORIZED`                                                     | You Cannot Create Games In This Club                |
+| `TEMPLATE_UNKNOWN`                                                   | Pick A Template First                               |
+| `VARIANT_UNAVAILABLE`                                                | This Variant Is Not Available Yet                   |
+| `STAKES_INVALID`                                                     | Those Stakes Are Not Valid                          |
+| `OVERRIDE_INVALID: <key> ...`                                        | The <Key> Setting Is Not Valid                      |
+| `HANDEDNESS_INVALID`                                                 | That Table Size Is Not Offered For This Game        |
+| `BUYIN_BAND_INVALID`                                                 | The Buy In Range Is Not Valid                       |
+| `ANTE_INVALID`                                                       | The Ante Setting Is Not Valid                       |
+| `VPIP_INVALID` / `VPIP_WINDOW_INVALID`                               | (both present)                                      |
+| `BOMB_TRIGGER_INVALID` / `BOMB_ANTE_INVALID` / `BOMB_BOARDS_INVALID` | The Bomb Pot Settings Are Not Valid                 |
+| `STAY_CLOCK_BELOW_FLOOR` / `REJOIN_WINDOW_BELOW_FLOOR`               | (floor wording, pinned)                             |
+| `CLOCK_TOO_LONG`                                                     | The Stay Clock Or Rejoin Window Is Too Long         |
+| `GAME_EXISTS`                                                        | This Club Already Runs <x>. Join That Game Instead. |
+| `ONE_GAME_PER_BLIND_CATEGORY` (trigger, passes through after 181309) | ADDED, section I2                                   |
+| `OVERRIDE_LOCKED` (181309)                                           | ADDED, section I3                                   |
 
 Not covered, deliberately: whatever `fn_cash_cluster_open_table` raises (lane A/C
 territory) surfaces as the server's own message through the existing
@@ -292,52 +293,52 @@ same problem (I4) is closed.
 
 ### What was checked and found correct (no change)
 
-* Six steps in OPORD order: template, variant, mode, stakes, handedness,
+- Six steps in OPORD order: template, variant, mode, stakes, handedness,
   overrides; each waits on the one before (law test pins it).
-* Defaults are re-fetched on every template or variant change (`useEffect` on
+- Defaults are re-fetched on every template or variant change (`useEffect` on
   `[template, variant]`, with a `live` flag so a stale answer cannot land).
-* One `fn_cash_game_create` call for Save and for Start; Start additionally
+- One `fn_cash_game_create` call for Save and for Start; Start additionally
   wakes the engine with `getTableState` and navigates to the felt.
-* Seat choices come from `snapshot.seat_choices` / `seats_locked`, never from
+- Seat choices come from `snapshot.seat_choices` / `seats_locked`, never from
   the file; the live table in section 2 is what renders. The "6-Max Is Locked
   For Omaha Games" note fires on `seats_locked`, which the live function sets
   only for the plo family.
-* Variant chips: `CASH_VARIANTS` = the nine ids = engine `KNOWN_VARIANTS` = the
+- Variant chips: `CASH_VARIANTS` = the nine ids = engine `KNOWN_VARIANTS` = the
   live `VARIANT_UNAVAILABLE` list (vocabulary test pins the first two; the live
   body read today lists the same nine).
-* Stakes presets: all twelve rows of `BLINDS_PRESETS` satisfy `STAKES_INVALID`
+- Stakes presets: all twelve rows of `BLINDS_PRESETS` satisfy `STAKES_INVALID`
   (sb > 0, bb > sb, two decimals, bb <= 100000); the limit ladder is the subset
   with bb = 2 sb.
-* Buy-in sliders: min 10..400 step 10, max 40..1000 step 10, each clamped to the
+- Buy-in sliders: min 10..400 step 10, max 40..1000 step 10, each clamped to the
   other - inside `BUYIN_BAND_INVALID` (1 <= min <= max <= 1000).
-* Stay clock / rejoin window: slider `min` IS `snapshot.stay_clock_min` /
+- Stay clock / rejoin window: slider `min` IS `snapshot.stay_clock_min` /
   `snapshot.rejoin_window_min` (10 / 120 live), maxima 60 / 720 are inside
   `CLOCK_TOO_LONG` (1440 / 10080).
-* Action time 10..60 inside the SQL clamp 10..120 (none-must-mean-none law).
-* Price panel: `getRakeConfig(bb, variant, sb, {RAKE_INHERIT, RAKE_INHERIT})`,
+- Action time 10..60 inside the SQL clamp 10..120 (none-must-mean-none law).
+- Price panel: `getRakeConfig(bb, variant, sb, {RAKE_INHERIT, RAKE_INHERIT})`,
   the BBJ line says "No Bad Beat Jackpot On This Game" when the schedule has
   none - no invented copy.
-* Hostile state: there is NO localStorage draft in the cash flow (the
+- Hostile state: there is NO localStorage draft in the cash flow (the
   `ca_saved_start_time_<club>` key belongs to the tournament tabs and is never
   read here); all cash state is React state that resets with the route. A club
   without create rights: `canBuildHere` false disables Save and Start and
   prints `deniedMessage`; the server's `NOT_AUTHORIZED` has copy regardless.
-* `TableConfigPage.tsx` Regular tab is a thin mount of the flow with the
+- `TableConfigPage.tsx` Regular tab is a thin mount of the flow with the
   access gate; it writes nothing for cash (`handleSave` / `handleStart` return
   on `gameMode === 'regular'`).
 
 ## 4. Dead code, stubs, stale pins found
 
-* `fn_cash_game_create_impl_20260905`'s `OR public.is_club_admin(...)` in the
+- `fn_cash_game_create_impl_20260905`'s `OR public.is_club_admin(...)` in the
   authorisation check is unreachable: the wrapper `fn_cash_game_create` refuses
   on `fn_can_create_games` alone first. Not changed (lane C owns the
   authorisation surface); recorded.
-* `overridesFromSnapshot` filled in bomb `trigger` / `ante_bb` / `boards` for
+- `overridesFromSnapshot` filled in bomb `trigger` / `ante_bb` / `boards` for
   classic (`'timed_15m'`, 2, 2) so the controls had something to show - dead
   with the controls, removed.
-* `tests/unit/bombPotGuards.test.ts` 797-801 pins a "Bomb Ante" slider in the
+- `tests/unit/bombPotGuards.test.ts` 797-801 pins a "Bomb Ante" slider in the
   flow with `step={1}` - a pin on the removed lie (I9, to move).
-* Law test `defaults()` mock: `vpip_window: 40`, madness `vpip_floor: 30`,
+- Law test `defaults()` mock: `vpip_window: 40`, madness `vpip_floor: 30`,
   action holdem `seat_choices: [2..8]` - the live function says 10, 50, [2..9]
   (I8, to correct).
 
@@ -353,8 +354,7 @@ separate post-apply `DO $assert$` reads the function back through the
 catalogue and refuses to commit unless both edits and the template-sourced
 ante assignment are in the live body.
 Ordering: it touches ONLY `fn_cash_game_create_impl_20260905`, which no other
-migration in this audit (181230 / 181259 / 181632 / 181642 / 181653 / 181704 /
-191454) rewrites, so it sits anywhere in the serial order; version order
+migration in this audit (181230 / 181259 / 181632 / 181642 / 181653 / 181704 / 191454) rewrites, so it sits anywhere in the serial order; version order
 (after 181259, before 181632) is fine. No new schema object, so no
 `schema-manifest.d` fragment.
 
@@ -469,7 +469,7 @@ card too. The selectors are anchored (`/^Action/`) now.
 
 ## 7. What could not be done, and why
 
-* **The painted `#ClubArenaConsole` chassis.** `SpadeConsole.tsx/.css` and
+- **The painted `#ClubArenaConsole` chassis.** `SpadeConsole.tsx/.css` and
   `public/assets/club-buttons/console/spade-console-v1/*` exist only on the
   unmerged branches `feat/spade-console-waitlist-rules-buyin-confirm` and
   `agent/cw-dailybonus/feat/console-pages`; they are not on `origin/main`
@@ -481,11 +481,11 @@ card too. The selectors are anchored (`/^Action/`) now.
   written vocabulary main does have (`--realism-*`, section I6). Rebuilding the
   template cards, chips and footer plates on `SpadeConsole` is a follow-up for
   after that branch merges.
-* **The wrapper / impl authorisation asymmetry** (section 4) is recorded, not
+- **The wrapper / impl authorisation asymmetry** (section 4) is recorded, not
   changed: lane C owns `fn_cash_game_create`'s authorisation surface.
-* **An idempotency key for a lost success response** (section 3, residual):
+- **An idempotency key for a lost success response** (section 3, residual):
   needs a new parameter on `fn_cash_game_create`; Tier 3, not started.
-* **No browser or headless render of the rebuilt step.** Every claim about the
+- **No browser or headless render of the rebuilt step.** Every claim about the
   rules step is from the DOM assertions in the law test (the readouts render
   with no `input`/`button`/`select` inside the group; the chips carry
   `disabled`, `title` and `data-taken`). The before/after shots the console
@@ -494,17 +494,17 @@ card too. The selectors are anchored (`/^Action/`) now.
 
 ## 8. Shared files touched (for the integrator)
 
-* `src/utils/errorReporter.ts` - the unconditional copy (I10). Six lines in
+- `src/utils/errorReporter.ts` - the unconditional copy (I10). Six lines in
   the prefixing block; nothing else in the file. Imported by 20+ services;
   the change only stops them from having their error mutated.
-* `tests/unit/bombPotGuards.test.ts` - two pins: my own (the removed "Bomb
+- `tests/unit/bombPotGuards.test.ts` - two pins: my own (the removed "Bomb
   Ante" slider, moved to the SQL bounds) and one character on line ~709 for
   another lane's widened engine select (section 6).
-* `tests/cash-games-are-created-from-a-template.law.test.tsx` - lane C's
+- `tests/cash-games-are-created-from-a-template.law.test.tsx` - lane C's
   `from` mock and moved A1.1 pin are kept as they left them; my additions are
   the corrected `defaults()` mock and the five new `describe` blocks at the
   foot of the file.
-* Nothing in `lobbyEntries.ts`, `CashClusterHUD`, `MustMoveLobbyModal`,
+- Nothing in `lobbyEntries.ts`, `CashClusterHUD`, `MustMoveLobbyModal`,
   `TablePage`, `MultiTablePage`, `ServerTableEngineBase.ts` or
   `fn_cash_cluster_tick` was touched by this lane.
 
@@ -534,10 +534,10 @@ The test bans `title=` within 80 characters of a `?`, and my greyed stakes chip
 carried `title={taken ?? undefined}`. The `??` tripped it, but the test's rule
 applies for real and the fix belonged in the component, not the test:
 
-* a `title` does not exist on touch, and this is a mobile-first app;
-* a `disabled` button is not focusable, so a keyboard user never reached it
+- a `title` does not exist on touch, and this is a mobile-first app;
+- a `disabled` button is not focusable, so a keyboard user never reached it
   either;
-* so the reason a rung was struck reached nobody but a desktop mouse.
+- so the reason a rung was struck reached nobody but a desktop mouse.
 
 The sanctioned pattern is already on this page: a rule that locks a control is
 stated as VISIBLE `role="status"` copy beside it (the Free Buy lock,
@@ -578,4 +578,5 @@ and the whole lane set again, on the merged tree:
 ```
 
 ---
+
 Last updated 2026-09-10. Nothing committed, pushed or applied.

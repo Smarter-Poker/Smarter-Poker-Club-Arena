@@ -1,6 +1,6 @@
 {
   "mode": "after",
-  "captured_at": "2026-09-11T06:05:41.085Z",
+  "captured_at": "2026-09-11T06:15:56.368Z",
   "outcomes": [
     {
       "evidence": "individual_claim",
@@ -30,12 +30,12 @@
       "waitA": {
         "wait_event_type": "Lock",
         "wait_event": "transactionid",
-        "blockers": [35251]
+        "blockers": [2899]
       },
       "waitB": {
         "wait_event_type": "Lock",
         "wait_event": "advisory",
-        "blockers": [35252]
+        "blockers": [2902]
       },
       "callResults": [
         {
@@ -86,12 +86,12 @@
       "waitA": {
         "wait_event_type": "Lock",
         "wait_event": "transactionid",
-        "blockers": [35255]
+        "blockers": [2958]
       },
       "waitB": {
         "wait_event_type": "Lock",
         "wait_event": "advisory",
-        "blockers": [35256]
+        "blockers": [2963]
       },
       "callResults": [
         {
@@ -202,7 +202,7 @@
       "wait": {
         "wait_event_type": "Lock",
         "wait_event": "advisory",
-        "blockers": [35278]
+        "blockers": [4279]
       },
       "first_total": 15,
       "second_total": 15,
@@ -221,7 +221,7 @@
       "wait": {
         "wait_event_type": "Lock",
         "wait_event": "advisory",
-        "blockers": [35281]
+        "blockers": [4312]
       },
       "first_total": 15,
       "second_total": 15,
@@ -238,6 +238,51 @@
     {
       "name": "captured original Round3 body is refused at receipt fence with full rollback",
       "pass": true
+    },
+    {
+      "evidence": "exact_funding_journal",
+      "moneyBefore": {
+        "treasury": "100.00",
+        "agent": "30.00",
+        "player": "0.00",
+        "receipts": 0,
+        "linked_receipts": 0,
+        "legs": 0,
+        "wallet_rows": 0
+      },
+      "state": {
+        "treasury": "100.00",
+        "agent": "0.00",
+        "player": "30.00",
+        "receipts": 2,
+        "linked_receipts": 2,
+        "legs": 2,
+        "wallet_rows": 2
+      },
+      "legs": [
+        {
+          "id": "89043fba-6b35-4670-b6e6-34f5ab6a2092",
+          "from_type": "player_wallet",
+          "from_entity_id": "00000000-0000-4000-8000-000000000101",
+          "to_type": "player_wallet",
+          "to_entity_id": "00000000-0000-4000-8000-000000000201",
+          "amount": "15.00",
+          "category": "rakeback"
+        },
+        {
+          "id": "e5f3829b-19f9-4b32-b708-386ca911e548",
+          "from_type": "player_wallet",
+          "from_entity_id": "00000000-0000-4000-8000-000000000101",
+          "to_type": "player_wallet",
+          "to_entity_id": "00000000-0000-4000-8000-000000000201",
+          "amount": "15.00",
+          "category": "rakeback"
+        }
+      ],
+      "treasury_debits": 0,
+      "agent_debits": 30,
+      "player_credits": 30,
+      "suspense_net": 0
     },
     {
       "evidence": "aggregate_shortfall_retry",
@@ -280,6 +325,128 @@
       "pass": true
     },
     {
+      "evidence": "preserved_original_category_leak",
+      "result": {
+        "success": true,
+        "total_payout": 30,
+        "periods_claimed": 2
+      },
+      "state": {
+        "treasury": "70.00",
+        "agent": "100.00",
+        "player": "30.00",
+        "receipts": 2,
+        "linked_receipts": 0,
+        "legs": 3,
+        "wallet_rows": 2
+      },
+      "legs": [
+        {
+          "id": "c45ee300-12af-42c4-9a5a-da12cf48465e",
+          "from_type": "club_treasury",
+          "from_entity_id": "00000000-0000-4000-8000-000000000900",
+          "to_type": "settlement_suspense",
+          "to_entity_id": null,
+          "amount": "15.00",
+          "category": "adjustment"
+        },
+        {
+          "id": "e62d1bfb-ce2c-4848-bd1d-10c6361fd721",
+          "from_type": "settlement_suspense",
+          "from_entity_id": null,
+          "to_type": "player_wallet",
+          "to_entity_id": "00000000-0000-4000-8000-000000000201",
+          "amount": "15.00",
+          "category": "rakeback"
+        },
+        {
+          "id": "9557fc10-1862-4f93-bf76-6d70092ebd01",
+          "from_type": "club_treasury",
+          "from_entity_id": "00000000-0000-4000-8000-000000000900",
+          "to_type": "settlement_suspense",
+          "to_entity_id": null,
+          "amount": "15.00",
+          "category": "rakeback"
+        },
+        {
+          "id": "68133a84-fc86-457c-9c4b-9c6145433008",
+          "from_type": "settlement_suspense",
+          "from_entity_id": null,
+          "to_type": "player_wallet",
+          "to_entity_id": "00000000-0000-4000-8000-000000000201",
+          "amount": "15.00",
+          "category": "rakeback"
+        }
+      ]
+    },
+    {
+      "evidence": "exact_funding_journal",
+      "moneyBefore": {
+        "treasury": "100.00",
+        "agent": "100.00",
+        "player": "0.00",
+        "receipts": 0,
+        "linked_receipts": 0,
+        "legs": 0,
+        "wallet_rows": 0
+      },
+      "state": {
+        "treasury": "70.00",
+        "agent": "100.00",
+        "player": "30.00",
+        "receipts": 2,
+        "linked_receipts": 2,
+        "legs": 2,
+        "wallet_rows": 2
+      },
+      "legs": [
+        {
+          "id": "f97ef9c9-a15e-464f-b8da-ea8dd3fd1fb1",
+          "from_type": "club_treasury",
+          "from_entity_id": "00000000-0000-4000-8000-000000000900",
+          "to_type": "settlement_suspense",
+          "to_entity_id": null,
+          "amount": "15.00",
+          "category": "commission"
+        },
+        {
+          "id": "44213ced-dfdf-44e2-b458-87999aebc5e1",
+          "from_type": "settlement_suspense",
+          "from_entity_id": null,
+          "to_type": "player_wallet",
+          "to_entity_id": "00000000-0000-4000-8000-000000000201",
+          "amount": "15.00",
+          "category": "rakeback"
+        },
+        {
+          "id": "6cd17a9b-cc01-4876-be1b-27c0c120fef9",
+          "from_type": "club_treasury",
+          "from_entity_id": "00000000-0000-4000-8000-000000000900",
+          "to_type": "settlement_suspense",
+          "to_entity_id": null,
+          "amount": "15.00",
+          "category": "commission"
+        },
+        {
+          "id": "3a866526-2a3e-4c3b-a73b-c476abfb6f4d",
+          "from_type": "settlement_suspense",
+          "from_entity_id": null,
+          "to_type": "player_wallet",
+          "to_entity_id": "00000000-0000-4000-8000-000000000201",
+          "amount": "15.00",
+          "category": "rakeback"
+        }
+      ],
+      "treasury_debits": 30,
+      "agent_debits": 0,
+      "player_credits": 30,
+      "suspense_net": 0
+    },
+    {
+      "name": "original two-period claim category leak is preserved as evidence and corrected close restores caller context",
+      "pass": true
+    },
+    {
       "name": "malformed negative legacy basis refuses without discarding aggregate members",
       "pass": true
     },
@@ -288,11 +455,69 @@
       "pass": true
     },
     {
+      "name": "malformed missing_basis legacy basis refuses without discarding aggregate members",
+      "pass": true
+    },
+    {
+      "evidence": "exact_funding_journal",
+      "moneyBefore": {
+        "treasury": "100.00",
+        "agent": "100.00",
+        "player": "0.00",
+        "receipts": 0,
+        "linked_receipts": 0,
+        "legs": 0,
+        "wallet_rows": 0
+      },
+      "state": {
+        "treasury": "85.00",
+        "agent": "85.00",
+        "player": "30.00",
+        "receipts": 2,
+        "linked_receipts": 2,
+        "legs": 2,
+        "wallet_rows": 2
+      },
+      "legs": [
+        {
+          "id": "7335a521-874e-483f-bc3e-699dc2780b60",
+          "from_type": "club_treasury",
+          "from_entity_id": "00000000-0000-4000-8000-000000000900",
+          "to_type": "settlement_suspense",
+          "to_entity_id": null,
+          "amount": "15.00",
+          "category": "adjustment"
+        },
+        {
+          "id": "85e1a54d-293f-47c4-bf76-f1776056b1c5",
+          "from_type": "settlement_suspense",
+          "from_entity_id": null,
+          "to_type": "player_wallet",
+          "to_entity_id": "00000000-0000-4000-8000-000000000201",
+          "amount": "15.00",
+          "category": "rakeback"
+        },
+        {
+          "id": "242e53fd-ce69-4311-8416-b0165d4ace1d",
+          "from_type": "player_wallet",
+          "from_entity_id": "00000000-0000-4000-8000-000000000101",
+          "to_type": "player_wallet",
+          "to_entity_id": "00000000-0000-4000-8000-000000000201",
+          "amount": "15.00",
+          "category": "rakeback"
+        }
+      ],
+      "treasury_debits": 15,
+      "agent_debits": 15,
+      "player_credits": 30,
+      "suspense_net": 0
+    },
+    {
       "evidence": "running_old_round3_1_stale",
       "wait": {
         "wait_event_type": "Lock",
         "wait_event": "transactionid",
-        "blockers": [35283]
+        "blockers": [4534]
       },
       "body_replaced_while_waiting": true,
       "table_fence_installed_before_call": true,
@@ -325,11 +550,74 @@
       "pass": true
     },
     {
+      "evidence": "exact_funding_journal",
+      "moneyBefore": {
+        "treasury": "100.00",
+        "agent": "100.00",
+        "player": "0.00",
+        "receipts": 0,
+        "linked_receipts": 0,
+        "legs": 0,
+        "wallet_rows": 0
+      },
+      "state": {
+        "treasury": "70.00",
+        "agent": "100.00",
+        "player": "30.00",
+        "receipts": 2,
+        "linked_receipts": 2,
+        "legs": 2,
+        "wallet_rows": 2
+      },
+      "legs": [
+        {
+          "id": "ba7325e0-2d30-4c25-91dc-c1ae11bd9dcb",
+          "from_type": "club_treasury",
+          "from_entity_id": "00000000-0000-4000-8000-000000000900",
+          "to_type": "settlement_suspense",
+          "to_entity_id": null,
+          "amount": "15.00",
+          "category": "adjustment"
+        },
+        {
+          "id": "90d28e5c-fcf3-4eb0-9274-b396bfebd4b3",
+          "from_type": "settlement_suspense",
+          "from_entity_id": null,
+          "to_type": "player_wallet",
+          "to_entity_id": "00000000-0000-4000-8000-000000000201",
+          "amount": "15.00",
+          "category": "rakeback"
+        },
+        {
+          "id": "d04c66b0-b17b-4141-8a87-44ffd896f2b4",
+          "from_type": "club_treasury",
+          "from_entity_id": "00000000-0000-4000-8000-000000000900",
+          "to_type": "settlement_suspense",
+          "to_entity_id": null,
+          "amount": "15.00",
+          "category": "adjustment"
+        },
+        {
+          "id": "69330e1e-47ed-4953-ae25-1ba4a5f54f66",
+          "from_type": "settlement_suspense",
+          "from_entity_id": null,
+          "to_type": "player_wallet",
+          "to_entity_id": "00000000-0000-4000-8000-000000000201",
+          "amount": "15.00",
+          "category": "rakeback"
+        }
+      ],
+      "treasury_debits": 30,
+      "agent_debits": 0,
+      "player_credits": 30,
+      "suspense_net": 0
+    },
+    {
       "evidence": "running_old_round3_2_stale",
       "wait": {
         "wait_event_type": "Lock",
         "wait_event": "transactionid",
-        "blockers": [35287]
+        "blockers": [4559]
       },
       "body_replaced_while_waiting": true,
       "table_fence_installed_before_call": true,
@@ -362,16 +650,66 @@
       "pass": true
     },
     {
+      "evidence": "exact_funding_journal",
+      "moneyBefore": {
+        "treasury": "100.00",
+        "agent": "100.00",
+        "player": "0.00",
+        "receipts": 0,
+        "linked_receipts": 0,
+        "legs": 0,
+        "wallet_rows": 0
+      },
+      "state": {
+        "treasury": "100.00",
+        "agent": "70.00",
+        "player": "30.00",
+        "receipts": 2,
+        "linked_receipts": 2,
+        "legs": 2,
+        "wallet_rows": 2
+      },
+      "legs": [
+        {
+          "id": "869a5557-ee48-4934-9131-a5d83f4c17b1",
+          "from_type": "player_wallet",
+          "from_entity_id": "00000000-0000-4000-8000-000000000101",
+          "to_type": "player_wallet",
+          "to_entity_id": "00000000-0000-4000-8000-000000000201",
+          "amount": "15.00",
+          "category": "rakeback"
+        },
+        {
+          "id": "2c492b27-3185-4f88-95c8-c175c353ed9a",
+          "from_type": "player_wallet",
+          "from_entity_id": "00000000-0000-4000-8000-000000000101",
+          "to_type": "player_wallet",
+          "to_entity_id": "00000000-0000-4000-8000-000000000201",
+          "amount": "15.00",
+          "category": "rakeback"
+        }
+      ],
+      "treasury_debits": 0,
+      "agent_debits": 30,
+      "player_credits": 30,
+      "suspense_net": 0
+    },
+    {
       "evidence": "rolling_old_multiperiod_claim",
+      "selected_deadlock_victim": "claim",
+      "detector_timeouts_ms": {
+        "preferred": 200,
+        "other": 2000
+      },
       "waitOld": {
         "wait_event_type": "Lock",
         "wait_event": "transactionid",
-        "blockers": [35289]
+        "blockers": [4602]
       },
       "waitNew": {
         "wait_event_type": "Lock",
         "wait_event": "tuple",
-        "blockers": [35290]
+        "blockers": [4604]
       },
       "body_replaced_while_waiting": true,
       "results": [
@@ -421,7 +759,135 @@
       "limit": "PostgreSQL deadlock aborts one old/new transaction; caller retry remains necessary."
     },
     {
-      "name": "observed old multi-period claim crossing replacement resolves lock inversion atomically and retries once",
+      "name": "observed old multi-period claim crossing replacement with claim deadlock victim resolves atomically and retries once",
+      "pass": true
+    },
+    {
+      "evidence": "exact_funding_journal",
+      "moneyBefore": {
+        "treasury": "100.00",
+        "agent": "100.00",
+        "player": "0.00",
+        "receipts": 0,
+        "linked_receipts": 0,
+        "legs": 0,
+        "wallet_rows": 0
+      },
+      "state": {
+        "treasury": "70.00",
+        "agent": "100.00",
+        "player": "30.00",
+        "receipts": 2,
+        "linked_receipts": 2,
+        "legs": 2,
+        "wallet_rows": 2
+      },
+      "legs": [
+        {
+          "id": "72ca05e8-0d0f-4045-b3e4-fdce539a5eae",
+          "from_type": "club_treasury",
+          "from_entity_id": "00000000-0000-4000-8000-000000000900",
+          "to_type": "settlement_suspense",
+          "to_entity_id": null,
+          "amount": "15.00",
+          "category": "adjustment"
+        },
+        {
+          "id": "518790de-7625-49e2-aa8b-b06fa52a0027",
+          "from_type": "settlement_suspense",
+          "from_entity_id": null,
+          "to_type": "player_wallet",
+          "to_entity_id": "00000000-0000-4000-8000-000000000201",
+          "amount": "15.00",
+          "category": "rakeback"
+        },
+        {
+          "id": "3724d45b-7937-44d2-9fa5-236b22f2ba5f",
+          "from_type": "club_treasury",
+          "from_entity_id": "00000000-0000-4000-8000-000000000900",
+          "to_type": "settlement_suspense",
+          "to_entity_id": null,
+          "amount": "15.00",
+          "category": "adjustment"
+        },
+        {
+          "id": "4d896448-85ce-4252-a1fc-2df8fb4ebe01",
+          "from_type": "settlement_suspense",
+          "from_entity_id": null,
+          "to_type": "player_wallet",
+          "to_entity_id": "00000000-0000-4000-8000-000000000201",
+          "amount": "15.00",
+          "category": "rakeback"
+        }
+      ],
+      "treasury_debits": 30,
+      "agent_debits": 0,
+      "player_credits": 30,
+      "suspense_net": 0
+    },
+    {
+      "evidence": "rolling_old_multiperiod_claim",
+      "selected_deadlock_victim": "weekly",
+      "detector_timeouts_ms": {
+        "preferred": 200,
+        "other": 2000
+      },
+      "waitOld": {
+        "wait_event_type": "Lock",
+        "wait_event": "transactionid",
+        "blockers": [4778]
+      },
+      "waitNew": {
+        "wait_event_type": "Lock",
+        "wait_event": "tuple",
+        "blockers": [4786]
+      },
+      "body_replaced_while_waiting": true,
+      "results": [
+        {
+          "rows": [
+            {
+              "result": {
+                "success": true,
+                "total_payout": 30,
+                "periods_claimed": 2
+              }
+            }
+          ]
+        },
+        {
+          "error": {
+            "code": "40P01",
+            "message": "deadlock detected"
+          }
+        }
+      ],
+      "retryClaim": {
+        "success": true,
+        "total_payout": 0,
+        "periods_claimed": 0
+      },
+      "retryWeekly": {
+        "name": "agents_to_players",
+        "round": 3,
+        "amount": 0,
+        "detail": [],
+        "payees": 0,
+        "shortfalls": 0
+      },
+      "state": {
+        "treasury": "70.00",
+        "agent": "100.00",
+        "player": "30.00",
+        "receipts": 2,
+        "linked_receipts": 2,
+        "legs": 2,
+        "wallet_rows": 2
+      },
+      "limit": "PostgreSQL deadlock aborts one old/new transaction; caller retry remains necessary."
+    },
+    {
+      "name": "observed old multi-period claim crossing replacement with weekly deadlock victim resolves atomically and retries once",
       "pass": true
     }
   ]

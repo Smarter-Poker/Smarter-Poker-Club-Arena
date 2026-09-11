@@ -25,11 +25,18 @@ export async function proveLegacyAggregate(ctx) {
   const installed = {};
   for (const name of [
     'fn_claim_rakeback(uuid)',
+    'fn_close_settlement_period(uuid)',
     'fn_settle_round3_agents_to_players(uuid,timestamptz,timestamptz)',
   ])
     installed[name] = (
       await query('SELECT pg_get_functiondef($1::regprocedure) body', [name])
     )[0].body;
+  let ledgerBefore = new Set(),
+    moneyBefore;
+  async function checkpoint() {
+    ledgerBefore = new Set((await query('SELECT id FROM chip_ledger')).map((r) => r.id));
+    moneyBefore = await snapshot();
+  }
   async function two(agent = 15) {
     await reset({ agent, treasury: 100 });
     await query(
@@ -44,13 +51,65 @@ export async function proveLegacyAggregate(ctx) {
       "INSERT INTO rakeback_daily_user(club_id,day,user_id,cents) VALUES($1,'2026-08-24',$2,10000)",
       [uid(900), uid(201)]
     );
+    await checkpoint();
   }
   async function assertPaid30() {
     const state = await snapshot();
     assert.equal(state.player, '30.00');
     assert.equal(state.receipts, 2);
     assert.equal(state.wallet_rows, 2);
-    assert.equal(state.legs, 2);
+    const legs = (
+      await query(
+        'SELECT id,from_type,from_entity_id,to_type,to_entity_id,amount,category FROM chip_ledger'
+      )
+    ).filter((r) => !ledgerBefore.has(r.id));
+    let treasury = 0,
+      agent = 0,
+      player = 0,
+      suspense = 0;
+    for (const leg of legs) {
+      assert.equal(Number(leg.amount), 15);
+      if (
+        leg.from_type === 'club_treasury' &&
+        leg.from_entity_id === uid(900) &&
+        leg.to_type === 'settlement_suspense'
+      ) {
+        treasury += 15;
+        suspense += 15;
+      } else if (
+        leg.from_type === 'settlement_suspense' &&
+        leg.to_type === 'player_wallet' &&
+        leg.to_entity_id === uid(201)
+      ) {
+        player += 15;
+        suspense -= 15;
+        assert.equal(leg.category, 'rakeback');
+      } else if (
+        leg.from_type === 'player_wallet' &&
+        leg.from_entity_id === uid(101) &&
+        leg.to_type === 'player_wallet' &&
+        leg.to_entity_id === uid(201)
+      ) {
+        agent += 15;
+        player += 15;
+        assert.equal(leg.category, 'rakeback');
+      } else assert.fail('Unexpected journal endpoint ' + JSON.stringify(leg));
+    }
+    assert.equal(treasury, Number(moneyBefore.treasury) - Number(state.treasury));
+    assert.equal(agent, Number(moneyBefore.agent) - Number(state.agent));
+    assert.equal(player, 30);
+    assert.equal(suspense, 0);
+    assert.equal(legs.length, (treasury / 15) * 2 + agent / 15);
+    outcomes.push({
+      evidence: 'exact_funding_journal',
+      moneyBefore,
+      state,
+      legs,
+      treasury_debits: treasury,
+      agent_debits: agent,
+      player_credits: player,
+      suspense_net: suspense,
+    });
     const receipts = await query(
       'SELECT count(*)::int n FROM rakeback_period_payouts p JOIN wallet_transactions w ON w.id=p.wallet_transaction_id AND w.related_entity_id=p.id AND w.user_id=p.user_id AND w.amount=p.payout_amount'
     );
@@ -75,6 +134,7 @@ export async function proveLegacyAggregate(ctx) {
       ['pending', 'pending']
     );
     await query('UPDATE club_members SET chip_balance=30 WHERE user_id=$1', [uid(101)]);
+    await checkpoint();
     const paid = (await query(wide))[0].result;
     assert.equal(paid.amount, 30);
     assert.equal(paid.payees, 1);
@@ -90,6 +150,69 @@ export async function proveLegacyAggregate(ctx) {
       funded: paid,
       state,
     });
+  });
+  await test('original two-period claim category leak is preserved as evidence and corrected close restores caller context', async () => {
+    await two(100);
+    await query(original('fn_claim_rakeback('));
+    await query(original('fn_close_settlement_period('));
+    const actor = await client('original_category_claim', 'authenticated');
+    try {
+      await actor.query("SELECT set_config('request.jwt.claim.sub',$1,false)", [uid(201)]);
+      const old = (await actor.query(claimSql)).rows[0].result;
+      assert.equal(old.total_payout, 30);
+      const oldState = await snapshot();
+      assert.equal(oldState.player, '30.00');
+      assert.equal(oldState.receipts, 2);
+      assert.equal(oldState.wallet_rows, 2);
+      assert.equal(oldState.legs, 3);
+      const oldLegs = (
+        await query(
+          'SELECT id,from_type,from_entity_id,to_type,to_entity_id,amount,category FROM chip_ledger'
+        )
+      ).filter((r) => !ledgerBefore.has(r.id));
+      assert.equal(oldLegs.length, 4);
+      assert.deepEqual(
+        oldLegs
+          .filter((r) => r.from_type === 'club_treasury')
+          .map((r) => r.category)
+          .sort(),
+        ['adjustment', 'rakeback']
+      );
+      outcomes.push({
+        evidence: 'preserved_original_category_leak',
+        result: old,
+        state: oldState,
+        legs: oldLegs,
+      });
+    } finally {
+      await query(installed['fn_close_settlement_period(uuid)']);
+      await query(installed['fn_claim_rakeback(uuid)']);
+      await actor.end();
+    }
+    await two(100);
+    const fixed = await client('scoped_category_claim', 'authenticated');
+    try {
+      await fixed.query("SELECT set_config('request.jwt.claim.sub',$1,false)", [uid(201)]);
+      await fixed.query('BEGIN');
+      await fixed.query("SELECT set_config('app.ledger_category','commission',true)");
+      assert.equal((await fixed.query(claimSql)).rows[0].result.total_payout, 30);
+      assert.equal(
+        (await fixed.query("SELECT current_setting('app.ledger_category') value")).rows[0].value,
+        'commission'
+      );
+      await fixed.query('COMMIT');
+      await assertPaid30();
+      const legs = (await query('SELECT id,from_type,category FROM chip_ledger')).filter(
+        (r) => !ledgerBefore.has(r.id)
+      );
+      assert.deepEqual(
+        legs.filter((r) => r.from_type === 'club_treasury').map((r) => r.category),
+        ['commission', 'commission']
+      );
+    } finally {
+      await fixed.query('ROLLBACK');
+      await fixed.end();
+    }
   });
   for (const bad of ['negative', 'missing_rate', 'missing_basis'])
     await test(
@@ -187,57 +310,77 @@ export async function proveLegacyAggregate(ctx) {
         }
       }
     );
-  await test('observed old multi-period claim crossing replacement resolves lock inversion atomically and retries once', async () => {
-    await two(100);
-    await query(original('fn_claim_rakeback('));
-    const blocker = await client('rolling_claim_blocker', null),
-      old = await client('rolling_old_claim', 'authenticated'),
-      weekly = await client('rolling_new_weekly', 'service_role');
-    try {
-      await old.query("SELECT set_config('request.jwt.claim.sub',$1,false)", [uid(201)]);
-      await old.query("SET statement_timeout='7s'");
-      await weekly.query("SET statement_timeout='7s'");
-      await blocker.query('BEGIN');
-      await blocker.query('SELECT 1 FROM rakeback_periods WHERE id=$1 FOR UPDATE', [uid(502)]);
-      const a = old.query(claimSql).then(
-        (v) => ({ rows: v.rows }),
-        (e) => ({ error: { code: e.code, message: e.message } })
-      );
-      const waitOld = await observeWait(ctx.db, 'rolling_old_claim');
-      await query(installed['fn_claim_rakeback(uuid)']);
-      const b = weekly.query(wide).then(
-        (v) => ({ rows: v.rows }),
-        (e) => ({ error: { code: e.code, message: e.message } })
-      );
-      const waitNew = await observeWait(ctx.db, 'rolling_new_weekly');
-      await blocker.query('COMMIT');
-      const results = await Promise.all([a, b]);
-      const errors = results.filter((r) => r.error);
-      assert.equal(errors.length, 1);
-      assert.equal(errors[0].error.code, '40P01');
-      const state = await assertPaid30();
-      assert.equal(Number(state.treasury) + Number(state.agent) + Number(state.player), 200);
-      const retryClaim = (await old.query(claimSql)).rows[0].result,
-        retryWeekly = (await weekly.query(wide)).rows[0].result;
-      assert.equal(retryClaim.total_payout, 0);
-      assert.equal(retryWeekly.amount, 0);
-      assert.deepEqual(await snapshot(), state);
-      outcomes.push({
-        evidence: 'rolling_old_multiperiod_claim',
-        waitOld,
-        waitNew,
-        body_replaced_while_waiting: true,
-        results,
-        retryClaim,
-        retryWeekly,
-        state,
-        limit:
-          'PostgreSQL deadlock aborts one old/new transaction; caller retry remains necessary.',
-      });
-    } finally {
-      await blocker.query('ROLLBACK');
-      await query(installed['fn_claim_rakeback(uuid)']);
-      await Promise.all([old.end(), weekly.end(), blocker.end()]);
-    }
-  });
+  for (const victim of ['claim', 'weekly'])
+    await test(
+      'observed old multi-period claim crossing replacement with ' +
+        victim +
+        ' deadlock victim resolves atomically and retries once',
+      async () => {
+        await two(100);
+        await query(original('fn_claim_rakeback('));
+        const blocker = await client('rolling_claim_blocker', null),
+          old = await client('rolling_old_claim', 'authenticated'),
+          weekly = await client('rolling_new_weekly', 'service_role');
+        try {
+          await old.query("SELECT set_config('request.jwt.claim.sub',$1,false)", [uid(201)]);
+          await old.query("SET statement_timeout='7s'");
+          await weekly.query("SET statement_timeout='7s'");
+          await old.query(
+            "RESET ROLE; SET deadlock_timeout='" +
+              (victim === 'claim' ? '200ms' : '2s') +
+              "'; SET ROLE authenticated"
+          );
+          await weekly.query(
+            "RESET ROLE; SET deadlock_timeout='" +
+              (victim === 'weekly' ? '200ms' : '2s') +
+              "'; SET ROLE service_role"
+          );
+          await blocker.query('BEGIN');
+          await blocker.query('SELECT 1 FROM rakeback_periods WHERE id=$1 FOR UPDATE', [uid(502)]);
+          const a = old.query(claimSql).then(
+            (v) => ({ rows: v.rows }),
+            (e) => ({ error: { code: e.code, message: e.message } })
+          );
+          const waitOld = await observeWait(ctx.db, 'rolling_old_claim');
+          await query(installed['fn_claim_rakeback(uuid)']);
+          const b = weekly.query(wide).then(
+            (v) => ({ rows: v.rows }),
+            (e) => ({ error: { code: e.code, message: e.message } })
+          );
+          const waitNew = await observeWait(ctx.db, 'rolling_new_weekly');
+          await blocker.query('COMMIT');
+          const results = await Promise.all([a, b]);
+          const errors = results.filter((r) => r.error);
+          assert.equal(errors.length, 1);
+          assert.equal(errors[0].error.code, '40P01');
+          assert.equal(results[victim === 'claim' ? 0 : 1].error?.code, '40P01');
+          console.log('ROLLING_RESULTS', JSON.stringify(results));
+          const state = await assertPaid30();
+          assert.equal(Number(state.treasury) + Number(state.agent) + Number(state.player), 200);
+          const retryClaim = (await old.query(claimSql)).rows[0].result,
+            retryWeekly = (await weekly.query(wide)).rows[0].result;
+          assert.equal(retryClaim.total_payout, 0);
+          assert.equal(retryWeekly.amount, 0);
+          assert.deepEqual(await snapshot(), state);
+          outcomes.push({
+            evidence: 'rolling_old_multiperiod_claim',
+            selected_deadlock_victim: victim,
+            detector_timeouts_ms: { preferred: 200, other: 2000 },
+            waitOld,
+            waitNew,
+            body_replaced_while_waiting: true,
+            results,
+            retryClaim,
+            retryWeekly,
+            state,
+            limit:
+              'PostgreSQL deadlock aborts one old/new transaction; caller retry remains necessary.',
+          });
+        } finally {
+          await blocker.query('ROLLBACK');
+          await query(installed['fn_claim_rakeback(uuid)']);
+          await Promise.all([old.end(), weekly.end(), blocker.end()]);
+        }
+      }
+    );
 }

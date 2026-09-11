@@ -73,6 +73,7 @@ DECLARE
   v_balance        numeric;
   v_debit          jsonb;
   v_treasury       numeric;
+  v_ledger_category text;
 BEGIN
   SELECT club_id INTO v_admitted_club FROM public.rakeback_periods WHERE id=p_period_id;
   PERFORM public.fn_lock_rakeback_payer_clubs(ARRAY[v_admitted_club]);
@@ -251,12 +252,14 @@ BEGIN
 
   PERFORM set_config('app.ledger_club_id', v_period.club_id::text, true);
 
+  v_ledger_category:=current_setting('app.ledger_category',true);
   PERFORM public.atomic_credit_wallet_and_log(
     v_period.user_id, v_payout, 'rakeback',
     'Rakeback payout ' || v_period.period_start::text || ' to ' || v_period.period_end::text,
     NULL, NULL, v_payout_id, 'rakeback:' || p_period_id::text
   );
   PERFORM set_config('app.ledger_club_id', '', true);
+  PERFORM set_config('app.ledger_category',coalesce(v_ledger_category,''),true);
 
   SELECT cm.chip_balance INTO v_balance
     FROM public.club_members cm

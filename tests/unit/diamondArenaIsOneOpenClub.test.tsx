@@ -144,6 +144,31 @@ describe('One open club: the lobby never reads a membership row the arena has no
   });
 });
 
+describe('One open club: the arena asks no chip-only feed a question it cannot answer', () => {
+  const page = readFileSync(join(__dirname, '..', '..', 'src/pages/ClubHomePage.tsx'), 'utf8');
+
+  /* Both were found on the live arena lobby after CI was green: a realtime
+     channel on `club_members`, which the arena has no rows in, failing on
+     every load, and the jackpot feeds timing out against a pool that does not
+     exist there. Hiding the strip was not enough; the queries behind it also
+     had to stop. */
+  it('does not subscribe to club_members realtime in the arena', () => {
+    const channel = page.indexOf('`club-members-${clubId}`');
+    expect(channel).toBeGreaterThan(-1);
+    const block = page.slice(channel, channel + 400);
+    expect(block).toContain('!isAutomaticArena');
+  });
+
+  it('does not start the jackpot feeds in the arena', () => {
+    const guard = page.indexOf('if (!automaticMembershipRef.current) {\n        stopBbjPool');
+    const pool = page.indexOf('watchBbjPool(resolvedId');
+    const mini = page.indexOf('watchBbjMini(resolvedId');
+    expect(guard, 'the jackpot feeds are no longer behind the arena guard').toBeGreaterThan(-1);
+    expect(pool).toBeGreaterThan(guard);
+    expect(mini).toBeGreaterThan(guard);
+  });
+});
+
 describe('Played with diamonds: the chip jackpot strip stays off the arena lobby', () => {
   const page = readFileSync(join(__dirname, '..', '..', 'src/pages/ClubHomePage.tsx'), 'utf8');
 

@@ -17,10 +17,14 @@
 # was stale. The only thing that can tell them apart is asking PRODUCTION what
 # it is serving and comparing it to main. That is this script.
 #
-# It is also self-healing: a lag with no successful build for HEAD gets ONE
-# automatic re-dispatch before a human is told, because the common causes
-# (a cancelled run, a rejected push, a transient 5xx) are all fixed by running
-# it again.
+# It REPORTS; it does not re-dispatch (2026-09-11, Dan: "i do not want any
+# watch dogs, i want hard coded fixes"). It used to re-dispatch the publisher
+# up to three times per sha, because the common causes (a cancelled run, a
+# rejected push, a transient 5xx) are fixed by running it again. That retry now
+# lives inside publish-club-arena.yml itself - its `hand-on` job dispatches a
+# bounded retry the moment a run fails or is cancelled - so a lag this script
+# finds is one the publisher has already given up on, or a run GitHub never
+# started. Both need a person.
 #
 # Env: GH_TOKEN, GITHUB_REPOSITORY. Optional: LAG_BUDGET_MIN (default 25).
 set -uo pipefail
@@ -249,8 +253,8 @@ fi
 # in_progress is still trusted without a clock: a real build takes ~7 minutes
 # and killing a slow one helps nobody. queued is trusted only up to the same
 # budget the lag itself gets - a run that has not been allocated inside the
-# budget is not going to be, and the honest response is to dispatch another
-# one, which lands in the same concurrency group and supersedes it.
+# budget is not going to be, and the honest response is to say so (this used
+# to dispatch another one; since 2026-09-11 this script only reports, below).
 if [ "$RUN_STATUS" = "in_progress" ]; then
   say "a publish run for this sha is still in_progress — letting it finish."
   exit 0
@@ -260,60 +264,35 @@ if [ "$RUN_STATUS" = "queued" ] && [ "$RUN_AGE_MIN" -le "$LAG_BUDGET_MIN" ]; the
   exit 0
 fi
 if [ "$RUN_STATUS" = "queued" ]; then
-  say "publish run for $HEAD_SHORT has been QUEUED ${RUN_AGE_MIN}m without starting (budget ${LAG_BUDGET_MIN}m) — treating it as stuck and healing."
+  say "publish run for $HEAD_SHORT has been QUEUED ${RUN_AGE_MIN}m without starting (budget ${LAG_BUDGET_MIN}m) — treating it as stuck and raising the alarm."
 fi
 
-# ── Self-heal, up to MAX_RETRIES per sha ───────────────────────────────────
-# The failures that strand a publish are overwhelmingly transient (a cancelled
-# run, a rejected push, a 5xx, a runner outage). Re-running fixes those without
-# a human. The cap exists so a GENUINELY broken build cannot be dispatched
-# forever — it is a stop on noise, not a stop on healing.
+# ── NO RE-DISPATCH FROM HERE (2026-09-11) ───────────────────────────────────
 #
-# 2026-09-02 — TWO CORRECTIONS, both of which stranded real commits:
-#
-#   1. The cap was ONE. A single transient failure followed by a second
-#      unrelated one meant the watchdog gave up and only filed an issue, so
-#      main sat unpublished until a human dispatched by hand. That is the
-#      "my last 3 pushes have not published" report. The cap is 3 now.
-#
-#   2. A CANCELLED retry counted against the cap. A cancellation carries no
-#      information about brokenness — it means a newer push superseded the
-#      run, which is the publisher working correctly. Burning the one retry on
-#      it was how a healthy repo talked itself out of healing. Cancelled and
-#      skipped attempts are no longer counted; only attempts that actually ran
-#      to a verdict are evidence of a fault.
-#
-# Retrying is also cheap and safe now: the publisher resolves the tip of main
-# itself, so a dispatch converges the whole backlog, and its dedupe makes an
-# already-current cycle one curl.
-MAX_RETRIES="${MAX_RETRIES:-3}"
-ALREADY_RETRIED=$(gh run list --repo "$REPO" --workflow "$PUBLISH_WORKFLOW" \
-                    --event workflow_dispatch --limit 30 --json headSha,conclusion \
-                    --jq "[.[]
-                           | select(.headSha == \"$HEAD_SHA\")
-                           | select(.conclusion != \"cancelled\")
-                           | select(.conclusion != \"skipped\")] | length" 2>/dev/null || echo 0)
-
+# This block re-dispatched the publisher up to MAX_RETRIES times per sha. The
+# publisher now retries itself: its `hand-on` job dispatches a handed-on run
+# when a run fails or is cancelled, up to three failures in a row, and stops
+# loudly (PUBLISH GAVE UP / PUBLISH TRAIN STOPPED) when that is not enough. So
+# if production is still behind here, either the publisher gave up on a build
+# that is genuinely broken - shipping it anyway would be worse than lagging -
+# or GitHub never started a run at all (the queued-forever zombies described
+# above). A dispatch from here fixes neither. What this script owes is the
+# alarm, and the in-app escalation when the publisher has given up.
 RETRY_NOTE=""
-if [ "$NOT_ANCESTOR" = "0" ] && [ "${ALREADY_RETRIED:-0}" -lt "$MAX_RETRIES" ]; then
-  ATTEMPT=$((ALREADY_RETRIED + 1))
-  if gh workflow run "$PUBLISH_WORKFLOW" --repo "$REPO" --ref main >/dev/null 2>&1; then
-    say "re-dispatched $PUBLISH_WORKFLOW for main — automatic retry ${ATTEMPT} of ${MAX_RETRIES}."
-    RETRY_NOTE="
-
-**Automatic retry ${ATTEMPT} of ${MAX_RETRIES} has been dispatched.** The publisher converges on the tip of \`main\`, so this retry ships every pending commit, not just this one. If retries run out and production is still behind, the cause is not transient and this issue will say so."
-  else
-    RETRY_NOTE="
-
-An automatic retry was attempted and the dispatch itself failed — check the token's \`actions: write\`."
-  fi
-elif [ "${ALREADY_RETRIED:-0}" -ge "$MAX_RETRIES" ]; then
+GAVE_UP=$(gh run list --repo "$REPO" --workflow "$PUBLISH_WORKFLOW" --limit 10 \
+            --json status,conclusion \
+            --jq '[.[] | select(.status == "completed")
+                       | select(.conclusion != "cancelled" and .conclusion != "skipped")][0:3]
+                  | (length == 3 and all(.conclusion == "failure"))' 2>/dev/null || echo "")
+if [ "$GAVE_UP" = "true" ]; then
   RETRY_NOTE="
 
-All ${MAX_RETRIES} automatic retries are used for this sha and production is still behind, so the cause is not transient. Read the publish run before dispatching another. (Cancelled attempts are not counted — every one of these ran to a verdict and did not fix it.)"
-  # Healing is spent and the build is genuinely broken. Auto-shipping it would
-  # be worse than lagging, so this is the point where a person has to know.
-  escalate_in_app "Main \`${HEAD_SHORT}\` Is ${AGE_MIN} Minutes Old And Production Still Serves \`${SERVED_SHORT:-Unknown}\`. ${MAX_RETRIES} Automatic Retries Are Spent, So This Needs A Human."
+**The publisher has stopped retrying itself:** its last three runs failed, so the cause is not transient. Read those runs before pushing anything else; the next push starts the next run."
+  escalate_in_app "Main \`${HEAD_SHORT}\` Is ${AGE_MIN} Minutes Old And Production Still Serves \`${SERVED_SHORT:-Unknown}\`. The Publisher Failed Three Times In A Row And Stopped, So This Needs A Human."
+elif [ "$RUN_STATUS" = "queued" ]; then
+  RETRY_NOTE="
+
+**GitHub has not started the publish run** (queued ${RUN_AGE_MIN}m). A run that never starts cannot hand itself on; see the concurrency-group generation note in publish-club-arena.yml."
 fi
 
 BODY="Production is not serving main, and it is past the ${LAG_BUDGET_MIN}-minute budget.

@@ -32,12 +32,16 @@ instead of silently treating that invocation as an import.
 
 Validation:
 
-- Six focused test files: 113 tests passed, including temporary Git histories,
+- Six focused test files: 114 tests passed, including temporary Git histories,
   control-only and mixed pushes, multi-commit runtime changes, runtime reverts,
   removed controls, missing previous commits, and invalid target commits.
 - Separate temporary SOURCE and CONTROL Git repositories: either wrong SHA is
   refused; the target's stale checker and allowlist cannot replace the control
   policy. Only target source calls are checked, including a symlink invocation.
+- Hostile inherited hook environment: outside repository config bytes and all
+  refs remain unchanged, including explicit marker keys/refs and Git config
+  count/key/value injection. All fixture Git calls and classifier reads isolate
+  their explicit repository from inherited `GIT_*` context.
 - Existing engine release seal and absolute deadline tests passed.
 - TypeScript `tsc --noEmit` passed.
 - Actionlint 1.7.12 passed both changed workflows.

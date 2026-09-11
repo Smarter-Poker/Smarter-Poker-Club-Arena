@@ -26,7 +26,12 @@ function git(cwd, args) {
   return execFileSync('git', args, {
     cwd,
     encoding: 'utf8',
-    env: { ...process.env, GIT_NO_REPLACE_OBJECTS: '1' },
+    // A caller may be a Git hook. Its GIT_DIR/COMMON_DIR/WORK_TREE must
+    // never override the explicit repository supplied to this classifier.
+    env: {
+      ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))),
+      GIT_NO_REPLACE_OBJECTS: '1',
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
     maxBuffer: 8 * 1024 * 1024,
   }).trim();

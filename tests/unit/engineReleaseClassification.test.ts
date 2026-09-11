@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -17,6 +17,8 @@ type Classifier = {
   classifyEngineRelease: (args: { cwd: string; beforeSha?: string; afterSha: string }) => Result;
 };
 const script = resolve(__dirname, '../../scripts/ci/classify-engine-release.mjs');
+const cleanGitEnv = () =>
+  Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
 const temporary: string[] = [];
 let classifier: Classifier;
 beforeAll(async () => {
@@ -30,7 +32,7 @@ function history() {
     execFileSync('git', args, {
       cwd,
       encoding: 'utf8',
-      env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' },
+      env: { ...cleanGitEnv(), GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' },
       stdio: ['ignore', 'pipe', 'pipe'],
     }).trim();
   git('init', '-q');
@@ -197,6 +199,62 @@ describe('exact runtime identity and exact control release classification', () =
       expect(() =>
         classifier.classifyEngineRelease({ cwd: h.cwd, beforeSha: h.base, afterSha })
       ).toThrow();
+    }
+  });
+
+  it('ignores inherited hook Git context without changing the other repository', () => {
+    const other = history();
+    other.git('config', 'fixture.outsideMarker', 'must-survive');
+    other.git('update-ref', 'refs/heads/outside-marker', other.base);
+    const priorConfig = readFileSync(join(other.cwd, '.git/config'), 'utf8');
+    const priorRefs = other.git('for-each-ref', '--format=%(refname) %(objectname)');
+    const previous = Object.fromEntries(
+      [
+        'GIT_DIR',
+        'GIT_COMMON_DIR',
+        'GIT_WORK_TREE',
+        'GIT_CONFIG_COUNT',
+        'GIT_CONFIG_KEY_0',
+        'GIT_CONFIG_VALUE_0',
+        'GIT_CONFIG_KEY_1',
+        'GIT_CONFIG_VALUE_1',
+      ].map((key) => [key, process.env[key]])
+    );
+    try {
+      process.env.GIT_DIR = join(other.cwd, '.git');
+      process.env.GIT_COMMON_DIR = join(other.cwd, '.git');
+      process.env.GIT_WORK_TREE = other.cwd;
+      process.env.GIT_CONFIG_COUNT = '2';
+      process.env.GIT_CONFIG_KEY_0 = 'user.name';
+      process.env.GIT_CONFIG_VALUE_0 = 'Injected hook identity';
+      process.env.GIT_CONFIG_KEY_1 = 'core.bare';
+      process.env.GIT_CONFIG_VALUE_1 = 'true';
+      const h = history();
+      const after = h.change('.github/workflows/auto-deploy-hetzner.yml', 'control fix\n');
+      expect(
+        classifier.classifyEngineRelease({ cwd: h.cwd, beforeSha: h.base, afterSha: after })
+      ).toMatchObject({
+        releaseRequired: true,
+        targetSha: h.base,
+        runtimeChanged: false,
+        controlChanged: true,
+      });
+      const cli = spawnSync(process.execPath, [script], {
+        cwd: h.cwd,
+        encoding: 'utf8',
+        env: { ...process.env, BEFORE_SHA: h.base, AFTER_SHA: after },
+      });
+      expect(cli.status, cli.stderr).toBe(0);
+      expect(cli.stdout).toContain(`target_sha=${h.base}\n`);
+      expect(readFileSync(join(other.cwd, '.git/config'), 'utf8')).toBe(priorConfig);
+      expect(other.git('for-each-ref', '--format=%(refname) %(objectname)')).toBe(priorRefs);
+      expect(other.git('rev-parse', 'HEAD')).toBe(other.base);
+      expect(other.git('status', '--porcelain')).toBe('');
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
     }
   });
 

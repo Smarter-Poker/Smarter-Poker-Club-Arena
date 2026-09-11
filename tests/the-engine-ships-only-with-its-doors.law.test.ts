@@ -28,6 +28,8 @@ const ALLOW = JSON.parse(
   readFileSync(resolve(root, 'scripts/ci/engine-doors.allowlist.json'), 'utf8')
 );
 
+const cleanGitEnv = () =>
+  Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
 type Doors = {
   doorsIn: (src: string) => Set<string>;
   engineDoors: (dir?: string) => Map<string, string[]>;
@@ -160,7 +162,7 @@ describe('the control policy scans a separate exact target', () => {
           cwd,
           encoding: 'utf8',
           stdio: ['ignore', 'pipe', 'pipe'],
-          env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' },
+          env: { ...cleanGitEnv(), GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' },
         }).trim();
       for (const repository of [target, control]) {
         git(repository, 'init', '-q');
@@ -186,7 +188,7 @@ describe('the control policy scans a separate exact target', () => {
         const identity = spawnSync('bash', ['-c', identityCode], {
           cwd: control,
           encoding: 'utf8',
-          env: { ...process.env, CONTROL_SHA, TARGET_SHA },
+          env: { ...cleanGitEnv(), CONTROL_SHA, TARGET_SHA },
         });
         expect(identity.status, identity.stderr).toBe(expected);
       }

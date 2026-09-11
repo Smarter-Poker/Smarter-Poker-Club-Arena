@@ -65,7 +65,7 @@ therefore its definition MD5) while preserving the pinned source body. The
 immediately following strict contraction preserves terminal receipts while
 removing the legacy payload fallback.
 
-The reviewed production prerequisite tail now ends at `20260911072837`. Before
+The reviewed production prerequisite tail now ends at `20260911081910`. Before
 the first Stage-B DDL, and again at entry and exit of the final contraction,
 require these exact one-statement ledger receipts:
 
@@ -96,6 +96,19 @@ require these exact one-statement ledger receipts:
 - `20260911072837_legacy_rakeback_closed_period_single_payer`: 36,786 bytes,
   SHA-256
   `a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7`.
+- `20260911081721_legacy_round3_preserve_server_only_acl`: 3,849 bytes,
+  SHA-256
+  `da06b3acca81a28a54e1354932aab87d515bc3202b4922e9cccc8e1971e867d5`;
+- `20260911081910_a_seat_exit_guard_without_its_consumer_refuses_nothing`:
+  7,525 bytes, SHA-256
+  `a1a762df5c6e9e62b63d1602a360a7349c087d652c00e22c63dac481a953a623`.
+
+The Round3 receipt only restates the already server-only ACL and does not touch
+any Stage-B authority. The seat-exit receipt changes the Stage-B boundary #1
+preimage of `fn_ca_close_tournament_seat_exit_authority` to source MD5
+`319441969e49923b3ee8d65f8f0b1e82`; boundary #1 pins that exact body. Once
+Stage-B installs the seat-exit consumer trigger, the conditional guard and the
+final contracted guard have the same enforced-consumption behavior.
 
 The `20260911061723` receipt authenticates the exact live preimage; it does not
 approve its cash-all cancellation policy as the Stage-B postimage. Boundary #1
@@ -141,16 +154,42 @@ generation replacement and `DELETE` with SQLSTATE `55P03`, then admits both
 after the fenced transaction commits. It also proves Stage-A application is
 rejected without leaving either ownership constraint behind.
 
-Resolve the staged-or-promoted artifact by suffix and require a pristine
-migration name:
+Resolve the staged-or-promoted key-share artifact and retain the exact ordered
+set used by the single pre-apply gate below:
 
-```sh
+```bash
+set -euo pipefail
 source scripts/ops/lib/resolve-staged-or-promoted-migration.sh
 KEYSHARE_FILE="$(resolve_staged_or_promoted_migration \
   "$PWD/supabase/migrations" \
   stage_b_lease_keyshare_once)"
-scripts/ops/verify-migration-ledger-artifact.sh \
-  stage_b_lease_keyshare_once PREAPPLY
+
+STAGE_B_MIGRATIONS=(
+  stage_b_forward_authority_expansion
+  stage_b_exact_precondition_repairs
+  stage_b_terminal_break_invariant
+  stage_b_atomic_finish_precertification
+  stage_b_current_postimage_contraction
+  stage_b_lease_keyshare_once
+)
+```
+
+From the authenticated control shell, refuse to enter the host while any
+engine deployment can still reach the cutover. An API error, non-numeric
+answer, or any non-completed run aborts:
+
+```bash
+set -euo pipefail
+DEPLOY_REPO=Smarter-Poker/Smarter-Poker-Club-Arena
+for run_status in queued in_progress waiting pending requested; do
+  run_count="$(gh api \
+    "repos/$DEPLOY_REPO/actions/workflows/auto-deploy-hetzner.yml/runs?status=$run_status&per_page=1" \
+    --jq '.total_count')"
+  [[ "$run_count" =~ ^[0-9]+$ ]] && (( run_count == 0 )) || {
+    echo "engine deployment state is not empty: $run_status=${run_count:-unreadable}" >&2
+    exit 75
+  }
+done
 ```
 
 ## Scale authority to zero
@@ -159,7 +198,28 @@ Use the natural enforced maintenance break. Keep one root shell on the engine
 host for the entire stop, apply, and restart sequence. Acquire the canonical
 engine-up lock before stopping any authority:
 
-```sh
+```bash
+set -euo pipefail
+
+CONTROL=/usr/local/lib/club-arena/engine-control/engine-release-seal.py
+FULL_SHA="$($CONTROL get desired-sha)"
+SEALED_IMAGE_ID="$($CONTROL get desired-image-id)"
+[[ "$FULL_SHA" =~ ^[0-9a-f]{40}$ ]]
+[[ "$SEALED_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]
+SHA8="${FULL_SHA:0:8}"
+
+test "$(docker ps -q --filter label=sp.role=engine | wc -l | tr -d ' ')" -eq 1
+ENGINE_CID="$(docker inspect -f '{{.Id}}' club-arena-engine)"
+test "$(docker inspect -f '{{.State.Status}}' "$ENGINE_CID")" = running
+test "$(docker inspect -f '{{.Image}}' "$ENGINE_CID")" = "$SEALED_IMAGE_ID"
+test "$(docker inspect -f '{{index .Config.Labels "sp.release.sha"}}' "$ENGINE_CID")" = "$FULL_SHA"
+test "$(docker image inspect -f '{{.Id}}' "club-arena-engine:$FULL_SHA")" = "$SEALED_IMAGE_ID"
+test "$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$SEALED_IMAGE_ID")" = "$FULL_SHA"
+LIVE_HEALTH="$(curl -fsS --max-time 10 http://127.0.0.1:8080/health)"
+printf '%s' "$LIVE_HEALTH" | python3 -c \
+  'import json,sys; d=json.load(sys.stdin); sys.exit(0 if d.get("running") is True and d.get("version")==sys.argv[1] else 65)' \
+  "$SHA8"
+
 exec 9>/var/lock/club-arena-engine-up.lock
 if ! flock -n 9; then
   echo 'engine-up lock is already owned; aborting before any authority is stopped' >&2
@@ -167,21 +227,33 @@ if ! flock -n 9; then
   exit 1
 fi
 systemctl stop club-arena-supervisor.timer
-systemctl stop club-arena-supervisor.service || true
+systemctl stop club-arena-supervisor.service
 docker stop -t 15 sp-autoheal
+STOP_EPOCH="$(date +%s)"
 docker stop -t 45 club-arena-engine
 ```
 
 Require every stopped-state readback in that same shell:
 
-```sh
-test "$(systemctl is-active club-arena-supervisor.timer)" = inactive
-test "$(systemctl is-active club-arena-supervisor.service)" = inactive
+```bash
+set -euo pipefail
+test "$(systemctl show -p ActiveState --value club-arena-supervisor.timer)" = inactive
+test "$(systemctl show -p ActiveState --value club-arena-supervisor.service)" = inactive
 test "$(docker inspect -f '{{.State.Status}}' sp-autoheal)" = exited
-test "$(docker ps -q --filter label=sp.role=engine | wc -l)" -eq 0
-test "$(docker inspect -f '{{.State.Running}}' club-arena-engine)" = false
-! curl -sf --max-time 3 http://127.0.0.1:8080/health
-! pgrep -af 'node.*club-arena.*server|node.*dist/index' | grep -v pgrep
+test "$(docker inspect -f '{{.Id}}' club-arena-engine)" = "$ENGINE_CID"
+test "$(docker inspect -f '{{.State.Status}}' "$ENGINE_CID")" = exited
+test "$(docker inspect -f '{{.State.ExitCode}}' "$ENGINE_CID")" -eq 0
+test "$(docker inspect -f '{{.State.OOMKilled}}' "$ENGINE_CID")" = false
+test -z "$(docker inspect -f '{{.State.Error}}' "$ENGINE_CID")"
+test "$(docker ps -q --filter label=sp.role=engine | wc -l | tr -d ' ')" -eq 0
+command -v ss >/dev/null 2>&1
+test -z "$(ss -H -ltn 'sport = :8080')"
+if curl -fsS --max-time 3 http://127.0.0.1:8080/health >/dev/null 2>&1; then
+  echo 'engine health endpoint still answers after the stop' >&2
+  exit 65
+fi
+test "$(docker logs --since "$STOP_EPOCH" "$ENGINE_CID" 2>&1 | \
+  grep -Fc '[GameServer] Shutdown complete.')" -eq 1
 ```
 
 After 30 seconds, run the checked-in read-only proof with the exact deployed
@@ -191,9 +263,10 @@ eight-character engine SHA:
 scripts/ops/verify-stage-b-zero-authority.sh "$SHA8"
 ```
 
-It proves the enforced break and zero fresh leader, table, or tournament lease.
-A live process, active deployment, unexpected relation lock, missing graceful
-shutdown receipt, or mismatched image SHA aborts the cutover.
+This verifier proves only the enforced database break and zero fresh leader,
+table, or tournament lease. It does not inspect GitHub runs, host processes,
+container exit state, shutdown logs, or image identity; the separate gates
+above prove those conditions and abort independently.
 
 ## Apply and verify
 
@@ -206,6 +279,16 @@ Before any retry after a timeout or lost response, query the ledger: an
 uncertain write is never replayed speculatively. Apply the key-share artifact
 only after the terminal guard, precertification, Stage B and its two contractions
 have unique byte-matched receipts.
+
+Immediately before the first DDL, rerun all six pristine-name gates in the
+still-stopped maintenance shell so a change since preflight fails closed:
+
+```bash
+set -euo pipefail
+for migration in "${STAGE_B_MIGRATIONS[@]}"; do
+  scripts/ops/verify-migration-ledger-artifact.sh "$migration" PREAPPLY
+done
+```
 
 Immediately after the key-share apply, require:
 
@@ -235,11 +318,50 @@ Inspect at least one cash table, multi-table tournament, Sit & Go, and Spin.
 
 The ordered restart in the still-locked root shell is:
 
-```sh
+```bash
+set -euo pipefail
+
+test "$($CONTROL get desired-sha)" = "$FULL_SHA"
+test "$($CONTROL get desired-image-id)" = "$SEALED_IMAGE_ID"
+test "$(docker image inspect -f '{{.Id}}' "club-arena-engine:$FULL_SHA")" = "$SEALED_IMAGE_ID"
 ENGINE_UP_LOCK_HELD=1 IMAGE="club-arena-engine:$FULL_SHA" \
   /usr/local/lib/club-arena/engine-control/engine-up.sh
-curl -fsS --max-time 5 http://127.0.0.1:8080/health
-curl -fsS --max-time 10 https://engine.smarter.poker/health
+
+test "$(docker inspect -f '{{.Image}}' club-arena-engine)" = "$SEALED_IMAGE_ID"
+test "$(docker inspect -f '{{index .Config.Labels "sp.release.sha"}}' club-arena-engine)" = "$FULL_SHA"
+
+exact_engine_health() {
+  local url="$1" body
+  body="$(curl -fsS --max-time 10 "$url")" || return 1
+  printf '%s' "$body" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+e = d.get("equityWorkerPool")
+ok = (
+    d.get("status") == "ok"
+    and d.get("running") is True
+    and d.get("version") == sys.argv[1]
+    and isinstance(e, dict)
+    and e.get("phase") == "ready"
+    and isinstance(e.get("configuredWorkers"), int)
+    and e.get("configuredWorkers") > 0
+    and e.get("readyWorkers") == e.get("configuredWorkers")
+)
+sys.exit(0 if ok else 65)
+' "$SHA8"
+}
+
+EXACT_HEALTH_READY=0
+for _attempt in $(seq 1 90); do
+  if exact_engine_health http://127.0.0.1:8080/health \
+     && exact_engine_health https://engine.smarter.poker/health; then
+    EXACT_HEALTH_READY=1
+    break
+  fi
+  sleep 2
+done
+test "$EXACT_HEALTH_READY" -eq 1
+
 docker start sp-autoheal
 test "$(docker inspect -f '{{.State.Running}}' sp-autoheal)" = true
 systemctl start club-arena-supervisor.timer

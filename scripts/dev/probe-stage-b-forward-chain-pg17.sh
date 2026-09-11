@@ -31,6 +31,8 @@ operator_visibility_statement_sha256='3f01c9da1e26451d8d8a938e1b942f70f2bdcff4db
 player_day_exit_statement_sha256='9a5109e118fd3877b816126652b3e5ac0f8b54780d2dc6b37be33e61cd4b0bc6'
 retired_mint_reporting_statement_sha256='a12119f40903928cf8febcca78f10b34a5b44cd8be6a996ccc68dd9c0dc69ecc'
 legacy_rakeback_single_payer_statement_sha256='a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7'
+legacy_round3_acl_statement_sha256='da06b3acca81a28a54e1354932aab87d515bc3202b4922e9cccc8e1971e867d5'
+seat_exit_consumer_guard_statement_sha256='a1a762df5c6e9e62b63d1602a360a7349c087d652c00e22c63dac481a953a623'
 bounty_rebuy_probe_sha256='ef8e7fe7c0705ad265dab8f416485302b379437ab94f055f08c98e5cff3a6a5e'
 cancellation_probe_sha256='485d48aad7147ab9b54d8c0f3118a6d928948468aade3da2361452f9ccedfce5'
 
@@ -222,6 +224,8 @@ psql_cmd=(
   -v "player_day_exit_statement_sha256=$player_day_exit_statement_sha256"
   -v "retired_mint_reporting_statement_sha256=$retired_mint_reporting_statement_sha256"
   -v "legacy_rakeback_single_payer_statement_sha256=$legacy_rakeback_single_payer_statement_sha256"
+  -v "legacy_round3_acl_statement_sha256=$legacy_round3_acl_statement_sha256"
+  -v "seat_exit_consumer_guard_statement_sha256=$seat_exit_consumer_guard_statement_sha256"
 )
 
 emit_zero_player_data_assertion_function() {
@@ -423,7 +427,9 @@ WITH required_prerequisites(version,name) AS (
     ('20260911062053','the_operator_sees_the_money_and_the_room'),
     ('20260911064427','the_player_can_see_the_day_and_the_way_out'),
     ('20260911072424','the_mint_that_is_gone_stops_being_reported'),
-    ('20260911072837','legacy_rakeback_closed_period_single_payer')
+    ('20260911072837','legacy_rakeback_closed_period_single_payer'),
+    ('20260911081721','legacy_round3_preserve_server_only_acl'),
+    ('20260911081910','a_seat_exit_guard_without_its_consumer_refuses_nothing')
 ), exact_body_rows(version,name,statement_sha256) AS (
   VALUES
     ('20260910051447','the_seat_move_door_the_engine_calls_exists',
@@ -455,7 +461,11 @@ WITH required_prerequisites(version,name) AS (
     ('20260911072424','the_mint_that_is_gone_stops_being_reported',22537,
      :'retired_mint_reporting_statement_sha256'),
     ('20260911072837','legacy_rakeback_closed_period_single_payer',36786,
-     :'legacy_rakeback_single_payer_statement_sha256')
+     :'legacy_rakeback_single_payer_statement_sha256'),
+    ('20260911081721','legacy_round3_preserve_server_only_acl',3849,
+     :'legacy_round3_acl_statement_sha256'),
+    ('20260911081910','a_seat_exit_guard_without_its_consumer_refuses_nothing',7525,
+     :'seat_exit_consumer_guard_statement_sha256')
 ), audited_tail_rows(version,name,statement_count) AS (
   VALUES
     ('20260910072322','the_knockout_door_owns_every_bust_a_hand_took',1),
@@ -1268,16 +1278,16 @@ if [[ "$major_version" != '17' || "$locality" != 'local' ]]; then
   echo "Rehearsal requires local PostgreSQL 17; observed ${server_address:-unknown}." >&2
   exit 65
 fi
-if [[ "$anchor_receipts" != '62' ]]; then
-  echo "The donor does not contain all 62 bounded Stage-B prerequisite receipts: ${anchor_receipts:-0}/62 present." >&2
+if [[ "$anchor_receipts" != '64' ]]; then
+  echo "The donor does not contain all 64 bounded Stage-B prerequisite receipts: ${anchor_receipts:-0}/64 present." >&2
   exit 65
 fi
 if [[ "$exact_body_receipts" != '3' ]]; then
   echo 'The donor does not contain all three byte-exact live body ledger rows (051447, 063559, 064701).' >&2
   exit 65
 fi
-if [[ "$descriptor_receipts" != '11' ]]; then
-  echo 'The donor does not contain the byte-exact 055857, 060034, and 11050554..11072837 ledger metadata.' >&2
+if [[ "$descriptor_receipts" != '13' ]]; then
+  echo 'The donor does not contain the byte-exact 055857, 060034, and 11050554..11081910 ledger metadata.' >&2
   exit 65
 fi
 if [[ "$audited_tail_receipts" != '38' || "$audited_tail_statements" != '41' ]]; then

@@ -1,7 +1,7 @@
 -- 20260910042007_stage_b_forward_authority_expansion
 --
 -- Thirteen historical Stage-B migrations are absent from production while
--- production has continued through the byte-authenticated 20260911072837 live
+-- production has continued through the byte-authenticated 20260911081910 live
 -- tail (final-deal v2, wheel free-spin retirement, exact-generation bounty
 -- rebuy settlement, welcome-spin coherence, the corrected unstarted-entry
 -- return policy, operator/player game views, retired mint reporting, and the
@@ -384,7 +384,7 @@ BEGIN
          '0f491a45693fcf3182719647c5ed7aee','plpgsql','v','uuid',
          1,ARRAY['search_path=public, pg_temp']::text[],'{postgres=X/postgres}'),
         ('public.fn_ca_close_tournament_seat_exit_authority(uuid,boolean)',
-         '0811b7a7795234ed8bc84c606d9a5a62','plpgsql','v','integer',
+         '319441969e49923b3ee8d65f8f0b1e82','plpgsql','v','integer',
          1,ARRAY['search_path=public']::text[],'{postgres=X/postgres}'),
         ('public.fn_ca_tournament_seat_move_receipt(uuid)',
          '68813ee03e355e2eec053e15bf40f98d','sql','s','jsonb',
@@ -559,9 +559,27 @@ BEGIN
             AND octet_length(m.statements[1])=36786
             AND encode(extensions.digest(
                   convert_to(m.statements[1],'UTF8'),'sha256'),'hex')=
-                'a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7')<>1 THEN
+                'a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7')<>1
+     OR (SELECT count(*)
+           FROM supabase_migrations.schema_migrations m
+          WHERE m.version='20260911081721'
+            AND m.name='legacy_round3_preserve_server_only_acl'
+            AND cardinality(m.statements)=1
+            AND octet_length(m.statements[1])=3849
+            AND encode(extensions.digest(
+                  convert_to(m.statements[1],'UTF8'),'sha256'),'hex')=
+                'da06b3acca81a28a54e1354932aab87d515bc3202b4922e9cccc8e1971e867d5')<>1
+     OR (SELECT count(*)
+           FROM supabase_migrations.schema_migrations m
+          WHERE m.version='20260911081910'
+            AND m.name='a_seat_exit_guard_without_its_consumer_refuses_nothing'
+            AND cardinality(m.statements)=1
+            AND octet_length(m.statements[1])=7525
+            AND encode(extensions.digest(
+                  convert_to(m.statements[1],'UTF8'),'sha256'),'hex')=
+                'a1a762df5c6e9e62b63d1602a360a7349c087d652c00e22c63dac481a953a623')<>1 THEN
     RAISE EXCEPTION
-      'Stage-B expansion requires the exact 20260911050554..20260911072837 live tail'
+      'Stage-B expansion requires the exact 20260911050554..20260911081910 live tail'
       USING ERRCODE='55000';
   END IF;
 END;

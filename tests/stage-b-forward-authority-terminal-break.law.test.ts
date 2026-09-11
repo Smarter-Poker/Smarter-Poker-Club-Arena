@@ -127,8 +127,8 @@ describe('the reserved Stage-B forward authority remains one bounded chain', () 
   it('authenticates bounded prerequisites instead of a moving ledger head', () => {
     expect(harness).not.toContain('current_live_ledger_head');
     expect(harness).not.toContain('SELECT max(version)');
-    expect(harness).toContain('if [[ "$anchor_receipts" != \'62\' ]]');
-    expect(harness).toContain('if [[ "$descriptor_receipts" != \'11\' ]]');
+    expect(harness).toContain('if [[ "$anchor_receipts" != \'64\' ]]');
+    expect(harness).toContain('if [[ "$descriptor_receipts" != \'13\' ]]');
     expect(harness).toContain(
       'if [[ "$audited_tail_receipts" != \'38\' || "$audited_tail_statements" != \'41\' ]]'
     );
@@ -212,7 +212,7 @@ describe('the reserved Stage-B forward authority remains one bounded chain', () 
     }
   });
 
-  it('authenticates and preserves the exact live tail through 11072837', () => {
+  it('authenticates and preserves the exact live tail through 11081910', () => {
     const exactTail = [
       [
         '20260911050554',
@@ -267,6 +267,18 @@ describe('the reserved Stage-B forward authority remains one bounded chain', () 
         'legacy_rakeback_closed_period_single_payer',
         '36786',
         'a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7',
+      ],
+      [
+        '20260911081721',
+        'legacy_round3_preserve_server_only_acl',
+        '3849',
+        'da06b3acca81a28a54e1354932aab87d515bc3202b4922e9cccc8e1971e867d5',
+      ],
+      [
+        '20260911081910',
+        'a_seat_exit_guard_without_its_consumer_refuses_nothing',
+        '7525',
+        'a1a762df5c6e9e62b63d1602a360a7349c087d652c00e22c63dac481a953a623',
       ],
     ] as const;
     for (const descriptor of exactTail) {
@@ -323,6 +335,16 @@ describe('the reserved Stage-B forward authority remains one bounded chain', () 
         36786,
         'a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7',
       ],
+      [
+        '20260911081721_legacy_round3_preserve_server_only_acl.sql',
+        3849,
+        'da06b3acca81a28a54e1354932aab87d515bc3202b4922e9cccc8e1971e867d5',
+      ],
+      [
+        '20260911081910_a_seat_exit_guard_without_its_consumer_refuses_nothing.sql',
+        7525,
+        'a1a762df5c6e9e62b63d1602a360a7349c087d652c00e22c63dac481a953a623',
+      ],
     ] as const) {
       const receipt = readFileSync(resolve(migrationsDirectory, fileName));
       expect(receipt.byteLength).toBe(expectedBytes);
@@ -338,6 +360,8 @@ describe('the reserved Stage-B forward authority remains one bounded chain', () 
       /ALTER FUNCTION public\.fn_settle_tournament_final_table_deal\(uuid\)\s+SET search_path TO public,pg_temp;/
     );
     expect(contraction).toContain("ARRAY['search_path=public','statement_timeout=30s']");
+    expect(expansion).toContain('319441969e49923b3ee8d65f8f0b1e82');
+    expect(expansion).not.toContain("'0811b7a7795234ed8bc84c606d9a5a62','plpgsql','v','integer'");
     expect(contraction).toContain(
       "CASE WHEN p_after_contraction\n                THEN '{postgres=X/postgres}'"
     );
@@ -485,6 +509,40 @@ describe('the reserved Stage-B forward authority remains one bounded chain', () 
       expect(source).toContain('engine_maintenance_break');
     }
     expect(atomicFinish).toContain('stage_b_atomic_finish_precertification');
+  });
+
+  it('bounds M4 and rechecks authenticated stopped-engine authority immediately before commit', () => {
+    expect(atomicFinish).toContain("SET LOCAL statement_timeout = '120s';");
+    expect(atomicFinish).toContain("SET LOCAL transaction_timeout = '150s';");
+
+    const finalTag = 'recheck_authenticated_stopped_engine_before_commit';
+    const finalGate = dollarBlock(atomicFinish, finalTag);
+    const gateStart = atomicFinish.indexOf(`DO $${finalTag}$`);
+    const gateEnd = atomicFinish.indexOf(`$${finalTag}$;`, gateStart);
+    const commit = atomicFinish.lastIndexOf('\nCOMMIT;');
+    expect(gateStart).toBeGreaterThan(
+      atomicFinish.indexOf('$precertify_stage_a_atomic_finishes$;', gateStart - atomicFinish.length)
+    );
+    expect(gateEnd).toBeGreaterThan(gateStart);
+    expect(commit).toBeGreaterThan(gateEnd);
+    expect(atomicFinish.slice(gateEnd + finalTag.length + 3, commit).trim()).toBe('');
+
+    expect(finalGate).toContain("to_regprocedure('public.fn_platform_frozen()')");
+    expect(finalGate).toContain(
+      "to_regprocedure('public.fn_serialize_engine_maintenance_break_write()')"
+    );
+    expect(finalGate).toContain('112b1265824ee082b8adc67ea367d826');
+    expect(finalGate).toContain('084ed24f99e9d08765bd86ff8b920284');
+    expect(finalGate).toContain("tg.tgname='aa_serialize_maintenance_break_write'");
+    expect(finalGate).toContain('public.fn_platform_frozen() IS NOT TRUE');
+    expect(finalGate).toMatch(/b\.break_ends_at>=clock_timestamp\(\)\+interval '30 seconds'/);
+    for (const authority of [
+      'public.engine_leader',
+      'public.engine_table_leases',
+      'public.engine_tournament_leases',
+    ]) {
+      expect(finalGate).toContain(`SELECT 1 FROM ${authority}`);
+    }
   });
 
   it('runs the final behavioral scenarios and bounded postimage checks by default', () => {

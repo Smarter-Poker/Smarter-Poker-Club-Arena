@@ -58,13 +58,78 @@ CREATE TABLE public.engine_maintenance_break (
   id boolean PRIMARY KEY CHECK (id),
   enforce_freeze boolean NOT NULL,
   phase text NOT NULL,
+  announced_at timestamptz NOT NULL,
   break_started_at timestamptz,
   break_ends_at timestamptz
 );
 INSERT INTO public.engine_maintenance_break
-  VALUES (true,true,'counting_down',clock_timestamp(),clock_timestamp()+interval '10 minutes');
+  VALUES (
+    true,true,'counting_down',clock_timestamp()-interval '1 minute',
+    clock_timestamp(),clock_timestamp()+interval '10 minutes'
+  );
+CREATE FUNCTION public.fn_active_maintenance_release_boundary()
+RETURNS timestamptz
+LANGUAGE sql VOLATILE
+AS $$ SELECT NULL::timestamptz $$;
 CREATE FUNCTION public.fn_platform_frozen() RETURNS boolean
-LANGUAGE sql VOLATILE AS $$ SELECT true $$;
+LANGUAGE sql VOLATILE
+SET search_path = public, pg_temp
+AS $platform_frozen$
+  SELECT EXISTS (
+           SELECT 1
+             FROM public.engine_maintenance_break b
+            WHERE b.enforce_freeze
+              AND b.announced_at < clock_timestamp() + INTERVAL '30 seconds'
+              AND (
+                (
+                  b.phase = 'last_hand'
+                  AND b.break_started_at IS NULL
+                  AND b.break_ends_at IS NULL
+                  AND b.announced_at + INTERVAL '2 minutes' <= clock_timestamp()
+                )
+                OR (
+                  b.phase = 'counting_down'
+                  AND b.break_started_at IS NOT NULL
+                  AND b.break_ends_at IS NOT NULL
+                  AND b.break_started_at >= b.announced_at
+                  AND b.break_ends_at > b.break_started_at
+                  AND b.break_ends_at < b.announced_at + INTERVAL '15 minutes'
+                )
+              )
+         )
+         OR COALESCE(
+           public.fn_active_maintenance_release_boundary() > clock_timestamp(),
+           false
+         );
+$platform_frozen$;
+
+CREATE FUNCTION public.fn_serialize_engine_maintenance_break_write()
+RETURNS trigger
+LANGUAGE plpgsql VOLATILE
+SET search_path = public, pg_temp
+AS $maintenance_writer$
+BEGIN
+  /* PostgreSQL takes ACCESS EXCLUSIVE before firing a TRUNCATE trigger. Waiting
+     for the advisory boundary from there would invert the canonical order
+     against an admitted entry that next reads this table. This singleton has
+     no legitimate truncate path, so refuse immediately instead of deadlocking. */
+  IF TG_OP = 'TRUNCATE' THEN
+    RAISE EXCEPTION 'engine_maintenance_break may not be truncated'
+      USING ERRCODE = '0A000';
+  END IF;
+  /* One exclusive writer boundary. The matching entry paths take this key in
+     shared mode, so purchases stay concurrent with each other but can never
+     straddle a maintenance-row commit. Transaction scope prevents a pooled
+     connection from retaining the lock. */
+  PERFORM pg_advisory_xact_lock(530090, 1);
+  RETURN NULL;
+END;
+$maintenance_writer$;
+CREATE TRIGGER aa_serialize_maintenance_break_write
+  BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE
+  ON public.engine_maintenance_break
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION public.fn_serialize_engine_maintenance_break_write();
 
 CREATE TABLE public.tournaments (
   id uuid PRIMARY KEY,

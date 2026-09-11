@@ -1,0 +1,66 @@
+{
+  "recorded_at": "2026-09-11T09:26:25.091411+00:00",
+  "phase_three_complete": false,
+  "active_worktree": "codex-chip-entry-swarm",
+  "active_branch": "agent/codex-chip-entry-swarm/fix/approved-final-deal-v2",
+  "production_candidates": [
+    {
+      "path": "scripts/deploy/phase-three-activate-current-terminal-authorities.sql",
+      "sha256": "62c98c9b9f18e0c9738c3173fc3b345bee9d6ffad72de63653be1a27548a9544",
+      "bytes": 275855,
+      "status": "not_applied",
+      "reason": "Automatic approval review rejected the earlier exact candidate for security privilege changes, retirement of legacy RPCs, guards and shared locks; exact current candidate needs specific approval. No retry or alternate application route used.",
+      "verification": "138 native assertions; exact rollback and source stability. Production protected-window management transport exception is not certified."
+    },
+    {
+      "path": "scripts/deploy/phase-three-activate-versioned-final-deal.sql",
+      "sha256": "e29ca9f4a2e48a70d1d618d2bd62685fb750a56b244aa444f36a0e3b98d1a972",
+      "bytes": 4028,
+      "status": "not_applied",
+      "verification": "Paid, unpaid and partial exact-proposal consent cases and repeated application previously passed; live trigger remains absent."
+    },
+    {
+      "path": "scripts/ci/probes/tournament-create-options-persist-flags-candidate.sql",
+      "sha256": "e16b3a057460833cd74c7a2da612df8b2c5269e156a7cc7b8116679d7fb6b24a",
+      "bytes": 3281,
+      "status": "automatic_approval_rejected",
+      "reason": "Persistent DDL changes a production function's behavior; broad Phase 3 authorization did not clearly approve this exact write.",
+      "verification": "14 option assertions plus 15 reused creation checks; exact rollback, two applications, stable sources. 40 focused client/policy tests.",
+      "post_rejection_readback": {
+        "creator_still_original": true,
+        "option_correction_present": false,
+        "migration_receipt_present": false
+      }
+    }
+  ],
+  "runtime_integration": {
+    "status": "automatic_approval_rejected_before_edit",
+    "reason": "Broad maintenance-thaw/recovery rewrite could keep live tables paused or disrupt releases; reviewer required exact approval beyond the general Phase 3 request.",
+    "permitted_remaining_work": "Test the unused v3 helper and prepare an unapplied integration patch for review.",
+    "production_runtime_integrated": false
+  },
+  "publication": {
+    "status": "automatic_approval_rejected",
+    "repository": "Smarter-Poker/Smarter-Poker-Club-Arena",
+    "remote": "git@github.com:Smarter-Poker/Smarter-Poker-Club-Arena.git",
+    "branch": "agent/codex-chip-entry-swarm/fix/approved-final-deal-v2",
+    "reason": "Internal source/audit artifacts to an unverified destination were rejected.",
+    "subsequent_verification": "Connected GitHub metadata confirms exact expected private repository and push/admin permissions.",
+    "retry_performed": false,
+    "note": "Other continuations have published some earlier work to main; reconcile exact tree/commits before claiming remaining payload published."
+  },
+  "browser": {
+    "status": "requires_action_time_confirmation",
+    "url": "https://smarter.poker/hub/club-arena/clubs/shark-club",
+    "action": "Accept I Understand And Agree To These Terms, then enter Poker Arena.",
+    "origin": "Browser-control instruction requires fresh action-time confirmation before binding terms.",
+    "terms_accepted_by_this_continuation": false
+  },
+  "remaining_nonapproval_gates": [
+    "Finish current-clock native proof and review its limits.",
+    "Apply and verify approved runtime integration against exact source.",
+    "Reconcile latest main, commit verified artifacts and run final affected checks.",
+    "Verify guarded release/deployment identity and overall live readiness.",
+    "Complete actual browser acceptance and remaining twelve-control acceptance evidence."
+  ]
+}

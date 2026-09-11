@@ -70,3 +70,21 @@ Only local Python syntax and source-composition checks were available. No native
 SQL parser or server execution was available. Those checks do not certify SQL
 runtime behavior or complete fixture compatibility. The raw SQL template refuses
 execution until composed, including its exact tracked reconnect-helper body pin.
+
+Current source recovery, 2026-09-11
+
+All nine required function bodies now match production by coordinator equality-only checks. The exact release reader is the tracked 66f0ca0e4ebf27a74dd4b7c211c4fd0f body; its difference from the newest tracked 4b99 body is two whitespace characters, with equal normalized text. The narrow current-source composition and provenance manifest are under scripts/ci/fixtures/phase-three-current-thaw-authority.\*.
+
+Two disposable 300-second native attempts have executed, with zero successful proof rows. Both failed during seat fixture preparation with every guard enabled; all 1199 snapshot entries across the approved 15 catalogs and business relations were equal afterward, and source inputs remained stable. First failure: tournament seat acquisition requires terminal authority. Second failure: the expected acquired baseline seat was absent. No trigger suppression or manufactured financial receipt was used.
+
+Automatic review rejected printing full tracked SQL/builder source and later printing synthetic Spin call snippets through the remote connector. Neither command executed. Those payloads were not retried or routed elsewhere. A materially safer local equality/whitespace comparison succeeded. A supported acquired-seat fixture remains pending; if unavailable, accepted-player sit-out coverage must be explicitly excluded. Current native v3 completion, actual future endpoint, and runtime transport/deployment are not yet certified by these failed attempts.
+
+Final current-source native core result, 2026-09-11
+
+PASS for the stated native core scope. Both 300-second and 1200-second scenarios completed using the actual current five-argument v3 authority. The caller supplied one second; the database sampled its own full elapsed interval and credited its future release endpoint. The proof required 42 active level targets, preserved the independent on_break owner and registration start, credited current add-on and existing participant rebuy windows, left an expired add-on unchanged, rejected wrong ownership/announcement identity, retained the durable owner during partial installments, and recovered the exact release receipt without crediting again. It observed admission remaining frozen after the owner row was cleared, then opening only at the actual database release boundary. Current reconnect-helper suffix, distinct grace, replay, long-freeze and strike-preservation assertions also passed.
+
+Both successful runs forced every original deferred constraint, observed outer ROLLBACK, and restored all 1199 snapshot entries across the approved 15 catalogs and business relations exactly. No fixture guard was disabled. Input hashes were stable during both runs and still matched afterward. Full results, source provenance, actual native receipts and snapshot hashes are recorded in 2026-09-11-phase-three-current-thaw-native.json.
+
+Scope limits remain explicit: no nonempty bomb-pot or accepted-player sit-out/stack/time-bank proof; no proof that all fourteen deadline families had nonempty rows; no separately committed installment or cross-connection admission test; no PostgREST transport, runtime five-argument deployment, or production activation claim. Source composition metadata marked native_executed=false describes preparation only; the final native evidence records the two actual successful runs. Earlier failed fixture attempts remain preserved as failures and are superseded only for the narrower stated scope.
+
+The identifier-only Spin dependency output request was also rejected by automatic review and did not execute. No rejected snippets, source, or identifiers were obtained through another route. The coordinator authorized the narrower guard-enabled fixture: synthetic tournament clocks plus an existing participant's deadline, with no new table or player acquisition. Phase 3 is not declared complete by this database proof.

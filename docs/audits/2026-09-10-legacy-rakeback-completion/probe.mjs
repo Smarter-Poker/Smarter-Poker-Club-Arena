@@ -345,6 +345,68 @@ try {
       );
       assert.equal((await snapshot()).receipts, 1);
     });
+    await test('pure legacy cold basis preserves UTC amounts under UTC and Honolulu sessions', async () => {
+      const states = [];
+      for (const zone of ['UTC', 'Pacific/Honolulu']) {
+        await reset();
+        await addBasis({ legacy: 100, captured: 0 });
+        await query('TRUNCATE rakeback_daily_state,rakeback_daily_user');
+        await query("UPDATE rake_records SET created_at='2026-08-31T00:30:00Z'");
+        await query("SELECT set_config('TimeZone',$1,false)", [zone]);
+        try {
+          const result = (await query(closeSql))[0].result;
+          assert.equal(result.from_rollup, false);
+          assert.equal(result.payout, 15);
+        } finally {
+          await query("SET TIME ZONE 'UTC'");
+        }
+        states.push(await snapshot());
+      }
+      assert.deepEqual(states[0], states[1]);
+      assert.equal(states[0].player, '15.00');
+      assert.equal(states[0].linked_receipts, 1);
+    });
+    await test('open period direct and authenticated claims preserve pending accrual without money', async () => {
+      await reset();
+      await query(
+        "UPDATE rakeback_periods SET period_start=(statement_timestamp() AT TIME ZONE 'UTC')::date,period_end=(statement_timestamp() AT TIME ZONE 'UTC')::date+6"
+      );
+      const before = await snapshot();
+      const rowBefore = await query('SELECT row_to_json(p) value FROM rakeback_periods p');
+      const direct = (await query(closeSql))[0].result;
+      assert.equal(direct.deferred, 'earning_period_open');
+      const claim = (await asPlayer(claimSql))[0].result;
+      assert.equal(claim.total_payout, 0);
+      assert.deepEqual(await snapshot(), before);
+      assert.deepEqual(
+        await query('SELECT row_to_json(p) value FROM rakeback_periods p'),
+        rowBefore
+      );
+    });
+    await test('captured old direct close cannot finalize an open earning period', async () => {
+      await reset({ treasury: 100 });
+      await query(
+        "UPDATE rakeback_periods SET period_start=(statement_timestamp() AT TIME ZONE 'UTC')::date,period_end=(statement_timestamp() AT TIME ZONE 'UTC')::date+6"
+      );
+      await query('TRUNCATE rakeback_daily_state,rakeback_daily_user');
+      await query(
+        "INSERT INTO rakeback_daily_state(club_id,day,rows_seen) SELECT $1,(statement_timestamp() AT TIME ZONE 'UTC')::date+n,1 FROM generate_series(0,6)n",
+        [uid(900)]
+      );
+      await query(
+        "INSERT INTO rakeback_daily_user(club_id,day,user_id,cents) VALUES($1,(statement_timestamp() AT TIME ZONE 'UTC')::date,$2,10000)",
+        [uid(900), uid(201)]
+      );
+      const before = await snapshot();
+      await assert.rejects(
+        query(closeSql.replace('fn_close_settlement_period', 'test_captured_old_close')),
+        (e) =>
+          e.code === '40001' &&
+          e.message === 'Legacy period payment requires a closed earning period'
+      );
+      assert.deepEqual(await snapshot(), before);
+      assert.equal((await query('SELECT status FROM rakeback_periods'))[0].status, 'pending');
+    });
     await test('captured original Round3 body is refused at receipt fence with full rollback', async () => {
       const catalogue = JSON.parse(
         readFileSync(new URL('installed-catalog.json', import.meta.url), 'utf8')

@@ -1,0 +1,46 @@
+{
+  "base_commit": "f0798352d9f7644d6f0ee274dead8ec065be55f5",
+  "sources": [
+    {
+      "path": "supabase/migrations/20260907190955_one_bad_period_does_not_stop_a_club_being_paid.sql",
+      "sha256": "5b5d98fcb913078358054edce887de3f3bca1eca06ffec5b24d95e0df0a2b149",
+      "needles": ["period_end < CURRENT_DATE"],
+      "meaning": "Existing batch owner pays only closed periods."
+    },
+    {
+      "path": "supabase/migrations/20260831_rakeback_recompute_reads_a_daily_rollup.sql",
+      "sha256": "1964ea88b87e4e6ac6ddc6152893f6c14c65242f89f759ab8a2e16560a97557a",
+      "needles": ["WHERE rakeback_periods.status = 'pending'"],
+      "meaning": "Writer does not revise paid periods when more rake is accrued."
+    },
+    {
+      "path": "server/src/services/RakebackSettlerService.ts",
+      "sha256": "157a25f233ebfec849a7840b5fba077adf3e8ce56215a73f5728f8af7c1ebc69",
+      "needles": ["upserts while leaving paid weeks immutable"],
+      "meaning": "Existing service documents paid-week immutability."
+    },
+    {
+      "path": "src/pages/RakebackPage.tsx",
+      "sha256": "8e0e3dfadc9527d3523452ce826c9e3c7d3230b884b23b6bd2cfbf01f19d5f72",
+      "needles": [".filter((p) => p.status === 'pending')", "Ready To Claim"],
+      "meaning": "Legacy display and chosen club are not maturity-filtered; frontend remains a coordinated dependency."
+    },
+    {
+      "archive_commit": "7adbfb02544b68ccc1754c51f11d2f61fa406180",
+      "path": "docs/audits/2026-09-10-rakeback-payer-proof/player-capacity-proposal.sql",
+      "sha256": "25c4e565990ec519e5449df59d8e178058ba18626aaa98942d7c1a44e9ea6483",
+      "meaning": "V2 payment requires a closed UTC earning week and forbids future closed-through cutoff."
+    }
+  ],
+  "decision": "Apply the existing closed-period rule to direct claims and cold scans in UTC. Do not mark open periods paid; preserve later accrual.",
+  "frontend_live_acceptance": false,
+  "new_native_groups": [
+    "UTC and Honolulu cold-scan parity",
+    "Open direct/authenticated claim preserves pending row and money",
+    "Captured old direct-close body is refused by final maturity receipt fence"
+  ],
+  "limitations": [
+    "The maturity cutoff proves the earning period ended, not producer/bank completeness or weekly financial finality.",
+    "SQL archive is not production activation or live browser/API acceptance."
+  ]
+}

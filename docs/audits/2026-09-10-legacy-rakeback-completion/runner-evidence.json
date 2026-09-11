@@ -2,19 +2,19 @@
   "runs": [
     {
       "mode": "after",
-      "socket": "/tmp/ca-rakeback-payer.ccxo0sdb",
-      "data_directory": "/tmp/ca-rakeback-payer.ccxo0sdb/data",
+      "socket": "/tmp/ca-rakeback-payer.d2s35fup",
+      "data_directory": "/tmp/ca-rakeback-payer.d2s35fup/data",
       "tcp_listeners": "",
       "pass": true
     }
   ],
   "source_hashes": {
-    "probe.mjs": "123aaebbc8dc58f369d680ab90d3cbca590f7173d21c40096e1010f4613849b8",
+    "probe.mjs": "afc07874df6891a5216028601fc8ac2c3aaa00b239ffcaaeabfd479d6abfc034",
     "fixture.sql": "72b2a77c0d805989e7b3bb48593321258dfd79dc698d42d167397d57394ca42d",
-    "04-legacy-round3.sql": "89c6935279ade188ff071f09fc58329afcac3e00f6c03b735860184ca541248d",
+    "04-legacy-round3.sql": "ab4ed58233cc6f2c0cde17ceb6b85d44fb95c3dbf0edd5953db17ea1671d693e",
     "run-local.py": "d3cf1efef3abe605e464817c34da97243a92d60de8bbc100f7f219e0e6d52ab7",
     "02-legacy-round1.sql": "8137f28d8698aaea6647fa6d0a2842af9cc046535ea4edfda6c481bd7fa976fb",
-    "03-legacy-claim.sql": "c4ec4534560473fc619d9247b8b8c1a8daaf863dc4aeb1ad7636373d38756fc8",
+    "03-legacy-claim.sql": "d045654f7e37bf07f99ba85a6973c0ef7ef04a067f537c53ce1c49b1f8ecefaa",
     "money-guards.sql": "e7ac35f1cc08f6b947c386532a39bcc460a94e0c75949b5071e4098cbf3b9958",
     "basis-fixture.sql": "02679fb194a0b08d4af7dd839d0e142eaed2dbfc25b8178e404c5a3de9918688",
     "01-shared-basis.sql": "92b7960dfba8be63a80e02786bda98ed384de32fe87c4e7edf600088dea76987"

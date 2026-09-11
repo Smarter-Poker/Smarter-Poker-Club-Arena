@@ -88,6 +88,9 @@ BEGIN
   SELECT rp.*,receipt.payout_amount AS receipt_amount,receipt.user_id AS receipt_user INTO v_period
   FROM rakeback_period_payouts receipt JOIN rakeback_periods rp ON rp.id=receipt.rakeback_period_id
   WHERE receipt.id=NEW.related_entity_id;
+  IF FOUND AND (v_period.period_end+1)::timestamp AT TIME ZONE 'UTC' > statement_timestamp() THEN
+   RAISE EXCEPTION 'Legacy period payment requires a closed earning period' USING ERRCODE='40001';
+  END IF;
   IF FOUND AND public.fn_ca_rakeback_period_has_captured(v_period.club_id,v_period.user_id,v_period.period_start,v_period.period_end) THEN
    v_legacy:=public.fn_ca_legacy_player_rake(v_period.club_id,v_period.user_id,v_period.period_start,v_period.period_end);
    IF NEW.user_id IS DISTINCT FROM v_period.user_id OR v_period.receipt_user IS DISTINCT FROM v_period.user_id

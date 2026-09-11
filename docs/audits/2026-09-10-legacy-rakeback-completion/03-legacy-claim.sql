@@ -20,12 +20,15 @@ BEGIN
   END IF;
 
   PERFORM public.fn_lock_rakeback_payer_clubs(ARRAY(SELECT DISTINCT club_id FROM public.rakeback_periods
-   WHERE user_id=v_user AND status='pending' AND (p_club_id IS NULL OR club_id=p_club_id) ORDER BY club_id));
+   WHERE user_id=v_user AND status='pending'
+    AND (period_end+1)::timestamp AT TIME ZONE 'UTC' <= statement_timestamp()
+    AND (p_club_id IS NULL OR club_id=p_club_id) ORDER BY club_id));
 
   FOR v_period IN
     SELECT id FROM public.rakeback_periods
      WHERE user_id = v_user
        AND status = 'pending'
+       AND (period_end+1)::timestamp AT TIME ZONE 'UTC' <= statement_timestamp()
        AND (p_club_id IS NULL OR club_id = p_club_id)
      ORDER BY club_id,period_start,id
      FOR UPDATE
@@ -91,6 +94,13 @@ BEGIN
                                WHERE c.id = v_period.club_id
                                  AND c.owner_id = auth.uid()))) THEN
     RETURN jsonb_build_object('success', false, 'error', 'not_authorised');
+  END IF;
+
+  -- Earning periods are accrued while pending and immutable after payment.
+  -- The batch payer already enforces maturity; direct callers must do so too.
+  IF (v_period.period_end + 1)::timestamp AT TIME ZONE 'UTC' > statement_timestamp() THEN
+    RETURN jsonb_build_object('success',false,'deferred','earning_period_open',
+      'period_id',p_period_id,'matures_at',(v_period.period_end + 1)::timestamp AT TIME ZONE 'UTC');
   END IF;
 
   -- ---- EVERY CHEAP REFUSAL FIRST -------------------------------------------
@@ -171,8 +181,8 @@ BEGIN
         r.hand_id, r.rake_amount, r.player_contributions, COALESCE(r.rake_method, 'DEALT_EQUAL')
       ) s
      WHERE r.club_id = v_period.club_id
-       AND r.created_at >= v_period.period_start::timestamptz
-       AND r.created_at <  (v_period.period_end + 1)::timestamptz
+       AND r.created_at >= v_period.period_start::timestamp AT TIME ZONE 'UTC'
+       AND r.created_at <  (v_period.period_end + 1)::timestamp AT TIME ZONE 'UTC'
        AND r.rake_amount > 0
        AND r.player_contributions IS NOT NULL
        AND (r.player_contributions ? v_period.user_id::text)

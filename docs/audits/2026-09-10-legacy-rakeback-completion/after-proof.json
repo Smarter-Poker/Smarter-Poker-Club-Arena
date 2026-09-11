@@ -1,6 +1,6 @@
 {
   "mode": "after",
-  "captured_at": "2026-09-11T04:58:01.313Z",
+  "captured_at": "2026-09-11T05:06:18.568Z",
   "outcomes": [
     {
       "evidence": "individual_claim",
@@ -30,16 +30,12 @@
       "waitA": {
         "wait_event_type": "Lock",
         "wait_event": "transactionid",
-        "blockers": [
-          14332
-        ]
+        "blockers": [56221]
       },
       "waitB": {
         "wait_event_type": "Lock",
         "wait_event": "advisory",
-        "blockers": [
-          14333
-        ]
+        "blockers": [56225]
       },
       "callResults": [
         {
@@ -90,16 +86,12 @@
       "waitA": {
         "wait_event_type": "Lock",
         "wait_event": "transactionid",
-        "blockers": [
-          14335
-        ]
+        "blockers": [56234]
       },
       "waitB": {
         "wait_event_type": "Lock",
         "wait_event": "advisory",
-        "blockers": [
-          14336
-        ]
+        "blockers": [56235]
       },
       "callResults": [
         {
@@ -183,6 +175,18 @@
     },
     {
       "name": "weekly cutoff never includes the next open earning week under another session timezone",
+      "pass": true
+    },
+    {
+      "name": "pure legacy cold basis preserves UTC amounts under UTC and Honolulu sessions",
+      "pass": true
+    },
+    {
+      "name": "open period direct and authenticated claims preserve pending accrual without money",
+      "pass": true
+    },
+    {
+      "name": "captured old direct close cannot finalize an open earning period",
       "pass": true
     },
     {

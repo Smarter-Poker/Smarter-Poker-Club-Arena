@@ -14,6 +14,14 @@ import {
 } from './EquityWorkerPool.js';
 import { computeInsuranceComponentsForHands, insuranceSampleRunoutCap } from './equityWorker.js';
 
+// Fake-worker lifecycle scenarios need two worker slots. Control the CPU input
+// so the production reservation of two contexts behaves identically on CI and
+// developer machines; EquityWorkerCapacity.guard.test.ts covers the real budget.
+vi.mock('node:os', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:os')>()),
+  availableParallelism: () => 4,
+}));
+
 const C = (rank: CardRank, suit: CardSuit): Card => ({ rank, suit });
 
 const TEST_RANKS: CardRank[] = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];

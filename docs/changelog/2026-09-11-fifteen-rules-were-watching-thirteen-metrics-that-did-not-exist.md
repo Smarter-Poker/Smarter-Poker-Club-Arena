@@ -112,3 +112,30 @@ Whether that switch should be on is a product decision and is not made here. `fn
 The staleness view is deliberately left alone. It answers "is this job still being dispatched", which is a separate and true fact; a job that is dispatched and no-ops is a different failure and deserves its own name rather than a redefinition of an existing one.
 
 A numeric `skipped` is a count of items skipped by a job that did run — `/cron/freeroll-qualification-sync` reports `"0"`, `/cron/scrape-sports-clips` reports `"15"` — so only a non-numeric string counts as a reason for skipping everything, and a 24-hour floor keeps a job that skipped once out of it. Measured cost of the whole snapshot with the new detector: 765 ms.
+
+## Correction: something WAS checking, and it had been failing for a week
+
+`check-alert-rules-match.mjs` already asked this question. It runs in `deploy-monitoring.yml` after every merge that touches `infra/monitoring/**`, under the heading **RULES THAT READ A SERIES PROMETHEUS HAS NEVER SEEN**, and it had been naming these same metrics and failing the job since at least 2026-09-09. Four consecutive runs, red, for the right reason.
+
+So the honest version of this changelog is not "nothing was checking". It is that the check was right, it failed loudly, and the failure was not read for a week. That is a worse problem than an absent check, and it has a cause worth naming.
+
+Its own extractor read `sp:action_to_broadcast:p95_ms` as a metric called `p95_ms`, because its identifier pattern did not treat `:` as part of a name — while the comment above it claimed it skipped recording-rule prefixes, an intention the code did not carry out. So every run reported two phantoms, `max_ms` and `p95_ms`, that nobody could act on.
+
+Worse, it could not tell apart two different things:
+
+- a name **nothing emits** — the 2026-09-04 defect, fatal;
+- a name **something emits that has not been seen yet** — a counter waiting for its first event.
+
+Six horse counters were in the second state on the run of 2026-09-11 16:43 (`poker_horse_turn_timeouts_total`, `poker_horse_forced_sit_outs_total`, `poker_horses_seated` and three more). All six had series again within hours, without anyone doing anything. A deploy gate that goes red for that is a deploy gate people learn to scroll past, and this one was right about eleven real metrics in the same list.
+
+Both are fixed. `check-alert-rules-match.mjs` now uses the same extractor as `check-monitoring-drift.mjs` — one parser, one keyword list, one set of traps — and splits its report in two: a name with no producer fails the deploy, a name with a producer and no series yet is printed and does not. Verified against the live box: zero phantoms, and the six remaining names listed correctly as awaiting their first sample.
+
+The new check 8 still earns its place, for a reason that has nothing to do with being cleverer: **it runs on the pull request.** A deploy gate can only be red after the merge, and a red job after a merge is a thing to be scrolled past. A blocked PR is not.
+
+## And one more of my own, found by the check I had just written
+
+`PagerDeliveryFailing` and `CriticalEmailDeliveryFailing` were added earlier the same day to watch the pager itself. They read `alertmanager_notifications_failed_total`, which Prometheus was not scraping: Alertmanager was configured as an alert DESTINATION and never as a scrape TARGET, so the four scrape jobs never included it.
+
+Two alerts written that morning to catch a silent pager, silent from birth for the same reason as the fifteen. The check found them the first time it was pointed at the rebased branch, several hours after I wrote them.
+
+`prometheus.yml` gains the `alertmanager` scrape job, `REQUIRED_SCRAPE_JOBS` gains the name, and check 8 gains the general form: a metric belonging to a known exporter prefix now requires that exporter's scrape job to exist, because `alertmanager_*` having a producer says nothing at all about whether anything asks for it.

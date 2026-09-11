@@ -258,7 +258,25 @@ const REQUIRED_SCRAPE_JOBS = [
   'node_engine01',
   'engine_game_server',
   'turn_relay',
+  'alertmanager',
 ];
+
+/**
+ * A foreign metric is only "produced" if something is scraping the exporter
+ * that emits it. Check 8 accepts `alertmanager_*` because Alertmanager emits
+ * it; that says nothing about whether Prometheus ever asks. On 2026-09-11
+ * PagerDeliveryFailing and CriticalEmailDeliveryFailing were written against
+ * alertmanager_notifications_failed_total while Alertmanager was configured as
+ * an alert DESTINATION and never as a scrape TARGET - two alerts written to
+ * catch a silent pager, silent for the same reason as everything else found
+ * that day.
+ */
+const EXPORTER_JOBS = {
+  alertmanager_: 'alertmanager',
+  node_: 'node_engine01',
+  prometheus_: 'prometheus',
+  promhttp_: 'prometheus',
+};
 {
   const jobs = [...prom.matchAll(/^\s*-?\s*job_name:\s*['"]?([\w.-]+)/gm)].map((m) => m[1]);
   for (const job of REQUIRED_SCRAPE_JOBS) {
@@ -296,6 +314,26 @@ const REQUIRED_SCRAPE_JOBS = [
       if (isProduced(metric, haystack, recorded, declaredAbsent)) continue;
       if (!orphans.has(metric)) orphans.set(metric, []);
       orphans.get(metric).push(`${rule.file}:${rule.name}`);
+    }
+  }
+
+  // A foreign metric whose exporter nobody scrapes is the same empty vector by
+  // a different route, and check 8 above waves it through on the prefix alone.
+  {
+    const jobs = new Set(
+      [...prom.matchAll(/^\s*-?\s*job_name:\s*['"]?([\w.-]+)/gm)].map((m) => m[1])
+    );
+    const seen = new Set();
+    for (const rule of rules) {
+      for (const metric of rule.metrics) {
+        for (const [prefix, job] of Object.entries(EXPORTER_JOBS)) {
+          if (!metric.startsWith(prefix) || jobs.has(job) || seen.has(metric)) continue;
+          seen.add(metric);
+          errors.push(
+            `${metric} is referenced by ${rule.file}:${rule.name} and is emitted by the "${job}" exporter, but prometheus.yml has no ${job} scrape job. Nothing asks that exporter for it, so the rule evaluates against an empty vector exactly as if the metric did not exist.`
+          );
+        }
+      }
     }
   }
 

@@ -10,7 +10,7 @@
 
 import nodeCrypto from 'node:crypto';
 import { UUID_SHAPE as UUID } from '../lib/uuidShape.js';
-import { isMaintenanceFrozen, msUntilMaintenanceResume } from '../maintenance/freezeState.js';
+import { isMaintenanceFrozen, onNextMaintenanceThaw } from '../maintenance/freezeState.js';
 import { supabase } from '../services/supabase.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { reportError } from '../services/errorReporter.js';
@@ -132,7 +132,36 @@ class TerminalSettlementCommittedError extends Error {
   }
 }
 
+/** Spread owed work through the existing scheduler after the actual thaw. */
+export function thawPassDelayMs(tournamentId: string, spreadMs: number): number {
+  if (!(spreadMs > 0)) return 0;
+  const head = Number.parseInt(tournamentId.replace(/-/g, '').slice(0, 8), 16);
+  return Number.isFinite(head) ? head % spreadMs : 0;
+}
+
 export abstract class TournamentManagerEliminations extends TournamentManagerBase {
+  private thawPass: { generation: number; cancel: () => void } | null = null;
+  static readonly THAW_PASS_SPREAD_MS = 10_000;
+
+  private owePassAfterTheThaw(): void {
+    const lifecycle = this.captureLifecycleToken();
+    if (!lifecycle || !this.lifecycleIsCurrent(lifecycle)) return;
+    if (this.thawPass?.generation === lifecycle.generation) return;
+    this.thawPass?.cancel();
+    const cancel = onNextMaintenanceThaw(() => {
+      this.thawPass = null;
+      if (!this.lifecycleIsCurrent(lifecycle)) return;
+      if (isMaintenanceFrozen()) {
+        this.owePassAfterTheThaw();
+        return;
+      }
+      this.requestUrgentEliminationSweepAfter(
+        thawPassDelayMs(this.tournamentId, TournamentManagerEliminations.THAW_PASS_SPREAD_MS)
+      );
+    }, lifecycle.signal);
+    this.thawPass = { generation: lifecycle.generation, cancel };
+  }
+
   /**
    * Cooperative continuation through the bounded manager work unit. A slow
    * but successful database request advances this cursor before yielding, so
@@ -1374,18 +1403,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             this.requestUrgentEliminationSweepAfter(dueIn);
           }
         } else {
-          /* A BALANCE THE FREEZE DEFERRED IS STILL OWED (2026-09-11). Skipping
-             the move is right; forgetting it is not. A field spread one player
-             per table deals no hand and records no bust, so this sweep is the
-             last thing that will ever look at it: `$100 Freeroll 12:00 PM`
-             (7aa16fa7) recorded its last bust at 07:57 inside the 07:53
-             freeze and then sat as four players on four tables until a human
-             found it. A restart inside the freeze sends every resumed
-             manager's first sweep down this same exit (57 RUNNING events sat
-             one player per table at 12:10 UTC after the 10:55 restart). Ask
-             for one more pass after the thaw; the scheduler keeps one pending
-             wake per tournament, so this never stacks. */
-          this.requestEliminationSweepAfter(msUntilMaintenanceResume());
+          // The skipped stage owes one pass when the actual freeze lifts.
+          this.owePassAfterTheThaw();
         }
         if (completedStage(6)) return;
       }
@@ -1397,7 +1416,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         if (sweepStopped()) return;
         // The same debt as the balance stage above: an expansion the freeze
         // skipped is asked for again after the thaw, never dropped.
-        if (isMaintenanceFrozen()) this.requestEliminationSweepAfter(msUntilMaintenanceResume());
+        if (isMaintenanceFrozen()) this.owePassAfterTheThaw();
         if (completedStage(7)) return;
       }
 

@@ -24,9 +24,15 @@
  */
 
 let frozen = false;
+const thawListeners = new Set<() => void>();
 
 export function setMaintenanceFrozen(value: boolean): void {
+  const thawing = frozen && !value;
   frozen = value;
+  if (!thawing) return;
+  const due = [...thawListeners];
+  thawListeners.clear();
+  for (const listener of due) listener();
 }
 
 /** True from the :53 announcement until the :00 resume. */
@@ -35,27 +41,30 @@ export function isMaintenanceFrozen(): boolean {
 }
 
 /**
- * WHEN A STEP THE FREEZE DEFERRED IS DUE AGAIN (2026-09-11).
- *
- * A sweep that reaches seat movement while the platform is frozen must skip
- * it, and must also ask to come back: a tournament whose every table holds
- * one player deals no hand and records no bust, so nothing else will ever wake
- * its manager again. `$100 Freeroll 12:00 PM` (7aa16fa7) recorded its last
- * three busts at 07:47-07:57 UTC on 2026-09-11 - the last two inside the
- * 07:53 freeze - and then sat for hours as four players on four tables.
- *
- * The freeze runs from the :53 announcement to the :00 resume, so inside the
- * scheduled window the step is due just after the top of the hour. A freeze
- * observed outside that window (an overrun past :00, or one armed off
- * schedule) is re-checked on a short fixed cadence instead; the re-armed pass
- * finds it frozen again and asks again, so an overrun costs one read per
- * fifteen seconds and never a stranded event.
+ * Subscribe once to the actual thaw edge. This also works for an on-demand
+ * freeze or an overrun: a wall-clock boundary never substitutes for authority.
+ * Lifecycle abort removes the subscription immediately. An already-thawed
+ * caller is delivered on a cancellable microtask, without awaiting a new freeze.
  */
-export function msUntilMaintenanceResume(nowMs: number = Date.now()): number {
-  const HOUR_MS = 3_600_000;
-  const sinceTopOfHour = ((nowMs % HOUR_MS) + HOUR_MS) % HOUR_MS;
-  if (sinceTopOfHour >= 50 * 60_000) {
-    return Math.max(5_000, HOUR_MS - sinceTopOfHour + 5_000);
-  }
-  return 15_000;
+export function onNextMaintenanceThaw(listener: () => void, signal?: AbortSignal): () => void {
+  let active = !signal?.aborted;
+  const cancel = () => {
+    active = false;
+    thawListeners.delete(deliver);
+    signal?.removeEventListener('abort', cancel);
+  };
+  const deliver = () => {
+    if (!active) return;
+    cancel();
+    try {
+      listener();
+    } catch (error) {
+      console.warn('[MaintenanceBreak] a thaw listener failed', error);
+    }
+  };
+  if (!active) return cancel;
+  signal?.addEventListener('abort', cancel, { once: true });
+  if (frozen) thawListeners.add(deliver);
+  else queueMicrotask(deliver);
+  return cancel;
 }

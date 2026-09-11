@@ -1,0 +1,43 @@
+{
+  "recorded_at": "2026-09-10T18:10:28.208526+00:00",
+  "results": [
+    {
+      "runner": "rehearse-final-deal-current-terminal.py",
+      "exit": 0,
+      "catalog_changes": [],
+      "snapshot_changes": [],
+      "status": "passed",
+      "variants": [
+        {
+          "variant": "paid",
+          "passed": true,
+          "assertions": 41,
+          "exact_rollback": true,
+          "failure_tail": null
+        },
+        {
+          "variant": "unpaid",
+          "passed": true,
+          "assertions": 41,
+          "exact_rollback": true,
+          "failure_tail": null
+        },
+        {
+          "variant": "partial",
+          "passed": true,
+          "assertions": 41,
+          "exact_rollback": true,
+          "failure_tail": null
+        }
+      ]
+    },
+    {
+      "runner": "rehearse-current-bounty-mystery-lifecycle.py",
+      "exit": 0,
+      "catalog_changes": [],
+      "snapshot_changes": [],
+      "status": "passed",
+      "variants": []
+    }
+  ]
+}

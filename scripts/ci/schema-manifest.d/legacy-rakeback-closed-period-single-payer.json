@@ -1,0 +1,8 @@
+{
+  "_comment": "Already applied in 20260911072837_legacy_rakeback_closed_period_single_payer.sql; root read-only catalogue confirmed these public helpers at 2026-09-11 08:55:48 UTC. Exact adoption receipts: docs/audits/2026-09-11-rakeback-maturity-ui/approved-adoption/approved-rakeback-adoption-final.json.txt and docs/audits/2026-09-11-rakeback-maturity-ui/round3-acl-restatement/approved-rakeback-round3-acl-final.json.txt.",
+  "functions": [
+    "fn_ca_legacy_period_maturity",
+    "fn_ca_legacy_round3_wallet_receipt",
+    "fn_lock_rakeback_payer_clubs"
+  ]
+}

@@ -658,14 +658,17 @@ async function attemptBBJPayoutOnce(
           ? 'is still owed to you and is pending delivery.'
           : 'has a confirmed jackpot credit.';
         const which = `on hand #${params.handNumber}`;
+        /* WHICH JACKPOT (2026-09-11). The mini reuses this path, and a mini
+           recipient was told a "Bad Beat Jackpot" had hit - the notification
+           is the one record a seated player keeps, so it has to say which. */
+        const jackpotName = params.kind === 'mini' ? 'Mini Bad Beat Jackpot' : 'Bad Beat Jackpot';
         return {
           user_id: r.id,
           type: 'bonus',
-          title: r.pending
-            ? 'Bad Beat Jackpot - Payment Pending'
-            : 'Bad Beat Jackpot - You Got Paid!',
-          message: `A Bad Beat Jackpot hit ${which}. ${role}, and your share of $${money(r.share)} ${where}`,
+          title: r.pending ? `${jackpotName} - Payment Pending` : `${jackpotName} - You Got Paid!`,
+          message: `A ${jackpotName} hit ${which}. ${role}, and your share of ${money(r.share)} ${where}`,
           metadata: {
+            kind: params.kind === 'mini' ? 'mini' : 'main',
             tableId: params.tableId,
             handNumber: params.handNumber,
             amount: r.share,

@@ -57,6 +57,13 @@ export interface BBJRecentHitsProps {
   onOpenHand?: (payoutId: string) => void;
   /** Live pool, only used to size the example figures when nothing has hit. */
   poolAmount?: number;
+  /**
+   * WHICH JACKPOT (Dan 2026-09-11: "SEPERATE BBJ WINERS, AND MINI BBJ WINNERS").
+   * `main` and `mini` ask fn_bbj_recent_hits for one list each; `all` is the
+   * mixed list the ticker and the hit feed still read. Defaults to `all` so an
+   * older caller sees exactly what it saw.
+   */
+  kind?: 'main' | 'mini' | 'all';
 }
 
 /** Card as stored in hand_history: full suit names, rank 2-9/T/J/Q/K/A. */
@@ -216,7 +223,9 @@ export function BBJRecentHits({
   currentUserId,
   onOpenHand,
   poolAmount = 0,
+  kind = 'all',
 }: BBJRecentHitsProps) {
+  const kindArg = kind === 'all' ? null : kind;
   const [hits, setHits] = useState<Hit[] | null>(null);
   const [failed, setFailed] = useState(false);
   /**
@@ -289,6 +298,7 @@ export function BBJRecentHits({
         const { data, error } = await supabase.rpc('fn_bbj_recent_hits', {
           p_pool_id: poolId,
           p_limit: limit,
+          p_kind: kindArg,
         });
         if (!alive) return;
         if (error) {
@@ -312,7 +322,7 @@ export function BBJRecentHits({
     return () => {
       alive = false;
     };
-  }, [poolId, limit, revision]);
+  }, [poolId, limit, revision, kindArg]);
 
   /**
    * The next page, appended.
@@ -338,6 +348,7 @@ export function BBJRecentHits({
         p_limit: Math.max(limit, 10),
         p_before: last.awarded_at,
         p_before_id: last.payout_id,
+        p_kind: kindArg,
       });
       if (error) {
         setMoreFailed(true);
@@ -425,6 +436,21 @@ export function BBJRecentHits({
     );
   }
 
+  if (hits.length === 0 && kind === 'mini') {
+    /* The example rows below illustrate the MAIN rule (aces full of jacks,
+       quad kings); printing them under a "Mini" caption would teach the wrong
+       bar. The mini's empty state says so and stops. */
+    return (
+      <div className="bbj-hits">
+        <div className="bbj-hits__caption">Mini Bad Beat Jackpot Winners</div>
+        <p className="bbj-hits__examplenote">
+          No Mini Jackpot Has Been Paid On This Pool Yet. Aces Full Or Better (Hold’em) Or Any Quads
+          (Omaha) Losing To Quads Or Better Pays The Mini.
+        </p>
+      </div>
+    );
+  }
+
   if (hits.length === 0) {
     // A stakes tier has to be assumed to show any figure at all; Small (40% of
     // the pool) is the middle of the published ladder. While the pool is still
@@ -491,8 +517,8 @@ export function BBJRecentHits({
           a page, so it says which page of what. */}
       <div className="bbj-hits__caption">
         {total && total > hits.length
-          ? `Bad Beat Jackpot Winners (${hits.length} Of ${total})`
-          : `Last ${hits.length} Bad Beat Jackpot ${hits.length === 1 ? 'Winner' : 'Winners'}`}
+          ? `${kind === 'mini' ? 'Mini ' : ''}Bad Beat Jackpot Winners (${hits.length} Of ${total})`
+          : `Last ${hits.length} ${kind === 'mini' ? 'Mini ' : ''}Bad Beat Jackpot ${hits.length === 1 ? 'Winner' : 'Winners'}`}
       </div>
 
       {shown.map(({ hit, cards, label, beatBy, beatByLabel }) => {

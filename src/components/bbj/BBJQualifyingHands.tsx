@@ -20,6 +20,7 @@
  */
 
 import { BBJ_QUALIFYING_HANDS, BBJ_RULES } from '../../config/RakeConfig';
+import { getBBJMiniQualifyingInfo } from '../../config/bbjMini';
 import CardImage from '../table/CardImage';
 import type { Card as DeckCard } from '../table/CardImage';
 import './BBJQualifyingHands.css';
@@ -77,7 +78,31 @@ const BLOCKS: VariantBlock[] = [
 export interface BBJQualifyingHandsProps {
   /** Variant key or display name of the table in play — its block is marked. */
   highlightVariantKey?: string | null;
+  /**
+   * WHICH JACKPOT (Dan 2026-09-11: the Qualifying Hands page "NEEDS TO BE
+   * UPDATED WITH NEW MINI BBJ INFO AND DATA"). `mini` draws the mini's bar per
+   * variant from config/bbjMini - aces full or better in hold'em, any quads in
+   * Omaha - with the same card strip, so both tiers are read the same way.
+   */
+  kind?: 'main' | 'mini';
 }
+
+/** The mini's blocks: same games, same order, the mini's own bar and cards. */
+const MINI_BLOCKS: VariantBlock[] = BLOCKS.map((b) => {
+  const info = getBBJMiniQualifyingInfo(b.key);
+  if (!info.eligible) return { ...b, cards: [], note: '' };
+  const holdem = info.rule === 'holdem_aces_full';
+  const hiLo = b.key === 'plo8';
+  return {
+    ...b,
+    cards: info.minLosingHandCards,
+    note: holdem
+      ? 'Aces Full Or Better Must Lose To Quads Or Better. No Ace-In-The-Hole Rule And No Both-Cards-Must-Play Rule: The Mini Catches The Beats The Main Rule Refuses On A Technicality.'
+      : hiLo
+        ? 'Any Four Of A Kind Or Better Must Lose To Bigger Quads Or Better, Judged On The High Hand Only. The Low Hand Never Qualifies.'
+        : 'Any Four Of A Kind Or Better Must Lose To Bigger Quads Or Better. Not Only Quad Kings: Every Quad Below The Main Bar Pays The Mini.',
+  };
+});
 
 /** Collapse aliases onto the block that actually renders. */
 function blockKeyFor(variantKey: string | null | undefined): string | null {
@@ -89,22 +114,35 @@ function blockKeyFor(variantKey: string | null | undefined): string | null {
   return raw;
 }
 
-export function BBJQualifyingHands({ highlightVariantKey = null }: BBJQualifyingHandsProps) {
+export function BBJQualifyingHands({
+  highlightVariantKey = null,
+  kind = 'main',
+}: BBJQualifyingHandsProps) {
   const hl = blockKeyFor(highlightVariantKey);
+  const blocks = kind === 'mini' ? MINI_BLOCKS : BLOCKS;
 
   return (
     <div className="bbj-qh">
-      <p className="bbj-qh__intro">
-        The Losing Player Must Hold At Least The Hand Below.
-        {BBJ_RULES.requireBothHoleCards
-          ? ' Both Players Must Use Two Cards From Their Own Hand.'
-          : ''}
-        {BBJ_RULES.splitIfMultipleQualify
-          ? ' If More Than One Player Loses With A Qualifying Hand, The Prize Is Divided Between Them.'
-          : ''}
-      </p>
+      {kind === 'mini' ? (
+        <p className="bbj-qh__intro">
+          The Mini Jackpot Pays A Flat Amount For The Beats The Main Rule Turns Away. The Losing
+          Player Must Hold At Least The Hand Below And The Winner Must Still Hold Quads Or Better.
+          The Same Pot, Player And Board Conditions Apply As For The Main Jackpot; The
+          Ace-In-The-Hole And Both-Cards-Must-Play Rules Do Not.
+        </p>
+      ) : (
+        <p className="bbj-qh__intro">
+          The Losing Player Must Hold At Least The Hand Below.
+          {BBJ_RULES.requireBothHoleCards
+            ? ' Both Players Must Use Two Cards From Their Own Hand.'
+            : ''}
+          {BBJ_RULES.splitIfMultipleQualify
+            ? ' If More Than One Player Loses With A Qualifying Hand, The Prize Is Divided Between Them.'
+            : ''}
+        </p>
+      )}
 
-      {BLOCKS.map((b) => {
+      {blocks.map((b) => {
         const config = BBJ_QUALIFYING_HANDS[b.key];
         /**
          * ELIGIBILITY IS A RULE, NOT A RENDERING DETAIL.
@@ -143,7 +181,8 @@ export function BBJQualifyingHands({ highlightVariantKey = null }: BBJQualifying
               </>
             ) : (
               <p className="bbj-qh__note bbj-qh__note--off">
-                The Bad Beat Jackpot Is Not Available For {config?.label || b.games}.
+                The {kind === 'mini' ? 'Mini ' : ''}Bad Beat Jackpot Is Not Available For{' '}
+                {config?.label || b.games}.
               </p>
             )}
           </section>

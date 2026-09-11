@@ -1546,7 +1546,7 @@ function evaluateWithWorkspace(
   const boundedFuture = Boolean(input.continuation?.futureHands);
   const estimateCache = (!boundedFuture && workspace?.estimateCache) || new Map<string, Estimate>();
   const actionIcm =
-    (!boundedFuture && workspace?.actionIcm) ||
+    workspace?.actionIcm ||
     createIcmEquityEstimator(
       field.stacks,
       input.context.payoutPct,
@@ -1569,7 +1569,13 @@ function evaluateWithWorkspace(
         method: actionIcm.method,
       };
     }
-    const icm = actionIcm.estimate(vector);
+    // Phase 7 already generated these common clocks. A bounded prefix produces
+    // the same Phase 8 estimates as a fresh workspace, with its wider error,
+    // without rebuilding and sorting the entire remote field on the action clock.
+    const icm = actionIcm.estimate(
+      vector,
+      boundedFuture ? FUTURE_HAND_POLICY.maxIcmTrials : undefined
+    );
     const result = {
       equity: icm.equity,
       equityError: icm.errorBound,

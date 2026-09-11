@@ -442,23 +442,32 @@ describe('Phase 8 counterfactual selection', () => {
       )
     ).toBe(true);
   });
-  it('reuses only the decision-local ICM workspace without changing candidate utilities', () => {
-    const { gs, hero, input } = scenario();
-    const previous = evaluateTournamentUtilityDetailed(input);
-    const baseline = { ...previous.result!.decision, tournamentUtility: previous.result!.ledger };
-    const fresh = evaluateTournamentPostflop(hero, gs, baseline, input, 'shadow', () => 0);
-    const shared = evaluateTournamentPostflop(
-      hero,
-      gs,
-      baseline,
-      input,
-      'shadow',
-      () => 0,
-      previous.continuePostflop
-    );
-    expect(shared).toEqual(fresh);
-    expect(JSON.stringify(shared.ledger)).not.toContain('continuePostflop');
-  });
+  it.each([3, 18, 200, 1000])(
+    'reuses the ICM workspace without changing %i-player candidate utilities',
+    (count) => {
+      const { gs, hero, input } = scenario();
+      const remote = Array.from({ length: count - 3 }, (_, i) => 5000 + i * 10);
+      input.context.fieldStacks.push(...remote);
+      input.context.playersLeft = count;
+      gs.tournament!.stacks!.push(...remote);
+      gs.tournament!.playersLeft = count;
+      const previous = evaluateTournamentUtilityDetailed(input);
+      const baseline = { ...previous.result!.decision, tournamentUtility: previous.result!.ledger };
+      const fresh = evaluateTournamentPostflop(hero, gs, baseline, input, 'shadow', () => 0);
+      const shared = evaluateTournamentPostflop(
+        hero,
+        gs,
+        baseline,
+        input,
+        'shadow',
+        () => 0,
+        previous.continuePostflop
+      );
+      expect(fresh.ledger.fired).toBe(true);
+      expect(shared).toEqual(fresh);
+      expect(JSON.stringify(shared.ledger)).not.toContain('continuePostflop');
+    }
+  );
   it('refuses a budget breach and a private-card boundary violation', () => {
     const { gs, hero, input } = scenario();
     const previous = evaluateTournamentUtility(input)!;

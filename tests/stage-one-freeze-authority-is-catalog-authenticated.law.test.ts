@@ -7,8 +7,7 @@ const migrationsDirectory = resolve(root, 'supabase/migrations');
 function migrationSource(file: string): string {
   if (file.endsWith('.sql')) return readFileSync(resolve(migrationsDirectory, file), 'utf8');
   const matches = readdirSync(migrationsDirectory).filter(
-    (candidate) =>
-      candidate.endsWith(`_${file}.sql`) || candidate.endsWith(`_${file}.sql.pending`)
+    (candidate) => candidate.endsWith(`_${file}.sql`) || candidate.endsWith(`_${file}.sql.pending`)
   );
   if (matches.length !== 1) throw new Error(`Stage-B ${file} migration is ambiguous`);
   return readFileSync(resolve(migrationsDirectory, matches[0]), 'utf8');

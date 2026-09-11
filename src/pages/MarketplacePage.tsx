@@ -733,6 +733,7 @@ export default function MarketplacePage() {
             error={shopError}
             categories={catalog.shopCategories}
             onGoManage={() => switchTab('manage')}
+            onCatalogStale={() => loadShop(clubId, true)}
             onPurchased={(newBalance) => {
               // The BALANCE_UPDATED bus subscription reloads the shop + wallet;
               // only the optimistic diamond balance and the inventory are

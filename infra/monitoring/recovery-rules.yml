@@ -1,0 +1,38 @@
+# Alerts for the read-only recovery-stack verification.
+#
+# There is intentionally no periodic engine supervisor and no mutating
+# heartbeat here. Docker restart policy owns process/daemon/host restart; the
+# release transaction and ExecStopPost own exact desired restoration. The
+# daily verifier publishes only the result of checking those deterministic
+# contracts and the still-explicit autoheal dependency.
+groups:
+  - name: club-arena-recovery
+    rules:
+      - alert: RecoveryStackDegraded
+        expr: club_arena_recovery_stack_failures > 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $value }} recovery-stack assertion(s) failing"
+          description: >-
+            The daily read-only verification found a deterministic recovery
+            contract missing or misconfigured: Docker restart policy, the
+            autoheal health owner, the sealed release identity, causal
+            ExecStopPost restoration, or monitoring delivery. Run the active
+            engine-control generation's verify-recovery-stack.sh for the
+            per-assertion breakdown.
+
+      - alert: RecoveryStackUnverified
+        expr: >-
+          absent(club_arena_recovery_stack_last_verified_timestamp_seconds)
+          or time() - club_arena_recovery_stack_last_verified_timestamp_seconds > 172800
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Recovery stack has not been verified in over 48h"
+          description: >-
+            club-arena-verify.timer runs the read-only audit daily. Either it
+            stopped or the textfile collector is no longer publishing. The
+            recovery contract may be intact, but it is not currently verified.

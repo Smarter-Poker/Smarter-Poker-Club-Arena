@@ -125,7 +125,7 @@ describe('source maps go to Sentry, not to players', () => {
     // going back weeks. Deleting maps from the pool is safe in a way deleting
     // anything else from it is not: a player mid-hand asks for a hashed CHUNK,
     // never for its map, and a .map is fetched only by open devtools.
-    expect(publisher).toMatch(/find pool -type f -name '\*\.map' -delete/);
+    expect(publisher).toMatch(/find "\$ROOT\/pool" -type f -name '\*\.map' -delete/);
   });
 
   it('the runtime reports a broken build as broken, not as version one', () => {

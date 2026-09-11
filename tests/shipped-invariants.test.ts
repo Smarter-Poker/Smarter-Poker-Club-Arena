@@ -191,28 +191,16 @@ describe('shipped functionality is still here', () => {
     expect(job.includes(spec), `the CSS Beat E2E job no longer runs ${spec}`).toBe(true);
   });
 
-  /* GITHUB_TOKEN must never be the credential a merge is made with. A merge it
-     produces does not trigger downstream workflows, so the commit lands on main
-     and publish-club-arena.yml never fires: merged, never published, which
-     reads exactly like a regression. The `||` chain is the thing that keeps it
-     last, and 'simplifying' it is a one-character change with no visible
-     symptom, so pin the chain itself. */
-  it('Autopilot never reaches for GITHUB_TOKEN before a publishing token', () => {
+  /* A merge must use a freshly minted installation token. Long-lived PATs and
+     the workflow token are not fallback release authorities. */
+  it('Autopilot uses only the GitHub App installation token for merges', () => {
     const wf = readFileSync(root('.github/workflows/agent-autopilot.yml'), 'utf8');
     const uses = [...wf.matchAll(/GH_TOKEN:\s*\$\{\{([^}]*)\}\}/g)].map((m) => m[1]);
     expect(uses.length, 'no GH_TOKEN assignment found in agent-autopilot.yml').toBeGreaterThan(0);
     for (const expr of uses) {
-      const gt = expr.indexOf('secrets.GITHUB_TOKEN');
-      if (gt === -1) continue; // no fallback at all is fine
-      const pat = expr.indexOf('secrets.GH_PAT');
-      const app = expr.indexOf('steps.app-token.outputs.token');
-      expect(
-        pat >= 0 || app >= 0,
-        `GH_TOKEN: ${expr.trim()} — GITHUB_TOKEN with no publishing token ahead of it`
-      ).toBe(true);
-      if (pat >= 0) expect(pat, expr.trim()).toBeLessThan(gt);
-      if (app >= 0) expect(app, expr.trim()).toBeLessThan(gt);
+      expect(expr.trim()).toBe('steps.app-token.outputs.token');
     }
+    expect(wf).not.toMatch(/secrets\.(?:GH_PAT|GITHUB_TOKEN|AUTOFIX_GITHUB_TOKEN)/);
   });
 
   /* THE PUBLISH PATH. Every gate in this repo answers "did it merge"; these
@@ -310,15 +298,15 @@ describe('shipped functionality is still here', () => {
       ).toBe(true);
     });
 
-    it('something asks production what it is actually serving', () => {
+    it('a read-only audit asks production what it is actually serving', () => {
       // Without this, "merged" and "published" have the same green tick, and
       // three separate incidents here were merges that never published.
-      expect(existsSync(root('.github/workflows/publish-watchdog.yml'))).toBe(true);
+      expect(existsSync(root('.github/workflows/production-integrity-audit.yml'))).toBe(true);
       expect(
-        readFileSync(root('.github/scripts/publish-watchdog.sh'), 'utf8').includes(
+        readFileSync(root('.github/scripts/audit-publish-provenance.sh'), 'utf8').includes(
           'build-info.json'
         ),
-        'the watchdog no longer reads the deployed provenance file'
+        'the production audit no longer reads the deployed provenance file'
       ).toBe(true);
     });
   });
@@ -366,7 +354,7 @@ describe('shipped functionality is still here', () => {
   /* The guards can all be reverted, and nothing but this notices. Pinned on the
      file, not its contents: what matters is that SOMETHING still compares the
      seven repos to each other. */
-  it('something still watches the guards themselves', () => {
+  it('a read-only audit still checks the guards themselves', () => {
     expect(existsSync(root('.github/workflows/estate-integrity.yml'))).toBe(true);
     const sh = readFileSync(root('.github/scripts/estate-integrity.sh'), 'utf8');
     // The three questions it exists to answer. Losing any one of them turns it
@@ -377,6 +365,14 @@ describe('shipped functionality is still here', () => {
     expect(
       sh.includes('required_status_checks'),
       'no longer checks that required checks exist'
+    ).toBe(true);
+    expect(
+      sh.includes("FORBIDDEN_REQUIRED_CONTEXT='Stage B Release Freeze'"),
+      'no longer rejects the unauthorized synthetic release-freeze context'
+    ).toBe(true);
+    expect(
+      sh.includes('index($context) != null'),
+      'the forbidden-context declaration is no longer wired to every branch ruleset'
     ).toBe(true);
     expect(sh.includes('SHARED_FILES'), 'no longer compares the shared guards').toBe(true);
   });

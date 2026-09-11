@@ -38,16 +38,18 @@ credentials, or duplicated rules.
 
 ## Cron's Remaining Role
 
-Cron may perform housekeeping, periodic reporting, or a secondary reconciliation
-and recovery check. It must not be the sole progress mechanism for significant
-work. The primary path must work and recover when that cron job is absent.
+Cron is limited to product-time behavior, read-only observability/reporting, and
+bounded housekeeping such as retention pruning. It may not reconcile, heal,
+retry, backfill, re-drive, or recover a correctness or release operation. The
+owning event-driven transaction or always-running service must complete and
+recover significant work from its own durable record.
 
-This standard does not authorize deleting existing schedules before their
-replacement works. For each migration, identify the current writer, readers,
-delivery path, owner, and recovery path. Install and verify the replacement,
-prove duplicate safety during overlap, then retire or demote the old schedule
-through the normal release process. Preserve all existing accounting, privacy,
-authorization, and maintenance rules.
+An existing repair schedule is transitional debt, never target architecture.
+Identify its writer, readers, delivery path, owner, and root cause; ship and
+verify the owning hard fix; settle already-created damage through the product's
+idempotent path; then delete the schedule and its credentials through the normal
+release process. Preserve all accounting, privacy, authorization, and
+maintenance rules while the root fix is proved.
 
 ## Acceptance
 

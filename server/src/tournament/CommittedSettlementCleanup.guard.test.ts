@@ -26,9 +26,9 @@ const gameServer = code(read('src/GameServer.ts'));
 const managerBase = code(read('src/tournament/TournamentManagerBase.ts'));
 const migrationsDirectory = path.join(process.cwd(), '..', 'supabase/migrations');
 const stageBMigration = (suffix: string): string => {
-  const matches = fs.readdirSync(migrationsDirectory).filter(
-    (file) => file.endsWith(`_${suffix}.sql`) || file.endsWith(`_${suffix}.sql.pending`)
-  );
+  const matches = fs
+    .readdirSync(migrationsDirectory)
+    .filter((file) => file.endsWith(`_${suffix}.sql`) || file.endsWith(`_${suffix}.sql.pending`));
   if (matches.length !== 1) throw new Error(`Stage-B ${suffix} migration is ambiguous`);
   return fs.readFileSync(path.join(migrationsDirectory, matches[0]), 'utf8');
 };

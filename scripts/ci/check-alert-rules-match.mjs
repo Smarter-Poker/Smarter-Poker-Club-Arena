@@ -120,7 +120,16 @@ function metricsReferenced() {
 function ask(url) {
   const ssh = process.env.ENGINE_MONITORING_SSH;
   const args = ssh
-    ? [ssh, '-o', 'ConnectTimeout=15', '-o', 'StrictHostKeyChecking=accept-new', `curl -sf --max-time 20 '${url}'`]
+    ? [
+        '-o',
+        'ConnectTimeout=15',
+        '-o',
+        'BatchMode=yes',
+        '-o',
+        'StrictHostKeyChecking=yes',
+        ssh,
+        `curl -sf --max-time 20 '${url}'`,
+      ]
     : null;
   const raw = ssh
     ? execFileSync('ssh', args, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })

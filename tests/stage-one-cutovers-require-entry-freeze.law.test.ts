@@ -35,8 +35,7 @@ function sqlFor(file: string): string {
   const directory = resolve(root, 'supabase/migrations');
   if (file.endsWith('.sql')) return readFileSync(resolve(directory, file), 'utf8');
   const matches = readdirSync(directory).filter(
-    (candidate) =>
-      candidate.endsWith(`_${file}.sql`) || candidate.endsWith(`_${file}.sql.pending`)
+    (candidate) => candidate.endsWith(`_${file}.sql`) || candidate.endsWith(`_${file}.sql.pending`)
   );
   if (matches.length !== 1) {
     throw new Error(`expected exactly one ${file} migration, found ${matches.length}`);

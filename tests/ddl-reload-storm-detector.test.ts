@@ -227,10 +227,10 @@ describe('a dead logger is not a quiet platform', () => {
 });
 
 describe('the gate is actually wired to something', () => {
-  it('runs in the watchdog, which is its reader', async () => {
+  it('runs in the read-only production audit, which is its reader', async () => {
     const { readFileSync } = await import('fs');
     const wf = readFileSync(
-      resolve(__dirname, '..', '.github/workflows/publish-watchdog.yml'),
+      resolve(__dirname, '..', '.github/workflows/production-integrity-audit.yml'),
       'utf8'
     );
     expect(wf).toContain('scripts/ci/check-ddl-reload-storms.mjs');

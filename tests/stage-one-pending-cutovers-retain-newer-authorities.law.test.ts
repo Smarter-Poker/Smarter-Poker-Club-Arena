@@ -6,8 +6,7 @@ const migrations = resolve(__dirname, '..', 'supabase', 'migrations');
 const read = (file: string): string => {
   if (file.endsWith('.sql')) return readFileSync(resolve(migrations, file), 'utf8');
   const matches = readdirSync(migrations).filter(
-    (candidate) =>
-      candidate.endsWith(`_${file}.sql`) || candidate.endsWith(`_${file}.sql.pending`)
+    (candidate) => candidate.endsWith(`_${file}.sql`) || candidate.endsWith(`_${file}.sql.pending`)
   );
   if (matches.length !== 1) {
     throw new Error(`expected exactly one ${file} migration, found ${matches.length}`);
@@ -133,9 +132,7 @@ describe('pending stage-one cutovers retain newer installed authorities', () => 
     expect(seatExit).toContain(
       "('public.fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid)'::regprocedure,"
     );
-    expect(seatExit).toContain(
-      "'public.fn_settle_satellite_tournament_pre_money_path_gate('"
-    );
+    expect(seatExit).toContain("'public.fn_settle_satellite_tournament_pre_money_path_gate('");
     expect(seatExit).toContain('satellite seat-exit core lost its global-lane money core');
   });
 });

@@ -1,5 +1,11 @@
 # 2026-09-10 - Every engine deploy reaches the break, and green means shipped
 
+> **SUPERSEDED / HISTORICAL: DO NOT IMPLEMENT THIS RELEASE DESIGN.** This file
+> records an intermediate 110/130-minute GitHub-owned cutover and watchdog era.
+> The current authority is the exact-SHA staging event plus the durable Hetzner
+> host transaction. The watchdog dispatch, Actions-side hand-on, failed-run
+> retry, and cancellation recovery described below are retired.
+
 ## What Dan saw
 
 "Back to back to back errors on every deployment." Between 15:57 and 19:00 UTC

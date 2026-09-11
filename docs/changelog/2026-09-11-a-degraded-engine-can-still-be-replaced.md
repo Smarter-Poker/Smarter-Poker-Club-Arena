@@ -1,71 +1,22 @@
-# A degraded engine can still be replaced
+# A Degraded Engine Can Still Be Replaced
 
-2026-09-11 · deploy train (`.github/workflows/auto-deploy-hetzner.yml`)
+2026-09-11 · root-owned Hetzner engine release transaction
 
-## What happened
+## Problem
 
-At 06:58 UTC, after the thaw surge, the engine's equity worker pool went
-permanently `failed`. From then on `/health` reported `status: "degraded"`,
-and `server/src/handlers/health.ts` answers **503** for anything that is not
-routing-ready. It sends the same body with the 503. The handler's comment
-names the deploy verifier as the reader it keeps that body for.
+The engine health endpoint intentionally returns the same structured body with HTTP 503 when an optional subsystem makes the engine non-routing-ready. The former deploy workflow used `curl -f` while reading the maintenance certificate, which discarded that body. A degraded engine could therefore present a complete, durable restart certificate and still prevent the release intended to replace it.
 
-The deploy train read `/health` with `curl -sf`. `-f` turns any non-2xx
-answer into an empty string, so every read failed. Run 34571396262 carried
-#4249, #4255, #4256 and #4257. It polled its break gate 175 times and logged
-`/health unreadable` on every poll. At 07:55:08 a complete restart
-certificate went by unread: counting*down, durable, 0 unparked tables,
-290 s left. The run shipped nothing. The build that would have replaced the
-degraded engine could not ship \_because* the engine was degraded.
+## Durable Fix
 
-The host's locked re-check used the same `-f` under `set -e`, so fixing the
-runner side alone would still have refused the cutover.
+- `server/scripts/engine-release-transaction.sh` is the sole engine mutation owner.
+- Its maintenance-certificate reader accepts only HTTP 200 or 503 after a successful transfer, then validates every certificate predicate from the JSON body.
+- The certificate is checked before and again after the engine lock is acquired.
+- Transport failures, unexpected status codes, invalid JSON, false predicates, unparked tables, and insufficient recovery time all fail closed before mutation.
+- The already-sealed source and its rollback recovery accept only a fully transferred HTTP 200 or 503, then require exact SHA, running state, liveness, process identity, and local/public agreement. The transaction's pre-cutover rollback-readiness gate additionally requires an unchanged container generation and a fresh elected database leader. This lets a release replace the optional subsystem defect that made its source return 503 without treating an unknown or dead source as recoverable.
+- Every new candidate, pre-commit check, and final local/public check explicitly requires HTTP 200 plus the exact identity predicates. The independent publication check also remains routing-ready and fail-closed. A 503 source can be replaced; a 503 candidate can never be certified or reported shipped.
+- `.github/workflows/auto-deploy-hetzner.yml` delegates the transaction to the host and independently verifies the sealed exact-SHA result.
 
-Players were not affected. Caddy has a single upstream and no active health
-check, so it routes regardless of the 503.
+## Pinned By
 
-## The fix
-
-Two changes landed within minutes of each other and are reconciled here.
-
-#4267 (`read valid restart certificates from degraded engines`) fixed the
-two certificate reads: the runner's break gate and the host's locked
-re-check. Both now read the body of a 200 or 503 answer after a complete
-transfer, and anything else still fails closed. That form is kept as is.
-
-This change fixes the four remaining reads that ask what the engine is.
-Each one now reads the body whatever the HTTP code:
-
-| Step                                          | Read                                |
-| --------------------------------------------- | ----------------------------------- |
-| Skip if production already serves this commit | version                             |
-| Verify: the public hostname check             | version                             |
-| Commit the verified SHA/image-ID release seal | identity + liveness, under the lock |
-| Verdict                                       | version                             |
-
-The seal-commit re-check matters most. The Verify step has already required
-a routing-ready 200. A later 503, for example from a worker pool restarting
-under the thaw surge, must not refuse the seal and roll back a verified
-build.
-
-Two places keep `-f` on purpose, and each now says so:
-
-- the post-cutover **Verify** loop, because a new build is not verified
-  until it answers a routing-ready 200;
-- **ROLLBACK** recovery verification, for the same reason.
-
-## Pinned by
-
-`tests/a-degraded-engine-can-still-be-replaced.law.test.ts`:
-
-- The certificate and identity steps contain no `curl -f` read of `/health`.
-- Only the Verify and ROLLBACK steps keep `-f`.
-- The host re-check keeps its fail-closed order: `set -euo pipefail`, then
-  the read, then the marker.
-- The real drain-gate script is run against a loopback stub that answers 503
-  with a complete certificate. It must accept on the first poll. Against the
-  previous workflow it logs `unreadable` until it is killed. Verified: 8 of
-  the 10 cases fail on the old file.
-
-`tests/engine-recovery-healthcheck.law.test.ts` already pinned the same rule
-for the host supervisor, which had the same bug.
+- `tests/unit/engineReleaseMaintenanceCertificate.test.ts` executes the maintenance and source 200/503 matrices, the strict-200 identity boundary, and their transport, status, JSON, identity, and certificate failure classes.
+- `tests/a-degraded-engine-can-still-be-replaced.law.test.ts` pins transaction ownership, lock ordering, degraded source/rollback ownership, the executable transaction-to-prepare path, and the strict candidate/publication boundary.

@@ -22,9 +22,9 @@
  * The groups were copied into this file on 2026-09-05 so it is a SUPERSET of
  * what is live and a deploy can only ever add.
  *
- * THE PIN. Every group that was live on the box that day is named here. If
- * you remove one, you are removing an alert that is watching production right
- * now, and you must say so deliberately. Adding groups is always fine.
+ * THE PIN. Every group that was live on the box that day is named here except
+ * a deliberately retired group, which must be replaced by its root-owned
+ * successor in the same change. Adding groups is always fine.
  *
  * This does not, by itself, make the repo the source of truth - a reconciler
  * that compares /api/v1/rules against these files is Phase 7 of
@@ -52,7 +52,7 @@ const LIVE_ON_THE_BOX = [
   'spin-fairness',
   'spin-money',
   'spin-experience',
-  'club-arena-supervisor',
+  'club-arena-recovery',
   'tournament-health',
 ];
 

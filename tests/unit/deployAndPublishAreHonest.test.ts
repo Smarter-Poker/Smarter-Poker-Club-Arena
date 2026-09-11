@@ -1,701 +1,411 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- * A GREEN TICK MUST NOT MEAN "SHIPPED NOTHING"
- * ═══════════════════════════════════════════════════════════════════════════════
- *
- * On 2026-08-26 a merged engine fix was believed live for thirteen minutes.
- * `auto-deploy-hetzner.yml` had reported `completed/success` while deliberately
- * deploying nothing:
- *
- *   Engine restarted only 20s ago (< 1200s) and is healthy with 2 tables
- *   — coalescing.
- *
- * The coalescing is correct: a restart voids in-flight hands, so a merge train
- * must not restart the engine five times in an hour. What was wrong is that the
- * only way to learn a run had shipped nothing was to read the log of a run that
- * had not failed — and nobody reads the log of a green run.
- *
- * Two structural answers, both pinned here because both are one careless edit
- * from being undone:
- *
- *   THE SKIP IS VISIBLE. A step that runs ONLY on the skip paths, named so that
- *   `gh api .../jobs` cannot be misread, plus a warning annotation rather than
- *   a notice.
- *
- *   THE SKIP IS TEMPORARY. The catch-up schedule must fire at least as often as
- *   the coalescing window, or a commit that defers at minute 18 waits for the
- *   next hour despite becoming eligible at minute 38.
- *
- * 2026-09-10: both the coalescing skip and the catch-up schedule are gone. The
- * :55 break gate is the spacing, every engine push starts its own run, and a
- * run that cannot ship hands the train on itself. What survives from above is
- * the first answer - a run that shipped nothing says so where it is seen -
- * and the Verdict step now makes such a run RED.
- */
-
-import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { sliceYamlBlock, sliceYamlEntry } from '../helpers/sourceWindow';
-import { sliceBetween } from '../helpers/sourceWindow';
+import { describe, expect, it } from 'vitest';
 
-const wf = (n: string) => readFileSync(resolve(__dirname, `../../.github/workflows/${n}`), 'utf8');
-
-const HETZNER = wf('auto-deploy-hetzner.yml');
-const SYNC = wf('publish-club-arena.yml');
-
-/** Reads the every-N-minutes cron cadence out of a workflow. */
-function cronEveryMinutes(yaml: string): number | null {
-  const m = yaml.match(/cron:\s*'\*\/(\d+) \* \* \* \*'/);
-  return m ? Number(m[1]) : null;
-}
-
-describe('the engine deploy tells the truth when it skips', () => {
-  it('has a step that exists only to be seen on the skip path', () => {
-    expect(HETZNER).toMatch(/name: 'DID NOT DEPLOY — this run shipped nothing'/);
-    // It must be conditional on the skip paths, or it is just noise on a
-    // successful deploy.
-    /* EVERY skip path, named explicitly. 2026-08-31: the restart-window gate
-       shipped without being listed here or in the REASON below it, so a run
-       blocked by the window reported "coalescing - the engine restarted too
-       recently" while the engine had been up 45 minutes. A wrong reason costs
-       more than no reason: it is confidently wrong, and it is the first line
-       anybody reads.
-
-       THERE ARE TWO GATES NOW, NOT THREE (2026-09-05). `steps.window` was
-       deleted when Dan moved the restart to the hourly :55 maintenance break -
-       CLAUDE.md section 13, dated ONE DAY after the 2026-08-31 instruction this
-       file quotes below, and it says in terms: "If you read anything - in this
-       repo, another repo, or a stale worktree - saying the engine restarts at
-       7am and 7pm ... that text is OLD. This section wins."
-
-       This assertion was that text. It REQUIRED a branch on a step that no
-       longer exists, and a missing step's output is the empty string, never
-       'false' - so the branch it demanded was unreachable even while it was
-       present. Keeping it would have done what section 13 was written about:
-       sent the next agent to restore a gate Dan deleted, in order to make a
-       test pass. */
-    expect(HETZNER).toMatch(
-      /if: steps\.dedupe\.outputs\.skip == 'true' \|\| steps\.drain\.outputs\.skip == 'true'/
-    );
-  });
-
-  it('annotates a run that shipped nothing as a WARNING, and has no spacing skip left', () => {
-    // A notice does not surface on a green run. A warning does.
-    expect(HETZNER).toMatch(/::warning title=DID NOT DEPLOY::/);
-    expect(HETZNER).not.toMatch(/::notice::Engine restarted only/);
-    // 2026-09-10: the 20-minute restart-coalescing skip is GONE. Every restart
-    // happens inside the :55 break gate, one run at a time, so the break is
-    // the spacing - and with no cron left, a coalesced run would strand the
-    // very commit it was asked to ship, because nothing comes back for it.
-    const runnable = HETZNER.split('\n')
-      .filter((l) => !/^\s*#/.test(l))
-      .join('\n');
-    expect(runnable).not.toMatch(/MIN_RESTART_SPACING_SEC/);
-    expect(runnable).not.toMatch(/reason=coalesced/);
-    expect(runnable).not.toMatch(/::warning title=NOT DEPLOYED::/);
-  });
-
-  /**
-   * 2026-08-31, Dan, binding: "STOP THE ENGINE FROM RESTARTING. IT SHOULD ONLY
-   * BE RESTARTING AT 7AM AND 7PM FROM NOW ON."
-   *
-   * This replaces the old cadence pin, which asserted that an every-20-minutes
-   * catch-up came round at least as often as the coalescing window. There is no
-   * catch-up any more and no merge-triggered restart at all: the engine
-   * restarts on a schedule, and merged engine code waits for the next window.
-   */
-  /**
-   * THE REASON MUST NAME THE GATE THAT ACTUALLY HELD.
-   *
-   * The window gate makes the dedupe step set skip=true, so before this pin
-   * the REASON fell through to the coalescing branch and a run blocked by the
-   * time of day announced a spacing problem that did not exist. Whoever reads
-   * that goes and investigates a gate that is working correctly.
-   */
-  it('reports the gate that actually held, and never the deleted window', () => {
-    expect(HETZNER, 'the reason block exists').toContain('REASON="already serving this commit"');
-    /* Bounded by the STRUCTURE - the if/elif chain, from its first assignment
-       to the `fi` that closes it - not by a byte count. One more elif branch
-       would outrun any magic number here, and the pin would then either go red
-       for no reason or, worse, stay green while watching nothing. */
-    const block = sliceBetween(HETZNER, 'REASON="already serving this commit"', '\n          fi');
-
-    // The break gate is the one that holds a run now, and it hands its OWN
-    // reason up rather than being guessed at from the outside. Run
-    // 33991470437 is why: the step warning said hands were in flight, the
-    // summary said the break never opened, and the truth was that the run had
-    // refused to WAIT for a break that had not started. Three answers, one
-    // run, and the loudest was the only false one.
-    const drainAt = block.indexOf('steps.drain.outputs.skip');
-    const gateReasonAt = block.indexOf('gate_reason');
-    const supersededAt = block.indexOf('superseded');
-    expect(drainAt, 'the break gate is one of the reasons').toBeGreaterThan(-1);
-    expect(gateReasonAt, 'and it supplies its own reason').toBeGreaterThan(-1);
-    expect(supersededAt, 'superseded is a reason').toBeGreaterThan(-1);
-    expect(drainAt, 'the gate that held is read FIRST').toBeLessThan(supersededAt);
-    // The spacing skip was deleted on 2026-09-10; a reason that names it
-    // would send the reader to investigate a gate that no longer exists.
-    expect(block, 'coalescing is not a reason any more').not.toContain('coalescing');
-
-    // NEGATIVE, and this is the half that matters. CLAUDE.md section 13 says
-    // the 7am/7pm text is old and must not come back; a stale sentence sitting
-    // in the repo is what re-teaches it. So the workflow must not mention the
-    // deleted step or the window it belonged to, anywhere outside a comment.
-    const code = HETZNER.split('\n')
-      .filter((line) => !/^\s*#/.test(line))
-      .join('\n');
-    expect(code, 'steps.window was deleted with the restart window').not.toMatch(
-      /steps\.window\.outputs/
-    );
-    expect(code, 'the 7am/7pm Chicago window is not how restarts work').not.toMatch(
-      /7am\/7pm|America\/Chicago restart window/
-    );
-
-    // A skipped run must not advertise an unsafe escape hatch. Dispatching
-    // still stages immediately, but only a fresh maintenance certificate may
-    // authorize the stop/start transition.
-    const step = sliceYamlEntry(HETZNER, "name: 'DID NOT DEPLOY");
-    expect(step).not.toMatch(/force=true|voids in-flight hands/);
-    expect(step).toMatch(/readyForRestart certificate/);
-  });
-
-  /**
-   * THE BREAK GATE HAS TWO ANSWERS AND THE SUMMARY MUST NOT PICK ONE BY HAND.
-   *
-   * `steps.drain` was a hands-in-flight drain gate once; it has not had a
-   * hands-in-flight skip path since the maintenance break landed. Its two
-   * skips are "the break never opened" and "the next break is beyond this
-   * run's budget", and on 2026-09-05 run 33991470437 was held by the second
-   * while the summary announced "drain gate - hands are still in flight" and
-   * the database, three steps later, recorded a third story. A wrong reason
-   * costs more than no reason (see the pin above): it is confidently wrong and
-   * it is the first thing anybody reads.
-   *
-   * So the step exports `gate_reason` on BOTH skip paths, and the two places
-   * that report read it rather than guessing.
-   */
-  it('the break gate says which half of it held, in the summary and in the database', () => {
-    const step = sliceYamlBlock(
-      HETZNER,
-      '      - name: Wait for the maintenance break to park every table'
-    );
-    const skips = step.match(/echo "skip=true" >> \$GITHUB_OUTPUT/g) ?? [];
-    const reasons = step.match(/echo "gate_reason=/g) ?? [];
-    expect(skips.length, 'the break gate has skip paths').toBeGreaterThan(0);
-    expect(reasons.length, 'every skip path names itself').toBe(skips.length);
-    // Neither reporter may hard-code one of the two answers.
-    const block = sliceBetween(HETZNER, 'REASON="already serving this commit"', '\n          fi');
-    expect(block).toContain('steps.drain.outputs.gate_reason');
-    expect(block, 'the retired hands-in-flight wording is gone').not.toContain(
-      'hands are still in flight'
-    );
-    const truth = sliceYamlBlock(HETZNER, '          REASON: >-');
-    expect(truth).toContain('steps.drain.outputs.gate_reason');
-  });
-
-  /**
-   * 2026-09-10, Dan: "i do not want any watch dogs, i want hard coded fixes
-   * that solve this problem and prevent it from breaking or regressing, i want
-   * any and all pushes to be published in the order that they come in!"
-   *
-   * This test used to pin the opposite - "never restarts on a merge - there is
-   * no push trigger" - from the 2026-08-31 rule, when a merge RESTARTED
-   * production (263 times in one week). What that rule protects still holds,
-   * and is pinned below: a merge starts a run, and the run restarts nothing
-   * until the break gate has a fresh certificate.
-   */
-  it('every engine push starts its own run, and nothing in that run restarts outside the break', () => {
-    const triggers = HETZNER.slice(HETZNER.indexOf('\non:'), HETZNER.indexOf('\nconcurrency:'));
-    const push = sliceYamlBlock(triggers, '  push:');
-    expect(push).toMatch(/branches: \[main\]/);
-    // The engine's runtime paths, the same set engine-watchdog.sh measures
-    // "behind" against: a test or a sim change never enters the image.
-    expect(push).toContain("- 'server/**'");
-    expect(push).toContain("- '!server/**/*.test.ts'");
-    expect(push).toContain("- '!server/sim/**'");
-    expect(triggers).toMatch(/^\s{2}workflow_dispatch:/m);
-    // The one queue: one run in flight, the newest push pending behind it.
-    expect(HETZNER).toMatch(
-      /concurrency:\s*\n\s*group: deploy-hetzner\s*\n\s*cancel-in-progress: false/
-    );
-    // And the restart is behind the break gate whatever started the run.
-    const cutover = sliceYamlEntry(HETZNER, 'name: Cut over to the new image');
-    expect(cutover).toMatch(
-      /if: steps\.dedupe\.outputs\.skip != 'true' && steps\.drain\.outputs\.skip != 'true'/
-    );
-  });
-
-  it('has no cron and needs no watchdog: the train hands itself on', () => {
-    /**
-     * The `35 * * * *` tick was the only scheduled start, and GitHub delivered
-     * 3 of ~19 of them on 2026-09-10; engine-watchdog.sh and schedule-liveness
-     * dispatched the rest, at whatever minute they ran. Both were band-aids on
-     * a trigger that did not work, and Dan asked for neither. The start is now
-     * the push itself, and the two ways a started train could stall hand on
-     * from inside the run.
-     */
-    const triggers = HETZNER.slice(HETZNER.indexOf('\non:'), HETZNER.indexOf('\nconcurrency:'));
-    expect(triggers).not.toMatch(/^\s{2}schedule:/m);
-    expect(HETZNER).not.toMatch(/^\s*- cron:/m);
-
-    // 1. A run that main superseded dispatches current main before it goes,
-    //    because the commits that moved main may have started no run.
-    const stage = sliceYamlEntry(HETZNER, 'name: Stage the current release proof control');
-    expect(stage).toMatch(
-      /echo "superseded=true" >> "\$GITHUB_OUTPUT"\s*\n\s*if gh workflow run auto-deploy-hetzner\.yml --repo "\$GITHUB_REPOSITORY" --ref main; then/
-    );
-    // 2. A run its break gate could not serve dispatches its successor -
-    //    and ONLY those: a failed test, build or cutover never retries itself.
-    //    A deliberate lease deferral hands on too: its commit still has to ship.
-    const verdict = sliceYamlEntry(HETZNER, "name: 'Verdict");
-    expect(verdict).toMatch(
-      /elif gh workflow run auto-deploy-hetzner\.yml --repo "\$GITHUB_REPOSITORY" --ref main \\\s*\n\s*-f retries="\$\{1:-0\}"; then/
-    );
-    // (2026-09-11) A rollback hands on as the SAME rollback, never as a plain
-    // forward run of main: that silently dropped the owner's decision.
-    expect(verdict).toMatch(
-      /hand_on\(\) \{\s*\n\s*if \[ "\$ROLLBACK_REQUESTED" = "true" \]; then\s*\n\s*if gh workflow run auto-deploy-hetzner\.yml --repo "\$GITHUB_REPOSITORY" --ref main \\\s*\n\s*-f ref_sha="\$SHA" -f rollback=true -f rollback_reason="\$ROLLBACK_REASON" \\/
-    );
-    expect(verdict).toMatch(
-      /ROLLBACK_REQUESTED: \$\{\{ github\.event\.inputs\.rollback \|\| 'false' \}\}/
-    );
-    expect(verdict).toMatch(
-      /"\$GATE_KIND" = "staged_deferred" \] \|\| \[ "\$GATE_KIND" = "no_certificate" \]; \}; then\s*\n\s*hand_on/
-    );
-    expect(verdict).toMatch(
-      /"\$GATE_KIND" = "lease_held_elsewhere" \]; then[\s\S]{0,300}?hand_on 0 \|\| exit 1\s*\n\s*exit 0/
-    );
-    // 3. (2026-09-11) A run that never touched production heals itself: a
-    //    cancel or a failure hands on while fewer than DEPLOY_RETRY_LIMIT runs
-    //    IN A ROW ended before their cutover. The count rides the chain as the
-    //    `retries` input (a per-commit count reset on every merge and never saw
-    //    cancels), and an unreadable count stops the train. A cutover step
-    //    that REFUSED before its mutation marker never touched production and
-    //    counts as "before". A run whose cutover RAN never hands on - that
-    //    would restart production into a broken build every hour.
-    const failed = sliceBetween(
-      verdict,
-      'if [ "$JOB_STATUS" != "success" ]; then',
-      '\n          fi\n          if [ "$SHIPPED"'
-    );
-    expect(failed).toMatch(
-      /if \[ -z "\$CUTOVER_OUTCOME" \] \|\| \[ "\$CUTOVER_OUTCOME" = "skipped" \] \\\s*\n\s*\|\| \{ \[ "\$CUTOVER_OUTCOME" = "failure" \] && \[ "\$CUTOVER_ATTEMPTED" != "true" \]; \}; then/
-    );
-    expect(verdict).toMatch(/CUTOVER_ATTEMPTED: \$\{\{ steps\.cutover\.outputs\.attempted \}\}/);
-    expect(failed).toMatch(
-      /if \[ "\$PRIOR_RETRIES" -lt "\$DEPLOY_RETRY_LIMIT" \]; then[\s\S]{0,300}?hand_on \$\(\(PRIOR_RETRIES \+ 1\)\) \|\| true/
-    );
-    expect(verdict).toMatch(/PRIOR_RETRIES: \$\{\{ github\.event\.inputs\.retries \|\| '0' \}\}/);
-    // No per-commit count and no unbounded cancel path survive.
-    expect(failed).not.toMatch(/--commit "\$SHA" --status failure/);
-    expect(failed).not.toMatch(/FAILED_BEFORE/);
-    expect(failed).toMatch(/::error title=GAVE UP ON/);
-    // The input exists, so a hand-on's -f retries= is accepted.
-    const inputs = HETZNER.slice(
-      HETZNER.indexOf('  workflow_dispatch:'),
-      HETZNER.indexOf('\nconcurrency:')
-    );
-    expect(inputs).toMatch(/\n {6}retries:\n/);
-    expect(failed, 'an unreadable count stops, never loops').toMatch(
-      /''\|\*\[!0-9\]\*\)[\s\S]{0,400}?::error title=TRAIN STOPPED::/
-    );
-    expect(verdict).toMatch(/CUTOVER_OUTCOME: \$\{\{ steps\.cutover\.outcome \}\}/);
-    expect(Number(verdict.match(/DEPLOY_RETRY_LIMIT: '(\d+)'/)![1])).toBeGreaterThan(0);
-    // Every hand-on in the failed/cancelled branch sits inside the
-    // "production was never touched" guard.
-    const guardAt = failed.indexOf('if [ -z "$CUTOVER_OUTCOME" ]');
-    const retryAt = [...failed.matchAll(/hand_on [^\n]*\|\| true/g)].map((m) => m.index!);
-    expect(retryAt.length).toBe(1);
-    for (const at of retryAt) {
-      expect(at).toBeGreaterThan(guardAt);
-    }
-    // All four hand-on sites, and no others: lease deferral, gate decline and
-    // a newer engine commit on main after this one shipped (all reset the
-    // chain with 0), and the bounded before-cutover retry.
-    const calls = verdict.split('\n').filter((l) => /^\s*hand_on\b(?!\(\))/.test(l));
-    expect(calls.length).toBe(4);
-    expect(calls.filter((l) => /hand_on 0 /.test(l)).length).toBe(3);
-    // A newer engine commit is never left without a run (review, 2026-09-11):
-    // the control step checks the engine paths instead of assuming.
-    expect(stage).toMatch(
-      /if ! git diff --quiet "\$CONTROL_SHA" "\$REMOTE_MAIN" -- server \\\s*\n\s*':\(exclude\)server\/\*\*\/\*\.test\.ts' ':\(exclude\)server\/sim'; then\s*\n\s*echo "main_ahead=true" >> "\$GITHUB_OUTPUT"/
-    );
-    expect(verdict).toMatch(/MAIN_AHEAD: \$\{\{ steps\.control\.outputs\.main_ahead \}\}/);
-    expect(verdict).toMatch(
-      /if \[ "\$MAIN_AHEAD" = "true" \] && \[ "\$DEDUPE_REASON" != "superseded" \]; then\s*\n\s*hand_on 0 \|\| true/
-    );
-    expect(verdict).toMatch(/GH_TOKEN: \$\{\{ github\.token \}\}/);
-    // A hand-on that could not be made is red, never silent.
-    expect(stage).toMatch(/::error title=TRAIN STOPPED::/);
-    expect(verdict).toMatch(/::error title=TRAIN STOPPED::/);
-    // The token may dispatch, and is named in full.
-    const job = sliceYamlBlock(HETZNER, '    permissions:');
-    expect(job).toMatch(/actions: write/);
-    expect(job).toMatch(/contents: read/);
-  });
-
-  it('a rollback the queue dropped is dispatched again, and goes first (2026-09-11)', () => {
-    // The group keeps one pending run and GitHub cancels it when a newer run
-    // is queued, so a rollback waiting behind a deploy was replaced by the
-    // next engine push and ran no step. Rollbacks are named for what they are,
-    // and a forward run that finds the newest one cancelled before it started
-    // - at the moment a newer run was queued - dispatches it again and stands
-    // down.
-    const runName = HETZNER.slice(HETZNER.indexOf('\nrun-name:'), HETZNER.indexOf('\non:'));
-    expect(runName).toMatch(
-      /github\.event_name == 'workflow_dispatch' && github\.event\.inputs\.rollback == 'true'[\s\S]*format\('ROLLBACK \{0\} \{1\}', github\.event\.inputs\.ref_sha, github\.event\.inputs\.rollback_reason\)[\s\S]*\|\| ''/
-    );
-    const control = sliceYamlEntry(HETZNER, 'name: Stage the current release proof control');
-    const block = control.slice(control.indexOf('A ROLLBACK IS NEVER LOST IN THE QUEUE'));
-    expect(block).toContain(
-      `if [ "\${{ github.event.inputs.rollback || 'false' }}" != "true" ]; then`
-    );
-    expect(block).toContain('select(.displayTitle | startswith("ROLLBACK "))');
-    expect(block).toContain('$r.status != "completed" or $r.conclusion != "cancelled"');
-    expect(block).toMatch(/> 10800 then empty/);
-    // A person's cancel is not a queue replacement: a newer run must have been
-    // queued at the moment the rollback was cancelled.
-    expect(block).toMatch(/\(\(\$r\.updatedAt \| fromdateiso8601\) - 20\)/);
-    // It never started a step.
-    expect(block).toMatch(/actions\/runs\/\$LOST_ID\/jobs/);
-    expect(block).toContain('if [ "$STARTED" = "0" ]; then');
-    // Same rollback, same reason; this run stands down; a failed re-dispatch
-    // stops the run instead of deploying forward over the rollback.
-    expect(block).toContain(
-      '-f ref_sha="$LOST_SHA" -f rollback=true -f rollback_reason="$LOST_REASON"'
-    );
-    expect(block).toMatch(/echo "superseded=true" >> "\$GITHUB_OUTPUT"[\s\S]{0,400}?exit 0/);
-    expect(block).toMatch(/::error title=ROLLBACK LOST::[\s\S]{0,400}?exit 1/);
-    expect(control.indexOf('A ROLLBACK IS NEVER LOST IN THE QUEUE')).toBeLessThan(
-      control.indexOf('CONTROL_DIR="$GITHUB_WORKSPACE/.engine-release-control"')
-    );
-  });
-
-  it('a hang fails its step in minutes; nothing from the cutover on can be killed half-way (2026-09-11)', () => {
-    // A hang used to end only at the 130-minute job timeout, which GitHub
-    // reports as a CANCEL - and a cancel handed the train on unconditionally,
-    // so a deterministic hang looped every 130 minutes, forever.
-    const timeout = (name: string) =>
-      sliceYamlEntry(HETZNER, `name: ${name}`).match(/\n\s+timeout-minutes: (\d+)\n/)?.[1];
-    for (const [name, most] of [
-      ['Server tests must pass before anything is deployed', 30],
-      ['Capture pre-deploy host state', 10],
-      ['Pre-flight checks', 10],
-      ['Pull the exact commit onto the host', 15],
-      ['Build immutable image (or adopt the one already staged)', 45],
-    ] as const) {
-      expect(Number(timeout(name)), name).toBeGreaterThan(0);
-      expect(Number(timeout(name)), name).toBeLessThanOrEqual(most);
-    }
-    for (const name of [
-      'Exactly one engine may answer for this host',
-      'Install/refresh host supervisor',
-      'Wait for the maintenance break to park every table',
-      'Prepare one-use sealed cutover authority',
-      'Cut over to the new image',
-      "'PROVE the version moved: the engine wrote the new build, not just answered with it'",
-      'ROLLBACK — restore the last known-good image',
-      'Revoke unused authority and GUARANTEE the sealed engine',
-    ]) {
-      expect(timeout(name), `${name} must never be killed half-way`).toBeUndefined();
-    }
-    // A connection that died mid-command fails in about a minute.
-    const ssh = sliceYamlEntry(HETZNER, 'name: Setup SSH key');
-    expect(ssh).toMatch(/-o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4/);
-  });
-
-  it('has no timezone left to get wrong', () => {
-    // The Chicago window gate was deleted with the five-window schedule. It
-    // existed only to turn ten UTC cron hours into five local ones, which is
-    // a DST bug waiting for the two days a year the clocks move. Every hour
-    // is a window now, so there is nothing to convert.
-    //
-    // Asserted on the RUNNABLE lines, not on the appearance of the strings:
-    // the comment that removed the gate names it in order to explain what
-    // changed, and a test that forbids naming the bug forbids documenting it.
-    // (Same reasoning as drainProtectsEveryHand's humansSeatedTotal check.)
-    const runnable = HETZNER.split('\n')
-      .filter((l) => !/^\s*#/.test(l))
-      .join('\n');
-    expect(runnable).not.toMatch(/HOUR=\$\(TZ=America\/Chicago/);
-    expect(runnable).not.toMatch(/case "\$HOUR" in/);
-    expect(runnable).not.toMatch(/::warning title=OUTSIDE THE RESTART WINDOW::/);
-  });
-
-  it('has no force path around the maintenance certificate', () => {
-    const gate = HETZNER.slice(
-      HETZNER.indexOf('Wait for the maintenance break'),
-      HETZNER.indexOf('Cut over to the new image')
-    );
-    expect(HETZNER).not.toMatch(/github\.event\.inputs\.force|force=true/);
-    expect(gate).not.toMatch(/skipping the break gate/);
-  });
-
-  it('waits for the announced break instead of racing the hands', () => {
-    /**
-     * REPLACED THE DRAIN RACE (Dan 2026-09-01). This test used to pin the
-     * opposite behaviour - "inside a window the deploy proceeds regardless" -
-     * because the old gate polled for a moment when no table was mid-hand and
-     * a fleet dealing ~290 hands a minute never reports one. The only path
-     * that ever actually deployed was a 45-minute staleness cap that restarted
-     * straight through live play.
-     *
-     * The engine now DECLARES a stop rather than the workflow hunting for one:
-     * every table is parked between hands at :55 and `readyForRestart` opens.
-     * That is not a snapshot that can go stale between the read and the
-     * SIGTERM - the platform is held still, on purpose, for five minutes.
-     */
-    const gate = HETZNER.slice(
-      HETZNER.indexOf('Wait for the maintenance break'),
-      HETZNER.indexOf('Cut over to the new image')
-    );
-    expect(gate).toMatch(/maintenance/);
-    expect(gate).toMatch(/readyForRestart/);
-    // The old "a scheduled window means proceed anyway" escape must be gone,
-    // or the break is decorative and the restart still lands on live tables.
-    expect(gate).not.toMatch(/event_name \}\}" = "schedule"/);
-    // Fails CLOSED: a break that never opens defers the deploy rather than
-    // restarting outside it. A missed window costs six hours of slightly
-    // older code; restarting outside the break costs somebody's hand.
-    expect(gate).toMatch(/BREAK NEVER OPENED/);
-    expect(gate).toMatch(/skip=true/);
-  });
-
-  it('does not treat a legacy health payload as restart authority', () => {
-    const gate = HETZNER.slice(
-      HETZNER.indexOf('Wait for the maintenance break'),
-      HETZNER.indexOf('Cut over to the new image')
-    );
-    expect(gate).not.toMatch(/LEGACY ENGINE|LEGACY=yes/);
-    expect(gate).toMatch(/Missing\/legacy\/straggler states are/);
-  });
-
-  it('treats a push and a dispatch the same: no event may skip or bypass anything', () => {
-    // The spacing gate's "!= workflow_dispatch" bypass went with the gate.
-    // What is left must not branch on who started the run, except for the
-    // audited rollback, which exists only on a dispatch.
-    const runnable = HETZNER.split('\n')
-      .filter((l) => !/^\s*#/.test(l))
-      .join('\n');
-    expect(runnable).not.toContain('!= "workflow_dispatch"');
-    expect(runnable).not.toMatch(/github\.event_name \}\}" != /);
-  });
-});
-
-describe('a green engine deploy means production serves the commit (2026-09-10)', () => {
-  /**
-   * The skip was visible, and it was still green. On 2026-09-10 five runs in
-   * one afternoon ended "IMAGE STAGED, CUTOVER DEFERRED" or "BREAK NEVER
-   * OPENED", every one GREEN, while production crash-looped on 7732b971 with
-   * the fix merged. Only ca_engine_deploy_attempts said shipped=false, and
-   * nobody reads a ledger when the Actions tab is green. The colour now carries
-   * the outcome, decided once, at the very end, from the ledger's own
-   * expression.
-   */
-  const code = HETZNER.split('\n')
+const read = (path: string) => readFileSync(resolve(__dirname, '../..', path), 'utf8');
+const uncommented = (source: string) =>
+  source
+    .split('\n')
     .filter((line) => !/^\s*#/.test(line))
     .join('\n');
-  const verdictAt = code.indexOf("- name: 'Verdict");
-  const verdict = code.slice(verdictAt);
-  const shippedOf = (hay: string) => {
-    const m = hay.match(/^\s*SHIPPED: (\$\{\{.*\}\})\s*$/m);
-    expect(m, 'a SHIPPED expression was not found').toBeTruthy();
-    return m![1];
-  };
+const job = (yaml: string, name: string) => {
+  const start = yaml.indexOf(`  ${name}:`);
+  expect(start, `missing job ${name}`).toBeGreaterThan(-1);
+  const rest = yaml.slice(start + `  ${name}:`.length);
+  const next = /^ {2}[A-Za-z0-9_-]+:\s*$/m.exec(rest);
+  return yaml.slice(start, next ? start + `  ${name}:`.length + next.index : undefined);
+};
 
-  it('the verdict is the last step of the job and always runs', () => {
-    expect(verdictAt, 'the Verdict step is missing').toBeGreaterThan(-1);
-    expect(verdict.slice(1), 'no step may run after the verdict').not.toMatch(/\n\s*- name:/);
-    expect(verdict).toMatch(/if: always\(\)/);
+const deploy = read('.github/workflows/auto-deploy-hetzner.yml');
+const publish = read('.github/workflows/publish-club-arena.yml');
+const publishCode = uncommented(publish);
+const buildProvenance = read('scripts/stamp-build-provenance.mjs');
+
+describe('engine deployment reports what actually happened', () => {
+  it('calls a release shipped only after the durable transaction and independent proof agree', () => {
+    expect(deploy).toContain('[ "$UNIT_RESULT" = success ] && [ "$RESULT_SHA" = "$SHA" ]');
+    expect(deploy).toContain('case "$RESULT" in sealed|already-released)');
+    expect(deploy).toMatch(
+      /shipped: .*steps\.release\.outputs\.result == 'sealed'.*steps\.verify\.outputs\.verified == 'true'/
+    );
+    expect(deploy).toContain("steps.release.outputs.result || 'not completed'");
+    expect(deploy).toContain("steps.verify.outputs.verified || 'false'");
+    expect(deploy).toContain("STRICT_RECEIPT: '1'");
   });
 
-  it('it decides from the SAME shipped expression the ledger records', () => {
-    const ledger = code.slice(
-      code.indexOf('- name: Record deploy truth in the database'),
-      code.indexOf('- name: Cleanup SSH key')
-    );
-    expect(shippedOf(verdict)).toBe(shippedOf(ledger));
+  it('keeps npm verification on a separate runner from root SSH release authority', () => {
+    const preflight = uncommented(job(deploy, 'preflight'));
+    const doors = uncommented(job(deploy, 'engine-doors'));
+    const release = uncommented(job(deploy, 'deploy'));
+    const receipt = uncommented(job(deploy, 'record-receipt'));
+
+    // A GitHub job is the runner isolation boundary: server dependency scripts
+    // and tests finish in preflight before the root-authorized job can start.
+    expect(preflight).toMatch(/^ {2}preflight:/);
+    expect(preflight).toMatch(/^ {4}runs-on: ubuntu-latest$/m);
+    expect(preflight).toMatch(/^ {8}working-directory: server$/m);
+    expect(preflight).toMatch(/^\s+npm ci --no-audit --no-fund\s*$/m);
+    expect(preflight).toMatch(/^\s+npm run build\s*$/m);
+    expect(preflight).toMatch(/^\s+npm test\s*$/m);
+    expect(preflight).not.toMatch(/\$\{\{[^}\n]*\bsecrets\b[^}\n]*\}\}/);
+    expect(preflight).not.toContain('SSH_USER: root');
+
+    expect(doors).toMatch(/^ {2}engine-doors:/);
+    expect(doors).toMatch(/^ {4}needs: preflight$/m);
+    expect(doors).toContain('DATABASE_URL: ${{ secrets.DATABASE_URL }}');
+    expect(doors).toContain('node scripts/ci/check-engine-doors-exist.mjs');
+    expect(doors).not.toMatch(/secrets\.HETZNER_|\bSSH_(?:USER|KEY|DIR)\b|\bHSSH\b/);
+
+    expect(release).toMatch(/^ {2}deploy:/);
+    expect(release).toMatch(/^ {4}needs: \[preflight, engine-doors\]$/m);
+    expect(release).toMatch(/^ {4}runs-on: ubuntu-latest$/m);
+    expect(release).toMatch(/^ {6}SHA: \$\{\{ needs\.preflight\.outputs\.target_sha \}\}$/m);
+    expect(release).toMatch(/^ {6}SSH_USER: root$/m);
+    expect(release).toContain('SSH_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}');
+    expect(release).toContain('HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}');
+    expect(release).not.toMatch(/^\s*(?:npm|npx|pnpm|yarn)\b/m);
+    expect(release).not.toContain('actions/setup-node@');
+
+    expect(receipt).toMatch(/^ {2}record-receipt:/);
+    expect(receipt).toMatch(/^ {4}needs: \[preflight, deploy\]$/m);
+    expect(receipt).toMatch(/^ {4}runs-on: ubuntu-latest$/m);
+    expect(receipt).toContain('DATABASE_URL: ${{ secrets.DATABASE_URL }}');
+    expect(receipt).toContain('node scripts/ci/record-engine-deploy-attempt.mjs');
+    expect(receipt).not.toMatch(/secrets\.HETZNER_|\bSSH_(?:USER|KEY|DIR)\b|\bHSSH\b/);
   });
 
-  it('a run the break gate declined is red; already-live and superseded are green', () => {
-    const script = verdict.slice(verdict.indexOf('run: |'));
-    // Shipped, and the deliberate stand-downs (already serving, superseded and
-    // handed on) -> exit 0 before anything else is considered. (2026-09-11:
-    // one branch, so both can give a newer engine commit its run - MAIN_AHEAD.)
-    expect(script).toMatch(
-      /if \[ "\$SHIPPED" = "true" \] \|\| \[ "\$DEDUPE_SKIP" = "true" \]; then[\s\S]{0,1200}?exit 0/
-    );
-    // Everything else that reaches the end of a green job shipped nothing and
-    // should have: that is a failure, and it says so in an error annotation.
-    const tail = script.slice(script.lastIndexOf('::error title=DID NOT SHIP::'));
-    expect(tail).toMatch(/^::error title=DID NOT SHIP::/);
-    expect(tail.trim().endsWith('exit 1')).toBe(true);
-    // Handing the train on happens on the way to red; it never turns it green.
-    expect(tail).not.toMatch(/exit 0/);
-    // An earlier failure is already red; the verdict never double-reports it
-    // and never turns a red run green.
-    const failedBranch = sliceBetween(
-      script,
-      'if [ "$JOB_STATUS" != "success" ]; then',
-      '\n          fi\n          if [ "$SHIPPED"'
-    );
-    expect(failedBranch.trim().endsWith('exit 0')).toBe(true);
-    expect(failedBranch, 'the verdict never turns a failed run red twice or green').not.toMatch(
-      /exit 1/
-    );
-    expect(verdict).toMatch(/JOB_STATUS: \$\{\{ job\.status \}\}/);
+  it('never represents a selectable ref or force flag as deployment authority', () => {
+    const code = uncommented(deploy);
+    expect(code).not.toMatch(/workflow_dispatch:|github\.event\.inputs/);
+    expect(code).not.toMatch(/force=true|inputs\.force/);
+    expect(code).toContain('github.event.client_payload.ref_sha');
   });
 
-  it('a deliberate deferral names itself; a decline that should have shipped never does', () => {
-    const script = verdict.slice(verdict.indexOf('run: |'));
-    expect(script).toMatch(
-      /if \[ "\$DRAIN_SKIP" = "true" \] && \[ "\$GATE_KIND" = "lease_held_elsewhere" \]; then[\s\S]{0,300}?exit 0/
+  it('immediately hands a successful exact engine release to cross-artifact production E2E', () => {
+    const certification = job(deploy, 'certify-production');
+    expect(certification).toContain('needs: [preflight, deploy, record-receipt]');
+    expect(certification).toMatch(/^\s+contents:\s*write\s*$/m);
+    expect(certification).toMatch(/^\s+actions:\s*read\s*$/m);
+    expect(certification).toContain('ENGINE_SHA: ${{ needs.preflight.outputs.target_sha }}');
+    expect(certification).toContain('-f event_type=run-post-deploy-e2e');
+    expect(certification).toContain('-F "client_payload[engine_sha]=$ENGINE_SHA"');
+    expect(certification).toContain(
+      'actions/workflows/post-deploy-e2e.yml/runs?event=repository_dispatch'
     );
-    // Budget and certificate declines are failures to ship. They are named in
-    // the script for ONE reason only - to hand the train on - and that branch
-    // sits after the DID NOT SHIP error, on the way to `exit 1`.
-    const redAt = script.lastIndexOf('::error title=DID NOT SHIP::');
-    expect(redAt).toBeGreaterThan(-1);
-    for (const kind of ['staged_deferred', 'no_certificate']) {
-      const at = script.indexOf(`"${kind}"`);
-      expect(at, `${kind} is handed on`).toBeGreaterThan(redAt);
-    }
-    const gate = sliceYamlBlock(
-      HETZNER,
-      '      - name: Wait for the maintenance break to park every table'
-    );
-    expect((gate.match(/echo "gate_kind=[a-z_]+" >> \$GITHUB_OUTPUT/g) ?? []).length).toBe(
-      (gate.match(/echo "skip=true" >> \$GITHUB_OUTPUT/g) ?? []).length
-    );
+    expect(certification).toContain('Post-Deploy E2E $ENGINE_SHA');
+    expect(certification).not.toContain('if: always()');
   });
 
-  it('every dedupe skip says which one it was, and already-live never claims the commit is missing', () => {
-    const d = sliceYamlBlock(
-      HETZNER,
-      '      - name: Skip if production already serves this commit'
-    );
-    expect(
-      (d.match(/echo "reason=(already_live|superseded)" >> \$GITHUB_OUTPUT/g) ?? []).length
-    ).toBe((d.match(/echo "skip=true" >> \$GITHUB_OUTPUT/g) ?? []).length);
-    expect(sliceYamlEntry(HETZNER, "name: 'DID NOT DEPLOY")).toMatch(
-      /"already_live" \]; then\s*\n\s*echo "::notice title=ALREADY LIVE::/
-    );
-  });
-
-  it('a superseded run stands down green instead of failing red', () => {
-    // 8 of 8 red deploy runs on 2026-09-10 were runs whose workflow commit was
-    // no longer main's tip - none a ship failure - and one opened a false
-    // "train is failing" alarm (#4109).
-    const stage = sliceYamlEntry(HETZNER, 'name: Stage the current release proof control');
-    expect(stage).toMatch(
-      /git merge-base --is-ancestor "\$CONTROL_SHA" "\$REMOTE_MAIN"[\s\S]{0,2400}?echo "superseded=true" >> "\$GITHUB_OUTPUT"[\s\S]{0,800}?exit 0/
-    );
-    // 2026-09-10: main moving is not the control plane moving. With a push
-    // trigger the pending run is the newest ENGINE push and main keeps moving
-    // under it with client merges; an ancestor whose deploy control plane is
-    // byte-identical to main's ships its own commit instead of standing down.
-    expect(stage).toMatch(
-      /if git diff --quiet "\$CONTROL_SHA" "\$REMOTE_MAIN" -- \$CONTROL_PLANE; then\s*\n\s*echo "superseded=false" >> "\$GITHUB_OUTPUT"/
-    );
-    for (const path of [
-      '.github/workflows/auto-deploy-hetzner.yml',
-      'scripts/ci',
-      'server/scripts',
-    ]) {
-      expect(stage, `${path} is part of the control plane`).toContain(path);
-    }
-    // A commit that is NOT an ancestor of main is still refused, red.
-    expect(stage).toMatch(
-      /not dispatched from current main; refusing rollbackable control-plane code"\s*\n\s*exit 1/
-    );
-    const d = sliceYamlBlock(
-      HETZNER,
-      '      - name: Skip if production already serves this commit'
-    );
-    expect(d).toMatch(
-      /steps\.control\.outputs\.superseded \}\}" = "true" \]; then[\s\S]{0,120}?echo "skip=true"/
-    );
-  });
-
-  it('the verdict reads production before it paints a run red', () => {
-    const script = verdict.slice(verdict.indexOf('run: |'));
-    const read = script.indexOf('/health?nocache=');
-    expect(read).toBeGreaterThan(-1);
-    expect(read).toBeLessThan(script.lastIndexOf('::error title=DID NOT SHIP::'));
-  });
-
-  it('nothing keyed on failure() can react to the verdict', () => {
-    // The rollback is `if: failure() && ...`. A red verdict placed before it
-    // would read as a failed deploy and could restore an image nobody replaced.
-    const rollbackAt = code.indexOf('- name: ROLLBACK');
-    expect(rollbackAt).toBeGreaterThan(-1);
-    expect(rollbackAt).toBeLessThan(verdictAt);
+  it('pins the engine SSH transport to only the supplied host-key file', () => {
+    expect(deploy).toContain('StrictHostKeyChecking=yes');
+    expect(deploy).toContain('UserKnownHostsFile=%q');
+    expect(deploy).toContain('GlobalKnownHostsFile=/dev/null');
+    expect(deploy).toContain('IdentitiesOnly=yes');
+    expect(deploy).not.toContain('StrictHostKeyChecking=accept-new');
   });
 });
 
-describe('the publish path cannot be left waiting on a push that never comes', () => {
-  it('needs no catch-up schedule: a run that cannot finish hands itself on', () => {
-    // `push` was the ONLY trigger once, and a run that failed or was cancelled
-    // with no newer push behind it was never retried; a */30 catch-up and the
-    // watchdog's re-dispatch covered that. Since 2026-09-11 the run itself
-    // hands on (the hand-on job) and there is no cron.
-    expect(cronEveryMinutes(SYNC)).toBeNull();
-    expect(SYNC).not.toMatch(/^\s*- cron:/m);
-    expect(SYNC).toMatch(/\n {2}hand-on:\n/);
+describe('the Club Arena bundle publishes directly to its Hetzner origin', () => {
+  it('a recovery event can publish only the exact current protected-main SHA', () => {
+    const resolver = publish.slice(
+      publish.indexOf('- name: Resolve the tip of main'),
+      publish.indexOf('- name: Has this exact tree already passed the client suite?')
+    );
+    expect(resolver).toContain('[ "$REQUESTED_SHA" = "$TIP" ]');
+    expect(resolver).toContain('TARGET="$REQUESTED_SHA"');
+    expect(resolver).not.toContain('/compare/${REQUESTED_SHA}...${TIP}');
+    expect(resolver).not.toMatch(/identical\|ahead/);
   });
 
-  it('a handed-on retry costs nothing when production is already current', () => {
-    // Without this every hand-on retry would install, test and build a bundle
-    // that a newer push's run may already have published.
-    expect(SYNC).toMatch(/publish-needed:/);
-    expect(SYNC).toMatch(/id: dedupe/);
-    expect(SYNC).toMatch(/if: github\.event_name == 'workflow_dispatch' && inputs\.handed_on/);
-    expect(SYNC).toMatch(/build-info\.json/);
-    expect(SYNC).toMatch(
-      /handed_on:\s*\n\s*description:[^\n]*\n\s*type: boolean\s*\n\s*default: false/
+  it('contains no executable World Hub checkout, sync token, or Vercel deploy', () => {
+    expect(publishCode).not.toMatch(/repository:\s*Smarter-Poker\/Smarter-Poker-World-Hub/);
+    expect(publishCode).not.toMatch(/WORLD_HUB_(?:SYNC_)?TOKEN/);
+    expect(publishCode).not.toMatch(/\bvercel\s+(?:deploy|--prod)\b/i);
+    expect(publishCode).toContain('ORIGIN_URL: https://ca-static.smarter.poker');
+  });
+
+  it('uses only the Club Arena origin credential names', () => {
+    const origin = job(publish, 'publish-to-origin');
+    expect(origin).toContain('secrets.CA_ORIGIN_HOST');
+    expect(origin).toContain('secrets.CA_ORIGIN_SSH_KEY');
+    expect(origin).toContain('secrets.CA_ORIGIN_HOST_KEY');
+    expect(origin).not.toMatch(/HETZNER_SSH_KEY|WORLD_HUB|VERCEL_TOKEN/);
+  });
+
+  it('uses the dedicated identity and pinned host key as the only SSH trust path', () => {
+    const origin = job(publish, 'publish-to-origin');
+    const count = (needle: string) => origin.split(needle).length - 1;
+    const transports = count('UserKnownHostsFile=$HOME/.ssh/ca_origin_known_hosts');
+
+    expect(transports).toBe(5);
+    expect(count('GlobalKnownHostsFile=/dev/null')).toBe(transports);
+    expect(count('StrictHostKeyChecking=yes')).toBe(transports);
+    expect(count('IdentitiesOnly=yes')).toBe(transports);
+    expect(origin).toContain('chmod 600 ~/.ssh/ca_origin_known_hosts');
+    expect(origin).not.toContain('StrictHostKeyChecking=accept-new');
+  });
+
+  it('runs every release job on a fresh hosted runner', () => {
+    const runners = [...publish.matchAll(/^\s+runs-on:\s*(.+)$/gm)].map((match) => match[1].trim());
+    expect(runners.length).toBeGreaterThanOrEqual(4);
+    expect(new Set(runners)).toEqual(new Set(['ubuntu-latest']));
+    expect(publish).not.toContain('vars.CI_RUNNER');
+    expect(publish).not.toContain('self-hosted');
+  });
+
+  it('requires both the built artifact and the test verdict before publishing', () => {
+    const origin = job(publish, 'publish-to-origin');
+    expect(origin).toContain('needs: [publish-needed, build-and-store, client-tests]');
+    expect(origin).toContain("needs.build-and-store.result == 'success'");
+    expect(origin).toContain("needs.client-tests.result == 'success'");
+  });
+
+  it('has read-only repository authority while the origin SSH key performs the publish', () => {
+    const origin = job(publish, 'publish-to-origin');
+    expect(origin).toMatch(/^\s+contents:\s*read\s*$/m);
+    expect(origin).not.toMatch(/^\s+(?:contents|actions):\s*write\s*$/m);
+  });
+
+  it('uploads an immutable release and swaps current only after the transfer', () => {
+    const origin = job(publish, 'publish-to-origin');
+    const upload = origin.indexOf('"$ORIGIN_USER@$ORIGIN_HOST:$ORIGIN_ROOT/incoming/$STAGE_NAME/"');
+    const manifest = origin.indexOf(
+      '(cd "$STAGE" && sha256sum --strict -c .release-manifest.sha256'
+    );
+    const lock = origin.indexOf('flock -w 45 9');
+    const swap = origin.indexOf('mv -Tf "$NEXT" "$ROOT/current"');
+    expect(upload).toBeGreaterThan(-1);
+    expect(lock).toBeGreaterThan(upload);
+    expect(manifest).toBeGreaterThan(lock);
+    expect(swap).toBeGreaterThan(manifest);
+    expect(origin).not.toContain('$ORIGIN_ROOT/releases/$SHA/"');
+    expect(publish).toContain('Seal the immutable release bytes');
+    expect(origin).toContain('(cd "$FINAL" && sha256sum --strict -c');
+  });
+
+  it('reuses a sealed same-SHA release even when a rebuild has new run-time metadata', () => {
+    const origin = job(publish, 'publish-to-origin');
+    const existingReleaseStart = origin.indexOf('if [ -e "$FINAL" ] || [ -L "$FINAL" ]');
+    const existingReleaseEnd = origin.indexOf('else\n            mv -- "$STAGE" "$FINAL"');
+    expect(existingReleaseStart).toBeGreaterThan(-1);
+    expect(existingReleaseEnd).toBeGreaterThan(existingReleaseStart);
+    const existingRelease = origin.slice(existingReleaseStart, existingReleaseEnd);
+
+    expect(publish).toContain('"built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"');
+    expect(buildProvenance).toContain('buildTime: new Date().toISOString()');
+    expect(existingRelease).not.toContain(
+      'cmp -s "$STAGE/.release-manifest.sha256" "$FINAL/.release-manifest.sha256"'
+    );
+    expect(existingRelease).toContain('find "$FINAL" -type l -print -quit');
+    expect(existingRelease).toContain('sealed release contains a symlink');
+    expect(existingRelease).toContain('find "$FINAL" ! -type d ! -type f -print -quit');
+    expect(existingRelease).toContain('sealed release contains a special file');
+    expect(existingRelease).toContain(
+      '(cd "$FINAL" && sha256sum --strict -c .release-manifest.sha256 >/dev/null)'
+    );
+    expect(existingRelease).toContain('verify_complete_manifest "$FINAL"');
+    expect(existingRelease).toContain('verify_release_identity "$FINAL" "$SHA" "$REPOSITORY"');
+    expect(origin).toContain("provenance.get('schema')");
+    expect(origin).toContain("provenance.get('commit') == expected_sha");
+    expect(origin).toContain("provenance.get('builtBy') == 'github-actions'");
+    expect(origin).toContain("provenance.get('dirty') is False");
+    expect(origin).toContain("provenance.get('historyComplete') is True");
+    expect(origin).toContain("provenance['behindMain'] == 0");
+    expect(origin).toContain("provenance['aheadMain'] == 0");
+    expect(origin).toContain("build_info.get('ca_sha') == expected_sha");
+    expect(origin).toContain("build_info.get('built_by') == 'publish-club-arena.yml'");
+    expect(origin).toContain("re.fullmatch(r'[0-9]+', build_info['run_id'])");
+    expect(origin).toContain(
+      'expected_run = f"https://github.com/{repository}/actions/runs/{build_info[\'run_id\']}"'
+    );
+    expect(origin).toContain("provenance.get('ciRun') == expected_run");
+    expect(existingRelease).toContain('rm -rf -- "$STAGE"');
+  });
+
+  it('seals the exact pre-manifest current release for first-adoption rollback under the activation lock', () => {
+    const origin = job(publish, 'publish-to-origin');
+    const lock = origin.indexOf('flock -w 45 9');
+    const seal = origin.indexOf('seal_current_release_for_rollback \\');
+    const pool = origin.indexOf('assert_additive_pool_has_no_collision "$FINAL/assets"');
+    const swap = origin.indexOf('mv -Tf "$NEXT" "$ROOT/current"');
+    expect(seal).toBeGreaterThan(lock);
+    expect(pool).toBeGreaterThan(seal);
+    expect(swap).toBeGreaterThan(pool);
+    expect(origin).toContain(
+      'verify_release_identity "$release_dir" "$expected_sha" "$repository"'
+    );
+    expect(origin).toContain('legacy manifest staging is not on the release filesystem');
+    expect(origin).toContain('sync -f "$staged_manifest"');
+    expect(origin).toContain('mv -Tf "$staged_manifest" "$manifest"');
+    expect(origin).toContain('rm -f -- "$ROOT/incoming/.legacy-release-manifest.$STAGE_NAME"');
+  });
+
+  it('carries the hidden release seal through the artifact courier', () => {
+    const upload = publish.slice(
+      publish.indexOf('- name: Upload dist for the sync job'),
+      publish.indexOf('- name: Verify dist is complete')
+    );
+    expect(upload).toContain('uses: actions/upload-artifact@v4');
+    expect(upload).toContain('include-hidden-files: true');
+    expect(publish).toContain('test -s dist/.release-manifest.sha256');
+  });
+
+  it('requires the artifact to prove its exact clean protected-main CI source', () => {
+    const origin = job(publish, 'publish-to-origin');
+    const gateStart = origin.indexOf(
+      'EXPECTED_SHA="${{ needs.publish-needed.outputs.target_sha }}"'
+    );
+    const gateEnd = origin.indexOf(
+      'OURS_SHA=$(node scripts/ci/production-e2e-provenance.mjs build-info'
+    );
+    expect(gateStart).toBeGreaterThan(-1);
+    expect(gateEnd).toBeGreaterThan(gateStart);
+    const gate = origin.slice(gateStart, gateEnd);
+    expect(gate).toContain("fs.readFileSync('dist/ca-provenance.json', 'utf8')");
+    expect(gate).toContain('provenance.schema === 1');
+    expect(gate).toContain('provenance.commit === expectedSha');
+    expect(gate).toContain("provenance.builtBy === 'github-actions'");
+    expect(gate).toContain('provenance.dirty === false');
+    expect(gate).toContain('provenance.historyComplete === true');
+    expect(gate).toContain('provenance.behindMain === 0');
+    expect(gate).toContain('provenance.aheadMain === 0');
+    expect(gate).toContain('provenance.ciRun === expectedRun');
+  });
+
+  it('performs the final decision as a host-locked compare-and-swap', () => {
+    const origin = job(publish, 'publish-to-origin');
+    const lock = origin.indexOf('flock -w 45 9');
+    const readCurrent = origin.indexOf(
+      'CURRENT_SHA=$(read_exact_build_info_sha "$ROOT/current/build-info.json")',
+      lock
+    );
+    const compare = origin.indexOf('[ "$CURRENT_SHA" != "$EXPECTED_SHA" ]', readCurrent);
+    const swap = origin.indexOf('mv -Tf "$NEXT" "$ROOT/current"', compare);
+    expect(lock).toBeGreaterThan(-1);
+    expect(readCurrent).toBeGreaterThan(lock);
+    expect(compare).toBeGreaterThan(readCurrent);
+    expect(swap).toBeGreaterThan(compare);
+    expect(origin).toContain('refusing stale activation');
+  });
+
+  it('parses every publish-authority build-info as strict JSON, never matching text with sed', () => {
+    const origin = job(publish, 'publish-to-origin');
+    expect(origin).toContain(
+      'OURS_SHA=$(node scripts/ci/production-e2e-provenance.mjs build-info < dist/build-info.json)'
+    );
+    expect(origin).toContain('node scripts/ci/production-e2e-provenance.mjs build-info); then');
+    expect(origin).toContain('read_exact_build_info_sha "$ROOT/current/build-info.json"');
+    expect(origin).toContain('read_exact_build_info_sha "$STAGE/build-info.json"');
+    expect(origin).not.toMatch(/sed -n[\s\S]*ca_sha/);
+  });
+
+  it('flushes release bytes before activation and the symlink rename before success', () => {
+    const origin = job(publish, 'publish-to-origin');
+    const swap = origin.indexOf('mv -Tf "$NEXT" "$ROOT/current"');
+    const flushes = [...origin.matchAll(/sync -f "\$ROOT"/g)].map((match) => match.index!);
+    expect(flushes.some((index) => index < swap)).toBe(true);
+    expect(flushes.some((index) => index > swap)).toBe(true);
+    expect(origin).toContain('rsync -az --delete --fsync');
+  });
+
+  it('serializes the additive pool with activation and gives mutable fonts one pointer', () => {
+    const origin = job(publish, 'publish-to-origin');
+    const lock = origin.indexOf('flock -w 45 9');
+    const collisionGuard = origin.indexOf(
+      'assert_additive_pool_has_no_collision "$FINAL/assets"',
+      lock
+    );
+    const pool = origin.indexOf('rsync -a --ignore-existing --fsync "$FINAL/assets/"', lock);
+    const poolProof = origin.indexOf('prove_additive_pool_contains_release "$FINAL/assets"', pool);
+    const fontPointer = origin.indexOf('ln -s "$ROOT/current/fonts/fonts.css" "$FONT_NEXT"', pool);
+    const swap = origin.indexOf('mv -Tf "$NEXT" "$ROOT/current"', fontPointer);
+    expect(collisionGuard).toBeGreaterThan(lock);
+    expect(pool).toBeGreaterThan(collisionGuard);
+    expect(poolProof).toBeGreaterThan(pool);
+    expect(fontPointer).toBeGreaterThan(pool);
+    expect(swap).toBeGreaterThan(fontPointer);
+    expect(origin).not.toContain('dist/fonts/ "$ORIGIN_USER@$ORIGIN_HOST:$ORIGIN_ROOT/pool');
+    expect(origin).not.toContain('find "$ROOT/pool" -type f -mtime +30 -delete');
+  });
+
+  it('rejects both changed bytes and files omitted from an existing manifest', () => {
+    const origin = job(publish, 'publish-to-origin');
+    expect(origin).toContain('verify_complete_manifest "$STAGE"');
+    expect(origin).toContain('verify_complete_manifest "$FINAL"');
+    expect(origin).toContain("find . -type f ! -path './.release-manifest.sha256' -print0");
+    expect(origin).toContain('cmp -s "$check_path" "$release_dir/.release-manifest.sha256"');
+  });
+
+  it('bounds every job and every origin transport operation', () => {
+    const jobTimeouts = [...publish.matchAll(/^ {4}timeout-minutes: (\d+)$/gm)].map((match) =>
+      Number(match[1])
+    );
+    expect(jobTimeouts).toHaveLength(5);
+    expect(jobTimeouts.every((minutes) => minutes > 0 && minutes <= 30)).toBe(true);
+    const origin = job(publish, 'publish-to-origin');
+    expect(origin).toContain('timeout 35s ssh');
+    expect(origin).toContain('timeout 240s rsync');
+    expect(origin).toContain('-o ServerAliveCountMax=2');
+  });
+
+  it('cleans the exact staging path and credentials on every terminal path', () => {
+    const origin = job(publish, 'publish-to-origin');
+    expect(origin).toContain("if: always() && steps.verdict.outputs.verdict == 'publish'");
+    expect(origin).toContain('rm -rf -- "$ROOT/incoming/$STAGE_NAME"');
+    expect(origin).toContain('- name: Remove origin credentials and control sockets');
+    expect(origin).toMatch(
+      /Remove origin credentials and control sockets[\s\S]*?if: always\(\)[\s\S]*?rm -f -- "\$HOME\/\.ssh\/ca_origin"/
     );
   });
 
-  it('the check is a JOB, so the TEST SUITE skips with the build', () => {
-    /* The work this guards lives in TWO parallel jobs. A step output cannot
-       cross a runner, so a dedupe living inside build-and-store would have let
-       `client-tests` run the whole suite anyway on a cycle with nothing to
-       publish - most of the cost it exists to save. */
-    expect(SYNC).toMatch(/publish-needed:\s*\n\s*runs-on:/);
-    expect(SYNC).toMatch(/outputs:\s*\n\s*skip: \$\{\{ steps\.dedupe\.outputs\.skip \}\}/);
-    for (const job of ['client-tests', 'build-and-store']) {
-      const block = sliceYamlBlock(SYNC, `  ${job}:`);
-      expect(block, `${job} must wait on publish-needed`).toMatch(/needs: publish-needed/);
-      expect(block, `${job} must skip with it`).toMatch(
-        /if: needs\.publish-needed\.outputs\.skip != 'true'/
-      );
-    }
+  it('proves the exact ca_sha from the live origin before declaring success', () => {
+    const origin = job(publish, 'publish-to-origin');
+    const proof = origin.slice(
+      origin.indexOf('- name: Verify the origin serves this bundle'),
+      origin.indexOf('- name: Restore the previously verified release after any publish failure')
+    );
+    expect(proof).toContain('$ORIGIN_URL/build-info.json?cb=$RANDOM');
+    expect(proof).toContain('$PUBLIC_URL/build-info.json?cb=$RANDOM');
+    expect(proof.match(/production-e2e-provenance\.mjs unchanged "\$SHA"/g)).toHaveLength(2);
+    expect(proof).toContain('[ "$LIVE_ORIGIN" = "$SHA" ]');
+    expect(proof).toContain('[ "$LIVE_PUBLIC" = "$SHA" ]');
+    expect(proof).toContain('echo "sha=$SHA" >> "$GITHUB_OUTPUT"');
+    expect(proof).toMatch(/origin serves '\$LIVE_ORIGIN'.*wanted \$SHA[\s\S]{0,80}exit 1/);
+    expect(proof).not.toMatch(/sed -n[\s\S]*ca_sha/);
+    const app = job(publish, 'publish-to-app');
+    expect(app).toContain("needs.publish-to-origin.outputs.verified_sha != ''");
+    expect(app).toContain(
+      'needs.publish-to-origin.outputs.verified_sha == needs.publish-needed.outputs.target_sha'
+    );
   });
 
-  it('a push and a manual dispatch are NEVER deduped', () => {
-    // A push is by definition new work; a human dispatching this is usually
-    // forcing a republish of something that looks stuck. Deduping either would
-    // be the publish bug this is meant to prevent. Only a run's own handed-on
-    // retry (handed_on=true, default false) asks production first.
-    const dedupe = sliceYamlEntry(SYNC, 'id: dedupe');
-    expect(dedupe).toMatch(/if: github\.event_name == 'workflow_dispatch' && inputs\.handed_on/);
-  });
-
-  it('an unreadable build-info publishes rather than assuming it is current', () => {
-    // Fail OPEN. A stale CDN or a broken build-info is exactly the moment this
-    // needs to run, and treating "cannot tell" as "up to date" would make the
-    // safety net silently useless.
-    expect(SYNC).toMatch(/unreadable - publishing rather than assuming/);
-  });
-
-  it('the publisher cannot run without both the bundle and the tests', () => {
-    /* publish-to-origin needs BOTH heavy jobs, so a deduped cycle skips it for
-       free: GitHub skips a job whose dependencies were skipped. That is also
-       what stops it failing on a dist that was never built - no `always()`
-       anywhere near it. */
-    expect(SYNC).toMatch(/needs: \[build-and-store, client-tests\]/);
-    const sync = sliceYamlBlock(SYNC, '  publish-to-origin:');
-    expect(sync).not.toMatch(/if: always\(\)/);
+  it('restores the exact prior immutable release when post-activation proof fails', () => {
+    const origin = job(publish, 'publish-to-origin');
+    const verify = origin.indexOf('- name: Verify the origin serves this bundle');
+    const rollback = origin.indexOf(
+      '- name: Restore the previously verified release after any publish failure'
+    );
+    const credentialCleanup = origin.indexOf(
+      '- name: Remove origin credentials and control sockets'
+    );
+    expect(rollback).toBeGreaterThan(verify);
+    expect(credentialCleanup).toBeGreaterThan(rollback);
+    const body = origin.slice(rollback, credentialCleanup);
+    expect(body).toContain("if: failure() && steps.verdict.outputs.verdict == 'publish'");
+    expect(body).toContain('flock -w 45 9');
+    expect(body).toContain('if [ "$CURRENT_LINK" != "$CANDIDATE" ]');
+    expect(body).toContain('refusing to overwrite it');
+    expect(body).toContain('(cd "$PREVIOUS" && sha256sum --strict -c');
+    expect(body).toContain('cmp -s "$CHECK" "$PREVIOUS/.release-manifest.sha256"');
+    expect(body).toContain(
+      'python3 - "$PREVIOUS/build-info.json" "$EXPECTED_SHA" <<\'PYTHON_ROLLBACK_BUILD_INFO\''
+    );
+    expect(body).toContain('mv -Tf "$NEXT" "$ROOT/current"');
+    expect(body.match(/production-e2e-provenance\.mjs unchanged "\$EXPECTED_SHA"/g)).toHaveLength(
+      2
+    );
+    expect(body).toContain('[ "$LIVE_ORIGIN" = "$EXPECTED_SHA" ]');
+    expect(body).toContain('[ "$LIVE_PUBLIC" = "$EXPECTED_SHA" ]');
+    expect(body).not.toMatch(/sed -n[\s\S]*ca_sha/);
   });
 });

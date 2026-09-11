@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest';
 const root = resolve(__dirname, '..');
 
 function stagedMigration(suffix: string): string {
-  const matches = readdirSync(resolve(root, 'supabase', 'migrations')).filter((file) =>
-    file.endsWith(`_${suffix}.sql`) || file.endsWith(`_${suffix}.sql.pending`)
+  const matches = readdirSync(resolve(root, 'supabase', 'migrations')).filter(
+    (file) => file.endsWith(`_${suffix}.sql`) || file.endsWith(`_${suffix}.sql.pending`)
   );
   expect(matches, `${suffix} migration`).toHaveLength(1);
   return readFileSync(resolve(root, 'supabase', 'migrations', matches[0]), 'utf8');

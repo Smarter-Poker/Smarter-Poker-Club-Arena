@@ -27,7 +27,7 @@ const REPO = process.env.REPO || 'Smarter-Poker/Smarter-Poker-Club-Arena';
 const WH_REPO = process.env.WH_REPO || 'Smarter-Poker/Smarter-Poker-World-Hub';
 // Reads (including World Hub, a different private repo) ride the App token or
 // PAT; issue writes ride GITHUB_TOKEN, whose issues:write the workflow
-// declares - the same split every watchdog here uses, for the same reason.
+// declares - the same split the read-only estate audits use.
 const TOKEN = process.env.GH_TOKEN || process.env.GITHUB_TOKEN || '';
 const TOKEN_ISSUES = process.env.GH_TOKEN_ISSUES || TOKEN;
 const SB_URL = process.env.SUPABASE_URL || '';
@@ -90,7 +90,7 @@ await tryStep('publish', async () => {
     item(
       behind != null
         ? `Production serves ${live}, ${behind} commit(s) behind main ${tip} (built ${info.built_at}). Normal when merges are flowing; a growing gap is the publish outage signature.`
-        : `Production serves ${live}; main is ${tip}; ancestry unreadable - if this persists, check publish-watchdog issues.`
+        : `Production serves ${live}; main is ${tip}; ancestry unreadable - if this persists, check production-integrity audit issues.`
     );
   }
 });
@@ -115,10 +115,13 @@ await tryStep('cron', async () => {
   item(
     ageMin === null
       ? 'No scheduled run found at all - the wedge, if the repo has schedules.'
-      : `Last scheduled tick ${ageMin} min ago (${last.name}). Over ~90 min is the wedge signature; the self-healer in publish-watchdog cycles registrations automatically and files a cron-wedge issue when it does.`
+      : `Last scheduled tick ${ageMin} min ago (${last.name}). Over ~90 min is a schedule-delivery failure; inspect the owning workflow without cycling or redispatching it.`
   );
   const wedges = await gh(`/repos/${REPO}/issues?state=open&labels=cron-wedge&per_page=1`);
-  if (wedges.length > 0) item(`OPEN cron-wedge issue: #${wedges[0].number} - a heal ran and awaits tick confirmation.`);
+  if (wedges.length > 0)
+    item(
+      `OPEN cron-wedge issue: #${wedges[0].number} - inspect the owning scheduled workflow and its latest delivery evidence.`
+    );
 });
 
 // ── 4. The money board ──────────────────────────────────────────────────────
@@ -151,8 +154,8 @@ await tryStep('drift', async () => {
     missing === 0
       ? 'Every applied migration has a repo file.'
       : missing === null
-        ? 'Reconciler output unparsed - see the twice-daily Applied Migrations workflow for the real number.'
-        : `${missing} applied migration(s) still have no repo file (backfill in progress; the reconciler files a migration-drift issue while any remain).`
+        ? 'Audit output unparsed - see the twice-daily Applied Migrations workflow for the real number.'
+        : `${missing} applied migration(s) still have no repo file; the owning audit files a migration-drift issue while any remain.`
   );
 });
 

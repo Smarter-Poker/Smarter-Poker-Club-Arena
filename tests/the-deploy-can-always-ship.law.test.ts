@@ -1,474 +1,131 @@
-/**
- * THE DEPLOY CAN ALWAYS SHIP.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * WHAT HAPPENED (2026-09-05, all figures read from production, none inferred)
- * ─────────────────────────────────────────────────────────────────────────────
- *
- * `ca_engine_deploy_attempts`, 72 hours:
- *
- *   deployed and verified                          46
- *   the maintenance break never opened             23
- *   coalesced or already serving                   22
- *   run ended without a verified cutover            7
- *   ───────────────────────────────────────────────────
- *   98 attempts, 52 of which shipped NOTHING (53%)
- *
- * Every one of those 52 was a GREEN run. `gh run list` showed success.
- *
- * Three independent defects, each of which made a run report success while
- * deploying nothing, and each of which is pinned below:
- *
- *  1. THE COALESCING GATE READ THE WRONG CLOCK. It compared `/health.uptime`
- *     against a 20-minute spacing threshold. Uptime says when the PROCESS
- *     started; the gate wanted to know when the PIPELINE last restarted
- *     production. sp-autoheal bounced the engine five times that day (16:06,
- *     16:42, 17:49, 18:26, 19:04 UTC), each bounce resetting uptime, and every
- *     deploy in the following twenty minutes coalesced against a commit
- *     production was not serving. Run 33981313111 is the recorded case.
- *
- *  2. THE BREAK GATE COULD NOT AFFORD TO WAIT. Its budget is the job timeout
- *     minus the elapsed build minus a cutover reserve, and it refuses to wait
- *     when the next :55 is further away than that. With timeout 40 and an
- *     8-minute build the budget was 27 minutes, so any run arriving before :28
- *     quit — which is exactly where an off-cycle dispatch lands, and an
- *     off-cycle dispatch is what publish-watchdog fires when it notices the
- *     engine is behind. The recovery path was arithmetically incapable of
- *     recovering. Runs 33985138036 and 33986167969, back to back, both
- *     carrying aa6b6387, both green, both shipped nothing — after building it.
- *
- *  3. THE RUN NAMED THE WRONG GATE. One run gave three different answers: the
- *     step warning said "drain gate — hands are still in flight", the summary
- *     and the database said "the maintenance break never opened", and the
- *     truth was that it had declined to wait for a break that had not started.
- *     The `steps.window` branch it fell through was dead code for a gate
- *     deleted days earlier, and it advertised a 7am/7pm Chicago window that
- *     §13 abolished — the exact shape of stale text §13 was written about.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * WHY THESE ARE PINNED AS ONE LAW
- * ─────────────────────────────────────────────────────────────────────────────
- *
- * All three are the same failure: a number or a string that was correct when
- * it was written, in a pipeline whose other numbers moved underneath it. The
- * build grew from 5 minutes to 18 and the budget did not. The restart moved
- * from twice a day to every hour and the reason text did not. The engine
- * acquired a sidecar that restarts it and the spacing clock did not.
- *
- * So this file does not check that the numbers are any particular value. It
- * checks that the numbers still AGREE WITH EACH OTHER, which is the property
- * that actually broke, and the one a human reviewer cannot hold in their head.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * 2026-09-10: THE ARITHMETIC ONLY CHECKED THE CALLER THAT HAD STOPPED CALLING
- * ─────────────────────────────────────────────────────────────────────────────
- *
- *  4. This file proved every CRON minute could reach the break, with a staged
- *     run assumed to reach the gate in 6 minutes. Neither held. The server
- *     suite runs before the gate on every run (~9 minutes; staged runs reached
- *     the gate after 10.3-11.7 minutes), and the cron was no longer the caller:
- *     GitHub delivered 3 of ~19 ticks that day and the DB dispatcher had been
- *     retired, so every run was an engine-watchdog or agent dispatch at an
- *     arbitrary minute. Any run that started before :10 or after :44 staged
- *     its image, went green and shipped nothing - five of them in one
- *     afternoon (34491811148, 34493149950, 34505100894, 34511390657,
- *     34516171966) - while production crash-looped on 7732b971 through three
- *     breaks with the fix merged. The law now covers EVERY start minute, cold
- *     and staged, and the watchdog's idea of a stale run must outlast the
- *     longest legitimate wait.
- *
- *  5. Later the same day the cron went altogether (Dan: "i do not want any
- *     watch dogs ... i want any and all pushes to be published in the order
- *     that they come in!"). Every engine push starts its own run at whatever
- *     minute it merges, so "every start minute" stopped being a safety margin
- *     and became the only case there is. The coalescing gate went too: the
- *     :55 break is the spacing, and with nothing coming back later a coalesced
- *     run would strand the commit it was asked to ship.
- */
-import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
 
-const ROOT = process.cwd();
-const WORKFLOW = join(ROOT, '.github/workflows/auto-deploy-hetzner.yml');
-const yml = readFileSync(WORKFLOW, 'utf8');
-const imageBuilder = readFileSync(join(ROOT, 'server/scripts/build-engine-image.sh'), 'utf8');
+const read = (path: string) => readFileSync(resolve(__dirname, '..', path), 'utf8');
+const triggerBlock = (yaml: string) =>
+  yaml.slice(yaml.indexOf('\non:'), yaml.indexOf('\nconcurrency:'));
+const uncommented = (source: string) =>
+  source
+    .split('\n')
+    .filter((line) => !/^\s*#/.test(line))
+    .join('\n');
 
-/** The step that decides whether there is anything to ship. */
-function dedupeStep(): string {
-  const start = yml.indexOf('- name: Skip if production already serves this commit');
-  const end = yml.indexOf('- name: Setup Node 22', start);
-  expect(start, 'the dedupe step has been renamed - re-point this law').toBeGreaterThan(-1);
-  expect(end).toBeGreaterThan(start);
-  return yml.slice(start, end);
-}
+const engine = read('.github/workflows/auto-deploy-hetzner.yml');
+const engineCode = uncommented(engine);
+const transaction = read('server/scripts/engine-release-transaction.sh');
+const transactionCode = uncommented(transaction);
+const engineSignal = read('.github/workflows/stage-engine-release.yml');
+const engineSignalCode = uncommented(engineSignal);
+const publisher = read('.github/workflows/publish-club-arena.yml');
 
-/** The step that waits for the announced :55 break. */
-function breakGateStep(): string {
-  const start = yml.indexOf('- name: Wait for the maintenance break to park every table');
-  const end = yml.indexOf('- name: Cut over to the new image', start);
-  expect(start, 'the break gate step has been renamed - re-point this law').toBeGreaterThan(-1);
-  expect(end).toBeGreaterThan(start);
-  return yml.slice(start, end);
-}
-
-function num(pattern: RegExp, hay: string, what: string): number {
-  const m = hay.match(pattern);
-  expect(m, `${what} not found - this law reads it to check the arithmetic`).toBeTruthy();
-  return Number(m![1]);
-}
-
-describe('the wait budget can actually reach the break', () => {
-  /**
-   * The build has been measured at 8-18 minutes (docs/changelog/
-   * 2026-09-04-push-to-live-under-six-minutes.md, and the runs above). 18 is
-   * the worst observed, so it is what the budget must survive.
-   */
-  const WORST_BUILD_MIN = 18;
-  /**
-   * A run that adopts an already-staged image: checkout, the server suite,
-   * pull, adopt, supervisor, gate. MEASURED 2026-09-10, not assumed: 10.3-11.7
-   * minutes (runs 34505100894, 34511390657, 34512893031, 34516171966); the
-   * server suite alone is ~9. It was 6 here, which is how a 55-minute ceiling
-   * looked sufficient for starts it could not serve.
-   */
-  const REUSED_ELAPSED_MIN = 12;
-  /** A run that builds cold: everything above plus the worst observed build. */
-  const COLD_ELAPSED_MIN = REUSED_ELAPSED_MIN + WORST_BUILD_MIN;
-  /**
-   * What a FAILED cutover still needs after the reserve: the ROLLBACK's proxy
-   * polls and strict proof (~8m) plus the always() tail (~2m). The job timeout
-   * must never be the thing that ends a rollback halfway.
-   */
-  const ROLLBACK_TAIL_MIN = 10;
-  /** The gate polls until the next :56 — one minute past the flag opening. */
-  const GATE_MINUTE = 56;
-
-  const timeoutMin = num(/^\s*timeout-minutes:\s*(\d+)\s*$/m, yml, 'job timeout-minutes');
-  const gate = breakGateStep();
-  const budgetTimeoutMin = num(
-    /JOB_TIMEOUT_S=\$\(\(\s*(\d+)\s*\*\s*60\s*\)\)/,
-    gate,
-    'JOB_TIMEOUT_S'
-  );
-  const reserveS = num(/CUTOVER_RESERVE_S=(\d+)/, gate, 'CUTOVER_RESERVE_S');
-
-  const cronMinutes = [...yml.matchAll(/^\s*-\s*cron:\s*'(\d+(?:,\d+)*)\s/gm)].flatMap((m) =>
-    m[1].split(',').map(Number)
-  );
-
-  /** Minutes from `at` to the next occurrence of GATE_MINUTE. */
-  const minutesToGate = (at: number) => (((GATE_MINUTE - at) % 60) + 60) % 60;
-
-  it('the job timeout and the budget formula are the same number', () => {
-    // They were 40 and `40 * 60` in two files-worth of context apart, and the
-    // whole class of defect here is one of them being changed alone.
-    expect(
-      budgetTimeoutMin,
-      `timeout-minutes is ${timeoutMin} but the break gate budgets for ${budgetTimeoutMin} minutes`
-    ).toBe(timeoutMin);
+describe('the engine deploy has one fail-closed Hetzner authority', () => {
+  it('accepts only the default-branch exact-SHA repository event', () => {
+    const triggers = triggerBlock(engine);
+    expect(triggers).toMatch(/^\s{2}repository_dispatch:/m);
+    expect(triggers).toContain('types: [deploy-club-arena-engine]');
+    expect(triggers).not.toMatch(/^\s{2}schedule:/m);
+    expect(triggers).not.toMatch(/^\s{2}workflow_dispatch:/m);
+    expect(triggers).not.toMatch(/^\s{2}push:/m);
   });
 
-  it('no scheduled tick is left to rely on: the start minute is whenever a push lands', () => {
-    // The two tick laws that stood here proved every CRON minute could build
-    // and reach the break. There is no cron (2026-09-10): the run starts when
-    // an engine push merges, or when the run before it hands the train on, at
-    // any minute of the hour. The law below, over all sixty start minutes, is
-    // therefore the whole of the arithmetic, not its safety margin.
-    expect(cronMinutes, 'a cron schedule is back - the start-minute law is what governs').toEqual(
-      []
+  it('requires a lowercase full ref_sha for every repository dispatch', () => {
+    expect(engineCode).toContain("REQUESTED_SHA: ${{ github.event.client_payload.ref_sha || '' }}");
+    expect(engineCode).toMatch(/\[\[ "\$REQUESTED_SHA" =~ \^\[0-9a-f\]\{40\}\$ \]\]/);
+    expect(engineCode).toContain('client_payload.ref_sha must be one full lowercase commit SHA');
+    expect(engineCode).toContain('ref: ${{ github.event.client_payload.ref_sha }}');
+    expect(engineCode).toContain('git log "$MAIN_SHA" -1 --format=%H');
+    expect(engineCode).toContain('[ "$RESOLVED_SHA" = "$LATEST_REQUIRED" ]');
+    expect(transactionCode).toContain('[ "$latest" = "$SHA" ]');
+    expect(transactionCode).toContain('target $SHA is stale; protected main requires $latest');
+  });
+
+  it('immediately sends every protected-main server SHA into the owning release lane', () => {
+    const triggers = engineSignal.slice(
+      engineSignal.indexOf('\non:'),
+      engineSignal.indexOf('\npermissions:')
     );
-    expect(yml).toMatch(/^\s{2}push:\s*\n\s{4}branches: \[main\]/m);
-  });
-
-  it('EVERY start minute reaches the next break, staged or cold', () => {
-    // The caller is a push, at whatever minute it merges, or the run before it
-    // handing the train on, at whatever minute that run ended - so the budget
-    // has to serve all sixty. +1 because a run reaching the gate at :56:59
-    // waits 59m59s, not 59m.
-    for (const elapsed of [REUSED_ELAPSED_MIN, COLD_ELAPSED_MIN]) {
-      const budgetMin = timeoutMin - elapsed - reserveS / 60;
-      for (let start = 0; start < 60; start++) {
-        const wait = minutesToGate((start + elapsed) % 60) + 1;
-        expect(
-          wait,
-          `a run started at :${String(start).padStart(2, '0')} reaches the gate after ${elapsed}m ` +
-            `and must wait ${wait}m for :${GATE_MINUTE}, but only has ${budgetMin}m of budget - ` +
-            `it would stage its image, go green and ship nothing (the 2026-09-10 defect)`
-        ).toBeLessThanOrEqual(budgetMin);
-      }
-    }
-  });
-
-  it('the worst start minute still leaves room for a rollback to finish', () => {
-    const worst = COLD_ELAPSED_MIN + 60 + reserveS / 60 + ROLLBACK_TAIL_MIN;
-    expect(
-      timeoutMin,
-      `a cold build reaching the gate just after :${GATE_MINUTE} needs ${worst}m including a ` +
-        `rollback, but the job is killed at ${timeoutMin}m`
-    ).toBeGreaterThanOrEqual(worst);
-  });
-
-  it('the watchdog never treats a run waiting for its break as stale', () => {
-    // A run can now legitimately hold the deploy group for up to an hour. If
-    // the watchdog's in-flight window were shorter than the job ceiling, it
-    // would decide that run was a zombie and announce that the train had
-    // stopped while it was waiting, correctly, for its break. (It no longer
-    // dispatches anything; a false "train stopped" is still a false page.)
-    const sh = readFileSync(join(ROOT, '.github/scripts/engine-watchdog.sh'), 'utf8');
-    const stale = num(
-      /INFLIGHT_STALE_MIN=\$\{INFLIGHT_STALE_MIN:-(\d+)\}/,
-      sh,
-      'INFLIGHT_STALE_MIN'
+    expect(triggers).toMatch(/^\s{2}push:$/m);
+    expect(triggers).toContain('branches: [main]');
+    expect(triggers).not.toMatch(/^\s+paths(?:-ignore)?:/m);
+    expect(triggers).not.toMatch(
+      /^\s{2}(?:schedule|workflow_dispatch|repository_dispatch|pull_request|pull_request_target|workflow_run):/m
     );
-    // Age is measured from createdAt, which includes time spent PENDING behind
-    // another run of the group, so one run can be in flight for two ceilings.
-    expect(
-      stale,
-      `engine-watchdog.sh treats runs older than ${stale}m as stale, but a deploy may be in ` +
-        `flight for ${2 * timeoutMin}m (pending behind one ceiling, then running its own)`
-    ).toBeGreaterThanOrEqual(2 * timeoutMin + 10);
+    expect(engineSignal).toMatch(/^permissions:\s*\{\}\s*$/m);
+    expect(engineSignal).toMatch(/^\s{2}detect:\s*$/m);
+    expect(engineSignal).toContain('fetch-depth: 0');
+    expect(engineSignalCode).toContain('BEFORE_SHA: ${{ github.event.before }}');
+    expect(engineSignalCode).toContain('git diff --quiet "$BEFORE_SHA" "$AFTER_SHA" --');
+    expect(engineSignalCode).toContain('RELEASE_REQUIRED=true');
+    expect(engineSignalCode).toContain('Previous commit is missing or unreadable; failing closed');
+    expect(engineSignal).toContain("if: needs.detect.outputs.release_required == 'true'");
+    expect(engineSignal).toMatch(/^\s{6}contents:\s*write\s*$/m);
+    expect(engineSignalCode).toContain('GH_TOKEN: ${{ github.token }}');
+    expect(engineSignalCode).toContain('REF_SHA: ${{ needs.detect.outputs.target_sha }}');
+    expect(engineSignalCode).toMatch(/\[\[ "\$REF_SHA" =~ \^\[0-9a-f\]\{40\}\$ \]\]/);
+    expect(engineSignalCode).toContain('-f event_type=deploy-club-arena-engine');
+    expect(engineSignalCode).toContain('-F "client_payload[ref_sha]=$REF_SHA"');
+    const signalJob = engineSignalCode.slice(engineSignalCode.indexOf('\n  signal:'));
+    expect(signalJob).not.toMatch(
+      /secrets\.|create-github-app-token|\bgit\s|\bssh\b|\brsync\b|actions\/checkout|\.env|\|\|\s*true/
+    );
   });
 
-  it('refusing to wait says the image is staged, and does not blame the break', () => {
-    // The refusal is legitimate. Reporting it as "the maintenance break never
-    // opened" is not: 23 rows in ca_engine_deploy_attempts blamed a break that
-    // had never been reached, which is where two hours of investigation went.
-    const refusal = gate.slice(gate.indexOf('SECS_TO_GATE" -gt "$BUDGET_CAP_S'));
-    expect(refusal).toMatch(/gate_reason=image staged/);
-    expect(refusal.slice(0, refusal.indexOf('exit 0'))).not.toMatch(/break never opened/i);
+  it('proves checkout identity and protected-main ancestry before touching the host', () => {
+    expect(engineCode).toContain('[ "$RESOLVED_SHA" = "$REQUESTED_SHA" ]');
+    expect(engineCode).toContain(
+      "git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'"
+    );
+    expect(engineCode).toContain('git merge-base --is-ancestor "$RESOLVED_SHA" "$MAIN_SHA"');
+    const hostTouch = engineCode.indexOf('name: Establish pinned ephemeral SSH transport');
+    expect(hostTouch).toBeGreaterThan(engineCode.indexOf('[ "$LATEST_REQUIRED" = "$SHA" ]'));
+  });
+
+  it('has no force path around the maintenance certificate', () => {
+    expect(engineCode).not.toMatch(/github\.event\.inputs/);
+    expect(engineCode).not.toMatch(/force=true|inputs\.force/);
+    const gate = transaction.slice(
+      transaction.indexOf('maintenance_certificate()'),
+      transaction.indexOf('validate_candidate_image()')
+    );
+    expect(gate).toContain('readyForRestart');
+    expect(gate).toContain('durableConfirmed');
+    expect(gate).toContain('unparkedTables');
+    expect(gate).toContain('MIN_BREAK_MS');
+    expect(gate).not.toContain('skip=true');
+    expect(transaction).toContain(
+      "die 'the engine did not present a restart certificate with enough proof time remaining'"
+    );
+    expect(gate).not.toMatch(/skipping the break gate/i);
+  });
+
+  it('makes every no-cutover result explicit', () => {
+    expect(engine).toContain('case "$RESULT" in sealed|already-released)');
+    expect(engine).toContain('[ "$UNIT_RESULT" = success ] && [ "$RESULT_SHA" = "$SHA" ]');
+    expect(engine).toContain("steps.release.outputs.result || 'not completed'");
+    expect(engine).toContain("steps.verify.outputs.verified || 'false'");
+    expect(engine).toContain("STRICT_RECEIPT: '1'");
   });
 });
 
-describe('nothing defers a run that has something to ship', () => {
-  const step = dedupeStep();
-
-  it('there is no spacing decision left that could stand a run down', () => {
-    // THE REGRESSION, BY NAME, TWICE OVER. The spacing gate first read the
-    // wrong clock (/health.uptime, reset by sp-autoheal five times in one
-    // day), and once it read the right one it still had only one power: to
-    // tell a run with new code to stand down and trust a later tick. With the
-    // cron gone nothing comes later. The only skips left are "superseded" (and
-    // that run hands the train on) and "already live".
-    const code = step.replace(/^\s*#.*$/gm, '');
-    expect(code).not.toMatch(/MIN_RESTART_SPACING_SEC/);
-    expect(code).not.toMatch(/reason=coalesced/);
-    const reasons = [
-      ...new Set([...code.matchAll(/echo "reason=([a-z_]+)"/g)].map((m) => m[1])),
-    ].sort();
-    expect(reasons).toEqual(['already_live', 'superseded']);
+describe('the static publisher is event-driven and independent', () => {
+  it('has no timer, workflow dispatch, or self-retry chain', () => {
+    const triggers = triggerBlock(publisher);
+    const code = uncommented(publisher);
+    expect(triggers).toMatch(/^\s{2}push:/m);
+    expect(triggers).toMatch(/^\s{2}repository_dispatch:/m);
+    expect(triggers).not.toMatch(/^\s{2}schedule:/m);
+    expect(triggers).not.toMatch(/^\s{2}workflow_dispatch:/m);
+    expect(code).not.toMatch(/Converge - chain another publish/);
+    expect(code).not.toMatch(/repos\/\$\{\{ github\.repository \}\}\/dispatches/);
   });
 
-  it('a commit production already contains is live by inclusion, never redeployed backwards', () => {
-    // A push event GitHub delivers late can queue a run for an older commit
-    // behind the run that shipped a newer one. That commit is on production
-    // already; deploying it would be a step backwards that the forward-only
-    // release seal refuses, red, for no reason.
-    expect(step).toMatch(
-      /git merge-base --is-ancestor "\$SHA" "\$VER" 2>\/dev\/null; then\s*\n\s*echo "skip=true" >> \$GITHUB_OUTPUT\s*\n\s*echo "reason=already_live"/
-    );
-  });
-
-  it('the same engine tree is live: a control-plane-only run restarts nothing (2026-09-11)', () => {
-    // The control plane starts its own run now (on.push.paths), and such a
-    // run usually carries nothing for the engine. The image is built from
-    // `$SHA:server` alone - the builder labels it with exactly that tree - so
-    // an identical tree means an identical image: skip, never for a rollback.
-    const step = dedupeStep();
-    expect(imageBuilder).toMatch(/rev-parse --verify "\$\{TARGET_SHA\}:server"/);
-    expect(step).toMatch(/SHA_TREE=\$\(git rev-parse --verify -q "\$\{SHA\}:server"/);
-    expect(step).toMatch(
-      /if \[ "\$ROLLBACK_REQUESTED" != "true" \] && \[ -n "\$VER" \] && \[ -n "\$SHA_TREE" \][\s\S]{0,200}?\[ "\$\(git rev-parse --verify -q "\$\{VER\}:server" 2>\/dev\/null\)" = "\$SHA_TREE" \]; then\s*\n\s*echo "skip=true" >> \$GITHUB_OUTPUT\s*\n\s*echo "reason=already_live"/
-    );
-  });
-
-  it('a fix to the deploy control plane starts a run of its own (2026-09-11)', () => {
-    const triggers = yml.slice(yml.indexOf('\non:'), yml.indexOf('\nconcurrency:'));
-    const paths = triggers.slice(
-      triggers.indexOf('    paths:'),
-      triggers.indexOf('workflow_dispatch:')
-    );
-    for (const path of [
-      "- 'server/**'",
-      "- '!server/**/*.test.ts'",
-      "- '!server/sim/**'",
-      "- '.github/workflows/auto-deploy-hetzner.yml'",
-      "- 'scripts/ci/**'",
-    ]) {
-      expect(paths).toContain(path);
-    }
-  });
-
-  it('a rollback is never live by inclusion (review, 2026-09-11)', () => {
-    // A rollback target is by definition contained in the build it rolls back
-    // from. Without this exemption every audited rollback stopped here as
-    // "already live", never reached the seal (the only place MODE=rollback
-    // exists) and went green with production still on the bad build.
-    expect(step).toMatch(
-      /ROLLBACK_REQUESTED: \$\{\{ github\.event\.inputs\.rollback \|\| 'false' \}\}/
-    );
-    expect(step).toMatch(
-      /if \[ "\$ROLLBACK_REQUESTED" != "true" \] && \[ -n "\$VER" \] \\\s*\n\s*&& git cat-file -e "\$\{VER\}\^\{commit\}" 2>\/dev\/null \\\s*\n\s*&& git merge-base --is-ancestor "\$SHA" "\$VER"/
-    );
-    // The exact-version check is unchanged: a rollback to the build that is
-    // already serving has nothing to do.
-    expect(step).toMatch(/if \[ -n "\$VER" \] && \[ "\$VER" = "\$SHORT" \]; then/);
-  });
-
-  it('the unplanned-restart clock comes from the deploy ledger', () => {
-    expect(step).toMatch(/last-shipped-engine-deploy\.mjs/);
-    expect(existsSync(join(ROOT, 'scripts/ci/last-shipped-engine-deploy.mjs'))).toBe(true);
-  });
-
-  it('an unreadable ledger never invents an unplanned restart', () => {
-    // Non-numeric answers (ERR, NEVER) become -1, and the report requires a
-    // positive age: silence from the ledger is not evidence of anything.
-    const script = readFileSync(join(ROOT, 'scripts/ci/last-shipped-engine-deploy.mjs'), 'utf8');
-    expect(script).toMatch(/'ERR'/);
-    expect(script).toMatch(/'NEVER'/);
-    expect(step).toMatch(/SINCE_SHIPPED_N=-1/);
-    expect(step).toMatch(/"\$SINCE_SHIPPED_N" -gt 0/);
-  });
-
-  it('a restart nobody asked for is reported', () => {
-    // An engine younger than our own last deploy was restarted by something
-    // else, outside the announced break, voiding live hands (§13, §10.5).
-    // Until 2026-09-05 that was visible only as a deploy that mysteriously
-    // coalesced - it was never once stated out loud.
-    expect(step).toMatch(/unplanned_restart=true/);
-    expect(step).toMatch(/UNPLANNED RESTART/);
-  });
-});
-
-describe('a run that ships nothing names the gate that actually held', () => {
-  it('the deleted restart-window gate is not referenced anywhere', () => {
-    // `steps.window` has not existed since the hourly :55 break replaced the
-    // Chicago windows. A missing step's output is '' and never 'false', so the
-    // branch was unreachable while reading as a live gate - and it told every
-    // agent who got that far that a 7am/7pm window still governs deploys.
-    const code = yml.replace(/^\s*#.*$/gm, '');
-    expect(code, 'steps.window was deleted with the restart-window gate').not.toMatch(
-      /steps\.window/
-    );
-    expect(
-      code,
-      '§13: the 7am/7pm Chicago window is gone. Do not describe it as live.'
-    ).not.toMatch(/7am\/7pm/);
-  });
-
-  it('every path that declines the cutover records why', () => {
-    const gate = breakGateStep();
-    const skips = [...gate.matchAll(/echo "skip=true" >> \$GITHUB_OUTPUT/g)].length;
-    const reasons = [...gate.matchAll(/echo "gate_reason=/g)].length;
-    expect(
-      reasons,
-      `${skips} paths in the break gate set skip=true but only ${reasons} record a gate_reason. ` +
-        `A path that skips without saying why is how one run came to give three different answers.`
-    ).toBe(skips);
-  });
-
-  it('the warning, the summary and the database all read the same reason', () => {
-    // Three consumers, one string. They disagreed on run 33986167969 and the
-    // loudest of the three was the only one that was false.
-    const didNotDeploy = yml.slice(
-      yml.indexOf("- name: 'DID NOT DEPLOY"),
-      yml.indexOf('- name: Post-deploy summary')
-    );
-    expect(didNotDeploy).toMatch(/steps\.drain\.outputs\.gate_reason/);
-    const truth = yml.slice(yml.indexOf('- name: Record deploy truth in the database'));
-    expect(truth).toMatch(/steps\.drain\.outputs\.gate_reason/);
-    expect(
-      truth,
-      'the ledger must not hard-code a break failure for every way the gate can decline'
-    ).not.toMatch(/skip == 'true' && 'the maintenance break never opened for a restart'/);
-  });
-});
-
-describe('an unannounced restart is an incident, and something watches for one', () => {
-  const rules = readFileSync(join(ROOT, 'infra/monitoring/engine-freeze-rules.yml'), 'utf8');
-
-  it('a single restart outside a maintenance break alerts', () => {
-    // NOTHING watched for this before 2026-09-05. EngineTableRebuildChurn
-    // needs FOUR restarts in thirty minutes; the real pattern was one every
-    // 35-70 minutes - five unannounced restarts in a day, every one under the
-    // threshold and therefore silent. They were found only because they were
-    // also breaking deploys, which is a coincidence, not a detector.
-    expect(rules).toMatch(/alert:\s*EngineRestartedOutsideTheBreak/);
-    const alert = rules.slice(rules.indexOf('alert: EngineRestartedOutsideTheBreak'));
-    const expr = alert.slice(0, alert.indexOf('for:'));
-    // resets(), not changes(): changes() counts every scrape of a monotonic
-    // counter and fires forever on a healthy engine (measured 2026-08-16,
-    // changes()=118 vs resets()=3), which trains people to ignore it.
-    expect(expr).toMatch(/resets\(poker_uptime_seconds/);
-    expect(expr).not.toMatch(/changes\(poker_uptime_seconds/);
-    // Guarded by the break, or it pages every hour about a stop we scheduled
-    // (§13 rule 6).
-    expect(expr).toMatch(/poker_maintenance_break_active/);
-    // ONE restart. A threshold here re-creates the blind spot it was written
-    // to close.
-    expect(expr).toMatch(/>\s*0\b/);
-  });
-});
-
-describe('the watchdog can say WHY production is behind', () => {
-  const sh = readFileSync(join(ROOT, '.github/scripts/engine-watchdog.sh'), 'utf8');
-
-  it('the staleness issue quotes the pipeline ledger', () => {
-    // Staleness said "the engine is behind" and never once said why, while
-    // ca_engine_deploy_attempts held the pipeline's own recorded reason for
-    // every one of the 52 runs that shipped nothing.
-    expect(existsSync(join(ROOT, '.github/scripts/deploy-ship-rate.mjs'))).toBe(true);
-    expect(sh).toMatch(/deploy-ship-rate\.mjs/);
-    expect(sh).toMatch(/\$LEDGER/);
-  });
-
-  it('the evidence is optional and can never fail the watchdog', () => {
-    // A watchdog that dies because its optional evidence was unavailable is
-    // worse than one that reports without it.
-    const script = readFileSync(join(ROOT, '.github/scripts/deploy-ship-rate.mjs'), 'utf8');
-    expect(script).toMatch(/process\.exit\(0\)/);
-    expect(sh).toMatch(/if \[ -n "\$\{DATABASE_URL:-\}" \]/);
-  });
-
-  it('being behind is reported, never dispatched: the train hands itself on', () => {
-    // It used to dispatch the deploy whenever the engine was behind, and on
-    // 2026-09-10 it was the thing starting nearly every deploy - a watchdog as
-    // the primary trigger (Dan: "i do not want any watch dogs"). The train now
-    // starts on every engine push and hands itself on inside the workflow, so
-    // an engine that stays behind means a run FAILED and nothing was pushed
-    // since. That needs a person; one more dispatch of the same commit does not.
-    const code = sh.replace(/^\s*#.*$/gm, '');
-    expect(code).not.toMatch(/gh workflow run/);
-    const block = sh.slice(
-      sh.indexOf('NEXT_WINDOW_EPOCH=$(window_at_or_after "$NOW_TS")'),
-      sh.indexOf('BODY=$(cat')
-    );
-    expect(block, 'it still says whether a run is waiting for the break').toMatch(/INFLIGHT=/);
-    expect(block, 'and says so loudly when nothing is coming').toMatch(/DEPLOY TRAIN STOPPED/);
-    expect(block, 'the :35 tick is not a caller anyone can rely on').not.toMatch(
-      /:35 tick cuts over/
-    );
-  });
-});
-
-describe('an image is built once per commit', () => {
-  it('a staged image is adopted instead of rebuilt', () => {
-    // The revision, exact server-tree ID and clean-build contract together
-    // prove the bytes are identical. Rebuilding is 8-18 minutes spent
-    // reproducing a proven image, and those are the minutes the break gate
-    // then does not have. This is what makes a retry cheap enough to succeed.
-    const start = yml.indexOf('- name: Build immutable image');
-    expect(start, 'the build step has been renamed - re-point this law').toBeGreaterThan(-1);
-    const step = yml.slice(start, yml.indexOf('- name: Install/refresh host supervisor', start));
-    expect(step).toMatch(/build-engine-image\.sh/);
-    expect(imageBuilder).toMatch(/docker image inspect "\$IMAGE_REF"/);
-    expect(imageBuilder).toMatch(/EXISTING_REVISION/);
-    expect(imageBuilder).toMatch(/EXISTING_TREE/);
-    expect(imageBuilder).toMatch(/EXISTING_CONTRACT/);
-    expect(imageBuilder).toMatch(/ENGINE_IMAGE_REUSED=true/);
-    // The adoption must come BEFORE the build, or it is decoration.
-    expect(imageBuilder.indexOf('ENGINE_IMAGE_REUSED=true')).toBeLessThan(
-      imageBuilder.indexOf('docker build')
-    );
+  it('does not wait on or share a concurrency group with the engine deploy', () => {
+    const publishGroup = publisher.match(/^concurrency:\n\s*group:\s*(.+)$/m)?.[1]?.trim();
+    const engineGroup = engine.match(/^concurrency:\n\s*group:\s*(.+)$/m)?.[1]?.trim();
+    expect(publishGroup).toBeTruthy();
+    expect(engineGroup).toBeTruthy();
+    expect(publishGroup).not.toBe(engineGroup);
+    expect(uncommented(publisher)).not.toMatch(/needs:.*hetzner/i);
   });
 });

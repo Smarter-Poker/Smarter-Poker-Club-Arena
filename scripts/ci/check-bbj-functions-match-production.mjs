@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * THE BBJ MONEY PATH IN THE REPO MUST BE THE ONE PRODUCTION RUNS
+ * EVERY WATCHED PRODUCTION BBJ FUNCTION MUST BE REBUILDABLE FROM THE REPO
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * On 2026-08-27 `bbj_atomic_payout_v2` and `bbj_credit_one_recipient` — the two
@@ -12,9 +12,12 @@
  * one — silently, because the functions were tracked only by NAME in
  * scripts/ci/supabase-schema-manifest.json.
  *
- * This prints the normalised fingerprint of each function as the REPO defines
- * it, applying migrations in filename order so the last definition wins, which
- * is what a rebuild would produce. Compare it against production with:
+ * This is a repository reconstruction guard. It does not query production and
+ * its fingerprints must not be presented as live comparison evidence. It
+ * prints the normalised fingerprint of each function as the REPO defines it,
+ * applying migrations in filename order so the last definition wins, which is
+ * what a rebuild would produce. A separately witnessed production comparison
+ * can use:
  *
  *   select proname,
  *          md5(regexp_replace(regexp_replace(pg_get_functiondef(oid),
@@ -83,9 +86,9 @@ for (const name of [...WATCHED].sort()) {
 
 if (missing > 0) {
   console.error(
-    `\n${missing} BBJ money-path function(s) exist in production and in no migration. ` +
+    `\n${missing} watched BBJ money-path function(s) are absent from every migration. ` +
       `A rebuild from this repo would not create them.`
   );
   process.exit(1);
 }
-console.log('\nAll watched BBJ functions are defined in migrations.');
+console.log('\nAll watched BBJ functions can be rebuilt from tracked migrations.');

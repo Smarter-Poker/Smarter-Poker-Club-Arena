@@ -1,41 +1,50 @@
-# 100% Automated Deployment Pipeline
+# Club Arena Delivery Pipeline
 
-This repository is governed by an entirely decoupled, multi-layered architecture designed to prevent stranded code, stale pull requests, and deployment lag. It is built to support extreme velocity (100+ commits/day) and multi-agent concurrency.
+Club Arena has one reviewed delivery chain. Local janitors, recovery watchers,
+direct-main pushes, World Hub bundle syncs, Vercel builds, and workstation SSH
+deploys are not part of it.
 
-## Layer 1: The Local OS Janitor
+## 1. Preserve Work Locally
 
-**Where:** `scripts/agent-recovery-janitor.sh` (triggered by macOS `crontab` every 30m)
-**Purpose:** Prevents local work from being destroyed by `git reset --hard origin/main`.
-**How it works:**
+Work in an isolated feature branch. Stage only task-owned paths, commit with all
+hooks enabled, fetch `origin/main`, and merge it forward when it advances. Never
+rebase or rewrite shared history. A guard refusal is fixed at the root; it is not
+bypassed.
 
-1. Scans all `.agent-trees/`.
-2. Leaves active work (touched in the last 2 hours) strictly alone to prevent hijacking.
-3. Takes abandoned work, commits it, pushes it to `recovery/*`, and opens a Draft PR so GitHub preserves the code.
+## 2. Review And Merge
 
-## Layer 2: Agent Open PR
+Credential-free `.github/workflows/agent-branch-proposal.yml` signals a pushed
+feature branch. Trusted default-branch `.github/workflows/agent-open-pr.yml`
+opens the missing pull request, and `.github/workflows/agent-autopilot.yml`
+enables protected squash auto-merge. Conflicts and failures stay blocked until
+a reviewed commit fixes them; no periodic reconciler mutates branches.
 
-**Where:** `.github/workflows/agent-open-pr.yml`
-**Purpose:** Rescues agents that successfully pushed to GitHub but were blocked from running `gh pr create` (e.g. proxy blocked API).
-**How it works:** Intercepts any new `agent/*` branch creation on GitHub and automatically opens a PR for it.
+## 3. Publish The Frontend
 
-## Layer 3: Agent Autopilot
+A merge to `main` invokes `.github/workflows/publish-club-arena.yml`. It builds
+the exact main SHA and publishes it atomically to the Club Arena Hetzner static
+origin at `ca-static.smarter.poker`. The public World Hub URL is a routing layer
+only. The publisher may also be retried with the `publish-club-arena` repository
+event carrying the exact full main SHA; it still fails closed on stale or
+diverged input.
 
-**Where:** `.github/workflows/agent-autopilot.yml`
-**Purpose:** Removes the need for agents to manually poll CI and merge their own work.
-**How it works:**
+## 4. Deploy The Engine
 
-1. Enables Squash Auto-Merge instantly on open PRs.
-2. Keeps branches automatically rebased and fresh against `main`.
-3. Merges automatically the second the required checks (TypeScript, Vitest, Playwright, Build) pass.
+Protected-main server changes trigger `.github/workflows/stage-engine-release.yml`,
+which immediately sends the exact SHA to `.github/workflows/auto-deploy-hetzner.yml`.
+The owning workflow stages and verifies that immutable commit, then cuts over
+only within the sealed maintenance authority. There is no force input, timer
+dependency, or manual workstation deployment path.
 
-## Layer 4: The Stuck Sweep
+## 5. Prove The Release
 
-**Where:** `.github/scripts/report-stuck-prs.sh` (runs inside Autopilot `*/20` schedule)
-**Purpose:** Prevents rotting code (the "Revert Trap").
-**How it works:** If a PR fails a check, encounters a conflict, or sits open without merging, it sweeps the repository and creates a GitHub Issue alerting agents that human/AI intervention is needed.
+`.github/workflows/production-integrity-audit.yml` compares both the direct
+Hetzner `build-info.json` and the public Club Arena route with current `main`.
+It is read-only and cannot repair or re-dispatch. A green workflow is not
+sufficient: completion requires the intended SHA and affected behavior to be
+live. Engine adoption is proven independently with the cache-busted engine
+health/version response.
 
-## Layer 5: Publish Watchdog
-
-**Where:** `.github/workflows/publish-watchdog.yml`
-**Purpose:** Proves code actually reached production, rather than just merging into `main`.
-**How it works:** Curls Vercel (`build-info.json`) every 15 minutes. If Vercel is serving an old SHA, it triggers an automatic retry of the deployment pipeline. If it still fails, it opens a high-priority GitHub Issue.
+Credential values live only in the Club Arena repository's GitHub Actions
+secret store and the target runtime. Documentation and local `.env` files may
+name required variables but must never contain or relay production values.

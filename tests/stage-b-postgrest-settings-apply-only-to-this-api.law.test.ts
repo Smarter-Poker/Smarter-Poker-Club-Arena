@@ -10,7 +10,9 @@ const contractionFiles = readdirSync(migrationsDirectory).filter(
     file.endsWith('_stage_b_current_postimage_contraction.sql.pending')
 );
 if (contractionFiles.length !== 1) {
-  throw new Error(`expected exactly one staged contraction migration, found ${contractionFiles.length}`);
+  throw new Error(
+    `expected exactly one staged contraction migration, found ${contractionFiles.length}`
+  );
 }
 const migration = readFileSync(resolve(migrationsDirectory, contractionFiles[0]), 'utf8');
 const probe = readFileSync(

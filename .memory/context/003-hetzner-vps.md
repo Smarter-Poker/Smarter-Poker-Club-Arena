@@ -1,38 +1,31 @@
-# Hetzner VPS — Game Engine Server
+# Hetzner Club Arena Engine Authority
 
 **Type:** CONTEXT
-**Date:** 2026-03-30
+
+**Rewritten:** 2026-09-10
+
 **Project:** Smarter Poker Club Arena
 
-## Connection Details
+The Club Arena repository is the sole source and release authority for the
+production game engine at `https://engine.smarter.poker`.
 
-| Field          | Value                                 |
-| -------------- | ------------------------------------- |
-| IP Address     | `178.156.160.206`                     |
-| SSH User       | `root`                                |
-| Remote Path    | `/opt/club-arena`                     |
-| Container Name | `club-arena-engine`                   |
-| Health Check   | `https://engine.smarter.poker/health` |
-| Port           | `8080`                                |
+Engine releases use `.github/workflows/auto-deploy-hetzner.yml` only. The
+workflow resolves an immutable commit already reachable from Club Arena
+`main`, builds and stages the corresponding image, waits for the engine's
+maintenance certificate, performs the sealed cutover, and proves the exact
+live SHA. It deliberately exposes no force input.
 
-## Deploy Process
+Do not SSH to the host, mutate its checkout, build or restart Docker by hand,
+edit runtime credentials, or delegate deployment to World Hub or Vercel.
+Local deploy scripts and mutable tags are not recovery paths.
 
-1. SSH: `ssh root@178.156.160.206`
-2. Pull: `cd /opt/club-arena && git pull origin main`
-3. Build: `docker build -t club-arena-engine -f server/Dockerfile server/`
-4. Restart: `docker stop club-arena-engine; docker rm club-arena-engine; docker run -d --name club-arena-engine --env-file /opt/club-arena/server/.env -p 8080:8080 --restart unless-stopped club-arena-engine`
-5. Verify: `curl https://engine.smarter.poker/health`
+The workflow consumes these write-only Club Arena repository secrets:
 
-## Quick Deploy Script
+- `HETZNER_SSH_PRIVATE_KEY`
+- `HETZNER_HOST`
+- `HETZNER_HOST_KEY`
 
-```bash
-bash /Users/smarter.poker/Documents/club-arena/server/deploy-hetzner.sh
-```
-
-## Notes
-
-- SSH key-based auth (ed25519) set up from Cowork VM
-- Docker container runs Node.js game engine
-- Auto-restarts via `--restart unless-stopped`
-- Health endpoint returns: running, uptime, activeTables, activeTournaments, totalHandsDealt
-- Engine serves: POST /action, /timebank, /heartbeat, /preaction, /sitout, /straddle, /state, /rit, /insurance, /showhand, /discard; GET /actions, /health
+Never place their values in Markdown, a tracked environment file, a command,
+or another repository. Completion requires the exact target SHA in a terminal
+successful workflow and cache-busted live health, followed by the required
+runtime stability observation.

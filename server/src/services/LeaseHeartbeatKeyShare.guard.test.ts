@@ -28,9 +28,7 @@ const FIXTURE = readFileSync(
 describe('lease heartbeat locks remain live without weakening exact ownership', () => {
   it('is a fail-closed post-Stage-B stopped-engine cutover', () => {
     expect(currentPostimagePath < keySharePath).toBe(true);
-    expect(keySharePath).toMatch(
-      /20260910060008_stage_b_lease_keyshare_once\.sql(?:\.pending)?$/
-    );
+    expect(keySharePath).toMatch(/20260910060008_stage_b_lease_keyshare_once\.sql(?:\.pending)?$/);
     expect(SQL).toContain('-- 20260910042137_stage_b_lease_keyshare_once');
     expect(SQL.match(/^BEGIN;$/gm)).toHaveLength(1);
     expect(SQL.match(/^COMMIT;$/gm)).toHaveLength(1);

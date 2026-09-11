@@ -1,35 +1,3 @@
 # tests/the-deploy-can-always-ship.law.test.ts
 
-A deploy run is green only when production serves its commit or not shipping
-was deliberate (already live, superseded and handed on, the window held by
-another owner); a run that should have shipped and did not is red, and EVERY
-start minute must be able to wait for the next :55 (2026-09-10: runs
-dispatched by the engine watchdog at other minutes staged their image, went
-green and shipped nothing while production crash-looped). Since the same
-evening there is no cron and no watchdog dispatch at all: every engine push
-starts its own run, a superseded run dispatches current main, and a run its
-break gate could not serve dispatches its successor - so the start-minute law
-is the whole arithmetic, and the restart-spacing ("coalescing") skip is gone,
-because the :55 break is the spacing and nothing would come back for a
-coalesced commit.
-Pins the three ways it stopped doing that on 2026-09-05, when 52 of 98
-attempts in 72 hours shipped nothing and every one reported success: the job
-timeout and the break gate's wait budget must be the same number and must
-leave every scheduled tick able to reach the next :55 (a budget that shrank
-under a growing build is what made an off-cycle dispatch arithmetically
-incapable of landing); the deploy must measure the last deploy WE shipped,
-from `ca_engine_deploy_attempts`, never `/health.uptime`, which anything
-restarting the container resets, and must report an engine younger than our
-own last deploy as an unplanned, unannounced restart; every path
-that declines the cutover must record its own `gate_reason`, which the run
-warning, the job summary and the deploy ledger all read, so one run can never
-again give three different answers; the deleted 7am/7pm restart-window gate
-(`steps.window`) must not be referenced as though it were live (§13); and an
-image already staged for a commit must be adopted rather than rebuilt, which
-is what leaves a retry enough budget to wait for the break. It also pins the
-two detectors that were missing entirely: a single engine restart outside an
-announced break must alert (on `resets()`, never `changes()`, with no
-threshold above zero - five unannounced restarts in one day all sat under the
-existing four-in-thirty rule), and the staleness issue must quote the deploy
-ledger for WHY production is behind, with that evidence optional so it can
-never fail the watchdog.
+The Club Arena engine has one fail-closed Hetzner release authority. Every protected-main server change immediately emits one exact-SHA repository event; the release workflow accepts no timer, manual dispatch, push, force, or maintenance-bypass input. It proves checkout identity, protected-main ancestry, current engine-component ownership, and the engine-authored durable maintenance certificate before the host transaction can cut over. Every no-cutover result is explicit and written to the append-only deployment receipt. The static publisher remains a separate non-cancelling Hetzner lane with its own exact events and cannot wait on or share serialization with the engine.

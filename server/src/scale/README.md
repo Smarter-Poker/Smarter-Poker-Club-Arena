@@ -263,11 +263,12 @@ These are **not** code decisions — they need your call and provisioning:
      durable coordination. Either satisfies `BusTransport` — decision is
      reversible.
 
-3. **Hosting / topology** — current target is a Hetzner VPS (see
-   `server/deploy-hetzner.sh`, `Dockerfile`, `railway.json`). For multi-node you
-   need: a load balancer / gateway tier, a private network between nodes, and a
-   managed or self-hosted Redis/NATS. The **WS gateway split** (stateless
-   front, sticky-by-table routing to compute) is the main new infra component.
+3. **Hosting / topology** — current target is the Club Arena-owned Hetzner
+   engine (see `.github/workflows/auto-deploy-hetzner.yml`,
+   `server/scripts/engine-up.sh`, and `Dockerfile`). For multi-node you need: a
+   load balancer / gateway tier, a private network between nodes, and a managed
+   or self-hosted Redis/NATS. The **WS gateway split** (stateless front,
+   sticky-by-table routing to compute) is the main new infra component.
 
 4. **Worker count & weights** — how many `worker_threads` per box (start:
    `cpus - 1`), and per-worker weights if boxes are heterogeneous

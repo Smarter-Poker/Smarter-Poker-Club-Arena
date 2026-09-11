@@ -4,9 +4,10 @@ import { join } from 'node:path';
 
 const root = process.cwd();
 const read = (path: string): string => readFileSync(join(root, path), 'utf8');
-const migrationName = readdirSync(join(root, 'supabase/migrations')).find((name) =>
-  name.endsWith('_stage_b_current_postimage_contraction.sql') ||
-  name.endsWith('_stage_b_current_postimage_contraction.sql.pending')
+const migrationName = readdirSync(join(root, 'supabase/migrations')).find(
+  (name) =>
+    name.endsWith('_stage_b_current_postimage_contraction.sql') ||
+    name.endsWith('_stage_b_current_postimage_contraction.sql.pending')
 );
 if (!migrationName) throw new Error('tournament move authority contraction is missing');
 

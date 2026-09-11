@@ -175,7 +175,7 @@ export default function BlacklistManagerPage() {
   const checkSeated = useCallback(async (member: MemberOption, resolvedClubId: string) => {
     const { data, error: seatError } = await supabase
       .from('table_seats')
-      .select('table_id, tables!inner(club_id, status)')
+      .select('table_id, tables!table_seats_table_id_fkey!inner(club_id, status)')
       .eq('user_id', member.user_id)
       .is('left_at', null)
       .eq('tables.club_id', resolvedClubId);

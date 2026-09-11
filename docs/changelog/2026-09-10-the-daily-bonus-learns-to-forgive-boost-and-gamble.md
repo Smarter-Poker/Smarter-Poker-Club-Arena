@@ -87,6 +87,14 @@ transaction, 558 ms, recorded byte-exact in `schema_migrations`.
   own countdown (a deadline, not a decremented counter, like the reset
   clock) and the diamonds it has added so far. `boost_already_live` reads
   as "A Mission Boost Is Already Running".
+- **The boost row printed its multiplier twice (fixed 2026-09-11).** The
+  render slot printed the factor and the row's figure printed the factor, so
+  the tile read "2x" directly above "2x" - beside the Rabbit Hunts row and its
+  painted render, that reads as a mistake, and it shipped that way. The row now
+  mirrors the time bank above it, which had the shape right all along: the
+  render slot carries the TOTAL (24H), the figure carries the COUNT (2x), and
+  the copy explains the unit without repeating either. No number appears on a
+  row twice.
 - **Not painted yet.** The OpenAI image account had no credits
   (`credit_balance_exhausted`) when this shipped, so no new badge was
   painted for the boost. When credits are back, paint one in the kit's badge

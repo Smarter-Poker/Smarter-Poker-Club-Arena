@@ -12451,7 +12451,10 @@ export default function TablePage({
                 if (live) {
                   const { count, error: seatCountErr } = await supabase
                     .from('table_seats')
-                    .select('id, tables!inner(tournament_id)', { count: 'exact', head: true })
+                    .select('id, tables!table_seats_table_id_fkey!inner(tournament_id)', {
+                      count: 'exact',
+                      head: true,
+                    })
                     .eq('user_id', userId)
                     .eq('tables.tournament_id', table.tournament_id)
                     .is('left_at', null);

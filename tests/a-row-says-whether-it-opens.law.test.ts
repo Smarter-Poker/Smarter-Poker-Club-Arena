@@ -1,6 +1,7 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { migrationCorpus } from './helpers/migrationCorpus';
 
 /**
  * A ROW SAYS WHETHER IT OPENS (binding)
@@ -34,22 +35,41 @@ import { describe, expect, it } from 'vitest';
  * of six, one super agent two of six, another four of six.
  */
 
-const MIGRATIONS = resolve(__dirname, '../supabase/migrations');
 const PANEL = resolve(__dirname, '../src/components/club/RakeSnapshotPanel.tsx');
 
-function latestDefining(fnName: string): string {
-  const files = readdirSync(MIGRATIONS)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-  let found = '';
-  for (const f of files) {
-    const sql = readFileSync(resolve(MIGRATIONS, f), 'utf8');
-    if (sql.includes(`FUNCTION public.${fnName}(`)) found = sql;
-  }
-  return found;
+/**
+ * READ THE TREE ONCE, NOT ONCE PER QUESTION.
+ *
+ * This file used to walk `supabase/migrations` - 2,897 files on 2026-09-11,
+ * and the one directory in this repo that only ever grows - six separate
+ * times, once for each question it asks. On a 28-core box running the suite
+ * uncapped, two of these `it` blocks crossed vitest's 5s default and the file
+ * went red; CI, which caps workers at cores/4, stayed green on the identical
+ * commit. A guard whose verdict depends on how busy the machine is is a coin
+ * flip, and it teaches everyone to re-run CI instead of reading it.
+ *
+ * `migrationCorpus()` reads the directory once per test file and answers from
+ * memory; the memos below take this file from six walks to one. See
+ * `tests/helpers/migrationCorpus.ts`.
+ */
+function memo<K, V>(compute: (key: K) => V): (key: K) => V {
+  const held = new Map<K, V>();
+  return (key: K) => {
+    if (!held.has(key)) held.set(key, compute(key));
+    return held.get(key) as V;
+  };
 }
 
-function body(fnName: string): string {
+/** The LAST migration that declares `fnName`, which is the one production has. */
+const latestDefining = memo((fnName: string): string => {
+  const needle = `FUNCTION public.${fnName}(`;
+  let found = '';
+  for (const migration of migrationCorpus())
+    if (migration.sql.includes(needle)) found = migration.sql;
+  return found;
+});
+
+const body = memo((fnName: string): string => {
   const sql = latestDefining(fnName);
   const start = sql.indexOf(`FUNCTION public.${fnName}(`);
   if (start < 0) return '';
@@ -59,24 +79,25 @@ function body(fnName: string): string {
     .split('\n')
     .filter((l) => !l.trimStart().startsWith('--'))
     .join('\n');
-}
+});
 
 /** Every migration, for changes that are applied as a patch rather than a
  *  re-declaration. */
-function allMigrations(): string {
-  return readdirSync(MIGRATIONS)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()
-    .map((f) => readFileSync(resolve(MIGRATIONS, f), 'utf8'))
-    .join('\n');
-}
+const allMigrations = memo((_: 'all'): string =>
+  migrationCorpus()
+    .map((migration) => migration.sql)
+    .join('\n')
+);
+
+/** The panel, read once however many questions ask about it. */
+const panelSource = memo((_: 'panel'): string => readFileSync(PANEL, 'utf8'));
 
 /** The predicates that decide who may read a downline. */
 const CONDITIONS = ['fn_is_club_admin_uid', 'fn_is_union_overseer', 'fn_is_agent_ancestor'];
 
 describe('a row says whether it opens', () => {
   it('a club admin may open an agent in their own club', () => {
-    const all = allMigrations();
+    const all = allMigrations('all');
     expect(
       all,
       'without this the owner is shown a network total and refused its composition'
@@ -87,7 +108,7 @@ describe('a row says whether it opens', () => {
     // fn_agent_downline_rake spans every club the agent belongs to when
     // p_club_id is null. Admitting an admin there would admit them to clubs
     // they do not administer, on the strength of one they do.
-    const all = allMigrations();
+    const all = allMigrations('all');
     const clause =
       /AND NOT \(p_club_id IS NOT NULL AND public\.fn_is_club_admin_uid\(p_club_id\)\)/;
     expect(all).toMatch(clause);
@@ -100,14 +121,14 @@ describe('a row says whether it opens', () => {
     // of every migration from that heading runs on into later files, which
     // legitimately mention the finances gate for other reasons - and the law
     // then fails for a sentence written somewhere else.
-    const file = readdirSync(MIGRATIONS).find((n) =>
-      n.endsWith('_a_club_admin_may_open_an_agent_in_their_own_club.sql')
+    const widening = migrationCorpus().find((m) =>
+      m.name.endsWith('_a_club_admin_may_open_an_agent_in_their_own_club.sql')
     );
-    expect(file, 'the migration that widens the gate is gone').toBeTruthy();
+    expect(widening, 'the migration that widens the gate is gone').toBeTruthy();
     // Comments stripped. The header of that migration EXPLAINS why the
     // finances gate was not used, so reading the prose finds the name of the
     // thing the law forbids and fails on the explanation.
-    const patch = readFileSync(resolve(MIGRATIONS, file as string), 'utf8')
+    const patch = (widening?.sql ?? '')
       .split('\n')
       .filter((l) => !l.trimStart().startsWith('--'))
       .join('\n');
@@ -136,7 +157,7 @@ describe('a row says whether it opens', () => {
     // The failure this catches is asymmetric drift: a fourth way in added to
     // the walker and not to the flag hides rows that would open; added to the
     // flag and not the walker offers rows that refuse.
-    const gate = allMigrations();
+    const gate = allMigrations('all');
     const flag = body('fn_ca_rake_by_agent');
     for (const fn of CONDITIONS) {
       expect(gate, `${fn} is not in the gate`).toMatch(new RegExp(fn));
@@ -158,7 +179,7 @@ describe('a row says whether it opens', () => {
   });
 
   it('the panel only offers a door the server says will open', () => {
-    const tsx = readFileSync(PANEL, 'utf8');
+    const tsx = panelSource('panel');
     // Rendering every agent as a button and handling the refusal afterwards
     // is the version of this that ships an error toast per click.
     expect(tsx).toMatch(/r\.can_drill && r\.agent_user_id \? \(/);
@@ -166,7 +187,7 @@ describe('a row says whether it opens', () => {
   });
 
   it('a drill from the club list is not bounced back out of it', () => {
-    const tsx = readFileSync(PANEL, 'utf8');
+    const tsx = panelSource('panel');
     // A club owner holds no downline of their own, so 'agent' is not among the
     // scopes they are offered - and the fallback that keeps an operator out of
     // scopes they do not hold would fire on the very next render.
@@ -174,7 +195,7 @@ describe('a row says whether it opens', () => {
   });
 
   it('backing out of a drill returns where it started', () => {
-    const tsx = readFileSync(PANEL, 'utf8');
+    const tsx = panelSource('panel');
     expect(tsx).toMatch(/setDrillOrigin\(scope\)/);
     expect(tsx).toMatch(/const leaveDrill = useCallback/);
     // "My Downline" is both wrong and a dead end for an owner who has none.
@@ -182,7 +203,7 @@ describe('a row says whether it opens', () => {
   });
 
   it('a search does not follow the operator into the downline', () => {
-    const tsx = readFileSync(PANEL, 'utf8');
+    const tsx = panelSource('panel');
     // It was matching AGENT names in the club list. Carried in, it filters
     // PLAYER names, and quietly hides most of the book just asked for.
     const open = tsx.slice(tsx.indexOf('const openAgent'), tsx.indexOf('const leaveDrill'));

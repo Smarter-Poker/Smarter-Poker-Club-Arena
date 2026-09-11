@@ -17,67 +17,116 @@
  *         and its `remainder -= weight; if (remainder <= 0)` loop could award a
  *         ZERO-weight tier when the remainder landed exactly on a boundary.
  *
- * These tests are statistical where they have to be, but every threshold below
- * is loose enough that a correct implementation will not flake: the tightest is
- * a chi-square bound that a uniform generator clears with probability > 0.999.
+ * The release gate must never depend on a lucky random sample. Every assertion
+ * below drives WebCrypto with an exact Uint32 sequence, including rejection
+ * boundaries, and exhausts every Fisher-Yates path for a four-element array.
  */
 
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { secureRandomInt, secureRandom, secureShuffle } from './CryptoRandom.js';
-import { Deck } from './PokerEngine.js';
+import { Deck, RANKS, SUITS } from './PokerEngine.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/**
- * Chi-square statistic for observed counts against a uniform expectation.
- * Returned rather than asserted so each caller can pick its own bound.
- */
-function chiSquareUniform(counts: number[]): number {
-  const total = counts.reduce((a, b) => a + b, 0);
-  const expected = total / counts.length;
-  return counts.reduce((acc, c) => acc + (c - expected) ** 2 / expected, 0);
+function stubUint32Draws(draws: readonly number[]) {
+  let next = 0;
+  const getRandomValues = vi.fn((target: Uint32Array): Uint32Array => {
+    if (!(target instanceof Uint32Array) || target.length !== 1) {
+      throw new Error('CryptoRandom requested an unexpected entropy buffer');
+    }
+    if (next >= draws.length) {
+      throw new Error('CryptoRandom consumed more entropy than the test vector supplied');
+    }
+    target[0] = draws[next++];
+    return target;
+  });
+
+  vi.stubGlobal('crypto', { getRandomValues });
+  return {
+    getRandomValues,
+    consumed: () => next,
+  };
 }
 
 const cardKey = (c: { rank: string; suit: string }) => `${c.rank}${c.suit}`;
+const UINT32_RANGE = 0x100000000;
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // secureRandomInt
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('secureRandomInt', () => {
-  it('returns 0 for degenerate ranges instead of NaN or a throw', () => {
-    expect(secureRandomInt(0)).toBe(0);
-    expect(secureRandomInt(1)).toBe(0);
-    expect(secureRandomInt(-5)).toBe(0);
-  });
+  it('rejects non-integer and out-of-domain ranges before drawing entropy', () => {
+    const entropy = stubUint32Draws([0]);
 
-  it('stays inside [0, exclusiveMax) for ranges that do not divide 2^32', () => {
-    // 3, 5, 7, 52 and 1_000_000 all leave a remainder against 2^32 — these are
-    // precisely the ranges a modulo-biased implementation skews on.
-    for (const max of [3, 5, 7, 52, 1_000_000]) {
-      for (let i = 0; i < 2_000; i++) {
-        const v = secureRandomInt(max);
-        expect(Number.isInteger(v)).toBe(true);
-        expect(v).toBeGreaterThanOrEqual(0);
-        expect(v).toBeLessThan(max);
-      }
+    for (const invalid of [
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      1.5,
+      Number.MAX_SAFE_INTEGER + 1,
+    ]) {
+      expect(() => secureRandomInt(invalid)).toThrow(TypeError);
     }
+    for (const invalid of [-1, 0, UINT32_RANGE + 1]) {
+      expect(() => secureRandomInt(invalid)).toThrow(RangeError);
+    }
+
+    expect(entropy.consumed()).toBe(0);
   });
 
-  it('is uniform over a range that does not divide 2^32', () => {
-    // 7 buckets, 70_000 draws => expected 10_000 each.
-    // chi-square with 6 df: the 99.9th percentile is 22.46.
-    const counts = new Array(7).fill(0);
-    for (let i = 0; i < 70_000; i++) counts[secureRandomInt(7)]++;
-    expect(chiSquareUniform(counts)).toBeLessThan(22.46);
+  it('returns the sole value for max 1 without consuming entropy', () => {
+    const entropy = stubUint32Draws([0xffffffff]);
+    expect(secureRandomInt(1)).toBe(0);
+    expect(entropy.consumed()).toBe(0);
   });
 
-  it('covers every value of a small range', () => {
-    const seen = new Set<number>();
-    for (let i = 0; i < 1_000; i++) seen.add(secureRandomInt(6));
-    expect(seen.size).toBe(6);
+  it('uses all 2^32 source values when the range divides 2^32', () => {
+    const entropy = stubUint32Draws([0xffffffff]);
+
+    // The former 0xffffffff domain-size bug rejected this value for max 16.
+    expect(secureRandomInt(16)).toBe(15);
+    expect(entropy.getRandomValues).toHaveBeenCalledTimes(1);
+  });
+
+  it('supports the full Uint32 range, including its largest result', () => {
+    const entropy = stubUint32Draws([0xffffffff]);
+
+    expect(secureRandomInt(UINT32_RANGE)).toBe(UINT32_RANGE - 1);
+    expect(entropy.getRandomValues).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects exactly the incomplete residue tail for max 7', () => {
+    const firstRejected = UINT32_RANGE - (UINT32_RANGE % 7);
+    const entropy = stubUint32Draws([
+      firstRejected,
+      firstRejected + 1,
+      firstRejected + 2,
+      firstRejected + 3,
+      14,
+    ]);
+
+    expect(firstRejected).toBe(4294967292);
+    expect(secureRandomInt(7)).toBe(0);
+    expect(entropy.getRandomValues).toHaveBeenCalledTimes(5);
+  });
+
+  it('maps accepted boundary values to exact residues', () => {
+    const entropy = stubUint32Draws([0, 1, 6, 7, 4294967291]);
+
+    expect([
+      secureRandomInt(7),
+      secureRandomInt(7),
+      secureRandomInt(7),
+      secureRandomInt(7),
+      secureRandomInt(7),
+    ]).toEqual([0, 1, 6, 0, 6]);
+    expect(entropy.getRandomValues).toHaveBeenCalledTimes(5);
   });
 });
 
@@ -86,24 +135,15 @@ describe('secureRandomInt', () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('secureRandom', () => {
-  it('returns a float in [0, 1) and never repeats trivially', () => {
-    const seen = new Set<number>();
-    for (let i = 0; i < 5_000; i++) {
-      const v = secureRandom();
-      expect(v).toBeGreaterThanOrEqual(0);
-      expect(v).toBeLessThan(1);
-      seen.add(v);
-    }
-    // 5_000 draws from a 2^32 space: a collision is possible but the generator
-    // being stuck is what this catches.
-    expect(seen.size).toBeGreaterThan(4_990);
-  });
+  it('maps exact Uint32 boundary vectors into [0, 1)', () => {
+    const entropy = stubUint32Draws([0, 0x80000000, 0xffffffff]);
 
-  it('has a mean near 0.5', () => {
-    let sum = 0;
-    const n = 50_000;
-    for (let i = 0; i < n; i++) sum += secureRandom();
-    expect(Math.abs(sum / n - 0.5)).toBeLessThan(0.01);
+    expect([secureRandom(), secureRandom(), secureRandom()]).toEqual([
+      0,
+      0.5,
+      (UINT32_RANGE - 1) / UINT32_RANGE,
+    ]);
+    expect(entropy.getRandomValues).toHaveBeenCalledTimes(3);
   });
 });
 
@@ -112,17 +152,8 @@ describe('secureRandom', () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('secureShuffle', () => {
-  it('is a permutation - nothing added, dropped or duplicated', () => {
-    for (let trial = 0; trial < 200; trial++) {
-      const arr = Array.from({ length: 52 }, (_, i) => i);
-      secureShuffle(arr);
-      expect(arr.length).toBe(52);
-      expect(new Set(arr).size).toBe(52);
-      expect([...arr].sort((a, b) => a - b)).toEqual(Array.from({ length: 52 }, (_, i) => i));
-    }
-  });
-
-  it('handles empty and single-element arrays', () => {
+  it('handles empty and single-element arrays without drawing entropy', () => {
+    const entropy = stubUint32Draws([0]);
     const empty: number[] = [];
     secureShuffle(empty);
     expect(empty).toEqual([]);
@@ -130,19 +161,40 @@ describe('secureShuffle', () => {
     const one = [7];
     secureShuffle(one);
     expect(one).toEqual([7]);
+    expect(entropy.consumed()).toBe(0);
   });
 
-  it('sends element 0 to a uniform destination index', () => {
-    // The old modulo implementation skewed low indices. 10 slots, 20_000
-    // shuffles => expected 2_000 each; chi-square with 9 df, 99.9th pct = 27.88.
-    const N = 10;
-    const counts = new Array(N).fill(0);
-    for (let trial = 0; trial < 20_000; trial++) {
-      const arr = Array.from({ length: N }, (_, i) => i);
-      secureShuffle(arr);
-      counts[arr.indexOf(0)]++;
+  it('follows a known Fisher-Yates swap vector in descending slot order', () => {
+    const entropy = stubUint32Draws([2, 0, 1]);
+    const values = [0, 1, 2, 3];
+
+    secureShuffle(values);
+
+    expect(values).toEqual([3, 1, 0, 2]);
+    expect(entropy.getRandomValues).toHaveBeenCalledTimes(3);
+  });
+
+  it('maps every Fisher-Yates choice path to one unique permutation', () => {
+    const permutations = new Set<string>();
+
+    // A length-four Fisher-Yates pass has 4 * 3 * 2 = 24 possible choice
+    // paths. Exhausting all of them proves both completeness and one-to-one
+    // mapping without relying on a random sample or a statistical threshold.
+    for (let atThree = 0; atThree < 4; atThree++) {
+      for (let atTwo = 0; atTwo < 3; atTwo++) {
+        for (let atOne = 0; atOne < 2; atOne++) {
+          const entropy = stubUint32Draws([atThree, atTwo, atOne]);
+          const values = [0, 1, 2, 3];
+          secureShuffle(values);
+
+          expect([...values].sort((a, b) => a - b)).toEqual([0, 1, 2, 3]);
+          expect(entropy.consumed()).toBe(3);
+          permutations.add(values.join(','));
+        }
+      }
     }
-    expect(chiSquareUniform(counts)).toBeLessThan(27.88);
+
+    expect(permutations.size).toBe(24);
   });
 });
 
@@ -151,38 +203,17 @@ describe('secureShuffle', () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('Deck.shuffle', () => {
-  it('always holds 52 distinct cards after a shuffle', () => {
-    for (let trial = 0; trial < 100; trial++) {
-      const deck = new Deck();
-      const cards = deck.deal(52);
-      expect(cards.length).toBe(52);
-      expect(new Set(cards.map(cardKey)).size).toBe(52);
-      expect(deck.remaining()).toBe(0);
-    }
-  });
+  it('uses the exact Fisher-Yates known vector and preserves every card', () => {
+    const entropy = stubUint32Draws(new Array(51).fill(0));
+    const newDeckOrder = SUITS.flatMap((suit) => RANKS.map((rank) => `${rank}${suit}`));
 
-  it('does not leave the deck in new-deck order', () => {
-    const ordered = new Deck();
-    // A fresh Deck() already shuffles in reset(); build the reference order by
-    // hand instead of trusting an unshuffled instance.
-    const first = ordered.deal(52).map(cardKey).join(',');
-    const second = new Deck().deal(52).map(cardKey).join(',');
-    expect(first).not.toBe(second);
-  });
+    // Choosing slot zero at every descending step rotates new-deck order left
+    // by one. This pins Deck -> secureShuffle wiring as well as the full pass.
+    const cards = new Deck().deal(52).map(cardKey);
 
-  it('deals the ace of spades to a uniform position', () => {
-    // The single strongest signal that a shuffle is biased: track one card's
-    // landing slot across many deals, bucketed into 13 groups of 4 positions.
-    const BUCKETS = 13;
-    const counts = new Array(BUCKETS).fill(0);
-    const TRIALS = 26_000; // expected 2_000 per bucket
-    for (let t = 0; t < TRIALS; t++) {
-      const cards = new Deck().deal(52);
-      const idx = cards.findIndex((c) => c.rank === 'A' && c.suit === 'spades');
-      counts[Math.floor(idx / 4)]++;
-    }
-    // chi-square with 12 df: 99.9th percentile is 32.91.
-    expect(chiSquareUniform(counts)).toBeLessThan(32.91);
+    expect(cards).toEqual([...newDeckOrder.slice(1), newDeckOrder[0]]);
+    expect(new Set(cards).size).toBe(52);
+    expect(entropy.getRandomValues).toHaveBeenCalledTimes(51);
   });
 });
 

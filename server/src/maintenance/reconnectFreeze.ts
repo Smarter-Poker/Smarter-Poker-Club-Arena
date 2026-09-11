@@ -15,7 +15,7 @@ export function completeReconnectFreeze(startMs: number, durationMs: number): vo
     !Number.isFinite(startMs) ||
     !Number.isFinite(durationMs) ||
     durationMs <= 0 ||
-    durationMs > 900_000 ||
+    !Number.isFinite(startMs + durationMs) ||
     (completedFreeze !== null && startMs < completedFreeze.startMs)
   )
     return;
@@ -37,7 +37,7 @@ export function completeTableReconnectFreeze(
     completedFreeze.startMs !== startMs ||
     !Number.isFinite(endMs) ||
     endMs < completedFreeze.endMs ||
-    endMs - startMs > 900_000
+    !Number.isFinite(endMs - startMs)
   )
     return;
   tableResumeEnds.set(tableId, Math.max(tableResumeEnds.get(tableId) ?? 0, endMs));

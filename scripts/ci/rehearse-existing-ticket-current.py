@@ -9,6 +9,7 @@ source satellite terminal execution and late chairs are not certified here.
 import argparse
 import datetime
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import re
@@ -19,13 +20,12 @@ SOCKET = "/tmp/codex-chip-drift-cutover-e2iav203/socket"
 CMD = [PSQL, "-X", "-qAt", "-h", SOCKET, "-p", "55473", "-U", "postgres",
        "-d", "full_stage1", "-v", "ON_ERROR_STOP=1"]
 PROBE = "scripts/ci/probes/existing-ticket-current-redemption-native.sql"
+STAGE_B_RESOLVER = "scripts/ci/stage_b_migration_source.py"
 SOURCES = {
     "m4": ("supabase/migrations/20260909165629_satellite_settlement_has_one_atomic_authority.sql", "ce14eccd72c0589fd4feae70fe1395a11347d1c0812de15090a7b48337d08882"),
-    "seat_core": ("supabase/migrations/20260910000905_final_tournament_roster_seat_authority_after_scheduler_fence.sql", "908d9e9d415e43b697e4321a025bbf8d0330b0ab2d327c2a33165fd315269275"),
-    "public_root": ("supabase/migrations/20260909043000_tournament_terminal_roots_are_db_first_hardened.sql", "af23b09dd963122cf09072d8b240093b588d57cd91a272f7179c9efcc5b2e9bc"),
     "funded": ("supabase/migrations/20260910171924_satellite_seats_count_once_and_keep_the_funded_prize.sql", "9a00bc662f729d5a6db25c4f10a5ceeb45509b230e35f48252620fe9dcef3fc3"),
     "resolver": ("supabase/migrations/20260910020626_the_host_club_is_in_its_own_union.sql", "4e078b55a44bbc3e516d4a0da73ce39453b4dc6950225d98e02d2a8d6c0412e9"),
-    "lane": ("supabase/migrations/20260910035245_the_settlement_lane_is_per_tournament_not_platform_wide.sql", "d07cbe35f62ef4a18e29779c812526c27420da4a82c891c0bf2f136b9e6a31fe"),
+    "lane": ("supabase/migrations/20260910035435_the_settlement_lane_is_per_tournament_not_platform_wide.sql", "d07cbe35f62ef4a18e29779c812526c27420da4a82c891c0bf2f136b9e6a31fe"),
     "m6": ("supabase/migrations/20260909014433_spin_reserve_settlement_commits_its_journal_or_nothing.sql", "3a2af49bcaf13fdca72a4b89e2d6b38ee9c125f4d8b09aa8626c36e593aebc1f"),
     "rolling": ("supabase/migrations/20260910173147_the_settlement_lane_is_per_tournament_for_rolling_authorities.sql", "bc620a6b093ab9769615427168763bc35aaed44e60ee190202470dfcef0f744b"),
     "cap": ("supabase/migrations/20260906233722_a_cap_counts_entries_not_the_seats_filled_right_now.sql", "0e66deca80157a34105d1f1cae569b52f07cbe2e74c07caf46fa11a53ba3ecac"),
@@ -75,6 +75,15 @@ def digest(text):
 
 def quote(text):
     return "'" + text.replace("'", "''") + "'"
+
+
+def stage_b_source(root):
+    spec = importlib.util.spec_from_file_location(
+        "existing_ticket_stage_b_source", root / STAGE_B_RESOLVER
+    )
+    resolver = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(resolver)
+    return resolver.resolve(root)
 
 
 def definition(source, name):
@@ -208,6 +217,8 @@ def compose(root):
         if digest(text) != expected:
             raise ValueError("reviewed tracked source changed: " + path)
         texts[key] = text
+    stage_b_path = stage_b_source(root)
+    texts["stage_b"] = stage_b_path.read_text()
     sql = """BEGIN;
 SET LOCAL statement_timeout='60s';
 SET LOCAL lock_timeout='5s';
@@ -233,15 +244,17 @@ $owned_baseline$;
     sql += schema_foundation(texts["m4"])
     for key, name, signature, expected, roles in FUNCTIONS:
         sql += install(definition(texts[key], name), name, signature, expected, roles)
-    for key, name, signature, before, after in (
-        ("m6", "fn_ca_lock_tournament_seat_acquisition", "uuid,uuid,uuid", None, "b7d371b05e543f1fa9ac3131288bca13"),
-        ("seat_core", "fn_ca_register_for_tournament_with_ticket_for", "uuid,uuid,uuid", "0684c947d613e4aaa2b4309e1a9ff06d", "73c4229d74a0ebdd79ec48a17e43883b"),
-    ):
-        item = definition(texts[key], name)
-        if before is not None and body_hash(item) != before:
-            raise ValueError("original ticket core differs")
-        item = lane_transform(item, texts["lane"], name)
-        sql += install(item, name, signature, after)
+    name = "fn_ca_lock_tournament_seat_acquisition"
+    item = lane_transform(definition(texts["m6"], name), texts["lane"], name)
+    sql += install(item, name, "uuid,uuid,uuid", "b7d371b05e543f1fa9ac3131288bca13")
+    # Stage B is now the sole executable source for the final ticket core. It
+    # already contains the reviewed tournament-local lane, so no legacy
+    # post-source transformation is replayed here.
+    sql += install(
+        definition(texts["stage_b"], "fn_ca_register_for_tournament_with_ticket_for"),
+        "fn_ca_register_for_tournament_with_ticket_for", "uuid,uuid,uuid",
+        "73c4229d74a0ebdd79ec48a17e43883b",
+    )
     # Only the function declaration is renamed, so its body remains exact M4.
     alias = definition(texts["m4"], "fn_register_for_tournament_with_ticket")
     old = "public.fn_register_for_tournament_with_ticket("
@@ -249,7 +262,7 @@ $owned_baseline$;
         raise ValueError("private ticket alias declaration is ambiguous")
     alias = alias.replace(old, "public.fn_register_for_tournament_with_ticket_before_terminal_gate(", 1)
     sql += install(alias, "fn_register_for_tournament_with_ticket_before_terminal_gate", "uuid,uuid", "bd9bdc21fe6dbdd039a9e4f784ac4f75")
-    sql += install(definition(texts["public_root"], "fn_register_for_tournament_with_ticket"),
+    sql += install(definition(texts["stage_b"], "fn_register_for_tournament_with_ticket"),
         "fn_register_for_tournament_with_ticket", "uuid,uuid", "f7f87de4557415c2a691282202a522b2", "authenticated,service_role")
     # Same narrow source selection used by current entry acceptance. Exclude
     # the historical production player's postcondition, retain substitution
@@ -359,7 +372,11 @@ def main():
         "baseline_before": before_baseline, "baseline_after": after_baseline,
         "exit_code": result.returncode if result is not None else None,
         "exact_rollback": restored, "passed_checks": markers,
-        "source_sha256": {path: sha for path, sha in SOURCES.values()},
+        "source_sha256": {
+            **{path: sha for path, sha in SOURCES.values()},
+            STAGE_B_RESOLVER: digest((root / STAGE_B_RESOLVER).read_text()),
+            str(stage_b_source(root).relative_to(root)): digest(stage_b_source(root).read_text()),
+        },
         "probe_sha256": digest((root / PROBE).read_text()), "composed_sha256": digest(sql),
         "before": before, "after": after, "output": output, "error": errors,
     }

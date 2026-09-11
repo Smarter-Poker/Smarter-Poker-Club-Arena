@@ -2178,8 +2178,10 @@ const SPIN_BOARD_BUYINS = [1, 2, 3, 5, 10, 20, 50, 100];
  * WHAT IS A TARGET. Any scheduled MTT in the owner's own scope (the union for
  * the house board, the club for a standalone club) that is open for
  * registration, starts at least SATELLITE_HU_TARGET_LEAD_MS from now and no
- * more than SATELLITE_HU_TARGET_HORIZON_MS away, and costs at least
- * SATELLITE_HU_MIN_TICKET to enter. "Bigger buy-in" is that floor: nobody
+ * more than SATELLITE_HU_TARGET_HORIZON_MS away, costs at least
+ * SATELLITE_HU_MIN_TICKET to enter, and whose entry the satellite finish can
+ * deliver (satelliteTargetIsDeliverable: never a bounty, PKO, mystery-bounty
+ * or Spin event, whose seat the settlement authority refuses). "Bigger buy-in" is that floor: nobody
  * needs a satellite into a 5-chip turbo. The board keeps one satellite per
  * target for the SATELLITE_HU_TARGETS_PER_OWNER dearest targets, so the
  * biggest events of the week always have a feeder running.
@@ -2225,6 +2227,44 @@ export interface SatelliteTargetRow {
   variant: string | null;
   max_players: number | null;
   game_type?: string | null;
+  tournament_type?: string | null;
+  is_bounty?: boolean | null;
+  is_pko?: boolean | null;
+  is_mystery_bounty?: boolean | null;
+  is_premium_spin?: boolean | null;
+}
+
+/**
+ * A FEEDER ONLY FEEDS AN EVENT ITS FINISH CAN SEAT (2026-09-11).
+ *
+ * The one satellite settlement authority (fn_settle_satellite_tournament)
+ * refuses every target whose entry is not a plain prize + fee split: bounty,
+ * PKO, mystery bounty and Spin, and any row whose flags are unknown (NULL is
+ * refused there, because the bounty slice of a seat must never be booked as
+ * prize). The feeder read none of those columns, so the dearest weekly event
+ * - Sunday Funday High Roller PKO, 67.50 + 7.50 with a 35.00 bounty - got a
+ * heads-up satellite every half hour from 03:01 UTC on 2026-09-11, and every
+ * one of them was played to a winner and then refused at the finish.
+ *
+ * This is the same predicate, so the feeder and the finish agree. The
+ * database refuses the insert as well (the migration that ships with this),
+ * so no other creation path can open a satellite the finish will refuse.
+ * Unknown is not supported: a row without the flags is not a target.
+ */
+export function satelliteTargetIsDeliverable(row: SatelliteTargetRow): boolean {
+  const flags = [row.is_bounty, row.is_pko, row.is_mystery_bounty, row.is_premium_spin];
+  if (flags.some((flag) => flag !== false)) return false;
+  const variant = String(row.variant ?? '').toLowerCase();
+  if (
+    variant === 'spin' ||
+    variant === 'bounty' ||
+    variant === 'progressive_bounty' ||
+    variant === 'mystery_bounty' ||
+    variant === 'pko'
+  )
+    return false;
+  if (String(row.tournament_type ?? '').toUpperCase() === 'SPIN') return false;
+  return true;
 }
 
 /**
@@ -2245,6 +2285,7 @@ export function pickSatelliteTargets(
     .filter((r) => {
       const v = String(r.variant ?? '').toLowerCase();
       if (v === 'spin' || v === 'sng' || v === 'satellite') return false;
+      if (!satelliteTargetIsDeliverable(r)) return false;
       const seats = Number(r.max_players);
       if (Number.isFinite(seats) && seats > 0 && seats <= 2) return false;
       const start = r.start_time ? Date.parse(r.start_time) : NaN;
@@ -3224,7 +3265,9 @@ export class TournamentRecurringService {
     try {
       let q = supabase
         .from('tournaments')
-        .select('id, name, start_time, buy_in_amount, buy_in_fee, variant, max_players, game_type')
+        .select(
+          'id, name, start_time, buy_in_amount, buy_in_fee, variant, max_players, game_type, tournament_type, is_bounty, is_pko, is_mystery_bounty, is_premium_spin'
+        )
         .eq('status', 'REGISTERING')
         .gt('start_time', new Date(Date.now() + SATELLITE_HU_TARGET_LEAD_MS).toISOString())
         .lt('start_time', new Date(Date.now() + SATELLITE_HU_TARGET_HORIZON_MS).toISOString())

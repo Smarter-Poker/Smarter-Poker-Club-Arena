@@ -265,9 +265,16 @@ export default function ClubDiamondGamesOperationsPage() {
         }
       } catch (err) {
         // No answer came back, so nobody knows whether the chips moved. The key
-        // is deliberately kept: the next press is the same intent, not a new one.
+        // is deliberately kept: the next press is the same intent, not a new one,
+        // and the server will either carry it out or report it as a replay.
+        //
+        // The first cut of this said the chips had not moved, which is a claim
+        // nobody here is in a position to make, printed over numbers that were
+        // never rechecked. The console rereads and lets the wallet answer.
         reportError(err, 'ClubDiamondGamesOperationsPage.fundPromo');
-        if (isMountedRef.current) toast.error('Those Chips Could Not Be Moved');
+        if (!isMountedRef.current) return;
+        toast.error('No Answer Came Back. The Numbers Below Are Rechecked');
+        await load(game);
       } finally {
         if (isMountedRef.current) setFunding(false);
       }

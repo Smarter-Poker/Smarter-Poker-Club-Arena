@@ -33,7 +33,11 @@
  *     union one;
  *   - the client mints ONE key per intent and HOLDS it across a thrown
  *     request, which is the half of the protection that lives in the browser.
- *     A key minted per press would put the bug straight back.
+ *     A key minted per press would put the bug straight back;
+ *   - and a request that never answered is reported as what it is. The first
+ *     cut of this said "Those Chips Could Not Be Moved" on a thrown request,
+ *     which is a claim nobody in the browser is in a position to make, printed
+ *     over numbers that were never rechecked. The console rereads instead.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'fs';
@@ -189,5 +193,16 @@ describe('the half of the protection that lives in the browser', () => {
 
   it.each(PAGES)('%s tells the operator a replay moved nothing', (page) => {
     expect(src(page)).toContain("'Those Chips Were Already Moved'");
+  });
+
+  it.each(PAGES)('%s rereads after a thrown request instead of claiming it failed', (page) => {
+    const s = src(page);
+    const caught = s.slice(s.indexOf('} catch (err) {', s.indexOf('const moveIntoPromo')));
+    const block = caught.slice(0, caught.indexOf('} finally {'));
+    // Nobody in the browser knows whether a request that never answered moved
+    // the chips. Saying it did not is a claim, and it sat on stale numbers.
+    expect(block).not.toContain('Those Chips Could Not Be Moved');
+    expect(block).toContain("toast.error('No Answer Came Back. The Numbers Below Are Rechecked')");
+    expect(block).toContain('load(');
   });
 });

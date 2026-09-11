@@ -54,7 +54,43 @@ describe('HorseSessionRotator sees the whole room', () => {
   });
 
   it('declines the pass on a failed page rather than rotating half a room', () => {
-    expect(src).toMatch(/if \(error \|\| !chunk\) return;/);
+    /* THE PIN MOVED WITH THE MECHANISM (2026-09-09, CLAUDE.md 10.6).
+     *
+     * This asserted the exact one-line form `if (error || !chunk) return;`.
+     * The branch is now a block, because a bare return was the whole defect
+     * on 2026-09-09: two migrations added composite foreign keys from
+     * `table_seats` to `tables`, PostgREST refused the unqualified embed
+     * (PGRST201), every page failed, and the rotator declined every pass for
+     * three and a half hours in complete silence. The room read is the only
+     * read it has, so session ends, lone stands, tournament leaves, seat
+     * changes and the human release rule all stopped at once and nothing
+     * anywhere said so.
+     *
+     * THE CONTRACT THIS FILE EXISTS FOR IS UNCHANGED and is asserted more
+     * strictly than before: a failed page still declines the pass rather than
+     * rotating half a room, AND it can no longer do so silently. Weakening
+     * either half re-ships one of the two bugs. */
+    const guard = src.indexOf('if (error || !chunk)');
+    expect(guard, 'the failed-page guard must still exist').toBeGreaterThan(-1);
+    const branch = src.slice(guard, src.indexOf('seats.push(...chunk)', guard));
+    // It still declines the pass - rotating a half-read room is the old bug.
+    expect(branch).toMatch(/\breturn;/);
+    // ...and it is never silent again - the 2026-09-09 bug.
+    expect(branch).toContain('HorseSessionRotator.seat_read_failed');
+    expect(branch).toContain('console.warn(');
+  });
+
+  it('names its foreign key, so a new relationship cannot kill the read', () => {
+    /* ADDED 2026-09-09. `table_seats` gained two composite foreign keys to
+     * `tables` in one afternoon and the unqualified embed died on the spot.
+     * Naming the parent makes the read immune to how many relationships
+     * exist between the two tables, which is not something this file should
+     * have to learn again from an outage. */
+    expect(src).toContain('tables!table_seats_table_id_fkey!inner(');
+    const code = src;
+    expect(code, 'no unqualified tables embed may come back').not.toMatch(
+      /[^!_a-zA-Z]tables!inner\(/
+    );
   });
 });
 

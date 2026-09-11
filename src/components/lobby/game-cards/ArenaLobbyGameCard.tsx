@@ -23,6 +23,19 @@ export function arenaGameCardActionsForEntry(
         onSecondary: () => ctx.onViewTable?.(entry),
       };
     }
+    /* A disabled game (or a paused table) is not taking players; the door
+       refuses GAME_CLOSED. Say so rather than offer a Join that only fails. */
+    if (entry.status === 'closed') {
+      return {
+        /* No onPrimary: the button is disabled, so a handler on it would be
+           code that can never run. The secondary still opens the game. */
+        primaryLabel: `${entry.game ? 'Game' : 'Table'} ${entry.statusLabel}`,
+        primaryTone: 'neutral',
+        primaryDisabled: true,
+        secondaryLabel: entry.game ? 'View Game' : 'View Table',
+        onSecondary: () => ctx.onViewTable?.(entry),
+      };
+    }
     if (entry.status === 'full' || entry.status === 'waitlist') {
       const joined = mine === 'waitlisted';
       return {

@@ -1,9 +1,101 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
-   MUST MOVE LOBBY (Dan 2026-09-05) - the frame is TournamentLobbyModal.css
-   (tlm-*); this sheet is only the content. Palette from club-engine.css, the
-   Facebook scheme (.agent/workflows/design-guidelines.md): no gold, no amber.
-   Mobile-first: 375px is the reference width.
+   MUST MOVE LOBBY (Dan 2026-09-05) - the 3/4 geometry is TournamentLobbyModal.css
+   (tlm-*: the overlay, the slide, the sheet-on-a-phone); this sheet is the
+   material and the content. Mobile-first: 375px is the reference width.
+
+   #SMARTERCASINOREALISM (audit 2026-09-09, lane H). This used to be a flat
+   generic panel: Facebook-blue rectangles on rgba(255,255,255,0.04) cards with
+   a 1px grey border, which is a wireframe of a console and not a console. It
+   is now built from the material vocabulary club-engine.css defines ONCE on
+   :root (the --realism-* tokens, each read with its literal fallback so the
+   panel survives a harness that never loads that sheet):
+
+     - the panel is a machined chassis: carbon over obsidian, a gunmetal edge
+       that reads as an edge, a lit rail down the hinge side;
+     - every section is a bevelled gunmetal frame - a hairline of light on the
+       top edge (--realism-bevel), a dark cavity under it (--realism-cavity),
+       and a cast shadow so it sits IN the chassis, not on it;
+     - labels are chrome-lettered: Roboto Condensed caps in --realism-chrome
+       with an engraved shadow; readouts are --realism-chrome-hot condensed
+       numerals in recessed wells;
+     - the actions are illuminated pill buttons: a blue glass face, a specular
+       line across the top, a glow, and a real press in :active (no :hover,
+       ever - tests/no-hover-effects.law.test.ts).
+
+   WHAT THIS IS NOT. #ClubArenaConsole's painted chassis (SpadeConsole and the
+   spade-console-v1 slices) is NOT on origin/main as of 2026-09-09 - it lives
+   on the agent/cw-console branch - so this surface cannot be printed onto
+   that art yet. When the kit lands this sheet is the content layer to keep
+   and the frames below are what the painted slices replace.
+
+   Brand colours only (design-guidelines.md): the house blue, chrome, cyan for
+   live data. No gold, no amber, no browns.
    ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* ─── The chassis ─── */
+.mml-panel {
+  --mml-panel: var(--realism-panel, #0b1017);
+  --mml-panel-raised: var(--realism-panel-raised, #111925);
+  --mml-obsidian: var(--realism-obsidian, #05070a);
+  --mml-carbon: var(--realism-carbon, #0d1218);
+  --mml-gunmetal: var(--realism-gunmetal, #27313c);
+  --mml-gunmetal-lit: var(--realism-gunmetal-lit, #3a4756);
+  --mml-chrome: var(--realism-chrome, #b8c3cd);
+  --mml-chrome-hot: var(--realism-chrome-hot, #e6edf3);
+  --mml-muted: var(--realism-muted, #7f8c9b);
+  --mml-cyan: var(--realism-cyan, #00d4ff);
+  --mml-blue: #1877f2;
+  --mml-blue-deep: #1250b0;
+  --mml-bevel: var(--realism-bevel, inset 0 1px 0 rgba(255, 255, 255, 0.07));
+  --mml-cavity: var(--realism-cavity, inset 0 -1px 0 rgba(0, 0, 0, 0.6));
+  --mml-lift: var(--realism-lift, 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.45));
+  --mml-font-label: var(
+    --realism-font-label,
+    'Roboto Condensed',
+    'Rajdhani',
+    Inter,
+    system-ui,
+    sans-serif
+  );
+  --mml-font-display: var(
+    --realism-font-display,
+    'Rajdhani',
+    'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif
+  );
+  --mml-engrave: 0 1px 0 rgba(0, 0, 0, 0.85);
+  background: linear-gradient(180deg, var(--mml-carbon) 0%, var(--mml-obsidian) 100%);
+  border-left: 1px solid var(--mml-gunmetal-lit);
+  /* The lit rail down the hinge, the way the machined drawers carry it. */
+  box-shadow:
+    inset 3px 0 0 var(--mml-blue-deep),
+    inset 4px 0 0 rgba(255, 255, 255, 0.1),
+    -18px 0 44px rgba(0, 0, 0, 0.62);
+}
+
+/* The header is a plate that sits proud of the chassis. */
+.mml-panel .tlm-header {
+  background: linear-gradient(180deg, var(--mml-panel-raised) 0%, var(--mml-panel) 100%);
+  border-bottom: 1px solid var(--mml-gunmetal);
+  box-shadow:
+    var(--mml-bevel),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.45),
+    0 5px 12px rgba(0, 0, 0, 0.3);
+}
+
+.mml-panel .tlm-title {
+  font-family: var(--mml-font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mml-chrome-hot);
+  text-shadow:
+    var(--mml-engrave),
+    0 0 14px rgba(24, 119, 242, 0.22);
+}
 
 .mml-body {
   overflow-y: auto;
@@ -18,41 +110,59 @@
   flex: 0 0 auto;
 }
 
+/* ─── Frames: every section is a bevelled gunmetal frame ─── */
+.mml-game,
+.mml-me,
+.mml-table,
+.mml-error,
+.mml-loading {
+  border-radius: var(--realism-radius, 8px);
+  background: linear-gradient(180deg, var(--mml-panel-raised) 0%, var(--mml-panel) 100%);
+  border: 1px solid var(--mml-gunmetal);
+  box-shadow: var(--mml-bevel), var(--mml-cavity), var(--mml-lift);
+}
+
 .mml-error,
 .mml-loading {
   padding: 14px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-secondary, #b0b8c4);
-  font-size: 0.85rem;
+  font-family: var(--mml-font-label);
+  font-size: 0.86rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--mml-chrome);
   text-align: center;
+  text-shadow: var(--mml-engrave);
 }
 
 .mml-error {
   color: #ff7b7b;
+  border-color: rgba(255, 91, 110, 0.4);
 }
 
+/* Chrome-lettered labels. */
 .mml-section-title {
-  font-size: 0.7rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  font-family: var(--mml-font-label);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--text-secondary, #b0b8c4);
+  color: var(--mml-chrome);
+  text-shadow: var(--mml-engrave);
   margin-bottom: 6px;
 }
 
 /* ─── The game ─── */
 .mml-game {
   padding: 12px;
-  border-radius: 12px;
-  background: linear-gradient(180deg, rgba(24, 119, 242, 0.16) 0%, rgba(255, 255, 255, 0.03) 100%);
-  border: 1px solid rgba(24, 119, 242, 0.32);
 }
 
 .mml-game-name {
-  font-size: 1.05rem;
-  font-weight: 800;
-  color: var(--text-primary, #fff);
+  font-family: var(--mml-font-display);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--mml-chrome-hot);
+  text-shadow: var(--mml-engrave);
 }
 
 .mml-game-line {
@@ -61,23 +171,39 @@
   align-items: center;
   gap: 8px;
   margin-top: 4px;
-  font-size: 0.85rem;
-  color: var(--text-secondary, #b0b8c4);
+  font-family: var(--mml-font-label);
+  font-size: 0.86rem;
+  letter-spacing: 0.03em;
+  color: var(--mml-chrome);
 }
 
+/* The style is an etched plate, lit blue, not a coloured sticker. */
 .mml-style {
-  padding: 2px 8px;
+  padding: 2px 9px;
   border-radius: 999px;
-  background: #1877f2;
+  background: linear-gradient(180deg, var(--mml-blue) 0%, var(--mml-blue-deep) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow:
+    var(--mml-bevel),
+    0 0 10px rgba(24, 119, 242, 0.35);
   color: #fff;
+  font-family: var(--mml-font-label);
   font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-shadow: var(--mml-engrave);
 }
 
 .mml-stakes {
   font-weight: 700;
-  color: var(--text-primary, #fff);
+  font-variant-numeric: tabular-nums;
+  color: var(--mml-chrome-hot);
+}
+
+/* "6 Max": chrome, a shade under the stakes. (It had no rule at all before
+   2026-09-09 and read in whatever the line inherited.) */
+.mml-hand {
+  color: var(--mml-chrome);
 }
 
 .mml-figures {
@@ -87,65 +213,84 @@
   margin-top: 10px;
 }
 
+/* Readouts sit in recessed wells cut into the frame. */
 .mml-figure {
   display: flex;
   flex-direction: column;
   align-items: center;
   padding: 8px 4px;
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.28);
+  border-radius: 6px;
+  background: var(--mml-obsidian);
+  border: 1px solid rgba(0, 0, 0, 0.7);
+  box-shadow:
+    inset 0 2px 5px rgba(0, 0, 0, 0.7),
+    0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .mml-figure-value {
-  font-size: 1.25rem;
-  font-weight: 800;
-  color: var(--text-primary, #fff);
+  font-family: var(--mml-font-display);
+  font-size: 1.35rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--mml-cyan);
+  text-shadow: 0 0 10px rgba(0, 212, 255, 0.35);
   line-height: 1;
 }
 
 .mml-figure-label {
   margin-top: 4px;
-  font-size: 0.62rem;
-  letter-spacing: 0.1em;
+  font-family: var(--mml-font-label);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--text-secondary, #b0b8c4);
+  color: var(--mml-muted);
 }
 
 /* ─── Your seat ─── */
 .mml-me {
   padding: 12px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
 }
 
 .mml-me-line {
-  font-size: 0.95rem;
+  font-family: var(--mml-font-display);
+  font-size: 1rem;
   font-weight: 700;
-  color: var(--text-primary, #fff);
+  letter-spacing: 0.03em;
+  color: var(--mml-chrome-hot);
+  text-shadow: var(--mml-engrave);
 }
 
 .mml-me-note {
   margin-top: 4px;
   font-size: 0.82rem;
-  color: var(--text-secondary, #b0b8c4);
+  color: var(--mml-chrome);
 }
 
+/* The move sentence: a lit plate, the one message in a panel of readouts. */
 .mml-me-move {
   margin-top: 8px;
   padding: 8px 10px;
-  border-radius: 8px;
-  background: rgba(24, 119, 242, 0.18);
-  border: 1px solid rgba(24, 119, 242, 0.4);
-  font-size: 0.85rem;
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(24, 119, 242, 0.32) 0%, rgba(18, 80, 176, 0.22) 100%);
+  border: 1px solid rgba(24, 119, 242, 0.55);
+  box-shadow:
+    var(--mml-bevel),
+    0 0 12px rgba(24, 119, 242, 0.25);
+  font-family: var(--mml-font-label);
+  font-size: 0.86rem;
   font-weight: 600;
-  color: var(--text-primary, #fff);
+  letter-spacing: 0.03em;
+  color: var(--mml-chrome-hot);
+  text-shadow: var(--mml-engrave);
 }
 
+/* An engraved rule, not a drawn divider. */
 .mml-seat-change {
   margin-top: 12px;
   padding-top: 10px;
-  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .mml-request-row,
@@ -155,60 +300,116 @@
   align-items: center;
   gap: 10px;
   font-size: 0.85rem;
-  color: var(--text-primary, #fff);
+  color: var(--mml-chrome-hot);
 }
 
 .mml-hint {
   font-size: 0.78rem;
-  color: var(--text-secondary, #b0b8c4);
+  color: var(--mml-chrome);
 }
 
-.mml-btn {
-  appearance: none;
-  border: none;
-  border-radius: 10px;
-  background: #1877f2;
-  color: #fff;
-  font-weight: 800;
-  font-size: 0.82rem;
-  letter-spacing: 0.02em;
-  min-height: 44px;
-  padding: 0 16px;
-  cursor: pointer;
-}
-
-.mml-btn:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-/* JOIN GAME, beside Close in the header (Dan 2026-09-05). It borrows the
-   .tlm-close geometry so the two buttons are the same height and touch
-   target, and wears the brand blue so it reads as the action rather than
-   the dismissal. margin-left:auto keeps the pair together on the right of
-   a space-between header that now has three children. */
+/* ─── Illuminated pill buttons ───
+   The face is blue glass, the top edge carries a specular line, the glow says
+   it is powered. metallic-popups.css bevels every button inside a dialog with
+   !important, so the shadow is restated here at higher specificity, or the
+   glow is lost and the pill flattens into that sheet's generic bevel. */
+.mml-btn,
 .mml-join {
-  margin-left: auto;
-  border-color: transparent;
-  background: #1877f2;
+  appearance: none;
+  position: relative;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: linear-gradient(180deg, #2b8cff 0%, var(--mml-blue) 45%, var(--mml-blue-deep) 100%);
   color: #fff;
-  font-weight: 800;
+  font-family: var(--mml-font-label);
+  font-weight: 700;
+  font-size: 0.84rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow: var(--mml-engrave);
+  min-height: 44px;
+  padding: 0 18px;
+  cursor: pointer;
+  overflow: hidden;
 }
 
+.mml-panel .mml-btn,
+.mml-panel .mml-join {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.35),
+    0 0 14px rgba(24, 119, 242, 0.45),
+    0 4px 10px rgba(0, 0, 0, 0.5) !important;
+}
+
+.mml-btn::after,
+.mml-join::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 1px;
+  right: 1px;
+  height: 1px;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+}
+
+.mml-panel .mml-btn:active:not(:disabled),
+.mml-panel .mml-join:active:not(:disabled) {
+  box-shadow:
+    inset 0 3px 6px rgba(0, 0, 0, 0.6),
+    0 0 6px rgba(24, 119, 242, 0.3) !important;
+  filter: brightness(0.92);
+  transform: translateY(1px);
+}
+
+.mml-btn:active:not(:disabled)::after,
+.mml-join:active:not(:disabled)::after {
+  opacity: 0;
+}
+
+.mml-btn:disabled,
 .mml-join:disabled {
   opacity: 0.45;
   cursor: default;
+  filter: saturate(0.4);
 }
 
+.mml-panel .mml-btn:disabled,
+.mml-panel .mml-join:disabled {
+  box-shadow: none !important;
+}
+
+/* JOIN GAME, beside Close in the header (Dan 2026-09-05). Its own geometry -
+   the same 44px floor and width as .tlm-close - and the lit face, so it reads
+   as the action rather than the dismissal. margin-left:auto keeps the pair
+   together on the right of a space-between header that has three children. */
+.mml-join {
+  margin-left: auto;
+  min-width: 64px;
+  padding: 0 14px;
+  font-size: 0.8rem;
+}
+
+/* The steel plate: a secondary control, unlit. */
 .mml-btn--ghost {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: linear-gradient(180deg, var(--mml-gunmetal-lit) 0%, var(--mml-gunmetal) 100%);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: var(--mml-chrome-hot);
+}
+
+.mml-panel .mml-btn--ghost {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.45),
+    0 4px 10px rgba(0, 0, 0, 0.5) !important;
 }
 
 .mml-btn--small {
   min-height: 34px;
-  padding: 0 12px;
-  font-size: 0.74rem;
+  padding: 0 14px;
+  font-size: 0.72rem;
   margin-left: auto;
 }
 
@@ -220,14 +421,17 @@
 }
 
 .mml-table {
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
   overflow: hidden;
 }
 
+/* The table you are looking at wears the lit edge. */
 .mml-table--here {
-  border-color: rgba(24, 119, 242, 0.6);
+  border-color: rgba(24, 119, 242, 0.7);
+  box-shadow:
+    var(--mml-bevel),
+    var(--mml-cavity),
+    0 0 12px rgba(24, 119, 242, 0.25),
+    var(--mml-lift);
 }
 
 .mml-table--closing {
@@ -240,39 +444,53 @@
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  background: rgba(0, 0, 0, 0.25);
+  background: rgba(0, 0, 0, 0.35);
+  border-bottom: 1px solid #000;
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .mml-table-name {
-  font-weight: 800;
-  font-size: 0.9rem;
-  color: var(--text-primary, #fff);
+  font-family: var(--mml-font-display);
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+  color: var(--mml-chrome-hot);
+  text-shadow: var(--mml-engrave);
 }
 
+/* The state is an etched plate. */
 .mml-table-state {
-  font-size: 0.66rem;
+  font-family: var(--mml-font-label);
+  font-size: 0.64rem;
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  padding: 2px 6px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-secondary, #b0b8c4);
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--mml-obsidian);
+  border: 1px solid var(--mml-gunmetal);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.7);
+  color: var(--mml-chrome);
 }
 
 .mml-table--closing .mml-table-state {
-  background: rgba(255, 123, 123, 0.18);
+  border-color: rgba(255, 91, 110, 0.45);
   color: #ff9b9b;
 }
 
 .mml-table-count {
-  font-size: 0.8rem;
+  font-family: var(--mml-font-label);
+  font-size: 0.82rem;
   font-weight: 700;
-  color: var(--text-secondary, #b0b8c4);
+  font-variant-numeric: tabular-nums;
+  color: var(--mml-cyan);
+  text-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
 }
 
 .mml-table-queue {
+  font-family: var(--mml-font-label);
   font-size: 0.72rem;
+  letter-spacing: 0.03em;
   color: #79b4ff;
 }
 
@@ -291,12 +509,12 @@
   align-items: center;
   gap: 6px;
   font-size: 0.8rem;
-  color: var(--text-primary, #fff);
+  color: var(--mml-chrome-hot);
   min-height: 22px;
 }
 
 .mml-seat--open {
-  color: var(--text-secondary, #8b93a1);
+  color: var(--mml-muted);
 }
 
 .mml-seat--me .mml-seat-name {
@@ -305,9 +523,10 @@
 }
 
 .mml-seat-n {
+  font-family: var(--mml-font-label);
   font-size: 0.68rem;
   font-weight: 700;
-  color: var(--text-secondary, #8b93a1);
+  color: var(--mml-muted);
 }
 
 .mml-seat-name {
@@ -317,14 +536,16 @@
 }
 
 .mml-seat-stack {
+  font-family: var(--mml-font-label);
   font-variant-numeric: tabular-nums;
   font-weight: 700;
+  color: var(--mml-chrome);
 }
 
 /* ─── The list ─── */
 .mml-list-note {
   font-size: 0.76rem;
-  color: var(--text-secondary, #b0b8c4);
+  color: var(--mml-chrome);
   margin-bottom: 6px;
 }
 
@@ -343,20 +564,29 @@
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+  background: linear-gradient(180deg, var(--mml-panel-raised) 0%, var(--mml-panel) 100%);
+  border: 1px solid var(--mml-gunmetal);
+  box-shadow: var(--mml-bevel), var(--mml-cavity);
   font-size: 0.84rem;
-  color: var(--text-primary, #fff);
+  color: var(--mml-chrome-hot);
 }
 
 .mml-list-row--me {
-  background: rgba(24, 119, 242, 0.2);
-  border: 1px solid rgba(24, 119, 242, 0.45);
+  background: linear-gradient(180deg, rgba(24, 119, 242, 0.3) 0%, rgba(18, 80, 176, 0.2) 100%);
+  border-color: rgba(24, 119, 242, 0.6);
+  box-shadow:
+    var(--mml-bevel),
+    0 0 12px rgba(24, 119, 242, 0.25);
 }
 
 .mml-list-pos {
-  font-weight: 800;
-  color: #79b4ff;
+  font-family: var(--mml-font-display);
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--mml-cyan);
+  text-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
 }
 
 .mml-list-name {
@@ -366,8 +596,10 @@
 }
 
 .mml-list-table {
+  font-family: var(--mml-font-label);
   font-size: 0.74rem;
-  color: var(--text-secondary, #b0b8c4);
+  letter-spacing: 0.04em;
+  color: var(--mml-chrome);
 }
 
 /* The viewer's own row says so in words, not only in colour (Dan
@@ -376,19 +608,44 @@
 .mml-list-you {
   display: inline-block;
   margin-left: 8px;
-  padding: 1px 6px;
+  padding: 1px 7px;
   border-radius: 999px;
-  background: #1877f2;
+  background: linear-gradient(180deg, var(--mml-blue) 0%, var(--mml-blue-deep) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: var(--mml-bevel);
   color: #fff;
-  font-size: 0.62rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  font-family: var(--mml-font-label);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
+  text-shadow: var(--mml-engrave);
   vertical-align: middle;
+}
+
+/* On a phone the panel is a sheet: the rail moves to the top edge. */
+@media (max-width: 640px) {
+  .mml-panel {
+    border-left: none;
+    border-top: 1px solid var(--mml-gunmetal-lit);
+    box-shadow:
+      inset 0 3px 0 var(--mml-blue-deep),
+      inset 0 4px 0 rgba(255, 255, 255, 0.1),
+      0 -18px 44px rgba(0, 0, 0, 0.62);
+  }
 }
 
 @media (min-width: 900px) {
   .mml-seats {
     grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* The movement stops; the object does not flatten (10.6). */
+@media (prefers-reduced-motion: reduce) {
+  .mml-panel .mml-btn:active:not(:disabled),
+  .mml-panel .mml-join:active:not(:disabled) {
+    filter: none;
+    transform: none;
   }
 }

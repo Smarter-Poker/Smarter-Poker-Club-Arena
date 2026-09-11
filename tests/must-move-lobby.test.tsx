@@ -15,6 +15,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { blankNonCode, sliceEnclosingBlock } from './helpers/sourceWindow';
 
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -551,13 +552,26 @@ describe('the tab follows the chair', () => {
   });
 
   it('MultiTablePage re-points the tab in place and never touches activeIndex', () => {
-    const block = MULTI.slice(
-      MULTI.indexOf('if (updates.movedToTableId && updates.movedToTableId !== tableId)')
-    );
+    /* The window is the re-point BRANCH itself, taken by its own braces rather
+       than from a text anchor to the next `return next;`. The anchor used to be
+       `if (updates.movedToTableId && ...`, and main added a one-line
+       `requestSeatResync()` guard with the same opening text above it, so the
+       slice silently grew to cover two other statements (2026-09-10). */
+    const block = sliceEnclosingBlock(MULTI, 'const dest = updates.movedToTableId;');
     expect(block.length).toBeGreaterThan(0);
-    const body = block.slice(0, block.indexOf('return next;'));
+    /* Comments and strings blanked (offsets preserved) before the assertions:
+       this pin is about what the CODE does, and prose explaining the law it
+       obeys must never be able to satisfy it or to break it. */
+    const body = blankNonCode(block);
     expect(body).toMatch(/next\[idx\] = \{\s*id: dest,/);
-    expect(body).not.toMatch(/activeIndex/);
+    /* AND THE PIN CAN ACTUALLY FAIL NOW (2026-09-10). `/activeIndex/` is case
+       sensitive, so it never matched `setActiveIndex(` - the one spelling the
+       law is about. Proved by inserting `setActiveIndex(idx);` into this very
+       branch: green. It was tripping on the word in a COMMENT and blind to the
+       call beside it, which is the exact shape 10.86 is about. The call is
+       named outright and the identifier is matched in any casing. */
+    expect(body).not.toMatch(/setActiveIndex\s*\(/);
+    expect(body).not.toMatch(/activeIndex/i);
     expect(body).toMatch(/return prev\.filter\(\(t\) => t\.id !== tableId\)/);
   });
 

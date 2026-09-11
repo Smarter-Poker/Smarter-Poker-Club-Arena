@@ -210,8 +210,14 @@ describe('the engine embeds through a NAMED relationship, so a second key cannot
   it('the launch reads its live-seat inventory through the hinted embed', () => {
     const base = read('server/src/tournament/TournamentManagerBase.ts');
     const launch = base.slice(base.indexOf('protected async createTablesAndSeatPlayers('));
-    expect(launch).toContain(
-      "select('user_id, table_id, seat_number, tables!table_seats_table_id_fkey!inner(tournament_id)')"
+    // Whitespace-normalised on purpose. Naming the foreign key made the call
+    // long enough for Prettier to wrap `.select(` onto its own line, which
+    // broke the previous exact-adjacency spelling of this pin while the code
+    // it guards was correct. A pin that a formatter can turn red is a pin
+    // people learn to edit rather than read (CLAUDE.md 10.86).
+    const flat = launch.replace(/\s+/g, ' ');
+    expect(flat).toContain(
+      ".select( 'user_id, table_id, seat_number, tables!table_seats_table_id_fkey!inner(tournament_id)' )"
     );
   });
 

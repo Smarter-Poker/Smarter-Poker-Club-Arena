@@ -360,13 +360,16 @@ describe('DailyBonusSheet', () => {
       streak: 2,
     });
     const { container } = render(<DailyBonusSheet mode="inline" />);
-    await screen.findByText('Double Daily Mission Diamonds For 24 Hours');
+    await screen.findByText('Double Daily Mission Diamonds');
     const row = container.querySelector('.dbs-row[data-kind="boost"]');
-    expect(row?.querySelector('.dbs-row__render--print')?.textContent).toBe('2×');
+    // the render slot carries the DURATION and the figure the MULTIPLIER, so
+    // neither number is printed on the row twice
+    expect(row?.querySelector('.dbs-row__render--print')?.textContent).toBe('24H');
+    expect(row?.querySelector('.dbs-row__figure')?.textContent).toBe('2×');
     expect(row?.querySelector('.dbs-row__render img')).toBeNull();
     fireEvent.click(screen.getAllByRole('button', { name: 'Claim' })[3]);
     await waitFor(() => expect(mocks.claim).toHaveBeenCalledWith('2026-09-08', 4));
-    expect(await screen.findByText('Running For 24 Hours')).toBeTruthy();
+    expect(await screen.findByText('Boost Is Running')).toBeTruthy();
     // The boost readout is live the moment it is claimed, not a tick later.
     expect(noteText(container, 'Boost')).toContain('2× Daily Mission Diamonds For Another');
     expect(noteText(container, 'Boost')).toMatch(/2[34]:\d\d:\d\d/);
@@ -391,7 +394,7 @@ describe('DailyBonusSheet', () => {
     });
     mocks.claim.mockResolvedValue({ success: false, reason: 'boost_already_live' });
     const { container } = render(<DailyBonusSheet mode="inline" />);
-    await screen.findByText('Double Daily Mission Diamonds For 24 Hours');
+    await screen.findByText('Double Daily Mission Diamonds');
     expect(screen.getByText('01:02:05')).toBeTruthy();
     expect(noteText(container, 'Boost')).toContain('+12 Diamonds So Far');
     fireEvent.click(screen.getAllByRole('button', { name: 'Claim' })[3]);

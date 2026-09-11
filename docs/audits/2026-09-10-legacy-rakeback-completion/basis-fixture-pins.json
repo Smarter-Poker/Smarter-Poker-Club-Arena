@@ -1,0 +1,20 @@
+[
+  {
+    "function": "fn_allocate_rake_credits",
+    "path": "supabase/migrations/20260829_weighted_contributed_rake.sql",
+    "file_sha256": "d1f7d123bc9339eb27929eadfd35894e56219f49c0e20909f4fce71b18358707",
+    "definition_sha256": "911a9bd725c1b74d0ad3e75b9f21a5b72feae256c8c2bc20a32b6d9d496dab5f"
+  },
+  {
+    "function": "fn_rake_shares_for_record",
+    "path": "supabase/migrations/20260829164155_rake_consumers_read_the_ledger.sql",
+    "file_sha256": "1ab4e332c94cec4ce2f61c344454dcbe41bdd1500f1a327d2ebc7f43e13d2371",
+    "definition_sha256": "d9ffb62ffb46ebbc0d08175cc936d7218038ac977a2d680eea5c3cf011aa96ca"
+  },
+  {
+    "function": "fn_rake_record_is_ghost_twin",
+    "path": "supabase/migrations/20260908020401_the_open_week_is_snapshotted_and_every_reader_gets_the_one_basis_in_time.sql",
+    "file_sha256": "ddbccf2af181ecd2f91150bdba7d198c16e7dbe05ece76cdf571dbc1d666e058",
+    "definition_sha256": "ca0a7e6cd8bb60654af0dfb85d6f684e7f1912eac3e97aae746aa71942383333"
+  }
+]

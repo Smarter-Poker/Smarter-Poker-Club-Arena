@@ -1,0 +1,193 @@
+{
+  "mode": "after",
+  "captured_at": "2026-09-11T04:58:01.313Z",
+  "outcomes": [
+    {
+      "evidence": "individual_claim",
+      "treasury": "5.00",
+      "agent": "25.00",
+      "player": "15.00",
+      "receipts": 1,
+      "linked_receipts": 1,
+      "legs": 1,
+      "wallet_rows": 1
+    },
+    {
+      "name": "individual close payer and actual wallet pointer",
+      "pass": true
+    },
+    {
+      "evidence": "weekly_dupe",
+      "state": {
+        "treasury": "20.00",
+        "agent": "85.00",
+        "player": "15.00",
+        "receipts": 1,
+        "linked_receipts": 1,
+        "legs": 1,
+        "wallet_rows": 1
+      },
+      "waitA": {
+        "wait_event_type": "Lock",
+        "wait_event": "transactionid",
+        "blockers": [
+          14332
+        ]
+      },
+      "waitB": {
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "blockers": [
+          14333
+        ]
+      },
+      "callResults": [
+        {
+          "value": [
+            {
+              "result": {
+                "name": "agents_to_players",
+                "round": 3,
+                "amount": 15,
+                "detail": [],
+                "payees": 1,
+                "shortfalls": 0
+              }
+            }
+          ]
+        },
+        {
+          "value": [
+            {
+              "result": {
+                "name": "agents_to_players",
+                "round": 3,
+                "amount": 0,
+                "detail": [],
+                "payees": 0,
+                "shortfalls": 0
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "observed simultaneous weekly selections",
+      "pass": true
+    },
+    {
+      "evidence": "weekly_claim",
+      "state": {
+        "treasury": "20.00",
+        "agent": "85.00",
+        "player": "15.00",
+        "receipts": 1,
+        "linked_receipts": 1,
+        "legs": 1,
+        "wallet_rows": 1
+      },
+      "waitA": {
+        "wait_event_type": "Lock",
+        "wait_event": "transactionid",
+        "blockers": [
+          14335
+        ]
+      },
+      "waitB": {
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "blockers": [
+          14336
+        ]
+      },
+      "callResults": [
+        {
+          "value": [
+            {
+              "result": {
+                "name": "agents_to_players",
+                "round": 3,
+                "amount": 15,
+                "detail": [],
+                "payees": 1,
+                "shortfalls": 0
+              }
+            }
+          ]
+        },
+        {
+          "value": [
+            {
+              "result": {
+                "success": true,
+                "total_payout": 0,
+                "periods_claimed": 0
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "observed weekly wait versus independent claim",
+      "pass": true
+    },
+    {
+      "name": "direct authenticated claim wins before weekly payer without changing funding owner",
+      "pass": true
+    },
+    {
+      "name": "mixed captured direct claim excludes source and ignores stale gross estimate",
+      "pass": true
+    },
+    {
+      "name": "mixed captured weekly payer excludes source and records legacy amount",
+      "pass": true
+    },
+    {
+      "name": "captured-only claim has no legacy payment or financial receipt",
+      "pass": true
+    },
+    {
+      "name": "captured-only weekly has no legacy payment or financial receipt",
+      "pass": true
+    },
+    {
+      "name": "agent shortfall remains payable by legitimate direct club-funded claim",
+      "pass": true
+    },
+    {
+      "name": "final journal fault rolls back all claim money and receipts",
+      "pass": true
+    },
+    {
+      "name": "final journal fault rolls back all weekly money and receipts",
+      "pass": true
+    },
+    {
+      "name": "historical paid periods and receipts remain immutable on replay",
+      "pass": true
+    },
+    {
+      "name": "unrelated authenticated actor cannot claim another player period",
+      "pass": true
+    },
+    {
+      "name": "direct weekly RPC remains unavailable to authenticated users",
+      "pass": true
+    },
+    {
+      "name": "captured original direct close refuses captured projection after money with full rollback",
+      "pass": true
+    },
+    {
+      "name": "weekly cutoff never includes the next open earning week under another session timezone",
+      "pass": true
+    },
+    {
+      "name": "captured original Round3 body is refused at receipt fence with full rollback",
+      "pass": true
+    }
+  ]
+}

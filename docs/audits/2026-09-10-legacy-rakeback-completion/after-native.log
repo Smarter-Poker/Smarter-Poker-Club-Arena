@@ -1,0 +1,18 @@
+PASS individual close payer and actual wallet pointer
+PASS observed simultaneous weekly selections
+PASS observed weekly wait versus independent claim
+PASS direct authenticated claim wins before weekly payer without changing funding owner
+PASS mixed captured direct claim excludes source and ignores stale gross estimate
+PASS mixed captured weekly payer excludes source and records legacy amount
+PASS captured-only claim has no legacy payment or financial receipt
+PASS captured-only weekly has no legacy payment or financial receipt
+PASS agent shortfall remains payable by legitimate direct club-funded claim
+PASS final journal fault rolls back all claim money and receipts
+PASS final journal fault rolls back all weekly money and receipts
+PASS historical paid periods and receipts remain immutable on replay
+PASS unrelated authenticated actor cannot claim another player period
+PASS direct weekly RPC remains unavailable to authenticated users
+PASS captured original direct close refuses captured projection after money with full rollback
+PASS weekly cutoff never includes the next open earning week under another session timezone
+PASS captured original Round3 body is refused at receipt fence with full rollback
+{"mode":"after","passed":17}

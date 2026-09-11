@@ -1,0 +1,4 @@
+PASS individual close payer and actual wallet pointer
+PASS observed simultaneous weekly selections
+PASS observed weekly wait versus independent claim
+{"mode":"before","passed":3}

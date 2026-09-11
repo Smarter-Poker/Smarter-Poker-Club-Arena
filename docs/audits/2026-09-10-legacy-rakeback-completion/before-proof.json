@@ -1,0 +1,127 @@
+{
+  "mode": "before",
+  "captured_at": "2026-09-11T04:53:09.869Z",
+  "outcomes": [
+    {
+      "evidence": "individual_claim",
+      "treasury": "5.00",
+      "agent": "25.00",
+      "player": "15.00",
+      "receipts": 1,
+      "linked_receipts": 0,
+      "legs": 0,
+      "wallet_rows": 1
+    },
+    {
+      "name": "individual close payer and actual wallet pointer",
+      "pass": true
+    },
+    {
+      "evidence": "weekly_dupe",
+      "state": {
+        "treasury": "20.00",
+        "agent": "70.00",
+        "player": "30.00",
+        "receipts": 0,
+        "linked_receipts": 0,
+        "legs": 1,
+        "wallet_rows": 2
+      },
+      "waitA": {
+        "wait_event_type": "Lock",
+        "wait_event": "transactionid",
+        "blockers": [94441]
+      },
+      "waitB": {
+        "wait_event_type": "Lock",
+        "wait_event": "tuple",
+        "blockers": [94442]
+      },
+      "callResults": [
+        {
+          "value": [
+            {
+              "result": {
+                "name": "agents_to_players",
+                "round": 3,
+                "amount": 15,
+                "detail": [],
+                "payees": 1,
+                "shortfalls": 0
+              }
+            }
+          ]
+        },
+        {
+          "value": [
+            {
+              "result": {
+                "name": "agents_to_players",
+                "round": 3,
+                "amount": 15,
+                "detail": [],
+                "payees": 1,
+                "shortfalls": 0
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "observed simultaneous weekly selections",
+      "pass": true
+    },
+    {
+      "evidence": "weekly_claim",
+      "state": {
+        "treasury": "5.00",
+        "agent": "85.00",
+        "player": "30.00",
+        "receipts": 1,
+        "linked_receipts": 0,
+        "legs": 1,
+        "wallet_rows": 2
+      },
+      "waitA": {
+        "wait_event_type": "Lock",
+        "wait_event": "transactionid",
+        "blockers": [94444]
+      },
+      "waitB": {
+        "completed_while_weekly_waited": true
+      },
+      "callResults": [
+        {
+          "value": [
+            {
+              "result": {
+                "name": "agents_to_players",
+                "round": 3,
+                "amount": 15,
+                "detail": [],
+                "payees": 1,
+                "shortfalls": 0
+              }
+            }
+          ]
+        },
+        {
+          "value": [
+            {
+              "result": {
+                "success": true,
+                "total_payout": 15,
+                "periods_claimed": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "observed weekly wait versus independent claim",
+      "pass": true
+    }
+  ]
+}

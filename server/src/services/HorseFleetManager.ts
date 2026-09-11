@@ -259,11 +259,16 @@ interface TableConfig {
 // CASH GAME TABLE CONFIGS — Every Stake Level × Every Game Type
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// FIX 201: Tables spawn from the UNION, not individual clubs.
-// All cash tables belong to the Midway Union — visible across all member clubs.
-const MIDWAY_UNION_ID = 'fade0000-0000-0000-0000-000000000001';
+/* MIDWAY_UNION_ID IS GONE (2026-09-09). It was the union every cash table
+   used to be inserted under, and Gate 7 deleted every table writer in this
+   file - the constant then sat here with exactly one reference, its own
+   declaration, which is the shape an agent "wires back up". A table's union
+   is read from the row (`t.union_id`) by `eligibleClubsFor`, which is the
+   only thing that ever needed to know. */
 
-// Legacy club IDs kept only for rake routing fallback (seatHorse clubId param)
+// Legacy club IDs, still read: they seed the set of clubs the bankroll loader
+// pages (see clubIdsToLoad), and one of them is passed to seatHorse as the
+// wallet when resolveSeatClub picks it.
 const SHARK_CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 const JAQK_CLUB_ID = 'a0000000-0000-0000-0000-000000000001';
 
@@ -525,7 +530,6 @@ export class HorseFleetManager {
    * is the truth about a fleet that is not seating anyone.
    */
   private lastEligibleBuiltAt = 0;
-  private clubIndex = 0;
   /* Last time a failed fleet-state publish was reported. The engine can ship
      before the World Hub migration that creates fn_ca_fleet_state_upsert, and
      an unthrottled report would file one Sentry event and one console line
@@ -533,11 +537,12 @@ export class HorseFleetManager {
   private lastStatePublishReportAt = 0;
   private clubIds = [SHARK_CLUB_ID, JAQK_CLUB_ID];
 
-  private getNextClubId(): string {
-    const id = this.clubIds[this.clubIndex % this.clubIds.length];
-    this.clubIndex++;
-    return id;
-  }
+  /* getNextClubId() IS GONE (2026-09-09). It round-robined a club id onto a
+     table this file was about to INSERT, and Gate 7 (2026-09-05) removed
+     every insert. It had no caller left - dead code on the seeding path,
+     holding a mutable cursor nothing advanced. The wallet a seat is bought
+     from is decided by resolveSeatClub, which asks the database's own rule
+     rather than taking turns. */
 
   // ─────────────────────────────────────────────────────────────────────
   // START / STOP

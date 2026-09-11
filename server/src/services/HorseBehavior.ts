@@ -647,6 +647,43 @@ export function wantsSeatChange(s: SeatChangeSituation): boolean {
 }
 
 /**
+ * THE MEMO DIES WITH THE STAY (2026-09-09).
+ *
+ * The rotator remembers every (game, horse) pair it has asked the door about
+ * so a refused horse is not re-asked every ninety seconds, and it holds a
+ * final refusal (SEAT_CHANGE_USED, NOT_FROM_MAIN, ...) for twelve hours. But
+ * the budget the door spends is PER STAY: `cash_game_roster` opens a fresh row
+ * with a fresh `seat_change_used_at` when a player leaves a game and comes
+ * back, so a person who cashes out at lunch and sits again at dinner has a
+ * seat change again. A memo keyed on the game alone outlived the stay - a
+ * horse that left and rejoined inside the twelve hours was never asked
+ * again, which is a horse denied a button a human has (CLAUDE.md 10.5).
+ *
+ * So the memo is pruned against the room every pass: an entry is kept only
+ * while it has not expired AND the horse still holds a seat in that game.
+ * `seated` is the set of `${gameId}:${horseId}` pairs seated right now.
+ * Returns how many entries were dropped because the stay had ended.
+ */
+export function pruneSeatChangeMemo(
+  memo: Map<string, number>,
+  seated: ReadonlySet<string>,
+  nowMs: number
+): number {
+  let ended = 0;
+  for (const [key, until] of [...memo]) {
+    if (until <= nowMs) {
+      memo.delete(key);
+      continue;
+    }
+    if (!seated.has(key)) {
+      memo.delete(key);
+      ended++;
+    }
+  }
+  return ended;
+}
+
+/**
  * `tables.settings.retire_when_empty` - the row is being wound down: nobody is
  * seated there any more and every horse on it is walked out. Set by the
  * 2026-09-03 "close any tables over 2/5" migration on the running tables it

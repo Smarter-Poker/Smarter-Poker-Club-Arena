@@ -52,6 +52,8 @@ import GameLobbyPanel from '../components/lobby/GameLobbyPanel';
 import {
   cashEntry,
   countStylesOnBoard,
+  isCensusTable,
+  isClusterFront,
   isHiddenClusterMember,
   tournamentEntry,
   classifyTournament,
@@ -59,6 +61,7 @@ import {
   type LobbyTableRow,
   type LobbyTournamentRow,
   withClubLabel,
+  withClusterFigures,
 } from '../components/lobby/lobbyEntries';
 import { tournamentService, tournamentUnregisterSuccessText } from '../services/TournamentService';
 import { tableService } from '../services/TableService';
@@ -211,7 +214,11 @@ const VARIANT_GROUP_ORDER: Record<string, number> = {
    The unversioned sessionStorage read below is deliberately left alone: it
    serves the v2 transition from 2026-08-22, it is tab-scoped rather than
    persistent, and it dies when the tab closes. */
-const CLUB_HOME_CACHE_VER = 'v3';
+/* v4 (2026-09-09, must-move audit): a cached table list written before the
+   chain selected the cluster identity columns (2026-09-05) paints one row per
+   FEEDER table for the ~300 ms until the chain answers - the exact leak R10
+   forbids. The key change orphans those entries once, for everyone. */
+export const CLUB_HOME_CACHE_VER = 'v4';
 const CLUB_HOME_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 function getClubHomeCache(clubId: string) {
@@ -306,6 +313,14 @@ interface TableData {
   /** The must-move game this table belongs to (Operation Table Stakes), or null. */
   cluster_id?: string | null;
   cluster_must_move?: boolean | null;
+  cluster_state?: string | null;
+  /** `cash_games.enabled`, embedded by the chain read; a disabled game is Closed on the board. */
+  cluster_enabled?: boolean | null;
+  role?: 'main' | 'feeder' | null;
+  main_index?: number | null;
+  lifecycle?: string | null;
+  cluster_players?: number | null;
+  cluster_tables?: number | null;
 }
 
 interface TournamentData {
@@ -1216,10 +1231,16 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           // is_deleted=true and arrive here as UPDATE events. Merging kept the
           // row as a clickable card (filteredTables doesn't exclude by status),
           // so drop it from the list instead of merging when it goes dead.
+          /* A cluster table the controller closes flips `lifecycle` to
+             'closed' and may leave `status` at 'waiting' (read on production
+             2026-09-09: two such rows). It is out of the game's census and out
+             of get_club_home; it leaves the list here too, or the row lingers
+             until the next reload. */
           if (
             updated.is_deleted === true ||
             updated.status === 'closed' ||
-            updated.status === 'deleted'
+            updated.status === 'deleted' ||
+            updated.lifecycle === 'closed'
           ) {
             setTables((prev) => prev.filter((t) => t.id !== updated.id));
           } else {
@@ -2644,7 +2665,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       const tableQuery = supabase
         .from('tables')
         .select(
-          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, union_id, is_private, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands, cluster_id, role, main_index, lifecycle'
+          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, union_id, is_private, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands, cluster_id, role, main_index, lifecycle, cluster:cash_games!tables_cluster_id_fkey(template_name, must_move, state, enabled)'
         );
       // ONE rule, applied. Union clubs see the UNION's tables plus their OWN
       // private games; another club's private game is never visible.
@@ -2772,6 +2793,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       lobbyPainted = true;
 
       const tableData = tableResult.data;
+      /* The chain's rows with the game embed flattened (below); what the
+         board and the boot cache both receive. */
+      let flattenedTables: TableData[] = [];
       /* Keep the last good list when the query fails rather than blanking the
          lobby -- but SAY SO. The malformed filter above 400'd on every load
          for hours and nothing anywhere reported it, because a swallowed error
@@ -2791,17 +2815,44 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
            on screen, leaving the game-wide figures the fast path put there.
            Rows the chain does not return are removed: it is the authority on
            which tables exist. */
+        /* THE CHAIN CARRIES THE GAME ROW ITSELF (2026-09-09, must-move audit).
+           `cluster:cash_games(...)` is the FK embed, so the style, the mode
+           and - new - `enabled` come from the authority on every load, not
+           only from a fast path that does not run on a warm reload. The
+           game-wide figures are not read from anywhere any more: the board
+           derives them from its own rows (withClusterFigures, one definition
+           with fn_cash_cluster_census). An embed the RLS withheld is left
+           undefined so mergeFastRows keeps what is already on screen. */
+        const flattened = (tableData as Array<Record<string, unknown>>).map((r) => {
+          const { cluster: game, ...rest } = r as {
+            cluster?: {
+              template_name?: string | null;
+              must_move?: boolean | null;
+              state?: string | null;
+              enabled?: boolean | null;
+            } | null;
+          } & Record<string, unknown>;
+          if (!game || typeof game !== 'object') return rest;
+          return {
+            ...rest,
+            cluster_template: game.template_name ?? null,
+            cluster_must_move: game.must_move ?? null,
+            cluster_state: game.state ?? null,
+            cluster_enabled: game.enabled ?? null,
+          };
+        });
+        flattenedTables = flattened as unknown as TableData[];
         setTables((prev) => {
-          const incoming = new Set((tableData as Array<{ id: string }>).map((r) => String(r.id)));
+          const incoming = new Set(flattened.map((r) => String(r.id)));
           const kept = prev.filter((r) => incoming.has(String(r.id)));
-          return mergeFastRows(kept, tableData as typeof prev);
+          return mergeFastRows(kept, flattenedTables);
         });
       }
       const tableCapped = (tableData?.length ?? 0) >= QUERY_LIMITS.LIST;
 
       // SWR: cache club + tables for instant display on revisit
       if (clubId && clubData) {
-        setClubHomeCache(clubId, { club: clubData, tables: tableData || [] });
+        setClubHomeCache(clubId, { club: clubData, tables: flattenedTables });
       }
       hasDataRef.current = true;
 
@@ -2912,18 +2963,41 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
      tab, from the rows already loaded and BEFORE the style filter - so a
      player who has narrowed the board to Action still reads how many Classic
      and Madness games they are not looking at. One game counts once. */
+  /* ONE DEFINITION OF A GAME'S PLAYERS AND TABLES (2026-09-09, must-move
+     audit). Every cluster row is stamped with its game's figures derived from
+     the rows on this board under fn_cash_cluster_census's own predicate
+     (lobbyEntries.withClusterFigures). Nothing else paints those two numbers:
+     not the fast path (which does not run on a warm reload), not the chain
+     (which keeps the old aggregate), not realtime (which carries one table at
+     a time) - so a seat change on the feeder moves the game's row the moment
+     its `tables` UPDATE arrives. */
+  const boardTables = useMemo(() => {
+    /* Count exactly what is rendered. A cluster row that is not a census
+       table is not part of its game (the controller has stopped counting it),
+       so it leaves the board here rather than being rendered as a game while
+       being excluded from that game's figures - the two-answers shape 5.2 is
+       about. A table with no cluster is untouched: it is its own game. */
+    const rows = (tables as unknown as LobbyTableRow[]).filter(
+      (t) => !t.cluster_id || isCensusTable(t)
+    );
+    return withClusterFigures(rows) as unknown as TableData[];
+  }, [tables]);
+
   const styleCounts = useMemo(
     () =>
       countStylesOnBoard(
-        (tables as unknown as LobbyTableRow[]).filter(
+        (boardTables as unknown as LobbyTableRow[]).filter(
           (t) => gameType === 'ALL' || cashKind(t) === gameType
         )
       ),
-    [tables, gameType]
+    [boardTables, gameType]
   );
 
   const filteredTables = useMemo(() => {
     if (!showsCash) return [];
+    /* Deliberate shadow: every reference below reads the STAMPED rows, so a
+       later edit cannot accidentally filter the unstamped state. */
+    const tables = boardTables;
 
     /* Advanced Filters apply to the tab they were saved on. On ALL there is no
        single tab to read, so they do not apply - ALL means "show me
@@ -2961,7 +3035,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             variant: table.game_variant,
             price: Number(table.big_blind) || 0,
             seats: Number(table.max_players) || 0,
-            seatsTaken: Number(table.current_players) || 0,
+            /* The game's count on its one row (R10); the status chips judge a
+               game, never its Main 1. */
+            seatsTaken: isClusterFront(table as unknown as LobbyTableRow)
+              ? Number(table.cluster_players) || 0
+              : Number(table.current_players) || 0,
+            game: isClusterFront(table as unknown as LobbyTableRow),
             name: table.name,
             style: table.cluster_template ?? null,
             row: table as unknown as Record<string, unknown>,
@@ -3020,7 +3099,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           (a, b) => cmpVariant(a, b) || cmpStakes(a, b) || cmpPlayers(a, b) || cmpName(a, b)
         );
     }
-  }, [tables, gameType, showsCash, sortKey, advFilters, allStatusFilter]);
+  }, [boardTables, gameType, showsCash, sortKey, advFilters, allStatusFilter]);
 
   /**
    * Is the lobby showing less than everything, and why.

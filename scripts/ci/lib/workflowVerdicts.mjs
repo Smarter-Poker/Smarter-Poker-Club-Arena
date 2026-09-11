@@ -56,6 +56,34 @@ export const BAD_CONCLUSIONS = new Set(['failure', 'timed_out', 'startup_failure
 /** Everything that counts as evidence either way. */
 export const VERDICT_CONCLUSIONS = new Set([GREEN, ...BAD_CONCLUSIONS]);
 
+/**
+ * An issue is allowed to suppress a red workflow only when two independent,
+ * machine-readable facts agree: this exact label and the exact per-workflow
+ * marker below. A title/body substring is human prose, not durable ownership.
+ */
+export const MAIN_HEALTH_READER_LABEL = 'main-health-reader';
+const MAIN_HEALTH_MARKER_PREFIX = '<!-- club-arena:main-health-reader:v1 workflow=';
+
+export function workflowAlarmMarker(name) {
+  const identity = Buffer.from(String(name), 'utf8').toString('base64url');
+  return `${MAIN_HEALTH_MARKER_PREFIX}${identity} -->`;
+}
+
+export function issueCarriesWorkflowAlarm(issue, workflowName, since) {
+  const sinceMs = new Date(since).getTime();
+  const touchedMs = new Date(issue?.updated_at).getTime();
+  if (!Number.isFinite(sinceMs) || !Number.isFinite(touchedMs) || touchedMs < sinceMs) {
+    return false;
+  }
+
+  const labels = Array.isArray(issue?.labels)
+    ? issue.labels.map((label) => (typeof label === 'string' ? label : label?.name))
+    : [];
+  if (!labels.includes(MAIN_HEALTH_READER_LABEL)) return false;
+
+  return String(issue?.body || '').includes(workflowAlarmMarker(workflowName));
+}
+
 /** Did this run actually decide anything? */
 export function isVerdict(run) {
   return VERDICT_CONCLUSIONS.has(run?.conclusion);
@@ -120,4 +148,81 @@ export function redWorkflows(runs, now = Date.now()) {
     if (verdict) out.push(verdict);
   }
   return out;
+}
+
+/**
+ * Enumerate the repository's active workflows first, then read a private run
+ * window for each one. A single repository-wide run window lets noisy jobs
+ * evict a low-frequency workflow completely, which can turn an old red into a
+ * false all-clear.
+ *
+ * An active workflow with zero completed main runs is not applicable (for
+ * example, a pull-request-only workflow) and is reported separately. A
+ * nonempty run history with no success/failure verdict is unknown, never green.
+ * The caller maps that thrown outcome to its distinct UNKNOWN exit code so it
+ * cannot close a durable alarm.
+ */
+export async function collectActiveWorkflowRuns(api, repository, branch) {
+  const perPage = 100;
+  const maxInventoryPages = 100;
+  const maxRunPages = 3;
+  const discovered = [];
+
+  for (let page = 1; page <= maxInventoryPages; page += 1) {
+    const payload = await api(
+      `/repos/${repository}/actions/workflows?per_page=${perPage}&page=${page}`
+    );
+    if (!Array.isArray(payload?.workflows)) {
+      throw new Error(`active workflow inventory page ${page} was unreadable`);
+    }
+    discovered.push(...payload.workflows);
+    if (payload.workflows.length < perPage) break;
+    if (page === maxInventoryPages) {
+      throw new Error('active workflow inventory exceeded the safe pagination bound');
+    }
+  }
+
+  const byId = new Map();
+  for (const workflow of discovered) {
+    if (workflow?.state !== 'active') continue;
+    const name = typeof workflow?.name === 'string' ? workflow.name.trim() : '';
+    if ((typeof workflow?.id !== 'number' && typeof workflow?.id !== 'string') || !name) {
+      throw new Error('active workflow inventory contained an unreadable identity');
+    }
+    byId.set(String(workflow.id), { ...workflow, name });
+  }
+  const workflows = [...byId.values()];
+  if (workflows.length === 0) {
+    throw new Error('active workflow inventory was empty');
+  }
+
+  const runs = [];
+  const notApplicable = [];
+  for (const workflow of workflows) {
+    const workflowRuns = [];
+    for (let page = 1; page <= maxRunPages; page += 1) {
+      const payload = await api(
+        `/repos/${repository}/actions/workflows/${encodeURIComponent(String(workflow.id))}` +
+          `/runs?branch=${encodeURIComponent(branch)}&status=completed&per_page=${perPage}&page=${page}`
+      );
+      if (!Array.isArray(payload?.workflow_runs)) {
+        throw new Error(`completed runs for active workflow "${workflow.name}" were unreadable`);
+      }
+      const batch = payload.workflow_runs.map((run) => ({ ...run, name: workflow.name }));
+      workflowRuns.push(...batch);
+      if (batch.length < perPage) break;
+    }
+
+    if (workflowRuns.length === 0) {
+      notApplicable.push(workflow);
+      continue;
+    }
+    if (!workflowRuns.some(isVerdict)) {
+      throw new Error(`active workflow "${workflow.name}" has no completed verdict on ${branch}`);
+    }
+    runs.push(...workflowRuns);
+  }
+
+  runs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  return { workflows, notApplicable, runs };
 }

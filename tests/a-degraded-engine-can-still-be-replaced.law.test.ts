@@ -1,207 +1,408 @@
-/**
- * A DEGRADED ENGINE CAN STILL BE REPLACED (2026-09-11).
- *
- * /health answers 503 whenever the engine is not ROUTING-ready: `status` is
- * 'degraded' while the equity pool, the horse decision worker or the dealer
- * prerequisites are not ready. It sends the SAME body either way, and
- * server/src/handlers/health.ts says so in as many words, naming the deploy
- * verifier as the reader the body is kept for.
- *
- * The deploy train read it with `curl -sf`. `-f` turns every non-2xx answer
- * into an empty string, so from the moment the equity pool went 'failed'
- * (06:58 UTC, after the thaw surge) every read was "/health unreadable".
- * Run 34571396262 polled its break gate 175 times, logged that line every
- * time, and let a complete readyForRestart certificate go by: at 07:55:08
- * the body said counting_down, durable, 0 unparked, 290 s left. The build
- * that would have replaced the degraded engine could not ship BECAUSE the
- * engine was degraded, and the host's own locked re-check used the same
- * `-f`, so fixing the runner alone would still have refused the cutover.
- *
- * The rule pinned here: a read that asks WHAT the engine is (its restart
- * certificate, its version) reads the body whatever the HTTP code. Only the
- * post-cutover verification and the recovery verification keep `-f`, on
- * purpose: a new or recovered build is not verified until it answers a
- * routing-ready 200.
- */
-import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { createServer, get, type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { spawnSync } from 'node:child_process';
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 const root = resolve(__dirname, '..');
-const WF = readFileSync(resolve(root, '.github/workflows/auto-deploy-hetzner.yml'), 'utf8');
-const HEALTH_HANDLER = readFileSync(resolve(root, 'server/src/handlers/health.ts'), 'utf8');
+const transaction = readFileSync(
+  resolve(root, 'server/scripts/engine-release-transaction.sh'),
+  'utf8'
+);
+const workflow = readFileSync(resolve(root, '.github/workflows/auto-deploy-hetzner.yml'), 'utf8');
+const healthHandler = readFileSync(resolve(root, 'server/src/handlers/health.ts'), 'utf8');
+const unitWrapper = readFileSync(
+  resolve(root, 'server/scripts/engine-release-unit-wrapper.sh'),
+  'utf8'
+);
+const supervisor = readFileSync(resolve(root, 'server/scripts/engine-supervisor.sh'), 'utf8');
 
-/** Every step of the deploy job, keyed by its name. */
-function steps(): Map<string, string> {
-  const out = new Map<string, string>();
-  const parts = WF.split(/\n(?= {6}- name: )/);
-  for (const part of parts.slice(1)) {
-    const name = part.slice('      - name: '.length, part.indexOf('\n')).replace(/^'|'$/g, '');
-    out.set(name, part);
-  }
-  return out;
+function shellFunction(name: string, nextName: string): string {
+  const start = transaction.indexOf(`${name}() {`);
+  const end = transaction.indexOf(`\n${nextName}() {`, start);
+  expect(start, `${name} exists`).toBeGreaterThan(-1);
+  expect(end, `${nextName} follows ${name}`).toBeGreaterThan(start);
+  return transaction.slice(start, end);
 }
 
-function step(prefix: string): string {
-  const hit = [...steps().entries()].filter(([name]) => name.startsWith(prefix));
-  expect(hit, `exactly one step named "${prefix}..."`).toHaveLength(1);
-  return hit[0][1];
-}
-
-/** The literal `run: |` script of a step, dedented. */
-function runScript(block: string): string {
-  const lines = block.split('\n');
-  const start = lines.findIndex((l) => /^ {8}run: \|\s*$/.test(l));
-  expect(start, 'the step has a run: | block').toBeGreaterThan(-1);
-  const body: string[] = [];
-  for (const line of lines.slice(start + 1)) {
-    if (line.trim() !== '' && !line.startsWith('          ')) break;
-    body.push(line.slice(10));
-  }
-  return body.join('\n');
-}
-
-/** `curl` reads of /health that would discard a 503 body. */
-function failingHealthReads(text: string): string[] {
-  return text
-    .split('\n')
-    .filter((l) => !/^\s*#/.test(l) && /\bcurl\b/.test(l) && /\/health\b/.test(l))
-    .filter((l) => {
-      const flags = l.slice(l.indexOf('curl'), l.indexOf('/health'));
-      return /(^|\s)-(?!-)[A-Za-z]*f[A-Za-z]*(\s|$)|--fail\b/.test(flags);
-    });
-}
-
-describe('the restart certificate and the version are read from the body, whatever the code', () => {
-  it('the health handler still sends one body for 200 and 503 (the contract this law relies on)', () => {
-    expect(HEALTH_HANDLER).toMatch(/sendJSON\(res, dealerReady \? 200 : 503, status\)/);
+describe('a degraded engine can still be replaced', () => {
+  it('the health handler preserves the same certificate body for HTTP 200 and 503', () => {
+    expect(healthHandler).toMatch(/sendJSON\(res, dealerReady \? 200 : 503, status\)/);
   });
 
-  for (const name of [
-    'Skip if production already serves this commit',
-    'Wait for the maintenance break to park every table',
-    'Cut over to the new image',
-    'Commit the verified SHA/image-ID release seal',
-    'Verdict — green only if production serves this commit',
-  ]) {
-    it(`"${name}" never reads /health with curl -f`, () => {
-      const block = step(name);
-      expect(block).toMatch(/\/health/);
-      expect(failingHealthReads(block)).toEqual([]);
-    });
-  }
+  it('the root-owned transaction accepts only a 200 or 503 maintenance response', () => {
+    const certificate = shellFunction('maintenance_certificate', 'persist_break_deadline');
 
-  it('only the two verification steps keep -f, and they say why', () => {
-    const owners = [...steps().entries()]
-      .filter(([, block]) => failingHealthReads(block).length > 0)
-      .map(([name]) => name);
-    expect(owners.sort()).toEqual(
-      [
-        'ROLLBACK — restore the last known-good image',
-        'Verify — liveness AND that the running build is the one we shipped',
-      ].sort()
+    expect(certificate).toContain("curl -sS --max-time 10 --write-out $'\\n%{http_code}'");
+    expect(certificate).toContain('case "$http_code" in\n    200|503)');
+    expect(certificate).not.toMatch(/curl\s+-[^\n]*f/);
+    expect(certificate).toContain('m.get("readyForRestart") is True');
+    expect(certificate).toContain('m.get("unparkedTables")==0');
+  });
+
+  it('rechecks the certificate under the mutation lock before preparing a release', () => {
+    const firstCertificate = transaction.indexOf('BREAK_REMAINING_MS="$(maintenance_certificate)"');
+    const lock = transaction.indexOf("acquire_engine_lock 'maintenance cutover'", firstCertificate);
+    const secondCertificate = transaction.indexOf(
+      'BREAK_REMAINING_MS="$(maintenance_certificate)"',
+      lock
     );
-    expect(step('Verify — liveness')).toMatch(/`-f` is deliberate HERE and only here/);
+    const rollbackProof = transaction.indexOf('prove_rollback_readiness', secondCertificate);
+    const prepare = transaction.indexOf('PREPARE_OUTPUT=', rollbackProof);
+
+    expect(firstCertificate).toBeGreaterThan(-1);
+    expect(lock).toBeGreaterThan(firstCertificate);
+    expect(secondCertificate).toBeGreaterThan(lock);
+    expect(rollbackProof).toBeGreaterThan(secondCertificate);
+    expect(prepare).toBeGreaterThan(rollbackProof);
   });
 
-  it('the host re-check under the lock still fails closed when nothing answers', () => {
-    const cutover = step('Cut over to the new image');
-    // set -euo pipefail inside the ssh script: a refused connection aborts
-    // before the mutation marker is printed.
-    const script = runScript(cutover);
-    const guard = script.indexOf('set -euo pipefail');
-    const read = script.indexOf('http://127.0.0.1:8080/health');
-    const marker = script.indexOf("echo '$MUTATION_MARKER'");
-    expect(guard).toBeGreaterThan(-1);
-    expect(read).toBeGreaterThan(guard);
-    expect(marker).toBeGreaterThan(read);
+  it('admits a degraded exact source and rollback without weakening candidate proof', () => {
+    const strictHealth = shellFunction('health_instance_for_sha', 'source_instance_for_sha');
+    const sourceHealth = shellFunction('source_instance_for_sha', 'health_instance');
+    const rollbackReadiness = shellFunction('prove_rollback_readiness', 'emit_already_released');
+
+    expect(strictHealth).toContain("--write-out $'\\n%{http_code}'");
+    expect(strictHealth).toContain('[ "$http_code" = 200 ]');
+    expect(strictHealth).not.toContain('200|503');
+    expect(sourceHealth).toContain('case "$http_code" in\n    200|503)');
+    expect(sourceHealth).not.toMatch(/curl\s+-[^\n]*f/);
+    expect(rollbackReadiness).toContain('source_instance_for_sha');
+    expect(rollbackReadiness).not.toContain('health_instance_for_sha');
+    expect(supervisor).toContain('case "$http_code" in\n    200|503)');
+    expect(supervisor).not.toMatch(/curl\s+-[^\n]*f/);
+
+    const engineUp = transaction.indexOf('"$ENGINE_UP"');
+    const candidateCheck = transaction.indexOf(
+      'CANDIDATE_INSTANCE="$(health_instance \'http://127.0.0.1:8080/health\')"',
+      engineUp
+    );
+    expect(engineUp).toBeGreaterThan(-1);
+    expect(candidateCheck).toBeGreaterThan(engineUp);
+    expect(transaction.slice(engineUp)).not.toContain('source_instance_for_sha');
   });
-});
 
-describe('the break gate, run for real against an engine that is degraded but certified', () => {
-  const CERTIFIED_BUT_DEGRADED = {
-    status: 'degraded',
-    liveness: 'ok',
-    running: true,
-    version: 'c58dfafd',
-    equityWorkerPool: {
-      phase: 'failed',
-      lastError: 'Equity worker operation timed out after 2500ms',
-    },
-    maintenance: {
-      active: true,
-      phase: 'counting_down',
-      durableConfirmed: true,
-      readyForRestart: true,
-      unparkedTables: 0,
-      remainingMs: 290_924,
-    },
-  };
-  let server: Server;
-  let url = '';
+  // This runs a complete sandboxed transaction and its repeated fsync proofs;
+  // allow loaded-suite process startup without weakening any release deadline.
+  it('runs the real transaction through rollback proof to prepare from an exact HTTP 503 source', () => {
+    const sandbox = mkdtempSync(join(tmpdir(), 'engine-degraded-source-'));
+    try {
+      const generation = join(sandbox, 'generation');
+      const requestRoot = join(sandbox, 'requests');
+      const leaseRoot = join(sandbox, 'leases');
+      const repo = join(sandbox, 'repo');
+      const bin = join(sandbox, 'bin');
+      const runKey = '4270-1';
+      const sourceSha = 'a'.repeat(40);
+      const targetSha = 'b'.repeat(40);
+      const controlSha = 'c'.repeat(40);
+      const sourceTree = 'd'.repeat(40);
+      const sourceImage = `sha256:${'e'.repeat(64)}`;
+      const targetImage = `sha256:${'f'.repeat(64)}`;
+      const containerId = '1'.repeat(64);
+      const instanceId = '12345-deadbeef';
+      const eventLog = join(sandbox, 'events.log');
+      const prepareLog = join(sandbox, 'prepare.log');
+      const curlLog = join(sandbox, 'curl.log');
+      const databaseLog = join(sandbox, 'database.log');
+      const buildMarker = join(sandbox, 'built');
+      const databaseMarker = join(sandbox, 'database-proved');
+      const mutationMarker = join(sandbox, 'engine-up-called');
+      const abortMarker = join(sandbox, 'abort-called');
+      for (const path of [generation, requestRoot, leaseRoot, repo, bin]) mkdirSync(path);
+      const canonicalGeneration = realpathSync(generation);
 
-  beforeAll(async () => {
-    server = createServer((_req, res) => {
-      res.writeHead(503, { 'content-type': 'application/json' });
-      res.end(JSON.stringify(CERTIFIED_BUT_DEGRADED));
-    });
-    await new Promise<void>((done) => server.listen(0, '127.0.0.1', () => done()));
-    url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  });
-  afterAll(() => new Promise<void>((done) => server.close(() => done())));
+      // The production host uses Bash 5. The test host uses macOS Bash 3.2, so
+      // add only a fixture-local implementation of the mapfile builtin; the
+      // release transaction and every boundary under test remain unchanged.
+      const executableFixture = transaction.replace(
+        'set -euo pipefail',
+        `set -euo pipefail
+mapfile() {
+  [ "\${1:-}" = -t ] && [ "$#" = 2 ] || return 2
+  local target="$2" line
+  case "$target" in
+    REQUEST_LINES)
+      REQUEST_LINES=()
+      while IFS= read -r line; do REQUEST_LINES[\${#REQUEST_LINES[@]}]="$line"; done
+      ;;
+    IMAGE_FIELDS)
+      IMAGE_FIELDS=()
+      while IFS= read -r line; do IMAGE_FIELDS[\${#IMAGE_FIELDS[@]}]="$line"; done
+      ;;
+    existing)
+      existing=()
+      while IFS= read -r line; do existing[\${#existing[@]}]="$line"; done
+      ;;
+    *) return 2 ;;
+  esac
+}`
+      );
+      expect(executableFixture).not.toBe(transaction);
+      writeFileSync(join(generation, 'engine-release-transaction.sh'), executableFixture);
+      chmodSync(join(generation, 'engine-release-transaction.sh'), 0o755);
+      writeFileSync(join(generation, 'control-sha'), `${controlSha}\n`);
+      writeFileSync(
+        join(requestRoot, `${runKey}.request`),
+        `${[
+          targetSha,
+          'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/4270',
+          'degraded-source-test',
+          canonicalGeneration,
+          controlSha,
+          String(Math.floor(Date.now() / 1000) + 1100),
+        ].join('\n')}\n`
+      );
+      writeFileSync(join(sandbox, 'engine.env'), 'DATABASE_URL=test-only\n');
 
-  // spawn, not spawnSync: the stub server lives on THIS event loop.
-  const run = (cmd: string, args: string[], env: Record<string, string>) =>
-    new Promise<{ code: number | null; out: string }>((done) => {
-      const child = spawn(cmd, args, { env: { ...process.env, ...env } });
-      let out = '';
-      child.stdout.on('data', (b) => (out += b));
-      child.stderr.on('data', (b) => (out += b));
-      const kill = setTimeout(() => child.kill('SIGKILL'), 45_000);
-      child.on('close', (code) => {
-        clearTimeout(kill);
-        done({ code, out });
+      writeFileSync(
+        join(generation, 'engine-release-seal.py'),
+        `#!/usr/bin/env bash
+set -euo pipefail
+case "\${1:-}:\${2:-}" in
+  pending-owner:) printf '%s\\n' none ;;
+  get:desired-sha) printf '%s\\n' '${sourceSha}' ;;
+  get:desired-image-id) printf '%s\\n' '${sourceImage}' ;;
+  get:desired-legacy-unlabelled) printf '%s\\n' false ;;
+  attest-commit:*) exit 1 ;;
+  prepare:*)
+    printf '%s\\n' "$*" >> '${prepareLog}'
+    printf '%s\\n' 'seal-prepare' >> '${eventLog}'
+    exit 86
+    ;;
+  abort:*) touch '${abortMarker}' ;;
+  *) exit 87 ;;
+esac
+`
+      );
+      writeFileSync(join(generation, 'engine-supervisor.sh'), '#!/usr/bin/env bash\nexit 0\n');
+      writeFileSync(
+        join(generation, 'build-engine-image.sh'),
+        `#!/usr/bin/env bash
+touch '${buildMarker}'
+printf '%s\\n' builder >> '${eventLog}'
+`
+      );
+      writeFileSync(
+        join(generation, 'engine-release-database-proof.py'),
+        `#!/usr/bin/env bash
+set -euo pipefail
+[[ " $* " == *" --sha ${sourceSha} "* ]]
+[[ " $* " == *" --instance-id ${instanceId} "* ]]
+[[ " $* " == *" --max-heartbeat-age-seconds 15 "* ]]
+printf '%s\\n' "$*" > '${databaseLog}'
+touch '${databaseMarker}'
+printf '%s\\n' database-proof >> '${eventLog}'
+`
+      );
+      writeFileSync(
+        join(generation, 'engine-up.sh'),
+        `#!/usr/bin/env bash
+touch '${mutationMarker}'
+printf '%s\\n' MUTATION-engine-up >> '${eventLog}'
+exit 88
+`
+      );
+      for (const name of [
+        'engine-release-seal.py',
+        'engine-supervisor.sh',
+        'build-engine-image.sh',
+        'engine-release-database-proof.py',
+        'engine-up.sh',
+      ]) {
+        chmodSync(join(generation, name), 0o755);
+      }
+
+      const healthBody = JSON.stringify({
+        running: true,
+        releaseSha: sourceSha,
+        liveness: 'ok',
+        instanceId,
+        maintenance: {
+          active: true,
+          phase: 'counting_down',
+          durableConfirmed: true,
+          readyForRestart: true,
+          unparkedTables: 0,
+          remainingMs: 296_000,
+        },
       });
-    });
+      writeFileSync(join(bin, 'id'), '#!/usr/bin/env bash\n[ "$1" = -u ] && echo 0\n');
+      writeFileSync(join(bin, 'flock'), '#!/usr/bin/env bash\nexit 0\n');
+      writeFileSync(
+        join(bin, 'timeout'),
+        '#!/usr/bin/env bash\nset -e\nwhile [[ "${1:-}" == --* ]]; do shift; done\n[[ "${1:-}" =~ ^[0-9]+s$ ]] && shift\nexec "$@"\n'
+      );
+      writeFileSync(
+        join(bin, 'curl'),
+        `#!/usr/bin/env bash
+url=''
+has_write=false
+has_cache=false
+for argument in "$@"; do
+  case "$argument" in
+    -fsS) exit 22 ;;
+    --write-out) has_write=true ;;
+    'Cache-Control: no-cache, no-store') has_cache=true ;;
+  esac
+  url="$argument"
+done
+[ "$has_write" = true ] || exit 23
+printf '503 %s\\n' "$url" >> '${curlLog}'
+if [ "$has_cache" = true ]; then
+  printf 'source-503:%s\\n' "$url" >> '${eventLog}'
+else
+  printf 'certificate-503:%s\\n' "$url" >> '${eventLog}'
+fi
+printf '%s\\n%s' '${healthBody}' 503
+`
+      );
+      writeFileSync(
+        join(bin, 'git'),
+        `#!/usr/bin/env bash
+set -euo pipefail
+case "$*" in
+  *' fetch --no-tags '*) exit 0 ;;
+  *" rev-parse --verify origin/main^{commit}") printf '%s\\n' '${targetSha}' ;;
+  *' cat-file -e '*) exit 0 ;;
+  *' merge-base --is-ancestor '*) exit 0 ;;
+  *' log '*' -1 --format=%H -- '*) printf '%s\\n' '${targetSha}' ;;
+  *" rev-parse --verify ${targetSha}:server") printf '%s\\n' '${sourceTree}' ;;
+  *) exit 89 ;;
+esac
+`
+      );
+      writeFileSync(
+        join(bin, 'docker'),
+        `#!/usr/bin/env bash
+set -euo pipefail
+case "\${1:-}" in
+  run|start|stop|restart|update|unpause|rm|kill)
+    printf 'MUTATION-docker-%s\\n' "$1" >> '${eventLog}'
+    exit 97
+    ;;
+esac
+if [ "\${1:-}" = info ]; then exit 0; fi
+if [ "\${1:-}" = image ] && [ "\${2:-}" = inspect ]; then
+  if [ "\${3:-}" = --format ]; then
+    printf '%s\\n' '{"Id":"${targetImage}","Config":{"Labels":{"org.opencontainers.image.revision":"${targetSha}","com.smarterpoker.engine.source-tree":"${sourceTree}","com.smarterpoker.engine.build-contract":"clean-server-archive-v1"}}}'
+  fi
+  exit 0
+fi
+if [ "\${1:-}" = container ] && [ "\${2:-}" = inspect ]; then
+  format=''
+  while [ "$#" -gt 0 ]; do
+    [ "$1" = -f ] && { format="$2"; shift 2; continue; }
+    shift
+  done
+  case "$format" in
+    '{{.Id}}') printf '%s\\n' '${containerId}' ;;
+    '{{.State.StartedAt}}') printf '%s\\n' '2026-09-11T12:00:00.000000000Z' ;;
+    '{{.Image}}') printf '%s\\n' '${sourceImage}' ;;
+    '{{.State.Status}}') printf '%s\\n' running ;;
+    *sp.release.sha*) printf '%s\\n' '${sourceSha}' ;;
+    *autoheal*) printf '%s\\n' true ;;
+    *sp.role*) printf '%s\\n' engine ;;
+    *RestartPolicy.Name*) printf '%s\\n' always ;;
+    *) exit 90 ;;
+  esac
+  exit 0
+fi
+if [ "\${1:-}" = ps ]; then exit 0; fi
+exit 91
+`
+      );
+      writeFileSync(
+        join(bin, 'mv'),
+        '#!/usr/bin/env bash\n[ "${1:-}" = -fT ] && shift\nexec /bin/mv "$@"\n'
+      );
+      writeFileSync(
+        join(bin, 'ln'),
+        '#!/usr/bin/env bash\n[ "${1:-}" = -- ] && shift\nexec /bin/ln "$@"\n'
+      );
+      for (const name of ['id', 'flock', 'timeout', 'curl', 'git', 'docker', 'mv', 'ln']) {
+        chmodSync(join(bin, name), 0o755);
+      }
 
-  it('the stub really is a 503, and the old `curl -sf` read really discarded it', async () => {
-    // node:http, not fetch: the root suite runs under happy-dom, whose fetch
-    // applies browser CORS rules to a loopback stub.
-    const status = await new Promise<number | undefined>((done) =>
-      get(`${url}/health`, (res) => {
-        res.resume();
-        done(res.statusCode);
-      })
+      const result = spawnSync(
+        'bash',
+        [join(generation, 'engine-release-transaction.sh'), '--run-id', runKey],
+        {
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            PATH: `${bin}:${process.env.PATH ?? ''}`,
+            REPO_DIR: repo,
+            ENGINE_RELEASE_REQUEST_ROOT: requestRoot,
+            ENGINE_RELEASE_IMAGE_LEASE_ROOT: leaseRoot,
+            ENGINE_LOCK_FILE: join(sandbox, 'engine.lock'),
+            SOURCE_LOCK_FILE: join(sandbox, 'source.lock'),
+            ENV_FILE: join(sandbox, 'engine.env'),
+            ENGINE_URL: 'https://engine.example.invalid',
+            INVOCATION_ID: '2'.repeat(32),
+            ENGINE_RELEASE_MAX_RUNTIME_SECONDS: '1200',
+          },
+        }
+      );
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('release seal refused the candidate');
+      expect(result.stdout).toContain(
+        `exact desired rollback source ${sourceSha} is live locally and publicly with a fresh database leader as ${instanceId}`
+      );
+      const prepareCall = readFileSync(prepareLog, 'utf8');
+      expect(prepareCall).toContain(`prepare --sha ${targetSha}`);
+      expect(prepareCall).toContain(`--image ${targetImage}`);
+      expect(prepareCall).toContain(`--run-id ${runKey}`);
+      expect(existsSync(buildMarker)).toBe(true);
+      expect(existsSync(databaseMarker)).toBe(true);
+      const databaseCall = readFileSync(databaseLog, 'utf8');
+      expect(databaseCall).toContain(`--sha ${sourceSha}`);
+      expect(databaseCall).toContain(`--instance-id ${instanceId}`);
+      expect(existsSync(mutationMarker)).toBe(false);
+      expect(existsSync(abortMarker)).toBe(false);
+      const curlCalls = readFileSync(curlLog, 'utf8');
+      expect(curlCalls).toContain('503 http://127.0.0.1:8080/health');
+      expect(curlCalls).toContain('503 https://engine.example.invalid/health?nocache=');
+      const events = readFileSync(eventLog, 'utf8').trim().split('\n');
+      const certificates = events.filter((event) => event.startsWith('certificate-503:'));
+      const sourceProofs = events
+        .map((event, index) => ({ event, index }))
+        .filter(({ event }) => event.startsWith('source-503:'));
+      const databaseProof = events.indexOf('database-proof');
+      expect(certificates).toHaveLength(2);
+      expect(sourceProofs).toHaveLength(4);
+      expect(databaseProof).toBeGreaterThan(sourceProofs[1].index);
+      expect(databaseProof).toBeLessThan(sourceProofs[2].index);
+      expect(events[events.length - 1]).toBe('seal-prepare');
+      expect(events.some((event) => event.startsWith('MUTATION'))).toBe(false);
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  it('the workflow delegates mutation and independently proves routing-ready health', () => {
+    expect(workflow).toContain('server/scripts/install-engine-intake.sh');
+    expect(workflow).toContain('$STAGE/server/scripts/install-engine-intake.sh');
+    expect(unitWrapper).toContain(
+      '"$GENERATION/engine-release-transaction.sh" --run-id "$RUN_KEY"'
     );
-    expect(status).toBe(503);
-    const old = await run('curl', ['-sf', '--max-time', '10', `${url}/health`], {});
-    expect(old.code).toBe(22);
-    expect(old.out).toBe('');
+    expect(workflow).toMatch(
+      /Independently prove the sealed local, public, and leader identity[\s\S]*curl -fsS[\s\S]*\$ENGINE_URL\/health/
+    );
+    expect(workflow).not.toContain('Wait for the maintenance break to park every table');
   });
-
-  it('accepts the certificate on the first poll and cuts over', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'degraded-gate-'));
-    const output = join(dir, 'github_output');
-    writeFileSync(output, '');
-    const script = runScript(step('Wait for the maintenance break to park every table'));
-    const { code, out } = await run('bash', ['-e', '-c', script], {
-      ENGINE_URL: url,
-      GITHUB_OUTPUT: output,
-      SHA: '0123456789abcdef0123456789abcdef01234567',
-      IMAGE_REPO: 'club-arena-engine',
-      DEPLOY_STARTED_AT: String(Math.floor(Date.now() / 1000)),
-    });
-    expect(out).not.toMatch(/unreadable/);
-    expect(out).toMatch(
-      /attempt 1\/\d+: break is running and every table is parked — restarting now/
-    );
-    expect(code).toBe(0);
-    const recorded = readFileSync(output, 'utf8');
-    expect(recorded).toMatch(/^skip=false$/m);
-    expect(recorded).not.toMatch(/^skip=true$/m);
-  }, 60_000);
 });
+
+// The executable 200/503 matrix, transport failures, malformed bodies, false
+// predicates, and insufficient-time result are covered once in
+// tests/unit/engineReleaseMaintenanceCertificate.test.ts.

@@ -1,75 +1,28 @@
-# How agents push to Smarter-Poker repos (READ THIS FIRST)
+# How Agents Push And Publish Club Arena
 
-> **SUPERSEDED 2026-09-03 - READ THIS FIRST.**
-> Club Arena no longer publishes by committing its build into the World Hub
-> repo. It publishes by rsync to its own origin, `https://ca-static.smarter.poker`
-> (`/srv/club-arena` on the Hetzner box: `releases/<ca_sha>/`, an atomically
-> swapped `current` symlink, an additive `pool/`), and the World Hub carries a
-> single Next.js rewrite `/hub/club-arena/:path*` to it. `public/hub/club-arena/`
-> is GONE from that repo and a law test refuses to let it back.
->
-> **Every `sync-club-arena.sh` / `build-club-arena.sh` / `sync-to-world-hub.sh`
-> command below is dead.** Those scripts are deleted from `main`. If you find one
-> on disk you are on a stale branch - it still works, and running it would
-> re-vendor the bundle and shadow the origin.
->
-> **You do not publish by hand at all now:** push a branch, and
-> `agent-open-pr` -> `agent-autopilot` -> `publish-club-arena` does the rest.
-> The current path is `.agent/architecture/deploy-paths.md`.
+Club Arena publishes from this repository to its own Hetzner origin. World Hub
+only rewrites the public route; it never receives, builds, or publishes the
+Club Arena bundle. The canonical path is
+`.agent/architecture/deploy-paths.md`.
 
-Last verified: 2026-09-03
+Last verified: 2026-09-10
 
-## TL;DR — which token works
+## Credential boundary
 
-**None of the tokens on the Mac do, as of 2026-09-03.** Both candidates in
-`Smarter-Poker-World-Hub/.env` return `401 Bad credentials` against
-`api.github.com`:
-
-- ❌ `GITHUB_TOKEN` — the entry this guide used to call the live token is **no
-  longer in that file at all**. Do not go looking for it.
-- ❌ `GITHUB_PAT_FINE_GRAINED` — present, 93 characters, and rejected.
-- ❌ The PAT embedded in the club-arena git remote URL (`ghp_waRF…`) — revoked
-  well before this.
-
-What actually authenticates now:
-
-- ✅ **The `smarter-poker-autopilot` GitHub App**, inside Actions. It opens the
-  pull request, merges it, and publishes. You never hold its credential.
-- ✅ **SSH on the Mac** for `git push` — this is how a branch leaves the machine.
-- ✅ **The GitHub MCP through the device bridge** (`mcp__remote-devices__github__*`)
-  for reading and for API work; it carries its own auth.
-
-So: do not try to fix a token. Push the branch over SSH and let the pipeline do
-the rest. If you need an API call the MCP cannot make, that is the moment to ask
-Dan for a fresh PAT - not to hunt through `.env` files for one that works.
+Use the host's configured Git/CLI authentication to push a branch. Never hunt
+through World Hub environment files, embed a token in a remote URL, copy a
+credential into a command, or print a value. The autopilot application and both
+Hetzner publishers read their own write-only Club Arena repository secrets.
 
 ## Push paths, in order of preference
 
-1. **GitHub MCP through the device bridge** (`mcp__remote-devices__github__*`).
-   Runs on the Mac with network + auth. Works for normal-size files
-   (`push_files`, `create_or_update_file`, `create_pull_request`, `merge_pull_request`).
-   This is the default for everyday commits/PRs.
-
-2. **Large files (>~250 KB) — GitHub git-data API.**
-   `push_files` / `create_or_update_file` send the whole file inline, and the
-   agent's own tool-call output cap (~85–100k tokens) makes a 300 KB file
-   impossible to emit in one call. Instead build the commit from git objects:
-   `POST /git/blobs` → `POST /git/trees` (base_tree + changed entries) →
-   `POST /git/commits` → `PATCH /git/refs/heads/<branch>`. Verify the blob SHA
-   with `git hash-object` before committing. (This is how `TablePage.tsx`,
-   ~300 KB, was shipped on 2026-08-06.)
-
-3. **The cloud session's git proxy is per-repo gated.** From the cloud container,
-   `git push` / `api.github.com/repos/...` return `403 "not enabled for this
-session"` for repos not in the session's authorized set — regardless of token.
-   `/user` still 200s because the proxy injects its own credential there, so that
-   endpoint is NOT a valid token test. To push directly from the cloud, add the
-   repo to the session's GitHub sources (add_repo, access:"push").
-
-4. **Compute-with-network fallback (only if 1–3 are blocked).** A short-lived
-   Vercel serverless function can call the GitHub git-data API with the `.env`
-   token passed **in the request body** (never baked into source), then be
-   deleted. Used once during the 2026-08-06 GitHub Actions outage.
+1. Work in an isolated worktree on a feature branch.
+2. Merge current `origin/main` into that branch when it moves; never rebase or
+   force-push around a conflict.
+3. Push the branch with normal hooks. The repository's `agent-open-pr` and
+   `agent-autopilot` workflows own proposal and merge.
+4. Follow required checks, merge, and the relevant Club Arena Hetzner workflow
+   to a terminal result. Fix red checks forward through the same branch path.
 
 ## Deploy pipeline note
 
@@ -86,8 +39,9 @@ the rewrite must agree:
     curl -s https://ca-static.smarter.poker/build-info.json
     curl -s https://smarter.poker/hub/club-arena/build-info.json
 
-Both return `{ ca_sha, built_at, built_by: "publish-club-arena.yml", run_id }`.
-A merge is normally live within about two minutes.
+Both return `{ ca_sha, built_at, built_by: "publish-club-arena.yml", run_id }`
+and both `ca_sha` values must equal the exact current Club Arena `main`.
 
-Publishing is still **GitHub-Actions-gated** — during an Actions outage a merge
-does not go live until Actions recovers and the publisher runs.
+Publishing is GitHub-Actions-gated. If a run is dropped or infrastructure
+recovers after an outage, re-dispatch the owning Club Arena workflow
+immediately; never create a workstation, World Hub, or Vercel fallback.

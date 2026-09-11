@@ -1,5 +1,9 @@
 # SWARM BRIEF - Diamond Economy audit, standard and fixes (2026-09-02, ~23:00 UTC)
 
+> Historical lane brief. Current release authority is `.github/DEPLOYMENT.md`.
+> Never scrape a workstation `.env`, call a deployment API directly, or use
+> this dated brief as a credential or publishing runbook.
+
 You are one lane of a swarm auditing and then fixing the DIAMOND economy of Smarter Poker / Club Arena, from the Mint to the players and everything in between, and preparing the ground for the Diamond Arena (one platform club where everyone plays cash, MTTs, spins, SNGs and satellites in diamonds). This replicates, 1:1, the chip work of 2026-09-02: `docs/CHIP-ACCOUNTING-STANDARD.md`, `docs/CHIP-ACCOUNTING-ROADMAP.md`, `docs/audits/2026-09-02-chip-standard-round2/`. Your lane, worktree and deliverables are in your task prompt. This file is the shared operating contract. Everything in `docs/SWARM-BRIEF-CHIP-STANDARD.md` still holds except the names below.
 
 ## Environment - you are on Dan's Mac through MCP tools
@@ -8,8 +12,12 @@ You are one lane of a swarm auditing and then fixing the DIAMOND economy of Smar
 - Read-only audit lanes write ONLY under `docs/audits/2026-09-02-diamond-economy/` in the orchestrator's worktree `/Users/smarter.poker/Documents/.agent-trees/club-arena/diamond-audit` and never run git there. Fix lanes get their own worktree on branch `fix/diamond-<lane>`: `cd /Users/smarter.poker/Documents/club-arena && nohup git worktree add -b fix/diamond-<lane> /Users/smarter.poker/Documents/.agent-trees/club-arena/diamond-<lane> origin/main > /tmp/wt-<lane>.log 2>&1 < /dev/null & disown`, then `ln -s /Users/smarter.poker/Documents/club-arena/node_modules node_modules`. Never touch another lane's worktree or the main clone.
 - Supabase production: project `kuklfnapbkmacvwxktbh` (Postgres 17). Read with the `execute_sql` tool of the Supabase MCP (in this session it is named `mcp__b6d9edd4-a2e3-495f-b4c4-16c2befba6ef__execute_sql`; load it with ToolSearch `select:` if deferred). Apply DDL ONLY with `..._apply_migration` (name = migration file name without `.sql`). `execute_sql` returns the last SELECT of a multi-statement script even when it ends in ROLLBACK: `BEGIN; ...probe...; SELECT ...; ROLLBACK;` is the probe shape. Regex `{n,m}` fails in this client: use unbounded quantifiers or substr/position; `\b` is backspace, use `\y`. The client times out at 60s but the transaction may have committed: verify before re-applying.
 - **Read the LIVE body before you replace a function**: `select pg_get_functiondef(oid) from pg_proc where proname='...'`. The repo mirror is stale in places. Keep every behaviour you did not set out to change and prove it (compare reconstructed body length to `length(prosrc)`).
-- GitHub: `gh` has a dead keyring token. Use the REST API with the token from `grep '^GITHUB_TOKEN=' ~/Documents/club-arena/.env | cut -d= -f2- | tr -d '"'` (never print it). Agent Autopilot opens a PR for ANY pushed branch and auto-merges any non-draft PR on green: PATCH the PR body it opened instead of POSTing a second one; draft only to hold something for Dan.
-- Engine (`server/`) deploys to Hetzner at fixed windows only (18, 22, 04, 10, 14 America/Chicago) and needs the maintenance break. Migrations land immediately; engine code lands at the next successful window. Plan every DB/engine pair so the DB half is safe with BOTH engine builds. Never pass `force: true`.
+- GitHub: use the configured `gh` credential store. Push the branch normally;
+  the branch-proposal signal and trusted default-branch opener create the PR.
+  Local env files are never repository or release authority.
+- Engine (`server/`) publishes only through the Club Arena-owned exact-SHA
+  Hetzner workflow. Immediately dispatch already-staged work toward the current
+  certified break through the owning lane; never force or restart it by hand.
 
 ## Binding rules (Dan's, enforced by hooks and CI)
 

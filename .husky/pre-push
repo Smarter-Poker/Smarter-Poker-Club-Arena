@@ -7,15 +7,14 @@
 #   3. Introduce client-side PIN-gate storage (Phase 3.6 server-side only)
 #   4. Use raw supabase.auth.getUser() outside src/lib/authUtils.ts
 #
-# Bypass with `git push --no-verify` only in genuine emergencies.
+# There is no bypass. A refusal must be fixed at its source.
 
 set -e
 
 # ── One working tree per agent (rule 1a) ────────────────────────────────────
 # Runs FIRST, for the same reason it runs first on pre-commit: if this push
 # should not be coming from this tree at all, none of the content checks below
-# matter. git-safe-push.sh and the World Hub sync export AGENT_SHARED_CLONE_OK=1
-# because they legitimately push from the one-and-only tree; CI is exempt too.
+# matter. No publisher or agent pushes from the shared clone.
 #
 # Added 2026-08-23. Commit-only enforcement missed the shape that actually
 # loses work: an agent edits in the shared clone, never commits there, and the
@@ -26,12 +25,10 @@ bash "$(git rev-parse --show-toplevel)/scripts/guard-shared-clone.sh" push
 # Autopilot squash-merges the instant the required checks pass. A push after
 # that lands on a closed pull request, changes nothing, and EXITS 0 - which is
 # how World Hub #1387 shipped one of its three commits and nobody noticed for
-# hours. Runs early and costs one HTTP request; fails open on any doubt.
+# hours. The actual remote destination is checked inside the ref loop below.
 # Warns, never blocks. The disk filling is the one failure on this machine
 # that presents as somebody else's bug (see scripts/worktree-pressure.sh).
 bash "$(git rev-parse --show-toplevel)/scripts/worktree-pressure.sh" || true
-
-bash "$(git rev-parse --show-toplevel)/scripts/guard-merged-branch.sh"
 
 REMOTE="$1"
 URL="$2"
@@ -79,6 +76,13 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   if [ "$LOCAL_SHA" = "0000000000000000000000000000000000000000" ]; then
     continue
   fi
+
+  case "$REMOTE_REF" in
+    refs/heads/*)
+      bash "$(git rev-parse --show-toplevel)/scripts/guard-merged-branch.sh" \
+        "${REMOTE_REF#refs/heads/}" "$REMOTE" "$URL"
+      ;;
+  esac
 
   if [ "$REMOTE_SHA" = "0000000000000000000000000000000000000000" ]; then
     # ─────────────────────────────────────────────────────────────────────
@@ -140,10 +144,8 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
     # suggests nothing, and points at no file. It cost a real debugging cycle
     # to trace to this line.
     #
-    # The danger is not the wasted time. The obvious way out of an
-    # inscrutable pre-push failure is --no-verify, and every rule below this
-    # point exists because something was lost. A guard whose failure mode
-    # invites its own bypass is worse than no guard.
+    # The danger is not the wasted time. An inscrutable pre-push failure makes
+    # the actual repair unclear, so this guard names the missing authority.
     #
     # So: fetch it, and if it still is not here, check against main instead.
     # Never die, and never silently check nothing.
@@ -193,9 +195,8 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   # That matters more than the lost minutes. Check 4's own comment promises
   # "this gate only fires on files you actually touch, so they are a to-do,
   # not a wall" - and autopilot merges main into every open branch on a timer,
-  # so the wall builds itself. An inscrutable block invites --no-verify, and
-  # --no-verify switches off the merge-conflict-marker check too: the one
-  # guard here that has actually caught a production break.
+  # so the wall builds itself. The list is narrowed to the branch-owned diff;
+  # mandatory checks remain active for every push.
   #
   # So drop anything whose content matches origin/main. This only ever NARROWS,
   # never skips: if main is not fetched, the list is left exactly as computed.
@@ -269,20 +270,19 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
           git log --oneline --max-count=15 "$LOCAL_SHA..$REMOTE_SHA" 2>/dev/null | sed 's/^/    /'
           echo ""
           echo "  This is how four production-serving commits were lost on 2026-08-21."
-          echo "  Almost always the fix is to REBASE ONTO them rather than over them:"
+          echo "  Preserve the work on a feature branch and merge current main into it:"
           echo ""
-          echo "      git pull --rebase $REMOTE main && git push"
+          echo "      git fetch $REMOTE main"
+          echo "      git switch <feature-branch>"
+          echo "      git merge $REMOTE/main"
+          echo "      git push $REMOTE <feature-branch>"
           echo ""
           echo "  If you are deliberately reverting, revert with a commit - that keeps"
           echo "  the history and is reviewable. A rewind leaves no trace of what went."
           echo ""
-          echo "  Genuine emergency override:  CA_ALLOW_MAIN_REWIND=1 git push ..."
+          echo "  There is no local bypass. GitHub rulesets also reject this operation."
           echo ""
-          if [ "${CA_ALLOW_MAIN_REWIND:-0}" = "1" ]; then
-            echo "  [CA_ALLOW_MAIN_REWIND=1 set - allowing this rewind]"
-          else
-            FAIL=1
-          fi
+          FAIL=1
         fi
       fi
       ;;
@@ -383,8 +383,7 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   #
   #    It SKIPS, loudly, when a worktree has no node_modules — same reasoning
   #    as the formatter in .husky/pre-commit: a gate people wait on is a gate
-  #    people --no-verify past, and --no-verify also disables the rewind guard
-  #    in check 5, which must never be skipped.
+  #    developers stop trusting. The rewind guard must never be skipped.
   if echo "$FILES" | grep -qE '^src/.*\.tsx?$'; then
     TSC="$(git rev-parse --show-toplevel)/node_modules/.bin/tsc"
     if [ -x "$TSC" ]; then
@@ -454,9 +453,7 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   # validateBearer() from src/lib/auth", but `src/lib/auth/` has never existed
   # in this repo's history and `validateBearer` has never been defined
   # anywhere. Phase 6 Rule 4 named a migration target that was never built, so
-  # the only way past this gate was --no-verify — which also switches off the
-  # merge-conflict-marker check in the same hook, the one guard here that has
-  # actually caught a production break (f490f61bf).
+  # the gate itself had to be corrected before it could enforce the real rule.
   #
   # The canonical module is src/lib/authUtils.ts, and the helper is
   # readLocalSession(): it parses the shared 'smarter-poker-auth' JWT, honours
@@ -613,9 +610,8 @@ fi
 # related` on the files you actually touched is about four seconds, and it
 # would have caught all four incidents above - three of them changed a test
 # file (run directly), the fourth changed ActionPanel.tsx (found by related).
-# A gate people wait minutes for is a gate people start bypassing.
-#
-# Emergency bypass:  CA_SKIP_TESTS=1 git push
+# The targeted gate is mandatory. Missing dependencies are a refusal, not an
+# environment-variable escape hatch.
 # ═════════════════════════════════════════════════════════════════════════════
 # 2026-08-23: gated on a LOCAL vitest. This hook ran in NONE of the 38 agent
 # worktrees whose core.hooksPath pointed at the gitignored .husky/_ (see
@@ -634,7 +630,7 @@ fi
 # tree is broken and starts reinstalling, which is how it becomes a loop.
 #
 # Probe first, so the diagnosis arrives before the confusion does.
-bash "$(git rev-parse --show-toplevel)/scripts/check-node-modules.sh" --check || true
+bash "$(git rev-parse --show-toplevel)/scripts/check-node-modules.sh" --check
 
 VITEST="$(git rev-parse --show-toplevel)/node_modules/.bin/vitest"
 
@@ -644,80 +640,22 @@ VITEST="$(git rev-parse --show-toplevel)/node_modules/.bin/vitest"
 # stops a red test blocking the World Hub bundle was a printed sentence in the
 # 124 of 162 trees that had no server/node_modules.
 #
-# The first attempt at repairing it carried four defects worth recording,
-# because each is a shape that recurs:
-#
-#   - it copied with `cp -R src dst` while `dst` might already exist, which
-#     nests into node_modules/node_modules and leaves a tree that every later
-#     `[ -e ]` check calls "provisioned" forever. Copy to a temp and rename.
-#   - it refused when run IN the main clone, which is where git-safe-push.sh
-#     and the World Hub sync push from. A guard that can brick the deploy path
-#     is worse than the hole it closes. That case now advises `npm ci` and
-#     does not block.
-#   - it had no CI exemption, unlike every other guard in this file.
-#   - it read `[ -z "$CA_SKIP_TESTS" ]`, so CA_SKIP_TESTS=0 SKIPPED the gate —
-#     the opposite of what the message it prints says. Compare to "1".
-CA_IN_CI=0
-[ -n "${CI:-}" ] && CA_IN_CI=1
-[ -n "${GITHUB_ACTIONS:-}" ] && CA_IN_CI=1
-
-CA_TESTS_ON=1
-[ "${CA_SKIP_TESTS:-0}" = "1" ] && CA_TESTS_ON=0
-[ "$CA_IN_CI" = "1" ] && CA_TESTS_ON=0
-
-CA_ROOT_MAIN="$HOME/Documents/club-arena"
+# Dependencies are prepared by the workspace/bootstrap path. This hook never
+# copies or repairs a dependency tree while a push is in progress.
 CA_TREE_TOP="$(git rev-parse --show-toplevel)"
 
-# Same repository only. A second full clone of this remote exists on this
-# machine and its node_modules answers to a different package-lock.
-ca_same_repo() {
-  [ -d "$CA_ROOT_MAIN/.git" ] || [ -f "$CA_ROOT_MAIN/.git" ] || return 1
-  [ "$(git -C "$CA_ROOT_MAIN" rev-parse --git-common-dir 2>/dev/null)" = "$(git rev-parse --git-common-dir 2>/dev/null)" ]
-}
-
-# Clone one package root's deps in, atomically. Never copies onto an existing
-# directory, so a gutted or half-copied tree is replaced rather than nested.
-ca_provision() {
-  src="$1"; dst="$2"
-  [ -d "$src" ] || return 1
-  rm -rf "$dst.provision.$$" 2>/dev/null
-  if cp -Rc "$src" "$dst.provision.$$" 2>/dev/null || cp -R "$src" "$dst.provision.$$" 2>/dev/null; then
-    rm -rf "$dst" 2>/dev/null
-    mv "$dst.provision.$$" "$dst" 2>/dev/null && return 0
-  fi
-  rm -rf "$dst.provision.$$" 2>/dev/null
-  return 1
-}
-
-if [ "$CA_TESTS_ON" = "1" ] && [ -f package.json ] && [ ! -x "$VITEST" ]; then
-  if [ "$CA_TREE_TOP" = "$CA_ROOT_MAIN" ]; then
-    echo ""
-    echo "[club-arena pre-push] this clone's node_modules is missing or gutted, so the"
-    echo "                      test gate cannot run. NOT refusing: git-safe-push.sh and"
-    echo "                      the World Hub sync push from here, and bricking that is"
-    echo "                      worse than the gate being down for one push."
-    echo "                      Repair it:  (cd $CA_ROOT_MAIN && npm ci)"
-    echo ""
-  elif ca_same_repo && ca_provision "$CA_ROOT_MAIN/node_modules" "$CA_TREE_TOP/node_modules"; then
-    echo "[club-arena pre-push] no local vitest - provisioned from the main clone so the gate can run."
-  fi
-fi
-
-if [ "$CA_TESTS_ON" = "1" ] && [ -f package.json ] && [ ! -x "$VITEST" ] \
-   && [ "$CA_TREE_TOP" != "$CA_ROOT_MAIN" ]; then
+if [ -f package.json ] && [ ! -x "$VITEST" ]; then
   echo ""
   echo "[club-arena pre-push] REFUSING: no vitest in this tree and it could not be"
   echo "                      provisioned, so the test gate cannot run. Pushing now"
   echo "                      would put an ungated commit on a branch CI publishes"
   echo "                      from."
-  echo "                      Fix:  bash scripts/agent-workspace.sh <you> <slug>"
-  echo "                      or:   npm ci"
-  echo "                      Deliberate override: CA_SKIP_TESTS=1"
+  echo "                      Fix the workspace dependency installation, then retry."
   echo ""
   exit 1
 fi
 
-if [ "$CA_TESTS_ON" = "1" ] && [ -f package.json ] && [ -x "$VITEST" ]; then
+if [ -f package.json ] && [ -x "$VITEST" ]; then
   CHANGED_TESTS=""
   CHANGED_SRC=""
   for f in $FILES; do
@@ -806,7 +744,7 @@ fi
 # Provisioning is necessary and it is not sufficient; this is the part that
 # enforces.
 SERVER_VITEST="$CA_TREE_TOP/server/node_modules/.bin/vitest"
-if [ "$CA_TESTS_ON" = "1" ] && [ -f server/package.json ]; then
+if [ -f server/package.json ]; then
   SRV_TESTS=""
   SRV_SRC=""
   for f in $FILES; do
@@ -822,20 +760,12 @@ if [ "$CA_TESTS_ON" = "1" ] && [ -f server/package.json ]; then
     esac
   done
 
-  if [ -n "$SRV_TESTS$SRV_SRC" ]; then
-    if [ ! -x "$SERVER_VITEST" ] && ca_same_repo; then
-      ca_provision "$CA_ROOT_MAIN/server/node_modules" "$CA_TREE_TOP/server/node_modules" \
-        && echo "[club-arena pre-push] provisioned server deps so the engine gate can run."
-    fi
-  fi
-
   if [ -n "$SRV_TESTS$SRV_SRC" ] && [ ! -x "$SERVER_VITEST" ]; then
     echo ""
     echo "[club-arena pre-push] REFUSING: you changed server/** and there is no vitest"
     echo "                      in server/, so the ENGINE gate cannot run. This is the"
     echo "                      code that deals real hands."
-    echo "                      Fix:  (cd server && npm ci)"
-    echo "                      Deliberate override: CA_SKIP_TESTS=1"
+    echo "                      Fix the server dependency installation, then retry."
     echo ""
     FAIL=1
   elif [ -n "$SRV_TESTS" ]; then
@@ -864,7 +794,7 @@ fi
 
 if [ "$FAIL" -ne 0 ]; then
   echo ""
-  echo "[club-arena pre-push] FAILED — fix the issues above or use --no-verify if certain."
+  echo "[club-arena pre-push] FAILED — fix the issues above; release checks have no bypass."
   exit 1
 fi
 

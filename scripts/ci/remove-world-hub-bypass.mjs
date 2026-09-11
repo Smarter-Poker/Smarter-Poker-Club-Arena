@@ -47,7 +47,7 @@
  *
  * ── USAGE ────────────────────────────────────────────────────────────────────
  *   node scripts/ci/remove-world-hub-bypass.mjs            # report only
- *   GH_PAT=... node scripts/ci/remove-world-hub-bypass.mjs --apply
+ *   GH_TOKEN=<short-lived administration token> node scripts/ci/remove-world-hub-bypass.mjs --apply
  *
  * The token needs **Administration: Read and write** on Smarter-Poker-World-Hub.
  * A token that can push code cannot change protection rules - the estate's
@@ -60,11 +60,11 @@
 import process from 'node:process';
 
 const REPO = process.env.BYPASS_REPO || 'Smarter-Poker/Smarter-Poker-World-Hub';
-const TOKEN = process.env.GH_PAT || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '';
+const TOKEN = process.env.GH_TOKEN || process.env.GITHUB_TOKEN || '';
 const APPLY = process.argv.includes('--apply');
 
 if (!TOKEN) {
-  console.error('No token. Set GH_PAT to one with Administration: Read and write.');
+  console.error('No short-lived token with Administration: Read and write was provided.');
   process.exit(2);
 }
 
@@ -125,7 +125,7 @@ if (!APPLY) {
   console.log('Re-run with --apply and a token carrying Administration: Read and write.');
   console.log('\nBefore you do, be sure of these two, which this script cannot check for you:');
   console.log('  1. No workflow pushes directly to main as the app. Checked 2026-09-06:');
-  console.log('     none of agent-autopilot, agent-open-pr or publish-watchdog does.');
+  console.log('     neither agent-autopilot nor agent-open-pr does.');
   console.log('  2. Autopilot still merges. Club Arena runs the same app with an empty');
   console.log('     bypass list, so this is evidenced rather than hoped.');
   process.exit(1);

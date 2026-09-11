@@ -22,9 +22,8 @@
  * which is a different interval on a different service. So an executor that
  * throws every cycle, or one switched off by STABLE_HAND_CONTROLLER while
  * everyone forgets, is caught. An engine that is dead entirely is NOT caught
- * here and is not meant to be - `engine-watchdog.sh` and the deploy watchdogs
- * already own that, from outside the box. Said plainly because a watchdog
- * whose limits are not written down gets trusted for things it never covered.
+ * here and is not meant to be. The Club Arena release workflow and read-only
+ * production audit independently prove engine health and exact-SHA adoption.
  */
 
 import { supabase } from './supabase.js';

@@ -1,9 +1,9 @@
 /**
- * The secrets-expiry watchdog and its inventory stay honest (2026-09-01).
+ * The read-only credential-contract audit and its inventory stay honest.
  *
  * A credential that expires silently is an outage with a date on it. These
- * pins keep the inventory well-formed, keep the watchdog from ever printing a
- * value or failing the job, and keep the two live-check paths present.
+ * pins keep the inventory well-formed, keep the audit from ever printing a
+ * value or failing the job, and keep it independent of a long-lived PAT.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -37,15 +37,13 @@ describe('secrets inventory', () => {
     expect(raw).not.toMatch(/eyJ[A-Za-z0-9_-]{20}/);
   });
 
-  it('records the one genuinely-expiring credential (the GitHub PAT)', () => {
-    const pat = inv.secrets.find((s: any) => s.name === 'GH_PAT');
-    expect(pat).toBeTruthy();
-    expect(pat.expires).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(pat.live_check).toBe('github_token_expiry');
+  it('has no long-lived GitHub PAT in the release credential contract', () => {
+    expect(inv.secrets.map((s: any) => s.name)).not.toContain('GH_PAT');
+    expect(inv.secrets.map((s: any) => s.name)).not.toContain('AUTOFIX_GITHUB_TOKEN');
   });
 });
 
-describe('the watchdog script', () => {
+describe('the credential audit script', () => {
   const s = readFileSync(root(SCRIPT), 'utf8');
 
   it('never fails the job - an alarm is an issue, not a red run', () => {
@@ -53,9 +51,10 @@ describe('the watchdog script', () => {
     expect(s).toContain('process.exit(0)');
   });
 
-  it('has both live-check paths: GitHub token expiry and Supabase key format', () => {
-    expect(s).toContain('github-authentication-token-expiration');
+  it('checks Supabase key format without inspecting a GitHub PAT', () => {
     expect(s).toContain('sb_secret_');
+    expect(s).not.toContain('github-authentication-token-expiration');
+    expect(s).not.toContain('GH_PAT');
   });
 
   it('writes the alarm with a token independent of the one that can expire', () => {

@@ -34,7 +34,7 @@ BEGIN
 END;
 $authenticated_hook_execution$;
 
-/* Both are intentionally authenticated player RPCs as well as manager RPCs.
+/* All three are intentionally authenticated player RPCs as well as manager RPCs.
    Test the actual hook under the request role before any routine body runs. */
 SELECT set_config('request.method', 'POST', true);
 SELECT set_config('request.path', '/rpc/process_tournament_rebuy', true);
@@ -42,6 +42,10 @@ SET LOCAL ROLE authenticated;
 SELECT smarter_private.fn_smarter_data_api_pre_request();
 RESET ROLE;
 SELECT set_config('request.path', '/rest/v1/rpc/fn_decline_tournament_rebuy', true);
+SET LOCAL ROLE authenticated;
+SELECT smarter_private.fn_smarter_data_api_pre_request();
+RESET ROLE;
+SELECT set_config('request.path', '/rpc/fn_mystery_bounty_reveal', true);
 SET LOCAL ROLE authenticated;
 SELECT smarter_private.fn_smarter_data_api_pre_request();
 RESET ROLE;
@@ -68,23 +72,62 @@ SELECT smarter_private.fn_smarter_data_api_pre_request();
 RESET ROLE;
 
 DO $service_hook_execution_and_private_surface$
+DECLARE
+  v_authenticator_oid oid;
+  v_current_database_oid oid;
+  v_canonical_global_hook_settings bigint;
+  v_applicable_hook_settings bigint;
 BEGIN
+  SELECT r.oid INTO STRICT v_authenticator_oid
+    FROM pg_roles r
+   WHERE r.rolname = 'authenticator';
+  SELECT d.oid INTO STRICT v_current_database_oid
+    FROM pg_database d
+   WHERE d.datname = current_database();
+
   IF current_setting('app.smarter_data_actor', true) <> 'service' THEN
     RAISE EXCEPTION 'service_role could not execute the private PostgREST hook';
   END IF;
   IF to_regprocedure('public.fn_smarter_data_api_pre_request()') IS NOT NULL THEN
     RAISE EXCEPTION 'request hook still has a public RPC spelling';
   END IF;
-  IF NOT EXISTS (
+  SELECT
+    count(*) FILTER (
+      WHERE s.setdatabase = 0
+        AND s.setrole = v_authenticator_oid
+        AND setting.value =
+            'pgrst.db_pre_request=smarter_private.fn_smarter_data_api_pre_request'
+    ),
+    count(*)
+    INTO v_canonical_global_hook_settings, v_applicable_hook_settings
+    FROM pg_db_role_setting s
+    CROSS JOIN LATERAL unnest(COALESCE(s.setconfig, '{}'::text[])) AS setting(value)
+   WHERE s.setdatabase IN (0, v_current_database_oid)
+     AND s.setrole IN (0, v_authenticator_oid)
+     AND setting.value LIKE 'pgrst.db_pre_request=%';
+
+  IF v_canonical_global_hook_settings <> 1
+     OR v_applicable_hook_settings <> 1 THEN
+    RAISE EXCEPTION
+      'PostgREST private request hook settings are not exact (canonical global %, applicable %)',
+      v_canonical_global_hook_settings,
+      v_applicable_hook_settings;
+  END IF;
+
+  IF EXISTS (
     SELECT 1
       FROM pg_db_role_setting s
-      JOIN pg_roles r ON r.oid = s.setrole
       CROSS JOIN LATERAL unnest(COALESCE(s.setconfig, '{}'::text[])) AS setting(value)
-     WHERE r.rolname = 'authenticator'
-       AND setting.value =
-           'pgrst.db_pre_request=smarter_private.fn_smarter_data_api_pre_request'
+      CROSS JOIN LATERAL regexp_split_to_table(
+        split_part(setting.value, '=', 2),
+        '[[:space:]]*,[[:space:]]*'
+      ) AS exposed(schema_name)
+     WHERE s.setdatabase IN (0, v_current_database_oid)
+       AND s.setrole IN (0, v_authenticator_oid)
+       AND setting.value LIKE 'pgrst.db_schemas=%'
+       AND exposed.schema_name = 'smarter_private'
   ) THEN
-    RAISE EXCEPTION 'PostgREST is not configured for the private request hook';
+    RAISE EXCEPTION 'smarter_private is exposed to this PostgREST instance';
   END IF;
 END;
 $service_hook_execution_and_private_surface$;
@@ -93,6 +136,7 @@ DO $probe$
 DECLARE
   v_denied boolean;
   v_kind text;
+  v_route text;
   v_result jsonb;
 BEGIN
   FOREACH v_kind IN ARRAY ARRAY[
@@ -112,8 +156,12 @@ BEGIN
     '10000000-0000-4000-8000-000000000001', 'refund', NULL,
     '30000000-0000-4000-8000-000000000001', 1, 'pg17.stage_b', NULL, NULL
   );
-  IF COALESCE((v_result->>'ok')::boolean, false) IS NOT TRUE THEN
-    RAISE EXCEPTION 'public payer stopped delegating a non-pool refund: %', v_result;
+  IF COALESCE((v_result->>'ok')::boolean, true) IS NOT FALSE
+     OR v_result->>'refused_reason' IS DISTINCT FROM
+          'exact_refund_authority_required' THEN
+    RAISE EXCEPTION
+      'public payer admitted a refund without exact entitlement authority: %',
+      v_result;
   END IF;
   IF (
     SELECT count(*)
@@ -182,11 +230,49 @@ BEGIN
   UPDATE public.tournaments SET name = 'shared-estate-service'
    WHERE id = '10000000-0000-4000-8000-000000000002';
 
+  /* Shared player/manager routines are not a generic service back door.
+     Their unmarked authenticated shape is tested above; every service shape
+     except an exact manager lease must stop at the request boundary. */
+  FOREACH v_route IN ARRAY ARRAY[
+    'rpc/fn_decline_tournament_rebuy',
+    'rpc/fn_mystery_bounty_reveal',
+    'rpc/process_tournament_rebuy'
+  ]::text[] LOOP
+    v_denied := false;
+    PERFORM set_config('request.headers', '{}', true);
+    PERFORM set_config('request.jwt.claims', '{"role":"service_role"}', true);
+    PERFORM set_config('request.path', '/' || v_route, true);
+    BEGIN
+      PERFORM smarter_private.fn_smarter_data_api_pre_request();
+    EXCEPTION WHEN insufficient_privilege THEN
+      v_denied := true;
+    END;
+    IF NOT v_denied THEN
+      RAISE EXCEPTION 'unmarked service entered shared player/manager route %', v_route;
+    END IF;
+
+    v_denied := false;
+    PERFORM set_config(
+      'request.headers',
+      '{"x-smarter-data-actor":"service","x-smarter-data-protocol":"1"}',
+      true
+    );
+    BEGIN
+      PERFORM smarter_private.fn_smarter_data_api_pre_request();
+    EXCEPTION WHEN insufficient_privilege THEN
+      v_denied := true;
+    END;
+    IF NOT v_denied THEN
+      RAISE EXCEPTION 'generic service actor entered shared player/manager route %', v_route;
+    END IF;
+  END LOOP;
+
   /* The same unmarked credential cannot enter an engine-private exact lease
      route. This closes old/headerless engine binaries without rejecting
      unrelated World Hub or Club Arena work. Exercise the gateway-prefixed
      path shape as well as the direct PostgREST shape. */
   v_denied := false;
+  PERFORM set_config('request.headers', '{}', true);
   PERFORM set_config('request.path', '/rest/v1/rpc/claim_table_lease_v2', true);
   BEGIN
     PERFORM smarter_private.fn_smarter_data_api_pre_request();
@@ -251,6 +337,18 @@ BEGIN
   IF current_setting('app.smarter_manager_request_fenced', true) <> 'protocol-2' THEN
     RAISE EXCEPTION 'fresh exact manager did not acquire request proof';
   END IF;
+
+  FOREACH v_route IN ARRAY ARRAY[
+    'rpc/fn_decline_tournament_rebuy',
+    'rpc/fn_mystery_bounty_reveal',
+    'rpc/process_tournament_rebuy'
+  ]::text[] LOOP
+    PERFORM set_config('request.path', '/' || v_route, true);
+    PERFORM smarter_private.fn_smarter_data_api_pre_request();
+    IF current_setting('app.smarter_manager_request_fenced', true) <> 'protocol-2' THEN
+      RAISE EXCEPTION 'exact manager lost lease proof on shared route %', v_route;
+    END IF;
+  END LOOP;
 
   /* Use the relation path for the direct write transaction represented by
      this probe. */
@@ -416,24 +514,64 @@ $probe$;
    12-argument SECURITY DEFINER door must still resolve its owner-only core
    after Stage B drops the 11-argument rolling wrapper. This catches a PL/pgSQL
    late-name dependency that catalog-existence checks alone cannot see. */
+DO $settlement_fixture_scope$
+BEGIN
+  IF (
+    SELECT count(*)
+      FROM public.tables t
+     WHERE t.id = '20000000-0000-4000-8000-000000000002'
+       AND t.club_id = '70000000-0000-4000-8000-000000000002'
+       AND t.tournament_id IS NULL
+  ) <> 1 THEN
+    RAISE EXCEPTION
+      'Stage-B settlement fixture lost its exact cash-table club scope';
+  END IF;
+  IF EXISTS (
+    SELECT 1
+      FROM public.hand_atomic_commits c
+     WHERE c.table_id = '20000000-0000-4000-8000-000000000002'
+       AND c.hand_number = 1
+  ) THEN
+    RAISE EXCEPTION
+      'Stage-B settlement fixture started with a pre-existing hand receipt';
+  END IF;
+END;
+$settlement_fixture_scope$;
+
 SET LOCAL ROLE service_role;
 DO $settlement_probe$
 DECLARE
   v_settlement jsonb;
 BEGIN
   v_settlement := public.fn_ca_commit_hand_settlement(
-    '20000000-0000-4000-8000-000000000099',
+    '20000000-0000-4000-8000-000000000002',
     1,
-    '{}'::jsonb,
+    '[]'::jsonb,
     0,
     0,
     'stage-b-probe',
     0,
-    '{}'::jsonb,
+    jsonb_build_object(
+      'pot_size', 0,
+      'big_blind', 2,
+      '_accepted_post_commit_facts', jsonb_build_object(
+        'contributions', '{}'::jsonb,
+        'returned_uncalled', '{}'::jsonb,
+        'insurance', '[]'::jsonb
+      )
+    ),
     '{}'::jsonb,
     'stage-b-probe',
     '50000000-0000-4000-8000-000000000099',
-    '{}'::jsonb
+    jsonb_build_object(
+      'version', '1',
+      'time_banks', '[]'::jsonb,
+      'promo_playthrough', '[]'::jsonb,
+      'insurance', '[]'::jsonb,
+      'pending_addons', jsonb_build_object('enabled', true, 'max_buy_in', 1),
+      'rake', NULL,
+      'bbj_contribution', NULL
+    )
   );
   IF COALESCE((v_settlement->>'success')::boolean, false) IS NOT TRUE
      OR COALESCE((v_settlement->>'post_commit_obligations')::boolean, false)

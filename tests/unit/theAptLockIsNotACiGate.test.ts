@@ -25,15 +25,15 @@
  *
  * The fix is not a retry and not a flock, because neither removes the cause:
  * on a box that already has the libraries, the correct number of apt calls is
- * zero. Every workflow step that installs a browser therefore branches on
- * `runner.environment`, taking the plain download on a self-hosted box and
- * keeping `--with-deps` for a GitHub-hosted one, where the libraries genuinely
- * are missing.
+ * zero. A workflow step may therefore use `--with-deps` directly only when its
+ * job is pinned to `ubuntu-latest`; any job that can reach a self-hosted box
+ * must branch on `runner.environment` and take the plain browser download
+ * there.
  *
- * Three of the four call sites already did this. The fourth did not, which is
- * the whole reason for this file: the pattern was established, documented in
- * two comments, and still silently absent from one step. A comment cannot fail
- * a build. This can.
+ * These jobs may also be moved between runner classes over time. The law must
+ * therefore bind the install command to the job's current `runs-on` owner:
+ * hosted-only jobs need the dependency install, while configurable jobs need
+ * the branch. A comment cannot enforce that ownership boundary. This can.
  *
  * IT MUST BE `runner.environment`, NEVER `vars.CI_RUNNER`. That variable is
  * set repo-wide, so it reads true even for a job still pinned to
@@ -52,6 +52,7 @@ interface Step {
   name: string;
   line: number;
   body: string;
+  runsOn: string;
 }
 
 /**
@@ -80,13 +81,17 @@ function stepsOf(file: string): Step[] {
   const lines = text.split('\n');
   const steps: Step[] = [];
   let current: Step | null = null;
+  let runsOn = '';
 
   for (let i = 0; i < lines.length; i += 1) {
+    if (/^ {2}[A-Za-z_][A-Za-z0-9_-]*:\s*$/.test(lines[i])) runsOn = '';
+    const runner = lines[i].match(/^ {4}runs-on:\s*(.+?)\s*$/);
+    if (runner) runsOn = runner[1];
     const named = lines[i].match(/^\s*-\s+name:\s*(.+?)\s*$/);
     if (named) {
       if (current) current.body = stripComments(current.body);
       if (current) steps.push(current);
-      current = { file, name: named[1], line: i + 1, body: '' };
+      current = { file, name: named[1], line: i + 1, body: '', runsOn };
       continue;
     }
     if (current) current.body += lines[i] + '\n';
@@ -108,25 +113,33 @@ describe('a browser install never gambles on the apt lock', () => {
     expect(WORKFLOWS.length).toBeGreaterThan(5);
   });
 
-  it('every --with-deps sits inside a runner.environment branch', () => {
+  it('every --with-deps is hosted or sits inside a runner.environment branch', () => {
     const offenders: string[] = [];
     let guarded = 0;
+    let hosted = 0;
 
     for (const file of WORKFLOWS) {
       for (const step of stepsOf(file)) {
         if (!step.body.includes('--with-deps')) continue;
+        if (step.runsOn === 'ubuntu-latest') {
+          hosted += 1;
+          continue;
+        }
         if (step.body.includes('runner.environment')) {
           guarded += 1;
           continue;
         }
-        offenders.push(`${file}:${step.line}  step "${step.name}"`);
+        offenders.push(
+          `${file}:${step.line}  step "${step.name}" (runs-on: ${step.runsOn || 'missing'})`
+        );
       }
     }
 
     expect(
       offenders,
-      'These steps run `playwright install --with-deps` unconditionally. On a ' +
-        'self-hosted box the libraries are already there (provision-ci-box.sh ' +
+      'These steps can run `playwright install --with-deps` on a non-hosted ' +
+        'or unknown runner. On a self-hosted box the libraries are already ' +
+        'there (provision-ci-box.sh ' +
         'section 6), so the apt call installs nothing and can only lose the ' +
         'machine-wide apt lock to a sibling runner - which fails the job with ' +
         'exit 100 for a reason that is not in the branch. Branch on ' +
@@ -139,11 +152,10 @@ describe('a browser install never gambles on the apt lock', () => {
         offenders.join('\n')
     ).toEqual([]);
 
-    // And prove the rule still has something to be true ABOUT. If every
-    // --with-deps is ever deleted this assertion is what says so, rather than
-    // the suite quietly passing on an empty set for ever after.
+    // And prove the rule still has something to be true ABOUT. A fixed hosted
+    // job needs no branch, while a configurable runner still does.
     expect(
-      guarded,
+      guarded + hosted,
       'no workflow installs a browser any more - if that is deliberate, delete ' +
         'this file rather than leaving a guard with nothing to guard'
     ).toBeGreaterThan(0);

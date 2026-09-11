@@ -86,9 +86,14 @@ describe('a money key identifies the purchase, not the attempt', () => {
     expect(src).toMatch(/spent = \(err as \{ definitive\?: boolean \}\)\?\.definitive === true/);
   });
 
-  it('the store purchase rotates its key only on a TERMINAL refusal', () => {
+  it('the store purchase rotates only a terminal refusal or an explicit pre-commit price conflict', () => {
     const src = strip(read('src/pages/marketplace/StoreTab.tsx'));
-    expect(src).toMatch(/if \(\(err as \{ definitive\?: boolean \}\)\?\.definitive\) \{/);
+    expect(src).toMatch(/if \(apiError\.definitive\) \{/);
+    expect(src).toMatch(/apiError\.status === 409 && apiError\.data\?\.reason === 'price_changed'/);
+    expect(src).toMatch(/closeBuy\(\);\s*onCatalogStale\(\);\s*return;/);
+    // A generic/ambiguous 409 does not satisfy either branch, so its key is
+    // retained and the server can replay a possibly committed debit.
+    expect(src).not.toMatch(/apiError\.status === 409\)\s*\{\s*purchaseKeyRef\.current/);
   });
 
   it('all three transports say which refusals are terminal, with the same list', () => {

@@ -23,6 +23,7 @@ ARCHIVED_FILES = {
  "ba3a1fd990b13689acafc94ead4b998ea9c7f0eab73bbcc730111593abea8777",
 }
 BASELINE = "full_stage1|postgres|true|15|12|0|3|false"
+STAGE_B_RESOLVER = "scripts/ci/stage_b_migration_source.py"
 
 
 def module(path, name):
@@ -195,13 +196,14 @@ def main():
     root=args.root.resolve()
     if "/.agent-trees/" not in str(root):
         raise SystemExit("requires owned repository worktree")
-    source_files=[Path(__file__),root/"scripts/ci/probes/satellite-cancel-current-native.sql",
+    stage_b=module(root/STAGE_B_RESOLVER,"cancel_stage_b_source").resolve(root)
+    source_files=[Path(__file__),root/STAGE_B_RESOLVER,stage_b,
+      root/"scripts/ci/probes/satellite-cancel-current-native.sql",
       root/"scripts/ci/rehearse-satellite-full-terminal.py",root/"scripts/ci/rehearse-existing-ticket-current.py",
       root/"scripts/ci/rehearse-final-deal-current-terminal.py",root/"scripts/ci/rehearse-whole-phase-three-cutover.py",
       root/"scripts/deploy/phase-three-current-satellite-terminal.sql",
       root/"scripts/deploy/phase-three-strict-tournament-cutover.sql",root/"scripts/deploy/phase-three-final-deal-terminal-v2.sql",
       root/"supabase/migrations/20260909165629_satellite_settlement_has_one_atomic_authority.sql",
-      root/"supabase/migrations/20260910000905_final_tournament_roster_seat_authority_after_scheduler_fence.sql",
       root/"supabase/migrations/20260910190537_late_entry_uses_canonical_capacity_and_charged_wallet_receip.sql"]
     if args.cash_candidate:source_files.append(root/"scripts/deploy/phase-three-cancellation-origin-cash.sql")
     hashes={str(f.relative_to(root)):hashlib.sha256(f.read_bytes()).hexdigest() for f in source_files}

@@ -12,18 +12,22 @@ git status --porcelain # must be empty of tracked files
 git log --oneline origin/main..HEAD # must be empty
 git branch -r --contains HEAD # must name your branch
 gh pr list --head <your-branch> # must show a PR, or explain why not
-# `gh` is NOT installed on the Mac. There, ask the API directly:
-# curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-#   "https://api.github.com/repos/Smarter-Poker/<repo>/pulls?head=Smarter-Poker:<branch>&state=all"
+
+# Use the configured GitHub CLI credential store. Never scrape a token from a
+
+# local `.env`, sibling repository, remote URL, or documentation file.
+
 # And MERGED IS NOT LANDED - the tick is not evidence, the files are:
+
 # git fetch origin main && git cat-file -e origin/main:<path> && echo on-main
+
 If any of those is wrong, you are not finished. Fix it before continuing.
 
 PART B — DID YOU FOLLOW THE RULES?
 pwd # must be under .agent-trees/
 git log -1 --format='%an <%ae>' # must be Smarter-Poker # <254329056+...@users.noreply.github.com>
 git log --oneline origin/main..HEAD | wc -l
-State plainly whether you used --no-verify at any point. If you did, say where and why.
+Confirm that every commit and push ran the repository hooks and that no guard was bypassed.
 
 PART C — IS THE CODE ACTUALLY DONE? (THE INTERROGATION)
 You must re-read your own diff before answering: `git diff origin/main...HEAD`
@@ -57,7 +61,7 @@ worth more than a confident claim I have to discover is wrong.
 Every rule below exists because work was lost, a deploy was blocked, or the
 platform stopped publishing. They are not preferences and they are not
 negotiable. `AGENT-PLAYBOOK.md` at the repository root is the long form and is
-byte-identical in all seven repos; `estate-integrity` checks that hourly.
+byte-identical in all seven repos; `estate-integrity` checks that contract.
 
 ---
 
@@ -70,17 +74,16 @@ is on GitHub, the CI checks are green, and the PR is MERGED.
 git push origin HEAD:refs/heads/<your-branch>
 ```
 
-The pull request opens itself - `agent-open-pr.yml` fires on the push, for any
-branch name. Do NOT run `gh pr create`: **`gh` is not installed on the Mac**
-agents work on, so that command dies with `command not found` after the push has
-already succeeded. On the Mac, ask the REST API with `curl` and the
-`GITHUB_TOKEN` in `~/Documents/club-arena/.env`.
+The push starts the unprivileged `Agent Branch Proposal` signal. The trusted
+default-branch `agent-open-pr.yml` workflow consumes that signal and opens the
+pull request for any eligible branch name. Use the configured GitHub client to
+inspect it; never source or copy a token from a workstation `.env`.
 
 **YOU MUST NOT ORPHAN OR ABANDON YOUR WORK** - and you avoid that by PUSHING,
 not by waiting. Push, report the branch and the pull request number, and END
-YOUR SESSION. Autopilot merges it, the publisher ships it, and the watchdogs
-verify it, all server-side, on infrastructure that does not care which account
-you were.
+YOUR SESSION. Native repository events open it, Autopilot arms protected merge,
+and the owning publisher ships it. Read-only production audits provide
+independent evidence; they never repair or re-dispatch a failed release.
 
 **NEVER SET A TIMER, AND NEVER USE THE `schedule` TOOL.** This block used to
 say the opposite - "Call `schedule` with `DurationSeconds=300`" - and it broke
@@ -125,8 +128,8 @@ If you make commits inside the shared clone, you break the estate. Work in `.age
 
 ## RULE 3 — ENFORCE SOURCE OF TRUTH (NO MANUAL COMPILED ASSETS).
 
-Agents must NEVER manually commit compiled or minified `assets/*.js` files directly to `Smarter-Poker-World-Hub`.
-Any updates to Club Arena must STRICTLY flow through a merged PR on the `club-arena` repository, followed by a clean, automated build-and-sync process (Vercel/GitHub Actions). Do not attempt to bypass the pipeline by copying bundled files into World Hub manually.
+Agents must NEVER commit compiled or minified Club Arena assets to `Smarter-Poker-World-Hub`.
+Every Club Arena update must flow through a reviewed PR in this repository, followed by the Club Arena-owned Hetzner publisher. World Hub only routes the public URL; it does not build, synchronize, mutate, or publish Club Arena.
 
 ## RULE 4 — WHEN A GUARD REFUSES YOU, READ IT.
 
@@ -137,10 +140,15 @@ Any updates to Club Arena must STRICTLY flow through a merged PR on the `club-ar
 **DO NOT EVER ASK THE USER TO MANUALLY DO A TASK.**
 You have every single credential (CLI, backend, DB access, GitHub, Supabase) to do every single task yourself.
 
-- If a database migration needs to be run, YOU run it via `psql` or `supabase` CLI.
-- If the database is timing out, retry it yourself now, or put the job on **Open Claw** (`scripts/openclaw-cron-dispatcher.py`) - never on the Claude `schedule` tool, which `CLAUDE.md` 10.85 bans because it reports `enabled: true` and never fires. Do not abandon the task and do not ask the user to "paste this in the Supabase SQL editor".
-- If a server needs to be restarted, YOU restart it.
-- If a PR needs to be merged, YOU merge it or wait for autopilot.
+- If a database migration needs to be run, apply the reviewed migration through
+  the configured database client without exposing or relocating credentials.
+- If the database is timing out, diagnose and fix the cause through the owning
+  reviewed database path. Do not create a timer, watcher, or alternate writer.
+- If an already-staged engine SHA needs deployment, coordinate with its current
+  owner and immediately send the exact SHA through the trusted Club Arena
+  repository-dispatch lane; never restart it by SSH or race an active owner run.
+- If a PR needs to be merged, fix its required checks and let the protected
+  auto-merge path merge it. Never invoke a merge bypass yourself.
   Never tell Dan to run a command, pull a branch, start a server, open a PR, merge anything, or run a SQL query. If a step needs doing, DO IT YOURSELF.
 
 ## RULE 6 — REPORT ONLY WHAT YOU VERIFIED.
@@ -184,9 +192,8 @@ Required (a PR cannot merge until these are green):
 - **Production Build** — vite build + bundle budget. Deterministic.
 - **CSS Beat E2E (multi-table + animations)** — Playwright against this commit's own build.
 
-A green tick answers "did it merge". It does not answer "did it reach production". `.github/workflows/publish-watchdog.yml` asks production directly — it compares `build-info.json` against `main` after every publish attempt.
+A green tick answers "did it merge". It does not answer "did it reach production". The owning repository's read-only production integrity audit compares immutable live provenance against `main`; it cannot publish or retry.
 
 ## APPENDIX B — A RESET CAN NO LONGER DESTROY A COMMIT OR AN EDIT
 
-`.husky/reference-transaction` fires before any ref update lands and refuses one that would orphan local commits — and it writes them to `refs/wip/orphan-guard/<stamp>` first. `scripts/agent-trees-snapshot.sh` does the same for uncommitted edits every ten minutes.
-If you deliberately need to move a ref backwards, say so: `AGENT_REF_GUARD_OK=1`.
+`.husky/reference-transaction` fires before any ref update lands and refuses one that would orphan local commits. It writes a recoverable reference under `refs/wip/orphan-guard/<stamp>` before refusing the destructive update. There is no bypass: preserve the work on a feature branch and merge forward.

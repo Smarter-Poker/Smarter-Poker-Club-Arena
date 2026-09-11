@@ -23,19 +23,20 @@
  * the others are the majority.
  *
  * ── WHAT IT DOES ─────────────────────────────────────────────────────────────
- * Ask GitHub for recent completed runs on `main`, keep the newest run per
- * workflow, and report any workflow whose newest run FAILED - with how long it
- * has been failing and over how many consecutive runs. Exits non-zero when
- * anything is over the threshold, so the caller can raise one issue naming all
- * of them.
+ * Ask GitHub for every active workflow, then fetch completed `main` runs for
+ * each workflow independently. A noisy workflow therefore cannot evict a
+ * low-frequency workflow from one shared run window. Report any workflow whose
+ * newest verdict FAILED, with how long it has been failing and over how many
+ * consecutive verdicts. Exits non-zero when anything is over the threshold, so
+ * the caller can raise one issue naming all of them.
  *
  * Deliberately NOT a list of blessed exceptions. A workflow allowed to be red
  * is a workflow that should be deleted or fixed, and an allowlist here would
  * become the place failures go to be forgotten - which is the bug.
  *
  * ── LOUD FAILURES ARE NOT THE TARGET ─────────────────────────────────────────
- * Some workflows fail ON PURPOSE: `Publish Watchdog` exits non-zero to RAISE an
- * alarm, and when it does it opens or updates a tracked issue. Its red is the
+ * Some workflows fail ON PURPOSE: a production audit can exit non-zero to RAISE
+ * an alarm, and when it does it opens or updates a tracked issue. Its red is the
  * product, not a defect, and the first run of this detector flagged it - which
  * would have taught everyone to ignore this detector inside a week.
  *
@@ -54,14 +55,19 @@
  */
 import process from 'node:process';
 
-import { groupByWorkflow, redWorkflows } from './lib/workflowVerdicts.mjs';
+import {
+  collectActiveWorkflowRuns,
+  groupByWorkflow,
+  issueCarriesWorkflowAlarm,
+  MAIN_HEALTH_READER_LABEL,
+  redWorkflows,
+  workflowAlarmMarker,
+} from './lib/workflowVerdicts.mjs';
 
-const REPO = process.env.GITHUB_REPOSITORY || 'Smarter-Poker/Smarter-Poker-World-Hub';
+const REPO = process.env.GITHUB_REPOSITORY || '';
 const TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '';
 const HOURS = Number(process.env.MAIN_RED_HOURS || 6);
 const BRANCH = process.env.MAIN_RED_BRANCH || 'main';
-/** Runs to scan. Enough to see several ticks of every workflow. */
-const PAGES = 3;
 
 /**
  * ── THREE OUTCOMES, BECAUSE TWO CLOSED A REAL ALARM (2026-09-07) ────────────
@@ -85,6 +91,11 @@ const PAGES = 3;
  */
 const UNKNOWN = 3;
 
+if (!REPO) {
+  console.error('COULD NOT TELL: no GITHUB_REPOSITORY, so no Club Arena run was read.');
+  process.exit(UNKNOWN);
+}
+
 if (!TOKEN) {
   console.error('COULD NOT TELL: no GITHUB_TOKEN, so no run on main was read.');
   process.exit(UNKNOWN);
@@ -103,26 +114,17 @@ const api = async (path) => {
 };
 
 let runs = [];
+let activeWorkflows = [];
+let notApplicable = [];
 try {
-  for (let page = 1; page <= PAGES; page++) {
-    const d = await api(
-      `/repos/${REPO}/actions/runs?branch=${encodeURIComponent(BRANCH)}&status=completed&per_page=100&page=${page}`
-    );
-    const batch = d.workflow_runs || [];
-    runs.push(...batch);
-    if (batch.length < 100) break;
-  }
+  const inventory = await collectActiveWorkflowRuns(api, REPO, BRANCH);
+  runs = inventory.runs;
+  activeWorkflows = inventory.workflows;
+  notApplicable = inventory.notApplicable;
 } catch (err) {
   // NOT fail-open. It does not page (the workflow treats 3 as a warning), and
   // it does not close a standing alarm either, which exit 0 used to do.
-  console.error(`COULD NOT TELL: could not read workflow runs (${err.message}).`);
-  process.exit(UNKNOWN);
-}
-
-if (runs.length === 0) {
-  // A repository with no completed run on main in three pages is not a green
-  // repository; it is a question this cannot answer.
-  console.error(`COULD NOT TELL: no completed runs found on ${BRANCH}.`);
+  console.error(`COULD NOT TELL: could not read every active workflow verdict (${err.message}).`);
   process.exit(UNKNOWN);
 }
 
@@ -144,7 +146,10 @@ const red = redWorkflows(runs, now);
 // Open issues, so a workflow that already raised one is not double-reported.
 let openIssues = [];
 try {
-  const d = await api(`/repos/${REPO}/issues?state=open&per_page=100&sort=updated`);
+  const d = await api(
+    `/repos/${REPO}/issues?state=open&labels=${encodeURIComponent(MAIN_HEALTH_READER_LABEL)}` +
+      '&per_page=100&sort=updated'
+  );
   openIssues = Array.isArray(d) ? d.filter((i) => !i.pull_request) : [];
 } catch {
   openIssues = []; // no issues readable -> treat everything as silent, which errs loud
@@ -153,26 +158,21 @@ try {
 /**
  * Is somebody already being told about this workflow?
  *
- * A tracked alarm names its detector. `Publish Watchdog` puts its own name and
- * the failing sha in the issue it maintains, so a substring match on the
- * workflow name across open issues is enough, provided the issue has been
- * touched since the failures started - a stale issue from last month is not
- * evidence that anyone is watching today.
+ * Human prose is not authority. The issue must carry the exact reader label and
+ * exact per-workflow machine marker, and must have been touched since this
+ * failure episode began. A similarly titled issue, a coincidental workflow name
+ * in prose, or a stale marker cannot suppress an alarm.
  */
-const hasOpenAlarm = (name, since) => {
-  const needle = name.toLowerCase();
-  const sinceMs = new Date(since).getTime();
-  return openIssues.some((i) => {
-    const touched = new Date(i.updated_at).getTime();
-    if (touched < sinceMs) return false;
-    const hay = `${i.title} ${i.body || ''}`.toLowerCase();
-    return hay.includes(needle);
-  });
-};
+const hasOpenAlarm = (name, since) =>
+  openIssues.some((issue) => issueCarriesWorkflowAlarm(issue, name, since));
 
 const hrs = (h) => (h >= 48 ? `${(h / 24).toFixed(1)} days` : `${h.toFixed(1)}h`);
 
-console.log(`Scanned ${runs.length} completed runs on ${BRANCH}, ${byWorkflow.size} workflows.`);
+console.log(
+  `Scanned ${runs.length} completed runs on ${BRANCH} across ` +
+    `${activeWorkflows.length} active workflows; ${notApplicable.length} had no completed ` +
+    `${BRANCH} run and were not applicable.`
+);
 
 if (red.length === 0) {
   console.log(`OK - every workflow's latest VERDICT on ${BRANCH} is green.`);
@@ -196,6 +196,9 @@ for (const r of red) {
       (r.lastGreen ? `, last green ${r.lastGreen}` : ', no green run in the window') +
       (r.loud ? ' [an open issue already names it]' : '')
   );
+  // The workflow copies this log into its owned issue. These exact markers make
+  // that issue authoritative for the workflows it is actually tracking.
+  console.log(`  ${workflowAlarmMarker(r.name)}`);
 }
 console.log('');
 

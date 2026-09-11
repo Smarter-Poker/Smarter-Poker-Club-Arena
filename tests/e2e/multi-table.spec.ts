@@ -85,12 +85,16 @@ async function mountTabBar(page: Page) {
   });
 }
 
-/** Apply a beat, settle two frames, return Chrome's running animations. */
+/** Apply a beat, resolve its styles, and return Chrome's running animations. */
 async function beat(page: Page, mutate: string): Promise<Record<string, number>> {
-  return page.evaluate(async (src) => {
+  return page.evaluate((src) => {
     const $ = (id: string) => document.getElementById(id)!;
     new Function('$', 'document', src)($, document);
-    await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+    /* getAnimations() performs the style update needed to instantiate CSS
+       animations. Waiting for two requestAnimationFrame callbacks was not
+       part of the assertion and can wait forever when headless Chromium
+       throttles a reduced-motion/background page under CI contention. */
+    void document.documentElement.offsetWidth;
     const out: Record<string, number> = {};
     for (const a of document.getAnimations()) {
       const name = (a as unknown as { animationName?: string }).animationName;

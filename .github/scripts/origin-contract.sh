@@ -21,7 +21,8 @@
 #   3. the shell must carry stale-if-error, which is what lets Vercel's edge
 #      keep serving when this single box is unreachable;
 #   4. build-info.json must never be cached, or "production is serving X"
-#      becomes "an edge node remembers X" - both watchdogs read it.
+#      becomes "an edge node remembers X" - release proof and the read-only
+#      production audit both read it.
 set -uo pipefail
 
 BASE="${BASE:-https://smarter.poker/hub/club-arena}"
@@ -77,7 +78,7 @@ else
   # apply instead, which would revalidate a 525KB entry chunk on EVERY
   # navigation. See docs/changelog/2026-09-03-a-404-is-not-immutable.md.
   #
-  # A watchdog that is permanently red teaches everyone to ignore it, so this
+  # A check that is permanently red teaches everyone to ignore it, so this
   # stays a warning until the edge can express it. Turn it back into `fail`
   # the day that changes - and check the ORIGIN directly, which this does not:
   #   curl -sI https://ca-static.smarter.poker/assets/nope.js | grep -i cache

@@ -6,8 +6,8 @@
  * fn_ca_reprice_unpaid_tournament_place on 2026-09-11 - because a schema
  * manifest fragment declared each one before its migration was applied, and
  * the phantom-reference gate believed the declaration. The deploy now asks
- * production's pg_proc for every function the engine calls, before its break
- * gate, and refuses to wait for a break with a door missing.
+ * production's pg_proc for every function the engine calls, before its release
+ * gate, and refuses to hand the build to Hetzner with a door missing.
  *
  * This law pins: the extractor sees both incidents' call sites and nothing in
  * a comment; the real script, run end to end against a "production" that
@@ -124,16 +124,18 @@ describe('the real script, end to end', () => {
   });
 });
 
-describe('the workflow asks before it waits', () => {
-  it('runs the check with production credentials, before the break gate', () => {
+describe('the workflow asks before it hands the build to Hetzner', () => {
+  it('runs the check with production credentials, before the durable intake', () => {
     const doors = WF.indexOf(
       '- name: Every database function this build calls exists in production'
     );
-    const drain = WF.indexOf('- name: Wait for the maintenance break to park every table');
-    const build = WF.indexOf('- name: Build immutable image');
+    const handoff = WF.indexOf(
+      '- name: Dispatch the staged SHA through the durable Hetzner intake'
+    );
+    const build = WF.indexOf('- name: Compile and test the exact server tree');
     expect(doors).toBeGreaterThan(build);
-    expect(doors).toBeLessThan(drain);
-    const step = WF.slice(doors, drain);
+    expect(doors).toBeLessThan(handoff);
+    const step = WF.slice(doors, handoff);
     expect(step).toMatch(/DATABASE_URL: \$\{\{ secrets\.DATABASE_URL \}\}/);
     expect(step).toMatch(/ROLLBACK_REQUESTED:/);
     expect(step).toMatch(/node scripts\/ci\/check-engine-doors-exist\.mjs/);

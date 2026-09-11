@@ -76,9 +76,9 @@
  *
  * ─── WHO READS IT (CLAUDE.md 10.86 rule 3) ─────────────────────────────────
  *
- * The `ddl_reload_storms` job in `.github/workflows/publish-watchdog.yml`,
- * every 15 minutes on `ubuntu-latest`, next to the other live checks. A red run
- * there is picked up by `check-main-is-green.mjs` in the same workflow, which
+ * The `ddl_reload_storms` job in the read-only
+ * `.github/workflows/production-integrity-audit.yml`. A red run there is
+ * picked up by `check-main-is-green.mjs` in the same workflow, which
  * raises one issue for any workflow red on `main` with nobody watching. It
  * reports; it never gates - it cannot, because the statements it is about do
  * not go through a pull request at all.

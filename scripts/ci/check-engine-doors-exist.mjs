@@ -27,9 +27,9 @@
  * production's pg_proc, read immediately before the break gate. Every
  * `.rpc('<name>')` in server/src (tests excluded), and every literal assigned
  * to an `...rpcName` variable, must name a function in schema public. A
- * missing one fails the run before it can wait for the break: the build is
- * not safe to ship until its migration is applied, and the train's hand-on
- * retries once the database has caught up.
+ * missing one fails the run before the SHA is handed to the durable Hetzner
+ * intake. The build is not safe to ship until its migration is applied; it
+ * can be dispatched again after the database has caught up.
  *
  * Deliberately NOT a blocker:
  *   - an unreadable database (no DATABASE_URL, pg missing, network): a

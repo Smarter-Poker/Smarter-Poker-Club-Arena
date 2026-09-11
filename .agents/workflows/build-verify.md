@@ -44,7 +44,10 @@ For login-gated verification, tell the user:
 ## Deploy Checklist
 
 1. Build passes (exit 0)
-2. Git commit + push Club Arena
-3. rsync dist to World Hub
-4. Git commit + push World Hub
-5. Verify Vercel deployment is BUILDING/READY via `mcp_vercel_list_deployments`
+2. Commit on an isolated Club Arena branch and push with normal hooks
+3. Required pull-request gates pass and autopilot merges to Club Arena `main`
+4. `publish-club-arena.yml` rsyncs `dist/` directly to the Hetzner static origin
+5. Both `https://ca-static.smarter.poker/build-info.json` and the public
+   `/hub/club-arena/build-info.json` report the exact Club Arena `main` SHA
+6. For `server/**` changes, separately verify the sealed Hetzner engine deploy
+   and cache-busted `https://engine.smarter.poker/health`; never force a restart

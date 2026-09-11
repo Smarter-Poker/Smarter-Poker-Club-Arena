@@ -1,8 +1,17 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const root = resolve(__dirname, '..');
+const migrationsDirectory = resolve(root, 'supabase/migrations');
+function migrationSource(file: string): string {
+  if (file.endsWith('.sql')) return readFileSync(resolve(migrationsDirectory, file), 'utf8');
+  const matches = readdirSync(migrationsDirectory).filter(
+    (candidate) => candidate.endsWith(`_${file}.sql`) || candidate.endsWith(`_${file}.sql.pending`)
+  );
+  if (matches.length !== 1) throw new Error(`Stage-B ${file} migration is ambiguous`);
+  return readFileSync(resolve(migrationsDirectory, matches[0]), 'utf8');
+}
 
 const cutovers = [
   {
@@ -30,24 +39,12 @@ const cutovers = [
     gate: 'require_live_terminal_cutover_freeze',
   },
   {
-    file: '20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql',
-    gate: 'require_live_seat_exit_cutover_freeze',
-  },
-  {
-    file: '20260909041438_retire_legacy_tournament_hold_refund_door.sql',
-    gate: 'require_live_legacy_hold_retirement_freeze',
-  },
-  {
-    file: '20260909043000_tournament_terminal_roots_are_db_first_hardened.sql',
-    gate: 'require_live_terminal_acl_cutover_freeze',
-  },
-  {
     file: '20260909165602_the_four_table_limit_is_never_satellite_cash.sql',
     gate: 'require_live_cap_correction_freeze',
   },
 ].map((cutover) => ({
   ...cutover,
-  sql: readFileSync(resolve(root, 'supabase/migrations', cutover.file), 'utf8'),
+  sql: migrationSource(cutover.file),
 }));
 
 function taggedBody(sql: string, tag: string): string {

@@ -23,17 +23,18 @@ Both got past the phantom-reference gate for the same reason:
 
 ## What changed
 
-Before its break gate, the deploy now reads production's `pg_proc`. That is
-the one witness that cannot be declared into existence. The check covers:
+Before it hands the SHA to the durable Hetzner intake, the deploy now reads
+production's `pg_proc`. That is the one witness that cannot be declared into
+existence. The check covers:
 
 - every `.rpc('<name>')` in `server/src`, excluding tests;
 - every literal an `...rpcName` variable can take.
 
 Each one must name a function in schema `public`.
 
-- **A missing function fails the run** before it waits for a break, and the
-  error names the function and its callers. The train's hand-on retries; the
-  build ships once the migration is applied.
+- **A missing function fails the run** before the Hetzner handoff, and the
+  error names the function and its callers. The release can be dispatched
+  again once the migration is applied.
 - **An unreadable database is a warning.** A dropped connection must never be
   the reason an urgent fix cannot ship.
 - **A rollback is reported, not blocked.** It restores a build production
@@ -52,4 +53,5 @@ exist.
 - the real script, run against a production that lacks the reprice door,
   exits 1 and names the door;
 - the rollback and unreadable-database paths never block;
-- the step sits before the break gate and has production's credentials.
+- the step sits before the durable Hetzner intake and has production's
+  credentials.

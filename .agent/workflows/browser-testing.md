@@ -23,14 +23,15 @@ description: How to test features in the browser — ALL testing on smarter.poke
 
 ## Test Account Credentials
 
-- **Email:** `daniel@bekavactrading.com`
-- **Password:** `<TEST_USER_PASSWORD — see .env.local, never commit>`
+Read `TEST_USER_EMAIL` and `TEST_USER_PASSWORD` from the local, gitignored
+`.env.local`. Never place either value in Markdown, source, command output, or
+chat.
 
 ## Login Steps
 
 1. Navigate to `https://smarter.poker/hub/club-arena/` (or the specific page you need to test)
 2. If prompted with "Sign In Required", click the sign-in / login button
-3. Enter the email and password above
+3. Enter the local test-account values without printing them
 4. Wait for the session to initialize (usually 2-5 seconds)
 5. Proceed with testing
 
@@ -40,7 +41,7 @@ description: How to test features in the browser — ALL testing on smarter.poke
 - Features that "work on localhost" often break in production due to missing env vars, RLS policies, edge caching, etc.
 - Testing on production catches REAL bugs — testing on localhost gives false confidence
 - The user deploys continuously; by the time you test localhost, the code is already live
-- Club Arena is served from smarter.poker's `public/hub/club-arena/` — testing on localhost tests a DIFFERENT build pipeline
+- Club Arena is served by its Hetzner origin through the smarter.poker rewrite — testing on localhost does not exercise that delivery path
 
 ## What Localhost Is For
 

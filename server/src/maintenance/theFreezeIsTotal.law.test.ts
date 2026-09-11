@@ -267,7 +267,11 @@ describe('the break is idle before the first table is woken (MaintenanceBreak.en
     const src = read('maintenance/MaintenanceBreak.ts');
     const end = sliceMethod(src, 'async end(): Promise<void> {');
     const idle = at(end, "this.phase = 'idle';", 'phase idle');
-    const resume = at(end, 'this.resumeEveryEngine(reconnectFreezeStartedAt)', 'resume');
+    const resume = at(
+      end,
+      'this.resumeEveryEngine(reconnectFreezeStartedAt > 0 ? reconnectFreezeStartedAt : undefined)',
+      'resume'
+    );
     expect(
       idle,
       'a staggered batch checks phase === idle; it must be idle before any batch can fire'

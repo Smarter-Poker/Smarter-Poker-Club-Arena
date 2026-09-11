@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/horse-rebuy-seat-club",
+  "_comment": "The horse admission chain gained the lifecycle gate the human chain already had, so a horse can late-register into a RUNNING event exactly as a person does (20260911163252, applied 2026-09-11 16:35 UTC). Everything else in that migration and the three beside it is CREATE OR REPLACE of a function the base snapshot already knows.",
+  "functions": ["fn_register_horse_for_tournament_before_atomic_lifecycle_gate"]
+}

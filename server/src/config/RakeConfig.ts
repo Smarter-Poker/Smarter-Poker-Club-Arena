@@ -111,8 +111,17 @@ export function getPlayerCountCaps(fullCap: number): { players: number; cap: num
 // Past the pivot the jackpot is already large, so new rake is steered into the
 // promo wallet rather than growing main further; the Back Up share is held flat
 // at 25% because its job is to reseed main after a full hit, not to grow.
-// This constant is the STANDARD split; the pivot split is applied at banking
-// time in logBBJCollection against the LIVE main balance.
+// This constant is the STANDARD split.
+//
+// WHERE THE PIVOT IS ACTUALLY APPLIED (corrected 2026-09-11). This said "at
+// banking time in logBBJCollection against the LIVE main balance", which sent
+// every reader to a function that does no arithmetic: `logBBJCollection` calls
+// the `bbj_record_table_contribution` RPC and the split is decided in SQL, by
+// `fn_bbj_allocate` reading `ca_bbj_policy`. THE DATABASE IS THE ALLOCATOR.
+// These constants are a mirror of that policy row and nothing reads them at
+// banking time; `LAW 6` in tests/the-jackpot-is-one-allocator-with-an-opening-
+// balance.law.test.ts is what keeps the mirror honest, and any surface that
+// needs the live rule reads `fn_bbj_allocation_policy()`.
 export const BBJ_POOL_ALLOCATION = {
   mainBBJ: 0.5, // 50% of BBJ rake goes to Main BBJ pool (standard)
   backUpBBJ: 0.25, // 25% goes to Back Up BBJ pool (standard)

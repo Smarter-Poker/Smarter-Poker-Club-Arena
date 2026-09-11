@@ -37,7 +37,7 @@ switch and an input. The union operator got a sentence and a dead end.
 ## What was added
 
 `fn_bbj_set_union_mini_enabled(union, enabled)` and
-`fn_bbj_set_union_mini_floor(union, floor)` — migration `20260911214135`. The
+`fn_bbj_set_union_mini_floor(union, floor)` — migration `20260911214403`. The
 same two controls, keyed on the union and authorized against it. Everything
 else is deliberately phase 3's:
 

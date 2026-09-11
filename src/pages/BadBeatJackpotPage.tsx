@@ -6,7 +6,12 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
-import { watchBbjPool } from '../lib/bbjPoolFeed';
+import {
+  watchBbjPool,
+  getBbjAllocationPolicy,
+  BBJ_PIVOT_APPROACH_FRACTION,
+  type BbjAllocationPolicy,
+} from '../lib/bbjPoolFeed';
 import { watchBbjMini, type BbjMiniSnapshot } from '../lib/bbjMiniFeed';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
@@ -56,6 +61,11 @@ export default function BadBeatJackpotPage() {
   const [justUpdated, setJustUpdated] = useState(false);
   /** True when the last read threw. Distinct from "this club has no pool". */
   const [loadFailed, setLoadFailed] = useState(false);
+  /* The allocation rule, read from the allocator rather than mirrored as a
+     constant. Null until it answers, and null FOREVER if it could not be read -
+     the approach banner renders nothing rather than counting toward a
+     threshold it invented. */
+  const [allocationPolicy, setAllocationPolicy] = useState<BbjAllocationPolicy | null>(null);
   const [playerContribution, setPlayerContribution] = useState(0);
   // 2026-08-18: real hand count + own-contribution facts, from the ledger.
   const [poolFacts, setPoolFacts] = useState<{ hands: number; chips: number } | null>(null);
@@ -126,6 +136,21 @@ export default function BadBeatJackpotPage() {
    * subscription per club, always the newest loader.
    */
   const loadRef = useRef<(getIsMounted?: () => boolean) => void>(() => {});
+
+  /* THE ALLOCATION RULE, ONCE. It is a rule and not a figure - it has changed
+     by hand once since it was written - so it is read on mount and cached for
+     the session by the feed, never polled. Its own effect because it does not
+     depend on the club: every pool on the platform is allocated by the same
+     policy row. */
+  useEffect(() => {
+    let alive = true;
+    void getBbjAllocationPolicy().then((p) => {
+      if (alive) setAllocationPolicy(p);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!clubId) {
@@ -504,62 +529,88 @@ export default function BadBeatJackpotPage() {
         />
       </div>
 
-      {/* 100K Pivot Law Threshold Alert */}
-      {/* RAKE-AUDIT 2026-07-24: alert fired at 50k (50% of pivot) while the
-          progress math used 100k — aligned to the actual 100k pivot approach
-          zone (>=80%) so the banner matches the allocation switchover. */}
-      {(jackpot?.main_balance || 0) >= 80000 && (
-        <div
-          style={{
-            margin: '0 1rem 0.75rem',
-            padding: '12px 16px',
-            background:
-              'linear-gradient(135deg, rgba(213, 218, 226,0.08) 0%, rgba(186, 193, 203,0.06) 100%)',
-            border: '1px solid rgba(213, 218, 226,0.25)',
-            borderRadius: '12px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <div>
-            <span
-              style={{
-                fontSize: '0.75rem',
-                color: '#d5dae2',
-                fontWeight: 700,
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
-              }}
-            >
-              100K Pivot Alert
-            </span>
-            <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>
-              Pool At {(((jackpot?.main_balance || 0) / 100000) * 100).toFixed(1)}% Of Pivot
-              Threshold
-            </div>
-          </div>
+      {/* THE PIVOT, READ FROM THE ALLOCATOR (2026-09-11).
+
+          This banner typed `>= 80000` as its trigger and divided by `100000`
+          for its percentage and its bar - the same threshold written three
+          times, none of them the authority. The authority is `ca_bbj_policy`,
+          which `fn_bbj_allocate` reads on every raked hand and which is a
+          TABLE: one UPDATE moves the real pivot with no migration and no
+          failing test, after which this banner would have gone on counting
+          toward a number the bank had stopped using.
+
+          RAKE-AUDIT 2026-07-24 had already caught these literals out of step
+          once - the alert fired at 50k while the bar measured against 100k -
+          and fixed it by typing a third literal. `allocationPolicy` is the
+          fix that ends the class: one read, one number.
+
+          `allocationPolicy` is null when the rule could not be READ, and a
+          banner counting toward a threshold it invented is worse than no
+          banner, so it renders nothing rather than guessing (10.86). */}
+      {allocationPolicy !== null &&
+        (jackpot?.main_balance || 0) >=
+          allocationPolicy.pivotThreshold * BBJ_PIVOT_APPROACH_FRACTION && (
           <div
             style={{
-              width: '80px',
-              height: '6px',
-              background: 'rgba(255,255,255,0.06)',
-              borderRadius: '3px',
-              overflow: 'hidden',
+              margin: '0 1rem 0.75rem',
+              padding: '12px 16px',
+              background:
+                'linear-gradient(135deg, rgba(213, 218, 226,0.08) 0%, rgba(186, 193, 203,0.06) 100%)',
+              border: '1px solid rgba(213, 218, 226,0.25)',
+              borderRadius: '12px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
             }}
           >
+            <div>
+              <span
+                style={{
+                  fontSize: '0.75rem',
+                  color: '#d5dae2',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                }}
+              >
+                Approaching {Math.round(allocationPolicy.pivotThreshold).toLocaleString('en-US')}
+              </span>
+              {/* WORDS A PLAYER CAN ACT ON. This read "100K Pivot Alert" over
+                "Pool At 82.3% Of Pivot Threshold" - internal vocabulary on a
+                page every player can open, and shaped like a warning about
+                their own jackpot. What actually happens at the threshold is
+                that each drop starts sending less to this pool and more to
+                promotions, so the jackpot keeps growing and grows more slowly.
+                The percentages are the policy's, never typed beside it. */}
+              <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>
+                At {Math.round(allocationPolicy.pivotThreshold).toLocaleString('en-US')} Chips, Each
+                Hand Starts Sending {Math.round(allocationPolicy.pivotMain * 100)}% Of Its Jackpot
+                Drop Here Instead Of {Math.round(allocationPolicy.standardMain * 100)}%, And{' '}
+                {Math.round(allocationPolicy.pivotPromo * 100)}% To Club Promotions. The Jackpot
+                Keeps Growing, More Slowly.
+              </div>
+            </div>
             <div
               style={{
-                height: '100%',
-                width: `${Math.min(100, ((jackpot?.main_balance || 0) / 100000) * 100)}%`,
-                background: 'linear-gradient(90deg, #d5dae2, #8f97a3)',
+                width: '80px',
+                height: '6px',
+                background: 'rgba(255,255,255,0.06)',
                 borderRadius: '3px',
-                transition: 'width 1s ease',
+                overflow: 'hidden',
               }}
-            />
+            >
+              <div
+                style={{
+                  height: '100%',
+                  width: `${Math.min(100, ((jackpot?.main_balance || 0) / allocationPolicy.pivotThreshold) * 100)}%`,
+                  background: 'linear-gradient(90deg, #d5dae2, #8f97a3)',
+                  borderRadius: '3px',
+                  transition: 'width 1s ease',
+                }}
+              />
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
       {/* Triple-Bank Breakdown */}
       <div className="jackpot-info" style={{ marginBottom: '0.5rem' }}>

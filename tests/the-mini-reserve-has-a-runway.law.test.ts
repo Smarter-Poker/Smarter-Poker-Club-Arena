@@ -267,7 +267,7 @@ describe('the mini has its own near misses and its own players floor', () => {
  * unreachable for the pool it matters most to.
  */
 describe('the union can reach the two controls a club has', () => {
-  const UNION_MIGRATION = 'supabase/migrations/20260911214135_the_union_owns_its_own_mini.sql';
+  const UNION_MIGRATION = 'supabase/migrations/20260911214403_the_union_owns_its_own_mini.sql';
   const sql = read(UNION_MIGRATION);
   /* On the SQL, not the prose. This migration explains in its header which
      predicate it deliberately did NOT use, and asserting on raw text would

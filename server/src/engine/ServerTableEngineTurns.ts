@@ -435,10 +435,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // is a tournament-integrity failure, a long pause is only an incident.
     //
     // 2026-09-11: "paused" means the pause has TAKEN EFFECT (isParkedByDesign).
-    // The maintenance break raises its flag at :53 on a table still playing a
-    // hand; standing down for that hand meant a seat that lost its clock in the
-    // last-hand window could never be rescued, never parked, and kept the
-    // restart certificate shut for the whole break.
+    // The maintenance break (:53) and the tournament break (:55) raise their
+    // flags on tables still playing a hand; standing down for that hand meant a
+    // seat that lost its clock in the last-hand window could never be rescued,
+    // never parked, and kept the restart certificate shut for the whole break.
     if (this.isParkedByDesign()) {
       const pausedMs = this.msPaused();
       if (

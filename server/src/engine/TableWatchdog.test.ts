@@ -445,12 +445,44 @@ describe('table watchdog - a hand in flight at the break is still a hand', () =>
     expect(trips(h)).toBe(0);
   });
 
-  it('every other authority still holds a table mid-hand, because a rebuild would deal into it', () => {
+  it("the tournament's own :55 break does not shield a frozen hand either", () => {
+    // Review of the first draft: at :55 TournamentManagerBase.pauseForBreak
+    // calls pauseAfterHand(break+grace, {beforeNextHand, untilResumed}) on
+    // every table of the event, mid-hand or not. Those are exactly the minutes
+    // readyForRestart can open in, so that flag must not re-shield the hand.
+    const h = harness({ hasClock: false });
+    const e = h.engine as any;
+    e.maintenancePaused = true;
+    e.pausedSinceMs = Date.now() - 120_000;
+    e.pauseAfterHand(420_000, { beforeNextHand: true, untilResumed: true });
+    h.setStale(STALL_MS + 1_000);
+    expect(e.isPausedByDesign()).toBe(true);
+    expect(e.isParkedByDesign()).toBe(false);
+    run(h);
+    expect(h.calls.startTimer).toHaveLength(1);
+  });
+
+  it('hand-for-hand and a deal hold do not shield a frozen hand; a replacement gets them back', () => {
     for (const hold of [
       (e: any) => (e.handForHandPaused = true),
+      (e: any) => (e.dealHoldUntilMs = Date.now() + 60_000),
+    ]) {
+      const h = harness({ hasClock: false });
+      const e = h.engine as any;
+      hold(e);
+      e.pausedSinceMs = Date.now() - 60_000;
+      h.setStale(STALL_MS + 1_000);
+      expect(e.isParkedByDesign()).toBe(false);
+      run(h);
+      expect(h.calls.startTimer).toHaveLength(1);
+    }
+  });
+
+  it('a fence a rebuild would lose still holds a hand in flight', () => {
+    for (const hold of [
       (e: any) => (e.finalTableDealPaused = true),
       (e: any) => (e.terminalCloseoutPaused = true),
-      (e: any) => (e.dealHoldUntilMs = Date.now() + 60_000),
+      (e: any) => (e.tableFSM = { state: 'paused', transition: () => {} }),
     ]) {
       const h = harness({ hasClock: false });
       const e = h.engine as any;
@@ -462,6 +494,20 @@ describe('table watchdog - a hand in flight at the break is still a hand', () =>
       run(h);
       expect(h.calls.startTimer).toHaveLength(0);
       expect(h.calls.killed).toEqual([]);
+    }
+  });
+
+  it('between hands, every authority parks the table', () => {
+    for (const hold of [
+      (e: any) => (e.maintenancePaused = true),
+      (e: any) => (e.handForHandPaused = true),
+      (e: any) => (e.dealHoldUntilMs = Date.now() + 60_000),
+      (e: any) => (e.finalTableDealPaused = true),
+    ]) {
+      const h = harness({ noHand: true });
+      const e = h.engine as any;
+      hold(e);
+      expect(e.isParkedByDesign()).toBe(true);
     }
   });
 

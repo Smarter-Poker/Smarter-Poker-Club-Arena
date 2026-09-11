@@ -185,37 +185,32 @@ describe('the watchdog and the reaper stand down only for a pause that has taken
     expect(watchdog).not.toMatch(/if \(this\.isPausedByDesign\(\)\) \{/);
   });
 
-  it('the break counts once the table is between hands; every other authority counts at once', () => {
+  it('between hands every authority counts; mid-hand only a fence a rebuild would lose', () => {
+    // A next-hand fence (the maintenance break at :53, the tournament break
+    // and hand-for-hand at :55, a deal hold) does not stop the turn clock, and
+    // a replacement gets it back (MaintenanceBreak.adopt, the manager's
+    // prepareManagedTableEngineForPlay). So a hand that froze under one is
+    // worked and reaped like any other. The first draft let every
+    // non-maintenance authority count mid-hand; review caught that the :55
+    // tournament break then shielded a frozen MTT hand for exactly the minutes
+    // readyForRestart can open.
     const parked = methodBody(BASE, 'isParkedByDesign(): boolean {');
-    expect(parked).toMatch(/this\.maintenancePaused && this\.isBetweenHands\(\)/);
-    expect(parked).toMatch(/this\.isHeldByDesignApartFromTheBreak\(\)/);
-  });
-
-  it('names the same authorities as isPausedByDesign, apart from the break', () => {
-    // Two lists that must not drift: a new pause authority added to
-    // isPausedByDesign() and forgotten here would let the watchdog kill a
-    // table that authority is holding - the hand-for-hand rebuild again.
-    const terms = (body: string) =>
-      new Set(
-        body
-          .slice(body.lastIndexOf('return ('))
-          .replace(/^return \(|\);?\s*\}\s*$/g, '')
-          .split('||')
-          .map((t) =>
-            t
-              .replace(/\s+/g, ' ')
-              .replace(/^return \( ?/, '')
-              .trim()
-          )
-          .filter(Boolean)
-      );
-    const paused = terms(methodBody(BASE, 'isPausedByDesign(): boolean {'));
-    const apart = terms(methodBody(BASE, 'private isHeldByDesignApartFromTheBreak(): boolean {'));
-    expect(paused.has('this.maintenancePaused')).toBe(true);
-    expect(apart.has('this.maintenancePaused')).toBe(false);
-    expect([...apart].sort()).toEqual(
-      [...paused].filter((t) => t !== 'this.maintenancePaused').sort()
-    );
-    expect(apart.size).toBeGreaterThanOrEqual(6);
+    expect(parked).toMatch(/if \(this\.isBetweenHands\(\)\) return this\.isPausedByDesign\(\);/);
+    const midHand = parked.slice(parked.lastIndexOf('return'));
+    for (const lost of [
+      'finalTableDealPaused',
+      'terminalCloseoutPaused',
+      "tableFSM.state === 'paused'",
+    ]) {
+      expect(midHand, `${lost} is lost by a rebuild, so it still holds a hand`).toContain(lost);
+    }
+    for (const survives of [
+      'maintenancePaused',
+      'handForHandPaused',
+      'dealHoldUntilMs',
+      'tournamentMovePauseOwners',
+    ]) {
+      expect(midHand, `${survives} must not shield a frozen hand`).not.toContain(survives);
+    }
   });
 });

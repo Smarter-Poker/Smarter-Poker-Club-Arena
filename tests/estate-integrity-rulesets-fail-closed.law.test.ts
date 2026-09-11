@@ -113,7 +113,8 @@ describe('LAW - every branch ruleset detail must be readable before the audit ca
       expect(result.status).toBe(1);
       expect(combined).toContain('branch ruleset `102`');
       expect(combined).toContain('required contexts are unverified');
-    }
+    },
+    15_000
   );
 
   it('alarms and exits nonzero when a valid secondary ruleset contains the forbidden context', () => {

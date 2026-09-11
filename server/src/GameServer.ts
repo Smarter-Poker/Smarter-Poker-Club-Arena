@@ -3004,41 +3004,9 @@ export class GameServer {
     const { deadStalledCount, dealableTableCount, wholeFleetStalled, barrenLeaderDead } =
       livenessVerdict;
 
-    let totalHands = 0;
-    // FIX 153: Aggregate telemetry from all table engines for health endpoint
-    const tableMetrics: any[] = [];
-    for (const engine of this.tableEngines.values()) {
-      totalHands += engine.getHandCount();
-      const snapshot = engine.getTelemetrySnapshot();
-      if (snapshot.tables.length > 0) {
-        tableMetrics.push(...snapshot.tables);
-      }
-    }
-    const avgHandDurationMs =
-      tableMetrics.length > 0
-        ? Math.round(
-            tableMetrics.reduce((s, t) => s + t.avgHandDurationMs, 0) / tableMetrics.length
-          )
-        : 0;
-    const avgHandsPerHour =
-      tableMetrics.length > 0
-        ? Math.round(tableMetrics.reduce((s, t) => s + t.handsPerHour, 0) / tableMetrics.length)
-        : 0;
-    // Bible V8 §9.1: Aggregate action performance metrics
-    let totalActionProcessingMs = 0;
-    let actionCount = 0;
-    let processingViolations = 0;
-    let broadcastViolations = 0;
-    for (const engine of this.tableEngines.values()) {
-      // Performance summary is on the telemetry instance via engine
-      const perf = engine.getPerformanceSummary();
-      if (perf) {
-        totalActionProcessingMs += perf.avgProcessingMs * perf.actionCount;
-        actionCount += perf.actionCount;
-        processingViolations += perf.processingViolations;
-        broadcastViolations += perf.broadcastViolations;
-      }
-    }
+    const fleetTelemetry = EngineTelemetry.getFleetSnapshot(
+      Array.from(this.tableEngines.values(), (engine) => engine.telemetry)
+    );
 
     return {
       // ── Phase 5.1.4: spec-compliant top-level fields (master plan §8.1.4)
@@ -3251,19 +3219,25 @@ export class GameServer {
             })),
         };
       })(),
-      totalHandsDealt: totalHands,
+      totalHandsDealt: fleetTelemetry.totalHandsDealt,
       telemetry: {
-        avgHandDurationMs,
-        avgHandsPerHour,
-        tablesWithMetrics: tableMetrics.length,
+        avgHandDurationMs: fleetTelemetry.avgHandDurationMs,
+        avgHandsPerHour: fleetTelemetry.avgHandsPerHour,
+        tablesWithMetrics: fleetTelemetry.activeTables,
+        lastHandSampleAt: fleetTelemetry.lastHandAt,
+        lastHandSampleAgeMs: fleetTelemetry.lastHandAgeMs,
       },
-      // Bible V8 §9.1 Performance Instrumentation
       performance: {
-        avgActionProcessingMs:
-          actionCount > 0 ? Math.round(totalActionProcessingMs / actionCount) : 0,
-        totalActionsRecorded: actionCount,
-        processingThresholdViolations: processingViolations,
-        broadcastThresholdViolations: broadcastViolations,
+        avgActionProcessingMs: fleetTelemetry.avgProcessingMs,
+        totalActionsRecorded: fleetTelemetry.totalActionsRecorded,
+        actionSampleCount: fleetTelemetry.actionSampleCount,
+        actionSampleWindowMs: fleetTelemetry.actionSampleWindowMs,
+        lastActionSampleAt: fleetTelemetry.lastActionAt,
+        lastActionSampleAgeMs: fleetTelemetry.lastActionAgeMs,
+        avgBroadcastMs: fleetTelemetry.avgBroadcastMs,
+        broadcastSampleCount: fleetTelemetry.broadcastSampleCount,
+        processingThresholdViolations: fleetTelemetry.processingViolations,
+        broadcastThresholdViolations: fleetTelemetry.broadcastViolations,
       },
     };
   }

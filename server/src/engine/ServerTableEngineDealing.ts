@@ -8,6 +8,7 @@
  * declarations for the hooks each layer calls on the layer below.
  */
 
+import { EngineTelemetry } from './EngineTelemetry.js';
 import { noteFire } from './BrainTelemetry.js';
 import { resolvePersona, wantsStraddle } from './HorsePersona.js';
 import { HandController } from './HandController.js';
@@ -2789,9 +2790,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // retry. Permanent freeze.
         let applied = false;
         try {
-          applied = this.handController.performAction(
-            dcPlayer.seat,
-            disconnectAction.action as any
+          applied = EngineTelemetry.measureAcceptedAction(
+            this.engineTelemetry,
+            this.tableId,
+            dcPlayer.user_id,
+            disconnectAction.action,
+            () => this.handController!.performAction(dcPlayer.seat, disconnectAction.action as any)
           );
         } catch (err) {
           reportError(err, 'ServerTableEngine.' + this.tableId + '.disconnect_autoaction_threw');

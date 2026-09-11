@@ -40,7 +40,7 @@ export interface ActionDeps {
 /**
  * Structural shape of the per-table engine this handler needs.
  *
- * Deliberately minimal — only the two methods the action path touches. If a
+ * Deliberately minimal — only the engine action method this path touches. If a
  * future change requires another method, extend the interface here rather
  * than importing `ServerTableEngine` directly (keeps handlers decoupled from
  * the engine's internals).
@@ -52,7 +52,6 @@ export interface ActionEngine {
     amount?: number,
     actionContext?: string | null
   ): { success: boolean; [k: string]: unknown };
-  recordActionPerformance(userId: string, action: string, processingMs: number): void;
 }
 
 export async function handleAction(
@@ -132,12 +131,9 @@ export async function handleAction(
       return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
     }
 
-    // Bible V8 §9.1.1: Instrument action processing time (target < 50ms)
-    const actionStartMs = Date.now();
+    // The shared accepted-action boundary in the engine records processing.
+    // HTTP retries and rejected requests must not create additional samples.
     const result = engine.handlePlayerAction(userId, action, amount, actionContext ?? null);
-    const actionProcessingMs = Date.now() - actionStartMs;
-    // Record to telemetry (broadcast timing tracked inside engine)
-    engine.recordActionPerformance(userId, action, actionProcessingMs);
 
     // Old bundles only read JSON on HTTP 200. Deliver the reload instruction
     // in their understood envelope, always with success:false and no mutation.

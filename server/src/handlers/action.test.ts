@@ -65,7 +65,7 @@ describe('handleAction', () => {
     expect(captured.statusCode).toBe(404);
   });
 
-  it('200 on success + calls engine.handlePlayerAction + records perf', async () => {
+  it('200 on success delegates once without duplicate handler telemetry', async () => {
     vi.mocked(authenticateRequest).mockResolvedValue({ userId: 'u1' });
     vi.mocked(readBody).mockResolvedValue(
       JSON.stringify({ tableId: 't1', action: 'raise', amount: 50 })
@@ -77,7 +77,7 @@ describe('handleAction', () => {
 
     expect((engine as any).handlePlayerAction).toHaveBeenCalledWith('u1', 'raise', 50, null);
 
-    expect((engine as any).recordActionPerformance).toHaveBeenCalled();
+    expect((engine as any).recordActionPerformance).not.toHaveBeenCalled();
   });
 
   it('userId always comes from JWT, never from request body (spoofing defense)', async () => {

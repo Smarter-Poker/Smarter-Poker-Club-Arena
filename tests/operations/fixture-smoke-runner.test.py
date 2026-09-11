@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -24,6 +25,32 @@ SMOKE = '\n'.join(map(json.dumps, RECORDS)) + '\nNative service smoke and contai
 
 
 class RunnerTests(unittest.TestCase):
+    def test_failed_actual_build_preserves_bounded_build_diagnostics(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            script = root / m.PREFIX / 'build-image.sh'
+            script.parent.mkdir(parents=True)
+            script.write_text("printf 'Reviewed build dependency missing\\n' >&2\nexit 7\n")
+            diagnostic = root / 'native-build.log'
+            env = {'PATH': os.environ['PATH'], 'FIXTURE_SMOKE_BUILD_LOG': str(diagnostic)}
+            with self.assertRaises(RuntimeError):
+                m.command(['bash', m.PREFIX + 'build-image.sh'], root, env)
+            self.assertIn('Reviewed build dependency missing', diagnostic.read_text())
+            self.assertEqual(diagnostic.stat().st_mode & 0o777, 0o600)
+
+    def test_actual_native_service_failure_never_creates_build_log(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            script = root / m.PREFIX / 'smoke-image.sh'
+            script.parent.mkdir(parents=True)
+            script.write_text("printf 'PRIVATE RUNTIME TOKEN\\n' >&2\nexit 7\n")
+            diagnostic = root / 'native-build.log'
+            env = {'PATH': os.environ['PATH'], 'FIXTURE_SMOKE_BUILD_LOG': str(diagnostic)}
+            with self.assertRaises(RuntimeError) as raised:
+                m.command(['bash', m.PREFIX + 'smoke-image.sh'], root, env)
+            self.assertFalse(diagnostic.exists())
+            self.assertNotIn('PRIVATE RUNTIME', str(raised.exception))
+
     def exercise(self, fault=None):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

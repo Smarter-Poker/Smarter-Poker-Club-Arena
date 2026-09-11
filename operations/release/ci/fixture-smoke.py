@@ -27,8 +27,9 @@ def require(value):
 def command(args, cwd, env, timeout=120):
     process = subprocess.Popen(args, cwd=cwd, env=env, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, text=True, start_new_session=True)
+    stdout = stderr = ''
     try:
-        stdout, _ = process.communicate(timeout=timeout)
+        stdout, stderr = process.communicate(timeout=timeout)
     except BaseException:
         # Stop the entire locally spawned command group, then clean exact Docker resources.
         try:
@@ -36,11 +37,21 @@ def command(args, cwd, env, timeout=120):
         except ProcessLookupError:
             pass
         try:
-            process.communicate(timeout=10)
+            stdout, stderr = process.communicate(timeout=10)
         except subprocess.TimeoutExpired:
             os.killpg(process.pid, signal.SIGKILL)
-            process.communicate()
+            stdout, stderr = process.communicate()
         raise
+    finally:
+        # Only the reviewed image build is eligible. Its allowlisted context has
+        # no credentials or application data; synthetic secrets are generated
+        # later during native-smoke and that command's output stays private.
+        if args[:2] == ['bash', PREFIX + 'build-image.sh'] and env.get('FIXTURE_SMOKE_BUILD_LOG'):
+            build_log = Path(env['FIXTURE_SMOKE_BUILD_LOG'])
+            fd = os.open(build_log, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, 'w') as log:
+                log.write('Reviewed image build only; no native service output.\n')
+                log.write((stdout + '\n' + stderr)[-131072:])
     require(process.returncode == 0)
     return stdout
 
@@ -87,6 +98,7 @@ def execute(repo, output, expected, run=command):
     name = 'ca-fixture-smoke-' + uuid.uuid4().hex
     tag = 'club-arena-component-fixture:smoke-' + uuid.uuid4().hex
     env['FIXTURE_SMOKE_CONTAINER'] = name
+    env['FIXTURE_SMOKE_BUILD_LOG'] = str(output / 'native-build.log')
     image_id = None
     build_started = False
     failed = False

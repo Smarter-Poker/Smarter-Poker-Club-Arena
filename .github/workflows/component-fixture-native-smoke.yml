@@ -30,6 +30,8 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: draft-native-fixture-smoke-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/fixture-smoke-evidence/native-smoke-receipt.json
+          path: |
+            ${{ runner.temp }}/fixture-smoke-evidence/native-smoke-receipt.json
+            ${{ runner.temp }}/fixture-smoke-evidence/native-build.log
           if-no-files-found: error
           retention-days: 7

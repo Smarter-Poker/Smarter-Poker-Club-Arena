@@ -1,0 +1,222 @@
+{
+  "scope": "Unused isolated v3 protocol helper; runtime integration UNAPPLIED",
+  "passed": true,
+  "finished_at_utc": "2026-09-11T09:27:13.817397+00:00",
+  "source_inputs_stable": true,
+  "source_sha256": {
+    "server/src/maintenance/maintenanceThawV3.ts": "ea315cc4a88057382fcb56ccd2ed83b6a3e1ee4371b54a639336c938c403acf9",
+    "server/src/maintenance/maintenanceThawV3.test.ts": "285c87d4165bb429098d85057bf9068dad49a247e8fcea31c103becf27dbf041",
+    "server/src/GameServer.ts": "f84068a05f12fa705d80835c03e770c3b9cc9f109992c0b7ec62eb5a5c2da68d",
+    "server/src/maintenance/MaintenanceBreak.ts": "068da7d2b8a7974d982e710162fbeadac4e2417308facb4026c01c1145070bad",
+    "server/src/maintenance/maintenanceBreakStore.ts": "63b1f7fd6289c7ff6730818c2c730ee93efe46648b7a837bd5ea71c4920c7ddd",
+    "server/src/maintenance/reconnectFreeze.ts": "5bca74992f62898f10f4f624c57de717d7bc96f5a5c405743e66618c33de3de0"
+  },
+  "commands": [
+    {
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "src/maintenance/maintenanceThawV3.test.ts",
+        "--reporter=json",
+        "--outputFile=/tmp/codex-ca09-v3-helper-o3jrhajc/vitest.json"
+      ],
+      "exit_code": 0,
+      "log": "/tmp/codex-ca09-v3-helper-o3jrhajc/helper.log"
+    },
+    {
+      "command": ["npx", "tsc", "--noEmit", "--pretty", "false"],
+      "exit_code": 0,
+      "log": "/tmp/codex-ca09-v3-helper-o3jrhajc/typecheck.log"
+    }
+  ],
+  "test_report": {
+    "numTotalTestSuites": 2,
+    "numPassedTestSuites": 2,
+    "numFailedTestSuites": 0,
+    "numPendingTestSuites": 0,
+    "numTotalTests": 16,
+    "numPassedTests": 16,
+    "numFailedTests": 0,
+    "numPendingTests": 0,
+    "numTodoTests": 0,
+    "snapshot": {
+      "added": 0,
+      "failure": false,
+      "filesAdded": 0,
+      "filesRemoved": 0,
+      "filesRemovedList": [],
+      "filesUnmatched": 0,
+      "filesUpdated": 0,
+      "matched": 0,
+      "total": 0,
+      "unchecked": 0,
+      "uncheckedKeysByFile": [],
+      "unmatched": 0,
+      "updated": 0,
+      "didUpdate": false
+    },
+    "startTime": 1789118825621,
+    "success": true,
+    "testResults": [
+      {
+        "assertionResults": [
+          {
+            "ancestorTitles": ["current maintenance thaw v3 request and release certificate"],
+            "fullName": "current maintenance thaw v3 request and release certificate sends all five exact arguments and returns the future certificate without calling it a local release",
+            "status": "passed",
+            "title": "sends all five exact arguments and returns the future certificate without calling it a local release",
+            "duration": 2.1928329999999505,
+            "failureMessages": [],
+            "meta": {}
+          },
+          {
+            "ancestorTitles": ["current maintenance thaw v3 request and release certificate"],
+            "fullName": "current maintenance thaw v3 request and release certificate honors not-due retry hints, then checkpoints before accepting a complete release",
+            "status": "passed",
+            "title": "honors not-due retry hints, then checkpoints before accepting a complete release",
+            "duration": 0.2773339999999962,
+            "failureMessages": [],
+            "meta": {}
+          },
+          {
+            "ancestorTitles": ["current maintenance thaw v3 request and release certificate"],
+            "fullName": "current maintenance thaw v3 request and release certificate recovers an exact already-committed release after a lost response",
+            "status": "passed",
+            "title": "recovers an exact already-committed release after a lost response",
+            "duration": 0.6233330000000024,
+            "failureMessages": [],
+            "meta": {}
+          },
+          {
+            "ancestorTitles": ["current maintenance thaw v3 request and release certificate"],
+            "fullName": "current maintenance thaw v3 request and release certificate refuses missing release without a fallback request",
+            "status": "passed",
+            "title": "refuses missing release without a fallback request",
+            "duration": 0.2668340000000171,
+            "failureMessages": [],
+            "meta": {}
+          },
+          {
+            "ancestorTitles": ["current maintenance thaw v3 request and release certificate"],
+            "fullName": "current maintenance thaw v3 request and release certificate refuses wrong owner without a fallback request",
+            "status": "passed",
+            "title": "refuses wrong owner without a fallback request",
+            "duration": 0.13700000000000045,
+            "failureMessages": [],
+            "meta": {}
+          },
+          {
+            "ancestorTitles": ["current maintenance thaw v3 request and release certificate"],
+            "fullName": "current maintenance thaw v3 request and release certificate refuses wrong freeze without a fallback request",
+            "status": "passed",
+            "title": "refuses wrong freeze without a fallback request",
+            "duration": 0.17041699999998627,
+            "failureMessages": [],
+            "meta": {}
+          },
+          {
+            "ancestorTitles": ["current maintenance thaw v3 request and release certificate"],
+            "fullName": "current maintenance thaw v3 request and release certificate refuses missing endpoint without a fallback request",
+            "status": "passed",
+            "title": "refuses missing endpoint without a fallback request",
+            "duration": 0.13370800000001282,
+            "failureMessages": [],
+            "meta": {}
+          },
+          {
+            "ancestorTitles": ["current maintenance thaw v3 request and release certificate"],
+            "fullName": "current maintenance thaw v3 request and release certificate refuses inconsistent credit without a fallback request",
+            "status": "passed",
+            "title": "refuses inconsistent credit without a fallback request",
+            "duration": 0.12658299999998235,
+            "failureMessages": [],
+            "meta": {}
+          },
+          {
+            "ancestorTitles": ["current maintenance thaw v3 request and release certificate"],
+            "fullName": "current maintenance thaw v3 request and release certificate refuses aggregate-only legacy response without a fallback request",
+            "status": "passed",
+            "title": "refuses aggregate-only legacy response without a fallback request",
+            "duration": 0.12391600000000835,
+            "failureMessages": [],
+            "meta": {}
+          },
+          {
+            "ancestorTitles": ["current maintenance thaw v3 request and release certificate"],
+            "fullName": "current maintenance thaw v3 request and release certificate refuses missing step without a fallback request",
+            "status": "passed",
+            "title": "refuses missing step without a fallback request",
+            "duration": 0.12562500000001364,
+            "failureMessages": [],
+            "meta": {}
+          },
+          {
+            "ancestorTitles": ["current maintenance thaw v3 request and release certificate"],
+            "fullName": "current maintenance thaw v3 request and release certificate refuses abandoned without a fallback request",
+            "status": "passed",
+            "title": "refuses abandoned without a fallback request",
+            "duration": 0.13854200000002947,
+            "failureMessages": [],
+            "meta": {}
+          },
+          {
+            "ancestorTitles": ["current maintenance thaw v3 request and release certificate"],
+            "fullName": "current maintenance thaw v3 request and release certificate retains explicit refusal maintenance_ownership_changed without retrying the legacy bridge",
+            "status": "passed",
+            "title": "retains explicit refusal maintenance_ownership_changed without retrying the legacy bridge",
+            "duration": 0.4241669999998976,
+            "failureMessages": [],
+            "meta": {}
+          },
+          {
+            "ancestorTitles": ["current maintenance thaw v3 request and release certificate"],
+            "fullName": "current maintenance thaw v3 request and release certificate retains explicit refusal legacy_inflight_thaw_requires_quiescent_cutover without retrying the legacy bridge",
+            "status": "passed",
+            "title": "retains explicit refusal legacy_inflight_thaw_requires_quiescent_cutover without retrying the legacy bridge",
+            "duration": 0.11404200000004039,
+            "failureMessages": [],
+            "meta": {}
+          },
+          {
+            "ancestorTitles": ["current maintenance thaw v3 request and release certificate"],
+            "fullName": "current maintenance thaw v3 request and release certificate returns a retryable attempt failure without pretending incomplete work released the break",
+            "status": "passed",
+            "title": "returns a retryable attempt failure without pretending incomplete work released the break",
+            "duration": 0.15279199999997672,
+            "failureMessages": [],
+            "meta": {}
+          },
+          {
+            "ancestorTitles": ["current maintenance thaw v3 request and release certificate"],
+            "fullName": "current maintenance thaw v3 request and release certificate aborts a not-due wait immediately and never issues the next request",
+            "status": "passed",
+            "title": "aborts a not-due wait immediately and never issues the next request",
+            "duration": 1.4220410000000356,
+            "failureMessages": [],
+            "meta": {}
+          },
+          {
+            "ancestorTitles": ["current maintenance thaw v3 request and release certificate"],
+            "fullName": "current maintenance thaw v3 request and release certificate refuses a delayed complete response after lifecycle cancellation",
+            "status": "passed",
+            "title": "refuses a delayed complete response after lifecycle cancellation",
+            "duration": 0.13608399999998255,
+            "failureMessages": [],
+            "meta": {}
+          }
+        ],
+        "startTime": 1789118826180,
+        "endTime": 1789118826187.136,
+        "status": "passed",
+        "message": "",
+        "name": "/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-chip-entry-swarm/server/src/maintenance/maintenanceThawV3.test.ts"
+      }
+    ]
+  },
+  "helper_imported_by_production_runtime": false,
+  "runtime_integration_applied": false,
+  "runtime_integration_executed": false,
+  "database_calls_executed": false,
+  "control_complete": false
+}

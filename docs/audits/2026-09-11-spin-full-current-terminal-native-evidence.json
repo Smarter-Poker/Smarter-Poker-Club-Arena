@@ -1,19 +1,18 @@
 {
-  "recorded_at": "2026-09-11T09:13:59.930717+00:00",
+  "recorded_at": "2026-09-11T09:01:27.437659+00:00",
   "passed": true,
   "production_mutations": false,
   "phase_complete": false,
-  "native_socket": "/private/tmp/codex-chip-drift-owned-native-qeol56o5/socket",
   "baseline": "full_stage1|postgres|true|15|12|0|3|false",
   "exit_code": 0,
   "rollback_exact": true,
   "source_inputs_stable": true,
   "source_sha256": {
-    "scripts/ci/rehearse-spin-full-current-terminal.py": "3cc64de06cf22f1ef28b87251197392d855133b9d7c27a6247356bdd303b33dc",
+    "scripts/ci/rehearse-spin-full-current-terminal.py": "dd3884b7a46c7ed117cd32ef597c1754842fe9f50487600dacd70f8147c8aff8",
     "scripts/ci/probes/spin-full-current-terminal-native.sql": "54227a51635bf8941697118a9833d0cb20676a46ec132f9ea65428437ff6cb1e",
     "scripts/ci/rehearse-final-deal-current-terminal.py": "43cdefa38c7a699840c7767b22622560caad4911a2b9e6d3b999ce133e655756",
     "scripts/ci/rehearse-satellite-cancel-current.py": "6530882d7dec13eca29bbce6af1feea927f6bc6a1cdd8b07494a6e35c1d32470",
-    "scripts/ci/rehearse-whole-phase-three-cutover.py": "6383961ebbfa7ea9036892ebf29a161b1c97df02db706452308fb5ebd15fe38f",
+    "scripts/ci/rehearse-whole-phase-three-cutover.py": "9aba08c670f152e9d1e01a8aa67ddf15a187fccf6d75db43da888eaab54cb908",
     "scripts/ci/rehearse-stage-b-cash-payers.py": "4990134f6353cdfe7d6509570602617b3db96cf58d5d0ba471a9cf112b3fb6d4",
     "scripts/dev/build-versioned-final-deal-probe.py": "e75bb5e19be5ff787caa8cda53782f3ca62cee06007b53af1167a68e6e171a8e",
     "scripts/ci/probes/atomic-terminal-rehearsal-fixture.sql": "207ab33a49fbe2951553df90f0c298241181578c617f69714b6062d8d53dfdba",
@@ -252,11 +251,11 @@
     "batch": {
       "mode": "structure",
       "settled": true,
-      "place_count": 1,
+      "place_count": 2,
       "bubble_enabled": false,
       "contract_version": 2,
-      "plan_fingerprint": "63dcf32886e7d1d71c5481e481bab79d",
-      "place_amount_owed": 2.0,
+      "plan_fingerprint": "addb1ec7be31739e60abf50f84a133d1",
+      "place_amount_owed": 10.0,
       "bubble_amount_owed": 0.0
     },
     "escrow": {
@@ -265,12 +264,16 @@
       "prize_balance": 0.0,
       "bounty_balance": 0.0
     },
-    "payout_count": 1,
-    "payout_total": 2.0,
-    "draw_multiplier": 2,
+    "payout_count": 2,
+    "payout_total": 10.0,
+    "draw_multiplier": 10,
     "expected_payouts": [
       {
         "place": 1,
+        "amount": 8.0
+      },
+      {
+        "place": 2,
         "amount": 2.0
       }
     ],
@@ -282,7 +285,11 @@
     "approved_payout_structure": [
       {
         "place": 1,
-        "percentage": 100
+        "percentage": 80
+      },
+      {
+        "place": 2,
+        "percentage": 20
       }
     ],
     "capability_rows_remaining": 0,
@@ -351,7 +358,7 @@
       "count": 0
     },
     "pg_catalog.pg_proc": {
-      "md5": "ea1f22cf9bd7a89510cf57b36b030a92",
+      "md5": "87e8e18ca72ae9436fd4e3ea0b419d3f",
       "count": 6348
     },
     "public.ad_campaign": {
@@ -379,11 +386,11 @@
       "count": 0
     },
     "pg_catalog.pg_class": {
-      "md5": "4d62f2587d0deade7f837615a55dd8b8",
+      "md5": "d2dde445887d88fdec1e9eae90a3f73b",
       "count": 6619
     },
     "pg_catalog.pg_index": {
-      "md5": "5c1b645907d811d95df0409b4f446e86",
+      "md5": "243a967e715d7df6274319c05f6b1522",
       "count": 3883
     },
     "public.ad_placement": {
@@ -403,11 +410,11 @@
       "count": 0
     },
     "pg_catalog.pg_depend": {
-      "md5": "78e2060df9957d2db1674d124580026f",
+      "md5": "8b1419a71faa68b3939445e5250856ac",
       "count": 47940
     },
     "pg_catalog.pg_policy": {
-      "md5": "5c758ab9df1fff9f013a295172f89cc1",
+      "md5": "0c338205a4039731c82777a8cc9c200b",
       "count": 1461
     },
     "public.active_tables": {
@@ -419,11 +426,11 @@
       "count": 0
     },
     "pg_catalog.pg_attrdef": {
-      "md5": "b03b50f81b4703857a3e339d462d9e5f",
+      "md5": "6c3bb43814d85300233d207f986fa9fa",
       "count": 5751
     },
     "pg_catalog.pg_trigger": {
-      "md5": "a665c236a3a2ec65403f1f1e68513b08",
+      "md5": "ca78c99683c6f915be978798c332e0af",
       "count": 6009
     },
     "auth.audit_log_entries": {
@@ -439,20 +446,20 @@
       "count": 0
     },
     "pg_catalog.pg_shdepend": {
-      "md5": "c16a57570e8df2df8846c4cd922cc4b0",
-      "count": 793
+      "md5": "a0b8d844d6dd3df98c28943cebdb83ed",
+      "count": 2359
     },
     "public.admin_audit_log": {
       "md5": "d41d8cd98f00b204e9800998ecf8427e",
       "count": 0
     },
     "pg_catalog.pg_attribute": {
-      "md5": "b02157d1d77618f50e7e88970e41544b",
+      "md5": "ba471572827a80efdca94ec814a55d05",
       "count": 41612
     },
     "pg_catalog.pg_namespace": {
-      "md5": "e69ee7a88b02e6556d5d718fa7ad3da8",
-      "count": 18
+      "md5": "90e983ebeb672af52291cfbc3b850418",
+      "count": 34
     },
     "public.anti_cheat_flags": {
       "md5": "d41d8cd98f00b204e9800998ecf8427e",
@@ -471,7 +478,7 @@
       "count": 0
     },
     "pg_catalog.pg_constraint": {
-      "md5": "052177fa6d4b24535c2f97882fd45470",
+      "md5": "3bb7c52ef36be5c40cd5e402f805f899",
       "count": 4707
     },
     "public.action_audit_logs": {
@@ -499,7 +506,7 @@
       "count": 0
     },
     "pg_catalog.pg_description": {
-      "md5": "c7f0785d8cc75c951120f283ff9b7460",
+      "md5": "e5c0e9cb80aa3ec1a32f5b7a1cfd9be8",
       "count": 7038
     },
     "public._pps_backfill_state": {
@@ -511,11 +518,11 @@
       "count": 0
     },
     "pg_catalog.pg_event_trigger": {
-      "md5": "df464619f2ee760038cd0669d0fc2fed",
+      "md5": "85b9a45061c90957f0123631b97afcb1",
       "count": 14
     },
     "pg_catalog.pg_db_role_setting": {
-      "md5": "861654cd2813e68a12091f3e6c008d5a",
+      "md5": "b4e5d33928789024e23ffa267a1d496c",
       "count": 1
     },
     "public.ad_event_retention_policy": {
@@ -5149,7 +5156,7 @@
       "count": 0
     },
     "pg_catalog.pg_proc": {
-      "md5": "ea1f22cf9bd7a89510cf57b36b030a92",
+      "md5": "87e8e18ca72ae9436fd4e3ea0b419d3f",
       "count": 6348
     },
     "public.ad_campaign": {
@@ -5177,11 +5184,11 @@
       "count": 0
     },
     "pg_catalog.pg_class": {
-      "md5": "4d62f2587d0deade7f837615a55dd8b8",
+      "md5": "d2dde445887d88fdec1e9eae90a3f73b",
       "count": 6619
     },
     "pg_catalog.pg_index": {
-      "md5": "5c1b645907d811d95df0409b4f446e86",
+      "md5": "243a967e715d7df6274319c05f6b1522",
       "count": 3883
     },
     "public.ad_placement": {
@@ -5201,11 +5208,11 @@
       "count": 0
     },
     "pg_catalog.pg_depend": {
-      "md5": "78e2060df9957d2db1674d124580026f",
+      "md5": "8b1419a71faa68b3939445e5250856ac",
       "count": 47940
     },
     "pg_catalog.pg_policy": {
-      "md5": "5c758ab9df1fff9f013a295172f89cc1",
+      "md5": "0c338205a4039731c82777a8cc9c200b",
       "count": 1461
     },
     "public.active_tables": {
@@ -5217,11 +5224,11 @@
       "count": 0
     },
     "pg_catalog.pg_attrdef": {
-      "md5": "b03b50f81b4703857a3e339d462d9e5f",
+      "md5": "6c3bb43814d85300233d207f986fa9fa",
       "count": 5751
     },
     "pg_catalog.pg_trigger": {
-      "md5": "a665c236a3a2ec65403f1f1e68513b08",
+      "md5": "ca78c99683c6f915be978798c332e0af",
       "count": 6009
     },
     "auth.audit_log_entries": {
@@ -5237,20 +5244,20 @@
       "count": 0
     },
     "pg_catalog.pg_shdepend": {
-      "md5": "c16a57570e8df2df8846c4cd922cc4b0",
-      "count": 793
+      "md5": "a0b8d844d6dd3df98c28943cebdb83ed",
+      "count": 2359
     },
     "public.admin_audit_log": {
       "md5": "d41d8cd98f00b204e9800998ecf8427e",
       "count": 0
     },
     "pg_catalog.pg_attribute": {
-      "md5": "b02157d1d77618f50e7e88970e41544b",
+      "md5": "ba471572827a80efdca94ec814a55d05",
       "count": 41612
     },
     "pg_catalog.pg_namespace": {
-      "md5": "e69ee7a88b02e6556d5d718fa7ad3da8",
-      "count": 18
+      "md5": "90e983ebeb672af52291cfbc3b850418",
+      "count": 34
     },
     "public.anti_cheat_flags": {
       "md5": "d41d8cd98f00b204e9800998ecf8427e",
@@ -5269,7 +5276,7 @@
       "count": 0
     },
     "pg_catalog.pg_constraint": {
-      "md5": "052177fa6d4b24535c2f97882fd45470",
+      "md5": "3bb7c52ef36be5c40cd5e402f805f899",
       "count": 4707
     },
     "public.action_audit_logs": {
@@ -5297,7 +5304,7 @@
       "count": 0
     },
     "pg_catalog.pg_description": {
-      "md5": "c7f0785d8cc75c951120f283ff9b7460",
+      "md5": "e5c0e9cb80aa3ec1a32f5b7a1cfd9be8",
       "count": 7038
     },
     "public._pps_backfill_state": {
@@ -5309,11 +5316,11 @@
       "count": 0
     },
     "pg_catalog.pg_event_trigger": {
-      "md5": "df464619f2ee760038cd0669d0fc2fed",
+      "md5": "85b9a45061c90957f0123631b97afcb1",
       "count": 14
     },
     "pg_catalog.pg_db_role_setting": {
-      "md5": "861654cd2813e68a12091f3e6c008d5a",
+      "md5": "b4e5d33928789024e23ffa267a1d496c",
       "count": 1
     },
     "public.ad_event_retention_policy": {
@@ -9886,7 +9893,7 @@
     }
   },
   "changed_after_rollback": [],
-  "output_directory": "/tmp/codex-spin-full-current-5rhiwoaw",
+  "output_directory": "/tmp/codex-spin-full-current-3euy2uhq",
   "failure_tail": [],
   "limits": [
     "Opening member wallets, reserve capital and accepted dealt-hand scenes are synthetic; actual creator, take-seat purchase, lease, launch, draw and terminal authorities create all boards, paid seats, funds and receipts.",

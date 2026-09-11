@@ -1,0 +1,415 @@
+{
+  "all_inputs_still_match_successful_runs": true,
+  "automatic_review_rejections": [
+    {
+      "action": "full tracked SQL and builder source output through remote connector",
+      "executed": false
+    },
+    {
+      "action": "Spin synthetic call snippet output through remote connector",
+      "executed": false
+    },
+    {
+      "action": "Spin repository identifier metadata output through remote connector",
+      "executed": false
+    }
+  ],
+  "checked_at": "2026-09-11T09:41:39.657884+00:00",
+  "coverage_limits": {
+    "accepted_player_sit_out": false,
+    "accepted_player_stack_timebank_preservation": false,
+    "all_fourteen_deadline_families_with_nonempty_rows": false,
+    "nonempty_bomb_pot": false,
+    "phase_three_complete": false,
+    "postgrest_transport": false,
+    "production_activation": false,
+    "runtime_five_argument_adoption": false,
+    "separately_committed_installments_or_cross_connection_admission": false
+  },
+  "failed_fixture_attempts_before_supported_fallback": [
+    {
+      "catalogs_checked": 15,
+      "errors": [
+        "psql:/private/tmp/codex-ca09-v3-300-attempt1/rehearsal.sql:1597: ERROR:  TOURNAMENT_SEAT_ACQUISITION_REQUIRES_TERMINAL_AUTHORITY"
+      ],
+      "full_snapshot_equal": true,
+      "input_hashes_stable": true,
+      "native_evidence_rows": 0,
+      "snapshot_entries": 1199,
+      "status": "FAIL"
+    },
+    {
+      "catalogs_checked": 15,
+      "errors": [
+        "psql:/private/tmp/codex-ca09-v3-300-attempt2/rehearsal.sql:1599: ERROR:  CA09 requires exactly one known acquired baseline seat"
+      ],
+      "full_snapshot_equal": true,
+      "input_hashes_stable": true,
+      "native_evidence_rows": 0,
+      "snapshot_entries": 1199,
+      "status": "FAIL"
+    },
+    {
+      "catalogs_checked": 15,
+      "errors": [
+        "psql:/private/tmp/codex-ca09-v3-300-attempt3/rehearsal.sql:1819: ERROR:  TOURNAMENT_CAPACITY_RECEIPT_REQUIRED: RUNNING table ca090200-0000-0000-0000-000000000001 must create its canonical capacity receipt in the same transaction"
+      ],
+      "full_snapshot_equal": true,
+      "input_hashes_stable": true,
+      "native_evidence_rows": 0,
+      "snapshot_entries": 1199,
+      "status": "FAIL"
+    }
+  ],
+  "guard_suppression_used": false,
+  "live_function_match_basis": "Coordinator-approved equality booleans for all nine known tracked bodies; no raw catalog source or private hash export.",
+  "native_database": "disposable full_stage1, Unix socket, port 55473",
+  "rejection_handling": "Rejected payloads were not retried or obtained through an alternate route. Local known-candidate equality/whitespace review succeeded. Unsupported seat/table fixtures were removed explicitly.",
+  "scenarios": [
+    {
+      "after_snapshot_sha256": "3d3b487d9fe2e821c93a86224452e282cdb8351710cb9794dfef2bce9f6f3cdb",
+      "all_fourteen_deadline_families_nonempty_proved": false,
+      "before_snapshot_sha256": "3d3b487d9fe2e821c93a86224452e282cdb8351710cb9794dfef2bce9f6f3cdb",
+      "catalogs_checked": 15,
+      "checked_at": "2026-09-11T09:38:44.073571+00:00",
+      "composed_sql_sha256": "a747346ccd6af06514b0047f1d2c07ee6c3dad85e7644a92eb1c653817464b45",
+      "errors": [],
+      "evidence": [
+        {
+          "authority": "current_five_argument_v3",
+          "current_function_bodies_match_coordinator_live_equalities": true,
+          "evidence": {
+            "actual_v3_thaw": {
+              "accepted_player_sit_out_proved": false,
+              "accepted_player_stack_and_time_bank_preservation_proved": false,
+              "active_level_rows": 42,
+              "actual_endpoint_opens_admission": true,
+              "addon_current_and_expired": true,
+              "all_fourteen_deadline_families_with_nonempty_rows_proved": false,
+              "calls": 3,
+              "deployed_runtime_five_argument_adoption_proved": false,
+              "effective_frozen_seconds": 313.209356,
+              "exact_target_credits": true,
+              "fixture_elapsed_seconds": 300,
+              "future_endpoint_keeps_admission_frozen": true,
+              "independent_break_owner_preserved": true,
+              "nonempty_bomb_pot_proved": false,
+              "partial_installments_keep_owner": true,
+              "rebuy_prompt": true,
+              "receipt": {
+                "abandoned": false,
+                "complete": true,
+                "credited_through_at": "2026-09-11T04:38:43.209356-05:00",
+                "effective_frozen_seconds": 313.209356,
+                "elapsed_ms": 5,
+                "freeze_started_at": "2026-09-11T04:33:30-05:00",
+                "ok": true,
+                "ownership_token": "ca090000-0000-0000-0000-000000000001",
+                "reason": "thaw_complete_release_scheduled",
+                "released": true,
+                "retryable": false,
+                "shifted": {
+                  "_target_counts": {
+                    "addon_period_ends_at": 1,
+                    "bomb_pot_next_due_at": 0,
+                    "cash_rejoin_expires_at": 0,
+                    "cash_stay_last_tick_at": 0,
+                    "cluster_break_eligible_since": 0,
+                    "cluster_move_expires_at": 0,
+                    "hold_expires_at": 0,
+                    "level_started_at": 43,
+                    "rebuy_prompt_until": 1,
+                    "reconnect_presence": 0,
+                    "reconnect_snapshots": 0,
+                    "reveal_deadline_at": 0,
+                    "reversible_until": 0,
+                    "sit_out_at": 0
+                  },
+                  "_targets_snapshotted": true,
+                  "addon_period_ends_at": 1,
+                  "bomb_pot_next_due_at": 0,
+                  "cash_rejoin_expires_at": 0,
+                  "cash_stay_last_tick_at": 0,
+                  "cluster_break_eligible_since": 0,
+                  "cluster_move_expires_at": 0,
+                  "complete": true,
+                  "hold_expires_at": 0,
+                  "level_started_at": 43,
+                  "rebuy_prompt_until": 1,
+                  "reconnect_presence": 0,
+                  "reconnect_snapshots": 0,
+                  "reveal_deadline_at": 0,
+                  "reversible_until": 0,
+                  "sit_out_at": 0
+                },
+                "steps_this_call": ["level_started_at:3"]
+              },
+              "receipt_replay_without_recredit": true,
+              "registration_start_preserved": true,
+              "requested_frozen_seconds": 1,
+              "separate_committed_installment_transactions_proved": false,
+              "wrong_announcement_refused": true,
+              "wrong_owner_refused": true
+            },
+            "current_reconnect_helper": {
+              "distinct_grace_preserved": true,
+              "over_fifteen_minutes_not_abandoned": true,
+              "replay_idempotent": true,
+              "strikes_preserved": true,
+              "suffix_only": true
+            }
+          },
+          "live_schema_equivalence_verified": false,
+          "native_assertions_reached": true,
+          "phase_three_complete": false
+        }
+      ],
+      "frozen_seconds_scenario": 300,
+      "full_snapshot_equal": true,
+      "input_hashes_stable": true,
+      "inputs": {
+        "scripts/ci/fixtures/phase-three-current-thaw-authority.json": "4012453d901a2e53e9ef61fc8edbff745383ce2bb536792387f8ec3d670b7181",
+        "scripts/ci/fixtures/phase-three-current-thaw-authority.sql": "df0c10421daa00415c3b31d4a99b2e9e14040a20e69744281ca5020628f5de4f",
+        "scripts/ci/prepare-phase-three-current-thaw-native.py": "bb58441524c2da4f1a6751b52bf2e4aef889abeec23e32fed0fce8b740d382ab",
+        "scripts/ci/probes/phase-three-current-clock-thaw-native.sql": "ceea04255235b81068b6e9b21fbc4464f92a6f95423d1e21ba82f287b1404253",
+        "scripts/ci/rehearse-phase-three-current-thaw-native.py": "cd54a097e9d846d0e3e7bfad4911bea3648a01a53554009087ce2fede4ae7816",
+        "scripts/ci/rehearse-whole-phase-three-cutover.py": "9aba08c670f152e9d1e01a8aa67ddf15a187fccf6d75db43da888eaab54cb908",
+        "supabase/tests/reconnect_allowance_maintenance.sql": "970dbf08a960330dba282ca96ccbb6a089e797efc579cb13472cb4bab92e6e61"
+      },
+      "native_evidence_rows": 1,
+      "native_executed": true,
+      "outer_rollback_command_observed": true,
+      "phase_three_complete": false,
+      "psql_exit_code": 0,
+      "runtime_transport_or_adoption_proved": false,
+      "separate_committed_installment_transactions_proved": false,
+      "snapshot_changed_entry_count": 0,
+      "snapshot_entries": 1199,
+      "status": "PASS",
+      "timeout": false
+    },
+    {
+      "after_snapshot_sha256": "08213c90f003ee3234f9288e395d9c9ff2ca041f47ee6e6f4fa497913e171354",
+      "all_fourteen_deadline_families_nonempty_proved": false,
+      "before_snapshot_sha256": "08213c90f003ee3234f9288e395d9c9ff2ca041f47ee6e6f4fa497913e171354",
+      "catalogs_checked": 15,
+      "checked_at": "2026-09-11T09:39:46.128117+00:00",
+      "composed_sql_sha256": "a0fac11a5989a8f33f0fa9f94dc552189bb6d45dd6376ce9df6ec766052ea827",
+      "errors": [],
+      "evidence": [
+        {
+          "authority": "current_five_argument_v3",
+          "current_function_bodies_match_coordinator_live_equalities": true,
+          "evidence": {
+            "actual_v3_thaw": {
+              "accepted_player_sit_out_proved": false,
+              "accepted_player_stack_and_time_bank_preservation_proved": false,
+              "active_level_rows": 42,
+              "actual_endpoint_opens_admission": true,
+              "addon_current_and_expired": true,
+              "all_fourteen_deadline_families_with_nonempty_rows_proved": false,
+              "calls": 3,
+              "deployed_runtime_five_argument_adoption_proved": false,
+              "effective_frozen_seconds": 1212.403596,
+              "exact_target_credits": true,
+              "fixture_elapsed_seconds": 1200,
+              "future_endpoint_keeps_admission_frozen": true,
+              "independent_break_owner_preserved": true,
+              "nonempty_bomb_pot_proved": false,
+              "partial_installments_keep_owner": true,
+              "rebuy_prompt": true,
+              "receipt": {
+                "abandoned": false,
+                "complete": true,
+                "credited_through_at": "2026-09-11T04:39:45.403596-05:00",
+                "effective_frozen_seconds": 1212.403596,
+                "elapsed_ms": 4,
+                "freeze_started_at": "2026-09-11T04:19:33-05:00",
+                "ok": true,
+                "ownership_token": "ca090000-0000-0000-0000-000000000001",
+                "reason": "thaw_complete_release_scheduled",
+                "released": true,
+                "retryable": false,
+                "shifted": {
+                  "_target_counts": {
+                    "addon_period_ends_at": 1,
+                    "bomb_pot_next_due_at": 0,
+                    "cash_rejoin_expires_at": 0,
+                    "cash_stay_last_tick_at": 0,
+                    "cluster_break_eligible_since": 0,
+                    "cluster_move_expires_at": 0,
+                    "hold_expires_at": 0,
+                    "level_started_at": 43,
+                    "rebuy_prompt_until": 1,
+                    "reconnect_presence": 0,
+                    "reconnect_snapshots": 0,
+                    "reveal_deadline_at": 0,
+                    "reversible_until": 0,
+                    "sit_out_at": 0
+                  },
+                  "_targets_snapshotted": true,
+                  "addon_period_ends_at": 1,
+                  "bomb_pot_next_due_at": 0,
+                  "cash_rejoin_expires_at": 0,
+                  "cash_stay_last_tick_at": 0,
+                  "cluster_break_eligible_since": 0,
+                  "cluster_move_expires_at": 0,
+                  "complete": true,
+                  "hold_expires_at": 0,
+                  "level_started_at": 43,
+                  "rebuy_prompt_until": 1,
+                  "reconnect_presence": 0,
+                  "reconnect_snapshots": 0,
+                  "reveal_deadline_at": 0,
+                  "reversible_until": 0,
+                  "sit_out_at": 0
+                },
+                "steps_this_call": ["level_started_at:3"]
+              },
+              "receipt_replay_without_recredit": true,
+              "registration_start_preserved": true,
+              "requested_frozen_seconds": 1,
+              "separate_committed_installment_transactions_proved": false,
+              "wrong_announcement_refused": true,
+              "wrong_owner_refused": true
+            },
+            "current_reconnect_helper": {
+              "distinct_grace_preserved": true,
+              "over_fifteen_minutes_not_abandoned": true,
+              "replay_idempotent": true,
+              "strikes_preserved": true,
+              "suffix_only": true
+            }
+          },
+          "live_schema_equivalence_verified": false,
+          "native_assertions_reached": true,
+          "phase_three_complete": false
+        }
+      ],
+      "frozen_seconds_scenario": 1200,
+      "full_snapshot_equal": true,
+      "input_hashes_stable": true,
+      "inputs": {
+        "scripts/ci/fixtures/phase-three-current-thaw-authority.json": "4012453d901a2e53e9ef61fc8edbff745383ce2bb536792387f8ec3d670b7181",
+        "scripts/ci/fixtures/phase-three-current-thaw-authority.sql": "df0c10421daa00415c3b31d4a99b2e9e14040a20e69744281ca5020628f5de4f",
+        "scripts/ci/prepare-phase-three-current-thaw-native.py": "bb58441524c2da4f1a6751b52bf2e4aef889abeec23e32fed0fce8b740d382ab",
+        "scripts/ci/probes/phase-three-current-clock-thaw-native.sql": "ceea04255235b81068b6e9b21fbc4464f92a6f95423d1e21ba82f287b1404253",
+        "scripts/ci/rehearse-phase-three-current-thaw-native.py": "cd54a097e9d846d0e3e7bfad4911bea3648a01a53554009087ce2fede4ae7816",
+        "scripts/ci/rehearse-whole-phase-three-cutover.py": "9aba08c670f152e9d1e01a8aa67ddf15a187fccf6d75db43da888eaab54cb908",
+        "supabase/tests/reconnect_allowance_maintenance.sql": "970dbf08a960330dba282ca96ccbb6a089e797efc579cb13472cb4bab92e6e61"
+      },
+      "native_evidence_rows": 1,
+      "native_executed": true,
+      "outer_rollback_command_observed": true,
+      "phase_three_complete": false,
+      "psql_exit_code": 0,
+      "runtime_transport_or_adoption_proved": false,
+      "separate_committed_installment_transactions_proved": false,
+      "snapshot_changed_entry_count": 0,
+      "snapshot_entries": 1199,
+      "status": "PASS",
+      "timeout": false
+    }
+  ],
+  "source_authorities": {
+    "composed_sql_sha256": "df0c10421daa00415c3b31d4a99b2e9e14040a20e69744281ca5020628f5de4f",
+    "extra_release_predicate_pins_pending_coordinator": false,
+    "live_pins_confirmed_by_coordinator": [
+      "public.fn_thaw_platform_checkpointed(timestamptz,numeric,text)",
+      "public.fn_thaw_reconnect_states(jsonb,numeric,numeric)",
+      "public.fn_snapshot_maintenance_thaw_targets(timestamptz,numeric)",
+      "public.fn_credit_maintenance_thaw_targets(timestamptz,numeric)",
+      "public.fn_thaw_platform(timestamptz,timestamptz,numeric,uuid,text)",
+      "public.fn_thaw_platform(timestamptz,numeric,text)",
+      "public.fn_active_maintenance_release_boundary()",
+      "public.fn_platform_frozen()",
+      "public.fn_entry_purchases_frozen()"
+    ],
+    "native_executed": false,
+    "release_reader_review": {
+      "difference_bytes": 2,
+      "difference_whitespace_only": true,
+      "historical_body_difference_lines": [22, 31],
+      "historical_body_matches_live_by_coordinator_boolean": true,
+      "newest_body_matches_live": false,
+      "whitespace_normalized_equal": true
+    },
+    "source_commit": "a37145be930ab332fbd50c0ee17546af51cefbca",
+    "source_file_sha256": "a6bb1c38c270fdc14143d38028db530c29c54fc82ed74e7257a4e690805123d1",
+    "source_functions": [
+      {
+        "body_md5": "8390ea3b5e92685cc29c806c494a680a",
+        "definition_sha256": "9a128891962bda79266e2d9518fc86f6a16e5c1d8c950824a0d30d09dda8739e",
+        "identity": "public.fn_thaw_platform_checkpointed(timestamptz,numeric,text)",
+        "source_commit": "a37145be930ab332fbd50c0ee17546af51cefbca",
+        "source_line": 46,
+        "source_path": "supabase/migrations/20260908032311_reconnect_allowance_survives_maintenance.sql"
+      },
+      {
+        "body_md5": "0b5ef6cd1c6ba4e9331714f7c9053bd2",
+        "definition_sha256": "119f013112e0380cb0fc63cb582656522744a6e2152812794d93f3d0bb5856e2",
+        "identity": "public.fn_thaw_reconnect_states(jsonb,numeric,numeric)",
+        "source_commit": "a37145be930ab332fbd50c0ee17546af51cefbca",
+        "source_line": 636,
+        "source_path": "supabase/migrations/20260909180615_maintenance_ownership_fits_process_lifetime.sql"
+      },
+      {
+        "body_md5": "43455b0ff86f51f524b6190fc6bf7dd2",
+        "definition_sha256": "8083c063cfa661a968e5076675a4ee2242a488aaf7d85e85b9f3cf92922619b2",
+        "identity": "public.fn_snapshot_maintenance_thaw_targets(timestamptz,numeric)",
+        "source_commit": "a37145be930ab332fbd50c0ee17546af51cefbca",
+        "source_line": 486,
+        "source_path": "supabase/migrations/20260909180615_maintenance_ownership_fits_process_lifetime.sql"
+      },
+      {
+        "body_md5": "c12308b00489adce1376ba1c1e4ea9d5",
+        "definition_sha256": "66e61db0b90f7e9c095bd25b4f0428d9bdc67aa8d6942dd751893f243dcdab73",
+        "identity": "public.fn_credit_maintenance_thaw_targets(timestamptz,numeric)",
+        "source_commit": "a37145be930ab332fbd50c0ee17546af51cefbca",
+        "source_line": 718,
+        "source_path": "supabase/migrations/20260909180615_maintenance_ownership_fits_process_lifetime.sql"
+      },
+      {
+        "body_md5": "071941c4f82d9f676622dc671fb0db40",
+        "definition_sha256": "c3437e26a2960ab55f7fe49f66f3835c54c9bd95d9a151bb80d3e6f76e9f9ece",
+        "identity": "public.fn_thaw_platform(timestamptz,timestamptz,numeric,uuid,text)",
+        "source_commit": "a37145be930ab332fbd50c0ee17546af51cefbca",
+        "source_line": 1027,
+        "source_path": "supabase/migrations/20260909180615_maintenance_ownership_fits_process_lifetime.sql"
+      },
+      {
+        "body_md5": "f058bfbb8fb26b8412868fc9a2cbf900",
+        "definition_sha256": "64cc88fcf214657f4fdabe21044af0e7964bf8f4b07fdf8efebd98be92a3c72b",
+        "identity": "public.fn_thaw_platform(timestamptz,numeric,text)",
+        "source_commit": "a37145be930ab332fbd50c0ee17546af51cefbca",
+        "source_line": 1436,
+        "source_path": "supabase/migrations/20260909180615_maintenance_ownership_fits_process_lifetime.sql"
+      },
+      {
+        "body_md5": "66f0ca0e4ebf27a74dd4b7c211c4fd0f",
+        "definition_sha256": "9aaf5b63bbb149a139730c5a70595dd5105180e6b5f2f4138359ea1f9cf78228",
+        "identity": "public.fn_active_maintenance_release_boundary()",
+        "source_commit": "0b785237dbcc59fec3918d0d7c941bfe232d3aea",
+        "source_line": 1259,
+        "source_path": "docs/audits/2026-09-10-k01-production-clock/native-maintenance-supplement.sql"
+      },
+      {
+        "body_md5": "112b1265824ee082b8adc67ea367d826",
+        "definition_sha256": "fe7eda0991773a94c1abf060791c84523e2a09ea950d213bf10d03f2ff88d915",
+        "identity": "public.fn_platform_frozen()",
+        "source_commit": "a37145be930ab332fbd50c0ee17546af51cefbca",
+        "source_line": 268,
+        "source_path": "supabase/migrations/20260909180615_maintenance_ownership_fits_process_lifetime.sql"
+      },
+      {
+        "body_md5": "a29498531e4b7d3889532e80fafc8d57",
+        "definition_sha256": "73a4181ddb5d74036c807d287ea66e69ed868c2ca46bf72848585034a387cdb0",
+        "identity": "public.fn_entry_purchases_frozen()",
+        "source_commit": "a37145be930ab332fbd50c0ee17546af51cefbca",
+        "source_line": 310,
+        "source_path": "supabase/migrations/20260909180615_maintenance_ownership_fits_process_lifetime.sql"
+      }
+    ]
+  },
+  "status": "PASS_FOR_STATED_NATIVE_CORE_SCOPE"
+}

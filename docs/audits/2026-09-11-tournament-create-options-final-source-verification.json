@@ -1,0 +1,22 @@
+{
+  "started_at": "2026-09-11T09:18:21.236434+00:00",
+  "finished_at": "2026-09-11T09:18:29.355950+00:00",
+  "source_sha256": {
+    "src/utils/freeBuy.ts": "c1a9f4bd1d8a9f41f420608b2c14e7b3ca396c4056b731c4e21882da4d536fb2",
+    "server/src/config/buyIn.ts": "0844854e9990f322098f0db72a88245b3cebf2c612d9977b67536a1f176b68e9",
+    "tests/unit/tournamentCreateEnabledOptionsWiring.test.ts": "9a881df5ec2791f4100e10a60df85c1028d510c4627ccccc6804f4a6ee3e93be",
+    "tests/law/FreerollsAreFreeBuy.law.test.ts": "fc71b4f80a302c3bef42058c6ddeaae191a5b5c21242e8ea7926dc540c69c5de"
+  },
+  "sources_unchanged": true,
+  "focused_exit_code": 0,
+  "focused_totals": [
+    "\u001b[2m Test Files \u001b[22m \u001b[1m\u001b[32m3 passed\u001b[39m\u001b[22m\u001b[90m (3)\u001b[39m",
+    "\u001b[2m      Tests \u001b[22m \u001b[1m\u001b[32m40 passed\u001b[39m\u001b[22m\u001b[90m (40)\u001b[39m"
+  ],
+  "server_typecheck_exit_code": 2,
+  "server_typecheck_diagnostics": [
+    "server/src/maintenance/maintenanceThawV3.test.ts(39,48): error TS2493: Tuple type '[]' of length '0' has no element at index '0'."
+  ],
+  "owned_diff_check_exit_code": 0,
+  "owned_diff_check_diagnostics": []
+}

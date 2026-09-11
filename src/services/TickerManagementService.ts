@@ -192,23 +192,27 @@ function contentError(
  * Bounded by construction: one entry per club or union a session visits.
  */
 const lastKnownGood = new Map<string, ManagedTickerSettings>();
+let cacheGeneration = 0;
 
 function scopeKey(clubId?: string | null, unionId?: string | null): string {
   return unionId ? `union:${unionId}` : `club:${clubId || 'none'}`;
 }
 
-/** Test seam: forget every cached snapshot. */
+/** Account transitions must also retire reads that have not returned yet. */
 export function resetTickerSettingsCache(): void {
+  cacheGeneration += 1;
   lastKnownGood.clear();
 }
 
 export const tickerManagementService = {
   async get(clubId?: string | null, unionId?: string | null): Promise<ManagedTickerSettings> {
     const key = scopeKey(clubId, unionId);
+    const generation = cacheGeneration;
     const { data, error } = await supabase.rpc('fn_get_game_ticker_settings', {
       p_club_id: clubId || null,
       p_union_id: unionId || null,
     });
+    if (generation !== cacheGeneration) return DEFAULT_TICKER_SETTINGS;
     if (error) return lastKnownGood.get(key) ?? DEFAULT_TICKER_SETTINGS;
     const settings = normalizeTickerSettings(data);
     lastKnownGood.set(key, settings);

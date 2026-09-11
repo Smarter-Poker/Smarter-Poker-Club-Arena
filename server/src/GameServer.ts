@@ -167,7 +167,11 @@ import { createSupabaseMaintenanceBreakStore } from './maintenance/maintenanceBr
 import { StatsHealthMonitor } from './observability/StatsHealthMonitor.js';
 import { runThawInstallments } from './maintenance/thawInstallments.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
-import { resumesHoldingASlot, selectRunningResumes } from './tournamentResumeBudget.js';
+import {
+  RunningResumeCooldowns,
+  resumesHoldingASlot,
+  selectRunningResumes,
+} from './tournamentResumeBudget.js';
 import { isWakeableCashTable } from './services/onDemandTableWake.js';
 // 2026-08-16: single-owner table leases + per-process identity. See
 // services/tableLease.ts for the dual-container incident that motivated them.
@@ -692,20 +696,51 @@ export class GameServer {
       lostCashEngines.push([tableId, engine]);
     }
 
+    /**
+     * ONLY A LOST LEASE IS RE-ADOPTION DISTRESS (2026-09-11)
+     *
+     * A manager whose lease lapsed is the re-adoption storm's signature, so
+     * #4212 told the RUNNING re-adoption budget about it, as a failed cash
+     * start tells C20. But it charged every manager this pass retires, and a
+     * tournament that finishes stops its own manager and leaves it in
+     * tournamentEngines for this pass to retire; renewal refuses a stopped
+     * manager, so every normal completion came through here as a lost lease.
+     * Production's retained logs show it: each of three completions was
+     * followed 4-7s later by "Lost the tournament lease ... to another engine
+     * instance". At 400-700 completions an hour that is distress on half the
+     * lane's passes or more, which held the budget between a half and a fifth
+     * of its design with no lease trouble at all, and made /health's "pinned
+     * at the floor" mean nothing.
+     *
+     * So each manager is judged BEFORE the fence below, because the fence sets
+     * the expiry flag the judgment reads. One that stood down on its own with
+     * its lease intact is fenced and retired without a report or a charge. An
+     * expired proof, a database fence or a takeover while running is still
+     * reported and charged. (A stand-down whose proof then lapsed before this
+     * pass could read it - a stall of fifteen seconds or more - still counts:
+     * that stall is itself the storm's signature.)
+     *
+     * And a manager is judged ONCE. A quarantined one whose stop() keeps
+     * failing stays in tournamentEngines and comes back through here on every
+     * pass; charging it each time would hold the budget at the floor for the
+     * life of the process with no storm at all.
+     */
     const lostManagers: Array<[string, TournamentManager]> = [];
     for (const [tournamentId, manager] of lostTournamentIds) {
       if (this.tournamentEngines.get(tournamentId) !== manager) continue;
-      reportError(
-        new Error(`Lost the tournament lease on ${tournamentId} to another engine instance`),
-        'GameServer.tournament_lease_lost'
-      );
+      if (!this.tournamentManagersJudgedLost.has(manager)) {
+        this.tournamentManagersJudgedLost.add(manager);
+        if (!manager.stoodDownWithItsLeaseIntact()) {
+          reportError(
+            new Error(`Lost the tournament lease on ${tournamentId} to another engine instance`),
+            'GameServer.tournament_lease_lost'
+          );
+          this.tournamentResumeDistress++;
+        }
+      }
       manager.fenceForTournamentLeaseLoss();
       lostManagers.push([tournamentId, manager]);
     }
-
-    // A manager whose lease lapsed is the re-adoption storm's signature: tell
-    // the RUNNING re-adoption budget, as a failed cash start tells C20.
-    this.tournamentResumeDistress += lostManagers.length;
 
     for (const [tableId, engine] of lostCashEngines) {
       void this.recoverDirectTableEngine(tableId, engine, 'cash_table_lease_lost').catch((error) =>
@@ -844,12 +879,25 @@ export class GameServer {
   private tournamentResumeBudget: number = ENGINE_START_BUDGET_MAX;
   /**
    * Distress since the last tournament pass, read and cleared once per pass:
-   * a discovery resume that threw or had to schedule a retry, and every manager
-   * the lease renewal pass found had lost or outlived its lease.
+   * a discovery resume that threw or had to schedule a retry, and each manager
+   * the lease renewal pass found had lost its lease - once per manager, and
+   * never one that stood down on its own (2026-09-11).
    */
   private tournamentResumeDistress: number = 0;
+  /**
+   * Every manager generation the renewal pass has already judged lost,
+   * charged or not, so none is judged (or charged) twice. See
+   * performOwnedEngineLeaseProofRenewal.
+   */
+  private readonly tournamentManagersJudgedLost = new WeakSet<TournamentManager>();
   /** Discovery-launched resume admissions not yet settled, by launch time. */
   private tournamentResumesInFlight = new Map<string, number>();
+  /**
+   * RUNNING ids whose last lane resume came back without a manager, each on a
+   * doubling cooldown (2026-09-11, tournamentResumeBudget.ts), so a head of
+   * events that cannot resume no longer takes every slot on every pass.
+   */
+  private readonly tournamentResumeCooldowns = new RunningResumeCooldowns();
 
   /** Applies the C20 control law to this instance. Returns the new budget. */
   private adjustEngineStartBudget(distressed: boolean): number {
@@ -2963,6 +3011,13 @@ export class GameServer {
        */
       tournamentResumeBudget: this.tournamentResumeBudget,
       tournamentResumesInFlight: this.tournamentResumesInFlight.size,
+      /**
+       * RUNNING tournaments whose last resume came back without a manager and
+       * that have not been adopted since, each on its cooldown (2026-09-11).
+       * High while the budget is full and nothing is in flight is a head of
+       * events that cannot resume.
+       */
+      tournamentResumesFailing: this.tournamentResumeCooldowns.size,
       tournamentLease: tournamentLeaseDiagnostics(),
       leadership: leadershipDiagnostics(),
       stalledTableCount: stalledTables.length,
@@ -5937,6 +5992,12 @@ export class GameServer {
             'GameServer.running_board_read_failed'
           );
           resumePassDistressed = true;
+        } else {
+          // A cooldown streak ends when its id gets a manager or leaves the
+          // RUNNING board. Only a board that was actually read can say so.
+          this.tournamentResumeCooldowns.settle(running || [], (id) =>
+            this.tournamentEngines.has(id)
+          );
         }
 
         /**
@@ -5948,11 +6009,21 @@ export class GameServer {
          * board order (oldest started_at first) still decides which, and the
          * rest are read again next pass rather than dropped. An id already
          * being admitted (by a retry or another path) spends nothing.
+         *
+         * Nor does an id waiting on its admission retry timer, or one whose
+         * last resume came back without a manager and is cooling down
+         * (2026-09-11). Both used to be relaunched first on every pass, so a
+         * head of events that cannot resume could hold every slot while no
+         * younger event was ever adopted. See tournamentResumeBudget.ts.
          */
+        const selectedAt = Date.now();
         const resumes = selectRunningResumes(running || [], {
           hasManager: (id) => this.tournamentEngines.has(id),
-          admissionInFlight: (id) => this.tournamentManagerAdmissionOperations.has(id),
-          resumesInFlight: resumesHoldingASlot(this.tournamentResumesInFlight.values(), Date.now()),
+          admissionInFlight: (id) =>
+            this.tournamentManagerAdmissionOperations.has(id) ||
+            this.tournamentManagerAdmissionRetryTimers.has(id),
+          coolingDown: (id) => this.tournamentResumeCooldowns.coolingDown(id, selectedAt),
+          resumesInFlight: resumesHoldingASlot(this.tournamentResumesInFlight.values(), selectedAt),
           budget: this.tournamentResumeBudget,
         });
         for (const [index, tournament] of resumes.entries()) {
@@ -5962,7 +6033,12 @@ export class GameServer {
           if (this.tournamentEngines.has(tournament.id)) continue;
 
           const tournamentId = String(tournament.id);
-          if (this.tournamentManagerAdmissionOperations.has(tournamentId)) continue;
+          if (
+            this.tournamentManagerAdmissionOperations.has(tournamentId) ||
+            this.tournamentManagerAdmissionRetryTimers.has(tournamentId)
+          ) {
+            continue;
+          }
 
           const launchedAt = Date.now();
           this.tournamentResumesInFlight.set(tournamentId, launchedAt);
@@ -5987,6 +6063,14 @@ export class GameServer {
               .finally(() => {
                 if (this.tournamentResumesInFlight.get(tournamentId) === launchedAt) {
                   this.tournamentResumesInFlight.delete(tournamentId);
+                }
+                // Settled without a manager, whatever the reason (resume_failed,
+                // owned_elsewhere, a retry now pending, a throw): cool down
+                // before this lane launches the id again.
+                if (this.tournamentEngines.has(tournamentId)) {
+                  this.tournamentResumeCooldowns.forget(tournamentId);
+                } else {
+                  this.tournamentResumeCooldowns.recordFailure(tournamentId, Date.now());
                 }
               }),
             'GameServer.Tournament_resume_failed_for_t',

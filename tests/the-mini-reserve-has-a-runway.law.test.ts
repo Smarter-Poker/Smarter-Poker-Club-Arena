@@ -253,3 +253,123 @@ describe('the mini has its own near misses and its own players floor', () => {
     expect(settle).toMatch(/void recordBBJNearMiss\(\{[\s\S]{0,600}miniNearMiss\.reason/);
   });
 });
+
+/**
+ * THE UNION OWNS ITS OWN MINI (2026-09-11).
+ *
+ * The switch and the reserve floor were built keyed on a CLUB, and both refuse
+ * a club inside a union with `union_club_follows_the_union` - correctly: one
+ * member club must not decide what every table under a union pays. The union
+ * was then given nothing to follow that sentence to. Measured on production:
+ * `SELECT count(*) FROM pg_proc WHERE proname LIKE 'fn_bbj_set_union%'` was 0,
+ * while the LARGER pool on this platform is a union pool (Midway Union,
+ * 52,369.37 main / 43,893.73 backup). So phase 3's whole control surface was
+ * unreachable for the pool it matters most to.
+ */
+describe('the union can reach the two controls a club has', () => {
+  const UNION_MIGRATION = 'supabase/migrations/20260911214135_the_union_owns_its_own_mini.sql';
+  const sql = read(UNION_MIGRATION);
+  /* On the SQL, not the prose. This migration explains in its header which
+     predicate it deliberately did NOT use, and asserting on raw text would
+     make that explanation illegal - which teaches the next author to delete
+     the reasoning to get the law green. Same trap the promo law documents,
+     and the third time it has caught this programme's own author. */
+  const code = sql.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*--.*$/gm, '');
+
+  it('both controls exist, keyed on the union', () => {
+    expect(sql).toMatch(/FUNCTION public\.fn_bbj_set_union_mini_enabled\(/);
+    expect(sql).toMatch(/FUNCTION public\.fn_bbj_set_union_mini_floor\(/);
+  });
+
+  it('the union operator is the authority, not the club admin', () => {
+    /* fn_is_union_operator is the union's owner or a row in union_admins.
+       Deliberately NOT fn_is_union_overseer, which also admits club-member
+       admins of a union-shaped club: a control that changes what every table
+       under a union pays answers to the union's own people. */
+    expect(code).toMatch(/public\.fn_is_union_operator\(p_union_id, v_actor\)/);
+    expect(code).not.toMatch(/fn_is_union_overseer/);
+    expect(code).not.toMatch(/fn_is_club_admin_uid/);
+  });
+
+  it('it names its own actor, and authorizes before it explains', () => {
+    for (const fn of ['fn_bbj_set_union_mini_enabled', 'fn_bbj_set_union_mini_floor']) {
+      const body = sql.slice(sql.indexOf(`FUNCTION public.${fn}(`));
+      const stop = body.indexOf('$function$;');
+      const src = body.slice(0, stop > 0 ? stop : undefined);
+      // the function reads auth.uid() itself - derived one call down it would
+      // answer a service_role caller with the misleading 'not_a_union_operator'
+      expect(src, `${fn} must read auth.uid()`).toMatch(/v_actor := auth\.uid\(\)/);
+      // and the pool lookup comes AFTER the authorization check, so a stranger
+      // cannot learn from a refusal whether this union has banked a jackpot
+      expect(src.indexOf('fn_is_union_operator')).toBeLessThan(src.indexOf('pool_not_found'));
+    }
+  });
+
+  it('the pool is resolved on the predicate that is actually unique', () => {
+    /* `uq_bbj_pools_union_active` is UNIQUE on (union_id) WHERE club_id IS
+       NULL AND status = 'active'. A bare `WHERE union_id = ...` is not unique
+       here, and plpgsql's SELECT INTO does not raise on multiple rows - it
+       silently takes one, which is a control writing to an arbitrary pool. */
+    const lookups = sql.match(/WHERE p\.union_id = p_union_id[^;]*/g) || [];
+    expect(lookups.length, 'both controls resolve a pool').toBe(2);
+    for (const l of lookups) {
+      expect(l).toContain('p.club_id IS NULL');
+      expect(l).toContain("p.status = 'active'");
+    }
+  });
+
+  it('the floor bound is derived, exactly as the club control derives it', () => {
+    expect(sql).toMatch(/max\(mt\.amount\) FILTER \(WHERE mt\.enabled\)/);
+    expect(sql).toMatch(/'floor_below_one_payout'/);
+    // the refusal carries the number, or an operator cannot act on it
+    expect(sql).toMatch(/'minimum', v_min/);
+  });
+
+  it('no pre-login role can turn a union jackpot off', () => {
+    for (const fn of [
+      'fn_bbj_set_union_mini_enabled\\(uuid, boolean\\)',
+      'fn_bbj_set_union_mini_floor\\(uuid, numeric\\)',
+    ]) {
+      expect(sql).toMatch(new RegExp(`REVOKE ALL ON FUNCTION public\\.${fn} FROM PUBLIC, anon`));
+      expect(sql).toMatch(new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${fn} TO authenticated`));
+    }
+    // and the migration proves it rather than assuming the REVOKE landed
+    expect(sql).toMatch(/has_function_privilege\('anon'/);
+  });
+
+  it('the migration creates the controls and does not use them', () => {
+    /* Phase 3's first cut asserted every floor was exactly 5,000 - right about
+       the intent, wrong as a permanent check, because the same file ships the
+       control whose job is to change that value. What must be true is that the
+       migration itself writes no pool row outside the function bodies. */
+    const outsideFns = sql.replace(/AS \$function\$[\s\S]*?\$function\$;/g, '');
+    expect(outsideFns).not.toMatch(/UPDATE\s+public\.bbj_pools/i);
+    expect(outsideFns).not.toMatch(/INSERT\s+INTO\s+public\.bbj_pools/i);
+  });
+
+  it('the surface calls the union RPCs and can say why either refused', () => {
+    const feed = read('src/lib/bbjMiniFeed.ts');
+    expect(feed).toContain("supabase.rpc('fn_bbj_set_union_mini_enabled'");
+    expect(feed).toContain("supabase.rpc('fn_bbj_set_union_mini_floor'");
+
+    const page = read('src/pages/UnionDashboardPage.tsx');
+    expect(page).toContain('setBbjUnionMiniEnabled(');
+    expect(page).toContain('setBbjUnionMiniFloor(');
+    /* Every reason either RPC can return needs words. A reason nobody
+       translates is a reason nobody reads: `floor_below_one_payout` on a
+       screen is not an instruction. */
+    for (const reason of [
+      'not_a_union_operator',
+      'not_signed_in',
+      'union_not_found',
+      'pool_not_found',
+      'floor_cannot_be_negative',
+      'floor_below_one_payout',
+      'union_and_enabled_required',
+      'union_and_floor_required',
+      'request_failed',
+    ]) {
+      expect(page, `${reason} must have words for the operator`).toContain(`'${reason}'`);
+    }
+  });
+});

@@ -1,13 +1,13 @@
 # Lane F - the horse fleet inside must-move games, and across Classic / Action / Madness
 
-| #      | finding                                                        | sev | status |
-| ------ | -------------------------------------------------------------- | --- | ------ |
-| P0-F1  | the session rotator was dead for 3h31m, silently                | P0  | **DONE** |
-| P1-F2  | a horse's seat change died with the memo, not with the stay      | P1  | **DONE** |
-| P1-F3  | Madness and Action evict the fleet at hand 11                    | P1  | **DONE** |
-| P2-F4  | a stale changelog note calls a live path dead                    | P2  | REPORTED, not deleted |
-| P2-F5  | `DEFAULT_TABLES` is a 14-entry array with no table behind it     | P2  | REPORTED (see F6 for what was removed) |
-| P3-F6  | dead round-robin and an unused union constant in the fleet       | P3  | **DONE** |
+| #     | finding                                                      | sev | status                                 |
+| ----- | ------------------------------------------------------------ | --- | -------------------------------------- |
+| P0-F1 | the session rotator was dead for 3h31m, silently             | P0  | **DONE**                               |
+| P1-F2 | a horse's seat change died with the memo, not with the stay  | P1  | **DONE**                               |
+| P1-F3 | Madness and Action evict the fleet at hand 11                | P1  | **DONE**                               |
+| P2-F4 | a stale changelog note calls a live path dead                | P2  | REPORTED, not deleted                  |
+| P2-F5 | `DEFAULT_TABLES` is a 14-entry array with no table behind it | P2  | REPORTED (see F6 for what was removed) |
+| P3-F6 | dead round-robin and an unused union constant in the fleet   | P3  | **DONE**                               |
 
 Audit of 2026-09-09. Everything below was read from production
 `kuklfnapbkmacvwxktbh` (Club Arena). **The swarm brief named
@@ -28,10 +28,10 @@ and the silence are FIXED HERE.**
 At **17:23:50** and **17:25:29** three migrations landed that added composite
 foreign keys from `table_seats` to `tables`:
 
-| version          | name                                          | added                            |
-| ---------------- | --------------------------------------------- | -------------------------------- |
-| 20260909172350   | one_committed_cash_game_seat_per_player        | `live_seat_parent_cannot_close`  |
-| 20260909172529   | terminal_tables_cannot_commit_live_occupancies | `active_seat_game_scope_parent`  |
+| version        | name                                           | added                           |
+| -------------- | ---------------------------------------------- | ------------------------------- |
+| 20260909172350 | one_committed_cash_game_seat_per_player        | `live_seat_parent_cannot_close` |
+| 20260909172529 | terminal_tables_cannot_commit_live_occupancies | `active_seat_game_scope_parent` |
 
 `table_seats` then had **three** relationships to `tables`:
 
@@ -83,12 +83,12 @@ one of these stopped, silently, for three and a half hours:
 There was no log to read - that is the defect. It was found from the table
 state:
 
-| read 18:5x                                                   | value                    |
-| ------------------------------------------------------------ | ------------------------ |
-| `docker logs --since 3h ... \| grep -c 'SessionRotator'`      | **1** (the boot banner)  |
-| cluster tables holding exactly one horse                      | 4                        |
-| minutes that lone horse had been seated                       | **415, 129, 121, 54**    |
-| `LONE_TABLE_MINUTES` (the rule it broke)                       | **10**                   |
+| read 18:5x                                               | value                   |
+| -------------------------------------------------------- | ----------------------- |
+| `docker logs --since 3h ... \| grep -c 'SessionRotator'` | **1** (the boot banner) |
+| cluster tables holding exactly one horse                 | 4                       |
+| minutes that lone horse had been seated                  | **415, 129, 121, 54**   |
+| `LONE_TABLE_MINUTES` (the rule it broke)                 | **10**                  |
 
 The engine had booted at **17:56:01**, i.e. entirely inside the ambiguity
 window, so it never had a working pass to compare against.
@@ -127,16 +127,16 @@ All were dead in the same window and are working again only because the
 constraints were dropped. **None is in lane F**; they are listed with line
 numbers so the integrator can route them:
 
-| file                                          | lines            |
-| --------------------------------------------- | ---------------- |
-| `server/src/tournament/TournamentManagerEliminations.ts` | 1611, 1646 |
+| file                                                     | lines            |
+| -------------------------------------------------------- | ---------------- |
+| `server/src/tournament/TournamentManagerEliminations.ts` | 1611, 1646       |
 | `server/src/tournament/TournamentManagerBase.ts`         | 2692, 4807, 5347 |
-| `server/src/tournament/seatClaim.ts`                     | 61        |
-| `server/src/services/TournamentRecurringService.ts`      | 4294      |
-| `src/pages/TablePage.tsx`                                | 12426     |
-| `src/pages/BlacklistManagerPage.tsx`                     | 177       |
-| `src/pages/AntiCheatPage.tsx`                            | 734       |
-| `src/services/IntegrityActionService.ts`                 | 98        |
+| `server/src/tournament/seatClaim.ts`                     | 61               |
+| `server/src/services/TournamentRecurringService.ts`      | 4294             |
+| `src/pages/TablePage.tsx`                                | 12426            |
+| `src/pages/BlacklistManagerPage.tsx`                     | 177              |
+| `src/pages/AntiCheatPage.tsx`                            | 734              |
+| `src/services/IntegrityActionService.ts`                 | 98               |
 
 `src/pages/ClubHomePage.tsx:3361` was fixed on `main` at 18:10 by #3982, which
 names `table_seats_table_id_fkey`. That is the correct pattern and this lane
@@ -153,7 +153,7 @@ applies it.
    ```
 
    Verified against production PostgREST at 22:32 with the service identity:
-   both the old and new forms return HTTP 200 *now* (the constraints are
+   both the old and new forms return HTTP 200 _now_ (the constraints are
    gone), so the named form is proven equivalent, and it is the form that
    survives the constraints coming back.
 
@@ -176,7 +176,7 @@ applies it.
 **Status: FIXED.**
 
 `HorseSessionRotator.seatChangeAsked` remembers every `(gameId, horseId)` pair
-it has asked the door about, and holds a *final* refusal
+it has asked the door about, and holds a _final_ refusal
 (`SEAT_CHANGE_USED`, `SEAT_CHANGE_NOT_FROM_MAIN`, ...) for
 `SEAT_CHANGE_STAY_MS` = **12 hours**.
 
@@ -217,11 +217,11 @@ template get it evicted en masse") and the answer is **yes**.
 
 `cash_player_session` closures, 24 hours to 22:00:
 
-| template | vpip_evicted | system | voluntary | **evicted share** | avg session |
-| -------- | ------------ | ------ | --------- | ----------------- | ----------- |
-| classic  | **0**        | 1,116  | 1,325     | **0%**            | 119.5 min   |
-| action   | 206          | 414    | 152       | **27%**           | 47.7 min    |
-| madness  | **586**      | 356    | 104       | **56%**           | **36.3 min**|
+| template | vpip_evicted | system | voluntary | **evicted share** | avg session  |
+| -------- | ------------ | ------ | --------- | ----------------- | ------------ |
+| classic  | **0**        | 1,116  | 1,325     | **0%**            | 119.5 min    |
+| action   | 206          | 414    | 152       | **27%**           | 47.7 min     |
+| madness  | **586**      | 356    | 104       | **56%**           | **36.3 min** |
 
 Where in the sitting it fires (hands on file at eviction, same window):
 
@@ -248,9 +248,9 @@ A binomial at p=0.59 puts P(4 or fewer of 10) at ~22%, and the check re-runs
 every hand after, which is how 22% becomes the observed 56%.
 
 `tests/a-vpip-floor-must-be-reachable.law.test.ts` was written for exactly
-this and its own words are the acceptance criterion being missed: *"a horse
+this and its own words are the acceptance criterion being missed: _"a horse
 that is booted every ten hands is not obeying the floor, it is churning the
-game."*
+game."_
 
 **Consequence on the floor, and it is self-reinforcing.** An eviction writes
 `barred_until` through `fn_cash_session_close` - **no seat in that game for
@@ -272,7 +272,7 @@ exactly the number `fn_nit_check` judges at the first check:
 
 | template | floor | sittings reaching 10 | mean VPIP over first 10 | **under floor at hand 10** |
 | -------- | ----- | -------------------- | ----------------------- | -------------------------- |
-| action   | 30    | 392                  | 47.1%                   | 25  (**6.4%**)             |
+| action   | 30    | 392                  | 47.1%                   | 25 (**6.4%**)              |
 | madness  | 50    | 597                  | 59.2%                   | 104 (**17.4%**)            |
 
 The mean clears both floors comfortably. The SAMPLE does not. A ten-hand
@@ -291,7 +291,7 @@ target was simply too close to the floor.
 is judged over instead of being a flat ten points:
 
 ```ts
-export const VPIP_JUDGED_OVER_HANDS = 10;      // tables.maintain_hands
+export const VPIP_JUDGED_OVER_HANDS = 10; // tables.maintain_hands
 export const VPIP_FLOOR_MARGIN_SIGMAS = 1.3;
 
 export function vpipTargetFor(floorPct: number): number {
@@ -302,11 +302,11 @@ export function vpipTargetFor(floorPct: number): number {
 }
 ```
 
-| floor | target was | target now | prior multiplier | clamp (0.35) |
-| ----- | ---------- | ---------- | ---------------- | ------------ |
-| 30    | 0.40       | **0.488**  | 0.573            | clear        |
-| 50    | 0.60       | **0.706**  | 0.397            | clear        |
-| 70 (retired) | 0.80 | 0.888      | 0.315 -> clamped | pinned, as before |
+| floor        | target was | target now | prior multiplier | clamp (0.35)      |
+| ------------ | ---------- | ---------- | ---------------- | ----------------- |
+| 30           | 0.40       | **0.488**  | 0.573            | clear             |
+| 50           | 0.60       | **0.706**  | 0.397            | clear             |
+| 70 (retired) | 0.80       | 0.888      | 0.315 -> clamped | pinned, as before |
 
 1.3 sigma puts about a tenth of windows under the floor instead of a sixth,
 and it is the largest margin that still leaves the layer room to steer at the
@@ -371,20 +371,20 @@ P3 because it is the kind of list an agent "wires back up".
 
 Every one of these was read from production at 18:00-22:32, not inferred:
 
-| question (lane brief)                                    | answer |
-| -------------------------------------------------------- | ------ |
-| horses use the same seat change as humans                 | **yes** - one door, `fn_cash_seat_change_request`; the only line that differs is `fn_caller_is_engine()` naming the player. Same roster budget, same refusals |
-| horses never sit on closed / breaking tables              | **yes** - 0 horse seats on `lifecycle` closed or breaking, 0 on `status='closed'` |
-| a horse with two chairs in one game                       | **0** |
-| a horse on a lifecycle-closed table                        | **0** |
-| horses on non-cluster cash tables                          | **0** |
-| the four-table limit does not count a within-game move     | **yes** - `fn_enforce_four_table_limit` returns early on `app.cash_seat_move = 'on'` |
-| swaps are not reservations                                 | **yes** - the pending-move read filters `.is('swap_move_id', null)` |
-| band supply falls back one band down when no game exists   | **yes** - `projectStakeBandOnto` is downward-only and fails open on an unread floor; mirrored in SQL by `fn_project_stake_band` |
-| a horse only plays a stake its bankroll supports           | **yes** - `rollSupportsStake` = `available >= max(20, buyInsToSit) x 100bb`; the tagger applies the roll as a ceiling and never as a floor |
-| the fleet respects the :55 freeze                           | **yes** - `isMaintenanceFrozen()` gates the seeding interval, `seedAllTables`, `seatHorse`, the rotator interval, `considerSeatChanges`, the tournament-leave loop, the Stable Hand executor and `openPlannedTables` |
-| no `is_horse` special-casing that skips a player rule       | **none found** in this lane. `fn_nit_evictions` carries the *removed* horse predicate as a comment, and the fleet's `is_horse` reads are all identification (telling a horse seat from a human one so a HUMAN gets rescue priority) |
-| a horse leaves a lone dead table after 10 minutes           | **the rule is correct; it was not running** - see P0-F1 |
+| question (lane brief)                                    | answer                                                                                                                                                                                                                              |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| horses use the same seat change as humans                | **yes** - one door, `fn_cash_seat_change_request`; the only line that differs is `fn_caller_is_engine()` naming the player. Same roster budget, same refusals                                                                       |
+| horses never sit on closed / breaking tables             | **yes** - 0 horse seats on `lifecycle` closed or breaking, 0 on `status='closed'`                                                                                                                                                   |
+| a horse with two chairs in one game                      | **0**                                                                                                                                                                                                                               |
+| a horse on a lifecycle-closed table                      | **0**                                                                                                                                                                                                                               |
+| horses on non-cluster cash tables                        | **0**                                                                                                                                                                                                                               |
+| the four-table limit does not count a within-game move   | **yes** - `fn_enforce_four_table_limit` returns early on `app.cash_seat_move = 'on'`                                                                                                                                                |
+| swaps are not reservations                               | **yes** - the pending-move read filters `.is('swap_move_id', null)`                                                                                                                                                                 |
+| band supply falls back one band down when no game exists | **yes** - `projectStakeBandOnto` is downward-only and fails open on an unread floor; mirrored in SQL by `fn_project_stake_band`                                                                                                     |
+| a horse only plays a stake its bankroll supports         | **yes** - `rollSupportsStake` = `available >= max(20, buyInsToSit) x 100bb`; the tagger applies the roll as a ceiling and never as a floor                                                                                          |
+| the fleet respects the :55 freeze                        | **yes** - `isMaintenanceFrozen()` gates the seeding interval, `seedAllTables`, `seatHorse`, the rotator interval, `considerSeatChanges`, the tournament-leave loop, the Stable Hand executor and `openPlannedTables`                |
+| no `is_horse` special-casing that skips a player rule    | **none found** in this lane. `fn_nit_evictions` carries the _removed_ horse predicate as a comment, and the fleet's `is_horse` reads are all identification (telling a horse seat from a human one so a HUMAN gets rescue priority) |
+| a horse leaves a lone dead table after 10 minutes        | **the rule is correct; it was not running** - see P0-F1                                                                                                                                                                             |
 
 ---
 
@@ -406,8 +406,7 @@ Every one of these was read from production at 18:00-22:32, not inferred:
   `feeder_opened`, 159 `feeder_live`, 36 `feeder_abandoned` (**82% of opened
   feeders now go live** - the 2026-09-06 programme's target was "well above a
   half", against a 14/25 baseline). 15 `controller_tick_error`.
-- Four-game load over the 584 Midway horses: 393 at 4, 128 at 5, 19 at 6, 1 at
-  7. Loads above four exist because a chair in an event already entered is
+- Four-game load over the 584 Midway horses: 393 at 4, 128 at 5, 19 at 6, 1 at 7. Loads above four exist because a chair in an event already entered is
   honoured rather than refused (`fn_enforce_four_table_limit`, 2026-09-09).
 - 73 REGISTERING tournaments are **overdue by more than an hour** holding
   2,550 bookings. Outside this lane, named because those bookings sit inside
@@ -453,10 +452,10 @@ line 272 and the bare `if (error || !chunk) return;` at line 282 - it works
 only because the constraints were removed, and it is one migration away from
 being dark again. This lane's fix is the only one on that path.
 
-| test | asserted | why red | moved to |
-| ---- | -------- | ------- | -------- |
+| test                                                                                                            | asserted                                               | why red                                                 | moved to                                                                                                                                                   |
+| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `PagedReadsCannotLieAboutBeingComplete` > "declines the pass on a failed page rather than rotating half a room" | the literal one-liner `if (error \|\| !chunk) return;` | the branch is now a block that reports before returning | the guard still exists, its branch still `return;`s, **and** it must carry `seat_read_failed` and a `console.warn` - the silence is now pinned as a defect |
-| `theClubProgrammeMirrorsTheHouse` > "the rotator walks one horse out per cycle through the engine" | `tables!inner(id, big_blind, ... created_at)` | the embed names its foreign key now | the same full column list, against the **qualified** embed - strictly stronger, since the read can no longer be broken by a migration in another lane |
+| `theClubProgrammeMirrorsTheHouse` > "the rotator walks one horse out per cycle through the engine"              | `tables!inner(id, big_blind, ... created_at)`          | the embed names its foreign key now                     | the same full column list, against the **qualified** embed - strictly stronger, since the read can no longer be broken by a migration in another lane      |
 
 `PagedReadsCannotLieAboutBeingComplete` also gained a new pin - the read names
 its foreign key and no unqualified `tables!inner(` may come back - because
@@ -468,9 +467,9 @@ purest form of that lie.
 
 Two mutations, applied to `HorseSessionRotator.ts`, run, then reverted:
 
-| mutation | red |
-| -------- | --- |
-| the reporting block -> `if (error \|\| !chunk) return;` (a silent decline) | **3 failed**: `aDeadReadIsNotAnEmptyRoom` "reports and warns before it declines the pass" + "throttles the report", and `PagedReads` "declines the pass on a failed page" |
+| mutation                                                                                              | red                                                                                                                                                                                                                                                                  |
+| ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the reporting block -> `if (error \|\| !chunk) return;` (a silent decline)                            | **3 failed**: `aDeadReadIsNotAnEmptyRoom` "reports and warns before it declines the pass" + "throttles the report", and `PagedReads` "declines the pass on a failed page"                                                                                            |
 | `tables!table_seats_table_id_fkey!inner(` -> `tables!inner(` (the actual 2026-09-09 outage condition) | **4 failed**: `aDeadReadIsNotAnEmptyRoom` "embeds tables through table_seats_table_id_fkey by name" + "carries NO unqualified tables embed", `PagedReads` "names its foreign key", and `theClubProgrammeMirrorsTheHouse` "the rotator walks one horse out per cycle" |
 
 The file was restored from a byte copy taken before the first mutation and
@@ -520,18 +519,18 @@ probing. Nothing was committed, pushed or applied.
 
 ## Files changed by this lane
 
-| file | change |
-| ---- | ------ |
-| `server/src/services/HorseSessionRotator.ts` | P0: the embed names its foreign key; a failed page reports and warns before declining; the seat-change memo is pruned against the room |
-| `server/src/services/HorseBehavior.ts` | P1-F2: `pruneSeatChangeMemo`, pure and tested |
-| `server/src/engine/HorseLogic.ts` | P1-F3: `vpipTargetFor`, `VPIP_JUDGED_OVER_HANDS`, `VPIP_FLOOR_MARGIN_SIGMAS`; the cushion is derived |
-| `server/src/services/HorseFleetManager.ts` | P3-F6: dead `getNextClubId` / `clubIndex` / `MIDWAY_UNION_ID` removed |
-| `server/src/services/aDeadReadIsNotAnEmptyRoom.law.test.ts` | **new** - the law that would have caught the P0 |
-| `docs/laws.d/a-dead-read-is-not-an-empty-room.md` | **new** - its registry entry |
-| `server/src/engine/HorseVpipFloor.test.ts` | pins moved to the derived cushion, with the derivation |
-| `tests/a-vpip-floor-must-be-reachable.law.test.ts` | calls the real function instead of a local copy; new sigma pin |
-| `server/src/services/PagedReadsCannotLieAboutBeingComplete.test.ts` | pin moved to the reporting branch; new pin on the named foreign key |
-| `server/src/services/theClubProgrammeMirrorsTheHouse.test.ts` | the same column list, pinned against the qualified embed |
+| file                                                                | change                                                                                                                                 |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `server/src/services/HorseSessionRotator.ts`                        | P0: the embed names its foreign key; a failed page reports and warns before declining; the seat-change memo is pruned against the room |
+| `server/src/services/HorseBehavior.ts`                              | P1-F2: `pruneSeatChangeMemo`, pure and tested                                                                                          |
+| `server/src/engine/HorseLogic.ts`                                   | P1-F3: `vpipTargetFor`, `VPIP_JUDGED_OVER_HANDS`, `VPIP_FLOOR_MARGIN_SIGMAS`; the cushion is derived                                   |
+| `server/src/services/HorseFleetManager.ts`                          | P3-F6: dead `getNextClubId` / `clubIndex` / `MIDWAY_UNION_ID` removed                                                                  |
+| `server/src/services/aDeadReadIsNotAnEmptyRoom.law.test.ts`         | **new** - the law that would have caught the P0                                                                                        |
+| `docs/laws.d/a-dead-read-is-not-an-empty-room.md`                   | **new** - its registry entry                                                                                                           |
+| `server/src/engine/HorseVpipFloor.test.ts`                          | pins moved to the derived cushion, with the derivation                                                                                 |
+| `tests/a-vpip-floor-must-be-reachable.law.test.ts`                  | calls the real function instead of a local copy; new sigma pin                                                                         |
+| `server/src/services/PagedReadsCannotLieAboutBeingComplete.test.ts` | pin moved to the reporting branch; new pin on the named foreign key                                                                    |
+| `server/src/services/theClubProgrammeMirrorsTheHouse.test.ts`       | the same column list, pinned against the qualified embed                                                                               |
 
 **Shared files touched: none.** Every file above is lane F's. The tournament
 and client paths carrying the same dead embed are listed under P0-F1 with line

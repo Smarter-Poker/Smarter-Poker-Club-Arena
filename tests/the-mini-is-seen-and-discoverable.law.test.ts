@@ -401,6 +401,25 @@ describe('a club without a union owns its mini switch (Dan 2026-09-11)', () => {
     );
   });
 
+  it('the switch names its own actor, and refuses a caller with no session', () => {
+    /* check-definer-authorization blocked this function on its first push: a
+       SECURITY DEFINER writer a browser can execute, whose actor arrived one
+       call down inside fn_is_club_admin_uid. Named here now - and that also
+       closed a real case, since a service-role caller has no auth.uid() and
+       used to fall through to the misleading `not_a_club_admin`. */
+    const actorSql = read(
+      'supabase/migrations/20260911142515_the_mini_switch_names_who_is_asking.sql'
+    );
+    expect(actorSql).toMatch(/v_actor := auth\.uid\(\);/);
+    expect(actorSql).toMatch(
+      /IF v_actor IS NULL THEN\s*RETURN jsonb_build_object\('ok', false, 'reason', 'not_signed_in'\);/
+    );
+    // the actor is the SESSION, never a parameter
+    expect(actorSql).not.toMatch(/v_actor := p_/);
+    // and the migration asserts both, so a later replace cannot drop them quietly
+    expect(actorSql).toMatch(/RAISE EXCEPTION 'the mini switch must name its own actor'/);
+  });
+
   it('only a club admin may set it, and never for a club inside a union', () => {
     const fn = toggleSql.slice(
       toggleSql.indexOf('CREATE OR REPLACE FUNCTION public.fn_bbj_set_club_mini_enabled')

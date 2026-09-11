@@ -40,6 +40,7 @@ Three migrations, all applied.
 | `20260911133435` | `fn_bbj_mini_for_club` - the mini as a player sees it; `fn_bbj_hand_detail` says which jackpot a hand was; `fn_bbj_analytics` gains the mini's own numbers |
 | `20260911133927` | `fn_bbj_recent_hits` gains `p_kind`, so the winners list can be asked for one jackpot at a time and `total_hits` counts what the list counts               |
 | `20260911140713` | `bbj_pools.mini_enabled`, the payout honours it, `fn_bbj_set_club_mini_enabled`, and the feed reports whose switch it is                                   |
+| `20260911142515` | the switch names its own actor - `auth.uid()` in the function, not one call down - after `check-definer-authorization` blocked the push                    |
 
 **On the files versus what ran.** Each file's version is the one production
 recorded, not the one `new-migration.mjs` reserved: the management API stamps
@@ -144,6 +145,23 @@ success case:
 | union club's own admin            | `union_club_follows_the_union`                                              |
 | solo club's admin on its own club | `ok:true mini_enabled:false`, and the row stored `f`                        |
 | a plain player, and a non-member  | `not_a_club_admin` for both                                                 |
+
+### The guard caught the version of this that was one call too clever
+
+`check-definer-authorization` **blocked the first push**, correctly: a
+`SECURITY DEFINER` function that writes, that a browser role can execute, and
+that never names `auth.uid()` itself. The actor _was_ derived from the session -
+inside `fn_is_club_admin_uid`, one call down - so this was indirection rather
+than an open door. But a guard that has to follow a helper to clear a
+browser-reachable definer writer will eventually follow it wrong.
+
+`20260911142515` names the actor in the function. That was not paperwork: the
+function is granted to `service_role`, a service-role caller has no
+`auth.uid()`, and before the fix such a caller fell through to
+`not_a_club_admin` - a refusal that named the wrong reason. It now answers
+`not_signed_in`, which is what is actually true. Re-probed, rolled back: no
+session -> `not_signed_in`; the club's own admin -> `ok:true`, stored `f`; a
+union club -> `union_club_follows_the_union`.
 
 The order is deliberate and pinned: **authorize before explaining**, so a
 stranger cannot learn a club's union shape from a refusal. The idempotency

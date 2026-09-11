@@ -49,10 +49,9 @@ flock -w "$LOCK_WAIT" 7 || die 'engine image build lock is unavailable for reten
 declare -A protected=()
 shopt -s nullglob
 for file in "$LEASE_ROOT"/*.lease; do
-  case "$(basename "$file")" in
-    [1-9][0-9]*.lease|[1-9][0-9]*-[1-9][0-9]*.lease) ;;
-    *) die 'engine image lease directory contains an invalid entry' ;;
-  esac
+  lease_name="$(basename "$file")"
+  [[ "$lease_name" =~ ^[1-9][0-9]*(-[1-9][0-9]*)?\.lease$ ]] \
+    || die 'engine image lease directory contains an invalid entry'
   mapfile -t lease_lines < "$file" || die 'engine image lease is unreadable'
   [ "${#lease_lines[@]}" = 1 ] || die 'engine image lease has an invalid field count'
   leased_sha="${lease_lines[0]}"

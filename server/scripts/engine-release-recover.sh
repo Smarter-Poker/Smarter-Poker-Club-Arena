@@ -142,51 +142,36 @@ bounded_recovery_command 15 "$CONTROL_DIR/engine-release-seal.py" attest-termina
 # edge still exist. A crash here simply replays the request and recreates the
 # same validated pin; it can never strand a pin that blocks generation GC.
 PIN_FILE="$PIN_ROOT/$RUN_ID.generation"
-case "$PIN_FILE" in
-  "$PIN_ROOT"/[1-9][0-9]*.generation|"$PIN_ROOT"/[1-9][0-9]*-[1-9][0-9]*.generation)
-    bounded_recovery_command 10 rm -f -- "$PIN_FILE"
-    ;;
-  *) echo '[engine-release-recover] FATAL: refusing unsafe generation-pin cleanup' >&2; exit 1 ;;
-esac
+[[ "$PIN_FILE" =~ ^"$PIN_ROOT"/[1-9][0-9]*(-[1-9][0-9]*)?\.generation$ ]] \
+  || { echo '[engine-release-recover] FATAL: refusing unsafe generation-pin cleanup' >&2; exit 1; }
+bounded_recovery_command 10 rm -f -- "$PIN_FILE"
 fsync_directory "$PIN_ROOT"
 
 LEASE_FILE="$LEASE_ROOT/$RUN_ID.lease"
 if [ -d "$LEASE_ROOT" ]; then
-  case "$LEASE_FILE" in
-    "$LEASE_ROOT"/[1-9][0-9]*.lease|"$LEASE_ROOT"/[1-9][0-9]*-[1-9][0-9]*.lease)
-      bounded_recovery_command 10 rm -f -- "$LEASE_FILE"
-      ;;
-    *) echo '[engine-release-recover] FATAL: refusing unsafe image-lease cleanup' >&2; exit 1 ;;
-  esac
+  [[ "$LEASE_FILE" =~ ^"$LEASE_ROOT"/[1-9][0-9]*(-[1-9][0-9]*)?\.lease$ ]] \
+    || { echo '[engine-release-recover] FATAL: refusing unsafe image-lease cleanup' >&2; exit 1; }
+  bounded_recovery_command 10 rm -f -- "$LEASE_FILE"
   fsync_directory "$LEASE_ROOT"
 fi
 
 # Retire auxiliary deadline state while the immutable request still owns a
 # replay. Request deletion remains the final durable state deletion, so any
 # earlier fsync failure can always reconstruct its exact cleanup authority.
-case "$BREAK_DEADLINE_FILE" in
-  "$REQUEST_ROOT"/[1-9][0-9]*.break-deadline|"$REQUEST_ROOT"/[1-9][0-9]*-[1-9][0-9]*.break-deadline)
-    bounded_recovery_command 10 rm -f -- "$BREAK_DEADLINE_FILE"
-    ;;
-  *) echo '[engine-release-recover] FATAL: refusing unsafe break-deadline cleanup' >&2; exit 1 ;;
-esac
+[[ "$BREAK_DEADLINE_FILE" =~ ^"$REQUEST_ROOT"/[1-9][0-9]*(-[1-9][0-9]*)?\.break-deadline$ ]] \
+  || { echo '[engine-release-recover] FATAL: refusing unsafe break-deadline cleanup' >&2; exit 1; }
+bounded_recovery_command 10 rm -f -- "$BREAK_DEADLINE_FILE"
 fsync_directory "$REQUEST_ROOT"
 
 INTENT_FILE="$REQUEST_ROOT/$RUN_ID.intent"
-case "$INTENT_FILE" in
-  "$REQUEST_ROOT"/[1-9][0-9]*.intent|"$REQUEST_ROOT"/[1-9][0-9]*-[1-9][0-9]*.intent)
-    bounded_recovery_command 10 rm -f -- "$INTENT_FILE"
-    ;;
-  *) echo '[engine-release-recover] FATAL: refusing unsafe release-intent cleanup' >&2; exit 1 ;;
-esac
+[[ "$INTENT_FILE" =~ ^"$REQUEST_ROOT"/[1-9][0-9]*(-[1-9][0-9]*)?\.intent$ ]] \
+  || { echo '[engine-release-recover] FATAL: refusing unsafe release-intent cleanup' >&2; exit 1; }
+bounded_recovery_command 10 rm -f -- "$INTENT_FILE"
 fsync_directory "$REQUEST_ROOT"
 
-case "$REQUEST_FILE" in
-  "$REQUEST_ROOT"/[1-9][0-9]*.request|"$REQUEST_ROOT"/[1-9][0-9]*-[1-9][0-9]*.request)
-    bounded_recovery_command 10 rm -f -- "$REQUEST_FILE"
-    ;;
-  *) echo '[engine-release-recover] FATAL: refusing unsafe request cleanup' >&2; exit 1 ;;
-esac
+[[ "$REQUEST_FILE" =~ ^"$REQUEST_ROOT"/[1-9][0-9]*(-[1-9][0-9]*)?\.request$ ]] \
+  || { echo '[engine-release-recover] FATAL: refusing unsafe request cleanup' >&2; exit 1; }
+bounded_recovery_command 10 rm -f -- "$REQUEST_FILE"
 fsync_directory "$REQUEST_ROOT"
 
 # This exact per-attempt unit remains enabled until pin, intent, request, and

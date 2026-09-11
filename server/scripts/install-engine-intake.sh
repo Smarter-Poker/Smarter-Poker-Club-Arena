@@ -62,7 +62,8 @@ INTAKE_LOCK="/var/lock/club-arena-engine-intake-$RUN_ID.lock"
 case "$STAGE" in "$STAGING_ROOT/$RUN_ID") ;; *) die 'unsafe staging path' ;; esac
 case "$REQUEST_FILE" in "$INTAKE_ROOT/$RUN_ID.request") ;; *) die 'unsafe request path' ;; esac
 case "$INTENT_FILE" in "$INTAKE_ROOT/$RUN_ID.intent") ;; *) die 'unsafe intent path' ;; esac
-case "$INTAKE_LOCK" in /var/lock/club-arena-engine-intake-[1-9][0-9]*-[1-9][0-9]*.lock) ;; *) die 'unsafe intake lock path' ;; esac
+[[ "$INTAKE_LOCK" =~ ^/var/lock/club-arena-engine-intake-[1-9][0-9]*-[1-9][0-9]*\.lock$ ]] \
+  || die 'unsafe intake lock path'
 [ -x "$STAGE/server/scripts/engine-release-intake.sh" ] || die 'durable intake entrypoint is missing'
 SCRIPT_PATH="$(readlink -e -- "${BASH_SOURCE[0]}" || true)"
 [ "$SCRIPT_PATH" = "$STAGE/server/scripts/install-engine-intake.sh" ] \

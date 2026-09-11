@@ -44,7 +44,8 @@ INTAKE_LOCK="/var/lock/club-arena-engine-intake-$RUN_ID.lock"
 case "$REQUEST_FILE" in "$INTAKE_ROOT/$RUN_ID.request") ;; *) die 'unsafe intake request path' ;; esac
 case "$INTENT_FILE" in "$INTAKE_ROOT/$RUN_ID.intent") ;; *) die 'unsafe intake intent path' ;; esac
 case "$STAGE" in "$STAGING_ROOT/$RUN_ID") ;; *) die 'unsafe control staging path' ;; esac
-case "$INTAKE_LOCK" in /var/lock/club-arena-engine-intake-[1-9][0-9]*-[1-9][0-9]*.lock) ;; *) die 'unsafe intake lock path' ;; esac
+[[ "$INTAKE_LOCK" =~ ^/var/lock/club-arena-engine-intake-[1-9][0-9]*-[1-9][0-9]*\.lock$ ]] \
+  || die 'unsafe intake lock path'
 exec 7>"$INTAKE_LOCK"
 flock -w 30 7 || retry 'another exact intake invocation still owns this run key'
 

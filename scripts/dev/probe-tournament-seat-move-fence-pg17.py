@@ -12,7 +12,17 @@ import tempfile
 repo = Path(__file__).resolve().parents[2]
 pg = Path(os.environ.get("PG17_BINDIR", "/opt/homebrew/opt/postgresql@17/bin"))
 assert " 17." in subprocess.check_output([str(pg / "postgres"), "--version"], text=True)
-source = (repo / "scripts/deploy/phase-three-strict-tournament-cutover.sql").read_text()
+migration_name = "stage_b_current_postimage_contraction"
+migration_directory = repo / "supabase/migrations"
+migration_matches = sorted(
+    path for path in migration_directory.iterdir()
+    if path.is_file() and re.fullmatch(
+        rf"[0-9]{{14}}_{re.escape(migration_name)}\.sql(?:\.pending)?",
+        path.name,
+    )
+)
+assert len(migration_matches) == 1, "Expected exactly one staged-or-promoted Stage-B contraction"
+source = migration_matches[0].read_text()
 hooks = re.findall(
     r"CREATE OR REPLACE FUNCTION smarter_private\.fn_smarter_data_api_pre_request\(\)[\s\S]*?\$function\$;",
     source,

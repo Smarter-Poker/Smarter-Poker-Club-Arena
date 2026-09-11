@@ -7,6 +7,15 @@
  * process that declared it". Those three are what is pinned.
  */
 
+import type { MaintenanceThawRequest } from './maintenanceThawV3.js';
+function releaseFor(request: Readonly<MaintenanceThawRequest>) {
+  return {
+    ...request,
+    creditedThroughAt: Date.now(),
+    effectiveFrozenSeconds: (Date.now() - request.freezeStartedAt) / 1000,
+  };
+}
+
 import { describe, it, expect, beforeEach, beforeAll, vi, afterEach } from 'vitest';
 import {
   MaintenanceBreak,
@@ -89,6 +98,9 @@ class FakeEngine {
 }
 
 class FakeStore implements MaintenanceBreakStore {
+  async loadReleaseBoundary(): Promise<number | null> {
+    return null;
+  }
   row: PersistedMaintenanceBreak | null = null;
   saves = 0;
   clears = 0;
@@ -804,9 +816,10 @@ describe('the end of the break', () => {
       isRunning: () => true,
       emit: () => {},
       store,
-      thaw: async (startedAt, seconds) => {
+      thaw: async (request) => {
         events.push('thaw');
-        thawArgs = { startedAt, seconds };
+        thawArgs = { startedAt: request.freezeStartedAt, seconds: request.frozenSeconds };
+        return releaseFor(request);
       },
     });
     engines.get('t0')!.resumeFromMaintenance = function (this: FakeEngine) {
@@ -818,7 +831,7 @@ describe('the end of the break', () => {
     parkAll(engines);
     await mb.beginCountdown();
     const started = Date.now();
-    vi.advanceTimersByTime(MaintenanceBreak.BREAK_DURATION_MS);
+    await vi.advanceTimersByTimeAsync(MaintenanceBreak.BREAK_DURATION_MS);
     await mb.end();
 
     expect(events).toEqual(['thaw', 'resume']);
@@ -827,9 +840,8 @@ describe('the end of the break', () => {
     expect(thawArgs!.startedAt).toBeLessThanOrEqual(started);
   });
 
-  it('a thaw failure never leaves the platform frozen', async () => {
-    // Five minutes of clock drift is a wrong that heals; a platform that
-    // stays frozen is not.
+  it('a thaw failure retains the freeze until recovery is proved', async () => {
+    // A failed transport is not a durable release certificate.
     const { mb, engines } = build(2);
     (mb as any).deps.thaw = async () => {
       throw new Error('PGRST002');
@@ -839,9 +851,9 @@ describe('the end of the break', () => {
     await mb.beginCountdown();
     await mb.end();
     for (const [id, e] of engines) {
-      expect(e.paused, `${id} stayed frozen after a thaw failure`).toBe(false);
+      expect(e.paused, `${id} resumed without a release receipt`).toBe(true);
     }
-    expect(mb.isActive()).toBe(false);
+    expect(mb.isActive()).toBe(true);
   });
 
   it('measures the WHOLE freeze across a restart, not this process`s slice', async () => {
@@ -864,8 +876,9 @@ describe('the end of the break', () => {
       isRunning: () => true,
       emit: () => {},
       store,
-      thaw: async (_startedAt, seconds) => {
-        thawSeconds = seconds;
+      thaw: async (request) => {
+        thawSeconds = request.frozenSeconds;
+        return releaseFor(request);
       },
     });
     await mb.start();
@@ -1320,7 +1333,7 @@ describe('surviving the restart', () => {
     expect(store.row).toBeNull();
   });
 
-  it('ignores an expired row rather than blacking out the platform', async () => {
+  it('adopts an expired row and schedules its recovery', async () => {
     const { mb, engines, store } = build(2);
     store.row = {
       phase: 'counting_down',
@@ -1332,9 +1345,11 @@ describe('surviving the restart', () => {
     };
     await mb.start();
 
+    expect(mb.isActive()).toBe(true);
+    expect([...engines.values()][0].paused).toBe(true);
+    expect(store.clears).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
     expect(mb.isActive()).toBe(false);
-    expect([...engines.values()][0].paused).toBe(false);
-    expect(store.clears).toBe(1);
   });
 
   it('owns a foreign expired row before cleanup so a failed clear cannot poison the next hour', async () => {
@@ -1360,6 +1375,7 @@ describe('surviving the restart', () => {
     await mb.start();
     const adoptedToken = store.row!.ownershipToken;
     expect(adoptedToken).not.toBe('retired-process-token');
+    await vi.advanceTimersByTimeAsync(1);
     expect(mb.isActive()).toBe(false);
 
     await mb.announceLastHand();
@@ -1415,10 +1431,8 @@ describe('surviving the restart', () => {
     expect([...engines.values()][0].paused).toBe(false);
   });
 
-  it('deals normally when the break row cannot be read at all', async () => {
-    // Fails OPEN on purpose. A database blip must not become a platform
-    // outage - the worst case is a visible restart, which is where we were
-    // before this existed.
+  it('holds and retries when the break row cannot be read', async () => {
+    // Unknown durable state cannot authorize a release.
     const { mb, engines, store } = build(2);
     let loads = 0;
     store.load = async () => {
@@ -1432,8 +1446,8 @@ describe('surviving the restart', () => {
     );
     await starting;
     expect(loads).toBe(MaintenanceBreak.RESTORE_ATTEMPTS);
-    expect(mb.isActive()).toBe(false);
-    expect([...engines.values()][0].paused).toBe(false);
+    expect(mb.isActive()).toBe(true);
+    expect([...engines.values()][0].paused).toBe(true);
   });
 
   it('retries a boot-time read that fails once, and honours the break it then finds', async () => {
@@ -1561,6 +1575,7 @@ describe('the schedule', () => {
       isRunning: () => true,
       emit: () => {},
       store: {
+        loadReleaseBoundary: async () => null,
         load: async () => null,
         save: async () => {
           throw new Error('database refused the announcement');
@@ -1682,6 +1697,7 @@ describe('the maintenance owner cannot outlive shutdown', () => {
       isRunning: () => true,
       emit: () => {},
       store: {
+        loadReleaseBoundary: async () => null,
         load: () => loading.promise,
         save: async () => {},
         claim: async () => null,
@@ -1722,6 +1738,7 @@ describe('the maintenance owner cannot outlive shutdown', () => {
       isRunning: () => true,
       emit: () => {},
       store: {
+        loadReleaseBoundary: async () => null,
         load: async () => null,
         save: () => {
           saveStarted = true;
@@ -1767,9 +1784,10 @@ describe('the maintenance owner cannot outlive shutdown', () => {
       isRunning: () => true,
       emit: () => {},
       store: new FakeStore(),
-      thaw: () => {
+      thaw: async (request) => {
         thawStarted = true;
-        return thawing.promise;
+        await thawing.promise;
+        return releaseFor(request);
       },
       setTimer: ((fn: () => void, ms: number) => {
         timers.push({ fn, ms });

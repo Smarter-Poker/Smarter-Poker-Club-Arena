@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm, symlink } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildBundle } from '../../operations/release/build-bundle.mjs';
@@ -25,6 +25,12 @@ test('real dependency bundle is reproducible, binds rendered identity and reject
     assert.equal(first.bundle_digest, second.bundle_digest);
     const manifest = await verifyBundle(first.output, first.bundle_digest, readFile);
     assert.ok(manifest.files['node_modules/pg/lib/client.js']);
+    assert.ok(manifest.files['fixture/package-lock.json']);
+    assert.ok(manifest.files['fixture/fixture-server.mjs']);
+    assert.equal(
+      Object.keys(manifest.files).some((name) => name.startsWith('fixture/node_modules/')),
+      false
+    );
     const unit = await readFile(
       path.join(first.output, 'native/club-arena-release-controller.service'),
       'utf8'
@@ -46,6 +52,31 @@ test('real dependency bundle is reproducible, binds rendered identity and reject
     await rm(directory, { recursive: true, force: true });
   }
 });
+test('excluding fixture installs never permits symlinks in installed control source', async () => {
+  const work = fileURLToPath(new URL('../../work/', import.meta.url));
+  await mkdir(work, { recursive: true });
+  const directory = await mkdtemp(path.join(work, 'bundle-link-test-'));
+  try {
+    await writeFile(path.join(directory, 'outside'), 'synthetic outside bytes');
+    for (const [index, name] of ['controller.mjs', 'fixture/fixture-server.mjs'].entries()) {
+      const source = path.join(directory, 'source-' + index);
+      await mkdir(path.dirname(path.join(source, name)), { recursive: true });
+      await symlink(path.join(directory, 'outside'), path.join(source, name));
+      await assert.rejects(
+        buildBundle({
+          source,
+          output: path.join(directory, 'output-' + index),
+          serviceUser: 'existing_test_user',
+          serviceGroup: 'existing_test_group',
+        }),
+        /RELEASE_BUNDLE_SYMLINK_REFUSED/
+      );
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('native upgrade must be an exact component of the pending active release and restored DB identity', () => {
   const native_upgrade = { bundle_digest: 'b'.repeat(64), prior_bundle_digest: 'a'.repeat(64) };
   const intent = {

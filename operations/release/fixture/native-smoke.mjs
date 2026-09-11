@@ -24,6 +24,7 @@ import {
   nativeFailureDiagnostic,
   NativeDatabaseOwner,
   nativeChildFailure,
+  realtimeLogDiagnostic,
 } from './runtime-files.mjs';
 
 const exec = promisify(execFile);
@@ -863,6 +864,14 @@ try {
     if (oom) diagnostic.service_oom_kills = Number(oom[1]);
   } catch {
     /* Availability is not evidence of absence. */
+  }
+  try {
+    Object.assign(
+      diagnostic,
+      realtimeLogDiagnostic(await readFile(`${root}/private/realtime.log`, 'utf8'))
+    );
+  } catch {
+    /* A failure before Realtime starts has no service log. */
   }
   console.error(JSON.stringify(diagnostic));
   process.exitCode = 1;

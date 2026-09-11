@@ -13,6 +13,18 @@ spec.loader.exec_module(m)
 
 
 class NativeDiagnosticsTests(unittest.TestCase):
+    def test_realtime_crash_diagnostics_are_bounded_and_never_raw_text(self):
+        row = {'status':'failed', 'stage':'realtime-server-ready', 'error':'Error',
+               'realtime_log_markers': (2 ** 22) - 1, 'realtime_frames':['a' * 64 + ':42']}
+        self.assertEqual(m.native_failures(json.dumps(row)), [{
+            'stage':row['stage'], 'category':'Error', 'realtime_log_markers':row['realtime_log_markers'],
+            'realtime_frames':row['realtime_frames']}])
+        for value in [2 ** 22, -1, True, None, '1']:
+            self.assertEqual(m.native_failures(json.dumps({**row, 'realtime_log_markers':value})), [])
+        for value in ['PRIVATE', None, ['private.ex:42'], ['a' * 64 + ':0'], ['a' * 64 + ':42'] * 9]:
+            self.assertEqual(m.native_failures(json.dumps({**row, 'realtime_frames':value})), [])
+        self.assertEqual(m.native_failures(json.dumps({**row, 'stderr':'PRIVATE'})), [])
+
     def test_native_service_exit_diagnostics_are_strict(self):
         row={'status':'failed', 'stage':'realtime-server-ready', 'error':'Error',
              'native_service':'realtime', 'service_signal':'SIGKILL', 'service_oom_kills':1}

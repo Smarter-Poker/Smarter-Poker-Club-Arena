@@ -7,6 +7,48 @@ import { promisify } from 'node:util';
 
 const exec = promisify(execFile);
 
+// Presence bits are fixed labels, never log excerpts. Hashed source frames can
+// be matched to the pinned upstream tree without exporting private log text.
+export const realtimeLogMarkers = Object.freeze([
+  'SIGTERM received',
+  'Application realtime exited',
+  'reached_max_restart_intensity',
+  'failed_to_start_child',
+  'connection refused',
+  'connection not available',
+  'MatchError',
+  'ArgumentError',
+  'FunctionClauseError',
+  'KeyError',
+  'UndefinedFunctionError',
+  'CaseClauseError',
+  'SystemLimitError',
+  'RuntimeError',
+  'Postgrex.Error',
+  'DBConnection.ConnectionError',
+  'eaddrinuse',
+  'enospc',
+  'emfile',
+  'eacces',
+  'shutdown',
+  'terminating',
+]);
+export function realtimeLogDiagnostic(output) {
+  if (typeof output !== 'string' || output.length > 8 * 1024 * 1024) return {};
+  let markers = 0;
+  realtimeLogMarkers.forEach((marker, index) => {
+    if (output.includes(marker)) markers += 2 ** index;
+  });
+  const frames = [
+    ...new Set(
+      [...output.matchAll(/\b([a-z][a-z0-9_]{0,63}\.(?:ex|erl)):([1-9][0-9]{0,5})\b/g)].map(
+        (match) => createHash('sha256').update(match[1]).digest('hex') + ':' + match[2]
+      )
+    ),
+  ].slice(0, 8);
+  return { realtime_log_markers: markers, realtime_frames: frames };
+}
+
 export function nativeChildFailure(children) {
   const child = children.find(
     (item) => item.nativeFailed || item.exitCode !== null || item.signalCode !== null

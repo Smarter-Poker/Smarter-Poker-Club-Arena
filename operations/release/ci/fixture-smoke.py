@@ -52,7 +52,7 @@ def native_failures(output):
     # names, SQL, service logs, or additional fields from child output.
     records = []
     for line in output.splitlines():
-        if len(line) > 512:
+        if len(line) > 2048:
             continue
         try:
             row = json.loads(line)
@@ -64,6 +64,15 @@ def native_failures(output):
         has_native_line = 'native_line' in row
         native_line = row.pop('native_line', None)
         if has_native_line and (type(native_line) is not int or not 1 <= native_line <= 9999):
+            continue
+        realtime = {key: row.pop(key) for key in ('realtime_log_markers', 'realtime_frames') if key in row}
+        if realtime and (set(realtime) != {'realtime_log_markers', 'realtime_frames'}
+                or type(realtime['realtime_log_markers']) is not int
+                or not 0 <= realtime['realtime_log_markers'] < 2 ** 22
+                or not isinstance(realtime['realtime_frames'], list)
+                or len(realtime['realtime_frames']) > 8
+                or any(not isinstance(frame, str) or not re.fullmatch('[0-9a-f]{64}:[1-9][0-9]{0,5}', frame)
+                       for frame in realtime['realtime_frames'])):
             continue
         service = {key: row.pop(key) for key in ('native_service', 'service_exit_code',
                    'service_signal', 'service_oom_kills') if key in row}
@@ -137,6 +146,7 @@ def native_failures(output):
         record.update(auth)
         record.update(listener)
         record.update(service)
+        record.update(realtime)
         if record not in records:
             records.append(record)
     return records

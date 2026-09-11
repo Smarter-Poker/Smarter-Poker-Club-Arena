@@ -29,6 +29,9 @@ export async function buildBundle({
     for (const entry of (await readdir(directory)).sort()) {
       if (entry === '__pycache__' || entry.endsWith('.pyc')) continue;
       const name = prefix + entry;
+      // These packages belong inside the independently built Linux fixture
+      // image. Host installs include CLI symlinks and are not controller deps.
+      if (name === 'fixture/node_modules') continue;
       const from = path.join(directory, entry);
       const info = await lstat(from);
       if (info.isSymbolicLink()) throw new Error('RELEASE_BUNDLE_SYMLINK_REFUSED');

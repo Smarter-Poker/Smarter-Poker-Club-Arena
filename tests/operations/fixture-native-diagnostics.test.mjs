@@ -7,7 +7,35 @@ import { promisify } from 'node:util';
 import {
   nativeFailureDiagnostic,
   nativeChildFailure,
+  realtimeLogDiagnostic,
+  realtimeLogMarkers,
 } from '../../operations/release/fixture/runtime-files.mjs';
+
+test('private Realtime crashes retain only fixed presence bits and hashed source frames', () => {
+  const output =
+    'PRIVATE JWT\n** (MatchError) PRIVATE SQL\n (realtime) lib/realtime/example.ex:42: private_value\n' +
+    '(realtime) lib/realtime/example.ex:42: private_value\nApplication realtime exited: shutdown';
+  const actual = realtimeLogDiagnostic(output);
+  assert.equal(
+    actual.realtime_log_markers,
+    ['MatchError', 'Application realtime exited', 'shutdown'].reduce(
+      (value, marker) => value + 2 ** realtimeLogMarkers.indexOf(marker),
+      0
+    )
+  );
+  assert.deepEqual(actual.realtime_frames, [
+    createHash('sha256').update('example.ex').digest('hex') + ':42',
+  ]);
+  assert.ok(!JSON.stringify(actual).includes('PRIVATE'));
+  assert.ok(!JSON.stringify(actual).includes('example.ex'));
+  assert.deepEqual(realtimeLogDiagnostic(null), {});
+  assert.deepEqual(realtimeLogDiagnostic('a'.repeat(8 * 1024 * 1024 + 1)), {});
+  assert.equal(
+    realtimeLogDiagnostic(Array.from({ length: 20 }, (_, i) => `file.ex:${i + 1}`).join('\n'))
+      .realtime_frames.length,
+    8
+  );
+});
 
 test('actual native child exit and signal retain only reviewed service identity and status', async () => {
   const child = spawn(process.execPath, ['-e', 'process.exit(7)'], { stdio: 'ignore' });

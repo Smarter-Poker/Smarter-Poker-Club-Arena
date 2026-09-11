@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import net from 'node:net';
-import pg from 'pg';
+import { createRequire } from 'node:module';
 import { once, EventEmitter } from 'node:events';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -11,6 +11,17 @@ import {
 } from '../../operations/release/fixture/runtime-files.mjs';
 
 import { ServiceSupervisor } from '../../operations/release/fixture/fixture-server.mjs';
+
+// Resolve from the fixture's installed lockfile, not an accidental root or
+// controller dependency. CI installs the fixture package before this suite.
+const fixtureRequire = createRequire(
+  new URL('../../operations/release/fixture/package.json', import.meta.url)
+);
+const pg = fixtureRequire('pg');
+assert.equal(
+  fixtureRequire('pg/package.json').version,
+  fixtureRequire('./package.json').dependencies.pg
+);
 
 function packet(type, payload) {
   const length = Buffer.alloc(4);

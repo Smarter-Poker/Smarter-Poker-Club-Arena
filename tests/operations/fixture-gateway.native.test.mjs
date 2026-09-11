@@ -184,7 +184,7 @@ test('only one exact public anonymous key for the declared project is accepted',
   assert.equal(findPublicAnonKey([Buffer.from(supabaseHost + ' ' + opaque)], supabaseHost), opaque);
   assert.throws(() =>
     findPublicAnonKey(
-      [Buffer.from(supabaseHost + ' ' + opaque + ' sb_secret_synthetic')],
+      [Buffer.from(supabaseHost + ' ' + opaque + ' sb_secret_test_gateway')],
       supabaseHost
     )
   );

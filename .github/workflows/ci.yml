@@ -1094,6 +1094,7 @@ jobs:
           RELEASE_TEST_POSTGRES_BIN: /usr/lib/postgresql/17/bin
         run: |
           npm ci --ignore-scripts --prefix operations/release
+          npm ci --ignore-scripts --prefix operations/release/fixture
           npm test --prefix operations/release
       - name: Atomic departures, ownership, rollback and concurrency
         env:

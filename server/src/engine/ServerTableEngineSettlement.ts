@@ -352,7 +352,19 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         `[ServerTableEngine:${this.tableId}] *** BBJ ${kind.toUpperCase()} DRILL FIRED *** ` +
           `hand #${handNumber}. This is a drill, not a real bad beat. The chips are real.`
       );
-      EngineMetrics.bbjDrillsFiredTotal.inc(1);
+      /* EACH FAMILY'S OWN DRILL COUNTER. `bbjDrillsFiredTotal` is documented -
+         in engineInstruments and in the runbook - as the subtrahend in
+         `detected - drills = genuine bad beats`. The first cut of the mini
+         drill incremented it while incrementing the MINI's detected counter,
+         which made `bbj_hits_detected - bbj_drills_fired` under-count genuine
+         main bad beats by one per mini drill and go negative in a window where
+         minis were drilled and no main hit. Two counters, two arithmetics,
+         neither borrowing from the other. */
+      if (kind === 'mini') {
+        EngineMetrics.bbjMiniDrillsFiredTotal.inc(1);
+      } else {
+        EngineMetrics.bbjDrillsFiredTotal.inc(1);
+      }
 
       return {
         kind,

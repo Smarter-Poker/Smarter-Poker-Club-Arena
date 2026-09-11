@@ -118,13 +118,30 @@ describe('the drill cannot arm itself', () => {
     /* The arm row says which jackpot it asked for and the claim hands that
        back, because the engine cannot read the row and must not guess. A mini
        drill taking the main branch would pay a SHARE OF THE POOL for an arm
-       that asked for a flat tier out of the reserve. */
+       that asked for a flat tier out of the reserve.
+
+       ON THE RUNTIME DEFAULT, not the type annotation. The first cut asserted
+       `kind: 'main' | 'mini'` beside a comment claiming it pinned "anything
+       unrecognised reads as main" - it pinned neither, and would have survived
+       the default being changed to 'mini'. The ternary below is the default. */
     expect(drill).toMatch(/claim\.kind === 'mini' \? 'mini' : 'main'/);
-    /* Anything unrecognised - including an arm written before the column
-       existed - reads as 'main', which is what those rows are. */
-    expect(drill).toMatch(/kind: 'main' \| 'mini'/);
     // and the mini branch takes the drill's verdict in place of its detection
     expect(settlement).toMatch(/drillKind === 'mini' && drillResult/);
+  });
+
+  it('each family counts its own drills, so detected minus drills holds for both', () => {
+    /* `bbjDrillsFiredTotal` is documented in engineInstruments AND in the
+       runbook as the subtrahend in `detected - drills = genuine bad beats`.
+       The first cut of the mini drill incremented it while incrementing the
+       MINI's detected counter, so that subtraction under-counted genuine MAIN
+       bad beats by one per mini drill and could go negative. */
+    expect(drill).toMatch(/if \(kind === 'mini'\)/);
+    expect(drill).toMatch(/bbjMiniDrillsFiredTotal\.inc\(1\)/);
+    expect(drill).toMatch(/bbjDrillsFiredTotal\.inc\(1\)/);
+    const instruments = read('../observability/engineInstruments.ts');
+    expect(instruments).toContain('poker_bbj_mini_drills_fired_total');
+    // seeded at zero from boot, like every counter beside it
+    expect(instruments).toContain('bbjMiniDrillsFiredTotal.inc(0);');
   });
 
   it('a database it cannot reach means no drill, never a drill', () => {
@@ -215,25 +232,71 @@ describe('the mini drill is the mini, not a second main', () => {
     expect(migCode).toMatch(/COALESCE\(v_arm\.kind, 'main'\)/);
   });
 
-  it('a mini arm is guarded on the MINI, so it cannot fire into a refusal', () => {
-    /* Arming against a reserve that cannot pay would burn the operator's one
-       arm and pay nothing - the failure the main arm's own "refuse before
-       claiming, never after" comment was written about. */
-    expect(migCode).toMatch(/'mini_is_off_for_this_pool'/);
-    expect(migCode).toMatch(/'reserve_cannot_cover_a_mini_payout'/);
-    expect(migCode).toMatch(/'no_mini_tier_is_enabled'/);
-    // the reserve must cover a payout ABOVE its floor, not merely be non-zero
-    expect(migCode).toMatch(
-      /backup_balance, 0\) - COALESCE\(v_mini\.mini_reserve_floor, 0\) < v_largest/
-    );
+  /** The corrective pass that made the arm's guard the payout's guard. */
+  const fixFile = readdirSync(MIG).find((n) =>
+    /^\d{14}_the_arm_asks_what_the_payout_asks\.sql$/.test(n)
+  );
+  if (!fixFile) throw new Error('the corrective arm migration is not in the tree');
+  const fixCode = readFileSync(resolve(MIG, fixFile), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*--.*$/gm, '');
+
+  it('the arm asks EXACTLY what the payout asks', () => {
+    /* THE DEFECT THIS PINS, found by an adversarial review of the first cut.
+       The guard was `backup - floor < largest_enabled_tier`; the payout asks
+       `backup - parked - THIS tier's amount < floor`. Three holes, each of
+       which fires the arm and then refuses the payout - the exact failure the
+       guard exists to prevent. */
+    // 1. the parked reserve: chips in backup_balance already owed to somebody
+    expect(fixCode).toMatch(/fn_bbj_parked_reserve\(v_pool\.pool_id, 'backup'\)/);
+    // 2. THIS table's tier and ITS enabled bit, not the largest tier's amount
+    expect(fixCode).toMatch(/FROM public\.bbj_stakes_tiers st/);
+    expect(fixCode).toMatch(/'mini_disabled_for_this_tier'/);
+    // 3. the variant, which a mini drill bypasses detectMiniBBJHit to reach
+    expect(fixCode).toMatch(/FROM public\.bbj_qualifying_hands q/);
+    expect(fixCode).toMatch(/'variant_is_not_eligible_for_the_jackpot'/);
+    /* The largest-tier bound was the defect, not a simplification of it, and
+       the reasoning that justified it ("the BB-to-tier map would be duplicated
+       in SQL") was wrong about the facts: bbj_stakes_tiers already carries it. */
+    expect(fixCode).not.toMatch(/max\(mt\.amount\) FILTER \(WHERE mt\.enabled\)/);
   });
 
-  it('the tier bound is the LARGEST enabled, so no BB-to-tier map is duplicated in SQL', () => {
-    /* The big-blind-to-tier mapping lives in the engine. Duplicating it here
-       is how two halves of one rule drift apart; the largest enabled tier is
-       conservative and needs no mapping at all. */
-    expect(migCode).toMatch(/max\(mt\.amount\) FILTER \(WHERE mt\.enabled\)/);
-    expect(migCode).not.toMatch(/big_blind/);
+  it('the arm records the bank it is armed AGAINST', () => {
+    /* It stored `main_balance` for a MINI arm - the one number a mini arm has
+       nothing to do with - and handed it back as confirmation.
+
+       SCOPED TO THE FUNCTION BODIES. The migration's own DO block asserts the
+       same absence at apply time and therefore QUOTES the forbidden string, so
+       an absence assertion over the whole file matches the check that exists
+       to forbid it. A guard that trips on its own guard is the fourth
+       appearance of this trap in this programme; slicing is the answer, not
+       deleting the runtime assertion. */
+    const bodies = fixCode.slice(0, fixCode.indexOf('DO $$'));
+    expect(bodies).toMatch(/pool_balance_at_arm, note, armed_by, kind\)[\s\S]{0,140}v_armed/);
+    expect(bodies).not.toMatch(/v_pool\.main_balance, p_note/);
+    expect(bodies).toMatch(/v_bank\s*:=\s*'backup'/);
+    expect(bodies).toMatch(/v_bank\s*:=\s*'main'/);
+    // and the migration proves it again at apply time, against the live body
+    expect(fixCode).toMatch(/RAISE EXCEPTION 'the arm still records the MAIN balance/);
+  });
+
+  it('already_armed is asked before any balance is read, so it cannot be masked', () => {
+    /* It was LAST, so an operator with an open arm was told the pool was above
+       the ceiling and went to chase a balance. The mini kinds had widened the
+       set of masking refusals from two to five. */
+    const armedAt = fixCode.indexOf("'already_armed'");
+    const poolAt = fixCode.indexOf('fn_bbj_pool_for_club');
+    expect(armedAt).toBeGreaterThan(-1);
+    expect(poolAt).toBeGreaterThan(-1);
+    expect(armedAt).toBeLessThan(poolAt);
+  });
+
+  it('the arms listing can tell a mini arm from a main one', () => {
+    /* The surface the runbook sends an operator to for "what is armed".
+       Without `kind` the two are indistinguishable - beside a balance that
+       meant a different bank for each. */
+    expect(fixCode).toMatch(/a\.kind,/);
+    expect(fixCode).toMatch(/RETURNS TABLE\([\s\S]{0,220}kind text/);
   });
 
   it('a union pool is out of reach for BOTH kinds', () => {

@@ -14,6 +14,7 @@ PSQL = "/opt/homebrew/opt/postgresql@17/bin/psql"
 SOCKET = "/tmp/codex-chip-drift-cutover-e2iav203/socket"
 DB = "full_stage1"
 TID = "87000000-0000-0000-0000-000000000001"
+STAGE_B_RESOLVER = "scripts/ci/stage_b_migration_source.py"
 GUARDS = ("aa_guard_tournament_completing_claim",
  "zzzz_freeze_finalized_tournament_prize_pool",
  "zzzz_tournament_pool_finalization_window_guard",
@@ -164,7 +165,7 @@ def compose(root, variant, probe_path=None):
 def runtime_sql(root):
     # Install exact current narrow authorities inside this transaction only.
     m5 = root / "supabase/migrations/20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql"
-    seat = root / "supabase/migrations/20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql"
+    stage_b = module(root / STAGE_B_RESOLVER, "final_deal_stage_b_source").resolve(root)
     m4 = root / "supabase/migrations/20260909042455_tournament_cash_settlement_has_one_atomic_authority.sql"
     stage = root / "scripts/deploy/phase-three-strict-tournament-cutover.sql"
     lane = root / "supabase/migrations/20260910035245_the_settlement_lane_is_per_tournament_not_platform_wide.sql"
@@ -200,10 +201,10 @@ def runtime_sql(root):
     ]:
         text = definition(path, name, before, after)
         runtime += text + "\n"
-    wrapper = definition(seat, "fn_complete_tournament_terminal", "098ae780395481eaf3b4f273a97b6aa5")
-    wrapper = once(wrapper, "  v_token:=public.fn_ca_open_tournament_seat_exit_authority(",
-                   "  PERFORM public.fn_ca_lock_settlement_lane_global();\n"
-                   "  v_token:=public.fn_ca_open_tournament_seat_exit_authority(")
+    wrapper = definition(
+        stage_b, "fn_complete_tournament_terminal",
+        "96a61ea5e16560735bcb70b355aa79ab",
+    )
     # Match production's first-install shape: implementation at the public
     # name, no retained private copy. The migration must create that copy and
     # install the wrapper itself; its second execution then tests reapplication.
@@ -313,8 +314,10 @@ def main():
             print("\n".join(item["failure_tail"]), flush=True)
             break
     evidence["status"] = "passed" if all(x["passed"] for x in evidence["variants"]) else "failed"
+    stage_b = module(root / STAGE_B_RESOLVER, "final_deal_stage_b_evidence").resolve(root)
     evidence["source_sha256"] = {str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in (Path(__file__), root / "scripts/ci/probes/final-deal-current-terminal-native.sql",
+        for path in (Path(__file__), root / STAGE_B_RESOLVER, stage_b,
+            root / "scripts/ci/probes/final-deal-current-terminal-native.sql",
             root / "scripts/deploy/phase-three-final-deal-terminal-v2.sql",
             root / "scripts/deploy/phase-three-strict-tournament-cutover.sql",
             root / "scripts/dev/build-versioned-final-deal-probe.py")}

@@ -141,6 +141,9 @@ export function thawPassDelayMs(tournamentId: string, spreadMs: number): number 
 
 export abstract class TournamentManagerEliminations extends TournamentManagerBase {
   private thawPass: { generation: number; cancel: () => void } | null = null;
+  // A thaw wake can resume a cursor already past a frozen stage. Retain the
+  // exact debt until that stage actually runs in a later cycle.
+  private readonly frozenStagesOwed = new Set<number>();
   static readonly THAW_PASS_SPREAD_MS = 10_000;
 
   private owePassAfterTheThaw(): void {
@@ -1384,6 +1387,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             this.balanceOwedAfterCycle = true;
           }
 
+          if (!this.eliminationWorkBudgetExpired()) this.frozenStagesOwed.delete(5);
+
           // The old five-second manager interval also happened to poll final
           // table deal votes. Preserve the feature's intended ten-second
           // cadence only after table balancing has proved the field is on one
@@ -1404,6 +1409,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           }
         } else {
           // The skipped stage owes one pass when the actual freeze lifts.
+          this.frozenStagesOwed.add(5);
           this.owePassAfterTheThaw();
         }
         if (completedStage(6)) return;
@@ -1416,7 +1422,12 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         if (sweepStopped()) return;
         // The same debt as the balance stage above: an expansion the freeze
         // skipped is asked for again after the thaw, never dropped.
-        if (isMaintenanceFrozen()) this.owePassAfterTheThaw();
+        if (isMaintenanceFrozen()) {
+          this.frozenStagesOwed.add(6);
+          this.owePassAfterTheThaw();
+        } else {
+          this.frozenStagesOwed.delete(6);
+        }
         if (completedStage(7)) return;
       }
 
@@ -1618,7 +1629,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       }
       this.eliminationSweepCursor.reset();
       this.balanceRetriedThisCycle = false;
-      if (this.balanceOwedAfterCycle) {
+      if (
+        this.balanceOwedAfterCycle ||
+        (!isMaintenanceFrozen() && this.frozenStagesOwed.size > 0)
+      ) {
         this.balanceOwedAfterCycle = false;
         this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
       }

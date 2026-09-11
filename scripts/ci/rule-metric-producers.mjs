@@ -86,6 +86,14 @@ export function metricsIn(expr) {
   let e = expr.replace(/#.*$/gm, '');
   e = e.replace(/"[^"]*"|'[^']*'/g, ' ');
   e = e.replace(/\{[^}]*\}/g, ' ');
+  // Range selectors and offsets: `[30m]`, `[$__rate_interval]`. The unit
+  // letter in `[30m]` is a standalone identifier to any regex that does not
+  // remove the brackets, and `m` then sails through any substring-based
+  // producer check because every source file contains the letter m.
+  e = e.replace(/\[[^\]]*\]/g, ' ');
+  // Bare duration literals, as in `offset 5m`. Same trap as above: the unit
+  // letter survives on its own once the digits stop matching.
+  e = e.replace(/\b\d+(?:\.\d+)?(ms|s|m|h|d|w|y)\b/g, ' ');
   e = e.replace(/\b(by|without|on|ignoring|group_left|group_right)\s*\([^)]*\)/g, ' ');
   const found = new Set();
   for (const tok of e.match(/[A-Za-z_:][A-Za-z0-9_:]*/g) ?? []) {
@@ -186,7 +194,13 @@ export function isProduced(name, haystack, recorded, declaredAbsent) {
   const base = name.replace(/_(bucket|sum|count)$/, '');
   if (base !== name) candidates.push(base);
   for (const suffix of ['_bucket', '_sum', '_count', '_total']) candidates.push(name + suffix);
-  return candidates.some((c) => haystack.includes(c));
+  // Word boundaries, not substring. `haystack.includes('m')` is true of every
+  // source tree ever written, and `poker_foo` is a substring of
+  // `poker_foobar`: either would report a metric as produced by a file that
+  // never mentions it.
+  return candidates.some((c) =>
+    new RegExp(`(^|[^A-Za-z0-9_:])${c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^A-Za-z0-9_:]|$)`).test(haystack)
+  );
 }
 
 /** Names allowed to have no producer, each with a reason, one per line. */
@@ -199,6 +213,36 @@ export function readDeclaredAbsent(dir) {
     if (!t || t.startsWith('#')) continue;
     const m = /^(\S+)\s+(.+)$/.exec(t);
     if (m) out.set(m[1], m[2]);
+  }
+  return out;
+}
+
+/**
+ * Metric names named by Grafana dashboard panels, as {file, metrics}.
+ *
+ * A panel whose metric has no series renders an empty graph, which is the
+ * dashboard version of an alert that cannot fire: not an error, not a warning,
+ * just nothing, and the people who look at it learn to stop looking.
+ */
+export function dashboardsWithMetrics(dir) {
+  const out = [];
+  let entries;
+  try { entries = readdirSync(dir); } catch { return out; }
+  for (const file of entries.filter((f) => f.endsWith('.json'))) {
+    let doc;
+    try { doc = JSON.parse(readFileSync(resolve(dir, file), 'utf8')); } catch { continue; }
+    const exprs = [];
+    const walk = (node) => {
+      if (!node || typeof node !== 'object') return;
+      if (Array.isArray(node)) return node.forEach(walk);
+      if (typeof node.expr === 'string') exprs.push(node.expr);
+      Object.values(node).forEach(walk);
+    };
+    walk(doc);
+    const metrics = new Set();
+    for (const e of exprs) for (const m of metricsIn(e)) metrics.add(m);
+    // Grafana template variables are not metrics.
+    out.push({ file, metrics: [...metrics].filter((m) => !m.startsWith('__')) });
   }
   return out;
 }

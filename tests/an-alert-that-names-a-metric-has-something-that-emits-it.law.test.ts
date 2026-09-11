@@ -39,6 +39,7 @@ import {
   isProduced,
   metricsIn,
   extractExpressions,
+  dashboardsWithMetrics,
 } from '../scripts/ci/rule-metric-producers.mjs';
 
 const root = resolve(__dirname, '..');
@@ -164,6 +165,67 @@ describe('an alert that names a metric has something that emits it', () => {
     expect(body).toMatch(/die\(\)\s*\{[^}]*exit 1/);
     expect(body).not.toMatch(/>\s*"\$OUT"\s*$/m); // writes go through $TMP then mv
     expect(body).toContain('mv -f "$TMP" "$OUT"');
+  });
+
+  it('every metric a dashboard panel names has a producer', () => {
+    // A panel reading a metric with no series draws an empty graph forever,
+    // which is how people learn to stop looking at dashboards. 23 of the 45
+    // panel expressions were in this state on 2026-09-11.
+    const files = loadedRuleFiles();
+    const dashboards = dashboardsWithMetrics(resolve(DIR, 'grafana-dashboards'));
+    expect(dashboards.length).toBeGreaterThan(0);
+    const haystack = producerHaystack(root);
+    const recorded = recordedNames(DIR, files);
+    const declared = readDeclaredAbsent(DIR);
+    const orphans: string[] = [];
+    for (const d of dashboards) {
+      for (const m of d.metrics) {
+        if (!isProduced(m, haystack, recorded, declared)) orphans.push(`${m} (${d.file})`);
+      }
+    }
+    expect(
+      orphans,
+      `dashboard panels read metrics nothing emits:\n  ${orphans.join('\n  ')}`
+    ).toEqual([]);
+  });
+
+  it('every declared exception carries a reason and is still referenced', () => {
+    const declared = readDeclaredAbsent(DIR);
+    const files = loadedRuleFiles();
+    const named = new Set([
+      ...rulesWithMetrics(DIR, files).flatMap((r) => r.metrics),
+      ...dashboardsWithMetrics(resolve(DIR, 'grafana-dashboards')).flatMap((d) => d.metrics),
+    ]);
+    for (const [metric, reason] of declared) {
+      expect(reason.trim().length, `${metric} has no reason`).toBeGreaterThan(10);
+      expect(named.has(metric), `${metric} is declared but referenced nowhere`).toBe(true);
+    }
+  });
+
+  it('a range selector or a bare duration is not a metric name', () => {
+    // `rate(foo[30m])` yields a standalone `m` to any regex that does not
+    // remove the brackets, and `m` then passes a substring producer check
+    // because every source tree contains the letter m. Both halves of that
+    // trap are fixed; this is what keeps them fixed.
+    expect(metricsIn('rate(foo[30m]) / rate(bar[1h] offset 5m) > 0.5').sort()).toEqual([
+      'bar',
+      'foo',
+    ]);
+    expect(metricsIn('max_over_time(baz{job="x"}[6m]) == 1 unless on() qux').sort()).toEqual([
+      'baz',
+      'qux',
+    ]);
+  });
+
+  it('a producer match is a whole name, not a substring', () => {
+    const recorded = new Set<string>();
+    const declared = new Map<string, string>();
+    // poker_foo must not be satisfied by a file that only mentions
+    // poker_foobar, and nothing may be satisfied by a single letter.
+    expect(isProduced('poker_foo', 'emit("poker_foobar", 1)', recorded, declared)).toBe(false);
+    expect(isProduced('poker_foo', 'emit("poker_foo", 1)', recorded, declared)).toBe(true);
+    expect(isProduced('m', 'const m = 1;', recorded, declared)).toBe(true);
+    expect(isProduced('m', 'const somethingelse = 1;', recorded, declared)).toBe(false);
   });
 
   it('the CI guard still fails when a producer disappears', () => {

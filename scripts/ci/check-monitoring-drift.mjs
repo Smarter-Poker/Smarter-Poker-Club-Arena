@@ -64,6 +64,7 @@ import {
   recordedNames,
   readDeclaredAbsent,
   isProduced,
+  dashboardsWithMetrics,
 } from './rule-metric-producers.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -306,13 +307,48 @@ const REQUIRED_SCRAPE_JOBS = [
     );
   }
 
+}
+
+// ── 9. every metric a DASHBOARD PANEL names must have something that emits it ─
+//
+// Same failure, quieter. A panel reading a metric with no series draws an empty
+// graph forever. Found 2026-09-11: 23 of the 45 panel expressions in
+// infra/monitoring/grafana-dashboards read metrics that have never existed -
+// two engine panels naming `poker_engine_active_tables` where the engine emits
+// `poker_active_tables`, a cron dashboard reading an exporter this stack does
+// not run, all seven Postgres panels, and all fourteen SLO panels reading an
+// `slo:` recording-rule prefix that was never written (the estate settled on
+// `sp:`). Four of those fourteen are error-budget panels, which read as a FULL
+// budget rather than as no data.
+{
+  const dashDir = resolve(DIR, 'grafana-dashboards');
+  const dashboards = dashboardsWithMetrics(dashDir);
+  const ruleFiles = onDisk.filter((f) => loadedNames.includes(f));
+  const haystack = producerHaystack(root);
+  const recorded = recordedNames(DIR, ruleFiles);
+  const declaredAbsent = readDeclaredAbsent(DIR);
+
+  for (const dash of dashboards) {
+    const orphans = dash.metrics.filter((m) => !isProduced(m, haystack, recorded, declaredAbsent));
+    if (orphans.length) {
+      errors.push(
+        `grafana-dashboards/${dash.file} has panel(s) reading ${orphans.join(', ')}, which nothing emits. ` +
+          `The panel renders empty forever. Point it at a metric that exists, delete it, or declare it in ` +
+          `infra/monitoring/metrics-without-a-producer.txt with the reason.`
+      );
+    }
+  }
+
   // A declaration that is no longer needed is its own kind of rot: it keeps the
   // door open for the next name that lands under it.
+  const named = new Set([
+    ...rulesWithMetrics(DIR, ruleFiles).flatMap((r) => r.metrics),
+    ...dashboards.flatMap((d) => d.metrics),
+  ]);
   for (const [metric] of declaredAbsent) {
-    const named = rules.some((r) => r.metrics.includes(metric));
-    if (!named) {
+    if (!named.has(metric)) {
       errors.push(
-        `infra/monitoring/metrics-without-a-producer.txt declares ${metric}, but no rule references it any more. Remove the line.`
+        `infra/monitoring/metrics-without-a-producer.txt declares ${metric}, but no rule or dashboard panel references it any more. Remove the line.`
       );
     }
   }
@@ -326,5 +362,5 @@ if (errors.length) {
 }
 
 console.log(
-  `OK: ${explicit.length} rule file(s) loaded, mounted at matching paths, non-empty; every metric they name has a producer; alerts route to a receiver that delivers`
+  `OK: ${explicit.length} rule file(s) loaded, mounted at matching paths, non-empty; every metric they and the dashboards name has a producer; alerts route to a receiver that delivers`
 );

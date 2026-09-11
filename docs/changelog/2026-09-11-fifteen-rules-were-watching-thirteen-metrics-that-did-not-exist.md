@@ -70,3 +70,18 @@ The rules that read engine metrics keep their bare `unless`, because both sides 
 `/cron/union-rakeback` (silent 25.5 days, 1 success in 30) and `/cron/rakeback-period-settle` (18.5 days, 2 successes) are not flagged stale and are not fixed here. The staleness view requires five successes in thirty days before it will judge a job, on purpose: it cannot infer a cadence from two data points. That floor is correct and it is also a gap, and the gap is bigger than this change.
 
 The horse-batch and trivia jobs are not restarted here. They belong to the Social product and their schedule lives outside this repo. What changes today is that their silence is now reportable.
+
+## The same gap, one layer down
+
+Extending the check to Grafana found the dashboard version of it. **23 of the 45 panel expressions in `infra/monitoring/grafana-dashboards` read metrics that have never had a series.**
+
+- `poker-engine.json` asks for `poker_engine_active_tables` and `poker_engine_seated_players`. The engine emits `poker_active_tables` and `poker_active_players`. Two panels on the main engine dashboard, blank since the day they were written, over a one-word difference. Repointed.
+- `cron-health.json` reads `cron_last_run_timestamp`, `cron_runs_total` and `cron_runs_failed_total` from a cron exporter this stack does not run. Repointed at the gauges the new collector publishes.
+- `postgres.json` reads seven `pg_*` metrics from a postgres_exporter that is not deployed and not scraped. All seven panels blank.
+- `slo.json` reads fourteen recording rules under an `slo:` prefix. The estate settled on `sp:<objective>:<window>`, and no `slo:` rule has ever existed. All fourteen blank, and **four of them are error-budget panels, which render as a full remaining budget rather than as no data** — the one failure mode worse than an empty graph.
+
+The last two are not find-and-replace. `postgres.json` needs an exporter deployed or the dashboard deleted; `slo.json` wants per-surface error ratios over four windows that `slo-rules.yml` does not compute at all. Both are recorded in `infra/monitoring/metrics-without-a-producer.txt` with the reason, which is what turns twenty-one silently blank panels into twenty-one lines a reviewer has to look at. A declaration whose metric stops being referenced is itself an error, so the file cannot become a parking space.
+
+## Two bugs in the checker, found by pointing it at something new
+
+`rate(foo[30m])` yields a standalone `m` to any regex that does not remove range selectors, and `m` then passed the producer check because `haystack.includes('m')` is true of every source tree ever written. The same looseness meant `poker_foo` would be satisfied by a file mentioning only `poker_foobar`. `metricsIn()` now strips range selectors and bare duration literals, and `isProduced()` matches on whole names. The law test pins both, because a guard that reports everything as produced is worse than no guard: it is a guard that says the thing it cannot see is fine.

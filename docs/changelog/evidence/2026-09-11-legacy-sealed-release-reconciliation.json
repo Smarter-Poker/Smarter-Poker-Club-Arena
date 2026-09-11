@@ -1,0 +1,37 @@
+{
+  "base_commit": "bc525463996c65be3a89a7fe0cb35cd601a0d5e3",
+  "scope": "additive accepted-request legacy-health reconciliation and inactive native installer",
+  "source_files": {
+    "docs/changelog/2026-09-11-legacy-sealed-release-reconciliation.md": "d549fec9ac69da0c42e0cacba4f77f2b1c7d0fc4fc9cafa4abe505d29e5f7647",
+    "docs/operations/legacy-sealed-release-reconciliation.md": "82e890e3e86c634429feb978f2a63470548a90aa6d5eaec163ed20d75e57f31a",
+    "server/scripts/reconcile-legacy-sealed-release-v1.py": "0d96bca66d01b6dfccd48877fdc65f8d6d115317d8628e830d2ed8f24c70f274",
+    "server/scripts/install-legacy-sealed-reconciliation-v1.py": "a06ee519e21456c648048499f76a14bc633f39abeb110e86793224affd850fbf",
+    "tests/engine-legacy-sealed-reconciliation.native.test.ts": "64ea5ee5b67f0046ac6667d7abe8f41c4fc601db2b1957e25895a99262d28b7e",
+    "tests/engine-legacy-sealed-reconciliation.test.py": "23b326c56410f835441a635f8ac46bafb7a36fdee795a5112f28097d92341dec",
+    "tests/fixtures/legacy-sealed-source/bc525-health-parser.json": "4e3561c3d32edcf919577c362124beb9419bc805e2508df63c55a2d8c3f7a66c"
+  },
+  "validation": {
+    "native_cases_passed": 37,
+    "required_vitest_bridge_passed": true,
+    "python_compile_passed": true,
+    "production_or_host_access": false,
+    "native_external_services": "Docker, systemd, health and database-leader transport fixtures",
+    "real_native_components": [
+      "filesystem",
+      "flock",
+      "fsync",
+      "existing seal implementation and audit",
+      "pinned pure parser subprocess"
+    ]
+  },
+  "logs": {
+    "native-tests.log": "6f84fbc9bfeaa9c92a9b747774a953e840e470845eda1b023093782ad054d8d7",
+    "vitest-bridge.log": "ea0a70196423b4e66bb4b9459cf41f1d9acf4bf5a1ab307b36f440716b3f7cb4"
+  },
+  "limitations": [
+    "Actual immutable installation receipt remains pending sole production owner execution.",
+    "No production recovery or engine mutation performed.",
+    "Retain original helper generation through terminal audit readback.",
+    "Existing frozen v1 files and original accepted records unchanged."
+  ]
+}

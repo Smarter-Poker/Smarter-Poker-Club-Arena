@@ -6,6 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const fixture = vi.hoisted(() => ({
   user: { id: 'player-1' },
   result: { data: [] as Record<string, unknown>[], error: null as unknown },
+  deferReads: false,
+  pendingReads: [] as (() => void)[],
+  limits: vi.fn(),
   rpc: vi.fn(),
   from: vi.fn(),
   eq: vi.fn(),
@@ -19,14 +22,45 @@ vi.mock('@/lib/supabase', () => ({
   supabase: {
     from: (table: string) => {
       fixture.from(table);
+      const filters: ((row: Record<string, unknown>) => boolean)[] = [];
+      let orderColumn = 'period_start';
       const query = {
         select: () => query,
-        eq: (...args: unknown[]) => {
-          fixture.eq(...args);
+        eq: (column: string, value: unknown) => {
+          fixture.eq(column, value);
+          filters.push((row) => row[column] === value);
           return query;
         },
-        order: () => query,
-        limit: () => Promise.resolve(fixture.result),
+        gt: (column: string, value: number) => {
+          filters.push((row) => Number(row[column]) > value);
+          return query;
+        },
+        lt: (column: string, value: string) => {
+          filters.push((row) => String(row[column]) < value);
+          return query;
+        },
+        not: (column: string, _operator: string, value: unknown) => {
+          filters.push((row) => row[column] !== value);
+          return query;
+        },
+        order: (column: string) => {
+          orderColumn = column;
+          return query;
+        },
+        limit: (count: number) => {
+          fixture.limits(count);
+          const result = {
+            data: fixture.result.data
+              .filter((row) => filters.every((filter) => filter(row)))
+              .sort((a, b) => String(b[orderColumn]).localeCompare(String(a[orderColumn])))
+              .slice(0, count)
+              .map((row) => ({ ...row })),
+            error: fixture.result.error,
+          };
+          return fixture.deferReads
+            ? new Promise((resolve) => fixture.pendingReads.push(() => resolve(result)))
+            : Promise.resolve(result);
+        },
       };
       return query;
     },
@@ -61,7 +95,7 @@ vi.mock('recharts', () => ({
 
 import RakebackPage from '@/pages/RakebackPage';
 
-function period(id: string, club: string, end: string, earned: number, status = 'pending') {
+function period(id: string, club: string | null, end: string, earned: number, status = 'pending') {
   return {
     id,
     user_id: 'player-1',
@@ -88,7 +122,7 @@ async function openPage(rows: Record<string, unknown>[]) {
 }
 function readyValue() {
   const summary = screen.getByLabelText('Rakeback Engine Live Summary');
-  return within(summary).getByText('Ready To Claim').parentElement!.querySelector('dd')!
+  return within(summary).getByText('Next Ready Period').parentElement!.querySelector('dd')!
     .textContent;
 }
 
@@ -96,6 +130,9 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-09-11T12:00:00.000Z'));
   vi.clearAllMocks();
+  fixture.user = { id: 'player-1' };
+  fixture.deferReads = false;
+  fixture.pendingReads = [];
   fixture.rpc.mockResolvedValue({
     data: { success: true, total_payout: 0, periods_claimed: 0 },
     error: null,
@@ -110,7 +147,7 @@ describe('RakebackPage closed UTC earning periods', () => {
   it('keeps an end-today period visible as pending without offering a claim', async () => {
     const view = await openPage([period('open', 'club-open', '2026-09-11', 17)]);
     expect(readyValue()).toBe('0');
-    expect(screen.getByText('Pending Earnings: 17')).toBeInTheDocument();
+    expect(screen.getByText('Recent Pending Earnings: 17')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Claim Rakeback' })).toBeNull();
     expect(view.container.querySelectorAll('.period-row')).toHaveLength(1);
     expect(view.container.querySelector('.period-earned .status')).toHaveTextContent('Pending');
@@ -121,7 +158,7 @@ describe('RakebackPage closed UTC earning periods', () => {
     const rows = [
       period('open', 'club-open', '2026-09-11', 30),
       period('zero', 'club-zero', '2026-09-10', 0),
-      period('missing-club', '', '2026-09-10', 5),
+      period('missing-club', null, '2026-09-10', 5),
       period('ready', 'club-ready', '2026-09-10', 20),
       period('other-ready', 'club-other', '2026-09-09', 10),
       period('paid', 'club-paid', '2026-09-08', 7, 'paid'),
@@ -134,8 +171,8 @@ describe('RakebackPage closed UTC earning periods', () => {
       return { data: { success: true, total_payout: 20, periods_claimed: 1 }, error: null };
     });
     const view = await openPage(rows);
-    expect(readyValue()).toBe('30');
-    expect(screen.getByText('Pending Earnings: 35')).toBeInTheDocument();
+    expect(readyValue()).toBe('20');
+    expect(screen.getByText('Recent Pending Earnings: 65')).toBeInTheDocument();
     expect(view.container.querySelectorAll('.period-row')).toHaveLength(6);
     expect(view.container.querySelectorAll('.period-earned .status.paid')).toHaveLength(1);
     expect(screen.queryByRole('button', { name: 'Claim All' })).toBeNull();
@@ -146,7 +183,7 @@ describe('RakebackPage closed UTC earning periods', () => {
       p_club_id: 'club-ready',
     });
     expect(readyValue()).toBe('10');
-    expect(screen.getByText('Pending Earnings: 35')).toBeInTheDocument();
+    expect(screen.getByText('Recent Pending Earnings: 45')).toBeInTheDocument();
     expect(view.container.querySelectorAll('.period-row')).toHaveLength(6);
     expect(fixture.eq).toHaveBeenCalledWith('user_id', 'player-1');
     expect(fixture.emit).toHaveBeenCalledWith('RAKEBACK_CLAIMED', {
@@ -164,9 +201,9 @@ describe('RakebackPage closed UTC earning periods', () => {
       await vi.advanceTimersByTimeAsync(1);
     });
     expect(readyValue()).toBe('9');
-    expect(screen.getByText('Pending Earnings: 0')).toBeInTheDocument();
+    expect(screen.getByText('Recent Pending Earnings: 9')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Claim Rakeback' })).toBeEnabled();
-    expect(fixture.from).toHaveBeenCalledTimes(1);
+    expect(fixture.from).toHaveBeenCalledTimes(4);
     view.unmount();
     expect(vi.getTimerCount()).toBe(0);
   });
@@ -188,7 +225,7 @@ describe('RakebackPage closed UTC earning periods', () => {
     async (end) => {
       const view = await openPage([period('malformed', 'club-unknown', end, 4)]);
       expect(readyValue()).toBe('0');
-      expect(screen.getByText('Pending Earnings: 4')).toBeInTheDocument();
+      expect(screen.getByText('Recent Pending Earnings: 4')).toBeInTheDocument();
       expect(view.container.querySelectorAll('.period-row')).toHaveLength(1);
       expect(screen.queryByRole('button', { name: 'Claim Rakeback' })).toBeNull();
       expect(fixture.rpc).not.toHaveBeenCalled();
@@ -226,10 +263,14 @@ describe('RakebackPage installed claim response contract', () => {
   it('reports a valid zero aggregate as no payout rather than a successful claim', async () => {
     await claim({ success: true, total_payout: 0, periods_claimed: 0 });
     expect(
-      screen.getByText('No Rakeback Was Paid. Pending Periods May Be Deferred.')
+      screen.getByText('No Additional Payout Was Confirmed. Pending Periods May Be Deferred.')
     ).toBeInTheDocument();
-    expect(fixture.emit).not.toHaveBeenCalled();
-    expect(fixture.from).toHaveBeenCalledTimes(2);
+    expect(fixture.emit).toHaveBeenCalledExactlyOnceWith('WALLET_REFRESHED', {
+      walletType: 'PLAYER',
+      available: 0,
+      total: 0,
+    });
+    expect(fixture.from).toHaveBeenCalledTimes(4);
   });
 
   it('reports only the server-confirmed partial payout and triggers authoritative wallet refresh', async () => {
@@ -341,7 +382,283 @@ describe('RakebackPage installed claim response contract', () => {
         available: 0,
         total: 0,
       });
-      expect(fixture.from).toHaveBeenCalledTimes(2);
+      expect(fixture.from).toHaveBeenCalledTimes(4);
     }
   );
+});
+
+function rerenderPage(view: ReturnType<typeof render>) {
+  view.rerender(
+    <MemoryRouter>
+      <RakebackPage />
+    </MemoryRouter>
+  );
+}
+async function resolveReads() {
+  const reads = fixture.pendingReads.splice(0);
+  await act(async () => {
+    reads.forEach((resolve) => resolve());
+  });
+}
+async function clickClaim() {
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Claim Rakeback' }));
+  });
+}
+const deadlock = { message: 'deadlock detected', code: '40P01', details: '', hint: '' };
+const paid = { data: { success: true, total_payout: 9, periods_claimed: 1 }, error: null };
+
+describe('RakebackPage bounded discovery and request ownership', () => {
+  it('discovers a positive closed club outside the twelve recent history rows', async () => {
+    const recent = Array.from({ length: 12 }, (_, i) =>
+      period(`recent-${i}`, 'club-recent', '2026-09-11', 2, 'paid')
+    );
+    const view = await openPage([...recent, period('older', 'club-older', '2026-09-09', 9)]);
+    expect(view.container.querySelectorAll('.period-row')).toHaveLength(12);
+    expect(readyValue()).toBe('9');
+    const summary = screen.getByLabelText('Rakeback Engine Live Summary');
+    expect(within(summary).getByText('Recent Earnings').parentElement).toHaveTextContent('24');
+    expect(screen.getByText('Recent Pending Earnings: 0')).toBeInTheDocument();
+    expect(
+      screen.getByText('Estimate For One Period. A Club Claim May Include More Periods.')
+    ).toBeInTheDocument();
+    expect(fixture.limits.mock.calls.map(([n]) => n)).toEqual([12, 1]);
+    await clickClaim();
+    expect(fixture.rpc).toHaveBeenCalledWith('fn_claim_rakeback', { p_club_id: 'club-older' });
+  });
+
+  it('rediscovers hidden newly mature earnings at UTC midnight with no pending history boundary', async () => {
+    vi.setSystemTime(new Date('2026-09-11T23:59:59.999Z'));
+    const recent = Array.from({ length: 12 }, (_, i) =>
+      period(`paid-${i}`, 'club-paid', '2026-09-11', 2, 'paid')
+    );
+    const hidden = {
+      ...period('hidden', 'club-hidden', '2026-09-11', 9),
+      period_start: '2026-09-01',
+    };
+    await openPage([...recent, hidden]);
+    expect(readyValue()).toBe('0');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(readyValue()).toBe('9');
+    expect(fixture.from).toHaveBeenCalledTimes(4);
+    await clickClaim();
+    expect(fixture.rpc).toHaveBeenCalledWith('fn_claim_rakeback', { p_club_id: 'club-hidden' });
+  });
+
+  it.each([false, true])(
+    'keeps a coalesced post-claim read after an in-flight snapshot (failure=%s)',
+    async (fails) => {
+      const row = period('closed', 'club-closed', '2026-09-10', 9);
+      let finishClaim!: (value: unknown) => void;
+      fixture.rpc.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishClaim = resolve;
+          })
+      );
+      const view = await openPage([row]);
+      await clickClaim();
+      fixture.deferReads = true;
+      fixture.result = { data: [row], error: fails ? { message: 'old read failed' } : null };
+      await act(async () => {
+        fixture.refresh();
+      });
+      expect(fixture.pendingReads).toHaveLength(2);
+      fixture.result = { data: [{ ...row, status: 'paid' }], error: null };
+      await act(async () => {
+        finishClaim(paid);
+        fixture.refresh();
+        fixture.refresh();
+      });
+      expect(fixture.from).toHaveBeenCalledTimes(4);
+      fixture.deferReads = false;
+      await resolveReads();
+      expect(fixture.from).toHaveBeenCalledTimes(6);
+      expect(readyValue()).toBe('0');
+      expect(view.container.querySelectorAll('.period-earned .status.paid')).toHaveLength(1);
+      expect(fixture.toast.error).not.toHaveBeenCalled();
+    }
+  );
+
+  it('queues the new account read and discards the old account snapshot', async () => {
+    fixture.deferReads = true;
+    const view = await openPage([period('old', 'club-old', '2026-09-10', 99)]);
+    fixture.user = { id: 'player-2' };
+    fixture.result = {
+      data: [{ ...period('new', 'club-new', '2026-09-10', 7), user_id: 'player-2' }],
+      error: null,
+    };
+    await act(async () => {
+      rerenderPage(view);
+    });
+    expect(readyValue()).toBe('0');
+    expect(screen.queryByRole('button', { name: 'Claim Rakeback' })).toBeNull();
+    fixture.deferReads = false;
+    await resolveReads();
+    expect(readyValue()).toBe('7');
+    expect(fixture.from).toHaveBeenCalledTimes(4);
+    expect(fixture.eq).toHaveBeenCalledWith('user_id', 'player-2');
+    await clickClaim();
+    expect(fixture.rpc).toHaveBeenCalledExactlyOnceWith('fn_claim_rakeback', {
+      p_club_id: 'club-new',
+    });
+  });
+
+  it.each([paid, { data: { success: false, error: 'Old Account Refusal' }, error: null }])(
+    'does not publish a prior account claim completion into the new account',
+    async (response) => {
+      let finishClaim!: (value: unknown) => void;
+      fixture.rpc.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishClaim = resolve;
+          })
+      );
+      const view = await openPage([period('old', 'club-old', '2026-09-10', 9)]);
+      await clickClaim();
+      fixture.user = { id: 'player-2' };
+      fixture.result = {
+        data: [{ ...period('new', 'club-new', '2026-09-10', 7), user_id: 'player-2' }],
+        error: null,
+      };
+      await act(async () => {
+        rerenderPage(view);
+      });
+      await act(async () => {
+        finishClaim(response);
+      });
+      expect(readyValue()).toBe('7');
+      expect(screen.queryByText('Claimed 9 chips!')).toBeNull();
+      expect(screen.queryByText('Old Account Refusal')).toBeNull();
+      expect(fixture.emit).not.toHaveBeenCalled();
+      expect(fixture.toast.error).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Claim Rakeback' })).toBeEnabled();
+    }
+  );
+
+  it.each([null, undefined, Number.NaN, Number.POSITIVE_INFINITY, 0])(
+    'labels the latest period rate accurately for %s',
+    async (rate) => {
+      await openPage([{ ...period('rate', 'club', '2026-09-10', 0), rakeback_rate: rate }]);
+      const summary = screen.getByLabelText('Rakeback Engine Live Summary');
+      expect(within(summary).getByText('Latest Period Rate').parentElement).toHaveTextContent(
+        rate === 0 ? '0.0%' : 'Unavailable'
+      );
+      expect(screen.queryByText('Your Rate')).toBeNull();
+    }
+  );
+
+  it('shows an unavailable latest rate when there are no periods', async () => {
+    await openPage([]);
+    const summary = screen.getByLabelText('Rakeback Engine Live Summary');
+    expect(within(summary).getByText('Latest Period Rate').parentElement).toHaveTextContent(
+      'Unavailable'
+    );
+  });
+
+  it('retries an actual Supabase 40P01 result and reports only its later confirmed payout', async () => {
+    fixture.rpc.mockResolvedValueOnce({ data: null, error: deadlock }).mockResolvedValueOnce(paid);
+    await openPage([period('closed', 'club-closed', '2026-09-10', 9)]);
+    await clickClaim();
+    expect(fixture.rpc).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Claiming...' })).toBeDisabled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(fixture.rpc).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('Claimed 9 chips!')).toBeInTheDocument();
+  });
+
+  it('bounds exhausted database errors to two retries and never claims payment', async () => {
+    fixture.rpc.mockResolvedValue({ data: null, error: deadlock });
+    await openPage([period('closed', 'club-closed', '2026-09-10', 9)]);
+    await clickClaim();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(fixture.rpc).toHaveBeenCalledTimes(3);
+    expect(screen.getByText('deadlock detected')).toBeInTheDocument();
+    expect(fixture.emit).not.toHaveBeenCalled();
+  });
+
+  it('does not retry an authentication refusal', async () => {
+    fixture.rpc.mockResolvedValue({
+      data: null,
+      error: { ...deadlock, code: '42501', message: 'permission denied' },
+    });
+    await openPage([period('closed', 'club-closed', '2026-09-10', 9)]);
+    await clickClaim();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(fixture.rpc).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('permission denied')).toBeInTheDocument();
+  });
+
+  it('cancels the old account retry before another RPC can use the new session', async () => {
+    fixture.rpc.mockResolvedValue({ data: null, error: deadlock });
+    const view = await openPage([period('old', 'club-old', '2026-09-10', 9)]);
+    await clickClaim();
+    fixture.user = { id: 'player-2' };
+    fixture.result = {
+      data: [{ ...period('new', 'club-new', '2026-09-10', 7), user_id: 'player-2' }],
+      error: null,
+    };
+    await act(async () => {
+      rerenderPage(view);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(fixture.rpc).toHaveBeenCalledTimes(1);
+    expect(readyValue()).toBe('7');
+    expect(fixture.emit).not.toHaveBeenCalled();
+    expect(fixture.toast.error).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Claim Rakeback' })).toBeEnabled();
+  });
+});
+
+describe('RakebackPage uncertain transport outcomes', () => {
+  it('does not deny an earlier payment when a lost response is followed by a zero retry', async () => {
+    fixture.rpc.mockRejectedValueOnce(new TypeError('Failed to fetch')).mockResolvedValueOnce({
+      data: { success: true, total_payout: 0, periods_claimed: 0 },
+      error: null,
+    });
+    await openPage([period('closed', 'club-closed', '2026-09-10', 9)]);
+    await clickClaim();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(fixture.rpc).toHaveBeenCalledTimes(2);
+    expect(
+      screen.getByText('No Additional Payout Was Confirmed. Pending Periods May Be Deferred.')
+    ).toBeInTheDocument();
+    expect(fixture.emit).toHaveBeenCalledExactlyOnceWith('WALLET_REFRESHED', {
+      walletType: 'PLAYER',
+      available: 0,
+      total: 0,
+    });
+    expect(fixture.from).toHaveBeenCalledTimes(4);
+  });
+
+  it('refreshes an exhausted lost-response attempt without asserting whether money moved', async () => {
+    fixture.rpc.mockRejectedValue(new TypeError('Failed to fetch'));
+    await openPage([period('closed', 'club-closed', '2026-09-10', 9)]);
+    await clickClaim();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(fixture.rpc).toHaveBeenCalledTimes(3);
+    expect(
+      screen.getByText('Claim Result Could Not Be Confirmed. Please Check Your Refreshed Balances.')
+    ).toBeInTheDocument();
+    expect(fixture.emit).toHaveBeenCalledExactlyOnceWith('WALLET_REFRESHED', {
+      walletType: 'PLAYER',
+      available: 0,
+      total: 0,
+    });
+    expect(fixture.from).toHaveBeenCalledTimes(4);
+  });
 });

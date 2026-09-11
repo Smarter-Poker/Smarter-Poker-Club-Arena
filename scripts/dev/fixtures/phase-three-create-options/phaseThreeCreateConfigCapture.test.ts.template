@@ -1,0 +1,16 @@
+// Native-acceptance fixture capture from the actual client mapping functions.
+import { vi } from "vitest";
+import { tournamentService } from "@/services/TournamentService";
+vi.mock("@/lib/tournamentFromTableConfig", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/tournamentFromTableConfig")>();
+  const fs = await import("node:fs");
+  const captures: unknown[] = [];
+  return { ...actual, buildTournamentConfig: (...args: Parameters<typeof actual.buildTournamentConfig>) => {
+    const mapped = actual.buildTournamentConfig(...args);
+    const rpc = (tournamentService as unknown as {buildRpcConfig(value: unknown): unknown}).buildRpcConfig(mapped);
+    captures.push({input: args[0], mapped, rpc});
+    fs.writeFileSync("/tmp/codex-phase-three-create-client-configs.json", JSON.stringify(captures, null, 2));
+    return mapped;
+  }};
+});
+import "./TournamentFromTableConfig.test";

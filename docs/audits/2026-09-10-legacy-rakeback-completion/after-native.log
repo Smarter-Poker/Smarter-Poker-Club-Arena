@@ -22,4 +22,32 @@ PASS maturity transition guard preserves already-paid historical rows even with 
 PASS claim pins admitted clubs across a late earlier-sorting club insertion
 PASS weekly pins admitted clubs across a late earlier-sorting club insertion
 PASS captured original Round3 body is refused at receipt fence with full rollback
-{"mode":"after","passed":24}
+PASS actual two-period aggregate shortfall defers both then funded retry pays exact receipts once
+PASS malformed negative legacy basis refuses without discarding aggregate members
+PASS malformed missing_rate legacy basis refuses without discarding aggregate members
+PASS malformed missing_basis legacy basis refuses without discarding aggregate members
+PASS actual running old Round3 partially stale two-period set rolls back after body replacement
+PASS actual running old Round3 all stale two-period set rolls back after body replacement
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+3 !== 2
+
+    at assertPaid30 (file:///Users/smarter.poker/Documents/.agent-trees/club-arena/codex-payer-legacy-sep10/docs/audits/2026-09-10-legacy-rakeback-completion/aggregate-proof.mjs:53:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async file:///Users/smarter.poker/Documents/.agent-trees/club-arena/codex-payer-legacy-sep10/docs/audits/2026-09-10-legacy-rakeback-completion/aggregate-proof.mjs:218:21
+    at async test (file:///Users/smarter.poker/Documents/.agent-trees/club-arena/codex-payer-legacy-sep10/docs/audits/2026-09-10-legacy-rakeback-completion/probe.mjs:118:3)
+    at async proveLegacyAggregate (file:///Users/smarter.poker/Documents/.agent-trees/club-arena/codex-payer-legacy-sep10/docs/audits/2026-09-10-legacy-rakeback-completion/aggregate-proof.mjs:190:3)
+    at async file:///Users/smarter.poker/Documents/.agent-trees/club-arena/codex-payer-legacy-sep10/docs/audits/2026-09-10-legacy-rakeback-completion/probe.mjs:592:5 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: 3,
+  expected: 2,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v26.3.0

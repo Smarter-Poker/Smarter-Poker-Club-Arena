@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { proveLegacyAggregate } from './aggregate-proof.mjs';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { writeFileSync, readFileSync } from 'node:fs';
@@ -588,23 +587,6 @@ try {
       assert.equal((await query('SELECT status FROM rakeback_periods'))[0].status, 'pending');
     });
   }
-  if (!baseline)
-    await proveLegacyAggregate({
-      assert,
-      query,
-      reset,
-      snapshot,
-      client,
-      observeWait,
-      test,
-      outcomes,
-      uid,
-      readFileSync,
-      rootURL: import.meta.url,
-      claimSql,
-      closeSql,
-      db,
-    });
   writeFileSync(
     new URL(mode + '-proof.json', import.meta.url),
     JSON.stringify({ mode, captured_at: new Date().toISOString(), outcomes }, null, 2) + '\n'

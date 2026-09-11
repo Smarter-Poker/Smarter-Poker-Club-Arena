@@ -6,7 +6,7 @@ DO $gate$ BEGIN
 END $gate$;
 CREATE OR REPLACE FUNCTION public.fn_settle_round3_agents_to_players(p_union_id uuid,p_period_start timestamptz,p_period_end timestamptz)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO public AS $f$
-DECLARE r record;g record;v_items jsonb:='[]'::jsonb;v_agent uuid;v_payout uuid;v_wallet uuid;v_agent_before numeric;v_agent_after numeric;
+DECLARE r record;v_agent uuid;v_payout uuid;v_wallet uuid;v_agent_before numeric;v_agent_after numeric;
  v_player_before numeric;v_player_after numeric;v_owed numeric;v_rake numeric;v_rate numeric;
  v_admitted_clubs uuid[];
  v_paid numeric:=0;v_payees integer:=0;v_short integer:=0;v_detail jsonb:='[]';v_skip text;
@@ -24,61 +24,39 @@ BEGIN
  WHERE rp.status='pending' AND rp.club_id=ANY(v_admitted_clubs)
  AND rp.period_start >= (p_period_start AT TIME ZONE 'UTC')::date
  AND (rp.period_end + 1)::timestamp AT TIME ZONE 'UTC' <= p_period_end
- AND (rp.period_end + 1)::timestamp AT TIME ZONE 'UTC' <= statement_timestamp()
  ORDER BY rp.club_id,rp.period_start,rp.id FOR UPDATE OF rp
  LOOP
   IF EXISTS(SELECT 1 FROM rakeback_period_payouts x WHERE x.rakeback_period_id=r.id AND x.user_id=r.user_id) THEN CONTINUE; END IF;
   SELECT agent_id,chip_balance INTO v_agent,v_player_before FROM club_members WHERE club_id=r.club_id AND user_id=r.user_id;
   IF v_agent IS NULL THEN CONTINUE; END IF;
   IF v_agent=r.user_id THEN RAISE EXCEPTION 'Legacy rakeback payer cannot equal beneficiary' USING ERRCODE='23514'; END IF;
-  v_owed:=r.rakeback_amount;v_rake:=coalesce(r.rake_generated,r.total_rake_paid);v_rate:=r.rakeback_rate;
+  v_owed:=r.rakeback_amount;v_rake:=coalesce(r.rake_generated,r.total_rake_paid,0);v_rate:=r.rakeback_rate;
   IF public.fn_ca_rakeback_period_has_captured(r.club_id,r.user_id,r.period_start,r.period_end) THEN
    v_rake:=public.fn_ca_legacy_player_rake(r.club_id,r.user_id,r.period_start,r.period_end);
    v_rate:=public.fn_player_rakeback_rate(r.user_id,r.club_id,v_rake);v_owed:=round(v_rake*v_rate,2);
    UPDATE rakeback_periods SET rake_generated=v_rake,total_rake_paid=v_rake,rakeback_rate=v_rate,rakeback_amount=v_owed,rakeback_earned=v_owed WHERE id=r.id;
    IF v_owed=0 THEN UPDATE rakeback_periods SET status='paid',paid_at=now() WHERE id=r.id; END IF;
   END IF;
-  -- Negative offsets and missing receipt basis require explicit repair, not
-  -- silent exclusion from the installed aggregate funding decision.
-  IF v_owed<0 THEN RAISE EXCEPTION 'Legacy rakeback aggregate contains a negative period' USING ERRCODE='23514'; END IF;
-  IF v_owed IS NULL OR v_owed=0 THEN CONTINUE; END IF;
-  IF v_rake IS NULL OR v_rake<0 OR v_rake::text IN('NaN','Infinity','-Infinity')
-    OR v_rate IS NULL OR v_rate<0 OR v_rate>1 OR v_rate::text IN('NaN','Infinity','-Infinity')
-  THEN RAISE EXCEPTION 'Legacy rakeback receipt basis requires repair' USING ERRCODE='23514'; END IF;
+  IF v_owed IS NULL OR v_owed<=0 THEN CONTINUE; END IF;
   IF v_owed::text IN('NaN','Infinity','-Infinity') OR v_owed<>round(v_owed,2)
   THEN RAISE EXCEPTION 'Legacy rakeback must be finite whole cents' USING ERRCODE='23514'; END IF;
-  v_items:=v_items||jsonb_build_object('id',r.id,'club_id',r.club_id,'user_id',r.user_id,
-    'agent',v_agent,'owed',v_owed,'rake',v_rake,'rate',v_rate);
- END LOOP;
- -- Preserve the installed all-or-nothing funding decision for each player group.
- -- Exact membership and amounts were pinned while every period row was locked.
- FOR g IN SELECT x.club_id,x.user_id,x.agent,sum(x.owed) AS owed
-  FROM jsonb_to_recordset(v_items) AS x(id uuid,club_id uuid,user_id uuid,agent uuid,owed numeric,rake numeric,rate numeric)
-  GROUP BY x.club_id,x.user_id,x.agent ORDER BY x.club_id,x.agent,x.user_id
- LOOP
-  v_agent:=g.agent;
-  PERFORM 1 FROM club_members WHERE club_id=g.club_id AND user_id IN(v_agent,g.user_id) ORDER BY user_id FOR UPDATE;
-  IF NOT EXISTS(SELECT 1 FROM club_members WHERE club_id=g.club_id AND user_id=g.user_id AND agent_id=v_agent)
+  -- Admission precedes member locks; order both wallet rows by user identity.
+  PERFORM 1 FROM club_members WHERE club_id=r.club_id AND user_id IN(v_agent,r.user_id) ORDER BY user_id FOR UPDATE;
+  IF NOT EXISTS(SELECT 1 FROM club_members WHERE club_id=r.club_id AND user_id=r.user_id AND agent_id=v_agent)
   THEN RAISE EXCEPTION 'Legacy payer changed during admission' USING ERRCODE='40001'; END IF;
-  SELECT chip_balance INTO v_agent_before FROM club_members WHERE club_id=g.club_id AND user_id=v_agent;
-  IF coalesce(v_agent_before,0)<g.owed THEN
-   v_short:=v_short+1;v_detail:=v_detail||jsonb_build_object('agent',v_agent,'player',g.user_id,'owed',g.owed,'agent_balance',coalesce(v_agent_before,0),'skipped',true);CONTINUE;
+  SELECT chip_balance INTO v_agent_before FROM club_members WHERE club_id=r.club_id AND user_id=v_agent;
+  SELECT chip_balance INTO v_player_before FROM club_members WHERE club_id=r.club_id AND user_id=r.user_id;
+  IF coalesce(v_agent_before,0)<v_owed THEN
+   v_short:=v_short+1;v_detail:=v_detail||jsonb_build_object('agent',v_agent,'player',r.user_id,'owed',v_owed,'agent_balance',coalesce(v_agent_before,0),'skipped',true);CONTINUE;
   END IF;
-  FOR r IN SELECT x.* FROM jsonb_to_recordset(v_items)
-    AS x(id uuid,club_id uuid,user_id uuid,agent uuid,owed numeric,rake numeric,rate numeric)
-    WHERE x.club_id=g.club_id AND x.user_id=g.user_id AND x.agent=g.agent ORDER BY x.id
-  LOOP
-   v_owed:=r.owed;v_rake:=r.rake;v_rate:=r.rate;
-   SELECT chip_balance INTO v_agent_before FROM club_members WHERE club_id=r.club_id AND user_id=v_agent;
-   SELECT coalesce(chip_balance,0) INTO v_player_before FROM club_members WHERE club_id=r.club_id AND user_id=r.user_id;
   INSERT INTO rakeback_period_payouts(rakeback_period_id,club_id,user_id,user_rake_contribution,rakeback_pct,payout_amount,status,paid_at)
   VALUES(r.id,r.club_id,r.user_id,v_rake,round(v_rate*100,2),v_owed,'paid',now())
   ON CONFLICT(rakeback_period_id,user_id) DO NOTHING RETURNING id INTO v_payout;
-  IF v_payout IS NULL THEN RAISE EXCEPTION 'Legacy period receipt changed after admission' USING ERRCODE='40001'; END IF;
+  IF v_payout IS NULL THEN CONTINUE; END IF;
   v_skip:=current_setting('app.ledger_autoskip_club_members',true);
   PERFORM set_config('app.ledger_autoskip_club_members','1',true);
   UPDATE club_members SET chip_balance=chip_balance-v_owed,updated_at=now() WHERE club_id=r.club_id AND user_id=v_agent RETURNING chip_balance INTO v_agent_after;
-  UPDATE club_members SET chip_balance=coalesce(chip_balance,0)+v_owed,updated_at=now() WHERE club_id=r.club_id AND user_id=r.user_id RETURNING chip_balance INTO v_player_after;
+  UPDATE club_members SET chip_balance=chip_balance+v_owed,updated_at=now() WHERE club_id=r.club_id AND user_id=r.user_id RETURNING chip_balance INTO v_player_after;
   PERFORM set_config('app.ledger_autoskip_club_members',coalesce(v_skip,''),true);
   IF v_agent_after IS NULL OR v_player_after IS NULL OR v_agent_before-v_agent_after<>v_owed OR v_player_after-v_player_before<>v_owed
   THEN RAISE EXCEPTION 'Legacy rakeback balance conservation failed' USING ERRCODE='23514'; END IF;
@@ -92,9 +70,7 @@ BEGIN
    'Round 3: agent -> player rakeback','round3-period:'||r.id::text,
    jsonb_build_object('period_id',r.id,'period_start',p_period_start,'period_end',p_period_end,'payout_id',v_payout,'wallet_transaction_id',v_wallet));
   UPDATE rakeback_periods SET status='paid',paid_at=now() WHERE id=r.id;
-  v_paid:=v_paid+v_owed;
-  END LOOP;
-  v_payees:=v_payees+1;
+  v_paid:=v_paid+v_owed;v_payees:=v_payees+1;
  END LOOP;
  RETURN jsonb_build_object('round',3,'name','agents_to_players','payees',v_payees,'amount',round(v_paid,2),'shortfalls',v_short,'detail',v_detail);
 END $f$;

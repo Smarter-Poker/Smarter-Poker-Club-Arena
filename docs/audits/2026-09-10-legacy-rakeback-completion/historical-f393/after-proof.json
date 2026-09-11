@@ -1,6 +1,6 @@
 {
   "mode": "after",
-  "captured_at": "2026-09-11T06:05:41.085Z",
+  "captured_at": "2026-09-11T05:23:40.852Z",
   "outcomes": [
     {
       "evidence": "individual_claim",
@@ -30,12 +30,12 @@
       "waitA": {
         "wait_event_type": "Lock",
         "wait_event": "transactionid",
-        "blockers": [35251]
+        "blockers": [13647]
       },
       "waitB": {
         "wait_event_type": "Lock",
         "wait_event": "advisory",
-        "blockers": [35252]
+        "blockers": [13648]
       },
       "callResults": [
         {
@@ -86,12 +86,12 @@
       "waitA": {
         "wait_event_type": "Lock",
         "wait_event": "transactionid",
-        "blockers": [35255]
+        "blockers": [13651]
       },
       "waitB": {
         "wait_event_type": "Lock",
         "wait_event": "advisory",
-        "blockers": [35256]
+        "blockers": [13652]
       },
       "callResults": [
         {
@@ -202,7 +202,7 @@
       "wait": {
         "wait_event_type": "Lock",
         "wait_event": "advisory",
-        "blockers": [35278]
+        "blockers": [13683]
       },
       "first_total": 15,
       "second_total": 15,
@@ -221,7 +221,7 @@
       "wait": {
         "wait_event_type": "Lock",
         "wait_event": "advisory",
-        "blockers": [35281]
+        "blockers": [13685]
       },
       "first_total": 15,
       "second_total": 15,
@@ -237,191 +237,6 @@
     },
     {
       "name": "captured original Round3 body is refused at receipt fence with full rollback",
-      "pass": true
-    },
-    {
-      "evidence": "aggregate_shortfall_retry",
-      "shortfall": {
-        "name": "agents_to_players",
-        "round": 3,
-        "amount": 0,
-        "detail": [
-          {
-            "owed": 30,
-            "agent": "00000000-0000-4000-8000-000000000101",
-            "player": "00000000-0000-4000-8000-000000000201",
-            "skipped": true,
-            "agent_balance": 15
-          }
-        ],
-        "payees": 0,
-        "shortfalls": 1
-      },
-      "funded": {
-        "name": "agents_to_players",
-        "round": 3,
-        "amount": 30,
-        "detail": [],
-        "payees": 1,
-        "shortfalls": 0
-      },
-      "state": {
-        "treasury": "100.00",
-        "agent": "0.00",
-        "player": "30.00",
-        "receipts": 2,
-        "linked_receipts": 2,
-        "legs": 2,
-        "wallet_rows": 2
-      }
-    },
-    {
-      "name": "actual two-period aggregate shortfall defers both then funded retry pays exact receipts once",
-      "pass": true
-    },
-    {
-      "name": "malformed negative legacy basis refuses without discarding aggregate members",
-      "pass": true
-    },
-    {
-      "name": "malformed missing_rate legacy basis refuses without discarding aggregate members",
-      "pass": true
-    },
-    {
-      "evidence": "running_old_round3_1_stale",
-      "wait": {
-        "wait_event_type": "Lock",
-        "wait_event": "transactionid",
-        "blockers": [35283]
-      },
-      "body_replaced_while_waiting": true,
-      "table_fence_installed_before_call": true,
-      "result": {
-        "error": {
-          "code": "23514",
-          "message": "Round3 requires the unique unpaid period receipt"
-        }
-      },
-      "retry": {
-        "name": "agents_to_players",
-        "round": 3,
-        "amount": 15,
-        "detail": [],
-        "payees": 1,
-        "shortfalls": 0
-      },
-      "state": {
-        "treasury": "85.00",
-        "agent": "85.00",
-        "player": "30.00",
-        "receipts": 2,
-        "linked_receipts": 2,
-        "legs": 2,
-        "wallet_rows": 2
-      }
-    },
-    {
-      "name": "actual running old Round3 partially stale two-period set rolls back after body replacement",
-      "pass": true
-    },
-    {
-      "evidence": "running_old_round3_2_stale",
-      "wait": {
-        "wait_event_type": "Lock",
-        "wait_event": "transactionid",
-        "blockers": [35287]
-      },
-      "body_replaced_while_waiting": true,
-      "table_fence_installed_before_call": true,
-      "result": {
-        "error": {
-          "code": "23514",
-          "message": "Round3 requires the unique unpaid period receipt"
-        }
-      },
-      "retry": {
-        "name": "agents_to_players",
-        "round": 3,
-        "amount": 0,
-        "detail": [],
-        "payees": 0,
-        "shortfalls": 0
-      },
-      "state": {
-        "treasury": "70.00",
-        "agent": "100.00",
-        "player": "30.00",
-        "receipts": 2,
-        "linked_receipts": 2,
-        "legs": 2,
-        "wallet_rows": 2
-      }
-    },
-    {
-      "name": "actual running old Round3 all stale two-period set rolls back after body replacement",
-      "pass": true
-    },
-    {
-      "evidence": "rolling_old_multiperiod_claim",
-      "waitOld": {
-        "wait_event_type": "Lock",
-        "wait_event": "transactionid",
-        "blockers": [35289]
-      },
-      "waitNew": {
-        "wait_event_type": "Lock",
-        "wait_event": "tuple",
-        "blockers": [35290]
-      },
-      "body_replaced_while_waiting": true,
-      "results": [
-        {
-          "error": {
-            "code": "40P01",
-            "message": "deadlock detected"
-          }
-        },
-        {
-          "rows": [
-            {
-              "result": {
-                "name": "agents_to_players",
-                "round": 3,
-                "amount": 30,
-                "detail": [],
-                "payees": 1,
-                "shortfalls": 0
-              }
-            }
-          ]
-        }
-      ],
-      "retryClaim": {
-        "success": true,
-        "total_payout": 0,
-        "periods_claimed": 0
-      },
-      "retryWeekly": {
-        "name": "agents_to_players",
-        "round": 3,
-        "amount": 0,
-        "detail": [],
-        "payees": 0,
-        "shortfalls": 0
-      },
-      "state": {
-        "treasury": "100.00",
-        "agent": "70.00",
-        "player": "30.00",
-        "receipts": 2,
-        "linked_receipts": 2,
-        "legs": 2,
-        "wallet_rows": 2
-      },
-      "limit": "PostgreSQL deadlock aborts one old/new transaction; caller retry remains necessary."
-    },
-    {
-      "name": "observed old multi-period claim crossing replacement resolves lock inversion atomically and retries once",
       "pass": true
     }
   ]

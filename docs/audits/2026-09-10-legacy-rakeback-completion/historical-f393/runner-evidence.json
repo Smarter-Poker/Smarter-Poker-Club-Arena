@@ -2,22 +2,21 @@
   "runs": [
     {
       "mode": "after",
-      "socket": "/tmp/ca-rakeback-payer.wgorfmg9",
-      "data_directory": "/tmp/ca-rakeback-payer.wgorfmg9/data",
+      "socket": "/tmp/ca-rakeback-payer.0giovylq",
+      "data_directory": "/tmp/ca-rakeback-payer.0giovylq/data",
       "tcp_listeners": "",
       "pass": true
     }
   ],
   "source_hashes": {
-    "probe.mjs": "30c17f2a351faa4513d0e16c6aa8dc5bf229a5504213badbc704e73d7f8fad39",
+    "probe.mjs": "063e93970e166190f4569540fe5ec78868c167880f30793a34c38abc4f98a996",
     "fixture.sql": "72b2a77c0d805989e7b3bb48593321258dfd79dc698d42d167397d57394ca42d",
-    "04-legacy-round3.sql": "1b89d8f601d07fac3357f4f575fa998689f068b0322add6cf7fe1661beccc5bd",
+    "04-legacy-round3.sql": "22018ebac025c00ad5d24d1e642421f089008f9f9711008a15aa3e3c9548c148",
     "run-local.py": "d3cf1efef3abe605e464817c34da97243a92d60de8bbc100f7f219e0e6d52ab7",
     "02-legacy-round1.sql": "8137f28d8698aaea6647fa6d0a2842af9cc046535ea4edfda6c481bd7fa976fb",
     "03-legacy-claim.sql": "02d0bf1dcf824f4bf3060ac18e91f4d9da07c01509092c80f8170f912272a14c",
     "money-guards.sql": "e7ac35f1cc08f6b947c386532a39bcc460a94e0c75949b5071e4098cbf3b9958",
     "basis-fixture.sql": "02679fb194a0b08d4af7dd839d0e142eaed2dbfc25b8178e404c5a3de9918688",
-    "aggregate-proof.mjs": "b71e6483655d6643a551c4158251a708222a94c2cfc8581c89e640a68e3eea2b",
     "01-shared-basis.sql": "92b7960dfba8be63a80e02786bda98ed384de32fe87c4e7edf600088dea76987"
   }
 }

@@ -302,3 +302,135 @@ export async function assertManagedPostgresBoundary(db) {
   }
   return { ...managedPostgresReceipt };
 }
+
+// Production catalog observed 2026-09-12 13:55:49 UTC. These four platform
+// helpers are owned by Auth, not by the application restore role. Their bodies,
+// attributes and direct ACLs are preserved independently of GoTrue's ledger.
+const authPlatformHelpers = [
+  {
+    identity: 'auth.email()',
+    owner: 'supabase_auth_admin',
+    body_md5: 'd83fa9609bbd5e95512922e407b4141d',
+    language: 'sql',
+    volatility: 's',
+    security_definer: false,
+    strict: false,
+    settings: null,
+    acl: [
+      '=X/supabase_auth_admin',
+      'dashboard_user=X/supabase_auth_admin',
+      'supabase_auth_admin=X/supabase_auth_admin',
+    ],
+  },
+  {
+    identity: 'auth.jwt()',
+    owner: 'supabase_auth_admin',
+    body_md5: '2db09c3fc855ba90e71d3ae28cfadae3',
+    language: 'sql',
+    volatility: 's',
+    security_definer: false,
+    strict: false,
+    settings: null,
+    acl: [
+      '=X/supabase_auth_admin',
+      'dashboard_user=X/supabase_auth_admin',
+      'postgres=X/supabase_auth_admin',
+      'supabase_auth_admin=X/supabase_auth_admin',
+    ],
+  },
+  {
+    identity: 'auth.role()',
+    owner: 'supabase_auth_admin',
+    body_md5: 'f31486fed08a7402e89d4aa71b0ad273',
+    language: 'sql',
+    volatility: 's',
+    security_definer: false,
+    strict: false,
+    settings: null,
+    acl: [
+      '=X/supabase_auth_admin',
+      'dashboard_user=X/supabase_auth_admin',
+      'supabase_auth_admin=X/supabase_auth_admin',
+    ],
+  },
+  {
+    identity: 'auth.uid()',
+    owner: 'supabase_auth_admin',
+    body_md5: 'cdef18c69c4f4cbbced2eaf81e628b49',
+    language: 'sql',
+    volatility: 's',
+    security_definer: false,
+    strict: false,
+    settings: null,
+    acl: [
+      '=X/supabase_auth_admin',
+      'dashboard_user=X/supabase_auth_admin',
+      'supabase_auth_admin=X/supabase_auth_admin',
+    ],
+  },
+];
+const authPlatformHelperSql =
+  "CREATE FUNCTION auth.email()\n RETURNS text\n LANGUAGE sql\n STABLE\nAS $function$\n  select \n  coalesce(\n    nullif(current_setting('request.jwt.claim.email', true), ''),\n    (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'email')\n  )::text\n$function$;\nREVOKE ALL ON FUNCTION auth.email() FROM PUBLIC, postgres, dashboard_user;\nGRANT EXECUTE ON FUNCTION auth.email() TO PUBLIC, dashboard_user;\nCREATE FUNCTION auth.jwt()\n RETURNS jsonb\n LANGUAGE sql\n STABLE\nAS $function$\n  select \n    coalesce(\n        nullif(current_setting('request.jwt.claim', true), ''),\n        nullif(current_setting('request.jwt.claims', true), '')\n    )::jsonb\n$function$;\nREVOKE ALL ON FUNCTION auth.jwt() FROM PUBLIC, postgres, dashboard_user;\nGRANT EXECUTE ON FUNCTION auth.jwt() TO PUBLIC, dashboard_user, postgres;\nCREATE FUNCTION auth.role()\n RETURNS text\n LANGUAGE sql\n STABLE\nAS $function$\n  select \n  coalesce(\n    nullif(current_setting('request.jwt.claim.role', true), ''),\n    (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role')\n  )::text\n$function$;\nREVOKE ALL ON FUNCTION auth.role() FROM PUBLIC, postgres, dashboard_user;\nGRANT EXECUTE ON FUNCTION auth.role() TO PUBLIC, dashboard_user;\nCREATE FUNCTION auth.uid()\n RETURNS uuid\n LANGUAGE sql\n STABLE\nAS $function$\n  select \n  coalesce(\n    nullif(current_setting('request.jwt.claim.sub', true), ''),\n    (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub')\n  )::uuid\n$function$;\nREVOKE ALL ON FUNCTION auth.uid() FROM PUBLIC, postgres, dashboard_user;\nGRANT EXECUTE ON FUNCTION auth.uid() TO PUBLIC, dashboard_user;";
+
+export async function assertFixtureAuthPlatformHelpers(db) {
+  const result =
+    await db.query(`SELECT format('%I.%I(%s)',n.nspname,p.proname,pg_get_function_identity_arguments(p.oid)) AS identity,
+    pg_get_userbyid(p.proowner) AS owner, md5(p.prosrc) AS body_md5,
+    l.lanname AS language, p.provolatile AS volatility,
+    p.prosecdef AS security_definer, p.proisstrict AS strict, p.proconfig AS settings,
+    ARRAY(SELECT a::text FROM unnest(p.proacl) a ORDER BY a::text) AS acl
+    FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+    JOIN pg_language l ON l.oid=p.prolang
+    WHERE n.nspname='auth' AND p.proname=ANY(ARRAY['email','jwt','role','uid'])
+    ORDER BY n.nspname,p.proname,pg_get_function_identity_arguments(p.oid)`);
+  assert.deepEqual(result.rows, authPlatformHelpers, 'FIXTURE_AUTH_PLATFORM_IDENTITY_REQUIRED');
+  return { helpers: 4, owner: 'supabase_auth_admin', catalog: 'exact-body-attributes-direct-acl' };
+}
+
+export async function installFixtureAuthPlatformHelpers(db) {
+  await assertFixtureServiceBootstrap(db);
+  await db.query('BEGIN');
+  try {
+    const preflight = await db.query(`SELECT
+      current_database()='club_arena_qualification' AND inet_server_addr() IS NULL
+      AND current_user='supabase_admin' AND session_user='supabase_admin'
+      AND (SELECT pg_get_userbyid(nspowner)='supabase_admin' FROM pg_namespace WHERE nspname='auth')
+      AND (SELECT pg_get_userbyid(relowner)='supabase_auth_admin' FROM pg_class
+        WHERE oid='auth.schema_migrations'::regclass)
+      AND NOT has_schema_privilege('postgres','auth','CREATE')
+      AND NOT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname='auth' AND p.proname=ANY(ARRAY['email','jwt','role','uid']))
+      AS auth_platform_absent`);
+    assert.deepEqual(
+      preflight.rows,
+      [{ auth_platform_absent: true }],
+      'FIXTURE_AUTH_PLATFORM_ABSENCE_REQUIRED'
+    );
+    await db.query('SET LOCAL ROLE supabase_auth_admin');
+    await db.query(authPlatformHelperSql);
+    await assertFixtureAuthPlatformHelpers(db);
+    await db.query('COMMIT');
+  } catch (error) {
+    await db.query('ROLLBACK');
+    throw error;
+  }
+}
+
+// The real application connection may execute helpers but must not replace
+// Auth's definition. Both expected denial and unexpected success roll back.
+export async function assertFixtureAuthPlatformWriteDenied(db) {
+  await assertApplicationOwnerBoundary(db);
+  await db.query('BEGIN');
+  let denied = false;
+  try {
+    await db.query(`CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid
+      LANGUAGE sql STABLE AS $$SELECT NULL::uuid$$`);
+  } catch (error) {
+    if (error?.code !== '42501') throw error;
+    denied = true;
+  } finally {
+    await db.query('ROLLBACK');
+  }
+  assert.equal(denied, true, 'FIXTURE_APPLICATION_AUTH_REPLACEMENT_MUST_REFUSE');
+  await assertFixtureAuthPlatformHelpers(db);
+}

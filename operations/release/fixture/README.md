@@ -408,3 +408,19 @@ No event trigger is deleted from the supplied application schema, no owner is
 promoted to overcome a permission failure, and no application signup is accepted
 while the owner is a superuser. This probe does not qualify application funding,
 F06/F12 composition, the complete role graph, or a production release.
+
+### Captured Auth platform helpers
+
+The follow-up to managed fixture source `9ba5a7ad` supplies `auth.email()`,
+`auth.jwt()`, `auth.role()` and `auth.uid()` under `supabase_auth_admin`, after
+real GoTrue migrations and before application restoration. Their definitions,
+attributes and direct ACLs were captured read-only on 2026-09-12 at 13:55:49 UTC.
+Application `postgres` remains NOSUPERUSER without Auth schema CREATE. Existing
+helper names, unexpected catalog values or a permitted application replacement
+fail the fixture; each bootstrap/replacement probe rolls back on failure.
+
+The native follow-up must establish both catalog identity and real PostgREST
+claim behavior for two users and an anonymous request. The earlier `9ba5a7ad`
+receipt does not test these additions. The application schema composer must
+reconcile its old four helper blocks with this service bootstrap using exact
+source guards. All other full-schema readiness requirements remain in place.

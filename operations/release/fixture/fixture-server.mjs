@@ -23,6 +23,9 @@ import {
   assertManagedPostgresBoundary,
   assertBootstrapPostgresConfiguration,
   sealFixtureAuthMigrationLedger,
+  installFixtureAuthPlatformHelpers,
+  assertFixtureAuthPlatformHelpers,
+  assertFixtureAuthPlatformWriteDenied,
   assertFixtureServiceBootstrap,
 } from './service-role-boundary.mjs';
 import { createFixtureGateway, loadStaticManifest, findPublicAnonKey } from './gateway.mjs';
@@ -680,6 +683,7 @@ async function start(args) {
     try {
       await authBootstrap.connect();
       await sealFixtureAuthMigrationLedger(authBootstrap);
+      await installFixtureAuthPlatformHelpers(authBootstrap);
     } finally {
       await supervisor.databaseOwner.end(authBootstrap);
     }
@@ -726,6 +730,8 @@ async function start(args) {
       schemaRoot + '/schema.sql',
     ]);
     const applicationOwner = await assertApplicationOwnerBoundary(db);
+    await assertFixtureAuthPlatformHelpers(db);
+    await assertFixtureAuthPlatformWriteDenied(db);
     await supervisor.start('auth', '/usr/local/bin/auth', ['serve'], env.auth);
     await supervisor.until(() => health('http://127.0.0.1:9999/health'));
     stage = 'real-users-and-financial-seed';

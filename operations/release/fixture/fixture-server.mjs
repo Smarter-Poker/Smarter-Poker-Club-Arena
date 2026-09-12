@@ -1,3 +1,4 @@
+import { configureFixtureSafeupdate } from './safeupdate-provider.mjs';
 import {
   cronPostgresArguments,
   installFixtureCron,
@@ -680,6 +681,8 @@ async function start(args) {
     await db.query(serviceRoleBootstrapSql(secrets.databasePassword));
     stage = 'postgresql-native-cron-install';
     await installFixtureCron(db);
+    stage = 'postgresql-safeupdate-configure';
+    await configureFixtureSafeupdate(db);
     await supervisor.databaseOwner.end(db);
     db = supervisor.databaseOwner.own(new pg.Client({ ...connection, database }));
     await db.connect();

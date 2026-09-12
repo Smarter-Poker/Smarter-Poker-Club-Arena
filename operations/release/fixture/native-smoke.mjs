@@ -1,4 +1,10 @@
 import {
+  configureFixtureSafeupdate,
+  safeupdateProbeSetupSql,
+  assertFixtureSafeupdateSession,
+  assertFixtureSafeupdateHttp,
+} from './safeupdate-provider.mjs';
+import {
   cronPostgresArguments,
   installFixtureCron,
   assertFixtureCronCatalog,
@@ -343,6 +349,8 @@ async function services() {
   await bootstrap.query(serviceRoleBootstrapSql(password));
   stage = 'postgresql-native-cron-install';
   await installFixtureCron(bootstrap);
+  stage = 'postgresql-safeupdate-configure';
+  await configureFixtureSafeupdate(bootstrap);
   await databaseOwner.end(bootstrap);
   const db = databaseOwner.own(
     new pg.Client({
@@ -514,6 +522,22 @@ async function services() {
       users[1].id,
       'hidden-other-user',
     ]);
+    stage = 'postgresql-safeupdate-fresh-session';
+    await db.query(safeupdateProbeSetupSql);
+    const safeupdateSession = databaseOwner.own(
+      new pg.Client({
+        host: '127.0.0.1',
+        user: 'authenticator',
+        password,
+        database,
+      })
+    );
+    try {
+      await safeupdateSession.connect();
+      await assertFixtureSafeupdateSession(safeupdateSession);
+    } finally {
+      await databaseOwner.end(safeupdateSession);
+    }
     stage = 'postgrest-server-start';
     await start('postgrest', '/usr/local/bin/postgrest', [], {
       PGRST_DB_URI: `postgres://authenticator:${password}@127.0.0.1:5432/${database}`,
@@ -526,6 +550,8 @@ async function services() {
     });
     stage = 'postgrest-server-ready';
     await eventually(() => healthy('http://127.0.0.1:3000/'));
+    stage = 'postgrest-safeupdate-native-http';
+    const safeupdate = await assertFixtureSafeupdateHttp(db, user.session.access_token);
     stage = 'gotrue-platform-helper-http';
     for (const actor of [users[1], user]) {
       const claimResponse = await fetch('http://127.0.0.1:3000/rpc/fixture_auth_claims', {
@@ -962,6 +988,7 @@ async function services() {
         postgres: '17.11',
         extensions: 7,
         cron,
+        safeupdate,
         auth: '2.196.0',
         mfa: 'aal2',
         ledger_attribution: 'banned-without-session',

@@ -12,7 +12,7 @@ import uuid
 
 FILES = ('Dockerfile', 'package.json', 'package-lock.json', 'fixture-server.mjs',
          'runtime-files.mjs', 'gateway.mjs', 'auth-fixture.mjs', 'auth-bootstrap-proof.mjs',
-         'service-role-boundary.mjs', 'cron-provider.mjs', 'actors.mjs', 'financial-route-phase.mjs',
+         'service-role-boundary.mjs', 'cron-provider.mjs', 'safeupdate-provider.mjs', 'actors.mjs', 'financial-route-phase.mjs',
          'seed-fixture.mjs', 'native-smoke.mjs', 'observation-bridge.mjs', 'build-image.sh', 'smoke-image.sh')
 PREFIX = 'operations/release/fixture/'
 CONTROL_FILES = tuple('operations/release/native/' + name for name in (
@@ -20,6 +20,7 @@ CONTROL_FILES = tuple('operations/release/native/' + name for name in (
     'component-semantic-observations.mjs'))
 NATIVE_STAGES = frozenset((
     'managed-postgres-event-trigger-boundary', 'postgresql-native-cron-install', 'postgresql-native-cron-metadata',
+    'postgresql-safeupdate-configure', 'postgresql-safeupdate-fresh-session', 'postgrest-safeupdate-native-http',
     'gotrue-platform-helper-authority', 'gotrue-platform-helper-http',
     'initialization', 'observer-user-isolation', 'native-observation-bridge',
     'chromium-native-read-and-rls', 'postgresql-17-extensions',
@@ -245,6 +246,7 @@ def smoke_records(output):
                          'metadata_api': 'schedule-alter-unschedule-rollback',
                          'application_ddl': 'denied', 'background_jobs': 'disabled',
                          'production_binary_parity': False, 'complete_cron_acl_parity': False}, 'auth': '2.196.0', 'mfa': 'aal2',
+                'safeupdate': {'library': 'safeupdate-1.4', 'source': '104f78d27b607076b49f22927ba33828fd0a98a0', 'fresh_session': 'authenticator-native-loaded', 'sql_refusals': 'update-delete-cte-21000', 'ordinary_disable': '42501', 'http': 'unfiltered-denied-filtered-committed', 'probe_cleanup': 'rows-restored-objects-absent', 'production_binary_parity': False, 'complete_role_graph_parity': False, 'production_pre_request_parity': False},
                 'ledger_attribution': 'banned-without-session',
                 'service_roles': {'auth_admin_inheritance': 'disabled',
                                   'auth_claim_helpers': 'service-owned-and-http-verified',

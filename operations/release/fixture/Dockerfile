@@ -79,7 +79,7 @@ RUN test "$(dpkg --print-architecture)" = amd64 \
 
 WORKDIR /opt/qualification
 # These are trusted, reviewed runtime files, never supplied by a candidate archive.
-COPY fixture-server.mjs runtime-files.mjs gateway.mjs auth-fixture.mjs auth-bootstrap-proof.mjs service-role-boundary.mjs actors.mjs financial-route-phase.mjs seed-fixture.mjs native-smoke.mjs observation-bridge.mjs cron-provider.mjs /opt/qualification/runtime/
+COPY fixture-server.mjs runtime-files.mjs gateway.mjs auth-fixture.mjs auth-bootstrap-proof.mjs service-role-boundary.mjs actors.mjs financial-route-phase.mjs seed-fixture.mjs native-smoke.mjs observation-bridge.mjs cron-provider.mjs safeupdate-provider.mjs /opt/qualification/runtime/
 RUN node --input-type=module -e "import {adaptRealtimeLauncher,adaptRealtimeConfiguration} from '/opt/qualification/runtime/fixture-server.mjs'; await adaptRealtimeLauncher(); await adaptRealtimeConfiguration();" \
     && printf '#!/bin/sh\nexec /usr/local/bin/node /opt/qualification/runtime/fixture-server.mjs "$@"\n' > /usr/local/bin/fixture-server \
     && chmod 0555 /usr/local/bin/fixture-server \
@@ -117,7 +117,16 @@ RUN mkdir /tmp/pg-cron \
     && sed -i "s/^default_version = '1.6'$/default_version = '1.6.4'/" /tmp/cron-install/usr/share/postgresql/17/extension/pg_cron.control \
     && printf '%s\n' '-- Alignment migration: 1.6 and 1.6.4 are schema-identical.' > /tmp/cron-install/usr/share/postgresql/17/extension/pg_cron--1.6--1.6.4.sql
 
+# PostgreSQL17 ABI build of the real safeupdate1.4 hook, never a SQL replacement.
+FROM supautils-builder AS safeupdate-builder
+ADD --checksum=sha256:fc9dc2699ab43fa2a19cae382d497caa95abb7029864af5adaa0c96d4d656c09 https://codeload.github.com/eradman/pg-safeupdate/tar.gz/104f78d27b607076b49f22927ba33828fd0a98a0 /tmp/safeupdate.tar.gz
+RUN mkdir /tmp/safeupdate \
+    && tar -xzf /tmp/safeupdate.tar.gz --strip-components=1 -C /tmp/safeupdate \
+    && make -C /tmp/safeupdate PG_CONFIG=/usr/lib/postgresql/17/bin/pg_config \
+    && test -s /tmp/safeupdate/safeupdate.so
+
 FROM postgres-runtime
+COPY --from=safeupdate-builder --chmod=0555 /tmp/safeupdate/safeupdate.so /usr/lib/postgresql/17/lib/safeupdate.so
 COPY --from=cron-builder --chmod=0555 /tmp/cron-install/usr/lib/postgresql/17/lib/pg_cron.so /usr/lib/postgresql/17/lib/pg_cron.so
 COPY --from=cron-builder /tmp/cron-install/usr/share/postgresql/17/extension/pg_cron* /usr/share/postgresql/17/extension/
 COPY --from=supautils-builder --chmod=0555 /tmp/supautils/supautils.so /usr/lib/postgresql/17/lib/supautils.so

@@ -70,6 +70,17 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
+# The user prohibits Mac dependency installs and copies. A partial shared
+# install is not a source-code verdict. Keep all dependency-free guards here;
+# required PR CI and the publisher still compile/test their exact installed tree.
+# A complete Mac install and every non-Mac host retain the local gates as well.
+CA_TREE_TOP="$(git rev-parse --show-toplevel)"
+CLIENT_DEPENDENCY_MODE=$(node "$CA_TREE_TOP/scripts/local-dependency-policy.mjs" "$CA_TREE_TOP")
+SERVER_DEPENDENCY_MODE=local
+if [ -f "$CA_TREE_TOP/server/package.json" ]; then
+  SERVER_DEPENDENCY_MODE=$(node "$CA_TREE_TOP/scripts/local-dependency-policy.mjs" "$CA_TREE_TOP/server")
+fi
+
 # Get the range of commits being pushed
 while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   # Skip deletions
@@ -386,7 +397,9 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   #    developers stop trusting. The rewind guard must never be skipped.
   if echo "$FILES" | grep -qE '^src/.*\.tsx?$'; then
     TSC="$(git rev-parse --show-toplevel)/node_modules/.bin/tsc"
-    if [ -x "$TSC" ]; then
+    if [ "$CLIENT_DEPENDENCY_MODE" = ci ]; then
+      echo "[club-arena pre-push] local typecheck not run: Mac dependencies are incomplete. Required CI must pass."
+    elif [ -x "$TSC" ]; then
       echo "[club-arena pre-push] type-checking src/ ..."
       if ! "$TSC" --noEmit; then
         echo ""
@@ -524,8 +537,8 @@ done
 copy_case_guard() {
   guard="$1"
   [ -f "$guard" ] || return 0
-  if [ ! -d "$(git rev-parse --show-toplevel)/node_modules/typescript" ]; then
-    echo "[club-arena pre-push] no local node_modules - skipped $(basename "$guard"). CI still runs it."
+  if ! node -e 'require("typescript")' >/dev/null 2>&1; then
+    echo "[club-arena pre-push] local TypeScript unavailable - $(basename "$guard") must run in CI."
     return 0
   fi
   if ! node "$guard"; then
@@ -641,7 +654,9 @@ fi
 # tree is broken and starts reinstalling, which is how it becomes a loop.
 #
 # Probe first, so the diagnosis arrives before the confusion does.
-bash "$(git rev-parse --show-toplevel)/scripts/check-node-modules.sh" --check
+if [ "$CLIENT_DEPENDENCY_MODE" = local ]; then
+  bash "$CA_TREE_TOP/scripts/check-node-modules.sh" --check
+fi
 
 VITEST="$(git rev-parse --show-toplevel)/node_modules/.bin/vitest"
 
@@ -655,7 +670,7 @@ VITEST="$(git rev-parse --show-toplevel)/node_modules/.bin/vitest"
 # copies or repairs a dependency tree while a push is in progress.
 CA_TREE_TOP="$(git rev-parse --show-toplevel)"
 
-if [ -f package.json ] && [ ! -x "$VITEST" ]; then
+if [ "$CLIENT_DEPENDENCY_MODE" = local ] && [ -f package.json ] && [ ! -x "$VITEST" ]; then
   echo ""
   echo "[club-arena pre-push] REFUSING: no vitest in this tree and it could not be"
   echo "                      provisioned, so the test gate cannot run. Pushing now"
@@ -666,7 +681,9 @@ if [ -f package.json ] && [ ! -x "$VITEST" ]; then
   exit 1
 fi
 
-if [ -f package.json ] && [ -x "$VITEST" ]; then
+if [ "$CLIENT_DEPENDENCY_MODE" = ci ]; then
+  echo "[club-arena pre-push] local client tests not run: Mac dependencies are incomplete. Required CI must pass."
+elif [ -f package.json ] && [ -x "$VITEST" ]; then
   CHANGED_TESTS=""
   CHANGED_SRC=""
   for f in $FILES; do
@@ -771,7 +788,9 @@ if [ -f server/package.json ]; then
     esac
   done
 
-  if [ -n "$SRV_TESTS$SRV_SRC" ] && [ ! -x "$SERVER_VITEST" ]; then
+  if [ -n "$SRV_TESTS$SRV_SRC" ] && [ "$SERVER_DEPENDENCY_MODE" = ci ]; then
+    echo "[club-arena pre-push] local server tests not run: Mac dependencies are incomplete. Required CI must pass."
+  elif [ -n "$SRV_TESTS$SRV_SRC" ] && [ ! -x "$SERVER_VITEST" ]; then
     echo ""
     echo "[club-arena pre-push] REFUSING: you changed server/** and there is no vitest"
     echo "                      in server/, so the ENGINE gate cannot run. This is the"
@@ -791,7 +810,7 @@ if [ -f server/package.json ]; then
     fi
   fi
 
-  if [ -n "$SRV_SRC" ] && [ -x "$SERVER_VITEST" ]; then
+  if [ "$SERVER_DEPENDENCY_MODE" = local ] && [ -n "$SRV_SRC" ] && [ -x "$SERVER_VITEST" ]; then
     echo "[club-arena pre-push] running the server tests that cover your changes..."
     if ! ( cd server && "$SERVER_VITEST" related --run $SRV_SRC ); then
       echo ""

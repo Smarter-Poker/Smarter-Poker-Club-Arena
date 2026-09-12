@@ -21,9 +21,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(join(here, 'ServerTableEngineDealing.ts'), 'utf8');
 
 describe('dealHand re-reads the controller after its one await', () => {
-  const construct = SRC.indexOf(
-    'this.handController = new HandController(config, hcPlayers, dealerSeat);'
-  );
+  const construct = SRC.indexOf('this.handController = new HandController(');
   const awaitAt = SRC.indexOf('const tbExtras = await this.fetchTimeBankExtras(', construct);
   const guard = SRC.indexOf('if (!this.handController || !this.running) {', awaitAt);
   const capture = SRC.indexOf('const controllerForHand = this.handController!;', guard);

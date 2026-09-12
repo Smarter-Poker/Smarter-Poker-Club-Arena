@@ -208,7 +208,12 @@ export class HandController {
   /** FIX-225: Bible V8 §1.6/§3.2 — Formal Hand State Machine */
   private handFSM = createHandStateMachine('idle');
 
-  constructor(config: HandConfig, players: SeatPlayer[], dealerSeat: number) {
+  constructor(
+    config: HandConfig,
+    players: SeatPlayer[],
+    dealerSeat: number,
+    private readonly readPublicTournamentStage?: import('./HorsePublicTournamentStage.js').HorsePublicTournamentReader
+  ) {
     if (config.asset === 'diamonds') {
       const amounts = [
         config.smallBlind,
@@ -1011,7 +1016,8 @@ export class HandController {
         this.config,
         this.state,
         this.getAuthoritativeActionState(player.user_id),
-        this.getActiveBoardCount()
+        this.getActiveBoardCount(),
+        this.readPublicTournamentStage
       );
     } catch {
       // Learning metadata cannot veto an already validated poker action.

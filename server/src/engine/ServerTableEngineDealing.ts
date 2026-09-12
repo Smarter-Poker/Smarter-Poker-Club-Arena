@@ -11,6 +11,7 @@
 import { noteFire } from './BrainTelemetry.js';
 import { resolvePersona, wantsStraddle } from './HorsePersona.js';
 import { HandController } from './HandController.js';
+import { getTournamentBrainContextSnapshot } from '../services/TournamentBrainContext.js';
 import { captureHandSeatGenerations } from './handSeatGeneration.js';
 import { ShadowRecorder } from './eventlog/ShadowRecorder.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
@@ -2569,7 +2570,17 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       this.currentHandVariant = config.gameVariant;
 
       this.currentHandSeatGenerations = captureHandSeatGenerations(players);
-      this.handController = new HandController(config, hcPlayers, dealerSeat);
+      // Bind the tournament identity to this hand. Each accepted action reads
+      // only the existing cache; later table reassignment cannot change it.
+      const observationTournamentId = this.tableInfo?.tournament_id;
+      this.handController = new HandController(
+        config,
+        hcPlayers,
+        dealerSeat,
+        config.isTournament && observationTournamentId
+          ? () => getTournamentBrainContextSnapshot(observationTournamentId)
+          : undefined
+      );
       // chip-std Lane F (2026-09-02): the stacks this hand was dealt from. The
       // tournament persist gate in postHandTasks holds the settled stacks of
       // these exact players to this exact total.

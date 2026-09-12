@@ -69,6 +69,21 @@ const chips = (st: () => any) =>
   st().players.reduce((s: number, p: SeatPlayer) => s + p.stack, 0) + st().pot;
 
 describe('pineapple discard round', () => {
+  it.each([-1, 3, 0.5, NaN, Infinity, null, undefined])(
+    'rejects malformed discard index %s without changing cards or private knowledge',
+    (index) => {
+      const { hc, st, events } = toDiscardRound();
+      const player = st().players[0] as SeatPlayer;
+      const before = structuredClone(player.cards),
+        eventCount = events.length;
+      expect(hc.performDiscard(player.seat, index as number)).toBe(false);
+      expect(player.cards).toEqual(before);
+      expect(hc.getPineappleKnownDeadCards(player.seat)).toEqual([]);
+      expect(hc.owesPineappleDiscard(player.seat)).toBe(true);
+      expect(events).toHaveLength(eventCount);
+    }
+  );
+
   it('retains the voluntary discard privately and rejects a second discard without changing it', () => {
     const { hc, st } = toDiscardRound();
     const player = st().players[0] as SeatPlayer;

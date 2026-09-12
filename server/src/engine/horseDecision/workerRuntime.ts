@@ -383,6 +383,8 @@ export class HorseDecisionWorkerRuntime {
         request.opts.phase8Postflop === 'candidate' ||
         request.opts.phase10Plo4 === 'candidate' ||
         request.opts.phase11Omaha === 'candidate' ||
+        request.opts.phase12Remaining === 'candidate' ||
+        'phase12EvidenceMode' in request.opts ||
         'phase11EvidenceMode' in request.opts ||
         'phase10EvidenceMode' in request.opts)
     ) {

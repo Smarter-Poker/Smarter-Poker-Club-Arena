@@ -1092,7 +1092,7 @@ export class HandController {
     if (!player.cards || player.cards.length !== 3) {
       return false; // Invalid state — should have 3 cards
     }
-    if (cardIndex < 0 || cardIndex >= player.cards.length) {
+    if (!Number.isInteger(cardIndex) || cardIndex < 0 || cardIndex >= player.cards.length) {
       return false; // Invalid card index
     }
 

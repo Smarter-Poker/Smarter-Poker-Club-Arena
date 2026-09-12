@@ -1,4 +1,9 @@
 import {
+  evaluateRemainingVariantPolicy,
+  type RemainingVariantMode,
+} from './remainingVariants/RemainingVariantLivePolicy.js';
+import { isRemainingPolicyVariant } from './remainingVariants/RemainingVariantPolicyPack.js';
+import {
   evaluateOmahaVariantPolicy,
   type OmahaVariantMode,
 } from './omaha/OmahaVariantLivePolicy.js';
@@ -1878,6 +1883,8 @@ export interface HorseDecideOpts {
   /** Phase 11 variant policies are live shadow; candidate/evidence controls are offline only. */
   phase11Omaha?: OmahaVariantMode;
   phase11EvidenceMode?: boolean;
+  phase12Remaining?: RemainingVariantMode;
+  phase12EvidenceMode?: boolean;
   /** V44 (2026-09-05): the SECOND LOOK. When set above 1, every Monte Carlo
    *  read in this decision runs at that multiple of its budgeted sample. The
    *  engine uses it to replay a close decision inside the think time it was
@@ -2043,6 +2050,7 @@ interface Phase7EquityEvidence {
 let phase7EquityEvidence: Phase7EquityEvidence | null = null;
 let phase10EquityEvidence: Plo4EquityEvidence | null = null;
 let phase11DecisionEquityCeiling: number | null = null;
+let phase12DecisionEquityCeiling: number | null = null;
 
 function phase7PlayersBehind(gs: HorseGameStateV2, hero: SeatPlayer): Set<string> {
   if (gs.dealerSeat === undefined) return new Set<string>();
@@ -2347,6 +2355,7 @@ export class HorseLogic {
       phase7EquityEvidence = null;
       phase10EquityEvidence = null;
       phase11DecisionEquityCeiling = null;
+      phase12DecisionEquityCeiling = null;
       const toCall = Math.max(0, (gameState.currentBet || 0) - (player.bet || 0));
       return toCall === 0
         ? { action: 'check', thinkTime: 1500 }
@@ -2355,6 +2364,7 @@ export class HorseLogic {
       phase7EquityEvidence = null;
       phase10EquityEvidence = null;
       phase11DecisionEquityCeiling = null;
+      phase12DecisionEquityCeiling = null;
       HorseMind.setDecisionScope(null);
     }
   }
@@ -2369,6 +2379,7 @@ export class HorseLogic {
     phase7EquityEvidence = null;
     phase10EquityEvidence = null;
     phase11DecisionEquityCeiling = null;
+    phase12DecisionEquityCeiling = null;
     const base = STYLE_PARAMS[styleName] || STYLE_PARAMS.balanced;
     const params: StyleParams = {
       ...base,
@@ -2569,7 +2580,20 @@ export class HorseLogic {
           )
         : null;
     if (phase11) decision = this.legalize(phase11.decision, player, gs, vi);
-    const variantPolicy = phase10 ?? phase11;
+    const phase12 =
+      isRemainingPolicyVariant(gs.gameVariant) && opts.phase12Remaining !== 'off'
+        ? evaluateRemainingVariantPolicy(
+            player,
+            gs,
+            decision,
+            null,
+            opts.phase12Remaining ?? 'shadow',
+            opts.phase12EvidenceMode && !tele ? () => 0 : undefined,
+            phase12DecisionEquityCeiling ?? 1
+          )
+        : null;
+    if (phase12) decision = this.legalize(phase12.decision, player, gs, vi);
+    const variantPolicy = phase10 ?? phase11 ?? phase12;
 
     let phase8UtilityInput: TournamentUtilityInput | null = null;
     let phase8ReuseUtility: TournamentContinuationRunner | undefined;
@@ -2684,7 +2708,10 @@ export class HorseLogic {
                 baseline: this.legalize(variantPolicy.proposal, player, gs, vi),
                 showdownSamples: phase8UtilityInput.showdownSamples.slice(0, 32),
                 withinBudget:
-                  (opts.phase10EvidenceMode || opts.phase11EvidenceMode) && !tele
+                  (opts.phase10EvidenceMode ||
+                    opts.phase11EvidenceMode ||
+                    opts.phase12EvidenceMode) &&
+                  !tele
                     ? () => true
                     : () => performance.now() - shadowStart < 4,
               });
@@ -2852,6 +2879,37 @@ export class HorseLogic {
         if (phase11.receipt.applied) noteFire('phase11_applied');
         else noteFire('phase11_baseline_retained');
         noteFire(`phase11_utility_${phase11.receipt.utilityOwner}`);
+      }
+    }
+    if (phase12) {
+      if (isTournamentMode(gs) && phase12.receipt.utilityOwner !== 'phase7_evaluated') {
+        phase12.receipt.utilityOwner = 'phase7_unavailable';
+        if (phase12.receipt.mode === 'candidate') {
+          decision = beforePhase10;
+          phase12.receipt.applied = false;
+        }
+      }
+      phase12.receipt.finalAction = decision.action;
+      phase12.receipt.finalAmount = decision.amount ?? null;
+      decision = { ...decision, remainingVariantPolicy: phase12.receipt };
+      if (tele) {
+        noteFire('phase12_seen');
+        noteFire(`phase12_variant_${phase12.receipt.variant}`);
+        noteDecisionMs('phase12', phase12.receipt.latencyMs);
+        noteDecisionMs(`phase12_${phase12.receipt.variant}`, phase12.receipt.latencyMs);
+        noteFire(`phase12_${phase12.receipt.variant}_reason_${phase12.receipt.reason}`);
+        if (phase12.receipt.eligible) noteFire(`phase12_${phase12.receipt.variant}_eligible`);
+        if (phase12.receipt.fired) noteFire(`phase12_${phase12.receipt.variant}_fired`);
+        noteFire(`phase12_reason_${phase12.receipt.reason}`);
+        if (phase12.receipt.eligible) noteFire('phase12_eligible');
+        if (phase12.receipt.fired) {
+          noteFire('phase12_fired');
+          noteFire(`phase12_street_${gs.stage}`);
+        }
+        if (phase12.receipt.changed) noteFire('phase12_shadow_changed');
+        if (phase12.receipt.applied) noteFire('phase12_applied');
+        else noteFire('phase12_baseline_retained');
+        noteFire(`phase12_utility_${phase12.receipt.utilityOwner}`);
       }
     }
     decision.thinkTime = this.computeThinkTime(
@@ -3080,6 +3138,7 @@ export class HorseLogic {
         phase7EquityEvidence = null;
         phase10EquityEvidence = null;
         phase11DecisionEquityCeiling = null;
+        phase12DecisionEquityCeiling = null;
       }
     }
     const stackBB = player.stack / bb;
@@ -6320,6 +6379,10 @@ export class HorseLogic {
 
     if (isOmahaPolicyVariant(gs.gameVariant) && eq15 < equity) {
       phase11DecisionEquityCeiling = clamp01(eq15);
+    }
+
+    if (isRemainingPolicyVariant(gs.gameVariant) && eq15 < equity) {
+      phase12DecisionEquityCeiling = clamp01(eq15);
     }
 
     if (gs.gameVariant === 'plo4') {

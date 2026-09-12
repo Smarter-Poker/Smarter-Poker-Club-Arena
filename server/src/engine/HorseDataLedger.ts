@@ -554,6 +554,16 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase11'
   ),
   flag(
+    'phase12Remaining',
+    'separate Short Deck/Pineapple/FLH/FLO8 policies; shadow by default; candidate selection is offline only',
+    'Phase12'
+  ),
+  flag(
+    'phase12EvidenceMode',
+    'offline fixed-work remaining-variant clock; rejected by the live decision worker',
+    'Phase12'
+  ),
+  flag(
     'v43Tempo',
     'tempo reads: a river big bet priced by how fast it was made against what this player shows down at that tempo',
     'V43'
@@ -1745,6 +1755,88 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
       'HorseLogic; ServerTableEngineTurns',
       'per-variant eligibility, completion, reason and final execution; depends on table mix',
       'Phase11'
+    )
+  ),
+  receipt(
+    'phase12_seen',
+    'HorseLogic -> evaluateRemainingVariantPolicy',
+    'natural Short Deck/Pineapple/FLH/FLO8 decisions entering the versioned policy',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_eligible',
+    'evaluateRemainingVariantPolicy',
+    'complete supported single-board Short Deck/Pineapple/FLH/FLO8 nodes',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_fired',
+    'evaluateRemainingVariantPolicy',
+    'completed bounded Short Deck/Pineapple/FLH/FLO8 policy evaluation',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_shadow_changed',
+    'evaluateRemainingVariantPolicy',
+    'proposal differs from baseline; not a live action claim',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_applied',
+    'HorseLogic',
+    'approved policy proposal accepted before final utility and enforcement',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_baseline_retained',
+    'HorseLogic',
+    'shadow or unavailable policy retained the existing action',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_reason_*',
+    'evaluateRemainingVariantPolicy',
+    'exact selection or unavailable reason',
+    'Phase12',
+    'phase12_seen',
+    0.99
+  ),
+  receipt(
+    'phase12_street_*',
+    'evaluateRemainingVariantPolicy',
+    'street coverage for completed policy evaluations',
+    'Phase12',
+    'phase12_fired',
+    0.99
+  ),
+  receipt(
+    'phase12_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'cash or existing tournament utility ownership',
+    'Phase12',
+    'phase12_seen',
+    0.99
+  ),
+  receipt(
+    'phase12_execution_*',
+    'ServerTableEngineTurns',
+    'authoritative action or retired decision accounting',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_variant_*',
+    'HorseLogic',
+    'partition entering decisions by exact variant',
+    'Phase12',
+    'phase12_seen',
+    0.99
+  ),
+  ...(['short_deck', 'pineapple', 'flh', 'flo8'] as const).map((variant) =>
+    receipt(
+      `phase12_${variant}_*`,
+      'HorseLogic; ServerTableEngineTurns',
+      'per-variant eligibility, completion, reason and final execution; depends on table mix',
+      'Phase12'
     )
   ),
   receipt(

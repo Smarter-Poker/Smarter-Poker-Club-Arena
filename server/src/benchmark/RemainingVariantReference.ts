@@ -3,6 +3,11 @@
  * an answer. FLO8 retains the independent exact-two/exact-three Omaha oracle.
  */
 import type { Card } from '../types.js';
+import {
+  contributionLayers,
+  settleOmahaReference,
+  type ReferencePlayer,
+} from './OmahaReference.js';
 
 export const REMAINING_REFERENCE_VERSION = 'remaining-variants-reference-round1-v1';
 const RANKS = '23456789TJQKA';
@@ -105,4 +110,85 @@ export function referenceRemainingHigh(
             if (!best || result.score > best.score) best = result;
           }
   return best!;
+}
+
+/** Independent contribution layers, refunds, ranking and button-relative odd
+ * chips. FLO8 shares Omaha's exact-two/exact-three reference; only its wagering
+ * differs. Pineapple inputs contain the retained pair and declared discards. */
+export function settleRemainingReference(input: {
+  variant: 'short_deck' | 'pineapple' | 'flh' | 'flo8';
+  players: ReferencePlayer[];
+  board: Card[];
+  knownDeadCards?: Card[];
+  chipUnit: 0.01 | 1;
+  dealerSeat: number;
+}) {
+  validateReferenceCards(
+    [...input.players.flatMap((p) => p.cards), ...input.board, ...(input.knownDeadCards ?? [])],
+    input.variant === 'short_deck'
+  );
+  if (input.variant === 'flo8')
+    return settleOmahaReference({
+      variant: 'flo8',
+      players: input.players,
+      boards: [input.board],
+      chipUnit: input.chipUnit,
+      dealerSeat: input.dealerSeat,
+    });
+  if (
+    input.board.length !== 5 ||
+    input.players.some((p) => p.cards.length !== 2) ||
+    !Number.isInteger(input.dealerSeat) ||
+    input.dealerSeat < 1 ||
+    input.dealerSeat > 10
+  )
+    throw new Error('Invalid remaining-variant showdown geometry');
+  const { pots, refunds } = contributionLayers(input.players, input.chipUnit);
+  const totals = Object.fromEntries(input.players.map((p) => [p.id, 0]));
+  const scores = new Map(
+    input.players
+      .filter((p) => !p.folded)
+      .map((p) => [
+        p.id,
+        referenceRemainingHigh(
+          input.variant as 'flh' | 'pineapple' | 'short_deck',
+          p.cards,
+          input.board
+        ).score,
+      ])
+  );
+  const awards: { playerId: string; potIndex: number; amount: number }[] = [];
+  pots.forEach((pot, potIndex) => {
+    const high = Math.max(...pot.eligible.map((id) => scores.get(id)!));
+    const winners = input.players
+      .filter((p) => pot.eligible.includes(p.id) && scores.get(p.id) === high)
+      .sort(
+        (a, b) =>
+          Number(a.seat <= input.dealerSeat) - Number(b.seat <= input.dealerSeat) || a.seat - b.seat
+      );
+    if (!winners.length) throw new Error('No eligible winner');
+    const units = Math.round(pot.amount / input.chipUnit);
+    winners.forEach((p, i) => {
+      const amount =
+        (Math.floor(units / winners.length) + Number(i < units % winners.length)) * input.chipUnit;
+      totals[p.id] += amount;
+      if (amount) awards.push({ playerId: p.id, potIndex, amount });
+    });
+  });
+  const contributed = input.players.reduce((n, p) => n + p.contributed, 0);
+  const distributed = [...Object.values(totals), ...Object.values(refunds)].reduce(
+    (n, x) => n + x,
+    0
+  );
+  if (Math.abs(contributed - distributed) > input.chipUnit / 1e4)
+    throw new Error('Reference failed conservation');
+  return {
+    version: REMAINING_REFERENCE_VERSION,
+    pots,
+    refunds,
+    totals,
+    awards,
+    contributed,
+    distributed,
+  };
 }

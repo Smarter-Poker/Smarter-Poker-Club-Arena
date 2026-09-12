@@ -1,3 +1,7 @@
+## 2026-09-12: Enforce the tournament variant catalogue
+
+Applied `20260912044409_remaining_tournament_variant_allowlist.sql` through the Supabase migration tool. The governed creator now accepts the existing eight tournament games and four Spin games, with normalized names. Exact source and metadata guards preserve authorization and financial formulas. Native PostgreSQL passed 47 launch cases, idempotence and source-drift rejection; production source fingerprints and authentication refusal match. No historical rows changed. See `docs/horse-brain-phase12-round1.md`. Engine policy release remains separate.
+
 ## 2026-09-10: Restore Bounded Rake Attribution Retries
 
 Prepare an exact-source guarded restoration of the committed attribution retry loop while preserving settlement lane exclusion and function metadata. Thirty-five native rollback assertions passed; the tracked composer reproduces the executed proof exactly. See docs/changelog/2026-09-10-rake-attribution-retry-restoration.md for scope and limits. Application remains separate from source publication.

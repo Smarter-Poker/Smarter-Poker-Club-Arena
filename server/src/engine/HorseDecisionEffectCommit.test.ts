@@ -680,3 +680,129 @@ describe('Phase 11 authoritative execution receipts', () => {
     expect(performAction).not.toHaveBeenCalled();
   });
 });
+
+// Phase 12 must reconcile through the same real scheduled action boundary.
+describe('Phase 12 authoritative execution receipts', () => {
+  it.each(['generation', 'fence'] as const)(
+    'retires every ledger on an early %s mismatch without executing an action',
+    async (mismatch) => {
+      const { engine, player, enginePlayer, state, performAction } = harness(true);
+      const ledgers = Object.fromEntries(
+        [
+          'tournamentUtility',
+          'tournamentPostflop',
+          'plo4Policy',
+          'omahaVariantPolicy',
+          'remainingVariantPolicy',
+        ].map((key) => [
+          key,
+          {
+            variant: 'flo8',
+            finalAction: 'bet',
+            finalAmount: 20,
+            executedAction: null,
+            executedAmount: null,
+            executionStatus: 'pending',
+          },
+        ])
+      );
+      decisionWorker.decideFast.mockImplementationOnce(async (snapshot: any) => ({
+        type: 'FAST_RESULT' as const,
+        requestId: 45,
+        generation: snapshot.generation + Number(mismatch === 'generation'),
+        fence: mismatch === 'fence' ? 'retired-fence' : snapshot.fence,
+        decision: { action: 'bet' as const, amount: 20, thinkTime: 1, ...ledgers },
+        rngBefore: 11,
+        rngAfter: 22,
+        computeMs: 2,
+        governorScale: 1,
+        effects: [],
+      }));
+      engine.scheduleHorseAction(player, 1, enginePlayer, state);
+      await vi.advanceTimersByTimeAsync(250);
+      for (const ledger of Object.values(ledgers))
+        expect(ledger.executionStatus).toBe('not_executed');
+      expect(performAction).not.toHaveBeenCalled();
+      expect(decisionWorker.commitDecisionEffects).not.toHaveBeenCalled();
+    }
+  );
+  it.each([
+    [true, 'intended', 'bet'],
+    [false, 'fallback', 'check'],
+  ] as const)(
+    'records the authoritative Phase 12 execution receipt (%s -> %s)',
+    async (accepted, expectedStatus, expectedAction) => {
+      const { engine, player, enginePlayer, state, performAction } = harness(accepted);
+      const receipt: any = {
+        finalAction: 'bet',
+        finalAmount: 20,
+        executedAction: null,
+        executedAmount: null,
+        executionStatus: 'pending',
+      };
+      decisionWorker.decideFast.mockImplementationOnce(async (snapshot: any) => ({
+        type: 'FAST_RESULT' as const,
+        requestId: 41,
+        generation: snapshot.generation,
+        fence: snapshot.fence,
+        decision: {
+          action: 'bet' as const,
+          amount: 20,
+          thinkTime: 1,
+          remainingVariantPolicy: receipt,
+        },
+        rngBefore: 11,
+        rngAfter: 22,
+        computeMs: 2,
+        governorScale: 1,
+        effects: [],
+      }));
+
+      engine.scheduleHorseAction(player, 1, enginePlayer, state);
+      await vi.advanceTimersByTimeAsync(250);
+
+      expect(receipt.executionStatus).toBe(expectedStatus);
+      expect(receipt.executedAction).toBe(expectedAction);
+      expect(receipt.executedAmount).toBe(expectedAction === 'bet' ? 20 : null);
+      expect(performAction).toHaveBeenCalledTimes(accepted ? 1 : 2);
+    }
+  );
+
+  it('closes a pending Phase 12 receipt when the authority fence expires before commit', async () => {
+    const { engine, player, enginePlayer, state, performAction } = harness(true);
+    const receipt: any = {
+      finalAction: 'bet',
+      finalAmount: 20,
+      executedAction: null,
+      executedAmount: null,
+      executionStatus: 'pending',
+    };
+    decisionWorker.decideFast.mockImplementationOnce(async (snapshot: any) => ({
+      type: 'FAST_RESULT' as const,
+      requestId: 42,
+      generation: snapshot.generation,
+      fence: snapshot.fence,
+      decision: {
+        action: 'bet' as const,
+        amount: 20,
+        thinkTime: 1_000,
+        remainingVariantPolicy: receipt,
+      },
+      rngBefore: 11,
+      rngAfter: 22,
+      computeMs: 2,
+      governorScale: 1,
+      effects: [],
+    }));
+
+    engine.scheduleHorseAction(player, 1, enginePlayer, state);
+    await vi.advanceTimersByTimeAsync(0);
+    engine.handCount += 1;
+    await vi.advanceTimersByTimeAsync(1_500);
+
+    expect(receipt.executionStatus).toBe('not_executed');
+    expect(receipt.executedAction).toBeNull();
+    expect(receipt.executedAmount).toBeNull();
+    expect(performAction).not.toHaveBeenCalled();
+  });
+});

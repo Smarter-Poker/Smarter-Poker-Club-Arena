@@ -234,14 +234,14 @@ export default function FinancialHealthPage() {
         {status?.lastSuspensionCheck ? (
           <div className="fh-suspension-stats">
             {status.lastSuspensionCheck.checkedAt && (
-              <div>Last attempt: {formatDateTime(status.lastSuspensionCheck.checkedAt)}</div>
+              <div>Last Attempt: {formatDateTime(status.lastSuspensionCheck.checkedAt)}</div>
             )}
             {status.lastSuspensionCheck.unavailable && (
               <div role="alert">
-                Suspension check unavailable or incomplete. Counts below are partial.{' '}
+                Suspension Check Unavailable Or Incomplete. Counts Below Are Partial.{' '}
                 {status.lastSuspensionCheck.disabled
-                  ? 'Automatic checks are paused after repeated failures. Reload the app to retry.'
-                  : 'Run again to retry.'}
+                  ? 'Automatic Checks Are Paused After Repeated Failures. Reload The App To Retry.'
+                  : 'Run Again To Retry.'}
               </div>
             )}
             <div className="fh-stat">

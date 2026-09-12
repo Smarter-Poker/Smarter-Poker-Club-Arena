@@ -160,7 +160,7 @@ export default function AgentInvoicesPanel({ agentId }: Props) {
         <div style={{ fontSize: '13px', opacity: 0.6, padding: '8px 0' }}>Loading Invoices...</div>
       ) : unavailable ? (
         <div role="alert">
-          Invoices unavailable. Try again to check your balance.
+          Invoices Unavailable. Try Again To Check Your Balance.
           <button type="button" onClick={() => void load()}>
             Retry
           </button>

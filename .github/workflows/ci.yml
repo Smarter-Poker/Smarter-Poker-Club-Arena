@@ -1107,6 +1107,11 @@ jobs:
           PGBIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/probe-a-bust-is-ranked-by-when-it-happened-pg17.sh
 
+      - name: Agent downline rake stays in overseer clubs
+        env:
+          PGBIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/dev/probe-agent-downline-rake-scope-pg17.py
+
       - name: Certified V31 PostgreSQL 17 behavior gate
         if: >-
           github.event_name == 'schedule' ||

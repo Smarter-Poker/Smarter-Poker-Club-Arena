@@ -1,0 +1,36 @@
+{
+  "artifacts": [
+    {
+      "path": "EVIDENCE_DELIVERY_INDEX.json",
+      "sha256": "dcb4e81e88b8ac3f0deeb61c124e074270e1d2e5ce09d7f32ebe546381ca26d7"
+    },
+    {
+      "path": "EXACT_ACL_HOME_DECISION.json",
+      "sha256": "85cd5731bdd732e0bcc0f930df24c698a0c17e163a93d6c520d55b6c8272adef"
+    },
+    {
+      "path": "EXACT_NEW_HOMES.json",
+      "sha256": "dbfaa94d068c7f0f4b94fa0faac774d06933db9766a659bc77a19cbf1ab423c4"
+    },
+    {
+      "path": "INPUTS.json",
+      "sha256": "41be2966ae3a8e8d3e6c4ed83bc5f10095477080eda08a9489c83b83b457dee6"
+    },
+    {
+      "path": "MULTIPLE_HOME_DECISIONS.json",
+      "sha256": "6d36e727533329733b6edc3f5d7405487f416456b4ec6212a7455a6d7881ed9a"
+    },
+    {
+      "path": "ORIGINAL_REGISTER_SNAPSHOT.json",
+      "sha256": "100581a8ef17292e663670bb57545dae3cef4735e1a7bf2a731379d3637db55a"
+    },
+    {
+      "path": "ROOT_25_CONTRACTS.json",
+      "sha256": "fa405b80132e747c38a358bb01f0d92b2545b940a4fb750905828c1e36089e99"
+    },
+    {
+      "path": "VERIFICATION.json",
+      "sha256": "eb24ef3b5043b34933d773c9d120bf890f345262d00ee1fdffd751a86c84cfae"
+    }
+  ]
+}

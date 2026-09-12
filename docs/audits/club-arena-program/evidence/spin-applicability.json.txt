@@ -1,0 +1,251 @@
+{
+  "source_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+  "purpose": "Read-only exact artifact recovery; not source audit or executed test",
+  "spin_evidence_at": "2026-09-11T09:01:27.437659+00:00",
+  "spin_assertion_groups": 26,
+  "spin_passed": true,
+  "spin_limits": [
+    "Opening member wallets, reserve capital and accepted dealt-hand scenes are synthetic; actual creator, take-seat purchase, lease, launch, draw and terminal authorities create all boards, paid seats, funds and receipts.",
+    "Current cancellation source623100 and reader0b6ab are locally composed; a played/committed Spin must refuse cancellation without any replacement ticket or refund.",
+    "The unused versioned-deal fixture supplies shared runtime prerequisites and does not fund this Spin.",
+    "All seven terminal guards are enabled; whole Stage B manager-envelope integration, production activation, engine adoption and browser acceptance remain separate gates."
+  ],
+  "source_comparisons": [
+    {
+      "path": "scripts/ci/rehearse-spin-full-current-terminal.py",
+      "recorded_sha256": "dd3884b7a46c7ed117cd32ef597c1754842fe9f50487600dacd70f8147c8aff8",
+      "current_sha256": "85d94e313081cf2fc341b781b9be979def85bba4b393822fe0a5386bc3e3ff75",
+      "matches": false
+    },
+    {
+      "path": "scripts/ci/probes/spin-full-current-terminal-native.sql",
+      "recorded_sha256": "54227a51635bf8941697118a9833d0cb20676a46ec132f9ea65428437ff6cb1e",
+      "current_sha256": "54227a51635bf8941697118a9833d0cb20676a46ec132f9ea65428437ff6cb1e",
+      "matches": true
+    },
+    {
+      "path": "scripts/ci/rehearse-final-deal-current-terminal.py",
+      "recorded_sha256": "43cdefa38c7a699840c7767b22622560caad4911a2b9e6d3b999ce133e655756",
+      "current_sha256": "725e3093962e0b8d5a19bed1637ab3960e86968f74ebb0dc725601dfbe65012a",
+      "matches": false
+    },
+    {
+      "path": "scripts/ci/rehearse-satellite-cancel-current.py",
+      "recorded_sha256": "6530882d7dec13eca29bbce6af1feea927f6bc6a1cdd8b07494a6e35c1d32470",
+      "current_sha256": "9df67706672f2b0bbec45e48f92e73845dbafe43ef4fd2f25d3c8298b42c4e25",
+      "matches": false
+    },
+    {
+      "path": "scripts/ci/rehearse-whole-phase-three-cutover.py",
+      "recorded_sha256": "9aba08c670f152e9d1e01a8aa67ddf15a187fccf6d75db43da888eaab54cb908",
+      "current_sha256": "6383961ebbfa7ea9036892ebf29a161b1c97df02db706452308fb5ebd15fe38f",
+      "matches": false
+    },
+    {
+      "path": "scripts/ci/rehearse-stage-b-cash-payers.py",
+      "recorded_sha256": "4990134f6353cdfe7d6509570602617b3db96cf58d5d0ba471a9cf112b3fb6d4",
+      "current_sha256": "98e28adb633d0020510173220518ad988da4935eb5c6e9efa16e2aee7d9b85a6",
+      "matches": false
+    },
+    {
+      "path": "scripts/dev/build-versioned-final-deal-probe.py",
+      "recorded_sha256": "e75bb5e19be5ff787caa8cda53782f3ca62cee06007b53af1167a68e6e171a8e",
+      "current_sha256": "659347aeb5a28af1516a64b28efe83b720b1e8806110a3f9af3f60ccf0f76e11",
+      "matches": false
+    },
+    {
+      "path": "scripts/ci/probes/atomic-terminal-rehearsal-fixture.sql",
+      "recorded_sha256": "207ab33a49fbe2951553df90f0c298241181578c617f69714b6062d8d53dfdba",
+      "current_sha256": "207ab33a49fbe2951553df90f0c298241181578c617f69714b6062d8d53dfdba",
+      "matches": true
+    },
+    {
+      "path": "scripts/deploy/phase-three-strict-tournament-cutover.sql",
+      "recorded_sha256": "2862c27eae420c623a3ccc9ccc086245d208fc48dad3c0e97f2a5b0da1c6dabc",
+      "current_sha256": "2862c27eae420c623a3ccc9ccc086245d208fc48dad3c0e97f2a5b0da1c6dabc",
+      "matches": true
+    },
+    {
+      "path": "scripts/deploy/phase-three-final-deal-terminal-v2.sql",
+      "recorded_sha256": "b4af55173b825be5ecf48c6c3bbcca1e828493cdafc47becf00d73ad3186c871",
+      "current_sha256": "b4af55173b825be5ecf48c6c3bbcca1e828493cdafc47becf00d73ad3186c871",
+      "matches": true
+    },
+    {
+      "path": "scripts/deploy/phase-three-cancellation-origin-cash.sql",
+      "recorded_sha256": "84f2d79130e27bd687c848a45bb65bf5b63ac2ebf0d4e9bf360dc1ec19cd284a",
+      "current_sha256": "84f2d79130e27bd687c848a45bb65bf5b63ac2ebf0d4e9bf360dc1ec19cd284a",
+      "matches": true
+    },
+    {
+      "path": "scripts/deploy/2026-09-10-restore-rake-attribution-retries.sql",
+      "recorded_sha256": "f912f858c7f35004bfc2447fdf70329afc8a52029970e052c85c8e106fc83f2c",
+      "current_sha256": "f912f858c7f35004bfc2447fdf70329afc8a52029970e052c85c8e106fc83f2c",
+      "matches": true
+    },
+    {
+      "path": "docs/audits/2026-09-10-native-current-settlement-lane.json",
+      "recorded_sha256": "654dfc198ff4fcc58b93f8a4b70b0c5ef191b3e04b830b7df0d3b8133312aeef",
+      "current_sha256": "654dfc198ff4fcc58b93f8a4b70b0c5ef191b3e04b830b7df0d3b8133312aeef",
+      "matches": true
+    },
+    {
+      "path": "docs/audits/2026-09-10-native-current-money-authorities.json",
+      "recorded_sha256": "9cd8238b83ce94da5ff74d90a193028fb3a2aac891d2cfaac40aaeca76fe0f8b",
+      "current_sha256": "9cd8238b83ce94da5ff74d90a193028fb3a2aac891d2cfaac40aaeca76fe0f8b",
+      "matches": true
+    },
+    {
+      "path": "docs/audits/2026-09-10-native-current-seat-authority.json",
+      "recorded_sha256": "0fae11af62bf824820b386611c4478b82ca24a0747f297ab123993ec7c10c536",
+      "current_sha256": "0fae11af62bf824820b386611c4478b82ca24a0747f297ab123993ec7c10c536",
+      "matches": true
+    },
+    {
+      "path": "supabase/migrations/20260910034412_spin_draw_gate_reads_zero_as_undrawn_and_stamps_the_row.sql",
+      "recorded_sha256": "0634d1da3856c1db483ea99fb9713838a5c7c5158e1d2f3ee6daf58f335dcf7f",
+      "current_sha256": "0634d1da3856c1db483ea99fb9713838a5c7c5158e1d2f3ee6daf58f335dcf7f",
+      "matches": true
+    },
+    {
+      "path": "supabase/migrations/20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql",
+      "recorded_sha256": "59395e0e803d7c94dcbe2e35414bb6d5f97f6f674a67e9b1e30b9822a3c9c04d",
+      "current_sha256": "59395e0e803d7c94dcbe2e35414bb6d5f97f6f674a67e9b1e30b9822a3c9c04d",
+      "matches": true
+    },
+    {
+      "path": "supabase/migrations/20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql",
+      "recorded_sha256": "27cf35a8b9cb3c7322265b755d0ec42f0d3feceb12dd4917e14589375b4c7036",
+      "current_sha256": null,
+      "matches": false
+    },
+    {
+      "path": "supabase/migrations/20260909042455_tournament_cash_settlement_has_one_atomic_authority.sql",
+      "recorded_sha256": "1b265f8bdf0e435770a3f968faf5542f2c96c06849c2329fe3aeb6e7efcf25e1",
+      "current_sha256": "1b265f8bdf0e435770a3f968faf5542f2c96c06849c2329fe3aeb6e7efcf25e1",
+      "matches": true
+    },
+    {
+      "path": "supabase/migrations/20260909165629_satellite_settlement_has_one_atomic_authority.sql",
+      "recorded_sha256": "ce14eccd72c0589fd4feae70fe1395a11347d1c0812de15090a7b48337d08882",
+      "current_sha256": "ce14eccd72c0589fd4feae70fe1395a11347d1c0812de15090a7b48337d08882",
+      "matches": true
+    },
+    {
+      "path": "supabase/migrations/20260910035245_the_settlement_lane_is_per_tournament_not_platform_wide.sql",
+      "recorded_sha256": "d07cbe35f62ef4a18e29779c812526c27420da4a82c891c0bf2f136b9e6a31fe",
+      "current_sha256": null,
+      "matches": false
+    },
+    {
+      "path": "supabase/migrations/20260909210701_tournament_registration_retains_original_operation_receipt.sql",
+      "recorded_sha256": "09f7ee2683a076a3a30a4468080f2b61f8b49229e799849d2e0e955c3cd3c098",
+      "current_sha256": "09f7ee2683a076a3a30a4468080f2b61f8b49229e799849d2e0e955c3cd3c098",
+      "matches": true
+    },
+    {
+      "path": "supabase/migrations/20260910020626_the_host_club_is_in_its_own_union.sql",
+      "recorded_sha256": "4e078b55a44bbc3e516d4a0da73ce39453b4dc6950225d98e02d2a8d6c0412e9",
+      "current_sha256": "4e078b55a44bbc3e516d4a0da73ce39453b4dc6950225d98e02d2a8d6c0412e9",
+      "matches": true
+    },
+    {
+      "path": "supabase/migrations/20260910023919_the_entry_is_charged_to_the_wallet_the_entry_is_stamped_with.sql",
+      "recorded_sha256": "0da3ff95884121df67a9410c8535338c2afd32679288f1868f921d689df2c2e5",
+      "current_sha256": "0da3ff95884121df67a9410c8535338c2afd32679288f1868f921d689df2c2e5",
+      "matches": true
+    },
+    {
+      "path": "supabase/migrations/20260910012633_tournament_entry_receipts_use_the_charged_club_wallet.sql",
+      "recorded_sha256": "08bc3f0012fb887d2cc2157430685a110254ae248d8b97889b640ee9db497e4f",
+      "current_sha256": "08bc3f0012fb887d2cc2157430685a110254ae248d8b97889b640ee9db497e4f",
+      "matches": true
+    },
+    {
+      "path": "supabase/migrations/20260910190537_late_entry_uses_canonical_capacity_and_charged_wallet_receip.sql",
+      "recorded_sha256": "e7d8e53de468e504d4c22c1ed9f701f22cb3adb3a3fdafda3ab2dbe5dadec5ed",
+      "current_sha256": "e7d8e53de468e504d4c22c1ed9f701f22cb3adb3a3fdafda3ab2dbe5dadec5ed",
+      "matches": true
+    },
+    {
+      "path": "supabase/migrations/20260910171924_satellite_seats_count_once_and_keep_the_funded_prize.sql",
+      "recorded_sha256": "9a00bc662f729d5a6db25c4f10a5ceeb45509b230e35f48252620fe9dcef3fc3",
+      "current_sha256": "9a00bc662f729d5a6db25c4f10a5ceeb45509b230e35f48252620fe9dcef3fc3",
+      "matches": true
+    },
+    {
+      "path": "supabase/migrations/20260909222303_satellite_unregister_returns_its_funded_cash.sql",
+      "recorded_sha256": "aa58b97563d4541c9a44a1d60ce3fc2883fe03d227c9df825e9d4f8929dbc907",
+      "current_sha256": "aa58b97563d4541c9a44a1d60ce3fc2883fe03d227c9df825e9d4f8929dbc907",
+      "matches": true
+    },
+    {
+      "path": "supabase/migrations/20260909232326_the_exact_refund_authority_is_a_money_path_r3_recognises.sql",
+      "recorded_sha256": "d2f6f06ee5518e803a650d1438293ca878952e508d48efd863deca7262aee66b",
+      "current_sha256": "d2f6f06ee5518e803a650d1438293ca878952e508d48efd863deca7262aee66b",
+      "matches": true
+    },
+    {
+      "path": "supabase/migrations/20260909014444_tournament_cancellation_commits_one_stored_receipt.sql",
+      "recorded_sha256": "ca4124bfda0faf242981653a72321fc9952ebfad59d6561be511a3ec1b1a04b7",
+      "current_sha256": "ca4124bfda0faf242981653a72321fc9952ebfad59d6561be511a3ec1b1a04b7",
+      "matches": true
+    },
+    {
+      "path": "supabase/migrations/20260910171843_started_tournaments_resume_or_settle_instead_of_cancelling.sql",
+      "recorded_sha256": "85e02d3f2350b4c1c7229ab2b58e789b3b8651869c0c3834a3318d7547b10bf6",
+      "current_sha256": "85e02d3f2350b4c1c7229ab2b58e789b3b8651869c0c3834a3318d7547b10bf6",
+      "matches": true
+    },
+    {
+      "path": "scripts/dev/fixtures/registration-funding/installed.sql",
+      "recorded_sha256": "5e78455fcb7b3a4eba04dff7b5ccfa74c3a813d1ed13c81d78ec990b85826b9a",
+      "current_sha256": "5e78455fcb7b3a4eba04dff7b5ccfa74c3a813d1ed13c81d78ec990b85826b9a",
+      "matches": true
+    },
+    {
+      "path": "supabase/migrations/20260909183657_seat_first_unregistration_uses_actual_start_truth.sql",
+      "recorded_sha256": "2bd44741a966cd0f453e7f8cc3df13ca5e6269b27b36642c48add4151817703e",
+      "current_sha256": "2bd44741a966cd0f453e7f8cc3df13ca5e6269b27b36642c48add4151817703e",
+      "matches": true
+    },
+    {
+      "path": "supabase/migrations/20260908043250_seat_first_board_creation_is_one_transaction.sql",
+      "recorded_sha256": "b834364c3c6064751abb3a2194a0d81eb80421f601636ae7b71a8839e47e0589",
+      "current_sha256": "b834364c3c6064751abb3a2194a0d81eb80421f601636ae7b71a8839e47e0589",
+      "matches": true
+    },
+    {
+      "path": "scripts/dev/fixtures/heads-up-funding/captured-functions.json",
+      "recorded_sha256": "2d8bbf1410ddf87670bb3e1fee7ea3d76c43878d5f171b8f0d92b3f83ee66a98",
+      "current_sha256": "2d8bbf1410ddf87670bb3e1fee7ea3d76c43878d5f171b8f0d92b3f83ee66a98",
+      "matches": true
+    },
+    {
+      "path": "supabase/migrations/20260910063559_a_busy_manager_keeps_its_lease.sql",
+      "recorded_sha256": "2e95299dd7693a09ee310a4086b2dcdf16f0f942582007bdede0c4c81024e07d",
+      "current_sha256": "2e95299dd7693a09ee310a4086b2dcdf16f0f942582007bdede0c4c81024e07d",
+      "matches": true
+    },
+    {
+      "path": "supabase/migrations/20260908043200_tournament_manager_requests_carry_lease_authority.sql",
+      "recorded_sha256": "2cbcab5f263e8ca02b16f6c47ebbd7f6d47eb783d81c5939133c1e39b5d306f4",
+      "current_sha256": "2cbcab5f263e8ca02b16f6c47ebbd7f6d47eb783d81c5939133c1e39b5d306f4",
+      "matches": true
+    },
+    {
+      "path": "supabase/migrations/20260908042900_tournament_leases_have_fencing_generations.sql",
+      "recorded_sha256": "7ced5fc19e7dad590da5fa07da02252c2dc50887b5bfbf0e2e1dfc0dd017ca3a",
+      "current_sha256": "7ced5fc19e7dad590da5fa07da02252c2dc50887b5bfbf0e2e1dfc0dd017ca3a",
+      "matches": true
+    },
+    {
+      "path": "supabase/migrations/20260908221010_lease_heartbeats_skip_busy_generations.sql",
+      "recorded_sha256": "1d0707357aa629f2aa6b15416f74ab9317238ce80a29837be7355bf41e7b22ac",
+      "current_sha256": "1d0707357aa629f2aa6b15416f74ab9317238ce80a29837be7355bf41e7b22ac",
+      "matches": true
+    }
+  ],
+  "matching_inputs": 31,
+  "total_inputs": 39
+}

@@ -1,0 +1,55 @@
+{
+  "captured_at": "2026-09-11T20:56:55.129831+00:00",
+  "files": [
+    {
+      "source_path": "docs/audits/2026-09-09-accounting-phase-two-acceptance.json",
+      "source_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+      "source_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/11a37306788567e9b60d6ac1ab32455b865de5c1/docs/audits/2026-09-09-accounting-phase-two-acceptance.json",
+      "archive": "evidence/recovered/2026-09-09-accounting-phase-two-acceptance.json.txt",
+      "bytes": 8749,
+      "sha256": "9cf6bc3944a5a8b2543392f0d92bc8dfe567303098e234cb17a78a89901fa2bb",
+      "acquired_at": "2026-09-11T20:56:55.129831+00:00",
+      "method": "git show exact assigned baseline; no execution"
+    },
+    {
+      "source_path": "docs/audits/2026-09-10-phase3-independent-acceptance.json",
+      "source_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+      "source_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/11a37306788567e9b60d6ac1ab32455b865de5c1/docs/audits/2026-09-10-phase3-independent-acceptance.json",
+      "archive": "evidence/recovered/2026-09-10-phase3-independent-acceptance.json.txt",
+      "bytes": 10691,
+      "sha256": "855c194017826fa520b7c5d1133cdefc01b514bcf463fa93b6892bbefca2f080",
+      "acquired_at": "2026-09-11T20:56:55.129831+00:00",
+      "method": "git show exact assigned baseline; no execution"
+    },
+    {
+      "source_path": "docs/audits/2026-09-10-phase3-independent-release-review.json",
+      "source_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+      "source_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/11a37306788567e9b60d6ac1ab32455b865de5c1/docs/audits/2026-09-10-phase3-independent-release-review.json",
+      "archive": "evidence/recovered/2026-09-10-phase3-independent-release-review.json.txt",
+      "bytes": 4099,
+      "sha256": "f15ffa1fec039925cf0ae4be7c5afc6b30d4ad3996e3141c6fd151565252e673",
+      "acquired_at": "2026-09-11T20:56:55.129831+00:00",
+      "method": "git show exact assigned baseline; no execution"
+    },
+    {
+      "source_path": "docs/audits/2026-09-11-spin-full-current-terminal-native-evidence.json",
+      "source_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+      "source_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/11a37306788567e9b60d6ac1ab32455b865de5c1/docs/audits/2026-09-11-spin-full-current-terminal-native-evidence.json",
+      "archive": "evidence/recovered/2026-09-11-spin-full-current-terminal-native-evidence.json.txt",
+      "bytes": 279314,
+      "sha256": "d2333e70c4e6178d873e5f997f82aa147575f2a4b53740a9f60b4ed4efb64c5d",
+      "acquired_at": "2026-09-11T20:56:55.129831+00:00",
+      "method": "git show exact assigned baseline; no execution"
+    },
+    {
+      "source_path": "scripts/deploy/phase-three-activate-current-terminal-authorities.sql",
+      "source_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+      "source_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/11a37306788567e9b60d6ac1ab32455b865de5c1/scripts/deploy/phase-three-activate-current-terminal-authorities.sql",
+      "archive": "evidence/recovered/phase-three-activate-current-terminal-authorities.sql",
+      "bytes": 276794,
+      "sha256": "1f6c8ac88ead4612085c8c6de0da258914d50eb06d94300cf9931bb343eafb40",
+      "acquired_at": "2026-09-11T20:56:55.129831+00:00",
+      "method": "git show exact assigned baseline; no execution"
+    }
+  ]
+}

@@ -1,0 +1,216 @@
+{
+  "at": "2026-09-12T05:21:07.493893+00:00",
+  "purpose": "Exact backup of accepted Phase1 planning evidence; local source paths retained as provenance, not repository-relative links or portable runtime inputs. No delivery/production acceptance inferred.",
+  "files": [
+    {
+      "path": "G5_PHASE1_ACCEPTANCE.json",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/baseline-planning/G5_PHASE1_ACCEPTANCE.json",
+      "sha256": "b2faf8559f36547c95c9bed852796081642aa245f7b1cd754d24a06692e8dd5d",
+      "bytes": 3651
+    },
+    {
+      "path": "ACCEPTED_EXECUTION_PHASES.json",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/baseline-planning/PROPOSED_EXECUTION_PHASES.json",
+      "sha256": "5d00a60c9a0fe29f52543d7bf83d3b77f64e6cc855a61c51d5a6718cb1fdca93",
+      "bytes": 13699
+    },
+    {
+      "path": "FROZEN_EXECUTION_PHASE_INPUT.json",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/baseline-planning/consolidated-current-input-snapshots/PROPOSED_EXECUTION_PHASES.json",
+      "sha256": "83b04d482ab97c373f9255c9234d30ca5e08d3145407d7230b8cd62d19bd7716",
+      "bytes": 13584
+    },
+    {
+      "path": "INPUT_REFERENCE_ADDENDUM.json",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/baseline-planning/consolidated-current-0001-INPUT_REFERENCE_ADDENDUM.json",
+      "sha256": "3a36d8c9af5603b4c689909babba53e7f6deaf9526a1cb75f3a45b3308d83fd9",
+      "bytes": 780
+    },
+    {
+      "path": "MTT_MOVEMENT_SCOPE.md",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/MTT_MOVEMENT_SCOPE.md",
+      "sha256": "2d1199bb42bd9b4ad6f6c32a318071341d7840e36858c47cf2bdc4323b559730",
+      "bytes": 5593
+    },
+    {
+      "path": "COORDINATION_POLICY.md",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/COORDINATION_POLICY.md",
+      "sha256": "06526dbea2751a34d464b093363f96ed42dc812c7e7e6e206d8e86748a671dd6",
+      "bytes": 2298
+    },
+    {
+      "path": "consolidated/EXACT_ACL_HOME_DECISION.json",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/baseline-planning/consolidated-current-0001/EXACT_ACL_HOME_DECISION.json",
+      "sha256": "85cd5731bdd732e0bcc0f930df24c698a0c17e163a93d6c520d55b6c8272adef",
+      "bytes": 462
+    },
+    {
+      "path": "consolidated/EXACT_NEW_HOMES.json",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/baseline-planning/consolidated-current-0001/EXACT_NEW_HOMES.json",
+      "sha256": "dbfaa94d068c7f0f4b94fa0faac774d06933db9766a659bc77a19cbf1ab423c4",
+      "bytes": 54202
+    },
+    {
+      "path": "consolidated/ROOT_25_CONTRACTS.json",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/baseline-planning/consolidated-current-0001/ROOT_25_CONTRACTS.json",
+      "sha256": "fa405b80132e747c38a358bb01f0d92b2545b940a4fb750905828c1e36089e99",
+      "bytes": 107528
+    },
+    {
+      "path": "consolidated/ORIGINAL_REGISTER_SNAPSHOT.json",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/baseline-planning/consolidated-current-0001/ORIGINAL_REGISTER_SNAPSHOT.json",
+      "sha256": "100581a8ef17292e663670bb57545dae3cef4735e1a7bf2a731379d3637db55a",
+      "bytes": 3540144
+    },
+    {
+      "path": "consolidated/MULTIPLE_HOME_DECISIONS.json",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/baseline-planning/consolidated-current-0001/MULTIPLE_HOME_DECISIONS.json",
+      "sha256": "6d36e727533329733b6edc3f5d7405487f416456b4ec6212a7455a6d7881ed9a",
+      "bytes": 22398
+    },
+    {
+      "path": "consolidated/EVIDENCE_DELIVERY_INDEX.json",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/baseline-planning/consolidated-current-0001/EVIDENCE_DELIVERY_INDEX.json",
+      "sha256": "dcb4e81e88b8ac3f0deeb61c124e074270e1d2e5ce09d7f32ebe546381ca26d7",
+      "bytes": 7160444
+    },
+    {
+      "path": "consolidated/INPUTS.json",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/baseline-planning/consolidated-current-0001/INPUTS.json",
+      "sha256": "41be2966ae3a8e8d3e6c4ed83bc5f10095477080eda08a9489c83b83b457dee6",
+      "bytes": 1462
+    },
+    {
+      "path": "consolidated/VERIFICATION.json",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/baseline-planning/consolidated-current-0001/VERIFICATION.json",
+      "sha256": "eb24ef3b5043b34933d773c9d120bf890f345262d00ee1fdffd751a86c84cfae",
+      "bytes": 828
+    },
+    {
+      "path": "consolidated/INTEGRITY.json",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/baseline-planning/consolidated-current-0001/INTEGRITY.json",
+      "sha256": "ecde7b9abf043c00564247ca9f134d6e27232ff5bd5c4bf3e31a5bb33a4201e3",
+      "bytes": 1121
+    },
+    {
+      "path": "independent/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-01-integrity.sha256",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/outputs/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-01-integrity.sha256",
+      "sha256": "8847c5983939187c956a3acd27283983998b36a459cb2cffd44cfa4668a61499",
+      "bytes": 352
+    },
+    {
+      "path": "independent/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-01-checks.json",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/outputs/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-01-checks.json",
+      "sha256": "9cbf1d704b094eb3d2f9e7cab41abc68cab9927afe16d888aa6fd7db1eeaccda",
+      "bytes": 74924
+    },
+    {
+      "path": "independent/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-04-checks.json",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/outputs/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-04-checks.json",
+      "sha256": "0514e491d9a56b23118a5ed5f6e331dedfd2d413b87068d803b78472b093817e",
+      "bytes": 1028
+    },
+    {
+      "path": "independent/G8-EXECUTION-PHASE-REVIEW-0052-seal.json",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/outputs/G8-EXECUTION-PHASE-REVIEW-0052-seal.json",
+      "sha256": "87b7560368288c3e42c7ea6803010878653a3e5bd965c769fedf259adb316a87",
+      "bytes": 676
+    },
+    {
+      "path": "independent/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-02.md",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/outputs/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-02.md",
+      "sha256": "b7017e3402ba682a58656baa0a67222f2a33c4e5f848fe513025f8eab9cdd9c0",
+      "bytes": 5231
+    },
+    {
+      "path": "independent/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-01-seal.json",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/outputs/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-01-seal.json",
+      "sha256": "968689bdf1d21259b90fa1d42d4e366519867d439808b4cca97130be12d6eee4",
+      "bytes": 700
+    },
+    {
+      "path": "independent/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-02-checks.json",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/outputs/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-02-checks.json",
+      "sha256": "8d830f66ef0205a6eb537151f6e9d5449c4737810db6b922ab405dfc85d90322",
+      "bytes": 382569
+    },
+    {
+      "path": "independent/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-03.md",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/outputs/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-03.md",
+      "sha256": "a46bbcc6be5cb0859cae0bb6204831635214bcf49d33e1a01ee2ed227e1be2d0",
+      "bytes": 5018
+    },
+    {
+      "path": "independent/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-04-integrity.sha256",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/outputs/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-04-integrity.sha256",
+      "sha256": "cbac8592b5414a078676bf72867d383f08d1a755a3c99ac181fca2187193147d",
+      "bytes": 352
+    },
+    {
+      "path": "independent/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-04.md",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/outputs/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-04.md",
+      "sha256": "52d9a8c240819fa0dafe4a99f165632350f67458bba42ecdc0b93a28e8cae501",
+      "bytes": 1906
+    },
+    {
+      "path": "independent/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-03-integrity.sha256",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/outputs/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-03-integrity.sha256",
+      "sha256": "4440e0243170719800c4d3e59d6b1fe165f73baef45b4a684e3aa9d3396bfe5e",
+      "bytes": 352
+    },
+    {
+      "path": "independent/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-02-seal.json",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/outputs/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-02-seal.json",
+      "sha256": "369c00bccb66d980dbe03f16d4916568d83d05b7e584a2dc4b1ad9c2e83715e2",
+      "bytes": 701
+    },
+    {
+      "path": "independent/G8-EXECUTION-PHASE-REVIEW-0052-checks.json",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/outputs/G8-EXECUTION-PHASE-REVIEW-0052-checks.json",
+      "sha256": "151d89a601be65f251094eae31c3222bb1c1277e9482dfe8aab77076255f65dd",
+      "bytes": 45203
+    },
+    {
+      "path": "independent/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-01.md",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/outputs/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-01.md",
+      "sha256": "f1ad56ac39df0ba9465d5cfd92337b32663ebeaa80772f4ee34634e6834df934",
+      "bytes": 7379
+    },
+    {
+      "path": "independent/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-04-seal.json",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/outputs/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-04-seal.json",
+      "sha256": "93f6612fdfa33dd84b9d2d396d728369ee9cbb3586460bc5d7f1778a2038ed6d",
+      "bytes": 698
+    },
+    {
+      "path": "independent/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-02-integrity.sha256",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/outputs/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-02-integrity.sha256",
+      "sha256": "6be5b536fa1212ffae49882533e62a09844f2df3c9750541eb247c8bbfd8746a",
+      "bytes": 352
+    },
+    {
+      "path": "independent/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-03-seal.json",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/outputs/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-03-seal.json",
+      "sha256": "bf27e213ec73c272d5372f2ab533b41839f1e0d3fd4870ef88245331ef11ce99",
+      "bytes": 701
+    },
+    {
+      "path": "independent/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-03-checks.json",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/outputs/G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-03-checks.json",
+      "sha256": "eb032c7c7be14e6fdad3660f727413f885b179a4dd12b9bb8b037f8546af36bc",
+      "bytes": 269057
+    },
+    {
+      "path": "independent/G8-EXECUTION-PHASE-REVIEW-0052-integrity.sha256",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/outputs/G8-EXECUTION-PHASE-REVIEW-0052-integrity.sha256",
+      "sha256": "01a08e0188cc5985a3498fd61a462aab49661923062df77a5dafa790aa2ee200",
+      "bytes": 316
+    },
+    {
+      "path": "independent/G8-EXECUTION-PHASE-REVIEW-0052.md",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/outputs/G8-EXECUTION-PHASE-REVIEW-0052.md",
+      "sha256": "c5e17a68f219a5b7842fd6ad222019a2b40f6eae033eb6a792aa9caf2b8bdd31",
+      "bytes": 7818
+    }
+  ]
+}

@@ -37,6 +37,66 @@ import {
 import type { Card, HorseDecision, SeatPlayer } from '../types.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
+
+describe('Phase13 joint outcomes retain Phase7 ownership', () => {
+  it.each([
+    [1, 3],
+    [2, 5],
+  ])('uses button %s whole-unit board awards in action utility', (dealerSeat, chipEv) => {
+    const hero = seat('hero', 1, 1, 4);
+    const villain = seat('villain', 2, 0, 5);
+    const players = [hero, villain];
+    const board = {
+      heroHigh: 2,
+      opponentHigh: [2],
+      heroLow: null,
+      opponentLow: [null],
+      opponentDecisionStrength: [1],
+    };
+    const value = input({
+      hero,
+      players,
+      pot: 9,
+      pots: calculatePots(players),
+      currentBet: 5,
+      toCall: 1,
+      legalActions: ['fold', 'all_in'],
+      minRaiseTo: null,
+      maxRaiseTo: null,
+      baseline: { action: 'all_in', thinkTime: 0 },
+      heroEquity: 0.5,
+      equitySampleSize: 64,
+      equityStandardError: 0,
+      opponents: [{ userId: 'villain', range: null, foldMul: 1, actsAfterHero: false }],
+      sampledOpponentIds: ['villain'],
+      showdownSamples: Array.from({ length: 64 }, () => ({ boards: [board, board] })),
+      context: context({
+        playersLeft: 2,
+        fieldStacks: [5, 5],
+        fieldStackByUser: { hero: 5, villain: 5 },
+      }),
+    });
+    value.settlement = { chipUnit: 1, dealerSeat, splitLow: false };
+    const result = evaluateTournamentUtilityDetailed(value);
+    expect(result.unavailableReason).toBeNull();
+    expect(result.result?.ledger.candidates.find((c) => c.action === 'all_in')?.chipEv).toBeCloseTo(
+      chipEv,
+      8
+    );
+    expect(result.result?.ledger.candidates.every((c) => c.stackConservationError < 1e-8)).toBe(
+      true
+    );
+  });
+  it('builds only exact-unit wager candidates when settlement units are supplied', () => {
+    const value = input({ pot: 401 });
+    value.settlement = { chipUnit: 1, dealerSeat: 2, splitLow: false };
+    expect(
+      buildTournamentActionCandidates(value)
+        .filter((c) => c.amount !== null)
+        .every((c) => Number.isInteger(c.amount))
+    ).toBe(true);
+  });
+});
 const card = (rank: Card['rank'], suit: Card['suit']): Card => ({ rank, suit });
 
 function seat(

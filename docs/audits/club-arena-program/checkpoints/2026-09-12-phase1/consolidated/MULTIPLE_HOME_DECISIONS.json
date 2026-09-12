@@ -1,0 +1,438 @@
+[
+  {
+    "id": "G5-UNION-REPLAY-0001",
+    "primary_home": "DU-REPLAY",
+    "secondary_interfaces": ["DU-SCOPE"],
+    "prior": {
+      "evidence_id": "G5-UNION-REPLAY-0001",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/intent-audit/FINDINGS.json",
+      "source_sha256": "2cfae07535b0985270c8d95665456a59128074be334442a7aaf8539092653d38",
+      "homes": ["DU-REPLAY", "DU-SCOPE"],
+      "explicit_placement_links": [
+        {
+          "home": "DU-SCOPE",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-delivery-candidate-0002/EXACT_DELIVERY_UNITS.json",
+          "pointer": "/units/0/root_contracts/0",
+          "join_kind": "exact prior disposition target G8-CAUSE-03"
+        },
+        {
+          "home": "DU-REPLAY",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-delivery-candidate-0002/EXACT_DELIVERY_UNITS.json",
+          "pointer": "/units/1/root_contracts/0",
+          "join_kind": "exact prior disposition target G8-CAUSE-03"
+        }
+      ],
+      "related_context_links": [],
+      "prior_exact_dispositions": [
+        {
+          "target": "G8-CAUSE-03",
+          "kind": "root primary"
+        }
+      ],
+      "classification_unchanged": "Confirmed deployedfunction sourcegap; no unauthorizedoperation attempted",
+      "title_unchanged": "Union member transfer cachedreplay bypasses reauthorization and semanticpayloadbinding",
+      "status": "explicit home delivered; root ratification pending",
+      "original_controls_unchanged": [],
+      "canonical_controls_unchanged": ["CA-04-06", "CA-04-12", "CA-06-01", "CA-06-08", "CA-12-01"]
+    },
+    "reason": "Explicit root primary owner resolution; all prior homes retained as exact consumer interfaces"
+  },
+  {
+    "id": "G5-UNION-IDENTITY-0001",
+    "primary_home": "DU-INTENT",
+    "secondary_interfaces": ["DU-REPLAY"],
+    "prior": {
+      "evidence_id": "G5-UNION-IDENTITY-0001",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/intent-audit/FINDINGS.json",
+      "source_sha256": "2cfae07535b0985270c8d95665456a59128074be334442a7aaf8539092653d38",
+      "homes": ["DU-INTENT", "DU-REPLAY"],
+      "explicit_placement_links": [
+        {
+          "home": "DU-REPLAY",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-delivery-candidate-0002/EXACT_DELIVERY_UNITS.json",
+          "pointer": "/units/1/root_contracts/1",
+          "join_kind": "exact prior disposition target G8-CAUSE-05"
+        },
+        {
+          "home": "DU-INTENT",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-delivery-candidate-0002/EXACT_DELIVERY_UNITS.json",
+          "pointer": "/units/3/root_contracts/2",
+          "join_kind": "exact prior disposition target G8-CAUSE-05"
+        }
+      ],
+      "related_context_links": [],
+      "prior_exact_dispositions": [
+        {
+          "target": "G8-CAUSE-05",
+          "kind": "root primary"
+        }
+      ],
+      "classification_unchanged": "Confirmed captured source mismatch; no runtime invocation or historical loss demonstrated",
+      "title_unchanged": "Union send suppresses distinct equal-amount intents using a20-second history heuristic",
+      "status": "explicit home delivered; root ratification pending",
+      "original_controls_unchanged": [],
+      "canonical_controls_unchanged": ["CA-04-06", "CA-04-12", "CA-12-01"]
+    },
+    "reason": "Explicit root primary owner resolution; all prior homes retained as exact consumer interfaces"
+  },
+  {
+    "id": "SPIN-SQL-O07",
+    "primary_home": "DU-RESERVE",
+    "secondary_interfaces": ["DU-REPLAY"],
+    "prior": {
+      "evidence_id": "SPIN-SQL-O07",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/spin-activation-current-sql/OBSERVATIONS_AND_QUALIFICATIONS.json",
+      "source_sha256": "ca94b6b927d69c814e5f152b4e16e609be51ecc0b9ece50eaca7d35b73592008",
+      "homes": ["DU-REPLAY", "DU-RESERVE"],
+      "explicit_placement_links": [
+        {
+          "home": "DU-RESERVE",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/SUPPLEMENTAL_PLACEMENT_40.json",
+          "pointer": "/rows/34",
+          "join_kind": "G4 exact successor target G4-S35"
+        },
+        {
+          "home": "DU-REPLAY",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/SUPPLEMENTAL_PLACEMENT_40.json",
+          "pointer": "/rows/35",
+          "join_kind": "G4 exact successor target G4-S36"
+        },
+        {
+          "home": "DU-RESERVE",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/OBSERVATION_PLACEMENT_299.json",
+          "pointer": "/rows/272",
+          "join_kind": "G4 exact owner-declared placement SPIN-SQL-O07"
+        }
+      ],
+      "related_context_links": [],
+      "prior_exact_dispositions": [
+        {
+          "target": ["G4-S35", "G4-S36"],
+          "kind": "G4 attributed later disposition"
+        }
+      ],
+      "classification_unchanged": "Provisional; G8 intake pending",
+      "title_unchanged": "See retained evidence record",
+      "status": "explicit home delivered; root ratification pending",
+      "original_controls_unchanged": [],
+      "canonical_controls_unchanged": ["CA-03-08", "CA-05-10"]
+    },
+    "reason": "Explicit root primary owner resolution; all prior homes retained as exact consumer interfaces"
+  },
+  {
+    "id": "HORSE-CORE-Q01",
+    "primary_home": "DU-CASH",
+    "secondary_interfaces": ["DU-TERMINAL"],
+    "prior": {
+      "evidence_id": "HORSE-CORE-Q01",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/acceptance/horse-core-question-current-overlay.json",
+      "source_sha256": "9c58d7acf04dc76c601ef45b883a1d7d8c6bd77fb977c288f99d32ca4ebeae39",
+      "homes": ["DU-CASH", "DU-TERMINAL"],
+      "explicit_placement_links": [
+        {
+          "home": "DU-TERMINAL",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-delivery-candidate-0002/EXACT_DELIVERY_UNITS.json",
+          "pointer": "/units/11/root_contracts/0",
+          "join_kind": "exact prior disposition target G8-CAUSE-07"
+        },
+        {
+          "home": "DU-CASH",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/SUPPLEMENTAL_PLACEMENT_40.json",
+          "pointer": "/rows/23",
+          "join_kind": "G4 exact successor target G4-S24"
+        },
+        {
+          "home": "DU-CASH",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/SUPPLEMENTAL_PLACEMENT_40.json",
+          "pointer": "/rows/23",
+          "join_kind": "G4 exact owner-declared placement G4-S24"
+        },
+        {
+          "home": "DU-CASH",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/OBSERVATION_PLACEMENT_299.json",
+          "pointer": "/rows/30",
+          "join_kind": "G4 exact owner-declared placement HORSE-CORE-Q01"
+        }
+      ],
+      "related_context_links": [],
+      "prior_exact_dispositions": [
+        {
+          "target": ["G4-S24"],
+          "kind": "G4 attributed later disposition"
+        },
+        {
+          "target": "G8-CAUSE-07",
+          "kind": "root primary"
+        }
+      ],
+      "classification_unchanged": "Retained conditional acceptance question",
+      "title_unchanged": "See retained evidence record",
+      "status": "explicit home delivered; root ratification pending",
+      "original_controls_unchanged": [],
+      "canonical_controls_unchanged": ["CA-03-01", "CA-03-11"]
+    },
+    "reason": "Explicit root primary owner resolution; all prior homes retained as exact consumer interfaces"
+  },
+  {
+    "id": "HORSE-CORE-Q02",
+    "primary_home": "DU-OWED",
+    "secondary_interfaces": ["DU-TERMINAL"],
+    "prior": {
+      "evidence_id": "HORSE-CORE-Q02",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/acceptance/horse-core-question-current-overlay.json",
+      "source_sha256": "9c58d7acf04dc76c601ef45b883a1d7d8c6bd77fb977c288f99d32ca4ebeae39",
+      "homes": ["DU-OWED", "DU-TERMINAL"],
+      "explicit_placement_links": [
+        {
+          "home": "DU-TERMINAL",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-delivery-candidate-0002/EXACT_DELIVERY_UNITS.json",
+          "pointer": "/units/11/root_contracts/1",
+          "join_kind": "exact prior disposition target G8-CAUSE-08"
+        },
+        {
+          "home": "DU-OWED",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/SUPPLEMENTAL_PLACEMENT_40.json",
+          "pointer": "/rows/24",
+          "join_kind": "G4 exact successor target G4-S25"
+        },
+        {
+          "home": "DU-OWED",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/SUPPLEMENTAL_PLACEMENT_40.json",
+          "pointer": "/rows/24",
+          "join_kind": "G4 exact owner-declared placement G4-S25"
+        },
+        {
+          "home": "DU-OWED",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/OBSERVATION_PLACEMENT_299.json",
+          "pointer": "/rows/31",
+          "join_kind": "G4 exact owner-declared placement HORSE-CORE-Q02"
+        }
+      ],
+      "related_context_links": [],
+      "prior_exact_dispositions": [
+        {
+          "target": ["G4-S25"],
+          "kind": "G4 attributed later disposition"
+        },
+        {
+          "target": "G8-CAUSE-08",
+          "kind": "root primary"
+        }
+      ],
+      "classification_unchanged": "Retained conditional recovery question",
+      "title_unchanged": "See retained evidence record",
+      "status": "explicit home delivered; root ratification pending",
+      "original_controls_unchanged": [],
+      "canonical_controls_unchanged": ["CA-03-01", "CA-07-08"]
+    },
+    "reason": "Explicit root primary owner resolution; all prior homes retained as exact consumer interfaces"
+  },
+  {
+    "id": "HORSE-CORE-Q03",
+    "primary_home": "DU-CASH",
+    "secondary_interfaces": ["DU-TERMINAL"],
+    "prior": {
+      "evidence_id": "HORSE-CORE-Q03",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/acceptance/horse-core-question-current-overlay.json",
+      "source_sha256": "9c58d7acf04dc76c601ef45b883a1d7d8c6bd77fb977c288f99d32ca4ebeae39",
+      "homes": ["DU-CASH", "DU-TERMINAL"],
+      "explicit_placement_links": [
+        {
+          "home": "DU-TERMINAL",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-delivery-candidate-0002/EXACT_DELIVERY_UNITS.json",
+          "pointer": "/units/11/root_contracts/2",
+          "join_kind": "exact prior disposition target G8-CAUSE-09"
+        },
+        {
+          "home": "DU-CASH",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/OBSERVATION_PLACEMENT_299.json",
+          "pointer": "/rows/32",
+          "join_kind": "G4 exact owner-declared placement HORSE-CORE-Q03"
+        }
+      ],
+      "related_context_links": [],
+      "prior_exact_dispositions": [
+        {
+          "target": "G4 later retained disposition",
+          "kind": "G4 attributed later disposition"
+        },
+        {
+          "target": "G8-CAUSE-09",
+          "kind": "root primary"
+        }
+      ],
+      "classification_unchanged": "Named body gap CLOSED by complete202 read; downstream ownership joins retained",
+      "title_unchanged": "See retained evidence record",
+      "status": "explicit home delivered; root ratification pending",
+      "original_controls_unchanged": [],
+      "canonical_controls_unchanged": ["CA-03-01"]
+    },
+    "reason": "Explicit root primary owner resolution; all prior homes retained as exact consumer interfaces"
+  },
+  {
+    "id": "G8-O20",
+    "primary_home": "DU-HAND",
+    "secondary_interfaces": ["DU-LAUNCH"],
+    "prior": {
+      "evidence_id": "G8-O20",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-lifecycle/source-audit/generation-12/frozen-generation11-packet/generation-8/RECORDED_OBSERVATIONS.json",
+      "source_sha256": "9ee6581f56ed2f734eee8df00ad5a1a4be09d9c331ff75e50852902394910d9f",
+      "homes": ["DU-HAND", "DU-LAUNCH"],
+      "explicit_placement_links": [
+        {
+          "home": "DU-LAUNCH",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-delivery-candidate-0002/PEER_CONTRACT_PLACEMENT.json",
+          "pointer": "/life/0",
+          "join_kind": "explicit lifecycle anchor only"
+        },
+        {
+          "home": "DU-HAND",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-delivery-candidate-0002/PEER_CONTRACT_PLACEMENT.json",
+          "pointer": "/life/8",
+          "join_kind": "explicit lifecycle anchor only"
+        },
+        {
+          "home": "DU-LAUNCH",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-lifecycle/source-audit/cause-disposition-0001/ALL_RECORD_DELIVERY_LINKS.json",
+          "pointer": "/58",
+          "join_kind": "Lifecycle owner-declared Specific anchor"
+        },
+        {
+          "home": "DU-HAND",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-lifecycle/source-audit/cause-disposition-0001/ALL_RECORD_DELIVERY_LINKS.json",
+          "pointer": "/58",
+          "join_kind": "Lifecycle owner-declared Specific anchor"
+        },
+        {
+          "home": "DU-LAUNCH",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-delivery-candidate-0002/PEER_CONTRACT_PLACEMENT.json",
+          "pointer": "/life/0",
+          "join_kind": "exact prior disposition target G8-O20"
+        },
+        {
+          "home": "DU-HAND",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-delivery-candidate-0002/PEER_CONTRACT_PLACEMENT.json",
+          "pointer": "/life/8",
+          "join_kind": "exact prior disposition target G8-O20"
+        }
+      ],
+      "related_context_links": [],
+      "prior_exact_dispositions": [
+        {
+          "target": "G8-O20",
+          "kind": "lifecycle primary"
+        }
+      ],
+      "classification_unchanged": "Provisional; G8 intake pending",
+      "title_unchanged": "Detached fallback can arm current same seat without captured authority",
+      "status": "explicit home delivered; root ratification pending",
+      "original_controls_unchanged": [],
+      "canonical_controls_unchanged": []
+    },
+    "reason": "Explicit root primary owner resolution; all prior homes retained as exact consumer interfaces"
+  },
+  {
+    "id": "G5-LIFECYCLE-AUDIT-0001-F25",
+    "primary_home": "DU-LAUNCH",
+    "secondary_interfaces": ["DU-REPORT"],
+    "prior": {
+      "evidence_id": "G5-LIFECYCLE-AUDIT-0001-F25",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-lifecycle/source-audit/generation-15/INCREMENTAL_FINDINGS.json",
+      "source_sha256": "102cffbed3269e907b32d841268466467c73512d0d58da7f3f45c18cbacfd934",
+      "homes": ["DU-LAUNCH", "DU-REPORT"],
+      "explicit_placement_links": [
+        {
+          "home": "DU-LAUNCH",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-delivery-candidate-0002/PEER_CONTRACT_PLACEMENT.json",
+          "pointer": "/life/2",
+          "join_kind": "explicit lifecycle anchor only"
+        },
+        {
+          "home": "DU-LAUNCH",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-lifecycle/source-audit/cause-disposition-0001/ALL_RECORD_DELIVERY_LINKS.json",
+          "pointer": "/26",
+          "join_kind": "Lifecycle owner-declared Specific anchor"
+        },
+        {
+          "home": "DU-LAUNCH",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-delivery-candidate-0002/PEER_CONTRACT_PLACEMENT.json",
+          "pointer": "/life/2",
+          "join_kind": "exact prior disposition target F25"
+        },
+        {
+          "home": "DU-REPORT",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/OBSERVATION_PLACEMENT_299.json",
+          "pointer": "/rows/77",
+          "join_kind": "G4 exact owner-declared placement G5-LIFECYCLE-AUDIT-0001-F25"
+        }
+      ],
+      "related_context_links": [],
+      "prior_exact_dispositions": [
+        {
+          "target": "G4 later retained disposition",
+          "kind": "G4 attributed later disposition"
+        },
+        {
+          "target": "F25",
+          "kind": "lifecycle primary"
+        }
+      ],
+      "classification_unchanged": "Provisional; G8 intake pending",
+      "title_unchanged": "Unpaged lifecycle boards and physical-seat reads treat a finite response as complete",
+      "status": "explicit home delivered; root ratification pending",
+      "original_controls_unchanged": [],
+      "canonical_controls_unchanged": []
+    },
+    "reason": "Explicit root primary owner resolution; all prior homes retained as exact consumer interfaces"
+  },
+  {
+    "id": "CONN-S04-005",
+    "primary_home": "DU-RESERVE",
+    "secondary_interfaces": ["DU-CASH", "DU-REPLAY"],
+    "prior": {
+      "evidence_id": "CONN-S04-005",
+      "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/outputs/connected-audit/generation5-snapshot/PROVISIONAL_OBSERVATIONS.json",
+      "source_sha256": "5b6b9e2e14c7df015976e7a68168ee71d358db6cc134a90b919b301140caab59",
+      "homes": ["DU-CASH", "DU-REPLAY"],
+      "explicit_placement_links": [
+        {
+          "home": "DU-CASH",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/../club-arena-connected-service-recovery/outputs/connected-audit/baseline-placement-0016/PLACEMENTS.json",
+          "pointer": "/179",
+          "join_kind": "Connected exact owner placement ATTRIBUTED-CONN-S04-005"
+        },
+        {
+          "home": "DU-REPLAY",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/SUPPLEMENTAL_PLACEMENT_40.json",
+          "pointer": "/rows/35",
+          "join_kind": "G4 exact successor target G4-S36"
+        },
+        {
+          "home": "DU-REPLAY",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/SUPPLEMENTAL_PLACEMENT_40.json",
+          "pointer": "/rows/35",
+          "join_kind": "G4 exact owner-declared placement G4-S36"
+        },
+        {
+          "home": "DU-REPLAY",
+          "packet": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/OBSERVATION_PLACEMENT_299.json",
+          "pointer": "/rows/285",
+          "join_kind": "G4 exact owner-declared placement CONN-S04-005"
+        }
+      ],
+      "related_context_links": [],
+      "prior_exact_dispositions": [
+        {
+          "target": ["G4-S36"],
+          "kind": "G4 attributed later disposition"
+        }
+      ],
+      "classification_unchanged": "Provisional; G8 intake pending",
+      "title_unchanged": "Spin amount and retry contract open",
+      "status": "explicit home delivered; root ratification pending",
+      "original_controls_unchanged": ["L01", "L04", "L06", "L11"],
+      "canonical_controls_unchanged": ["CA-04-05", "CA-04-11", "CA-01-02", "CA-04-02"]
+    },
+    "reason": "Explicit root primary owner resolution; all prior homes retained as exact consumer interfaces"
+  }
+]

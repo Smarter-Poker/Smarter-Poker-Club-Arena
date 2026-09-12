@@ -24,14 +24,14 @@
  *      The test was simply the unlucky bystander, and the real fault was a
  *      telemetry insert rejecting three files away.
  *
- * A grep-style test is the right shape here: the defect is "someone writes the
- * pattern again", which no behavioural test can catch, and it costs
- * milliseconds.
+ * This source guard follows the actual promise chain. Callback length,
+ * comments and nested catches must not hide a missing outer rejection handler.
  */
 
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import ts from 'typescript';
 
 const SRC = new URL('../', import.meta.url).pathname;
 
@@ -51,29 +51,40 @@ function walk(dir: string, out: string[] = []): string[] {
 /**
  * Find `void <expr>` statements that contain a `.then(` but no `.catch(`.
  *
- * Deliberately simple: it reads forward from each `void` until brace/paren
- * depth returns to zero, which is the end of the statement. Anything cleverer
- * would need a parser, and the pattern this guards against is textual.
+ * Walk the outer call chain from its last operation toward its receiver.
+ * Every then must have a later catch; a catch inside its callback does not
+ * guard this chain. The former 60-line window missed real handlers after
+ * adding another phase's execution receipts.
  */
 function unguardedVoidThens(source: string): number[] {
-  const lines = source.split('\n');
+  const file = ts.createSourceFile('guard.ts', source, ts.ScriptTarget.Latest, true);
   const hits: number[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (!/^\s*void\s/.test(lines[i])) continue;
-    let depth = 0;
-    let statement = '';
-    for (let j = i; j < Math.min(i + 60, lines.length); j++) {
-      statement += lines[j] + '\n';
-      for (const ch of lines[j]) {
-        if (ch === '(' || ch === '{' || ch === '[') depth++;
-        else if (ch === ')' || ch === '}' || ch === ']') depth--;
+  function visit(node: ts.Node): void {
+    if (ts.isVoidExpression(node)) {
+      let expression: ts.Expression = node.expression;
+      let guarded = false;
+      while (true) {
+        if (ts.isParenthesizedExpression(expression)) {
+          expression = expression.expression;
+          continue;
+        }
+        if (
+          !ts.isCallExpression(expression) ||
+          !ts.isPropertyAccessExpression(expression.expression)
+        )
+          break;
+        const operation = expression.expression.name.text;
+        if (operation === 'catch' && expression.arguments.length > 0) guarded = true;
+        if (operation === 'then' && !guarded) {
+          hits.push(file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1);
+          break;
+        }
+        expression = expression.expression.expression;
       }
-      if (depth <= 0 && /;\s*$/.test(lines[j])) break;
     }
-    if (statement.includes('.then(') && !statement.includes('.catch(')) {
-      hits.push(i + 1);
-    }
+    ts.forEachChild(node, visit);
   }
+  visit(file);
   return hits;
 }
 
@@ -108,5 +119,16 @@ describe('no fire-and-forget promise may be left without a .catch()', () => {
     `;
     expect(unguardedVoidThens(bad)).toHaveLength(1);
     expect(unguardedVoidThens(good)).toHaveLength(0);
+  });
+
+  it('reads a complete long chain and ignores nested or quoted catches', () => {
+    const longBody = 'doWork();\n'.repeat(100);
+    expect(unguardedVoidThens(`void job.then(() => { ${longBody} }).catch(report);`)).toEqual([]);
+    expect(unguardedVoidThens(`void job.then(() => { ${longBody} });`)).toEqual([1]);
+    expect(unguardedVoidThens('void job.then(() => other.catch(report));')).toEqual([1]);
+    expect(unguardedVoidThens('void job.then(() => ".catch(fake)");')).toEqual([1]);
+    expect(unguardedVoidThens('void job.then(work); // .catch(fake)')).toEqual([1]);
+    expect(unguardedVoidThens('void job.catch(report).then(work);')).toEqual([1]);
+    expect(unguardedVoidThens('void (job.then(work).catch(report));')).toEqual([]);
   });
 });

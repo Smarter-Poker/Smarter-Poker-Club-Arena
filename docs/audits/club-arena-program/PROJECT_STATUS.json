@@ -1,0 +1,225 @@
+{
+  "updated_at": "2026-09-11T20:56:55.129831+00:00",
+  "unknown_is_not_zero": true,
+  "projects": [
+    {
+      "project": "G1",
+      "name": "Cash Games And Shared Poker Rules",
+      "lead_session": null,
+      "lead_state": "Queued behind foundation; no full domain lead launched",
+      "phase": "Not Started",
+      "baseline_version": null,
+      "recovery_source_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+      "coverage": {
+        "total_scoped_lines": null,
+        "reviewed_lines": null,
+        "exclusions": null,
+        "note": "Discovery/recovery is not audited coverage"
+      },
+      "findings": {
+        "open": null,
+        "blocked": null,
+        "completed": null,
+        "note": "Canonical counts await full applicability and baseline review"
+      },
+      "current_task": "Bounded prerequisite research only through assigned delegate",
+      "owned_paths": [],
+      "dependency": "G8 FOUNDATION_ACCEPTANCE plus actual domain contract dependencies",
+      "latest_update_at": "2026-09-11T20:56:55.129831+00:00",
+      "latest_evidence": "ASSIGNMENTS.json; EVIDENCE_INDEX.md; initial submitted research remains incomplete for gate",
+      "delivery_target": "Existing Club Arena architecture and production services through current sole release owner; scoped connected services only as required",
+      "pr_state": "No new technical PR under this intake; existing owner PRs preserved",
+      "deployment_state": "No technical deployment by G8 intake",
+      "next_action": "Continue only assigned necessary foundation prerequisites; launch full audit after G8 gate",
+      "foundation_delegate": "/root/foundation_lifecycle"
+    },
+    {
+      "project": "G2",
+      "name": "Tournaments And Shared Tournament Infrastructure",
+      "lead_session": null,
+      "lead_state": "Queued behind foundation; no full domain lead launched",
+      "phase": "Not Started",
+      "baseline_version": null,
+      "recovery_source_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+      "coverage": {
+        "total_scoped_lines": null,
+        "reviewed_lines": null,
+        "exclusions": null,
+        "note": "Discovery/recovery is not audited coverage"
+      },
+      "findings": {
+        "open": null,
+        "blocked": null,
+        "completed": null,
+        "note": "Canonical counts await full applicability and baseline review"
+      },
+      "current_task": "Bounded prerequisite research only through assigned delegate",
+      "owned_paths": [],
+      "dependency": "G8 FOUNDATION_ACCEPTANCE plus actual domain contract dependencies",
+      "latest_update_at": "2026-09-11T20:56:55.129831+00:00",
+      "latest_evidence": "ASSIGNMENTS.json; EVIDENCE_INDEX.md; initial submitted research remains incomplete for gate",
+      "delivery_target": "Existing Club Arena architecture and production services through current sole release owner; scoped connected services only as required",
+      "pr_state": "No new technical PR under this intake; existing owner PRs preserved",
+      "deployment_state": "No technical deployment by G8 intake",
+      "next_action": "Continue only assigned necessary foundation prerequisites; launch full audit after G8 gate",
+      "foundation_delegate": "/root/foundation_lifecycle"
+    },
+    {
+      "project": "G3",
+      "name": "Satellites, Spins And Standalone Heads-Up SNG",
+      "lead_session": null,
+      "lead_state": "Queued behind foundation; no full domain lead launched",
+      "phase": "Not Started",
+      "baseline_version": null,
+      "recovery_source_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+      "coverage": {
+        "total_scoped_lines": null,
+        "reviewed_lines": null,
+        "exclusions": null,
+        "note": "Discovery/recovery is not audited coverage"
+      },
+      "findings": {
+        "open": null,
+        "blocked": null,
+        "completed": null,
+        "note": "Canonical counts await full applicability and baseline review"
+      },
+      "current_task": "Bounded prerequisite research only through assigned delegate",
+      "owned_paths": [],
+      "dependency": "G8 FOUNDATION_ACCEPTANCE plus actual domain contract dependencies",
+      "latest_update_at": "2026-09-11T20:56:55.129831+00:00",
+      "latest_evidence": "ASSIGNMENTS.json; EVIDENCE_INDEX.md; initial submitted research remains incomplete for gate",
+      "delivery_target": "Existing Club Arena architecture and production services through current sole release owner; scoped connected services only as required",
+      "pr_state": "No new technical PR under this intake; existing owner PRs preserved",
+      "deployment_state": "No technical deployment by G8 intake",
+      "next_action": "Continue only assigned necessary foundation prerequisites; launch full audit after G8 gate",
+      "foundation_delegate": "/root/foundation_lifecycle"
+    },
+    {
+      "project": "G4",
+      "name": "Clubs, Unions And Economic Policy",
+      "lead_session": null,
+      "lead_state": "Queued behind foundation; no full domain lead launched",
+      "phase": "Not Started",
+      "baseline_version": null,
+      "recovery_source_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+      "coverage": {
+        "total_scoped_lines": null,
+        "reviewed_lines": null,
+        "exclusions": null,
+        "note": "Discovery/recovery is not audited coverage"
+      },
+      "findings": {
+        "open": null,
+        "blocked": null,
+        "completed": null,
+        "note": "Canonical counts await full applicability and baseline review"
+      },
+      "current_task": "Bounded prerequisite research only through assigned delegate",
+      "owned_paths": [],
+      "dependency": "G8 FOUNDATION_ACCEPTANCE plus actual domain contract dependencies",
+      "latest_update_at": "2026-09-11T20:56:55.129831+00:00",
+      "latest_evidence": "ASSIGNMENTS.json; EVIDENCE_INDEX.md; initial submitted research remains incomplete for gate",
+      "delivery_target": "Existing Club Arena architecture and production services through current sole release owner; scoped connected services only as required",
+      "pr_state": "No new technical PR under this intake; existing owner PRs preserved",
+      "deployment_state": "No technical deployment by G8 intake",
+      "next_action": "Continue only assigned necessary foundation prerequisites; launch full audit after G8 gate",
+      "foundation_delegate": "/root/foundation_contract_review"
+    },
+    {
+      "project": "G5",
+      "name": "Chip Accounting And Chip Drift",
+      "lead_session": "/root/g5_foundation_lead",
+      "lead_state": "Active first technical lead",
+      "phase": "Phase 1, Total Phases Not Yet Determined",
+      "baseline_version": null,
+      "recovery_source_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+      "coverage": {
+        "total_scoped_lines": null,
+        "reviewed_lines": null,
+        "exclusions": null,
+        "note": "Discovery/recovery is not audited coverage"
+      },
+      "findings": {
+        "open": null,
+        "blocked": null,
+        "completed": null,
+        "note": "Canonical counts await full applicability and baseline review"
+      },
+      "current_task": "G5-RESEARCH-GATE-0002",
+      "owned_paths": [
+        "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5"
+      ],
+      "dependency": "Combined research gate, then complete financial audit and accepted baseline",
+      "latest_update_at": "2026-09-11T20:56:55.129831+00:00",
+      "latest_evidence": "ASSIGNMENTS.json; EVIDENCE_INDEX.md; initial submitted research remains incomplete for gate",
+      "delivery_target": "Existing Club Arena architecture and production services through current sole release owner; scoped connected services only as required",
+      "pr_state": "No new technical PR under this intake; existing owner PRs preserved",
+      "deployment_state": "No technical deployment by G8 intake",
+      "next_action": "Complete remaining research; propose disjoint missing/unreviewed audit slices",
+      "foundation_delegate": "/root/g5_foundation_lead"
+    },
+    {
+      "project": "G6",
+      "name": "Real-Time Connections And Delivery",
+      "lead_session": null,
+      "lead_state": "Queued behind foundation; no full domain lead launched",
+      "phase": "Not Started",
+      "baseline_version": null,
+      "recovery_source_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+      "coverage": {
+        "total_scoped_lines": null,
+        "reviewed_lines": null,
+        "exclusions": null,
+        "note": "Discovery/recovery is not audited coverage"
+      },
+      "findings": {
+        "open": null,
+        "blocked": null,
+        "completed": null,
+        "note": "Canonical counts await full applicability and baseline review"
+      },
+      "current_task": "Bounded prerequisite research only through assigned delegate",
+      "owned_paths": [],
+      "dependency": "G8 FOUNDATION_ACCEPTANCE plus actual domain contract dependencies",
+      "latest_update_at": "2026-09-11T20:56:55.129831+00:00",
+      "latest_evidence": "ASSIGNMENTS.json; EVIDENCE_INDEX.md; initial submitted research remains incomplete for gate",
+      "delivery_target": "Existing Club Arena architecture and production services through current sole release owner; scoped connected services only as required",
+      "pr_state": "No new technical PR under this intake; existing owner PRs preserved",
+      "deployment_state": "No technical deployment by G8 intake",
+      "next_action": "Continue only assigned necessary foundation prerequisites; launch full audit after G8 gate",
+      "foundation_delegate": "/root/foundation_contract_review"
+    },
+    {
+      "project": "G7",
+      "name": "Repair Elimination And Recovery",
+      "lead_session": null,
+      "lead_state": "Queued behind foundation; no full domain lead launched",
+      "phase": "Not Started",
+      "baseline_version": null,
+      "recovery_source_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+      "coverage": {
+        "total_scoped_lines": null,
+        "reviewed_lines": null,
+        "exclusions": null,
+        "note": "Discovery/recovery is not audited coverage"
+      },
+      "findings": {
+        "open": null,
+        "blocked": null,
+        "completed": null,
+        "note": "Canonical counts await full applicability and baseline review"
+      },
+      "current_task": "Bounded prerequisite research only through assigned delegate",
+      "owned_paths": [],
+      "dependency": "G8 FOUNDATION_ACCEPTANCE plus actual domain contract dependencies",
+      "latest_update_at": "2026-09-11T20:56:55.129831+00:00",
+      "latest_evidence": "ASSIGNMENTS.json; EVIDENCE_INDEX.md; initial submitted research remains incomplete for gate",
+      "delivery_target": "Existing Club Arena architecture and production services through current sole release owner; scoped connected services only as required",
+      "pr_state": "No new technical PR under this intake; existing owner PRs preserved",
+      "deployment_state": "No technical deployment by G8 intake",
+      "next_action": "Continue only assigned necessary foundation prerequisites; launch full audit after G8 gate",
+      "foundation_delegate": "/root/foundation_contract_review"
+    }
+  ]
+}

@@ -62,7 +62,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
-import { reportError } from '../../utils/errorReporter';
+import { reportError, reportWarning } from '../../utils/errorReporter';
 import { busToast, type BusPayloadMap } from '../../core/MasterBus';
 import { useTableSettings } from '../../hooks/useTableSettings';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
@@ -72,7 +72,7 @@ import {
   tickerManagementService,
   type ManagedTickerSettings,
 } from '../../services/TickerManagementService';
-import { resolveClubUUID } from '../../utils/clubIdResolver';
+import { isUUID, resolveClubUUID } from '../../utils/clubIdResolver';
 import { rankOverlayAnnouncements, type OverlayCandidate } from '../../utils/overlayAnnouncements';
 /* The value comes from the small extracted module and the row shape is a
    type-only import, so this root-mounted ticker does not pull the whole
@@ -125,6 +125,8 @@ export function TournamentStartingTicker() {
   const [tickerScopeRevision, setTickerScopeRevision] = useState(0);
   const [viewerRevision, setViewerRevision] = useState(0);
   const scopeEpochRef = useRef(0);
+  /** (reason, scope) pairs already reported this mount. See warnOnce below. */
+  const warnedScopesRef = useRef<Set<string>>(new Set());
 
   /* The live ticker belongs on active tables and inside a club's live lobby.
      The club route matters: its desktop reference reserves this exact strip
@@ -160,6 +162,24 @@ export function TournamentStartingTicker() {
     let pending = false;
     const epoch = scopeEpochRef.current;
 
+    /* OBSERVABLE ONCE, NOT ONCE EVERY THIRTY SECONDS. This effect re-polls on
+       a 30s tick, so anything it reports on a scope it cannot resolve repeats
+       for as long as the player sits there - which is precisely how the rail's
+       last reporting bug turned one wrong route into 243 database rows. Each
+       distinct (scope, reason) speaks once per mount. console.warn is the
+       right level and the right channel: HorseBugReporter patches
+       console.error only, so a warning can never be persisted as a bug. */
+    const warnOnce = (scope: string, reason: string, segment: string) => {
+      const key = `${reason}:${scope}`;
+      if (warnedScopesRef.current.has(key)) return;
+      warnedScopesRef.current.add(key);
+      const what =
+        reason === 'unresolvedSegment'
+          ? `Route segment "${segment}" is not an id, so the ticker is using platform defaults.`
+          : `No readable row for "${segment}", so the ticker is using platform defaults.`;
+      reportWarning(what, 'TournamentStartingTicker.unscopedTicker', { scope, reason });
+    };
+
     const loadManaged = async () => {
       if (cancelled || document.hidden || epoch !== scopeEpochRef.current) return;
       if (inFlight) {
@@ -174,23 +194,58 @@ export function TournamentStartingTicker() {
         const clubMatch = location.pathname.match(/^\/clubs\/([^/]+)/);
         const tableMatch = location.pathname.match(/^\/table\/([^/]+)/);
         if (clubMatch) {
-          clubUuid = await resolveClubUUID(clubMatch[1]);
-          const { data, error } = await supabase
-            .from('clubs')
-            .select('union_id')
-            .eq('id', clubUuid)
-            .maybeSingle();
-          if (error) throw error;
-          unionUuid = data?.union_id || null;
+          /* A ROUTE SEGMENT IS NOT AN ID UNTIL SOMETHING SAYS IT IS.
+             resolveClubUUID's documented contract is that it returns its INPUT
+             when it cannot resolve one ("Fallback: return as-is (will fail
+             downstream, but that's the existing behavior)"), so a slug nobody
+             owns arrives here as a slug. Feeding that to .eq('id', ...) is the
+             same 22P02 the table branch below used to raise, from the branch
+             that looks guarded. Check the value that is about to be used, not
+             the function that produced it. */
+          const resolved = await resolveClubUUID(clubMatch[1]);
+          if (isUUID(resolved)) {
+            clubUuid = resolved;
+            const { data, error } = await supabase
+              .from('clubs')
+              .select('union_id')
+              .eq('id', clubUuid)
+              .maybeSingle();
+            if (error) throw error;
+            if (!data) warnOnce(`club:${clubUuid}`, 'noSuchClub', clubMatch[1]);
+            unionUuid = data?.union_id || null;
+          } else {
+            warnOnce(`club:${clubMatch[1]}`, 'unresolvedSegment', clubMatch[1]);
+          }
         } else if (tableMatch) {
-          const { data, error } = await supabase
-            .from('tables')
-            .select('club_id,union_id')
-            .eq('id', tableMatch[1])
-            .maybeSingle();
-          if (error) throw error;
-          clubUuid = data?.club_id || null;
-          unionUuid = data?.union_id || null;
+          /* THE ASYMMETRY THAT COST 243 ROWS (fixed 2026-09-12). This branch
+             put the raw path segment straight into a uuid column, so every
+             /table/<not-a-uuid> raised Postgres 22P02, the catch below called
+             reportError, HorseBugReporter's console.error hook filed it as a
+             tournament_bug (the CONTEXT LABEL contains "Tournament"), and the
+             production E2E route specs re-ran it on every deploy for ten days.
+             A segment that cannot be a uuid is not a table: fall to defaults
+             without the round trip and without filing anything. Fail at the
+             boundary once, not once per poll in Postgres. */
+          if (isUUID(tableMatch[1])) {
+            const { data, error } = await supabase
+              .from('tables')
+              .select('club_id,union_id')
+              .eq('id', tableMatch[1])
+              .maybeSingle();
+            if (error) throw error;
+            /* .maybeSingle() answers {data: null, error: null} for a well-formed
+               uuid with no row a viewer may read - no row, no error, no report,
+               and the rail silently served platform defaults instead of the
+               club's own settings. That is a DIFFERENT defect from the 22P02
+               flood and it was found beside it; it is a warning rather than an
+               error because RLS makes it reachable without anything being
+               broken. warnOnce keeps it from becoming the next flood. */
+            if (!data) warnOnce(`table:${tableMatch[1]}`, 'noSuchTable', tableMatch[1]);
+            clubUuid = data?.club_id || null;
+            unionUuid = data?.union_id || null;
+          } else {
+            warnOnce(`table:${tableMatch[1]}`, 'unresolvedSegment', tableMatch[1]);
+          }
         }
         const next = await tickerManagementService.get(unionUuid ? null : clubUuid, unionUuid);
         if (!cancelled && epoch === scopeEpochRef.current) setManagedTicker(next);

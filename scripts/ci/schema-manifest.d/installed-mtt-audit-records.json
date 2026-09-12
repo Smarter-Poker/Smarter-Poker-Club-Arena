@@ -1,0 +1,14 @@
+{
+  "_owner": "fix/installed-mtt-audit-records",
+  "_comment": "Generated from scoped production catalog at 2026-09-12T09:28:37.205989+00:00. Exact history, original-to-installed mapping and complete observed ACLs: docs/audits/installed-migrations/20260912-pr4392/manifest.json. Historical records only; no reapplication or product qualification.",
+  "functions": [
+    "fn_ca_financial_alert_to_incident",
+    "fn_ca_supply_snapshot",
+    "fn_ca_trial_balance",
+    "fn_ca_undeclared_money_paths",
+    "fn_union_rake_stale_days"
+  ],
+  "columns": {
+    "ca_supply_snapshots": ["pending_addons"]
+  }
+}

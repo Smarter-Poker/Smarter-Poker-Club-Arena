@@ -120,6 +120,52 @@ export function normaliseBugMessage(body: string): string {
     .trim();
 }
 
+/**
+ * The browser has ALREADY said "Uncaught". Saying it again is a second bug.
+ *
+ * `window.onerror` hands over `event.message` pre-formatted, and the format is
+ * the browser's, not ours: Chrome sends `Uncaught TypeError: ...` and WebKit
+ * sends a bare `TypeError: ...`. Prefixing that with `Uncaught Error: ` gave
+ * the operator dashboard titles reading
+ *
+ *   Uncaught Error: Uncaught TypeError: Cannot set property message of  which
+ *   has only a getter
+ *
+ * - 2,686 rows of it - while the SAME defect seen in Safari five months later
+ * filed under `Uncaught Error: TypeError: Attempted to assign to readonly
+ * property.` and took another 158 rows of its own. One defect, two titles,
+ * both misspelt, and (since #4398 made the title the fingerprint) two
+ * permanently separate rows that no dedupe could ever collapse.
+ *
+ * Stripping the browser's own prefix leaves one shape for both engines. The
+ * engines still word their messages differently, which no code here can fix,
+ * but the doubling and the disagreement in OUR half of the string are gone.
+ */
+export function uncaughtTitle(message: unknown): string {
+  const raw = typeof message === 'string' ? message : '';
+  const stripped = raw.replace(/^\s*Uncaught\s+/i, '').trim();
+  return `Uncaught Error: ${stripped || 'Unknown Error'}`;
+}
+
+/** Read a property off a rejection reason that may refuse to be read. */
+function safeReason(reason: unknown, key: string): string | undefined {
+  try {
+    const value = (reason as Record<string, unknown> | null | undefined)?.[key];
+    return typeof value === 'string' ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** `String(reason)` that cannot throw — a rejection reason can be anything. */
+function safeReasonString(reason: unknown): string {
+  try {
+    return String(reason);
+  } catch {
+    return '[unstringifiable rejection reason]';
+  }
+}
+
 /** The stable identity of a bug: where it happened, and what happened. */
 export function bugFingerprint(msg: string): string {
   const { label, body } = splitContextLabel(msg);
@@ -274,38 +320,55 @@ class HorseBugReporterService {
 
     // Global error handler
     this.errorListener = (event: ErrorEvent) => {
-      this.report({
-        horseName: 'GLOBAL',
-        horseId: 'system',
-        tableId: 'global',
-        tableName: 'Global',
-        handNumber: 0,
-        category: 'runtime_error',
-        severity: 'critical',
-        title: `Uncaught Error: ${event.message}`,
-        description: `${event.filename}:${event.lineno}:${event.colno}`,
-        context: { filename: event.filename, lineno: event.lineno },
-        stackTrace: event.error?.stack,
-      });
+      // A capture path may not raise inside the handler that captures. If
+      // filing the bug fails, that failure goes to the ORIGINAL console.error
+      // and stops there; re-raising here would re-enter window.onerror.
+      try {
+        this.report({
+          horseName: 'GLOBAL',
+          horseId: 'system',
+          tableId: 'global',
+          tableName: 'Global',
+          handNumber: 0,
+          category: 'runtime_error',
+          severity: 'critical',
+          title: uncaughtTitle(event.message),
+          description: `${event.filename}:${event.lineno}:${event.colno}`,
+          context: { filename: event.filename, lineno: event.lineno },
+          stackTrace: safeReason(event.error, 'stack'),
+        });
+      } catch (err) {
+        this.originalConsoleError('[HorseBugReporter] error listener failed:', err);
+      }
     };
     window.addEventListener('error', this.errorListener);
 
     // Unhandled promise rejection handler
     this.rejectionListener = (event: PromiseRejectionEvent) => {
       const reason = event.reason;
-      this.report({
-        horseName: 'GLOBAL',
-        horseId: 'system',
-        tableId: 'global',
-        tableName: 'Global',
-        handNumber: 0,
-        category: 'runtime_error',
-        severity: 'high',
-        title: `Unhandled Promise Rejection`,
-        description: typeof reason === 'string' ? reason : reason?.message || 'Unknown Rejection',
-        context: { reason: String(reason) },
-        stackTrace: reason?.stack,
-      });
+      // A rejection reason is whatever was thrown: a DOMException, a Proxy, a
+      // Symbol, an object with a throwing getter. `reason.message` and
+      // `String(reason)` are both guarded because both have thrown here.
+      try {
+        this.report({
+          horseName: 'GLOBAL',
+          horseId: 'system',
+          tableId: 'global',
+          tableName: 'Global',
+          handNumber: 0,
+          category: 'runtime_error',
+          severity: 'high',
+          title: `Unhandled Promise Rejection`,
+          description:
+            typeof reason === 'string'
+              ? reason
+              : safeReason(reason, 'message') || 'Unknown Rejection',
+          context: { reason: safeReasonString(reason) },
+          stackTrace: safeReason(reason, 'stack'),
+        });
+      } catch (err) {
+        this.originalConsoleError('[HorseBugReporter] rejection listener failed:', err);
+      }
     };
     window.addEventListener('unhandledrejection', this.rejectionListener);
 

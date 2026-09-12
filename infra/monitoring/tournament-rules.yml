@@ -147,7 +147,15 @@ groups:
 
       # ── A finished tournament that paid nobody ────────────────────────
       # The strongest money signal available: COMPLETED, has a prize pool, and
-      # not one prize row exists against it.
+      # nothing of value reached anybody against it.
+      #
+      # "Nothing of value" is deliberately wider than "no cash" (2026-09-12).
+      # A satellite pays in a SEAT at the target event or a TICKET to enter one
+      # later, neither of which is a wallet transaction, so a cash-only test
+      # made every satellite unpaid by construction: 12 firings in 14 days, 12
+      # satellites, 0 unpaid. `fn_tournament_metrics` now also clears a
+      # tournament that delivered a `tournament_satellite_awards` row, which
+      # evidences delivery by constraint rather than by the ledger's intent.
       - alert: TournamentCompletedUnpaid
         expr: poker_tournaments_unpaid_completed > 0
         for: 15m
@@ -158,10 +166,14 @@ groups:
           summary: "{{ $value }} completed tournament(s) with a prize pool and no payout"
           description: |
             One or more tournaments finished in the last 6 hours with a
-            non-zero prize pool and zero prize payments recorded. Players
-            bought in and nobody was paid. The payout sweep and the reconciler
-            both run on a schedule; if this persists, both have declined to
-            act and it needs a human.
+            non-zero prize pool and NOTHING delivered against it: no cash
+            prize on the wallet ledger, and no satellite award either. A
+            satellite pays in a seat or a ticket rather than in chips and both
+            count as payment here, so a satellite in this number is one that
+            failed to settle, not one that paid in kind. Players bought in and
+            nobody was paid. The payout sweep and the reconciler both run on a
+            schedule; if this persists, both have declined to act and it needs
+            a human.
           runbook: https://monitor.smarter.poker/runbooks/tournament-unpaid
 
       # ── THE ALERT ABOUT THE ALERTS ───────────────────────────────────

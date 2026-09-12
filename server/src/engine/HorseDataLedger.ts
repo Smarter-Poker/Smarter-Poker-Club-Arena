@@ -1679,6 +1679,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     0.99
   ),
   receipt(
+    'phase10_unavailable_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'exact reason the existing tournament utility owner refused evaluation',
+    'Phase10'
+  ),
+  receipt(
     'phase10_utility_*',
     'HorseLogic -> HorseTournamentUtility',
     'cash or existing tournament utility ownership',
@@ -1743,6 +1749,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase11',
     'phase11_fired',
     0.99
+  ),
+  receipt(
+    'phase11_unavailable_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'exact reason the existing tournament utility owner refused evaluation',
+    'Phase11'
   ),
   receipt(
     'phase11_utility_*',
@@ -1825,6 +1837,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase12',
     'phase12_fired',
     0.99
+  ),
+  receipt(
+    'phase12_unavailable_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'exact reason the existing tournament utility owner refused evaluation',
+    'Phase12'
   ),
   receipt(
     'phase12_utility_*',

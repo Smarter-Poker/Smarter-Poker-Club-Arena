@@ -6,6 +6,10 @@ import type {
   HandStage,
 } from '../types.js';
 import { isKnownVariant, isShortDeckVariant } from './VariantRules.js';
+import {
+  captureHorsePublicDeductions,
+  type HorsePublicDeductions,
+} from './HorsePublicDeductions.js';
 
 /** Public facts only. Hand/session identity and action origin must be bound by
  * the accepted-hand producer before any model may learn from this snapshot.
@@ -18,6 +22,8 @@ export type HorsePublicActionNode =
       mode: 'cash' | 'tournament';
       asset: 'chips' | 'diamonds';
       chipUnit: 0.01 | 1;
+      /** Absent on earlier schema-1 rows; those rows cannot establish net EV. */
+      deductions?: HorsePublicDeductions;
       street: HandStage;
       dealerSeat: number;
       actorSeat: number;
@@ -196,6 +202,7 @@ export function captureHorsePublicActionNode(
     mode: config.isTournament ? 'tournament' : 'cash',
     asset: config.asset === 'diamonds' ? 'diamonds' : 'chips',
     chipUnit: config.isTournament || config.asset === 'diamonds' ? 1 : 0.01,
+    deductions: captureHorsePublicDeductions(config),
     street: state.stage,
     dealerSeat: state.dealerSeat,
     actorSeat: rights.heroSeat,

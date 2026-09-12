@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
 import {
   classifyTrustedLineage,
   readBuildInfoSha,
   requireUnchangedBuildInfoSha,
+  requireReadyEngineSha,
 } from '../scripts/ci/production-e2e-provenance.mjs';
 
 const A = 'a'.repeat(40);
@@ -12,6 +14,59 @@ const B = 'b'.repeat(40);
 const CLI = resolve(process.cwd(), 'scripts/ci/production-e2e-provenance.mjs');
 
 describe('production E2E uses exact trusted provenance', () => {
+  it('admits only the exact running engine before browser fixture creation', () => {
+    expect(
+      requireReadyEngineSha(JSON.stringify({ releaseSha: A, running: true, liveness: 'ok' }), A)
+    ).toBe(A);
+  });
+
+  it.each([
+    ['an old engine', { releaseSha: B, running: true, liveness: 'ok' }],
+    ['a stopped engine', { releaseSha: A, running: false, liveness: 'ok' }],
+    ['coerced readiness', { releaseSha: A, running: 'true', liveness: 'ok' }],
+    ['failed liveness', { releaseSha: A, running: true, liveness: 'stalled' }],
+    ['a short engine SHA', { releaseSha: 'abc1234', running: true, liveness: 'ok' }],
+    ['a missing engine SHA', { running: true, liveness: 'ok' }],
+    ['an array', [{ releaseSha: A, running: true, liveness: 'ok' }]],
+  ])('refuses %s as a certification prerequisite', (_label, value) => {
+    expect(() => requireReadyEngineSha(JSON.stringify(value), A)).toThrow();
+  });
+
+  it('rejects malformed engine health and expected identity', () => {
+    expect(() => requireReadyEngineSha('{', A)).toThrow();
+    expect(() => requireReadyEngineSha('{}', 'abc1234')).toThrow();
+  });
+
+  it('keeps the prerequisite after schema audits and before browser installation and account creation', () => {
+    const workflow = readFileSync(
+      resolve(process.cwd(), '.github/workflows/post-deploy-e2e.yml'),
+      'utf8'
+    );
+    const gate = workflow.indexOf(
+      '- name: Require the exact engine before opening production browser fixtures'
+    );
+    expect(gate).toBeGreaterThan(
+      workflow.indexOf('- name: Audit the remaining live schema from trusted code')
+    );
+    expect(gate).toBeLessThan(workflow.indexOf('- name: Install Chromium and WebKit'));
+    const stanza = workflow.slice(gate, workflow.indexOf('- name: Install Chromium and WebKit'));
+    expect(stanza).toContain('set -euo pipefail');
+    expect(stanza).toContain('curl -fsS --max-time 20');
+    expect(stanza).toContain('engine-ready "$EXPECTED_ENGINE_SHA"');
+    expect(stanza).not.toContain('continue-on-error');
+    expect(stanza).not.toContain('|| true');
+  });
+
+  it('uses the same exact engine parser from the workflow CLI', () => {
+    const run = (sha: string) =>
+      spawnSync(process.execPath, [CLI, 'engine-ready', A], {
+        input: JSON.stringify({ releaseSha: sha, running: true, liveness: 'ok' }),
+        encoding: 'utf8',
+      });
+    expect(run(A).status).toBe(0);
+    expect(run(B).status).not.toBe(0);
+  });
+
   it('reads one full lowercase SHA from a JSON object', () => {
     expect(readBuildInfoSha(JSON.stringify({ ca_sha: A }))).toBe(A);
   });

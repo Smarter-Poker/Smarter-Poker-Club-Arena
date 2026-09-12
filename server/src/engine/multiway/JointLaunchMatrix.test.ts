@@ -8,6 +8,26 @@ import { HorseLogic } from '../HorseLogic.js';
 import type { GameVariant, SeatPlayer } from '../../types.js';
 
 describe('Phase13 actual launch and board downgrade matrix', () => {
+  it('requires an explicit zero rake cap at Diamond tables, matching hand admission', () => {
+    const s = jointPolicyFixture('nlh', 2, 'cash');
+    s.state.asset = 'diamonds';
+    s.state.chipUnit = 1;
+    s.state.rakeConfig!.percent = 0;
+    expect(
+      evaluateJointLivePolicy(s.hero, s.state, s.baseline, 'candidate', () => 0).receipt.reason
+    ).toBe('diamond_deductions_unavailable');
+    s.state.rakeConfig!.cap = 0;
+    expect(
+      evaluateJointLivePolicy(s.hero, s.state, s.baseline, 'candidate', () => 0).receipt.fired
+    ).toBe(true);
+  });
+  it('refuses unlaunched Diamond tournament objectives', () => {
+    const s = jointPolicyFixture('nlh', 2, 'tournament');
+    s.state.asset = 'diamonds';
+    expect(
+      evaluateJointLivePolicy(s.hero, s.state, s.baseline, 'candidate', () => 0).receipt.reason
+    ).toBe('diamond_tournament_unavailable');
+  });
   it.each(KNOWN_VARIANTS as GameVariant[])(
     '%s honors actual board count, trigger, units, physical and product caps',
     (variant) => {

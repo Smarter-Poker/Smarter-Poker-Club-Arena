@@ -185,6 +185,10 @@ export function evaluateJointLivePolicy(
     return finish('chip_rules_unavailable');
   if (s.asset === 'diamonds' && s.gameVariant !== 'nlh')
     return finish('diamond_variant_unavailable');
+  if (s.asset === 'diamonds' && s.gameMode !== 'cash')
+    return finish('diamond_tournament_unavailable');
+  if (s.asset === 'diamonds' && s.rakeConfig?.cap !== 0)
+    return finish('diamond_deductions_unavailable');
   if (!Number.isInteger(s.dealerSeat) || s.dealerSeat! < 1 || s.dealerSeat! > 10)
     return finish('button_unavailable');
   const unit = s.chipUnit!;

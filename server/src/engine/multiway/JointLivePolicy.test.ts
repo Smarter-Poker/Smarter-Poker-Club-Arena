@@ -157,6 +157,7 @@ describe('bounded Phase13 shadow policy', () => {
     state.asset = 'diamonds';
     state.chipUnit = 1;
     state.rakeConfig!.percent = 0;
+    state.rakeConfig!.cap = 0;
     const result = evaluateJointLivePolicy(hero, state, baseline, 'shadow', () => 0);
     expect(result.receipt.fired, result.receipt.reason).toBe(true);
     expect(

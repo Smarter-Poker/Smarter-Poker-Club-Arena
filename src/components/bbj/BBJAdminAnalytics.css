@@ -198,3 +198,12 @@
 .bbj-admin__miss.is-turned-away .bbj-admin__miss-label {
   color: #f87171;
 }
+
+/* The engine's own sentence for the player, under the gate that refused it. */
+.bbj-admin__miss-eg {
+  font-size: 10px;
+  line-height: 1.4;
+  opacity: 0.65;
+  font-style: italic;
+  margin-top: 2px;
+}

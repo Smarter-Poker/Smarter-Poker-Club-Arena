@@ -145,6 +145,64 @@ that `mini_refused` is classified first on both sides, that the three outcomes
 stay three, that the writer still cannot gate a payout or write a null reason,
 and that none of the five ghost reasons becomes a label key.
 
+## Two defects the deep dive found in this phase's own work
+
+Both were in the first commit of this branch, both looked correct in review,
+and both were only visible by running the thing. Fixed before the branch
+merged, and pinned.
+
+**1. `example` was dead data.** The SQL selected it, the migration header
+argued for it at length - _"the sentence the engine already wrote for a player
+... writing a second set of words here would be a second vocabulary"_ - and the
+interface declared it. **Nothing rendered it.** It appeared exactly once in the
+component, as a type field. That is worse than an unused column, because the
+reasoning in the header tells the next reader the operator sees that sentence.
+It is now printed under the gate that refused, and the law asserts that every
+field the reader returns is rendered by name.
+
+**2. A null `reason` crashed the panel.** `bbj_near_misses.reason` is nullable -
+the creating migration declared `reason text` with no constraint. `NULL LIKE
+'mini\_%'` is NULL, so the CASE fell through to `main` and the reader returned
+a null reason; the panel then called `reason.startsWith('mini_refused:')` on
+it, which throws during render. **One malformed row would have blanked the
+entire Jackpot Health panel** - balances, funding rate, mini headroom, all of
+it - on a screen whose whole purpose is to be readable when something is wrong.
+Found by a rolled-back probe that inserted one synthetic row per classifier
+branch, including branches that have never existed in production.
+
+Fixed at the reader (`COALESCE(s.reason, 'unspecified')`, migration
+`20260912001756`), and independently at the panel, because a UI that throws on
+data it did not expect is its own defect. **Not** with `SET NOT NULL` on the
+column: the near-miss writer is fire-and-forget by construction - _a jackpot
+must not be lost because its paperwork was_ - so a constraint that can reject
+its INSERT would convert a harmless null into a failed write on the settlement
+path.
+
+Re-proved after the fix: **0 null reasons returned**, the null row comes back
+as `unspecified`, and `mini_refused:reserve_at_floor` still classifies as an
+incident and sorts first.
+
+A third, smaller one: the law compared raw file offsets to prove
+`mini_refused:` is classified before `mini_`, and went red when the corrective
+migration's header explained the bug in prose above the code. The property was
+true and the test said it was not. It reads the `CASE` expression now - a law
+that reads whichever mention comes first in a file is a law about comment
+placement.
+
+## Also checked, and already fixed elsewhere
+
+The phase 2 sweep listed _"union pools have no mini operator control"_ as still
+open. **It is not.** `20260911214403_the_union_owns_its_own_mini` landed the
+same day and is on `main`: `fn_bbj_set_union_mini_enabled` and
+`fn_bbj_set_union_mini_floor` exist live, `src/lib/bbjMiniFeed.ts` wraps them,
+and `src/pages/UnionDashboardPage.tsx` calls both from a real control. The note
+was stale within hours of being written, which is exactly what CLAUDE.md 10.86
+says to expect of any claim about the environment - so it was re-checked
+against `main` rather than believed.
+
+The same re-check confirmed the drill is no longer main-only (phase 2, merged
+as `eeeaa15360` and published).
+
 ## Still open, unchanged by this
 
 - The near-miss log has no retention job. The creating migration reasoned that

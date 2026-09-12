@@ -108,10 +108,19 @@ describe('the near-miss log has a reader', () => {
     expect(panel).toMatch(/Mini Qualified But Was Turned Away/);
 
     /* The database classifier has to order the two the same way, or a mini the
-       payout turned away is filed as a hand that never qualified. */
-    const migration = latestReaderMigration();
-    const dbRefused = migration.indexOf("'mini\\_refused:%'");
-    const dbMini = migration.indexOf("'mini\\_%'");
+       payout turned away is filed as a hand that never qualified.
+
+       SCOPED TO THE CASE EXPRESSION, not to the file. Comparing raw file
+       offsets failed the moment a migration header explained the bug in prose
+       above the code - the property was still true and the test said it was
+       not. A law that reads whichever mention comes first in a file is a law
+       about comment placement. */
+    const caseBlock = /CASE\s*\n\s*WHEN s\.reason LIKE[\s\S]*?END AS kind/.exec(
+      latestReaderMigration()
+    )?.[0];
+    expect(caseBlock, 'no WHEN/THEN classifier found in the reader migration').toBeTruthy();
+    const dbRefused = caseBlock!.indexOf("'mini\\_refused:%'");
+    const dbMini = caseBlock!.indexOf("'mini\\_%'");
     expect(dbRefused).toBeGreaterThan(-1);
     expect(dbMini).toBeGreaterThan(-1);
     expect(dbRefused).toBeLessThan(dbMini);
@@ -150,6 +159,38 @@ describe('the near-miss log has a reader', () => {
     expect(writer).not.toMatch(/throw .*near_miss/i);
     // A near miss with no reason is a detector answering without knowing.
     expect(writer).toMatch(/reason:\s*params\.reason\s*\?\?\s*'unspecified'/);
+  });
+
+  /* BOTH OF THESE ARE DEFECTS THE PHASE 3 DEEP DIVE FOUND IN PHASE 3'S OWN
+     WORK, before it merged. They are pinned here because each one looked
+     correct in review and was only visible by running it. */
+
+  it('a null reason cannot reach the panel, and cannot crash it if it does', () => {
+    /* `bbj_near_misses.reason` is nullable - the creating migration declared it
+       `reason text` with no constraint. A null used to come back from the
+       reader as a null (NULL LIKE 'mini\\_%' is NULL, so the CASE fell to
+       'main'), and the panel called .startsWith() on it, which throws during
+       render and blanks the entire Jackpot Health panel. Two belts: */
+    const migration = latestReaderMigration();
+    expect(migration).toMatch(/COALESCE\(s\.reason, 'unspecified'\)/);
+
+    const panel = read(PANEL);
+    expect(panel).toMatch(/if \(!reason\) return NEAR_MISS_LABELS\.unspecified;/);
+    expect(panel).toMatch(/reason: string \| null \| undefined/);
+  });
+
+  it('every field the reader returns is rendered, none selected for nobody', () => {
+    const panel = read(PANEL);
+    /* `example` carries the sentence the engine already wrote for the player.
+       It shipped selected by the SQL, justified at length in the migration
+       header, declared on the interface - and rendered NOWHERE. Dead data that
+       reads as wired is how a panel quietly stops telling the truth. */
+    for (const field of ['refusals', 'reason', 'last_at', 'biggest_pot', 'example', 'kind']) {
+      expect(
+        new RegExp(`m\\.${field}`).test(panel),
+        `the reader returns ${field} and the panel never renders it`
+      ).toBe(true);
+    }
   });
 
   it('the fiction in the creating migration is not a source of labels', () => {

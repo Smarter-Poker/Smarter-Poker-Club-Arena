@@ -53,7 +53,15 @@ const NEAR_MISS_LABELS: Record<string, string> = {
   unspecified: 'Reason Not Recorded',
 };
 
-function nearMissLabel(reason: string): string {
+function nearMissLabel(reason: string | null | undefined): string {
+  /* `bbj_near_misses.reason` IS NULLABLE and nothing enforces otherwise. The
+     engine's writer defaults to 'unspecified', but any other path into the
+     table can leave a null, and `null.startsWith(...)` throws during render -
+     one malformed row would blank the whole Jackpot Health panel. The reader
+     COALESCEs it in SQL; this is the second belt, because a UI that throws on
+     data it did not expect is its own defect. */
+  if (!reason) return NEAR_MISS_LABELS.unspecified;
+
   /* A mini the PAYOUT turned away carries the refusal after a colon. It is not
      a near miss and never reads as one: a player made the hand. */
   if (reason.startsWith('mini_refused:')) {
@@ -346,8 +354,16 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
                 <span className="bbj-admin__miss-label">{nearMissLabel(m.reason)}</span>
                 <span className="bbj-admin__miss-sub">
                   {m.last_at ? `Last ${new Date(m.last_at).toLocaleDateString()}` : ''}
-                  {Number(m.biggest_pot) > 0 ? ` - Biggest Pot $${money(m.biggest_pot, 0)}` : ''}
+                  {Number(m.biggest_pot) > 0
+                    ? ` - Biggest Pot $${money(Number(m.biggest_pot), 0)}`
+                    : ''}
                 </span>
+                {/* The sentence the ENGINE already wrote for the player at the
+                    table, from the most recent hand in this group. It is why
+                    the reader returns `example` at all: without it this field
+                    was selected, justified in the migration header, and shown
+                    to nobody. */}
+                {m.example ? <span className="bbj-admin__miss-eg">{m.example}</span> : null}
               </span>
             </div>
           ))}

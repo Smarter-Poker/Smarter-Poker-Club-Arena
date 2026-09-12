@@ -1923,6 +1923,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase13'
   ),
   receipt(
+    'phase13_unavailable_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'explicit utility refusal, budget, context or legalization failure',
+    'Phase13'
+  ),
+  receipt(
     'phase13_variant_*',
     'HorseLogic',
     'partition entering decisions by exact variant',

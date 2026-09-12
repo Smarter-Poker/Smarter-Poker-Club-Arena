@@ -54,6 +54,7 @@ export interface JointPolicyReceipt {
   completedSamples: number;
   sampleBudgetExhausted: boolean;
   utilityOwner: 'cash' | 'phase7_pending' | 'phase7_evaluated' | 'phase7_unavailable';
+  utilityUnavailableReason?: string;
   shadowUtility?: HorseTournamentUtilityLedger;
   utilityLatencyMs?: number;
   latencyMs: number;

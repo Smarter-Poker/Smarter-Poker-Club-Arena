@@ -1282,7 +1282,14 @@ function calibratedSampleWeights(input: TournamentUtilityInput): {
   };
 
   let result = meanFor(0);
-  if (target > minimum + 1e-9 && target < maximum - 1e-9) {
+  // Joint samples already carry their exact uniform mean. Tilting that same
+  // mean through sixty bisections introduced rounding noise: eight equally
+  // weighted outcomes became 7.999999999999998 effective outcomes and failed
+  // the eight-outcome gate. Keep the original distribution when it matches to
+  // numerical precision; different targets still use the calibrated weights.
+  if (Math.abs(result.mean - target) <= 1e-12) {
+    // Uniform weights are the exact lambda=0 solution.
+  } else if (target > minimum + 1e-9 && target < maximum - 1e-9) {
     let low = -40;
     let high = 40;
     for (let step = 0; step < 60; step++) {

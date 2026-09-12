@@ -3003,13 +3003,24 @@ export class HorseLogic {
                     ...selected,
                     tournamentUtility: evaluated.result.ledger,
                   };
-              } else jointPolicy.receipt.utilityOwner = 'phase7_unavailable';
-            } else jointPolicy.receipt.utilityOwner = 'phase7_unavailable';
+              } else {
+                jointPolicy.receipt.utilityOwner = 'phase7_unavailable';
+                jointPolicy.receipt.utilityUnavailableReason = 'legalizer_mismatch';
+              }
+            } else {
+              jointPolicy.receipt.utilityOwner = 'phase7_unavailable';
+              jointPolicy.receipt.utilityUnavailableReason =
+                evaluated.unavailableReason ?? 'no_result';
+            }
           } catch {
             jointPolicy.receipt.utilityOwner = 'phase7_unavailable';
+            jointPolicy.receipt.utilityUnavailableReason = 'numerical_error';
           }
           jointPolicy.receipt.utilityLatencyMs = performance.now() - utilityStarted;
-        } else jointPolicy.receipt.utilityOwner = 'phase7_unavailable';
+        } else {
+          jointPolicy.receipt.utilityOwner = 'phase7_unavailable';
+          jointPolicy.receipt.utilityUnavailableReason = 'context_or_joint_samples_unavailable';
+        }
         if (jointPolicy.receipt.utilityOwner !== 'phase7_evaluated') proposal = beforePhase13;
       } else if (jointPolicy.receipt.mode === 'candidate' && jointPolicy.receipt.fired)
         decision = { ...beforePhase13, ...proposal };
@@ -3043,6 +3054,8 @@ export class HorseLogic {
         noteFire(`phase13_board_${receipt.boardCount}`);
         noteFire(`phase13_reason_${receipt.reason}`);
         noteFire(`phase13_${receipt.variant}_reason_${receipt.reason}`);
+        if (receipt.utilityUnavailableReason)
+          noteFire(`phase13_unavailable_utility_${receipt.utilityUnavailableReason}`);
         noteDecisionMs('phase13', receipt.latencyMs);
         noteDecisionMs(`phase13_${receipt.variant}`, receipt.latencyMs);
         if (receipt.utilityLatencyMs !== undefined)

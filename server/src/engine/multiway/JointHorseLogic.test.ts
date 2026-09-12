@@ -31,6 +31,45 @@ const action = (d: ReturnType<typeof HorseLogic.decide>) => ({
   thinkTime: d.thinkTime,
 });
 describe('Phase13 actual HorseLogic integration', () => {
+  it.each([
+    ['plo4', 'river', 2, 10],
+    ['plo8', 'turn', 3, 9],
+    ['flo8', 'turn', 3, 9],
+  ] as const)(
+    '%s %s %i boards keeps all eight uniform outcomes eligible for utility',
+    (variant, street, boards, seats) => {
+      const s = jointPolicyFixture(variant, boards, 'tournament', street);
+      s.state.players = Array.from({ length: seats }, (_, i) => ({
+        ...s.state.players[0],
+        seat: i + 1,
+        user_id: 'p' + i,
+        cards: [],
+        is_folded: false,
+        is_sitting_out: false,
+      }));
+      s.state.dealtSeatIds = s.state.players.map((p) => p.seat);
+      s.state.pot = seats * 5;
+      s.state.pots = calculatePots(s.state.players);
+      Object.assign(s.state.tournament!, {
+        playersLeft: seats,
+        stacks: s.state.players.map((p) => p.stack + p.totalInvested),
+        stackByUser: Object.fromEntries(
+          s.state.players.map((p) => [p.user_id, p.stack + p.totalInvested])
+        ),
+      });
+      seedFastRandom(139002);
+      const d = HorseLogic.decide(
+        s.hero,
+        s.state,
+        'balanced',
+        {},
+        { ...opts, phase13Joint: 'shadow', phase13EvidenceMode: true }
+      );
+      expect(d.jointPolicy?.completedSamples).toBe(8);
+      expect(d.jointPolicy?.utilityOwner).toBe('phase7_evaluated');
+      expect(d.jointPolicy?.shadowUtility?.effectiveOutcomeSamples).toBe(8);
+    }
+  );
   it.each(['plo4', 'plo5', 'plo6'] as const)(
     '%s preserves a rejected non-nut flush-draw call-off against two all-ins',
     (variant) => {
@@ -159,6 +198,9 @@ describe('Phase13 actual HorseLogic integration', () => {
       utilityOwner: 'phase7_unavailable',
     });
     expect(candidate.jointPolicy?.shadowUtility).toBeUndefined();
+    expect(candidate.jointPolicy?.utilityUnavailableReason).toBe(
+      'context_or_joint_samples_unavailable'
+    );
   });
   it('lets the existing utility owner select an offline candidate and prices bounty and recovery inputs', () => {
     const s = jointPolicyFixture('nlh', 2, 'tournament', 'river');

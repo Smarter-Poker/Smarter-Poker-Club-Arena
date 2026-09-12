@@ -20,3 +20,8 @@ the application owner to create real foreign keys to Auth users without a
 superuser bypass. After genuine Auth migrations run, their ledger retains only
 the captured read grant for postgres; it cannot insert or alter migration rows.
 Connection ownership and rollback on privilege failure are checked separately.
+
+Realtime's private migration and tenant catalogs are read through a separately
+owned bootstrap connection, which closes before application work resumes.
+Permission and connection errors retain their cause instead of being reported
+as a generic readiness timeout. No application privilege is added for this check.

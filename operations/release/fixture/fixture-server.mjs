@@ -23,6 +23,7 @@ import {
   assertManagedPostgresBoundary,
   assertBootstrapPostgresConfiguration,
   sealFixtureAuthMigrationLedger,
+  assertFixtureServiceBootstrap,
 } from './service-role-boundary.mjs';
 import { createFixtureGateway, loadStaticManifest, findPublicAnonKey } from './gateway.mjs';
 import {
@@ -438,6 +439,7 @@ async function jsonHealth(url, field, headers = {}) {
 }
 
 export async function realtimeMigrated(db) {
+  await assertFixtureServiceBootstrap(db);
   try {
     const result = await db.query(`SELECT
       (SELECT count(*)=82 AND min(version)=20211116024918 AND max(version)=20260714120000
@@ -450,8 +452,11 @@ export async function realtimeMigrated(db) {
       EXISTS(SELECT 1 FROM _realtime.tenants WHERE external_id='realtime-dev' AND migrations_ran=82)
       AS complete`);
     return result.rows[0]?.complete === true;
-  } catch {
-    return false;
+  } catch (error) {
+    // A service still creating its catalog may not be ready. Authorization
+    // and transport errors are failures, not sixty seconds of false readiness.
+    if (error?.code === '42P01' || error?.code === '3F000') return false;
+    throw error;
   }
 }
 
@@ -691,7 +696,15 @@ async function start(args) {
     // The seed calls genuine tenant migrations, but its process exit alone
     // does not prove they succeeded. Read their exact pinned installed set;
     // never stamp a migration row to make an incomplete service look current.
-    await supervisor.until(() => realtimeMigrated(db));
+    const realtimeBootstrap = supervisor.databaseOwner.own(
+      new pg.Client({ ...connection, user: 'supabase_admin', database })
+    );
+    try {
+      await realtimeBootstrap.connect();
+      await supervisor.until(() => realtimeMigrated(realtimeBootstrap));
+    } finally {
+      await supervisor.databaseOwner.end(realtimeBootstrap);
+    }
     const serviceRoles = await assertNativeServiceRoleBoundary(db);
     stage = 'managed-postgres-event-trigger-boundary';
     const managedPostgres = await assertManagedPostgresBoundary(db);

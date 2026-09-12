@@ -7,7 +7,51 @@ import { EventEmitter } from 'node:events';
 import {
   ServiceSupervisor,
   closeFixtureResources,
+  realtimeMigrated,
 } from '../../operations/release/fixture/fixture-server.mjs';
+
+test('private Realtime catalog checks refuse an application connection before reading rows', async () => {
+  let calls = 0;
+  await assert.rejects(
+    realtimeMigrated({
+      query: async () => {
+        calls++;
+        return { rows: [{ owned_service_bootstrap: false }] };
+      },
+    }),
+    /FIXTURE_SERVICE_BOOTSTRAP_IDENTITY_REQUIRED/
+  );
+  assert.equal(calls, 1);
+});
+
+for (const code of ['42501', 'ECONNRESET']) {
+  test(`Realtime ${code} read failure remains a failure instead of a readiness timeout`, async () => {
+    let calls = 0;
+    const original = Object.assign(new Error('private service failure'), { code });
+    await assert.rejects(
+      realtimeMigrated({
+        query: async () => {
+          if (++calls === 1) return { rows: [{ owned_service_bootstrap: true }] };
+          throw original;
+        },
+      }),
+      (error) => error === original
+    );
+  });
+}
+
+test('Realtime may wait for its own not-yet-created catalog', async () => {
+  let calls = 0;
+  assert.equal(
+    await realtimeMigrated({
+      query: async () => {
+        if (++calls === 1) return { rows: [{ owned_service_bootstrap: true }] };
+        throw Object.assign(new Error('catalog not created yet'), { code: '42P01' });
+      },
+    }),
+    false
+  );
+});
 
 test('a failed resource close still retires readiness and observes the real child exit', async () =>
   owned(async (supervisor, root) => {

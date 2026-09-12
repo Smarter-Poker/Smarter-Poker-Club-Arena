@@ -50,6 +50,21 @@ export async function assertBootstrapPostgresConfiguration(db) {
   );
 }
 
+// Private service catalogs are observed by their original initdb identity.
+// This connection never performs application signup or funded-route work.
+export async function assertFixtureServiceBootstrap(db) {
+  const result = await db.query(`SELECT current_database()='club_arena_qualification'
+    AND current_user='supabase_admin' AND session_user='supabase_admin'
+    AND inet_server_addr() IS NULL
+    AND EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND oid=10 AND rolsuper)
+    AS owned_service_bootstrap`);
+  assert.deepEqual(
+    result.rows,
+    [{ owned_service_bootstrap: true }],
+    'FIXTURE_SERVICE_BOOTSTRAP_IDENTITY_REQUIRED'
+  );
+}
+
 // Local bootstrap only. These credentials are random per disposable fixture,
 // never obtained from production. Keep the two native entrypoints identical.
 export function serviceRoleBootstrapSql(password) {

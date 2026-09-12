@@ -557,16 +557,24 @@ async function services() {
     // The real seeder may return zero after a tenant migration failed. Reuse
     // the fixture's exact installed-set check before opening subscriptions.
     stage = 'realtime-tenant-migration-ledger';
-    await eventually(() => realtimeMigrated(db));
-    stage = 'realtime-tenant-row';
-    assert.equal(
-      (
-        await db.query(
-          "SELECT count(*)::int AS n FROM _realtime.tenants WHERE external_id='realtime-dev'"
-        )
-      ).rows[0].n,
-      1
+    const realtimeBootstrap = databaseOwner.own(
+      new pg.Client({ host: '/run/postgresql', user: 'supabase_admin', database })
     );
+    try {
+      await realtimeBootstrap.connect();
+      await eventually(() => realtimeMigrated(realtimeBootstrap));
+      stage = 'realtime-tenant-row';
+      assert.equal(
+        (
+          await realtimeBootstrap.query(
+            "SELECT count(*)::int AS n FROM _realtime.tenants WHERE external_id='realtime-dev'"
+          )
+        ).rows[0].n,
+        1
+      );
+    } finally {
+      await databaseOwner.end(realtimeBootstrap);
+    }
     stage = 'realtime-server-start';
     await start('realtime', '/app/bin/server', [], realtimeEnv);
     stage = 'realtime-server-ready';

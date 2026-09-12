@@ -2,6 +2,7 @@
 """Real Linux build and cgroup OOM proof; runs only in disposable CI."""
 import json
 import hashlib
+import importlib.util
 import os
 from pathlib import Path
 import re
@@ -173,6 +174,19 @@ def main():
             if any(name.endswith((".test.js", ".spec.js")) or "/__tests__/" in name
                    for name in actual):
                 raise RuntimeError("unit-test entrypoints were included in the runtime image")
+            # Reuse this exact successful build; do not compile a second image.
+            # The archives are temporary and never uploaded or loaded on a host.
+            raw_archive = Path(temp, "engine-image-save.tar")
+            normalized_archive = Path(temp, "engine-image-canonical.tar")
+            run(["docker", "image", "save", "--output", str(raw_archive), tag], timeout=120)
+            module_spec = importlib.util.spec_from_file_location(
+                "engine_archive", ROOT / "server/scripts/engine-image-archive.py")
+            archive_module = importlib.util.module_from_spec(module_spec)
+            module_spec.loader.exec_module(archive_module)
+            server_tree = run(["git", "rev-parse", f"{sha}:server"]).stdout.strip()
+            receipt["archive_normalization"] = archive_module.normalize_engine_archive(
+                raw_archive, normalized_archive, source_sha=sha,
+                server_tree=server_tree, image_id=receipt["image_id"])
             run(["docker", "buildx", "inspect", BUILDER, "--bootstrap"], timeout=120)
             receipt["memory_max"] = counter("memory.max")
             receipt["swap_max"] = counter("memory.swap.max")

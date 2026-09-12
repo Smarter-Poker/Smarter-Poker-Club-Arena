@@ -7,6 +7,7 @@ import { calculatePots } from './PokerEngine.js';
 import { bigBlindAnteTotal } from './AnteMath.js';
 import { scoreHoldem } from './HorseEval.js';
 import {
+  CONTINUATION_POLICY,
   continuationStrength,
   simulateTournamentContinuation,
 } from './HorseTournamentContinuation.js';
@@ -47,8 +48,31 @@ export interface FutureHandResult {
 /** Decision-local common cards/facts. Stack and betting outcomes are never cached here. */
 export interface FutureHandDraw {
   board: Card[];
-  seats: Map<string, { cards: Card[]; preflop: number; streets: number[]; showdown: number }>;
+  seats: Map<string, FutureSeatFacts>;
 }
+
+interface FutureSeatFacts {
+  cards: Card[];
+  preflop: number;
+  streets: number[];
+  showdown: number;
+}
+
+type SyntheticDealFacts = {
+  board: Card[];
+  seats: FutureSeatFacts[];
+};
+// These are the rollout model's synthetic cards and scores, never live cards,
+// player identities, stacks, pot rights or bounty values. The one-hand model's
+// shuffle depends only on the outcome index and number of surviving seats.
+// At most 32 * 9 entries are possible. Caller-visible draws are copied so an
+// observer's mutation cannot contaminate another decision's facts.
+const syntheticDealFacts = new Map<string, SyntheticDealFacts>();
+const copySeatFacts = (facts: SyntheticDealFacts['seats'][number]) => ({
+  ...facts,
+  cards: facts.cards.map((c) => ({ ...c })),
+  streets: facts.streets.slice(),
+});
 
 /** NLH-only synthetic rollout settlement. Compared against production per-pot
  * awards in the differential suite; never used to settle a real hand. */
@@ -176,6 +200,21 @@ export function simulateTournamentFutureHands(args: {
     const bb = (sb + 1) % players.length;
     const drawKey = `${args.sampleIndex}:${hand}:${players.map((p) => p.user_id).join(',')}`;
     let draw = args.drawCache?.get(drawKey);
+    const templateKey =
+      FUTURE_HAND_POLICY.maxHands === 1 &&
+      Number.isInteger(args.sampleIndex) &&
+      args.sampleIndex >= 0 &&
+      args.sampleIndex < CONTINUATION_POLICY.maxOutcomeSamples
+        ? `${args.sampleIndex}:${players.length}`
+        : null;
+    const template = templateKey === null ? undefined : syntheticDealFacts.get(templateKey);
+    if (!draw && template) {
+      draw = {
+        board: template.board.map((c) => ({ ...c })),
+        seats: new Map(players.map((p, i) => [p.user_id, copySeatFacts(template.seats[i])])),
+      };
+      args.drawCache?.set(drawKey, draw);
+    }
     if (!draw) {
       const deck: Card[] = [];
       for (const suit of ['clubs', 'diamonds', 'hearts', 'spades'] as const)
@@ -210,6 +249,11 @@ export function simulateTournamentFutureHands(args: {
           })
         ),
       };
+      if (templateKey !== null)
+        syntheticDealFacts.set(templateKey, {
+          board: draw.board.map((c) => ({ ...c })),
+          seats: players.map((p) => copySeatFacts(draw!.seats.get(p.user_id)!)),
+        });
       args.drawCache?.set(drawKey, draw);
     }
     for (const p of players) p.cards = draw.seats.get(p.user_id)!.cards;

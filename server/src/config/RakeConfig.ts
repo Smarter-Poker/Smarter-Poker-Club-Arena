@@ -1101,8 +1101,21 @@ function doesHandQualify(
  * `theMiniNeverOverrulesTheMain.law.test.ts`.
  */
 export interface BBJMiniDetectionResult extends BBJDetectionResult {
-  /** Which of Dan's two rules was applied, for the celebration and the log. */
-  miniRule?: 'holdem_aces_full' | 'plo_quads';
+  /**
+   * Which of Dan's two rules was applied, for the celebration and the log -
+   * or `drill`, when the verdict was injected by an armed mini drill rather
+   * than ruled by `detectMiniBBJHit`.
+   *
+   * `drill` IS IN THE UNION DELIBERATELY. Settlement writes it, and it was
+   * typechecking only because `currentHandMiniBBJHit` is declared as the base
+   * `BBJDetectionResult` - which has no `miniRule` at all - so the field was
+   * erased on assignment and read back through a cast. It worked and no
+   * compiler could have caught a typo in it. Naming it here is what makes
+   * `miniRule` a closed set again: every value settlement can write is a value
+   * this type admits, and the near-miss message and the payout metadata that
+   * interpolate it can be read against a list rather than against a hope.
+   */
+  miniRule?: 'holdem_aces_full' | 'plo_quads' | 'drill';
 }
 
 /** Aces full or better: a full house whose trips are Aces, or anything above. */

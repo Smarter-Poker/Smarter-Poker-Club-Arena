@@ -303,7 +303,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     dealtInPlayerIds: string[],
     variant: string,
     handNumber: number
-  ): Promise<BBJDetectionResult | null> {
+  ): Promise<{ kind: 'main' | 'mini'; result: BBJDetectionResult } | null> {
     /* Refuse before claiming, never after. An arm burned on a hand that cannot
        produce a payout is an operator arming again and wondering why. */
     if (this.currentHandShowdownResults.length < 2) return null;
@@ -333,32 +333,59 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         reportError(error, 'ServerTableEngine.bbj_drill_claim_failed', { tableId: this.tableId });
         return null;
       }
-      const claim = (Array.isArray(data) ? data[0] : data) as { claimed?: boolean } | null;
+      const claim = (Array.isArray(data) ? data[0] : data) as {
+        claimed?: boolean;
+        kind?: string;
+      } | null;
       if (!claim?.claimed) return null;
 
+      /* WHICH JACKPOT THIS ARM ASKED FOR (2026-09-11). The arm row carries it
+         and the claim hands it back, because the engine cannot read the row
+         and must not guess: a mini drill taking the main branch would pay a
+         SHARE OF THE POOL for an arm that asked for a flat tier out of the
+         reserve. An arm written before the column existed answers 'main',
+         which is what it was. Anything unrecognised is treated as 'main' too
+         - the conservative reading, and the one every historical row means. */
+      const kind: 'main' | 'mini' = claim.kind === 'mini' ? 'mini' : 'main';
+
       console.warn(
-        `[ServerTableEngine:${this.tableId}] *** BBJ DRILL FIRED *** hand #${handNumber}. ` +
-          `This is a drill, not a real bad beat. The chips are real.`
+        `[ServerTableEngine:${this.tableId}] *** BBJ ${kind.toUpperCase()} DRILL FIRED *** ` +
+          `hand #${handNumber}. This is a drill, not a real bad beat. The chips are real.`
       );
-      EngineMetrics.bbjDrillsFiredTotal.inc(1);
+      /* EACH FAMILY'S OWN DRILL COUNTER. `bbjDrillsFiredTotal` is documented -
+         in engineInstruments and in the runbook - as the subtrahend in
+         `detected - drills = genuine bad beats`. The first cut of the mini
+         drill incremented it while incrementing the MINI's detected counter,
+         which made `bbj_hits_detected - bbj_drills_fired` under-count genuine
+         main bad beats by one per mini drill and go negative in a window where
+         minis were drilled and no main hit. Two counters, two arithmetics,
+         neither borrowing from the other. */
+      if (kind === 'mini') {
+        EngineMetrics.bbjMiniDrillsFiredTotal.inc(1);
+      } else {
+        EngineMetrics.bbjDrillsFiredTotal.inc(1);
+      }
 
       return {
-        hit: true,
-        loserUserId: loser.userId,
-        loserHand: {
-          ranking: loser.handRanking,
-          name: loser.handName,
-          kickers: loser.kickers ?? [],
+        kind,
+        result: {
+          hit: true,
+          loserUserId: loser.userId,
+          loserHand: {
+            ranking: loser.handRanking,
+            name: loser.handName,
+            kickers: loser.kickers ?? [],
+          },
+          winnerUserId: winner.userId,
+          winnerHand: {
+            ranking: winner.handRanking,
+            name: winner.handName,
+            kickers: winner.kickers ?? [],
+          },
+          dealtInPlayerIds,
+          variant,
+          qualifyingHandLabel: 'Drill',
         },
-        winnerUserId: winner.userId,
-        winnerHand: {
-          ranking: winner.handRanking,
-          name: winner.handName,
-          kickers: winner.kickers ?? [],
-        },
-        dealtInPlayerIds,
-        variant,
-        qualifyingHandLabel: 'Drill',
       };
     } catch (e) {
       reportError(e, 'ServerTableEngine.bbj_drill_claim_threw', { tableId: this.tableId });
@@ -1071,10 +1098,26 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
          leave on. `fn_bbj_arm_drill` refuses a union pool outright (that is
          where the production jackpot lives) and any pool over 1,000.00. */
       let drillResult: typeof bbjResult | null = null;
+      /* WHICH JACKPOT THE ARM ASKED FOR (2026-09-11). Until today a drill was
+         always a MAIN drill, and its verdict took the main branch below - so
+         on a drill table the mini was never even asked. The drill is tried
+         precisely when the main rule refused, which is exactly the case the
+         mini exists to catch, so a hand that genuinely qualified for the mini
+         had it silently displaced. "One hand pays one jackpot" makes that the
+         right outcome; nothing made it a decision anybody had taken, and
+         nothing let an operator drill the mini instead. */
+      let drillKind: 'main' | 'mini' = 'main';
       if (!bbjResult.hit) {
-        drillResult = await this.claimBBJDrill(dealtInPlayerIds, variant, this.handCount);
+        const claimed = await this.claimBBJDrill(dealtInPlayerIds, variant, this.handCount);
+        if (claimed) {
+          drillResult = claimed.result;
+          drillKind = claimed.kind;
+        }
       }
-      const effectiveBbjResult = drillResult ?? bbjResult;
+      /* A MINI drill must NOT become a main jackpot. It falls through to the
+         else branch below, where it stands in for the mini's own detection -
+         same synthetic verdict, the mini's payout path, the mini's money. */
+      const effectiveBbjResult = drillKind === 'main' ? (drillResult ?? bbjResult) : bbjResult;
 
       if (effectiveBbjResult.hit) {
         const bbjResult = effectiveBbjResult;
@@ -1162,16 +1205,28 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
            can produce one payout of either kind and never both. The money is a
            flat amount per stakes tier out of `backup_balance` - a reserve that
            until now nothing spent - never out of the jackpot itself. */
-        const miniResult = detectMiniBBJHit(
-          this.currentHandShowdownResults,
-          this.currentHandWinnerIds,
-          variant,
-          this.currentHandPotSize,
-          this.tableInfo.big_blind,
-          dealtInPlayerIds.length,
-          dealtInPlayerIds,
-          { doubleBoard: this.currentHandCommunityCards2.length > 0 }
-        );
+        /* A MINI DRILL STANDS IN FOR THE MINI'S DETECTION, AND FOR NOTHING
+           ELSE (2026-09-11). Same construction as the main drill one branch
+           up: the showdown is real - real players, real board, real pot, real
+           chips out of the real reserve - and only the VERDICT is injected.
+           `miniRule` says `drill` rather than borrowing a real rule's name,
+           because every downstream reader of that field (the near-miss table,
+           the settlement log, the notification) would otherwise record a
+           synthetic verdict as `aces_full_or_better` and make a drill
+           indistinguishable from the thing it is drilling. */
+        const miniResult =
+          drillKind === 'mini' && drillResult
+            ? { ...drillResult, miniRule: 'drill' as const }
+            : detectMiniBBJHit(
+                this.currentHandShowdownResults,
+                this.currentHandWinnerIds,
+                variant,
+                this.currentHandPotSize,
+                this.tableInfo.big_blind,
+                dealtInPlayerIds.length,
+                dealtInPlayerIds,
+                { doubleBoard: this.currentHandCommunityCards2.length > 0 }
+              );
 
         if (miniResult.hit) {
           const miniTierId = getTierIdForBB(this.tableInfo.big_blind);

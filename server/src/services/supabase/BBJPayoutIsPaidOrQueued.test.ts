@@ -19,7 +19,7 @@
  * durable record (the queue) and a loud one (a CRITICAL financial alert) -
  * both carrying every parameter needed to re-drive the payout by hand.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const rpc = vi.fn();
 const from = vi.fn();
@@ -86,6 +86,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers();
   setBBJPayoutQueue(null);
+  /* The freeze flag is module state in maintenance/freezeState and nothing
+     else in this file resets it. A stale `true` leaking out of the deferral
+     block below would make every test above it assert against a platform that
+     is not running, and they would still pass - silently testing nothing. */
+  setMaintenanceFrozen(false);
   from.mockImplementation((name: string) => {
     if (name === 'clubs') return table({ data: { union_id: 'union-1' }, error: null });
     if (name === 'bbj_contributions') return table({ data: { pool_id: POOL }, error: null });
@@ -729,9 +734,13 @@ it('reports unreadable parked shares at their source without retrying payment', 
  * put a credit inside the freeze.
  */
 describe('a payout defers to the maintenance break instead of moving chips through it', () => {
-  beforeEach(() => {
-    setMaintenanceFrozen(false);
-  });
+  /* The reset also lives in the FILE-WIDE beforeEach. It was here alone at
+     first, and that was safe only by accident - this describe happens to be
+     the last block in the file and its last test happens to set `false`. Add
+     one test after it, or move this block, and every earlier test in the file
+     would start running against a frozen platform and quietly assert the
+     wrong thing. A test's isolation must not depend on where it sits. */
+  afterEach(() => setMaintenanceFrozen(false));
 
   it('makes no RPC call at all while the platform is frozen', async () => {
     setMaintenanceFrozen(true);
@@ -743,6 +752,15 @@ describe('a payout defers to the maintenance break instead of moving chips throu
   });
 
   it('does not burn its retries or raise a CRITICAL alert for a break we scheduled', async () => {
+    /* A working queue, because that is production: `setBBJPayoutQueue` is
+       called at module scope in FeeReconciler and every entrypoint reaches the
+       engine through GameServer, which imports it. The file-wide beforeEach
+       nulls it, and a NULL queue is the one condition under which a deferral
+       is correctly loud - see the test below. */
+    setBBJPayoutQueue({
+      claim: vi.fn().mockResolvedValue(true),
+      settle: vi.fn().mockResolvedValue(true),
+    } as never);
     setMaintenanceFrozen(true);
     await run();
     /* Falling into the attempt loop would spend four attempts and end in
@@ -752,16 +770,45 @@ describe('a payout defers to the maintenance break instead of moving chips throu
   });
 
   it('still writes the durable claim, because a record is not a chip movement', async () => {
-    const claim = vi.fn().mockResolvedValue(undefined);
-    setBBJPayoutQueue({ claim, settle: vi.fn().mockResolvedValue(undefined) } as never);
+    /* `true` is what the real queueUnpaidBBJPayout returns on a confirmed
+       insert, and queueSafely compares against exactly that. */
+    const claim = vi.fn().mockResolvedValue(true);
+    setBBJPayoutQueue({ claim, settle: vi.fn().mockResolvedValue(true) } as never);
     setMaintenanceFrozen(true);
     const outcome = await run();
     expect(outcome.status).toBe('queued');
     /* The claim is what survives the :57 engine restart and what the
        reconciler re-drives at the thaw. Deferring without it would be
-       dropping the jackpot, which is the defect this whole file exists for. */
-    expect(claim).toHaveBeenCalled();
-    setBBJPayoutQueue(null);
+       dropping the jackpot, which is the defect this whole file exists for.
+
+       ASSERTED ON THE DEFERRAL'S OWN REASON, not on `claim` merely having been
+       called. The write-ahead at the top of the function calls `claim`
+       unconditionally, so `toHaveBeenCalled()` alone passed with this whole
+       feature deleted - a test that cannot fail is not a test. Only the frozen
+       branch writes a reason beginning "deferred:". */
+    expect(claim).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringMatching(/^deferred: platform frozen/)
+    );
+  });
+
+  it('a deferral whose durable write did NOT land is loud, not silent', async () => {
+    /* The one case where deferring would lose a jackpot: Postgres unreachable
+       while the flag is set - the outage shape the queue exists for. The first
+       cut of this gate threw the claim's answer away, which made it the only
+       `queued` return in the module that could leave nothing behind at all. */
+    const claim = vi.fn().mockRejectedValue(new Error('database is unreachable'));
+    setBBJPayoutQueue({ claim, settle: vi.fn().mockResolvedValue(undefined) } as never);
+    setMaintenanceFrozen(true);
+    const outcome = await run();
+    expect(outcome.status).toBe('queued');
+    expect(raiseFinancialAlert).toHaveBeenCalledWith(
+      'critical',
+      'processBBJPayout.frozen_without_a_claim',
+      // the alert carries every parameter needed to re-drive the payout by hand
+      expect.stringContaining(PARAMS.loserUserId),
+      expect.objectContaining({ loserUserId: PARAMS.loserUserId, queued: false })
+    );
   });
 
   it('says WHY it queued, so a deferral is not read as a failure', async () => {

@@ -607,6 +607,45 @@ export abstract class ServerTableEngineBase {
   // the add-on is reduced or canceled. Map<userId, requestedAmount>.
   protected pendingAddOns: Map<string, number> = new Map();
   /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  MID-HAND DIAMOND TOP-UPS ARE AN INTENT, NOT A DEBIT
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * The chip lane takes the money at request time and lands the chips at the
+   * end of the hand, through the durable `table_pending_addons` ledger. A
+   * Diamond seat cannot do that, and the reason is a constraint rather than a
+   * preference: the deferred trigger `zzz_diamond_seat_keeps_custody` requires
+   * a Diamond seat's `stack` to EQUAL its custody balance at every COMMIT. A
+   * reservation made now and applied later is a committed state where the two
+   * disagree, so there is no ordering of the chip lane's two steps that this
+   * arena permits.
+   *
+   * The alternative to a debit is an INTENT: nothing moves until the hand
+   * ends, and then the whole top-up happens in the one transaction the
+   * constraint does allow, through `fn_poker_diamond_top_up` - the door that
+   * already exists and is already certified.
+   *
+   * WHAT THE PLAYER GIVES UP, stated plainly because they are told it too: the
+   * chip lane guarantees the money is committed the moment they tap. This
+   * guarantees only that it will be attempted the moment the hand ends, so a
+   * player who spends those Diamonds elsewhere in the intervening thirty
+   * seconds gets an honest refusal instead. That is a narrower promise, and it
+   * is the widest one this constraint leaves; the chip lane's promise is not
+   * as wide as it looks either, since it re-sizes at landing and refunds the
+   * difference when the pot has moved the stack.
+   *
+   * KEYED BY REQUEST ID, not by user, so a retry of the same tap overwrites
+   * itself and two genuine taps both count. The id is the same uuidv5 the
+   * between-hands path derives, so the SQL door de-duplicates a replay of the
+   * landing itself.
+   *
+   * MEMORY ONLY, deliberately. An intent lost to an engine restart costs the
+   * player nothing, because nothing was taken; a DEBIT lost to a restart is
+   * the failure mode the durable chip ledger exists to prevent. There is
+   * nothing here worth making durable.
+   */
+  protected diamondTopUpIntents: Map<string, { userId: string; amount: number }> = new Map();
+  /**
    * A2: does the durable `table_pending_addons` ledger need a sweep?
    *
    * Starts true so a freshly started engine always checks once for rows a dead

@@ -116,6 +116,20 @@ The strongest evidence was already written and had been skipping the Diamond arm
 
 Line two remains the only open line in Phase 7: mid-hand add-ons need a custody holding lane of their own, because a Diamond seat's stack must EQUAL its custody balance at every commit, and waitlists, offers, seat changes, must move and clusters are still to certify.
 
+## Execution Update, September 12, 2026, The Last Line Of Phase 7
+
+Checklist line two is claimed, and Phase 7 is complete.
+
+Most of the line turned out to need nothing built. Waitlists move no money at all, `fn_offer_open_seat` reads no asset, the Diamond cash-out fires it through the same wrapper a chip cash-out does, and `atomic_table_buyin` has been an asset router since September 10, so a claimed offer lands on the Diamond buy-in door, which honours the hold and settles the waitlist row itself. That is worth writing down because it was not obvious until it was checked, and because the work that remained was all about what the queue TOLD a Diamond player rather than whether it worked.
+
+Three things were wrong there. Every Diamond refusal reached the player as the caller's generic "check your balance", so the arena told a waitlisted player who arrived on time that they were short of Diamonds; thirteen are translated now, matched on the SQL exception name, with a second test reading those names back out of the migrations so a translation cannot outlive the refusal it handles. The lobby tested full before it tested the closed gate, so the one board that could still offer an action while Diamond cash was closed was a board with no seats on it. And the client opened six tables on a desktop while the server enforced four in three places, which is the direction its own note forbids.
+
+Mid-hand add-ons were the real work. The chip lane takes the money on the tap and lands the chips at the end of the hand, and this arena cannot do that: the deferred seat-keeps-custody trigger requires a Diamond seat's stack to EQUAL its custody balance at every commit, so a reservation made now and applied later is a committed state the database refuses. There is no ordering of the chip lane's two steps this arena permits. So a mid-hand Diamond top-up is an intent rather than a debit. Nothing moves until the hand ends, and then the whole top-up happens in the one transaction that is allowed, through the door that already exists. The promise is narrower than the chip one and the player is told so rather than given the more comfortable sentence: the chip lane says the difference returns to your wallet, which is true because the chips were taken on the tap, and nothing has been taken here to return. The local balance, the session buy-in total and the rebuy count stay still until it lands, because counting a purchase nobody made is how a session P/L starts lying.
+
+Seat changes and must-move remain unavailable, and they are unavailable BY CONSTRUCTION rather than by omission, which is the distinction the phase exit asks for. Both are provided by the cluster structure; a Diamond table belongs to no cluster and the boundary refuses one, so there is no `cash_games` row to name, no roster to spend a seat change from, and nothing that has to be remembered to keep them off. Evidence: [the queue changelog](changelog/2026-09-12-diamond-phase-7-the-queue-and-what-it-tells-you.md) and [the mid-hand changelog](changelog/2026-09-12-diamond-phase-7-a-seat-adds-mid-hand.md).
+
+Phase 7 exit is met: the supported-feature matrix is explicit and passing, and every unsupported feature is refused by a rule rather than left out.
+
 ## Approved Product Contract
 
 This replaces the earlier recommendation for two separate World Hub destinations. The World Hub has one player-facing Poker Arena entrance. Reuse the existing Club Arena application as the shared shell, lobby and game implementation. Diamond Arena is a diamond-only skin and operating policy inside it, not a second poker application.
@@ -343,7 +357,7 @@ Phase 6 Of 12 Is Done, verified September 11, 2026. Implementation merge 85da647
 ### Phase 7 Of 12: Cash Game Parity And Table Features
 
 - [x] Enable each intended Club Arena variant only after corresponding Diamond tests.
-- [ ] Reuse waitlists, offers, rebuys/add-ons, seat changes, must-move and multi-table flows.
+- [x] Reuse waitlists, offers, rebuys/add-ons, seat changes, must-move and multi-table flows.
 - [x] Reuse supported bomb pots, board counts, straddles and run-it-twice.
 - [x] Integrate table skins, cards, time banks, rabbit hunt, chat, voice and throwables where supported.
 - [x] Keep feature diamond charges separate from game stakes, with no double charge.

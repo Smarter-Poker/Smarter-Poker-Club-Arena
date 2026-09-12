@@ -34,7 +34,7 @@ export async function startObservationBridge(options, testHarness = {}) {
   }
 }
 
-async function startBridge({ db, binding, onFailure }, testHarness = {}) {
+async function startBridge({ db, binding, onFailure, financialActors }, testHarness = {}) {
   const protocol =
     testHarness.protocol ?? (await import(CONTROL_ROOT + 'component-observation-protocol.mjs'));
   const observations =
@@ -48,8 +48,16 @@ async function startBridge({ db, binding, onFailure }, testHarness = {}) {
     REPLY_BYTES,
     PERSISTENCE_MS,
     READ_MS,
+    FINANCIAL_MS,
   } = protocol;
   const owned = validateBinding(binding);
+  const actorIds = financialActors === undefined ? null : Object.freeze([...financialActors]);
+  if (actorIds) {
+    assert.equal(actorIds.length, 2);
+    assert.equal(new Set([...actorIds, owned.spectator_user_id]).size, 3);
+    for (const id of actorIds)
+      assert.match(id, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  }
   const socketPath = testHarness.socketPath ?? protocol.OBSERVATION_SOCKET;
   const fixtureUid = testHarness.fixtureUid ?? 1000;
   const observerGid = testHarness.observerGid ?? 1001;
@@ -80,7 +88,10 @@ async function startBridge({ db, binding, onFailure }, testHarness = {}) {
     hand = null,
     handDeadline = null,
     closePromise;
-  let server, handFloor;
+  let server,
+    handFloor,
+    financial = null,
+    financialDeadline = null;
   const abort = new AbortController();
   function fail(category) {
     if (failed || closing) return;
@@ -112,7 +123,17 @@ async function startBridge({ db, binding, onFailure }, testHarness = {}) {
   }
   db.on?.('error', () => fail('OBSERVATION_DATABASE_FAILED'));
   async function execute(request) {
-    if (request.read !== 'catalogue') {
+    const financialRead = request.read === 'financial_facts';
+    if (financialRead) {
+      assert.ok(actorIds, 'OBSERVATION_FINANCIAL_ACTORS_NOT_BOUND');
+      if (!financial) {
+        assert.ok(request.financial.hand_number > handFloor, 'OBSERVATION_HISTORICAL_HAND_REFUSED');
+        financial = Object.freeze({ ...request.financial });
+        financialDeadline = now() + FINANCIAL_MS;
+      }
+      assert.deepEqual(request.financial, financial, 'OBSERVATION_FINANCIAL_SUBSTITUTION');
+      assert.ok(now() < financialDeadline, 'OBSERVATION_FINANCIAL_DEADLINE');
+    } else if (request.read !== 'catalogue') {
       if (!hand) {
         assert.ok(request.hand.hand_number > handFloor, 'OBSERVATION_HISTORICAL_HAND_REFUSED');
         hand = Object.freeze({ ...request.hand });
@@ -121,7 +142,8 @@ async function startBridge({ db, binding, onFailure }, testHarness = {}) {
       assert.deepEqual(request.hand, hand, 'OBSERVATION_HAND_SUBSTITUTION');
       assert.ok(now() < handDeadline, 'OBSERVATION_PERSISTENCE_DEADLINE');
     }
-    const budget = request.read === 'catalogue' ? READ_MS : Math.min(READ_MS, handDeadline - now());
+    const deadline = financialRead ? financialDeadline : handDeadline;
+    const budget = request.read === 'catalogue' ? READ_MS : Math.min(READ_MS, deadline - now());
     assert.ok(budget > 0);
     let timer, abortListener;
     const work = async () => {
@@ -136,6 +158,8 @@ async function startBridge({ db, binding, onFailure }, testHarness = {}) {
         let data;
         if (request.read === 'catalogue')
           data = { catalogue_digest: await observations.schemaCatalogue(db) };
+        else if (financialRead)
+          data = await observations.observeFinancialFacts(db, owned.table_id, actorIds, financial);
         else if (request.read === 'hand_presence')
           data = await observations.observeHandPresence(db, owned.table_id, hand.hand_number);
         else
@@ -147,10 +171,10 @@ async function startBridge({ db, binding, onFailure }, testHarness = {}) {
           );
         validateData(request.read, data);
         if (request.read !== 'catalogue')
-          assert.ok(now() < handDeadline, 'OBSERVATION_PERSISTENCE_DEADLINE');
+          assert.ok(now() < deadline, 'OBSERVATION_PERSISTENCE_DEADLINE');
         await db.query('COMMIT');
         if (request.read !== 'catalogue')
-          assert.ok(now() < handDeadline, 'OBSERVATION_PERSISTENCE_DEADLINE');
+          assert.ok(now() < deadline, 'OBSERVATION_PERSISTENCE_DEADLINE');
         return data;
       } catch (error) {
         await db.query('ROLLBACK').catch(() => {});
@@ -235,7 +259,11 @@ async function startBridge({ db, binding, onFailure }, testHarness = {}) {
             request_id: request.request_id,
             binding: owned,
             read: request.read,
-            ...(request.read === 'catalogue' ? {} : { hand }),
+            ...(request.read === 'catalogue'
+              ? {}
+              : request.read === 'financial_facts'
+                ? { financial }
+                : { hand }),
             data,
           };
           const encoded = Buffer.from(JSON.stringify(response) + '\n');

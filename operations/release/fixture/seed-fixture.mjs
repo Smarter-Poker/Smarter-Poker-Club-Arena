@@ -31,7 +31,14 @@ function inputIds(actorIds, spectatorId) {
  * into the following operation. Failure retires the entire disposable fixture;
  * no fixture identity is returned until every committed postcondition passes.
  */
-export async function seedFixture({ db, actorIds, spectatorId, sessionIds }) {
+export async function seedFixture({
+  db,
+  actorIds,
+  spectatorId,
+  sessionIds,
+  financialScenario = false,
+}) {
+  assert.equal(typeof financialScenario, 'boolean', 'FIXTURE_FINANCIAL_MODE_REQUIRED');
   const ids = inputIds(actorIds, spectatorId);
   assert.ok(
     Array.isArray(sessionIds) &&
@@ -195,8 +202,8 @@ export async function seedFixture({ db, actorIds, spectatorId, sessionIds }) {
       () =>
         db.query(
           `SELECT public.fn_cash_game_create($1,'classic','nlh',1,2,6,
-      '{}'::jsonb,'Component Fixture Cash',false) AS result`,
-          [clubId]
+      $2::jsonb,'Component Fixture Cash',false) AS result`,
+          [clubId, financialScenario ? { options: { insurance_enabled: true } } : {}]
         ),
       2
     );
@@ -234,6 +241,21 @@ export async function seedFixture({ db, actorIds, spectatorId, sessionIds }) {
       assert.equal(Number(result.rows[0].supply), 100000, 'FIXTURE_SUPPLY_MUST_BALANCE');
       assert.equal(result.rows[0].hands, 0, 'FIXTURE_MUST_NOT_SEED_HANDS');
       assert.equal(result.rows[0].spectator_mfa_required, true, 'FIXTURE_OWNER_MFA_GUARD_REQUIRED');
+      if (financialScenario) {
+        const financial = await db.query(
+          `SELECT insurance_enabled, tournament_id, max_buy_in::text AS max_buy_in
+           FROM public.tables WHERE id=$1`,
+          [tableId]
+        );
+        assert.equal(financial.rows.length, 1);
+        assert.equal(
+          financial.rows[0].insurance_enabled,
+          true,
+          'FIXTURE_CANONICAL_INSURANCE_REQUIRED'
+        );
+        assert.equal(financial.rows[0].tournament_id, null, 'FIXTURE_CASH_TABLE_REQUIRED');
+        assert.ok(Number(financial.rows[0].max_buy_in) >= 210, 'FIXTURE_TOPUP_HEADROOM_REQUIRED');
+      }
     });
     return {
       club_id: clubId,

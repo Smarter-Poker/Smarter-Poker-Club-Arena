@@ -51,22 +51,35 @@ function snapshot(current = null, context = null) {
 
 async function harness(
   t,
-  { state = snapshot(), response = () => [200, { success: true }], subprotocol = 'bearer' } = {}
+  {
+    state = snapshot(),
+    response = () => [200, { success: true }],
+    subprotocol = 'bearer',
+    financialProof,
+    financialResponse = () => [400, { success: false }],
+  } = {}
 ) {
   const actions = [],
+    financialRequests = [],
     frames = [],
     sockets = new Map(),
     failures = [];
   const server = createServer(async (req, res) => {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
-    assert.equal(req.method, 'POST');
-    assert.equal(req.url, '/action');
-    const body = JSON.parse(Buffer.concat(chunks).toString());
+    const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : null;
     const actor = users.find(
       (user) => req.headers.authorization === `Bearer ${user.session.access_token}`
     );
     assert.ok(actor);
+    if (req.url !== '/action') {
+      financialRequests.push({ method: req.method, url: req.url, body, actor: actor.id });
+      const [code, result] = financialResponse(financialRequests.at(-1));
+      res.writeHead(code, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(result));
+      return;
+    }
+    assert.equal(req.method, 'POST');
     actions.push({ ...body, actor: actor.id, at: Date.now() });
     const [status, result] = response(actions.at(-1), actions.length);
     res.writeHead(status, { 'content-type': 'application/json' });
@@ -111,6 +124,7 @@ async function harness(
     startFixtureActors({
       tableId,
       users,
+      ...(financialProof ? { financialProof } : {}),
       onFailure: (error) => failures.push(error.message),
       testEndpoints: {
         http: `http://127.0.0.1:${port}`,
@@ -130,6 +144,7 @@ async function harness(
     send,
     broadcast,
     actions,
+    financialRequests,
     failures,
     frames,
     sockets,
@@ -177,6 +192,101 @@ test('two native actors check/call/fold only through HTTP with exact contexts an
   assert.ok(fixture.actions.every((x) => x.tableId === tableId && !('amount' in x)));
   assert.ok(fixture.actions[2].at - fixture.actions[0].at >= 350);
   assert.deepEqual(fixture.failures, []);
+});
+
+test('financial actor transports top-up replay and offer acceptance over authenticated HTTP exactly once', async (t) => {
+  // Loopback protocol fixture only: this does not claim a real engine-generated
+  // insurance offer, funded settlement, or actual GoTrue session.
+  const checkpoints = [];
+  const h = await harness(t, {
+    state: snapshot(ids[0], 'preflop-one'),
+    financialProof: {
+      opId: 'bounded-topup-01',
+      checkpoint: async (item) => checkpoints.push(item),
+    },
+    financialResponse: ({ url, body }) => {
+      if (url === '/addchips')
+        return body.opId === ''
+          ? [400, { success: false }]
+          : [200, { success: true, queued: true, applied: 10 }];
+      if (url.startsWith('/insurance-preview?'))
+        return [200, { success: true, premium: 4, insuredAmount: 100 }];
+      assert.equal(url, '/insurance');
+      return typeof body.coveragePercent === 'string'
+        ? [400, { success: false }]
+        : [200, { success: true, status: 'accepted', premium: 4, insuredAmount: 100 }];
+    },
+  });
+  const runner = await h.start();
+  await until(() => h.actions.length === 1);
+  h.broadcast({
+    type: 'SNAPSHOT',
+    tableId,
+    seq: 2,
+    state: { ...snapshot(ids[1], 'turn-one'), stage: 'turn' },
+  });
+  await until(() => h.actions.length === 2);
+  assert.deepEqual(
+    h.actions.map((x) => x.action),
+    ['check', 'all_in']
+  );
+  const payload = {
+    type: 'insurance_offers',
+    table_id: tableId,
+    hand_number: 1,
+    street: 'turn',
+    board: ['Ah', 'Kd', '7s', '2c'],
+    pot: 200,
+    deadlineAt: Date.now() + 10000,
+    offers: [{ playerId: ids[1], fullPremium: 4 }],
+  };
+  h.broadcast({ type: 'EVENT', tableId, payload });
+  await until(() => checkpoints.some((x) => x.phase === 'insurance.accepted'));
+  h.broadcast({
+    type: 'EVENT',
+    tableId,
+    payload: { type: 'hand_complete', table_id: tableId, hand_number: 1 },
+  });
+  await until(() => runner.financialObservations().length === 8);
+  assert.equal(h.financialRequests.length, 7);
+  assert.deepEqual(
+    h.financialRequests.slice(1, 3).map((x) => x.body),
+    [
+      { tableId, amount: 10, opId: 'bounded-topup-01' },
+      { tableId, amount: 10, opId: 'bounded-topup-01' },
+    ]
+  );
+  assert.ok(h.financialRequests.slice(0, 3).every((x) => x.actor === ids[0]));
+  assert.ok(h.financialRequests.slice(3).every((x) => x.actor === ids[1]));
+  assert.equal(
+    new URL(h.financialRequests[3].url, 'http://fixture').searchParams.get('coveragePercent'),
+    '100'
+  );
+  h.broadcast({
+    type: 'SNAPSHOT',
+    tableId,
+    seq: 3,
+    state: { ...snapshot(ids[0], 'next-hand'), hand_number: 2 },
+  });
+  await wait(500);
+  assert.equal(h.actions.length, 2, 'financial sequence must not begin a second hand');
+  assert.deepEqual(h.failures, []);
+});
+
+test('a failed financial checkpoint stops play before a top-up request is sent', async (t) => {
+  const h = await harness(t, {
+    state: snapshot(ids[0], 'first-decision'),
+    financialProof: {
+      opId: 'bounded-topup-01',
+      checkpoint: async () => {
+        throw new Error('observer refused');
+      },
+    },
+  });
+  await h.start();
+  await until(() => h.failures.length === 1);
+  assert.deepEqual(h.financialRequests, []);
+  assert.deepEqual(h.actions, []);
 });
 
 test('duplicate snapshot and metadata delta cannot submit one decision twice', async (t) => {

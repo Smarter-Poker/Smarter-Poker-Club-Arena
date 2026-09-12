@@ -11,7 +11,7 @@
     "pg": "8.16.3"
   },
   "scripts": {
-    "test": "node --test --test-concurrency=1 ../../tests/operations/*.test.mjs",
+    "test": "node --test --test-concurrency=1 ../../tests/operations/*.test.mjs fixture/*.test.mjs",
     "test:native": "python3 -B ../../tests/operations/native-install.test.py && python3 -B ../../tests/operations/native-engine.test.py && python3 -B ../../tests/operations/native-qualification.test.py && python3 -B ../../tests/operations/native-stage.test.py && python3 -B ../../tests/operations/native-operation-v2.test.py && python3 -B ../../tests/operations/native-wiring-v2.test.py && python3 -B ../../tests/operations/native-frontend-proof.test.py && python3 -B ../../tests/operations/native-component-semantics.test.py",
     "observe": "node cli.mjs observe",
     "controller": "node controller.mjs",

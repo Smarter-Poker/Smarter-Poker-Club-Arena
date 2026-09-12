@@ -231,3 +231,81 @@ export async function captureObservationHandFloor(db, tableId) {
   assert.ok(Number.isSafeInteger(value) && value >= 0);
   return value;
 }
+
+/** Fixed, read-only economic facts for the two actors bound by the fixture
+ * owner. Never accepts a relation name, SQL, club id or arbitrary player id.
+ * The caller owns a repeatable-read transaction with row_security=off.
+ */
+export async function observeFinancialFacts(db, tableId, actorIds, financial) {
+  const { validateFinancial, validateFinancialData, FINANCIAL_SECTIONS } =
+    await import('./component-observation-protocol.mjs');
+  validateFinancial(financial);
+  assert.ok(Array.isArray(actorIds) && actorIds.length === 2 && new Set(actorIds).size === 2);
+  for (const id of [tableId, ...actorIds])
+    assert.match(id, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  const tables = [
+    'tables',
+    'club_members',
+    'table_seats',
+    'table_pending_addons',
+    'table_addon_idempotency',
+    'entry_purchase_idempotency_receipts',
+    'chip_ledger',
+    'wallet_transactions',
+    'insurance_transactions',
+    'insurance_offer_events',
+    'hand_atomic_commits',
+  ];
+  // ACCESS SHARE freezes relation identity for these fixed queries without
+  // blocking ordinary game writes. Missing/replaced relation kinds refuse.
+  await db.query(
+    'LOCK TABLE public.tables, public.club_members, public.table_seats, public.table_pending_addons, public.table_addon_idempotency, public.entry_purchase_idempotency_receipts, public.chip_ledger, public.wallet_transactions, public.insurance_transactions, public.insurance_offer_events, public.hand_atomic_commits IN ACCESS SHARE MODE'
+  );
+  const identity = await db.query(
+    "SELECT c.relname FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname=ANY($1::text[]) AND c.relkind IN ('r','p') ORDER BY c.relname",
+    [tables]
+  );
+  assert.deepEqual(
+    identity.rows.map((r) => r.relname),
+    [...tables].sort(),
+    'FINANCIAL_OBSERVATION_RELATION'
+  );
+  const actor = actorIds[financial.actor_index];
+  const key = `addon:${tableId}:${actor}:${financial.op_id}`;
+  const args = [tableId, actorIds, key, financial.hand_number];
+  const queries = {
+    wallets:
+      'SELECT jsonb_build_array(user_id::text,chip_balance::text) AS row FROM public.club_members WHERE club_id=(SELECT club_id FROM public.tables WHERE id=$1) AND user_id=ANY($2::uuid[]) ORDER BY user_id LIMIT 3',
+    seats:
+      'SELECT jsonb_build_array(occupancy_id::text,user_id::text,stack::text,left_at::text) AS row FROM public.table_seats WHERE table_id=$1 AND user_id=ANY($2::uuid[]) ORDER BY occupancy_id LIMIT 9',
+    addons:
+      'SELECT jsonb_build_array(id::text,user_id::text,amount::text,kind,resolved_at::text,applied_to_stack::text,refunded::text) AS row FROM public.table_pending_addons WHERE table_id=$1 AND user_id=ANY($2::uuid[]) ORDER BY id LIMIT 9',
+    addon_keys:
+      'SELECT jsonb_build_array(key,user_id::text,amount::text,applied_to_seat::text,table_id::text) AS row FROM public.table_addon_idempotency WHERE table_id=$1 AND user_id=ANY($2::uuid[]) AND key=$3 ORDER BY key LIMIT 3',
+    receipts:
+      "SELECT jsonb_build_array(key_domain,idempotency_key,request::text,response::text,claimed_at::text,completed_at::text) AS row FROM public.entry_purchase_idempotency_receipts WHERE key_domain='cash_addon' AND idempotency_key=$3 AND request->>'table_id'=$1::text AND request->>'user_id'=ANY($2::text[]) ORDER BY key_domain,idempotency_key LIMIT 3",
+    ledger:
+      'SELECT jsonb_build_array(id::text,from_type,from_entity_id::text,to_type,to_entity_id::text,amount::text,category,idempotency_key) AS row FROM public.chip_ledger WHERE table_id=$1 ORDER BY id LIMIT 65',
+    wallet_transactions:
+      'SELECT jsonb_build_array(id::text,user_id::text,type,category,amount::text,balance_after::text) AS row FROM public.wallet_transactions WHERE table_id=$1 AND user_id=ANY($2::uuid[]) ORDER BY id LIMIT 65',
+    insurance:
+      'SELECT jsonb_build_array(id::text,player_id::text,premium::text,insured_amount::text,payout::text,net_result::text,player_won::text,bank_type,bank_entity_id::text) AS row FROM public.insurance_transactions WHERE table_id=$1 AND player_id=ANY($2::uuid[]) AND hand_number=$4 ORDER BY id LIMIT 9',
+    offers:
+      'SELECT jsonb_build_array(id::text,player_id::text,event,premium::text,insured_amount::text,street,hand_number::text) AS row FROM public.insurance_offer_events WHERE table_id=$1 AND player_id=ANY($2::uuid[]) AND hand_number=$4 ORDER BY id LIMIT 25',
+    commits:
+      'SELECT jsonb_build_array(hand_id::text,payload_hash,committed_at::text,post_commit_completed_at::text,post_commit_payload_hash,post_commit_result::text) AS row FROM public.hand_atomic_commits WHERE table_id=$1 AND hand_number=$4 ORDER BY hand_id LIMIT 3',
+  };
+  const data = { actor_ids: [...actorIds] };
+  for (const [name, sql] of Object.entries(queries)) {
+    // Unused bind slots still have explicit types, so PostgreSQL can prepare
+    // every fixed query without relying on driver interpolation or casts from
+    // client-supplied SQL. The CTE is a value binding, never an authority RPC.
+    const bound =
+      'WITH observation_binding AS (SELECT $1::uuid,$2::uuid[],$3::text,$4::bigint) ' + sql;
+    const result = await db.query(bound, args);
+    assert.ok(result.rows.length <= FINANCIAL_SECTIONS[name][0], 'FINANCIAL_OBSERVATION_ROW_CAP');
+    data[name] = result.rows.map((r) => r.row);
+  }
+  assert.equal(data.wallets.length, 2, 'FINANCIAL_OBSERVATION_ACTOR_MEMBERSHIP');
+  return validateFinancialData(data);
+}

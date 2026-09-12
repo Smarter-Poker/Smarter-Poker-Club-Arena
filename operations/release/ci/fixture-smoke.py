@@ -11,7 +11,7 @@ import sys
 import uuid
 
 FILES = ('Dockerfile', 'package.json', 'package-lock.json', 'fixture-server.mjs',
-         'runtime-files.mjs', 'gateway.mjs', 'auth-fixture.mjs', 'actors.mjs',
+         'runtime-files.mjs', 'gateway.mjs', 'auth-fixture.mjs', 'actors.mjs', 'financial-route-phase.mjs',
          'seed-fixture.mjs', 'native-smoke.mjs', 'observation-bridge.mjs', 'build-image.sh', 'smoke-image.sh')
 PREFIX = 'operations/release/fixture/'
 CONTROL_FILES = tuple('operations/release/native/' + name for name in (

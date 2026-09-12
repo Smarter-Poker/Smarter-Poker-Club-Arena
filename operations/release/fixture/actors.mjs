@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { financialRoutePhase } from './financial-route-phase.mjs';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const bettingStages = new Set(['preflop', 'flop', 'turn', 'river']);
@@ -133,7 +134,13 @@ function stateShape(state, tableId, actorIds) {
  * action fallback after rejection, or browser/suite success fabrication.
  * testEndpoints may point only to one explicit loopback port in boundary tests.
  */
-export async function startFixtureActors({ tableId, users, onFailure, testEndpoints }) {
+export async function startFixtureActors({
+  tableId,
+  users,
+  onFailure,
+  testEndpoints,
+  financialProof,
+}) {
   assert.match(tableId, uuid);
   assert.equal(typeof onFailure, 'function');
   assert.ok(Array.isArray(users) && users.length === 2);
@@ -157,7 +164,53 @@ export async function startFixtureActors({ tableId, users, onFailure, testEndpoi
     protocol(user.session.user?.id === user.id, 'SESSION');
   }
   const target = endpoints(testEndpoints);
+  if (financialProof !== undefined) {
+    protocol(
+      record(financialProof) && Object.keys(financialProof).sort().join(',') === 'checkpoint,opId',
+      'FINANCIAL_CONFIGURATION'
+    );
+    protocol(typeof financialProof.checkpoint === 'function', 'FINANCIAL_OBSERVER');
+  }
   const actors = [];
+  const financialRequests = new Set();
+  const financial =
+    financialProof === undefined
+      ? null
+      : financialRoutePhase({
+          tableId,
+          users,
+          ...financialProof,
+          async request(user, method, route, body) {
+            protocol(!closed && users.includes(user), 'FINANCIAL_ACTOR');
+            protocol(
+              ['addchips', 'insurance', 'insurance-preview'].includes(route),
+              'FINANCIAL_ROUTE'
+            );
+            const controller = new AbortController();
+            financialRequests.add(controller);
+            const timeout = setTimeout(() => controller.abort(), 3000);
+            try {
+              const url = new URL(`${target.http}/${route}`);
+              if (method === 'GET') url.search = new URLSearchParams(body).toString();
+              const response = await fetch(url, {
+                method,
+                redirect: 'error',
+                signal: controller.signal,
+                headers: {
+                  authorization: `Bearer ${user.session.access_token}`,
+                  'content-type': 'application/json',
+                },
+                ...(method === 'GET' ? {} : { body: JSON.stringify(body) }),
+              });
+              const text = await response.text();
+              protocol(text.length <= 8192, 'FINANCIAL_RESPONSE');
+              return { status: response.status, body: JSON.parse(text) };
+            } finally {
+              clearTimeout(timeout);
+              financialRequests.delete(controller);
+            }
+          },
+        });
   let closed = false,
     failed = false,
     enabled = false;
@@ -172,6 +225,7 @@ export async function startFixtureActors({ tableId, users, onFailure, testEndpoi
     clearTimeout(startupTimer);
     clearTimeout(lifetimeTimer);
     clearInterval(watchdog);
+    for (const controller of financialRequests) controller.abort();
     for (const actor of actors) {
       clearTimeout(actor.timer);
       actor.controller?.abort();
@@ -202,7 +256,8 @@ export async function startFixtureActors({ tableId, users, onFailure, testEndpoi
   }
 
   function schedule(actor) {
-    if (closed || !enabled || actor.inflight || actor.timer || !actor.state) return;
+    if (closed || financial?.finished || !enabled || actor.inflight || actor.timer || !actor.state)
+      return;
     const state = actor.state;
     if (!bettingStages.has(state.stage) || state.current_player !== actor.user.id) return;
     const context = state.action_context;
@@ -227,11 +282,27 @@ export async function startFixtureActors({ tableId, users, onFailure, testEndpoi
   }
 
   async function act(actor, context) {
-    if (closed || actor.decisions.has(context)) return;
+    if (closed || actor.inflight || actor.decisions.has(context)) return;
+    actor.inflight = true;
+    if (financial) {
+      await financial.beforeAction(actor.user, actor.state);
+      protocol(
+        !closed &&
+          actor.state.action_context === context &&
+          actor.state.current_player === actor.user.id,
+        'FINANCIAL_CONTEXT_CHANGED'
+      );
+    }
     const state = actor.state,
       player = state.players.find((p) => p.user_id === actor.user.id);
     const toCall = state.current_bet - player.bet;
-    const action = toCall === 0 ? 'check' : toCall <= player.stack ? 'call' : 'fold';
+    const action = financial
+      ? financial.action(state, player)
+      : toCall === 0
+        ? 'check'
+        : toCall <= player.stack
+          ? 'call'
+          : 'fold';
     const idempotencyKey = randomUUID();
     actor.decisions.add(context);
     protocol(actor.decisions.size <= 1024, 'DECISION_LIMIT');
@@ -320,6 +391,7 @@ export async function startFixtureActors({ tableId, users, onFailure, testEndpoi
       case 'USER_EVENT':
         // Cards, clocks and animation events cannot replace authoritative state.
         protocol(record(message.payload) && typeof message.payload.type === 'string', 'EVENT');
+        if (financial) void financial.event(message.payload).catch((error) => fail(error.message));
         return;
       case 'ERROR':
         throw new Error('FIXTURE_ACTOR_ENGINE_ERROR');
@@ -373,7 +445,10 @@ export async function startFixtureActors({ tableId, users, onFailure, testEndpoi
       socket.addEventListener('close', () => fail('FIXTURE_ACTOR_SOCKET_CLOSED'));
     }
     await ready;
-    return Object.freeze({ close: stop });
+    return Object.freeze({
+      close: stop,
+      ...(financial ? { financialObservations: () => financial.observations() } : {}),
+    });
   } catch (error) {
     if (!closed) fail('FIXTURE_ACTOR_START_FAILED');
     throw error;

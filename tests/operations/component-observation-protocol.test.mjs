@@ -5,6 +5,7 @@ import {
   validateRequest,
   validateResponse,
   verifyObservedHandFacts,
+  FINANCIAL_SECTIONS,
 } from '../../operations/release/native/component-observation-protocol.mjs';
 const binding = {
   version: 1,
@@ -32,6 +33,40 @@ test('fixed request refuses SQL, identifiers, substituted binding and invalid tu
     { ...request, hand: { ...hand, path: '/etc/passwd' } },
   ])
     assert.throws(() => validateRequest(value, binding));
+});
+test('financial facts bind one actor slot, operation and hand without exposing SQL selectors', () => {
+  const financial = { actor_index: 0, op_id: 'owned-operation-0001', hand_number: 17 };
+  const req = { version: 1, request_id: randomUUID(), binding, read: 'financial_facts', financial };
+  const facts = {
+    actor_ids: [randomUUID(), randomUUID()],
+    ...Object.fromEntries(Object.keys(FINANCIAL_SECTIONS).map((k) => [k, []])),
+  };
+  validateRequest(req, binding);
+  assert.deepEqual(validateResponse({ ...req, data: facts }, req), facts);
+  for (const invalid of [
+    { ...financial, actor_index: 2 },
+    { ...financial, op_id: 'x;SELECT 1' },
+    { ...financial, hand_number: 0 },
+    { ...financial, actor_id: randomUUID() },
+  ]) {
+    assert.throws(() => validateRequest({ ...req, financial: invalid }, binding));
+  }
+  assert.throws(() =>
+    validateResponse(
+      { ...req, financial: { ...financial, op_id: 'changed-operation' }, data: facts },
+      req
+    )
+  );
+  assert.throws(() => validateResponse({ ...req, data: { ...facts, passed: true } }, req));
+  assert.throws(() =>
+    validateResponse(
+      { ...req, data: { ...facts, ledger: Array(65).fill(Array(8).fill('x')) } },
+      req
+    )
+  );
+  assert.throws(() =>
+    validateResponse({ ...req, data: { ...facts, wallets: [{ success: true }] } }, req)
+  );
 });
 test('response forbids pass flags and binds exact request/instance', () => {
   const response = { ...request, data };

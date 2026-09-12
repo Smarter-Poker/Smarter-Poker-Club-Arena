@@ -58,7 +58,12 @@ async function harness(t, changes = {}) {
   };
   const failures = [];
   const bridge = await startObservationBridge(
-    { db, binding, onFailure: (value) => failures.push(value) },
+    {
+      db,
+      binding,
+      financialActors: changes.financialActors,
+      onFailure: (value) => failures.push(value),
+    },
     options
   );
   t.after(async () => {
@@ -236,4 +241,82 @@ test('client rejects wrong control revision and socket/parent substitution', asy
   await chmod(h.directory, 0o2770);
   await assert.rejects(h.client().catalogue());
   await chmod(h.directory, 0o2750);
+});
+
+const financial = { actor_index: 0, op_id: 'bounded-topup-01', hand_number: 17 };
+function financialHarnessOptions(extra = {}) {
+  const financialActors = [randomUUID(), randomUUID()];
+  return {
+    financialActors,
+    observations: {
+      observeFinancialFacts: async (_db, _table, actors, selection) => {
+        assert.deepEqual(actors, financialActors);
+        assert.deepEqual(selection, financial);
+        return {
+          actor_ids: actors,
+          ...Object.fromEntries(Object.keys(protocol.FINANCIAL_SECTIONS).map((key) => [key, []])),
+        };
+      },
+    },
+    ...extra,
+  };
+}
+
+test('financial reader uses trusted actors and refuses cross-client operation substitution', async (t) => {
+  const h = await harness(t, financialHarnessOptions());
+  const client = h.client();
+  const result = await client.financialFacts(financial);
+  assert.equal(result.actor_ids.length, 2);
+  assert.deepEqual(await client.financialFacts(financial), result);
+  const calls = h.db.calls.length;
+  assert.equal(
+    await raw(
+      h.socketPath,
+      request(h, 'financial_facts', {
+        financial: { ...financial, op_id: 'substituted-01' },
+      })
+    ),
+    ''
+  );
+  assert.equal(h.db.calls.length, calls, 'substitution never enters a database transaction');
+  assert.equal(h.failures.length, 1);
+  client.close();
+});
+
+test('financial reads require trusted actor binding and a newly dealt hand', async (t) => {
+  const absent = await harness(t);
+  await assert.rejects(absent.client().financialFacts(financial));
+  const historical = await harness(
+    t,
+    financialHarnessOptions({
+      observations: { captureObservationHandFloor: async () => 17 },
+    })
+  );
+  await assert.rejects(historical.client().financialFacts(financial));
+});
+
+test('financial deadline is finite and cannot be renewed by a new observer client', async (t) => {
+  let clock = 1000;
+  const h = await harness(t, financialHarnessOptions({ options: { now: () => clock } }));
+  assert.ok(await raw(h.socketPath, request(h, 'financial_facts', { financial })));
+  clock += protocol.FINANCIAL_MS;
+  const before = h.db.calls.length;
+  assert.equal(await raw(h.socketPath, request(h, 'financial_facts', { financial })), '');
+  assert.equal(h.db.calls.length, before);
+  assert.equal(h.failures.length, 1);
+});
+
+test('financial client pins actor, key and hand independently of ordinary hand reads', async (t) => {
+  for (const replacement of [
+    { actor_index: 1 },
+    { op_id: 'other-topup-02' },
+    { hand_number: 18 },
+  ]) {
+    const h = await harness(t, financialHarnessOptions());
+    const client = h.client();
+    await client.financialFacts(financial);
+    const before = h.db.calls.length;
+    await assert.rejects(client.financialFacts({ ...financial, ...replacement }), /SUBSTITUTION/);
+    assert.equal(h.db.calls.length, before);
+  }
 });

@@ -466,6 +466,7 @@ async function checkPackage() {
     'gateway.mjs',
     'auth-fixture.mjs',
     'actors.mjs',
+    'financial-route-phase.mjs',
     'seed-fixture.mjs',
     'observation-bridge.mjs',
   ])
@@ -745,6 +746,7 @@ async function start(args) {
     // including startup failure. The browser has no PostgreSQL identity.
     bridge = await startObservationBridge({
       db: observerDb,
+      financialActors: users.slice(0, 2).map((user) => user.id),
       binding: {
         version: 1,
         instance_id: randomUUID(),

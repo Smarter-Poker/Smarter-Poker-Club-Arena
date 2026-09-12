@@ -31,4 +31,10 @@ test('missing, invalid or shared session identities cannot reach the fixture dat
       /FIXTURE_(REAL_SESSION_IDS|DISTINCT_SESSIONS)_REQUIRED/
     );
   assert.equal(calls, 0);
+  for (const financialScenario of ['true', 1, null, {}])
+    await assert.rejects(
+      seedFixture({ ...input, sessionIds: ids, financialScenario }),
+      /FIXTURE_FINANCIAL_MODE_REQUIRED/
+    );
+  assert.equal(calls, 0, 'malformed financial modes cannot reach any seed operation');
 });

@@ -4,6 +4,7 @@ export const REQUEST_BYTES = 4096;
 export const REPLY_BYTES = 65536;
 export const PERSISTENCE_MS = 15000;
 export const READ_MS = 6000;
+export const FINANCIAL_MS = 120000;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 export function keys(value, expected) {
   assert.ok(value && typeof value === 'object' && !Array.isArray(value));
@@ -30,21 +31,69 @@ export function validateHand(hand) {
   return Object.freeze({ ...hand });
 }
 export function validateRequest(value, binding) {
-  assert.ok(['catalogue', 'hand_presence', 'hand_facts'].includes(value?.read));
+  assert.ok(['catalogue', 'hand_presence', 'hand_facts', 'financial_facts'].includes(value?.read));
   keys(value, [
     'version',
     'request_id',
     'binding',
     'read',
-    ...(value.read === 'catalogue' ? [] : ['hand']),
+    ...(value.read === 'catalogue'
+      ? []
+      : value.read === 'financial_facts'
+        ? ['financial']
+        : ['hand']),
   ]);
   assert.equal(value.version, 1);
   assert.match(value.request_id, uuid);
   sameBinding(value.binding, binding);
-  if (value.read !== 'catalogue') validateHand(value.hand);
+  if (value.read === 'financial_facts') validateFinancial(value.financial);
+  else if (value.read !== 'catalogue') validateHand(value.hand);
   return value;
 }
+export function validateFinancial(value) {
+  keys(value, ['actor_index', 'op_id', 'hand_number']);
+  assert.ok(value.actor_index === 0 || value.actor_index === 1);
+  assert.match(value.op_id, /^[A-Za-z0-9-]{8,64}$/);
+  assert.ok(Number.isSafeInteger(value.hand_number) && value.hand_number > 0);
+  return Object.freeze({ ...value });
+}
+// Exact tuple widths and caps. SQL produces only selected facts, not arbitrary
+// JSON objects or a fixture-authored success/certificate flag.
+export const FINANCIAL_SECTIONS = Object.freeze({
+  wallets: [2, 2],
+  seats: [8, 4],
+  addons: [8, 7],
+  addon_keys: [2, 5],
+  receipts: [2, 6],
+  ledger: [64, 8],
+  wallet_transactions: [64, 6],
+  insurance: [8, 9],
+  offers: [24, 7],
+  commits: [2, 6],
+});
+export function validateFinancialData(data) {
+  keys(data, ['actor_ids', ...Object.keys(FINANCIAL_SECTIONS)]);
+  assert.ok(Array.isArray(data.actor_ids) && data.actor_ids.length === 2);
+  data.actor_ids.forEach((id) => assert.match(id, uuid));
+  assert.notEqual(data.actor_ids[0], data.actor_ids[1]);
+  for (const [name, [cap, width]] of Object.entries(FINANCIAL_SECTIONS)) {
+    assert.ok(
+      Array.isArray(data[name]) && data[name].length <= cap,
+      'FINANCIAL_OBSERVATION_ROW_CAP'
+    );
+    for (const row of data[name]) {
+      assert.ok(Array.isArray(row) && row.length === width, 'FINANCIAL_OBSERVATION_TUPLE');
+      for (const item of row)
+        assert.ok(
+          item === null || (typeof item === 'string' && item.length <= 8192),
+          'FINANCIAL_OBSERVATION_VALUE'
+        );
+    }
+  }
+  return data;
+}
 export function validateData(read, data) {
+  if (read === 'financial_facts') return validateFinancialData(data);
   if (read === 'catalogue') {
     keys(data, ['catalogue_digest']);
     assert.match(data.catalogue_digest, /^[0-9a-f]{64}$/);
@@ -78,13 +127,19 @@ export function validateResponse(value, request) {
     'binding',
     'read',
     'data',
-    ...(request.read === 'catalogue' ? [] : ['hand']),
+    ...(request.read === 'catalogue'
+      ? []
+      : request.read === 'financial_facts'
+        ? ['financial']
+        : ['hand']),
   ]);
   assert.equal(value.version, 1);
   assert.equal(value.request_id, request.request_id);
   sameBinding(value.binding, request.binding);
   assert.equal(value.read, request.read);
-  if (request.read !== 'catalogue') assert.deepEqual(validateHand(value.hand), request.hand);
+  if (request.read === 'financial_facts')
+    assert.deepEqual(validateFinancial(value.financial), request.financial);
+  else if (request.read !== 'catalogue') assert.deepEqual(validateHand(value.hand), request.hand);
   return validateData(value.read, value.data);
 }
 export function verifyObservedHandFacts(facts, hand) {

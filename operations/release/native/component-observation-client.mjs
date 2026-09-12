@@ -10,9 +10,11 @@ import {
   REPLY_BYTES,
   PERSISTENCE_MS,
   READ_MS,
+  FINANCIAL_MS,
   keys,
   validateBinding,
   validateHand,
+  validateFinancial,
   validateResponse,
 } from './component-observation-protocol.mjs';
 
@@ -41,6 +43,8 @@ export function createObservationClient(descriptor, control, testHarness = {}) {
     closed = false,
     busy = false;
   const sockets = new Set();
+  let financial = null,
+    financialDeadline = null;
   async function read(kind, value) {
     assert.ok(!closed && !busy, 'OBSERVATION_CLIENT_UNAVAILABLE');
     busy = true;
@@ -63,7 +67,15 @@ export function createObservationClient(descriptor, control, testHarness = {}) {
           stat.gid === observerGid &&
           (stat.mode & 0o7777) === 0o660
       );
-      if (kind !== 'catalogue') {
+      if (kind === 'financial_facts') {
+        validateFinancial(value);
+        if (!financial) {
+          financial = Object.freeze({ ...value });
+          financialDeadline = now() + FINANCIAL_MS;
+        }
+        assert.deepEqual(value, financial, 'OBSERVATION_FINANCIAL_SUBSTITUTION');
+        assert.ok(now() < financialDeadline, 'OBSERVATION_FINANCIAL_DEADLINE');
+      } else if (kind !== 'catalogue') {
         validateHand(value);
         if (!hand) {
           hand = Object.freeze({ ...value });
@@ -77,11 +89,12 @@ export function createObservationClient(descriptor, control, testHarness = {}) {
         request_id: randomUUID(),
         binding,
         read: kind,
-        ...(kind === 'catalogue' ? {} : { hand }),
+        ...(kind === 'catalogue' ? {} : kind === 'financial_facts' ? { financial } : { hand }),
       };
       const encoded = Buffer.from(JSON.stringify(request) + '\n');
       assert.ok(encoded.length <= REQUEST_BYTES);
-      const budget = kind === 'catalogue' ? READ_MS : Math.min(READ_MS, deadline - now());
+      const readDeadline = kind === 'financial_facts' ? financialDeadline : deadline;
+      const budget = kind === 'catalogue' ? READ_MS : Math.min(READ_MS, readDeadline - now());
       assert.ok(budget > 0);
       const result = await new Promise((resolve, reject) => {
         const socket = net.createConnection({ path: socketPath });
@@ -120,7 +133,7 @@ export function createObservationClient(descriptor, control, testHarness = {}) {
           }
         });
       });
-      if (kind !== 'catalogue') assert.ok(now() < deadline, 'OBSERVATION_PERSISTENCE_DEADLINE');
+      if (kind !== 'catalogue') assert.ok(now() < readDeadline, 'OBSERVATION_PERSISTENCE_DEADLINE');
       return result;
     } catch (error) {
       closed = true;
@@ -135,6 +148,7 @@ export function createObservationClient(descriptor, control, testHarness = {}) {
     catalogue: () => read('catalogue'),
     handPresence: (hand) => read('hand_presence', hand),
     handFacts: (hand) => read('hand_facts', hand),
+    financialFacts: (financial) => read('financial_facts', financial),
     close() {
       closed = true;
       for (const socket of sockets) socket.destroy();

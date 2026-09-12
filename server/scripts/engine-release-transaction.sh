@@ -903,7 +903,13 @@ while :; do
   CERTIFICATE_RC=$?
   set -e
   if [ "$CERTIFICATE_RC" -eq 2 ]; then
-    die "the certified table break has ${BREAK_REMAINING_MS:-0}ms remaining, below the ${MIN_BREAK_REMAINING_MS}ms candidate-and-recovery budget; refusing before mutation"
+    # A predecessor or image build can consume the beginning of this break.
+    # No prepare or break deadline exists yet. Keep the original request's
+    # absolute deadline and source-freshness checks while waiting for a later
+    # complete certificate; never reduce the candidate-and-recovery reserve.
+    echo "[engine-release-transaction] the certified table break has ${BREAK_REMAINING_MS:-0}ms remaining, below the ${MIN_BREAK_REMAINING_MS}ms candidate-and-recovery budget; refusing before mutation and waiting for a later certificate"
+    bounded_sleep 15
+    continue
   fi
   if [ "$CERTIFICATE_RC" -ne 0 ]; then
     bounded_sleep 5
@@ -921,7 +927,9 @@ while :; do
   set -e
   if [ "$CERTIFICATE_RC" -eq 2 ]; then
     release_engine_lock
-    die "the locked table break has ${BREAK_REMAINING_MS:-0}ms remaining, below the ${MIN_BREAK_REMAINING_MS}ms candidate-and-recovery budget"
+    echo "[engine-release-transaction] the locked table break has ${BREAK_REMAINING_MS:-0}ms remaining, below the ${MIN_BREAK_REMAINING_MS}ms candidate-and-recovery budget; waiting for a later certificate"
+    bounded_sleep 15
+    continue
   fi
   if [ "$CERTIFICATE_RC" -ne 0 ]; then
     release_engine_lock

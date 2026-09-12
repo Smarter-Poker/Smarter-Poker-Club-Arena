@@ -2953,18 +2953,22 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         };
       })
       .then((fastResult) => {
-        if (
-          fastResult.generation !== turnToken ||
-          fastResult.fence !== fence ||
-          !fenceIsCurrent('fast_result')
-        ) {
-          return;
-        }
+        // Own the returned receipts before validating the response fence. A
+        // rejected early result never acts, but its analysis must be retired
+        // just like a result rejected later during the think-time window.
         let decision = fastResult.decision;
         pendingUtilityLedger = decision.tournamentUtility;
         pendingPostflopLedger = decision.tournamentPostflop;
         pendingPlo4Ledger = decision.plo4Policy;
         pendingOmahaLedger = decision.omahaVariantPolicy;
+        if (
+          fastResult.generation !== turnToken ||
+          fastResult.fence !== fence ||
+          !fenceIsCurrent('fast_result')
+        ) {
+          markPendingUtilityNotExecuted();
+          return;
+        }
 
         // Humanlike think time comes from the decision engine itself (style- and
         // situation-aware, 0.7-8s). Clamp inside the table's action timer window.

@@ -554,6 +554,45 @@ describe('Phase 10 authoritative execution receipts', () => {
 
 // Phase 11 must reconcile through the same real scheduled action boundary.
 describe('Phase 11 authoritative execution receipts', () => {
+  it.each(['generation', 'fence'] as const)(
+    'retires every ledger on an early %s mismatch without executing an action',
+    async (mismatch) => {
+      const { engine, player, enginePlayer, state, performAction } = harness(true);
+      const ledgers = Object.fromEntries(
+        ['tournamentUtility', 'tournamentPostflop', 'plo4Policy', 'omahaVariantPolicy'].map(
+          (key) => [
+            key,
+            {
+              variant: 'plo8',
+              finalAction: 'bet',
+              finalAmount: 20,
+              executedAction: null,
+              executedAmount: null,
+              executionStatus: 'pending',
+            },
+          ]
+        )
+      );
+      decisionWorker.decideFast.mockImplementationOnce(async (snapshot: any) => ({
+        type: 'FAST_RESULT' as const,
+        requestId: 45,
+        generation: snapshot.generation + Number(mismatch === 'generation'),
+        fence: mismatch === 'fence' ? 'retired-fence' : snapshot.fence,
+        decision: { action: 'bet' as const, amount: 20, thinkTime: 1, ...ledgers },
+        rngBefore: 11,
+        rngAfter: 22,
+        computeMs: 2,
+        governorScale: 1,
+        effects: [],
+      }));
+      engine.scheduleHorseAction(player, 1, enginePlayer, state);
+      await vi.advanceTimersByTimeAsync(250);
+      for (const ledger of Object.values(ledgers))
+        expect(ledger.executionStatus).toBe('not_executed');
+      expect(performAction).not.toHaveBeenCalled();
+      expect(decisionWorker.commitDecisionEffects).not.toHaveBeenCalled();
+    }
+  );
   it.each([
     [true, 'intended', 'bet'],
     [false, 'fallback', 'check'],

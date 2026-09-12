@@ -16,6 +16,7 @@ import { recordHorseHandReviews } from '../HorseHandReview.js';
 import { readScopeOf } from '../../engine/HorseMind.js';
 import { getLiveHorseDecisionWorker } from '../../engine/horseDecision/index.js';
 import { wakeHandProjection } from './handProjection.js';
+import { bindHorseObservationIdentity } from '../../engine/HorseObservationIdentity.js';
 
 export interface AtomicHandCommitInput {
   stacks: Array<{
@@ -310,6 +311,11 @@ export async function logHandHistory(params: {
    * (CLAUDE.md 10.12): the hand carries one identity from settlement onward.
    */
   handId?: string;
+  /** The dealt hand's frozen generations, copied before settlement's first await. */
+  seatGenerations?: ReadonlyMap<
+    string,
+    import('../../engine/handSeatGeneration.js').HandSeatGeneration
+  >;
   players: { userId: string; username: string; seat: number; stack: number; cards: string[] }[];
   actions: {
     seat: number;
@@ -320,6 +326,7 @@ export async function logHandHistory(params: {
     stage: string;
     publicNode?: import('../../engine/HorsePublicActionNode.js').HorsePublicActionNode;
     origin?: import('../../types.js').AcceptedActionOrigin;
+    observationIdentity?: import('../../engine/HorseObservationIdentity.js').HorseObservationIdentity;
   }[];
   showdownResults?: {
     userId: string;
@@ -429,6 +436,24 @@ export async function logHandHistory(params: {
   const holeCardsPayload = Object.keys(holeCardsByUser).length > 0 ? holeCardsByUser : null;
   const boardPayload = params.communityCards?.length ? params.communityCards : null;
 
+  // Recompute at the sole accepted producer. Supplied identity is never trusted.
+  // Preserve ordinals in the full list, including forced/discard/pseudo-actions.
+  // Older actions stay unannotated; a later receipt UUID cannot retroactively
+  // supply lineage that was absent from the durable transaction's payload.
+  const acceptedActions = params.actions.map((action, actionOrdinal) => {
+    const { observationIdentity: _suppliedIdentity, ...record } = action;
+    return action.publicNode
+      ? {
+          ...record,
+          observationIdentity: bindHorseObservationIdentity(action, actionOrdinal, {
+            handId: params.handId,
+            tableId: params.tableId,
+            seatGenerations: params.seatGenerations,
+          }),
+        }
+      : record;
+  });
+
   const row = {
     // See `handId` on the params above. Omitted entirely when the caller did
     // not mint one, so the column keeps its gen_random_uuid() default and
@@ -488,7 +513,7 @@ export async function logHandHistory(params: {
         }))
       : null,
     players: params.players,
-    actions: params.actions,
+    actions: acceptedActions,
     hole_cards: holeCardsPayload,
     board: boardPayload,
     button_seat: params.buttonSeat ?? null,
@@ -539,7 +564,7 @@ export async function logHandHistory(params: {
         'observe',
       ].join(':'),
       handKey,
-      actions: params.actions,
+      actions: acceptedActions,
       bigBlind: params.bigBlind,
       showdown: params.showdownReveal ?? null,
       // V45: the hand's scope - card family and how many were dealt in.

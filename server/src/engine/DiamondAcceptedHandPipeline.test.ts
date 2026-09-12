@@ -133,6 +133,8 @@ describe('the actual shared settlement pipeline accepts Diamond hands', () => {
     await engine.postHandTasks(players, 1);
     expect(mocks.commit).toHaveBeenCalledTimes(1);
     const request = mocks.commit.mock.calls[0][0];
+    expect(request.seatGenerations).toEqual(engine.currentHandSeatGenerations);
+    expect(request.seatGenerations).not.toBe(engine.currentHandSeatGenerations);
     expect(request.dailyMissionEvents).toEqual([]);
     expect(request.atomicCommit).toMatchObject({
       rake: 0,
@@ -180,5 +182,22 @@ describe('the actual shared settlement pipeline accepts Diamond hands', () => {
     expect(mocks.obligations).not.toHaveBeenCalled();
     expect(mocks.leaves).not.toHaveBeenCalled();
     expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it('keeps the dealt hand generations after settlement yields and the roster changes', async () => {
+    const { engine, players } = engineAndPlayers();
+    const dealt = new Map(engine.currentHandSeatGenerations);
+    const pending = engine.postHandTasks(players, 1);
+    engine.currentHandSeatGenerations = new Map();
+    players[0].seat_id = 'replacement-seat';
+    players[0].seat_joined_at = '2026-09-12T12:00:00.999Z';
+    await pending;
+    expect(mocks.commit).toHaveBeenCalledTimes(1);
+    const request = mocks.commit.mock.calls[0][0];
+    expect(request.seatGenerations).toEqual(dealt);
+    expect(request.atomicCommit.stacks[0]).toMatchObject({
+      seat_id: 'seat-a',
+      seat_joined_at: joinedAt,
+    });
   });
 });

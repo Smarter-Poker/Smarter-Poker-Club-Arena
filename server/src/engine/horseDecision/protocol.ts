@@ -119,6 +119,9 @@ export interface CompletedHandObservation extends HorseDecisionFence {
         amount?: number;
         stage: string;
         timestamp?: number;
+        publicNode?: import('../HorsePublicActionNode.js').HorsePublicActionNode;
+        origin?: import('../../types.js').AcceptedActionOrigin;
+        observationIdentity?: import('../HorseObservationIdentity.js').HorseObservationIdentity;
       }>
     | undefined;
   bigBlind: number;

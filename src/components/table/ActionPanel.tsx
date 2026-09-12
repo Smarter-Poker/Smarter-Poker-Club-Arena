@@ -69,6 +69,26 @@ interface ActionPanelProps {
   /** True for PLO4/5/6, so the preset row always offers RAISE POT. */
   isPotLimit?: boolean;
   /**
+   * THE SMALLEST AMOUNT THIS TABLE CAN WAGER AT ALL (2026-09-12).
+   *
+   * Not the same question as `smallestChip`, which is the DENOMINATION the
+   * derived sizings snap to. This is the indivisible unit underneath it: a
+   * cent for chips, a whole Diamond at a Diamond table. The engine refuses a
+   * fractional Diamond outright - `HandController.performAction` returns false
+   * on a non-integer amount for a Diamond asset - and a button whose value the
+   * engine will not accept is a button that does nothing when you press it.
+   *
+   * Two things were doing exactly that before this prop existed. The MULTIPLES
+   * row carries 2.5X and 3.5X, and two and a half times an odd bet is a half.
+   * And the default grid is `bigBlind / 2`, which on three rungs of the
+   * Diamond stake ladder - 10/25, 200/500, 1000/2500 - is itself a half, so
+   * POT and every postflop fraction snapped onto a grid the table cannot pay.
+   *
+   * Defaults to a cent, which is what every chip table has always used, so the
+   * chip path is unchanged by construction.
+   */
+  unit?: number;
+  /**
    * True for the fixed-limit games (FLH, FLO8), where the street has exactly
    * one legal wager and `minRaise === maxRaise`. The sizing panel is skipped
    * entirely — there is nothing to size — and the button shows the amount.
@@ -287,6 +307,8 @@ export interface RaisePresetInput {
    * 0.5/1 game offers 3.5 rather than 4. Defaults to the small blind.
    */
   smallestChip?: number;
+  /** The indivisible unit; see the prop of the same name on the panel. */
+  unit?: number;
 }
 
 /**
@@ -346,6 +368,7 @@ export function computeRaisePresets(input: RaisePresetInput): RaisePreset[] {
     maxRaise,
     isPotLimit,
     smallestChip,
+    unit: unitInput,
   } = input;
 
   /**
@@ -370,10 +393,21 @@ export function computeRaisePresets(input: RaisePresetInput): RaisePreset[] {
    * Only the derived sizings (POT, the postflop fractions), which have no exact
    * value to preserve, snap to the table's chip grid.
    */
-  const grid = smallestChip && smallestChip > 0 ? smallestChip : Math.max(bigBlind / 2, 0.01);
+  const unit = unitInput && unitInput > 0 ? unitInput : 0.01;
+  /* A denomination is itself a whole number of units: a grid of half a Diamond
+     can only ever produce amounts the table cannot pay. In practice a Diamond
+     table passes `smallestChip` of one Diamond and this rounding is the
+     backstop rather than the answer. */
+  const rawGrid = smallestChip && smallestChip > 0 ? smallestChip : Math.max(bigBlind / 2, unit);
+  const grid = Math.max(Math.round(rawGrid / unit) * unit, unit);
   const snapUp = (n: number) => Math.ceil(n / grid - 1e-9) * grid;
-  /** Kill binary dust like 7.500000000000001 before it reaches a button. */
-  const clean = (n: number) => Math.round(n * 100) / 100;
+  /** Kill binary dust like 7.500000000000001 before it reaches a button, and
+   *  land on an amount the table can actually wager. For chips `unit` is a
+   *  cent, so this is the `Math.round(n * 100) / 100` it has always been. */
+  const clean = (n: number) => {
+    const snapped = Math.round(n / unit) * unit;
+    return Math.round(snapped * 100) / 100;
+  };
 
   const capOnGrid = Math.floor(maxRaise / grid + 1e-9) * grid;
   const minOnGrid = snapUp(minRaise);
@@ -511,6 +545,7 @@ export default function ActionPanel({
   isPreflop = false,
   isPotLimit = false,
   isFixedLimit = false,
+  unit: unitProp,
   currentBet = 0,
 
   raiseIntent,
@@ -520,16 +555,32 @@ export default function ActionPanel({
   showStackInBB = false,
 }: ActionPanelProps) {
   /**
+   * The table's indivisible amount: a cent for chips, a whole Diamond at a
+   * Diamond table. See the `unit` prop for why the distinction is load-bearing
+   * rather than cosmetic.
+   */
+  const unit = unitProp && unitProp > 0 ? unitProp : 0.01;
+  /**
    * The table's chip unit. The small blind when the parent knows it, otherwise
    * half the big blind, which is the small blind for every standard structure.
    * Never below a cent: the engine's chips are whole cents (see the CENT_EPS
    * note in server/src/engine/PokerEngine.ts), so a finer grid would invent
    * amounts that do not exist.
+   *
+   * AND NEVER OFF THE TABLE'S OWN UNIT (2026-09-12). Three rungs of the
+   * Diamond stake ladder have a small blind that is not half the big blind -
+   * 10/25, 200/500, 1000/2500 - so the `bigBlind / 2` fallback produced 12.5,
+   * 250 and 1250, and the first and last of those are half a Diamond. Every
+   * derived sizing snapped onto that grid, and `performAction` then refused
+   * the amount for not being a whole Diamond: the POT button did nothing when
+   * pressed. Rounding the grid to the unit is the whole fix; for chips the
+   * unit is a cent and this is the rounding that was already here.
    */
   const smallestChip = useMemo(() => {
     const sb = smallBlind && smallBlind > 0 ? smallBlind : bigBlind / 2;
-    return Math.max(Math.round(sb * 100) / 100, 0.01);
-  }, [smallBlind, bigBlind]);
+    const onUnit = Math.round(sb / unit) * unit;
+    return Math.max(Math.round(onUnit * 100) / 100, unit);
+  }, [smallBlind, bigBlind, unit]);
   const minRaise = roundToChip(rawMinRaise, smallestChip, rawMinRaise, rawMaxRaise);
   const maxRaise = rawMaxRaise;
   // Only an amount that reaches the REAL all-in threshold is an all-in.
@@ -840,8 +891,21 @@ export default function ActionPanel({
         // Dan 2026-08-21 (item 9): the derived sizings snap to THIS table's
         // chips, not to the integer 1.
         smallestChip,
+        // And no preset may land off the table's indivisible unit.
+        unit,
       }),
-    [isPreflop, bigBlind, currentBet, callAmount, pot, minRaise, maxRaise, isPotLimit, smallestChip]
+    [
+      isPreflop,
+      bigBlind,
+      currentBet,
+      callAmount,
+      pot,
+      minRaise,
+      maxRaise,
+      isPotLimit,
+      smallestChip,
+      unit,
+    ]
   );
 
   /**

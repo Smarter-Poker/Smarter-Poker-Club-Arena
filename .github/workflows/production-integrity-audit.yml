@@ -114,27 +114,6 @@ jobs:
         if: always()
         run: bash .github/scripts/origin-contract.sh
 
-      # ── IS THE PIPELINE GETTING WORSE? (2026-09-12) ────────────────────────
-      # The step above answers "is production running main" as a BOOLEAN, and
-      # it had been answering "no" continuously since 2026-09-11 00:25 - issue
-      # #4219 was open the whole time. So when production went from one release
-      # behind to FOURTEEN releases and four and a half hours behind, nothing
-      # anywhere changed state and there was no new signal to notice. A chronic
-      # alarm that never clears is the same blind spot as no alarm.
-      #
-      # This reads the pipeline's own append-only ledger and asks the question
-      # the boolean cannot: are commits being offered to production faster than
-      # production is taking them, and is the release lane itself the reason.
-      # Read-only. No dispatch, retry, repair, or mutation authority.
-      - name: The engine pipeline is not starving
-        if: always()
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          set -euo pipefail
-          npm install pg@8 --no-save --ignore-scripts --no-audit --no-fund >/dev/null 2>&1 || true
-          node .github/scripts/check-engine-deploy-starvation.mjs
-
   # ───────────────────────────────────────────────────────────────────────────
   # IS ANYTHING RED ON MAIN THAT NOBODY IS LOOKING AT?
   #
@@ -247,6 +226,52 @@ jobs:
           fi
           echo "::error title=INTEGRITY DRIFT OR UNKNOWN::realtime=$RT bbj_rebuild=$BBJ cosmetics=$COS. Read the detector logs; no repair was attempted."
           exit 1
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # IS THE PIPELINE GETTING WORSE? (2026-09-12)
+  #
+  # The `engine:` job above answers "is production running main" as a BOOLEAN,
+  # and it had been answering "no" continuously since 2026-09-11 00:25 - issue
+  # #4219 was open the whole time. So when production went from one release
+  # behind to FOURTEEN releases and four and a half hours behind, nothing
+  # anywhere changed state and there was no new signal to notice. A chronic
+  # alarm that never clears is the same blind spot as no alarm.
+  #
+  # This reads the pipeline's own append-only ledger and asks the question the
+  # boolean cannot: are commits being offered to production faster than
+  # production is taking them, and is the release lane itself the reason.
+  # Read-only. No dispatch, retry, repair, or mutation authority.
+  #
+  # It is a JOB OF ITS OWN rather than a step inside `engine:` because
+  # `engine:` is the CREDENTIAL-FREE provenance observer - it carries no
+  # GH_TOKEN and no DATABASE_URL, and
+  # `tests/engine-watchdog-asks-production.test.ts` has enforced exactly that
+  # since the watchdog was retired. A database reader belongs beside
+  # `live_drift` and `chip_conservation`, which is where every other read-only
+  # DATABASE_URL job in this workflow already lives.
+  # ─────────────────────────────────────────────────────────────────────────────
+  engine_deploy_starvation:
+    name: The engine pipeline is not starving
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Read the deploy attempt ledger
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          npm install pg@8 --no-save --ignore-scripts --no-audit --no-fund >/dev/null 2>&1 || true
+          node .github/scripts/check-engine-deploy-starvation.mjs
 
   # Chip and diamond conservation is a production invariant, not merely a
   # property of code on a pull request. This independent reader is read-only

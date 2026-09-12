@@ -246,10 +246,28 @@ describe('the starvation alarm exists and has a reader', () => {
     // that already asks the engine question, on GitHub's pool, so it never
     // shares a failure domain with the box it is watching.
     expect(audit).toContain('node .github/scripts/check-engine-deploy-starvation.mjs');
-    expect(audit).toContain('DATABASE_URL: ${{ secrets.DATABASE_URL }}');
+    // No net-new cron: it rides the one hourly schedule this workflow already has.
+    expect(audit.match(/^\s*schedule:$/gm)?.length).toBe(1);
+
+    const starvationJob = audit.slice(
+      audit.indexOf('\n  engine_deploy_starvation:'),
+      audit.indexOf('\n  chip_conservation:')
+    );
+    expect(starvationJob).toContain('runs-on: ubuntu-latest');
+    expect(starvationJob).toContain('name: The engine pipeline is not starving');
+    expect(starvationJob).toContain('DATABASE_URL: ${{ secrets.DATABASE_URL }}');
+    // Read-only, like every other database reader in this workflow.
+    expect(starvationJob).toMatch(/^\s{6}contents:\s*read\s*$/m);
+    expect(starvationJob).not.toMatch(/^\s{6}(?:issues|actions|contents):\s*write\s*$/m);
+
+    // It is a SIBLING of `engine:`, never a step inside it. `engine:` is the
+    // credential-free provenance observer and
+    // tests/engine-watchdog-asks-production.test.ts refuses any GH_TOKEN or
+    // DATABASE_URL there. Putting the ledger reader in that job is what broke
+    // CI on the first cut of this change.
     const engineJob = audit.slice(audit.indexOf('\n  engine:'), audit.indexOf('\n  live_drift:'));
     expect(engineJob).toContain('runs-on: ubuntu-latest');
-    expect(engineJob).toContain('name: The engine pipeline is not starving');
+    expect(engineJob).not.toMatch(/GH_TOKEN|DATABASE_URL/);
   });
 
   it('fires on both a count and a span, and can say it does not know', () => {

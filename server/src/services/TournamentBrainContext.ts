@@ -35,6 +35,7 @@ import {
   type TournamentContextStatus,
 } from '../engine/HorseTournamentPreflop.js';
 import { selectInChunks } from './supabase/chunkedIn.js';
+import { recoveryFeeCents, tournamentFeeRatio, unitFloorCents } from '../tournament/recoveryFee.js';
 import { horseRebuyAllowance } from './FreeBuy.js';
 
 export type TournamentFormat = 'mtt' | 'sng' | 'spin' | 'hu_sng';
@@ -213,6 +214,25 @@ export interface TournamentRowLite {
   addon_levels?: number | null;
   addon_period_started_at?: string | null;
   addon_period_ends_at?: string | null;
+  /**
+   * ═════════════════════════════════════════════════════════════════════════
+   *  THE SMALLEST AMOUNT THIS TOURNAMENT CAN PAY, IN CENTS (2026-09-12)
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * One cent for a chip tournament, which is every tournament that has ever
+   * run, and which is why every reader of this field defaults to 1 when it is
+   * absent. One hundred for a Diamond tournament, because a Diamond does not
+   * divide.
+   *
+   * NO SELECT POPULATES THIS YET, and that is deliberate rather than
+   * forgotten. It is `fn_ca_tournament_unit_cents` on the SQL side, and
+   * reading it here means joining clubs into the tournament read, which
+   * belongs with the work that opens the Diamond tournament door rather than
+   * with the arithmetic. The arithmetic is correct for both denominations
+   * now; the field is the one wire left to connect, and the quote is already
+   * waiting for it.
+   */
+  unit_cents?: number | null;
   addon_period_triggered?: boolean | null;
   prize_pool_finalized?: boolean | null;
   on_break?: boolean | null;
@@ -1225,15 +1245,35 @@ function tournamentPurchaseQuote(row: TournamentRowLite): TournamentPurchaseQuot
   let recoveryPrizeContributionCents: number | null = null;
   let recoveryBountyContributionCents: number | null = null;
   if (recoveryCostCents !== null) {
-    const feeRatio = buyIn + buyInFee > 0 && buyInFee > 0 ? buyInFee / (buyIn + buyInFee) : 0.1;
-    const feeCents = Math.min(
-      Math.trunc(recoveryUnits * feeRatio * 100 + 0.000001),
-      Math.trunc(recoveryUnits * 0.1 * 100 + 0.000001)
-    );
+    const feeRatio = tournamentFeeRatio(buyIn, buyInFee);
+    /**
+     * The recovery fee is the ratio, capped at ten percent, truncated DOWN to
+     * the smallest amount this tournament can pay. It used to truncate to a
+     * cent, because a cent was hard-coded as that smallest amount; a 10
+     * Diamond rebuy at a 10/110 ratio then produced a 0.90 fee and dropped
+     * 9.10 Diamonds into the prize pool, which is not an amount this estate
+     * can pay, store or reserve.
+     *
+     * This is not a new rake rate. It is the same ratio, the same cap and the
+     * same downward truncation, told what a unit is instead of assuming one.
+     * `Math.floor(x / 1) * 1` is `x`, so the chip quote is unchanged by
+     * construction rather than by inspection.
+     *
+     * The cap is floored too: a cap that is not on the grid is not a cap the
+     * fee can honour. Mirrors fn_ca_recovery_fee_cents.
+     */
+    const unitCents =
+      Number.isSafeInteger(Number(row.unit_cents)) && Number(row.unit_cents) >= 1
+        ? Number(row.unit_cents)
+        : 1;
+    const floorToUnit = (cents: number) => unitFloorCents(cents, unitCents);
+    const feeCents = recoveryFeeCents(recoveryCostCents, feeRatio, unitCents);
     const netCents = Math.max(0, recoveryCostCents - feeCents);
+    // The head is floored to the same unit, so what is left for the prize is
+    // whole by construction rather than by luck.
     const bountyHeadCents =
       row.is_bounty === true || row.is_pko === true || row.is_mystery_bounty === true
-        ? Math.min(netCents, Math.round((finite(row.bounty_amount) ?? 0) * 100))
+        ? floorToUnit(Math.min(netCents, Math.round((finite(row.bounty_amount) ?? 0) * 100)))
         : 0;
     recoveryBountyContributionCents = bountyHeadCents;
     recoveryPrizeContributionCents = netCents - bountyHeadCents;

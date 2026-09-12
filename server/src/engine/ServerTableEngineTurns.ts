@@ -196,6 +196,25 @@ export function noteSecondLookDecline(reason: SecondLookDecline): void {
   }
 }
 
+/** Why a horse turn was abandoned; see poker_horse_turns_abandoned_total. */
+type HorseTurnAbandonReason =
+  | 'aborted'
+  | 'superseded'
+  | 'hand_replaced'
+  | 'lifecycle_locked'
+  | 'seat_moved'
+  | 'lease_lost';
+
+/** How far the turn got before the fence refused it. `commit` is the
+ *  expensive one: the decision was computed and then dropped. */
+type HorseTurnAbandonStage =
+  | 'schedule'
+  | 'fallback'
+  | 'fast_result'
+  | 'deep_start'
+  | 'deep_result'
+  | 'commit';
+
 export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   /** Previous zone is table-owned state and is embedded in every worker snapshot. */
   private readonly horseTournamentMZones = new Map<string, TournamentMZone>();
@@ -2645,30 +2664,58 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       noteFire('phase7_utility_not_executed');
     };
 
-    const fenceIsCurrent = (): boolean => {
+    /* WHY the fence refused, not merely that it did.
+       Six stages guard on this, and until 2026-09-11 every one of them
+       answered a failure with a bare `return`. A horse whose table lost its
+       engine lease mid-turn was therefore never scheduled, never asked the
+       worker for anything, and appeared in no counter anywhere - the
+       seventeen-second clock resolved its seat as a forced check/fold while
+       every decision-path gauge read perfect. Measured that evening: fallbacks
+       0 and the worker idle at 4.9 ms compute, while timer timeouts ran 19-40
+       a minute beside 1,652 engine lease losses a minute across 1,570 tables.
+       The checks below are unchanged and in the same order; only their silence
+       is. */
+    const fenceRefusal = (): HorseTurnAbandonReason | null => {
+      if (abortController.signal.aborted) return 'aborted';
       if (
-        abortController.signal.aborted ||
         this.horseDecisionAbortController !== abortController ||
-        this.horseTurnToken !== turnToken ||
+        this.horseTurnToken !== turnToken
+      ) {
+        return 'superseded';
+      }
+      if (
         !handControllerRef ||
         handControllerRef !== this.handController ||
-        this.handCount !== handNumber ||
-        !this.lifecycleCanMutate() ||
-        handControllerRef.getState().currentPlayerSeat !== seat
+        this.handCount !== handNumber
       ) {
-        markPendingUtilityNotExecuted();
-        return false;
+        return 'hand_replaced';
       }
+      if (!this.lifecycleCanMutate()) return 'lifecycle_locked';
+      if (handControllerRef.getState().currentPlayerSeat !== seat) return 'seat_moved';
       const currentLease = this.getEngineLeaseAuthority();
-      const current =
-        leaseGeneration !== null &&
-        currentLease?.verified === true &&
-        currentLease.generation === leaseGeneration;
-      if (!current) markPendingUtilityNotExecuted();
-      return current;
+      if (
+        leaseGeneration === null ||
+        currentLease?.verified !== true ||
+        currentLease.generation !== leaseGeneration
+      ) {
+        return 'lease_lost';
+      }
+      return null;
     };
 
-    if (!fenceIsCurrent()) {
+    const fenceIsCurrent = (stage: HorseTurnAbandonStage): boolean => {
+      const reason = fenceRefusal();
+      if (reason === null) return true;
+      markPendingUtilityNotExecuted();
+      try {
+        EngineMetrics.horseTurnsAbandonedTotal.inc(1, { reason, stage });
+      } catch {
+        /* metrics must never affect gameplay */
+      }
+      return false;
+    };
+
+    if (!fenceIsCurrent('schedule')) {
       this.cancelHorseDecisionWork();
       return;
     }
@@ -2868,7 +2915,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           throw error;
         }
         reportError(error, 'ServerTableEngine.' + this.tableId + '.horse_decision_worker_failed');
-        if (!fenceIsCurrent()) throw new HorseDecisionAbortedError();
+        if (!fenceIsCurrent('fallback')) throw new HorseDecisionAbortedError();
         try {
           EngineMetrics.horseDecisionFallbacksTotal.inc(1);
         } catch {
@@ -2900,7 +2947,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         if (
           fastResult.generation !== turnToken ||
           fastResult.fence !== fence ||
-          !fenceIsCurrent()
+          !fenceIsCurrent('fast_result')
         ) {
           return;
         }
@@ -3054,7 +3101,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         if (secondLook.ok) {
           this.horseSecondLookTimer = setTimeout(() => {
             this.horseSecondLookTimer = null;
-            if (!fenceIsCurrent()) return;
+            if (!fenceIsCurrent('deep_start')) return;
             void getLiveHorseDecisionWorker()
               .decideDeep(
                 {
@@ -3068,7 +3115,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                 if (
                   deepResult.generation !== turnToken ||
                   deepResult.fence !== fence ||
-                  !fenceIsCurrent()
+                  !fenceIsCurrent('deep_result')
                 ) {
                   retirePlo4(deepResult.decision.plo4Policy);
                   if (deepResult.decision.tournamentPostflop?.executionStatus === 'pending') {
@@ -3136,7 +3183,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           pendingPlo4Ledger = plo4Ledger;
           pendingPostflopLedger = postflopLedger;
           pendingUtilityLedger = utilityLedger;
-          if (!fenceIsCurrent()) return;
+          if (!fenceIsCurrent('commit')) return;
           if (!handControllerRef) {
             markPendingUtilityNotExecuted();
             return;

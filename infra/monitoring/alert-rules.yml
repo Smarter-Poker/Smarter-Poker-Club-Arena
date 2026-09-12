@@ -1660,6 +1660,47 @@ groups:
             auto-checked for ten minutes. The horses are seated and cannot play.
           runbook: docs/changelog/2026-09-11-the-horse-audit.md
 
+      # ── WHY A HORSE TURN WAS ABANDONED ────────────────────────────────────
+      #
+      # HorseTurnTimeoutStorm above says horses are being folded by the clock.
+      # It has never been able to say WHY, because the six fence checks in
+      # scheduleHorseAction each answered a failure with a bare return: the
+      # turn was refused, nothing was counted, and every decision-path gauge
+      # stayed clean. On 2026-09-11 that read as fallbacks 0 and a worker idle
+      # at 4.9 ms compute while one horse turn in eight was folded, beside
+      # 1,652 engine lease losses a minute across 1,570 tables.
+      #
+      # This alert is the missing half of that pair. It does not fire because
+      # turns are abandoned - abandoning a superseded turn is CORRECT, and a
+      # table that has lost its lease must not act. It fires when abandonment
+      # is a working condition rather than an exception, and it carries the
+      # reason, so the answer arrives with the page instead of after it.
+      #
+      # 5/min matches HorseTurnTimeoutStorm deliberately: the two describe the
+      # same seat from opposite ends, and a threshold that differed would let
+      # one fire without the other and invite the wrong conclusion.
+      - alert: HorseTurnsAbandonedByLostAuthority
+        expr: |
+          sum by (reason) (rate(poker_horse_turns_abandoned_total[10m])) * 60 > 5
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: critical
+          page: sms
+          component: club-arena-engine
+        annotations:
+          summary: '{{ $value | printf "%.1f" }} horse turns/min abandoned: {{ $labels.reason }}'
+          description: |
+            Seated horses are reaching their turn and having it taken away
+            before they can act, for the reason in the label. lease_lost means
+            the table lost its engine lease mid-turn, so the horse was never
+            scheduled and the clock folded it; check the engine log for
+            tournament_lease_lost and cash_lease_proof_expired, which are not
+            themselves metered. seat_moved or hand_replaced at this rate means
+            the table is restarting under the horse. superseded is the benign
+            one and should not reach this rate on its own.
+          runbook: docs/changelog/2026-09-11-a-horse-turn-that-is-abandoned-says-why.md
+
       # ── A LEASE THAT IS NOT RENEWED ───────────────────────────────────────
       #
       # Measured 2026-09-12: every cash table on the engine was re-claiming its

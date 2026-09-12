@@ -688,13 +688,15 @@ async function start(args) {
     stage = 'real-users-and-financial-seed';
     const api = fixtureAuth({ serviceKey: secrets.serviceKey, jwtSecret: secrets.jwtSecret });
     const users = await api.createUsers();
+    users[2] = await api.enrollMfa(users[2]);
     const { seedFixture } = await import('./seed-fixture.mjs');
     const fixture = await seedFixture({
       db,
       actorIds: users.slice(0, 2).map((user) => user.id),
       spectatorId: users[2].id,
+      sessionIds: users.map((user) => user.sessionId),
     });
-    const spectator = await api.enrollMfa(users[2]);
+    const spectator = users[2];
     stage = 'private-observation-bridge';
     const { startObservationBridge } = await import('./observation-bridge.mjs');
     const observerDb = supervisor.databaseOwner.own(new pg.Client({ ...connection, database }));

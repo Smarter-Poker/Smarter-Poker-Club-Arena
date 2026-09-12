@@ -4,6 +4,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import http from 'node:http';
 import { once } from 'node:events';
+import { createHmac, randomUUID } from 'node:crypto';
 import { nativeFailureDiagnostic } from '../../operations/release/fixture/runtime-files.mjs';
 import {
   assertFixtureAuthVersion,
@@ -14,6 +15,68 @@ import {
   totp,
   verifyFixtureToken,
 } from '../../operations/release/fixture/auth-fixture.mjs';
+
+for (const missingSession of [false, true]) {
+  test(`real HTTP sign-in ${missingSession ? 'refuses an absent' : 'retains the signed'} session identity`, async () => {
+    const secrets = fixtureSecrets();
+    const users = new Map();
+    const server = http.createServer(async (request, response) => {
+      const chunks = [];
+      for await (const chunk of request) chunks.push(chunk);
+      const input = JSON.parse(Buffer.concat(chunks).toString());
+      response.setHeader('content-type', 'application/json');
+      if (request.url === '/admin/users') {
+        assert.ok(input.user_metadata.poker_alias.length <= 15);
+        assert.ok(
+          ['actor_one', 'actor_two', 'spectator'].includes(input.user_metadata.poker_alias)
+        );
+        const user = { id: randomUUID(), email: input.email };
+        users.set(input.email, { user, sessionId: randomUUID() });
+        response.end(JSON.stringify(user));
+      } else {
+        const { user, sessionId } = users.get(input.email);
+        const claims = {
+          sub: user.id,
+          role: 'authenticated',
+          aal: 'aal1',
+          exp: Math.floor(Date.now() / 1000) + 300,
+          ...(missingSession ? {} : { session_id: sessionId }),
+        };
+        const encode = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
+        const body = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode(claims)}`;
+        const token = `${body}.${createHmac('sha256', secrets.jwtSecret).update(body).digest('base64url')}`;
+        response.end(JSON.stringify({ user, access_token: token, refresh_token: 'local-probe' }));
+      }
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    try {
+      const api = fixtureAuth({
+        endpoint: `http://127.0.0.1:${server.address().port}`,
+        ...secrets,
+      });
+      if (missingSession) await assert.rejects(api.createUsers());
+      else {
+        const actual = await api.createUsers();
+        assert.equal(actual.length, 3);
+        for (const user of actual) {
+          assert.match(
+            user.email,
+            /^component-(actor-one|actor-two|spectator)@smarter-poker\.invalid$/
+          );
+          assert.equal(user.sessionId, users.get(user.email).sessionId);
+          assert.equal(
+            user.sessionId,
+            verifyFixtureToken(user.session.access_token, secrets.jwtSecret).session_id
+          );
+        }
+      }
+    } finally {
+      server.closeAllConnections();
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+}
 
 for (const [status, payload, expected] of [
   [403, { message: 'PRIVATE SERVICE VALUE' }, { auth_stage: 'mfa-enroll', auth_http_status: 403 }],

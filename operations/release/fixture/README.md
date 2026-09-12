@@ -309,6 +309,26 @@ this package does not perform them.
 
 ## Synthetic actors
 
+The real Auth API creates the three fixture users under the existing
+`@smarter-poker.invalid` certification domain. Their distinct `poker_alias`
+values fit the signup trigger's 15-character limit; the generic `username`
+metadata field is not that trigger's alias input. The spectator enrolls MFA
+before setup. Verified Auth JWTs supply each user's session identity; the seed
+requires the corresponding live `auth.sessions` row and AAL before using it.
+
+`seed-fixture.mjs` uses `fn_create_club_atomic`, `fn_join_club`,
+`fn_club_bank_send`, `fn_cash_game_create` and `atomic_table_buyin` with each
+actual user's authenticated session context. It preserves and reconciles the
+canonical 100,000-chip opening grant, funds each actor with 2,000 chips, and buys
+each seat in for 200. It does not insert club memberships or mint a second
+opening supply. Each operation has its own serializable transaction so local
+ledger/authorization settings cannot leak between RPCs. A session advisory lock
+owns setup, and all constraints are forced before every commit. Previously
+committed synthetic setup is removed with the owned fixture if a later step
+fails; no partially initialized identity becomes ready. A nonempty database
+cannot be seeded again. Source/SQL-layer checks do not qualify full Auth,
+application-schema parity or an engine hand.
+
 `actors.mjs` exports async `startFixtureActors({tableId, users, onFailure})`,
 returning `{close()}` after both authenticated subscriptions and initial native
 snapshots arrive. Supply exactly two real GoTrue sessions after the engine is

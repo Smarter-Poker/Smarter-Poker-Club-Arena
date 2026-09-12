@@ -138,6 +138,7 @@ export function fixtureAuth({ endpoint = 'http://127.0.0.1:9999', serviceKey, jw
     assert.equal(claims.sub, expectedId);
     assert.equal(claims.role, 'authenticated');
     assert.equal(claims.aal, minimumAal);
+    assert.match(claims.session_id, uuid);
     assert.equal(session.user.id, expectedId);
     assert.ok(typeof session.refresh_token === 'string' && session.refresh_token.length > 0);
     return { ...session, expires_at: claims.exp };
@@ -146,7 +147,7 @@ export function fixtureAuth({ endpoint = 'http://127.0.0.1:9999', serviceKey, jw
     async createUsers() {
       const users = [];
       for (const name of ['actor-one', 'actor-two', 'spectator']) {
-        const email = `${name}@component-fixture.invalid`;
+        const email = `component-${name}@smarter-poker.invalid`;
         const password = randomBytes(32).toString('base64url');
         const user = await request('/admin/users', {
           email,
@@ -155,6 +156,9 @@ export function fixtureAuth({ endpoint = 'http://127.0.0.1:9999', serviceKey, jw
           user_metadata: {
             component_qualification: true,
             username: `component_${name.replaceAll('-', '_')}`,
+            // The real signup trigger reads poker_alias and truncates to 15
+            // characters. Shared email prefixes would collide without it.
+            poker_alias: name.replaceAll('-', '_'),
           },
         });
         assert.match(user.id, uuid);
@@ -163,7 +167,12 @@ export function fixtureAuth({ endpoint = 'http://127.0.0.1:9999', serviceKey, jw
           await request('/token?grant_type=password', { email, password }),
           user.id
         );
-        users.push({ id: user.id, email, session });
+        users.push({
+          id: user.id,
+          email,
+          session,
+          sessionId: verifyFixtureToken(session.access_token, jwtSecret).session_id,
+        });
       }
       assert.equal(new Set(users.map((user) => user.id)).size, 3);
       return users;
@@ -192,7 +201,12 @@ export function fixtureAuth({ endpoint = 'http://127.0.0.1:9999', serviceKey, jw
           token
         );
         stage = 'mfa-session';
-        return { ...user, session: validateSession(session, user.id, 'aal2') };
+        const validated = validateSession(session, user.id, 'aal2');
+        return {
+          ...user,
+          session: validated,
+          sessionId: verifyFixtureToken(validated.access_token, jwtSecret).session_id,
+        };
       } catch (error) {
         const failure = new Error('fixture MFA refused');
         failure.auth_stage = stage;

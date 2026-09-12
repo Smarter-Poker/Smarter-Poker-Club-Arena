@@ -903,7 +903,21 @@ const COL_ACTIONS: ColumnDef = {
               {waiting ? 'Leave Waitlist' : 'Join Waitlist'}
             </button>
           )}
-          {!closed && !full && ctx.onJoinTable && (
+          {/* A board nobody may sit at says so, rather than offering a seat the
+              buy-in door will refuse. A player already seated still returns to
+              their own table: the closed gate is about taking a NEW seat. */}
+          {!closed && !full && ctx.seatsClosedLabel && !seated && (
+            <button
+              type="button"
+              className="lt-act"
+              data-act="closed"
+              disabled
+              aria-label={`${e.name}: ${ctx.seatsClosedLabel}`}
+            >
+              {ctx.seatsClosedLabel}
+            </button>
+          )}
+          {!closed && !full && ctx.onJoinTable && !(ctx.seatsClosedLabel && !seated) && (
             <button
               type="button"
               className="lt-act lt-act--primary"

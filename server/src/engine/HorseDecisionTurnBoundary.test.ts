@@ -137,7 +137,7 @@ describe('horse decision work follows the authoritative turn boundary', () => {
     expect(performAction).not.toHaveBeenCalled();
     releaseBeat();
     await handling;
-    expect(performAction).toHaveBeenCalledWith(CURRENT_SEAT, 'check', undefined);
+    expect(performAction).toHaveBeenCalledWith(CURRENT_SEAT, 'check', undefined, 'pre_action');
     pending.dispose();
   });
 

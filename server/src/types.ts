@@ -525,6 +525,15 @@ export interface HandStateBroadcast {
   action_history: ActionRecord[];
 }
 
+/** Authored by the final engine executor, never inferred from player identity. */
+export type AcceptedActionOrigin =
+  | 'player'
+  | 'pre_action'
+  | 'horse_policy'
+  | 'horse_fallback'
+  | 'forced'
+  | 'unknown';
+
 export interface ActionRecord {
   seat: number;
   userId: string;
@@ -536,6 +545,8 @@ export interface ActionRecord {
   isFullRaise?: boolean;
   /** Accepted-hand learning metadata, omitted from controller/UI history. */
   publicNode?: import('./engine/HorsePublicActionNode.js').HorsePublicActionNode;
+  /** Durable history only; unknown/forced/fallback actions cannot train a voluntary model. */
+  origin?: AcceptedActionOrigin;
 }
 
 export type HandEvent =
@@ -590,6 +601,7 @@ export type HandEvent =
       /** Accepted immutable history; late consumers must not read a later action. */
       record?: Readonly<ActionRecord>;
       publicNode?: import('./engine/HorsePublicActionNode.js').HorsePublicActionNode;
+      origin?: AcceptedActionOrigin;
     }
   | { type: 'POT_UPDATE'; pot: number; pots: Pot[] }
   | { type: 'TURN_CHANGE'; seat: number; availableActions: ActionType[] }

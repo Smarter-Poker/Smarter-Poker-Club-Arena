@@ -87,7 +87,17 @@ describe('a refusal cannot corrupt the global bust order', () => {
       ELIM.indexOf('takenPositions.add(place);')
     );
     expect(loop).toMatch(/this\.bustRefusalStreak\.set\(/);
-    expect(loop, 'the abort itself is deliberate and stays').toMatch(/return;/);
+    // 2026-09-12 (drift incident 7ab0dcbe): the abort is deliberate and stays,
+    // but it ends the ASSIGNMENT PASS, not the sweep. Returning from the sweep
+    // stranded eliminationSweepCursor at stage 1, so balanceStage - the only
+    // caller of checkTableBalance - never ran, and one player the door refused
+    // stopped the whole field consolidating.
+    expect(loop, 'the abort itself is deliberate and stays').toMatch(
+      /bustBatchHasMore = true;[\s\S]{0,200}break;/
+    );
+    expect(loop, 'a refusal may never end the sweep').not.toMatch(
+      /BUST_REFUSAL_SKIP_AFTER\) return;/
+    );
   });
 
   it('clears the streak the moment a player is actually eliminated', () => {

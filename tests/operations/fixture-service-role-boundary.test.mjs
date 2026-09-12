@@ -7,6 +7,7 @@ import {
   createFixtureApplicationOwner,
   assertApplicationOwnerBoundary,
   assertManagedPostgresBoundary,
+  sealFixtureAuthMigrationLedger,
 } from '../../operations/release/fixture/service-role-boundary.mjs';
 
 const boundary = {
@@ -23,6 +24,7 @@ const boundary = {
   auth_schema_owner: true,
   auth_schema_migration_access: true,
   public_create_denied: true,
+  auth_ledger_read_only: true,
   application_schema_boundary: true,
 };
 
@@ -56,6 +58,44 @@ test('managed native probe rejects a superuser before creating any probe objects
   );
   assert.equal(calls, 1);
 });
+
+test('Auth ledger permissions refuse an unowned connection before any mutation', async () => {
+  const calls = [];
+  await assert.rejects(
+    sealFixtureAuthMigrationLedger({
+      query: async (sql) => {
+        calls.push(sql);
+        return { rows: [{ owned_auth_ledger: false }] };
+      },
+    }),
+    /FIXTURE_AUTH_LEDGER_OWNER_REQUIRED/
+  );
+  assert.equal(calls.length, 1);
+});
+
+for (const failure of ['grant', 'commit']) {
+  test(`Auth ledger ${failure} failure rolls back its complete privilege transaction`, async () => {
+    const calls = [];
+    const original = new Error(`ledger ${failure} refused`);
+    await assert.rejects(
+      sealFixtureAuthMigrationLedger({
+        query: async (sql) => {
+          calls.push(sql);
+          if (sql.includes('AS owned_auth_ledger')) return { rows: [{ owned_auth_ledger: true }] };
+          if (
+            (failure === 'grant' && sql.startsWith('SET LOCAL ROLE')) ||
+            (failure === 'commit' && sql === 'COMMIT')
+          )
+            throw original;
+          return { rows: [] };
+        },
+      }),
+      (error) => error === original
+    );
+    assert.equal(calls.at(-1), 'ROLLBACK');
+    if (failure === 'grant') assert.ok(!calls.includes('COMMIT'));
+  });
+}
 
 test('managed probe failure rolls back before verifying owned object absence', async () => {
   const calls = [];
@@ -149,6 +189,7 @@ for (const [field, bad] of [
   ['auth_schema_owner', false],
   ['auth_schema_migration_access', false],
   ['public_create_denied', false],
+  ['auth_ledger_read_only', false],
   ['application_schema_boundary', false],
 ]) {
   test(`native role drift refuses the service boundary: ${field}`, async () => {

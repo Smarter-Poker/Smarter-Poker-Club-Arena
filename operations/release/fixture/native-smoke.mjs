@@ -21,6 +21,7 @@ import {
   managedPostgresArguments,
   assertManagedPostgresBoundary,
   assertBootstrapPostgresConfiguration,
+  sealFixtureAuthMigrationLedger,
 } from './service-role-boundary.mjs';
 import { startObservationBridge } from './observation-bridge.mjs';
 import {
@@ -435,6 +436,15 @@ async function services() {
     await databaseOwner.end(authDatabase);
     stage = 'gotrue-migrate-command';
     await command('/usr/local/bin/auth', ['migrate'], authEnv);
+    const authBootstrap = databaseOwner.own(
+      new pg.Client({ host: '/run/postgresql', user: 'supabase_admin', database })
+    );
+    try {
+      await authBootstrap.connect();
+      await sealFixtureAuthMigrationLedger(authBootstrap);
+    } finally {
+      await databaseOwner.end(authBootstrap);
+    }
     stage = 'gotrue-migration-ledger';
     assertFixtureAuthMigrations(
       (await db.query('SELECT version FROM auth.schema_migrations')).rows.map((row) => row.version)

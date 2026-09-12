@@ -14,3 +14,9 @@ the restricted application identity. Full-schema, funded engine-route and
 production binary-version parity remain separate requirements. No dependency
 installation on the Mac, production SQL or production deployment is performed
 by this fixture change.
+
+Auth-owned tables also receive the captured managed default grants, allowing
+the application owner to create real foreign keys to Auth users without a
+superuser bypass. After genuine Auth migrations run, their ledger retains only
+the captured read grant for postgres; it cannot insert or alter migration rows.
+Connection ownership and rollback on privilege failure are checked separately.

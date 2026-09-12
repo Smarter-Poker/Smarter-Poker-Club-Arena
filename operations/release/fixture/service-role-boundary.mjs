@@ -68,9 +68,37 @@ export function serviceRoleBootstrapSql(password) {
     CREATE SCHEMA auth AUTHORIZATION supabase_admin;
     GRANT USAGE, CREATE ON SCHEMA auth TO supabase_auth_admin, dashboard_user;
     GRANT USAGE ON SCHEMA auth TO anon, authenticated, service_role, postgres;
+    ALTER DEFAULT PRIVILEGES FOR ROLE supabase_auth_admin IN SCHEMA auth
+      GRANT ALL ON TABLES TO postgres, dashboard_user;
+    ALTER DEFAULT PRIVILEGES FOR ROLE supabase_auth_admin IN SCHEMA auth
+      GRANT ALL ON SEQUENCES TO postgres, dashboard_user;
+    ALTER DEFAULT PRIVILEGES FOR ROLE supabase_auth_admin IN SCHEMA auth
+      GRANT EXECUTE ON FUNCTIONS TO postgres, dashboard_user;
     ALTER ROLE supabase_auth_admin SET search_path TO auth;
     GRANT CREATE ON DATABASE club_arena_qualification TO supabase_auth_admin;
     CREATE SCHEMA _realtime AUTHORIZATION supabase_admin;`;
+}
+
+// The managed Auth migration ledger is an exception to the captured Auth
+// defaults: postgres may read it, never stamp or alter migration history.
+// Called through the existing bootstrap identity after genuine migrations.
+export async function sealFixtureAuthMigrationLedger(db) {
+  const owner = await db.query(`SELECT current_database()='club_arena_qualification'
+    AND current_user='supabase_admin' AND session_user='supabase_admin'
+    AND inet_server_addr() IS NULL
+    AND (SELECT pg_get_userbyid(relowner)='supabase_auth_admin' FROM pg_class
+      WHERE oid='auth.schema_migrations'::regclass) AS owned_auth_ledger`);
+  assert.deepEqual(owner.rows, [{ owned_auth_ledger: true }], 'FIXTURE_AUTH_LEDGER_OWNER_REQUIRED');
+  await db.query('BEGIN');
+  try {
+    await db.query(`SET LOCAL ROLE supabase_auth_admin;
+      REVOKE ALL ON TABLE auth.schema_migrations FROM postgres, dashboard_user;
+      GRANT SELECT ON TABLE auth.schema_migrations TO postgres WITH GRANT OPTION;`);
+    await db.query('COMMIT');
+  } catch (error) {
+    await db.query('ROLLBACK');
+    throw error;
+  }
 }
 
 export const serviceBoundaryReceipt = Object.freeze({
@@ -136,6 +164,9 @@ export async function assertNativeServiceRoleBoundary(db) {
     has_schema_privilege('supabase_auth_admin','auth','USAGE')
       AND has_schema_privilege('supabase_auth_admin','auth','CREATE') AS auth_schema_migration_access,
     NOT has_schema_privilege('supabase_auth_admin','public','CREATE') AS public_create_denied,
+    has_table_privilege('postgres','auth.schema_migrations','SELECT')
+      AND NOT has_table_privilege('postgres','auth.schema_migrations','INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER,REFERENCES,MAINTAIN')
+      AND NOT has_table_privilege('dashboard_user','auth.schema_migrations','SELECT,INSERT,UPDATE,DELETE') AS auth_ledger_read_only,
     (SELECT bool_and(has_schema_privilege(r,'auth','USAGE') AND NOT has_schema_privilege(r,'auth','CREATE'))
       FROM unnest(ARRAY['anon','authenticated','service_role']) r) AS application_schema_boundary`);
   assert.deepEqual(
@@ -155,6 +186,7 @@ export async function assertNativeServiceRoleBoundary(db) {
         auth_schema_owner: true,
         auth_schema_migration_access: true,
         public_create_denied: true,
+        auth_ledger_read_only: true,
         application_schema_boundary: true,
       },
     ],

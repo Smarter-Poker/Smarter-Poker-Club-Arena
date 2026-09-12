@@ -22,6 +22,7 @@ import {
   managedPostgresArguments,
   assertManagedPostgresBoundary,
   assertBootstrapPostgresConfiguration,
+  sealFixtureAuthMigrationLedger,
 } from './service-role-boundary.mjs';
 import { createFixtureGateway, loadStaticManifest, findPublicAnonKey } from './gateway.mjs';
 import {
@@ -668,6 +669,15 @@ async function start(args) {
     await db.connect();
     stage = 'genuine-auth-migrations';
     await supervisor.command('/usr/local/bin/auth', ['migrate'], env.auth);
+    const authBootstrap = supervisor.databaseOwner.own(
+      new pg.Client({ ...connection, user: 'supabase_admin', database })
+    );
+    try {
+      await authBootstrap.connect();
+      await sealFixtureAuthMigrationLedger(authBootstrap);
+    } finally {
+      await supervisor.databaseOwner.end(authBootstrap);
+    }
     assertFixtureAuthMigrations(
       (await db.query('SELECT version FROM auth.schema_migrations')).rows.map((row) => row.version)
     );

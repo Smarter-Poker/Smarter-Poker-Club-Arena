@@ -8,7 +8,7 @@ import {
   assertApplicationOwnerBoundary,
   assertManagedPostgresBoundary,
   sealFixtureAuthMigrationLedger,
-  installFixtureAuthPlatformHelpers,
+  alignFixtureAuthPlatformHelperGrants,
   assertFixtureAuthPlatformHelpers,
   assertFixtureAuthPlatformWriteDenied,
 } from '../../operations/release/fixture/service-role-boundary.mjs';
@@ -31,10 +31,10 @@ const boundary = {
   application_schema_boundary: true,
 };
 
-test('Auth platform installation refuses a non-bootstrap connection before mutation', async () => {
+test('Auth grant alignment refuses a non-bootstrap connection before mutation', async () => {
   const calls = [];
   await assert.rejects(
-    installFixtureAuthPlatformHelpers({
+    alignFixtureAuthPlatformHelperGrants({
       query: async (sql) => {
         calls.push(sql);
         return { rows: [{ owned_service_bootstrap: false }] };
@@ -45,44 +45,43 @@ test('Auth platform installation refuses a non-bootstrap connection before mutat
   assert.equal(calls.length, 1);
 });
 
-test('pre-existing Auth helpers or wrong service ownership abort before replacement', async () => {
+test('wrong service ownership aborts before changing migrated helper grants', async () => {
   const calls = [];
   await assert.rejects(
-    installFixtureAuthPlatformHelpers({
+    alignFixtureAuthPlatformHelperGrants({
       query: async (sql) => {
         calls.push(sql);
         if (sql.includes('AS owned_service_bootstrap'))
           return { rows: [{ owned_service_bootstrap: true }] };
-        if (sql.includes('AS auth_platform_absent'))
-          return { rows: [{ auth_platform_absent: false }] };
+        if (sql.includes('AS auth_platform_owned'))
+          return { rows: [{ auth_platform_owned: false }] };
         return { rows: [] };
       },
     }),
-    /FIXTURE_AUTH_PLATFORM_ABSENCE_REQUIRED/
+    /FIXTURE_AUTH_PLATFORM_OWNER_REQUIRED/
   );
   assert.equal(calls.at(-1), 'ROLLBACK');
   assert.ok(!calls.includes('SET LOCAL ROLE supabase_auth_admin'));
   assert.ok(!calls.includes('COMMIT'));
 });
 
-test('Auth platform DDL failure rolls back and preserves the original failure', async () => {
+test('mismatched migrated Auth definitions abort before any grant change', async () => {
   const calls = [];
-  const failure = new Error('native Auth DDL refused');
   await assert.rejects(
-    installFixtureAuthPlatformHelpers({
+    alignFixtureAuthPlatformHelperGrants({
       query: async (sql) => {
         calls.push(sql);
         if (sql.includes('AS owned_service_bootstrap'))
           return { rows: [{ owned_service_bootstrap: true }] };
-        if (sql.includes('AS auth_platform_absent'))
-          return { rows: [{ auth_platform_absent: true }] };
-        if (sql.startsWith('CREATE FUNCTION auth.email()')) throw failure;
+        if (sql.includes('AS auth_platform_owned'))
+          return { rows: [{ auth_platform_owned: true }] };
         return { rows: [] };
       },
     }),
-    (error) => error === failure
+    /FIXTURE_GOTRUE_PLATFORM_PREIMAGE_REQUIRED/
   );
   assert.equal(calls.at(-1), 'ROLLBACK');
+  assert.ok(!calls.includes('SET LOCAL ROLE supabase_auth_admin'));
   assert.ok(!calls.includes('COMMIT'));
 });
 

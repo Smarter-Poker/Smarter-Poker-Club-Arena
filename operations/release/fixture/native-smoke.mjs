@@ -22,7 +22,7 @@ import {
   assertManagedPostgresBoundary,
   assertBootstrapPostgresConfiguration,
   sealFixtureAuthMigrationLedger,
-  installFixtureAuthPlatformHelpers,
+  alignFixtureAuthPlatformHelperGrants,
   assertFixtureAuthPlatformHelpers,
   assertFixtureAuthPlatformWriteDenied,
 } from './service-role-boundary.mjs';
@@ -445,7 +445,7 @@ async function services() {
     try {
       await authBootstrap.connect();
       await sealFixtureAuthMigrationLedger(authBootstrap);
-      await installFixtureAuthPlatformHelpers(authBootstrap);
+      await alignFixtureAuthPlatformHelperGrants(authBootstrap);
     } finally {
       await databaseOwner.end(authBootstrap);
     }

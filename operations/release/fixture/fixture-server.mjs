@@ -23,7 +23,7 @@ import {
   assertManagedPostgresBoundary,
   assertBootstrapPostgresConfiguration,
   sealFixtureAuthMigrationLedger,
-  installFixtureAuthPlatformHelpers,
+  alignFixtureAuthPlatformHelperGrants,
   assertFixtureAuthPlatformHelpers,
   assertFixtureAuthPlatformWriteDenied,
   assertFixtureServiceBootstrap,
@@ -683,7 +683,7 @@ async function start(args) {
     try {
       await authBootstrap.connect();
       await sealFixtureAuthMigrationLedger(authBootstrap);
-      await installFixtureAuthPlatformHelpers(authBootstrap);
+      await alignFixtureAuthPlatformHelperGrants(authBootstrap);
     } finally {
       await supervisor.databaseOwner.end(authBootstrap);
     }

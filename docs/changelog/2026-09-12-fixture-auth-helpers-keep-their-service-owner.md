@@ -1,15 +1,17 @@
 # Fixture Auth helpers keep their service owner
 
-The application fixture previously expected its schema to create four Auth
-claim helpers as postgres. Production assigns them to supabase_auth_admin and
-does not grant postgres CREATE on the Auth schema. The disposable fixture now
-installs their captured definitions through the original socket bootstrap,
-using the Auth role after genuine GoTrue migrations. It refuses existing
-helpers, verifies bodies, attributes and direct grants, and rolls back errors.
+The older application schema expected to create four Auth claim helpers as
+postgres. GoTrue already supplies their current definitions under
+supabase_auth_admin, and production does not grant postgres CREATE on Auth.
+The disposable fixture now verifies GoTrue's exact definitions and attributes,
+then aligns the three explicit postgres EXECUTE grants with the captured
+production exception. The public EXECUTE grants remain unchanged. No function
+is recreated and no Auth migration history is stamped.
 
-The native smoke verifies that the non-superuser application role cannot replace
-a helper. Two real signed-in users, including the MFA user, then exercise uid,
-role, email and jwt through PostgREST; anonymous claims remain anonymous. The
-full application entrypoint checks the helpers again after schema restoration.
-This prepares the service-owned portion of full-schema qualification. It does
-not certify the complete application schema or any funded route.
+The grant transaction refuses unexpected bodies, owners or grants and rolls
+back on error. Native smoke verifies that the non-superuser application role
+cannot replace a helper. Two real signed-in users, including MFA, exercise uid,
+role, email and jwt through PostgREST; anonymous claims stay anonymous. The
+full application entrypoint checks identities after schema restoration.
+This prepares one part of full-schema qualification. It does not certify the
+complete application schema or any funded route.

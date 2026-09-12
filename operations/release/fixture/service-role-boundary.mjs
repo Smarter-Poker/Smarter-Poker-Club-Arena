@@ -369,10 +369,7 @@ const authPlatformHelpers = [
     ],
   },
 ];
-const authPlatformHelperSql =
-  "CREATE FUNCTION auth.email()\n RETURNS text\n LANGUAGE sql\n STABLE\nAS $function$\n  select \n  coalesce(\n    nullif(current_setting('request.jwt.claim.email', true), ''),\n    (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'email')\n  )::text\n$function$;\nREVOKE ALL ON FUNCTION auth.email() FROM PUBLIC, postgres, dashboard_user;\nGRANT EXECUTE ON FUNCTION auth.email() TO PUBLIC, dashboard_user;\nCREATE FUNCTION auth.jwt()\n RETURNS jsonb\n LANGUAGE sql\n STABLE\nAS $function$\n  select \n    coalesce(\n        nullif(current_setting('request.jwt.claim', true), ''),\n        nullif(current_setting('request.jwt.claims', true), '')\n    )::jsonb\n$function$;\nREVOKE ALL ON FUNCTION auth.jwt() FROM PUBLIC, postgres, dashboard_user;\nGRANT EXECUTE ON FUNCTION auth.jwt() TO PUBLIC, dashboard_user, postgres;\nCREATE FUNCTION auth.role()\n RETURNS text\n LANGUAGE sql\n STABLE\nAS $function$\n  select \n  coalesce(\n    nullif(current_setting('request.jwt.claim.role', true), ''),\n    (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role')\n  )::text\n$function$;\nREVOKE ALL ON FUNCTION auth.role() FROM PUBLIC, postgres, dashboard_user;\nGRANT EXECUTE ON FUNCTION auth.role() TO PUBLIC, dashboard_user;\nCREATE FUNCTION auth.uid()\n RETURNS uuid\n LANGUAGE sql\n STABLE\nAS $function$\n  select \n  coalesce(\n    nullif(current_setting('request.jwt.claim.sub', true), ''),\n    (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub')\n  )::uuid\n$function$;\nREVOKE ALL ON FUNCTION auth.uid() FROM PUBLIC, postgres, dashboard_user;\nGRANT EXECUTE ON FUNCTION auth.uid() TO PUBLIC, dashboard_user;";
-
-export async function assertFixtureAuthPlatformHelpers(db) {
+async function authPlatformCatalog(db) {
   const result =
     await db.query(`SELECT format('%I.%I(%s)',n.nspname,p.proname,pg_get_function_identity_arguments(p.oid)) AS identity,
     pg_get_userbyid(p.proowner) AS owner, md5(p.prosrc) AS body_md5,
@@ -383,11 +380,22 @@ export async function assertFixtureAuthPlatformHelpers(db) {
     JOIN pg_language l ON l.oid=p.prolang
     WHERE n.nspname='auth' AND p.proname=ANY(ARRAY['email','jwt','role','uid'])
     ORDER BY n.nspname,p.proname,pg_get_function_identity_arguments(p.oid)`);
-  assert.deepEqual(result.rows, authPlatformHelpers, 'FIXTURE_AUTH_PLATFORM_IDENTITY_REQUIRED');
+  return result.rows;
+}
+
+export async function assertFixtureAuthPlatformHelpers(db) {
+  assert.deepEqual(
+    await authPlatformCatalog(db),
+    authPlatformHelpers,
+    'FIXTURE_AUTH_PLATFORM_IDENTITY_REQUIRED'
+  );
   return { helpers: 4, owner: 'supabase_auth_admin', catalog: 'exact-body-attributes-direct-acl' };
 }
 
-export async function installFixtureAuthPlatformHelpers(db) {
+// GoTrue's pinned 20220224000811 and 20220531120530 migrations already
+// create these exact bodies. Align only the production ACL exception to
+// current default grants; never replace a migrated function or stamp a ledger.
+export async function alignFixtureAuthPlatformHelperGrants(db) {
   await assertFixtureServiceBootstrap(db);
   await db.query('BEGIN');
   try {
@@ -397,17 +405,25 @@ export async function installFixtureAuthPlatformHelpers(db) {
       AND (SELECT pg_get_userbyid(nspowner)='supabase_admin' FROM pg_namespace WHERE nspname='auth')
       AND (SELECT pg_get_userbyid(relowner)='supabase_auth_admin' FROM pg_class
         WHERE oid='auth.schema_migrations'::regclass)
-      AND NOT has_schema_privilege('postgres','auth','CREATE')
-      AND NOT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-        WHERE n.nspname='auth' AND p.proname=ANY(ARRAY['email','jwt','role','uid']))
-      AS auth_platform_absent`);
+      AND NOT has_schema_privilege('postgres','auth','CREATE') AS auth_platform_owned`);
     assert.deepEqual(
       preflight.rows,
-      [{ auth_platform_absent: true }],
-      'FIXTURE_AUTH_PLATFORM_ABSENCE_REQUIRED'
+      [{ auth_platform_owned: true }],
+      'FIXTURE_AUTH_PLATFORM_OWNER_REQUIRED'
+    );
+    const migrationDefaults = authPlatformHelpers.map((helper) => ({
+      ...helper,
+      acl: [...new Set([...helper.acl, 'postgres=X/supabase_auth_admin'])].sort(),
+    }));
+    assert.deepEqual(
+      await authPlatformCatalog(db),
+      migrationDefaults,
+      'FIXTURE_GOTRUE_PLATFORM_PREIMAGE_REQUIRED'
     );
     await db.query('SET LOCAL ROLE supabase_auth_admin');
-    await db.query(authPlatformHelperSql);
+    await db.query(
+      `REVOKE EXECUTE ON FUNCTION auth.email(), auth.role(), auth.uid() FROM postgres;`
+    );
     await assertFixtureAuthPlatformHelpers(db);
     await db.query('COMMIT');
   } catch (error) {

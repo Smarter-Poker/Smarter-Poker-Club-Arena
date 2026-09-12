@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BUILDER = "club-arena-engine-bounded-v2"
 CONTAINER = f"buildx_buildkit_{BUILDER}0"
 NODE = "node:22-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5"
-LIMIT = 805306368
+LIMIT = 939524096
 
 
 def run(args, *, timeout=60, check=True, env=None):

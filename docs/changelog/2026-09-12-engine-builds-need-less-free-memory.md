@@ -1,9 +1,9 @@
 # Engine builds need less free memory
 
 The bounded builder correctly refused a release when the production host had
-less than its required 1.25 GiB available. Its successor uses a 768 MiB builder
-and a 512 MiB compiler heap while retaining the same 256 MiB host reserve,
-zero swap and single CPU limit. The required free memory is therefore 1 GiB.
+less than its required 1.25 GiB available. Its successor uses a 896 MiB builder
+and a 640 MiB compiler heap while retaining the same 256 MiB host reserve,
+zero swap and single CPU limit. The required free memory is therefore 1.125 GiB.
 The refusal now records both the available and required amounts.
 
 The new builder name keeps the previous builder's settings separate. Exact

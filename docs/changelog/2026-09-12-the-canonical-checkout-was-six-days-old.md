@@ -97,6 +97,20 @@ The worktrees did inherit it: of 371 measurable trees under
 `origin/main`** and only 18 are within 50. New trees are cut from `origin/main`
 so this is ageing, not the same jam, and `prune-stale-worktrees.sh` owns it.
 
+### The check got this wrong once, on its first real run
+
+Its first pre-push run announced **25 clones of Club Arena**, listing
+`Smarter-Poker-Arcade` and `identity-dna-engine` among them. Git exports
+`GIT_DIR` to its hooks and `git -C <dir>` does **not** override it, so every
+`git -C "$d" config --get remote.origin.url` answered with the pushing repo's
+URL and every directory matched. Every distance it then measured was measured
+against the wrong repository.
+
+That is this file's own subject matter: a component answering confidently when
+it had no business answering (10.86). The script now clears the inherited git
+environment before its first `git -C`, and a law test pins that, because a
+freshness check that measures the wrong repository is worse than none.
+
 ## The generalisable half
 
 Every item above is one failure: **a doc or a local copy asserting something

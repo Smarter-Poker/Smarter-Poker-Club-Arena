@@ -235,6 +235,25 @@ describe('the docs describe THIS environment', () => {
    * not Title Cased". The identical failure then happened to `gh`, because
    * the repair named one tool instead of the set the guards need.
    */
+  /**
+   * The check that measures whether the docs on disk are current must not be
+   * able to lie about it. Git exports GIT_DIR to its hooks, and `git -C <dir>`
+   * does NOT override it, so the first real pre-push run of
+   * check-checkout-freshness.sh answered with the PUSHING repo's identity for
+   * every directory it looked at and announced 25 clones of Club Arena,
+   * Smarter-Poker-Arcade among them. A freshness check that measures the wrong
+   * repository is the defect in this file's title wearing a different hat.
+   */
+  it('the freshness check clears the git environment a hook hands it', () => {
+    const src = read('scripts/check-checkout-freshness.sh');
+    const unset = src.match(/^unset GIT_DIR[\s\S]*?$/m);
+    expect(unset, 'check-checkout-freshness.sh must unset the inherited git env').not.toBeNull();
+    const block = src.slice(src.indexOf('unset GIT_DIR'), src.indexOf('QUIET=0'));
+    for (const v of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR']) {
+      expect(block, `${v} must be cleared before any \`git -C\` call`).toContain(v);
+    }
+  });
+
   it('the pre-push hook puts every tool its guards require on PATH', () => {
     const hook = read('.husky/pre-push');
     // Only guards the hook actually RUNS. Matching every `scripts/*.sh` the

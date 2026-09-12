@@ -62,6 +62,24 @@
 # before a CLONE is called stale.
 set -uo pipefail
 
+# ── RUN FROM A HOOK, THIS SCRIPT SAW ONE REPOSITORY EVERYWHERE ──────────────
+#
+# Git exports GIT_DIR (and GIT_WORK_TREE, GIT_INDEX_FILE, ...) to its hooks,
+# and `git -C <dir>` does NOT override them: `-C` changes the directory, then
+# GIT_DIR still names the repository. So every `git -C "$d" config --get
+# remote.origin.url` below answered with the PUSHING repo's URL, every
+# directory under ~/Documents with a .git in it "matched", and the first real
+# pre-push run of this script announced 25 clones of Club Arena, listing
+# Smarter-Poker-Arcade and identity-dna-engine among them. Every distance it
+# then measured was measured against the wrong repository.
+#
+# That is this file's own subject matter: a confident answer from a component
+# that had no business giving one (10.86). Clear the environment first, so
+# `-C` means what it reads as.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
+      GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR GIT_PREFIX \
+      GIT_NAMESPACE GIT_QUARANTINE_PATH 2>/dev/null || true
+
 QUIET=0
 FETCH=1
 for arg in "$@"; do

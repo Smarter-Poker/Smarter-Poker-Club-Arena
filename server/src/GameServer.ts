@@ -97,6 +97,7 @@ import {
   leaseRenewalPassesTotal,
   leaseRenewalLoopRunning,
   leaseRenewalLoopRelaunchesTotal,
+  leaseRenewalOutstandingTotal,
 } from './observability/engineInstruments.js';
 import { clientConnectionPrometheusLines } from './observability/ClientConnectionEvents.js';
 import {
@@ -459,6 +460,23 @@ export class GameServer {
   /** When a renewal pass last SETTLED. Age past the proof window means the one
    *  lifecycle that keeps every lease alive has stopped. */
   private ownershipLeaseRenewalCompletedAtMs: number = Date.now();
+  /**
+   * WHICH HALF OF THE PASS HAS NOT COME BACK (2026-09-12).
+   *
+   * `performOwnedEngineLeaseProofRenewal` awaits exactly two things, and each of
+   * THOSE awaits exactly one thing: the cash heartbeat RPC and the tournament
+   * heartbeat RPC. So naming the half still outstanding when a pass is abandoned
+   * names the call that did not come back, with no third possibility left to
+   * rule out afterwards.
+   *
+   * That is the question the 2026-09-12 incident could not answer. The renewal
+   * loop stopped for four and a half hours, every cash table died on its twenty
+   * second proof, and telling "hung" from "gone" took a hand-diff of
+   * pg_stat_statements against the container log. The abandon timer stops that
+   * being terminal and superviseOwnershipLeaseRenewal stops an exit being
+   * terminal; this stops the next one being a mystery.
+   */
+  private ownershipLeaseRenewalOutstanding: { cash: boolean; tournament: boolean } | null = null;
   private shutdownOwnershipLeaseRenewalActive = false;
   private shutdownOwnershipLeaseRenewalOperation: Promise<void> | null = null;
   /** One distributed claim + manager publication operation per tournament id. */
@@ -780,10 +798,21 @@ export class GameServer {
       if (this.ownershipLeaseRenewalOperation !== tracked) return;
       this.ownershipLeaseRenewalOperation = null;
       leaseRenewalPassesTotal.inc(1, { outcome: 'abandoned' });
+      /* Name the half that never came back. Each half awaits exactly one RPC,
+         so this names the call rather than only the branch. */
+      const out = this.ownershipLeaseRenewalOutstanding;
+      const stuck: Array<'cash' | 'tournament'> = [];
+      if (out?.cash) stuck.push('cash');
+      if (out?.tournament) stuck.push('tournament');
+      for (const half of stuck) leaseRenewalOutstandingTotal.inc(1, { half });
       reportError(
         new Error(
           `ownership lease renewal pass did not settle within ${OWNERSHIP_LEASE_RENEWAL_ABANDON_MS}ms; ` +
-            'abandoning it so the next pass can run'
+            `abandoning it so the next pass can run. Still outstanding: ${
+              stuck.length > 0
+                ? stuck.join(' and ')
+                : 'neither half (the pass settled as this fired)'
+            }`
         ),
         'GameServer.ownership_lease_renewal_pass_abandoned'
       );
@@ -795,10 +824,22 @@ export class GameServer {
   }
 
   private async performOwnedEngineLeaseProofRenewal(): Promise<void> {
+    /* Each half clears its own flag the moment it settles, so the abandon timer
+       can say which is still out. `finally` and not `then`: a REJECTED half has
+       still come back, and is not the one that hung. */
+    const outstanding = { cash: true, tournament: true };
+    this.ownershipLeaseRenewalOutstanding = outstanding;
     const [cashResult, tournamentResult] = await Promise.allSettled([
-      this.renewVerifiedCashTableLeaseProofs(),
-      this.renewVerifiedTournamentManagerLeaseProofs(),
+      this.renewVerifiedCashTableLeaseProofs().finally(() => {
+        outstanding.cash = false;
+      }),
+      this.renewVerifiedTournamentManagerLeaseProofs().finally(() => {
+        outstanding.tournament = false;
+      }),
     ]);
+    if (this.ownershipLeaseRenewalOutstanding === outstanding) {
+      this.ownershipLeaseRenewalOutstanding = null;
+    }
 
     const lostTables =
       cashResult.status === 'fulfilled' ? cashResult.value : new Map<string, ServerTableEngine>();

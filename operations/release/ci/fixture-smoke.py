@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Draft PR native smoke evidence; never a release/product certificate."""
+"""Pull-request native smoke evidence; never a release/product certificate."""
 import hashlib
 import json
 import os
@@ -278,7 +278,7 @@ def smoke_records(output):
 
 
 def execute(repo, output, expected, run=command):
-    receipt = {'version': 1, 'scope': 'draft-pr-native-service-smoke',
+    receipt = {'version': 1, 'scope': 'pull-request-native-service-smoke',
                'product_certificate': False, 'status': 'failed',
                'stage': 'source', 'cleanup': {'container_absent': False, 'peer_absent': False,
                                              'network_absent': False, 'image_removed': False}}

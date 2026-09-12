@@ -108,6 +108,7 @@ jobs:
       server: ${{ steps.f.outputs.server }}
       tests: ${{ steps.f.outputs.tests }}
       phase4: ${{ steps.f.outputs.phase4 }}
+      fixture: ${{ steps.f.outputs.fixture }}
     steps:
       - id: f
         env:
@@ -150,6 +151,7 @@ jobs:
             echo "server=true" >> "$GITHUB_OUTPUT"
             echo "tests=true"  >> "$GITHUB_OUTPUT"
             echo "phase4=true" >> "$GITHUB_OUTPUT"
+            echo "fixture=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "$FILES" | sed 's/^/  /'
@@ -169,6 +171,10 @@ jobs:
           # was red for every pull request after it (five pins, three files).
           WIDE=$(has '^(package(-lock)?\.json|vite\.config|vitest\.config|tsconfig|\.npmrc|\.nvmrc|\.node-version|\.github/workflows/)')
           PHASE4=$(has '^(\.github/workflows/ci\.yml|scripts/ci/probes/horse-phase4-certified-solver/|supabase/migrations/20260909(165541|170039|170749|171644|172537|175000|180000)_|server/src/(benchmark/(HorseLeague|HorseSolverAgreementV31)|engine/(GtoDecisionContext|GtoPostflopV31|GtoV31|HorseDataLedger|HorseLogic|LiveHorseDecisionWorkerHealth|horseDecision/)|services/GtoPostflopV31Loader))')
+          # Native fixture providers and their control/test wiring require an
+          # actual CI build regardless of the PR draft/ready state.
+          FIXTURE=$(has '^(operations/release/(fixture/|native/|ci/fixture-smoke\.py)|\.github/workflows/(ci|component-fixture-native-smoke)\.yml|scripts/ci/fixture-native-gate\.mjs|tests/(operations/(fixture-|financial-|component-source-contract|native-component-semantics)|unit/fixtureNativeCi\.test\.ts)|package(-lock)?\.json|\.npmrc|\.nvmrc|\.node-version)')
+          echo "fixture=$FIXTURE" >> "$GITHUB_OUTPUT"
           if [ "$WIDE" = "true" ]; then
             echo "src=true"    >> "$GITHUB_OUTPUT"
             echo "server=true" >> "$GITHUB_OUTPUT"
@@ -282,14 +288,47 @@ jobs:
           fi
           echo "No bare TODO or FIXME markers found."
 
+  fixture_native:
+    name: Native fixture prerequisites
+    needs: changes
+    if: >-
+      always() && github.event_name == 'pull_request' &&
+      (needs.changes.result != 'success' || needs.changes.outputs.fixture != 'false')
+    permissions:
+      contents: read
+    uses: ./.github/workflows/component-fixture-native-smoke.yml
+    with:
+      source_sha: ${{ github.event.pull_request.head.sha }}
+
+  # Keep the existing required check name, but never allow a skipped native
+  # prerequisite to masquerade as successful verification of affected source.
   typecheck:
+    name: TypeScript Check
+    needs: [typecheck_compile, changes, fixture_native]
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Require compilation and every applicable native fixture proof
+        env:
+          CI_EVENT_NAME: ${{ github.event_name }}
+          COMPILE_RESULT: ${{ needs.typecheck_compile.result }}
+          DIFF_RESULT: ${{ needs.changes.result }}
+          FIXTURE_CHANGED: ${{ needs.changes.outputs.fixture }}
+          NATIVE_RESULT: ${{ needs.fixture_native.result }}
+        run: node scripts/ci/fixture-native-gate.mjs
+
+  typecheck_compile:
     # COST 2026-08-23: this already ran, and passed, on the pull request -
     # the ruleset will not merge without it. Re-running it on the merge
     # commit tests an identical tree. 34 of every 100 CI runs were that
     # duplicate, and CI is six jobs, each billed as a whole minute even
     # when it takes twenty seconds.
     if: github.event_name == 'pull_request'
-    name: TypeScript Check
+    name: TypeScript compilation and repository checks
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -306,6 +345,9 @@ jobs:
         with:
           node-version: 20
           cache: npm
+
+      - name: Native fixture gate rejects missing and skipped proof
+        run: node --test tests/operations/fixture-required-ci.test.mjs
 
       - name: Mac dependency policy keeps Linux enforcement
         run: node --test tests/operations/local-dependency-policy.test.mjs
@@ -1338,13 +1380,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     if: always()
-    needs: [changes, stub_gate, typecheck, unit, server]
+    needs: [changes, stub_gate, typecheck, typecheck_compile, fixture_native, unit, server]
     steps:
       - name: Say what ran, and what did not
         run: |
           UNIT='${{ needs.unit.result }}'
           SERVER='${{ needs.server.result }}'
           TYPECHECK='${{ needs.typecheck.result }}'
+          COMPILE='${{ needs.typecheck_compile.result }}'
+          NATIVE='${{ needs.fixture_native.result }}'
           STUB='${{ needs.stub_gate.result }}'
           CHANGES='${{ needs.changes.result }}'
 
@@ -1355,7 +1399,9 @@ jobs:
             echo "| --- | --- |"
             echo "| What changed | $CHANGES |"
             echo "| Stub Gate | $STUB |"
-            echo "| TypeScript + repo invariants | $TYPECHECK |"
+            echo "| Required compilation + fixture result | $TYPECHECK |"
+            echo "| TypeScript + repo invariants | $COMPILE |"
+            echo "| Native fixture prerequisites | $NATIVE |"
             echo "| Client Unit Tests | $UNIT |"
             echo "| Server Engine | $SERVER |"
             echo ""

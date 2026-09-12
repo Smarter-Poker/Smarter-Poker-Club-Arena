@@ -1,46 +1,24 @@
-name: Draft component fixture native smoke
+name: Component fixture native smoke
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, converted_to_draft]
-    paths:
-      - operations/release/fixture/**
-      - operations/release/ci/fixture-smoke.py
-      - operations/release/native/**
-      - tests/operations/financial-*.test.mjs
-      - tests/operations/fixture-runtime-files.test.mjs
-      - tests/operations/fixture-seed.test.mjs
-      - tests/operations/fixture-auth-bootstrap.test.mjs
-      - tests/operations/fixture-service-role-boundary.test.mjs
-      - tests/operations/fixture-cron-provider.test.mjs
-      - tests/operations/fixture-safeupdate-provider.test.mjs
-      - tests/operations/fixture-supervisor.test.mjs
-      - tests/operations/fixture-database-owner.test.mjs
-      - tests/operations/fixture-auth.test.mjs
-      - tests/operations/fixture-gateway.native.test.mjs
-      - tests/operations/fixture-realtime-launcher.test.mjs
-      - tests/operations/fixture-realtime-listener.test.mjs
-      - tests/operations/fixtures/realtime-launcher/**
-      - tests/operations/fixture-native-diagnostics.test.mjs
-      - tests/operations/fixture-native-diagnostics.test.py
-      - tests/operations/component-source-contract.test.mjs
-      - tests/operations/native-component-semantics.test.py
-      - tests/operations/fixture-smoke-runner.test.py
-      - .github/workflows/release-component-qualification.yml
-      - .github/workflows/component-fixture-native-smoke.yml
+  workflow_call:
+    inputs:
+      source_sha:
+        required: true
+        type: string
 permissions:
   contents: read
 concurrency:
-  group: draft-fixture-smoke-${{ github.event.pull_request.number }}
+  group: fixture-native-${{ github.event.pull_request.number }}-${{ inputs.source_sha }}
   cancel-in-progress: false
 jobs:
   native-smoke:
-    if: github.event.pull_request.draft == true && github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 55
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ inputs.source_sha }}
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
@@ -58,7 +36,7 @@ jobs:
           python3 tests/operations/fixture-native-diagnostics.test.py
       - name: Build exact committed fixture and smoke native services
         env:
-          FIXTURE_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+          FIXTURE_SOURCE_SHA: ${{ inputs.source_sha }}
         run: python3 operations/release/ci/fixture-smoke.py . "$RUNNER_TEMP/fixture-smoke-evidence" "$FIXTURE_SOURCE_SHA"
       - name: Preserve sanitized native smoke and cleanup observations
         if: always()

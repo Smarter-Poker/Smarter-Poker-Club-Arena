@@ -19,7 +19,7 @@ publisher. The full source-contract readiness check still refuses incomplete
 application schemas, and native service smoke cannot issue a product certificate.
 The journal-backed `financial-observations.native.test.mjs` remains on PR4353;
 this package does not provide or claim that separate native test coverage.
-The workflow here remains a draft-PR smoke lane, not a post-publication gate.
+Ordinary pull-request CI invokes the reusable native workflow for affected or unknown diffs, regardless of draft status. The required TypeScript Check depends on compilation and successful native verification; unexpected skips fail. Compilation runs in parallel. Unrelated, positively classified diffs report their native skip explicitly. This is a prerequisite check, not a post-publication or product certificate.
 
 The earlier native service baseline is retained below as historical evidence;
 it does not certify this candidate's managed event-trigger or application ACLs.
@@ -286,7 +286,7 @@ install full dependency trees, or copy `node_modules` into Mac agent worktrees.
 Local source checks may reuse an existing shared installation without changing
 its packages; preserve the repository's normal commit and push hooks.
 
-After the normal draft PR includes the complete reviewed runtime files, use a
+After the normal PR includes the complete reviewed runtime files, CI uses a
 native Linux amd64 Docker runner with repository read permission and no secrets.
 Do not use a privileged production runner or a workflow-dispatch workaround.
 
@@ -299,7 +299,7 @@ The build refuses untracked/missing runtime sources and a dirty fixture tree.
 It labels the image with the exact checked-out commit and never pushes. The
 smoke uses the local immutable image ID and a fresh internal Docker network
 with no egress or published ports. Only the fixture and its separate refusal
-probe peer join that network. It checks six real extensions,
+probe peer join that network. It checks seven real extensions,
 GoTrue migrations/users/TOTP to AAL2, PostgREST authentication/RLS, a causal
 Realtime database event, separate-user credential denial and read-only SQL,
 and Chromium fetching the authenticated native endpoint. It creates no trace,
@@ -308,7 +308,7 @@ version/count facts; raw logs and session values stay in disposable memory.
 Readiness is bounded; failed services, browsers and assertions are never retried.
 The enclosing script removes both exact containers and their network, then
 verifies absence even on failure. No success statement is printed until that
-cleanup succeeds. The outer runner also records and checks all three absences.
+cleanup succeeds. The outer runner also removes the exact image and requires all four cleanup observations.
 
 For a runner-owned timeout cleanup, set `FIXTURE_SMOKE_CONTAINER` to exactly
 `ca-fixture-smoke-` followed by 32 lowercase hexadecimal characters. Without the

@@ -25102,6 +25102,13 @@ export default function TablePage({
                         pot={tableState.pot}
                         bigBlind={bb}
                         smallBlind={safeSB(tableState.blinds, bb / 2)}
+                        /* A Diamond does not divide, and the engine refuses a
+                           fractional one outright, so every preset has to land
+                           on a whole Diamond. Both the indivisible unit and
+                           the denomination the derived sizings snap to are one
+                           Diamond; a chip table keeps the cent and the small
+                           blind it has always had. */
+                        unit={tableState.arenaAsset === 'diamonds' ? 1 : 0.01}
                         /* Multiplier presets are multiples of the bet being
                            faced, not of the blind — without this they all
                            clamped to minRaise and 2X/3X/4X/5X produced the

@@ -19,6 +19,8 @@ import {
   assertNativeServiceRoleBoundary,
   createFixtureApplicationOwner,
   assertApplicationOwnerBoundary,
+  managedPostgresArguments,
+  assertManagedPostgresBoundary,
 } from './service-role-boundary.mjs';
 import { createFixtureGateway, loadStaticManifest, findPublicAnonKey } from './gateway.mjs';
 import {
@@ -623,6 +625,7 @@ async function start(args) {
       'max_wal_senders=20',
       '-c',
       'shared_preload_libraries=pg_stat_statements',
+      ...managedPostgresArguments,
     ]);
     await supervisor.until(async () => {
       try {
@@ -653,9 +656,14 @@ async function start(args) {
     await db.query(`CREATE DATABASE ${database} OWNER postgres`);
     await db.query('REVOKE CONNECT ON DATABASE postgres, template1 FROM PUBLIC');
     await supervisor.databaseOwner.end(db);
-    db = supervisor.databaseOwner.own(new pg.Client({ ...connection, database }));
+    db = supervisor.databaseOwner.own(
+      new pg.Client({ ...connection, user: 'supabase_admin', database })
+    );
     await db.connect();
     await db.query(serviceRoleBootstrapSql(secrets.databasePassword));
+    await supervisor.databaseOwner.end(db);
+    db = supervisor.databaseOwner.own(new pg.Client({ ...connection, database }));
+    await db.connect();
     stage = 'genuine-auth-migrations';
     await supervisor.command('/usr/local/bin/auth', ['migrate'], env.auth);
     assertFixtureAuthMigrations(
@@ -673,6 +681,8 @@ async function start(args) {
     // never stamp a migration row to make an incomplete service look current.
     await supervisor.until(() => realtimeMigrated(db));
     const serviceRoles = await assertNativeServiceRoleBoundary(db);
+    stage = 'managed-postgres-event-trigger-boundary';
+    const managedPostgres = await assertManagedPostgresBoundary(db);
     // Application DDL is restored verbatim. The reviewed schema composer
     // must reconcile service-managed objects with the pinned real migrations.
     // Missing/duplicate objects fail here; no migration history is fabricated.
@@ -797,6 +807,7 @@ async function start(args) {
         source_contract: template.source_contract,
         bootstrap_proof: {
           service_roles: serviceRoles,
+          managed_postgres: managedPostgres,
           application_owner: applicationOwner,
           signup: fixture.signup_proof,
           attribution_signup: attributionSignup,

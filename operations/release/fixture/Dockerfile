@@ -10,7 +10,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts --no-audit --no-fund && npm cache clean --force
 
 # Keep the genuine Realtime Erlang release and its matching Debian libc together.
-FROM supabase/realtime:v2.134.10@sha256:c1d078d929608f3eb4d441e30317bbdccc1bfcc1169efa3d1a26d4252417cc76
+FROM supabase/realtime:v2.134.10@sha256:c1d078d929608f3eb4d441e30317bbdccc1bfcc1169efa3d1a26d4252417cc76 AS postgres-runtime
 USER root
 ENV DEBIAN_FRONTEND=noninteractive \
     PATH=/usr/lib/postgresql/17/bin:/opt/qualification/node_modules/.bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
@@ -88,3 +88,18 @@ USER fixture
 # The driver supplies "fixture-server capabilities|start|ready|engine-environment".
 ENTRYPOINT ["/usr/bin/tini", "-s", "-g", "--"]
 CMD ["fixture-server", "capabilities"]
+
+# Build the official managed-Postgres hook against the same pinned PG17 ABI.
+# Compiler packages stay in this CI-only intermediate stage.
+FROM postgres-runtime AS supautils-builder
+USER root
+ADD --checksum=sha256:36c758bd7facda65e1c8ce4a59ebf714d36f3054a2d898a1e8d53cae37e71bec https://codeload.github.com/supabase/supautils/tar.gz/e35f8affc4467202ff0d98f8dd14cb955bc13c75 /tmp/supautils.tar.gz
+RUN apt-get update -o APT::Update::Error-Mode=any \
+    && apt-get install -y --no-install-recommends build-essential postgresql-server-dev-17=17.11-0+deb13u1 \
+    && mkdir /tmp/supautils \
+    && tar -xzf /tmp/supautils.tar.gz --strip-components=1 -C /tmp/supautils \
+    && make -C /tmp/supautils PG_CONFIG=/usr/lib/postgresql/17/bin/pg_config \
+    && test -s /tmp/supautils/supautils.so
+
+FROM postgres-runtime
+COPY --from=supautils-builder --chmod=0555 /tmp/supautils/supautils.so /usr/lib/postgresql/17/lib/supautils.so

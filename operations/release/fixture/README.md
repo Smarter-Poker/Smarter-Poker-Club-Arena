@@ -364,3 +364,31 @@ oracle finishes; the supervisor closes actors on its own termination path.
 fixtures and the repository's `ws` dependency. Its passing result is a boundary
 check, never proof that a candidate engine completed a real hand. The native
 Linux semantic matrix supplies that proof.
+
+## Managed PostgreSQL event triggers
+
+The application owner is now NOSUPERUSER from creation. Only the original
+supabase_admin bootstrap connection creates service roles and service schemas.
+Postgres receives the managed supabase_privileged_role membership; API roles
+must not inherit or SET that membership. The real Auth and Realtime bootstrap
+identities remain separate, and full application privileges still require
+independent current-schema qualification.
+
+The image builds [official Supautils 3.4.3](https://github.com/supabase/supautils/tree/e35f8affc4467202ff0d98f8dd14cb955bc13c75)
+from an immutable source archive (SHA256
+`36c758bd7facda65e1c8ce4a59ebf714d36f3054a2d898a1e8d53cae37e71bec`)
+against the same signed-snapshot PostgreSQL17.11 development headers. Only its
+shared library enters the final image; compiler packages remain in the CI build
+stage. Both entrypoints load it through session_preload_libraries, matching the
+managed configuration observed on September12. The installed production binary
+version was not exposed by its catalog; this is an explicitly pinned native
+behavior prerequisite, not a production binary-version match.
+
+The native probe creates, changes ownership of, and fires an event trigger as
+NOSUPERUSER postgres. A separate unprivileged role fires the same trigger but
+must receive SQLSTATE42501 when creating one. The probe rolls back all schema,
+trigger, role and membership changes and verifies absence before proceeding.
+No event trigger is deleted from the supplied application schema, no owner is
+promoted to overcome a permission failure, and no application signup is accepted
+while the owner is a superuser. This probe does not qualify application funding,
+F06/F12 composition, the complete role graph, or a production release.

@@ -18,6 +18,8 @@ import {
   serviceRoleBootstrapSql,
   assertNativeServiceRoleBoundary,
   createFixtureApplicationOwner,
+  managedPostgresArguments,
+  assertManagedPostgresBoundary,
 } from './service-role-boundary.mjs';
 import { startObservationBridge } from './observation-bridge.mjs';
 import {
@@ -296,6 +298,7 @@ async function services() {
     'max_wal_senders=20',
     '-c',
     'shared_preload_libraries=pg_stat_statements',
+    ...managedPostgresArguments,
   ]);
   stage = 'postgresql-ready';
   await eventually(async () => {
@@ -319,6 +322,13 @@ async function services() {
   await admin.query(`CREATE DATABASE ${database} OWNER postgres`);
   await admin.query('REVOKE CONNECT ON DATABASE postgres, template1 FROM PUBLIC');
   await databaseOwner.end(admin);
+  const bootstrap = databaseOwner.own(
+    new pg.Client({ host: '/run/postgresql', user: 'supabase_admin', database })
+  );
+  await bootstrap.connect();
+  stage = 'postgresql-bootstrap-roles';
+  await bootstrap.query(serviceRoleBootstrapSql(password));
+  await databaseOwner.end(bootstrap);
   const db = databaseOwner.own(
     new pg.Client({
       host: '/run/postgresql',
@@ -334,7 +344,6 @@ async function services() {
       SELECT current_user = 'postgres' AND session_user = 'postgres' AS identity,
         r.rolsuper AS superuser, r.rolreplication AS replication,
         current_database() = 'club_arena_qualification' AS database,
-        current_setting('data_directory') = '/var/lib/postgresql/data' AS data_directory,
         current_setting('wal_level') = 'logical' AS logical_wal,
         current_setting('output_plugin_libraries') = 'pgoutput,wal2json' AS trusted_output_plugins
       FROM pg_catalog.pg_roles r WHERE r.rolname = current_user
@@ -342,10 +351,9 @@ async function services() {
     assert.deepEqual(slotIdentity.rows, [
       {
         identity: true,
-        superuser: true,
+        superuser: false,
         replication: true,
         database: true,
-        data_directory: true,
         logical_wal: true,
         trusted_output_plugins: true,
       },
@@ -364,8 +372,6 @@ async function services() {
     assert.deepEqual(installed.rows, [{ plugin: 'wal2json', temporary: true }]);
     stage = 'postgresql-wal2json-slot-drop';
     await db.query("SELECT pg_drop_replication_slot('fixture_wal2json_probe')");
-    stage = 'postgresql-bootstrap-roles';
-    await db.query(serviceRoleBootstrapSql(password));
     stage = 'postgresql-bootstrap-schemas';
     await db.query(`
       CREATE SCHEMA extensions;
@@ -885,6 +891,8 @@ async function services() {
     databaseOwner.check();
     stage = 'native-migrated-service-role-boundary';
     const serviceRoles = await assertNativeServiceRoleBoundary(db);
+    stage = 'managed-postgres-event-trigger-boundary';
+    const managedPostgres = await assertManagedPostgresBoundary(db);
     console.log(
       JSON.stringify({
         scope: 'native-service-smoke',
@@ -894,6 +902,7 @@ async function services() {
         mfa: 'aal2',
         ledger_attribution: 'banned-without-session',
         service_roles: serviceRoles,
+        managed_postgres: managedPostgres,
         postgrest: '14.5',
         realtime: '2.134.10',
         realtime_listener: '127.0.0.1:4000',

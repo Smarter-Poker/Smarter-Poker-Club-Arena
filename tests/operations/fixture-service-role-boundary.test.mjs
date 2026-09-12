@@ -6,11 +6,14 @@ import {
   serviceBoundaryReceipt,
   createFixtureApplicationOwner,
   assertApplicationOwnerBoundary,
+  assertManagedPostgresBoundary,
 } from '../../operations/release/fixture/service-role-boundary.mjs';
 
 const boundary = {
   owned_database: true,
-  bootstrap_superuser: true,
+  application_owner_flags: true,
+  managed_owner_membership: true,
+  api_managed_membership_denied: true,
   realtime_bootstrap_superuser: true,
   auth_admin_boundary: true,
   authenticator_boundary: true,
@@ -38,6 +41,57 @@ test('bootstrap SQL accepts only the fixture random hex password, never a SQL fr
   assert.match(sql, /supabase_auth_admin LOGIN NOINHERIT CREATEROLE/);
   assert.match(sql, /CREATE SCHEMA auth AUTHORIZATION supabase_admin/);
   assert.ok(!sql.includes('TO supabase_admin WITH ADMIN OPTION'));
+});
+
+test('managed native probe rejects a superuser before creating any probe objects', async () => {
+  let calls = 0;
+  await assert.rejects(
+    assertManagedPostgresBoundary({
+      query: async () => {
+        calls++;
+        return { rows: [{ owned_database: true, application_owner_boundary: false }] };
+      },
+    }),
+    /FIXTURE_NON_SUPERUSER_APPLICATION_OWNER_REQUIRED/
+  );
+  assert.equal(calls, 1);
+});
+
+test('managed probe failure rolls back before verifying owned object absence', async () => {
+  const calls = [];
+  await assert.rejects(
+    assertManagedPostgresBoundary({
+      query: async (sql) => {
+        calls.push(sql);
+        if (sql.includes('AS application_owner_boundary'))
+          return { rows: [{ owned_database: true, application_owner_boundary: true }] };
+        if (sql.includes('AS managed_config')) return { rows: [{ managed_config: true }] };
+        if (sql.includes('AS absent')) return { rows: [{ absent: true }] };
+        if (sql.startsWith('CREATE SCHEMA')) throw new Error('probe DDL refused');
+        return { rows: [] };
+      },
+    }),
+    /probe DDL refused/
+  );
+  assert.equal(calls.at(-2), 'ROLLBACK');
+  assert.match(calls.at(-1), /AS absent/);
+});
+
+test('managed native probe refuses a pre-existing object before starting its transaction', async () => {
+  const calls = [];
+  await assert.rejects(
+    assertManagedPostgresBoundary({
+      query: async (sql) => {
+        calls.push(sql);
+        if (sql.includes('AS application_owner_boundary'))
+          return { rows: [{ owned_database: true, application_owner_boundary: true }] };
+        if (sql.includes('AS managed_config')) return { rows: [{ managed_config: true }] };
+        return { rows: [{ absent: false }] };
+      },
+    }),
+    /FIXTURE_MANAGED_PROBE_CLEANUP_REQUIRED/
+  );
+  assert.ok(!calls.includes('BEGIN'));
 });
 
 test('native role proof explicitly excludes full production application privilege parity', async () => {
@@ -83,7 +137,9 @@ test('application owner flags alone do not certify complete application privileg
 
 for (const [field, bad] of [
   ['owned_database', false],
-  ['bootstrap_superuser', false],
+  ['application_owner_flags', false],
+  ['managed_owner_membership', false],
+  ['api_managed_membership_denied', false],
   ['realtime_bootstrap_superuser', false],
   ['auth_admin_boundary', false],
   ['authenticator_boundary', false],

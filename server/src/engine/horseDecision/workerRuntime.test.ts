@@ -381,7 +381,11 @@ function pineappleRequest(
   const boardCount = stage === 'preflop' ? 0 : stage === 'turn' ? 4 : stage === 'river' ? 5 : 3;
   return rekey({
     ...fastRequest(requestId),
-    player: { ...snapshot.player, cards: pineappleCards.slice(0, cardCount) },
+    player: {
+      ...snapshot.player,
+      cards: pineappleCards.slice(0, cardCount),
+      knownDeadCards: cardCount === 2 ? pineappleCards.slice(2) : [],
+    },
     gameState: {
       ...snapshot.gameState,
       gameVariant: 'pineapple',
@@ -858,6 +862,53 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(h.messages.at(-1)).toMatchObject({
       type: 'ERROR',
       message: 'horse state pineapple post-discard cards lack authoritative discard proof',
+    });
+  });
+
+  it.each([
+    'missing',
+    'malformed',
+    'hero_collision',
+    'board_collision',
+    'other_variant',
+    'public_leak',
+  ])('rejects %s known-discard inputs before invoking any decision computation', async (fault) => {
+    const h = harness();
+    const request = fault === 'other_variant' ? fastRequest(1) : pineappleRequest('flop', 2);
+    request.player = { ...request.player };
+    if (fault === 'missing') delete request.player.knownDeadCards;
+    if (fault === 'malformed') request.player.knownDeadCards = {} as any;
+    if (fault === 'hero_collision') request.player.knownDeadCards = [request.player.cards[0]];
+    if (fault === 'board_collision')
+      request.player.knownDeadCards = [request.gameState.communityCards[0]];
+    if (fault === 'other_variant') request.player.knownDeadCards = [pineappleCards[0]];
+    if (fault === 'public_leak')
+      request.gameState.players = request.gameState.players.map((seat, i) =>
+        i === 0 ? { ...seat, knownDeadCards: [pineappleCards[2]] } : seat
+      );
+    h.runtime.receive(rekey(request));
+    await h.runtime.drain();
+    expect(h.decisionsAtRng).toEqual([]);
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      recoverable: true,
+      message:
+        fault === 'public_leak'
+          ? 'horse state contains private seat cards'
+          : 'horse state known discard or physical cards are invalid',
+    });
+  });
+
+  it("binds the hero's private discarded card into the decision key", async () => {
+    const h = harness();
+    const request = pineappleRequest('flop', 2);
+    request.player.knownDeadCards = [{ rank: '3', suit: 'clubs' }];
+    h.runtime.receive(request);
+    await h.runtime.drain();
+    expect(h.decisionsAtRng).toEqual([]);
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'decisionKey does not bind the canonical decision snapshot',
     });
   });
 

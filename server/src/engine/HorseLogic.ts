@@ -4222,7 +4222,8 @@ export class HorseLogic {
         useAdaptiveMC,
         hiLoSplit,
         oppReads,
-        outcomes7
+        outcomes7,
+        player.knownDeadCards
       );
       if (outcomes7) outcomeBoards7.push(outcomes7);
       boardEq36.push(equity);
@@ -4263,7 +4264,8 @@ export class HorseLogic {
           useAdaptiveMC,
           perBoardSplit,
           oppReadsPerBoard,
-          outcomes7
+          outcomes7,
+          player.knownDeadCards
         );
         if (outcomes7) outcomeBoards7.push(outcomes7);
         boardEq36.push(eb);

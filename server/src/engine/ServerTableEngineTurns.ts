@@ -2780,19 +2780,26 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const decisionPlayer: SeatPlayer = {
       ...authoritativePlayer,
       cards: [...authoritativePlayer.cards],
+      knownDeadCards:
+        activeVariant === 'pineapple'
+          ? handControllerRef.getPineappleKnownDeadCards(authoritativePlayer.seat)
+          : [],
       is_sitting_out:
         authoritativePlayer.is_sitting_out === true ||
         this.disconnectEngine.isSittingOut(this.tableId, authoritativePlayer.user_id),
     };
-    const publicPlayers: SeatPlayer[] = state.players.map((candidate) => ({
-      ...candidate,
-      // HIDDEN-INFORMATION FIREWALL: every seat in the shared state is public
-      // only. Hero's private cards exist exactly once, on decisionPlayer.
-      cards: [],
-      is_sitting_out:
-        candidate.is_sitting_out === true ||
-        this.disconnectEngine.isSittingOut(this.tableId, candidate.user_id),
-    }));
+    const publicPlayers: SeatPlayer[] = state.players.map((candidate) => {
+      const { knownDeadCards: _privateDeadCards, ...publicCandidate } = candidate;
+      return {
+        ...publicCandidate,
+        // HIDDEN-INFORMATION FIREWALL: every seat in the shared state is public
+        // only. Hero's private cards exist exactly once, on decisionPlayer.
+        cards: [],
+        is_sitting_out:
+          candidate.is_sitting_out === true ||
+          this.disconnectEngine.isSittingOut(this.tableId, candidate.user_id),
+      };
+    });
     const gameState: HorseGameStateV2 = {
       stateSchemaVersion: 1,
       heroSeat: boundedActions.heroSeat,

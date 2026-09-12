@@ -151,6 +151,13 @@ export class HandController {
   private eventHandlers: ((event: HandEvent) => void)[] = [];
   /** FIX 120: Crazy Pineapple — tracks seats that still need to discard after flop */
   private pineappleDiscardsRemaining: Set<number> = new Set();
+  /** Private per-hand knowledge; deliberately absent from public GameState. */
+  private pineappleKnownDeadCards = new Map<number, Card>();
+
+  public getPineappleKnownDeadCards(seat: number): Card[] {
+    const card = this.pineappleKnownDeadCards.get(seat);
+    return card ? [{ ...card }] : [];
+  }
   /**
    * All-in Pineapple has no player-action discard round, but showdown is still
    * a two-card game. The table engine computes those choices on the live horse
@@ -1100,6 +1107,7 @@ export class HandController {
        result has been unused since the variant shipped, which is why the
        replay could say "Discard" but never which card. */
     if (discarded[0]) {
+      this.pineappleKnownDeadCards.set(seat, { ...discarded[0] });
       this.emit({ type: 'PINEAPPLE_DISCARDED', seat, card: discarded[0] });
     }
 
@@ -2063,6 +2071,7 @@ export class HandController {
          left their hand and it is still theirs to review. Same private event,
          same RLS-protected destination. */
       if (forced[0]) {
+        this.pineappleKnownDeadCards.set(player.seat, { ...forced[0] });
         this.emit({ type: 'PINEAPPLE_DISCARDED', seat: player.seat, card: forced[0] });
       }
 

@@ -86,6 +86,9 @@ export interface SeatPlayer {
    * BBA and dead blinds remain shared dead money and never populate this field. */
   individualAnteInvested?: number;
   cards: Card[];
+  /** Decision-player copy only: this player's own known Pineapple discard.
+   * Never serialize it on public seats or store it on authoritative players. */
+  knownDeadCards?: Card[];
   is_folded: boolean;
   is_all_in: boolean;
   is_sitting_out: boolean;

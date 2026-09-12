@@ -194,6 +194,8 @@ describe('authoritative horse action effect commit', () => {
     const { engine, player, enginePlayer, state } = harness(true);
     engine.tableInfo = { ...engine.tableInfo, game_variant: 'pineapple' };
     engine.handController.getGameVariant = () => 'pineapple';
+    const discarded = [{ rank: 'Q', suit: 'diamonds' }];
+    engine.handController.getPineappleKnownDeadCards = vi.fn(() => discarded);
     enginePlayer.cards = [
       { rank: 'A', suit: 'hearts' },
       { rank: 'K', suit: 'hearts' },
@@ -213,6 +215,11 @@ describe('authoritative horse action effect commit', () => {
 
     const snapshot = decisionWorker.decideFast.mock.calls[0]?.[0] as any;
     expect(snapshot.player.cards).toHaveLength(2);
+    expect(snapshot.player.knownDeadCards).toEqual(discarded);
+    expect(engine.handController.getPineappleKnownDeadCards).toHaveBeenCalledWith(1);
+    expect(snapshot.gameState.players.every((seat: any) => seat.knownDeadCards === undefined)).toBe(
+      true
+    );
     expect(snapshot.gameState).toMatchObject({
       gameVariant: 'pineapple',
       stage: 'flop',

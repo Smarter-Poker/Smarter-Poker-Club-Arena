@@ -66,11 +66,11 @@ describe('accepted action facts survive a delayed history consumer', () => {
     const clock = vi.spyOn(Date, 'now');
     try {
       clock.mockReturnValue(1010);
-      expect(h.controller.performAction(4, 'raise', 6)).toBe(true);
+      expect(h.controller.performAction(4, 'raise', 6, 'horse_policy')).toBe(true);
       clock.mockReturnValue(1020);
-      expect(h.controller.performAction(1, 'call', 6)).toBe(true);
+      expect(h.controller.performAction(1, 'call', 6, 'player')).toBe(true);
       clock.mockReturnValue(1030);
-      expect(h.controller.performAction(2, 'all_in')).toBe(true);
+      expect(h.controller.performAction(2, 'all_in', undefined, 'pre_action')).toBe(true);
       clock.mockReturnValue(1040);
       expect(h.controller.performAction(3, 'call', 8)).toBe(true);
       const expectedFlags = [true, undefined, false, undefined];
@@ -96,6 +96,13 @@ describe('accepted action facts survive a delayed history consumer', () => {
       expect(owner.currentHandActions.map((a) => a.userId)).toEqual(['u4', 'u1', 'u2', 'u3']);
       expect(owner.currentHandActions.map((a) => a.timestamp)).toEqual([1010, 1020, 1030, 1040]);
       expect(owner.currentHandActions.every((a) => a.stage === 'preflop')).toBe(true);
+      expect(owner.currentHandActions.map((a) => a.origin)).toEqual([
+        'horse_policy',
+        'player',
+        'pre_action',
+        'unknown',
+      ]);
+      expect(h.controller.getState().actionHistory.every((a) => a.origin === undefined)).toBe(true);
       expect(owner.currentHandActions.map((a) => a.publicNode)).toEqual(
         h.events.map((e) => e.publicNode)
       );
@@ -121,6 +128,7 @@ describe('accepted action facts survive a delayed history consumer', () => {
       for (const [, event] of owner.hub.emitEvent.mock.calls) {
         expect(event).not.toHaveProperty('record');
         expect(event).not.toHaveProperty('publicNode');
+        expect(event).not.toHaveProperty('origin');
         expect(event).not.toHaveProperty('cards');
       }
       expect(JSON.stringify(h.events.map((e) => e.record))).not.toMatch(/cards|hole|rank|suit/);

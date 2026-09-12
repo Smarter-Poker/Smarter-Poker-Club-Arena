@@ -2791,7 +2791,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         try {
           applied = this.handController.performAction(
             dcPlayer.seat,
-            disconnectAction.action as any
+            disconnectAction.action as any,
+            undefined,
+            'forced'
           );
         } catch (err) {
           reportError(err, 'ServerTableEngine.' + this.tableId + '.disconnect_autoaction_threw');

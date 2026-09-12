@@ -56,6 +56,7 @@ import type {
   RakeConfig,
   BettingState,
   AuthoritativeActionState,
+  AcceptedActionOrigin,
 } from '../types.js';
 
 import { reportError } from '../services/errorReporter.js';
@@ -942,7 +943,12 @@ export class HandController {
     this.state.currentBet = r(this.state.currentBet);
   }
 
-  performAction(seat: number, action: ActionType, amount?: number): boolean {
+  performAction(
+    seat: number,
+    action: ActionType,
+    amount?: number,
+    origin: AcceptedActionOrigin = 'unknown'
+  ): boolean {
     if (this.config.asset === 'diamonds' && amount !== undefined && !Number.isSafeInteger(amount)) {
       return false;
     }
@@ -1102,6 +1108,9 @@ export class HandController {
       stage: this.state.stage,
       record,
       publicNode,
+      origin: ['player', 'pre_action', 'horse_policy', 'horse_fallback', 'forced'].includes(origin)
+        ? origin
+        : 'unknown',
     });
     this.emit({ type: 'POT_UPDATE', pot: this.state.pot, pots: calculatePots(this.state.players) });
     this.advanceGame();

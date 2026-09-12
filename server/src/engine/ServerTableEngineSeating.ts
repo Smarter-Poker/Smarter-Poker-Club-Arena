@@ -1266,7 +1266,13 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
           if (enginePlayer && !enginePlayer.is_folded && !enginePlayer.is_all_in) {
             let folded = false;
             try {
-              folded = this.handController?.performAction(enginePlayer.seat, 'fold') === true;
+              folded =
+                this.handController?.performAction(
+                  enginePlayer.seat,
+                  'fold',
+                  undefined,
+                  'forced'
+                ) === true;
               if (folded) {
                 console.log(
                   `[ServerTableEngine:${this.tableId}] Tournament player ${userId} auto-folded on leave`
@@ -1424,7 +1430,9 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
           // moment action reaches them.
           let folded = false;
           try {
-            folded = this.handController?.performAction(enginePlayer.seat, 'fold') === true;
+            folded =
+              this.handController?.performAction(enginePlayer.seat, 'fold', undefined, 'forced') ===
+              true;
             if (folded) {
               console.log(
                 `[ServerTableEngine:${this.tableId}] Player ${userId} auto-folded on leave`

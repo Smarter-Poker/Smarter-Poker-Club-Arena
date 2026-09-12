@@ -21,6 +21,7 @@ import {
   assertApplicationOwnerBoundary,
   managedPostgresArguments,
   assertManagedPostgresBoundary,
+  assertBootstrapPostgresConfiguration,
 } from './service-role-boundary.mjs';
 import { createFixtureGateway, loadStaticManifest, findPublicAnonKey } from './gateway.mjs';
 import {
@@ -652,6 +653,7 @@ async function start(args) {
       new pg.Client({ ...connection, user: 'supabase_admin', database: 'postgres' })
     );
     await db.connect();
+    await assertBootstrapPostgresConfiguration(db);
     await createFixtureApplicationOwner(db);
     await db.query(`CREATE DATABASE ${database} OWNER postgres`);
     await db.query('REVOKE CONNECT ON DATABASE postgres, template1 FROM PUBLIC');

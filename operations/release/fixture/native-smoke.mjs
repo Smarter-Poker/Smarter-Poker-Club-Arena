@@ -20,6 +20,7 @@ import {
   createFixtureApplicationOwner,
   managedPostgresArguments,
   assertManagedPostgresBoundary,
+  assertBootstrapPostgresConfiguration,
 } from './service-role-boundary.mjs';
 import { startObservationBridge } from './observation-bridge.mjs';
 import {
@@ -318,6 +319,7 @@ async function services() {
     })
   );
   await admin.connect();
+  await assertBootstrapPostgresConfiguration(admin);
   await createFixtureApplicationOwner(admin);
   await admin.query(`CREATE DATABASE ${database} OWNER postgres`);
   await admin.query('REVOKE CONNECT ON DATABASE postgres, template1 FROM PUBLIC');
@@ -344,8 +346,7 @@ async function services() {
       SELECT current_user = 'postgres' AND session_user = 'postgres' AS identity,
         r.rolsuper AS superuser, r.rolreplication AS replication,
         current_database() = 'club_arena_qualification' AS database,
-        current_setting('wal_level') = 'logical' AS logical_wal,
-        current_setting('output_plugin_libraries') = 'pgoutput,wal2json' AS trusted_output_plugins
+        current_setting('wal_level') = 'logical' AS logical_wal
       FROM pg_catalog.pg_roles r WHERE r.rolname = current_user
     `);
     assert.deepEqual(slotIdentity.rows, [
@@ -355,7 +356,6 @@ async function services() {
         replication: true,
         database: true,
         logical_wal: true,
-        trusted_output_plugins: true,
       },
     ]);
     stage = 'postgresql-wal2json-native-slot';

@@ -34,6 +34,22 @@ export const managedPostgresArguments = Object.freeze([
   'supautils.reserved_memberships=pg_read_server_files,pg_write_server_files,pg_execute_server_program,supabase_admin,supabase_auth_admin,supabase_storage_admin,supabase_read_only_user,supabase_realtime_admin,supabase_replication_admin,supabase_etl_admin,dashboard_user,pgbouncer,authenticator',
 ]);
 
+// Server-only settings remain private to the initdb connection. The app's
+// replication role exercises the actual output plugin separately.
+export async function assertBootstrapPostgresConfiguration(db) {
+  const result =
+    await db.query(`SELECT current_user='supabase_admin' AND session_user='supabase_admin'
+    AND inet_server_addr() IS NULL AND current_database()='postgres'
+    AND current_setting('data_directory')='/var/lib/postgresql/data'
+    AND current_setting('wal_level')='logical'
+    AND current_setting('output_plugin_libraries')='pgoutput,wal2json' AS configured`);
+  assert.deepEqual(
+    result.rows,
+    [{ configured: true }],
+    'FIXTURE_BOOTSTRAP_POSTGRES_CONFIGURATION_REQUIRED'
+  );
+}
+
 // Local bootstrap only. These credentials are random per disposable fixture,
 // never obtained from production. Keep the two native entrypoints identical.
 export function serviceRoleBootstrapSql(password) {

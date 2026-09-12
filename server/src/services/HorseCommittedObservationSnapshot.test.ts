@@ -81,6 +81,14 @@ const snapshot = (hands: unknown[] = []) => ({
   coverage: 'retained_committed_roster_rows',
   handCount: hands.length,
   sourceBytes: 1000 * hands.length,
+  actionCount: hands.reduce<number>(
+    (n, h) =>
+      n +
+      (Array.isArray((h as { actions?: unknown })?.actions)
+        ? (h as { actions: unknown[] }).actions.length
+        : 0),
+    0
+  ),
   hands,
 });
 function respond(data: unknown) {
@@ -221,6 +229,17 @@ describe('committed observation snapshot reader', () => {
       observations: [],
       source: { hands: 1 },
       rejected: { unavailable_public_node: 1 },
+    });
+  });
+  it('refuses mismatched or oversized total action counts', async () => {
+    respond({ ...snapshot([hand()]), actionCount: 0 });
+    expect(await read(request)).toEqual({ status: 'unavailable', reason: 'invalid_source' });
+    respond({ ...snapshot([hand()]), actionCount: 20001 });
+    expect(await read(request)).toEqual({ status: 'unavailable', reason: 'invalid_source' });
+    respond({ version: 1, status: 'unavailable', reason: 'action_budget_exceeded' });
+    expect(await read(request)).toEqual({
+      status: 'unavailable',
+      reason: 'action_budget_exceeded',
     });
   });
   it('discards the whole response if returned JSON exceeds the byte bound', async () => {

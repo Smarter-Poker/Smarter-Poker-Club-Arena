@@ -162,6 +162,28 @@ try {
   assert.equal((await get()).reason, 'invalid_or_oversized_hand');
   results.push({ case: 'row, whole-response and malformed payload budgets', passed: true });
   await c.query('TRUNCATE hand_history');
+  for (let n = 0; n < 5; n++)
+    await insert(
+      n,
+      Array.from({ length: 4000 }, () => ({}))
+    );
+  const sparse = await get();
+  assert.equal(sparse.status, 'snapshot');
+  assert.equal(sparse.actionCount, 20000);
+  assert.ok(sparse.hands.every((h) => h.actions.every((a) => Object.keys(a).length === 0)));
+  assert.ok(
+    Buffer.byteLength(JSON.stringify(sparse.hands.map((h) => h.actions))) <= sparse.sourceBytes + 20
+  );
+  await insert(6, [{}]);
+  const actionsOverflow = await get();
+  assert.equal(actionsOverflow.reason, 'action_budget_exceeded');
+  assert.deepEqual(actionsOverflow.hands, []);
+  results.push({
+    case: 'sparse JSON does not expand and total action work is bounded',
+    accepted: 20000,
+    rejected: 20001,
+  });
+  await c.query('TRUNCATE hand_history');
   await insert(1);
   await writer.query('BEGIN');
   await insert(2, [], actor, writer);

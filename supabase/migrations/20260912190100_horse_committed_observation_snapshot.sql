@@ -11,6 +11,7 @@ DECLARE
   v_now_ms bigint := floor(extract(epoch FROM v_at) * 1000)::bigint;
   v_rows jsonb;
   v_count integer;
+  v_actions bigint;
   v_bytes bigint;
   v_invalid boolean;
 BEGIN
@@ -38,15 +39,18 @@ BEGIN
     SELECT c.*,
            octet_length(c.actions::text) AS bytes,
            CASE WHEN jsonb_typeof(c.actions)='array'
+                THEN jsonb_array_length(c.actions) ELSE 0 END AS action_count,
+           CASE WHEN jsonb_typeof(c.actions)='array'
                 THEN jsonb_array_length(c.actions) > 4096 ELSE true END AS invalid
       FROM candidates c
   ), totals AS (
     SELECT count(*)::integer AS n, coalesce(sum(bytes),0)::bigint AS bytes,
+           coalesce(sum(action_count),0)::bigint AS actions,
            coalesce(bool_or(invalid OR bytes > 1048576),false) AS invalid
       FROM measured
   )
-  SELECT t.n, t.bytes, t.invalid,
-         CASE WHEN t.n <= 512 AND t.bytes <= 8388608 AND NOT t.invalid THEN
+  SELECT t.n, t.bytes, t.invalid, t.actions,
+         CASE WHEN t.n <= 512 AND t.bytes <= 8388608 AND t.actions <= 20000 AND NOT t.invalid THEN
            (SELECT coalesce(jsonb_agg(jsonb_build_object(
                'id',m.id,
                'createdAt',to_char(m.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
@@ -55,28 +59,28 @@ BEGIN
                -- and non-betting entries stay intact for public-line replay.
                'actions',(SELECT coalesce(jsonb_agg(
                    CASE WHEN jsonb_typeof(a.value)='object' THEN
-                     jsonb_build_object(
-                       'userId',a.value->'userId','action',a.value->'action',
-                       'stage',a.value->'stage','timestamp',a.value->'timestamp',
-                       'publicNode',a.value->'publicNode','origin',a.value->'origin',
-                       'observationIdentity',a.value->'observationIdentity')
-                   ELSE 'null'::jsonb END ORDER BY a.ordinality),'[]'::jsonb)
+                     (SELECT coalesce(jsonb_object_agg(f.key,f.value),'{}'::jsonb)
+                        FROM jsonb_each(a.value) f
+                       WHERE f.key IN ('userId','action','stage','timestamp',
+                                       'publicNode','origin','observationIdentity'))
+                   ELSE a.value END ORDER BY a.ordinality),'[]'::jsonb)
                    FROM jsonb_array_elements(m.actions) WITH ORDINALITY a(value,ordinality))
              ) ORDER BY m.created_at,m.id),'[]'::jsonb) FROM measured m)
          ELSE '[]'::jsonb END
-    INTO v_count,v_bytes,v_invalid,v_rows FROM totals t;
+    INTO v_count,v_bytes,v_invalid,v_actions,v_rows FROM totals t;
 
   RETURN jsonb_build_object(
     'version',1,
-    'status',CASE WHEN v_count > 512 OR v_bytes > 8388608 OR v_invalid
+    'status',CASE WHEN v_count > 512 OR v_bytes > 8388608 OR v_actions > 20000 OR v_invalid
                   THEN 'unavailable' ELSE 'snapshot' END,
     'reason',CASE WHEN v_count > 512 THEN 'hand_budget_exceeded'
                   WHEN v_bytes > 8388608 THEN 'byte_budget_exceeded'
+                  WHEN v_actions > 20000 THEN 'action_budget_exceeded'
                   WHEN v_invalid THEN 'invalid_or_oversized_hand' ELSE NULL END,
     'actor',p_actor,'fromMs',p_from_ms,'throughMs',p_through_ms,
     'readAtMs',v_now_ms,'snapshotId',pg_current_snapshot()::text,
     'coverage','retained_committed_roster_rows',
-    'handCount',v_count,'sourceBytes',v_bytes,'hands',v_rows
+    'handCount',v_count,'actionCount',v_actions,'sourceBytes',v_bytes,'hands',v_rows
   );
 END
 $function$;

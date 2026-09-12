@@ -12,6 +12,7 @@ const hash = (v: unknown) => createHash('sha256').update(JSON.stringify(v)).dige
 export const COMMITTED_OBSERVATION_LIMITS = Object.freeze({
   maxHands: 512,
   maxActionsPerHand: 4096,
+  maxSourceActions: 20_000,
   maxSourceBytes: 8_388_608,
   maxObservations: 20_000,
   maxWindowMs: 6 * 3_600_000,
@@ -46,6 +47,7 @@ const unavailable = (reason: string): CommittedObservationSnapshot =>
   Object.freeze({ status: 'unavailable', reason });
 const integer = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v);
 const serverReasons = new Set([
+  'action_budget_exceeded',
   'invalid_window',
   'hand_budget_exceeded',
   'byte_budget_exceeded',
@@ -101,6 +103,9 @@ export async function readCommittedObservationSnapshot(
       !integer(data.handCount) ||
       data.handCount < 0 ||
       data.handCount > COMMITTED_OBSERVATION_LIMITS.maxHands ||
+      !integer(data.actionCount) ||
+      data.actionCount < 0 ||
+      data.actionCount > COMMITTED_OBSERVATION_LIMITS.maxSourceActions ||
       !integer(data.sourceBytes) ||
       data.sourceBytes < 0 ||
       data.sourceBytes > COMMITTED_OBSERVATION_LIMITS.maxSourceBytes ||
@@ -115,6 +120,7 @@ export async function readCommittedObservationSnapshot(
       observationIds = new Set<string>(),
       manifest: unknown[] = [];
     let previous = '',
+      returnedActions = 0,
       returnedBytes = 0;
     for (const hand of data.hands) {
       if (
@@ -141,6 +147,9 @@ export async function readCommittedObservationSnapshot(
         return unavailable('invalid_source_hand');
       previous = key;
       ids.add(hand.id);
+      returnedActions += hand.actions.length;
+      if (returnedActions > COMMITTED_OBSERVATION_LIMITS.maxSourceActions)
+        return unavailable('action_budget_exceeded');
       returnedBytes += Buffer.byteLength(JSON.stringify(hand.actions));
       if (returnedBytes > COMMITTED_OBSERVATION_LIMITS.maxSourceBytes)
         return unavailable('response_budget_exceeded');
@@ -166,6 +175,7 @@ export async function readCommittedObservationSnapshot(
           return unavailable('observation_budget_exceeded');
       }
     }
+    if (returnedActions !== data.actionCount) return unavailable('invalid_source');
     return Object.freeze({
       status: 'snapshot',
       version: 1,

@@ -21,6 +21,7 @@ RECORDS = [dict(scope='native-service-smoke', observer='passed', browser='chromi
            dict(scope='native-service-smoke', postgres='17.11', extensions=6, auth='2.196.0', mfa='aal2',
                 ledger_attribution='banned-without-session',
                 service_roles=dict(auth_admin_inheritance='disabled',
+                                   auth_claim_helpers='service-owned-and-http-verified',
                                    authenticator_membership='set-without-inherit',
                                    auth_schema_owner='supabase_admin',
                                    auth_schema_create='auth-admin-only-among-application-callers',

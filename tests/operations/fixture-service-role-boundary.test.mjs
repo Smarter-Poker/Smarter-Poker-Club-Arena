@@ -8,6 +8,9 @@ import {
   assertApplicationOwnerBoundary,
   assertManagedPostgresBoundary,
   sealFixtureAuthMigrationLedger,
+  alignFixtureAuthPlatformHelperGrants,
+  assertFixtureAuthPlatformHelpers,
+  assertFixtureAuthPlatformWriteDenied,
 } from '../../operations/release/fixture/service-role-boundary.mjs';
 
 const boundary = {
@@ -27,6 +30,103 @@ const boundary = {
   auth_ledger_read_only: true,
   application_schema_boundary: true,
 };
+
+test('Auth grant alignment refuses a non-bootstrap connection before mutation', async () => {
+  const calls = [];
+  await assert.rejects(
+    alignFixtureAuthPlatformHelperGrants({
+      query: async (sql) => {
+        calls.push(sql);
+        return { rows: [{ owned_service_bootstrap: false }] };
+      },
+    }),
+    /FIXTURE_SERVICE_BOOTSTRAP_IDENTITY_REQUIRED/
+  );
+  assert.equal(calls.length, 1);
+});
+
+test('wrong service ownership aborts before changing migrated helper grants', async () => {
+  const calls = [];
+  await assert.rejects(
+    alignFixtureAuthPlatformHelperGrants({
+      query: async (sql) => {
+        calls.push(sql);
+        if (sql.includes('AS owned_service_bootstrap'))
+          return { rows: [{ owned_service_bootstrap: true }] };
+        if (sql.includes('AS auth_platform_owned'))
+          return { rows: [{ auth_platform_owned: false }] };
+        return { rows: [] };
+      },
+    }),
+    /FIXTURE_AUTH_PLATFORM_OWNER_REQUIRED/
+  );
+  assert.equal(calls.at(-1), 'ROLLBACK');
+  assert.ok(!calls.includes('SET LOCAL ROLE supabase_auth_admin'));
+  assert.ok(!calls.includes('COMMIT'));
+});
+
+test('mismatched migrated Auth definitions abort before any grant change', async () => {
+  const calls = [];
+  await assert.rejects(
+    alignFixtureAuthPlatformHelperGrants({
+      query: async (sql) => {
+        calls.push(sql);
+        if (sql.includes('AS owned_service_bootstrap'))
+          return { rows: [{ owned_service_bootstrap: true }] };
+        if (sql.includes('AS auth_platform_owned'))
+          return { rows: [{ auth_platform_owned: true }] };
+        return { rows: [] };
+      },
+    }),
+    /FIXTURE_GOTRUE_PLATFORM_PREIMAGE_REQUIRED/
+  );
+  assert.equal(calls.at(-1), 'ROLLBACK');
+  assert.ok(!calls.includes('SET LOCAL ROLE supabase_auth_admin'));
+  assert.ok(!calls.includes('COMMIT'));
+});
+
+test('missing Auth catalog identities are never a successful installation', async () => {
+  await assert.rejects(
+    assertFixtureAuthPlatformHelpers({ query: async () => ({ rows: [] }) }),
+    /FIXTURE_AUTH_PLATFORM_IDENTITY_REQUIRED/
+  );
+});
+
+for (const code of ['42704', undefined]) {
+  test(`unexpected Auth replacement error ${String(code)} propagates after rollback`, async () => {
+    const calls = [];
+    const failure = Object.assign(new Error('unexpected database failure'), { code });
+    await assert.rejects(
+      assertFixtureAuthPlatformWriteDenied({
+        query: async (sql) => {
+          calls.push(sql);
+          if (sql.includes('AS application_owner_boundary'))
+            return { rows: [{ owned_database: true, application_owner_boundary: true }] };
+          if (sql.startsWith('CREATE OR REPLACE FUNCTION')) throw failure;
+          return { rows: [] };
+        },
+      }),
+      (error) => error === failure
+    );
+    assert.equal(calls.at(-1), 'ROLLBACK');
+  });
+}
+
+test('an application role that can replace Auth helpers fails qualification after rollback', async () => {
+  const calls = [];
+  await assert.rejects(
+    assertFixtureAuthPlatformWriteDenied({
+      query: async (sql) => {
+        calls.push(sql);
+        if (sql.includes('AS application_owner_boundary'))
+          return { rows: [{ owned_database: true, application_owner_boundary: true }] };
+        return { rows: [] };
+      },
+    }),
+    /FIXTURE_APPLICATION_AUTH_REPLACEMENT_MUST_REFUSE/
+  );
+  assert.equal(calls.at(-1), 'ROLLBACK');
+});
 
 test('bootstrap SQL accepts only the fixture random hex password, never a SQL fragment', () => {
   for (const bad of [

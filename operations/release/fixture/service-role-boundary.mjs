@@ -302,3 +302,151 @@ export async function assertManagedPostgresBoundary(db) {
   }
   return { ...managedPostgresReceipt };
 }
+
+// Production catalog observed 2026-09-12 13:55:49 UTC. These four platform
+// helpers are owned by Auth, not by the application restore role. Their bodies,
+// attributes and direct ACLs are preserved independently of GoTrue's ledger.
+const authPlatformHelpers = [
+  {
+    identity: 'auth.email()',
+    owner: 'supabase_auth_admin',
+    body_md5: 'd83fa9609bbd5e95512922e407b4141d',
+    language: 'sql',
+    volatility: 's',
+    security_definer: false,
+    strict: false,
+    settings: null,
+    acl: [
+      '=X/supabase_auth_admin',
+      'dashboard_user=X/supabase_auth_admin',
+      'supabase_auth_admin=X/supabase_auth_admin',
+    ],
+  },
+  {
+    identity: 'auth.jwt()',
+    owner: 'supabase_auth_admin',
+    body_md5: '2db09c3fc855ba90e71d3ae28cfadae3',
+    language: 'sql',
+    volatility: 's',
+    security_definer: false,
+    strict: false,
+    settings: null,
+    acl: [
+      '=X/supabase_auth_admin',
+      'dashboard_user=X/supabase_auth_admin',
+      'postgres=X/supabase_auth_admin',
+      'supabase_auth_admin=X/supabase_auth_admin',
+    ],
+  },
+  {
+    identity: 'auth.role()',
+    owner: 'supabase_auth_admin',
+    body_md5: 'f31486fed08a7402e89d4aa71b0ad273',
+    language: 'sql',
+    volatility: 's',
+    security_definer: false,
+    strict: false,
+    settings: null,
+    acl: [
+      '=X/supabase_auth_admin',
+      'dashboard_user=X/supabase_auth_admin',
+      'supabase_auth_admin=X/supabase_auth_admin',
+    ],
+  },
+  {
+    identity: 'auth.uid()',
+    owner: 'supabase_auth_admin',
+    body_md5: 'cdef18c69c4f4cbbced2eaf81e628b49',
+    language: 'sql',
+    volatility: 's',
+    security_definer: false,
+    strict: false,
+    settings: null,
+    acl: [
+      '=X/supabase_auth_admin',
+      'dashboard_user=X/supabase_auth_admin',
+      'supabase_auth_admin=X/supabase_auth_admin',
+    ],
+  },
+];
+async function authPlatformCatalog(db) {
+  const result =
+    await db.query(`SELECT format('%I.%I(%s)',n.nspname,p.proname,pg_get_function_identity_arguments(p.oid)) AS identity,
+    pg_get_userbyid(p.proowner) AS owner, md5(p.prosrc) AS body_md5,
+    l.lanname AS language, p.provolatile AS volatility,
+    p.prosecdef AS security_definer, p.proisstrict AS strict, p.proconfig AS settings,
+    ARRAY(SELECT a::text FROM unnest(p.proacl) a ORDER BY a::text) AS acl
+    FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+    JOIN pg_language l ON l.oid=p.prolang
+    WHERE n.nspname='auth' AND p.proname=ANY(ARRAY['email','jwt','role','uid'])
+    ORDER BY n.nspname,p.proname,pg_get_function_identity_arguments(p.oid)`);
+  return result.rows;
+}
+
+export async function assertFixtureAuthPlatformHelpers(db) {
+  assert.deepEqual(
+    await authPlatformCatalog(db),
+    authPlatformHelpers,
+    'FIXTURE_AUTH_PLATFORM_IDENTITY_REQUIRED'
+  );
+  return { helpers: 4, owner: 'supabase_auth_admin', catalog: 'exact-body-attributes-direct-acl' };
+}
+
+// GoTrue's pinned 20220224000811 and 20220531120530 migrations already
+// create these exact bodies. Align only the production ACL exception to
+// current default grants; never replace a migrated function or stamp a ledger.
+export async function alignFixtureAuthPlatformHelperGrants(db) {
+  await assertFixtureServiceBootstrap(db);
+  await db.query('BEGIN');
+  try {
+    const preflight = await db.query(`SELECT
+      current_database()='club_arena_qualification' AND inet_server_addr() IS NULL
+      AND current_user='supabase_admin' AND session_user='supabase_admin'
+      AND (SELECT pg_get_userbyid(nspowner)='supabase_admin' FROM pg_namespace WHERE nspname='auth')
+      AND (SELECT pg_get_userbyid(relowner)='supabase_auth_admin' FROM pg_class
+        WHERE oid='auth.schema_migrations'::regclass)
+      AND NOT has_schema_privilege('postgres','auth','CREATE') AS auth_platform_owned`);
+    assert.deepEqual(
+      preflight.rows,
+      [{ auth_platform_owned: true }],
+      'FIXTURE_AUTH_PLATFORM_OWNER_REQUIRED'
+    );
+    const migrationDefaults = authPlatformHelpers.map((helper) => ({
+      ...helper,
+      acl: [...new Set([...helper.acl, 'postgres=X/supabase_auth_admin'])].sort(),
+    }));
+    assert.deepEqual(
+      await authPlatformCatalog(db),
+      migrationDefaults,
+      'FIXTURE_GOTRUE_PLATFORM_PREIMAGE_REQUIRED'
+    );
+    await db.query('SET LOCAL ROLE supabase_auth_admin');
+    await db.query(
+      `REVOKE EXECUTE ON FUNCTION auth.email(), auth.role(), auth.uid() FROM postgres;`
+    );
+    await assertFixtureAuthPlatformHelpers(db);
+    await db.query('COMMIT');
+  } catch (error) {
+    await db.query('ROLLBACK');
+    throw error;
+  }
+}
+
+// The real application connection may execute helpers but must not replace
+// Auth's definition. Both expected denial and unexpected success roll back.
+export async function assertFixtureAuthPlatformWriteDenied(db) {
+  await assertApplicationOwnerBoundary(db);
+  await db.query('BEGIN');
+  let denied = false;
+  try {
+    await db.query(`CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid
+      LANGUAGE sql STABLE AS $$SELECT NULL::uuid$$`);
+  } catch (error) {
+    if (error?.code !== '42501') throw error;
+    denied = true;
+  } finally {
+    await db.query('ROLLBACK');
+  }
+  assert.equal(denied, true, 'FIXTURE_APPLICATION_AUTH_REPLACEMENT_MUST_REFUSE');
+  await assertFixtureAuthPlatformHelpers(db);
+}

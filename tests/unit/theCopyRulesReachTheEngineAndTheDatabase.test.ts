@@ -195,7 +195,9 @@ describe('the two gaps in how work reaches production', () => {
     expect(CI).toContain('::warning title=NO TESTS RAN::');
     // It must not be able to hide behind a skipped dependency.
     expect(CI).toMatch(/verdict:[\s\S]{0,400}if: always\(\)/);
-    expect(CI).toContain('needs: [changes, stub_gate, typecheck, unit, server]');
+    expect(CI).toContain(
+      'needs: [changes, stub_gate, typecheck, typecheck_compile, fixture_native, unit, server]'
+    );
   });
 
   it('and something actually verifies main on a schedule', () => {

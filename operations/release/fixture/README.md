@@ -21,6 +21,8 @@ The journal-backed `financial-observations.native.test.mjs` remains on PR4353;
 this package does not provide or claim that separate native test coverage.
 Ordinary pull-request CI invokes the reusable native workflow for affected or unknown diffs, regardless of draft status. The required TypeScript Check depends on compilation and successful native verification; unexpected skips fail. Compilation runs in parallel. Unrelated, positively classified diffs report their native skip explicitly. This is a prerequisite check, not a post-publication or product certificate.
 
+The classifier compares the event's exact Git base/head commits without rename detection, retaining both old and new paths. It covers the previous native workflow's entire path set; failed, incomplete or mismatched Git evidence requires native execution. The native workflow emits proof and its exact source SHA only after service assertions and mandatory cleanup pass. The required result rejects absent or mismatched proof even if a wrapper reports success. Classification, native execution and the result checker all check out the event head without retaining repository credentials; compilation keeps its existing merge-context checks in parallel.
+
 The earlier native service baseline is retained below as historical evidence;
 it does not certify this candidate's managed event-trigger or application ACLs.
 [Linux run 34660221728](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34660221728)

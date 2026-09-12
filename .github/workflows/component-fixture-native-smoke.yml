@@ -5,6 +5,13 @@ on:
       source_sha:
         required: true
         type: string
+    outputs:
+      native_verified:
+        description: True only after native assertions and all cleanup pass
+        value: ${{ jobs.native-smoke.outputs.native_verified }}
+      source_sha:
+        description: Exact source verified by the native driver
+        value: ${{ jobs.native-smoke.outputs.source_sha }}
 permissions:
   contents: read
 concurrency:
@@ -15,6 +22,9 @@ jobs:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 55
+    outputs:
+      native_verified: ${{ steps.smoke.outputs.native_verified }}
+      source_sha: ${{ steps.smoke.outputs.source_sha }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -35,9 +45,13 @@ jobs:
           python3 tests/operations/fixture-smoke-runner.test.py
           python3 tests/operations/fixture-native-diagnostics.test.py
       - name: Build exact committed fixture and smoke native services
+        id: smoke
         env:
           FIXTURE_SOURCE_SHA: ${{ inputs.source_sha }}
-        run: python3 operations/release/ci/fixture-smoke.py . "$RUNNER_TEMP/fixture-smoke-evidence" "$FIXTURE_SOURCE_SHA"
+        run: |
+          python3 operations/release/ci/fixture-smoke.py . "$RUNNER_TEMP/fixture-smoke-evidence" "$FIXTURE_SOURCE_SHA"
+          echo "native_verified=true" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$FIXTURE_SOURCE_SHA" >> "$GITHUB_OUTPUT"
       - name: Preserve sanitized native smoke and cleanup observations
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

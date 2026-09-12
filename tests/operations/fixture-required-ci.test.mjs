@@ -8,6 +8,9 @@ const verified = {
   diffResult: 'success',
   fixtureChanged: 'true',
   nativeResult: 'success',
+  nativeVerified: 'true',
+  sourceSha: 'a'.repeat(40),
+  nativeSourceSha: 'a'.repeat(40),
 };
 
 test('affected ready or draft source requires genuine successful native outcome', () => {
@@ -73,6 +76,27 @@ test('a scheduled or missing event cannot satisfy the pull-request required gate
     assert.throws(
       () => requireFixtureNativeResult({ ...verified, eventName }),
       /FIXTURE_GATE_PULL_REQUEST_REQUIRED/
+    );
+  }
+});
+
+test('a green wrapper without executed proof or with another source is refused', () => {
+  for (const nativeVerified of [undefined, '', 'false', true]) {
+    assert.throws(
+      () => requireFixtureNativeResult({ ...verified, nativeVerified }),
+      /FIXTURE_GATE_EXECUTED_PROOF_REQUIRED/
+    );
+  }
+  for (const sourceSha of [undefined, '', 'main', 'a'.repeat(39)]) {
+    assert.throws(
+      () => requireFixtureNativeResult({ ...verified, sourceSha }),
+      /FIXTURE_GATE_SOURCE_REQUIRED/
+    );
+  }
+  for (const nativeSourceSha of [undefined, '', 'b'.repeat(40)]) {
+    assert.throws(
+      () => requireFixtureNativeResult({ ...verified, nativeSourceSha }),
+      /FIXTURE_GATE_EXACT_SOURCE_REQUIRED/
     );
   }
 });

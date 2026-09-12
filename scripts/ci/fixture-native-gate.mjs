@@ -8,6 +8,9 @@ export function requireFixtureNativeResult({
   diffResult,
   fixtureChanged,
   nativeResult,
+  nativeVerified,
+  sourceSha,
+  nativeSourceSha,
 }) {
   assert.equal(eventName, 'pull_request', 'FIXTURE_GATE_PULL_REQUEST_REQUIRED');
   assert.equal(compileResult, 'success', 'FIXTURE_GATE_COMPILATION_REQUIRED');
@@ -16,12 +19,17 @@ export function requireFixtureNativeResult({
   const required = diffResult !== 'success' || fixtureChanged !== 'false';
   if (required) {
     assert.equal(nativeResult, 'success', 'FIXTURE_GATE_NATIVE_SUCCESS_REQUIRED');
-    return 'Compilation and required native fixture verification passed.';
   }
   assert.ok(
     nativeResult === 'skipped' || nativeResult === 'success',
     'FIXTURE_GATE_UNEXPECTED_NATIVE_OUTCOME'
   );
+  if (nativeResult === 'success') {
+    assert.equal(nativeVerified, 'true', 'FIXTURE_GATE_EXECUTED_PROOF_REQUIRED');
+    assert.match(sourceSha ?? '', /^[0-9a-f]{40}$/, 'FIXTURE_GATE_SOURCE_REQUIRED');
+    assert.equal(nativeSourceSha, sourceSha, 'FIXTURE_GATE_EXACT_SOURCE_REQUIRED');
+  }
+  if (required) return 'Compilation and required native fixture verification passed.';
   return nativeResult === 'success'
     ? 'Compilation and native fixture verification passed.'
     : 'Compilation passed. Native fixture skipped for a verified unaffected diff.';
@@ -35,6 +43,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       diffResult: process.env.DIFF_RESULT,
       fixtureChanged: process.env.FIXTURE_CHANGED,
       nativeResult: process.env.NATIVE_RESULT,
+      nativeVerified: process.env.NATIVE_VERIFIED,
+      sourceSha: process.env.SOURCE_SHA,
+      nativeSourceSha: process.env.NATIVE_SOURCE_SHA,
     })
   );
 }

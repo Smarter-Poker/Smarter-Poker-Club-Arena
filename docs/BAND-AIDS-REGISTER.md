@@ -607,3 +607,60 @@ leaderboard settlement on its published cadence.
 Each item is finished when the live path cannot produce the wrong outcome, a
 test pins the cause, the damage is settled through the platform's own idempotent
 path, **and the job is gone from `cron.job`**.
+
+## 2026-09-12 the BBJ promo sweep, and why it is listed here without being a band-aid
+
+The phase 2 BBJ sweep flagged that `fn_sweep_bbj_promo` "moves money
+continuously with no cron row in this repo and no entry in
+`docs/BAND-AIDS-REGISTER.md`". This is that entry, and it is deliberately a
+**NOT-A-BAND-AID** row: the point of writing it down is that the next agent
+stops re-discovering it and reaching the wrong conclusion.
+
+**What it does.** `bbj_record_contribution` accrues the 25% promo slice into
+`bbj_pools.promo_balance` on every contribution - 46,814 of them in 24 hours -
+and `fn_sweep_bbj_promo` moves the accrued amount to
+`union_wallets.promo_wallet`, or to `clubs.promo_balance` for a club with no
+union. Measured 2026-09-12: 1,791 sweeps in seven days moving **24,965.28**,
+one per five-minute boundary, the `:00` run absent each hour because the
+platform is frozen for the maintenance break.
+
+**Why it is not a band-aid.** It repairs nothing and compensates for nothing.
+It is the transfer itself, batched, and the batching is the design rather than
+a tidy-up: crediting one `union_wallets` row inline on 46,814 contributions a
+day is a lock-contention problem, not a correctness improvement. CLAUDE.md
+10.12's own carve-out is "a job whose schedule IS the product", and this is one.
+If a future change makes the inline credit cheap, the staging slot and the
+sweep both go - but that is an optimisation, not a debt being repaid.
+
+**What WAS wrong, and is fixed (migration `20260912003749`).** Nothing in this
+repo could see it. No `cron.job` row names it, no trigger fires it, and no
+TypeScript in Club Arena or the World Hub calls it. **The driver is a third
+repo**: Open Claw dispatches `/api/cron/bbj-detect` on `*/5`, and
+`scripts/openclaw-cron-dispatcher.py` line 1022 records that the route now
+lives in the workers repo as `src/routes/bbj-detect`. So an agent auditing
+Club Arena finds a `SECURITY DEFINER` function that moves real money, finds no
+caller anywhere it can see, and concludes it is dead. That happened during this
+very audit, from `promo_balance = 0.00` on every pool - the zero is the sweep
+working, not the slice being banked inline. The function now names its driver
+in its own `COMMENT`.
+
+**And the trap that came with it.** `fn_sweep_bbj_promo_all`'s comment ended by
+telling the next agent to schedule it. It is not scheduled; its per-club
+sibling already is, from another repo. An agent obeying that sentence adds a
+**second driver** onto the same staging slot, with `_all` looping every pool
+`FOR UPDATE` against the live one on the same rows - and the thing they would
+race over is the promo slice of every raked hand on the platform. The comment
+now refuses instead, and the migration asserts that no `cron.job` has acquired
+either sweep.
+
+**The one genuinely open item.** `fn_bbj_promo_bank_check` reads whether the
+swept slice arrived, and **nothing calls it** - not `cron.job`, not either
+repo, not the workers repo. It is a guard with no reader (CLAUDE.md 10.86 rule
+3), so a stalled sweep raises nothing on its own; the visible symptom would be
+`bbj_pools.promo_balance` climbing instead of sitting near zero. It is NOT
+given a scheduler here, because 10.12 forbids shipping a job as the answer and
+10.85 puts scheduled work in Open Claw rather than wherever an agent finds
+convenient. **Root fix:** the workers repo's `bbj-detect` route, which already
+runs every five minutes and already calls the sweep, reads the check in the
+same pass and raises on a non-zero answer. That is one edit in the repo that
+already owns the schedule, and it adds no new scheduled job anywhere.

@@ -139,7 +139,13 @@ export function declaredExceptions(sql) {
       reason += ` ${c[1].trim()}`;
     }
     if (reason.trim().length >= 40) {
-      out.set(m[1].replace(/\s+/g, '').replace(/^public\./i, '').replace(/"/g, ''), reason.trim());
+      out.set(
+        m[1]
+          .replace(/\s+/g, '')
+          .replace(/^public\./i, '')
+          .replace(/"/g, ''),
+        reason.trim()
+      );
     }
   }
   return out;
@@ -157,9 +163,109 @@ export function declaredExceptions(sql) {
  * `FOR KEY SHARE` and `FOR NO KEY UPDATE` do not match `\bfor\s+share\b` and
  * are never reported.
  */
+
+/** Mask typed JSON dollar literals, not executable dollar-quoted SQL bodies.
+ * Historical pg_get_functiondef snapshots are JSON data even when they contain
+ * SQL keywords. Validate the whole JSON value and its explicit cast; unknown
+ * dollar strings stay visible. Walk outer bodies so nested literals are found.
+ * Conservatively keep all JSON visible in a body containing EXECUTE, and in
+ * an EXECUTE statement at top level. Do not infer inert use from the cast.
+ * This intentionally refuses some inert snapshots near dynamic execution.
+ */
+export function maskJsonDollarLiterals(sql) {
+  const walk = (text, allowMask = true) => {
+    let out = '',
+      i = 0,
+      statementExecutes = false;
+    while (i < text.length) {
+      if (text.startsWith('--', i)) {
+        const end = text.indexOf('\n', i);
+        const j = end < 0 ? text.length : end;
+        out += text.slice(i, j);
+        i = j;
+        continue;
+      }
+      if (text.startsWith('/*', i)) {
+        let j = i + 2,
+          depth = 1;
+        while (j < text.length && depth) {
+          if (text.startsWith('/*', j)) {
+            depth++;
+            j += 2;
+          } else if (text.startsWith('*/', j)) {
+            depth--;
+            j += 2;
+          } else j++;
+        }
+        out += text.slice(i, j);
+        i = j;
+        continue;
+      }
+      if (text[i] === "'" || text[i] === '"') {
+        const quote = text[i];
+        let j = i + 1;
+        while (j < text.length) {
+          if (text[j] === quote) {
+            if (text[j + 1] === quote) {
+              j += 2;
+              continue;
+            }
+            j++;
+            break;
+          }
+          j++;
+        }
+        out += text.slice(i, j);
+        i = j;
+        continue;
+      }
+      const tag = /^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/.exec(text.slice(i));
+      if (tag) {
+        const start = i + tag[0].length,
+          end = text.indexOf(tag[0], start);
+        if (end >= 0) {
+          const body = text.slice(start, end),
+            after = end + tag[0].length;
+          let json = false;
+          if (
+            allowMask &&
+            !statementExecutes &&
+            /^\s*::\s*(?:pg_catalog\s*\.\s*)?jsonb?(?![A-Za-z0-9_$\u0080-\uFFFF])(?!\s*[.\[])/i.test(
+              text.slice(after)
+            )
+          ) {
+            try {
+              JSON.parse(body);
+              json = true;
+            } catch {
+              /* retain unknown content */
+            }
+          }
+          out += json
+            ? "''"
+            : tag[0] +
+              walk(body, allowMask && !statementExecutes && !/\bexecute\b/i.test(body)) +
+              tag[0];
+          i = after;
+          continue;
+        }
+      }
+      if (text[i] === ';') statementExecutes = false;
+      if (
+        (i === 0 || !/[A-Za-z0-9_$\u0080-\uFFFF]/.test(text[i - 1])) &&
+        /^execute(?![A-Za-z0-9_$\u0080-\uFFFF])/i.test(text.slice(i))
+      )
+        statementExecutes = true;
+      out += text[i++];
+    }
+    return out;
+  };
+  return walk(String(sql));
+}
+
 export function offenders(sql) {
   const exempt = declaredExceptions(sql);
-  const clean = stripNoise(String(sql));
+  const clean = stripNoise(maskJsonDollarLiterals(sql));
   const found = new Map();
 
   for (const stmt of clean.split(';')) {
@@ -176,11 +282,19 @@ export function offenders(sql) {
       while ((m = relRe.exec(stmt)) !== null) {
         const alias = m[1] && !NOT_AN_ALIAS.test(m[1]) ? m[1].toLowerCase() : null;
 
-        for (const lock of stmt.matchAll(/\bfor\s+share\b(?:\s+of\s+([a-z0-9_,.\s"]+?))?(?=\s|$)/gi)) {
+        for (const lock of stmt.matchAll(
+          /\bfor\s+share\b(?:\s+of\s+([a-z0-9_,.\s"]+?))?(?=\s|$)/gi
+        )) {
           const listed = lock[1]
             ? lock[1]
                 .split(',')
-                .map((s) => s.trim().toLowerCase().replace(/"/g, '').replace(/^public\./, ''))
+                .map((s) =>
+                  s
+                    .trim()
+                    .toLowerCase()
+                    .replace(/"/g, '')
+                    .replace(/^public\./, '')
+                )
                 .filter(Boolean)
             : null;
           // No OF list: the lock covers every table in the statement, lease included.
@@ -203,7 +317,9 @@ function main() {
     : changedMigrations(base);
 
   if (files.length === 0) {
-    console.log(`[check-lease-lock-strength] no new migrations against ${base} - nothing to check.`);
+    console.log(
+      `[check-lease-lock-strength] no new migrations against ${base} - nothing to check.`
+    );
     return;
   }
 

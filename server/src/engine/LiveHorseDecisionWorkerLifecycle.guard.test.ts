@@ -69,7 +69,7 @@ describe('live HorseLogic has one lifecycle owner', () => {
   });
 
   it('publishes worker phase, queue and worker-owned solver health', () => {
-    const health = sliceMethod(gameServerSource, 'getStatus()');
+    const health = sliceMethod(gameServerSource, '\n  getStatus(');
     expect(health).toContain('const liveHorseDecision = liveHorseDecisionWorkerStatus()');
     expect(health).toContain('equityGovernor: liveHorseDecision.governor');
     expect(health).toContain('mainEventLoopGovernor: equityGovernor.snapshot()');

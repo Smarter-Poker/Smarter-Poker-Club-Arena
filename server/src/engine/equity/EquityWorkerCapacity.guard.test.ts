@@ -50,7 +50,7 @@ describe('equity worker capacity is a routing prerequisite', () => {
   });
 
   it('publishes queue pressure and keeps dealer health through bounded optional recovery', () => {
-    const health = sliceMethod(gameServer, 'getStatus()');
+    const health = sliceMethod(gameServer, '\n  getStatus(');
     const metrics = sliceMethod(gameServer, 'getPrometheusMetrics()');
     expect(health).toContain('equityWorkerPool: equityWorkers');
     expect(health).toContain('equityWorkerPoolPreservesDealerLiveness(equityWorkers)');

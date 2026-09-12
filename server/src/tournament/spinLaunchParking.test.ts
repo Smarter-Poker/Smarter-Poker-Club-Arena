@@ -592,7 +592,7 @@ describe('the wiring', () => {
       expect(SERVER.indexOf(`# TYPE ${gauge} gauge`, scrape)).toBeGreaterThan(scrape);
       expect(SERVER.indexOf(`\`${gauge} \${parks.`, scrape)).toBeGreaterThan(scrape);
     }
-    const status = SERVER.indexOf('getStatus() {');
+    const status = SERVER.indexOf('\n  getStatus(');
     expect(status).toBeGreaterThan(0);
     const field = SERVER.indexOf('spinLaunchParks: (() => {', status);
     expect(field).toBeGreaterThan(status);

@@ -42,7 +42,10 @@ export async function assertBootstrapPostgresConfiguration(db) {
     AND inet_server_addr() IS NULL AND current_database()='postgres'
     AND current_setting('data_directory')='/var/lib/postgresql/data'
     AND current_setting('wal_level')='logical'
-    AND current_setting('output_plugin_libraries')='pgoutput,wal2json' AS configured`);
+    AND current_setting('output_plugin_libraries')='pgoutput,wal2json'
+    AND current_setting('session_preload_libraries')='supautils'
+    AND current_setting('supautils.superuser')='supabase_admin'
+    AND current_setting('supautils.privileged_role')='supabase_privileged_role' AS configured`);
   assert.deepEqual(
     result.rows,
     [{ configured: true }],
@@ -225,11 +228,16 @@ export const managedPostgresReceipt = Object.freeze({
 // All probe objects and membership changes roll back, even on a failed assertion.
 export async function assertManagedPostgresBoundary(db) {
   await assertApplicationOwnerBoundary(db);
-  const config = await db.query(`SELECT current_setting('session_preload_libraries')='supautils'
-      AND current_setting('supautils.superuser')='supabase_admin'
-      AND current_setting('supautils.privileged_role')='supabase_privileged_role'
-      AND pg_has_role(current_user,'supabase_privileged_role','MEMBER') AS managed_config`);
-  assert.deepEqual(config.rows, [{ managed_config: true }], 'FIXTURE_MANAGED_POSTGRES_REQUIRED');
+  // Private preload configuration was checked on the bootstrap connection.
+  // This identity proves the actual managed behavior below without permission
+  // to read server-private settings or promote itself to a superuser.
+  const membership = await db.query(`SELECT
+    pg_has_role(current_user,'supabase_privileged_role','MEMBER') AS managed_membership`);
+  assert.deepEqual(
+    membership.rows,
+    [{ managed_membership: true }],
+    'FIXTURE_MANAGED_POSTGRES_REQUIRED'
+  );
   const absent = async () => {
     const result = await db.query(`SELECT
       NOT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='fixture_managed_probe')

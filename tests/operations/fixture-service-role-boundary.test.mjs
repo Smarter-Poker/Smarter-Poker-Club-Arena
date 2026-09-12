@@ -105,7 +105,7 @@ test('managed probe failure rolls back before verifying owned object absence', a
         calls.push(sql);
         if (sql.includes('AS application_owner_boundary'))
           return { rows: [{ owned_database: true, application_owner_boundary: true }] };
-        if (sql.includes('AS managed_config')) return { rows: [{ managed_config: true }] };
+        if (sql.includes('AS managed_membership')) return { rows: [{ managed_membership: true }] };
         if (sql.includes('AS absent')) return { rows: [{ absent: true }] };
         if (sql.startsWith('CREATE SCHEMA')) throw new Error('probe DDL refused');
         return { rows: [] };
@@ -125,7 +125,7 @@ test('managed native probe refuses a pre-existing object before starting its tra
         calls.push(sql);
         if (sql.includes('AS application_owner_boundary'))
           return { rows: [{ owned_database: true, application_owner_boundary: true }] };
-        if (sql.includes('AS managed_config')) return { rows: [{ managed_config: true }] };
+        if (sql.includes('AS managed_membership')) return { rows: [{ managed_membership: true }] };
         return { rows: [{ absent: false }] };
       },
     }),

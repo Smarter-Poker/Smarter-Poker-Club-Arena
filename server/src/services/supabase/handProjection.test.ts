@@ -15,11 +15,24 @@ import {
 } from './dataActorContext.js';
 
 type OutboxReply = {
-  data: Array<{ hand_id: string; table_id?: string; hand_number: number }> | null;
+  data: Array<{
+    hand_id: string;
+    table_id?: string;
+    hand_number: number;
+  }> | null;
   error: unknown;
 };
 type RpcReply = { data: unknown; error: unknown };
 
+let outboxModel:
+  | ((call: {
+      after?: number;
+      ceiling?: number;
+      ascending?: boolean;
+      limit?: number;
+    }) => OutboxReply)
+  | null = null;
+let projectionModel: ((id: string) => RpcReply | Promise<RpcReply>) | null = null;
 const outboxReplies: Array<OutboxReply | Promise<OutboxReply>> = [];
 const projectionReplies: RpcReply[] = [];
 /** Replies keyed by p_hand_id, consulted before the FIFO queue; a promise holds the RPC open. */
@@ -30,6 +43,7 @@ const queryCalls: Array<{
   table: string;
   columns?: string;
   after?: number;
+  ceiling?: number;
   ascending?: boolean;
   limit?: number;
 }> = [];
@@ -72,13 +86,19 @@ vi.mock('./client.js', () => ({
           call.after = value;
           return query;
         },
+        lte(_column: string, value: number) {
+          call.ceiling = value;
+          return query;
+        },
         order(_column: string, options: { ascending: boolean }) {
           call.ascending = options.ascending;
           return query;
         },
         limit(value: number) {
           call.limit = value;
-          return Promise.resolve(outboxReplies.shift() ?? { data: [], error: null });
+          return Promise.resolve(
+            outboxModel?.(call) ?? outboxReplies.shift() ?? { data: [], error: null }
+          );
         },
       };
       return query;
@@ -89,6 +109,7 @@ vi.mock('./client.js', () => ({
       rpcInFlight.now++;
       rpcInFlight.max = Math.max(rpcInFlight.max, rpcInFlight.now);
       try {
+        if (projectionModel) return await projectionModel(String(args.p_hand_id));
         const byId = projectionRepliesById.get(String(args.p_hand_id));
         if (byId) {
           projectionRepliesById.delete(String(args.p_hand_id));
@@ -118,6 +139,7 @@ vi.mock('./client.js', () => ({
 
 const mockReportError = vi.fn();
 vi.mock('../errorReporter.js', () => ({
+  describeError: (error: unknown) => JSON.stringify(error),
   reportError: (...args: unknown[]) => mockReportError(...args),
 }));
 
@@ -125,6 +147,8 @@ const worker = await import('./handProjection.js');
 
 beforeEach(async () => {
   await worker.stopHandProjectionWorker();
+  outboxModel = null;
+  projectionModel = null;
   outboxReplies.length = 0;
   projectionReplies.length = 0;
   projectionRepliesById.clear();
@@ -162,7 +186,12 @@ describe('the accepted-hand projection worker', () => {
 
     const summary = await worker.wakeHandProjection();
 
-    expect(summary).toEqual({ projected: 1, alreadyCompleted: 1, deferred: 1, failed: 0 });
+    expect(summary).toEqual({
+      projected: 1,
+      alreadyCompleted: 1,
+      deferred: 1,
+      failed: 0,
+    });
     expect(queryCalls).toEqual([
       {
         table: 'hand_projection_outbox',
@@ -193,7 +222,10 @@ describe('the accepted-hand projection worker', () => {
       data: { ok: false, reason: 'projection_refused' },
       error: null,
     });
-    projectionRepliesById.set('h-202', { data: null, error: { message: 'transport unavailable' } });
+    projectionRepliesById.set('h-202', {
+      data: null,
+      error: { message: 'transport unavailable' },
+    });
 
     await expect(worker.wakeHandProjection()).resolves.toEqual({
       projected: 0,
@@ -253,7 +285,7 @@ describe('the accepted-hand projection worker', () => {
     await vi.waitFor(() => expect(queryCalls).toHaveLength(11));
 
     expect(rpcCalls).toHaveLength(1_000);
-    expect(queryCalls[10]).toMatchObject({ after: 0, limit: 100 });
+    expect(queryCalls[10]).toMatchObject({ ascending: false, limit: 1 });
   });
 
   it('subscribes before startup drain and removes the exact channel on stop', async () => {
@@ -290,7 +322,9 @@ describe('the accepted-hand projection worker', () => {
         { data: { ok: true, hand_id: 'h-301' }, error: null }
       );
 
-      await expect(worker.wakeHandProjection()).resolves.toMatchObject({ failed: 1 });
+      await expect(worker.wakeHandProjection()).resolves.toMatchObject({
+        failed: 1,
+      });
       await vi.advanceTimersByTimeAsync(250);
       await vi.waitFor(() => expect(rpcCalls).toHaveLength(2));
 
@@ -312,7 +346,9 @@ describe('the accepted-hand projection worker', () => {
         { data: { ok: true, hand_id: 'h-401' }, error: null }
       );
 
-      await expect(worker.wakeHandProjection()).resolves.toMatchObject({ deferred: 1 });
+      await expect(worker.wakeHandProjection()).resolves.toMatchObject({
+        deferred: 1,
+      });
       await vi.advanceTimersByTimeAsync(250);
       await vi.waitFor(() => expect(rpcCalls).toHaveLength(2));
     } finally {
@@ -327,9 +363,14 @@ describe('the accepted-hand projection worker', () => {
         data: [{ hand_id: 'h-501', hand_number: 501 }],
         error: null,
       });
-      projectionReplies.push({ data: null, error: { message: 'connection reset' } });
+      projectionReplies.push({
+        data: null,
+        error: { message: 'connection reset' },
+      });
 
-      await expect(worker.wakeHandProjection()).resolves.toMatchObject({ failed: 1 });
+      await expect(worker.wakeHandProjection()).resolves.toMatchObject({
+        failed: 1,
+      });
       await worker.stopHandProjectionWorker();
       await vi.advanceTimersByTimeAsync(30_000);
 
@@ -373,9 +414,7 @@ describe('the accepted-hand projection worker', () => {
       'while (!stopping && visited < DRAIN_MAX && Date.now() < deadlineAt) {'
     );
     expect(source).toContain('while (!stopping && Date.now() < deadlineAt) {');
-    expect(source).toContain(
-      'if (!stopping && (visited >= DRAIN_MAX || Date.now() >= deadlineAt)) wakeAfterDrain = true;'
-    );
+    expect(source).toContain('visited >= DRAIN_MAX || Date.now() >= deadlineAt');
     expect(source).toContain('if (!workerActive || stopping) return;');
     expect(source).toContain('drainRunning: drainPromise !== null,');
     expect(source).toContain('retryArmed: retryTimer !== null,');
@@ -463,7 +502,12 @@ describe('the accepted-hand projection worker', () => {
       })
     ).toBe(false);
     expect(
-      worker.pollIsDue({ drainRunning: false, retryArmed: false, msSinceLastDrainStart: 0, pollMs })
+      worker.pollIsDue({
+        drainRunning: false,
+        retryArmed: false,
+        msSinceLastDrainStart: 0,
+        pollMs,
+      })
     ).toBe(true);
     // An armed retry fires within 15 s (RETRY_MAX_MS); it holds the poll off for that plus two intervals.
     expect(
@@ -549,7 +593,10 @@ describe('the accepted-hand projection worker', () => {
       }),
       { data: [{ hand_id: 'h-follow', hand_number: 7 }], error: null }
     );
-    projectionReplies.push({ data: { ok: true, hand_id: 'h-follow' }, error: null });
+    projectionReplies.push({
+      data: { ok: true, hand_id: 'h-follow' },
+      error: null,
+    });
 
     const running = worker.wakeHandProjection('local');
     const joined = worker.wakeHandProjection('poll');
@@ -651,17 +698,31 @@ describe('the accepted-hand projection worker', () => {
       // interval elapses three times and must not fire once, or the backoff
       // would collapse to 5 s forever.
       for (let i = 0; i < 6; i++) {
-        outboxReplies.push({ data: [{ hand_id: 'h-601', hand_number: 601 }], error: null });
-        projectionReplies.push({ data: null, error: { message: 'connection reset' } });
+        outboxReplies.push({
+          data: [{ hand_id: 'h-601', hand_number: 601 }],
+          error: null,
+        });
+        projectionReplies.push({
+          data: null,
+          error: { message: 'connection reset' },
+        });
       }
-      await expect(worker.wakeHandProjection()).resolves.toMatchObject({ failed: 1 });
+      await expect(worker.wakeHandProjection()).resolves.toMatchObject({
+        failed: 1,
+      });
       await vi.advanceTimersByTimeAsync(15_750);
       expect(rpcCalls).toHaveLength(6);
       expect(worker.handProjectionWakeCounts().poll).toBe(before);
 
       // Once the row commits and no retry is armed, the poll resumes.
-      outboxReplies.push({ data: [{ hand_id: 'h-601', hand_number: 601 }], error: null });
-      projectionReplies.push({ data: { ok: true, hand_id: 'h-601' }, error: null });
+      outboxReplies.push({
+        data: [{ hand_id: 'h-601', hand_number: 601 }],
+        error: null,
+      });
+      projectionReplies.push({
+        data: { ok: true, hand_id: 'h-601' },
+        error: null,
+      });
       await vi.advanceTimersByTimeAsync(15_000);
       expect(rpcCalls).toHaveLength(7);
       await vi.advanceTimersByTimeAsync(worker.HAND_PROJECTION_POLL_MS * 2);
@@ -780,7 +841,10 @@ describe('the drain projects one ordered chain per table, N tables at a time', (
       ],
       error: null,
     });
-    projectionRepliesById.set('A1', { data: null, error: { message: 'connection reset' } });
+    projectionRepliesById.set('A1', {
+      data: null,
+      error: { message: 'connection reset' },
+    });
     projectionRepliesById.set('B2', { data: { ok: true }, error: null });
     projectionRepliesById.set('B5', { data: { ok: true }, error: null });
 
@@ -796,7 +860,9 @@ describe('the drain projects one ordered chain per table, N tables at a time', (
     ]);
     // The pass owes a causal retry for table A; the retry re-reads the outbox.
     outboxReplies.push({ data: [], error: null });
-    await vi.waitFor(() => expect(queryCalls).toHaveLength(2), { timeout: 2_000 });
+    await vi.waitFor(() => expect(queryCalls).toHaveLength(2), {
+      timeout: 2_000,
+    });
   });
 
   it('a dependency-deferred hand blocks its table across pages of the same pass', async () => {
@@ -808,7 +874,10 @@ describe('the drain projects one ordered chain per table, N tables at a time', (
     }));
     outboxReplies.push(
       { data: page1, error: null },
-      { data: [{ hand_id: 'A101', table_id: 'A', hand_number: 101 }], error: null }
+      {
+        data: [{ hand_id: 'A101', table_id: 'A', hand_number: 101 }],
+        error: null,
+      }
     );
     projectionRepliesById.set('T1', {
       data: { ok: false, reason: 'predecessor_pending' },
@@ -836,7 +905,10 @@ describe('the drain projects one ordered chain per table, N tables at a time', (
       ],
       error: null,
     });
-    projectionRepliesById.set('A1', { data: { ok: false, reason: 'not_pending' }, error: null });
+    projectionRepliesById.set('A1', {
+      data: { ok: false, reason: 'not_pending' },
+      error: null,
+    });
     projectionRepliesById.set('A2', { data: { ok: true }, error: null });
     await expect(worker.wakeHandProjection()).resolves.toEqual({
       projected: 1,
@@ -857,7 +929,10 @@ describe('the drain projects one ordered chain per table, N tables at a time', (
       error: null,
     });
     projectionRepliesById.set('A1', { data: { ok: true }, error: null });
-    projectionRepliesById.set('B2', { data: { ok: false, reason: 'not_pending' }, error: null });
+    projectionRepliesById.set('B2', {
+      data: { ok: false, reason: 'not_pending' },
+      error: null,
+    });
     await worker.wakeHandProjection();
     const after = worker.handProjectionDrainResultCounts();
     expect(after.projected).toBe(before.projected + 1);
@@ -919,7 +994,9 @@ describe('projection worker owns its request context', () => {
     expect(() =>
       runWithTournamentDataAuthority(authority, () => worker.startHandProjectionWorker())
     ).toThrow('must start outside tournament authority');
-    await expect(worker.wakeHandProjection()).resolves.toMatchObject({ projected: 0 });
+    await expect(worker.wakeHandProjection()).resolves.toMatchObject({
+      projected: 0,
+    });
     expect(requestActors).toEqual([]);
     worker.startHandProjectionWorker();
     await vi.waitFor(() => expect(requestActors).toEqual(['service']));
@@ -938,4 +1015,422 @@ describe('projection worker owns its request context', () => {
     await vi.waitFor(() => expect(rpcCalls).toHaveLength(2));
     expect(requestActors).toEqual(['service', 'service', 'service', 'service']);
   });
+});
+
+describe('bounded fair sweeps over unchanged blocked prefixes', () => {
+  it.each([1000, 1205])(
+    'passes %i blocked rows, then recovers original work in order',
+    async (count) => {
+      vi.useFakeTimers();
+      try {
+        const pending = Array.from({ length: count }, (_, i) => ({
+          hand_id: `blocked-${i + 1}`,
+          table_id: 'blocked',
+          hand_number: i + 1,
+        }));
+        pending.push({
+          hand_id: 'healthy',
+          table_id: 'healthy',
+          hand_number: count + 1,
+        });
+        let blocked = true;
+        const completed: string[] = [];
+        outboxModel = (call) => ({
+          data: pending
+            .filter(
+              (r) =>
+                r.hand_number > (call.after ?? 0) && r.hand_number <= (call.ceiling ?? Infinity)
+            )
+            .sort((a, b) =>
+              call.ascending === false
+                ? b.hand_number - a.hand_number
+                : a.hand_number - b.hand_number
+            )
+            .slice(0, call.limit),
+          error: null,
+        });
+        projectionModel = (id) => {
+          // Frequent immediate wake signals must coalesce, not reset the sweep.
+          for (let i = 0; i < 5; i++) void worker.wakeHandProjection('listen');
+          if (id.startsWith('blocked') && blocked)
+            return {
+              data: { ok: false, reason: 'predecessor_pending' },
+              error: null,
+            };
+          const index = pending.findIndex((r) => r.hand_id === id);
+          if (
+            pending.some(
+              (r) =>
+                r.table_id === pending[index].table_id && r.hand_number < pending[index].hand_number
+            )
+          )
+            throw new Error('worker skipped original predecessor');
+          completed.push(id);
+          pending.splice(index, 1);
+          return { data: { ok: true }, error: null };
+        };
+        await worker.wakeHandProjection();
+        // Flush promise continuations without advancing the retry timer.
+        for (let i = 0; i < 100; i++) await Promise.resolve();
+        expect(completed).toEqual(['healthy']);
+        expect(rpcCalls.filter((c) => c.args.p_hand_id === 'blocked-1')).toHaveLength(1);
+        expect(queryCalls.filter((c) => c.ascending !== false).length).toBeLessThanOrEqual(14);
+        const before = rpcCalls.length;
+        await vi.advanceTimersByTimeAsync(249);
+        expect(rpcCalls.length).toBe(before);
+        blocked = false;
+        await vi.advanceTimersByTimeAsync(1);
+        for (let i = 0; i < 100; i++) await Promise.resolve();
+        expect(pending).toHaveLength(0);
+        expect(completed).toEqual([
+          'healthy',
+          ...Array.from({ length: count }, (_, i) => `blocked-${i + 1}`),
+        ]);
+        expect(new Set(completed).size).toBe(count + 1);
+        expect(
+          rpcCalls.every(
+            (c) =>
+              c.fn === 'fn_project_hand_side_effects' && Object.keys(c.args).join() === 'p_hand_id'
+          )
+        ).toBe(true);
+      } finally {
+        await worker.stopHandProjectionWorker();
+        vi.useRealTimers();
+      }
+    }
+  );
+});
+
+describe('fair sweep boundaries', () => {
+  it.each([false, true])(
+    'bounds a sweep despite new arrivals=%s and retries the original blocker',
+    async (arrivals) => {
+      vi.useFakeTimers();
+      try {
+        const pending = Array.from({ length: 1000 }, (_, i) => ({
+          hand_id: `a-${i + 1}`,
+          table_id: 'a',
+          hand_number: i + 1,
+        }));
+        if (arrivals)
+          pending.push({
+            hand_id: 'healthy-old',
+            table_id: 'b',
+            hand_number: 1001,
+          });
+        let captured = false;
+        outboxModel = (call) => {
+          const data = pending
+            .filter(
+              (r) =>
+                r.hand_number > (call.after ?? 0) && r.hand_number <= (call.ceiling ?? Infinity)
+            )
+            .sort((a, b) =>
+              call.ascending === false
+                ? b.hand_number - a.hand_number
+                : a.hand_number - b.hand_number
+            )
+            .slice(0, call.limit);
+          if (call.ascending === false && arrivals && !captured) {
+            captured = true;
+            pending.push({
+              hand_id: 'arriving',
+              table_id: 'b',
+              hand_number: 1002,
+            });
+          }
+          return { data, error: null };
+        };
+        projectionModel = (id) => {
+          if (id === 'a-1')
+            return {
+              data: { ok: false, reason: 'predecessor_pending' },
+              error: null,
+            };
+          pending.splice(
+            pending.findIndex((r) => r.hand_id === id),
+            1
+          );
+          return { data: { ok: true }, error: null };
+        };
+        const summary = await worker.wakeHandProjection();
+        expect(summary.deferred).toBe(1000);
+        for (let i = 0; i < 100; i++) await Promise.resolve();
+        expect(rpcCalls.filter((c) => c.args.p_hand_id === 'a-1')).toHaveLength(1);
+        expect(rpcCalls.some((c) => c.args.p_hand_id === 'arriving')).toBe(false);
+        await vi.advanceTimersByTimeAsync(249);
+        expect(rpcCalls.filter((c) => c.args.p_hand_id === 'a-1')).toHaveLength(1);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(rpcCalls.filter((c) => c.args.p_hand_id === 'a-1')).toHaveLength(2);
+        if (arrivals) expect(rpcCalls.some((c) => c.args.p_hand_id === 'arriving')).toBe(true);
+      } finally {
+        await worker.stopHandProjectionWorker();
+        vi.useRealTimers();
+      }
+    }
+  );
+  it('reports a failed frontier read and resumes from durable claims on the causal retry', async () => {
+    vi.useFakeTimers();
+    try {
+      const pending = Array.from({ length: 1001 }, (_, i) => ({
+        hand_id: `p-${i + 1}`,
+        table_id: 'one',
+        hand_number: i + 1,
+      }));
+      let failed = false;
+      outboxModel = (call) => {
+        if (call.ascending === false && !failed) {
+          failed = true;
+          return { data: null, error: { message: 'frontier offline' } };
+        }
+        return {
+          data: pending
+            .filter(
+              (r) =>
+                r.hand_number > (call.after ?? 0) && r.hand_number <= (call.ceiling ?? Infinity)
+            )
+            .slice(0, call.limit),
+          error: null,
+        };
+      };
+      projectionModel = (id) => {
+        pending.splice(
+          pending.findIndex((r) => r.hand_id === id),
+          1
+        );
+        return { data: { ok: true }, error: null };
+      };
+      await expect(worker.wakeHandProjection()).rejects.toThrow('projection frontier read failed');
+      await vi.advanceTimersByTimeAsync(250);
+      expect(pending).toHaveLength(0);
+      expect(rpcCalls).toHaveLength(1001);
+      expect(mockReportError).toHaveBeenCalledWith(
+        expect.any(Error),
+        'HandProjection.drain_failed'
+      );
+    } finally {
+      await worker.stopHandProjectionWorker();
+      vi.useRealTimers();
+    }
+  });
+  describe.each(['page', 'frontier'])('strict %s ordering responses', (surface) => {
+    const invalid = [
+      null,
+      undefined,
+      {},
+      [null],
+      [{}],
+      ...[
+        null,
+        undefined,
+        'garbage',
+        Infinity,
+        NaN,
+        0,
+        -1,
+        1.5,
+        Number.MAX_SAFE_INTEGER + 1,
+        '9007199254740993',
+        'Infinity',
+        '1e3',
+      ].map((hand_number) => [{ hand_id: 'bad', hand_number }]),
+    ];
+    it.each(invalid.map((data, index) => ({ data, index })))(
+      'rejects invalid response $index and retries',
+      async ({ data }) => {
+        vi.useFakeTimers();
+        try {
+          const pending = Array.from({ length: surface === 'frontier' ? 1001 : 1 }, (_, i) => ({
+            hand_id: `strict-${i + 1}`,
+            table_id: 'one',
+            hand_number: i + 1,
+          }));
+          let injected = false;
+          outboxModel = (call) => {
+            if (!injected && (surface === 'page' || call.ascending === false)) {
+              injected = true;
+              return { data, error: null } as unknown as OutboxReply;
+            }
+            return {
+              data: pending.filter((r) => r.hand_number > (call.after ?? 0)).slice(0, call.limit),
+              error: null,
+            };
+          };
+          projectionModel = (id) => {
+            pending.splice(
+              pending.findIndex((r) => r.hand_id === id),
+              1
+            );
+            return { data: { ok: true }, error: null };
+          };
+          await expect(worker.wakeHandProjection()).rejects.toThrow('projection ordering');
+          expect(pending).toHaveLength(1);
+          expect(rpcCalls).toHaveLength(surface === 'frontier' ? 1000 : 0);
+          await vi.advanceTimersByTimeAsync(249);
+          expect(pending).toHaveLength(1);
+          await vi.advanceTimersByTimeAsync(1);
+          expect(pending).toHaveLength(0);
+          expect(new Set(rpcCalls.map((c) => c.args.p_hand_id)).size).toBe(rpcCalls.length);
+        } finally {
+          await worker.stopHandProjectionWorker();
+          vi.useRealTimers();
+        }
+      }
+    );
+  });
+
+  it.each([false, true])(
+    'accepts exact numeric ordering including wire strings=%s',
+    async (wire) => {
+      const pending = Array.from({ length: 1001 }, (_, i) => ({
+        hand_id: `valid-${i + 1}`,
+        hand_number: i + 1,
+      }));
+      outboxModel = (call) => ({
+        data: pending
+          .filter(
+            (r) => r.hand_number > (call.after ?? 0) && r.hand_number <= (call.ceiling ?? Infinity)
+          )
+          .sort((a, b) =>
+            call.ascending === false ? b.hand_number - a.hand_number : a.hand_number - b.hand_number
+          )
+          .slice(0, call.limit)
+          .map((r) => ({
+            ...r,
+            hand_number: wire ? String(r.hand_number) : r.hand_number,
+          })) as unknown as OutboxReply['data'],
+        error: null,
+      });
+      projectionModel = (id) => {
+        pending.splice(
+          pending.findIndex((r) => r.hand_id === id),
+          1
+        );
+        return { data: { ok: true }, error: null };
+      };
+      await worker.wakeHandProjection();
+      await vi.waitFor(() => expect(pending).toHaveLength(0));
+      expect(rpcCalls).toHaveLength(1001);
+    }
+  );
+
+  it('rejects an out-of-order page before projecting its valid prefix', async () => {
+    outboxReplies.push({
+      data: [
+        { hand_id: 'a', hand_number: 2 },
+        { hand_id: 'b', hand_number: 1 },
+      ],
+      error: null,
+    });
+    await expect(worker.wakeHandProjection()).rejects.toThrow('outside bounds');
+    expect(rpcCalls).toHaveLength(0);
+  });
+  it.each(['page', 'frontier'])('accepts a verified empty %s array', async (surface) => {
+    vi.useFakeTimers();
+    try {
+      const pending = Array.from({ length: surface === 'frontier' ? 1000 : 0 }, (_, i) => ({
+        hand_id: `empty-${i + 1}`,
+        hand_number: i + 1,
+      }));
+      outboxModel = (call) => ({
+        data: pending.filter((r) => r.hand_number > (call.after ?? 0)).slice(0, call.limit),
+        error: null,
+      });
+      projectionModel = (id) => {
+        pending.splice(
+          pending.findIndex((r) => r.hand_id === id),
+          1
+        );
+        return { data: { ok: true }, error: null };
+      };
+      await worker.wakeHandProjection();
+      await vi.advanceTimersByTimeAsync(250);
+      expect(pending).toHaveLength(0);
+      expect(mockReportError).not.toHaveBeenCalled();
+      expect(rpcCalls).toHaveLength(surface === 'frontier' ? 1000 : 0);
+    } finally {
+      await worker.stopHandProjectionWorker();
+      vi.useRealTimers();
+    }
+  });
+  it.each([1, 2])(
+    'keeps physical lanes owned and revisits unstarted partial-page chains with %s lanes',
+    async (lanes) => {
+      vi.stubEnv('HAND_PROJECTION_DRAIN_CONCURRENCY', String(lanes));
+      vi.useFakeTimers();
+      try {
+        let blocked = true;
+        const pending = Array.from({ length: 1205 }, (_, i) => ({
+          hand_id: `timed-${i + 1}`,
+          hand_number: i + 1,
+          table_id:
+            i === 0 || (i >= 100 && i < 1204) ? 'blocked' : i === 99 ? 'table-2' : `table-${i + 1}`,
+        }));
+        const settle = async () => {
+          for (let i = 0; i < 20; i++) await Promise.resolve();
+        };
+        const gates = Array.from({ length: lanes }, () => {
+          let resolve!: (reply: RpcReply) => void;
+          const promise = new Promise<RpcReply>((done) => {
+            resolve = done;
+          });
+          return { promise, resolve };
+        });
+        const completed: string[] = [];
+        outboxModel = (call) => ({
+          data: pending
+            .filter(
+              (r) =>
+                r.hand_number > (call.after ?? 0) && r.hand_number <= (call.ceiling ?? Infinity)
+            )
+            .sort((a, b) =>
+              call.ascending === false
+                ? b.hand_number - a.hand_number
+                : a.hand_number - b.hand_number
+            )
+            .slice(0, call.limit),
+          error: null,
+        });
+        projectionModel = async (id) => {
+          const row = pending.find((r) => r.hand_id === id)!;
+          if (row.table_id === 'blocked' && blocked)
+            return { data: { ok: false, reason: 'predecessor_pending' }, error: null };
+          const gateIndex = row.hand_number - 2;
+          if (gateIndex >= 0 && gateIndex < lanes) await gates[gateIndex].promise;
+          completed.push(id);
+          pending.splice(
+            pending.findIndex((r) => r.hand_id === id),
+            1
+          );
+          return { data: { ok: true }, error: null };
+        };
+        const pass = worker.wakeHandProjection();
+        await settle();
+        expect(rpcInFlight.now).toBe(lanes);
+        const queryCount = queryCalls.length;
+        await vi.advanceTimersByTimeAsync(worker.HAND_PROJECTION_DRAIN_DEADLINE_MS + 1);
+        for (let i = 0; i < 8; i++) void worker.wakeHandProjection();
+        await settle();
+        expect(queryCalls).toHaveLength(queryCount);
+        expect(rpcInFlight.now).toBe(lanes);
+        for (const gate of gates) gate.resolve({ data: { ok: true }, error: null });
+        await pass;
+        await vi.advanceTimersByTimeAsync(0);
+        expect(completed).toContain(`timed-${lanes + 2}`);
+        expect(completed).toContain('timed-1205');
+        expect(rpcInFlight.max).toBe(lanes);
+        expect(rpcCalls.filter((c) => c.args.p_hand_id === 'timed-1')).toHaveLength(1);
+        const ascending = queryCalls.filter((c) => c.ascending === true);
+        expect(ascending[1].after).toBe(lanes + 1);
+        blocked = false;
+        await vi.advanceTimersByTimeAsync(250);
+        expect(pending).toHaveLength(0);
+        expect(new Set(completed).size).toBe(1205);
+        expect(completed).toHaveLength(1205);
+      } finally {
+        await worker.stopHandProjectionWorker();
+        vi.useRealTimers();
+      }
+    }
+  );
 });

@@ -1,0 +1,19 @@
+{
+  "recorded_at": "2026-09-12T10:50:27.408947+00:00",
+  "source_kind": "current captured authority baseline, not recovered historical migrations",
+  "source_capture": "2026-09-12 10:37:51.399106+00",
+  "review": "G8-independent-review-0094",
+  "disposition": "ACCEPT_CURRENT_SOURCE_BASELINE_ONLY",
+  "independent_handoff_sha256": "5d2de3919cb3c3b4682737db7f6e71b93cf04e23bb03d90cecfa191de855fe73",
+  "independent_checks_sha256": "ca12b8cc1f3c65c04358fc6957605b33ad8485a32abfec55351581b0a2b21766",
+  "independent_seal_sha256": "51e81744458b0766fc2526f46ac6424766c73d99c00992d7da0a13faa54308e7",
+  "manifest_entries_verified": 10,
+  "independent_seal_refs_verified": 19,
+  "production_ddl_executed": false,
+  "native_fixture_executed": false,
+  "effective_application_parity": false,
+  "source_ready": false,
+  "migration_version": null,
+  "note": "Preserved packet README/STATUS describe its preparation state; this separate record documents later independent acceptance. Exact function files do not establish ownership, ACLs, effective role parity or transitive dependencies. No pre-request hook is included.",
+  "recorded_metadata_format": "Repository formatter only; JSON values preserved. INPUT-MANIFEST retains original source hashes; RECORDED-MANIFEST pins this archive. Five SQL files are byte exact."
+}

@@ -68,7 +68,9 @@ describe('LAW 1/2/4 - the always-on registry', () => {
     // _handlePlayerActionInner, so the clock must be started there too -
     // verified on production 2026-09-04: before this, zero samples with no
     // human seated.
-    const horseAt = turns.indexOf('handControllerRef.performAction(seat, action as any, amount)');
+    const horseAt = turns.search(
+      /handControllerRef\.performAction\(\s*seat,\s*action as any,\s*amount,/
+    );
     expect(horseAt).toBeGreaterThan(0);
     const afterHorse = turns.slice(horseAt);
     expect(afterHorse.indexOf('this.lastActionAcceptedAtMs = Date.now()')).toBeGreaterThan(0);
@@ -129,10 +131,12 @@ describe('LAW 7 - the clock measures action-to-broadcast, not the gap between ac
     const seg = sliceMethod(turns, 'protected scheduleHorseAction(');
     expect(seg).toContain('const horseClockWasArmed');
     const arm = seg.indexOf('this.lastActionAcceptedAtMs = Date.now();');
-    const act = seg.indexOf('handControllerRef.performAction(seat, action as any, amount)');
+    const act = seg.search(/handControllerRef\.performAction\(\s*seat,\s*action as any,\s*amount,/);
+    expect(arm).toBeGreaterThan(-1);
+    expect(act).toBeGreaterThan(-1);
     expect(arm).toBeLessThan(act);
     // the degrade re-arms, and total failure restores
-    expect(seg).toContain("performAction(seat, 'fold' as any)");
+    expect(seg).toMatch(/performAction\(\s*seat,\s*'fold' as any,\s*undefined,\s*'horse_fallback'/);
     expect(turns).toMatch(/this\.lastActionAcceptedAtMs = horseClockWasArmed;/);
   });
 

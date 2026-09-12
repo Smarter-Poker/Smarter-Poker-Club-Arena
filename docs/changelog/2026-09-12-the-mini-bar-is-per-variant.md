@@ -133,3 +133,34 @@ by grepping, which finds what exists today and nothing about tomorrow.
 requires the three paragraphs to name the PLO5/FLO5 and Pineapple bars
 explicitly. It strips comments before matching, so the notes explaining the old
 wording stay readable without failing the law that describes them.
+
+## A rule change reaches the two halves at different speeds
+
+Worth writing down, because Dan will set another bar one day and this is not
+obvious from either repo.
+
+The **client** publishes minutes after merge: measured today, `main`
+`240b3394b2` was serving from `ca-static.smarter.poker` almost immediately, and
+the PLO5 "Quad Tens Or Better" string was in the published `RakeConfig` chunk.
+
+The **engine** does not. An engine-affecting merge is classified by
+`stage-engine-release.yml`, which sends one exact-SHA event to
+`auto-deploy-hetzner.yml`, and that waits in its break gate to cut over inside
+the hourly `:55` maintenance break (CLAUDE.md 13). Verified today: the engine
+was serving `d68cc549`, which does **not** contain `miniMinQuadRank`, while
+`Engine Release 96c00643dd` - which does, along with the `flo5` alias - was
+staged and in progress, waiting for that gate.
+
+So for up to about an hour after a mini-rule merge, **the page states the new
+bar and the engine still applies the old one.** Today that direction is safe:
+the engine pays MORE minis than the page promises (any quads rather than Quad
+Tens), so nobody is shortchanged and nobody is told they won something they did
+not. A rule change in the other direction - one that LOOSENS the engine before
+the page says so, or tightens the page while the engine still refuses - would
+put a player in front of a promise the payout declines.
+
+**If a future bar moves the other way, land the client text in a separate,
+later merge than the engine rule**, so the page never promises something the
+engine will not pay. Nothing enforces this ordering today; it is a judgement
+the next author has to make, which is why it is written here rather than
+assumed.

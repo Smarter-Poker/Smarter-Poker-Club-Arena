@@ -2,6 +2,43 @@
 
 BBJ programme, post-audit phase 4 of 5. 2026-09-12.
 
+> ## CORRECTION, ninety minutes later: I named the wrong function
+>
+> Everything below about _what_ the promo sweep does and _why_ it was invisible
+> is right. **Which function is driven was backwards**, and I wrote it into
+> production comments on two money-moving functions.
+>
+> `smarter-poker-workers/src/routes/bbj-detect.ts` step 6 calls
+> **`fn_sweep_bbj_promo_all()`**. Nothing in that repo calls the per-club
+> `fn_sweep_bbj_promo(uuid)`; its only caller is `mint_club_promo`. So the
+> comment reading **"DO NOT SCHEDULE THIS"** was sitting on the one function
+> the platform's promo slice depends on being scheduled - an agent obeying it
+> removes the only driver promo has, and the workers route records the cost: a
+> one-time manual sweep once moved 47,607.05, and pools re-accrued 3,339.90
+> within two days because nothing recurred.
+>
+> **How.** I measured that _something_ swept every five minutes, established
+> that only these two functions write that `tx_type`, and assigned the role to
+> the per-club one because a database function calls it. That is an inference,
+> and I wrote it down as fact. I could have read the answer: I told Dan the
+> workers repo "isn't mounted in this session" and recorded that in the
+> register, while it sat on this machine at `~/Documents/smarter-poker-workers`.
+> One `grep` settles it. CLAUDE.md 10.86 ends with exactly this - _date the
+> claim, and re-check it in one call before you route around anything_ - and
+> the migration written to stop an agent answering when it could not tell did
+> precisely that, about the same money path, in the same hour.
+>
+> Corrected by migration `20260912005352`, which asserts both halves: the
+> `_all` variant says it is the live driver and names its route, the per-club
+> variant says it is not scheduled, and the words "DO NOT SCHEDULE" may not
+> appear on the driver. The law gained a test that reads the actual workers
+> route rather than trusting either comment, and skips rather than fails where
+> that checkout is absent - its absence on another machine is not evidence
+> about production.
+>
+> Read the sections below with that swap in mind; they are left as written so
+> the mistake is legible rather than tidied away.
+
 ## What was wrong
 
 The phase 2 sweep left this open:

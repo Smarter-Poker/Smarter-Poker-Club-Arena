@@ -54,21 +54,43 @@ function sweepMigration(): string {
 }
 
 describe('the promo sweep names what drives it', () => {
-  it('the live sweep names its driver, its repo and its cadence', () => {
+  /* THE DRIVER IS `fn_sweep_bbj_promo_all()`, NOT the per-club variant.
+     This law's first version pinned it the other way round, because the
+     migration it was written against had it the other way round: the sweep
+     was measured running every five minutes, only two functions can write
+     that tx_type, and the role was assigned to the per-club one by inference
+     rather than read. `smarter-poker-workers/src/routes/bbj-detect.ts` step 6
+     calls `fn_sweep_bbj_promo_all` and nothing in that repo calls the other.
+     Corrected 2026-09-12 by migration `20260912005352`. */
+
+  it('the LIVE DRIVER is the _all variant, and it names its route and cadence', () => {
     const m = sweepMigration();
-    expect(m).toContain('COMMENT ON FUNCTION public.fn_sweep_bbj_promo(uuid)');
-    // The route, the scheduler and the repo that owns it.
-    expect(m).toMatch(/bbj-detect/);
-    expect(m).toMatch(/Open Claw/);
-    expect(m).toMatch(/workers repo/);
-    // And says plainly it is neither dead nor to be given a cron row here.
-    expect(m).toMatch(/do not delete this function as dead code/i);
+    expect(m).toContain('COMMENT ON FUNCTION public.fn_sweep_bbj_promo_all()');
+    const allComment = m.slice(m.indexOf('COMMENT ON FUNCTION public.fn_sweep_bbj_promo_all()'));
+    expect(allComment).toMatch(/THIS IS THE LIVE DRIVER/);
+    expect(allComment).toMatch(/bbj-detect/);
+    expect(allComment).toMatch(/five minutes/i);
+    // Never deleted as dead code, and never given a second driver.
+    expect(allComment).toMatch(/DO NOT DELETE IT/);
+    expect(allComment).toMatch(/DO NOT ADD A SECOND DRIVER/);
   });
 
-  it('the _all variant refuses to be scheduled', () => {
+  it('the per-club variant does not claim to be the driver', () => {
     const m = sweepMigration();
-    expect(m).toContain('DO NOT SCHEDULE THIS');
-    expect(m).toMatch(/second driver/i);
+    const single = m.slice(m.indexOf('COMMENT ON FUNCTION public.fn_sweep_bbj_promo(uuid)'));
+    expect(single).toMatch(/NOT SCHEDULED/);
+    expect(single).toMatch(/mint_club_promo/);
+  });
+
+  it('the function that IS scheduled is never told not to be', () => {
+    /* The exact inversion this law exists to prevent: a capitalised
+       instruction not to schedule the one function the platform's promo slice
+       depends on being scheduled. An agent obeying it removes the only driver
+       promo has. */
+    const m = sweepMigration();
+    const allComment = m.slice(m.indexOf('COMMENT ON FUNCTION public.fn_sweep_bbj_promo_all()'));
+    const end = allComment.indexOf('COMMENT ON FUNCTION public.fn_sweep_bbj_promo(uuid)');
+    expect(end > -1 ? allComment.slice(0, end) : allComment).not.toMatch(/DO NOT SCHEDULE/);
   });
 
   it('the migration asserts no cron row has acquired either sweep', () => {
@@ -83,11 +105,33 @@ describe('the promo sweep names what drives it', () => {
   it('the assertion does not quote the sentence it forbids', () => {
     /* The phase 2 corrective pass hit this four times: a migration asserting
        the ABSENCE of a phrase, which quotes the phrase in order to assert it,
-       matches its own check. This migration refuses by asserting the presence
-       of the refusal instead, and says so. */
+       matches its own check. */
     const m = sweepMigration();
     const assertionBlock = m.slice(m.indexOf('DO $$'));
     expect(assertionBlock).not.toMatch(/position\('Schedule this'/);
+  });
+
+  it('the workers repo is where the driver lives, and it is readable from here', () => {
+    /* The claim in every comment above depends on this file. It was asserted
+       for ninety minutes without being opened - I told Dan the repo "isn't
+       mounted in this session" while it sat at ~/Documents/smarter-poker-workers,
+       and the inverted comment is what that cost. If the checkout is absent
+       this test SKIPS rather than fails: its absence on some other machine is
+       not evidence about production. What it must never do is pass while the
+       file says something different. */
+    const route = resolve(
+      process.env.HOME || '',
+      'Documents/smarter-poker-workers/src/routes/bbj-detect.ts'
+    );
+    let src: string;
+    try {
+      src = readFileSync(route, 'utf8');
+    } catch {
+      return; // not checked out here; the migration's own assertions still ran
+    }
+    expect(src).toMatch(/rpc\(\s*['"]fn_sweep_bbj_promo_all['"]\s*\)/);
+    // And it does NOT call the per-club one, which is the whole correction.
+    expect(src).not.toMatch(/rpc\(\s*['"]fn_sweep_bbj_promo['"]/);
   });
 
   it('this repo still has no cron row and no caller for the sweep', () => {

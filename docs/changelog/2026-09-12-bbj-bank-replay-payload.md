@@ -1,0 +1,11 @@
+# BBJ bank move replay identity
+
+Reusing a BBJ bank move operation ID now succeeds only when the recorded pool, source bank, destination bank and accepted cent amount match. A different meaningful payload returns `op_id_payload_mismatch`. Identical retries still return the original receipt after the source bank has been depleted; equivalent rounded amounts and changed valid reason text keep their existing behavior.
+
+The change adds only a replay comparison. Existing bank updates, reserve checks, ledger statements, immutable receipt insertion, requested-pool locking and global operation uniqueness remain unchanged. This does not change the existing concurrent insert-conflict policy or claim that two moves could previously commit under one global operation ID.
+
+Independent review 0060 accepted the candidate and isolated PostgreSQL 17.11 validation: the same 19-case harness produced 11 passes/eight expected mismatch failures before the correction and 19 passes afterward. Pool, receipt and sequence snapshots stayed unchanged. The guarded installer preserved function identity, owner, permissions and settings, repeated idempotently and refused tested definition/permission/settings drift. The portable accounting CI probe preserves those boundaries and fails if its owned database cannot be stopped and removed.
+
+Separate independent review 0065 accepted the current native bank/journal/reserve composition from an explicitly synthetic opening estate. All 26 captured helper definitions and authority records, 20 trigger bindings and six relation grant/RLS records matched the isolated catalog. Actual transfers created the expected paired ledger entries; identical replay and altered-payload refusal preserved state; a concurrent global-key loser rolled back both balances and journal entries. Total bank value and parked liability stayed unchanged. A separate direct-journal probe exercised the current maintenance guard. Conditional issuance and tournament branches were not exercised, and the unexercised pool deletion trigger is a BEFORE DELETE row trigger.
+
+Protected integration, installed fingerprints and real authenticated funding/operation/cleanup retain their separate delivery gates. These fixture results do not certify external funding or a live identity provider.

@@ -2100,7 +2100,7 @@ if [ "$1" = buildx ]; then
   fi
   if [ "$2" = inspect ]; then
     [ -f "$STATE_DIR/builder" ] || exit 1
-    if [[ "$*" == *--format* ]]; then printf '%s\\n' "\${FAKE_BUILDER_DRIVER:-docker-container}"; fi
+    printf 'Driver: %s\\n' "\${FAKE_BUILDER_DRIVER:-docker-container}"
     exit 0
   fi
   if [ "$2" = stop ]; then printf 'stop\\n' >> "$STATE_DIR/builder-stops"; exit 0; fi

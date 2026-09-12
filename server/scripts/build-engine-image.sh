@@ -151,7 +151,9 @@ BUILDKIT_CONFIG
     --driver-opt restart-policy=no \
     --buildkitd-config "$BUILDER_CONFIG" >/dev/null
 fi
-DRIVER="$(docker buildx inspect "$BUILDER" --format '{{.Driver}}')"
+# Older supported Buildx releases have no inspect --format option. The named
+# driver's ordinary inspect output is stable; missing/ambiguous output refuses.
+DRIVER="$(docker buildx inspect "$BUILDER" | sed -n 's/^Driver:[[:space:]]*//p')"
 [ "$DRIVER" = docker-container ] || die 'engine builder is not the dedicated container driver'
 BUILDER_STARTED=1
 timeout --signal=TERM --kill-after=10s 120s docker buildx inspect "$BUILDER" --bootstrap >/dev/null

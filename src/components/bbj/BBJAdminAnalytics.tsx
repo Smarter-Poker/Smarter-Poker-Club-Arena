@@ -23,7 +23,13 @@ export interface BBJAdminAnalyticsProps {
 }
 
 /**
- * WHY IT HAS NOT PAID — the reader for `bbj_near_misses` (2026-09-11).
+ * HANDS THE RULES TURNED AWAY — the reader for `bbj_near_misses` (2026-09-11).
+ *
+ * This block was titled "WHY IT HAS NOT PAID" until 2026-09-12, which is also
+ * what the section heading said, and the heading was changed because it
+ * asserts something the panel cannot know - see the comment above the markup.
+ * The title is kept in step so nobody reads it here and renames the heading
+ * back to match.
  *
  * `days_since_last_hit` has been on this panel since 2026-08-18 posing a
  * question with nothing beside it to answer: a jackpot that has not paid in

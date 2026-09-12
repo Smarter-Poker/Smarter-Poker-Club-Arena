@@ -37,7 +37,11 @@ deep dive. Seeing it on the page is the proof that the fix landed.
 Zero console errors. No `BBJTicker` string anywhere in the published
 `BadBeatJackpotPage` chunk, and `fn_bbj_near_miss_summary`, `Why It Has Not
 Paid` and `Could Not Be Read` all present in it - so phase 4's deletion and
-phase 3's reader both reached players, not just `main`.
+phase 3's reader both reached players, not just `main`. (That was the bundle
+**as it stood when it was looked at**. `Why It Has Not Paid` is the string this
+phase then went on to change, for the reason below, so it is deliberately not
+in the next bundle - it is quoted here as evidence of what shipped, not as a
+thing to preserve.)
 
 ## What looking at it found
 
@@ -56,7 +60,15 @@ It now reads **`Hands The Rules Turned Away`** / _Last 30 Days_, which is true
 whichever way the pool is running. The list is worth reading when the jackpot
 is cold and when it is paying, and it says the same thing in both cases.
 `tests/the-near-miss-log-has-a-reader.law.test.ts` gained a pin: the heading
-may not claim the pool has not paid.
+may not claim the pool has not paid. The pin was **mutation-tested** rather
+than assumed - the old heading was put back, the law went red, the file was
+restored and it went green. A law nobody has watched fail is a law nobody has
+watched.
+
+It also became an `h4`, matching this panel's own `h3` twelve lines above it.
+It had shipped as a bare `span`, so the one section on the panel that exists to
+be found when something is wrong was the one section a screen reader could not
+find by heading.
 
 ### A union-shaped club id 404s on the jackpot route
 

@@ -17,6 +17,7 @@ import { assertCanonicalSignup, assertAttributionChipSeed } from './auth-bootstr
 import {
   serviceRoleBootstrapSql,
   assertNativeServiceRoleBoundary,
+  createFixtureApplicationOwner,
 } from './service-role-boundary.mjs';
 import { createFixtureGateway, loadStaticManifest, findPublicAnonKey } from './gateway.mjs';
 import {
@@ -590,7 +591,7 @@ async function start(args) {
       '-D',
       pgData,
       '-U',
-      'postgres',
+      'supabase_admin',
       '--auth-local=peer',
       '--auth-host=scram-sha-256',
       '--no-locale',
@@ -600,7 +601,10 @@ async function start(args) {
       pgData + '/pg_hba.conf',
       'local all all peer map=fixture_users\nhost all all 127.0.0.1/32 scram-sha-256\n'
     );
-    await writeFile(pgData + '/pg_ident.conf', 'fixture_users fixture postgres\n');
+    await writeFile(
+      pgData + '/pg_ident.conf',
+      'fixture_users fixture supabase_admin\nfixture_users fixture postgres\n'
+    );
     await supervisor.start('postgres', `${pgBin}/postgres`, [
       '-D',
       pgData,
@@ -625,7 +629,7 @@ async function start(args) {
           '-h',
           '/run/postgresql',
           '-U',
-          'postgres',
+          'supabase_admin',
         ]);
         return true;
       } catch {
@@ -640,9 +644,12 @@ async function start(args) {
       query_timeout: 5000,
       statement_timeout: 5000,
     };
-    db = supervisor.databaseOwner.own(new pg.Client({ ...connection, database: 'postgres' }));
+    db = supervisor.databaseOwner.own(
+      new pg.Client({ ...connection, user: 'supabase_admin', database: 'postgres' })
+    );
     await db.connect();
-    await db.query(`CREATE DATABASE ${database}`);
+    await createFixtureApplicationOwner(db);
+    await db.query(`CREATE DATABASE ${database} OWNER postgres`);
     await db.query('REVOKE CONNECT ON DATABASE postgres, template1 FROM PUBLIC');
     await supervisor.databaseOwner.end(db);
     db = supervisor.databaseOwner.own(new pg.Client({ ...connection, database }));

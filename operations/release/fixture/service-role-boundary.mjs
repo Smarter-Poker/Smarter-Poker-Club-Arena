@@ -1,5 +1,20 @@
 import assert from 'node:assert/strict';
 
+// Realtime's pinned PG17 dump uses GRANTED BY supabase_admin. PostgreSQL
+// reserves implicit role administration for the initdb bootstrap identity;
+// creating another SUPERUSER with that name is not equivalent.
+export async function createFixtureApplicationOwner(db) {
+  const identity = await db.query(`SELECT current_database()='postgres'
+    AND inet_server_addr() IS NULL AND current_user='supabase_admin'
+    AND session_user='supabase_admin'
+    AND EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND oid=10 AND rolsuper)
+    AS owned_bootstrap`);
+  assert.deepEqual(identity.rows, [{ owned_bootstrap: true }], 'FIXTURE_INITDB_IDENTITY_REQUIRED');
+  // This local owner is still privileged for schema restoration. Its later
+  // application demotion and effective ACL proof remain a separate gate.
+  await db.query('CREATE ROLE postgres LOGIN SUPERUSER CREATEDB CREATEROLE REPLICATION BYPASSRLS');
+}
+
 // Local bootstrap only. These credentials are random per disposable fixture,
 // never obtained from production. Keep the two native entrypoints identical.
 export function serviceRoleBootstrapSql(password) {
@@ -13,7 +28,7 @@ export function serviceRoleBootstrapSql(password) {
     CREATE ROLE authenticator LOGIN NOINHERIT PASSWORD '${password}';
     GRANT anon, authenticated, service_role TO authenticator;
     CREATE ROLE supabase_auth_admin LOGIN NOINHERIT CREATEROLE PASSWORD '${password}';
-    CREATE ROLE supabase_admin LOGIN SUPERUSER PASSWORD '${password}';
+    ALTER ROLE supabase_admin PASSWORD '${password}';
     CREATE ROLE dashboard_user NOLOGIN;
     CREATE SCHEMA auth AUTHORIZATION supabase_admin;
     GRANT USAGE, CREATE ON SCHEMA auth TO supabase_auth_admin, dashboard_user;
@@ -29,6 +44,7 @@ export const serviceBoundaryReceipt = Object.freeze({
   auth_schema_owner: 'supabase_admin',
   auth_schema_create: 'auth-admin-only-among-application-callers',
   bootstrap_postgres: 'local-superuser',
+  initdb_identity: 'supabase_admin',
   production_application_privilege_parity: false,
 });
 
@@ -38,7 +54,7 @@ export async function assertNativeServiceRoleBoundary(db) {
     current_database()='club_arena_qualification' AND inet_server_addr() IS NULL
       AND current_user='postgres' AS owned_database,
     (SELECT rolsuper FROM pg_roles WHERE rolname='postgres') AS bootstrap_superuser,
-    (SELECT rolcanlogin AND rolsuper AND rolinherit FROM pg_roles WHERE rolname='supabase_admin') AS realtime_bootstrap_superuser,
+    (SELECT oid=10 AND rolcanlogin AND rolsuper AND rolinherit FROM pg_roles WHERE rolname='supabase_admin') AS realtime_bootstrap_superuser,
     (SELECT rolcanlogin AND NOT rolinherit AND NOT rolsuper AND NOT rolbypassrls AND rolcreaterole
       FROM pg_roles WHERE rolname='supabase_auth_admin') AS auth_admin_boundary,
     (SELECT rolcanlogin AND NOT rolinherit AND NOT rolsuper AND NOT rolbypassrls AND NOT rolcreaterole

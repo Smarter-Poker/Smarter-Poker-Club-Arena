@@ -4,6 +4,7 @@ import {
   serviceRoleBootstrapSql,
   assertNativeServiceRoleBoundary,
   serviceBoundaryReceipt,
+  createFixtureApplicationOwner,
 } from '../../operations/release/fixture/service-role-boundary.mjs';
 
 const boundary = {
@@ -46,8 +47,24 @@ test('native role proof explicitly excludes full production application privileg
   assert.equal(proof.production_application_privilege_parity, false);
 });
 
+test('an ordinary or later-created superuser cannot create the fixture application owner', async () => {
+  let queries = 0;
+  await assert.rejects(
+    createFixtureApplicationOwner({
+      query: async () => {
+        queries++;
+        return { rows: [{ owned_bootstrap: false }] };
+      },
+    }),
+    /FIXTURE_INITDB_IDENTITY_REQUIRED/
+  );
+  assert.equal(queries, 1, 'refusal must occur before privileged DDL');
+});
+
 for (const [field, bad] of [
   ['owned_database', false],
+  ['bootstrap_superuser', false],
+  ['realtime_bootstrap_superuser', false],
   ['auth_admin_boundary', false],
   ['authenticator_boundary', false],
   ['authenticator_memberships', 4],

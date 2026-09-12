@@ -17,6 +17,7 @@ import {
 import {
   serviceRoleBootstrapSql,
   assertNativeServiceRoleBoundary,
+  createFixtureApplicationOwner,
 } from './service-role-boundary.mjs';
 import { startObservationBridge } from './observation-bridge.mjs';
 import {
@@ -263,7 +264,7 @@ async function services() {
     '-D',
     data,
     '-U',
-    'postgres',
+    'supabase_admin',
     '--auth-local=peer',
     '--auth-host=scram-sha-256',
     '--no-locale',
@@ -273,7 +274,10 @@ async function services() {
     `${data}/pg_hba.conf`,
     'local all all peer map=fixture_users\nhost all all 127.0.0.1/32 scram-sha-256\n'
   );
-  await writeFile(`${data}/pg_ident.conf`, 'fixture_users fixture postgres\n');
+  await writeFile(
+    `${data}/pg_ident.conf`,
+    'fixture_users fixture supabase_admin\nfixture_users fixture postgres\n'
+  );
   stage = 'postgresql-start';
   await start('postgres', `${pgBin}/postgres`, [
     '-D',
@@ -296,7 +300,7 @@ async function services() {
   stage = 'postgresql-ready';
   await eventually(async () => {
     try {
-      await command(`${pgBin}/pg_isready`, ['-h', '/run/postgresql', '-U', 'postgres']);
+      await command(`${pgBin}/pg_isready`, ['-h', '/run/postgresql', '-U', 'supabase_admin']);
       return true;
     } catch {
       return false;
@@ -306,12 +310,13 @@ async function services() {
   const admin = databaseOwner.own(
     new pg.Client({
       host: '/run/postgresql',
-      user: 'postgres',
+      user: 'supabase_admin',
       database: 'postgres',
     })
   );
   await admin.connect();
-  await admin.query(`CREATE DATABASE ${database}`);
+  await createFixtureApplicationOwner(admin);
+  await admin.query(`CREATE DATABASE ${database} OWNER postgres`);
   await admin.query('REVOKE CONNECT ON DATABASE postgres, template1 FROM PUBLIC');
   await databaseOwner.end(admin);
   const db = databaseOwner.own(
@@ -495,7 +500,6 @@ async function services() {
       ).status,
       401
     );
-    stage = 'realtime-genuine-migrations-and-change';
     stage = 'native-migrated-service-role-boundary';
     await assertNativeServiceRoleBoundary(db);
     stage = 'realtime-genuine-migrations-and-change';

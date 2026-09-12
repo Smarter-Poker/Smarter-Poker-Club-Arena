@@ -25,6 +25,7 @@ RECORDS = [dict(scope='native-service-smoke', observer='passed', browser='chromi
                                    auth_schema_owner='supabase_admin',
                                    auth_schema_create='auth-admin-only-among-application-callers',
                                    bootstrap_postgres='local-superuser',
+                                   initdb_identity='supabase_admin',
                                    production_application_privilege_parity=False),
                 postgrest='14.5', realtime='2.134.10', change='observed', retries=0,
                 realtime_listener='127.0.0.1:4000', realtime_gateway='authenticated-change-observed',

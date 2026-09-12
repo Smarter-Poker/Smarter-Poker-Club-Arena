@@ -137,6 +137,22 @@ describe('the break minute is the same minute everywhere', () => {
     expect(engineMinute).toBe(55);
   });
 
+  // Added 2026-09-12. The release transaction now decides whether a superseded
+  // candidate stands down by asking how far away the break is, so it reads the
+  // break minute itself and is one more surface that has to agree. CLAUDE.md 13
+  // rule 7: if you change one of these, change them together, in one commit.
+  it('the release transaction measures the break from the same minute', () => {
+    const transactionMinute = Number(RELEASE_TRANSACTION.match(/^BREAK_START_MINUTE=(\d+)$/m)![1]);
+    expect(transactionMinute).toBe(engineMinute);
+    // It must read the clock, not a countdown handed to it by the engine: the
+    // engine is down for about two of the five break minutes.
+    expect(RELEASE_TRANSACTION).toMatch(/seconds_to_next_break\(\) \{/);
+    expect(RELEASE_TRANSACTION).toContain('past=$(( $(date -u +%s) % 3600 ))');
+    // A break that is already open reads as zero away. The wrap-around this
+    // replaced said "an hour" at :56, which is inside the break being used.
+    expect(RELEASE_TRANSACTION).toMatch(/if \[ "\$past" -ge "\$break_at" \]; then\s*\n\s*echo 0/);
+  });
+
   it('the event-owned deploy spans a cold build, a full-hour wait, and proof', () => {
     const timeoutMin = Math.max(
       ...[...DEPLOY.matchAll(/timeout-minutes: (\d+)/g)].map((match) => Number(match[1]))

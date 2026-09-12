@@ -187,9 +187,33 @@ describe('a dealt hand is not thrown away by the table balancer', () => {
     expect(recovery).toContain("this.requestEliminationSweep('seat_move_outcome_pending')");
   });
 
-  it('allows no-engine movement only through the closed-orphan database mode', () => {
+  /**
+   * 2026-09-12: this pin used to read "only through the closed-orphan database
+   * mode", and that rule was itself the defect. A table holding one player
+   * cannot deal, so it holds no engine generation, so the live-source fence
+   * refused its move for ever while the database accepted the identical move -
+   * a stable deadlock across 65 events. The mode never proved anything the two
+   * registries did not. The pin moves to the property that actually keeps the
+   * boundary honest: the engineless path is taken ONLY when both registries
+   * are empty, and that is proven again immediately before the RPC.
+   */
+  it('allows no-engine movement in any mode, but only with no engine generation', () => {
     expect(MOVES).toContain("move.reason === CLOSED_ORPHAN_RESEAT_REASON ? 'closed_orphan'");
-    expect(MOVES).toContain("input.sourceMode !== 'closed_orphan'");
+    const claim = MOVES.slice(
+      MOVES.indexOf('private async claimTournamentMoveBoundary'),
+      MOVES.indexOf('private requestTournamentSeatMoveAtBoundary')
+    );
+    expect(claim).toContain('if (!managerEngine && !serverEngine) {');
+    const request = MOVES.slice(
+      MOVES.indexOf('private requestTournamentSeatMoveAtBoundary'),
+      MOVES.indexOf('protected redrivePendingTournamentSeatMoveOutcomes')
+    );
+    expect(request).toContain('this.tableEngines.has(input.sourceTableId)');
+    expect(request).toContain('this.gameServer.getTableEngine(input.sourceTableId)');
+    expect(request).toContain('engineless source boundary is no longer exact');
+    expect(request, 'the mode may no longer decide the engineless path').not.toContain(
+      "input.sourceMode !== 'closed_orphan'"
+    );
     expect(MOVES).not.toMatch(
       /\.from\(['"]table_seats['"]\)[\s\S]{0,120}\.(?:update|insert|delete)\(/
     );

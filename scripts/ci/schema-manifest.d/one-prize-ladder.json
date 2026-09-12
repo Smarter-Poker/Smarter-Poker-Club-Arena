@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/claude-diamond-phase-8/feature/one-prize-ladder",
+  "_comment": "Migration 20260912090000 collapsed the three SQL copies of the prize ladder into one function and gave it the tournament's unit. These three are the new shared primitives; the three callers (fn_ca_tournament_place_amounts, fn_tournament_payout_reconcile, fn_tournament_place_prize_exact) already existed and keep their names. fn_tournament_place_prize_exact gained a fourth parameter, p_unit_cents integer DEFAULT 1, because it is IMMUTABLE and cannot look the unit up; it is declared here only by name, as this manifest records names rather than signatures. Chip answers were proved unchanged inside the migration against 500 real completed tournaments end to end and 2,000 more on the checker's arithmetic. No full product qualification is claimed.",
+  "functions": ["fn_ca_prize_entries", "fn_ca_prize_ladder", "fn_ca_tournament_unit_cents"]
+}

@@ -18,6 +18,8 @@ const transactionCode = uncommented(transaction);
 const engineSignal = read('.github/workflows/stage-engine-release.yml');
 const engineSignalCode = uncommented(engineSignal);
 const publisher = read('.github/workflows/publish-club-arena.yml');
+const audit = read('.github/workflows/production-integrity-audit.yml');
+const starvation = read('.github/scripts/check-engine-deploy-starvation.mjs');
 
 describe('the engine deploy has one fail-closed Hetzner authority', () => {
   it('accepts only the default-branch exact-SHA repository event', () => {
@@ -127,5 +129,166 @@ describe('the static publisher is event-driven and independent', () => {
     expect(engineGroup).toBeTruthy();
     expect(publishGroup).not.toBe(engineGroup);
     expect(uncommented(publisher)).not.toMatch(/needs:.*hetzner/i);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// A PROOF THAT ONLY SUCCEEDS WHEN NOTHING IS MERGING IS NOT A GATE (2026-09-12)
+//
+// `source_target_is_current` required the release target to be the TIP of
+// server/** on protected main, and re-required it after the image build and
+// every sixty seconds of the wait for the break. Any engine merge inside that
+// window killed the release. Releases take 10-60 minutes (they wait for the
+// hourly break); engine merges arrived every 13-22 minutes. So each release
+// was killed by its own successor and the successor by ITS successor:
+// 14 consecutive releases shipped nothing between 00:21Z and 04:46Z on
+// 2026-09-12, every one recorded as "release ended without complete production
+// proof" while the engine was healthy throughout. Run 34673869399 is the whole
+// mechanism in one line - it finished its image build and died on
+// "target 240b3394b... is stale; protected main requires 96c00643d...", a
+// commit that had merged thirteen minutes after it started.
+//
+// Standing down is still right while the newer commit can actually reach the
+// break. It cannot from inside the break window, so standing down there gives
+// the break to nobody. These pins are the difference between those two cases.
+// ───────────────────────────────────────────────────────────────────────────
+describe('supersession defers a release, it does not starve one', () => {
+  const gate = transactionCode.slice(
+    transactionCode.indexOf('source_target_is_current() {'),
+    transactionCode.indexOf('parse_health_instance_for_sha()')
+  );
+
+  it('still stands a superseded target down outside the break window', () => {
+    // Unchanged behaviour and unchanged words for the common case. The design
+    // notes this serves - an obsolete candidate must not wait for or consume
+    // the next table break, and must free its workflow and host resources
+    // promptly - are still satisfied whenever a successor can get there.
+    expect(gate).toContain('die "target $SHA is stale; protected main requires $latest"');
+    expect(gate).toMatch(/BREAK_END_EPOCH:-0\} +" *-le 0|BREAK_END_EPOCH:-0\}" -le 0/);
+    expect(gate).toContain('"$(seconds_to_next_break)" -gt "$SUPERSESSION_YIELD_SECONDS"');
+  });
+
+  it('the yield window is shorter than one break period and longer than a build', () => {
+    const yieldS = Number(transaction.match(/^SUPERSESSION_YIELD_SECONDS=(\d+)$/m)![1]);
+    // Measured 2026-09-12 on run 34673869399: 800s from run creation to
+    // cutover-ready, plus 60-180s for stage-engine-release to detect the push
+    // and dispatch it. Below that arrival time, a commit merging now provably
+    // cannot reach this break.
+    expect(yieldS).toBeGreaterThanOrEqual(600);
+    // Above one break period it would span two breaks and never stand anything
+    // down, which is the opposite bug.
+    expect(yieldS).toBeLessThan(3600);
+  });
+
+  it('refuses the escape unless forward-only ordering is proved, not assumed', () => {
+    // The tip check was carrying this property incidentally. Now that the tip
+    // check is not absolute, the property is stated and proved in its own
+    // right, and the escape FAILS CLOSED when it cannot be proved.
+    expect(gate).toContain('"$RELEASE_SEAL" get high-water-sha');
+    expect(gate).toContain('git -C "$REPO_DIR" merge-base --is-ancestor "$high_water" "$SHA"');
+    expect(gate).toContain(
+      'die "target $SHA is superseded by $latest and the sealed high-water release is unreadable"'
+    );
+    expect(gate).toContain(
+      'die "target $SHA is superseded by $latest and does not contain the sealed high-water release $high_water"'
+    );
+  });
+
+  it('leaves every other release proof exactly where it was', () => {
+    // The escape must never become "ship it anyway". Protected-main
+    // containment, the maintenance certificate and the cutover proofs are
+    // untouched, and there is still no force input anywhere.
+    expect(gate).toContain('die "target $SHA is no longer contained in protected main"');
+    expect(transactionCode).toContain('prove_rollback_readiness');
+    expect(transactionCode).toContain('validate_candidate_image');
+    expect(engineCode).not.toMatch(/force=true|inputs\.force/);
+  });
+
+  it('records every override where it can be counted afterwards', () => {
+    // An override nobody can count becomes the normal path without anyone
+    // deciding that it should.
+    expect(gate).toContain('echo "ENGINE_RELEASE_SUPERSEDED_BY=$latest"');
+    expect(transactionCode).toContain(
+      'SEAL_REASON="$SEAL_REASON; shipped inside the break window while superseded by $SUPERSEDED_BY"'
+    );
+    expect(transactionCode).toContain('--reason "$SEAL_REASON"');
+  });
+});
+
+describe('a run that ships nothing says so, and says which half failed', () => {
+  it('does not record a stand-down as a failed production proof', () => {
+    // One sentence used to cover every non-shipping path, and it named the
+    // production proof - the half that had not even run. Step 7 (the durable
+    // intake) is where all fourteen died; `verify` never executed.
+    expect(engineCode).toContain('classify_release_failure');
+    expect(engineCode).toContain('echo "result=superseded" >> "$GITHUB_OUTPUT"');
+    expect(engineCode).toContain('echo "superseded_by=$stale" >> "$GITHUB_OUTPUT"');
+    expect(engineCode).toContain("needs.deploy.outputs.release_result == 'superseded'");
+    expect(engineCode).toContain("needs.deploy.outputs.release_result == 'not completed'");
+    expect(engineCode).toContain(
+      'the release sealed but production identity could not be independently proved'
+    );
+  });
+
+  it('annotates NOT DEPLOYED on every non-shipping path', () => {
+    expect(engine).toContain('name: Say plainly when nothing shipped');
+    expect(engineCode).toContain('::warning title=NOT DEPLOYED::');
+    const step = engine.slice(engine.indexOf('name: Say plainly when nothing shipped'));
+    expect(step).toMatch(/if: always\(\)/);
+    expect(step).toContain('SHIPPED: ${{ needs.deploy.outputs.shipped }}');
+  });
+});
+
+describe('the starvation alarm exists and has a reader', () => {
+  it('is wired into the hourly production audit, not a cron of its own', () => {
+    // CLAUDE.md 10.85 (never the Claude scheduler) and the estate cron
+    // governance: no net-new schedule: trigger. It hangs off the hourly audit
+    // that already asks the engine question, on GitHub's pool, so it never
+    // shares a failure domain with the box it is watching.
+    expect(audit).toContain('node .github/scripts/check-engine-deploy-starvation.mjs');
+    // No net-new cron: it rides the one hourly schedule this workflow already has.
+    expect(audit.match(/^\s*schedule:$/gm)?.length).toBe(1);
+
+    const starvationJob = audit.slice(
+      audit.indexOf('\n  engine_deploy_starvation:'),
+      audit.indexOf('\n  chip_conservation:')
+    );
+    expect(starvationJob).toContain('runs-on: ubuntu-latest');
+    expect(starvationJob).toContain('name: The engine pipeline is not starving');
+    expect(starvationJob).toContain('DATABASE_URL: ${{ secrets.DATABASE_URL }}');
+    // Read-only, like every other database reader in this workflow.
+    expect(starvationJob).toMatch(/^\s{6}contents:\s*read\s*$/m);
+    expect(starvationJob).not.toMatch(/^\s{6}(?:issues|actions|contents):\s*write\s*$/m);
+
+    // It is a SIBLING of `engine:`, never a step inside it. `engine:` is the
+    // credential-free provenance observer and
+    // tests/engine-watchdog-asks-production.test.ts refuses any GH_TOKEN or
+    // DATABASE_URL there. Putting the ledger reader in that job is what broke
+    // CI on the first cut of this change.
+    const engineJob = audit.slice(audit.indexOf('\n  engine:'), audit.indexOf('\n  live_drift:'));
+    expect(engineJob).toContain('runs-on: ubuntu-latest');
+    expect(engineJob).not.toMatch(/GH_TOKEN|DATABASE_URL/);
+  });
+
+  it('fires on both a count and a span, and can say it does not know', () => {
+    // Attempts alone pages on a normal merge burst; time alone pages on a
+    // quiet weekend. Only both together mean "production is refusing commits".
+    expect(starvation).toMatch(/export const ATTEMPTS_THRESHOLD = \d+;/);
+    expect(starvation).toMatch(/export const SPAN_MINUTES_THRESHOLD = \d+;/);
+    expect(starvation).toContain(
+      'attempts >= ATTEMPTS_THRESHOLD && spanMinutes >= SPAN_MINUTES_THRESHOLD'
+    );
+    expect(starvation).toContain('::warning title=ENGINE DEPLOY STARVATION UNKNOWN::');
+    expect(starvation).toContain('::error title=ENGINE DEPLOY STARVATION::');
+    // Read-only. It has no authority to fix what it finds.
+    expect(starvation).not.toMatch(/dispatches|workflow_dispatch|rerun|INSERT |UPDATE |DELETE /);
+  });
+
+  it('keeps the measurement next to the threshold it justifies', () => {
+    // CLAUDE.md 10.84: derive a threshold, do not guess one, and write the
+    // measurement beside it.
+    expect(starvation).toContain('2026-09-01 14:58Z to 2026-09-12 05:00Z');
+    expect(starvation).toContain('94 episodes');
+    expect(starvation).toContain('30 attempts / 739.4 minutes');
   });
 });

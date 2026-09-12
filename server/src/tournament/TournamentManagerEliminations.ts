@@ -994,10 +994,22 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
              */
             if (this.eliminationWorkBudgetExpired()) {
               if (committedThisPass > 0 || !this.grantEliminationMutationGrace()) {
+                /* A BACKLOG ENDS THE ASSIGNMENT PASS, NEVER THE SWEEP
+                   (2026-09-12, drift incident 7ab0dcbe). This is the same class
+                   as the `bustBatchHasMore` return fixed below: returning here
+                   left eliminationSweepCursor at stage 1, so finishStage,
+                   addOnStage and balanceStage - the ONLY caller of
+                   checkTableBalance - were unreachable for as long as the work
+                   budget kept expiring mid-batch, which on a large backlog is
+                   every pass. Ending the LOOP instead leaves the rest of the
+                   sweep and the cursor exactly where completedStage(2) expects
+                   them; the unresolved-bust retry still re-drives the players
+                   this pass did not reach. */
+                bustBatchHasMore = true;
                 this.requestUrgentEliminationSweepAfter(
                   TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
                 );
-                return;
+                break;
               }
               reportError(
                 new Error(
@@ -1090,7 +1102,27 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                * stuck event reaches the money board and not only this log
                * line.
                */
-              if (streak < TournamentManagerBase.BUST_REFUSAL_SKIP_AFTER) return;
+              if (streak < TournamentManagerBase.BUST_REFUSAL_SKIP_AFTER) {
+                /* A REFUSAL ENDS THE ASSIGNMENT PASS, NEVER THE SWEEP
+                   (2026-09-12, drift incident 7ab0dcbe). The abort itself is
+                   deliberate and stays: takenPositions is stale the moment the
+                   door refuses, so no further place may be handed out from this
+                   snapshot. What was wrong was returning from the SWEEP -
+                   eliminationSweepCursor stayed at stage 1, balanceStage never
+                   ran, and one player the door would not accept stopped the
+                   whole field consolidating until its tables drained to one
+                   player each and could no longer deal. All 10 RUNNING events
+                   with a >20 zero-chip backlog were stuck this way; event
+                   05e104c7 dealt 22 hands in 12 minutes while resolving 0
+                   busts. The already-armed unresolved-bust retry rebuilds the
+                   ladder from persisted positions before it writes anybody
+                   else. */
+                bustBatchHasMore = true;
+                this.requestUrgentEliminationSweepAfter(
+                  TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+                );
+                break;
+              }
               reportError(
                 new Error(
                   `[Tournament:${this.tournamentId.slice(0, 8)}] the knockout door has refused ${refusedId.slice(0, 8)} ${streak} times running; recording the rest of the field and leaving that bust for the door to accept. The event no longer waits on one player it cannot record.`
@@ -1110,8 +1142,23 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         }
 
         if (bustBatchHasMore) {
+          /* A BACKLOG IS NOT A REASON TO SKIP THE REST OF THE SWEEP (2026-09-12,
+             drift incident 7ab0dcbe). This `return` left eliminationSweepCursor
+             at stage 1, so every later stage was unreachable for as long as more
+             than SWEEP_MUTATION_BATCH_SIZE zero-chip players existed - including
+             balanceStage, the ONLY caller of checkTableBalance. On a 200 runner
+             field that is the whole event, and it is self-reinforcing: no
+             consolidation means tables drain to one player, a table of one
+             cannot deal, and the busts that caused the backlog are never
+             recorded. Afternoon Free Buy 94b24ce3 wrote 200 seat rows for 199
+             players and NOT ONE balancer move, stopped dealing at 22:09Z on 23
+             tables holding one player each, and left 151 players unranked and
+             250.90 in escrow payable to nobody. Platform-wide when this was
+             found: 45 events in that state, 243 unranked players, 5,430.90
+             pinned. The backlog still re-arms the next sweep - it just no
+             longer holds the cursor hostage, so the remaining busts are taken
+             one batch per full cycle while the field actually consolidates. */
           this.requestEliminationSweep();
-          return;
         }
 
         if (completedStage(2)) return;

@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
   entitlementInsert: null as null | ((payload: { new: Record<string, unknown> }) => void),
   entitlementStatus: null as null | ((status: string) => void),
   autoEntitlementSubscribe: true,
+  autoThemeSubscribe: true,
   removeChannel: vi.fn(),
   loadDiamonds: vi.fn(),
   themeSelect: '',
@@ -177,6 +178,7 @@ vi.mock('../../src/lib/supabase', () => ({
         ),
         subscribe: vi.fn((listener: (status: string) => void) => {
           if (isEntitlementChannel) mocks.entitlementStatus = listener;
+          if (name.startsWith('user-theme-settings:') && !mocks.autoThemeSubscribe) return channel;
           if (!isEntitlementChannel || mocks.autoEntitlementSubscribe) listener('SUBSCRIBED');
           return channel;
         }),
@@ -247,6 +249,7 @@ describe('ThemeSettingsModal hardening', () => {
     mocks.entitlementInsert = null;
     mocks.entitlementStatus = null;
     mocks.autoEntitlementSubscribe = true;
+    mocks.autoThemeSubscribe = true;
     mocks.removeChannel.mockReset();
     mocks.loadDiamonds.mockReset();
     mocks.loadDiamonds.mockResolvedValue(undefined);
@@ -299,6 +302,39 @@ describe('ThemeSettingsModal hardening', () => {
       'carbon_red'
     );
     expect(mocks.themeReads).toBe(1);
+  });
+
+  it('refreshes an invalidated initial read without waiting for realtime to connect', async () => {
+    mocks.autoThemeSubscribe = false;
+    const initial = deferred<{ data: unknown[]; error: null }>();
+    mocks.themeResult = initial.promise;
+    renderStudio();
+    expect(await screen.findByText('Loading Your Saved Design')).toBeVisible();
+    await act(async () => {
+      masterBus.emit('UI_THEME_CHANGED', {
+        userId: 'user-1',
+        key: 'ALL',
+        value: { table_id: 'carbon_red' },
+      });
+    });
+    // A broadcast can update one field while the initial SELECT is pending.
+    // Its older full row must not undo that field, and the editor must obtain
+    // a fresh full snapshot even if its Realtime channel is still connecting.
+    mocks.themeResult = Promise.resolve({
+      data: [{ ...savedTheme, table_id: 'carbon_red', cards_id: 'royal' }],
+      error: null,
+    });
+    await act(async () => {
+      initial.resolve({ data: [savedTheme], error: null });
+      await initial.promise;
+    });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Carbon Club' })).toBeEnabled());
+    expect(mocks.themeReads).toBe(2);
+    expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+      'data-table-theme',
+      'carbon_red'
+    );
+    expect(screen.getByTestId('gameplay-preview')).toHaveAttribute('data-card-back', 'royal');
   });
 
   it('starts a separate read when the account changes during an unfinished load', async () => {

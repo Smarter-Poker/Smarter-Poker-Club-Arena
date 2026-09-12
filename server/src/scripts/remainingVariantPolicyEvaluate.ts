@@ -61,6 +61,23 @@ async function main() {
   try {
     const startedAt = new Date().toISOString(),
       hash = await sourceHash();
+    await writeFile(
+      resolve(output, 'frozen-population.json'),
+      JSON.stringify(
+        {
+          startedAt,
+          serverSourceAndLockSha256: hash,
+          profiles: REMAINING_VARIANT_LEAGUE_PROFILES,
+          seeds: REMAINING_VARIANT_LEAGUE_SEEDS,
+          pairs,
+          packs: REMAINING_VARIANT_PACKS,
+          domain: REMAINING_VARIANT_DOMAIN,
+        },
+        null,
+        2
+      ) + '\n',
+      { flag: 'wx' }
+    );
     const spots = remainingVariantReferenceSpots();
     const leagues = [];
     for (const profile of REMAINING_VARIANT_LEAGUE_PROFILES) {
@@ -118,6 +135,10 @@ async function main() {
           v,
           {
             cashSeats: remainingVariantSeatCap(v, 'cash'),
+            maxStackBB:
+              v === 'flh' || v === 'flo8'
+                ? REMAINING_VARIANT_DOMAIN.fixedLimitMaxStackBB
+                : REMAINING_VARIANT_DOMAIN.maxStackBB,
             tournamentSeats: remainingVariantSeatCap(v, 'tournament'),
             postflopGeometryRows: { short_deck: 5880, pineapple: 2640, flh: 5880, flo8: 5340 }[v],
           },

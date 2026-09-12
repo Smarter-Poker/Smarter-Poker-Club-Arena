@@ -1,0 +1,14 @@
+{
+  "README.md": "d7e968f76795864f576e0cf5ab53d7ead6ae4f7199d966e42342f6a3c8cd9a23",
+  "SOURCE-MAP.json": "e74ffb68bba02b57737cc8b3fd01b85bdf5cc33aebf8c64f3ca549ef20fd7461",
+  "STATUS.json": "37888291b48699cc508683cb9a10bc72e142bfaf7ecedb524e0bafe45cef4526",
+  "catalogue-query.sql": "428e47b543c1ee17988e29d9445250393d9fb636426ef34bc4e42e0b0712c32d",
+  "catalogue.json": "fdbfaaececf7fb567d977461b199e444de48fffc81f41ddffbb9b914a42f01fe",
+  "fn_guard_profile_privileged_columns.sql": "04fd3fe180b1bd1b582d526ce11a7c06a441511491ea0059c6cfefb5b9e51037",
+  "fn_join_club.sql": "7637ddd4df1356e9da37b0351f71f4b163d70a3669673523f0e07fbbc8cff625",
+  "fn_sync_mfa_required_on_club_role.sql": "e5774743c6806c59cc028dcb3a3bd53b9f89dcdc892f5b3e6d6da3b74e008b47",
+  "fn_sync_mfa_required_on_role_change.sql": "e82e25145427f478817bafa40c9c0dff0c49dc80fbf20afc62b19d68036b66fb",
+  "handle_new_user_v2_create_wallet.sql": "4f144a7645896ac51021ada99b4469906fa13d5dde9ec3b949ca1b450beee45a",
+  "ACCEPTANCE.json": "74068068e736d6b9a4a184b60fa5bbc8cce80dbca7fb591185d084e11fc224e9",
+  "INPUT-MANIFEST.json": "9e6510a70e9beac6fa57ba50fddc0bc56bd632cf40bb5f45c957f1f084f996cf"
+}

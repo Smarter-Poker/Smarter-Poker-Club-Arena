@@ -7,11 +7,11 @@ import { equityGovernor } from '../engine/EquityLoadGovernor.js';
 
 describe('remaining variants actual-controller paired populations', () => {
   it('freezes exactly the enabled remaining variant populations', () => {
-    expect(REMAINING_VARIANT_LEAGUE_PROFILES).toHaveLength(23);
+    expect(REMAINING_VARIANT_LEAGUE_PROFILES).toHaveLength(25);
     expect(
       REMAINING_VARIANT_LEAGUE_PROFILES.some((p) => p.variant === 'pineapple' && p.tournament)
     ).toBe(false);
-    expect(new Set(REMAINING_VARIANT_LEAGUE_PROFILES.map((p) => p.id)).size).toBe(23);
+    expect(new Set(REMAINING_VARIANT_LEAGUE_PROFILES.map((p) => p.id)).size).toBe(25);
   });
   it.each(REMAINING_VARIANT_LEAGUE_PROFILES.map((p) => [p.id] as const))(
     '%s completes legal physical hands and exact chip conservation',

@@ -1,4 +1,5 @@
 import { uuid } from '../utils/uuid';
+import { isUUID } from '../utils/clubIdResolver';
 import { TableLoadFailureOverlay } from '../components/table/TableLoadFailureOverlay';
 
 /**
@@ -91,6 +92,7 @@ function sameStamps(a: Map<string, number>, b: Map<string, number>): boolean {
 }
 import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { TableRouteBoundary } from '../components/table/TableRouteBoundary';
 import { withClubContext } from '../utils/clubScopedPath';
 import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cachedIdentity';
 import { formatGameTitle } from '../utils/formatGameTitle';
@@ -1474,7 +1476,15 @@ function warmSeatsToPlayers(
   return players;
 }
 
-export default function TablePage({
+export default function TablePage(props: TablePageProps = {}) {
+  return (
+    <TableRouteBoundary embeddedTableId={props.embeddedTableId}>
+      {(tableId) => <LiveTablePage {...props} embeddedTableId={tableId} />}
+    </TableRouteBoundary>
+  );
+}
+
+function LiveTablePage({
   embeddedTableId,
   onTableInfoUpdate,
   isMultiTable = false,
@@ -1485,7 +1495,10 @@ export default function TablePage({
   const addScreenIcon = useButtonImage('icon-addscreen');
   const timebankIconPage = useButtonImage('icon-timebank');
   const { tableId: routeTableId } = useParams<{ tableId: string }>();
-  const tableId = embeddedTableId || routeTableId;
+  const requestedTableId = embeddedTableId || routeTableId;
+  // Every table effect receives a database ID or no scope. A URL segment
+  // such as "demo" must never start seat, jackpot or hole-card queries.
+  const tableId = requestedTableId && isUUID(requestedTableId) ? requestedTableId : undefined;
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();

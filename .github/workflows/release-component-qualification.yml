@@ -1,5 +1,5 @@
 name: Exact component semantic qualification
-run-name: release:${{ inputs.operation_id }}:COMPATIBILITY
+run-name: release:${{ inputs.operation_id }}:${{ inputs.financial_route && 'FINANCIAL_OBSERVATIONS' || 'COMPATIBILITY' }}
 on:
   workflow_dispatch:
     inputs:
@@ -9,6 +9,11 @@ on:
       request:
         required: true
         type: string
+      financial_route:
+        description: Run ordinary Auth financial observations in separate disposable fixtures
+        required: false
+        default: false
+        type: boolean
 permissions:
   contents: read
   actions: read
@@ -26,23 +31,40 @@ jobs:
           path: controls
           persist-credentials: false
       - name: Execute exact component and schema combinations
+        if: ${{ !inputs.financial_route }}
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_REQUEST: ${{ inputs.request }}
           RELEASE_OPERATION_ID: ${{ inputs.operation_id }}
         run: python3 controls/operations/release/native/qualify-components.py controls evidence
+      - name: Observe ordinary Auth financial routes with the same isolation and cleanup
+        if: ${{ inputs.financial_route }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REQUEST: ${{ inputs.request }}
+          RELEASE_OPERATION_ID: ${{ inputs.operation_id }}
+        run: python3 controls/operations/release/native/qualify-components.py controls evidence --financial-route
       - name: Preserve successful semantic execution and fixture cleanup
+        if: ${{ !inputs.financial_route }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: release-compatibility-${{ inputs.operation_id }}
           path: evidence/receipt.json
           if-no-files-found: error
           retention-days: 7
+      - name: Preserve scoped financial observations
+        if: ${{ inputs.financial_route }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: financial-route-observations-${{ inputs.operation_id }}
+          path: evidence/financial-route-observations.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Preserve cleanup observations on success or failure
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: release-compatibility-cleanup-${{ inputs.operation_id }}
+          name: ${{ inputs.financial_route && 'financial-route' || 'release-compatibility' }}-cleanup-${{ inputs.operation_id }}
           path: evidence/cleanup/receipt.json
           if-no-files-found: ignore
           retention-days: 7

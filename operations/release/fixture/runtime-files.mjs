@@ -348,12 +348,43 @@ export async function extractArchive(archive, root, { maxBytes = 256 * 1024 * 10
 }
 
 export function startArguments(args) {
-  assert.equal(args.length, 3);
-  const [schema, web, engine] = args;
+  assert.ok(args.length === 3 || args.length === 4);
+  const [schema, web, engine, scenario] = args;
   assert.equal(schema, '--schema=/inputs/schema.zip');
   assert.match(web, /^--web=\/inputs\/[0-9a-f]{64}\.zip$/);
   assert.equal(engine, '--engine=http://engine:8080');
-  return { schema: schema.slice(9), web: web.slice(6) };
+  if (args.length === 4) assert.equal(scenario, '--scenario=financial');
+  return {
+    schema: schema.slice(9),
+    web: web.slice(6),
+    ...(scenario ? { financialScenario: true } : {}),
+  };
+}
+
+// Only ordinary short-lived local Auth tokens cross to UID1001. Never export
+// the fixture's passwords, refresh tokens, service key or database credentials.
+export function financialActorDescriptor(fixture, users) {
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+  assert.match(fixture.club_id, uuid);
+  assert.match(fixture.table_id, uuid);
+  assert.ok(Array.isArray(users) && users.length === 2);
+  assert.equal(new Set(users.map((user) => user.id)).size, 2);
+  assert.deepEqual(
+    users.map((user) => user.id),
+    fixture.actor_user_ids
+  );
+  const actors = users.map((user) => {
+    assert.match(user.id, uuid);
+    assert.equal(user.session?.user?.id, user.id);
+    const token = user.session.access_token;
+    assert.match(token, /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+    const claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
+    assert.equal(claims.sub, user.id);
+    assert.equal(claims.role, 'authenticated');
+    assert.ok(Number.isSafeInteger(claims.exp) && claims.exp > Math.floor(Date.now() / 1000) + 300);
+    return { id: user.id, session: { access_token: token, user: { id: user.id } } };
+  });
+  return { version: 1, club_id: fixture.club_id, table_id: fixture.table_id, users: actors };
 }
 
 export function fixtureTemplate(value) {

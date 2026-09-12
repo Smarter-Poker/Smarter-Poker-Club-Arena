@@ -1,0 +1,7 @@
+# Ordinary Auth financial scenario in the isolated native driver
+
+The existing component fixture driver now has a separate financial observation mode. It creates a fresh fixture for each exact component tuple, enables insurance through the canonical cash-table seed, and passes only two ordinary local Auth access tokens to the independent observer. The fixture service remains UID1000; the observer and its actual player actors run as UID1001. Financial mode prevents fixture-owned duplicate actors. Private database, refresh-token and service credentials remain private.
+
+The independent oracle checks the exact engine and catalogue, runs the existing bounded top-up/replay and insurance/settlement coordinator, and checks the catalogue again. The same outer driver owns container, network and image cleanup on either success or failure. The workflow's explicit financial option writes only a scoped financial observation artifact; it cannot emit the product compatibility receipt or satisfy its five browser cases.
+
+The full current source-contract admission check remains required in both modes. The historical donor still fails admission. These changes wire the scenario; local boundary and lifecycle tests do not prove a genuine funded Auth/engine execution, full consumed helper and role closure, or a deployed release. Those proofs remain outstanding until the Linux run uses an admitted exact schema and completes its cleanup.

@@ -20,6 +20,7 @@ import {
   fixtureTemplate,
   observationControl,
   NativeDatabaseOwner,
+  financialActorDescriptor,
 } from './runtime-files.mjs';
 
 const exec = promisify(execFile);
@@ -697,6 +698,7 @@ async function start(args) {
       actorIds: users.slice(0, 2).map((user) => user.id),
       spectatorId: users[2].id,
       sessionIds: users.map((user) => user.sessionId),
+      financialScenario: inputs.financialScenario === true,
     });
     stage = 'disabled-ledger-attribution';
     const attributionId = await api.createLedgerAttributionIdentity();
@@ -821,6 +823,11 @@ async function start(args) {
         table_id: fixture.table_id,
         spectator_user_id: spectator.id,
         storage_state: browserStorage(spectator.session, template.supabase_host),
+        ...(inputs.financialScenario
+          ? {
+              financial_scenario: financialActorDescriptor(fixture, users.slice(0, 2)),
+            }
+          : {}),
         base_url: 'https://smarter.poker/hub/club-arena/',
         engine_health_url: 'https://engine.smarter.poker/health',
       }),
@@ -835,12 +842,16 @@ async function start(args) {
     // Engine starts only after the driver observes service readiness. This
     // bounded wait does not certify its source; the independent oracle does.
     await supervisor.until(() => jsonHealth('http://engine:8080/health', 'running'), 90000);
-    const { startFixtureActors } = await import('./actors.mjs');
-    actors = await startFixtureActors({
-      tableId: fixture.table_id,
-      users: users.slice(0, 2),
-      onFailure: () => supervisor.fail('actors'),
-    });
+    // Financial actions belong to the independent UID1001 observer process.
+    // Starting fixture-owned actors here too would race two owners per seat.
+    if (!inputs.financialScenario) {
+      const { startFixtureActors } = await import('./actors.mjs');
+      actors = await startFixtureActors({
+        tableId: fixture.table_id,
+        users: users.slice(0, 2),
+        onFailure: () => supervisor.fail('actors'),
+      });
+    }
     await supervisor.failed;
     throw new Error('fixture service stopped');
   } catch {

@@ -5,6 +5,14 @@ on:
     paths:
       - operations/release/fixture/**
       - operations/release/ci/fixture-smoke.py
+      - operations/release/native/**
+      - tests/operations/financial-*.test.mjs
+      - tests/operations/fixture-runtime-files.test.mjs
+      - tests/operations/fixture-seed.test.mjs
+      - tests/operations/component-source-contract.test.mjs
+      - tests/operations/native-component-semantics.test.py
+      - tests/operations/fixture-smoke-runner.test.py
+      - .github/workflows/release-component-qualification.yml
       - .github/workflows/component-fixture-native-smoke.yml
 permissions:
   contents: read
@@ -21,6 +29,14 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.23.2'
+      - name: Check financial route and fixture ownership boundaries
+        run: |
+          node --test operations/release/fixture/actors.test.mjs operations/release/fixture/financial-route-phase.test.mjs tests/operations/financial-checkpoint-observer.test.mjs tests/operations/financial-topup-verifier.test.mjs tests/operations/financial-insurance-verifier.test.mjs tests/operations/fixture-runtime-files.test.mjs tests/operations/financial-route-suite.test.mjs tests/operations/component-source-contract.test.mjs tests/operations/fixture-seed.test.mjs
+          python3 tests/operations/native-component-semantics.test.py
+          python3 tests/operations/fixture-smoke-runner.test.py
       - name: Build exact committed fixture and smoke native services
         env:
           FIXTURE_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}

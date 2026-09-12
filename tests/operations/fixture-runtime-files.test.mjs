@@ -12,6 +12,7 @@ import {
   fixtureTemplate,
   fixtureSourceContract,
   observationControl,
+  financialActorDescriptor,
 } from '../../operations/release/fixture/runtime-files.mjs';
 const exec = promisify(execFile);
 
@@ -69,6 +70,60 @@ test('CLI cannot select a command or a production backend', () => {
   assert.throws(() =>
     startArguments(['--schema=/inputs/schema.zip', web, '--engine=https://engine.smarter.poker'])
   );
+  const base = ['--schema=/inputs/schema.zip', web, '--engine=http://engine:8080'];
+  assert.equal(startArguments([...base, '--scenario=financial']).financialScenario, true);
+  for (const extra of [
+    '--scenario=product',
+    '--scenario=unknown',
+    '--actors=service_role',
+    '',
+    undefined,
+  ])
+    assert.throws(() => startArguments([...base, extra]));
+  assert.throws(() => startArguments([...base, '--scenario=financial', '--scenario=financial']));
+});
+
+test('financial observer receives only two ordinary local Auth sessions and their bound scope', () => {
+  const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+  const token = (sub, role = 'authenticated', exp = Math.floor(Date.now() / 1000) + 3600) =>
+    'e30.' + Buffer.from(JSON.stringify({ sub, role, exp })).toString('base64url') + '.signature';
+  const fixture = { club_id: id(1), table_id: id(2), actor_user_ids: [id(3), id(4)] };
+  const users = fixture.actor_user_ids.map((actor) => ({
+    id: actor,
+    password: 'must-stay-private',
+    sessionId: id(5),
+    session: {
+      access_token: token(actor),
+      refresh_token: 'must-stay-private',
+      user: { id: actor, email: 'private' },
+    },
+  }));
+  const result = financialActorDescriptor(fixture, users);
+  assert.deepEqual(result, {
+    version: 1,
+    club_id: id(1),
+    table_id: id(2),
+    users: users.map((user) => ({
+      id: user.id,
+      session: { access_token: user.session.access_token, user: { id: user.id } },
+    })),
+  });
+  assert.ok(!JSON.stringify(result).includes('private'));
+  for (const replacement of [
+    token(id(3), 'service_role'),
+    token(id(4)),
+    token(id(3), 'authenticated', 1),
+    'invalid',
+  ]) {
+    const invalid = structuredClone(users);
+    invalid[0].session.access_token = replacement;
+    assert.throws(() => financialActorDescriptor(fixture, invalid));
+  }
+  assert.throws(() => financialActorDescriptor(fixture, users.toReversed()));
+  assert.throws(() => financialActorDescriptor(fixture, [users[0], users[0]]));
+  assert.throws(() => financialActorDescriptor(fixture, [...users, users[0]]));
+  result.users[0].session.user.id = id(9);
+  assert.equal(users[0].session.user.id, id(3));
 });
 
 test('fixture requires fixed synthetic actor and real-auth provenance', () => {

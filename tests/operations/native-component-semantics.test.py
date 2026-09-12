@@ -95,6 +95,29 @@ class NativeArtifactBoundary(unittest.TestCase):
             with self.subTest(tuples=tuples), self.assertRaises(RuntimeError):
                 MODULE.validate_plan({**plan, 'tuples': tuples})
 
+    def test_financial_receipt_cannot_be_promoted_to_product_or_claim_early_cleanup(self):
+        schema = {'fixture_sha256': 'b' * 64, 'catalogue_digest': 'c' * 64}
+        component = {'club-arena-engine': {'source_sha': 'a' * 40}}
+        result = {'version': 1, 'scope': 'club-arena-financial-route', 'product_certificate': False,
+                  'tuple': component, 'runtime_image': 'fixture-test',
+                  'schema_fixture_sha256': schema['fixture_sha256'], 'schema_catalogue_digest': schema['catalogue_digest'],
+                  'success': True, 'executed': 3, 'failed': 0, 'skipped': 0, 'retries': 0,
+                  'cases': [{'name': name, 'passed': True} for name in MODULE.FINANCIAL_CASES],
+                  'engine_readiness': {'timeout_ms': 90000, 'elapsed_ms': 1, 'observations': 1,
+                                       'source_sha': 'a' * 40, 'running': True},
+                  'financial': {'scope': 'independent-financial-route-observations', 'product_certificate': False,
+                                'owner': {'sourceSha': 'a' * 40}, 'checkpoints': [{'phase': phase} for phase in [
+                                    'topup.before', 'topup.malformed_refused', 'topup.accepted', 'topup.replayed',
+                                    'insurance.offered', 'insurance.malformed_refused', 'insurance.accepted', 'settlement.observed']]},
+                  'cleanup': {'complete': False, 'owner': 'outer-native-driver'}}
+        MODULE.validate_financial_native(result, component, schema, 'fixture-test')
+        with self.assertRaisesRegex(RuntimeError, 'PRODUCT_EXECUTION_REQUIRED'):
+            MODULE.validate_native(result, component, schema, 'fixture-test')
+        for change in [{'product_certificate': True}, {'scope': 'club-arena-product'}, {'skipped': 1},
+                       {'retries': 1}, {'executed': 5}, {'cleanup': {'complete': True}}, {'financial': {}}]:
+            with self.subTest(change=change), self.assertRaises(RuntimeError):
+                MODULE.validate_financial_native({**result, **change}, component, schema, 'fixture-test')
+
     def test_schema_readiness_refuses_absent_partial_or_excluded_contract(self):
         valid = {'version': 1, 'source_sha': 'e' * 40,
                  'current_database_contract_ready': True, 'exclusions': []}
@@ -122,7 +145,7 @@ class NativeArtifactBoundary(unittest.TestCase):
             components = {'club-arena-engine': engine, 'club-arena-web': web}
             plan = {'version': 1, 'tuples': [components, components],
                     'cutover_order': ['club-arena-web'], 'component_builds': {'club-arena-web': web},
-                    'schema': {'artifact_id': 'schema', 'fixture_sha256': MODULE.digest(schema_sql)},
+                    'schema': {'artifact_id': 'schema', 'fixture_sha256': MODULE.digest(schema_sql), 'catalogue_digest': 'f' * 64},
                     'artifact_inputs': {MODULE.fact_digest({'target': target, **value}):
                                         {'target': target, **value, 'artifact_id': target}
                                         for target, value in components.items()}}
@@ -174,13 +197,24 @@ class NativeArtifactBoundary(unittest.TestCase):
                            'GITHUB_RUN_ID': '123', 'GITHUB_SHA': request['control_sha'],
                            'GH_TOKEN': 'provider-value-must-never-enter-candidate-command'}
             output = root / 'evidence'
-            with patch.dict(os.environ, environment), patch.object(MODULE, 'command', side_effect=command), \
-                    patch.object(MODULE, 'provider', return_value={'total_count': 1, 'jobs': [
-                        {'id': 456, 'name': 'qualify', 'status': 'in_progress'}]}), \
-                    patch.object(MODULE, 'download_artifact', side_effect=download), \
-                    patch.object(MODULE, 'unpack_engine'):
-                with self.assertRaisesRegex(RuntimeError, 'RELEASE_TEST_STOP_BEFORE_ORACLE'):
-                    MODULE.qualify(request, operation, root / 'controls', output)
+            for scenario in ('product', 'financial'):
+                with patch.dict(os.environ, environment), patch.object(MODULE, 'command', side_effect=command), \
+                        patch.object(MODULE, 'provider', return_value={'total_count': 1, 'jobs': [
+                            {'id': 456, 'name': 'qualify', 'status': 'in_progress'}]}), \
+                        patch.object(MODULE, 'download_artifact', side_effect=download), \
+                        patch.object(MODULE, 'unpack_engine'):
+                    selected_output = output if scenario == 'product' else root / 'financial-evidence'
+                    with self.assertRaisesRegex(RuntimeError, 'RELEASE_TEST_STOP_BEFORE_ORACLE'):
+                        MODULE.qualify(request, operation, root / 'controls', selected_output, scenario=scenario)
+                self.assertFalse((selected_output / 'receipt.json').exists())
+                self.assertFalse((selected_output / 'financial-route-observations.json').exists())
+                self.assertTrue(json.loads((selected_output / 'cleanup/receipt.json').read_text())['complete'])
+
+            financial_run = next(args for args in calls if '--scenario=financial' in args)
+            self.assertEqual(financial_run[financial_run.index('--user') + 1], '1000:1000')
+            financial_oracle = next(args for args in calls if any(arg.endswith('/financial-route-suite.mjs') for arg in args))
+            self.assertEqual(financial_oracle[financial_oracle.index('--user') + 1], 'qualification')
+            self.assertNotIn('--scenario=financial', next(args for args in calls if args[:3] == ['docker', 'run', '-d'] and 'start' in args))
 
             fixture_run = next(args for args in calls if args[:3] == ['docker', 'run', '-d'] and 'start' in args)
             self.assertEqual(fixture_run[fixture_run.index('--user') + 1], '1000:1000')
@@ -211,6 +245,40 @@ class NativeArtifactBoundary(unittest.TestCase):
             self.assertNotIn(environment['GH_TOKEN'], repr(calls))
             self.assertFalse((output / 'receipt.json').exists())
             self.assertTrue(json.loads((output / 'cleanup/receipt.json').read_text())['complete'])
+
+            # Explicit native-result doubles exercise only driver artifact and
+            # cleanup routing. They are not genuine Auth/engine evidence.
+            def financial_command(args, **kwargs):
+                if '/opt/qualification/node_modules/.bin/tsx' not in args:
+                    return command(args, **kwargs)
+                index = int(args[-2])
+                native = {'version': 1, 'scope': 'club-arena-financial-route', 'product_certificate': False,
+                          'tuple': plan['tuples'][index], 'runtime_image': request['runtime_image'],
+                          'schema_fixture_sha256': plan['schema']['fixture_sha256'], 'schema_catalogue_digest': 'f' * 64,
+                          'success': True, 'executed': 3, 'failed': 0, 'skipped': 0, 'retries': 0,
+                          'cases': [{'name': name, 'passed': True} for name in MODULE.FINANCIAL_CASES],
+                          'engine_readiness': {'timeout_ms': 90000, 'elapsed_ms': 1, 'observations': 1,
+                                               'source_sha': 'a' * 40, 'running': True},
+                          'financial': {'scope': 'independent-financial-route-observations', 'product_certificate': False,
+                                        'owner': {'sourceSha': 'a' * 40}, 'checkpoints': [{'phase': phase} for phase in [
+                                            'topup.before', 'topup.malformed_refused', 'topup.accepted', 'topup.replayed',
+                                            'insurance.offered', 'insurance.malformed_refused', 'insurance.accepted', 'settlement.observed']]},
+                          'cleanup': {'complete': False, 'owner': 'outer-native-driver'}}
+                return subprocess.CompletedProcess(args, 0, stdout=('FINANCIAL_ROUTE_RESULT:' + json.dumps(native)).encode(), stderr=b'')
+
+            financial_output = root / 'financial-complete-boundary'
+            with patch.dict(os.environ, environment), patch.object(MODULE, 'command', side_effect=financial_command), \
+                    patch.object(MODULE, 'provider', return_value={'total_count': 1, 'jobs': [
+                        {'id': 456, 'name': 'qualify', 'status': 'in_progress'}]}), \
+                    patch.object(MODULE, 'download_artifact', side_effect=download), patch.object(MODULE, 'unpack_engine'):
+                MODULE.qualify(request, operation, root / 'controls', financial_output, scenario='financial')
+            scoped = json.loads((financial_output / 'financial-route-observations.json').read_text())
+            self.assertFalse((financial_output / 'receipt.json').exists())
+            self.assertFalse(scoped['product_certificate'])
+            self.assertEqual(scoped['scope'], 'isolated-financial-route-observations')
+            self.assertTrue(scoped['cleanup']['complete'])
+            self.assertEqual(len(scoped['combinations']), len(plan['tuples']))
+            self.assertTrue(all(item['cleanup']['complete'] for item in scoped['combinations']))
 
             # An explicitly unready donor never reaches candidate image loading,
             # fixture start, SQL execution or the oracle, even with valid ZIPs.

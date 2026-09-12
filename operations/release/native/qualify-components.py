@@ -27,6 +27,8 @@ FIXTURE_SERVER = '/usr/local/bin/fixture-server'
 CASES = ['exact-schema-catalogue', 'authenticated-web-bundle',
          'engine-browser-causal-hand', 'completed-hand-persisted',
          'spectator-does-not-acquire-seat']
+FINANCIAL_CASES = ['exact-schema-catalogue', 'ordinary-auth-topup-replay',
+                   'ordinary-auth-insurance-settlement']
 
 
 def require(value, reason='RELEASE_COMPONENT_SEMANTIC_REFUSED'):
@@ -202,6 +204,33 @@ def validate_native(result, tuple_value, schema, runtime_image):
             'RELEASE_SEMANTIC_PRODUCT_EXECUTION_REQUIRED')
 
 
+def validate_financial_native(result, tuple_value, schema, runtime_image):
+    readiness = result.get('engine_readiness', {})
+    financial = result.get('financial', {})
+    owner = financial.get('owner', {})
+    require(result.get('version') == 1 and result.get('scope') == 'club-arena-financial-route' and
+            result.get('product_certificate') is False and result.get('tuple') == tuple_value and
+            result.get('runtime_image') == runtime_image and
+            result.get('schema_fixture_sha256') == schema['fixture_sha256'] and
+            result.get('schema_catalogue_digest') == schema['catalogue_digest'] and
+            result.get('success') is True and result.get('executed') == len(FINANCIAL_CASES) and
+            result.get('failed') == 0 and result.get('skipped') == 0 and result.get('retries') == 0 and
+            result.get('cases') == [{'name': name, 'passed': True} for name in FINANCIAL_CASES] and
+            readiness.get('timeout_ms') == 90000 and
+            type(readiness.get('elapsed_ms')) is int and 0 <= readiness['elapsed_ms'] <= 90000 and
+            type(readiness.get('observations')) is int and readiness['observations'] > 0 and
+            readiness.get('source_sha') == tuple_value['club-arena-engine']['source_sha'] and
+            readiness.get('running') is True and
+            financial.get('scope') == 'independent-financial-route-observations' and
+            financial.get('product_certificate') is False and
+            owner.get('sourceSha') == tuple_value['club-arena-engine']['source_sha'] and
+            [item.get('phase') for item in financial.get('checkpoints', [])] == [
+                'topup.before', 'topup.malformed_refused', 'topup.accepted', 'topup.replayed',
+                'insurance.offered', 'insurance.malformed_refused', 'insurance.accepted', 'settlement.observed'] and
+            result.get('cleanup') == {'complete': False, 'owner': 'outer-native-driver'},
+            'RELEASE_FINANCIAL_ROUTE_EXECUTION_REQUIRED')
+
+
 def validate_plan(plan):
     require(plan['version'] == 1 and len(plan['tuples']) == len(plan['cutover_order']) + 1)
     require(len(set(plan['cutover_order'])) == len(plan['cutover_order']) and
@@ -244,7 +273,9 @@ def write_cleanup(output, report):
     (directory / 'receipt.json').write_text(canonical(report))
 
 
-def qualify(request, operation, controls, output):
+def qualify(request, operation, controls, output, *, scenario='product'):
+    require(scenario in ('product', 'financial'), 'RELEASE_SEMANTIC_SCENARIO_REFUSED')
+    financial_scenario = scenario == 'financial'
     require(re.fullmatch(r'[0-9a-f-]{36}', operation))
     require(request['phase'] == 'COMPATIBILITY' and request['repository'] == REPO and
             os.environ['GITHUB_REPOSITORY'] == REPO and os.environ['GITHUB_RUN_ATTEMPT'] == '1')
@@ -302,7 +333,7 @@ def qualify(request, operation, controls, output):
             require(item.is_file() and not item.is_symlink())
             item.chmod(0o444)
         for index, tuple_value in enumerate(plan['tuples']):
-            prefix = f'release-semantic-{operation}-{index}'
+            prefix = f'release-{scenario}-{operation}-{index}'
             network, fixture, engine = prefix + '-network', prefix + '-fixture', prefix + '-engine'
             native = None
             cleanup_entry = {'index': index, 'tuple_digest': fact_digest(tuple_value), 'complete': False}
@@ -329,7 +360,8 @@ def qualify(request, operation, controls, output):
                          '--mount', f'type=bind,source={temp},target=/inputs,readonly',
                          '--mount', f'type=bind,source={controls},target=/opt/qualification/controls,readonly',
                          runtime_image, FIXTURE_SERVER, 'start', '--schema=/inputs/schema.zip',
-                         f'--web=/inputs/{web_key}.zip', '--engine=http://engine:8080'])
+                         f'--web=/inputs/{web_key}.zip', '--engine=http://engine:8080'] +
+                        (['--scenario=financial'] if financial_scenario else []))
                 command(['docker', 'exec', fixture, FIXTURE_SERVER, 'ready'], timeout=120)
                 env = json.loads(command(['docker', 'exec', fixture, FIXTURE_SERVER, 'engine-environment']).stdout)
                 require(set(env) == {'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'PORT', 'NODE_ENV'} and
@@ -352,14 +384,16 @@ def qualify(request, operation, controls, output):
                                   '--env', 'HOME=/tmp/qualification', '--env', 'TMPDIR=/tmp',
                                   '--env', 'XDG_CACHE_HOME=/tmp/qualification/cache', fixture,
                                   '/opt/qualification/node_modules/.bin/tsx',
-                                  '/opt/qualification/controls/operations/release/native/component-semantic-suite.mjs',
+                                  '/opt/qualification/controls/operations/release/native/' +
+                                  ('financial-route-suite.mjs' if financial_scenario else 'component-semantic-suite.mjs'),
                                   str(index), runtime_image], timeout=240)
                 lines = result.stdout.decode().splitlines()
-                matches = [line.removeprefix('RELEASE_SEMANTIC_RESULT:') for line in lines
-                           if line.startswith('RELEASE_SEMANTIC_RESULT:')]
+                marker = 'FINANCIAL_ROUTE_RESULT:' if financial_scenario else 'RELEASE_SEMANTIC_RESULT:'
+                matches = [line.removeprefix(marker) for line in lines if line.startswith(marker)]
                 require(len(matches) == 1)
                 native = json.loads(matches[0])
-                validate_native(native, tuple_value, plan['schema'], runtime_image)
+                validator = validate_financial_native if financial_scenario else validate_native
+                validator(native, tuple_value, plan['schema'], runtime_image)
             finally:
                 # Failed, crashed, intermediate and successful cases all close
                 # the entire fixture. No receipt is emitted on cleanup failure.
@@ -382,13 +416,22 @@ def qualify(request, operation, controls, output):
                'control_sha': request['control_sha'], 'runtime_image': runtime_image,
                'run_id': os.environ['GITHUB_RUN_ID'], 'run_attempt': 1, 'request': plan,
                'request_digest': fact_digest(plan), 'combinations': combinations, 'cleanup': cleanup_report}
-    (output / 'receipt.json').write_text(canonical(receipt))
+    if financial_scenario:
+        # A financial route result has no product certificate authority. The
+        # release provider still requires its separately named product receipt.
+        receipt.update({'scope': 'isolated-financial-route-observations', 'product_certificate': False})
+        (output / 'financial-route-observations.json').write_text(canonical(receipt))
+    else:
+        (output / 'receipt.json').write_text(canonical(receipt))
 
 
 if __name__ == '__main__':
     try:
+        require(len(sys.argv) in (3, 4) and (len(sys.argv) == 3 or sys.argv[3] == '--financial-route'),
+                'RELEASE_SEMANTIC_SCENARIO_REFUSED')
         qualify(json.loads(os.environ['RELEASE_REQUEST']), os.environ['RELEASE_OPERATION_ID'],
-                Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve())
+                Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve(),
+                scenario='financial' if len(sys.argv) == 4 else 'product')
     except Exception as error:
         # Raw API errors may contain signed URLs; child errors may contain
         # fixture tokens. Keep logs and failure reasons strictly sanitized.

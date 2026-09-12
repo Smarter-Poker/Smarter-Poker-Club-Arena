@@ -26,3 +26,7 @@ CI run 34678322392 completed all four server jobs in 3 minutes 38 seconds to
 stale dependency assertions in the client tests; they now follow the accounting
 prerequisite through the server shards. Publication timing remains to be measured
 on a protected release using this workflow.
+
+# Browser failure evidence
+
+CI now retains the Table Studio mock suite's failed browser trace and screenshot for three days, before another suite can replace its output. The existing failure still blocks the PR. Run 34678990946 passed all four engine groups and their required aggregate, but its second-tab Studio readiness assertion failed; that browser failure remains under investigation.

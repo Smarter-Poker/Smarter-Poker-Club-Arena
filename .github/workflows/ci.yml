@@ -2028,9 +2028,22 @@ jobs:
       # Its dedicated route redirects unless the test-harness flag is enabled -
       # which the shared build below now carries, so this needs no server.
       - name: Table Studio real-component purchase, sync, and accessibility gate
+        id: table-studio
         env:
           ARENA_SHARED_PREVIEW_URL: http://127.0.0.1:${{ steps.preview-port.outputs.port }}
         run: npm run test:e2e:customization
+
+      # These traces contain the throwaway Studio mock, not authenticated
+      # production journeys. Preserve failures before the next suite can clear
+      # Playwright's output directory; keep the original gate failure intact.
+      - name: Preserve failed Table Studio browser evidence
+        if: ${{ failure() && steps.table-studio.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: table-studio-failure-${{ github.sha }}-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 3
+          if-no-files-found: warn
 
       - name: Insurance and Rabbit Hunt 375px decision gate
         env:

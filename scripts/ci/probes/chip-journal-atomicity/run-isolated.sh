@@ -48,3 +48,6 @@ POKER_AUDIT_PG_BIN="$PGBIN" python3 "$probe_dir/../../../dev/probe-tournament-re
 
 # Mystery inventory, generation binding and concurrent replay use the same PG17 binaries.
 POKER_AUDIT_PG_BIN="$PGBIN" python3 "$probe_dir/../../../dev/probe-mystery-reservation-pg17.py"
+
+# Explicit zero closes late registration without weakening real entry windows.
+PG17_BINDIR="$PGBIN" python3 "$probe_dir/../../../dev/probe-prize-window-zero-pg17.py"

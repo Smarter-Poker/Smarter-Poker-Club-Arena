@@ -54,5 +54,10 @@ if narrowed == migration:
     raise RuntimeError('the migration no longer names the two money doors this runner narrows')
 
 run(narrowed)
+# The variant migration builds on the rule migration and is certified by the
+# same acceptance file, because "which games" and "what shape" are one question
+# about one table and splitting them would let the two answers drift.
+VARIANTS = ROOT / 'supabase/migrations/20260912070000_the_diamond_arena_deals_the_games_the_estate_deals.sql'
+run(VARIANTS.read_text())
 print(run('\\ir poker-diamond-plain-cash-rule-acceptance.sql'))
 print('One plain-cash rule certified in the isolated fixture; this is not public release.')

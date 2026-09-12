@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import {
   assertDiamondAcceptedHand,
   assertDiamondCashTable,
+  DIAMOND_CASH_VARIANTS,
 } from '../domain/DiamondCashBoundary.js';
 import { ServerTableEngine } from './ServerTableEngine.js';
 import { loadTable } from '../services/supabase/tables.js';
@@ -46,11 +47,26 @@ const hand = {
 afterEach(() => vi.restoreAllMocks());
 
 describe('the first Diamond game stays inside the custody boundary', () => {
-  it('admits plain integer NLH and rejects optional money paths', () => {
+  it('admits every supported game and rejects optional money paths', () => {
     expect(() => assertDiamondCashTable(table)).not.toThrow();
     expect(() => assertDiamondCashTable({ ...table, status: 'running' })).not.toThrow();
+    /* THE NINE GAMES THE CHIP CASH SCREEN OFFERS (2026-09-12). `plo4` was in
+       the refusal list below until the arithmetic that would have made it
+       unsafe was proved absent: every place a pot is divided already reads the
+       table's unit, the hi-lo split included. See DIAMOND_CASH_VARIANTS. */
+    for (const game_variant of DIAMOND_CASH_VARIANTS)
+      expect(
+        () => assertDiamondCashTable({ ...table, game_variant }),
+        `${game_variant} is offered for chips and must be offered here`
+      ).not.toThrow();
+    /* And a game nobody deals is still refused, so the list is a list rather
+       than an absent check. */
+    for (const game_variant of ['stud', 'razz', 'badugi', 'NLH', '', null])
+      expect(
+        () => assertDiamondCashTable({ ...table, game_variant }),
+        `${game_variant} is not a game this estate deals`
+      ).toThrow('Diamond Plain Cash Table Required');
     for (const change of [
-      { game_variant: 'plo4' },
       { tournament_id: 't' },
       { cluster_id: 'c' },
       { status: 'closed' },
@@ -140,10 +156,34 @@ describe('the first Diamond game stays inside the custody boundary', () => {
   });
 
   it('refuses a bomb pot that would deal a game the table is not certified for', () => {
+    /* THE RULE IS "THE TABLE'S OWN GAME", NOT "NLH" (2026-09-12). This read the
+       literal `nlh`, which was indistinguishable from the real rule while nlh
+       was the only game and became wrong the moment it was not: it would have
+       refused a Diamond PLO4 table whose bomb variant said plo4, and admitted
+       one whose bomb variant said nlh. Both backwards. The fixture table is
+       nlh, so the same list is still refused here - and the case that proves
+       the rule actually moved is the one below it. */
     for (const variant of ['plo4', 'plo5', 'short_deck', 'flo8', 'PLO4'])
       expect(() =>
         assertDiamondCashTable({ ...table, bomb_pot_enabled: true, bomb_pot_variant: variant })
       ).toThrow('Diamond Bomb Pots Require The Table Game');
+    /* A PLO4 table may bomb in PLO4, and may not bomb in hold'em. */
+    expect(() =>
+      assertDiamondCashTable({
+        ...table,
+        game_variant: 'plo4',
+        bomb_pot_enabled: true,
+        bomb_pot_variant: 'plo4',
+      })
+    ).not.toThrow();
+    expect(() =>
+      assertDiamondCashTable({
+        ...table,
+        game_variant: 'plo4',
+        bomb_pot_enabled: true,
+        bomb_pot_variant: 'nlh',
+      })
+    ).toThrow('Diamond Bomb Pots Require The Table Game');
     /* And the ante rule is not waived by the variant rule passing. */
     expect(() =>
       assertDiamondCashTable({
@@ -215,9 +255,17 @@ describe('the first Diamond game stays inside the custody boundary', () => {
 
   it('requires protocol 2 and refuses unsupported accepted facts before any writer', () => {
     expect(() => assertDiamondAcceptedHand(hand)).not.toThrow();
+    /* The DEALT variant, which is not always the table's column: a bomb-pot
+       override and the pineapple upgrade both reach this guard. Each supported
+       game must pass it, or a hand this arena dealt could not be committed. */
+    for (const variant of DIAMOND_CASH_VARIANTS)
+      expect(() => assertDiamondAcceptedHand({ ...hand, variant })).not.toThrow();
+    for (const variant of ['stud', 'razz', 'NLH', ''])
+      expect(() => assertDiamondAcceptedHand({ ...hand, variant })).toThrow(
+        'diamond_plain_cash_required'
+      );
     for (const change of [
       { verifiedLease: false },
-      { variant: 'plo4' },
       { rake: 1 },
       { bbj: 1 },
       { inflow: 1 },

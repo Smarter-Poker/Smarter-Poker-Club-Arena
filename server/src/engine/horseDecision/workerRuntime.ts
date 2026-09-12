@@ -383,6 +383,8 @@ export class HorseDecisionWorkerRuntime {
         request.opts.phase8Postflop === 'candidate' ||
         request.opts.phase10Plo4 === 'candidate' ||
         request.opts.phase11Omaha === 'candidate' ||
+        request.opts.phase12Remaining === 'candidate' ||
+        'phase12EvidenceMode' in request.opts ||
         'phase11EvidenceMode' in request.opts ||
         'phase10EvidenceMode' in request.opts)
     ) {
@@ -408,11 +410,20 @@ export class HorseDecisionWorkerRuntime {
       if (!Array.isArray(request.cards) || request.cards.length !== 3) {
         throw new Error('pineapple discard requires exactly three cards');
       }
-      if (!Array.isArray(request.communityCards) || request.communityCards.length > 5) {
-        throw new Error('pineapple discard communityCards must contain at most five cards');
+      if (!Array.isArray(request.communityCards) || request.communityCards.length !== 3) {
+        throw new Error('pineapple discard requires the exact three-card flop');
       }
-      if (typeof request.gameVariant !== 'string' || request.gameVariant.length === 0) {
-        throw new Error('pineapple discard gameVariant must be non-empty');
+      if (request.gameVariant !== 'pineapple') {
+        throw new Error('pineapple discard requires the canonical pineapple variant');
+      }
+      const ranks = new Set(['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']);
+      const suits = new Set(['clubs', 'diamonds', 'hearts', 'spades']);
+      const known = [...request.cards, ...request.communityCards];
+      if (
+        known.some((card) => !card || !ranks.has(card.rank) || !suits.has(card.suit)) ||
+        new Set(known.map((card) => `${card.rank}:${card.suit}`)).size !== known.length
+      ) {
+        throw new Error('pineapple discard requires six distinct physical cards');
       }
     }
   }
@@ -478,7 +489,15 @@ export class HorseDecisionWorkerRuntime {
     ) {
       throw new Error('horse state public hero does not match the private decision player');
     }
-    if (gs.players.some((seat) => !Array.isArray(seat.cards) || seat.cards.length !== 0)) {
+    if (
+      gs.players.some(
+        (seat) =>
+          !Array.isArray(seat.cards) ||
+          seat.cards.length !== 0 ||
+          (seat.knownDeadCards !== undefined &&
+            (!Array.isArray(seat.knownDeadCards) || seat.knownDeadCards.length !== 0))
+      )
+    ) {
       throw new Error('horse state contains private seat cards');
     }
     if (!isKnownVariant(gs.gameVariant)) throw new Error('horse state gameVariant is unknown');
@@ -532,6 +551,24 @@ export class HorseDecisionWorkerRuntime {
     }
     const validRanks = new Set(['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']);
     const validSuits = new Set(['clubs', 'diamonds', 'hearts', 'spades']);
+    const knownDead = request.player.knownDeadCards ?? [];
+    if (
+      !Array.isArray(knownDead) ||
+      !Array.isArray(gs.communityCards) ||
+      knownDead.length !== (pineapplePostDiscard ? 1 : 0)
+    ) {
+      throw new Error('horse state known discard or physical cards are invalid');
+    }
+    const physicalKnown = [...request.player.cards, ...knownDead, ...gs.communityCards];
+    if (
+      physicalKnown.some(
+        (card) => !card || !validRanks.has(card.rank) || !validSuits.has(card.suit)
+      ) ||
+      new Set(physicalKnown.map((card) => `${card.rank}:${card.suit}`)).size !==
+        physicalKnown.length
+    ) {
+      throw new Error('horse state known discard or physical cards are invalid');
+    }
     if (
       request.player.cards.some(
         (card) => !card || !validRanks.has(card.rank) || !validSuits.has(card.suit)

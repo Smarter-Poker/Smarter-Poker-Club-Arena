@@ -74,6 +74,13 @@ git -C "$ROOT" fetch origin main --quiet 2>/dev/null || true
 if [ -z "${AGENT_WORKSPACE_REEXEC:-}" ] && [ -r "$0" ]; then
   _MAIN_COPY=$(git -C "$ROOT" show origin/main:scripts/agent-workspace.sh 2>/dev/null || true)
   if [ -n "$_MAIN_COPY" ] && [ "$_MAIN_COPY" != "$(cat "$0")" ]; then
+    # An older provisioner would reinstate the Mac copies/installs that the
+    # user prohibited. Never hand this machine back to that implementation.
+    if [ "$(uname -s)" = Darwin ] && [[ "$_MAIN_COPY" != *'# MAC_DEPENDENCIES_CI_ONLY_V1'* ]]; then
+      echo "# origin/main has the older Mac dependency provisioner; refusing that handover" >&2
+      echo "# use git worktree add directly; dependency installation belongs in CI" >&2
+      exit 1
+    fi
     _MAIN_SCRIPT=$(mktemp "${TMPDIR:-/tmp}/agent-workspace.XXXXXX")
     printf '%s\n' "$_MAIN_COPY" > "$_MAIN_SCRIPT"
     echo "# this copy of agent-workspace.sh differs from origin/main - running main's copy instead" >&2
@@ -82,10 +89,11 @@ if [ -z "${AGENT_WORKSPACE_REEXEC:-}" ] && [ -r "$0" ]; then
   fi
 fi
 
-# Share the main clone's dependencies. The alternative is an npm install per
-# tree - minutes each, gigabytes across 47 trees - or a test gate that silently
-# skips, which is how a red test reaches main and blocks the bundle for all.
-# node_modules: a COPY-ON-WRITE CLONE, never a symlink.
+# MAC_DEPENDENCIES_CI_ONLY_V1
+# User policy, 2026-09-11: Mac worktrees receive no dependency copies or installs.
+# APFS clones still grow when tools write them, and the fallback is a full copy.
+# Existing shared tools may be read without mutation; missing dependencies must
+# be installed and checked in CI. The non-Mac provisioner below is unchanged.
 #
 # 2026-08-23. This used to be `ln -s`, and a symlink is not a safe thing to hand
 # an agent, because npm WRITES THROUGH IT. `npm ci` deletes node_modules before
@@ -97,8 +105,7 @@ fi
 #
 # `cp -Rc` is an APFS clone: about five seconds, and copy-on-write, so it costs
 # no real disk until something modifies it. Each tree now owns its node_modules
-# outright, which means `npm ci` in a worktree is simply SAFE - the thing agents
-# were doing all along.
+# outright. This historical approach is no longer permitted on the Mac.
 #
 # 2026-08-25: EVERY PACKAGE ROOT, AND ON EVERY ENTRY - NOT JUST AT CREATION.
 #
@@ -125,6 +132,10 @@ fi
 # when the directory is already there, so the steady-state cost is one `[ -e ]`
 # per package root.
 provision_node_modules() {
+  if [ "$(uname -s)" = Darwin ]; then
+    echo "# ${1:-.}/node_modules: Mac provisioning disabled; run dependency checks in CI" >&2
+    return 0
+  fi
   # $1 = package dir relative to the repo root ("" for the root itself)
   local rel="$1"
   local src="$ROOT${rel:+/$rel}"
@@ -333,6 +344,9 @@ EOF_PKGS
 # So verify the payload, not the path. Repair from whichever copy in this
 # repository actually has the binary.
 verify_native_deps() {
+  # Repairing an existing shared link would mutate every consumer. On the Mac
+  # this path must neither copy native packages nor remove incomplete ones.
+  [ "$(uname -s)" = Darwin ] && return 0
   local dst="$1"
   [ -d "$dst/node_modules" ] || return 0
 
@@ -472,7 +486,7 @@ bash "$ROOT/scripts/ensure-hooks.sh" 2>&1 | sed "s/^/# /" >&2 || true
 # hooks in every tree at once, with only an ERR_MODULE_NOT_FOUND to go on.
 # Probe it here - the one moment an agent is guaranteed to be looking - and
 # repair rather than report.
-bash "$ROOT/scripts/check-node-modules.sh" 2>&1 | sed "s/^/# /" >&2 || true
+bash "$ROOT/scripts/check-node-modules.sh" --check 2>&1 | sed "s/^/# /" >&2 || true
 
 # Every other guard in this estate queries GitHub, so all of them are blind to
 # work that never reached it. Ten commits sat in worktrees for nineteen hours on

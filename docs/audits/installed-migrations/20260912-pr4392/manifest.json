@@ -2,7 +2,6 @@
   "observed_at": "2026-09-12T09:28:37.205989+00:00",
   "source_base": "758d91a88a2520c46376af3444c90425133720bf",
   "scope": "Exact previously applied migration history and scoped current catalog",
-  "production_sql_executed": false,
   "production_data_writes": 0,
   "engine_source_changes": false,
   "world_hub_writes": 0,
@@ -179,5 +178,7 @@
     "default": null,
     "not_null": false
   },
-  "storage_note": "The byte-exact statements are an archival record, not forward migrations. One statement is a completed one-time ladder correction and another reschedules an existing job; replay is not authorized. Function replacements preserved installed service-only ACLs, which a text-only fresh-create check cannot infer. No guard or allowlist was changed."
+  "storage_note": "The byte-exact statements are an archival record, not forward migrations. One statement is a completed one-time ladder correction and another reschedules an existing job; replay is not authorized. Function replacements preserved installed service-only ACLs, which a text-only fresh-create check cannot infer. No guard or allowlist was changed.",
+  "read_only_production_queries": true,
+  "production_mutating_sql_executed": false
 }

@@ -319,6 +319,7 @@ export async function logHandHistory(params: {
     timestamp?: number;
     stage: string;
     publicNode?: import('../../engine/HorsePublicActionNode.js').HorsePublicActionNode;
+    origin?: import('../../types.js').AcceptedActionOrigin;
   }[];
   showdownResults?: {
     userId: string;

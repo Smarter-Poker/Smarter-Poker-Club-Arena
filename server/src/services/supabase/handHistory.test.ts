@@ -213,7 +213,11 @@ describe('logHandHistory - worker-owned completed-hand observation', () => {
       reason: 'private_discard_choice' as const,
     });
     const input = atomicParams(GLOBAL_HAND + 810);
-    const actions = input.actions.map((action) => ({ ...action, publicNode }));
+    const actions = input.actions.map((action) => ({
+      ...action,
+      publicNode,
+      origin: 'forced' as const,
+    }));
     await logHandHistory({ ...input, actions });
     expect((rpcCalls[0].args.p_hand_row as Record<string, unknown>).actions).toEqual(actions);
     expect(mockObserveCompletedHand.mock.calls[0][0].actions).toEqual(actions);

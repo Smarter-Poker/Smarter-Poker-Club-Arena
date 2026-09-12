@@ -594,6 +594,7 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
             timestamp: event.record?.timestamp ?? Date.now(), // Bible V8 §2.5
             stage,
             ...(event.publicNode ? { publicNode: event.publicNode } : {}),
+            ...(event.origin ? { origin: event.origin } : {}),
             // V12.3: carry isFullRaise into hand_history. HandController
             // records it on its own actionHistory (a short all-in is NOT a
             // raise, TDA 44) but it was dropped here, so every consumer of the

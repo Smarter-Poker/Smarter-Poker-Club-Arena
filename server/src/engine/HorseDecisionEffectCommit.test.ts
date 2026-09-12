@@ -350,7 +350,7 @@ describe('authoritative horse action effect commit', () => {
     engine.scheduleHorseAction(player, 1, enginePlayer, state);
     await vi.advanceTimersByTimeAsync(250);
 
-    expect(performAction).toHaveBeenCalledWith(1, 'all_in', undefined);
+    expect(performAction).toHaveBeenCalledWith(1, 'all_in', undefined, 'horse_policy');
   });
 
   it('never resurrects an all-in removed from the canonical AoF menu by the cap', async () => {
@@ -383,7 +383,7 @@ describe('authoritative horse action effect commit', () => {
     await vi.advanceTimersByTimeAsync(250);
 
     expect(performAction).toHaveBeenCalledTimes(1);
-    expect(performAction).toHaveBeenCalledWith(1, 'check', undefined);
+    expect(performAction).toHaveBeenCalledWith(1, 'check', undefined, 'horse_policy');
     expect(performAction.mock.calls.some(([, action]) => action === 'all_in')).toBe(false);
   });
 
@@ -426,6 +426,9 @@ describe('authoritative horse action effect commit', () => {
       expect(receipt.executedAction).toBe(expectedAction);
       expect(receipt.executedAmount).toBe(expectedAction === 'bet' ? 20 : null);
       expect(performAction).toHaveBeenCalledTimes(accepted ? 1 : 2);
+      expect(performAction.mock.calls.map((call) => call[3])).toEqual(
+        accepted ? ['horse_policy'] : ['horse_policy', 'horse_fallback']
+      );
     }
   );
 
@@ -474,7 +477,7 @@ describe('authoritative horse action effect commit', () => {
     await vi.advanceTimersByTimeAsync(250);
 
     expect(performAction).toHaveBeenCalledTimes(1);
-    expect(performAction).toHaveBeenCalledWith(1, 'bet', 20);
+    expect(performAction).toHaveBeenCalledWith(1, 'bet', 20, 'horse_policy');
     expect(decisionWorker.commitDecisionEffects).toHaveBeenCalledTimes(1);
     expect(decisionWorker.commitDecisionEffects).toHaveBeenCalledWith(
       expect.objectContaining({ generation: expect.any(Number), fence: expect.any(String) }),
@@ -488,8 +491,8 @@ describe('authoritative horse action effect commit', () => {
     engine.scheduleHorseAction(player, 1, enginePlayer, state);
     await vi.advanceTimersByTimeAsync(250);
 
-    expect(performAction).toHaveBeenNthCalledWith(1, 1, 'bet', 20);
-    expect(performAction).toHaveBeenNthCalledWith(2, 1, 'check');
+    expect(performAction).toHaveBeenNthCalledWith(1, 1, 'bet', 20, 'horse_policy');
+    expect(performAction).toHaveBeenNthCalledWith(2, 1, 'check', undefined, 'horse_fallback');
     expect(decisionWorker.commitDecisionEffects).not.toHaveBeenCalled();
   });
 
@@ -503,7 +506,7 @@ describe('authoritative horse action effect commit', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(performAction).toHaveBeenCalledTimes(1);
-    expect(performAction).toHaveBeenCalledWith(1, 'check', undefined);
+    expect(performAction).toHaveBeenCalledWith(1, 'check', undefined, 'horse_fallback');
     expect(decisionWorker.commitDecisionEffects).not.toHaveBeenCalled();
   });
 

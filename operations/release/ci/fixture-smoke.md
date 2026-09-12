@@ -2,7 +2,7 @@
 
 `component-fixture-native-smoke.yml` runs only for a draft pull request from the same repository. It checks out the exact PR head, uses read-only repository access, disables persisted checkout credentials, and runs on hosted Linux amd64. It has no dispatch, production environment, credential input, registry login, image push, or release callback. The artifact is native service smoke evidence, never a product compatibility certificate.
 
-The workflow is intentionally not runnable until the reviewed fixture package is committed alongside it. Do not copy partially reviewed staging files to make the job pass. The build script must use its committed allowlist context and stamp these labels with checked-out HEAD:
+The workflow requires the reviewed fixture package committed alongside it. Do not copy partially reviewed staging files to make the job pass. The build script must use its committed allowlist context and stamp these labels with checked-out HEAD:
 
 - `org.opencontainers.image.revision`
 - `com.smarter-poker.control-revision`
@@ -14,4 +14,8 @@ The smoke script must honor `FIXTURE_SMOKE_CONTAINER`, matching exactly `^ca-fix
 
 The receipt includes source file hashes, exact revisions/image ID, fixed allowlisted service observations and cleanup booleans. A native failure may include an enumerated stage and error category; messages, stacks, query text, session data, credentials and environment are never copied from runtime output. The separate bounded `native-build.log` contains only the reviewed image build, before any runtime credentials or users exist. Abrupt runner termination can prevent receipt creation; missing evidence is not success.
 
-Local contract tests use simulated Docker responses. They verify wrong revision/labels, symlink input, missing or duplicate observations, timeout cleanup and sanitization. They do not establish that the Linux image builds or services run. A real successful Linux run must still prove PostgreSQL/extensions, GoTrue/MFA, PostgREST/RLS, Realtime change delivery, distinct observer UID and Chromium, with complete cleanup. The full application schema and actual engine/web tuple oracle are separately required for product qualification.
+Local contract tests use simulated Docker responses. They verify wrong revision/labels, symlink input, missing or duplicate observations, timeout cleanup and sanitization. They do not establish that the Linux image builds or services run.
+
+[Native Linux run 34660221728](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34660221728) passed at `ef6ab8d71b60fe67af5fc978148b9bacb64f9686`. Its receipt proves PostgreSQL/extensions, GoTrue/MFA, PostgREST/RLS, authenticated Realtime change delivery, distinct observer UID, Chromium and peer isolation with zero retries. All four container/peer/network/image cleanup fields are true. The image was not published. The full application schema and actual engine/web tuple oracle remain required for product qualification; native smoke explicitly reports `product_certificate: false`.
+
+Dependency installation and image builds belong in CI. Do not install or copy full `node_modules` trees into Mac agent worktrees. An existing shared installation may be reused for local source checks without modifying its packages.

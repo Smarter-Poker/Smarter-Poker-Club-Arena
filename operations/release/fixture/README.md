@@ -6,16 +6,19 @@ GoTrue, PostgREST, Supabase Realtime, and Chromium. API responses are not mocked
 Only synthetic credentials are created at runtime. Candidate frontend, engine,
 and schema artifacts are inputs to the separate trusted runtime/controller.
 
-**Status: PostgreSQL native phase passed; full qualification remains incomplete.**
-Linux run `34656984535` at `9574b494099bc96a87fc41a7ac798925a9af87dc`
-built the image, passed actual wal2json slot creation/inspection/drop and all six
-extensions, then failed inside GoTrue migrations with SQLSTATE 42501. Its pinned
-migrator uses an unqualified ledger table; this fixture omitted the upstream
-Auth-role search path. Both runtimes now set that path and require the complete
-70-version Auth ledger. The next native run must prove that repair, genuine
-sign-in/MFA, Realtime, Chromium and separate-user/peer isolation. Prior failed
-runs verified container, peer, network and image cleanup. The full product
-matrix remains required; an image build or component test cannot certify it.
+**Status: native service smoke passed; full application qualification remains incomplete.**
+[Linux run 34660221728](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34660221728)
+at `ef6ab8d71b60fe67af5fc978148b9bacb64f9686` passed PostgreSQL 17.11,
+six extensions and a real wal2json slot, the exact Auth migration ledger,
+sign-in/TOTP MFA, PostgREST authentication/RLS, authenticated Realtime change
+delivery through the gateway, Chromium, and separate-user/peer isolation with
+zero retries. Its receipt verifies that the fixture container, peer, network
+and image were removed. The tested local image ID was
+`sha256:89229ac114d7f158bb71b0c46a805002927eafca4f53bedfadeed3e49105ec9b`;
+it was not published. The receipt explicitly records `product_certificate: false`.
+The full current application schema/ACL contract, before/intermediate/after
+engine and frontend combinations, immutable image publication and controller
+admission remain separate requirements.
 
 ## Pinned inputs
 
@@ -45,7 +48,7 @@ its [file inventory](https://packages.debian.org/trixie/amd64/postgresql-17-wal2
 includes `/usr/lib/postgresql/17/lib/wal2json.so`. The build uses the same signed
 snapshot and the native smoke must create and drop a real temporary logical
 slot using this plugin before exercising Realtime. The earlier image build
-passed the file check; real slot creation still requires a passing native smoke.
+passed the file check; run `34660221728` also passed native slot creation and removal.
 PostgreSQL 17.11 also checks the explicit
 [`output_plugin_libraries` trust list](https://www.postgresql.org/docs/17/runtime-config-replication.html#GUC-OUTPUT-PLUGIN-LIBRARIES),
 including for superusers. Both fixture startup paths set it to
@@ -173,13 +176,24 @@ arguments; they do not claim native Erlang, database, or browser proof.
 The build also calls `adaptRealtimeConfiguration()`. It accepts only the entire
 pinned `config/runtime.exs` (SHA256
 `6892bee389b9974972ece8e8737d2cdbe8bac50e82f2776037641e786b16d84c`) at the fixed
-release path and adds only `{:ip, {127, 0, 0, 1}}` to its HTTP socket options.
+release path and applies two bounded changes: `{:ip, {127, 0, 0, 1}}` in its
+HTTP socket options and `channel_name: "fixture_realtime_cluster"` in its
+PostgreSQL discovery strategy.
 The default upstream listener otherwise exposes port4000 to peer containers;
 the genuine tenant-administration JWT verifier accepts the synthetic service
 JWT used by the engine. Binding loopback makes the existing gateway's tenant
 administration refusal the peer-container boundary without changing player,
 service or tenant JWT authority. No undocumented bind-address environment
 variable or replacement service is used.
+
+The pinned discovery strategy otherwise derives its PostgreSQL LISTEN channel
+from the OTP cookie. The fixture's 96-character private cookie exceeds the
+pinned Postgrex driver's 63-byte channel-name limit, causing repeated cluster
+strategy failures and eventual listener shutdown. The fixed discovery channel
+keeps that cookie private and unchanged. The native cookie RPC separately
+asserts that the configured discovery channel equals the fixed value, without
+printing either cookie or configuration values. Run `34660221728` verified
+the real listener and subsequent causal event after this correction.
 
 Both full runtime and native smoke inspect the actual Linux `/proc/net/tcp` and
 `tcp6` tables after service readiness, requiring exactly one port4000 listener
@@ -250,6 +264,11 @@ refuses completion. The outer driver still removes the exact owned containers
 and verifies absence. Native-child regressions exercise failed and hung closes.
 
 ## Credential-free Linux CI path
+
+Install dependencies and build the Linux image in CI. Do not run `npm ci`,
+install full dependency trees, or copy `node_modules` into Mac agent worktrees.
+Local source checks may reuse an existing shared installation without changing
+its packages; preserve the repository's normal commit and push hooks.
 
 After the normal draft PR includes the complete reviewed runtime files, use a
 native Linux amd64 Docker runner with repository read permission and no secrets.

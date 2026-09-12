@@ -50,8 +50,22 @@ The TypeScript pair is held together by a byte for byte comparison. The new law,
 
 On exactness it asserts the bound rather than the convenient equality. A chip ladder spends the pool to the cent, always. A Diamond ladder does too, except in the short field, where the pool's sub Diamond remainder goes to nobody, because there is nobody it can go to. That remainder is always smaller than one unit and is zero whenever the pool is a whole number of Diamonds, which every Diamond pool in this estate is by construction.
 
+## A Door That Was Opened By Accident, And The Assertion That Missed It
+
+`fn_tournament_place_prize_exact` gained a parameter, and a parameter means the old function had to be dropped and a new one created. A new function in this project's `public` schema is created with default privileges that grant EXECUTE to anon, authenticated and service_role. The old function's ACL was `{postgres=X/postgres}`: nobody but the owner could call it. The new one came back reachable by anon, and it is SECURITY DEFINER, so it ran as the owner past RLS for a caller with no account.
+
+The migration did revoke, and the revoke was not enough. It revoked from PUBLIC, and the assertion that followed it checked exactly that one thing. The anon, authenticated and service_role grants are separate entries, so the migration proved the part it had thought of and said nothing about the part it had not. That is worse than having no assertion, because a narrow check that passes reads as a guarantee.
+
+The pre-push hook `check-definer-authorization` caught it before the branch left the machine, which is what that hook is for. Migration `20260912095522_the_prize_ladder_keeps_the_door_it_was_given.sql` restores the door to exactly where it was and asserts the whole ACL rather than one entry of it. The three new helpers are closed the same way, since each is only ever called from inside a function owned by postgres.
+
+The repair's own revokes are written out one statement at a time rather than looped over an array of signatures. `check-definer-authorization` models what a browser can reach by reading the migrations themselves and applying every GRANT and REVOKE to the roles it actually names, so a revoke issued through `EXECUTE format(...)` names nothing it can see. A loop would have closed the door in the database while leaving the gate certain it was open.
+
+Writing that second assertion turned up the same shape of error one more time. A NULL `proacl` is not an empty ACL; it means the object still carries the built-in defaults, and the built-in default for a function is EXECUTE to PUBLIC. `aclexplode(NULL)` returns no rows, so an EXISTS over it reports "no grants" for the most open state there is. The check now names that case explicitly.
+
 ## Applied
 
-Migration `20260912090000_one_prize_ladder_and_it_knows_its_unit.sql`, applied once. Never reapply.
+Migrations `20260912090000_one_prize_ladder_and_it_knows_its_unit.sql` and `20260912095522_the_prize_ladder_keeps_the_door_it_was_given.sql`, each applied once. Never reapply.
+
+All four functions are `{postgres=X/postgres}`: anon, authenticated and service_role cannot execute any of them.
 
 There is one Diamond arena club and there are zero Diamond tournaments, so every tournament this change touched is a chip tournament and every one of them prices exactly as it did before.

@@ -63,6 +63,10 @@ import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { createHandStateMachine, type HandFSMState } from './StateMachine.js';
 import { bigBlindAnteTotal } from './AnteMath.js';
 import { HAND_COMPLETION } from '../config/handCompletionSpec.js';
+import {
+  captureHorsePublicActionNode,
+  unavailablePublicActionNode,
+} from './HorsePublicActionNode.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HAND CONTROLLER
@@ -995,6 +999,19 @@ export class HandController {
       action === 'raise' || (action === 'all_in' && player.stack > bettingState.toCall + 0.005);
     if (raisesBet && !this.canReopenBetting(player)) return false;
 
+    let publicNode;
+    try {
+      publicNode = captureHorsePublicActionNode(
+        this.config,
+        this.state,
+        this.getAuthoritativeActionState(player.user_id),
+        this.getActiveBoardCount()
+      );
+    } catch {
+      // Learning metadata cannot veto an already validated poker action.
+      publicNode = unavailablePublicActionNode('invalid_public_state');
+    }
+
     let actualAmount = 0;
     let isFullRaiseFlag: boolean | undefined;
 
@@ -1084,6 +1101,7 @@ export class HandController {
       amount: actualAmount,
       stage: this.state.stage,
       record,
+      publicNode,
     });
     this.emit({ type: 'POT_UPDATE', pot: this.state.pot, pots: calculatePots(this.state.players) });
     this.advanceGame();
@@ -1179,6 +1197,7 @@ export class HandController {
       amount: 0,
       stage: this.state.stage,
       record,
+      publicNode: unavailablePublicActionNode('private_discard_choice'),
     });
     // Send updated cards to the player (secure per-player)
     this.emit({ type: 'CARDS_DEALT', seat, cards: [...player.cards] });
@@ -1245,6 +1264,7 @@ export class HandController {
       amount: 0,
       stage: this.state.stage,
       record,
+      publicNode: unavailablePublicActionNode('timeout_discard_fold'),
     } as unknown as HandEvent);
 
     // Everyone else folding to one player ends the hand here - there is no
@@ -2146,6 +2166,7 @@ export class HandController {
         amount: 0,
         stage: discardStage,
         record,
+        publicNode: unavailablePublicActionNode('forced_discard'),
       });
 
       this.emit({ type: 'CARDS_DEALT', seat: player.seat, cards: [...player.cards] });

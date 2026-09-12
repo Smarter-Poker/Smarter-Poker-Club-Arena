@@ -96,6 +96,18 @@ describe('accepted action facts survive a delayed history consumer', () => {
       expect(owner.currentHandActions.map((a) => a.userId)).toEqual(['u4', 'u1', 'u2', 'u3']);
       expect(owner.currentHandActions.map((a) => a.timestamp)).toEqual([1010, 1020, 1030, 1040]);
       expect(owner.currentHandActions.every((a) => a.stage === 'preflop')).toBe(true);
+      expect(owner.currentHandActions.map((a) => a.publicNode)).toEqual(
+        h.events.map((e) => e.publicNode)
+      );
+      expect(owner.currentHandActions[0].publicNode).toMatchObject({
+        status: 'captured',
+        pot: 3,
+        currentBet: 2,
+        actorSeat: 4,
+      });
+      expect(h.controller.getState().actionHistory.every((a) => a.publicNode === undefined)).toBe(
+        true
+      );
       expect(owner.hub.emitEvent.mock.calls.map(([, e]) => e.user_id)).toEqual([
         'u4',
         'u1',
@@ -108,6 +120,7 @@ describe('accepted action facts survive a delayed history consumer', () => {
       ]);
       for (const [, event] of owner.hub.emitEvent.mock.calls) {
         expect(event).not.toHaveProperty('record');
+        expect(event).not.toHaveProperty('publicNode');
         expect(event).not.toHaveProperty('cards');
       }
       expect(JSON.stringify(h.events.map((e) => e.record))).not.toMatch(/cards|hole|rank|suit/);
@@ -138,6 +151,10 @@ describe('accepted action facts survive a delayed history consumer', () => {
     expect(h.controller.foldForMissedDiscard(2)).toBe(true);
     const actions = h.events.filter((e) => e.stage === 'pineapple_discard');
     expect(actions.map((e) => e.record?.action)).toEqual(['discard', 'fold']);
+    expect(actions.map((e) => e.publicNode)).toEqual([
+      { version: 1, status: 'unavailable', reason: 'private_discard_choice' },
+      { version: 1, status: 'unavailable', reason: 'timeout_discard_fold' },
+    ]);
     expect(
       h.controller
         .getState()
@@ -170,6 +187,7 @@ describe('accepted action facts survive a delayed history consumer', () => {
       isFullRaise: false,
       stage: 'preflop',
     });
+    expect(owner.currentHandActions[0]).not.toHaveProperty('publicNode');
     const legacyWithoutController = await drain(
       [{ type: 'PLAYER_ACTION', seat: 1, action: 'all_in', amount: 200, stage: 'preflop' }],
       state,

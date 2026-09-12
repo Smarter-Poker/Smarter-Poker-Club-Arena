@@ -32,6 +32,7 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
+import { DailyBonusStatusError } from './dailyBonusStatusError';
 
 /**
  * Phase 3 (20260910181625): a `shield` tile is a Streak Shield credit, a
@@ -248,14 +249,32 @@ class DailyBonusServiceClass {
   }
 
   async getStatus(): Promise<DailyBonusStatus> {
-    const { data, error } = await supabase.rpc('fn_ca_daily_bonus_status');
+    const response = await supabase.rpc('fn_ca_daily_bonus_status').then(
+      (result) => result,
+      (cause: unknown) => {
+        throw new DailyBonusStatusError('rpc_error', cause, null, null, 'unavailable');
+      }
+    );
+    const { data, error, status: httpStatus, statusText } = response;
+    const payloadKind = data === null ? 'null' : Array.isArray(data) ? 'array' : typeof data;
     if (error) {
-      reportError(error, 'DailyBonusService.getStatus.fn_ca_daily_bonus_status');
-      throw new Error('Could Not Load Your Daily Bonus');
+      throw new DailyBonusStatusError(
+        'rpc_error',
+        error,
+        httpStatus ?? null,
+        statusText ?? null,
+        payloadKind
+      );
     }
     const status = data as DailyBonusStatus | null;
-    if (!status || typeof status !== 'object') {
-      throw new Error('Could Not Load Your Daily Bonus');
+    if (!status || typeof status !== 'object' || Array.isArray(status)) {
+      throw new DailyBonusStatusError(
+        'invalid_payload',
+        null,
+        httpStatus ?? null,
+        statusText ?? null,
+        payloadKind
+      );
     }
     return {
       ...status,

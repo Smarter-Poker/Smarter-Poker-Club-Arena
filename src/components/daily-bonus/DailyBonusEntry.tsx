@@ -36,7 +36,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { dailyBonusService } from '../../services/DailyBonusService';
-import { reportError } from '../../utils/errorReporter';
+import { reportDailyBonusStatusError } from '../../services/dailyBonusStatusError';
 import DailyBonusSheet from './DailyBonusSheet';
 import {
   MAX_RETRIES,
@@ -148,7 +148,7 @@ export default function DailyBonusEntry({ suspended = false }: { suspended?: boo
       if (!active.current || pending.current !== request || userRef.current !== userId) return;
       // The sheet is a courtesy on entry; a failed read is not a failed page.
       // It is also not the last word: retry a few times, then on any signal.
-      reportError(err, 'DailyBonusEntry.getStatus');
+      reportDailyBonusStatusError(err, 'DailyBonusEntry.getStatus');
       asked.current = null;
       if (retries.current < MAX_RETRIES) {
         retries.current += 1;

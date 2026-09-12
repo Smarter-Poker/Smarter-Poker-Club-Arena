@@ -23,6 +23,7 @@ import {
   dailyBonusService,
   diamondsToCentsLabel,
 } from '../../src/services/DailyBonusService';
+import { DailyBonusStatusError } from '../../src/services/dailyBonusStatusError';
 
 const STATUS = {
   eligible: true,
@@ -63,6 +64,7 @@ describe('DailyBonusService', () => {
   beforeEach(() => {
     mocks.rpc.mockReset();
     mocks.emit.mockReset();
+    mocks.reportError.mockReset();
     sessionStorage.clear();
   });
 
@@ -75,8 +77,50 @@ describe('DailyBonusService', () => {
   });
 
   it('throws a player-facing error when the status RPC fails', async () => {
-    mocks.rpc.mockResolvedValueOnce({ data: null, error: { message: 'boom' } });
-    await expect(dailyBonusService.getStatus()).rejects.toThrow('Could Not Load Your Daily Bonus');
+    const cause = { message: 'boom', code: 'XX000' };
+    mocks.rpc.mockResolvedValueOnce({
+      data: null,
+      error: cause,
+      status: 503,
+      statusText: 'Unavailable',
+    });
+    const failure = await dailyBonusService.getStatus().catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(DailyBonusStatusError);
+    expect(failure).toMatchObject({
+      message: 'Could Not Load Your Daily Bonus',
+      kind: 'rpc_error',
+      cause,
+      httpStatus: 503,
+      httpStatusText: 'Unavailable',
+      payloadKind: 'null',
+    });
+    expect(mocks.reportError).not.toHaveBeenCalled();
+  });
+
+  it.each([null, [], 'invalid', 0])(
+    'rejects a non-object status without logging its body: %j',
+    async (data) => {
+      mocks.rpc.mockResolvedValueOnce({ data, error: null, status: 204, statusText: 'No Content' });
+      await expect(dailyBonusService.getStatus()).rejects.toMatchObject({
+        kind: 'invalid_payload',
+        cause: null,
+        httpStatus: 204,
+        httpStatusText: 'No Content',
+      });
+      expect(mocks.reportError).not.toHaveBeenCalled();
+    }
+  );
+
+  it('preserves a rejected transport error for the request owner', async () => {
+    const cause = new TypeError('Failed to fetch');
+    mocks.rpc.mockRejectedValueOnce(cause);
+    await expect(dailyBonusService.getStatus()).rejects.toMatchObject({
+      kind: 'rpc_error',
+      cause,
+      httpStatus: null,
+      payloadKind: 'unavailable',
+    });
+    expect(mocks.reportError).not.toHaveBeenCalled();
   });
 
   it('claims by slot, request id and the day the sheet showed; the amount is never sent', async () => {

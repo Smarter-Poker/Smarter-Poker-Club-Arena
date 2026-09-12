@@ -65,26 +65,26 @@ describe('Restrict Observers', () => {
     expect(SELECT).toContain('restrict_observers');
   });
 
-  it('gates BOTH the upgrade path and the mux subscribe path', () => {
-    // The multi-table client never touches the upgrade gate, so one gate is
-    // no gate.
-    const gates = WS.match(/isRestrictedObserver\(/g) ?? [];
-    expect(gates.length).toBeGreaterThanOrEqual(3); // definition + two callers
+  it('gates both the upgrade and mux paths through the complete authority', () => {
+    expect(WS.match(/await this\.authorizeConnection\(tableId,/g)).toHaveLength(2);
     expect(WS).toContain('OBSERVERS_RESTRICTED');
   });
 
-  it('never caches the SEAT, only the table setting', () => {
-    const body = sliceMethod(WS, 'private async isRestrictedObserver(');
-    // A player who has just bought in connects within the same second; a
-    // stale "not seated" locks them out of the seat they just paid for.
-    expect(body).toContain('observerRestrictionCache');
-    const afterSeatQuery = body.slice(body.indexOf("from('table_seats')"));
-    expect(afterSeatQuery).not.toContain('Cache.set');
+  it('reads the current seat and observer setting from one uncached SQL snapshot', () => {
+    const sql = read(
+      'supabase/migrations/20260911195214_engine_table_connection_one_snapshot_verdict.sql'
+    );
+    expect(sql).toContain('s.left_at IS NULL');
+    expect(sql).toContain("WHEN f.seated THEN 'seated'");
+    expect(sql).toContain("WHEN f.restrict_observers IS TRUE THEN 'observers_restricted'");
+    expect(WS).not.toContain('observerRestrictionCache');
   });
 
-  it('fails open, like every other gate on this path', () => {
-    const fn = sliceMethod(WS, 'private async isRestrictedObserver(');
-    expect(fn).toMatch(/catch\s*\{\s*return false;/);
+  it('cannot grant access when the complete authority read fails', () => {
+    const gate = read('server/src/services/TableConnectionAccess.ts');
+    expect(gate).toContain('allowed: false');
+    expect(gate).toContain("reason: 'check_failed'");
+    expect(gate).toMatch(/catch\s*\{\s*return refused;/);
   });
 });
 

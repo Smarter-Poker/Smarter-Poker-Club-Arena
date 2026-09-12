@@ -45,19 +45,17 @@ interface Harness {
   server: EngineWebSocketServer;
   /** Pretend `userId` is already connected to `tableId` from `ip`. */
   seat(tableId: string, userId: string, ip: string | null): void;
-  /** Set the cached ip_restriction flag without touching the database. */
+  /** Supply the restriction setting from the verified database verdict. */
   setRestricted(tableId: string, restricted: boolean): void;
   conflict(tableId: string, userId: string, ip: string | null): Promise<boolean>;
 }
 
 function harness(): Harness {
   const server = new EngineWebSocketServer({ hub: fakeHub, tableExists: () => true });
-  // The gate reads two private members. Reaching into them keeps the test on
-  // the real implementation instead of a reimplementation of it.
+  const restrictions = new Map<string, boolean>();
   const internals = server as unknown as {
     connections: Map<object, { userId: string; tableId: string; clientIp: string | null }>;
-    ipRestrictionCache: Map<string, { restricted: boolean; readAt: number }>;
-    isIpConflict(tableId: string, userId: string, ip: string | null): Promise<boolean>;
+    isIpConflict(tableId: string, userId: string, ip: string | null, restricted: boolean): boolean;
   };
   return {
     server,
@@ -65,10 +63,12 @@ function harness(): Harness {
       internals.connections.set({}, { userId, tableId, clientIp: ip });
     },
     setRestricted(tableId, restricted) {
-      internals.ipRestrictionCache.set(tableId, { restricted, readAt: Date.now() });
+      restrictions.set(tableId, restricted);
     },
     conflict(tableId, userId, ip) {
-      return internals.isIpConflict.call(server, tableId, userId, ip);
+      return Promise.resolve(
+        internals.isIpConflict.call(server, tableId, userId, ip, restrictions.get(tableId) === true)
+      );
     },
   };
 }
@@ -192,29 +192,14 @@ describe('IP restriction - the switch itself', () => {
     await expect(h.conflict(TABLE_A, BOB, '127.0.0.1')).resolves.toBe(false);
   });
 
-  it('the cached flag is dropped once the last connection to a table closes', () => {
-    // Otherwise the cache grows for the life of the process, one entry per
-    // table anyone has ever connected to.
+  it('uses the current verdict when an owner turns the restriction on or off', async () => {
     const h = harness();
-    h.setRestricted(TABLE_A, true);
-    const internals = h.server as unknown as {
-      ipRestrictionCache: Map<string, unknown>;
-      forgetTableIfEmpty(tableId: string): void;
-    };
-    expect(internals.ipRestrictionCache.has(TABLE_A)).toBe(true);
-    internals.forgetTableIfEmpty.call(h.server, TABLE_A);
-    expect(internals.ipRestrictionCache.has(TABLE_A)).toBe(false);
-  });
-
-  it('does NOT drop the cached flag while someone is still connected', () => {
-    const h = harness();
-    h.setRestricted(TABLE_A, true);
     h.seat(TABLE_A, ALICE, '24.15.206.254');
-    const internals = h.server as unknown as {
-      ipRestrictionCache: Map<string, unknown>;
-      forgetTableIfEmpty(tableId: string): void;
-    };
-    internals.forgetTableIfEmpty.call(h.server, TABLE_A);
-    expect(internals.ipRestrictionCache.has(TABLE_A)).toBe(true);
+    h.setRestricted(TABLE_A, false);
+    await expect(h.conflict(TABLE_A, BOB, '24.15.206.254')).resolves.toBe(false);
+    h.setRestricted(TABLE_A, true);
+    await expect(h.conflict(TABLE_A, BOB, '24.15.206.254')).resolves.toBe(true);
+    h.setRestricted(TABLE_A, false);
+    await expect(h.conflict(TABLE_A, BOB, '24.15.206.254')).resolves.toBe(false);
   });
 });

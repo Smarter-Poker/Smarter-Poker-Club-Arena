@@ -10138,7 +10138,7 @@ export default function TablePage({
   // FIX-232: Polls at 0s/2s/5s intervals but STOPS once cards are received (Bug #7).
   // FIX-232: Uses cardsPreSortRef to avoid stale closure (Bug #6).
   useEffect(() => {
-    if (!tableId || !userId) return;
+    if (!tableId || !userId || userId === 'guest') return;
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let pollTimer: ReturnType<typeof setInterval> | null = null;

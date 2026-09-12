@@ -11,7 +11,8 @@
  * (stakesValue / buyInValue / startValue), never the formatted strings.
  */
 
-import { memo, useMemo, useRef, useState, useEffect, useCallback } from 'react';
+import { memo, useMemo, useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react';
+import { observeLobbyScrollClearance } from './lobbyScrollClearance';
 import type { LobbyEntry, LobbyStatusKey, LobbyTournamentRow } from './lobbyEntries';
 import { tournamentBlinds, tournamentLevel } from './tournamentFigures';
 import {
@@ -1586,6 +1587,12 @@ export default function LobbyTable({
   );
   const bodyRef = useRef<HTMLTableSectionElement>(null);
   const mobileCardsRef = useRef<HTMLDivElement>(null);
+  const sortbarRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (sortbarRef.current && mobileCardsRef.current) {
+      return observeLobbyScrollClearance(sortbarRef.current, mobileCardsRef.current);
+    }
+  }, [category]);
   /* Which chip of the mobile sort toolbar owns the single tab stop. */
   const sortChipsRef = useRef<HTMLDivElement>(null);
   const [sortFocus, setSortFocus] = useState(0);
@@ -1905,6 +1912,7 @@ export default function LobbyTable({
       {sortableColumns.length > 0 && (
         <div
           className="lobby-sortbar"
+          ref={sortbarRef}
           role="toolbar"
           aria-label="Sort Games"
           aria-orientation="horizontal"

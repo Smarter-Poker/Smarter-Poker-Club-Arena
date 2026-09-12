@@ -125,22 +125,33 @@ interface Analytics {
 export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
   const [data, setData] = useState<Analytics | null>(null);
   const [denied, setDenied] = useState(false);
+  const [settledPool, setSettledPool] = useState<string | null>(null);
   const [nearMisses, setNearMisses] = useState<NearMiss[]>([]);
   const [nearMissState, setNearMissState] = useState<NearMissState>('loading');
+  const [nearMissPool, setNearMissPool] = useState<string | null>(null);
 
   useEffect(() => {
     if (!poolId) return;
     let alive = true;
+    setSettledPool(null);
+    setData(null);
+    setDenied(false);
     (async () => {
-      const { data: rows, error } = await supabase.rpc('fn_bbj_analytics', { p_pool_id: poolId });
-      if (!alive) return;
-      if (error) {
-        // Not an admin (or the pool vanished) — render nothing, no noise.
-        setDenied(true);
-        return;
+      try {
+        const { data: rows, error } = await supabase.rpc('fn_bbj_analytics', { p_pool_id: poolId });
+        if (!alive) return;
+        if (error) {
+          // The server owns the admin boundary; a refusal remains no content.
+          setDenied(true);
+          return;
+        }
+        const row = Array.isArray(rows) ? rows[0] : rows;
+        if (row) setData(row as Analytics);
+      } catch {
+        if (alive) setDenied(true);
+      } finally {
+        if (alive) setSettledPool(poolId);
       }
-      const row = Array.isArray(rows) ? rows[0] : rows;
-      if (row) setData(row as Analytics);
     })();
     return () => {
       alive = false;
@@ -148,38 +159,49 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
   }, [poolId]);
 
   /* Its OWN effect, so the refusal log and the balances cannot take each other
-     down. The same authorisation decides both, so a non-admin never gets here
-     — the panel has already returned null. */
+     down. Each RPC enforces its own server-side authorisation. */
   useEffect(() => {
     if (!poolId) return;
     let alive = true;
+    setNearMissPool(null);
+    setNearMisses([]);
     setNearMissState('loading');
     (async () => {
-      const { data: rows, error } = await supabase.rpc('fn_bbj_near_miss_summary', {
-        p_pool_id: poolId,
-        p_days: 30,
-      });
-      if (!alive) return;
-      if (error) {
-        setNearMissState('unavailable');
-        return;
+      try {
+        const { data: rows, error } = await supabase.rpc('fn_bbj_near_miss_summary', {
+          p_pool_id: poolId,
+          p_days: 30,
+        });
+        if (!alive) return;
+        if (error) {
+          setNearMissState('unavailable');
+          return;
+        }
+        setNearMisses((Array.isArray(rows) ? rows : []) as NearMiss[]);
+        setNearMissState('ok');
+      } catch {
+        if (alive) setNearMissState('unavailable');
+      } finally {
+        if (alive) setNearMissPool(poolId);
       }
-      setNearMisses((Array.isArray(rows) ? rows : []) as NearMiss[]);
-      setNearMissState('ok');
     })();
     return () => {
       alive = false;
     };
   }, [poolId]);
 
-  if (!poolId || denied || !data) return null;
+  if (poolId && settledPool !== poolId) return <div data-initial-layout="pending" />;
+  if (!poolId || denied || !data) return <div data-initial-layout="settled" hidden />;
 
   // Funding rate vs. payout rate — the number an operator actually needs.
   const dailyFunding = Number(data.contributions_7d) / 7;
   const netPositive = Number(data.net_pool_position) >= 0;
 
   return (
-    <div className="bbj-admin">
+    <div
+      className="bbj-admin"
+      data-initial-layout={nearMissPool === poolId ? 'settled' : 'pending'}
+    >
       <div className="bbj-admin__header">
         <h3 className="bbj-admin__title">Jackpot Health</h3>
         <span className="bbj-admin__subtitle">Admin Only &middot; From The Payout Ledger</span>

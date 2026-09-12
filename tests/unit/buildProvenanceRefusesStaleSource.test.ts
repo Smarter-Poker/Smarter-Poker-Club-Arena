@@ -3,22 +3,20 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { gitFixtureEnvironment } from '../helpers/gitFixtureEnvironment';
 
 const script = resolve(process.cwd(), 'scripts/stamp-build-provenance.mjs');
 const repos: string[] = [];
 // Git exports repository-local GIT_* variables to hooks. This law runs from
 // pre-push, so carrying those variables into a temporary fixture would point
 // its git commands back at the caller's real worktree.
-const isolatedGitEnv = Object.fromEntries(
-  Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_'))
-);
 
 const git = (cwd: string, ...args: string[]) =>
   execFileSync('git', args, {
     cwd,
     encoding: 'utf8',
     stdio: 'pipe',
-    env: isolatedGitEnv,
+    env: gitFixtureEnvironment(),
   }).trim();
 
 const makeRepo = () => {
@@ -50,7 +48,7 @@ describe('Club Arena build provenance', () => {
     const result = spawnSync(process.execPath, [script], {
       cwd,
       encoding: 'utf8',
-      env: { ...isolatedGitEnv, STRICT_PROVENANCE: '1', CA_DIST: 'dist' },
+      env: { ...gitFixtureEnvironment(), STRICT_PROVENANCE: '1', CA_DIST: 'dist' },
     });
 
     expect(result.status).toBe(1);
@@ -65,7 +63,7 @@ describe('Club Arena build provenance', () => {
     const result = spawnSync(process.execPath, [script], {
       cwd,
       encoding: 'utf8',
-      env: { ...isolatedGitEnv, STRICT_PROVENANCE: '1', CA_DIST: 'dist' },
+      env: { ...gitFixtureEnvironment(), STRICT_PROVENANCE: '1', CA_DIST: 'dist' },
     });
 
     expect(result.status).toBe(0);

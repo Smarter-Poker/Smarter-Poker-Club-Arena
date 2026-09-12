@@ -31,6 +31,14 @@ export interface WsMetricsDeps {
   };
   engineWs: {
     connectionCount(): number;
+    connectionAccessStats?(): {
+      completed: number;
+      failed: number;
+      pending: number;
+      oldestPendingMs: number;
+      maxDurationMs: number;
+      over1200Ms: number;
+    };
     /** Optional so the structural typing above stays minimal, per this file's
      *  design note — a transport without it simply reports zeroes. */
     muxStats?(): {
@@ -113,6 +121,7 @@ export function handleWsMetrics(res: ServerResponse, deps: WsMetricsDeps): void 
   sendJSON(res, 200, {
     totalSubscribers: deps.tableStateHub.totalSubscribers(),
     activeConnections: deps.engineWs.connectionCount(),
+    connectionAccess: deps.engineWs.connectionAccessStats?.() ?? null,
     ...mux,
     ...backpressure,
     // 2026-08-24: channel transport visibility — see WsMetricsDeps.channelHub.

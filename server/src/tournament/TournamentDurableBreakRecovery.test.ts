@@ -249,4 +249,21 @@ describe('actual Manager durable close through actual Lease custody', () => {
     expect(f.api.ackCleanup.mock.calls[0][3]).toBe('verified_absent');
     expect(f.custody.admissionAllowed(source)).toBe(true);
   });
+  it.each(['lifecycle', 'source_table_id', 'custody_id'])(
+    'retains exact empty source on mismatched close %s',
+    async (field) => {
+      const f = fixture();
+      f.api.close.mockImplementationOnce(async () => ({
+        ...f.state(),
+        state: 'close_confirmed',
+        [field]: 'wrong',
+      }));
+      await expect(f.manager.retireTournamentBreak(f.state())).rejects.toThrow('exact close');
+      expect(f.global.get(source)).toBe(f.engine);
+      expect(f.manager.tableEngines.get(source)).toBe(f.engine);
+      expect(f.server.unregisterTournamentTableEngine).not.toHaveBeenCalled();
+      expect(f.api.ackCleanup).not.toHaveBeenCalled();
+      expect(f.custody.admissionAllowed(source)).toBe(false);
+    }
+  );
 });

@@ -2650,6 +2650,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
       this.currentHandSeatGenerations = captureHandSeatGenerations(players);
       this.handController = new HandController(config, hcPlayers, dealerSeat);
+      const preparedController = this.handController;
       // chip-std Lane F (2026-09-02): the stacks this hand was dealt from. The
       // tournament persist gate in postHandTasks holds the settled stacks of
       // these exact players to this exact total.
@@ -2775,11 +2776,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         (p) => !this.timeBankEngine.getPlayerBank(this.tableId, p.user_id)
       );
       const tbExtras = await this.fetchTimeBankExtras(tbNewPlayers.map((p) => p.user_id));
-      if (this.discardPreparedHandForPause()) return;
       /**
        * THE ENGINE MAY HAVE BEEN TORN DOWN DURING THAT AWAIT (2026-09-06).
        *
-       * That RPC is the one await between `new HandController(...)` above and
+       * That RPC is an await between `new HandController(...)` above and
        * `this.handController!.onEvent(...)` below, and both `stop()` and
        * `killForRestart()` set `this.handController = null` - a table that broke
        * or closed under the cluster controller, an engine superseded by its
@@ -2796,13 +2796,19 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
        * stopped engine must not go on to arm timers and write a snapshot for a
        * controller its successor owns. Leave quietly; the loop sees `running`.
        */
-      if (!this.handController || !this.running) {
+      if (
+        this.handController !== preparedController ||
+        !this.running ||
+        !this.isCurrentEngine() ||
+        !this.lifecycleCanMutate()
+      ) {
         console.log(
           `[ServerTableEngine:${this.tableId}] hand ${handNumber} not dealt - the engine was ` +
             `stopped while the time banks were being read`
         );
         return;
       }
+      if (this.discardPreparedHandForPause()) return;
       for (const p of hcPlayers) {
         this.atomicStackService.initializeStack(this.tableId, p.user_id, p.stack);
         // Only initialize time bank if player is NEW (don't reset existing pool per session)
@@ -2896,8 +2902,17 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // phase/authority check does not acquire a second mutex.
       const publicationStart = await this.acquireFinancialControllerStart();
       try {
+        if (
+          this.handController !== preparedController ||
+          !this.running ||
+          !this.isCurrentEngine() ||
+          !this.lifecycleCanMutate()
+        ) {
+          return;
+        }
+        if (this.discardPreparedHandForPause()) return;
         return new Promise<void>((resolve) => {
-          const controllerForHand = this.handController!;
+          const controllerForHand = preparedController;
           let persistenceGeneration: number | undefined;
           // FIX 178: Bible V8 §6.1 — Hand safety timeout must accommodate full multi-player hands.
           // A 9-player hand with 15s action timers × 4 betting rounds = 540s worst case.

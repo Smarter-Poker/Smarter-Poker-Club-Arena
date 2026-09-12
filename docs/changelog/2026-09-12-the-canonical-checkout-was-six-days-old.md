@@ -152,6 +152,29 @@ than prepends so finding `gh` cannot silently swap the agent's node for
 Homebrew's. The law test fails if a guard starts requiring a tool the list does
 not carry.
 
+### Why it survived: a law test was pinning it
+
+Correcting the two docs turned CI red.
+`tests/a-check-status-probe-cannot-say-pending-when-it-cannot-tell.law.test.ts`
+asserted, in as many words, "the playbook must record that gh is not installed
+on the Mac":
+
+```ts
+expect(pb, 'the playbook must record that gh is not installed on the Mac').toMatch(
+  /gh` is not installed|not installed on this Mac/
+);
+```
+
+So the claim was **load-bearing in CI**. Any agent that noticed `gh` working and
+fixed the doc would have watched the suite go red and put it back. That is the
+whole mechanism by which a false environmental claim becomes permanent, and it
+is worth more than the `gh` fix itself.
+
+The assertion now pins the REMEDY rather than the diagnosis: the playbook must
+name `/opt/homebrew/bin`. The law keeps its purpose - an agent must not be left
+guessing why a bare `gh` call fails - without requiring a sentence that is not
+true.
+
 **The guard stays fail-closed, and the bypass stays gone.** The failure it
 prevents is a push that exits 0 and reaches nobody, so "allow it through when
 we cannot check" recreates exactly that defect. `AGENT_MERGED_BRANCH_OK=1` has

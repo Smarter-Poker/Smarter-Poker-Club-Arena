@@ -53,7 +53,19 @@ export function bestPineappleDiscard(
     const keep = cards.filter((_, i) => i !== discard);
     const eq =
       communityCards.length >= 3
-        ? simulateEquity(keep, communityCards, 1, vi, iterations)
+        ? simulateEquity(
+            keep,
+            communityCards,
+            1,
+            vi,
+            iterations,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            [cards[discard]]
+          )
         : holdemPreflopScore(keep[0], keep[1], gameVariant === 'short_deck');
     if (eq > bestEq) {
       bestEq = eq;

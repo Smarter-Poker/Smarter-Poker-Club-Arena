@@ -2155,7 +2155,10 @@ export function simulateEquity(
   // V12: board-contact conditioning per opponent (NLH family only).
   oppReads?: Array<OppPostflopRead | null>,
   // Phase 7: bounded raw showdown outcomes from this same conditioned pass.
-  outcomeOut?: HorseEquityOutcomeCollector
+  outcomeOut?: HorseEquityOutcomeCollector,
+  // A hero's known discard stays out of every future board and opponent hand.
+  // Callers may provide only cards already known to that decision's owner.
+  knownDeadCards: readonly Card[] = []
 ): number {
   // V3 perf: banded Omaha sampling adds rejection-scoring cost; trim the
   // iteration count to stay inside the per-decision millisecond budget.
@@ -2205,6 +2208,7 @@ export function simulateEquity(
   const known = new Set<string>();
   for (const c of holeCards) known.add(cardKey(c));
   for (const c of boardCards) known.add(cardKey(c));
+  for (const c of knownDeadCards) known.add(cardKey(c));
 
   const base = vi.isShortDeck ? SHORT_DECK_CARDS : FULL_DECK;
   const deck = base.filter((c) => !known.has(cardKey(c)));

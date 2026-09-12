@@ -381,7 +381,11 @@ function pineappleRequest(
   const boardCount = stage === 'preflop' ? 0 : stage === 'turn' ? 4 : stage === 'river' ? 5 : 3;
   return rekey({
     ...fastRequest(requestId),
-    player: { ...snapshot.player, cards: pineappleCards.slice(0, cardCount) },
+    player: {
+      ...snapshot.player,
+      cards: pineappleCards.slice(0, cardCount),
+      knownDeadCards: cardCount === 2 ? pineappleCards.slice(2) : [],
+    },
     gameState: {
       ...snapshot.gameState,
       gameVariant: 'pineapple',
@@ -861,6 +865,53 @@ describe('HorseDecisionWorkerRuntime', () => {
     });
   });
 
+  it.each([
+    'missing',
+    'malformed',
+    'hero_collision',
+    'board_collision',
+    'other_variant',
+    'public_leak',
+  ])('rejects %s known-discard inputs before invoking any decision computation', async (fault) => {
+    const h = harness();
+    const request = fault === 'other_variant' ? fastRequest(1) : pineappleRequest('flop', 2);
+    request.player = { ...request.player };
+    if (fault === 'missing') delete request.player.knownDeadCards;
+    if (fault === 'malformed') request.player.knownDeadCards = {} as any;
+    if (fault === 'hero_collision') request.player.knownDeadCards = [request.player.cards[0]];
+    if (fault === 'board_collision')
+      request.player.knownDeadCards = [request.gameState.communityCards[0]];
+    if (fault === 'other_variant') request.player.knownDeadCards = [pineappleCards[0]];
+    if (fault === 'public_leak')
+      request.gameState.players = request.gameState.players.map((seat, i) =>
+        i === 0 ? { ...seat, knownDeadCards: [pineappleCards[2]] } : seat
+      );
+    h.runtime.receive(rekey(request));
+    await h.runtime.drain();
+    expect(h.decisionsAtRng).toEqual([]);
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      recoverable: true,
+      message:
+        fault === 'public_leak'
+          ? 'horse state contains private seat cards'
+          : 'horse state known discard or physical cards are invalid',
+    });
+  });
+
+  it("binds the hero's private discarded card into the decision key", async () => {
+    const h = harness();
+    const request = pineappleRequest('flop', 2);
+    request.player.knownDeadCards = [{ rank: '3', suit: 'clubs' }];
+    h.runtime.receive(request);
+    await h.runtime.drain();
+    expect(h.decisionsAtRng).toEqual([]);
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'decisionKey does not bind the canonical decision snapshot',
+    });
+  });
+
   it('refuses ordinary fast work during the simultaneous Pineapple discard round', async () => {
     const h = harness();
     h.runtime.receive(pineappleRequest('pineapple_discard', 3, false));
@@ -939,6 +990,8 @@ describe('HorseDecisionWorkerRuntime', () => {
     { phase10EvidenceMode: true },
     { phase11Omaha: 'candidate' },
     { phase11EvidenceMode: true },
+    { phase12Remaining: 'candidate' },
+    { phase12EvidenceMode: true },
   ])('rejects offline candidate selectors at the live worker boundary: %j', async (opts) => {
     const h = harness();
     h.runtime.receive({
@@ -1099,7 +1152,11 @@ describe('HorseDecisionWorkerRuntime', () => {
         { rank: 'K', suit: 'hearts' },
         { rank: '2', suit: 'clubs' },
       ],
-      communityCards: [],
+      communityCards: [
+        { rank: '7', suit: 'hearts' },
+        { rank: '8', suit: 'hearts' },
+        { rank: '3', suit: 'clubs' },
+      ],
       gameVariant: 'pineapple',
     });
     await h.runtime.drain();
@@ -1110,6 +1167,41 @@ describe('HorseDecisionWorkerRuntime', () => {
       computeMs: 6,
       governorScale: 0.2,
     });
+    expect(h.rng()).toBe(101);
+  });
+
+  it.each([
+    'missing_flop',
+    'future_board',
+    'wrong_variant',
+    'duplicate_hole',
+    'board_collision',
+    'invalid_card',
+  ])('rejects an invalid discard snapshot before computation: %s', async (fault) => {
+    const h = harness();
+    const request = {
+      type: 'DECIDE_DISCARD' as const,
+      requestId: 1,
+      generation: 4,
+      fence: 'table:hand:discard:2',
+      cards: structuredClone(pineappleCards),
+      communityCards: [
+        { rank: '7', suit: 'hearts' },
+        { rank: '8', suit: 'hearts' },
+        { rank: '3', suit: 'clubs' },
+      ] as typeof snapshot.player.cards,
+      gameVariant: 'pineapple',
+    };
+    if (fault === 'missing_flop') request.communityCards = [];
+    if (fault === 'future_board') request.communityCards.push({ rank: '4', suit: 'clubs' });
+    if (fault === 'wrong_variant') request.gameVariant = 'short_deck';
+    if (fault === 'duplicate_hole') request.cards[1] = request.cards[0];
+    if (fault === 'board_collision') request.communityCards[0] = request.cards[0];
+    if (fault === 'invalid_card') request.cards[0] = null as unknown as (typeof request.cards)[0];
+    h.runtime.receive(request);
+    await h.runtime.drain();
+    expect(h.messages.at(-1)).toMatchObject({ type: 'ERROR', requestId: 1 });
+    expect(h.decisionsAtRng).toEqual([]);
     expect(h.rng()).toBe(101);
   });
 
@@ -1281,6 +1373,37 @@ it.each(['plo5', 'plo6', 'plo8'] as const)(
     expect(result.decision.omahaVariantPolicy?.eligible).toBe(true);
     expect(result.decision.omahaVariantPolicy?.fired).toBe(true);
     expect(structuredClone(result).decision.omahaVariantPolicy?.finalAction).toBe(
+      result.decision.action
+    );
+  }
+);
+
+it.each(['short_deck', 'pineapple', 'flh', 'flo8'] as const)(
+  'Phase 12 %s receipt survives the live worker boundary',
+  async (variant) => {
+    const { remainingVariantSpot } =
+      await import('../../benchmark/RemainingVariantPolicyEvidence.js');
+    const h = harness(true);
+    const input = remainingVariantSpot(variant, 'preflop');
+    const request = {
+      type: 'DECIDE_FAST' as const,
+      requestId: 512,
+      ...structuredClone(snapshot),
+      style: 'balanced' as const,
+      mods: {},
+      opts: { mind: false, telemetry: false },
+      player: input.hero,
+      gameState: input.state,
+    };
+    request.decisionKey = buildHorseDecisionKey(request);
+    h.runtime.receive(request);
+    await h.runtime.drain();
+    const result = h.messages.find((m) => m.type === 'FAST_RESULT');
+    if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(h.messages));
+    expect(result.decision.remainingVariantPolicy?.mode).toBe('shadow');
+    expect(result.decision.remainingVariantPolicy?.eligible).toBe(true);
+    expect(result.decision.remainingVariantPolicy?.fired).toBe(true);
+    expect(structuredClone(result).decision.remainingVariantPolicy?.finalAction).toBe(
       result.decision.action
     );
   }

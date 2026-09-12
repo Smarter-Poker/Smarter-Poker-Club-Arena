@@ -19,7 +19,8 @@
     "horse:gto-v31-evaluate": "tsx --env-file=.env src/scripts/gtoV31Evaluate.ts",
     "horse:omaha-evaluate": "tsx src/scripts/horseOmahaEvaluate.ts",
     "horse:plo4-evaluate": "node --import tsx src/scripts/plo4PolicyEvaluate.ts",
-    "horse:omaha-variants-evaluate": "node --import tsx src/scripts/omahaVariantPolicyEvaluate.ts"
+    "horse:omaha-variants-evaluate": "node --import tsx src/scripts/omahaVariantPolicyEvaluate.ts",
+    "horse:remaining-variants-evaluate": "node --import tsx src/scripts/remainingVariantPolicyEvaluate.ts"
   },
   "dependencies": {
     "@sentry/node": "^10.46.0",

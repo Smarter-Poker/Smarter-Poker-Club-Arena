@@ -86,6 +86,9 @@ export interface SeatPlayer {
    * BBA and dead blinds remain shared dead money and never populate this field. */
   individualAnteInvested?: number;
   cards: Card[];
+  /** Decision-player copy only: this player's own known Pineapple discard.
+   * Never serialize it on public seats or store it on authoritative players. */
+  knownDeadCards?: Card[];
   is_folded: boolean;
   is_all_in: boolean;
   is_sitting_out: boolean;
@@ -926,6 +929,7 @@ export interface HorseTournamentUtilityLedger {
 export interface HorseDecision {
   plo4Policy?: import('./engine/plo4/Plo4LivePolicy.js').Plo4LiveReceipt;
   omahaVariantPolicy?: import('./engine/omaha/OmahaVariantLivePolicy.js').OmahaVariantReceipt;
+  remainingVariantPolicy?: import('./engine/remainingVariants/RemainingVariantLivePolicy.js').RemainingVariantReceipt;
   tournamentPostflop?: import('./engine/HorseTournamentPostflop.js').HorseTournamentPostflopLedger;
   action: ActionType;
   amount?: number;

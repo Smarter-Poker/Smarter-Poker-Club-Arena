@@ -2645,6 +2645,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     let pendingPostflopLedger: HorseDecision['tournamentPostflop'];
     let pendingPlo4Ledger: HorseDecision['plo4Policy'];
     let pendingOmahaLedger: HorseDecision['omahaVariantPolicy'];
+    let pendingRemainingLedger: HorseDecision['remainingVariantPolicy'];
 
     const retirePlo4 = (ledger: HorseDecision['plo4Policy']): void => {
       if (ledger?.executionStatus === 'pending') {
@@ -2659,9 +2660,17 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         noteFire(`phase11_${ledger.variant}_execution_not_executed`);
       }
     };
+    const retireRemaining = (ledger: HorseDecision['remainingVariantPolicy']): void => {
+      if (ledger?.executionStatus === 'pending') {
+        ledger.executionStatus = 'not_executed';
+        noteFire('phase12_execution_not_executed');
+        noteFire(`phase12_${ledger.variant}_execution_not_executed`);
+      }
+    };
     const markPendingUtilityNotExecuted = (): void => {
       retirePlo4(pendingPlo4Ledger);
       retireOmaha(pendingOmahaLedger);
+      retireRemaining(pendingRemainingLedger);
       if (pendingPostflopLedger?.executionStatus === 'pending') {
         pendingPostflopLedger.executionStatus = 'not_executed';
         noteFire('phase8_execution_not_executed');
@@ -2780,19 +2789,26 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const decisionPlayer: SeatPlayer = {
       ...authoritativePlayer,
       cards: [...authoritativePlayer.cards],
+      knownDeadCards:
+        activeVariant === 'pineapple'
+          ? handControllerRef.getPineappleKnownDeadCards(authoritativePlayer.seat)
+          : [],
       is_sitting_out:
         authoritativePlayer.is_sitting_out === true ||
         this.disconnectEngine.isSittingOut(this.tableId, authoritativePlayer.user_id),
     };
-    const publicPlayers: SeatPlayer[] = state.players.map((candidate) => ({
-      ...candidate,
-      // HIDDEN-INFORMATION FIREWALL: every seat in the shared state is public
-      // only. Hero's private cards exist exactly once, on decisionPlayer.
-      cards: [],
-      is_sitting_out:
-        candidate.is_sitting_out === true ||
-        this.disconnectEngine.isSittingOut(this.tableId, candidate.user_id),
-    }));
+    const publicPlayers: SeatPlayer[] = state.players.map((candidate) => {
+      const { knownDeadCards: _privateDeadCards, ...publicCandidate } = candidate;
+      return {
+        ...publicCandidate,
+        // HIDDEN-INFORMATION FIREWALL: every seat in the shared state is public
+        // only. Hero's private cards exist exactly once, on decisionPlayer.
+        cards: [],
+        is_sitting_out:
+          candidate.is_sitting_out === true ||
+          this.disconnectEngine.isSittingOut(this.tableId, candidate.user_id),
+      };
+    });
     const gameState: HorseGameStateV2 = {
       stateSchemaVersion: 1,
       heroSeat: boundedActions.heroSeat,
@@ -2961,6 +2977,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         pendingPostflopLedger = decision.tournamentPostflop;
         pendingPlo4Ledger = decision.plo4Policy;
         pendingOmahaLedger = decision.omahaVariantPolicy;
+        pendingRemainingLedger = decision.remainingVariantPolicy;
         if (
           fastResult.generation !== turnToken ||
           fastResult.fence !== fence ||
@@ -3133,6 +3150,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                 ) {
                   retirePlo4(deepResult.decision.plo4Policy);
                   retireOmaha(deepResult.decision.omahaVariantPolicy);
+                  retireRemaining(deepResult.decision.remainingVariantPolicy);
                   if (deepResult.decision.tournamentPostflop?.executionStatus === 'pending') {
                     deepResult.decision.tournamentPostflop.executionStatus = 'not_executed';
                     noteFire('phase8_execution_not_executed');
@@ -3147,6 +3165,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                   noteFire('v44_second_look_flipped');
                   retirePlo4(pendingPlo4Ledger);
                   retireOmaha(pendingOmahaLedger);
+                  retireRemaining(pendingRemainingLedger);
                   if (pendingPostflopLedger?.executionStatus === 'pending') {
                     pendingPostflopLedger.executionStatus = 'not_executed';
                     noteFire('phase8_execution_not_executed');
@@ -3165,9 +3184,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                   pendingPostflopLedger = decision.tournamentPostflop;
                   pendingPlo4Ledger = decision.plo4Policy;
                   pendingOmahaLedger = decision.omahaVariantPolicy;
+                  pendingRemainingLedger = decision.remainingVariantPolicy;
                 } else {
                   retirePlo4(deepResult.decision.plo4Policy);
                   retireOmaha(deepResult.decision.omahaVariantPolicy);
+                  retireRemaining(deepResult.decision.remainingVariantPolicy);
                   if (deepResult.decision.tournamentPostflop?.executionStatus === 'pending') {
                     deepResult.decision.tournamentPostflop.executionStatus = 'not_executed';
                     noteFire('phase8_execution_not_executed');
@@ -3199,8 +3220,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           const postflopLedger = decision.tournamentPostflop;
           const plo4Ledger = decision.plo4Policy;
           const omahaLedger = decision.omahaVariantPolicy;
+          const remainingLedger = decision.remainingVariantPolicy;
           pendingPlo4Ledger = plo4Ledger;
           pendingOmahaLedger = omahaLedger;
+          pendingRemainingLedger = remainingLedger;
           pendingPostflopLedger = postflopLedger;
           pendingUtilityLedger = utilityLedger;
           if (!fenceIsCurrent('commit')) return;
@@ -3467,6 +3490,25 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                     : 'coerced';
               noteFire(`phase11_execution_${omahaLedger.executionStatus}`);
               noteFire(`phase11_${omahaLedger.variant}_execution_${omahaLedger.executionStatus}`);
+            }
+            if (remainingLedger) {
+              remainingLedger.executedAction = executedAction;
+              remainingLedger.executedAmount = executedAmount;
+              const matched =
+                executedAction === remainingLedger.finalAction &&
+                (!['bet', 'raise'].includes(remainingLedger.finalAction) ||
+                  executedAmount === remainingLedger.finalAmount);
+              remainingLedger.executionStatus = !applied
+                ? 'not_executed'
+                : !intendedApplied
+                  ? 'fallback'
+                  : matched
+                    ? 'intended'
+                    : 'coerced';
+              noteFire(`phase12_execution_${remainingLedger.executionStatus}`);
+              noteFire(
+                `phase12_${remainingLedger.variant}_execution_${remainingLedger.executionStatus}`
+              );
             }
             if (postflopLedger) {
               postflopLedger.executedAction = executedAction;

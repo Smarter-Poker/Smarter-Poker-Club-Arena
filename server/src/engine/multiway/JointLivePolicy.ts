@@ -20,7 +20,9 @@ export const JOINT_LIVE_DOMAIN = Object.freeze({
   largeTableSamples: 8,
   minSamples: 8,
   liveBudgetMs: 4,
-  samplingDeadlineMs: 2,
+  // Larger Omaha boards spend more of the shared 4 ms budget in scoring;
+  // keep 1.5 ms reserved for candidate pots, responses and final accounting.
+  samplingDeadlineMs: 2.5,
 });
 export type JointPolicyMode = 'off' | 'shadow' | 'candidate';
 type ActionModel = NonNullable<ReturnType<typeof evaluateJointActions>>;

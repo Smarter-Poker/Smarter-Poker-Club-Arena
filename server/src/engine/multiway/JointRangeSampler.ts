@@ -75,6 +75,18 @@ export function jointDecisionStrength(variant: string, cards: Card[], board: Car
     rules.holeCardsUse === 'exactly_two'
       ? scoreOmahaHiPartial(cards, board)
       : scoreHoldem([...cards, ...board], cards.length + board.length, rules.deckSize === 36);
+  return decisionStrengthFromFacts(variant, cards, board, shape, score);
+}
+
+function decisionStrengthFromFacts(
+  variant: string,
+  cards: Card[],
+  board: Card[],
+  shape: number,
+  score: number
+): number {
+  if (board.length < 3) return shape;
+  const rules = horseVariantRulesFor(variant);
   const category = Math.floor(score / 0x100000);
   // Qualification on a partial board needs exactly two distinct low hole
   // ranks and three other low board ranks. The river-only scorer assumes
@@ -230,6 +242,48 @@ export function sampleJointRanges(
   const active = ranges.filter((p) => p.live);
   if (!active.length) return null;
   const rules = horseVariantRulesFor(state.gameVariant);
+  // Decision-local facts only. The same retained hand is read on every board;
+  // a completed current board is also its showdown board. Reuse that exact
+  // score instead of evaluating all Omaha combinations twice. Partial boards
+  // have different keys, so no future rank can enter a current response.
+  const shapes = new WeakMap<Card[], number>();
+  const highs = new WeakMap<Card[], Map<string, number>>();
+  const lows = new WeakMap<Card[], Map<string, number | null>>();
+  const shapeFor = (cards: Card[]) => {
+    let value = shapes.get(cards);
+    if (value === undefined) {
+      value = structuralQuality(state.gameVariant, cards);
+      shapes.set(cards, value);
+    }
+    return value;
+  };
+  const highFor = (cards: Card[], board: Card[]) => {
+    const boardKey = board.map(key).join(',');
+    let cache = highs.get(cards);
+    if (!cache) highs.set(cards, (cache = new Map()));
+    let value = cache.get(boardKey);
+    if (value === undefined) {
+      value =
+        rules.holeCardsUse === 'exactly_two'
+          ? board.length === 5
+            ? scoreOmahaHi(cards, board)
+            : scoreOmahaHiPartial(cards, board)
+          : scoreHoldem([...cards, ...board], cards.length + board.length, rules.deckSize === 36);
+      cache.set(boardKey, value);
+    }
+    return value;
+  };
+  const lowFor = (cards: Card[], board: Card[]) => {
+    if (!rules.splitLow8OrBetter) return null;
+    const boardKey = board.map(key).join(',');
+    let cache = lows.get(cards);
+    if (!cache) lows.set(cards, (cache = new Map()));
+    if (!cache.has(boardKey)) {
+      const value = scoreOmahaLow(cards, board);
+      cache.set(boardKey, Number.isFinite(value) ? value : null);
+    }
+    return cache.get(boardKey)!;
+  };
   let stream = ((options.seed ?? saveFastRandom()) ^ 0x51a7e13) >>> 0;
   for (const card of layout.physicalKnownCards)
     for (const char of key(card)) stream = Math.imul(stream ^ char.charCodeAt(0), 16777619) >>> 0;
@@ -269,8 +323,15 @@ export function sampleJointRanges(
           state.gameVariant === 'pineapple' && state.communityCards.length >= 3
             ? choosePineappleFlopPair(cards, state.communityCards.slice(0, 3))
             : cards;
+        const shape = shapeFor(retained);
         const reads = layout.boards.map((b) =>
-          jointDecisionStrength(state.gameVariant, retained, b)
+          decisionStrengthFromFacts(
+            state.gameVariant,
+            retained,
+            b,
+            shape,
+            b.length < 3 ? 0 : highFor(retained, b)
+          )
         );
         const mean = reads.reduce((a, b) => a + b, 0) / reads.length;
         const signal = Math.min(1, mean * 0.7 + Math.max(...reads) * 0.3);
@@ -324,14 +385,8 @@ export function sampleJointRanges(
     }
     samples.push({
       boards: boards.map((board, b) => {
-        const high = (cards: Card[]) =>
-          rules.holeCardsUse === 'exactly_two'
-            ? scoreOmahaHi(cards, board)
-            : scoreHoldem([...cards, ...board], cards.length + board.length, rules.deckSize === 36);
-        const low = (cards: Card[]) => {
-          const score = rules.splitLow8OrBetter ? scoreOmahaLow(cards, board) : Infinity;
-          return Number.isFinite(score) ? score : null;
-        };
+        const high = (cards: Card[]) => highFor(cards, board);
+        const low = (cards: Card[]) => lowFor(cards, board);
         return {
           heroHigh: high(heroCards),
           heroLow: low(heroCards),

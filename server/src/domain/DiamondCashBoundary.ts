@@ -25,15 +25,34 @@ import type { ArenaIdentity } from './ArenaContext.js';
  * Diamond table, and refusing it at the door is the only place the refusal
  * costs nobody a seat.
  */
+/**
+ * STRADDLES ARE ADMITTED (2026-09-12, Phase 7 line three).
+ *
+ * A straddle is the one optional cash feature that needs nothing from the chip
+ * economy. It is a blind post: `StraddleEngine` prices it at exactly
+ * `straddleMultiplier` (2) times the current blind, and this guard already
+ * refuses a table whose blinds are not whole positive integers, so a Diamond
+ * straddle is a whole number by construction with no division anywhere on the
+ * path. There is no counterparty, no ledger and no obligation - the units come
+ * out of one player's stack and into the pot, which the accepted-hand guard
+ * already requires to be whole.
+ *
+ * The three columns are also safe to read as absent-means-off, unlike the
+ * run-it columns above: every engine read is truthy (`if (straddle_enabled)`,
+ * `auto_utg_straddle === true`), so an unset column disables the feature in the
+ * engine exactly as it does here. That is why they leave the `disabled` list
+ * rather than joining `explicitlyOff`.
+ *
+ * `seven_deuce_enabled` stays refused and is not a straddle: it is a side bet
+ * paid between players at a table-configured `seven_deuce_amount`, which is a
+ * separate money fact this phase has not certified.
+ */
 export function assertDiamondCashTable(table: Record<string, unknown>): void {
   const disabled = [
     'is_template',
     'insurance_enabled',
     'bomb_pot_enabled',
     'run_it_twice_enabled',
-    'straddle_enabled',
-    'auto_utg_straddle',
-    'voluntary_straddle',
     'seven_deuce_enabled',
     'nit_game',
     'all_in_or_fold',

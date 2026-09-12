@@ -58,6 +58,9 @@ export interface CashierModalProps {
   transactions?: CashierTransaction[];
   currency?: string;
   isProcessing?: boolean;
+  /** Diamonds are whole units: every amount this modal offers or accepts is an
+   *  integer, because the custody door refuses a fraction. */
+  wholeUnits?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -77,10 +80,14 @@ function formatAmount(amount: number, currency: string = ''): string {
  * allowed range. Returns 0 for anything unparseable so the confirm button stays
  * disabled rather than submitting NaN.
  */
-function clampToCents(raw: string | number, max: number): number {
+function clampToCents(raw: string | number, max: number, wholeUnits = false): number {
   const n = typeof raw === 'number' ? raw : parseFloat(raw);
   if (!Number.isFinite(n) || n <= 0) return 0;
   const ceiling = Number.isFinite(max) && max > 0 ? max : n;
+  /* A Diamond does not divide. Rounding a typed 10.6 UP to 11 would ask the
+     custody door for a unit the player did not choose, and it refuses a
+     fraction outright, so the only honest direction here is down. */
+  if (wholeUnits) return Math.floor(Math.min(n, ceiling));
   return Math.round(Math.min(n, ceiling) * 100) / 100;
 }
 
@@ -107,6 +114,7 @@ export function CashierModal({
   transactions = [],
   currency = '',
   isProcessing = false,
+  wholeUnits = false,
 }: CashierModalProps) {
   const [amount, setAmount] = useState(0);
   // The quick-amount buttons animate in. They used to start as [] — which
@@ -154,6 +162,14 @@ export function CashierModal({
   // Quick amount options
   const quickAmounts = useMemo(() => {
     const max = canAddAmount;
+    if (wholeUnits) {
+      return [
+        { label: '25%', value: Math.floor(max * 0.25) },
+        { label: '50%', value: Math.floor(max * 0.5) },
+        { label: '75%', value: Math.floor(max * 0.75) },
+        { label: 'MAX', value: Math.floor(max) },
+      ];
+    }
     return [
       { label: '25%', value: Math.trunc(max * 0.25 * 100) / 100 },
       { label: '50%', value: Math.trunc(max * 0.5 * 100) / 100 },
@@ -164,7 +180,7 @@ export function CashierModal({
       // reached `atomic_table_addon` without passing through `clampToCents`.
       { label: 'MAX', value: Math.trunc(max * 100) / 100 },
     ];
-  }, [canAddAmount]);
+  }, [canAddAmount, wholeUnits]);
 
   // A changed amount is a DIFFERENT attempt — it gets its own idempotency
   // id. (After a failed attempt it is unchanged, so the held id survives for
@@ -350,11 +366,11 @@ export function CashierModal({
               type="number"
               className="cashier-modal__input"
               value={amount || ''}
-              onChange={(e) => setAmount(clampToCents(e.target.value, activeMax))}
-              onBlur={() => setAmount((prev) => clampToCents(prev, activeMax))}
+              onChange={(e) => setAmount(clampToCents(e.target.value, activeMax, wholeUnits))}
+              onBlur={() => setAmount((prev) => clampToCents(prev, activeMax, wholeUnits))}
               placeholder="0"
               min={0}
-              step={0.01}
+              step={wholeUnits ? 1 : 0.01}
               max={activeMax}
               disabled={busy}
               aria-label="Amount To Add"

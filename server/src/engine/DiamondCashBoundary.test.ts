@@ -59,14 +59,12 @@ describe('the first Diamond game stays inside the custody boundary', () => {
       { is_template: true },
       { insurance_enabled: true },
       { bomb_pot_enabled: true },
-      { run_it_twice: true },
       { seven_deuce_enabled: true },
       { nit_game: true },
       { all_in_or_fold: true },
       { pineapple_holdem: true },
       { cap_enabled: true },
       { rake_cap_bb: 1 },
-      { allow_run_it_twice: true },
       { small_blind: 0.5 },
       { min_buy_in: 0 },
       { max_buy_in: Infinity },
@@ -100,6 +98,25 @@ describe('the first Diamond game stays inside the custody boundary', () => {
     expect(() =>
       assertDiamondCashTable({ ...table, straddle_enabled: true, seven_deuce_enabled: true })
     ).toThrow('Diamond Plain Cash Table Required');
+  });
+
+  /* RUN IT TWICE IS ADMITTED (2026-09-12), and the two columns still have to be
+     STATED. The engine reads an absent one as true, which would make the chip
+     schedule's default this arena's answer. `run_it_twice_enabled` reads as
+     false when absent and only ever turns the feature on, so it is free. */
+  it('admits a table that runs it twice, and still refuses one that never said', () => {
+    for (const change of [
+      { run_it_twice: true, allow_run_it_twice: true },
+      { run_it_twice: true, allow_run_it_twice: false },
+      { run_it_twice_enabled: true },
+      { run_it_twice_enabled: false },
+    ])
+      expect(() => assertDiamondCashTable({ ...table, ...change })).not.toThrow();
+    for (const key of ['run_it_twice', 'allow_run_it_twice'] as const) {
+      expect(() => assertDiamondCashTable({ ...table, [key]: null })).toThrow(
+        'Diamond Plain Cash Table Required'
+      );
+    }
   });
 
   /* UNSET IS NOT OFF. The engine's default for each of these columns is the

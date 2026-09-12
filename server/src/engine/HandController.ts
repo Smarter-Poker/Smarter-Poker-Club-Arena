@@ -209,11 +209,19 @@ export class HandController {
       }
       // Phase 6 certifies plain NLH cash. Later variants and paid deductions
       // stay closed until their own accounting and release gates are approved.
+      //
+      // RUN IT TWICE LEFT THIS LIST ON 2026-09-12. It was here because the RIT
+      // runout cut every pot into integer CENTS, so a five Diamond pot over two
+      // runs paid two and a half Diamonds a board and this guard would then
+      // have refused the hand it had just dealt. The runout now cuts in the
+      // table's own unit and tells determineWinners what that unit is, so both
+      // the per-board slice and a tie chopped on one board are whole Diamonds.
+      // Bomb pots stay: their award rides the p_units lane the accepted-hand
+      // commit refuses for a Diamond hand.
       if (
         config.isTournament ||
         config.gameVariant !== 'nlh' ||
         config.bombPot ||
-        config.ritEnabled ||
         config.insuranceEnabled ||
         config.rakeConfig.percent !== 0 ||
         config.rakeConfig.cap !== 0 ||

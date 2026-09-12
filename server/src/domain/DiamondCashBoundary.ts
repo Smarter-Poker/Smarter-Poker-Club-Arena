@@ -26,6 +26,24 @@ import type { ArenaIdentity } from './ArenaContext.js';
  * costs nobody a seat.
  */
 /**
+ * RUN IT TWICE IS ADMITTED (2026-09-12, Phase 7 line three).
+ *
+ * It was refused because the RIT runout cut every pot into integer CENTS: a
+ * five Diamond pot over two runs paid two and a half Diamonds a board, and a
+ * fractional Diamond is refused by the hand guard, the accepted-hand guard and
+ * the settler alike. The runout now cuts in the table's own unit and passes
+ * that unit to `determineWinners`, so the per-board slice and a tie chopped on
+ * one board are both whole Diamonds, with the odd unit going to the earliest
+ * board and then to the first seat clockwise of the button - the same stated
+ * rules, counted in Diamonds.
+ *
+ * `run_it_twice` and `allow_run_it_twice` still have to be STATED. The engine
+ * reads an absent one as true, which would make the chip schedule's default the
+ * arena's answer, and this arena inherits nothing. `run_it_twice_enabled` reads
+ * as false when absent and only ever turns the feature ON, which is now
+ * allowed, so it leaves the refusal list entirely.
+ */
+/**
  * STRADDLES ARE ADMITTED (2026-09-12, Phase 7 line three).
  *
  * A straddle is the one optional cash feature that needs nothing from the chip
@@ -41,7 +59,7 @@ import type { ArenaIdentity } from './ArenaContext.js';
  * run-it columns above: every engine read is truthy (`if (straddle_enabled)`,
  * `auto_utg_straddle === true`), so an unset column disables the feature in the
  * engine exactly as it does here. That is why they leave the `disabled` list
- * rather than joining `explicitlyOff`.
+ * rather than joining `explicitlyStated`.
  *
  * `seven_deuce_enabled` stays refused and is not a straddle: it is a side bet
  * paid between players at a table-configured `seven_deuce_amount`, which is a
@@ -52,15 +70,17 @@ export function assertDiamondCashTable(table: Record<string, unknown>): void {
     'is_template',
     'insurance_enabled',
     'bomb_pot_enabled',
-    'run_it_twice_enabled',
     'seven_deuce_enabled',
     'nit_game',
     'all_in_or_fold',
     'pineapple_holdem',
     'cap_enabled',
   ];
-  /* These two default to ON in the engine, so "not true" is not good enough. */
-  const explicitlyOff = ['run_it_twice', 'allow_run_it_twice'];
+  /* These two default to ON in the engine, so an ABSENT column is a decision
+     the chip schedule made rather than one this arena made. Running it twice is
+     admitted now, so the rule is no longer "off" but "stated": either boolean
+     is fine, a missing one is not. */
+  const explicitlyStated = ['run_it_twice', 'allow_run_it_twice'];
   /* Every one of these defaults to a nonzero chip figure when it is unset. */
   const explicitlyZero = ['rake_percent', 'rake_cap_bb', 'bbj_percent'];
   if (
@@ -69,7 +89,7 @@ export function assertDiamondCashTable(table: Record<string, unknown>): void {
     table.cluster_id != null ||
     !['waiting', 'running', 'playing', 'active'].includes(String(table.status)) ||
     disabled.some((key) => table[key] === true) ||
-    explicitlyOff.some((key) => table[key] !== false) ||
+    explicitlyStated.some((key) => typeof table[key] !== 'boolean') ||
     explicitlyZero.some((key) => typeof table[key] !== 'number' || Number(table[key]) !== 0)
   )
     throw new Error('Diamond Plain Cash Table Required');

@@ -238,6 +238,8 @@ interface BranchResult {
 }
 
 interface Estimate {
+  /** Key validated for this private resulting vector before its estimate. */
+  vectorKey: string;
   equity: number;
   equityError: number;
   payout: number;
@@ -1376,18 +1378,25 @@ function evaluateCandidate(args: {
     // Select the conservative utility bound and include their span as model error.
     const future = args.input.continuation?.futureHands;
     let futureError = 0;
+    let selectedForecast: Estimate | undefined;
+    let selectedRecovery: OptionEstimate | undefined;
     if (future && !branch.heroBusted) {
       const levels = future.nextLevelDue ? future.levels.slice(-1) : future.levels;
       if (!levels.length || levels.length > 2)
         return { ledger: null, unavailableReason: 'candidate_settlement' };
       const bounds: Array<{
         branch: BranchResult;
+        forecast: Estimate;
+        recovery: OptionEstimate;
         utility: number;
         hands: number;
         forced: number;
       }> = [];
+      // Both blind-level bounds start from the same settled snapshot. Check
+      // its complete immutable field once before either rollout copies it.
+      const branchKey = args.vectorKey(branch.vector, false);
       for (const level of levels) {
-        const rolloutKey = `${index}:${level.smallBlind}:${level.bigBlind}:${level.ante}:${level.anteType}:${args.vectorKey(branch.vector, false)}`;
+        const rolloutKey = `${index}:${level.smallBlind}:${level.bigBlind}:${level.ante}:${level.anteType}:${branchKey}`;
         const rollout =
           args.futureResults.get(rolloutKey) ??
           simulateTournamentFutureHands({
@@ -1458,6 +1467,8 @@ function evaluateCandidate(args: {
         if (!recovery) return { ledger: null, unavailableReason: 'recovery_option' };
         bounds.push({
           branch: next,
+          forecast,
+          recovery,
           utility:
             forecast.payout +
             next.realizedPayoutPct +
@@ -1471,19 +1482,25 @@ function evaluateCandidate(args: {
       bounds.sort((a, b) => a.utility - b.utility);
       futureError = bounds[bounds.length - 1].utility - bounds[0].utility;
       branch = bounds[0].branch;
+      selectedForecast = bounds[0].forecast;
+      selectedRecovery = bounds[0].recovery;
       futureHands += weight * bounds[0].hands;
       futureForcedPaid += weight * bounds[0].forced;
       futureLevelEnvelope = Math.max(futureLevelEnvelope, futureError);
     }
-    const icm = args.estimate(branch.vector);
-    const option = optionValue(
-      args.input,
-      args.field,
-      branch.vector,
-      branch.heroBusted,
-      branch.heroFinishedPaid,
-      args.estimate
-    );
+    // The selected bound already owns these exact values. Its vector is not
+    // mutated after settlement; final accounting consumes that same bound.
+    const icm = selectedForecast ?? args.estimate(branch.vector);
+    const option =
+      selectedRecovery ??
+      optionValue(
+        args.input,
+        args.field,
+        branch.vector,
+        branch.heroBusted,
+        branch.heroFinishedPaid,
+        args.estimate
+      );
     if (!option) return { ledger: null, unavailableReason: 'recovery_option' };
     const payout = icm.payout + branch.realizedPayoutPct;
     const bounty = branch.bountyWonPct - branch.bountyDeniedPct;
@@ -1505,7 +1522,7 @@ function evaluateCandidate(args: {
     conservationError = Math.max(conservationError, branch.conservationError);
     icmError = Math.max(icmError, icm.error + option.error + futureError);
     methods.add(icm.method);
-    vectors.add(args.vectorKey(branch.vector, true));
+    vectors.add(icm.vectorKey);
   }
 
   const variance = Math.max(0, utilityMoment.square - utilityMoment.sum ** 2);
@@ -1675,6 +1692,7 @@ function evaluateWithWorkspace(
     ) {
       operationBudgetHit = true;
       return {
+        vectorKey: key,
         equity: 0,
         equityError: Number.POSITIVE_INFINITY,
         payout: 0,
@@ -1690,6 +1708,7 @@ function evaluateWithWorkspace(
       boundedFuture ? FUTURE_HAND_POLICY.maxIcmTrials : undefined
     );
     const result = {
+      vectorKey: key,
       equity: icm.equity,
       equityError: icm.errorBound,
       payout: icm.equity * payoutWeight,

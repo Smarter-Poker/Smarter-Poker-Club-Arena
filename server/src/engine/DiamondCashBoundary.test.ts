@@ -168,7 +168,71 @@ describe('the first Diamond game stays inside the custody boundary', () => {
     expect(from).toHaveBeenCalledTimes(1);
   });
 
-  it('refuses add-ons and leaves chip continuity, idle recovery and horse reload inert', async () => {
+  it('sends a Diamond add-on through the custody door, never the chip add-on', async () => {
+    const engine = new ServerTableEngine('00000000-0000-0000-0000-000000000006') as any;
+    engine.tableInfo = { ...table, arena: diamond };
+    engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 40, is_horse: false }];
+    engine.lifecycleCanMutate = () => true;
+    engine.broadcastCurrentState = () => {};
+    const rpc = vi
+      .spyOn(supabase, 'rpc')
+      .mockResolvedValue({ data: { success: true, stack: 140 }, error: null } as any);
+    await expect(engine.addChips('hero', 100, 'attempt')).resolves.toEqual({
+      success: true,
+      applied: 100,
+    });
+    expect(rpc).toHaveBeenCalledTimes(1);
+    const [name, args] = rpc.mock.calls[0] as unknown as [string, Record<string, unknown>];
+    expect(name).toBe('fn_poker_diamond_top_up');
+    expect(args).toMatchObject({
+      p_user_id: 'hero',
+      p_table_id: '00000000-0000-0000-0000-000000000006',
+      p_amount: 100,
+      p_expected_stack: 40,
+    });
+    expect(String(args.p_request_id)).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+    );
+    /* The seat row and its custody moved together in that transaction, so the
+       number the database wrote is the one the engine adopts. */
+    expect(engine.seatedPlayers[0].stack).toBe(140);
+  });
+
+  it('keeps a Diamond top-up whole and inside the table maximum', async () => {
+    const engine = new ServerTableEngine('00000000-0000-0000-0000-000000000006') as any;
+    engine.tableInfo = { ...table, arena: diamond };
+    engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 199, is_horse: false }];
+    engine.broadcastCurrentState = () => {};
+    const rpc = vi
+      .spyOn(supabase, 'rpc')
+      .mockResolvedValue({ data: { stack: 200 }, error: null } as any);
+    await expect(engine.addChips('hero', 100.6, 'attempt')).resolves.toEqual({
+      success: true,
+      applied: 1,
+    });
+    expect((rpc.mock.calls[0] as unknown as [string, Record<string, unknown>])[1].p_amount).toBe(1);
+    engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 200, is_horse: false }];
+    await expect(engine.addChips('hero', 50, 'attempt')).resolves.toEqual({
+      success: false,
+      error: 'Already at the maximum buy-in for this table',
+    });
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a Diamond top-up while a hand is live', async () => {
+    const engine = new ServerTableEngine('00000000-0000-0000-0000-000000000006') as any;
+    engine.tableInfo = { ...table, arena: diamond };
+    engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 40, is_horse: false }];
+    engine.handController = {};
+    const rpc = vi.spyOn(supabase, 'rpc');
+    await expect(engine.addChips('hero', 100, 'attempt')).resolves.toEqual({
+      success: false,
+      error: 'Diamond Top Ups Land Between Hands',
+    });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('leaves chip continuity, idle recovery and horse reload inert', async () => {
     const engine = new ServerTableEngine('00000000-0000-0000-0000-000000000006') as any;
     engine.tableInfo = { ...table, arena: diamond };
     engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 0, is_horse: false }];
@@ -177,10 +241,6 @@ describe('the first Diamond game stays inside the custody boundary', () => {
     engine.lifecycleCanMutate = () => true;
     const rpc = vi.spyOn(supabase, 'rpc');
     const from = vi.spyOn(supabase, 'from');
-    await expect(engine.addChips('hero', 100, 'attempt')).resolves.toEqual({
-      success: false,
-      error: 'Diamond Add-Ons Are Not Available Yet',
-    });
     await engine.processPendingAddOns(engine.seatedPlayers);
     await engine.recoverBustedSeatedHorses();
     await expect(engine.anyBustedPlayerCanAffordARebuy(engine.seatedPlayers)).resolves.toBe(false);

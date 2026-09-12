@@ -28,7 +28,7 @@
 import { BBJ_QUALIFYING_HANDS, normalizeVariantKey } from './RakeConfig';
 import type { Card as DeckCard } from '../components/table/CardImage';
 
-export type BBJMiniRule = 'holdem_aces_full' | 'plo_quads';
+export type BBJMiniRule = 'holdem_aces_full' | 'plo_quads' | 'ranked_quads';
 
 export interface BBJMiniQualifyingInfo {
   eligible: boolean;
@@ -48,6 +48,12 @@ export interface BBJMiniQualifyingInfo {
 export const BBJ_MINI_QUALIFYING_LABELS: Record<BBJMiniRule, string> = {
   holdem_aces_full: 'Aces Full Or Better',
   plo_quads: 'Quads Or Better',
+  /* `ranked_quads` has no single label: the bar is per variant and the words
+     come from `miniBarLabel` on the variant itself (Quad Tens for PLO5/FLO5,
+     Quad Deuces for Pineapple). This entry is the fallback for a variant that
+     somehow carries the rule without a label, and it says the bar is ranked
+     rather than inventing a rank. */
+  ranked_quads: 'Ranked Quads Or Better',
 };
 
 /** 50 / 25 / 25, the same split as the main jackpot (fn_bbj_mini_payout). */
@@ -129,9 +135,43 @@ const QUAD_DEUCES: DeckCard[] = [
   { rank: '3', suit: 's' },
 ];
 
+/** Four of `rank` plus a kicker, for the card strip beside a ranked bar. */
+function quadStripFor(rank: number): DeckCard[] {
+  /* Typed as DeckCard['rank'] rather than string: the deck's rank is a closed
+     union, and a bar set to a rank the deck cannot draw should fail to compile
+     here rather than render a blank card to a player. */
+  const face: Record<number, DeckCard['rank']> = {
+    14: 'A',
+    13: 'K',
+    12: 'Q',
+    11: 'J',
+    10: 'T',
+    9: '9',
+    8: '8',
+    7: '7',
+    6: '6',
+    5: '5',
+    4: '4',
+    3: '3',
+    2: '2',
+  };
+  const r: DeckCard['rank'] = face[rank] ?? '2';
+  const kicker: DeckCard['rank'] = rank === 14 ? 'K' : 'A';
+  return [
+    { rank: r, suit: 's' },
+    { rank: r, suit: 'h' },
+    { rank: r, suit: 'c' },
+    { rank: r, suit: 'd' },
+    { rank: kicker, suit: 's' },
+  ];
+}
+
 export function miniRuleForVariantKey(key: string): BBJMiniRule | null {
   const q = BBJ_QUALIFYING_HANDS[key] || BBJ_QUALIFYING_HANDS.nlh;
   if (q.eligible === false || !q.handRank) return null;
+  /* A per-variant ranked quad bar wins over the family default, exactly as it
+     does in the engine's detectMiniBBJHit (Dan, 2026-09-12). */
+  if (q.miniMinQuadRank != null) return 'ranked_quads';
   return q.handRank === 'full_house' ? 'holdem_aces_full' : 'plo_quads';
 }
 
@@ -162,6 +202,26 @@ export function getBBJMiniQualifyingInfo(
       variantLabel: q.label,
       minLosingHandCards: ACES_FULL_OF_DEUCES,
       qualifyingHandLabel: BBJ_MINI_QUALIFYING_LABELS[rule],
+    };
+  }
+  if (rule === 'ranked_quads') {
+    /* THE BAR AND ITS WORDS COME FROM THE SAME PLACE (Dan, 2026-09-12). The
+       rank drives the card strip and `miniBarLabel` drives the sentence, both
+       read off the variant, so a retuned bar cannot leave the caption behind -
+       which is the failure the `mainBar` note below was written about. */
+    const minRank = q.miniMinQuadRank as number;
+    const label = q.miniBarLabel ?? BBJ_MINI_QUALIFYING_LABELS.ranked_quads;
+    return {
+      eligible: true,
+      rule,
+      shortLabel: `${label} must lose to bigger Quads or better`,
+      subLabel:
+        minRank <= 2
+          ? 'Any four of a kind counts for the mini.'
+          : `Quads below ${label.replace(/ Or Better$/, '')} do not count for the mini.`,
+      variantLabel: q.label,
+      minLosingHandCards: quadStripFor(minRank),
+      qualifyingHandLabel: label,
     };
   }
   const hiLo = key === 'plo8' || key === 'flo8' || key === 'plo_hilo';

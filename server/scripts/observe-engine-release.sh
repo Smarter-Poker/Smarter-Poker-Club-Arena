@@ -46,6 +46,13 @@ fail_if_terminal_failure() {
     && [[ "$recovered_image" =~ ^sha256:[0-9a-f]{64}$ ]] \
     && [ -z "${extra:-}" ] \
     || die 'durable failure attestation is malformed'
+  # A durable failure can be observed before the generic systemd branch below.
+  # Keep its exact invocation's cause in Actions, including after unit cleanup.
+  # Missing or slow journal storage must never delay or change the refusal.
+  if ! timeout --signal=TERM --kill-after=1s 5s \
+    journalctl "_SYSTEMD_INVOCATION_ID=$failure_invocation" --no-pager -o cat -n 200; then
+    echo '[observe-engine-release] failure journal unavailable within its bounded read' >&2
+  fi
   die "release attempt failed permanently (status=$failure_status); sealed desired runtime $recovered_sha was recovered"
 }
 

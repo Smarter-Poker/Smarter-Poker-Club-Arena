@@ -120,27 +120,51 @@ interface Analytics {
   mini_reserve_floor?: number | null;
   mini_parked?: number | null;
   mini_available?: number | null;
+  /* THE MAIN JACKPOT'S OWN CADENCE (2026-09-12). `hit_count`,
+     `avg_days_between_hits` and `days_since_last_hit` count BOTH jackpots, and
+     since the mini fires several times a day they describe neither: this panel
+     told a club owner his jackpot hits every 0.2 days when the main jackpot's
+     own interval was 1.15. The blended figures are kept so no other reader
+     moves; these are what the panel prints. Optional so a cached older row
+     still renders. */
+  hands_30d?: number | null;
+  main_hit_count?: number | null;
+  main_paid_all_time?: number | null;
+  main_avg_days_between_hits?: number | null;
+  main_last_hit_at?: string | null;
+  main_days_since_last_hit?: number | null;
 }
 
 export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
   const [data, setData] = useState<Analytics | null>(null);
   const [denied, setDenied] = useState(false);
+  const [settledPool, setSettledPool] = useState<string | null>(null);
   const [nearMisses, setNearMisses] = useState<NearMiss[]>([]);
   const [nearMissState, setNearMissState] = useState<NearMissState>('loading');
+  const [nearMissPool, setNearMissPool] = useState<string | null>(null);
 
   useEffect(() => {
     if (!poolId) return;
     let alive = true;
+    setSettledPool(null);
+    setData(null);
+    setDenied(false);
     (async () => {
-      const { data: rows, error } = await supabase.rpc('fn_bbj_analytics', { p_pool_id: poolId });
-      if (!alive) return;
-      if (error) {
-        // Not an admin (or the pool vanished) — render nothing, no noise.
-        setDenied(true);
-        return;
+      try {
+        const { data: rows, error } = await supabase.rpc('fn_bbj_analytics', { p_pool_id: poolId });
+        if (!alive) return;
+        if (error) {
+          // The server owns the admin boundary; a refusal remains no content.
+          setDenied(true);
+          return;
+        }
+        const row = Array.isArray(rows) ? rows[0] : rows;
+        if (row) setData(row as Analytics);
+      } catch {
+        if (alive) setDenied(true);
+      } finally {
+        if (alive) setSettledPool(poolId);
       }
-      const row = Array.isArray(rows) ? rows[0] : rows;
-      if (row) setData(row as Analytics);
     })();
     return () => {
       alive = false;
@@ -148,38 +172,49 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
   }, [poolId]);
 
   /* Its OWN effect, so the refusal log and the balances cannot take each other
-     down. The same authorisation decides both, so a non-admin never gets here
-     — the panel has already returned null. */
+     down. Each RPC enforces its own server-side authorisation. */
   useEffect(() => {
     if (!poolId) return;
     let alive = true;
+    setNearMissPool(null);
+    setNearMisses([]);
     setNearMissState('loading');
     (async () => {
-      const { data: rows, error } = await supabase.rpc('fn_bbj_near_miss_summary', {
-        p_pool_id: poolId,
-        p_days: 30,
-      });
-      if (!alive) return;
-      if (error) {
-        setNearMissState('unavailable');
-        return;
+      try {
+        const { data: rows, error } = await supabase.rpc('fn_bbj_near_miss_summary', {
+          p_pool_id: poolId,
+          p_days: 30,
+        });
+        if (!alive) return;
+        if (error) {
+          setNearMissState('unavailable');
+          return;
+        }
+        setNearMisses((Array.isArray(rows) ? rows : []) as NearMiss[]);
+        setNearMissState('ok');
+      } catch {
+        if (alive) setNearMissState('unavailable');
+      } finally {
+        if (alive) setNearMissPool(poolId);
       }
-      setNearMisses((Array.isArray(rows) ? rows : []) as NearMiss[]);
-      setNearMissState('ok');
     })();
     return () => {
       alive = false;
     };
   }, [poolId]);
 
-  if (!poolId || denied || !data) return null;
+  if (poolId && settledPool !== poolId) return <div data-initial-layout="pending" />;
+  if (!poolId || denied || !data) return <div data-initial-layout="settled" hidden />;
 
   // Funding rate vs. payout rate — the number an operator actually needs.
   const dailyFunding = Number(data.contributions_7d) / 7;
   const netPositive = Number(data.net_pool_position) >= 0;
 
   return (
-    <div className="bbj-admin">
+    <div
+      className="bbj-admin"
+      data-initial-layout={nearMissPool === poolId ? 'settled' : 'pending'}
+    >
       <div className="bbj-admin__header">
         <h3 className="bbj-admin__title">Jackpot Health</h3>
         <span className="bbj-admin__subtitle">Admin Only &middot; From The Payout Ledger</span>
@@ -200,12 +235,21 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
           <span className="bbj-admin__stat-sub">&asymp; ${money(dailyFunding)}/Day</span>
         </div>
 
+        {/* THE MAIN JACKPOT ON ITS OWN, falling back to the blended figure only
+            when the reader is an older cached row without the new columns. A
+            mini fires several times a day and the main every week or two, so
+            the average of the two is a number describing no jackpot anybody
+            plays for. */}
         <div className="bbj-admin__stat">
-          <span className="bbj-admin__stat-label">Hits (All Time)</span>
-          <span className="bbj-admin__stat-value">{Number(data.hit_count).toLocaleString()}</span>
+          <span className="bbj-admin__stat-label">Main Hits (All Time)</span>
+          <span className="bbj-admin__stat-value">
+            {Number(data.main_hit_count ?? data.hit_count).toLocaleString()}
+          </span>
           <span className="bbj-admin__stat-sub">
-            {data.avg_days_between_hits != null
-              ? `Every ~${Number(data.avg_days_between_hits).toFixed(1)} Days`
+            {(data.main_avg_days_between_hits ?? data.avg_days_between_hits) != null
+              ? `Every ~${Number(
+                  data.main_avg_days_between_hits ?? data.avg_days_between_hits
+                ).toFixed(1)} Days`
               : 'Not Enough History'}
           </span>
         </div>
@@ -217,14 +261,16 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
         </div>
 
         <div className="bbj-admin__stat">
-          <span className="bbj-admin__stat-label">Last Hit</span>
+          <span className="bbj-admin__stat-label">Last Main Hit</span>
           <span className="bbj-admin__stat-value">
-            {data.days_since_last_hit != null
-              ? `${Number(data.days_since_last_hit).toFixed(1)}d`
+            {(data.main_days_since_last_hit ?? data.days_since_last_hit) != null
+              ? `${Number(data.main_days_since_last_hit ?? data.days_since_last_hit).toFixed(1)}d`
               : '-'}
           </span>
           <span className="bbj-admin__stat-sub">
-            {data.last_hit_at ? new Date(data.last_hit_at).toLocaleDateString() : 'Never Hit'}
+            {(data.main_last_hit_at ?? data.last_hit_at)
+              ? new Date(data.main_last_hit_at ?? data.last_hit_at!).toLocaleDateString()
+              : 'Never Hit'}
           </span>
         </div>
 
@@ -357,9 +403,10 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
 
         {nearMissState === 'ok' && nearMisses.length === 0 && (
           <div className="bbj-admin__misses-empty">
-            No Hand Was Refused In 30 Days. Across {Number(data.hands_7d).toLocaleString()}{' '}
-            Qualifying Hands In The Last 7 Days, Nothing Reached The Losing Hand Bar. The Rules Are
-            Not Turning Hands Away, They Are Simply Not Being Met.
+            No Hand Was Refused In 30 Days. Across{' '}
+            {Number(data.hands_30d ?? data.hands_7d).toLocaleString()} Qualifying Hands In The Same{' '}
+            {data.hands_30d != null ? '30' : '7'} Days, Nothing Reached The Losing Hand Bar. The
+            Rules Are Not Turning Hands Away, They Are Simply Not Being Met.
           </div>
         )}
 

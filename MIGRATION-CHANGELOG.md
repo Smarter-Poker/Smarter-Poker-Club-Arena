@@ -2,6 +2,14 @@
 
 Applied `20260912044409_remaining_tournament_variant_allowlist.sql` through the Supabase migration tool. The governed creator now accepts the existing eight tournament games and four Spin games, with normalized names. Exact source and metadata guards preserve authorization and financial formulas. Native PostgreSQL passed 47 launch cases, idempotence and source-drift rejection; production source fingerprints and authentication refusal match. No historical rows changed. See `docs/horse-brain-phase12-round1.md`. Engine policy release remains separate.
 
+## 2026-09-11: Certificate Repair Retains Current Jackpot Authority
+
+Merge current main 575b9763 without reviving the retired promo-rain control or owner probe. Jackpot reads now belong to the current account and club generation; old replies cannot expose operator facts, settle a newer page or release its pending request. Keep current mini/settlement rules, Diamond feed suppression, Daily Bonus diagnostics and guest card-recovery protection. Fifteen focused client files pass 176 tests, eight engine files pass 126 tests, and both application type checks pass. This is local source integration; protected CI, publication and the production certificate remain separate.
+
+## 2026-09-11: Mobile Cash View Clearance And Jackpot Initial Layout
+
+Keep mobile cash View actions inside the measured header, selector, sort-bar and footer clearance using the actual scrollport. Preserve jackpot child reads across routine refreshes and expose terminal first-layout readiness for owner controls, mini feed, recent hits and analytics before the unchanged bottom geometry check. Actual CSS WebKit/Chromium tests pass at 375px and 390px, and thirteen component/feed tests cover delayed, empty, failed and stale reads. No schema or money-path change; local browser fixtures do not certify production gameplay.
+
 ## 2026-09-10: Restore Bounded Rake Attribution Retries
 
 Prepare an exact-source guarded restoration of the committed attribution retry loop while preserving settlement lane exclusion and function metadata. Thirty-five native rollback assertions passed; the tracked composer reproduces the executed proof exactly. See docs/changelog/2026-09-10-rake-attribution-retry-restoration.md for scope and limits. Application remains separate from source publication.

@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/production-certificate-repairs",
+  "_comment": "Applied and independently read back 2026-09-11T20:04:03Z; Supabase ledger version 20260911200323, name engine_table_connection_one_snapshot_verdict. Exact source SQL SHA256 43ea9061906f7b7a27da796ab2b3f4aa54a2443a838de7664176f3ce03ce2264; live function body MD5 bb9bdd8430564e65eb535c5fca563d1a. Only postgres and service_role may execute.",
+  "functions": ["fn_ca_engine_table_connection_access"]
+}

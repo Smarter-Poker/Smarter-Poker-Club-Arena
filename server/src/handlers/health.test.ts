@@ -58,6 +58,14 @@ describe('handleWsMetrics', () => {
     const tableStateHub = { totalSubscribers: vi.fn().mockReturnValue(12) };
     const engineWs = {
       connectionCount: vi.fn().mockReturnValue(7),
+      connectionAccessStats: () => ({
+        completed: 6,
+        failed: 1,
+        pending: 2,
+        oldestPendingMs: 120,
+        maxDurationMs: 1500,
+        over1200Ms: 1,
+      }),
       muxStats: vi.fn().mockReturnValue({
         muxSockets: 2,
         singleSockets: 5,
@@ -85,6 +93,14 @@ describe('handleWsMetrics', () => {
     expect(parseJson(captured)).toEqual({
       totalSubscribers: 12,
       activeConnections: 7,
+      connectionAccess: {
+        completed: 6,
+        failed: 1,
+        pending: 2,
+        oldestPendingMs: 120,
+        maxDurationMs: 1500,
+        over1200Ms: 1,
+      },
       muxSockets: 2,
       singleSockets: 5,
       muxSubscriptions: 6,
@@ -109,6 +125,7 @@ describe('handleWsMetrics', () => {
     expect(parseJson(captured)).toEqual({
       totalSubscribers: 1,
       activeConnections: 1,
+      connectionAccess: null,
       muxSockets: 0,
       singleSockets: 0,
       muxSubscriptions: 0,

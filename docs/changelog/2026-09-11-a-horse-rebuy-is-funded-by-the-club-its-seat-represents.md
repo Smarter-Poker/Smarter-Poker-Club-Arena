@@ -23,10 +23,10 @@ with reason `busted_unfunded`.
 
 Read from rows on 2026-09-11:
 
-| club | horse_funding ledger rows |
-| ---- | ------------------------- |
-| Deep Stack Society | every day, 117 to 4,683 |
-| Midway Union | 81 rows on 09-02, then nothing for nine days |
+| club                  | horse_funding ledger rows                     |
+| --------------------- | --------------------------------------------- |
+| Deep Stack Society    | every day, 117 to 4,683                       |
+| Midway Union          | 81 rows on 09-02, then nothing for nine days  |
 | Club JAQK, SHARK CLUB | zero, ever. Their treasuries were never asked |
 
 Live cash seats at the time of the fix: 225 on Deep Stack Society (table club

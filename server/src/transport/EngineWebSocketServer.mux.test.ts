@@ -7,11 +7,13 @@
  * tearing every subscription down.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+const rpc = vi.hoisted(() => vi.fn());
 
 // Unit test: no network, no Sentry. The supabase client module initializes
 // @sentry/node at import time; mock it before importing the server class.
 vi.mock('../services/supabase.js', () => ({
   supabase: {
+    rpc,
     auth: {
       getUser: vi.fn(async () => ({ data: { user: null }, error: null })),
     },
@@ -64,19 +66,15 @@ function makeServer(overrides: Partial<Record<string, unknown>> = {}) {
     hub: hub as never,
     tableExists: (id: string) => id === T1 || id === T2,
     verifyToken: async () => ({ userId: 'user-1' }),
-    authorizeViewer: async () => ({
+    authorizeConnection: async () => ({
       allowed: true,
       reason: 'club_member',
       clubId: 'club-1',
+      banned: false,
+      ipRestricted: false,
     }),
     ...overrides,
   } as never);
-  // Per-table async gates: default to "not banned / no conflict" so tests
-  // exercise the happy path unless they override.
-  (server as unknown as { isBannedFromTable: unknown }).isBannedFromTable = vi
-    .fn()
-    .mockResolvedValue(false);
-  (server as unknown as { isIpConflict: unknown }).isIpConflict = vi.fn().mockResolvedValue(false);
   (server as unknown as { logConnectionAudit: unknown }).logConnectionAudit = vi.fn();
   return { server, hub };
 }
@@ -89,6 +87,7 @@ describe('EngineWebSocketServer /ws/multi', () => {
   let ws: ReturnType<typeof makeFakeWs>;
 
   beforeEach(() => {
+    rpc.mockReset();
     ({ server, hub } = makeServer());
     ws = makeFakeWs();
     (server as unknown as { onUpgradedMux: Handler }).onUpgradedMux(ws, 'user-1', '1.2.3.4');
@@ -101,6 +100,69 @@ describe('EngineWebSocketServer /ws/multi', () => {
     expect(hub.subscribe.mock.calls[0][0]).toBe(T1);
     const acks = ws.sent.map((s) => JSON.parse(s));
     expect(acks.some((m) => m.type === 'SUBSCRIBED' && m.tableId === T1)).toBe(true);
+  });
+
+  it('the default service waits for one RPC, exposes the wait, and performs no second authority phase', async () => {
+    const userId = '33333333-3333-4333-8333-333333333333';
+    let finish!: (value: unknown) => void;
+    rpc.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    const now = vi.spyOn(performance, 'now').mockReturnValue(100);
+    try {
+      const actual = new EngineWebSocketServer({ hub: hub as never, tableExists: () => true });
+      (actual as unknown as { logConnectionAudit: unknown }).logConnectionAudit = vi.fn();
+      const socket = makeFakeWs();
+      (actual as unknown as { onUpgradedMux: Handler }).onUpgradedMux(socket, userId, '1.2.3.4');
+      socket.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+      socket.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+      await flush();
+      expect(rpc).toHaveBeenCalledTimes(1);
+      expect(rpc).toHaveBeenCalledWith('fn_ca_engine_table_connection_access', {
+        p_table_id: T1,
+        p_user_id: userId,
+      });
+      expect(socket.sent).toEqual([]);
+      now.mockReturnValue(1600);
+      expect(actual.connectionAccessStats()).toEqual({
+        completed: 0,
+        failed: 0,
+        pending: 1,
+        oldestPendingMs: 1500,
+        maxDurationMs: 0,
+        over1200Ms: 0,
+      });
+      finish({
+        data: {
+          table_id: T1,
+          user_id: userId,
+          scope_id: T2,
+          allowed: true,
+          reason: 'club_member',
+          banned: false,
+          ip_restricted: false,
+        },
+        error: null,
+      });
+      await flush();
+      expect(rpc).toHaveBeenCalledTimes(1);
+      expect(hub.subscribe).toHaveBeenCalledTimes(1);
+      expect(socket.sent.map((raw) => JSON.parse(raw))).toEqual([
+        { type: 'SUBSCRIBED', tableId: T1 },
+      ]);
+      expect(actual.connectionAccessStats()).toEqual({
+        completed: 1,
+        failed: 0,
+        pending: 0,
+        oldestPendingMs: 0,
+        maxDurationMs: 1500,
+        over1200Ms: 1,
+      });
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it('re-SUBSCRIBE to the same table is idempotent: one hub.subscribe, ack + resync instead', async () => {
@@ -117,12 +179,14 @@ describe('EngineWebSocketServer /ws/multi', () => {
     const oldCheck = new Promise((resolve) => {
       denyOld = resolve;
     });
-    const authorizeViewer = vi.fn().mockReturnValueOnce(oldCheck).mockResolvedValue({
+    const authorizeConnection = vi.fn().mockReturnValueOnce(oldCheck).mockResolvedValue({
       allowed: true,
       reason: 'club_member',
       clubId: 'club-1',
+      banned: false,
+      ipRestricted: false,
     });
-    const { server: s, hub: h } = makeServer({ authorizeViewer });
+    const { server: s, hub: h } = makeServer({ authorizeConnection });
     const socket = makeFakeWs();
     (s as unknown as { onUpgradedMux: Handler }).onUpgradedMux(socket, 'user-1', '1.2.3.4');
     socket.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
@@ -144,7 +208,7 @@ describe('EngineWebSocketServer /ws/multi', () => {
   it('a cancelled successful check cannot authorize the next pending attempt', async () => {
     let allowOld!: (value: unknown) => void;
     let denyCurrent!: (value: unknown) => void;
-    const authorizeViewer = vi
+    const authorizeConnection = vi
       .fn()
       .mockReturnValueOnce(
         new Promise((resolve) => {
@@ -156,7 +220,7 @@ describe('EngineWebSocketServer /ws/multi', () => {
           denyCurrent = resolve;
         })
       );
-    const { server: s, hub: h } = makeServer({ authorizeViewer });
+    const { server: s, hub: h } = makeServer({ authorizeConnection });
     const socket = makeFakeWs();
     (s as unknown as { onUpgradedMux: Handler }).onUpgradedMux(socket, 'user-1', '1.2.3.4');
     socket.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
@@ -253,10 +317,12 @@ describe('EngineWebSocketServer /ws/multi', () => {
     const { server: deniedServer } = makeServer({
       tableExists: () => false,
       ensureTable,
-      authorizeViewer: async () => ({
+      authorizeConnection: async () => ({
         allowed: false,
         reason: 'membership_required',
         clubId: 'club-1',
+        banned: false,
+        ipRestricted: false,
       }),
     });
     const deniedWs = makeFakeWs();
@@ -274,10 +340,12 @@ describe('EngineWebSocketServer /ws/multi', () => {
 
   it('rejects a non-member before any table state subscription', async () => {
     const { server: deniedServer, hub: deniedHub } = makeServer({
-      authorizeViewer: async () => ({
+      authorizeConnection: async () => ({
         allowed: false,
         reason: 'membership_required',
         clubId: 'club-1',
+        banned: false,
+        ipRestricted: false,
       }),
     });
     const deniedWs = makeFakeWs();
@@ -300,9 +368,15 @@ describe('EngineWebSocketServer /ws/multi', () => {
   });
 
   it('rejects a banned user with BANNED and no hub call', async () => {
-    (server as unknown as { isBannedFromTable: unknown }).isBannedFromTable = vi
+    (server as unknown as { authorizeConnection: unknown }).authorizeConnection = vi
       .fn()
-      .mockResolvedValue(true);
+      .mockResolvedValue({
+        allowed: true,
+        reason: 'club_member',
+        clubId: 'club-1',
+        banned: true,
+        ipRestricted: false,
+      });
     ws.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
     await flush();
     expect(hub.subscribe).not.toHaveBeenCalled();
@@ -310,61 +384,73 @@ describe('EngineWebSocketServer /ws/multi', () => {
     expect(errs.some((m) => m.type === 'ERROR' && m.code === 'BANNED')).toBe(true);
   });
 
-  /**
-   * THE MUX GATES RUN TOGETHER (2026-09-03). #2711 made the single-table
-   * upgrade path ask its four gates at once and left this path - the one
-   * every browser uses - sequential, so "Connecting To The Table" appeared
-   * on every table opened from the lobby. Each gate is held on a promise the
-   * test controls: with the gates in flight together, ALL FOUR must have
-   * been asked before ANY has answered. The sequential code asks the second
-   * only after the first answers, so this fails on it.
-   */
-  it('asks viewer access, blacklist, restrict-observers and the IP rule at once', async () => {
-    const asked: string[] = [];
-    const holds: Array<() => void> = [];
-    const hold = <T>(name: string, value: T) =>
-      vi.fn(
-        () =>
-          new Promise<T>((resolve) => {
-            asked.push(name);
-            holds.push(() => resolve(value));
-          })
-      );
-    const authorizeViewer = hold('viewer', {
+  it('a banned viewer cannot wake an empty table', async () => {
+    const ensureTable = vi.fn().mockResolvedValue(true);
+    const blocked = makeServer({
+      tableExists: () => false,
+      ensureTable,
+      authorizeConnection: async () => ({
+        allowed: true,
+        reason: 'club_member',
+        clubId: 'club-1',
+        banned: true,
+        ipRestricted: false,
+      }),
+    });
+    const socket = makeFakeWs();
+    (blocked.server as unknown as { onUpgradedMux: Handler }).onUpgradedMux(
+      socket,
+      'user-1',
+      '1.2.3.4'
+    );
+    socket.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    await flush();
+    expect(ensureTable).not.toHaveBeenCalled();
+    expect(blocked.hub.subscribe).not.toHaveBeenCalled();
+    expect(socket.sent.map((m) => JSON.parse(m)).map((m) => m.code)).toEqual(['BANNED']);
+  });
+
+  it('shares a pending authority read and ACKs only after its complete verdict', async () => {
+    let release!: (value: unknown) => void;
+    const authorizeConnection = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        })
+    );
+    ({ server, hub } = makeServer({ authorizeConnection }));
+    ws = makeFakeWs();
+    (server as unknown as { onUpgradedMux: Handler }).onUpgradedMux(ws, 'user-1', '1.2.3.4');
+    ws.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    ws.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    await flush();
+    expect(authorizeConnection).toHaveBeenCalledTimes(1);
+    expect(authorizeConnection).toHaveBeenCalledWith(T1, 'user-1');
+    expect(hub.subscribe).not.toHaveBeenCalled();
+    expect(ws.sent).toEqual([]);
+    release({
       allowed: true,
       reason: 'club_member',
       clubId: 'club-1',
+      banned: false,
+      ipRestricted: false,
     });
-    ({ server, hub } = makeServer({ authorizeViewer }));
-    const s = server as unknown as Record<string, unknown>;
-    s.isBannedFromTable = hold('ban', false);
-    s.isRestrictedObserver = hold('observer', false);
-    s.isIpConflict = hold('ip', false);
-    ws = makeFakeWs();
-    (server as unknown as { onUpgradedMux: Handler }).onUpgradedMux(ws, 'user-1', '1.2.3.4');
-
-    ws.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
     await flush();
-    expect(asked.sort()).toEqual(['ban', 'ip', 'observer', 'viewer']);
-    expect(hub.subscribe).not.toHaveBeenCalled();
-
-    for (const release of holds) release();
-    await flush();
+    expect(authorizeConnection).toHaveBeenCalledTimes(1);
     expect(hub.subscribe).toHaveBeenCalledTimes(1);
-    expect(ws.sent.map((m) => JSON.parse(m)).some((m) => m.type === 'SUBSCRIBED')).toBe(true);
+    expect(ws.sent.map((m) => JSON.parse(m))).toContainEqual({ type: 'SUBSCRIBED', tableId: T1 });
   });
 
   it('a viewer who fails access is refused with the access reason even when also banned', async () => {
     ({ server, hub } = makeServer({
-      authorizeViewer: async () => ({
+      authorizeConnection: async () => ({
         allowed: false,
         reason: 'membership_required',
         clubId: 'c',
+        banned: true,
+        ipRestricted: false,
       }),
     }));
-    (server as unknown as { isBannedFromTable: unknown }).isBannedFromTable = vi
-      .fn()
-      .mockResolvedValue(true);
     ws = makeFakeWs();
     (server as unknown as { onUpgradedMux: Handler }).onUpgradedMux(ws, 'user-1', '1.2.3.4');
     ws.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
@@ -375,28 +461,58 @@ describe('EngineWebSocketServer /ws/multi', () => {
     expect(hub.subscribe).not.toHaveBeenCalled();
   });
 
-  it('a gate that THROWS never refuses: restrict-observers and the IP rule fail open', async () => {
-    (server as unknown as { isRestrictedObserver: unknown }).isRestrictedObserver = vi
-      .fn()
-      .mockRejectedValue(new Error('db down'));
-    (server as unknown as { isIpConflict: unknown }).isIpConflict = vi
+  it('a failed authority read never grants a subscription', async () => {
+    (server as unknown as { authorizeConnection: unknown }).authorizeConnection = vi
       .fn()
       .mockRejectedValue(new Error('db down'));
     ws.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
     await flush();
-    expect(hub.subscribe).toHaveBeenCalledTimes(1);
-    expect(ws.sent.map((m) => JSON.parse(m)).some((m) => m.type === 'ERROR')).toBe(false);
+    expect(hub.subscribe).not.toHaveBeenCalled();
+    expect(ws.sent.map((m) => JSON.parse(m)).map((m) => m.code)).toEqual(['SUB_FAILED']);
   });
 
   it('an observer-restricted table refuses a non-seated viewer with OBSERVERS_RESTRICTED', async () => {
-    (server as unknown as { isRestrictedObserver: unknown }).isRestrictedObserver = vi
+    (server as unknown as { authorizeConnection: unknown }).authorizeConnection = vi
       .fn()
-      .mockResolvedValue(true);
+      .mockResolvedValue({
+        allowed: false,
+        reason: 'observers_restricted',
+        clubId: 'club-1',
+        banned: false,
+        ipRestricted: false,
+      });
     ws.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
     await flush();
-    const errs = ws.sent.map((m) => JSON.parse(m)).filter((m) => m.type === 'ERROR');
-    expect(errs.map((e) => e.code)).toEqual(['OBSERVERS_RESTRICTED']);
+    expect(ws.sent.map((m) => JSON.parse(m)).map((m) => m.code)).toEqual(['OBSERVERS_RESTRICTED']);
     expect(hub.subscribe).not.toHaveBeenCalled();
+  });
+
+  it('includes settled mux subscriptions in the same-IP gate and lets the same account reconnect', async () => {
+    (server as unknown as { authorizeConnection: unknown }).authorizeConnection = vi
+      .fn()
+      .mockResolvedValue({
+        allowed: true,
+        reason: 'club_member',
+        clubId: 'club-1',
+        banned: false,
+        ipRestricted: true,
+      });
+    ws.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    await flush();
+    const second = makeFakeWs();
+    (server as unknown as { onUpgradedMux: Handler }).onUpgradedMux(second, 'user-2', '1.2.3.4');
+    second.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    await flush();
+    expect(second.sent.map((m) => JSON.parse(m)).map((m) => m.code)).toEqual(['IP_RESTRICTED']);
+    const reconnect = makeFakeWs();
+    (server as unknown as { onUpgradedMux: Handler }).onUpgradedMux(reconnect, 'user-1', '1.2.3.4');
+    reconnect.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    await flush();
+    expect(reconnect.sent.map((m) => JSON.parse(m))).toContainEqual({
+      type: 'SUBSCRIBED',
+      tableId: T1,
+    });
+    expect(hub.subscribe).toHaveBeenCalledTimes(2);
   });
 
   it('caps subscriptions at 4 with SUB_LIMIT', async () => {

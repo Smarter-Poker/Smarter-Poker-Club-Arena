@@ -161,6 +161,21 @@ for (const route of ROUTES) {
     }
 
     if (skipped.length === 0) {
+      if (route.endsWith('/jackpot')) {
+        // Parent data, mini first read, operator visibility, recent hits and
+        // analytics all affect the initial height. Terminal errors/empty reads
+        // settle too; a pending request may never be treated as stable geometry.
+        await expect(page.locator('.bbj-page')).toHaveAttribute('data-initial-layout', 'settled', {
+          timeout: 15_000,
+        });
+        await expect(
+          page.locator(
+            '.bbj-page[data-initial-layout="pending"], .bbj-page [data-initial-layout="pending"]'
+          )
+        ).toHaveCount(0, {
+          timeout: 15_000,
+        });
+      }
       const found = await evaluateAcrossDocumentReplacement(
         page,
         async ({ SLACK }) => {

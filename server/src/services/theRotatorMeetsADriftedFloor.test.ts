@@ -261,7 +261,10 @@ describe('the bands are loaded before the fleet decides a seat on them', () => {
 describe('the mind hydrates from the newest hands, not the oldest thousand', () => {
   it('pages newest-first by created_at up to the cap and replays in dealt order', () => {
     expect(HYDRATOR).toMatch(/\.order\('created_at', \{ ascending: false \}\)/);
-    expect(HYDRATOR).toMatch(/if \(cursor\) q = q\.lt\('created_at', cursor\);/);
+    expect(HYDRATOR).toMatch(/\.order\('id', \{ ascending: false \}\)/);
+    expect(HYDRATOR).toContain(
+      'created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id})'
+    );
     expect(HYDRATOR).toMatch(/const data = newestFirst\.reverse\(\);/);
     expect(HYDRATOR).not.toMatch(/\.limit\(HYDRATION_MAX_HANDS\)/);
   });

@@ -546,6 +546,32 @@ export const actionsFleetTotal: Counter = alwaysOnRegistry.counter(
   'poker_actions_fleet_total',
   'Player actions processed (labels: audience=human|horse, format=cash|spin|hu_sng|sng|mtt)'
 );
+/**
+ * Zero-seeded across the whole label domain, and the reason is the alert that
+ * reads it.
+ *
+ * `HorseCashActionsStopped` (critical, page: sms) is
+ *
+ *   sum(rate(poker_actions_fleet_total{audience="horse",format="cash"}[10m])) * 60 < 150
+ *
+ * A counter has no series until something increments it. On an engine that
+ * started and never got a single horse cash action onto the felt - the TOTAL
+ * failure this alert is named for - that series does not exist, rate() is an
+ * empty vector, sum() of empty is empty, and `empty < 150` is empty. The alert
+ * cannot fire. It works only once horses have already acted, which is to say
+ * it catches a decline and misses an outage.
+ *
+ * Seeded, a cold engine publishes 0, rate() is 0, and the page goes out.
+ *
+ * Ten series, deliberately enumerated rather than filled in on first use: the
+ * whole point is that they exist BEFORE the first use, and 2 x 5 is a domain
+ * this file already writes out by hand for horseForcedSitOutsTotal.
+ */
+for (const audience of ['human', 'horse']) {
+  for (const format of ['cash', 'spin', 'hu_sng', 'sng', 'mtt']) {
+    actionsFleetTotal.inc(0, { audience, format });
+  }
+}
 
 /**
  * ═══ THE HORSE'S INPUT DEVICE, COUNTED (2026-09-11) ══════════════════════════

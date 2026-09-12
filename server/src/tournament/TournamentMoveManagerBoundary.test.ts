@@ -227,14 +227,9 @@ describe('TournamentManager source move ownership', () => {
     expect(engine.releaseTournamentMovePause).not.toHaveBeenCalled();
   });
 
-  // 2026-09-12: this case used to assert that a live-source move with NO engine
-  // anywhere resolved 0 and never reached the database. That assertion was the
-  // deadlock: a table of one cannot deal, so it never holds an engine, so the
-  // move was re-planned every five seconds for ever while
-  // fn_move_tournament_player accepted the identical move. The no-engine path
-  // is now open to either mode, and the mode is still carried through to the
-  // database exactly as it was planned.
-  it('takes the no-engine path in either mode when no engine generation exists', async () => {
+  // Empty local maps cannot prove original hand disposition. The existing
+  // closed-orphan mode remains distinct from a live-source mutation.
+  it('refuses engineless live sources while preserving closed-orphan recovery', async () => {
     const gameServer = {
       getTableEngine: vi.fn(() => undefined),
       ownsTournamentTableEngine: vi.fn(() => false),
@@ -252,8 +247,9 @@ describe('TournamentManager source move ownership', () => {
     expect(moveRpc.mock.calls[0][0].sourceMode).toBe('closed_orphan');
 
     moveRpc.mockClear();
-    await expect(manager.executePlayerMoves([move()])).resolves.toBe(1);
-    expect(moveRpc.mock.calls[0][0].sourceMode).toBe('live_source');
+    await expect(manager.executePlayerMoves([move()])).resolves.toBe(0);
+    expect(moveRpc).not.toHaveBeenCalled();
+    expect(manager.requestUrgentEliminationSweepAfter).toHaveBeenCalled();
   });
 
   it('refuses the no-engine path while either registry still holds an engine', async () => {

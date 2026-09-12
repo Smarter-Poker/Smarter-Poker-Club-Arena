@@ -27,6 +27,7 @@ import { requestSatelliteSettlementReceipt } from './satelliteSettlementRpc.js';
 import type { VerifiedSatelliteSettlementReceipt } from './satelliteSettlementReceipt.js';
 import {
   moveTournamentPlayerAtomically,
+  resolveCommittedTournamentSeatMove,
   TournamentSeatMoveOutcomeUnknownError,
   type TournamentSeatMoveInput,
   type TournamentSeatMoveSourceMode,
@@ -1268,9 +1269,9 @@ export class TournamentManager extends TournamentManagerEliminations {
   /**
    * Own the exact source-table generation before a seat can be vacated.
    *
-   * A source table with no engine generation in EITHER registry has no hand in
-   * flight to fence. Closed-orphan recovery and a table of one both take that
-   * vacuous boundary; the database function independently proves the rest.
+   * A live source requires its retained, physically parked original engine.
+   * Empty local registries do not prove original hand disposition. Only the
+   * existing closed_orphan mode permits an engineless mutation boundary.
    */
   private async claimTournamentMoveBoundary(
     move: MoveInstruction,
@@ -1291,29 +1292,6 @@ export class TournamentManager extends TournamentManagerEliminations {
         this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
         return null;
       }
-      return { sourceMode, engine: null };
-    }
-
-    // ════════════════════════════════════════════════════════════════════════
-    //  A TABLE OF ONE HAS NO HAND TO FENCE (2026-09-12)
-    // ════════════════════════════════════════════════════════════════════════
-    //
-    // A table holding exactly one player cannot deal, so it holds no engine
-    // generation anywhere in this process. The live-source fence below then
-    // refused the move for ever: this method returned null, every planned move
-    // was skipped, `movedCount !== breakMoves.length`, and the balancer
-    // re-planned the identical move every five seconds. That is a STABLE
-    // DEADLOCK, not a starvation - nothing in it can ever change. 65 events
-    // were in that state. The database had always permitted the move:
-    // `fn_move_tournament_player(..., 'live_source')` succeeded on exactly
-    // these tables, so only this in-process fence refused.
-    //
-    // No engine generation means no hand in flight and the boundary is
-    // satisfied vacuously — the same reasoning that makes closed_orphan safe.
-    // The lease still fences other processes, and fn_move_tournament_player
-    // re-proves exactly-one-live-seat, the exact stack against the roster
-    // mirror, and the destination chair under its own locks.
-    if (!managerEngine && !serverEngine) {
       return { sourceMode, engine: null };
     }
 
@@ -1367,14 +1345,13 @@ export class TournamentManager extends TournamentManagerEliminations {
     outcomeWasAlreadyUnknown = false
   ): Promise<VerifiedTournamentSeatMoveReceipt> {
     if (!boundary.engine) {
-      // The mode no longer decides this: an engineless source is exact in ANY
-      // mode (2026-09-12, a table of one). What must still hold is that no
-      // engine generation has appeared in either registry since the claim.
       if (
+        input.sourceMode !== 'closed_orphan' ||
+        boundary.sourceMode !== 'closed_orphan' ||
         this.tableEngines.has(input.sourceTableId) ||
         this.gameServer.getTableEngine(input.sourceTableId)
       ) {
-        return Promise.reject(new Error('engineless source boundary is no longer exact'));
+        return Promise.reject(new Error('closed-orphan source boundary is no longer exact'));
       }
       return moveTournamentPlayerAtomically(input, {
         outcomeWasAlreadyUnknown,
@@ -1382,6 +1359,7 @@ export class TournamentManager extends TournamentManagerEliminations {
     }
     if (
       input.sourceMode !== 'live_source' ||
+      boundary.sourceMode !== 'live_source' ||
       this.tableEngines.get(input.sourceTableId) !== boundary.engine ||
       !this.gameServer.ownsTournamentTableEngine(input.sourceTableId, boundary.engine)
     ) {
@@ -1414,6 +1392,36 @@ export class TournamentManager extends TournamentManagerEliminations {
     }
     for (const [requestId, pending] of this.pendingTournamentSeatMoveOutcomes) {
       if (!this.eliminationMutationAllowed()) return false;
+      if (
+        pending.input.sourceMode === 'live_source' &&
+        !this.tableEngines.has(pending.input.sourceTableId) &&
+        !this.gameServer.getTableEngine(pending.input.sourceTableId)
+      ) {
+        // Unknown UUIDs authorize only a receipt read when the original engine
+        // is absent. A missing receipt is not proof of no commit or no start.
+        try {
+          const receipt = await resolveCommittedTournamentSeatMove(pending.input);
+          if (
+            !this.eliminationMutationAllowed() ||
+            this.pendingTournamentSeatMoveOutcomes.get(requestId) !== pending
+          )
+            return false;
+          if (!receipt) {
+            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+            return false;
+          }
+          this.pendingTournamentSeatMoveOutcomes.delete(requestId);
+          continue;
+        } catch (error) {
+          reportError(error, 'Tournament.atomic_move_receipt_only_unresolved', {
+            tournamentId: this.tournamentId,
+            requestId,
+            sourceTableId: pending.input.sourceTableId,
+          });
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+          return false;
+        }
+      }
       const boundary = await this.claimTournamentMoveBoundary(
         pending.move,
         pending.input.sourceMode

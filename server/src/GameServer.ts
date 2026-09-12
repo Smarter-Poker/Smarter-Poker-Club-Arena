@@ -1,3 +1,4 @@
+import { BoundedLeaseRenewalScope } from './services/BoundedLeaseRenewalScope.js';
 import {
   TournamentRetirementCustody,
   type RetirementBinding,
@@ -275,12 +276,10 @@ const OWNERSHIP_LEASE_RENEWAL_CADENCE_MS = Math.floor(
  * carried not one `[lease]` line, because nothing was failing. Nothing was
  * running.
  *
- * A pass is abandoned once it has outlived the proof window it exists to
- * defend: past that point its answer cannot renew anything anyway, because
- * `renewEngineLeaseProof` refuses a deadline that has already passed. The
- * in-flight RPC is left to finish or time out on its own - it is not cancelled,
- * and it cannot do damage, because every result is re-checked against the exact
- * engine and generation captured at pass start before it is applied.
+ * Scope deadlines release the caller and revoke result authority. Each scope
+ * retains at most one unsettled transport, so repeated ticks cannot accumulate
+ * overlapping requests. A blocked scope cannot renew until its transport settles;
+ * local expiration and the other scope continue independently.
  */
 const OWNERSHIP_LEASE_RENEWAL_ABANDON_MS = Number(
   process.env.OWNERSHIP_LEASE_RENEWAL_ABANDON_MS ??
@@ -461,6 +460,11 @@ export class GameServer {
   private serverLifecycleJobs = new Set<Promise<void>>();
   /** Keeps exact table/tournament authority alive only through shutdown drain. */
   private ownershipLeaseRenewalOperation: Promise<void> | null = null;
+  private ownershipLeaseRenewalAbandoned = new WeakSet<Promise<void>>();
+  private cashLeaseRenewalScope = new BoundedLeaseRenewalScope<Map<string, ServerTableEngine>>();
+  private tournamentLeaseRenewalScope = new BoundedLeaseRenewalScope<
+    Map<string, TournamentManager>
+  >();
   /** When a renewal pass last SETTLED. Age past the proof window means the one
    *  lifecycle that keeps every lease alive has stopped. */
   private ownershipLeaseRenewalCompletedAtMs: number = Date.now();
@@ -625,9 +629,12 @@ export class GameServer {
    * inherit the parent tournament generation and are renewed by that manager.
    */
   private async renewVerifiedCashTableLeaseProofs(
-    candidateTableIds: Iterable<string> = this.tableEngines.keys()
+    candidateTableIds: Iterable<string> = this.tableEngines.keys(),
+    isCurrent: () => boolean = () => true
   ): Promise<Map<string, ServerTableEngine>> {
     const candidates: Array<[string, ServerTableEngine]> = [];
+    const generations = new Map<string, string>();
+    if (!isCurrent()) return new Map();
     const lostEngines = new Map<string, ServerTableEngine>();
     for (const tableId of candidateTableIds) {
       const engine = this.tableEngines.get(tableId);
@@ -642,6 +649,7 @@ export class GameServer {
           continue;
         }
         candidates.push([tableId, engine]);
+        generations.set(tableId, authority.generation);
       }
     }
 
@@ -654,11 +662,14 @@ export class GameServer {
         return { tableId, leaseGeneration: authority.generation };
       })
     );
+    if (!isCurrent()) return new Map();
     if (heartbeat.status === 'answered') {
       for (const proof of heartbeat.proofs) {
+        if (!isCurrent()) return new Map();
         const captured = candidates.find(([tableId]) => tableId === proof.tableId)?.[1];
         if (!captured || this.tableEngines.get(proof.tableId) !== captured) continue;
         const authority = captured.getEngineLeaseAuthority();
+        if (authority?.generation !== generations.get(proof.tableId)) continue;
         if (
           !authority ||
           authority.scope !== 'cash' ||
@@ -673,7 +684,11 @@ export class GameServer {
       }
       for (const tableId of heartbeat.lostTableIds) {
         const captured = candidates.find(([id]) => id === tableId)?.[1];
-        if (captured && this.tableEngines.get(tableId) === captured) {
+        if (
+          captured &&
+          this.tableEngines.get(tableId) === captured &&
+          captured.getEngineLeaseAuthority()?.generation === generations.get(tableId)
+        ) {
           lostEngines.set(tableId, captured);
         }
       }
@@ -683,7 +698,11 @@ export class GameServer {
        event-loop stall that crossed its deadline before the timer callback
        ran becomes a synchronous loss in this sweep. */
     for (const [tableId, engine] of candidates) {
-      if (this.tableEngines.get(tableId) === engine && !engine.hasCurrentEngineLeaseAuthority()) {
+      if (
+        this.tableEngines.get(tableId) === engine &&
+        engine.getEngineLeaseAuthority()?.generation === generations.get(tableId) &&
+        !engine.hasCurrentEngineLeaseAuthority()
+      ) {
         lostEngines.set(tableId, engine);
       }
     }
@@ -695,9 +714,10 @@ export class GameServer {
    * A manager admitted while the RPC is in flight is never judged using its
    * predecessor's answer.
    */
-  private async renewVerifiedTournamentManagerLeaseProofs(): Promise<
-    Map<string, TournamentManager>
-  > {
+  private async renewVerifiedTournamentManagerLeaseProofs(
+    isCurrent: () => boolean = () => true
+  ): Promise<Map<string, TournamentManager>> {
+    if (!isCurrent()) return new Map();
     const candidates = new Map<string, { manager: TournamentManager; leaseGeneration: string }>();
     const lostManagers = new Map<string, TournamentManager>();
     for (const [tournamentId, manager] of this.tournamentEngines) {
@@ -720,10 +740,16 @@ export class GameServer {
         leaseGeneration: candidate.leaseGeneration,
       }))
     );
+    if (!isCurrent()) return new Map();
     if (heartbeat.status === 'answered') {
       for (const proof of heartbeat.proofs) {
+        if (!isCurrent()) return new Map();
         const captured = candidates.get(proof.tournamentId);
-        if (!captured || this.tournamentEngines.get(proof.tournamentId) !== captured.manager) {
+        if (
+          !captured ||
+          this.tournamentEngines.get(proof.tournamentId) !== captured.manager ||
+          captured.manager.getTournamentLeaseGeneration() !== captured.leaseGeneration
+        ) {
           continue;
         }
         if (
@@ -737,7 +763,11 @@ export class GameServer {
       }
       for (const tournamentId of heartbeat.lostTournamentIds) {
         const captured = candidates.get(tournamentId);
-        if (captured && this.tournamentEngines.get(tournamentId) === captured.manager) {
+        if (
+          captured &&
+          this.tournamentEngines.get(tournamentId) === captured.manager &&
+          captured.manager.getTournamentLeaseGeneration() === captured.leaseGeneration
+        ) {
           lostManagers.set(tournamentId, captured.manager);
         }
       }
@@ -748,6 +778,7 @@ export class GameServer {
     for (const [tournamentId, captured] of candidates) {
       if (
         this.tournamentEngines.get(tournamentId) === captured.manager &&
+        captured.manager.getTournamentLeaseGeneration() === captured.leaseGeneration &&
         !captured.manager.hasCurrentTournamentLeaseAuthority()
       ) {
         lostManagers.set(tournamentId, captured.manager);
@@ -766,56 +797,142 @@ export class GameServer {
   private renewOwnedEngineLeaseProofs(): Promise<void> {
     const existing = this.ownershipLeaseRenewalOperation;
     if (existing) return existing;
-    const operation = this.performOwnedEngineLeaseProofRenewal();
+    // Also supports the existing prototype-only lifecycle test harness.
+    this.ownershipLeaseRenewalAbandoned ??= new WeakSet<Promise<void>>();
     let tracked!: Promise<void>;
-    tracked = operation.finally(() => {
-      if (this.ownershipLeaseRenewalOperation === tracked) {
-        this.ownershipLeaseRenewalOperation = null;
-        this.ownershipLeaseRenewalCompletedAtMs = Date.now();
+    const abandoned = () => {
+      if (this.ownershipLeaseRenewalAbandoned.has(tracked)) return;
+      this.ownershipLeaseRenewalAbandoned.add(tracked);
+      try {
+        leaseRenewalPassesTotal.inc(1, { outcome: 'abandoned' });
+        reportError(
+          new Error('lease renewal pass retired; outstanding transports remain bounded'),
+          'GameServer.ownership_lease_renewal_pass_abandoned'
+        );
+      } catch {
+        /* Reporting cannot interrupt renewal recovery. */
       }
-    });
+    };
+    const operation = this.performOwnedEngineLeaseProofRenewal(abandoned);
+    tracked = operation
+      .then((completed) => {
+        if (completed === false) this.ownershipLeaseRenewalAbandoned.add(tracked);
+      })
+      .finally(() => {
+        if (this.ownershipLeaseRenewalOperation === tracked) {
+          this.ownershipLeaseRenewalOperation = null;
+          if (!this.ownershipLeaseRenewalAbandoned.has(tracked)) {
+            this.ownershipLeaseRenewalCompletedAtMs = Date.now();
+          }
+        }
+      });
     this.ownershipLeaseRenewalOperation = tracked;
-
-    /* See OWNERSHIP_LEASE_RENEWAL_ABANDON_MS. The slot is released on a timer
-       as well as on settlement, so a pass that never settles costs one window
-       rather than every window after it. The abandoned pass keeps running and
-       its `finally` above is identity-guarded, so it cannot clear a successor's
-       slot when it eventually lands. */
+    // Preserve4444's outer deadline/slot fallback and its primary-loop race.
+    // Normally the bounded scopes settle first. The shared marker ensures a
+    // scope timeout and this fallback never count the same pass twice.
     const abandon = setTimeout(() => {
       if (this.ownershipLeaseRenewalOperation !== tracked) return;
       this.ownershipLeaseRenewalOperation = null;
-      leaseRenewalPassesTotal.inc(1, { outcome: 'abandoned' });
-      reportError(
-        new Error(
-          `ownership lease renewal pass did not settle within ${OWNERSHIP_LEASE_RENEWAL_ABANDON_MS}ms; ` +
-            'abandoning it so the next pass can run'
-        ),
-        'GameServer.ownership_lease_renewal_pass_abandoned'
-      );
+      abandoned();
     }, OWNERSHIP_LEASE_RENEWAL_ABANDON_MS);
-    if (typeof abandon.unref === 'function') abandon.unref();
-    void tracked.finally(() => clearTimeout(abandon));
-
+    abandon.unref?.();
+    void tracked.then(
+      () => clearTimeout(abandon),
+      () => clearTimeout(abandon)
+    );
     return tracked;
   }
 
-  private async performOwnedEngineLeaseProofRenewal(): Promise<void> {
+  private async performOwnedEngineLeaseProofRenewal(abandoned: () => void): Promise<boolean> {
+    const cashAtStart = new Map(
+      [...this.tableEngines].map(
+        ([id, engine]) =>
+          [id, { engine, generation: engine.getEngineLeaseAuthority()?.generation }] as const
+      )
+    );
+    const tournamentsAtStart = new Map(
+      [...this.tournamentEngines].map(
+        ([id, manager]) =>
+          [id, { manager, generation: manager.getTournamentLeaseGeneration() }] as const
+      )
+    );
+    const generation = this.lifecycleGeneration;
+    const shutdown = this.shutdownOwnershipLeaseRenewalActive;
+    const isCurrent = () =>
+      this.lifecycleGeneration === generation &&
+      (shutdown
+        ? this.shutdownOwnershipLeaseRenewalActive
+        : this.directAdmissionIsCurrent(generation));
+    const proofWindow = Math.min(TABLE_LEASE_PROOF_WINDOW_MS, TOURNAMENT_LEASE_PROOF_WINDOW_MS);
+    const deadline =
+      Number.isFinite(OWNERSHIP_LEASE_RENEWAL_ABANDON_MS) && OWNERSHIP_LEASE_RENEWAL_ABANDON_MS > 0
+        ? Math.min(OWNERSHIP_LEASE_RENEWAL_ABANDON_MS, proofWindow)
+        : proofWindow;
     const [cashResult, tournamentResult] = await Promise.allSettled([
-      this.renewVerifiedCashTableLeaseProofs(),
-      this.renewVerifiedTournamentManagerLeaseProofs(),
+      this.cashLeaseRenewalScope.run(
+        deadline,
+        isCurrent,
+        (current) => this.renewVerifiedCashTableLeaseProofs(this.tableEngines.keys(), current),
+        abandoned
+      ),
+      this.tournamentLeaseRenewalScope.run(
+        deadline,
+        isCurrent,
+        (current) => this.renewVerifiedTournamentManagerLeaseProofs(current),
+        abandoned
+      ),
     ]);
+    if (!isCurrent()) return false;
 
     const lostTables =
-      cashResult.status === 'fulfilled' ? cashResult.value : new Map<string, ServerTableEngine>();
+      cashResult.status === 'fulfilled' && cashResult.value
+        ? cashResult.value
+        : new Map<string, ServerTableEngine>();
     if (cashResult.status === 'rejected') {
       reportError(cashResult.reason, 'GameServer.cash_lease_renewal_pass_failed');
     }
     const lostTournamentIds =
-      tournamentResult.status === 'fulfilled'
+      tournamentResult.status === 'fulfilled' && tournamentResult.value
         ? tournamentResult.value
         : new Map<string, TournamentManager>();
     if (tournamentResult.status === 'rejected') {
       reportError(tournamentResult.reason, 'GameServer.tournament_lease_renewal_pass_failed');
+    }
+
+    for (const [id, engine] of lostTables) {
+      const captured = cashAtStart.get(id);
+      if (
+        captured?.engine !== engine ||
+        this.tableEngines.get(id) !== engine ||
+        engine.getEngineLeaseAuthority()?.generation !== captured.generation
+      )
+        lostTables.delete(id);
+    }
+    for (const [id, manager] of lostTournamentIds) {
+      const captured = tournamentsAtStart.get(id);
+      if (
+        captured?.manager !== manager ||
+        this.tournamentEngines.get(id) !== manager ||
+        manager.getTournamentLeaseGeneration() !== captured.generation
+      )
+        lostTournamentIds.delete(id);
+    }
+
+    // A retained transport does not suppress local expiration/retirement. These
+    // current-object checks extend no proof and launch only existing causal cleanup.
+    for (const [tableId, engine] of this.tableEngines) {
+      const authority = engine.getEngineLeaseAuthority();
+      if (
+        authority?.scope === 'cash' &&
+        authority.verified &&
+        !engine.hasCurrentEngineLeaseAuthority()
+      ) {
+        lostTables.set(tableId, engine);
+      }
+    }
+    for (const [tournamentId, manager] of this.tournamentEngines) {
+      if (!manager.hasCurrentTournamentLeaseAuthority())
+        lostTournamentIds.set(tournamentId, manager);
     }
 
     const lostCashEngines: Array<[string, ServerTableEngine]> = [];
@@ -893,6 +1010,10 @@ export class GameServer {
         { tournamentId }
       );
     }
+    return (
+      (cashResult.status !== 'fulfilled' || cashResult.value !== null) &&
+      (tournamentResult.status !== 'fulfilled' || tournamentResult.value !== null)
+    );
   }
 
   /**
@@ -957,9 +1078,12 @@ export class GameServer {
           outcome: 'abandoned',
           error: null,
         };
-        const pass = this.renewOwnedEngineLeaseProofs().then(
+        const renewal = this.renewOwnedEngineLeaseProofs();
+        const pass = renewal.then(
           () => {
-            settlement.outcome = 'completed';
+            settlement.outcome = this.ownershipLeaseRenewalAbandoned.has(renewal)
+              ? 'abandoned'
+              : 'completed';
           },
           (error: unknown) => {
             settlement.outcome = 'threw';

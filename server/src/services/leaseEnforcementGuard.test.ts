@@ -63,9 +63,11 @@ describe('two dealers at one table can never happen again', () => {
     // The dedicated ownership lifecycle must synchronously fence every
     // verified cash dealer the typed heartbeat cannot prove, then route the
     // exact object through the shared stop/release/CAS recovery primitive.
-    const i = GAME_SERVER.indexOf('this.renewVerifiedCashTableLeaseProofs()');
-    expect(i, 'lease renewal missing from discovery loop').toBeGreaterThan(-1);
-    const block = sliceEnclosingBlock(GAME_SERVER, 'this.renewVerifiedCashTableLeaseProofs()');
+    const block = sliceMethod(GAME_SERVER, 'private async performOwnedEngineLeaseProofRenewal(');
+    expect(block).toContain('this.cashLeaseRenewalScope.run(');
+    expect(block).toContain(
+      'this.renewVerifiedCashTableLeaseProofs(this.tableEngines.keys(), current)'
+    );
     expect(block).toMatch(/engine\.fenceForEngineLeaseLoss\(/);
     expect(block).toMatch(/this\.recoverDirectTableEngine\(tableId, engine/);
     const recovery = sliceMethod(GAME_SERVER, 'private async performDirectTableEngineRecovery(');

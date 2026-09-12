@@ -107,10 +107,10 @@ describe('the one error Postgres defines as "run it again"', () => {
 describe('the record of a hand is worth another try', () => {
   const settlement = () => readFileSync(join(__dirname, 'ServerTableEngineSettlement.ts'), 'utf8');
 
-  it('gives hand_history a retry budget', () => {
-    // Without this, recognising the blink changes nothing: `attempts > budget`
-    // is true on the first throw when the budget is zero.
-    expect(settlement()).toMatch(/STEP_RETRY[\s\S]{0,900}hand_history:\s*[1-9]/);
+  it('retries the captured hand request instead of the mutable callback', () => {
+    expect(settlement()).not.toMatch(/hand_history:\s*[1-9]/);
+    const history = readFileSync(join(__dirname, '../services/supabase/handHistory.ts'), 'utf8');
+    expect(history).toMatch(/rollbackRetryDelays\s*=\s*\[250,\s*1_000\]/);
   });
 
   it('leaves the seats lane budget alone', () => {

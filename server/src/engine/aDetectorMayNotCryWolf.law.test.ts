@@ -188,32 +188,33 @@ describe('a dealt hand is not thrown away by the table balancer', () => {
   });
 
   /**
-   * 2026-09-12: this pin used to read "only through the closed-orphan database
-   * mode", and that rule was itself the defect. A table holding one player
-   * cannot deal, so it holds no engine generation, so the live-source fence
-   * refused its move for ever while the database accepted the identical move -
-   * a stable deadlock across 65 events. The mode never proved anything the two
-   * registries did not. The pin moves to the property that actually keeps the
-   * boundary honest: the engineless path is taken ONLY when both registries
-   * are empty, and that is proven again immediately before the RPC.
+   * Empty registries do not prove original live-source movement authority.
+   * Fresh live-source moves still require the identical owned, parked engine;
+   * only the existing closed-orphan mode may mutate without an engine.
+   * Fresh cold and one-player authority recovery remains open.
    */
-  it('allows no-engine movement in any mode, but only with no engine generation', () => {
+  it('restricts no-engine mutation to closed-orphan mode with both registries empty', () => {
     expect(MOVES).toContain("move.reason === CLOSED_ORPHAN_RESEAT_REASON ? 'closed_orphan'");
     const claim = MOVES.slice(
       MOVES.indexOf('private async claimTournamentMoveBoundary'),
       MOVES.indexOf('private requestTournamentSeatMoveAtBoundary')
     );
-    expect(claim).toContain('if (!managerEngine && !serverEngine) {');
+    expect(claim).toMatch(
+      /if \(sourceMode === 'closed_orphan'\) \{[\s\S]*?if \(managerEngine \|\| serverEngine\)/
+    );
+    expect(claim).toContain('return { sourceMode, engine: null };');
+    expect(claim).not.toContain('if (!managerEngine && !serverEngine) {');
+    expect(claim).toMatch(/!managerEngine \|\|\s*serverEngine !== managerEngine/);
+    expect(claim).toContain('await managerEngine.parkForTournamentMove(');
     const request = MOVES.slice(
       MOVES.indexOf('private requestTournamentSeatMoveAtBoundary'),
       MOVES.indexOf('protected redrivePendingTournamentSeatMoveOutcomes')
     );
+    expect(request).toContain("input.sourceMode !== 'closed_orphan'");
+    expect(request).toContain("boundary.sourceMode !== 'closed_orphan'");
     expect(request).toContain('this.tableEngines.has(input.sourceTableId)');
     expect(request).toContain('this.gameServer.getTableEngine(input.sourceTableId)');
-    expect(request).toContain('engineless source boundary is no longer exact');
-    expect(request, 'the mode may no longer decide the engineless path').not.toContain(
-      "input.sourceMode !== 'closed_orphan'"
-    );
+    expect(request).toContain('closed-orphan source boundary is no longer exact');
     expect(MOVES).not.toMatch(
       /\.from\(['"]table_seats['"]\)[\s\S]{0,120}\.(?:update|insert|delete)\(/
     );

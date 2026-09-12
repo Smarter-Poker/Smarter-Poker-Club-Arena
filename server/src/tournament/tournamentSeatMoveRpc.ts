@@ -136,7 +136,7 @@ export function verifyTournamentSeatMoveReceipt(
  * it can call only the receipt-only RPC, stamps ordinary service authority,
  * and exposes no general query or mutation surface.
  */
-async function resolveCommittedTournamentSeatMove(
+export async function resolveCommittedTournamentSeatMove(
   input: TournamentSeatMoveInput
 ): Promise<VerifiedTournamentSeatMoveReceipt | null> {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';

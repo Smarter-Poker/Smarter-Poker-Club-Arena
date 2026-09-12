@@ -1,4 +1,5 @@
 import { HorseLogic } from '../HorseLogic.js';
+import { jointPolicyFixture } from '../multiway/JointRangeFixture.test-support.js';
 import { describe, expect, it } from 'vitest';
 
 import type { HorseDecideOpts } from '../HorseLogic.js';
@@ -253,6 +254,57 @@ const rekey = (request: FastHorseDecisionRequest): FastHorseDecisionRequest => (
 });
 
 describe('Phase 13 cross-board worker boundary', () => {
+  it.each([
+    'nlh',
+    'plo4',
+    'plo5',
+    'plo6',
+    'plo8',
+    'flo8',
+    'flh',
+    'pineapple',
+    'short_deck',
+  ] as const)(
+    '%s carries real shadow analysis or an explicit real-time budget refusal through the live worker',
+    async (variant) => {
+      const s = jointPolicyFixture(variant, 2, 'cash', 'flop');
+      const h = harness(true);
+      const request = rekey({
+        ...fastRequest(),
+        player: s.hero,
+        gameState: s.state,
+        style: 'balanced',
+        mods: {},
+        opts: { mind: false },
+      });
+      h.runtime.receive(request);
+      await h.runtime.drain();
+      const result = h.messages.find((m) => m.type === 'FAST_RESULT');
+      expect(result?.type, JSON.stringify(h.messages)).toBe('FAST_RESULT');
+      if (result?.type !== 'FAST_RESULT') return;
+      const copy = structuredClone(result);
+      expect(copy.decision.jointPolicy).toMatchObject({
+        variant,
+        mode: 'shadow',
+        applied: false,
+        executionStatus: 'pending',
+      });
+      expect(copy.decision.jointPolicy?.finalAction).toBe(copy.decision.action);
+      expect(copy.decision.jointPolicy?.completedSamples).toBeGreaterThanOrEqual(0);
+      // A contended test runner may exhaust the production deadline; it may
+      // never forge an offline clock or serialize private opponent deals.
+      expect([
+        'work_budget',
+        'insufficient_joint_samples',
+        'joint_samples_unavailable',
+        'joint_cash_action_distribution',
+      ]).toContain(copy.decision.jointPolicy?.reason);
+      expect(JSON.stringify(copy.decision.jointPolicy)).not.toMatch(
+        /"rank"|"suit"|originalHands|availableCards/
+      );
+      expect(h.decisionOpts[0].phase13EvidenceMode).toBeUndefined();
+    }
+  );
   const multiboard = () => {
     const request = structuredClone(fastRequest());
     const card = (rank: string, suit: 'clubs' | 'diamonds' | 'hearts') => ({ rank, suit }) as const;
@@ -272,28 +324,36 @@ describe('Phase 13 cross-board worker boundary', () => {
     expect(h.messages.at(-1)?.type).toBe('FAST_RESULT');
     expect(h.decisionsAtRng).toHaveLength(1);
   });
-  it.each(['missing', 'duplicate', 'unknown', 'omitted_live', 'omitted_hero'] as const)(
-    'refuses %s dealt census',
-    async (fault) => {
-      const request = multiboard();
-      if (fault === 'missing') delete request.gameState.dealtSeatIds;
-      if (fault === 'duplicate') request.gameState.dealtSeatIds = [2, 3, 3];
-      if (fault === 'unknown') request.gameState.dealtSeatIds = [2, 3, 99];
-      if (fault === 'omitted_live') request.gameState.dealtSeatIds = [2];
-      if (fault === 'omitted_hero') request.gameState.dealtSeatIds = [3];
-      const h = harness();
-      h.runtime.receive(rekey(request));
-      await h.runtime.drain();
-      expect(h.decisionsAtRng).toEqual([]);
-      expect(h.messages.at(-1)).toMatchObject({
-        type: 'ERROR',
-        message: expect.stringContaining('dealt_census'),
-      });
+  it.each([
+    'missing',
+    'duplicate',
+    'unknown',
+    'omitted_live',
+    'omitted_hero',
+    'invalid_seat',
+  ] as const)('refuses %s dealt census', async (fault) => {
+    const request = multiboard();
+    if (fault === 'missing') delete request.gameState.dealtSeatIds;
+    if (fault === 'duplicate') request.gameState.dealtSeatIds = [2, 3, 3];
+    if (fault === 'unknown') request.gameState.dealtSeatIds = [2, 3, 99];
+    if (fault === 'omitted_live') request.gameState.dealtSeatIds = [2];
+    if (fault === 'omitted_hero') request.gameState.dealtSeatIds = [3];
+    if (fault === 'invalid_seat') {
+      request.gameState.players[1].seat = 11;
+      request.gameState.dealtSeatIds = [2, 11];
     }
-  );
+    const h = harness();
+    h.runtime.receive(rekey(request));
+    await h.runtime.drain();
+    expect(h.decisionsAtRng).toEqual([]);
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: expect.stringContaining('dealt_census'),
+    });
+  });
   it('counts folded disconnected cards when checking deck exhaustion', async () => {
     const request = multiboard();
-    for (let seat = 4; seat <= 11; seat++)
+    for (const seat of [1, 4, 5, 6, 7, 8, 9, 10])
       request.gameState.players.push({
         ...request.gameState.players[1],
         seat,
@@ -1080,6 +1140,9 @@ describe('HorseDecisionWorkerRuntime', () => {
     { phase11EvidenceMode: true },
     { phase12Remaining: 'candidate' },
     { phase12EvidenceMode: true },
+    { phase13Joint: 'candidate' },
+    { phase13EvidenceMode: true },
+    { phase13EvidenceMode: false },
   ])('rejects offline candidate selectors at the live worker boundary: %j', async (opts) => {
     const h = harness();
     h.runtime.receive({

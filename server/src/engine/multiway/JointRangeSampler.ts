@@ -15,6 +15,15 @@ import { remainingVariantHandShape } from '../remainingVariants/RemainingVariant
 import { choosePineappleFlopPair } from '../remainingVariants/RemainingVariantSampler.js';
 import { buildJointCardLayout, type JointCardLayoutInput } from './JointCardLayout.js';
 import { validateDealtSeatCensus } from './DealtSeatCensus.js';
+import { buildHorseDecisionKey } from '../horseDecision/protocol.js';
+
+export const jointStateKey = (hero: SeatPlayer, state: HorseGameStateV2) =>
+  buildHorseDecisionKey({
+    fence: 'phase13-joint-range',
+    decisionTimeMs: 0,
+    player: hero,
+    gameState: state,
+  });
 
 export const JOINT_RANGE_PACK = Object.freeze({
   version: 'joint-public-range-round1-v1',
@@ -131,6 +140,7 @@ export function buildJointOpponentRanges(
 
 export interface JointRangeSamples {
   version: string;
+  stateKey: string;
   ranges: JointOpponentRange[];
   opponentIds: string[];
   samples: TournamentUtilityShowdownSample[];
@@ -208,6 +218,12 @@ export function sampleJointRanges(
       layout: 'independent',
     });
     ranges = buildJointOpponentRanges(hero, state);
+  } catch {
+    return null;
+  }
+  let stateKey: string;
+  try {
+    stateKey = jointStateKey(hero, state);
   } catch {
     return null;
   }
@@ -329,6 +345,7 @@ export function sampleJointRanges(
   if (!samples.length) return null;
   return {
     version: JOINT_RANGE_PACK.version,
+    stateKey,
     ranges,
     opponentIds: active.map((p) => p.userId),
     samples,

@@ -1,3 +1,7 @@
+import { evaluateJointLivePolicy } from './multiway/JointLivePolicy.js';
+import { horseVariantRulesFor } from './VariantRules.js';
+import { jointPlayersBehind } from './multiway/JointActionModel.js';
+import { tournamentSampleEquity } from './HorseTournamentUtility.js';
 import {
   evaluateRemainingVariantPolicy,
   type RemainingVariantMode,
@@ -955,6 +959,7 @@ export interface HorseGameStateV2 extends HorseGameState {
   /** Settlement units from the active controller, including whole Diamonds. */
   chipUnit?: 0.01 | 1;
   asset?: 'chips' | 'diamonds';
+  bbjConfig?: import('../types.js').HandConfig['bbjConfig'] | null;
   heroSeat?: number;
   currentPlayerSeat?: number;
   legalActions?: ActionType[];
@@ -1891,6 +1896,8 @@ export interface HorseDecideOpts {
   phase11EvidenceMode?: boolean;
   phase12Remaining?: RemainingVariantMode;
   phase12EvidenceMode?: boolean;
+  phase13Joint?: import('./multiway/JointLivePolicy.js').JointPolicyMode;
+  phase13EvidenceMode?: boolean;
   /** V44 (2026-09-05): the SECOND LOOK. When set above 1, every Monte Carlo
    *  read in this decision runs at that multiple of its budgeted sample. The
    *  engine uses it to replay a close decision inside the think time it was
@@ -2148,6 +2155,83 @@ function capturePhase7Equity(
         actsAfterHero: behind.has(opponent.user_id),
       };
     }),
+  };
+}
+
+function buildPhase7UtilityInput(
+  gs: HorseGameStateV2,
+  player: SeatPlayer,
+  decision: HorseDecision,
+  vi: ReturnType<typeof variantInfo>,
+  tournament: NonNullable<HorseGameStateV2['tournament']>,
+  evidence7: Phase7EquityEvidence
+): TournamentUtilityInput {
+  if (!gs.pots || !gs.legalActions) throw new Error('joint_utility_canonical_state_unavailable');
+  const toCall = Math.max(0, gs.currentBet - player.bet);
+  return {
+    street: gs.stage,
+    hero: player,
+    players: gs.players,
+    pots: gs.pots,
+    pot: Math.max(0, Number(gs.pot) || 0),
+    currentBet: Math.max(0, Number(gs.currentBet) || 0),
+    toCall: Math.min(Math.max(0, Number(gs.toCall ?? toCall) || 0), Math.max(0, player.stack)),
+    legalActions: gs.legalActions,
+    minRaiseTo: gs.minRaiseTo ?? null,
+    maxRaiseTo: gs.maxRaiseTo ?? null,
+    bettingStructure:
+      gs.bettingStructure ??
+      (vi.isFixedLimit ? 'fixed_limit' : vi.isPotLimit ? 'pot_limit' : 'no_limit'),
+    baseline: decision,
+    heroEquity: evidence7.equity,
+    equitySampleSize: evidence7.sampleSize,
+    equityStandardError: evidence7.standardError,
+    opponents: evidence7.opponents,
+    sampledOpponentIds: evidence7.sampledOpponentIds,
+    showdownSamples: evidence7.showdownSamples,
+    context: {
+      format:
+        gs.format === 'spin' || gs.format === 'sng' || gs.format === 'hu_sng' ? gs.format : 'mtt',
+      playersLeft: Math.max(0, tournament.playersLeft ?? 0),
+      spotsPaid: Math.max(0, tournament.spotsPaid ?? 0),
+      satellite: tournament.satellite === true,
+      satelliteSeats: Math.max(0, tournament.satelliteSeats ?? 0),
+      // Once the field is already in the money, lower-place prizes
+      // belong to players who have finished. Price only places the
+      // live field can still occupy; keeping the full paid tail made
+      // every playersLeft < spotsPaid decision fail validation.
+      payoutPct: (tournament.payoutPct ?? []).slice(0, Math.max(0, tournament.playersLeft ?? 0)),
+      fieldStacks: tournament.stacks ?? [],
+      fieldStackByUser: tournament.stackByUser ?? {},
+      isPko: tournament.isPko === true,
+      isBounty: tournament.isBounty === true,
+      isMysteryBounty: tournament.isMysteryBounty === true,
+      mysteryBountyStage: tournament.mysteryBountyStage ?? 'none',
+      bountyFactor: Math.max(0, tournament.bountyFactor ?? 0),
+      bountyByUser: tournament.bountyByUser ?? {},
+      mysteryMeanCents: Math.max(0, tournament.mysteryMeanCents ?? 0),
+      meanBountyCents: Math.max(0, tournament.meanBountyCents ?? 0),
+      prizePoolCents: Math.max(0, tournament.prizePoolCents ?? 0),
+      bountyPoolCents: Math.max(0, tournament.bountyPoolCents ?? 0),
+      reentryOpen: tournament.reentryOpen === true,
+      rebuyOpen: tournament.rebuyOpen === true,
+      maxReentries: tournament.maxReentries ?? null,
+      maxRebuys: tournament.maxRebuys ?? null,
+      addOnPeriodOpen: tournament.addOnPeriodOpen === true,
+      addOnCostCents:
+        tournament.addOnCost == null ? null : Math.round(Math.max(0, tournament.addOnCost) * 100),
+      addOnChips: tournament.addOnChips ?? null,
+      buyInCents: tournament.buyInCents ?? null,
+      startingStackChips: tournament.startingStackChips ?? null,
+      rebuyCostCents: tournament.rebuyCostCents ?? null,
+      rebuyChips: tournament.rebuyChips ?? null,
+      rebuyPrizeContributionCents: tournament.rebuyPrizeContributionCents ?? null,
+      rebuyBountyContributionCents: tournament.rebuyBountyContributionCents ?? null,
+      reloadsUsed: tournament.reloadsUsed ?? null,
+      addOnTaken: tournament.addOnTaken ?? null,
+      rebuyAffordable: tournament.rebuyAffordable ?? null,
+      addOnAffordable: tournament.addOnAffordable ?? null,
+    },
   };
 }
 
@@ -2630,81 +2714,14 @@ export class HorseLogic {
         evidence7
       ) {
         try {
-          phase8UtilityInput = {
-            street: gs.stage,
-            hero: player,
-            players: gs.players,
-            pots: gs.pots,
-            pot: Math.max(0, Number(gs.pot) || 0),
-            currentBet: Math.max(0, Number(gs.currentBet) || 0),
-            toCall: Math.min(
-              Math.max(0, Number(gs.toCall ?? toCall) || 0),
-              Math.max(0, player.stack)
-            ),
-            legalActions: gs.legalActions,
-            minRaiseTo: gs.minRaiseTo ?? null,
-            maxRaiseTo: gs.maxRaiseTo ?? null,
-            bettingStructure:
-              gs.bettingStructure ??
-              (vi.isFixedLimit ? 'fixed_limit' : vi.isPotLimit ? 'pot_limit' : 'no_limit'),
-            baseline: decision,
-            heroEquity: evidence7.equity,
-            equitySampleSize: evidence7.sampleSize,
-            equityStandardError: evidence7.standardError,
-            opponents: evidence7.opponents,
-            sampledOpponentIds: evidence7.sampledOpponentIds,
-            showdownSamples: evidence7.showdownSamples,
-            context: {
-              format:
-                gs.format === 'spin' || gs.format === 'sng' || gs.format === 'hu_sng'
-                  ? gs.format
-                  : 'mtt',
-              playersLeft: Math.max(0, tournament.playersLeft ?? 0),
-              spotsPaid: Math.max(0, tournament.spotsPaid ?? 0),
-              satellite: tournament.satellite === true,
-              satelliteSeats: Math.max(0, tournament.satelliteSeats ?? 0),
-              // Once the field is already in the money, lower-place prizes
-              // belong to players who have finished. Price only places the
-              // live field can still occupy; keeping the full paid tail made
-              // every playersLeft < spotsPaid decision fail validation.
-              payoutPct: (tournament.payoutPct ?? []).slice(
-                0,
-                Math.max(0, tournament.playersLeft ?? 0)
-              ),
-              fieldStacks: tournament.stacks ?? [],
-              fieldStackByUser: tournament.stackByUser ?? {},
-              isPko: tournament.isPko === true,
-              isBounty: tournament.isBounty === true,
-              isMysteryBounty: tournament.isMysteryBounty === true,
-              mysteryBountyStage: tournament.mysteryBountyStage ?? 'none',
-              bountyFactor: Math.max(0, tournament.bountyFactor ?? 0),
-              bountyByUser: tournament.bountyByUser ?? {},
-              mysteryMeanCents: Math.max(0, tournament.mysteryMeanCents ?? 0),
-              meanBountyCents: Math.max(0, tournament.meanBountyCents ?? 0),
-              prizePoolCents: Math.max(0, tournament.prizePoolCents ?? 0),
-              bountyPoolCents: Math.max(0, tournament.bountyPoolCents ?? 0),
-              reentryOpen: tournament.reentryOpen === true,
-              rebuyOpen: tournament.rebuyOpen === true,
-              maxReentries: tournament.maxReentries ?? null,
-              maxRebuys: tournament.maxRebuys ?? null,
-              addOnPeriodOpen: tournament.addOnPeriodOpen === true,
-              addOnCostCents:
-                tournament.addOnCost == null
-                  ? null
-                  : Math.round(Math.max(0, tournament.addOnCost) * 100),
-              addOnChips: tournament.addOnChips ?? null,
-              buyInCents: tournament.buyInCents ?? null,
-              startingStackChips: tournament.startingStackChips ?? null,
-              rebuyCostCents: tournament.rebuyCostCents ?? null,
-              rebuyChips: tournament.rebuyChips ?? null,
-              rebuyPrizeContributionCents: tournament.rebuyPrizeContributionCents ?? null,
-              rebuyBountyContributionCents: tournament.rebuyBountyContributionCents ?? null,
-              reloadsUsed: tournament.reloadsUsed ?? null,
-              addOnTaken: tournament.addOnTaken ?? null,
-              rebuyAffordable: tournament.rebuyAffordable ?? null,
-              addOnAffordable: tournament.addOnAffordable ?? null,
-            },
-          };
+          phase8UtilityInput = buildPhase7UtilityInput(
+            gs,
+            player,
+            decision,
+            vi,
+            tournament,
+            evidence7
+          );
           const evaluation = evaluateTournamentUtilityDetailed(phase8UtilityInput);
           if (variantPolicy) {
             if (variantPolicy.receipt.mode === 'shadow' && variantPolicy.receipt.fired) {
@@ -2916,6 +2933,123 @@ export class HorseLogic {
         if (phase12.receipt.applied) noteFire('phase12_applied');
         else noteFire('phase12_baseline_retained');
         noteFire(`phase12_utility_${phase12.receipt.utilityOwner}`);
+      }
+    }
+    const beforePhase13 = decision;
+    const jointPolicy =
+      opts.phase13Joint === 'off'
+        ? null
+        : evaluateJointLivePolicy(
+            player,
+            gs,
+            decision,
+            opts.phase13Joint ?? 'shadow',
+            opts.phase13EvidenceMode && !tele ? () => 0 : undefined
+          );
+    if (jointPolicy) {
+      let proposal = this.legalize(jointPolicy.proposal, player, gs, vi);
+      if (isTournamentMode(gs)) {
+        const tournament = trustedTournamentContext(gs);
+        const joint = jointPolicy.jointEvidence;
+        if (jointPolicy.receipt.fired && joint && tournament) {
+          const utilityStarted = performance.now();
+          try {
+            const behind = new Set(jointPlayersBehind(player, gs));
+            const moments = tournamentSampleEquity({
+              hero: player,
+              sampledOpponentIds: joint.opponentIds,
+              showdownSamples: joint.samples,
+            });
+            const evidence: Phase7EquityEvidence = {
+              ...moments,
+              sampledOpponentIds: joint.opponentIds,
+              showdownSamples: joint.samples,
+              // The actual public-line distributions are in joint.ranges and
+              // the scored samples; no invented calibrated percentile band.
+              opponents: joint.opponentIds.map((userId) => ({
+                userId,
+                range: null,
+                foldMul: 1,
+                actsAfterHero: behind.has(userId),
+              })),
+            };
+            const input = buildPhase7UtilityInput(gs, player, proposal, vi, tournament, evidence);
+            input.settlement = {
+              chipUnit: 1,
+              dealerSeat: gs.dealerSeat!,
+              splitLow: horseVariantRulesFor(gs.gameVariant).splitLow8OrBetter,
+            };
+            input.withinBudget =
+              opts.phase13EvidenceMode && !tele
+                ? () => true
+                : () => performance.now() - utilityStarted < 4;
+            const evaluated = evaluateTournamentUtilityDetailed(input);
+            if (evaluated.result) {
+              const selected = this.legalize(evaluated.result.decision, player, gs, vi);
+              if (
+                selected.action === evaluated.result.ledger.selectedAction &&
+                (selected.amount ?? null) === evaluated.result.ledger.selectedAmount
+              ) {
+                proposal = selected;
+                jointPolicy.receipt.shadowUtility = evaluated.result.ledger;
+                jointPolicy.receipt.utilityOwner = 'phase7_evaluated';
+                if (jointPolicy.receipt.mode === 'candidate')
+                  decision = {
+                    ...beforePhase13,
+                    ...selected,
+                    tournamentUtility: evaluated.result.ledger,
+                  };
+              } else jointPolicy.receipt.utilityOwner = 'phase7_unavailable';
+            } else jointPolicy.receipt.utilityOwner = 'phase7_unavailable';
+          } catch {
+            jointPolicy.receipt.utilityOwner = 'phase7_unavailable';
+          }
+          jointPolicy.receipt.utilityLatencyMs = performance.now() - utilityStarted;
+        } else jointPolicy.receipt.utilityOwner = 'phase7_unavailable';
+        if (jointPolicy.receipt.utilityOwner !== 'phase7_evaluated') proposal = beforePhase13;
+      } else if (jointPolicy.receipt.mode === 'candidate' && jointPolicy.receipt.fired)
+        decision = { ...beforePhase13, ...proposal };
+      const sameAction = (a: HorseDecision, b: HorseDecision) =>
+        a.action === b.action && (!['bet', 'raise'].includes(a.action) || a.amount === b.amount);
+      const receipt = jointPolicy.receipt;
+      receipt.proposalAction = proposal.action;
+      receipt.proposalAmount = proposal.amount ?? null;
+      receipt.changed = !sameAction(proposal, beforePhase13);
+      receipt.applied = !sameAction(decision, beforePhase13);
+      receipt.finalAction = decision.action;
+      receipt.finalAmount = decision.amount ?? null;
+      for (const prior of [
+        decision.plo4Policy,
+        decision.omahaVariantPolicy,
+        decision.remainingVariantPolicy,
+      ])
+        if (prior) {
+          prior.finalAction = decision.action;
+          prior.finalAmount = decision.amount ?? null;
+        }
+      decision = { ...decision, jointPolicy: receipt };
+      if (tele) {
+        noteFire('phase13_seen');
+        noteFire(`phase13_variant_${receipt.variant}`);
+        noteFire(`phase13_board_${receipt.boardCount}`);
+        noteFire(`phase13_reason_${receipt.reason}`);
+        noteFire(`phase13_${receipt.variant}_reason_${receipt.reason}`);
+        noteDecisionMs('phase13', receipt.latencyMs);
+        noteDecisionMs(`phase13_${receipt.variant}`, receipt.latencyMs);
+        if (receipt.utilityLatencyMs !== undefined)
+          noteDecisionMs('phase13_utility', receipt.utilityLatencyMs);
+        if (receipt.eligible) {
+          noteFire('phase13_eligible');
+          noteFire(`phase13_${receipt.variant}_eligible`);
+        }
+        if (receipt.fired) {
+          noteFire('phase13_fired');
+          noteFire(`phase13_${receipt.variant}_fired`);
+          noteFire(`phase13_street_${gs.stage}`);
+        }
+        if (receipt.changed) noteFire('phase13_shadow_changed');
+        noteFire(receipt.applied ? 'phase13_applied' : 'phase13_baseline_retained');
+        noteFire(`phase13_utility_${receipt.utilityOwner}`);
       }
     }
     decision.thinkTime = this.computeThinkTime(

@@ -11,7 +11,9 @@ export function validateDealtSeatCensus(
     !Array.isArray(ids) ||
     ids.length < 2 ||
     ids.length > 10 ||
-    ids.some((id) => !Number.isSafeInteger(id) || id < 1 || !players.some((p) => p.seat === id)) ||
+    ids.some(
+      (id) => !Number.isSafeInteger(id) || id < 1 || id > 10 || !players.some((p) => p.seat === id)
+    ) ||
     new Set(ids).size !== ids.length ||
     !ids.includes(heroSeat) ||
     players.some(

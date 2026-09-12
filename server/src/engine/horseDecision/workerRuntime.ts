@@ -387,6 +387,8 @@ export class HorseDecisionWorkerRuntime {
         request.opts.phase11Omaha === 'candidate' ||
         request.opts.phase12Remaining === 'candidate' ||
         'phase12EvidenceMode' in request.opts ||
+        request.opts.phase13Joint === 'candidate' ||
+        'phase13EvidenceMode' in request.opts ||
         'phase11EvidenceMode' in request.opts ||
         'phase10EvidenceMode' in request.opts)
     ) {

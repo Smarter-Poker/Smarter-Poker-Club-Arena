@@ -3452,10 +3452,15 @@ export class HandController {
     };
   }
 
-  public getChipRulesSnapshot(): { asset: 'chips' | 'diamonds'; chipUnit: 0.01 | 1 } {
+  public getChipRulesSnapshot(): {
+    asset: 'chips' | 'diamonds';
+    chipUnit: 0.01 | 1;
+    bbjConfig: HandConfig['bbjConfig'] | null;
+  } {
     return {
       asset: this.config.asset === 'diamonds' ? 'diamonds' : 'chips',
       chipUnit: this.config.isTournament || this.config.asset === 'diamonds' ? 1 : 0.01,
+      bbjConfig: this.config.bbjConfig ? { ...this.config.bbjConfig } : null,
     };
   }
 

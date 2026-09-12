@@ -252,6 +252,52 @@ const rekey = (request: FastHorseDecisionRequest): FastHorseDecisionRequest => (
   decisionKey: buildHorseDecisionKey(request),
 });
 
+describe('Phase 13 cross-board worker boundary', () => {
+  const multiboard = () => {
+    const request = structuredClone(fastRequest());
+    const card = (rank: string, suit: 'clubs' | 'diamonds' | 'hearts') => ({ rank, suit }) as const;
+    request.gameState.stage = 'flop';
+    request.gameState.bombPot = true;
+    request.gameState.boardCount = 3;
+    request.gameState.communityCards = ['2', '3', '4'].map((r) => card(r, 'clubs')) as any;
+    request.gameState.communityCards2 = ['5', '6', '7'].map((r) => card(r, 'diamonds')) as any;
+    request.gameState.communityCards3 = ['8', '9', 'T'].map((r) => card(r, 'hearts')) as any;
+    return request;
+  };
+  it('accepts a complete physical triple-board betting snapshot', async () => {
+    const h = harness();
+    h.runtime.receive(rekey(multiboard()));
+    await h.runtime.drain();
+    expect(h.messages.at(-1)?.type).toBe('FAST_RESULT');
+    expect(h.decisionsAtRng).toHaveLength(1);
+  });
+  it.each([
+    'hero_collision',
+    'board_collision',
+    'third_board_short',
+    'declared_count',
+    'invalid_rank',
+    'malformed_board',
+  ] as const)('refuses %s before running strategy', async (fault) => {
+    const request = multiboard(),
+      gs = request.gameState;
+    if (fault === 'hero_collision') gs.communityCards2![0] = request.player.cards[0];
+    if (fault === 'board_collision') gs.communityCards3![0] = gs.communityCards2![0];
+    if (fault === 'third_board_short') gs.communityCards3!.pop();
+    if (fault === 'declared_count') gs.boardCount = 2;
+    if (fault === 'invalid_rank') gs.communityCards2![0].rank = 'X' as any;
+    if (fault === 'malformed_board') gs.communityCards3 = {} as any;
+    const h = harness();
+    h.runtime.receive(rekey(request));
+    await h.runtime.drain();
+    expect(h.decisionsAtRng).toEqual([]);
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: expect.stringMatching(/joint_cards/),
+    });
+  });
+});
+
 function phase6TournamentRequest(requestId = 50): FastHorseDecisionRequest {
   const player = { ...snapshot.player, cards: snapshot.player.cards.slice(0, 2) };
   const m = buildTournamentMState({

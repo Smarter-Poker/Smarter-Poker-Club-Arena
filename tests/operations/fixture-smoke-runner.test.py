@@ -22,6 +22,7 @@ RECORDS = [dict(scope='native-service-smoke', observer='passed', browser='chromi
                 ledger_attribution='banned-without-session',
                 postgrest='14.5', realtime='2.134.10', change='observed', retries=0,
                 realtime_listener='127.0.0.1:4000', realtime_gateway='authenticated-change-observed',
+                realtime_rls='two-users-causal-isolation',
                 observation_bridge='native-synthetic-protocol'),
            dict(scope='native-service-smoke', peer='passed', gateway='reachable',
                 realtime_direct='refused', tenant_administration='refused')]
@@ -180,6 +181,19 @@ class RunnerTests(unittest.TestCase):
     def test_duplicate_smoke_observation_refused(self):
         with self.assertRaises(RuntimeError):
             m.smoke_records(SMOKE + json.dumps(RECORDS[0]))
+
+    def test_older_single_user_evidence_cannot_prove_two_user_isolation(self):
+        old = dict(RECORDS[1])
+        del old['realtime_rls']
+        with self.assertRaises(RuntimeError):
+            m.smoke_records(SMOKE.replace(json.dumps(RECORDS[1]), json.dumps(old)))
+
+    def test_new_isolation_failure_retains_only_fixed_stage(self):
+        for stage in ['realtime-two-user-causal-isolation', 'postgrest-two-user-isolation']:
+            row = {'status': 'failed', 'stage': stage, 'error': 'AssertionError'}
+            self.assertEqual(m.native_failures(json.dumps(row)),
+                             [{'stage': stage, 'category': 'AssertionError'}])
+            self.assertEqual(m.native_failures(json.dumps({**row, 'token': 'PRIVATE'})), [])
 
 
 if __name__ == '__main__':

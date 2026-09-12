@@ -37,6 +37,7 @@ NATIVE_STAGES = frozenset((
     'realtime-migrate-command', 'realtime-seed-command', 'realtime-tenant-row',
     'realtime-server-start', 'realtime-server-ready', 'realtime-cookie-rpc', 'realtime-cookie-proof',
     'realtime-websocket-open', 'realtime-postgres-subscription', 'realtime-causal-change',
+    'realtime-two-user-causal-isolation', 'postgrest-two-user-isolation',
     'native-observation-bridge-start', 'observer-and-browser-handoff',
     'realtime-loopback-and-gateway', 'candidate-peer-isolation'))
 NATIVE_ERROR_NAMES = frozenset(('Error', 'AssertionError', 'TypeError', 'RangeError',
@@ -225,6 +226,7 @@ def smoke_records(output):
                 'change': 'observed', 'retries': 0,
                 'realtime_listener': '127.0.0.1:4000',
                 'realtime_gateway': 'authenticated-change-observed',
+                'realtime_rls': 'two-users-causal-isolation',
                 'observation_bridge': 'native-synthetic-protocol'}
     peer = {'scope': 'native-service-smoke', 'peer': 'passed', 'gateway': 'reachable',
             'realtime_direct': 'refused', 'tenant_administration': 'refused'}

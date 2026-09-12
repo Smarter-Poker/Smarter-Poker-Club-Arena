@@ -467,7 +467,7 @@ async function services() {
     stage = 'postgrest-14-5-authentication-and-rls';
     // Small native protocol fixture only; the full schema artifact is qualified separately.
     await db.query(`
-      CREATE TABLE public.fixture_smoke (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, owner_id uuid NOT NULL REFERENCES auth.users(id), payload text NOT NULL);
+      CREATE TABLE public.fixture_smoke (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, owner_id uuid NOT NULL REFERENCES auth.users(id), payload text NOT NULL, stream_version integer NOT NULL DEFAULT 0);
       ALTER TABLE public.fixture_smoke ENABLE ROW LEVEL SECURITY;
       CREATE POLICY own_rows ON public.fixture_smoke FOR SELECT TO authenticated USING (owner_id::text = current_setting('request.jwt.claims',true)::json->>'sub');
       GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
@@ -639,76 +639,143 @@ async function services() {
       await response.body?.cancel();
     }
     stage = 'realtime-websocket-open';
-    const socket = new WebSocket(
-      `ws://fixture:8000/realtime/v1/websocket?apikey=${encodeURIComponent(secrets.anonKey)}&vsn=1.0.0`
-    );
-    const messages = [];
-    let socketError = false;
-    socket.addEventListener('error', () => {
-      socketError = true;
-    });
-    socket.addEventListener('message', (event) => {
-      try {
-        messages.push(JSON.parse(event.data));
-      } catch {
-        socketError = true;
-      }
+    const subscriptions = [user, users[1]].map((actor, index) => {
+      const socket = new WebSocket(
+        `ws://fixture:8000/realtime/v1/websocket?apikey=${encodeURIComponent(secrets.anonKey)}&vsn=1.0.0`
+      );
+      const stream = {
+        actor,
+        socket,
+        topic: `realtime:native-smoke-${index}`,
+        messages: [],
+        failed: false,
+      };
+      socket.addEventListener('error', () => {
+        stream.failed = true;
+      });
+      socket.addEventListener('message', (event) => {
+        try {
+          if (stream.messages.length >= 64) throw new Error('native stream exceeded frame bound');
+          stream.messages.push(JSON.parse(event.data));
+        } catch {
+          stream.failed = true;
+        }
+      });
+      return stream;
     });
     try {
       await eventually(async () => {
-        assert.equal(socketError, false);
-        return socket.readyState === WebSocket.OPEN;
+        assert.ok(subscriptions.every((stream) => !stream.failed));
+        return subscriptions.every((stream) => stream.socket.readyState === WebSocket.OPEN);
       }, 15000);
       stage = 'realtime-postgres-subscription';
-      socket.send(
-        JSON.stringify({
-          topic: 'realtime:native-smoke',
-          event: 'phx_join',
-          ref: '1',
-          payload: {
-            config: {
-              broadcast: { ack: false, self: false },
-              presence: { key: '' },
-              postgres_changes: [{ event: 'INSERT', schema: 'public', table: 'fixture_smoke' }],
-              private: false,
+      for (const stream of subscriptions) {
+        stream.socket.send(
+          JSON.stringify({
+            topic: stream.topic,
+            event: 'phx_join',
+            ref: '1',
+            payload: {
+              config: {
+                broadcast: { ack: false, self: false },
+                presence: { key: '' },
+                // Both users request the whole table. The genuine service's
+                // RLS evaluation must perform the separation, not a client filter.
+                postgres_changes: [{ event: '*', schema: 'public', table: 'fixture_smoke' }],
+                private: false,
+              },
+              access_token: stream.actor.session.access_token,
             },
-            access_token: user.session.access_token,
-          },
-        })
-      );
+          })
+        );
+      }
       await eventually(async () => {
-        assert.equal(socketError, false);
-        return messages.some(
-          (m) =>
-            m.event === 'system' &&
-            m.payload?.extension === 'postgres_changes' &&
-            m.payload?.status === 'ok'
+        assert.ok(subscriptions.every((stream) => !stream.failed));
+        return subscriptions.every(
+          (stream) =>
+            stream.messages.some(
+              (m) =>
+                m.event === 'system' &&
+                m.payload?.extension === 'postgres_changes' &&
+                m.payload?.status === 'ok'
+            ) &&
+            stream.messages.some(
+              (m) => m.event === 'phx_reply' && m.ref === '1' && m.payload?.status === 'ok'
+            )
         );
       });
-      assert.ok(
-        messages.some((m) => m.event === 'phx_reply' && m.ref === '1' && m.payload?.status === 'ok')
-      );
       stage = 'realtime-causal-change';
       const inserted = await db.query(
-        'INSERT INTO public.fixture_smoke(owner_id,payload) VALUES($1,$2) RETURNING id',
-        [user.id, 'native-realtime-change']
+        'INSERT INTO public.fixture_smoke(owner_id,payload) VALUES($1,$2),($3,$4) RETURNING id,owner_id',
+        [users[1].id, 'native-peer-change', user.id, 'native-realtime-change']
       );
-      await eventually(async () =>
-        messages.some(
-          (m) =>
-            m.event === 'postgres_changes' &&
-            m.payload?.data?.record?.payload === 'native-realtime-change'
-        )
+      await eventually(async () => {
+        assert.ok(subscriptions.every((stream) => !stream.failed));
+        return subscriptions.every((stream) =>
+          stream.messages.some(
+            (m) =>
+              m.event === 'postgres_changes' &&
+              m.payload?.data?.type === 'INSERT' &&
+              m.payload?.data?.record?.owner_id === stream.actor.id
+          )
+        );
+      });
+      stage = 'realtime-two-user-causal-isolation';
+      // A later UPDATE is a stream watermark after both INSERTs. Preserve the
+      // payload so the separate real-browser/PostgREST observation stays valid.
+      await db.query(
+        'UPDATE public.fixture_smoke SET stream_version=1 WHERE id=ANY($1::bigint[])',
+        [inserted.rows.map((row) => row.id)]
       );
-      const changed = messages.find(
-        (m) =>
-          m.event === 'postgres_changes' &&
-          m.payload?.data?.record?.payload === 'native-realtime-change'
-      );
-      assert.equal(String(changed.payload.data.record.id), inserted.rows[0].id);
-      assert.equal(changed.payload.data.record.owner_id, user.id);
+      await eventually(async () => {
+        assert.ok(subscriptions.every((stream) => !stream.failed));
+        return subscriptions.every((stream) =>
+          stream.messages.some(
+            (m) =>
+              m.event === 'postgres_changes' &&
+              m.payload?.data?.type === 'UPDATE' &&
+              m.payload?.data?.record?.owner_id === stream.actor.id
+          )
+        );
+      });
+      for (const stream of subscriptions) {
+        const expected = inserted.rows.find((row) => row.owner_id === stream.actor.id);
+        const changes = stream.messages.filter((m) => m.event === 'postgres_changes');
+        assert.equal(changes.length, 2);
+        assert.deepEqual(
+          changes.map((m) => m.payload.data.type),
+          ['INSERT', 'UPDATE']
+        );
+        assert.deepEqual(
+          changes.map((m) => m.payload.data.record.stream_version),
+          [0, 1]
+        );
+        for (const change of changes) {
+          assert.equal(change.topic, stream.topic);
+          assert.equal(change.payload.data.record.owner_id, stream.actor.id);
+          assert.equal(String(change.payload.data.record.id), expected.id);
+        }
+      }
+      stage = 'postgrest-two-user-isolation';
+      for (const actor of [user, users[1]]) {
+        const response = await fetch('http://127.0.0.1:3000/fixture_smoke?order=id', {
+          headers: { authorization: `Bearer ${actor.session.access_token}` },
+          signal: AbortSignal.timeout(3000),
+          redirect: 'error',
+        });
+        assert.equal(response.status, 200);
+        const visible = await response.json();
+        assert.equal(visible.length, actor.id === user.id ? 1 : 2);
+        assert.ok(visible.every((row) => row.owner_id === actor.id));
+      }
+      const anonymousAfterChanges = await fetch('http://127.0.0.1:3000/fixture_smoke', {
+        signal: AbortSignal.timeout(3000),
+        redirect: 'error',
+      });
+      assert.equal(anonymousAfterChanges.status, 200);
+      assert.deepEqual(await anonymousAfterChanges.json(), []);
     } finally {
-      socket.close();
+      for (const stream of subscriptions) stream.socket.close();
     }
     stage = 'native-observation-bridge-start';
     // These minimal base tables satisfy the exact production observation helper
@@ -823,6 +890,7 @@ async function services() {
         realtime: '2.134.10',
         realtime_listener: '127.0.0.1:4000',
         realtime_gateway: 'authenticated-change-observed',
+        realtime_rls: 'two-users-causal-isolation',
         change: 'observed',
         observation_bridge: 'native-synthetic-protocol',
         retries: 0,

@@ -7,11 +7,11 @@ and compiling the requested immutable source. All four must succeed before the
 production database check or deployment can start.
 
 Protected PR CI uses the same four-way partition after a full server job hit its
-15-minute ceiling. Its aggregate retains the required `Server Engine (typecheck
-
-- tests)` name. It fails on any failed or cancelled shard and accepts a skipped
-  suite only when successful change detection explicitly found no server changes
-  on a pull request. PostgreSQL accounting remains a prerequisite of every shard.
+15-minute ceiling. Its aggregate retains the required
+`Server Engine (typecheck + tests)` name. It fails on any failed or cancelled
+shard and accepts a skipped suite only when successful change detection explicitly
+found no server changes on a pull request. PostgreSQL accounting remains a
+prerequisite of every shard.
 
 The change reduces the test portion of the publication delay. It keeps source
 freshness checks, production database checks, the single durable publisher,
@@ -21,5 +21,8 @@ test verdict or dispatch a replacement release.
 Validation covers all 735 real Vitest suite files in disjoint groups of
 184/184/184/183, existing release safety checks, the complete matrix/dependency
 chain, and execution of the CI aggregate's success/failure/skip verdicts. Actual
-CI timings and publication remain to be measured on a protected release using
-this workflow.
+CI run 34678322392 completed all four server jobs in 3 minutes 38 seconds to
+5 minutes 20 seconds, with each complete test shard passing. That run exposed two
+stale dependency assertions in the client tests; they now follow the accounting
+prerequisite through the server shards. Publication timing remains to be measured
+on a protected release using this workflow.

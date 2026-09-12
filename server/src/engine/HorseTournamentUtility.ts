@@ -1082,7 +1082,8 @@ function settleSample(args: {
     }
   }
   const bountyDeniedPct = heroBusted ? currencyToPoolPct(input, ownBountyCents(input)) : 0;
-  const total = vector.reduce((sum, stack) => sum + stack, 0);
+  let total = 0;
+  for (let index = 0; index < vector.length; index++) total += vector[index];
   return {
     vector,
     heroFinalStack: vector[field.heroIndex],
@@ -1639,11 +1640,13 @@ function evaluateWithWorkspace(
     // The remote field is immutable within this action. Check it without
     // allocating a thousand formatted numbers for every candidate/future
     // bound. Only table-local coordinates can distinguish valid vectors.
-    if (
-      vector.length !== field.stacks.length ||
-      remoteIndices.some((i) => vector[i] !== field.stacks[i])
-    )
+    if (vector.length !== field.stacks.length)
       throw new Error('Continuation changed the immutable remote field');
+    for (let slot = 0; slot < remoteIndices.length; slot++) {
+      const index = remoteIndices[slot];
+      if (vector[index] !== field.stacks[index])
+        throw new Error('Continuation changed the immutable remote field');
+    }
     return localIndices
       .map((i) => (rounded ? Math.round(vector[i] * 100) / 100 : vector[i]))
       .join(',');

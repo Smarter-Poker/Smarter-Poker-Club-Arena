@@ -53,6 +53,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     receipt = {"source_sha": sha, "scope": "isolated-build-resource-containment",
                "production_certificate": False, "status": "failed"}
+    before = None
     try:
         run(["docker", "run", "--detach", "--name", sentinel, "--memory", "256m",
              "--memory-swap", "256m", NODE, "node", "-e", "setInterval(()=>{},1000)"], timeout=120)
@@ -89,6 +90,9 @@ def main():
                 raise RuntimeError("runtime emission differs from the full typechecked CI build")
             receipt["typechecked_runtime_files_matched"] = len(expected)
             receipt["runtime_file_hashes"] = actual
+            if any(name.endswith((".test.js", ".spec.js")) or "/__tests__/" in name
+                   for name in actual):
+                raise RuntimeError("unit-test entrypoints were included in the runtime image")
             run(["docker", "buildx", "inspect", BUILDER, "--bootstrap"], timeout=120)
             receipt["memory_max"] = counter("memory.max")
             receipt["swap_max"] = counter("memory.swap.max")
@@ -124,6 +128,15 @@ def main():
             receipt["status"] = "passed"
     finally:
         cleanup = {}
+        if before is not None:
+            try:
+                current = inspect(sentinel)
+                receipt["neighbor_alive_before_cleanup"] = (
+                    current["State"]["Running"]
+                    and current["State"]["StartedAt"] == before["State"]["StartedAt"]
+                    and current["RestartCount"] == before["RestartCount"])
+            except RuntimeError:
+                receipt["neighbor_alive_before_cleanup"] = False
         for name in [sentinel, image_reader, CONTAINER]:
             run(["docker", "rm", "--force", name], check=False)
             cleanup[name] = run(["docker", "inspect", name], check=False).returncode != 0

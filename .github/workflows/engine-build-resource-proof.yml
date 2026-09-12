@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - server/Dockerfile
+      - server/tsconfig.json
+      - server/tsconfig.runtime.json
       - server/scripts/build-engine-image.sh
       - tests/operations/engine-build-resource-proof.py
       - .github/workflows/engine-build-resource-proof.yml
@@ -29,7 +31,7 @@ jobs:
         working-directory: server
         run: |
           npm ci --no-audit --no-fund
-          npm run build
+          npm run build -- --project tsconfig.runtime.json
       - name: Real bounded image build and neighboring process survival
         run: python3 tests/operations/engine-build-resource-proof.py
       - name: Preserve exact build, fault and cleanup evidence

@@ -13,7 +13,10 @@ Docker configuration and the effective cgroup limits before compiling. It
 refuses to start with less than the builder budget plus 256 MiB of available
 host memory. Exact-source release preflight retains its full TypeScript check
 and tests in CI. The image build emits runtime files with a 768 MiB compiler
-heap and omits declaration files; core dumps are disabled for the compiler.
+heap and omits test entrypoints and declaration files; core dumps are disabled
+for the compiler. A separate runtime project leaves the full test project
+unchanged. The original project included 753 test files alongside 387 other
+source files, making every host build parse and emit the entire test suite.
 Runtime engine settings are unchanged.
 There is no fallback to the unbounded daemon builder.
 

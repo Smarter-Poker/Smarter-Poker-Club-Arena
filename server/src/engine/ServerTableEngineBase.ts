@@ -3718,7 +3718,27 @@ export abstract class ServerTableEngineBase {
       msg.includes('supabase_timeout') ||
       msg.includes('This operation was aborted') ||
       msg.includes('The operation was aborted') ||
-      msg.includes('deal_step_timeout')
+      msg.includes('deal_step_timeout') ||
+      /* A SERIALIZATION FAILURE IS THE DATABASE BLINKING, BY DEFINITION
+         (2026-09-12).
+         Every entry above is a TRANSPORT failure. The one error Postgres
+         itself defines as "this conflicted, run it again" was missing, so the
+         question in this method's own title was answered "the code is wrong"
+         for the textbook case of the database blinking.
+         `smarter_private.f06_try_lane` raises exactly this when it cannot take
+         the shared `ca:tournament-terminal-settlement:v1` lock, and it spells
+         the remedy into the message:
+             RAISE EXCEPTION 'F06_RETRY_CANONICAL_LANE' USING ERRCODE='40001'
+         Nothing has been written when it fires - the lock is taken before the
+         work - and the caller sees `atomic_hand_rolled_back`, so a retry
+         re-runs a transaction that committed nothing.
+         Measured on production 2026-09-12: 412 hands in two hours whose
+         history was never written, 820 alerts in all, because the engine
+         treated an explicit request to retry as a terminal refusal. */
+      msg.includes('F06_RETRY_CANONICAL_LANE') ||
+      /^40001$/.test(String((err as { code?: unknown })?.code ?? '')) ||
+      msg.includes('could not serialize access') ||
+      msg.includes('deadlock detected')
     );
   }
 

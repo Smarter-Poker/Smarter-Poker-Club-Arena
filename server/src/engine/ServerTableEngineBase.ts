@@ -4000,6 +4000,41 @@ export abstract class ServerTableEngineBase {
     );
   }
 
+  /**
+   * Did the database roll the WHOLE hand back and ask to be run again?
+   *
+   * `fn_ca_commit_hand_settlement` answers a refusal with a reason, and two of
+   * those reasons mean "this transaction wrote nothing":
+   * `atomic_hand_rolled_back` (the accepted-hand core's own
+   * `EXCEPTION WHEN OTHERS`) and `rolled_back` (the stack core's). They reach
+   * the engine as `atomic hand commit refused (<reason>): <sqlerrm>`, and
+   * `insertHandHistoryRow` throws them without a retry because every string
+   * containing "atomic hand commit refused" is treated as deterministic.
+   *
+   * Most of them ARE deterministic and must stay terminal - a conservation
+   * violation, a negative stack, a constraint, a missing column. What
+   * separates the rest is the SQLERRM the reason carries, so this asks BOTH
+   * questions: the database said it rolled back, AND the cause is the one
+   * Postgres defines as "this conflicted, run it again". Only then is another
+   * attempt a re-run of a transaction that committed nothing.
+   *
+   * Measured on production 2026-09-12, 10:00-11:35 UTC: 1,021 of 1,023
+   * semantic refusals were exactly this pair - `atomic_hand_rolled_back` or
+   * `rolled_back`, carrying `F06_RETRY_CANONICAL_LANE`. Not one carried a
+   * rounding, denomination, pot-total or seat-set reason.
+   */
+  protected static isRolledBackSerializationRefusal(err: unknown): boolean {
+    const msg =
+      err instanceof Error
+        ? err.message
+        : (err as { message?: string })?.message ||
+          (typeof err === 'object' && err !== null ? JSON.stringify(err) : String(err));
+    return (
+      /atomic hand commit refused \((?:atomic_hand_)?rolled_back\)/.test(msg) &&
+      ServerTableEngineBase.isTransientDbError(err)
+    );
+  }
+
   /** `load_seats+96s` — for recovery-event details and /health. */
   describeLoopPhase(): string {
     return this.loopPhase + '+' + Math.round(this.msSinceLoopPhase() / 1000) + 's';

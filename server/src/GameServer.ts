@@ -96,6 +96,7 @@ import {
   mainEventLoopGovernorScale,
   leaseRenewalPassesTotal,
   leaseRenewalLoopRunning,
+  leaseRenewalLoopRelaunchesTotal,
 } from './observability/engineInstruments.js';
 import { clientConnectionPrometheusLines } from './observability/ClientConnectionEvents.js';
 import {
@@ -920,8 +921,22 @@ export class GameServer {
           // A programming or transport surprise cannot permanently remove the
           // platform's primary ownership lifecycle. Existing local deadlines stay
           // authoritative and the next serialized pass still runs.
+          //
+          // THE COUNT FIRST, THE REPORT SECOND, AND THE REPORT INSIDE ITS OWN
+          // TRY (2026-09-12). `reportError` writes to stderr before it does
+          // anything else, and on a saturated container pipe that write throws
+          // EPIPE/EAGAIN. A throw HERE escapes this catch, escapes the `while`
+          // above it, and ends the only loop that renews a lease in this
+          // process - the handler written to keep the loop alive being the
+          // thing that kills it. errorReporter now guards its own console
+          // write; this guards the call, because a catch handler that can
+          // throw is not a catch handler.
           leaseRenewalPassesTotal.inc(1, { outcome: 'threw' });
-          reportError(error, 'GameServer.ownership_lease_renewal_pass_threw');
+          try {
+            reportError(error, 'GameServer.ownership_lease_renewal_pass_threw');
+          } catch {
+            /* Reporting is never worth the lifecycle. */
+          }
         }
         if (!this.directAdmissionIsCurrent(generation)) return;
         const elapsedMs = Math.max(0, performance.now() - passStartedAt);
@@ -930,14 +945,82 @@ export class GameServer {
     } finally {
       leaseRenewalLoopRunning.set(0);
       if (this.directAdmissionIsCurrent(generation)) {
-        reportError(
-          new Error(
-            'ownership lease renewal loop left while its admission generation was still current; ' +
-              'nothing relaunches it, so every lease in this process will expire'
-          ),
-          'GameServer.ownership_lease_renewal_loop_left_early'
-        );
+        /* The message used to end "nothing relaunches it, so every lease in
+           this process will expire". Something does now -
+           superviseOwnershipLeaseRenewal below - so the sentence that followed
+           the fault was describing the world before the fix, which is the way
+           a comment becomes a lie. The FAULT is unchanged and still worth a
+           report: this loop must not leave while its generation is live.
+           Guarded for the same reason the catch above is. */
+        try {
+          reportError(
+            new Error(
+              'ownership lease renewal loop left while its admission generation was still current; ' +
+                'superviseOwnershipLeaseRenewal is relaunching it'
+            ),
+            'GameServer.ownership_lease_renewal_loop_left_early'
+          );
+        } catch {
+          /* Reporting is never worth the lifecycle. */
+        }
       }
+    }
+  }
+
+  /**
+   * THE ONE LOOP THAT RENEWS EVERY LEASE IS SUPERVISED (2026-09-12).
+   *
+   * `launchServerLifecycleJob` reports what a job throws and then forgets it.
+   * For every other lifecycle here that is correct: discovery is re-entered on
+   * the next sweep, an admission is retried by its own causal registry. This
+   * one is different. It is launched exactly ONCE per admission generation and
+   * it is the only thing in the process that renews a lease, so its exit is not
+   * a fault that costs one pass - it is the end of ownership for every table
+   * this process holds.
+   *
+   * What that cost, measured: every cash lease and every tournament lease
+   * expired 20 seconds after the loop left, each engine killed itself on its
+   * own proof, re-claimed, and died again - 26,129 engine lives in 2h10m, three
+   * quarters of them dealing no hands, 1,483 hands abandoned mid-play, hand
+   * volume down 61%. `claim_table_lease_v2` climbed 233 calls a minute while
+   * `heartbeat_table_leases_v4` did not move once. It ran like that for at
+   * least two hours and nothing said so, because nothing FAILED.
+   *
+   * `leaseRenewalPassesTotal` and the abandon timer closed the SILENCE. This
+   * closes the PERMANENCE. Relaunching is cheap and safe: the loop holds no
+   * lock of its own, `renewOwnedEngineLeaseProofs` serialises passes on
+   * `ownershipLeaseRenewalOperation` so a relaunch cannot double-renew, and the
+   * generation fence here is the same one the loop uses - a stopped or
+   * superseded server ends the supervisor rather than resurrecting a dead
+   * generation's renewals.
+   *
+   * The cadence sleep between relaunches is deliberate. A loop that throws the
+   * instant it is entered must not become a hot spin, and one skipped cadence
+   * is a quarter of the proof window rather than all of it.
+   */
+  private async superviseOwnershipLeaseRenewal(generation: number): Promise<void> {
+    while (this.directAdmissionIsCurrent(generation)) {
+      leaseRenewalLoopRunning.set(1);
+      try {
+        await this.runOwnershipLeaseRenewalLoop(generation);
+      } catch (error) {
+        /* The loop reports its own faults in its own finally. Reaching here
+           means that report, or the finally around it, threw - so this one is
+           guarded too. A supervisor that can die of a log line is not a
+           supervisor. */
+        try {
+          reportError(error, 'GameServer.ownership_lease_renewal_loop_threw');
+        } catch {
+          /* Reporting is never worth the lifecycle. */
+        }
+      }
+      if (!this.directAdmissionIsCurrent(generation)) return;
+      /* A RELAUNCH IS AN EVENT, NOT A LOG DETAIL. Without this the cure hides
+         the disease: passes keep completing, the gauge is back at 1 within a
+         tick, and nobody ever learns the loop died. Zero is the normal reading
+         for the life of a process. */
+      leaseRenewalLoopRelaunchesTotal.inc(1);
+      await this.sleep(OWNERSHIP_LEASE_RENEWAL_CADENCE_MS);
     }
   }
 
@@ -2250,10 +2333,12 @@ export class GameServer {
 
       /* Ownership renewal is a primary lifecycle, independent of the much
          heavier discovery/adoption/reaper loops. A blocked discovery RPC must
-         never consume the 20-second local authority proof of a healthy dealer. */
-      leaseRenewalLoopRunning.set(1);
+         never consume the 20-second local authority proof of a healthy dealer.
+         It is launched through its SUPERVISOR, never bare - see
+         superviseOwnershipLeaseRenewal, and 2026-09-12 for what a bare launch
+         cost. */
       this.launchServerLifecycleJob(
-        this.runOwnershipLeaseRenewalLoop(generation),
+        this.superviseOwnershipLeaseRenewal(generation),
         'GameServer.ownership_lease_renewal_fatal_err'
       );
 

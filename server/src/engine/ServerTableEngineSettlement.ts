@@ -91,6 +91,31 @@ const cents = (n: number): number => {
  */
 const RABBIT_HUNT_OFFER_TTL_MS = 90_000;
 
+/**
+ * HOW LONG A PREDECESSOR KEEPS TRYING TO FINISH ITS OWN ENVELOPE (2026-09-12).
+ *
+ * The post-commit envelope is authorized by the durable hand receipt, not by a
+ * dealer lease - `processHandPostCommitObligations` says so in its own contract
+ * and the database enforces it with a per-table `pg_advisory_xact_lock`, a
+ * `SELECT ... FOR UPDATE` and an `already_completed` early return. So an engine
+ * whose 20-second proof lapsed mid-settlement is still entitled to finish the
+ * work it committed, and the ONLY reason to stop is that somebody else should
+ * take over.
+ *
+ * Somebody else always can: the outbox row is authoritative and the projection
+ * worker is its successor. This budget is therefore not a safety limit, it is a
+ * handover time. Five seconds is one projection-worker poll interval, so the
+ * successor is already awake by the time this gives up, and it is short enough
+ * that a drain cannot hold the dealing loop's next-hand barrier for long.
+ *
+ * It bounds ONLY the post-fence case. While the engine can still mutate, the
+ * barrier stays exactly as unbounded as it has always been - see the loop in
+ * postHandTasks - because capping a healthy retry would file the critical alert
+ * on hands that were about to succeed, which is the defect
+ * `aDetectorMayNotCryWolf` was written for.
+ */
+const POST_COMMIT_DRAIN_BUDGET_MS = 5_000;
+
 export abstract class ServerTableEngineSettlement extends ServerTableEngineDealing {
   /**
    * Stack and payout values are money authority. JavaScript's NaN/Infinity
@@ -2516,7 +2541,34 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
          absent count as "read to find out". */
       let resolvedAddOnCount: number | undefined;
       this.setLoopPhase('settlement_post_commit_obligations');
-      while (!obligationsApplied && this.lifecycleCanMutate()) {
+      /* THE DRAIN DOES NOT NEED THE LEASE; THE REFLECTION BELOW STILL DOES
+       * (2026-09-12).
+       *
+       * This loop used to be gated on `lifecycleCanMutate()` - a DEALER-LEASE
+       * check - around a call whose contract explicitly disclaims the lease:
+       * "This call deliberately carries no dealer lease: once the exact
+       * settlement transaction commits, completing its frozen obligations is
+       * authorized by the durable hand receipt, not by whichever process
+       * happens to resume it."
+       *
+       * So the one case the barrier exists for - a hand committed by an engine
+       * whose proof expired while the settlement was in flight - was the exact
+       * case in which the loop body never ran. `attempt` stayed 0, and the
+       * give-up branch below filed a CRITICAL financial alert reading "after 0
+       * attempt(s)": an alarm about abandoning an envelope this process had
+       * never once tried to apply. 935 of 949 such alerts all-time carried
+       * `attempts: 0`, 414 of them in the eight hours of the 2026-09-12 lease
+       * outage, when every engine in the fleet was losing its proof every 20
+       * seconds.
+       *
+       * The lease term is replaced by a handover budget, and only for the
+       * post-fence case: while this engine can still mutate the barrier is
+       * unbounded exactly as before. `postCommitStateCanReflect` below is
+       * re-read from `lifecycleCanMutate()` and is UNCHANGED - the drain loses
+       * the lease term, the reflection never does. */
+      const drainDeadline = Date.now() + POST_COMMIT_DRAIN_BUDGET_MS;
+      const mayStillDrain = (): boolean => this.lifecycleCanMutate() || Date.now() < drainDeadline;
+      while (!obligationsApplied && mayStillDrain()) {
         attempt++;
         try {
           const outcome = await processHandPostCommitObligations(v_handHistoryId);
@@ -2560,10 +2612,20 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
              What moved is the FINANCIAL ALERT: it now fires only where the
              loop actually abandons the envelope - see `if (!obligationsApplied)`
              below - which is the condition its message has always described. */
-          if (this.lifecycleCanMutate()) {
-            this.markProgress();
-            await this.sleep(Math.min(150 * 2 ** Math.min(attempt - 1, 5), 5_000));
-          }
+          /* The backoff runs post-fence too, or the budget above buys exactly
+             one attempt: this was also gated on `lifecycleCanMutate()`, so an
+             engine past its proof slept zero and spun its whole handover
+             window into one tight retry. `markProgress` writes local watchdog
+             state only - no seat, no chip, no row - and on an engine that has
+             already been killed for restart it is a no-op the watchdog never
+             reads. The sleep is capped by what is left of the handover so the
+             ceiling really is the budget. */
+          this.markProgress();
+          const backoffMs = Math.min(150 * 2 ** Math.min(attempt - 1, 5), 5_000);
+          const handoverLeftMs = Math.max(0, drainDeadline - Date.now());
+          await this.sleep(
+            this.lifecycleCanMutate() ? backoffMs : Math.min(backoffMs, handoverLeftMs)
+          );
         }
       }
       postCommitStateCanReflect = this.lifecycleCanMutate();

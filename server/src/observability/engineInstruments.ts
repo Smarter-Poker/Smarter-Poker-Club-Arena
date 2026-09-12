@@ -582,6 +582,35 @@ export const leaseRenewalLoopRunning: Gauge = alwaysOnRegistry.gauge(
 );
 leaseRenewalLoopRunning.set(0);
 
+/**
+ * A RELAUNCH IS AN EVENT, NOT A LOG DETAIL (2026-09-12).
+ *
+ * `leaseRenewalLoopRunning` going 0 and back to 1 is invisible to anything
+ * sampling at 15s, and `poker_lease_renewal_passes_total` keeps climbing
+ * across a relaunch because the successor completes passes exactly like its
+ * predecessor did. So the supervisor that keeps the loop alive would, on its
+ * own, hide the fault it is curing: the platform stays up and nobody learns
+ * that the one loop renewing every lease in the process died and was restarted.
+ *
+ * This counter is that fault. Zero is the normal reading for the life of a
+ * process; ANY movement means the loop left while its admission generation was
+ * still current, and `GameServer.ownership_lease_renewal_loop_left_early` in
+ * Sentry carries the reason.
+ *
+ * No alert rule reads it yet, deliberately: section 10.84 says derive a
+ * threshold and write the measurement beside it, and there is no measured
+ * relaunch rate to derive one from - this counter is how that measurement gets
+ * taken. `LeaseRenewalLoopStopped` already pages on the outcome that matters
+ * (the completed-pass rate going flat); this says why.
+ */
+export const leaseRenewalLoopRelaunchesTotal: Counter = alwaysOnRegistry.counter(
+  'poker_lease_renewal_loop_relaunches_total',
+  'Times the ownership lease renewal loop left while its generation was current and was relaunched'
+);
+/* Zero-seeded: a counter with no series is an empty vector, which reads
+   exactly like health. See anAlertCannotWaitForAFailureToExist.law.test.ts. */
+leaseRenewalLoopRelaunchesTotal.inc(0);
+
 /** Actions processed, bounded by audience x tournament format. */
 export const actionsFleetTotal: Counter = alwaysOnRegistry.counter(
   'poker_actions_fleet_total',

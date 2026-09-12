@@ -203,8 +203,29 @@ export function describeError(error: unknown): string {
 }
 
 export function reportError(error: unknown, context: string, extra?: Record<string, any>): void {
-  // Always log to console for stdout/stderr visibility
-  console.error(`[${context}]`, error);
+  /* THE LOG LINE IS INSIDE A TRY, AND THAT IS NOT PARANOIA (2026-09-12).
+   *
+   * `console.error` writes to fd 2 synchronously. On a container whose stderr
+   * is a pipe nobody is draining it throws EAGAIN, and on one whose log
+   * collector has gone away it throws EPIPE. This line used to sit OUTSIDE
+   * every try in this function, so that throw did not stay here: it came out
+   * of `reportError` itself.
+   *
+   * Every `catch (error) { reportError(...) }` in this engine is written on
+   * the assumption that reporting cannot fail. When it can, the catch handler
+   * throws, the `while` around it unwinds, and the loop that called it is
+   * gone - with no log line, because the thing that failed WAS the log line.
+   * That is the amplifier behind the 2026-09-12 lease-renewal outage: a
+   * supervisor now relaunches that loop (GameServer.performStart), and this
+   * makes the push that knocks it over unavailable in the first place.
+   *
+   * A swallowed log line costs one message. An escaping one costs the loop. */
+  try {
+    // Always log to console for stdout/stderr visibility
+    console.error(`[${context}]`, error);
+  } catch {
+    // stderr is not a reason to lose the caller's control flow.
+  }
 
   // Send to Sentry if initialized
   if (!initialized) return;
@@ -249,7 +270,12 @@ export function reportError(error: unknown, context: string, extra?: Record<stri
  * Report a warning-level issue (non-fatal but noteworthy).
  */
 export function reportWarning(message: string, context: string, data?: Record<string, any>): void {
-  console.warn(`[${context}] ${message}`);
+  // Same EPIPE/EAGAIN hazard as reportError above, same one-line answer.
+  try {
+    console.warn(`[${context}] ${message}`);
+  } catch {
+    // stderr is not a reason to lose the caller's control flow.
+  }
 
   if (!initialized) return;
 

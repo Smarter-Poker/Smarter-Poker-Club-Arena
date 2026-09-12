@@ -2106,13 +2106,13 @@ if [ "$1" = buildx ]; then
   if [ "$2" = stop ]; then printf 'stop\\n' >> "$STATE_DIR/builder-stops"; exit 0; fi
 fi
 if [ "$1" = inspect ]; then
-  printf '%s\\n' 'moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8 1073741824 1073741824 100000 100000 no'
+  printf '%s\\n' 'moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8 805306368 805306368 100000 100000 no'
   exit 0
 fi
 if [ "$1" = exec ]; then
   case "$4" in
-    */memory.max) printf '%s\\n' "\${FAKE_CGROUP_MEMORY:-1073741824}" ;;
-    */memory.peak) printf '1048576000\\n' ;;
+    */memory.max) printf '%s\\n' "\${FAKE_CGROUP_MEMORY:-805306368}" ;;
+    */memory.peak) printf '786432000\\n' ;;
     */memory.swap.max) printf '0\\n' ;;
     */cpu.max) printf '100000 100000\\n' ;;
     /etc/buildkit/buildkitd.toml)
@@ -2130,7 +2130,7 @@ if [ "$1" = buildx ] && [ "$2" = build ]; then
   printf '%s\\n' "$PWD" > "$STATE_DIR/context-path"
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --builder) [ "$2" = club-arena-engine-bounded-v1 ]; shift 2 ;;
+      --builder) [ "$2" = club-arena-engine-bounded-v2 ]; shift 2 ;;
       --load) shift ;;
       --progress) [ "$2" = plain ]; shift 2 ;;
       --build-arg) printf '%s' "$2" > "$STATE_DIR/build-arg"; shift 2 ;;
@@ -2207,6 +2207,7 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
         ...isolatedEnv,
         PATH: `${bin}:${isolatedEnv.PATH ?? ''}`,
         FAKE_DOCKER_STATE_DIR: dockerState,
+        FAKE_AVAILABLE_KIB: '1048576',
         ENGINE_BUILD_CONTEXT_ROOT: contextRoot,
         ENGINE_BUILD_LOCK_FILE: join(sandbox, 'engine-build.lock'),
       };
@@ -2269,11 +2270,12 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
         [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
         {
           encoding: 'utf8',
-          env: { ...env, FAKE_AVAILABLE_KIB: '40000' },
+          env: { ...env, FAKE_AVAILABLE_KIB: '1048575' },
         }
       );
       expect(noHeadroom.status).toBe(1);
       expect(noHeadroom.stderr).toContain('insufficient memory headroom');
+      expect(noHeadroom.stderr).toContain('available=1048575KiB, required=1048576KiB');
       expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
       expect(readdirSync(contextRoot)).toEqual([]);
       const wrongDriver = spawnSync(

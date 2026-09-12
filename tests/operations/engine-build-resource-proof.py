@@ -12,10 +12,10 @@ import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[2]
-BUILDER = "club-arena-engine-bounded-v1"
+BUILDER = "club-arena-engine-bounded-v2"
 CONTAINER = f"buildx_buildkit_{BUILDER}0"
 NODE = "node:22-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5"
-LIMIT = 1073741824
+LIMIT = 805306368
 
 
 def run(args, *, timeout=60, check=True, env=None):
@@ -151,6 +151,8 @@ def main():
             if len(peaks) != 1:
                 raise RuntimeError("bounded engine build did not report its memory peak")
             receipt["engine_build_memory_peak"] = int(peaks[0])
+            if receipt["engine_build_memory_peak"] > LIMIT:
+                raise RuntimeError("bounded engine build exceeded its reviewed memory limit")
             if inspect(CONTAINER)["State"]["Running"]:
                 raise RuntimeError("successful build left its builder running")
             if list(Path(temp, "contexts").iterdir()):

@@ -535,11 +535,13 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   flag(
     'phase10Plo4',
+    'phase11Omaha',
     'bounded PLO4 policy for every street; shadow by default; candidate mode is offline promotion only',
     'Phase10'
   ),
   flag(
     'phase10EvidenceMode',
+    'phase11EvidenceMode',
     'offline fixed-work PLO4 evidence clock; rejected by the live decision worker',
     'Phase10'
   ),

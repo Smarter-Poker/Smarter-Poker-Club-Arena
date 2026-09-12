@@ -364,6 +364,19 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
     fi
   fi
 
+  # A trigger on a money table declares itself in the migration that creates
+  # it. UndeclaredTriggerOnAMoneyTable is critical and pages by SMS; it read 76
+  # on 2026-09-12 having read 74 ninety minutes before, so it is saturated and
+  # one more makes no visible difference. Enforced where the trigger is written.
+  if [ -f scripts/ci/check-money-trigger-declared.mjs ]; then
+    MTD_BASE=$(git merge-base HEAD origin/main 2>/dev/null || echo "HEAD~1")
+    if ! node scripts/ci/check-money-trigger-declared.mjs "$MTD_BASE"; then
+      echo "[club-arena pre-push] BLOCKED: an undeclared trigger on a money table."
+      echo "                      Declare it in the same migration. See above."
+      FAIL=1
+    fi
+  fi
+
   # NO BAND-AIDS (10.12). A repair, back-pay, re-drive, catch-up, backfill or
   # heal path is not a fix; it is the defect happening for ever with paperwork.
   if [ -f scripts/ci/check-no-new-band-aids.mjs ]; then

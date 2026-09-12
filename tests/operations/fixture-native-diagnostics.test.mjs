@@ -9,7 +9,25 @@ import {
   nativeChildFailure,
   realtimeLogDiagnostic,
   realtimeLogMarkers,
+  realtimeDatabaseErrorNames,
 } from '../../operations/release/fixture/runtime-files.mjs';
+
+test('Realtime database errors expose fixed categories without SQL, role names or credentials', () => {
+  const actual = realtimeLogDiagnostic(
+    'Postgrex.Error: insufficient_privilege PRIVATE_ROLE PRIVATE_JWT\n' +
+      'postgres: {code: :undefined_column, query: PRIVATE_SQL}\npassword=PRIVATE_SECRET'
+  );
+  assert.deepEqual(actual.realtime_database_errors, ['insufficient_privilege', 'undefined_column']);
+  assert.ok(!JSON.stringify(actual).includes('PRIVATE'));
+  assert.equal(
+    realtimeLogDiagnostic('Postgrex.Error PRIVATE_SQL').realtime_database_errors,
+    undefined
+  );
+  assert.deepEqual(
+    realtimeLogDiagnostic(realtimeDatabaseErrorNames.join(' ')).realtime_database_errors,
+    realtimeDatabaseErrorNames
+  );
+});
 
 test('private Realtime crashes retain only fixed presence bits and hashed source frames', () => {
   const output =

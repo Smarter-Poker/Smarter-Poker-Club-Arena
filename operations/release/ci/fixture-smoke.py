@@ -35,12 +35,13 @@ NATIVE_STAGES = frozenset((
     'gotrue-real-mfa-persistence', 'gotrue-disabled-ledger-attribution',
     'postgrest-14-5-authentication-and-rls', 'realtime-genuine-migrations-and-change',
     'postgrest-server-start', 'postgrest-server-ready', 'postgrest-anonymous-rls', 'postgrest-invalid-token',
-    'realtime-migrate-command', 'realtime-seed-command', 'realtime-tenant-row',
+    'realtime-migrate-command', 'realtime-seed-command', 'realtime-tenant-row', 'realtime-tenant-migration-ledger',
     'realtime-server-start', 'realtime-server-ready', 'realtime-cookie-rpc', 'realtime-cookie-proof',
     'realtime-websocket-open', 'realtime-postgres-subscription', 'realtime-causal-change',
     'realtime-two-user-causal-isolation', 'postgrest-two-user-isolation',
     'native-observation-bridge-start', 'observer-and-browser-handoff',
-    'realtime-loopback-and-gateway', 'candidate-peer-isolation'))
+    'realtime-loopback-and-gateway', 'candidate-peer-isolation',
+    'native-migrated-service-role-boundary'))
 NATIVE_ERROR_NAMES = frozenset(('Error', 'AssertionError', 'TypeError', 'RangeError',
                                 'SyntaxError', 'TimeoutError', 'AggregateError', 'error'))
 NATIVE_PG_ROUTINES = frozenset((
@@ -67,8 +68,8 @@ def native_failures(output):
         native_line = row.pop('native_line', None)
         if has_native_line and (type(native_line) is not int or not 1 <= native_line <= 9999):
             continue
-        realtime = {key: row.pop(key) for key in ('realtime_log_markers', 'realtime_frames') if key in row}
-        if realtime and (set(realtime) != {'realtime_log_markers', 'realtime_frames'}
+        realtime = {key: row.pop(key) for key in ('realtime_log_markers', 'realtime_frames', 'realtime_database_errors') if key in row}
+        if realtime and (not {'realtime_log_markers', 'realtime_frames'} <= set(realtime)
                 or type(realtime['realtime_log_markers']) is not int
                 or not 0 <= realtime['realtime_log_markers'] < 2 ** 22
                 or not isinstance(realtime['realtime_frames'], list)
@@ -76,6 +77,16 @@ def native_failures(output):
                 or any(not isinstance(frame, str) or not re.fullmatch('[0-9a-f]{64}:[1-9][0-9]{0,5}', frame)
                        for frame in realtime['realtime_frames'])):
             continue
+        if 'realtime_database_errors' in realtime:
+            allowed_errors = {'insufficient_privilege', 'undefined_object', 'undefined_function',
+                              'undefined_table', 'undefined_column', 'datatype_mismatch',
+                              'unique_violation', 'object_not_in_prerequisite_state',
+                              'invalid_schema_name', 'invalid_parameter_value'}
+            errors = realtime['realtime_database_errors']
+            if (not isinstance(errors, list) or not 1 <= len(errors) <= len(allowed_errors)
+                    or any(not isinstance(error, str) or error not in allowed_errors for error in errors)
+                    or len(errors) != len(set(errors))):
+                continue
         service = {key: row.pop(key) for key in ('native_service', 'service_exit_code',
                    'service_signal', 'service_oom_kills') if key in row}
         if (('native_service' in service and (not isinstance(service['native_service'], str)

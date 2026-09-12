@@ -11,6 +11,8 @@ on:
       - tests/operations/fixture-seed.test.mjs
       - tests/operations/fixture-auth-bootstrap.test.mjs
       - tests/operations/fixture-service-role-boundary.test.mjs
+      - tests/operations/fixture-native-diagnostics.test.mjs
+      - tests/operations/fixture-native-diagnostics.test.py
       - tests/operations/component-source-contract.test.mjs
       - tests/operations/native-component-semantics.test.py
       - tests/operations/fixture-smoke-runner.test.py
@@ -40,8 +42,10 @@ jobs:
         run: |
           node --test operations/release/fixture/actors.test.mjs operations/release/fixture/financial-route-phase.test.mjs tests/operations/financial-checkpoint-observer.test.mjs tests/operations/financial-topup-verifier.test.mjs tests/operations/financial-insurance-verifier.test.mjs tests/operations/fixture-runtime-files.test.mjs tests/operations/financial-route-suite.test.mjs tests/operations/component-source-contract.test.mjs tests/operations/fixture-seed.test.mjs
           node --test tests/operations/fixture-auth-bootstrap.test.mjs tests/operations/fixture-service-role-boundary.test.mjs
+          node --test tests/operations/fixture-native-diagnostics.test.mjs
           python3 tests/operations/native-component-semantics.test.py
           python3 tests/operations/fixture-smoke-runner.test.py
+          python3 tests/operations/fixture-native-diagnostics.test.py
       - name: Build exact committed fixture and smoke native services
         env:
           FIXTURE_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}

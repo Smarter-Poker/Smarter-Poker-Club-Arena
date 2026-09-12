@@ -13,6 +13,17 @@ spec.loader.exec_module(m)
 
 
 class NativeDiagnosticsTests(unittest.TestCase):
+    def test_realtime_database_error_categories_cannot_export_log_text(self):
+        row = {'status': 'failed', 'stage': 'realtime-postgres-subscription', 'error': 'Error',
+               'realtime_log_markers': 0, 'realtime_frames': [],
+               'realtime_database_errors': ['insufficient_privilege', 'undefined_column']}
+        self.assertEqual(m.native_failures(json.dumps(row))[0]['realtime_database_errors'],
+                         row['realtime_database_errors'])
+        for value in [[], None, 'PRIVATE SQL', ['PRIVATE ROLE'], ['insufficient_privilege'] * 2,
+                      [True], [[]], ['undefined_column\n']]:
+            self.assertEqual(m.native_failures(json.dumps({**row, 'realtime_database_errors': value})), [])
+        self.assertEqual(m.native_failures(json.dumps({**row, 'query': 'PRIVATE SQL'})), [])
+
     def test_realtime_crash_diagnostics_are_bounded_and_never_raw_text(self):
         row = {'status':'failed', 'stage':'realtime-server-ready', 'error':'Error',
                'realtime_log_markers': (2 ** 22) - 1, 'realtime_frames':['a' * 64 + ':42']}

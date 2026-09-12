@@ -23,6 +23,7 @@ import {
   prepareRealtimeCookie,
   assertRealtimeHttpListener,
   verifyRealtimePeerBoundary,
+  realtimeMigrated,
 } from './fixture-server.mjs';
 import { createFixtureGateway } from './gateway.mjs';
 import {
@@ -45,6 +46,7 @@ const children = [];
 const databaseOwner = new NativeDatabaseOwner();
 let bridgeFailure = null;
 let gatewayFailure = false;
+let realtimeBootstrapOutput = '';
 
 async function smokeControl() {
   const control = JSON.parse(await readFile(controls + '/smoke-control.json', 'utf8'));
@@ -520,13 +522,19 @@ async function services() {
       RLIMIT_NOFILE: '10000',
     };
     stage = 'realtime-migrate-command';
-    await command('/app/bin/migrate', [], realtimeEnv);
+    const realtimeMigration = await command('/app/bin/migrate', [], realtimeEnv);
+    realtimeBootstrapOutput = realtimeMigration.stdout + '\n' + realtimeMigration.stderr;
     stage = 'realtime-seed-command';
-    await command(
+    const realtimeSeed = await command(
       '/app/bin/realtime',
       ['eval', 'Realtime.Release.seeds(Realtime.Repo)'],
       realtimeEnv
     );
+    realtimeBootstrapOutput += '\n' + realtimeSeed.stdout + '\n' + realtimeSeed.stderr;
+    // The real seeder may return zero after a tenant migration failed. Reuse
+    // the fixture's exact installed-set check before opening subscriptions.
+    stage = 'realtime-tenant-migration-ledger';
+    await eventually(() => realtimeMigrated(db));
     stage = 'realtime-tenant-row';
     assert.equal(
       (
@@ -934,14 +942,16 @@ try {
   } catch {
     /* Availability is not evidence of absence. */
   }
+  let realtimeRuntimeOutput = '';
   try {
-    Object.assign(
-      diagnostic,
-      realtimeLogDiagnostic(await readFile(`${root}/private/realtime.log`, 'utf8'))
-    );
+    realtimeRuntimeOutput = await readFile(`${root}/private/realtime.log`, 'utf8');
   } catch {
     /* A failure before Realtime starts has no service log. */
   }
+  Object.assign(
+    diagnostic,
+    realtimeLogDiagnostic(realtimeBootstrapOutput + '\n' + realtimeRuntimeOutput)
+  );
   console.error(JSON.stringify(diagnostic));
   process.exitCode = 1;
 } finally {

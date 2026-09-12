@@ -33,6 +33,18 @@ export const realtimeLogMarkers = Object.freeze([
   'shutdown',
   'terminating',
 ]);
+export const realtimeDatabaseErrorNames = Object.freeze([
+  'insufficient_privilege',
+  'undefined_object',
+  'undefined_function',
+  'undefined_table',
+  'undefined_column',
+  'datatype_mismatch',
+  'unique_violation',
+  'object_not_in_prerequisite_state',
+  'invalid_schema_name',
+  'invalid_parameter_value',
+]);
 export function realtimeLogDiagnostic(output) {
   if (typeof output !== 'string' || output.length > 8 * 1024 * 1024) return {};
   let markers = 0;
@@ -46,7 +58,12 @@ export function realtimeLogDiagnostic(output) {
       )
     ),
   ].slice(0, 8);
-  return { realtime_log_markers: markers, realtime_frames: frames };
+  const errors = realtimeDatabaseErrorNames.filter((name) => output.includes(name));
+  return {
+    realtime_log_markers: markers,
+    realtime_frames: frames,
+    ...(errors.length ? { realtime_database_errors: errors } : {}),
+  };
 }
 
 export function nativeChildFailure(children) {

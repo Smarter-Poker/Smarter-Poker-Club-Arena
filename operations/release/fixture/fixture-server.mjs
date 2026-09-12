@@ -431,7 +431,7 @@ async function jsonHealth(url, field, headers = {}) {
   }
 }
 
-async function realtimeMigrated(db) {
+export async function realtimeMigrated(db) {
   try {
     const result = await db.query(`SELECT
       (SELECT count(*)=82 AND min(version)=20211116024918 AND max(version)=20260714120000

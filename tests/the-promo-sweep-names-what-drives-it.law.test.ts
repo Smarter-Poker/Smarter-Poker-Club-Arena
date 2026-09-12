@@ -4,29 +4,41 @@
  *  BBJ programme, post-audit phase 4 of 5 (2026-09-12)
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * `fn_sweep_bbj_promo` moves the 25% promo slice out of
+ * `fn_sweep_bbj_promo_all()` moves the 25% promo slice out of
  * `bbj_pools.promo_balance` into the union or club promo wallet. It runs every
  * five minutes and moved 24,965.28 chips in the seven days before this law was
  * written.
  *
  * NOTHING IN THIS REPO CALLS IT. No `cron.job` row, no trigger, no TypeScript
  * here or in the World Hub. The driver is a third repo: Open Claw dispatches
- * `/api/cron/bbj-detect` every five minutes and the route lives in the workers
- * repo. (The cron expression is spelled out in words on purpose - written as
- * the literal five-minute glob it closes this block comment, which is how the
- * first draft of this law failed to parse at all.)
+ * `/api/cron/bbj-detect` every five minutes, and
+ * `smarter-poker-workers/src/routes/bbj-detect.ts` step 6 calls it. (The cron
+ * expression is spelled out in words on purpose - written as the literal
+ * five-minute glob it closes this block comment, which is how the first draft
+ * of this law failed to parse at all.)
  *
- * That produced two failures of the same kind, and this law guards both:
+ * That produced three failures of the same kind, and this law guards all three:
  *
  *   1. AN AUDITOR CONCLUDES IT IS DEAD AND DELETES IT. This audit did conclude
  *      that, from `promo_balance = 0.00` on every pool - the zero is the sweep
  *      working, not the slice being banked inline.
  *
- *   2. AN AUDITOR OBEYS THE COMMENT AND SCHEDULES THE OTHER ONE.
- *      `fn_sweep_bbj_promo_all`'s comment used to end by instructing the next
- *      agent to schedule it. It is not scheduled and its sibling already is,
- *      so a second driver would loop every pool `FOR UPDATE` against the live
- *      one on the same rows.
+ *   2. AN AUDITOR OBEYS THE COMMENT AND SCHEDULES IT AGAIN.
+ *      `fn_sweep_bbj_promo_all`'s original comment ended by instructing the
+ *      next agent to schedule it, when it is ALREADY driven - so obeying it
+ *      adds a second driver looping every pool `FOR UPDATE` against the live
+ *      run five minutes later.
+ *
+ *   3. AN AUDITOR NAMES THE WRONG SIBLING - which is what I did. The first
+ *      version of this law, and the migration under it, said the per-club
+ *      `fn_sweep_bbj_promo(uuid)` was the five-minute driver and that `_all`
+ *      must never be scheduled. Exactly backwards, and it left "DO NOT
+ *      SCHEDULE THIS" sitting on the one function the promo slice depends on
+ *      being scheduled. The role was assigned by inference from
+ *      `union_wallet_transactions` timestamps instead of read from the route,
+ *      while the workers checkout sat on the same machine. Corrected by
+ *      migration `20260912005352`; the last test below now reads that route
+ *      rather than trusting any comment, including this one.
  *
  * The fix was the comments, because the comments were what was wrong. This law
  * keeps them saying what they say, and keeps the migration honest about the

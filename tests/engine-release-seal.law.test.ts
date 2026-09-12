@@ -2610,6 +2610,26 @@ exit 91
 
       writeFileSync(join(generation, 'observe-engine-release.sh'), observer);
       chmodSync(join(generation, 'observe-engine-release.sh'), 0o755);
+      const journalLog = join(sandbox, 'journal.log');
+      const timeoutLog = join(sandbox, 'timeout.log');
+      writeFileSync(
+        join(bin, 'timeout'),
+        `#!/usr/bin/env bash
+printf '%s\n' "$*" >> '${timeoutLog}'
+[ "\${TEST_JOURNAL_TIMEOUT:-0}" = 1 ] && exit 124
+shift 3
+exec "$@"
+`
+      );
+      writeFileSync(
+        join(bin, 'journalctl'),
+        `#!/usr/bin/env bash
+printf '%s\n' "$*" >> '${journalLog}'
+[ "\${TEST_JOURNAL_UNAVAILABLE:-0}" = 1 ] && exit 1
+printf '%s\n' '[engine-release-transaction] FATAL: target is stale; protected main requires a newer release'
+`
+      );
+      for (const command of ['timeout', 'journalctl']) chmodSync(join(bin, command), 0o755);
       const observed = spawnSync(
         join(generation, 'observe-engine-release.sh'),
         ['--sha', B_SHA, '--run-id', '778-1'],
@@ -2626,6 +2646,39 @@ exit 91
       expect(observed.status).toBe(1);
       expect(observed.stderr).toContain('release attempt failed permanently (status=1)');
       expect(observed.stderr).toContain(`sealed desired runtime ${A_SHA} was recovered`);
+      expect(observed.stdout).toContain('target is stale; protected main requires a newer release');
+      expect(readFileSync(journalLog, 'utf8').trim()).toBe(
+        `_SYSTEMD_INVOCATION_ID=${'e'.repeat(32)} --no-pager -o cat -n 200`
+      );
+      expect(readFileSync(timeoutLog, 'utf8')).toContain(
+        `--signal=TERM --kill-after=1s 5s journalctl _SYSTEMD_INVOCATION_ID=${'e'.repeat(32)}`
+      );
+      for (const failure of ['TEST_JOURNAL_UNAVAILABLE', 'TEST_JOURNAL_TIMEOUT']) {
+        const unavailable = spawnSync(
+          join(generation, 'observe-engine-release.sh'),
+          ['--sha', B_SHA, '--run-id', '778-1'],
+          {
+            encoding: 'utf8',
+            env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}`, [failure]: '1' },
+          }
+        );
+        expect(unavailable.status).toBe(1);
+        expect(unavailable.stderr).toContain('failure journal unavailable within its bounded read');
+        expect(unavailable.stderr).toContain('release attempt failed permanently (status=1)');
+      }
+      const readsBeforeMalformedReceipt = readFileSync(journalLog, 'utf8');
+      writeFileSync(
+        join(generation, 'engine-release-seal.py'),
+        `#!/usr/bin/env bash\nprintf '%s\\n' 'failed ${A_SHA} ${C_SHA} ${'e'.repeat(32)} 1 ${A_SHA} ${A_IMAGE}'\n`
+      );
+      const malformed = spawnSync(
+        join(generation, 'observe-engine-release.sh'),
+        ['--sha', B_SHA, '--run-id', '778-1'],
+        { encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}` } }
+      );
+      expect(malformed.status).toBe(1);
+      expect(malformed.stderr).toContain('durable failure attestation is malformed');
+      expect(readFileSync(journalLog, 'utf8')).toBe(readsBeforeMalformedReceipt);
       expect(existsSync(systemctlLog), 'failed observation must not query systemd').toBe(false);
     } finally {
       rmSync(sandbox, { recursive: true, force: true });

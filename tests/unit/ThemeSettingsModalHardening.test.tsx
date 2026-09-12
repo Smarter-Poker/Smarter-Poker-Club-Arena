@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   removeChannel: vi.fn(),
   loadDiamonds: vi.fn(),
   themeSelect: '',
+  themeReads: 0,
   collections: {
     favorites: [] as string[],
     loadouts: [null, null, null] as Array<Record<string, string> | null>,
@@ -151,8 +152,13 @@ vi.mock('../../src/lib/supabase', () => ({
         return builder;
       });
       for (const method of ['eq', 'like']) builder[method] = vi.fn(chain);
-      builder.then = (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
-        result().then(resolve, reject);
+      builder.then = (
+        resolve: (value: unknown) => unknown,
+        reject: (reason: unknown) => unknown
+      ) => {
+        if (table === 'user_theme_settings') mocks.themeReads += 1;
+        return result().then(resolve, reject);
+      };
       return builder;
     }),
     rpc: mocks.rpc,
@@ -245,6 +251,7 @@ describe('ThemeSettingsModal hardening', () => {
     mocks.loadDiamonds.mockReset();
     mocks.loadDiamonds.mockResolvedValue(undefined);
     mocks.themeSelect = '';
+    mocks.themeReads = 0;
     mocks.collections.favorites = [];
     mocks.collections.loadouts = [null, null, null];
     mocks.collections.recent = [];
@@ -268,6 +275,60 @@ describe('ThemeSettingsModal hardening', () => {
     });
     window.sessionStorage.clear();
     window.history.replaceState({}, '', '/table/test-table');
+  });
+
+  it('finishes a slow initial design read while periodic refreshes are requested', async () => {
+    const firstRead = deferred<{ data: unknown[]; error: null }>();
+    mocks.themeResult = firstRead.promise;
+    renderStudio();
+    expect(await screen.findByText('Loading Your Saved Design')).toBeVisible();
+
+    const nextRead = deferred<{ data: unknown[]; error: null }>();
+    mocks.themeResult = nextRead.promise;
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 2_100));
+    });
+    await act(async () => {
+      firstRead.resolve({ data: [{ ...savedTheme, table_id: 'carbon_red' }], error: null });
+      await firstRead.promise;
+    });
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Carbon Club' })).toBeEnabled());
+    expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+      'data-table-theme',
+      'carbon_red'
+    );
+    expect(mocks.themeReads).toBe(1);
+  });
+
+  it('starts a separate read when the account changes during an unfinished load', async () => {
+    const oldAccount = deferred<{ data: unknown[]; error: null }>();
+    mocks.themeResult = oldAccount.promise;
+    const view = renderStudio();
+    expect(await screen.findByText('Loading Your Saved Design')).toBeVisible();
+
+    const currentAccount = deferred<{ data: unknown[]; error: null }>();
+    mocks.themeResult = currentAccount.promise;
+    view.rerender(<ThemeSettingsModal isOpen onClose={vi.fn()} userId="user-2" isVip={false} />);
+    await act(async () => {
+      oldAccount.resolve({ data: [{ ...savedTheme, table_id: 'carbon_red' }], error: null });
+      await oldAccount.promise;
+    });
+    expect(screen.getByRole('button', { name: 'Carbon Club' })).toBeDisabled();
+    expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+      'data-table-theme',
+      'classic_green'
+    );
+    await act(async () => {
+      currentAccount.resolve({ data: [{ ...savedTheme, table_id: 'ocean_blue' }], error: null });
+      await currentAccount.promise;
+    });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Carbon Club' })).toBeEnabled());
+    expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+      'data-table-theme',
+      'ocean_blue'
+    );
+    expect(mocks.themeReads).toBe(2);
   });
 
   it('keeps customization choices disabled until the saved row is known', async () => {
@@ -937,6 +998,9 @@ describe('ThemeSettingsModal hardening', () => {
       'ocean_blue'
     );
 
+    // A focus refresh shares the still-pending SELECT. It must retain that
+    // read's original mutation revision, from before the realtime change.
+    act(() => window.dispatchEvent(new Event('focus')));
     await act(async () => {
       staleRefresh.resolve({ data: [savedTheme], error: null });
       await staleRefresh.promise;

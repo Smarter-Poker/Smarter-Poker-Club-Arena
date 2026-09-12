@@ -914,9 +914,74 @@ export class GameServer {
     try {
       while (this.directAdmissionIsCurrent(generation)) {
         const passStartedAt = performance.now();
+        /* AN ABANDONED PASS HAS TO RELEASE THE LOOP, NOT JUST THE SLOT
+         * (2026-09-12, measured).
+         *
+         * The abandon timer added earlier today frees
+         * `ownershipLeaseRenewalOperation` so a new pass CAN start. This loop
+         * is the only thing that ever starts one, and it was still awaiting
+         * the promise that timer had just given up on. So the slot opened and
+         * nobody walked through it.
+         *
+         * Production, 2026-09-12, on the release carrying the abandon timer:
+         *
+         *   10:30   passes_total{abandoned} 0 -> 1
+         *   10:30   passes_total{completed} frozen at 374
+         *   10:31   cash_lease_proof_expired resumes at ~113 a minute
+         *   10:45   frozen at 374 still, and only a restart cleared it
+         *
+         * `loop_running` read 1 for all fifteen minutes and `threw` stayed 0,
+         * so the loop was alive and had simply stopped iterating: one await
+         * that never returned. No further pass was abandoned either, which is
+         * the proof that none was ever started.
+         *
+         * So the loop races the pass against the same deadline the pass itself
+         * is held to, plus one cadence so the abandon timer always fires first
+         * and the slot is free by the time the next iteration asks for it. An
+         * abandoned pass keeps running and is still identity-guarded; it just
+         * stops being something the platform's only renewal loop waits on.
+         *
+         * The outcome is recorded by whoever actually decided it: the timer
+         * counts `abandoned`, and this counts `completed` or `threw` only when
+         * the pass really settled, so one pass is never counted twice. */
+        /* A holder rather than two `let`s: both are written only from the
+           callbacks below, which the compiler cannot see happening, so a plain
+           local would be narrowed to its initial value and the checks after
+           the race would read as unreachable. */
+        const settlement: { outcome: 'completed' | 'threw' | 'abandoned'; error: unknown } = {
+          outcome: 'abandoned',
+          error: null,
+        };
+        const pass = this.renewOwnedEngineLeaseProofs().then(
+          () => {
+            settlement.outcome = 'completed';
+          },
+          (error: unknown) => {
+            settlement.outcome = 'threw';
+            settlement.error = error;
+          }
+        );
+        /* Cancelled and unref'd on purpose: this runs every five seconds for
+           the life of the process, so a wait that outlives its own pass would
+           leave a handle per pass and hold the event loop open at shutdown. */
+        let waitTimer: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([
+          pass,
+          new Promise<void>((resolve) => {
+            waitTimer = setTimeout(
+              resolve,
+              OWNERSHIP_LEASE_RENEWAL_ABANDON_MS + OWNERSHIP_LEASE_RENEWAL_CADENCE_MS
+            );
+            waitTimer.unref?.();
+          }),
+        ]);
+        clearTimeout(waitTimer);
         try {
-          await this.renewOwnedEngineLeaseProofs();
-          leaseRenewalPassesTotal.inc(1, { outcome: 'completed' });
+          if (settlement.outcome === 'completed') {
+            leaseRenewalPassesTotal.inc(1, { outcome: 'completed' });
+          } else if (settlement.outcome === 'threw') {
+            throw settlement.error;
+          }
         } catch (error) {
           // A programming or transport surprise cannot permanently remove the
           // platform's primary ownership lifecycle. Existing local deadlines stay

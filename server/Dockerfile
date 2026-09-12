@@ -18,7 +18,7 @@ COPY src/ ./src/
 # Emit runtime files here without repeating that memory-heavy check on the
 # game host. Resource CI compares every emitted runtime file to the full build.
 # Declaration files serve no runtime purpose and can require extra inference.
-RUN node --max-old-space-size=512 ./node_modules/typescript/bin/tsc --noCheck --declaration false --declarationMap false
+RUN ulimit -c 0 && node --max-old-space-size=768 ./node_modules/typescript/bin/tsc --noCheck --declaration false --declarationMap false
 
 # Remove dev dependencies
 RUN npm prune --omit=dev --no-audit --no-fund

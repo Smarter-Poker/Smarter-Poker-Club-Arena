@@ -17,7 +17,7 @@ BUILDER='club-arena-engine-bounded-v1'
 BUILDER_CONTAINER="buildx_buildkit_${BUILDER}0"
 BUILDKIT_IMAGE='moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8'
 BUILD_MEMORY_BYTES=1073741824
-BUILD_RESERVE_KIB=393216
+BUILD_RESERVE_KIB=262144
 
 die() {
   echo "FATAL: $*" >&2
@@ -127,7 +127,7 @@ done
 [ ! -e "$BUILD_CONTEXT/.env" ] || die 'committed server tree contains forbidden .env credentials'
 [ ! -e "$BUILD_CONTEXT/.git" ] || die 'build context unexpectedly contains Git metadata'
 
-# Keep 384 MiB available beyond the complete builder limit before starting.
+# Keep 256 MiB available beyond the complete builder limit before starting.
 # There is no unbounded fallback on unsupported hosts or a low-memory reading.
 AVAILABLE_KIB="$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)"
 [[ "$AVAILABLE_KIB" =~ ^[0-9]+$ ]] || die 'host memory availability is unreadable'

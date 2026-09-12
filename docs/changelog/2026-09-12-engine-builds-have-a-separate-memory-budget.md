@@ -10,10 +10,11 @@ fully reconstructed.
 Uncached image builds now use one dedicated, digest-pinned BuildKit container
 with a 1024 MiB memory limit, zero swap and one CPU. The publisher verifies both
 Docker configuration and the effective cgroup limits before compiling. It
-refuses to start with less than the builder budget plus 384 MiB of available
+refuses to start with less than the builder budget plus 256 MiB of available
 host memory. Exact-source release preflight retains its full TypeScript check
-and tests in CI. The image build emits runtime files with a 512 MiB compiler
-heap and omits declaration files; runtime engine settings are unchanged.
+and tests in CI. The image build emits runtime files with a 768 MiB compiler
+heap and omits declaration files; core dumps are disabled for the compiler.
+Runtime engine settings are unchanged.
 There is no fallback to the unbounded daemon builder.
 
 The builder stops on completion or cancellation. Its cache stays available

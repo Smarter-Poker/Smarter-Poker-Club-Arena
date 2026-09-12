@@ -110,3 +110,26 @@ Three laws went red on this change and every one was right to: the new keys
 needed short labels, needed a block in the qualifying-hands strip, and the
 mini-rule union had to stay identical across both halves. They were updated in
 the same commit as the behaviour they pin, per CLAUDE.md 5.8 - not weakened.
+
+## Follow-up, same day: four surfaces still stated the old rule
+
+The rule change landed in the engine and the config, and **four player- and
+operator-facing surfaces went on telling people the old one**: "any quads
+losing to bigger quads or better in Omaha" - false for PLO5/FLO5 (Quad Tens)
+and imprecise for Pineapple (Quad Deuces).
+
+- `BBJRulesPanel` - the jackpot page's Mini tab
+- `BBJMiniPanel` - what an operator reads while deciding whether to run it
+- `BBJBasicPanel` - the popup's rules paragraph
+- `BBJQualifyingHands` - fixed in the original commit
+
+Each now names the per-game bars. A money rule misstated on the page whose job
+is to state it is not a copy problem.
+
+**And a law so the fifth one fails CI instead of shipping.** I found these four
+by grepping, which finds what exists today and nothing about tomorrow.
+`tests/the-mini-is-seen-and-discoverable.law.test.ts` now refuses any blanket
+"any quads losing to bigger quads" claim across the six mini surfaces, and
+requires the three paragraphs to name the PLO5/FLO5 and Pineapple bars
+explicitly. It strips comments before matching, so the notes explaining the old
+wording stay readable without failing the law that describes them.

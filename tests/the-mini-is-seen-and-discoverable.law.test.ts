@@ -117,6 +117,59 @@ describe('the read path exists and answers the same question the payout asks', (
   });
 });
 
+describe('no surface states the mini bar as one blanket rule', () => {
+  /* THE BAR IS PER GAME (Dan, 2026-09-12): PLO5/FLO5 is Quad Tens, Pineapple is
+     Quad Deuces, the other Omaha games are any quads, hold'em is aces full. The
+     rule change left FOUR player- and operator-facing surfaces still saying
+     "any quads ... in Omaha", each of which was a money rule misstated on a
+     page whose job is to state it - BBJRulesPanel, BBJMiniPanel, BBJBasicPanel
+     and the qualifying-hands strip. I found those by grepping. This finds the
+     fifth, which is the point: a blanket sentence is easy to write and reads
+     fine, so nothing but a check will notice it. */
+  const SURFACES = [
+    'src/components/bbj/BBJRulesPanel.tsx',
+    'src/components/bbj/BBJMiniPanel.tsx',
+    'src/components/bbj/BBJBasicPanel.tsx',
+    'src/components/bbj/BBJQualifyingHands.tsx',
+    'src/components/bbj/BBJInfoModal.tsx',
+    'src/config/bbjMini.ts',
+  ];
+
+  it('none of them claims the Omaha mini bar is simply "any quads"', () => {
+    const offenders: string[] = [];
+    for (const f of SURFACES) {
+      let src: string;
+      try {
+        src = read(f);
+      } catch {
+        continue; // a surface that no longer exists cannot misstate anything
+      }
+      /* Strip comments: the ones above these sentences EXPLAIN the old wording
+         and must stay readable without failing the law they describe. */
+      const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+      if (/[Aa]ny [Qq]uads [Ll]osing [Tt]o [Bb]igger [Qq]uads/.test(code)) {
+        offenders.push(f);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('the per-game bars are stated where the blanket sentence used to be', () => {
+    for (const f of [
+      'src/components/bbj/BBJRulesPanel.tsx',
+      'src/components/bbj/BBJMiniPanel.tsx',
+      'src/components/bbj/BBJBasicPanel.tsx',
+    ]) {
+      const src = read(f);
+      /* \\s+ because this is JSX prose and prettier reflows it: the sentence a
+         player reads has no line breaks, the source does, and a law that fails
+         on formatting is a law about formatting. */
+      expect(src, `${f} must name the PLO5/FLO5 bar`).toMatch(/Quad Tens Or Better In\s+PLO5/);
+      expect(src, `${f} must name the Pineapple bar`).toMatch(/Quad Deuces In\s+Pineapple/);
+    }
+  });
+});
+
 describe('the client rule mirrors the engine rule', () => {
   it('both pick the family from the MAIN rule hand rank for the variant', () => {
     expect(serverRake).toContain("const isHoldemFamily = qualifying.handRank === 'full_house';");

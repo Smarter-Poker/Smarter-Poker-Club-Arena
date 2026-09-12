@@ -1327,6 +1327,7 @@ function evaluateCandidate(args: {
   payoutWeight: number;
   futureDraws: Map<string, FutureHandDraw>;
   futureResults: Map<string, FutureHandResult>;
+  vectorKey: (vector: number[], rounded: boolean) => string;
 }): CandidateEvaluation {
   const chipMoment = { sum: 0, square: 0 };
   const payoutMoment = { sum: 0, square: 0 };
@@ -1385,7 +1386,7 @@ function evaluateCandidate(args: {
         forced: number;
       }> = [];
       for (const level of levels) {
-        const rolloutKey = `${index}:${level.smallBlind}:${level.bigBlind}:${level.ante}:${level.anteType}:${branch.vector.join(',')}`;
+        const rolloutKey = `${index}:${level.smallBlind}:${level.bigBlind}:${level.ante}:${level.anteType}:${args.vectorKey(branch.vector, false)}`;
         const rollout =
           args.futureResults.get(rolloutKey) ??
           simulateTournamentFutureHands({
@@ -1503,7 +1504,7 @@ function evaluateCandidate(args: {
     conservationError = Math.max(conservationError, branch.conservationError);
     icmError = Math.max(icmError, icm.error + option.error + futureError);
     methods.add(icm.method);
-    vectors.add(branch.vector.map((stack) => Math.round(stack * 100) / 100).join(','));
+    vectors.add(args.vectorKey(branch.vector, true));
   }
 
   const variance = Math.max(0, utilityMoment.square - utilityMoment.sum ** 2);
@@ -1629,6 +1630,24 @@ function evaluateWithWorkspace(
 
   const payoutWeight = payoutPoolWeight(input);
   const boundedFuture = Boolean(input.continuation?.futureHands);
+  const localIndices = [...field.localIndex.values()].sort((a, b) => a - b);
+  const localSet = new Set(localIndices);
+  const remoteIndices = field.stacks.map((_, i) => i).filter((i) => !localSet.has(i));
+  const vectorKey = (vector: number[], rounded: boolean) => {
+    if (!boundedFuture)
+      return (rounded ? vector.map((stack) => Math.round(stack * 100) / 100) : vector).join(',');
+    // The remote field is immutable within this action. Check it without
+    // allocating a thousand formatted numbers for every candidate/future
+    // bound. Only table-local coordinates can distinguish valid vectors.
+    if (
+      vector.length !== field.stacks.length ||
+      remoteIndices.some((i) => vector[i] !== field.stacks[i])
+    )
+      throw new Error('Continuation changed the immutable remote field');
+    return localIndices
+      .map((i) => (rounded ? Math.round(vector[i] * 100) / 100 : vector[i]))
+      .join(',');
+  };
   const estimateCache = (!boundedFuture && workspace?.estimateCache) || new Map<string, Estimate>();
   const actionIcm =
     workspace?.actionIcm ||
@@ -1641,7 +1660,7 @@ function evaluateWithWorkspace(
     );
   let operationBudgetHit = false;
   const estimate = (vector: number[]): Estimate => {
-    const key = vector.map((stack) => Math.round(stack * 100) / 100).join(',');
+    const key = vectorKey(vector, true);
     const cached = estimateCache.get(key);
     if (cached) return cached;
     // A future hand can consume the continuation deadline after the sample's
@@ -1697,6 +1716,7 @@ function evaluateWithWorkspace(
       payoutWeight,
       futureDraws,
       futureResults,
+      vectorKey,
     })
   );
   if (operationBudgetHit) {

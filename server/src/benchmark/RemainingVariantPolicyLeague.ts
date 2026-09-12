@@ -81,6 +81,21 @@ export const REMAINING_VARIANT_LEAGUE_PROFILES: readonly Readonly<Plo4LeagueProf
           tournament: false,
           opponentStyle: 'tag' as const,
         },
+        ...(variant === 'flh' || variant === 'flo8'
+          ? [
+              {
+                id: `${variant}-legacy-fixed-1000bb`,
+                seats: 6,
+                stackBB: 1000,
+                rakePercent: 10,
+                rakeCapBB: 5,
+                anteBB: 0,
+                straddle: false,
+                tournament: false,
+                opponentStyle: 'tag' as const,
+              },
+            ]
+          : []),
       ].map((p) => Object.freeze({ ...p, variant }))
     )
   );

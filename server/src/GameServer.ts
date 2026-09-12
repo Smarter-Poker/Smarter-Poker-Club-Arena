@@ -1,3 +1,8 @@
+import {
+  TournamentRetirementCustody,
+  type RetirementBinding,
+  type RetirementCustody,
+} from './services/TournamentRetirementCustody.js';
 import { bindToProcessRoot } from './services/supabase/dataActorContext.js';
 /**
  * GameServer — server-side game orchestration.
@@ -7828,11 +7833,20 @@ export class GameServer {
 
     let reopened = 0;
     for (const plan of plans) {
-      const { error: reopenErr } = await supabase
-        .from('tables')
-        .update({ status: plan.toStatus, current_players: plan.currentPlayers })
-        .eq('id', plan.tableId)
-        .eq('status', 'closed');
+      if (!this.tournamentRetirementCustody.admissionAllowed(plan.tableId)) continue;
+      const { error: reopenErr } = await this.tournamentRetirementCustody.withAdmission(
+        plan.tableId,
+        () => this.running,
+        async (assertCurrent) => {
+          const result = await supabase
+            .from('tables')
+            .update({ status: plan.toStatus, current_players: plan.currentPlayers })
+            .eq('id', plan.tableId)
+            .eq('status', 'closed');
+          assertCurrent();
+          return result;
+        }
+      );
       if (reopenErr) {
         reportError(
           new Error(
@@ -8158,7 +8172,29 @@ export class GameServer {
   /**
    * Register a table engine (used by TournamentManager for tournament tables)
    */
+  readonly tournamentRetirementCustody = new TournamentRetirementCustody<ServerTableEngine>();
+  /** Caller short-circuits acknowledged operations. prepare validates durable
+   * unacknowledged incarnation and claims DB custody before any engine stop.
+   * current validates owner/incarnation, including our own successful ACK state. */
+  withRetirementCustody<T>(
+    binding: RetirementBinding,
+    local: Map<string, ServerTableEngine>,
+    current: () => boolean,
+    work: (custody: RetirementCustody<ServerTableEngine>) => Promise<T>,
+    prepare: () => Promise<void>
+  ): Promise<T> {
+    return this.tournamentRetirementCustody.withCustody(
+      binding,
+      this.tableEngines,
+      local,
+      current,
+      work,
+      prepare
+    );
+  }
+
   registerTableEngine(tableId: string, engine: ServerTableEngine): boolean {
+    if (!this.tournamentRetirementCustody.admissionAllowed(tableId)) return false;
     // A manager callback already awaiting I/O when shutdown began must not
     // publish a dealer after stop() has taken its engine snapshot.
     if (!this.running) return false;
@@ -8191,6 +8227,7 @@ export class GameServer {
     // A lost transport response may follow a committed seat move. The old
     // source engine remains the physical fence until that exact UUID replays;
     // replacing it here would let the successor deal from an unknown roster.
+    if (!this.tournamentRetirementCustody.admissionAllowed(tableId)) return false;
     if (expected.hasClaimedTournamentMoveBoundary()) return false;
     let replaced = false;
     try {
@@ -8200,14 +8237,22 @@ export class GameServer {
         tableId,
         expected,
         replacement,
-        () => !expected.hasClaimedTournamentMoveBoundary()
+        () =>
+          this.tournamentRetirementCustody.admissionAllowed(tableId) &&
+          !expected.hasClaimedTournamentMoveBoundary()
       );
     } catch (error) {
       // ServerTableEngine reports cleanup failures only after releasing its
       // process-global scheduler ownership. When that exact fence is proven,
       // retaining the terminal object would turn a diagnostic into a permanent
       // outage. Any failure before the fence remains quarantined.
-      if (!expected.hasReleasedProcessOwnership() || this.tableEngines.get(tableId) !== expected) {
+      if (
+        !expected.hasReleasedProcessOwnership() ||
+        this.tableEngines.get(tableId) !== expected ||
+        !this.running ||
+        !this.tournamentRetirementCustody.admissionAllowed(tableId) ||
+        expected.hasClaimedTournamentMoveBoundary()
+      ) {
         throw error;
       }
       reportError(error, 'GameServer.tournament_table_teardown_cleanup_failed', { tableId });

@@ -1,0 +1,9 @@
+# Retain original hand authority through tournament table breaks
+
+Tournament table-break recovery now carries the original table, lifecycle, lease, hand permit and custody through exclusion, player placement, durable close and cleanup acknowledgment. When the retained original process positively proves that a hand never started, recovery can terminate that exact hand even if its original BEGIN reply was lost or never committed. Late replies cannot revive the terminated permit. Ambiguous outcomes retain their original identity for reconciliation.
+
+The engine preserves original completion capture before controller teardown and uses the existing ownership and settlement barriers. Hand-number consumers validate their original table binding and safe integer range. The accompanying database authority preserves immutable hand identity, canonical movement and settlement writers, and allocator floor ordering.
+
+The existing bust-backlog repair remains unchanged. Five additional regressions cover balancing after a bounded elimination batch, continuation after budget yield, unknown remaining counts, an ordered refusal and maintenance suppression.
+
+Validation includes independent source, SQL composition and integration reviews; 187 affected runtime tests and full server type checking passed on the composed source, followed by the five new balancing regressions under the repository configuration. Runtime tests exercise the real manager, custody, dealer and controller with controlled database and process boundaries. Native SQL component and rollback evidence retain their narrower scopes. Installed database identities, protected CI, served runtime and funded production movement remain required release gates. Cold-process and possible-actuation recovery are separate outstanding work.

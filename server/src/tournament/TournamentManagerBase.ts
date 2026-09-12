@@ -1,3 +1,4 @@
+import { F06HandPermit } from '../services/F06HandPermit.js';
 import {
   continueBookedSpinBlinds,
   readFundedSpinDraw,
@@ -499,6 +500,8 @@ export abstract class TournamentManagerBase {
 
   /** Every dealer owned by this manager carries the same tournament fence. */
   protected createManagedTableEngine(tableId: string): ServerTableEngine {
+    if (!this.gameServer.tournamentRetirementCustody.admissionAllowed(tableId))
+      throw new Error('f06_retirement_custody_held');
     if (this.tournamentLeaseGeneration) {
       const deadline = this.tournamentLeaseProofDeadlineMonotonicMs;
       if (deadline === null || !Number.isFinite(deadline)) {
@@ -1072,7 +1075,144 @@ export abstract class TournamentManagerBase {
   ): void {
     const lifecycle = this.lifecycleEpoch.current();
     const tableId = this.tableIdForManagedEngine(engine);
-    const operation = engine.start().catch(async (error) => {
+    const operation = (async () => {
+      if (!lifecycle || !tableId || !this.tournamentLeaseGeneration)
+        throw new Error('f06_engine_admission_identity_missing');
+      const leaseGeneration = this.tournamentLeaseGeneration;
+      const current = () =>
+        this.lifecycleIsCurrent(lifecycle) &&
+        this.tournamentLeaseGeneration === leaseGeneration &&
+        this.tableEngines.get(tableId) === engine &&
+        this.gameServer.ownsTournamentTableEngine(tableId, engine);
+      if (!current() || !this.gameServer.tournamentRetirementCustody.admissionAllowed(tableId))
+        throw new Error('f06_engine_admission_fenced');
+      const { data, error } = await supabase.rpc('fn_f06_hand_number_state', {
+        p_tournament_id: this.tournamentId,
+        p_lease_generation: leaseGeneration,
+        p_table_id: tableId,
+      });
+      const state = data as {
+        ok?: boolean;
+        table_id?: string;
+        lifecycle?: string;
+        can_reserve?: boolean;
+        blocked_reason?: string | null;
+        used_hand_number_max?: string;
+        unresolved_permit?: unknown;
+        next_hand_number_candidate?: string | null;
+      } | null;
+      if (
+        !current() ||
+        error ||
+        !state ||
+        state.ok !== true ||
+        state.table_id !== tableId ||
+        state.can_reserve !== true ||
+        state.blocked_reason !== null ||
+        typeof state.lifecycle !== 'string' ||
+        !/^[1-9][0-9]{0,18}$/.test(state.lifecycle) ||
+        BigInt(state.lifecycle) > 9223372036854775807n
+      )
+        throw new Error('f06_engine_admission_unproven');
+      // The singular projection is backed by f06_one_hand(table_id) WHERE
+      // state='reserved', across every lifecycle and owner generation.
+      if (
+        state.unresolved_permit !== null ||
+        typeof state.used_hand_number_max !== 'string' ||
+        !/^(0|[1-9][0-9]{0,18})$/.test(state.used_hand_number_max) ||
+        BigInt(state.used_hand_number_max) >= BigInt(Number.MAX_SAFE_INTEGER) ||
+        typeof state.next_hand_number_candidate !== 'string' ||
+        !/^[1-9][0-9]{0,18}$/.test(state.next_hand_number_candidate) ||
+        BigInt(state.next_hand_number_candidate) !== BigInt(state.used_hand_number_max) + 1n
+      )
+        throw new Error('f06_startup_permit_projection_unproven');
+      const tableLifecycle = state.lifecycle;
+      const handHighWater = BigInt(state.used_hand_number_max);
+      const custodyId = nodeCrypto.randomUUID();
+      engine.installF06Allocator(
+        custodyId,
+        async () => {
+          const { data: allocation, error: allocationError } = await supabase.rpc(
+            'fn_f06_allocate_hand_number',
+            {
+              p_tournament_id: this.tournamentId,
+              p_lease_generation: leaseGeneration,
+              p_table_id: tableId,
+            }
+          );
+          const a = allocation as {
+            ok?: boolean;
+            table_id?: string;
+            lifecycle?: string;
+            hand_number?: unknown;
+            hand_number_high_water?: unknown;
+          } | null;
+          if (
+            !current() ||
+            allocationError ||
+            !a ||
+            a.ok !== true ||
+            a.table_id !== tableId ||
+            a.lifecycle !== tableLifecycle ||
+            typeof a.hand_number !== 'string' ||
+            !/^[1-9][0-9]{0,18}$/.test(a.hand_number) ||
+            BigInt(a.hand_number) > BigInt(Number.MAX_SAFE_INTEGER) ||
+            typeof a.hand_number_high_water !== 'string' ||
+            !/^(0|[1-9][0-9]{0,18})$/.test(a.hand_number_high_water) ||
+            BigInt(a.hand_number) <= BigInt(a.hand_number_high_water)
+          )
+            throw new Error('f06_allocation_unproven');
+          return Number(a.hand_number);
+        },
+        () => current() && this.gameServer.tournamentRetirementCustody.admissionAllowed(tableId)
+      );
+      engine.installF06HandAdmission(async (handNumber) => {
+        const refreshed = await supabase.rpc('fn_f06_hand_number_state', {
+          p_tournament_id: this.tournamentId,
+          p_lease_generation: leaseGeneration,
+          p_table_id: tableId,
+        });
+        const latest = refreshed.data as typeof state;
+        if (
+          !current() ||
+          refreshed.error ||
+          !latest ||
+          latest.ok !== true ||
+          latest.table_id !== tableId ||
+          latest.lifecycle !== tableLifecycle ||
+          latest.can_reserve !== true ||
+          latest.blocked_reason !== null ||
+          latest.unresolved_permit !== null ||
+          typeof latest.used_hand_number_max !== 'string' ||
+          !/^(0|[1-9][0-9]{0,18})$/.test(latest.used_hand_number_max) ||
+          BigInt(latest.used_hand_number_max) >= BigInt(Number.MAX_SAFE_INTEGER)
+        )
+          throw new Error('f06_fresh_hand_projection_unproven');
+        if (BigInt(handNumber) <= BigInt(latest.used_hand_number_max))
+          throw new Error('f06_allocator_below_durable_floor');
+        if (BigInt(handNumber) <= handHighWater)
+          throw new Error('f06_allocator_below_durable_floor');
+        return new F06HandPermit(
+          {
+            tournament_id: this.tournamentId,
+            lease_generation: leaseGeneration,
+            table_id: tableId,
+            lifecycle: tableLifecycle,
+            permit_id: nodeCrypto.randomUUID(),
+            hand_number: handNumber,
+            custody_id: custodyId,
+          },
+          async (name, input) => {
+            const result = await supabase.rpc(name, input);
+            return { data: result.data, error: result.error };
+          },
+          current
+        );
+      });
+      if (!current() || !this.gameServer.tournamentRetirementCustody.admissionAllowed(tableId))
+        throw new Error('f06_engine_admission_fenced');
+      await engine.start();
+    })().catch(async (error) => {
       reportError(error, errorContext, metadata);
       if (!lifecycle || !tableId || !this.lifecycleIsCurrent(lifecycle)) return;
       await this.recoverManagedTableEngine(tableId, engine, lifecycle, 'engine_start_failed', true);

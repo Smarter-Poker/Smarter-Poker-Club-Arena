@@ -2575,6 +2575,13 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           if (outcome.ok !== true) {
             throw new Error(`post-commit obligations refused (${outcome.reason ?? 'unknown'})`);
           }
+          // F06 consumes only the exact accepted envelope after durable postcommit
+          // completion. Failure stays in this existing retry/failure path.
+          if (this.f06CurrentPermit) {
+            if (!Number.isSafeInteger(snap.handNumber) || snap.handNumber < 0)
+              throw new Error('f06_hand_number_precision');
+            await this.finishF06AcceptedHand(String(snap.handNumber), v_handHistoryId);
+          }
           resolvedAddOnCount =
             typeof outcome.pending_addons === 'number' && Number.isFinite(outcome.pending_addons)
               ? outcome.pending_addons

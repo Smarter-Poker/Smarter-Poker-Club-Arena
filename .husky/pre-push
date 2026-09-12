@@ -537,8 +537,8 @@ done
 copy_case_guard() {
   guard="$1"
   [ -f "$guard" ] || return 0
-  if [ ! -d "$(git rev-parse --show-toplevel)/node_modules/typescript" ]; then
-    echo "[club-arena pre-push] no local node_modules - skipped $(basename "$guard"). CI still runs it."
+  if ! node -e 'require("typescript")' >/dev/null 2>&1; then
+    echo "[club-arena pre-push] local TypeScript unavailable - $(basename "$guard") must run in CI."
     return 0
   fi
   if ! node "$guard"; then

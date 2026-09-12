@@ -315,11 +315,25 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
         </div>
       </div>
 
-      {/* WHY IT HAS NOT PAID. The answer to the "Last Hit" tile above it. */}
+      {/* WHICH GATE REFUSED, for the hands that reached the jackpot decision
+          and did not clear it.
+
+          THE HEADING USED TO READ "Why It Has Not Paid" AND THAT WAS A CLAIM,
+          NOT A LABEL. Looked at on a real screen for the first time on
+          2026-09-12, it sat four rows under the LAST HIT tile, which read
+          `0.3d` on both live pools - the section announced that the jackpot
+          had not paid, directly below the number saying it had paid that
+          morning. The rows underneath were all correct; the heading asserted a
+          premise nobody had checked against the tile above it.
+
+          This one is true whichever way the pool is running, which is what a
+          heading on an operator panel has to be: the list is worth reading
+          when the jackpot is cold AND when it is paying, and it says the same
+          thing in both cases. */}
       <div className="bbj-admin__misses">
         <div className="bbj-admin__misses-head">
-          <span className="bbj-admin__misses-title">Why It Has Not Paid</span>
-          <span className="bbj-admin__misses-sub">Hands Refused In The Last 30 Days</span>
+          <span className="bbj-admin__misses-title">Hands The Rules Turned Away</span>
+          <span className="bbj-admin__misses-sub">Last 30 Days</span>
         </div>
 
         {nearMissState === 'loading' && (

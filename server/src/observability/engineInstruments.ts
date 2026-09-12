@@ -206,6 +206,26 @@ export const bbjMiniPayoutsRefusedTotal: Counter = alwaysOnRegistry.counter(
 );
 
 /**
+ * THE MINI'S DRILLS, COUNTED SEPARATELY FROM THE MAIN'S (2026-09-11).
+ *
+ * `bbjDrillsFiredTotal` above is documented as the subtrahend in
+ * `detected - drills = genuine bad beats`, and the runbook says the same. The
+ * moment the drill learned to fire a MINI, that arithmetic became false: a
+ * mini drill incremented `drills_fired` and `mini_hits_detected`, so
+ * `bbj_hits_detected - bbj_drills_fired` under-counted genuine MAIN bad beats
+ * by one per mini drill and could go negative in any window where minis were
+ * drilled and no main jackpot hit.
+ *
+ * That is the same error the block above was written the same day to fix, made
+ * again one counter along. Each family now has its own drill counter, so
+ * `detected - drills` holds for both and neither borrows from the other.
+ */
+export const bbjMiniDrillsFiredTotal: Counter = alwaysOnRegistry.counter(
+  'poker_bbj_mini_drills_fired_total',
+  'MINI Bad Beat Jackpot DRILLS fired by an armed table - real payouts, synthetic verdict (fleet total)'
+);
+
+/**
  * Span exporter is attached ONLY when the flag is on, so span export is a no-op
  * by default. Span duration always feeds handDuration when a span is created,
  * but the engine only creates spans under the same flag, so with the flag unset
@@ -569,6 +589,7 @@ bbjMiniHitsDetectedTotal.inc(0);
 bbjMiniPayoutsPaidTotal.inc(0);
 bbjMiniPayoutsQueuedTotal.inc(0);
 bbjMiniPayoutsRefusedTotal.inc(0);
+bbjMiniDrillsFiredTotal.inc(0);
 bbjSharesParkedTotal.inc(0);
 bbjDrillsFiredTotal.inc(0);
 showdownHandsTotal.inc(0);

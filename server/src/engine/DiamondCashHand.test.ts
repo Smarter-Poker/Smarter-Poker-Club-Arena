@@ -91,6 +91,45 @@ describe('Diamond cash uses the shared NLH controller with indivisible units', (
     expect(hc.getState().players.every((p) => Number.isInteger(p.stack))).toBe(true);
     expect(events.filter((event) => event.type === 'HAND_COMPLETE')).toHaveLength(1);
   });
+  /* A DIAMOND TABLE MAY STRADDLE (2026-09-12, Phase 7 line three). The straddle
+     is the one optional cash feature that asks nothing of the chip economy:
+     StraddleEngine prices it at exactly two times the current blind, and every
+     Diamond guard already refuses a table whose blinds are not whole, so there
+     is no division anywhere on the path and no counterparty to owe. */
+  it('posts a whole UTG straddle and still conserves the table', () => {
+    /* The real deck, not the certification board: that fixture holds exactly
+       enough cards for three players and this hand needs four. */
+    /* Four handed off the button at seat 1: seat 2 is the small blind, seat 3
+       the big blind, and seat 4 is under the gun, which is the only seat a UTG
+       straddle is ever posted from. */
+    const hc = new HandController(
+      config({ straddles: [{ seat: 4, amount: 4 }] }),
+      players([100, 100, 100, 100]),
+      1
+    );
+    const events: HandEvent[] = [];
+    hc.onEvent((event) => events.push(event));
+    hc.start();
+    const posted = hc.getState();
+    expect(posted.players.find((p) => p.seat === 4)?.bet).toBe(4);
+    expect(posted.players.find((p) => p.seat === 4)?.stack).toBe(96);
+    /* The straddle is a live blind: the floor for a raise is the straddle
+       again, not the big blind. */
+    expect(posted.currentBet).toBe(4);
+    expect(posted.minRaise).toBe(4);
+    finish(hc);
+    const after = hc.getState();
+    expect(after.players.reduce((sum, p) => sum + p.stack, 0)).toBe(400);
+    expect(after.players.every((p) => Number.isInteger(p.stack))).toBe(true);
+    expect(events.filter((event) => event.type === 'HAND_COMPLETE')).toHaveLength(1);
+  });
+
+  it('refuses a fractional straddle before dealing anything', () => {
+    expect(
+      () => new HandController(config({ straddles: [{ seat: 4, amount: 4.5 }] }), players(), 1)
+    ).toThrow('Whole Units');
+  });
+
   it('settles multi-user all-ins and side pots once, including uncalled money', () => {
     royalBoard();
     const hc = new HandController(config(), players([5, 8, 11]), 1);
@@ -140,11 +179,20 @@ describe('Diamond cash uses the shared NLH controller with indivisible units', (
     expect(hc.getState()).toEqual(before);
   });
   it.each<Partial<HandConfig>>([
-    { ritEnabled: true },
+    { bombPot: { anteMultiplier: 2 } },
     { insuranceEnabled: true },
     { gameVariant: 'plo4' },
   ])('keeps later financial game features outside the initial certificate: %j', (feature) => {
     expect(() => new HandController(config(feature), players(), 1)).toThrow('Plain NLH');
+  });
+
+  /* RUN IT TWICE LEFT THAT LIST ON 2026-09-12. It was there because the RIT
+     runout cut every pot into integer cents, so a five Diamond pot over two
+     runs paid two and a half Diamonds a board and this very guard would have
+     refused the hand it had just dealt. The runout now cuts in the table's own
+     unit; the money proof for that lives in RunItTwice.money.test.ts. */
+  it('lets a Diamond hand be dealt with run it twice on', () => {
+    expect(() => new HandController(config({ ritEnabled: true }), players(), 1)).not.toThrow();
   });
   it('preserves cent-denominated chip betting', () => {
     const hc = new HandController(

@@ -14,6 +14,7 @@ import type { SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { pushFinancialUpdate } from '../services/financialPush.js';
 import { randomUUID } from 'node:crypto';
+import { v5 as uuidv5 } from 'uuid';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { leaveLabel } from './ChipContinuity.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
@@ -71,9 +72,6 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
      */
     opId?: string
   ): Promise<{ success: boolean; error?: string; queued?: boolean; applied?: number }> {
-    if (this.tableInfo?.arena?.asset === 'diamonds') {
-      return { success: false, error: 'Diamond Add-Ons Are Not Available Yet' };
-    }
     if (isMaintenanceFrozen()) {
       return { success: false, error: 'Scheduled maintenance is in progress' };
     }
@@ -83,6 +81,10 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
 
     const maxBuyIn = this.getMaxBuyIn();
     const midHand = !!this.handController;
+
+    if (this.tableInfo?.arena?.asset === 'diamonds') {
+      return this.addDiamonds(userId, amount, maxBuyIn, midHand, player, opId);
+    }
 
     // Effective current chips for the cap: include already-queued (already-
     // debited) pending add-ons so we never exceed the ceiling.
@@ -204,6 +206,91 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       );
     this.broadcastCurrentState();
     return { success: true, applied };
+  }
+
+  /**
+   * A Diamond seat tops up from the custody row it sat with.
+   *
+   * There is no chip wallet on this side of the arena and no pending add-on
+   * ledger. A Diamond seat's stack and its custody balance are held equal by a
+   * deferred constraint, so the two only ever move together, inside
+   * `fn_poker_diamond_top_up`. That makes this a BETWEEN-HANDS operation: mid
+   * hand the engine owns the live stack and the row on disk is the hand's
+   * opening stack, which the accepted-hand settler checks before it pays
+   * anyone. Raising that row under a dealt hand would stop the hand, so the
+   * door refuses instead, and refuses again on its own side if the stack it was
+   * handed is not the stack it finds.
+   *
+   * Whole units only. The request id is derived from the caller's attempt id,
+   * so a lost response retries the same reservation rather than buying a second
+   * one.
+   */
+  protected async addDiamonds(
+    userId: string,
+    amount: number,
+    maxBuyIn: number,
+    midHand: boolean,
+    player: SeatedPlayer,
+    opId?: string
+  ): Promise<{ success: boolean; error?: string; queued?: boolean; applied?: number }> {
+    if (midHand) {
+      return { success: false, error: 'Diamond Top Ups Land Between Hands' };
+    }
+    const stack = Number(player.stack || 0);
+    if (!Number.isSafeInteger(stack) || stack < 0) {
+      return { success: false, error: 'Diamond Top Ups Require A Whole Stack' };
+    }
+    const headroom = Math.max(0, Math.floor(maxBuyIn) - stack);
+    const applied = Math.min(Math.floor(amount), headroom);
+    if (applied < 1) {
+      return { success: false, error: 'Already at the maximum buy-in for this table' };
+    }
+    const requestId = uuidv5(
+      `diamond-top-up:${this.tableId}:${userId}:${opId || randomUUID()}`,
+      uuidv5.URL
+    );
+    let lastError: { message?: string } | null = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const { data, error } = await supabase.rpc('fn_poker_diamond_top_up', {
+        p_user_id: userId,
+        p_table_id: this.tableId,
+        p_amount: applied,
+        p_expected_stack: stack,
+        p_request_id: requestId,
+      });
+      if (!error) {
+        /* The seat row and its custody moved together in that transaction, so
+           the in-memory copy is the only one still behind. Take the number the
+           database wrote rather than the one we asked for. */
+        const written = Number((data as { stack?: number } | null)?.stack);
+        player.stack = Number.isSafeInteger(written) ? written : stack + applied;
+        this.broadcastCurrentState();
+        return { success: true, applied };
+      }
+      lastError = error;
+      const message = String(error.message || '');
+      /* A verdict is not a transport failure; asking twice only repeats it. */
+      if (/insufficient|stale_seat|exceeds_max_buy_in|not_open|required|mismatch/i.test(message)) {
+        break;
+      }
+      if (attempt === 1) await new Promise((r) => setTimeout(r, 250));
+    }
+    const message = String(lastError?.message || '');
+    reportError(lastError, `ServerTableEngine.${this.tableId}.diamond_top_up_failed`, {
+      userId,
+      amount: applied,
+      requestId,
+    });
+    if (/insufficient_settled_diamonds/i.test(message)) {
+      return { success: false, error: 'Not Enough Settled Diamonds' };
+    }
+    if (/diamond_top_up_exceeds_max_buy_in/i.test(message)) {
+      return { success: false, error: 'Already at the maximum buy-in for this table' };
+    }
+    if (/diamond_top_up_stale_seat/i.test(message)) {
+      return { success: false, error: 'The Seat Changed, Try Again' };
+    }
+    return { success: false, error: 'Diamond Top Up Failed' };
   }
 
   /*

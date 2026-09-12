@@ -44,11 +44,24 @@ describe('every live dealer carries and re-checks distributed authority', () => 
     expect(human).toContain("code: 'TABLE_LEASE_EXPIRED'");
 
     const horse = sliceMethod(turns, '  protected scheduleHorseAction(');
-    expect(horse).toContain('const fenceIsCurrent = (): boolean =>');
+    /* 2026-09-12: the fence split in two. `fenceRefusal` decides and NAMES the
+       reason; `fenceIsCurrent(stage)` counts it and answers. The authority
+       checks below are the same ones in the same order - only the silence is
+       gone - so both halves are pinned here. A fence that stops naming its
+       reason is the blindness `aHorseTurnThatIsAbandonedSaysWhy` was written
+       for; a fence that stops checking the generation is this law's own. */
+    expect(horse).toMatch(
+      /const\s+fenceRefusal\s*=\s*\(\)\s*:\s*HorseTurnAbandonReason\s*\|\s*null\s*=>/
+    );
+    expect(horse).toMatch(
+      /const\s+fenceIsCurrent\s*=\s*\(\s*stage\s*:\s*HorseTurnAbandonStage\s*\)\s*:\s*boolean\s*=>/
+    );
     expect(horse).toContain('!this.lifecycleCanMutate()');
-    expect(horse).toContain('currentLease.generation === leaseGeneration');
+    expect(horse).toContain("return 'lifecycle_locked';");
+    expect(horse).toContain('currentLease.generation !== leaseGeneration');
+    expect(horse).toContain("return 'lease_lost';");
     const horseActionTimer = sliceCall(horse, 'this.horseActionTimer = setTimeout(');
-    expect(horseActionTimer).toContain('if (!fenceIsCurrent()) return;');
+    expect(horseActionTimer).toContain("if (!fenceIsCurrent('commit')) return;");
 
     const timer = sliceMethod(turns, '  protected startTurnTimer(');
     expect(timer).toMatch(

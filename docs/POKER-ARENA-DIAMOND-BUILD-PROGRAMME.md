@@ -30,6 +30,40 @@ No Phase 7 checklist item is claimed by that work. The survey the rest of the ph
 
 Dan also asked, on the same day, for Diamond Arena to use a white or light colour scheme against Club Arena's dark one, explicitly in the next phase rather than this one.
 
+## Execution Update, September 12, 2026, Phase 7 Custody Top-Up And Feature Charge Audit
+
+Two Phase 7 checklist lines are now ticked, and one new money door exists.
+
+A seated Diamond player could not add to a stack. The chip add-on debits `club_members.chip_balance` and a Diamond entitlement has no row in that table, so `addChips` refused. `fn_poker_diamond_top_up` (migration 20260912004100, applied once to kuklfnapbkmacvwxktbh) reserves settled Diamonds into the SAME custody row the seat is bound to and raises `table_seats.stack` in the same transaction, which is the only shape the deferred seat-keeps-custody constraint allows. It is engine-only, whole units, capped at the table maximum, refused mid hand and refused again on a stale seat. Twenty-two assertions in the isolated Phase 6 fixture cover every refusal, the money move, the journal, idempotent replay, a hand settling on the topped-up stack and the full return of every Diamond on cash-out. Evidence: [the top-up changelog](changelog/2026-09-12-diamond-phase-7-custody-top-up.md). Mid hand add-ons, Auto Top Up and bust rebuy remain honestly unavailable for Diamond. Checklist line two is NOT claimed: it also covers seat changes, must move and clusters, which stay outside this phase.
+
+Checklist lines five and six are claimed, on the evidence in [the feature charge and side feature audit](audits/2026-09-12-diamond-phase-7-feature-charges-and-side-features.md): no feature charge writer and no Diamond stake writer share any storage in either direction, every in-game feature door is idempotent under a caller-held request id, and insurance and BBJ stay refused at all six layers because their counterparty is a chip account that Phase 9 owns.
+
+That audit also found a defect it deliberately did not fix. `fn_purchase_feature` is a shim that mints a fresh request id before delegating to the idempotent `fn_purchase_feature_v2`, so for the four `per_use` features a lost response followed by a second tap on the VIP page's a-la-carte grid charges twice. It is not a Diamond path and the fix belongs to the customization and VIP commerce estate; it is recorded in the audit and reported to Dan rather than repaired inside a Diamond slice.
+
+## Execution Update, September 12, 2026, Diamond Straddles
+
+Phase 7 checklist line three has started with the only one of its four features that asks nothing of the chip economy. A straddle is priced at exactly two times the current blind, every Diamond guard already refuses a table whose blinds are not whole, and HandController never refused a straddle for Diamond in the first place. Two places did, the table-load boundary and the SQL admission door, and both now admit one. A new staff door turns straddles on for a table that already exists, carries the creation door's authority, moves no money and refuses any table the boundary would not admit afterwards. Evidence: [the straddle changelog](changelog/2026-09-12-diamond-phase-7-straddles.md).
+
+Certifying it in the isolated fixture found a defect in the admission door that was not the one being changed: UNSET IS NOT OFF was taught to the TypeScript boundary on September 11 and never to the SQL. A table with a NULL run-it column passed the door, reserved the player's Diamonds and seated them, and would then have been refused by the engine's own table load on every hand. `rake_cap_bb` was not read there at all. Migration 20260912014500 makes the door read all four columns the way the engine does; all seventeen live tables already carry explicit zeros and falses, so nothing that exists today changed.
+
+Line three is NOT claimed. Bomb pots, board counts and run it twice remain. Run it twice halves a pot and an odd pot of whole Diamonds does not halve, so it needs an odd-unit rule certified first; bomb pots ride the `p_units` award lane, which the accepted-hand commit refuses for a Diamond hand.
+
+## Execution Update, September 12, 2026, Diamond Run It Twice
+
+The second of Phase 7 line three's four features. Run it twice was refused for Diamond because of arithmetic rather than policy: the runout cut every pot into integer CENTS, which is the indivisible unit of a chip and HALF of a Diamond, so a five Diamond pot over two runs paid two and a half Diamonds a board and the hand guard would have refused the hand the table had just dealt. A pot meets two divisions on that path and both now happen in the table's own unit, with the odd unit going where it always went: to the earliest board, and inside a chop to the first seat clockwise of the button. The chip arithmetic is unchanged by construction. Evidence: [the run it twice changelog](changelog/2026-09-12-diamond-phase-7-run-it-twice.md).
+
+The two run-it columns still have to be STATED, because the engine reads an absent one as true and this arena inherits nothing from the chip schedule; what changed is that the answer may now be either boolean. A staff door writes all three columns so the engine's composite is exactly the answer it was given.
+
+Line three is NOT claimed. Bomb pots and their board counts remain: a bomb pot's award rides the `p_units` lane that the accepted-hand commit refuses for a Diamond hand, so it needs a Diamond obligation lane rather than a rounding rule.
+
+## Execution Update, September 12, 2026, Lifecycle And Denomination Regressions
+
+Checklist line seven is claimed. Until September 12 a Diamond table had exactly one shape, and a regression suite for one shape is a suite for one row; straddles and run it twice made it a matrix, which is where a feature quietly stops working in the cell nobody tests.
+
+Three suites. A denomination law pins all FOUR dividers a Diamond pot can meet - the run-it-twice per-board slice, the multi-board settlement, the tie chop inside one board and the payout unit - to the same rule, and then pins each one to READING the asset, because a fifth divider written in cents would pass every arithmetic case and still deal a hand that cannot settle. A configuration matrix crosses six permitted shapes with the four live statuses, with the five terminal ones, and with all seventeen rungs of Dan's stake ladder, dealing a full hand at the maximum buy-in on every rung; twenty-three refusal reasons are each asserted against all six shapes, because a permitted flag must never launder a forbidden one. And a lifecycle pair proves that a permitted change lands on a running table without a restart while a refused row is refused whole, so the permitted half of a mixed row does not sneak in beside the forbidden half.
+
+The claim is scoped honestly: line seven is met for every configuration the arena CAN open today. Bomb pots and the variants beyond NLH are not omitted cells, they are features the boundary still refuses, and both matrices are written as arrays so a new feature joins them rather than forcing a rewrite. Evidence: [the lifecycle and denomination audit](audits/2026-09-12-diamond-phase-7-lifecycle-and-denomination-regressions.md).
+
 ## Approved Product Contract
 
 This replaces the earlier recommendation for two separate World Hub destinations. The World Hub has one player-facing Poker Arena entrance. Reuse the existing Club Arena application as the shared shell, lobby and game implementation. Diamond Arena is a diamond-only skin and operating policy inside it, not a second poker application.
@@ -260,9 +294,9 @@ Phase 6 Of 12 Is Done, verified September 11, 2026. Implementation merge 85da647
 - [ ] Reuse waitlists, offers, rebuys/add-ons, seat changes, must-move and multi-table flows.
 - [ ] Reuse supported bomb pots, board counts, straddles and run-it-twice.
 - [ ] Integrate table skins, cards, time banks, rabbit hunt, chat, voice and throwables where supported.
-- [ ] Keep feature diamond charges separate from game stakes, with no double charge.
-- [ ] Audit insurance and side-feature liabilities before enabling any such product.
-- [ ] Run table lifecycle and denomination regression tests across configurations.
+- [x] Keep feature diamond charges separate from game stakes, with no double charge.
+- [x] Audit insurance and side-feature liabilities before enabling any such product.
+- [x] Run table lifecycle and denomination regression tests across configurations.
 
 Exit: explicit supported-feature matrix passed; unsupported features remain honestly unavailable.
 

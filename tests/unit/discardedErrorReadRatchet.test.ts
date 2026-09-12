@@ -150,7 +150,6 @@ const BASELINE = new Map<string, number>([
   ['src/components/social/FriendListPanel.tsx', 1],
   ['src/components/gameplay/PlayerNotesPanel.tsx', 1],
   ['src/components/common/UnionSkinGuard.tsx', 2],
-  ['src/components/bbj/BBJTicker.tsx', 2],
   ['src/components/agent/PlayerInviteModal.tsx', 2],
   ['src/components/agent/AgentPromoPanel.tsx', 2],
   ['src/components/agent/AgentAnalyticsDashboard.tsx', 1],

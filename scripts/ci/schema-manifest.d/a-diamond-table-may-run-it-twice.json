@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/claude-diamond-phase-7/feature/diamond-run-it-twice. Phase 7 checklist line three, second feature. Run it twice was refused because the RIT runout cut every pot into integer CENTS, which is the indivisible unit of a chip and half of a Diamond; the runout now cuts in the table's own unit and passes that unit to determineWinners, so the per-board slice and a tie chopped on one board are both whole Diamonds. Migration 20260912022000, applied to kuklfnapbkmacvwxktbh on 2026-09-12, lets the admission door accept either boolean for the two run-it columns while still requiring both to be STATED, and adds the staff door below. No new table or column; the staff door is the only new object.",
+  "functions": ["fn_poker_diamond_set_table_run_it_twice"]
+}

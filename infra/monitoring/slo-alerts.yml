@@ -46,7 +46,7 @@ groups:
         annotations:
           summary: "Engine availability {{ $value | humanizePercentage }} over 30m, below the 99% objective"
           description: "Scrapes of job=engine_game_server are failing outside a maintenance break."
-          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+          runbook: "docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md"
 
       # ── DEALING: the platform deals hands ───────────────────────────────
       # ~33,500 hands an hour is the floor this estate runs at. A collapse to
@@ -66,7 +66,7 @@ groups:
         annotations:
           summary: "{{ $value }} hands/sec with tables still seated"
           description: "Tables exist and are seated, and almost nothing is being dealt. The engine is up - this is not an availability failure, which is exactly why it needs its own objective."
-          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+          runbook: "docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md"
 
       # A single table wedged for a quarter of an hour is a table of players
       # who cannot act and cannot leave.
@@ -81,7 +81,7 @@ groups:
           objective: dealing
         annotations:
           summary: "A table has made no progress for {{ $value | humanizeDuration }}"
-          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+          runbook: "docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md"
 
       # ── RESPONDING: the felt feels live ─────────────────────────────────
       - alert: SLOActionLatencyDegraded
@@ -95,7 +95,7 @@ groups:
           objective: responding
         annotations:
           summary: "p95 action processing {{ $value }}ms, above the 1s objective"
-          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+          runbook: "docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md"
 
       - alert: SLOBroadcastLatencyDegraded
         expr: |
@@ -108,7 +108,7 @@ groups:
           objective: responding
         annotations:
           summary: "p95 broadcast latency {{ $value }}ms - seats are seeing actions late"
-          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+          runbook: "docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md"
 
       # ── SETTLING: 99.5% of hands settle ─────────────────────────────────
       # The baseline before 2026-09-03 was 99.8-100%. On the day a no-op
@@ -126,7 +126,7 @@ groups:
         annotations:
           summary: "Settlement success {{ $value | humanizePercentage }}, below the 99.5% objective"
           description: "Read ca_settlements.error_detail before changing anything."
-          runbook: "docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md"
+          runbook: "docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md"
 
       # ── THE PLUMBING ────────────────────────────────────────────────────
       - alert: SLODatabaseErrorBudget
@@ -141,4 +141,4 @@ groups:
         annotations:
           summary: "PostgREST error rate {{ $value }}/s"
           description: "Every objective above rides on this. Sustained errors here are seats, hands and settlements failing to write."
-          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+          runbook: "docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md"

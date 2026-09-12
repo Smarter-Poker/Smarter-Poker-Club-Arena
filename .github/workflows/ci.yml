@@ -307,6 +307,9 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Mac dependency policy keeps Linux enforcement
+        run: node --test tests/operations/local-dependency-policy.test.mjs
+
       # 2026-09-01 (cost audit): cache the installed tree, skip npm ci on a
       # hit. `nm-lite` is deliberately a DIFFERENT key from the full-install
       # jobs: this install runs --ignore-scripts, and a scripts-less tree must

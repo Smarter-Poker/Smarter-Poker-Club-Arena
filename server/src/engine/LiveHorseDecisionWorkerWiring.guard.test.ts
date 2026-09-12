@@ -21,7 +21,7 @@ describe('live horse decisions stay outside the table event loop', () => {
     expect(schedule).toContain('getLiveHorseDecisionWorker().decideFast(');
     expect(schedule).toContain('.decideDeep(');
     expect(schedule).toContain('decisionTimeMs');
-    expect(schedule).toContain('currentLease.generation === leaseGeneration');
+    expect(schedule).toContain('currentLease.generation !== leaseGeneration');
     expect(schedule).toContain('fastResult.generation !== turnToken');
     expect(schedule).toContain('fastResult.fence !== fence');
     expect(schedule).toContain('deepResult.generation !== turnToken');

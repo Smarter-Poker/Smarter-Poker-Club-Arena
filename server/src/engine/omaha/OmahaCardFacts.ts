@@ -49,17 +49,39 @@ function possibleStraightHigh(available: Card[], board: Card[]): number {
   return best;
 }
 function lowScore(hole: Card[], board: Card[]): number | null {
-  let best = Infinity;
-  for (const h of pairs(hole))
-    for (const b of triples(board)) {
-      const values = [...h, ...b].map((c) => (c.rank === 'A' ? 1 : value(c))).sort((a, b) => b - a);
-      if (values[0] > 8 || new Set(values).size !== 5) continue;
-      best = Math.min(
-        best,
-        values.reduce((n, v) => n * 9 + v, 0)
-      );
+  // Qualifying lows need five DISTINCT ranks: duplicates and suits cannot
+  // improve them. For each legal board triple the two lowest available hole
+  // ranks are optimal. Rank masks preserve the exact 8-or-better ordering,
+  // avoiding hundreds of transient arrays during every counterfeit transition.
+  const lowMask = (cards: Card[]) => {
+    let result = 0;
+    for (const card of cards) {
+      const rank = card.rank === 'A' ? 1 : value(card);
+      if (rank <= 8) result |= 1 << (rank - 1);
     }
-  return Number.isFinite(best) ? best : null;
+    return result;
+  };
+  const holes = lowMask(hole),
+    boards = lowMask(board);
+  if (bits(holes) < 2 || bits(boards) < 3) return null;
+  let best = 256;
+  for (let a = boards; a; a &= a - 1) {
+    const first = a & -a;
+    for (let b = a & (a - 1); b; b &= b - 1) {
+      const second = b & -b;
+      for (let c = b & (b - 1); c; c &= c - 1) {
+        const triple = first | second | (c & -c);
+        const available = holes & ~triple;
+        const remaining = available & (available - 1);
+        if (!remaining) continue;
+        best = Math.min(best, triple | (available & -available) | (remaining & -remaining));
+      }
+    }
+  }
+  if (best === 256) return null;
+  let score = 0;
+  for (let rank = 8; rank >= 1; rank--) if (best & (1 << (rank - 1))) score = score * 9 + rank;
+  return score;
 }
 function possibleLow(available: Card[], board: Card[]) {
   // Only rank availability matters for low; one representative card per rank.

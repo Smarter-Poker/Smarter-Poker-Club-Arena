@@ -1724,6 +1724,17 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
        them - for want of a second try 250ms later. */
     const STEP_RETRY: Record<string, number> = {
       leave_pending: 2,
+      /* THE RECORD OF THE HAND IS WORTH THE SAME TWO WAITS AS THE SEATS
+         (2026-09-12). `hand_history` had no budget at all, so `attempts > 0`
+         was true on the first throw and every refusal was terminal - including
+         the one the database raises specifically to ask for another attempt.
+         Production, the two hours to 11:00 on 2026-09-12: 240 then 172 hands
+         whose history was never written, every one of them
+         `atomic hand commit refused (atomic_hand_rolled_back):
+         F06_RETRY_CANONICAL_LANE`, which is a contended advisory lock during
+         tournament terminal settlement and nothing else. The hand had already
+         been played; only its record was lost. */
+      hand_history: 2,
     };
     /* Two short waits, inside one hand boundary. The felt already holds for
        2.1-3.5s between hands, so 250ms + 1s costs nothing a player can see,
@@ -2376,6 +2387,38 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           }
         } catch (err) {
           const message = describeError(err);
+          /* ═══ THE KILL MUST NOT PRE-EMPT THE RETRY BUDGET (2026-09-12) ═════
+             `killForRestart` below sets `terminal = true; running = false`
+             SYNCHRONOUSLY, and it used to run for every refusal - including
+             the one the database raises specifically to ask for another
+             attempt. `runStep` decides whether to retry AFTER this body
+             returns, and its third condition is `!this.lifecycleCanMutate()`,
+             which is false the instant this generation is terminal. So the
+             budget `hand_history` was given could never be spent: the step
+             killed the engine on attempt 1 and the retry loop then refused to
+             run attempt 2 because the engine was dead. A retry that is
+             unreachable is not a retry.
+
+             So a refusal the database rolled back whole, for a reason Postgres
+             defines as "run it again", leaves here untouched: no kill, no
+             critical alert, no terminal loop phase. `runStep` re-runs this
+             step - the body above is pure, and every write it performs goes
+             through one idempotent RPC keyed on (table_id, hand_number). If
+             the budget runs out, the throw reaches `await lanes.record`,
+             `authoritativeCommitSucceeded` is still false, and the existing
+             `authoritative_hand_commit_not_proved` kill and the step's own
+             `postHandTasks.hand_history_failed` critical alert both stand.
+
+             Production, 2026-09-12 10:04:25Z onward: 1,021 of 1,023 semantic
+             refusals were this, and every one killed a live table. */
+          if (ServerTableEngineBase.isRolledBackSerializationRefusal(err)) {
+            this.setLoopPhase('settlement_lane_contended');
+            reportError(err, 'ServerTableEngine.authoritative_hand_lane_contended', {
+              tableId: this.tableId,
+              handNumber: snap.handNumber,
+            });
+            throw err;
+          }
           const semantic = message.includes('atomic hand commit refused');
           const alertCode = semantic
             ? 'ServerTableEngine.authoritative_hand_semantic_refusal'

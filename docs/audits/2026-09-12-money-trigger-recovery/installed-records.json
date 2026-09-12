@@ -1,0 +1,51 @@
+{
+  "recorded_at": "2026-09-12T11:31:07.207476+00:00",
+  "scope": "Exact actual-history records; no proposal replay or retrospective broad audit claim",
+  "helper": {
+    "actual_version": "20260912112511",
+    "name": "ci_money_trigger_recovery_metadata",
+    "statement_count": 1,
+    "statement_bytes": 2667,
+    "statement_sha256": "93b53cc131145f6912522fa07ed9e83c31edc713b12677a671faecd7a5b7b230",
+    "source_review": "G8-independent-review-0093-addendum-02",
+    "native_review": "G8-independent-review-0093-native-combined",
+    "installed_review": "G8-0093-HELPER-INSTALLED-REVIEW",
+    "owner": "postgres",
+    "owner_superuser": false,
+    "owner_bypassrls": true,
+    "security_definer": true,
+    "volatility": "stable",
+    "search_path": "pg_catalog",
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "exact_body_and_history_verified": true,
+    "actual_owner_readonly_invocation_verified": true
+  },
+  "existing_baseline": {
+    "actual_version": "20260912104203",
+    "name": "a_money_trigger_declares_itself",
+    "statement_count": 1,
+    "statement_bytes": 1052,
+    "statement_sha256": "e6f6dfd9914be57da2b9c490dfc804f7438a8993ce346ef6355e4817b699c54e",
+    "protected_source_PR": 4436,
+    "protected_source_merge": "904dea3c3fef9087f9099651b44e753123f354e2",
+    "protected_proposal_version": "20260912103000",
+    "protected_source_sha256": "4ed7715dec2f6bc3ec604118c79e97a3076d15c792fb5f03f758b1520486989d",
+    "preserve_protected_proposal": true,
+    "replay_baseline": false,
+    "database_application_actor": "not established from history",
+    "scope_limit": "Baseline records existing live/known triggers; it does not independently review all registered triggers. No registry note or declared_at was rewritten."
+  },
+  "original_F06_history": {
+    "actual_version": "20260912100322",
+    "statement_sha256": "02be881411324ba69ddb284c2080bcfae86fbaddc42bb03db482d4f44fb70296",
+    "preserved": true
+  },
+  "declaration_insert_proposal": "637fa63aa3e76ce3cf9596f13525ceb745624b42c3358d1839d8ad456553430d was not applied because both rows already existed.",
+  "pending_separate_acceptance": [
+    "Narrow two-guard recovery policy and actual trusted Actions/source-bound reporting",
+    "Source protected publication",
+    "Actual funded runtime and full program qualification"
+  ],
+  "recovery_policy_changed": false,
+  "business_function_invoked": false
+}

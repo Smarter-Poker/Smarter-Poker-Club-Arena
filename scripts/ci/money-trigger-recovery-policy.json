@@ -1,0 +1,28 @@
+[
+  {
+    "path": "supabase/migrations/20260912100322_tournament_break_original_custody_and_hand_authority.sql",
+    "review": "G8-independent-review-0093-baseline-binding",
+    "originalVersion": "20260912100322",
+    "originalName": "tournament_break_original_custody_and_hand_authority",
+    "originalSha256": "02be881411324ba69ddb284c2080bcfae86fbaddc42bb03db482d4f44fb70296",
+    "declarationVersion": "20260912104203",
+    "declarationName": "a_money_trigger_declares_itself",
+    "declarationSha256": "e6f6dfd9914be57da2b9c490dfc804f7438a8993ce346ef6355e4817b699c54e",
+    "triggers": [
+      {
+        "table": "table_seats",
+        "trigger": "a00_f06_source_seat",
+        "definitionSha256": "443267db4aba7be275177af7c69aae3cc6630d5a89dc18a409561e3b78a2cd28",
+        "functionSha256": "1693f68c007aa8c4f339ac12943265d92dca020dbc8db52c60cd9b46f2c996e2",
+        "note": "In service on 2026-09-12, declared as the baseline for check-money-trigger-declared. Records that it was live and known at that date, not that it was re-reviewed then. Anything created after this date declares itself in its own migration."
+      },
+      {
+        "table": "tournament_players",
+        "trigger": "a00_f06_source_roster",
+        "definitionSha256": "63587d8464ba505b8724e9be66e693fd82d97c60f9c8d685476a896c069093d6",
+        "functionSha256": "1693f68c007aa8c4f339ac12943265d92dca020dbc8db52c60cd9b46f2c996e2",
+        "note": "In service on 2026-09-12, declared as the baseline for check-money-trigger-declared. Records that it was live and known at that date, not that it was re-reviewed then. Anything created after this date declares itself in its own migration."
+      }
+    ]
+  }
+]

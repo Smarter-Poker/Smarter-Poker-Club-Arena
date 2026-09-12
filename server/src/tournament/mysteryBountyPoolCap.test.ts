@@ -66,3 +66,63 @@ describe('mysteryPoolCents - the cap the database applies', () => {
     expect(mysteryPoolCents(10_000, 50, 50, 6_000.6)).toBe(3_999);
   });
 });
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE MYSTERY HALF OF A DIAMOND POOL IS A WHOLE NUMBER OF DIAMONDS
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The regular half keeps the odd cent because it is spent knockout by
+ * knockout against a pool checked for exhaustion on every payment, whereas the
+ * mystery half is committed to a fixed inventory up front and an extra cent
+ * there leaves the event unable to reconcile.
+ *
+ * At a Diamond unit the same reasoning gives the regular half the odd DIAMOND,
+ * and for a harder reason: a fraction of a Diamond is not an amount any door
+ * in this estate accepts. The chest inventory is built from this number, so a
+ * half Diamond here is an event that cannot be seeded at all.
+ *
+ * The chip answers below are the ones this function has always given. They are
+ * asserted alongside rather than separately, because "the Diamond answer is
+ * whole" is only worth anything if the chip answer did not move to get there.
+ */
+describe('the mystery half of a Diamond pool', () => {
+  const DIAMOND = 100;
+
+  it('leaves the chip answer exactly where it was', () => {
+    expect(mysteryPoolCents(501, 50, 50)).toBe(250);
+    expect(mysteryPoolCents(501, 50, 50, 0, 1)).toBe(250);
+    expect(mysteryPoolCents(1000, 60, 40)).toBe(600);
+    expect(mysteryPoolCents(1000, 60, 40, 0, 1)).toBe(600);
+  });
+
+  it('pays the mystery half in whole Diamonds', () => {
+    // 5 Diamonds, split down the middle: 2 to the mystery half, 3 to the
+    // regular one, because the regular half keeps the odd unit.
+    expect(mysteryPoolCents(500, 50, 50, 0, DIAMOND)).toBe(200);
+    // 10 Diamonds at 60/40 is 6 exactly.
+    expect(mysteryPoolCents(1000, 60, 40, 0, DIAMOND)).toBe(600);
+    // A pool of one Diamond cannot be halved, so the mystery half is nothing
+    // and the regular half keeps all of it. Nothing is stranded.
+    expect(mysteryPoolCents(100, 50, 50, 0, DIAMOND)).toBe(0);
+  });
+
+  it('floors the already-paid cap to the unit too', () => {
+    // 10 Diamonds with 150 cents already paid leaves 850, which is not a whole
+    // number of Diamonds. The cap must land on the grid, not beside it.
+    const capped = mysteryPoolCents(1000, 100, 0, 150, DIAMOND);
+    expect(capped % DIAMOND).toBe(0);
+    expect(capped).toBeLessThanOrEqual(850);
+  });
+
+  it('never returns a fraction of a Diamond, for any split', () => {
+    for (let pool = 100; pool <= 5000; pool += 100) {
+      for (const m of [0, 10, 25, 33, 50, 60, 75, 100]) {
+        const half = mysteryPoolCents(pool, m, 100 - m, 0, DIAMOND);
+        expect(half % DIAMOND, `pool ${pool} mystery ${m}%`).toBe(0);
+        expect(half).toBeLessThanOrEqual(pool);
+        expect(half).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
+});

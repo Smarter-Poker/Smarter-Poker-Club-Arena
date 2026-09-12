@@ -1,0 +1,235 @@
+CREATE ROLE authenticated; CREATE ROLE service_role; CREATE ROLE anon;
+CREATE SCHEMA auth;
+CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT (nullif(current_setting('request.jwt.claims',true),'')::jsonb->>'sub')::uuid $$;
+GRANT USAGE ON SCHEMA public,auth TO authenticated,service_role,anon;
+CREATE TABLE agents(id uuid PRIMARY KEY,user_id uuid,club_id uuid,role text,status text,parent_agent_id uuid);
+CREATE TABLE union_clubs(union_id uuid,club_id uuid);
+CREATE TABLE unions(id uuid,owner_id uuid);
+CREATE TABLE union_admins(union_id uuid,user_id uuid);
+CREATE TABLE clubs(id uuid PRIMARY KEY,name text,owner_id uuid,is_union boolean);
+CREATE TABLE club_members(user_id uuid,club_id uuid,agent_id uuid,role text,status text);
+CREATE TABLE club_rake_rollup_complete(club_id uuid,day date);
+CREATE TABLE club_rake_daily_user(user_id uuid,club_id uuid,day date,rake_amount numeric,hands bigint);
+CREATE TABLE rake_records(id uuid,hand_id uuid,club_id uuid,created_at timestamptz,rake_amount numeric,player_contributions jsonb,rake_method text);
+CREATE TABLE rake_attributions(hand_id uuid,player_id uuid,weighted_rake_credit numeric);
+CREATE TABLE profiles(id uuid,alias text,username text,display_name text,first_name text,last_name text,full_name text);
+CREATE OR REPLACE FUNCTION public.fn_is_union_overseer(p_union_id uuid, p_user_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT p_union_id IS NOT NULL AND p_user_id IS NOT NULL AND (
+       EXISTS (SELECT 1 FROM public.unions u WHERE u.id = p_union_id AND u.owner_id = p_user_id)
+    OR EXISTS (SELECT 1 FROM public.union_admins a WHERE a.union_id = p_union_id AND a.user_id = p_user_id)
+    OR EXISTS (SELECT 1 FROM public.clubs c
+                WHERE c.id = p_union_id AND COALESCE(c.is_union, false) AND c.owner_id = p_user_id)
+    OR EXISTS (SELECT 1 FROM public.club_members m
+                WHERE m.club_id = p_union_id AND m.user_id = p_user_id
+                  AND m.role IN ('owner','co_owner','admin')
+                  AND m.status IN ('active','approved'))
+  );
+$function$;
+CREATE OR REPLACE FUNCTION public.fn_is_agent_ancestor(p_ancestor_user_id uuid, p_descendant_user_id uuid, p_club_id uuid DEFAULT NULL::uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  WITH RECURSIVE up AS (
+    SELECT a.id, a.user_id, a.parent_agent_id
+      FROM agents a
+     WHERE a.user_id = p_descendant_user_id
+       AND (p_club_id IS NULL OR a.club_id = p_club_id)
+    UNION ALL
+    SELECT p.id, p.user_id, p.parent_agent_id
+      FROM agents p JOIN up ON up.parent_agent_id = p.id
+  )
+  SELECT EXISTS (SELECT 1 FROM up WHERE up.user_id = p_ancestor_user_id
+                                    AND up.user_id <> p_descendant_user_id);
+$function$;
+CREATE OR REPLACE FUNCTION public.fn_is_club_admin_uid(p_club_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT EXISTS (
+    SELECT 1 FROM public.club_members cm
+    WHERE cm.club_id = p_club_id
+      AND cm.user_id = auth.uid()
+      AND cm.role IN ('owner','co_owner','admin','manager')
+      AND COALESCE(cm.status, 'active') = 'active'
+  );
+$function$;
+CREATE OR REPLACE FUNCTION public.fn_union_week_start(p_at timestamp with time zone DEFAULT now())
+ RETURNS timestamp with time zone
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO 'public', 'extensions'
+AS $function$
+  SELECT date_trunc('week', (p_at AT TIME ZONE 'America/Los_Angeles'))
+           AT TIME ZONE 'America/Los_Angeles';
+$function$;
+CREATE OR REPLACE FUNCTION public.fn_allocate_rake_credits(p_amount numeric, p_contributions jsonb, p_method text DEFAULT 'WEIGHTED_CONTRIBUTED'::text)
+ RETURNS TABLE(user_id uuid, credit numeric, weight numeric)
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  WITH c AS (
+    SELECT (k.key)::uuid AS uid,
+           round((k.value)::numeric * 100)::bigint AS cc
+      FROM jsonb_each(COALESCE(p_contributions, '{}'::jsonb)) k
+     WHERE jsonb_typeof(k.value) = 'number'
+       AND (k.value)::numeric > 0
+       AND k.key ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+  ),
+  t AS (
+    SELECT COALESCE(SUM(cc), 0)::bigint AS total,
+           round(GREATEST(COALESCE(p_amount, 0), 0) * 100)::bigint AS amt,
+           COUNT(*)::bigint AS n
+      FROM c
+  ),
+  weighted AS (
+    SELECT c.uid, c.cc,
+           (t.amt * c.cc) / t.total AS fl,
+           (t.amt * c.cc) % t.total AS rem,
+           t.amt, t.total
+      FROM c CROSS JOIN t
+     WHERE t.total > 0
+  ),
+  weighted_ranked AS (
+    SELECT w.*,
+           row_number() OVER (ORDER BY w.rem DESC, w.uid ASC) AS rn,
+           SUM(w.fl) OVER () AS fl_sum
+      FROM weighted w
+  ),
+  equal_ranked AS (
+    SELECT c.uid, c.cc, t.amt, t.total, t.n,
+           row_number() OVER (ORDER BY c.uid ASC) AS rn
+      FROM c CROSS JOIN t
+     WHERE t.n > 0
+  )
+  SELECT uid,
+         ((fl + CASE WHEN rn <= (amt - fl_sum) THEN 1 ELSE 0 END)::numeric / 100),
+         round(cc::numeric / total, 8)
+    FROM weighted_ranked
+   WHERE COALESCE(p_method, 'WEIGHTED_CONTRIBUTED') = 'WEIGHTED_CONTRIBUTED'
+  UNION ALL
+  SELECT uid,
+         (((amt / n) + CASE WHEN rn <= (amt % n) THEN 1 ELSE 0 END)::numeric / 100),
+         round(cc::numeric / total, 8)
+    FROM equal_ranked
+   WHERE COALESCE(p_method, 'WEIGHTED_CONTRIBUTED') = 'DEALT_EQUAL';
+$function$;
+CREATE OR REPLACE FUNCTION public.fn_rake_shares_for_record(p_hand_id uuid, p_rake numeric, p_contributions jsonb, p_method text)
+ RETURNS TABLE(user_id uuid, credit numeric)
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+  SELECT ra.player_id, ra.weighted_rake_credit
+    FROM public.rake_attributions ra
+   WHERE p_hand_id IS NOT NULL AND ra.hand_id = p_hand_id
+  UNION ALL
+  SELECT a.user_id, a.credit
+    FROM public.fn_allocate_rake_credits(p_rake, p_contributions, p_method) a
+   WHERE p_hand_id IS NULL
+      OR NOT EXISTS (SELECT 1 FROM public.rake_attributions ra2 WHERE ra2.hand_id = p_hand_id);
+$function$;
+CREATE OR REPLACE FUNCTION public.fn_arena_name(p_alias text, p_username text, p_display_name text, p_first_name text, p_last_name text, p_full_name text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  WITH real_name AS (
+    SELECT COALESCE(
+             NULLIF(btrim(p_full_name), ''),
+             NULLIF(btrim(concat_ws(' ',
+               NULLIF(btrim(p_first_name), ''),
+               NULLIF(btrim(p_last_name),  ''))), '')
+           ) AS rn
+  )
+  SELECT COALESCE(
+           NULLIF(btrim(p_alias), ''),
+           NULLIF(btrim(p_username), ''),
+           CASE
+             WHEN NULLIF(btrim(p_display_name), '') IS NOT NULL
+              AND (SELECT rn FROM real_name) IS NOT NULL
+              AND lower(btrim(p_display_name)) = lower((SELECT rn FROM real_name))
+             THEN NULL
+             ELSE NULLIF(btrim(p_display_name), '')
+           END,
+           'Player')
+$function$
+;
+INSERT INTO clubs VALUES('00000000-0000-4000-8000-000000000001','club1',NULL,false);
+INSERT INTO clubs VALUES('00000000-0000-4000-8000-000000000002','club2',NULL,false);
+INSERT INTO clubs VALUES('00000000-0000-4000-8000-000000000003','club3',NULL,false);
+INSERT INTO clubs VALUES('00000000-0000-4000-8000-000000000010','club10',NULL,true);
+INSERT INTO clubs VALUES('00000000-0000-4000-8000-000000000011','club11',NULL,true);
+INSERT INTO clubs VALUES('00000000-0000-4000-8000-000000000012','club12',NULL,true);
+INSERT INTO unions VALUES('00000000-0000-4000-8000-000000000010','00000000-0000-4000-8000-000000000201'),('00000000-0000-4000-8000-000000000011','00000000-0000-4000-8000-000000000202'),('00000000-0000-4000-8000-000000000012','00000000-0000-4000-8000-000000000203');
+INSERT INTO union_clubs VALUES('00000000-0000-4000-8000-000000000010','00000000-0000-4000-8000-000000000001'),('00000000-0000-4000-8000-000000000011','00000000-0000-4000-8000-000000000002'),('00000000-0000-4000-8000-000000000012','00000000-0000-4000-8000-000000000003');
+INSERT INTO agents VALUES('00000000-0000-4000-8000-000000001001','00000000-0000-4000-8000-000000000100','00000000-0000-4000-8000-000000000001','agent','active','00000000-0000-4000-8000-000000001000');
+INSERT INTO agents VALUES('00000000-0000-4000-8000-000000001002','00000000-0000-4000-8000-000000000100','00000000-0000-4000-8000-000000000002','agent','active',NULL);
+INSERT INTO agents VALUES('00000000-0000-4000-8000-000000001012','00000000-0000-4000-8000-000000000101','00000000-0000-4000-8000-000000000002','agent','active',NULL);
+INSERT INTO agents VALUES('00000000-0000-4000-8000-000000001021','00000000-0000-4000-8000-000000000102','00000000-0000-4000-8000-000000000001','agent','inactive',NULL);
+INSERT INTO agents VALUES('00000000-0000-4000-8000-000000001031','00000000-0000-4000-8000-000000000103','00000000-0000-4000-8000-000000000001','player','active',NULL);
+INSERT INTO agents VALUES('00000000-0000-4000-8000-000000001101','00000000-0000-4000-8000-000000000110','00000000-0000-4000-8000-000000000001','sub_agent','active','00000000-0000-4000-8000-000000001001');
+INSERT INTO agents VALUES('00000000-0000-4000-8000-000000001113','00000000-0000-4000-8000-000000000111','00000000-0000-4000-8000-000000000003','sub_agent','active','00000000-0000-4000-8000-000000001001');
+INSERT INTO agents VALUES('00000000-0000-4000-8000-000000001121','00000000-0000-4000-8000-000000000112','00000000-0000-4000-8000-000000000001','sub_agent','inactive','00000000-0000-4000-8000-000000001001');
+INSERT INTO agents VALUES('00000000-0000-4000-8000-000000001000','00000000-0000-4000-8000-000000000210','00000000-0000-4000-8000-000000000001','super_agent','active',NULL);
+INSERT INTO club_members VALUES('00000000-0000-4000-8000-000000000301','00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000100','player','active');
+INSERT INTO club_members VALUES('00000000-0000-4000-8000-000000000302','00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000100','player','active');
+INSERT INTO club_members VALUES('00000000-0000-4000-8000-000000000303','00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000101','player','active');
+INSERT INTO club_members VALUES('00000000-0000-4000-8000-000000000304','00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000110','player','active');
+INSERT INTO club_members VALUES('00000000-0000-4000-8000-000000000305','00000000-0000-4000-8000-000000000003','00000000-0000-4000-8000-000000000111','player','active');
+INSERT INTO club_members VALUES('00000000-0000-4000-8000-000000000306','00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000112','player','active');
+INSERT INTO club_members VALUES('00000000-0000-4000-8000-000000000220','00000000-0000-4000-8000-000000000001',NULL,'admin','active');
+INSERT INTO club_members VALUES('00000000-0000-4000-8000-000000000221','00000000-0000-4000-8000-000000000001',NULL,'admin','suspended');
+INSERT INTO club_members VALUES('00000000-0000-4000-8000-000000000222','00000000-0000-4000-8000-000000000010',NULL,'admin','active');
+INSERT INTO club_members VALUES('00000000-0000-4000-8000-000000000223','00000000-0000-4000-8000-000000000010',NULL,'admin','approved');
+INSERT INTO club_members VALUES('00000000-0000-4000-8000-000000000224','00000000-0000-4000-8000-000000000010',NULL,'admin','suspended');
+INSERT INTO club_members VALUES('00000000-0000-4000-8000-000000000225','00000000-0000-4000-8000-000000000010',NULL,'admin','revoked');
+INSERT INTO club_members VALUES('00000000-0000-4000-8000-000000000226','00000000-0000-4000-8000-000000000001',NULL,'player','active');
+INSERT INTO union_admins VALUES('00000000-0000-4000-8000-000000000010','00000000-0000-4000-8000-000000000227'); UPDATE clubs SET owner_id='00000000-0000-4000-8000-000000000228' WHERE id='00000000-0000-4000-8000-000000000010';
+INSERT INTO profiles VALUES('00000000-0000-4000-8000-000000000100','alias100','u100',NULL,NULL,NULL,NULL);
+INSERT INTO profiles VALUES('00000000-0000-4000-8000-000000000101','alias101','u101',NULL,NULL,NULL,NULL);
+INSERT INTO profiles VALUES('00000000-0000-4000-8000-000000000110','alias110','u110',NULL,NULL,NULL,NULL);
+INSERT INTO profiles VALUES('00000000-0000-4000-8000-000000000111','alias111','u111',NULL,NULL,NULL,NULL);
+INSERT INTO profiles VALUES('00000000-0000-4000-8000-000000000301','alias301','u301',NULL,NULL,NULL,NULL);
+INSERT INTO profiles VALUES('00000000-0000-4000-8000-000000000302','alias302','u302',NULL,NULL,NULL,NULL);
+INSERT INTO profiles VALUES('00000000-0000-4000-8000-000000000303','alias303','u303',NULL,NULL,NULL,NULL);
+INSERT INTO profiles VALUES('00000000-0000-4000-8000-000000000304','alias304','u304',NULL,NULL,NULL,NULL);
+INSERT INTO profiles VALUES('00000000-0000-4000-8000-000000000305','alias305','u305',NULL,NULL,NULL,NULL);
+INSERT INTO profiles VALUES('00000000-0000-4000-8000-000000000306','alias306','u306',NULL,NULL,NULL,NULL);
+INSERT INTO club_rake_rollup_complete VALUES('00000000-0000-4000-8000-000000000001','2026-09-09');
+INSERT INTO club_rake_rollup_complete VALUES('00000000-0000-4000-8000-000000000002','2026-09-09');
+INSERT INTO club_rake_rollup_complete VALUES('00000000-0000-4000-8000-000000000003','2026-09-09');
+INSERT INTO club_rake_daily_user VALUES('00000000-0000-4000-8000-000000000301','00000000-0000-4000-8000-000000000001','2026-09-09',7,2);
+INSERT INTO rake_records VALUES('00000000-0000-4000-8000-000000005301','00000000-0000-4000-8000-000000006301','00000000-0000-4000-8000-000000000001','2026-09-10 12:00Z',2,'{"00000000-0000-4000-8000-000000000301": 10}','DEALT_EQUAL');
+INSERT INTO rake_attributions VALUES('00000000-0000-4000-8000-000000006301','00000000-0000-4000-8000-000000000301',2);
+INSERT INTO rake_records VALUES('00000000-0000-4000-8000-000000007301','00000000-0000-4000-8000-000000008301','00000000-0000-4000-8000-000000000001','2026-09-10 13:00Z',1,'{"00000000-0000-4000-8000-000000000301": 10}','DEALT_EQUAL');
+INSERT INTO club_rake_daily_user VALUES('00000000-0000-4000-8000-000000000302','00000000-0000-4000-8000-000000000002','2026-09-09',13,2);
+INSERT INTO rake_records VALUES('00000000-0000-4000-8000-000000005302','00000000-0000-4000-8000-000000006302','00000000-0000-4000-8000-000000000002','2026-09-10 12:00Z',2,'{"00000000-0000-4000-8000-000000000302": 10}','DEALT_EQUAL');
+INSERT INTO rake_attributions VALUES('00000000-0000-4000-8000-000000006302','00000000-0000-4000-8000-000000000302',2);
+INSERT INTO rake_records VALUES('00000000-0000-4000-8000-000000007302','00000000-0000-4000-8000-000000008302','00000000-0000-4000-8000-000000000002','2026-09-10 13:00Z',1,'{"00000000-0000-4000-8000-000000000302": 10}','DEALT_EQUAL');
+INSERT INTO club_rake_daily_user VALUES('00000000-0000-4000-8000-000000000303','00000000-0000-4000-8000-000000000002','2026-09-09',17,2);
+INSERT INTO rake_records VALUES('00000000-0000-4000-8000-000000005303','00000000-0000-4000-8000-000000006303','00000000-0000-4000-8000-000000000002','2026-09-10 12:00Z',2,'{"00000000-0000-4000-8000-000000000303": 10}','DEALT_EQUAL');
+INSERT INTO rake_attributions VALUES('00000000-0000-4000-8000-000000006303','00000000-0000-4000-8000-000000000303',2);
+INSERT INTO rake_records VALUES('00000000-0000-4000-8000-000000007303','00000000-0000-4000-8000-000000008303','00000000-0000-4000-8000-000000000002','2026-09-10 13:00Z',1,'{"00000000-0000-4000-8000-000000000303": 10}','DEALT_EQUAL');
+INSERT INTO club_rake_daily_user VALUES('00000000-0000-4000-8000-000000000304','00000000-0000-4000-8000-000000000001','2026-09-09',3,2);
+INSERT INTO rake_records VALUES('00000000-0000-4000-8000-000000005304','00000000-0000-4000-8000-000000006304','00000000-0000-4000-8000-000000000001','2026-09-10 12:00Z',2,'{"00000000-0000-4000-8000-000000000304": 10}','DEALT_EQUAL');
+INSERT INTO rake_attributions VALUES('00000000-0000-4000-8000-000000006304','00000000-0000-4000-8000-000000000304',2);
+INSERT INTO rake_records VALUES('00000000-0000-4000-8000-000000007304','00000000-0000-4000-8000-000000008304','00000000-0000-4000-8000-000000000001','2026-09-10 13:00Z',1,'{"00000000-0000-4000-8000-000000000304": 10}','DEALT_EQUAL');
+INSERT INTO club_rake_daily_user VALUES('00000000-0000-4000-8000-000000000305','00000000-0000-4000-8000-000000000003','2026-09-09',19,2);
+INSERT INTO rake_records VALUES('00000000-0000-4000-8000-000000005305','00000000-0000-4000-8000-000000006305','00000000-0000-4000-8000-000000000003','2026-09-10 12:00Z',2,'{"00000000-0000-4000-8000-000000000305": 10}','DEALT_EQUAL');
+INSERT INTO rake_attributions VALUES('00000000-0000-4000-8000-000000006305','00000000-0000-4000-8000-000000000305',2);
+INSERT INTO rake_records VALUES('00000000-0000-4000-8000-000000007305','00000000-0000-4000-8000-000000008305','00000000-0000-4000-8000-000000000003','2026-09-10 13:00Z',1,'{"00000000-0000-4000-8000-000000000305": 10}','DEALT_EQUAL');
+INSERT INTO club_rake_daily_user VALUES('00000000-0000-4000-8000-000000000306','00000000-0000-4000-8000-000000000001','2026-09-09',23,2);
+INSERT INTO rake_records VALUES('00000000-0000-4000-8000-000000005306','00000000-0000-4000-8000-000000006306','00000000-0000-4000-8000-000000000001','2026-09-10 12:00Z',2,'{"00000000-0000-4000-8000-000000000306": 10}','DEALT_EQUAL');
+INSERT INTO rake_attributions VALUES('00000000-0000-4000-8000-000000006306','00000000-0000-4000-8000-000000000306',2);
+INSERT INTO rake_records VALUES('00000000-0000-4000-8000-000000007306','00000000-0000-4000-8000-000000008306','00000000-0000-4000-8000-000000000001','2026-09-10 13:00Z',1,'{"00000000-0000-4000-8000-000000000306": 10}','DEALT_EQUAL');

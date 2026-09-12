@@ -101,6 +101,7 @@ import {
 import { headsUpButtonSeat } from './headsUpButton.js';
 import type { StateMachine } from './StateMachine.js';
 import type { TableStatus } from '../types.js';
+import { assertDiamondCashTable } from '../domain/DiamondCashBoundary.js';
 
 export type EngineLeaseAuthority =
   | {
@@ -5665,6 +5666,35 @@ export abstract class ServerTableEngineBase {
         )
         .eq('id', this.tableId)
         .maybeSingle();
+      /* A DIAMOND TABLE'S RULES DO NOT LEAVE THE BOUNDARY UNDER IT (2026-09-11,
+         restated 2026-09-12 when straddles and run it twice were admitted).
+
+         Everything below re-reads the row roughly once a minute and applies
+         it, which is right for a chip club: the rules follow the row. For an
+         arena table it was a hole, because admission is the only OTHER place
+         the Diamond boundary is checked, so a column flipped afterwards was
+         honoured here whatever it said.
+
+         The fix is not to freeze an arena table. A staff door may legitimately
+         turn straddles or run it twice on for a table that is already running,
+         and both are inside the boundary now, so the refreshed row SHOULD be
+         applied and the table picks the change up without a restart. What must
+         never be applied is a row the boundary would no longer admit - rake, a
+         jackpot percentage, insurance, a bomb pot, a variant, or a run-it
+         column that has gone unset. Those are refused here and the table keeps
+         dealing under the rules its players sat down to, with the refusal
+         recorded rather than silently swallowed. */
+      if (tableRow && this.tableInfo && (this.tableInfo as any).arena?.asset === 'diamonds') {
+        try {
+          assertDiamondCashTable(tableRow as unknown as Record<string, unknown>);
+        } catch (error) {
+          console.error(
+            `[refreshRakeConfig] Diamond table ${this.tableId} rules changed to something the ` +
+              `arena boundary refuses; keeping the admitted rules. ${String(error)}`
+          );
+          return;
+        }
+      }
       if (tableRow && this.tableInfo) {
         this.tableInfo.rake_percent = tableRow.rake_percent ?? undefined;
         this.tableInfo.rake_cap_bb = tableRow.rake_cap_bb ?? undefined;

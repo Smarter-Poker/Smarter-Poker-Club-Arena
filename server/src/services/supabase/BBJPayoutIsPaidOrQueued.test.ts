@@ -19,7 +19,7 @@
  * durable record (the queue) and a loud one (a CRITICAL financial alert) -
  * both carrying every parameter needed to re-drive the payout by hand.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const rpc = vi.fn();
 const from = vi.fn();
@@ -38,6 +38,7 @@ import {
   setBBJPayoutQueue,
   resolveJackpotSiblingClubIds,
 } from './bbj.js';
+import { setMaintenanceFrozen } from '../../maintenance/freezeState.js';
 
 const POOL = 'f9806a7f-e7a2-47d2-a676-36336e3a5337';
 const PARAMS = {
@@ -85,6 +86,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers();
   setBBJPayoutQueue(null);
+  /* The freeze flag is module state in maintenance/freezeState and nothing
+     else in this file resets it. A stale `true` leaking out of the deferral
+     block below would make every test above it assert against a platform that
+     is not running, and they would still pass - silently testing nothing. */
+  setMaintenanceFrozen(false);
   from.mockImplementation((name: string) => {
     if (name === 'clubs') return table({ data: { union_id: 'union-1' }, error: null });
     if (name === 'bbj_contributions') return table({ data: { pool_id: POOL }, error: null });
@@ -705,4 +711,134 @@ it('reports unreadable parked shares at their source without retrying payment', 
     'processBBJPayout.parked_share_read_failed'
   );
   expect(from.mock.calls.some(([name]) => name === 'notifications')).toBe(false);
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A JACKPOT IS A CHIP MOVEMENT, AND THE PLATFORM FREEZES (2026-09-11)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The header of this file already names "the :55 maintenance freeze refusing
+ * the write" as one of the causes the queue exists to survive. It could never
+ * refuse us: `fn_refuse_while_frozen` returns early for any caller whose
+ * `request.jwt.claims.role` is `service_role`, and the engine holds
+ * SUPABASE_SERVICE_ROLE_KEY. So `zz_freeze_guard` on `table_seats` and
+ * `club_members` - the two tables this payout credits - stops browsers and
+ * not the engine, and on this path the engine was the only thing that could
+ * honour Dan's "NO CHIP MOVEMENTS" and it did not ask.
+ *
+ * Measured before the fix: zero of the 27 payouts since the freeze shipped
+ * landed inside the frozen window (:53 announcement to :00 resume). That is
+ * the break working rather than a guarantee - a long hand, `drainHands()`
+ * parking at the :57 restart, or a re-drive landing in the window would each
+ * put a credit inside the freeze.
+ */
+describe('a payout defers to the maintenance break instead of moving chips through it', () => {
+  /* The reset also lives in the FILE-WIDE beforeEach. It was here alone at
+     first, and that was safe only by accident - this describe happens to be
+     the last block in the file and its last test happens to set `false`. Add
+     one test after it, or move this block, and every earlier test in the file
+     would start running against a frozen platform and quietly assert the
+     wrong thing. A test's isolation must not depend on where it sits. */
+  afterEach(() => setMaintenanceFrozen(false));
+
+  it('makes no RPC call at all while the platform is frozen', async () => {
+    setMaintenanceFrozen(true);
+    const outcome = await run();
+    expect(outcome.status).toBe('queued');
+    /* The whole point: not "it tried and the database said no", but that it
+       never asked. The freeze guard cannot refuse a service_role caller. */
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('does not burn its retries or raise a CRITICAL alert for a break we scheduled', async () => {
+    /* A working queue, because that is production: `setBBJPayoutQueue` is
+       called at module scope in FeeReconciler and every entrypoint reaches the
+       engine through GameServer, which imports it. The file-wide beforeEach
+       nulls it, and a NULL queue is the one condition under which a deferral
+       is correctly loud - see the test below. */
+    setBBJPayoutQueue({
+      claim: vi.fn().mockResolvedValue(true),
+      settle: vi.fn().mockResolvedValue(true),
+    } as never);
+    setMaintenanceFrozen(true);
+    await run();
+    /* Falling into the attempt loop would spend four attempts and end in
+       processBBJPayout.exhausted - an alarm that fires every hour on a
+       maintenance break is an alarm that gets muted (CLAUDE.md 10.84). */
+    expect(raiseFinancialAlert).not.toHaveBeenCalled();
+  });
+
+  it('still writes the durable claim, because a record is not a chip movement', async () => {
+    /* `true` is what the real queueUnpaidBBJPayout returns on a confirmed
+       insert, and queueSafely compares against exactly that. */
+    const claim = vi.fn().mockResolvedValue(true);
+    setBBJPayoutQueue({ claim, settle: vi.fn().mockResolvedValue(true) } as never);
+    setMaintenanceFrozen(true);
+    const outcome = await run();
+    expect(outcome.status).toBe('queued');
+    /* The claim is what survives the :57 engine restart and what the
+       reconciler re-drives at the thaw. Deferring without it would be
+       dropping the jackpot, which is the defect this whole file exists for.
+
+       ASSERTED ON THE DEFERRAL'S OWN REASON, not on `claim` merely having been
+       called. The write-ahead at the top of the function calls `claim`
+       unconditionally, so `toHaveBeenCalled()` alone passed with this whole
+       feature deleted - a test that cannot fail is not a test. Only the frozen
+       branch writes a reason beginning "deferred:". */
+    expect(claim).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringMatching(/^deferred: platform frozen/)
+    );
+  });
+
+  it('a deferral whose durable write did NOT land is loud, not silent', async () => {
+    /* The one case where deferring would lose a jackpot: Postgres unreachable
+       while the flag is set - the outage shape the queue exists for. The first
+       cut of this gate threw the claim's answer away, which made it the only
+       `queued` return in the module that could leave nothing behind at all. */
+    const claim = vi.fn().mockRejectedValue(new Error('database is unreachable'));
+    setBBJPayoutQueue({ claim, settle: vi.fn().mockResolvedValue(undefined) } as never);
+    setMaintenanceFrozen(true);
+    const outcome = await run();
+    expect(outcome.status).toBe('queued');
+    expect(raiseFinancialAlert).toHaveBeenCalledWith(
+      'critical',
+      'processBBJPayout.frozen_without_a_claim',
+      // the alert carries every parameter needed to re-drive the payout by hand
+      expect.stringContaining(PARAMS.loserUserId),
+      expect.objectContaining({ loserUserId: PARAMS.loserUserId, queued: false })
+    );
+  });
+
+  it('says WHY it queued, so a deferral is not read as a failure', async () => {
+    setMaintenanceFrozen(true);
+    const outcome = await run();
+    expect(outcome.status).toBe('queued');
+    if (outcome.status === 'queued') {
+      expect(outcome.lastError).toMatch(/frozen/i);
+      expect(outcome.lastError).toMatch(/reconciler pays it when play resumes/i);
+    }
+  });
+
+  it('the MINI defers on the same gate', async () => {
+    setMaintenanceFrozen(true);
+    /* Awaited directly rather than through `run()`: the gate returns before
+       the attempt loop exists, so there are no backoff timers to drain, and
+       the mini's outcome is its own narrower shape. */
+    const outcome = await processMiniBBJPayout({
+      ...PARAMS,
+      tierId: 'small',
+    } as never);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(outcome.status).toBe('queued');
+  });
+
+  it('CONTROL: with the platform running, nothing about the payout changes', async () => {
+    setMaintenanceFrozen(false);
+    rpc.mockResolvedValueOnce({ data: [appliedRow()], error: null });
+    const outcome = await run();
+    expect(outcome.status).toBe('paid');
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
 });

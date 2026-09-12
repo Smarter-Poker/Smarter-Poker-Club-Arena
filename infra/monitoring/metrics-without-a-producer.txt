@@ -1,0 +1,52 @@
+# Metric names referenced by a rule or a dashboard panel that nothing in this
+# repo emits, with the reason. check-monitoring-drift.mjs (checks 8 and 9)
+# fails on any name not listed here, and ALSO fails on a name listed here that
+# no rule or panel references any more, so this file cannot become a parking
+# space.
+#
+# A line here is an admission, not an exemption. Every one of these renders as
+# an empty panel today.
+#
+# Format: <metric name><space><reason>
+
+# ── grafana-dashboards/postgres.json ────────────────────────────────────────
+# The whole dashboard reads postgres_exporter. This stack scrapes four targets
+# (prometheus, node_engine01, engine_game_server, turn_relay) and none of them
+# is a postgres exporter, so all seven panels have shown No Data since the
+# dashboard was added. Either deploy postgres_exporter beside node_exporter and
+# add the scrape job, or delete the dashboard. Listed rather than deleted
+# because the panels are the specification for what to scrape if it is added.
+pg_stat_database_numbackends grafana postgres.json; no postgres_exporter is deployed or scraped
+pg_settings_max_connections grafana postgres.json; no postgres_exporter is deployed or scraped
+pg_replication_lag_seconds grafana postgres.json; no postgres_exporter is deployed or scraped
+pg_stat_database_xact_commit grafana postgres.json; no postgres_exporter is deployed or scraped
+pg_stat_database_xact_rollback grafana postgres.json; no postgres_exporter is deployed or scraped
+pg_stat_database_blks_hit grafana postgres.json; no postgres_exporter is deployed or scraped
+pg_stat_database_blks_read grafana postgres.json; no postgres_exporter is deployed or scraped
+
+# ── grafana-dashboards/slo.json ─────────────────────────────────────────────
+# Every panel reads a recording rule under the `slo:` prefix. The recording
+# rules this estate actually settled on are `sp:<objective>:<window>` in
+# slo-rules.yml, and no `slo:` rule has ever existed. The two naming schemes
+# were never reconciled, so all fourteen panels have shown No Data since the
+# dashboard was added, and four of them are error-budget panels that would read
+# as a full budget rather than as no data.
+#
+# These are also not simple renames: slo.json wants per-surface error ratios
+# (wh_hub, ca_hub, engine, engine_tick) over 1h/6h/1d/3d windows, which
+# slo-rules.yml does not compute at all. Rewriting the dashboard against `sp:`
+# or adding the recording rules is a piece of work, not a find-and-replace.
+slo:wh_hub:budget_remaining_30d grafana slo.json; the `slo:` recording rules were never written, the estate uses `sp:`
+slo:ca_hub:budget_remaining_30d grafana slo.json; the `slo:` recording rules were never written, the estate uses `sp:`
+slo:engine:budget_remaining_30d grafana slo.json; the `slo:` recording rules were never written, the estate uses `sp:`
+slo:engine_tick:budget_remaining_30d grafana slo.json; the `slo:` recording rules were never written, the estate uses `sp:`
+slo:wh_hub:error_ratio_1h grafana slo.json; the `slo:` recording rules were never written, the estate uses `sp:`
+slo:ca_hub:error_ratio_1h grafana slo.json; the `slo:` recording rules were never written, the estate uses `sp:`
+slo:engine:error_ratio_1h grafana slo.json; the `slo:` recording rules were never written, the estate uses `sp:`
+slo:engine_tick:p99_5m grafana slo.json; the `slo:` recording rules were never written, the estate uses `sp:`
+slo:wh_hub:error_ratio_6h grafana slo.json; the `slo:` recording rules were never written, the estate uses `sp:`
+slo:wh_hub:error_ratio_1d grafana slo.json; the `slo:` recording rules were never written, the estate uses `sp:`
+slo:wh_hub:error_ratio_3d grafana slo.json; the `slo:` recording rules were never written, the estate uses `sp:`
+slo:engine:error_ratio_6h grafana slo.json; the `slo:` recording rules were never written, the estate uses `sp:`
+slo:engine:error_ratio_1d grafana slo.json; the `slo:` recording rules were never written, the estate uses `sp:`
+slo:engine:error_ratio_3d grafana slo.json; the `slo:` recording rules were never written, the estate uses `sp:`

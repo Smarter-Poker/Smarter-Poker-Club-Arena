@@ -146,6 +146,11 @@ describe('LAW 4 - the key survives every hop of the prop chain', () => {
 describe('LAW 5 - a lost response never claims the wallet was not charged', () => {
   it('the transport case says the outcome is unknown', () => {
     expect(TABLE_PAGE).toContain("res.code === 'TRANSPORT'");
-    expect(TABLE_PAGE).toContain('Your Chips May Have Been Added');
+    /* 2026-09-12: a Diamond seat tops up through the same handler, so the
+       sentence is written in the seat's own unit. The law is what it must SAY -
+       that the outcome is unknown and the stack is worth checking - not the one
+       spelling it had while chips were the only asset. */
+    expect(TABLE_PAGE).toContain('May Have Been Added. Check Your Stack Before Trying Again.');
+    expect(TABLE_PAGE).toContain('Your ${topUpUnits} May Have Been Added');
   });
 });

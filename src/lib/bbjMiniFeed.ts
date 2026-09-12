@@ -62,9 +62,32 @@ export interface BbjMiniSnapshot {
   hits30d: number;
   paid30d: number;
   lastHitAt: string | null;
+  /* THE RUNWAY (phase 3). Both rates are measured over ONE window -
+     `windowDays`, which is seven days or the mini's age, whichever is shorter -
+     so they are comparable. A seven-day divisor on a four-day-old mini reported
+     a spend rate about half the real one, which is how a pool can read solvent
+     while draining. */
+  /**
+   * THE RATES ARE THE CLUB'S BUSINESS, so the database returns them only to
+   * that club's staff: `in_per_day` is its daily jackpot rake income. NULL
+   * here means "not yours to see", which is NOT the same as a rate of zero -
+   * so these are nullable all the way to the surface rather than flattened
+   * through `num()`. `isOperator` says which case you are in.
+   */
+  inPerDay: number | null;
+  outPerDay: number | null;
+  netPerDay: number | null;
+  /** Days until the reserve reaches its floor. NULL when not draining, or hidden. */
+  daysToFloor: number | null;
+  /** The lowest floor the database will accept: one payout at the largest tier. */
+  floorMinimum: number | null;
+  windowDays: number | null;
+  /** The caller is staff of this club, so the rates above are populated. */
+  isOperator: boolean;
 }
 
 export type BbjMiniListener = (snapshot: BbjMiniSnapshot) => void;
+export type BbjMiniReadOutcome = 'ready' | 'empty' | 'error';
 
 /** Sixty seconds: configuration plus a reserve that moves on hits, not on hands. */
 export const BBJ_MINI_POLL_MS = 60_000;
@@ -74,6 +97,8 @@ interface ClubFeed {
   timer: ReturnType<typeof setInterval> | null;
   last: BbjMiniSnapshot | null;
   reading: boolean;
+  firstRead: BbjMiniReadOutcome | null;
+  firstReadListeners: Set<(outcome: BbjMiniReadOutcome) => void>;
 }
 
 const feeds = new Map<string, ClubFeed>();
@@ -86,6 +111,13 @@ function documentIsVisible(): boolean {
 function num(v: unknown): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+/** Like `num`, but NULL and undefined survive as null rather than becoming 0. */
+function maybeNum(v: unknown): number | null {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
 }
 
 function parseTiers(raw: unknown): BbjMiniTier[] {
@@ -124,6 +156,13 @@ function sameSnapshot(a: BbjMiniSnapshot | null, b: BbjMiniSnapshot): boolean {
     a.hits30d !== b.hits30d ||
     a.paid30d !== b.paid30d ||
     a.lastHitAt !== b.lastHitAt ||
+    a.inPerDay !== b.inPerDay ||
+    a.outPerDay !== b.outPerDay ||
+    a.netPerDay !== b.netPerDay ||
+    a.daysToFloor !== b.daysToFloor ||
+    a.floorMinimum !== b.floorMinimum ||
+    a.windowDays !== b.windowDays ||
+    a.isOperator !== b.isOperator ||
     a.tiers.length !== b.tiers.length
   ) {
     return false;
@@ -146,6 +185,7 @@ function sameSnapshot(a: BbjMiniSnapshot | null, b: BbjMiniSnapshot): boolean {
 async function readOnce(clubId: string, feed: ClubFeed): Promise<void> {
   if (feed.reading) return;
   feed.reading = true;
+  let outcome: BbjMiniReadOutcome = 'error';
   try {
     const { data, error } = await supabase.rpc('fn_bbj_mini_for_club', { p_club_id: clubId });
     if (error) {
@@ -153,7 +193,10 @@ async function readOnce(clubId: string, feed: ClubFeed): Promise<void> {
       return;
     }
     const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
-    if (!row) return;
+    if (!row) {
+      outcome = 'empty';
+      return;
+    }
     const next: BbjMiniSnapshot = {
       poolId: (row.pool_id as string) ?? null,
       enabled: row.enabled === true,
@@ -170,7 +213,19 @@ async function readOnce(clubId: string, feed: ClubFeed): Promise<void> {
       hits30d: num(row.hits_30d),
       paid30d: num(row.paid_30d),
       lastHitAt: row.last_hit_at ? String(row.last_hit_at) : null,
+      /* NULL stays NULL on every one of these. For days_to_floor a zero would
+         read as "the floor is reached today" rather than "not draining"; for
+         the rates it would read as "this club earns nothing" rather than "you
+         may not see it". */
+      inPerDay: maybeNum(row.in_per_day),
+      outPerDay: maybeNum(row.out_per_day),
+      netPerDay: maybeNum(row.net_per_day),
+      daysToFloor: maybeNum(row.days_to_floor),
+      floorMinimum: maybeNum(row.floor_minimum),
+      windowDays: maybeNum(row.window_days),
+      isOperator: row.is_operator === true,
     };
+    outcome = 'ready';
     if (sameSnapshot(feed.last, next)) return;
     feed.last = next;
     for (const listener of feed.listeners) {
@@ -184,6 +239,15 @@ async function readOnce(clubId: string, feed: ClubFeed): Promise<void> {
     reportError(e, 'bbjMiniFeed.read_threw', { clubId });
   } finally {
     feed.reading = false;
+    feed.firstRead = outcome;
+    for (const listener of feed.firstReadListeners) {
+      try {
+        listener(outcome);
+      } catch (e) {
+        reportError(e, 'bbjMiniFeed.first_read_listener_threw', { clubId });
+      }
+    }
+    feed.firstReadListeners.clear();
   }
 }
 
@@ -208,18 +272,34 @@ function hookVisibility(): void {
  * Watch a club's mini jackpot. Returns the unsubscribe. The listener is called
  * immediately with the last known snapshot when one exists.
  */
-export function watchBbjMini(clubId: string, listener: BbjMiniListener): () => void {
+export function watchBbjMini(
+  clubId: string,
+  listener: BbjMiniListener,
+  onFirstRead?: (outcome: BbjMiniReadOutcome) => void
+): () => void {
   if (!clubId) return () => undefined;
   hookVisibility();
 
   let feed = feeds.get(clubId);
   if (!feed) {
-    feed = { listeners: new Set(), timer: null, last: null, reading: false };
+    feed = {
+      listeners: new Set(),
+      timer: null,
+      last: null,
+      reading: false,
+      firstRead: null,
+      firstReadListeners: new Set(),
+    };
     feeds.set(clubId, feed);
   }
   const owned = feed;
   owned.listeners.add(listener);
   if (owned.last) listener(owned.last);
+  if (onFirstRead) {
+    if (owned.last) onFirstRead('ready');
+    else if (owned.firstRead) onFirstRead(owned.firstRead);
+    else owned.firstReadListeners.add(onFirstRead);
+  }
 
   if (owned.timer === null) {
     void readOnce(clubId, owned);
@@ -228,6 +308,7 @@ export function watchBbjMini(clubId: string, listener: BbjMiniListener): () => v
 
   return () => {
     owned.listeners.delete(listener);
+    if (onFirstRead) owned.firstReadListeners.delete(onFirstRead);
     if (owned.listeners.size > 0) return;
     if (owned.timer !== null) clearInterval(owned.timer);
     feeds.delete(clubId);
@@ -313,6 +394,116 @@ export async function setBbjMiniEnabled(
     return { ok: true, enabled: row.mini_enabled !== false };
   } catch (e) {
     reportError(e, 'bbjMiniFeed.set_threw', { clubId, enabled });
+    return { ok: false, reason: 'request_failed' };
+  }
+}
+
+/**
+ * Set a club's mini reserve floor (phase 3). Same shape as
+ * `setBbjMiniEnabled`: the DATABASE decides who may do this, whether the club
+ * owns its pool at all, and how low the floor may go - the floor may not fall
+ * below one payout at the largest enabled tier, or the felt would promise an
+ * amount the payout RPC must refuse. Returns the reason rather than throwing,
+ * and re-reads the feed on success.
+ */
+export async function setBbjMiniFloor(
+  clubId: string,
+  floor: number
+): Promise<{ ok: true; floor: number } | { ok: false; reason: string; minimum?: number }> {
+  try {
+    const { data, error } = await supabase.rpc('fn_bbj_set_club_mini_floor', {
+      p_club_id: clubId,
+      p_floor: floor,
+    });
+    if (error) {
+      reportError(error, 'bbjMiniFeed.set_floor_failed', { clubId, floor });
+      return { ok: false, reason: 'request_failed' };
+    }
+    const row = (data ?? {}) as Record<string, unknown>;
+    if (row.ok !== true) {
+      return {
+        ok: false,
+        reason: String(row.reason ?? 'refused'),
+        minimum: row.minimum === undefined ? undefined : num(row.minimum),
+      };
+    }
+    refreshBbjMini();
+    return { ok: true, floor: num(row.mini_reserve_floor) };
+  } catch (e) {
+    reportError(e, 'bbjMiniFeed.set_floor_threw', { clubId, floor });
+    return { ok: false, reason: 'request_failed' };
+  }
+}
+
+/**
+ * THE UNION'S OWN TWO CONTROLS (2026-09-11).
+ *
+ * The two above are keyed on a CLUB and both refuse a club inside a union with
+ * `union_club_follows_the_union` - correctly, because one member club must not
+ * decide what every table under a union pays. The union was then given nothing
+ * to follow that sentence to: there was no `fn_bbj_set_union_mini_*` at all,
+ * and the LARGER pool on this platform is a union pool. So the mini's switch
+ * and its reserve floor were unreachable for the pool they matter most to.
+ *
+ * Same shape as the club pair on purpose - the database decides who may call
+ * them (`fn_is_union_operator`: the union's owner, or a row in `union_admins`)
+ * and how low the floor may go (one payout at the largest enabled tier) - and
+ * the reason comes back rather than being thrown, so the surface can say why.
+ *
+ * They do NOT call `refreshBbjMini()`. That feed is keyed by club id and these
+ * take a union id; a union operator's surface re-reads the pool row it already
+ * holds. Calling it with no club in hand would refresh nothing and read as
+ * though it had.
+ */
+export async function setBbjUnionMiniEnabled(
+  unionId: string,
+  enabled: boolean
+): Promise<{ ok: true; enabled: boolean } | { ok: false; reason: string }> {
+  try {
+    const { data, error } = await supabase.rpc('fn_bbj_set_union_mini_enabled', {
+      p_union_id: unionId,
+      p_enabled: enabled,
+    });
+    if (error) {
+      reportError(error, 'bbjMiniFeed.union_set_failed', { unionId, enabled });
+      return { ok: false, reason: 'request_failed' };
+    }
+    const row = (data ?? {}) as Record<string, unknown>;
+    if (row.ok !== true) {
+      return { ok: false, reason: String(row.reason ?? 'refused') };
+    }
+    return { ok: true, enabled: row.mini_enabled !== false };
+  } catch (e) {
+    reportError(e, 'bbjMiniFeed.union_set_threw', { unionId, enabled });
+    return { ok: false, reason: 'request_failed' };
+  }
+}
+
+/** The union's reserve floor. See `setBbjUnionMiniEnabled` for why this pair exists. */
+export async function setBbjUnionMiniFloor(
+  unionId: string,
+  floor: number
+): Promise<{ ok: true; floor: number } | { ok: false; reason: string; minimum?: number }> {
+  try {
+    const { data, error } = await supabase.rpc('fn_bbj_set_union_mini_floor', {
+      p_union_id: unionId,
+      p_floor: floor,
+    });
+    if (error) {
+      reportError(error, 'bbjMiniFeed.union_set_floor_failed', { unionId, floor });
+      return { ok: false, reason: 'request_failed' };
+    }
+    const row = (data ?? {}) as Record<string, unknown>;
+    if (row.ok !== true) {
+      return {
+        ok: false,
+        reason: String(row.reason ?? 'refused'),
+        minimum: row.minimum === undefined ? undefined : num(row.minimum),
+      };
+    }
+    return { ok: true, floor: num(row.mini_reserve_floor) };
+  } catch (e) {
+    reportError(e, 'bbjMiniFeed.union_set_floor_threw', { unionId, floor });
     return { ok: false, reason: 'request_failed' };
   }
 }

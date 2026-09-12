@@ -24,6 +24,7 @@ import {
   detectBBJHit,
   detectBBJNearMiss,
   detectMiniBBJHit,
+  detectMiniBBJNearMiss,
   getTierIdForBB,
 } from '../config/RakeConfig.js';
 import type { BBJDetectionResult } from '../config/RakeConfig.js';
@@ -89,6 +90,31 @@ const cents = (n: number): number => {
  * hours ago still buyable.
  */
 const RABBIT_HUNT_OFFER_TTL_MS = 90_000;
+
+/**
+ * HOW LONG A PREDECESSOR KEEPS TRYING TO FINISH ITS OWN ENVELOPE (2026-09-12).
+ *
+ * The post-commit envelope is authorized by the durable hand receipt, not by a
+ * dealer lease - `processHandPostCommitObligations` says so in its own contract
+ * and the database enforces it with a per-table `pg_advisory_xact_lock`, a
+ * `SELECT ... FOR UPDATE` and an `already_completed` early return. So an engine
+ * whose 20-second proof lapsed mid-settlement is still entitled to finish the
+ * work it committed, and the ONLY reason to stop is that somebody else should
+ * take over.
+ *
+ * Somebody else always can: the outbox row is authoritative and the projection
+ * worker is its successor. This budget is therefore not a safety limit, it is a
+ * handover time. Five seconds is one projection-worker poll interval, so the
+ * successor is already awake by the time this gives up, and it is short enough
+ * that a drain cannot hold the dealing loop's next-hand barrier for long.
+ *
+ * It bounds ONLY the post-fence case. While the engine can still mutate, the
+ * barrier stays exactly as unbounded as it has always been - see the loop in
+ * postHandTasks - because capping a healthy retry would file the critical alert
+ * on hands that were about to succeed, which is the defect
+ * `aDetectorMayNotCryWolf` was written for.
+ */
+const POST_COMMIT_DRAIN_BUDGET_MS = 5_000;
 
 export abstract class ServerTableEngineSettlement extends ServerTableEngineDealing {
   /**
@@ -302,7 +328,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     dealtInPlayerIds: string[],
     variant: string,
     handNumber: number
-  ): Promise<BBJDetectionResult | null> {
+  ): Promise<{ kind: 'main' | 'mini'; result: BBJDetectionResult } | null> {
     /* Refuse before claiming, never after. An arm burned on a hand that cannot
        produce a payout is an operator arming again and wondering why. */
     if (this.currentHandShowdownResults.length < 2) return null;
@@ -332,32 +358,59 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         reportError(error, 'ServerTableEngine.bbj_drill_claim_failed', { tableId: this.tableId });
         return null;
       }
-      const claim = (Array.isArray(data) ? data[0] : data) as { claimed?: boolean } | null;
+      const claim = (Array.isArray(data) ? data[0] : data) as {
+        claimed?: boolean;
+        kind?: string;
+      } | null;
       if (!claim?.claimed) return null;
 
+      /* WHICH JACKPOT THIS ARM ASKED FOR (2026-09-11). The arm row carries it
+         and the claim hands it back, because the engine cannot read the row
+         and must not guess: a mini drill taking the main branch would pay a
+         SHARE OF THE POOL for an arm that asked for a flat tier out of the
+         reserve. An arm written before the column existed answers 'main',
+         which is what it was. Anything unrecognised is treated as 'main' too
+         - the conservative reading, and the one every historical row means. */
+      const kind: 'main' | 'mini' = claim.kind === 'mini' ? 'mini' : 'main';
+
       console.warn(
-        `[ServerTableEngine:${this.tableId}] *** BBJ DRILL FIRED *** hand #${handNumber}. ` +
-          `This is a drill, not a real bad beat. The chips are real.`
+        `[ServerTableEngine:${this.tableId}] *** BBJ ${kind.toUpperCase()} DRILL FIRED *** ` +
+          `hand #${handNumber}. This is a drill, not a real bad beat. The chips are real.`
       );
-      EngineMetrics.bbjDrillsFiredTotal.inc(1);
+      /* EACH FAMILY'S OWN DRILL COUNTER. `bbjDrillsFiredTotal` is documented -
+         in engineInstruments and in the runbook - as the subtrahend in
+         `detected - drills = genuine bad beats`. The first cut of the mini
+         drill incremented it while incrementing the MINI's detected counter,
+         which made `bbj_hits_detected - bbj_drills_fired` under-count genuine
+         main bad beats by one per mini drill and go negative in a window where
+         minis were drilled and no main hit. Two counters, two arithmetics,
+         neither borrowing from the other. */
+      if (kind === 'mini') {
+        EngineMetrics.bbjMiniDrillsFiredTotal.inc(1);
+      } else {
+        EngineMetrics.bbjDrillsFiredTotal.inc(1);
+      }
 
       return {
-        hit: true,
-        loserUserId: loser.userId,
-        loserHand: {
-          ranking: loser.handRanking,
-          name: loser.handName,
-          kickers: loser.kickers ?? [],
+        kind,
+        result: {
+          hit: true,
+          loserUserId: loser.userId,
+          loserHand: {
+            ranking: loser.handRanking,
+            name: loser.handName,
+            kickers: loser.kickers ?? [],
+          },
+          winnerUserId: winner.userId,
+          winnerHand: {
+            ranking: winner.handRanking,
+            name: winner.handName,
+            kickers: winner.kickers ?? [],
+          },
+          dealtInPlayerIds,
+          variant,
+          qualifyingHandLabel: 'Drill',
         },
-        winnerUserId: winner.userId,
-        winnerHand: {
-          ranking: winner.handRanking,
-          name: winner.handName,
-          kickers: winner.kickers ?? [],
-        },
-        dealtInPlayerIds,
-        variant,
-        qualifyingHandLabel: 'Drill',
       };
     } catch (e) {
       reportError(e, 'ServerTableEngine.bbj_drill_claim_threw', { tableId: this.tableId });
@@ -1070,10 +1123,26 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
          leave on. `fn_bbj_arm_drill` refuses a union pool outright (that is
          where the production jackpot lives) and any pool over 1,000.00. */
       let drillResult: typeof bbjResult | null = null;
+      /* WHICH JACKPOT THE ARM ASKED FOR (2026-09-11). Until today a drill was
+         always a MAIN drill, and its verdict took the main branch below - so
+         on a drill table the mini was never even asked. The drill is tried
+         precisely when the main rule refused, which is exactly the case the
+         mini exists to catch, so a hand that genuinely qualified for the mini
+         had it silently displaced. "One hand pays one jackpot" makes that the
+         right outcome; nothing made it a decision anybody had taken, and
+         nothing let an operator drill the mini instead. */
+      let drillKind: 'main' | 'mini' = 'main';
       if (!bbjResult.hit) {
-        drillResult = await this.claimBBJDrill(dealtInPlayerIds, variant, this.handCount);
+        const claimed = await this.claimBBJDrill(dealtInPlayerIds, variant, this.handCount);
+        if (claimed) {
+          drillResult = claimed.result;
+          drillKind = claimed.kind;
+        }
       }
-      const effectiveBbjResult = drillResult ?? bbjResult;
+      /* A MINI drill must NOT become a main jackpot. It falls through to the
+         else branch below, where it stands in for the mini's own detection -
+         same synthetic verdict, the mini's payout path, the mini's money. */
+      const effectiveBbjResult = drillKind === 'main' ? (drillResult ?? bbjResult) : bbjResult;
 
       if (effectiveBbjResult.hit) {
         const bbjResult = effectiveBbjResult;
@@ -1161,16 +1230,28 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
            can produce one payout of either kind and never both. The money is a
            flat amount per stakes tier out of `backup_balance` - a reserve that
            until now nothing spent - never out of the jackpot itself. */
-        const miniResult = detectMiniBBJHit(
-          this.currentHandShowdownResults,
-          this.currentHandWinnerIds,
-          variant,
-          this.currentHandPotSize,
-          this.tableInfo.big_blind,
-          dealtInPlayerIds.length,
-          dealtInPlayerIds,
-          { doubleBoard: this.currentHandCommunityCards2.length > 0 }
-        );
+        /* A MINI DRILL STANDS IN FOR THE MINI'S DETECTION, AND FOR NOTHING
+           ELSE (2026-09-11). Same construction as the main drill one branch
+           up: the showdown is real - real players, real board, real pot, real
+           chips out of the real reserve - and only the VERDICT is injected.
+           `miniRule` says `drill` rather than borrowing a real rule's name,
+           because every downstream reader of that field (the near-miss table,
+           the settlement log, the notification) would otherwise record a
+           synthetic verdict as `aces_full_or_better` and make a drill
+           indistinguishable from the thing it is drilling. */
+        const miniResult =
+          drillKind === 'mini' && drillResult
+            ? { ...drillResult, miniRule: 'drill' as const }
+            : detectMiniBBJHit(
+                this.currentHandShowdownResults,
+                this.currentHandWinnerIds,
+                variant,
+                this.currentHandPotSize,
+                this.tableInfo.big_blind,
+                dealtInPlayerIds.length,
+                dealtInPlayerIds,
+                { doubleBoard: this.currentHandCommunityCards2.length > 0 }
+              );
 
         if (miniResult.hit) {
           const miniTierId = getTierIdForBB(this.tableInfo.big_blind);
@@ -1181,6 +1262,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           );
           this.currentHandMiniBBJHit = miniResult;
           this.currentHandMiniBBJTierId = miniTierId;
+          /* The mini's OWN detected counter (2026-09-11). It must not touch
+             the main's: `bbjHitsDetectedTotal` is documented as one half of
+             the difference `detected - paid`, and a mini landing in it would
+             be read as a main jackpot that never delivered. */
+          EngineMetrics.bbjMiniHitsDetectedTotal.inc(1);
 
           /* The same event the main jackpot emits, carrying `kind: 'mini'` so
              a client can show a smaller celebration - and so an older client,
@@ -1209,6 +1295,14 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // losing hand and miss on exactly one condition? Teaching the rules
         // in the moment beats a rules page nobody opens. Display only: this
         // branch moves no money and cannot gate a payout.
+        /* THE MAIN BAR IS INSIDE THE MINI BAR, so a hand that nearly won the
+           MAIN jackpot nearly won the mini too, for the same reason. Without
+           this flag settlement wrote TWO bbj_near_misses rows and emitted TWO
+           bbj_near_miss hub events for one hand - the player was toasted
+           twice, once "would have qualified" and once "would have taken the
+           Mini", and every per-hand near-miss count double-counted
+           not_enough_players, pot_too_small and winner_not_quads. */
+        let mainNearMissReported = false;
         try {
           const nearMiss = detectBBJNearMiss(
             this.currentHandShowdownResults,
@@ -1220,6 +1314,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             bbjBoard
           );
           if (nearMiss.nearMiss) {
+            mainNearMissReported = true;
             console.log(
               `[ServerTableEngine:${this.tableId}] BBJ near miss (${nearMiss.reason}): ` +
                 `${nearMiss.userId} held ${nearMiss.handName}`
@@ -1258,6 +1353,72 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         } catch (nmErr) {
           // A cosmetic banner must never break settlement.
           console.warn(`[ServerTableEngine:${this.tableId}] BBJ near-miss check failed:`, nmErr);
+        }
+
+        /* THE MINI'S OWN NEAR MISS (phase 3, 2026-09-11). The check above only
+           ever judged the MAIN rule, and only for a loser who had already
+           cleared the MAIN hand bar - so the mini, which exists to catch the
+           beats the main turns away, had no near-miss record at all. Measured
+           that day: 50 near misses in seven days, ZERO about the mini, and 13
+           of them `both_cards_must_play`, a rule the mini DROPS. Its rate was
+           unmeasurable and its tuning guesswork.
+
+           Reasons are prefixed `mini_`, the same shape settlement already uses
+           for `mini_refused:<reason>`, so one table carries both jackpots and a
+           query can always tell them apart. Display and record only: like the
+           main's, this branch moves no money and cannot gate a payout. */
+        try {
+          /* Only when the main said nothing. A loser who cleared the MAIN bar
+             has necessarily cleared the MINI bar (hold'em AAAJJ+ with an ace
+             in hand is a subset of aces-full-or-better; Omaha KKKK is a subset
+             of any quads), and `miniMinPlayersDealt` ships equal to the main's,
+             so the two detectors agree on every shared gate. The mini's record
+             is the one that adds something exactly when the main is silent -
+             the beats the main rule turns away, which is what the mini is for. */
+          const miniNearMiss = mainNearMissReported
+            ? { nearMiss: false as const }
+            : detectMiniBBJNearMiss(
+                this.currentHandShowdownResults,
+                this.currentHandWinnerIds,
+                variant,
+                this.currentHandPotSize,
+                this.tableInfo.big_blind,
+                dealtInPlayerIds.length,
+                { doubleBoard: this.currentHandCommunityCards2.length > 0 }
+              );
+          if (miniNearMiss.nearMiss) {
+            console.log(
+              `[ServerTableEngine:${this.tableId}] MINI BBJ near miss (${miniNearMiss.reason}): ` +
+                `${miniNearMiss.userId} held ${miniNearMiss.handName}`
+            );
+            void recordBBJNearMiss({
+              tableId: this.tableId,
+              clubId: this.tableInfo?.club_id ?? null,
+              handNumber: this.handCount,
+              variant,
+              bigBlind: this.tableInfo?.big_blind ?? null,
+              potSize: this.currentHandPotSize,
+              playersDealt: dealtInPlayerIds.length,
+              userId: miniNearMiss.userId,
+              handName: miniNearMiss.handName,
+              reason: miniNearMiss.reason,
+              message: miniNearMiss.message,
+            }).catch(() => undefined);
+            this.hub?.emitEvent(this.tableId, {
+              type: 'bbj_near_miss',
+              table_id: this.tableId,
+              hand_number: this.handCount,
+              user_id: miniNearMiss.userId,
+              hand_name: miniNearMiss.handName,
+              reason: miniNearMiss.reason,
+              message: miniNearMiss.message,
+            });
+          }
+        } catch (nmErr) {
+          console.warn(
+            `[ServerTableEngine:${this.tableId}] MINI BBJ near-miss check failed:`,
+            nmErr
+          );
         }
       }
     }
@@ -2380,7 +2541,34 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
          absent count as "read to find out". */
       let resolvedAddOnCount: number | undefined;
       this.setLoopPhase('settlement_post_commit_obligations');
-      while (!obligationsApplied && this.lifecycleCanMutate()) {
+      /* THE DRAIN DOES NOT NEED THE LEASE; THE REFLECTION BELOW STILL DOES
+       * (2026-09-12).
+       *
+       * This loop used to be gated on `lifecycleCanMutate()` - a DEALER-LEASE
+       * check - around a call whose contract explicitly disclaims the lease:
+       * "This call deliberately carries no dealer lease: once the exact
+       * settlement transaction commits, completing its frozen obligations is
+       * authorized by the durable hand receipt, not by whichever process
+       * happens to resume it."
+       *
+       * So the one case the barrier exists for - a hand committed by an engine
+       * whose proof expired while the settlement was in flight - was the exact
+       * case in which the loop body never ran. `attempt` stayed 0, and the
+       * give-up branch below filed a CRITICAL financial alert reading "after 0
+       * attempt(s)": an alarm about abandoning an envelope this process had
+       * never once tried to apply. 935 of 949 such alerts all-time carried
+       * `attempts: 0`, 414 of them in the eight hours of the 2026-09-12 lease
+       * outage, when every engine in the fleet was losing its proof every 20
+       * seconds.
+       *
+       * The lease term is replaced by a handover budget, and only for the
+       * post-fence case: while this engine can still mutate the barrier is
+       * unbounded exactly as before. `postCommitStateCanReflect` below is
+       * re-read from `lifecycleCanMutate()` and is UNCHANGED - the drain loses
+       * the lease term, the reflection never does. */
+      const drainDeadline = Date.now() + POST_COMMIT_DRAIN_BUDGET_MS;
+      const mayStillDrain = (): boolean => this.lifecycleCanMutate() || Date.now() < drainDeadline;
+      while (!obligationsApplied && mayStillDrain()) {
         attempt++;
         try {
           const outcome = await processHandPostCommitObligations(v_handHistoryId);
@@ -2424,10 +2612,20 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
              What moved is the FINANCIAL ALERT: it now fires only where the
              loop actually abandons the envelope - see `if (!obligationsApplied)`
              below - which is the condition its message has always described. */
-          if (this.lifecycleCanMutate()) {
-            this.markProgress();
-            await this.sleep(Math.min(150 * 2 ** Math.min(attempt - 1, 5), 5_000));
-          }
+          /* The backoff runs post-fence too, or the budget above buys exactly
+             one attempt: this was also gated on `lifecycleCanMutate()`, so an
+             engine past its proof slept zero and spun its whole handover
+             window into one tight retry. `markProgress` writes local watchdog
+             state only - no seat, no chip, no row - and on an engine that has
+             already been killed for restart it is a no-op the watchdog never
+             reads. The sleep is capped by what is left of the handover so the
+             ceiling really is the budget. */
+          this.markProgress();
+          const backoffMs = Math.min(150 * 2 ** Math.min(attempt - 1, 5), 5_000);
+          const handoverLeftMs = Math.max(0, drainDeadline - Date.now());
+          await this.sleep(
+            this.lifecycleCanMutate() ? backoffMs : Math.min(backoffMs, handoverLeftMs)
+          );
         }
       }
       postCommitStateCanReflect = this.lifecycleCanMutate();
@@ -2778,7 +2976,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       if (!this.lifecycleCanMutate()) return;
 
       if (outcome.status === 'queued') {
-        EngineMetrics.bbjPayoutsQueuedTotal.inc(1);
+        /* THE MINI'S OWN QUEUED COUNTER (2026-09-11). This read
+           `bbjPayoutsQueuedTotal` - the MAIN's - so every queued mini inflated
+           the main jackpot's queue and skewed the one ratio those counters
+           exist to publish. */
+        EngineMetrics.bbjMiniPayoutsQueuedTotal.inc(1);
         this.hub?.emitEvent(this.tableId, {
           type: 'bbj_payout_pending',
           kind: 'mini',
@@ -2810,7 +3012,21 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
            seventeen silent days (CLAUDE.md 10.86). Same instrument, same
            table, so one query answers both "why did the main not pay" and
            "why did the mini not pay". Fire-and-forget; never gates. */
-        if (outcome.status === 'skipped') {
+        /* A REPLAY IS NOT A REFUSAL (2026-09-11). `already_paid` came back
+           through this branch and was written down as `mini_refused:
+           already_paid`, which is the one instrument built to answer "why did
+           the mini not pay" reporting a mini that DID pay. The comment above
+           was careful to exclude `queued` for exactly this reason and did not
+           exclude the other not-a-refusal beside it. Settlement can run twice
+           for one hand - that is what the idempotency key is for - and the
+           second run finding the payout already there is the key working. */
+        const refused = outcome.status === 'skipped' && outcome.reason !== 'already_paid';
+        if (refused) {
+          /* A REFUSAL IS A NUMBER (CLAUDE.md 10.84). The row below is the
+             detail; this is the series an alert can watch, because a reserve
+             that has reached its floor refuses EVERY mini at those tables and
+             the only other evidence is an absence of hits. */
+          EngineMetrics.bbjMiniPayoutsRefusedTotal.inc(1);
           void recordBBJNearMiss({
             tableId: this.tableId,
             clubId: this.tableInfo?.club_id ?? null,
@@ -2827,6 +3043,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         }
         return;
       }
+
+      /* THE MINI'S OWN PAID COUNTER (2026-09-11). Nothing was incremented
+         here, so `poker_bbj_mini_hits_detected_total` had no counterpart and
+         the mini's health could not be read the way the main's is: detected
+         == paid. */
+      EngineMetrics.bbjMiniPayoutsPaidTotal.inc(1);
 
       console.log(
         `[ServerTableEngine:${this.tableId}] mini jackpot paid ${outcome.total} ` +

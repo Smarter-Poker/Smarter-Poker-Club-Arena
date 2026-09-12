@@ -40,6 +40,7 @@ import { processBBJPayout, setBBJPayoutQueue } from './supabase/bbj.js';
 import type { BBJPayoutParams } from './supabase/bbj.js';
 import { reportError } from './errorReporter.js';
 import { raiseFinancialAlert } from './financialAlerts.js';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 
 /**
  * 'bbj_payout' (BBJ audit 2026-09-05): a jackpot the engine DETECTED but could
@@ -536,8 +537,14 @@ export async function reconcilePendingFees(): Promise<{
   resolved: number;
   stillFailing: number;
   exhausted: number;
+  /* DEFERRED IS ITS OWN OUTCOME (2026-09-11). A jackpot row skipped because
+     the platform is on its maintenance break is neither resolved nor still
+     failing, and folding it into either would be a signal answering when it
+     has deliberately not looked (CLAUDE.md 10.86). scanned - resolved -
+     stillFailing must still add up, so the deferral has to be countable. */
+  deferredFrozen: number;
 }> {
-  const summary = { scanned: 0, resolved: 0, stillFailing: 0, exhausted: 0 };
+  const summary = { scanned: 0, resolved: 0, stillFailing: 0, exhausted: 0, deferredFrozen: 0 };
 
   const { data, error } = await supabase
     .from('pending_fee_distributions')
@@ -558,6 +565,34 @@ export async function reconcilePendingFees(): Promise<{
   if (rows.length === 0) return summary;
 
   for (const row of rows) {
+    /* ═══════════════════════════════════════════════════════════════════════
+       THE SWEEP CHECKS THE FREEZE, FOR EVERY KIND (section 13 rule 5, 2026-09-11)
+       ═══════════════════════════════════════════════════════════════════════
+
+       Every row this loop re-drives moves money: `bbj_payout` credits seats,
+       `rake` calls `atomic_distribute_rake`, and the fall-through banks a BBJ
+       drop through `logBBJCollection`. Dan, section 13: "NO CHIP MOVEMENTS."
+
+       The first cut of this check gated only the jackpot branch, on the
+       reasoning that jackpots were what this programme was about. That left
+       the other two moving money through the break, and made the check's own
+       justification false: it is here so that a caller which forgets to gate
+       the cycle cannot slip money through, and two thirds of the money was
+       still slipping. `GameServer` does return early while frozen, but the
+       cycle is sized to run "comfortably under a minute of sequential RPCs" -
+       a freeze that begins MID-cycle is exactly the case a caller-level gate
+       cannot cover, and exactly the case this one is for.
+
+       The row is left completely untouched rather than attempted and failed:
+       bumping its attempt counter and writing a failure message would read in
+       the log as work that failed, when what happened is a break we scheduled.
+       It is also checked FIRST, before the `hand_history` resolution below,
+       so a deferred row costs no reads either. */
+    if (isMaintenanceFrozen()) {
+      summary.deferredFrozen++;
+      continue;
+    }
+
     let ok = false;
     let failureMessage = '';
     /* A jackpot that landed from the durable fee queue rather than live. The table is told

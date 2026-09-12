@@ -37,11 +37,35 @@
  *      null/blackhole-style name, and not a receiver with no delivery
  *      configured at all.
  *
- * Deliberately NOT checked: rule expressions. This guards the wiring.
+ *   8. Every metric name a rule EXPRESSION references has something in this
+ *      repo that emits it. Added 2026-09-11, after fifteen rules written on
+ *      2026-09-04 were found referencing thirteen metric names that nothing in
+ *      the estate produced. `poker_settlement_failure_rate > 0.02` against a
+ *      metric with no samples is an empty vector: not an error, not a warning,
+ *      just permanently green. Four of those rules described conditions that
+ *      were true when the gap was found, two of them SMS pages, one true for
+ *      13.7 days. It had happened twice before on smaller scales - the
+ *      27 rules recovered on 2026-08-15, and `poker_hands_total` leaving
+ *      SLOHandsAreNotBeingDealt unable to fire (see slo-rules.yml) - which is
+ *      what makes it a class rather than an incident.
+ *
+ *      This check is why the header no longer says expressions are out of
+ *      scope. It does not evaluate them; it asks only whether the names they
+ *      use exist anywhere as output. A name with no producer either gets one,
+ *      or gets a line in infra/monitoring/metrics-without-a-producer.txt
+ *      saying who emits it and why CI cannot see that.
  */
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, basename } from 'node:path';
+import {
+  rulesWithMetrics,
+  producerHaystack,
+  recordedNames,
+  readDeclaredAbsent,
+  isProduced,
+  dashboardsWithMetrics,
+} from './rule-metric-producers.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const DIR = resolve(root, 'infra/monitoring');
@@ -217,7 +241,7 @@ if (existsSync(resolve(DIR, 'alertmanager.yml'))) {
   }
 }
 
-// ── 6. Every scrape job that ever existed still exists ──────────────────────
+// ── 7. Every scrape job that ever existed still exists ──────────────────────
 //
 // 2026-08-31: the live host carried a `turn_relay` scrape job that had been
 // added directly on engine-01 on 2026-08-28 and NEVER COMMITTED. deploy.sh
@@ -234,7 +258,25 @@ const REQUIRED_SCRAPE_JOBS = [
   'node_engine01',
   'engine_game_server',
   'turn_relay',
+  'alertmanager',
 ];
+
+/**
+ * A foreign metric is only "produced" if something is scraping the exporter
+ * that emits it. Check 8 accepts `alertmanager_*` because Alertmanager emits
+ * it; that says nothing about whether Prometheus ever asks. On 2026-09-11
+ * PagerDeliveryFailing and CriticalEmailDeliveryFailing were written against
+ * alertmanager_notifications_failed_total while Alertmanager was configured as
+ * an alert DESTINATION and never as a scrape TARGET - two alerts written to
+ * catch a silent pager, silent for the same reason as everything else found
+ * that day.
+ */
+const EXPORTER_JOBS = {
+  alertmanager_: 'alertmanager',
+  node_: 'node_engine01',
+  prometheus_: 'prometheus',
+  promhttp_: 'prometheus',
+};
 {
   const jobs = [...prom.matchAll(/^\s*-?\s*job_name:\s*['"]?([\w.-]+)/gm)].map((m) => m[1]);
   for (const job of REQUIRED_SCRAPE_JOBS) {
@@ -246,6 +288,148 @@ const REQUIRED_SCRAPE_JOBS = [
   }
 }
 
+// ── 8. every metric a rule NAMES must have something that emits it ──────────
+//
+// The failure this catches is silent by construction. Prometheus does not warn
+// about an expression whose metric has no samples; it returns an empty vector,
+// and an alert with an empty vector is indistinguishable from an alert whose
+// condition is false. See this file's header for the three times that has now
+// happened here.
+//
+// "Produced" is deliberately shallow: the name appears in code that runs in
+// production. It does not prove the emitter is reachable, scraped, or correct -
+// check 7 covers the scrape target and nothing in a repo can prove the rest.
+// It proves only that SOMETHING writes the name, which is the single fact whose
+// absence made all three incidents possible.
+{
+  const ruleFiles = onDisk.filter((f) => loadedNames.includes(f));
+  const rules = rulesWithMetrics(DIR, ruleFiles);
+  const haystack = producerHaystack(root);
+  const recorded = recordedNames(DIR, ruleFiles);
+  const declaredAbsent = readDeclaredAbsent(DIR);
+
+  const orphans = new Map(); // metric -> rules that name it
+  for (const rule of rules) {
+    for (const metric of rule.metrics) {
+      if (isProduced(metric, haystack, recorded, declaredAbsent)) continue;
+      if (!orphans.has(metric)) orphans.set(metric, []);
+      orphans.get(metric).push(`${rule.file}:${rule.name}`);
+    }
+  }
+
+  // A foreign metric whose exporter nobody scrapes is the same empty vector by
+  // a different route, and check 8 above waves it through on the prefix alone.
+  {
+    const jobs = new Set(
+      [...prom.matchAll(/^\s*-?\s*job_name:\s*['"]?([\w.-]+)/gm)].map((m) => m[1])
+    );
+    const seen = new Set();
+    for (const rule of rules) {
+      for (const metric of rule.metrics) {
+        for (const [prefix, job] of Object.entries(EXPORTER_JOBS)) {
+          if (!metric.startsWith(prefix) || jobs.has(job) || seen.has(metric)) continue;
+          seen.add(metric);
+          errors.push(
+            `${metric} is referenced by ${rule.file}:${rule.name} and is emitted by the "${job}" exporter, but prometheus.yml has no ${job} scrape job. Nothing asks that exporter for it, so the rule evaluates against an empty vector exactly as if the metric did not exist.`
+          );
+        }
+      }
+    }
+  }
+
+  for (const [metric, named] of [...orphans].sort()) {
+    errors.push(
+      `${metric} is referenced by ${named.length} rule(s) (${named.join(', ')}) but nothing in server/src, server/scripts or infra/monitoring emits it. ` +
+        `A threshold on a metric with no samples evaluates to an empty vector, which reads exactly like healthy and can never fire. ` +
+        `Either add the emitter, or declare it in infra/monitoring/metrics-without-a-producer.txt with the reason.`
+    );
+  }
+
+}
+
+// ── 9. every metric a DASHBOARD PANEL names must have something that emits it ─
+//
+// Same failure, quieter. A panel reading a metric with no series draws an empty
+// graph forever. Found 2026-09-11: 23 of the 45 panel expressions in
+// infra/monitoring/grafana-dashboards read metrics that have never existed -
+// two engine panels naming `poker_engine_active_tables` where the engine emits
+// `poker_active_tables`, a cron dashboard reading an exporter this stack does
+// not run, all seven Postgres panels, and all fourteen SLO panels reading an
+// `slo:` recording-rule prefix that was never written (the estate settled on
+// `sp:`). Four of those fourteen are error-budget panels, which read as a FULL
+// budget rather than as no data.
+{
+  const dashDir = resolve(DIR, 'grafana-dashboards');
+  const dashboards = dashboardsWithMetrics(dashDir);
+  const ruleFiles = onDisk.filter((f) => loadedNames.includes(f));
+  const haystack = producerHaystack(root);
+  const recorded = recordedNames(DIR, ruleFiles);
+  const declaredAbsent = readDeclaredAbsent(DIR);
+
+  for (const dash of dashboards) {
+    const orphans = dash.metrics.filter((m) => !isProduced(m, haystack, recorded, declaredAbsent));
+    if (orphans.length) {
+      errors.push(
+        `grafana-dashboards/${dash.file} has panel(s) reading ${orphans.join(', ')}, which nothing emits. ` +
+          `The panel renders empty forever. Point it at a metric that exists, delete it, or declare it in ` +
+          `infra/monitoring/metrics-without-a-producer.txt with the reason.`
+      );
+    }
+  }
+
+  // A declaration that is no longer needed is its own kind of rot: it keeps the
+  // door open for the next name that lands under it.
+  const named = new Set([
+    ...rulesWithMetrics(DIR, ruleFiles).flatMap((r) => r.metrics),
+    ...dashboards.flatMap((d) => d.metrics),
+  ]);
+  for (const [metric] of declaredAbsent) {
+    if (!named.has(metric)) {
+      errors.push(
+        `infra/monitoring/metrics-without-a-producer.txt declares ${metric}, but no rule or dashboard panel references it any more. Remove the line.`
+      );
+    }
+  }
+}
+
+// ── 10. a runbook link must lead somewhere ──────────────────────────────────
+//
+// The runbook is what the person woken by a page reads first. A link that does
+// not resolve costs its reader the worst minutes of an incident, and nothing
+// was checking: 23 alerts - including HandsAreFailingToSettle,
+// OpenClawFleetLongSilence and MoneyAlertsGoingUnread, all of which paged on
+// 2026-09-11 - pointed at three changelog files that were never written. They
+// were authored on 2026-09-04 alongside the metrics that had no producer, and
+// the whole batch was aspirational in the same way.
+//
+// Only repo-relative paths are checked. An http(s) runbook is somebody else's
+// server and CI has no business reaching for it during a build.
+{
+  const ruleFiles = onDisk.filter((f) => loadedNames.includes(f));
+  const dangling = new Map(); // path -> alerts that name it
+  for (const f of ruleFiles) {
+    const lines = readFileSync(resolve(DIR, f), 'utf8').split('\n');
+    let owner = '(unnamed)';
+    for (const line of lines) {
+      const named = /^\s*-\s*(?:alert|record):\s*['"]?([\w:.-]+)/.exec(line);
+      if (named) owner = named[1];
+      const rb = /^\s*runbook:\s*['"]?([^'"\s]+)/.exec(line);
+      if (!rb) continue;
+      const target = rb[1];
+      if (/^https?:\/\//.test(target)) continue;
+      if (existsSync(resolve(root, target))) continue;
+      if (!dangling.has(target)) dangling.set(target, []);
+      dangling.get(target).push(`${f}:${owner}`);
+    }
+  }
+  for (const [target, owners] of [...dangling].sort()) {
+    errors.push(
+      `runbook ${target} does not exist, and ${owners.length} rule(s) point at it (${owners.slice(0, 4).join(', ')}${owners.length > 4 ? ', ...' : ''}). ` +
+        `The runbook is the first thing read by whoever the page wakes up. Write it, or point the rule at a document that exists.`
+    );
+  }
+}
+
 if (errors.length) {
   console.error('\nFAIL: monitoring wiring is broken.\n');
   for (const e of errors) console.error(`  - ${e}`);
@@ -254,5 +438,5 @@ if (errors.length) {
 }
 
 console.log(
-  `OK: ${explicit.length} rule file(s) loaded, mounted at matching paths, non-empty; alerts route to a receiver that delivers`
+  `OK: ${explicit.length} rule file(s) loaded, mounted at matching paths, non-empty; every metric they and the dashboards name has a producer; every runbook resolves; alerts route to a receiver that delivers`
 );

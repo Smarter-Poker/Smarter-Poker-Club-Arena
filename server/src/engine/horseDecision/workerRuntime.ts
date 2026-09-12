@@ -378,9 +378,15 @@ export class HorseDecisionWorkerRuntime {
     if (
       (request.type === 'DECIDE_FAST' || request.type === 'DECIDE_DEEP') &&
       request.opts &&
-      ('gtoV31DatasetChecksum' in request.opts || 'onGtoV31Decision' in request.opts)
+      ('gtoV31DatasetChecksum' in request.opts ||
+        'onGtoV31Decision' in request.opts ||
+        request.opts.phase8Postflop === 'candidate' ||
+        request.opts.phase10Plo4 === 'candidate' ||
+        request.opts.phase11Omaha === 'candidate' ||
+        'phase11EvidenceMode' in request.opts ||
+        'phase10EvidenceMode' in request.opts)
     ) {
-      throw new Error('offline V31 candidate controls are forbidden in live decision requests');
+      throw new Error('offline candidate controls are forbidden in live decision requests');
     }
     if (request.type === 'DECIDE_FAST' || request.type === 'DECIDE_DEEP') {
       this.assertCanonicalDecisionSnapshot(request);

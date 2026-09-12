@@ -181,8 +181,120 @@ export function watchBbjPool(clubId: string, listener: BbjPoolListener): () => v
   };
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE ALLOCATION RULE, READ FROM THE ALLOCATOR (2026-09-11)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Every raked hand's drop is split three ways, and `fn_bbj_allocate` reads the
+ * split from ONE authority: `ca_bbj_policy`. Below the pivot a drop is 50%
+ * main / 25% backup / 25% promo; at or above 100,000 in main it becomes
+ * 25 / 25 / 50.
+ *
+ * That threshold was written down in four places - the policy table, both
+ * halves of `RakeConfig.ts` as `BBJ_PIVOT_THRESHOLD`, and twice more as bare
+ * literals inside the jackpot page's own banner - with nothing checking that
+ * they agreed. The policy is a TABLE: one UPDATE moves the real threshold with
+ * no migration and no failing test anywhere, and the page would keep counting
+ * toward a number the bank had stopped using.
+ *
+ * It has not mattered yet because nothing has changed. Measured 2026-09-11 it
+ * is about to: the largest pool reaches the banner's own trigger in about a
+ * week and the pivot itself in about two.
+ *
+ * WHY IT IS CACHED FOR THE SESSION rather than polled. This is a rule, not a
+ * figure. It has changed once since it was written, by hand, and the page that
+ * reads it is open for minutes. One read per session is the correct cost; a
+ * timer here would be the 40,219-updates-a-day mistake in miniature.
+ *
+ * WHY NULL IS A REAL ANSWER. "Could not read the rule" is not "the rule is
+ * 100,000" (CLAUDE.md 10.86). A caller that gets null must show nothing rather
+ * than a threshold it guessed - a banner counting to an invented number is
+ * worse than no banner.
+ */
+export interface BbjAllocationPolicy {
+  pivotThreshold: number;
+  standardMain: number;
+  standardBackup: number;
+  standardPromo: number;
+  pivotMain: number;
+  pivotBackup: number;
+  pivotPromo: number;
+}
+
+let policyCache: BbjAllocationPolicy | null = null;
+let policyInFlight: Promise<BbjAllocationPolicy | null> | null = null;
+
+const rate = (v: unknown): number => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : NaN;
+};
+
+export async function getBbjAllocationPolicy(): Promise<BbjAllocationPolicy | null> {
+  if (policyCache) return policyCache;
+  /* One flight, however many surfaces ask at once. Without this, a page that
+     mounts three jackpot components makes three identical reads on load. */
+  if (policyInFlight) return policyInFlight;
+
+  policyInFlight = (async () => {
+    try {
+      const { data, error } = await supabase.rpc('fn_bbj_allocation_policy');
+      if (error) {
+        reportError(error, 'bbjPoolFeed.allocation_policy_failed');
+        return null;
+      }
+      const row = (data ?? null) as Record<string, unknown> | null;
+      if (!row) return null;
+
+      const parsed: BbjAllocationPolicy = {
+        pivotThreshold: rate(row.pivot_threshold),
+        standardMain: rate(row.standard_main),
+        standardBackup: rate(row.standard_backup),
+        standardPromo: rate(row.standard_promo),
+        pivotMain: rate(row.pivot_main),
+        pivotBackup: rate(row.pivot_backup),
+        pivotPromo: rate(row.pivot_promo),
+      };
+      /* A rule that arrived unreadable is not a rule. Publishing a NaN
+         threshold would put "NaN% Of" on a money surface, and publishing a
+         zero one would make every pool look past the pivot. */
+      if (Object.values(parsed).some((v) => !Number.isFinite(v)) || parsed.pivotThreshold <= 0) {
+        reportError(
+          'allocation policy returned an unusable rule',
+          'bbjPoolFeed.allocation_policy_unusable'
+        );
+        return null;
+      }
+
+      policyCache = parsed;
+      return parsed;
+    } catch (e) {
+      reportError(e, 'bbjPoolFeed.allocation_policy_threw');
+      return null;
+    } finally {
+      policyInFlight = null;
+    }
+  })();
+
+  return policyInFlight;
+}
+
+/**
+ * How close to the pivot a surface starts saying so: 80% of the threshold,
+ * derived from whatever the threshold actually is.
+ *
+ * The jackpot page typed `>= 80000` beside a progress bar dividing by
+ * `100000`, which is the same number twice with no way to keep them together.
+ * An earlier audit already found these two out of step once - the alert fired
+ * at 50k while the bar measured against 100k - and fixed it by typing a third
+ * literal.
+ */
+export const BBJ_PIVOT_APPROACH_FRACTION = 0.8;
+
 /** Test-only. Never called by the app. */
 export function __resetBbjPoolFeedForTests(): void {
   for (const feed of feeds.values()) if (feed.timer !== null) clearInterval(feed.timer);
   feeds.clear();
+  policyCache = null;
+  policyInFlight = null;
 }

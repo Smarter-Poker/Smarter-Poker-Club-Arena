@@ -151,7 +151,36 @@ groups:
         annotations:
           summary: '{{ $value }} Open Claw job(s) past their staleness threshold'
           description: 'SELECT * FROM v_openclaw_job_staleness WHERE is_stale. A job that stops being dispatched produces no errors at all - it simply stops appearing.'
-          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
+
+      # humanizeDuration reads its input as SECONDS. This gauge is minutes -
+      # its name says so and the threshold below is in minutes - so the first
+      # page this rule ever produced described 19,689.6 minutes of silence as
+      # "5h 28m 9s". A page that understates a 13.7-day outage by a factor of
+      # sixty is worse than no page, because it is believed.
+      # A job that is dispatched on time, returns 200, logs status 'success'
+      # and does none of its work is invisible to every staleness check ever
+      # written, because a skip IS a success as far as the log is concerned.
+      #
+      # Measured 2026-09-11: eight jobs in this state, 782 skipped runs in ten
+      # days, the longest 13.6 days without doing anything, all of them
+      # returning {"skipped":"engine_disabled","success":true}. The cause was a
+      # single boolean that had been false since January and that handlers
+      # deployed in September began reading.
+      #
+      # A numeric `skipped` is a count of items skipped by a job that did run,
+      # and does not count here. Only a reason does.
+      - alert: CronJobsReportingSuccessWhileDoingNothing
+        expr: |
+          poker_cron_jobs_skipping_all_work > 0
+        for: 1h
+        labels:
+          severity: warning
+          component: cron
+        annotations:
+          summary: '{{ $value }} cron job(s) have logged success for 24h while skipping all their work'
+          description: 'SELECT job_name, result FROM cron_execution_log WHERE status = ''success'' AND result ? ''skipped'' ORDER BY started_at DESC. A kill switch left off, or a handler that reads one it should not. Staleness alerts cannot see this: the job is being dispatched and is answering.'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       - alert: OpenClawFleetLongSilence
         expr: |
@@ -162,16 +191,16 @@ groups:
           page: sms
           component: cron
         annotations:
-          summary: 'An Open Claw job has been silent for {{ $value | humanizeDuration }}'
+          summary: 'An Open Claw job has been silent for {{ $value | humanize }} minutes'
           description: 'More than a day with no successful run. The worst case observed before this alert existed was 18.3 days.'
-          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       # Twelve at once on 2026-09-04, all 'job startup timeout', including the
       # snapshot prune and the daily-missions outbox drain.
       - alert: PgCronFailuresElevated
         expr: |
           poker_cron_pg_failures > 10
-          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 15m
         labels:
           severity: warning
@@ -179,7 +208,7 @@ groups:
         annotations:
           summary: '{{ $value }} pg_cron failures in the last hour'
           description: "SELECT jobname, status, return_message FROM cron.job_run_details JOIN cron.job USING (jobid) WHERE status <> 'succeeded' ORDER BY start_time DESC."
-          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       # 856 runs an hour is normal. A collapse means the scheduler itself has
       # stopped, which no per-job alert can see.
@@ -187,7 +216,7 @@ groups:
         expr: |
           poker_cron_pg_runs < 50
           and poker_cron_metrics_stale_seconds < 300
-          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 20m
         labels:
           severity: critical
@@ -195,19 +224,22 @@ groups:
         annotations:
           summary: 'Only {{ $value }} pg_cron runs in the last hour'
           description: 'The fleet normally runs ~856 an hour. The collector is fresh, so this is the scheduler, not the gauge.'
-          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       - alert: CronMetricsBlind
         expr: |
-          poker_cron_metrics_stale_seconds > 600
-          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+          (
+            poker_cron_metrics_stale_seconds > 600
+            or absent(poker_cron_metrics_stale_seconds)
+          )
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 10m
         labels:
           severity: warning
           component: cron
         annotations:
           summary: 'Cron fleet gauges are stale ({{ $value }}s)'
-          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
   # ── POSTGRES ──────────────────────────────────────────────────────────
   # Also empty until 2026-09-04, and pointedly so: the realtime replication
@@ -262,7 +294,7 @@ groups:
         annotations:
           summary: 'Engine and database clocks differ by {{ $value }}ms'
           description: 'Turn timers, maintenance-break windows and every retention cutoff are computed against one clock or the other.'
-          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       - alert: DatabaseRpcErrorsElevated
         expr: |
@@ -275,7 +307,7 @@ groups:
         annotations:
           summary: 'Engine RPC errors at {{ $value }}/s'
           description: 'The engine reaches Postgres only through PostgREST. A sustained error rate here is seats, hands and settlements failing to write.'
-          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
   # ── vercel-health: DELETED 2026-09-04, deliberately ───────────────────
   # This group existed with no rules in it. Filling it honestly is not
@@ -530,7 +562,7 @@ groups:
       - alert: HandsAreFailingToSettle
         expr: |
           poker_settlement_failure_rate > 0.02
-          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 5m
         labels:
           severity: critical
@@ -539,21 +571,21 @@ groups:
         annotations:
           summary: '{{ $value | humanizePercentage }} of hands are failing to settle'
           description: 'fn_ca_settle_hand_stacks_absolute is refusing hands whole. Read ca_settlements.error_detail for the reason before changing anything. The 2026-09-04 cause was a BEFORE UPDATE trigger on table_seats that cancelled no-op writes, making a correct seat write look like a failed one.'
-          runbook: 'docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       # Baseline before the incident was 0.0-0.2%. A rate that merely doubles
       # is worth knowing about long before it reaches a quarter of all hands.
       - alert: SettlementFailuresAboveBaseline
         expr: |
           poker_settlement_failure_rate > 0.005
-          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 30m
         labels:
           severity: warning
           component: money
         annotations:
           summary: 'Settlement failure rate {{ $value | humanizePercentage }}, above the 0.2% baseline'
-          runbook: 'docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       # No hands settling at all is not a quiet table - this platform settles
       # ~500 hands a minute. The failure-rate gauge is ABSENT in this state, so
@@ -562,7 +594,7 @@ groups:
         expr: |
           poker_settlement_window_hands == 0
           and poker_settlement_metrics_stale_seconds < 300
-          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 10m
         labels:
           severity: critical
@@ -570,24 +602,27 @@ groups:
         annotations:
           summary: 'No hand has settled in five minutes'
           description: 'The collector is fresh and reports zero terminal settlements. Either the engine has stopped dealing or settlement is failing before it reaches a terminal state.'
-          runbook: 'docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       - alert: SettlementsStuckMidStateMachine
         expr: |
           poker_settlement_stuck > 50
-          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 15m
         labels:
           severity: warning
           component: money
         annotations:
           summary: '{{ $value }} settlements are neither final nor failed'
-          runbook: 'docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       - alert: SettlementMetricsBlind
         expr: |
-          poker_settlement_metrics_stale_seconds > 600
-          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+          (
+            poker_settlement_metrics_stale_seconds > 600
+            or absent(poker_settlement_metrics_stale_seconds)
+          )
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 10m
         labels:
           severity: warning
@@ -595,7 +630,7 @@ groups:
         annotations:
           summary: 'Settlement gauges are stale ({{ $value }}s)'
           description: 'fn_settlement_health has not returned in over ten minutes. Whether hands are settling is currently unknown, and unknown is what thirteen hours of this looked like.'
-          runbook: 'docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
   # ── HAND PROJECTION OUTBOX (2026-09-10) ────────────────────────────────
   # Every accepted hand leaves one row in public.hand_projection_outbox; the
@@ -617,6 +652,30 @@ groups:
   - name: hand-projection
     interval: 30s
     rules:
+      - alert: HandProjectionDrainWedged
+        # NAMES THE CAUSE, NOT THE SYMPTOM (2026-09-11). The backlog alarm below
+        # fires whenever the outbox is old, which covers both "the lane is slow"
+        # and "the lane has stopped". Those need different answers. A pass that
+        # never settles used to leave drainPromise non-null for ever, and
+        # pollIsDue opens by returning false on exactly that, so the 5 s safety
+        # poll - the only cross-process wake left on this host, with Realtime in
+        # CHANNEL_ERROR and LISTEN unconfigured - was switched off. Measured that
+        # evening: drains_total frozen at 324 for fifteen minutes while the outbox
+        # climbed to 27,356 rows and fifty-one minutes old. The pass is bounded
+        # now (HAND_PROJECTION_DRAIN_DEADLINE_MS, 120s), so this should be
+        # unreachable; if it fires, the bound itself has failed.
+        expr: poker_hand_projection_drain_age_ms > 180000
+        for: 2m
+        labels:
+          severity: critical
+          component: club-arena-engine
+        annotations:
+          summary: 'A hand projection drain has been in flight for {{ $value | printf "%.0f" }} ms'
+          description: |
+            One drain pass has not settled. While a pass is in flight the safety
+            poll does not run, so nothing else will project a hand until it
+            clears. The pass carries its own deadline; this firing means the
+            deadline did not release the lane.
       - alert: HandProjectionOutboxBacklog
         expr: |
           poker_hand_projection_outbox_oldest_age_seconds > 300
@@ -706,7 +765,7 @@ groups:
         annotations:
           summary: '{{ $value }} undeclared trigger(s) on a money or seat table'
           description: 'A trigger is live on table_seats, club_members, wallets, chip_ledger, tournaments, tournament_players or ca_settlements with no row in ca_declared_money_triggers. Run SELECT * FROM fn_undeclared_money_triggers(). Either it is a legitimate change missing its declaration, or it is an unreviewed one - and the last unreviewed one broke a third of all hand settlements.'
-          runbook: 'docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       # Criticals nobody has looked at in a day. Deliberately NOT the raw
       # unresolved count: a critical raised a minute ago is the system working.
@@ -720,7 +779,7 @@ groups:
         annotations:
           summary: '{{ $value }} critical money alerts open longer than 24h'
           description: "financial_alerts is accumulating criticals nobody has resolved. A deep backlog is dangerous mainly because it hides a real one - on 2026-09-04 it was 1,345 rows deep and contained five 'player was never paid' alerts, all of which had in fact been paid within thirty minutes."
-          runbook: 'docs/changelog/2026-09-04-the-money-alerts-nobody-was-told-about.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       - alert: MoneyAlertBacklogGrowing
         expr: |
@@ -732,12 +791,15 @@ groups:
         annotations:
           summary: '{{ $value }} unresolved money alerts'
           description: 'Above the 1,345 the backlog stood at when it was first measured. Check poker_financial_alerts_distinct_conditions - if the row count is climbing and the condition count is not, the table is duplicating rather than finding new problems.'
-          runbook: 'docs/changelog/2026-09-04-the-money-alerts-nobody-was-told-about.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       - alert: MoneyHealthBlind
         expr: |
-          poker_money_health_stale_seconds > 600
-          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+          (
+            poker_money_health_stale_seconds > 600
+            or absent(poker_money_health_stale_seconds)
+          )
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 10m
         labels:
           severity: warning
@@ -745,7 +807,7 @@ groups:
         annotations:
           summary: 'Money-health gauges are stale ({{ $value }}s)'
           description: 'Neither the alert backlog nor the undeclared-trigger check has returned in over ten minutes. poker_money_undeclared_triggers is ABSENT rather than 0 in this state, deliberately - a zero here would be an all-clear the collector has not earned.'
-          runbook: 'docs/changelog/2026-09-04-the-money-alerts-nobody-was-told-about.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
   # ── Action latency (Realtime programme Phase 1, 2026-09-04) ──────────────
   # poker_act_to_broadcast_ms is the time from a player's action being
@@ -1598,6 +1660,133 @@ groups:
             auto-checked for ten minutes. The horses are seated and cannot play.
           runbook: docs/changelog/2026-09-11-the-horse-audit.md
 
+      # ── WHY A HORSE TURN WAS ABANDONED ────────────────────────────────────
+      #
+      # HorseTurnTimeoutStorm above says horses are being folded by the clock.
+      # It has never been able to say WHY, because the six fence checks in
+      # scheduleHorseAction each answered a failure with a bare return: the
+      # turn was refused, nothing was counted, and every decision-path gauge
+      # stayed clean. On 2026-09-11 that read as fallbacks 0 and a worker idle
+      # at 4.9 ms compute while one horse turn in eight was folded, beside
+      # 1,652 engine lease losses a minute across 1,570 tables.
+      #
+      # This alert is the missing half of that pair. It does not fire because
+      # turns are abandoned - abandoning a superseded turn is CORRECT, and a
+      # table that has lost its lease must not act. It fires when abandonment
+      # is a working condition rather than an exception, and it carries the
+      # reason, so the answer arrives with the page instead of after it.
+      #
+      # 5/min matches HorseTurnTimeoutStorm deliberately: the two describe the
+      # same seat from opposite ends, and a threshold that differed would let
+      # one fire without the other and invite the wrong conclusion.
+      - alert: HorseTurnsAbandonedByLostAuthority
+        expr: |
+          sum by (reason) (rate(poker_horse_turns_abandoned_total[10m])) * 60 > 5
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: critical
+          page: sms
+          component: club-arena-engine
+        annotations:
+          summary: '{{ $value | printf "%.1f" }} horse turns/min abandoned: {{ $labels.reason }}'
+          description: |
+            Seated horses are reaching their turn and having it taken away
+            before they can act, for the reason in the label. lease_lost means
+            the table lost its engine lease mid-turn, so the horse was never
+            scheduled and the clock folded it; check the engine log for
+            tournament_lease_lost and cash_lease_proof_expired, which are not
+            themselves metered. seat_moved or hand_replaced at this rate means
+            the table is restarting under the horse. superseded is the benign
+            one and should not reach this rate on its own.
+          runbook: docs/changelog/2026-09-11-a-horse-turn-that-is-abandoned-says-why.md
+
+      # ── A LEASE THAT IS NOT RENEWED ───────────────────────────────────────
+      #
+      # Measured 2026-09-12: every cash table on the engine was re-claiming its
+      # lease roughly every twenty seconds - 63 tables, 923
+      # cash_lease_proof_expired restarts in five minutes, the lease_generation
+      # changing each cycle - while the main loop sat idle (event-loop p99
+      # 21.9 ms) and the database answered heartbeat_table_leases_v4 in 5.2 ms.
+      #
+      # Each restart mints a new lease generation, and a new generation fails
+      # the authority fence of every horse turn in flight at that table, which
+      # is the lease_lost reason on poker_horse_turns_abandoned_total and the
+      # clock-fold behind HorseTurnTimeoutStorm. This is the cause; those are
+      # the symptom.
+      #
+      # `busy` is the one to watch. The database heartbeat takes
+      # FOR NO KEY UPDATE ... SKIP LOCKED so it never queues behind a
+      # settlement, so a locked row comes back busy, and busy correctly extends
+      # nothing. Four consecutive busies inside the twenty-second proof window
+      # is an expiry. One busy is ordinary contention; a rate of them is a
+      # table that will restart.
+      # ── THE RENEWAL LOOP STOPPED, AND NOTHING SAID SO ─────────────────────
+      #
+      # runOwnershipLeaseRenewalLoop renews every cash lease and every
+      # tournament lease in the process. It is launched once and nothing
+      # relaunches it. On 2026-09-12 it stopped for at least two hours:
+      # heartbeat_table_leases_v4 and heartbeat_tournament_leases_v4 held at
+      # exactly 27,886 and 27,765 calls across a 73-second window while
+      # claim_table_lease_v2 took 283 in the same window - 233 a minute. Every
+      # one of the 78 cash tables was killed by its own 20-second proof
+      # watchdog and re-claimed, 26,129 times, three quarters of those lives
+      # dealing no hands, at tables holding 9 of 9 seats.
+      #
+      # There was no log line, no error and no metric, because nothing FAILED.
+      # It was not running, and an engine not doing a thing reads exactly like
+      # an engine with nothing to do. This is the rule that tells them apart.
+      #
+      # A pass runs every 5 seconds, so 5m of zero completed passes is
+      # sixty missed renewals against a twenty second proof window. By then
+      # every lease in the process is already being lost and re-claimed.
+      - alert: LeaseRenewalLoopStopped
+        expr: |
+          sum(rate(poker_lease_renewal_passes_total{outcome="completed"}[5m])) == 0
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 5m
+        labels:
+          severity: critical
+          page: sms
+          component: club-arena-engine
+        annotations:
+          summary: 'No ownership lease renewal pass has completed for 5 minutes'
+          description: |
+            The one lifecycle that renews every cash and tournament lease in
+            the engine has stopped completing passes. Nothing relaunches it.
+            Every lease will reach its twenty second proof window unrenewed,
+            every table will be killed by its own watchdog and re-claimed, and
+            hands in flight will be abandoned mid-play. Read
+            poker_lease_renewal_loop_running: 0 means the loop left, 1 means it
+            is wedged inside a pass. Check
+            poker_lease_renewal_passes_total{outcome="abandoned"} for a pass
+            that never settled, and claim_table_lease_v2 call rate for the
+            re-claim storm that follows.
+          runbook: docs/changelog/2026-09-12-the-loop-that-renews-every-lease-stopped.md
+
+      - alert: LeaseHeartbeatsNotBeingKept
+        expr: |
+          sum by (scope) (rate(poker_lease_heartbeat_outcomes_total{state!="kept"}[10m]))
+            /
+          clamp_min(sum by (scope) (rate(poker_lease_heartbeat_outcomes_total[10m])), 0.001)
+            > 0.05
+        for: 10m
+        labels:
+          severity: critical
+          page: sms
+          component: club-arena-engine
+        annotations:
+          summary: '{{ $value | humanizePercentage }} of {{ $labels.scope }} lease heartbeats are not being kept'
+          description: |
+            More than one heartbeat in twenty is coming back as something other
+            than kept, for ten minutes. Read
+            poker_lease_heartbeat_outcomes_total by state: busy is a locked row
+            the heartbeat skipped rather than waited for, and repeated busies
+            inside the twenty-second proof window expire the lease and restart
+            the table under its players. taken means another instance holds it.
+            stale or missing mean the row is gone or past the audited window.
+          runbook: docs/changelog/2026-09-12-a-lease-that-is-not-renewed-says-so.md
+
       - alert: HorseDecisionFallbacks
         # The worker failed or expired a job and the seat took the legal
         # check/fold. The path reported to Sentry only before this release, so
@@ -1676,6 +1865,69 @@ groups:
           runbook: docs/changelog/2026-09-11-the-horse-audit.md
 
   # ═══════════════════════════════════════════════════════════════════════
+  # ═══════════════════════════════════════════════════════════════════════
+  #  THE PAGER IS WATCHED BY SOMETHING THAT IS NOT THE PAGER (2026-09-11)
+  # ═══════════════════════════════════════════════════════════════════════
+  #
+  # `page: sms` routes to the `pager-sms` webhook, which is the World Hub's
+  # /api/internal/alertmanager-page. That route is careful: when Twilio refuses,
+  # or when TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_PHONE_NUMBER are
+  # absent from its environment, it answers 502 rather than swallowing the
+  # failure, and Alertmanager counts it and retries.
+  #
+  # Nothing read that count. Measured 2026-09-11: zero rules anywhere in this
+  # repo named `alertmanager_notifications_failed_total`, so a dead pager was
+  # invisible by construction - the one thing that would have announced it is
+  # the pager. That is CLAUDE.md 10.83 exactly: a check nobody can see.
+  #
+  # DELIBERATELY NOT `page: sms`. An alarm about the pager must not be routed
+  # through the pager. These go to email-critical, which is a different
+  # integration with a different provider, so the two cannot fail together for
+  # one reason.
+  #
+  # Baseline on engine-01 when this was written: 14 webhook notifications
+  # delivered, `reason="serverError"` 0, `reason="clientError"` 1 (a single 4xx
+  # from before the bearer was in place). So the threshold is "any failure in
+  # fifteen minutes", which is quiet today and cannot be quiet if the pager
+  # stops working.
+  - name: pager-health
+    interval: 30s
+    rules:
+      - alert: PagerDeliveryFailing
+        expr: |
+          sum(increase(alertmanager_notifications_failed_total{integration="webhook"}[15m])) > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: monitoring
+        annotations:
+          summary: 'The SMS pager has failed {{ $value | printf "%.0f" }} delivery attempt(s) in fifteen minutes'
+          description: |
+            Alertmanager could not deliver to the pager webhook. A `serverError`
+            is the World Hub route answering 502, which it does when Twilio
+            refuses or when its three TWILIO_* values are missing from the
+            hub-vanguard environment; a `clientError` is a 4xx, usually the
+            bearer secret. Until this clears, every `page: sms` alert on this
+            platform is reaching nobody by text. This alert is routed to email
+            on purpose - it is about the pager, so it must not travel through
+            it.
+          runbook: 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/main/docs/changelog/2026-09-11-the-pager-is-watched.md'
+
+      - alert: CriticalEmailDeliveryFailing
+        expr: |
+          sum(increase(alertmanager_notifications_failed_total{integration="email"}[15m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: monitoring
+        annotations:
+          summary: 'Alertmanager has failed {{ $value | printf "%.0f" }} email delivery attempt(s) in fifteen minutes'
+          description: |
+            The email leg is the fallback the pager alarm above is routed to, so
+            it is worth knowing separately when it breaks. If BOTH legs are
+            failing, the only remaining signal is MonitoringCanary going absent
+            from the dashboard.
+
   - name: monitoring-canary
     interval: 30s
     rules:

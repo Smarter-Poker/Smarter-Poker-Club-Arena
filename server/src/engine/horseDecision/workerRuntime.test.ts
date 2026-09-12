@@ -1,3 +1,4 @@
+import { HorseLogic } from '../HorseLogic.js';
 import { describe, expect, it } from 'vitest';
 
 import type { HorseDecideOpts } from '../HorseLogic.js';
@@ -120,7 +121,7 @@ const V31_DATASET = {
   checksum: 'a'.repeat(64),
 };
 
-function harness() {
+function harness(realDecision = false) {
   const messages: HorseDecisionWorkerResponse[] = [];
   const restored: number[] = [];
   const decisionOpts: HorseDecideOpts[] = [];
@@ -164,6 +165,7 @@ function harness() {
           Object.isFrozen(_gameState) &&
           Object.isFrozen(_gameState.players)
       );
+      if (realDecision) return HorseLogic.decide(_player, _gameState, _style, _mods, opts);
       rng = 202;
       if (throwDecision) throw new Error('synthetic decision failure');
       return { action: 'call', amount: 4, thinkTime: 2500 };
@@ -930,11 +932,18 @@ describe('HorseDecisionWorkerRuntime', () => {
     });
   });
 
-  it('rejects offline candidate selectors at the live worker boundary', async () => {
+  it.each([
+    { gtoV31DatasetChecksum: 'a'.repeat(64) },
+    { phase8Postflop: 'candidate' },
+    { phase10Plo4: 'candidate' },
+    { phase10EvidenceMode: true },
+    { phase11Omaha: 'candidate' },
+    { phase11EvidenceMode: true },
+  ])('rejects offline candidate selectors at the live worker boundary: %j', async (opts) => {
     const h = harness();
     h.runtime.receive({
       ...fastRequest(),
-      opts: { gtoV31DatasetChecksum: 'a'.repeat(64) },
+      opts,
     } as unknown as FastHorseDecisionRequest);
     await h.runtime.drain();
 
@@ -944,7 +953,7 @@ describe('HorseDecisionWorkerRuntime', () => {
       requestId: 1,
       generation: 4,
       fence: 'table:hand:turn',
-      message: 'offline V31 candidate controls are forbidden in live decision requests',
+      message: 'offline candidate controls are forbidden in live decision requests',
     });
   });
 
@@ -1224,3 +1233,55 @@ describe('HorseDecisionWorkerRuntime', () => {
     });
   });
 });
+
+it('Phase 10 real PLO4 policy receipt survives the canonical live worker boundary', async () => {
+  const h = harness(true);
+  const request = {
+    type: 'DECIDE_FAST' as const,
+    requestId: 432,
+    ...structuredClone(snapshot),
+    style: 'balanced' as const,
+    mods: {},
+    opts: { mind: false, telemetry: false },
+  };
+  request.gameState.dealerSeat = 2;
+  request.decisionKey = buildHorseDecisionKey(request);
+  h.runtime.receive(request);
+  await h.runtime.drain();
+  const result = h.messages.find((m) => m.type === 'FAST_RESULT');
+  if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(h.messages));
+  expect(result.decision.plo4Policy?.mode).toBe('shadow');
+  expect(result.decision.plo4Policy?.eligible).toBe(true);
+  expect(result.decision.plo4Policy?.fired).toBe(true);
+  expect(structuredClone(result).decision.plo4Policy?.finalAction).toBe(result.decision.action);
+});
+
+it.each(['plo5', 'plo6', 'plo8'] as const)(
+  'Phase 11 %s receipt survives the live worker boundary',
+  async (variant) => {
+    const { omahaVariantSpot } = await import('../../benchmark/OmahaVariantPolicyEvidence.js');
+    const h = harness(true);
+    const input = omahaVariantSpot(variant, 'preflop');
+    const request = {
+      type: 'DECIDE_FAST' as const,
+      requestId: 511,
+      ...structuredClone(snapshot),
+      style: 'balanced' as const,
+      mods: {},
+      opts: { mind: false, telemetry: false },
+      player: input.hero,
+      gameState: input.state,
+    };
+    request.decisionKey = buildHorseDecisionKey(request);
+    h.runtime.receive(request);
+    await h.runtime.drain();
+    const result = h.messages.find((m) => m.type === 'FAST_RESULT');
+    if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(h.messages));
+    expect(result.decision.omahaVariantPolicy?.mode).toBe('shadow');
+    expect(result.decision.omahaVariantPolicy?.eligible).toBe(true);
+    expect(result.decision.omahaVariantPolicy?.fired).toBe(true);
+    expect(structuredClone(result).decision.omahaVariantPolicy?.finalAction).toBe(
+      result.decision.action
+    );
+  }
+);

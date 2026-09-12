@@ -183,11 +183,13 @@ export default defineConfig({
   },
   build: {
     outDir: NATIVE ? 'dist-native' : 'dist',
-    // Web: enabled — Sentry source maps are uploaded for readable production
-    // stack traces, then stripped by the publisher (never served to players).
+    // Web: hidden maps still upload to Sentry for readable stack traces.
+    // Do not ship a sourceMappingURL in every chunk: the publisher removes
+    // those maps after upload, so each browser reference points at a missing
+    // file. Sentry also resolves adjacent <chunk>.map files without that URL.
     // Native: off. The binary has no publisher to strip them, so a map here
     // is ~3 MB of source shipped inside the app to every player.
-    sourcemap: !NATIVE,
+    sourcemap: NATIVE ? false : 'hidden',
     rollupOptions: {
       // Rollup defaults to 1000 concurrent file operations. Our intended
       // local cap is 20; shared CI hosts use half their CPUs, with a floor of 4.

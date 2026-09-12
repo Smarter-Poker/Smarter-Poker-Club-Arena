@@ -87,8 +87,15 @@ describe('a club inside a union has no Spins wallet at all', () => {
        even ask. The first argument is the club identifier and is deliberately
        not pinned - it moved from the raw prop to the resolved UUID so the
        hook's device cache keys match every other read on the surface, which
-       changes nothing about who owns the wallet. */
-    expect(wallet).toMatch(/useSpinsWallet\([^)]*,\s*variant !== 'union' && !isClubInUnion\)/);
+       changes nothing about who owns the wallet.
+
+       2026-09-11: a second conjunct joined it, `hasChipWallet`, because an
+       arena that holds no chip wallet must not ask either. That is the same
+       rule applied to a second case, not a different rule, so this pins the
+       union condition as a required part of the gate rather than the whole of
+       it. */
+    expect(wallet).toMatch(/useSpinsWallet\([^)]*,[^)]*variant !== 'union' && !isClubInUnion/);
+    expect(wallet).toMatch(/useSpinsWallet\([^)]*hasChipWallet/);
   });
 });
 

@@ -94,6 +94,9 @@ import {
   equityWorkerPoolLastCompletionAgeMs,
   mainEventLoopGovernorSamplerLateMs,
   mainEventLoopGovernorScale,
+  leaseRenewalPassesTotal,
+  leaseRenewalLoopRunning,
+  leaseRenewalLoopRelaunchesTotal,
 } from './observability/engineInstruments.js';
 import { clientConnectionPrometheusLines } from './observability/ClientConnectionEvents.js';
 import {
@@ -247,6 +250,39 @@ const OWNERSHIP_LEASE_RENEWAL_CADENCE_MS = Math.floor(
 );
 
 /**
+ * A RENEWAL PASS THAT NEVER SETTLES MUST NOT POISON EVERY LATER PASS
+ * (2026-09-12).
+ *
+ * `renewOwnedEngineLeaseProofs` serialises on `ownershipLeaseRenewalOperation`
+ * and returns the in-flight promise to any later caller. That is correct while
+ * a pass finishes. If one never settles, the slot is never cleared, every
+ * subsequent tick returns the same hung promise, and the loop awaits it
+ * forever - renewing nothing, throwing nothing, logging nothing.
+ *
+ * Measured on 2026-09-12: `heartbeat_table_leases_v4` and
+ * `heartbeat_tournament_leases_v4` both sat at exactly 27,886 and 27,765 calls
+ * across a 73-second window while `claim_table_lease_v2` took 283 calls in the
+ * same window - 233 a minute. No lease was renewed at all. Every one of the 78
+ * cash tables was being killed by its own 20-second proof watchdog and
+ * re-claimed, 26,129 times in 2h10m, and three quarters of those engine lives
+ * dealt no hands. `heartbeat_at` equalled `acquired_at` on all 78 rows, the
+ * database function returned `kept` when called by hand, and the container log
+ * carried not one `[lease]` line, because nothing was failing. Nothing was
+ * running.
+ *
+ * A pass is abandoned once it has outlived the proof window it exists to
+ * defend: past that point its answer cannot renew anything anyway, because
+ * `renewEngineLeaseProof` refuses a deadline that has already passed. The
+ * in-flight RPC is left to finish or time out on its own - it is not cancelled,
+ * and it cannot do damage, because every result is re-checked against the exact
+ * engine and generation captured at pass start before it is applied.
+ */
+const OWNERSHIP_LEASE_RENEWAL_ABANDON_MS = Number(
+  process.env.OWNERSHIP_LEASE_RENEWAL_ABANDON_MS ??
+    Math.min(TABLE_LEASE_PROOF_WINDOW_MS, TOURNAMENT_LEASE_PROOF_WINDOW_MS)
+);
+
+/**
  * The four materially different answers to a direct table admission attempt.
  * A boolean erased the distinction between "this table was closed", "another
  * live process owns it", and "the database/start path blipped". The first two
@@ -358,6 +394,23 @@ const TOURNAMENT_PRESEAT_LEAD_MS = 60_000;
  * pass, which runs every few seconds.
  */
 const FINALIZED_FINISH_RETRY_MS = 5 * 60_000;
+/**
+ * A table is worth naming individually in /metrics once it has gone this long
+ * without observable progress.
+ *
+ * Thirty seconds is the floor `poker_blocked_settlements` already uses, so the
+ * two read the same definition of "stuck", and it is far longer than any
+ * healthy gap between hands.
+ */
+const STALL_SAMPLE_FLOOR_MS = 30_000;
+/**
+ * How many stalled (or undealable) tables keep a per-table sample.
+ *
+ * The point of a per-table line is to NAME a table for a human. Forty names is
+ * already more than anyone reads, and the fleet gauges beside it carry the true
+ * totals, so nothing is lost by stopping there.
+ */
+const PER_TABLE_LIVENESS_SAMPLE_CAP = 40;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // GAME SERVER — Main Orchestrator
@@ -403,6 +456,9 @@ export class GameServer {
   private serverLifecycleJobs = new Set<Promise<void>>();
   /** Keeps exact table/tournament authority alive only through shutdown drain. */
   private ownershipLeaseRenewalOperation: Promise<void> | null = null;
+  /** When a renewal pass last SETTLED. Age past the proof window means the one
+   *  lifecycle that keeps every lease alive has stopped. */
+  private ownershipLeaseRenewalCompletedAtMs: number = Date.now();
   private shutdownOwnershipLeaseRenewalActive = false;
   private shutdownOwnershipLeaseRenewalOperation: Promise<void> | null = null;
   /** One distributed claim + manager publication operation per tournament id. */
@@ -710,9 +766,31 @@ export class GameServer {
     tracked = operation.finally(() => {
       if (this.ownershipLeaseRenewalOperation === tracked) {
         this.ownershipLeaseRenewalOperation = null;
+        this.ownershipLeaseRenewalCompletedAtMs = Date.now();
       }
     });
     this.ownershipLeaseRenewalOperation = tracked;
+
+    /* See OWNERSHIP_LEASE_RENEWAL_ABANDON_MS. The slot is released on a timer
+       as well as on settlement, so a pass that never settles costs one window
+       rather than every window after it. The abandoned pass keeps running and
+       its `finally` above is identity-guarded, so it cannot clear a successor's
+       slot when it eventually lands. */
+    const abandon = setTimeout(() => {
+      if (this.ownershipLeaseRenewalOperation !== tracked) return;
+      this.ownershipLeaseRenewalOperation = null;
+      leaseRenewalPassesTotal.inc(1, { outcome: 'abandoned' });
+      reportError(
+        new Error(
+          `ownership lease renewal pass did not settle within ${OWNERSHIP_LEASE_RENEWAL_ABANDON_MS}ms; ` +
+            'abandoning it so the next pass can run'
+        ),
+        'GameServer.ownership_lease_renewal_pass_abandoned'
+      );
+    }, OWNERSHIP_LEASE_RENEWAL_ABANDON_MS);
+    if (typeof abandon.unref === 'function') abandon.unref();
+    void tracked.finally(() => clearTimeout(abandon));
+
     return tracked;
   }
 
@@ -819,19 +897,130 @@ export class GameServer {
    * next sleep rather than silently added to the authority gap.
    */
   private async runOwnershipLeaseRenewalLoop(generation: number): Promise<void> {
+    /* THIS LOOP LEAVING IS AN EVENT, NOT A DETAIL (2026-09-12).
+     *
+     * It is the only thing that renews every cash lease and every tournament
+     * lease in the process. `launchServerLifecycleJob` does not relaunch, so
+     * both of its exits used to be permanent and silent: a clean return when
+     * the admission generation moves on, and a wedge on a pass that never
+     * settles. On 2026-09-12 one of them stopped every renewal in the platform
+     * for at least two hours and nothing anywhere said so - no log line, no
+     * `reportError`, no metric. The engine kept claiming leases 233 times a
+     * minute and kept killing every table on its 20-second proof.
+     *
+     * The wedge is closed in `renewOwnedEngineLeaseProofs`. The clean exit is
+     * closed here: leaving is recorded, and leaving while this generation is
+     * still the live one is a fault, because nothing will start it again. */
+    try {
+      while (this.directAdmissionIsCurrent(generation)) {
+        const passStartedAt = performance.now();
+        try {
+          await this.renewOwnedEngineLeaseProofs();
+          leaseRenewalPassesTotal.inc(1, { outcome: 'completed' });
+        } catch (error) {
+          // A programming or transport surprise cannot permanently remove the
+          // platform's primary ownership lifecycle. Existing local deadlines stay
+          // authoritative and the next serialized pass still runs.
+          //
+          // THE COUNT FIRST, THE REPORT SECOND, AND THE REPORT INSIDE ITS OWN
+          // TRY (2026-09-12). `reportError` writes to stderr before it does
+          // anything else, and on a saturated container pipe that write throws
+          // EPIPE/EAGAIN. A throw HERE escapes this catch, escapes the `while`
+          // above it, and ends the only loop that renews a lease in this
+          // process - the handler written to keep the loop alive being the
+          // thing that kills it. errorReporter now guards its own console
+          // write; this guards the call, because a catch handler that can
+          // throw is not a catch handler.
+          leaseRenewalPassesTotal.inc(1, { outcome: 'threw' });
+          try {
+            reportError(error, 'GameServer.ownership_lease_renewal_pass_threw');
+          } catch {
+            /* Reporting is never worth the lifecycle. */
+          }
+        }
+        if (!this.directAdmissionIsCurrent(generation)) return;
+        const elapsedMs = Math.max(0, performance.now() - passStartedAt);
+        await this.sleep(Math.max(0, OWNERSHIP_LEASE_RENEWAL_CADENCE_MS - elapsedMs));
+      }
+    } finally {
+      leaseRenewalLoopRunning.set(0);
+      if (this.directAdmissionIsCurrent(generation)) {
+        /* The message used to end "nothing relaunches it, so every lease in
+           this process will expire". Something does now -
+           superviseOwnershipLeaseRenewal below - so the sentence that followed
+           the fault was describing the world before the fix, which is the way
+           a comment becomes a lie. The FAULT is unchanged and still worth a
+           report: this loop must not leave while its generation is live.
+           Guarded for the same reason the catch above is. */
+        try {
+          reportError(
+            new Error(
+              'ownership lease renewal loop left while its admission generation was still current; ' +
+                'superviseOwnershipLeaseRenewal is relaunching it'
+            ),
+            'GameServer.ownership_lease_renewal_loop_left_early'
+          );
+        } catch {
+          /* Reporting is never worth the lifecycle. */
+        }
+      }
+    }
+  }
+
+  /**
+   * THE ONE LOOP THAT RENEWS EVERY LEASE IS SUPERVISED (2026-09-12).
+   *
+   * `launchServerLifecycleJob` reports what a job throws and then forgets it.
+   * For every other lifecycle here that is correct: discovery is re-entered on
+   * the next sweep, an admission is retried by its own causal registry. This
+   * one is different. It is launched exactly ONCE per admission generation and
+   * it is the only thing in the process that renews a lease, so its exit is not
+   * a fault that costs one pass - it is the end of ownership for every table
+   * this process holds.
+   *
+   * What that cost, measured: every cash lease and every tournament lease
+   * expired 20 seconds after the loop left, each engine killed itself on its
+   * own proof, re-claimed, and died again - 26,129 engine lives in 2h10m, three
+   * quarters of them dealing no hands, 1,483 hands abandoned mid-play, hand
+   * volume down 61%. `claim_table_lease_v2` climbed 233 calls a minute while
+   * `heartbeat_table_leases_v4` did not move once. It ran like that for at
+   * least two hours and nothing said so, because nothing FAILED.
+   *
+   * `leaseRenewalPassesTotal` and the abandon timer closed the SILENCE. This
+   * closes the PERMANENCE. Relaunching is cheap and safe: the loop holds no
+   * lock of its own, `renewOwnedEngineLeaseProofs` serialises passes on
+   * `ownershipLeaseRenewalOperation` so a relaunch cannot double-renew, and the
+   * generation fence here is the same one the loop uses - a stopped or
+   * superseded server ends the supervisor rather than resurrecting a dead
+   * generation's renewals.
+   *
+   * The cadence sleep between relaunches is deliberate. A loop that throws the
+   * instant it is entered must not become a hot spin, and one skipped cadence
+   * is a quarter of the proof window rather than all of it.
+   */
+  private async superviseOwnershipLeaseRenewal(generation: number): Promise<void> {
     while (this.directAdmissionIsCurrent(generation)) {
-      const passStartedAt = performance.now();
+      leaseRenewalLoopRunning.set(1);
       try {
-        await this.renewOwnedEngineLeaseProofs();
+        await this.runOwnershipLeaseRenewalLoop(generation);
       } catch (error) {
-        // A programming or transport surprise cannot permanently remove the
-        // platform's primary ownership lifecycle. Existing local deadlines stay
-        // authoritative and the next serialized pass still runs.
-        reportError(error, 'GameServer.ownership_lease_renewal_pass_threw');
+        /* The loop reports its own faults in its own finally. Reaching here
+           means that report, or the finally around it, threw - so this one is
+           guarded too. A supervisor that can die of a log line is not a
+           supervisor. */
+        try {
+          reportError(error, 'GameServer.ownership_lease_renewal_loop_threw');
+        } catch {
+          /* Reporting is never worth the lifecycle. */
+        }
       }
       if (!this.directAdmissionIsCurrent(generation)) return;
-      const elapsedMs = Math.max(0, performance.now() - passStartedAt);
-      await this.sleep(Math.max(0, OWNERSHIP_LEASE_RENEWAL_CADENCE_MS - elapsedMs));
+      /* A RELAUNCH IS AN EVENT, NOT A LOG DETAIL. Without this the cure hides
+         the disease: passes keep completing, the gauge is back at 1 within a
+         tick, and nobody ever learns the loop died. Zero is the normal reading
+         for the life of a process. */
+      leaseRenewalLoopRelaunchesTotal.inc(1);
+      await this.sleep(OWNERSHIP_LEASE_RENEWAL_CADENCE_MS);
     }
   }
 
@@ -2144,9 +2333,12 @@ export class GameServer {
 
       /* Ownership renewal is a primary lifecycle, independent of the much
          heavier discovery/adoption/reaper loops. A blocked discovery RPC must
-         never consume the 20-second local authority proof of a healthy dealer. */
+         never consume the 20-second local authority proof of a healthy dealer.
+         It is launched through its SUPERVISOR, never bare - see
+         superviseOwnershipLeaseRenewal, and 2026-09-12 for what a bare launch
+         cost. */
       this.launchServerLifecycleJob(
-        this.runOwnershipLeaseRenewalLoop(generation),
+        this.superviseOwnershipLeaseRenewal(generation),
         'GameServer.ownership_lease_renewal_fatal_err'
       );
 
@@ -3176,7 +3368,34 @@ export class GameServer {
       equityWorkerPool: equityWorkers,
       stalledTables: stalledTables.slice(0, 20),
       discoveryStaleMs,
-      tableLiveness,
+      /* ── /health IS RENDERED ON THE AUTHORITATIVE EVENT LOOP (2026-09-11) ──
+       *
+       * This used to carry the WHOLE `tableLiveness` array. Measured on
+       * engine-01 that evening: the body was 341 KB, of which this one field
+       * was 362 KB of JSON before compaction - 98% of it - and rendering it
+       * cost 106-183 ms on the single thread that runs every turn timer,
+       * broadcast and horse decision round trip. Docker polls this endpoint
+       * every twenty seconds, and so do the deploy gate and the supervisor.
+       *
+       * Nothing outside this process ever read it. Not a workflow, not a
+       * script, not the client. And the answer it was there to give already
+       * sat one line above, capped: `stalledTables.slice(0, 20)`, plus
+       * `humansSeatedTotal`, `handsInFlightTotal` and the settlement health
+       * spread in below, all of which are derived from the same array.
+       *
+       * So the array stays inside the process, where every consumer of it
+       * already lives, and the endpoint carries the counts instead. A reader
+       * that wants to NAME a table still has `stalledTables`; a reader that
+       * wants a total now gets one that is always present rather than one it
+       * has to reduce a thousand objects to compute.
+       */
+      tableLivenessSummary: {
+        tables: tableLiveness.length,
+        stalled: stalledTables.length,
+        undealable: tableLiveness.filter((t) => t.dealable <= 0).length,
+        maxMsSinceProgress: tableLiveness.reduce((max, t) => Math.max(max, t.msSinceProgress), 0),
+        dealableSeats: tableLiveness.reduce((sum, t) => sum + t.dealable, 0),
+      },
       // Optional calculator capacity may recover after initial readiness
       // without taking a healthy dealer out of routing. Startup, exhausted
       // cooldown, and shutdown remain non-routing states.
@@ -3279,6 +3498,18 @@ export class GameServer {
     // the process, independent of whether the engine can still report itself.
     const now = Date.now();
     const liveness = this.tableLivenessSnapshot();
+    /* The per-table liveness lines this exposition will carry: a table that has
+       stalled, and a table that cannot deal. Both capped, because a fleet-wide
+       fault must not put the old 1,363-sample bill back on the event loop at
+       the very moment the loop is the thing that is wrong. Sorted worst-first,
+       so a truncated list is still the list you wanted. */
+    const stalledSamples = liveness
+      .filter((t) => t.msSinceProgress >= STALL_SAMPLE_FLOOR_MS)
+      .sort((a, b) => b.msSinceProgress - a.msSinceProgress)
+      .slice(0, PER_TABLE_LIVENESS_SAMPLE_CAP);
+    const undealableSamples = liveness
+      .filter((t) => t.dealable <= 0)
+      .slice(0, PER_TABLE_LIVENESS_SAMPLE_CAP);
     const livenessVerdict = evaluateEngineLiveness({
       isLeader: isLeader(),
       processUptimeMs: now - this.processStartedAt,
@@ -3388,14 +3619,52 @@ export class GameServer {
       // the day this was measured, every one an unannounced restart outside
       // the §13 break. It reads the same fleet-wide rule as getStatus() now.
       `poker_engine_liveness ${livenessVerdict.prometheusValue}`,
-      '# HELP poker_table_ms_since_progress Milliseconds since this table last made observable progress',
+      /* ── A SCRAPE IS NOT A STALL (2026-09-11) ──────────────────────────
+       *
+       * These two were emitted for every table this process owns. Measured on
+       * engine-01 that evening: 1,363 samples each, 2,726 of the 7,005 in a
+       * 590 KB exposition that took 136-502 ms to BUILD - on the
+       * authoritative event loop, every fifteen seconds, while that same loop
+       * was already at 309 ms p50 and every turn timer, broadcast and horse
+       * decision round trip was queued behind it.
+       *
+       * Nothing read them per table. The only consumer anywhere was
+       * slo-rules.yml's `max(poker_table_ms_since_progress)`, which is now the
+       * always-present fleet gauge below, and `poker_table_dealable_seats` had
+       * no consumer at all.
+       *
+       * What survives per table is the part that is worth naming: a table that
+       * has actually stalled, and a table that cannot deal. A healthy fleet
+       * emits a handful of lines here; an unhealthy one emits exactly the
+       * tables you would have gone looking for. The cap keeps a pathological
+       * fleet from paying the old price all over again, and the two counters
+       * beside it mean the truncation is never silent (CLAUDE.md 10.86).
+       */
+      '# HELP poker_fleet_table_stall_max_ms Milliseconds since the least-recently-progressed table made progress',
+      '# TYPE poker_fleet_table_stall_max_ms gauge',
+      `poker_fleet_table_stall_max_ms ${liveness.reduce((max, t) => Math.max(max, t.msSinceProgress), 0)}`,
+      '# HELP poker_fleet_tables_stalled Tables that have made no observable progress for at least 30s',
+      '# TYPE poker_fleet_tables_stalled gauge',
+      `poker_fleet_tables_stalled ${liveness.filter((t) => t.msSinceProgress >= STALL_SAMPLE_FLOOR_MS).length}`,
+      '# HELP poker_fleet_dealable_seats Seats able to be dealt into, summed across every table',
+      '# TYPE poker_fleet_dealable_seats gauge',
+      `poker_fleet_dealable_seats ${liveness.reduce((sum, t) => sum + t.dealable, 0)}`,
+      '# HELP poker_fleet_tables_undealable Tables with no seat that can be dealt into',
+      '# TYPE poker_fleet_tables_undealable gauge',
+      `poker_fleet_tables_undealable ${liveness.filter((t) => t.dealable <= 0).length}`,
+      '# HELP poker_fleet_per_table_liveness_samples Per-table liveness samples this exposition carries',
+      '# TYPE poker_fleet_per_table_liveness_samples gauge',
+      `poker_fleet_per_table_liveness_samples ${stalledSamples.length + undealableSamples.length}`,
+      '# HELP poker_table_ms_since_progress Milliseconds since this table last made observable progress (stalled tables only)',
       '# TYPE poker_table_ms_since_progress gauge',
-      ...liveness.map(
+      ...stalledSamples.map(
         (t) => `poker_table_ms_since_progress{table_id="${t.tableId}"} ${t.msSinceProgress}`
       ),
-      '# HELP poker_table_dealable_seats Seats able to be dealt into on this table',
+      '# HELP poker_table_dealable_seats Seats able to be dealt into on this table (undealable tables only)',
       '# TYPE poker_table_dealable_seats gauge',
-      ...liveness.map((t) => `poker_table_dealable_seats{table_id="${t.tableId}"} ${t.dealable}`),
+      ...undealableSamples.map(
+        (t) => `poker_table_dealable_seats{table_id="${t.tableId}"} ${t.dealable}`
+      ),
       // ── SPLIT-BRAIN (2026-08-16) ─────────────────────────────────
       // Every gauge above is per-process, so with two containers behind one
       // hostname Prometheus scrapes whichever the proxy picks and silently
@@ -3818,7 +4087,13 @@ export class GameServer {
         if (summary.scanned > 0) {
           console.log(
             `[FeeReconciler] scanned ${summary.scanned}, resolved ${summary.resolved}, ` +
-              `still failing ${summary.stillFailing}, exhausted ${summary.exhausted}`
+              `still failing ${summary.stillFailing}, exhausted ${summary.exhausted}` +
+              /* A jackpot deferred by the break is neither resolved nor still
+                 failing, and a row that leaves no trace in this line reads as
+                 a row that was never there. */
+              (summary.deferredFrozen > 0
+                ? `, deferred for the break ${summary.deferredFrozen}`
+                : '')
           );
         }
       } catch (err) {

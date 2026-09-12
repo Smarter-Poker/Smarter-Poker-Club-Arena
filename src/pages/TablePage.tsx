@@ -7450,19 +7450,31 @@ export default function TablePage({
   /** The hand in which the engine last answered "already at the maximum" to
    *  an automatic top-up; no retry until the hand number changes. */
   const autoTopUpRefusedForHandRef = useRef<number | null>(null);
+  /* The cashier is offered to a seat that has a funded top-up writer behind it:
+     every chip seat, and a Diamond CASH seat. A Diamond tournament seat has no
+     such writer (prize escrow is a later phase and the custody door refuses a
+     tournament table), so it is not offered a control that cannot work. */
+  const canTopUpSeat =
+    tableState.arenaAsset === 'chips' ||
+    (tableState.arenaAsset === 'diamonds' && !tableState.isTournament);
   const handleAddChips = async (
     amount: number,
     opId?: string,
     opts?: { source?: 'manual' | 'auto' }
   ): Promise<boolean> => {
-    if (tableStateRef.current.arenaAsset !== 'chips') return false;
+    /* A Diamond seat tops up too, through the same engine call. What differs is
+       the door underneath it (fn_poker_diamond_top_up, whole units, the seat's
+       own custody row) and the word for what moved. */
+    const topUpAsset = tableStateRef.current.arenaAsset;
+    if (topUpAsset !== 'chips' && topUpAsset !== 'diamonds') return false;
+    const topUpUnits = topUpAsset === 'diamonds' ? 'Diamonds' : 'Chips';
     if (!userId || userId === 'guest' || !tableId) {
       reportError(
         new Error('Cannot add chips: not authenticated'),
         'TablePage.Cannot_add_chips_not_authenticated'
       );
       if (typeof window !== 'undefined') {
-        toast.error('Sign in to add chips at this table.');
+        toast.error(`Sign in to add ${topUpUnits.toLowerCase()} at this table.`);
       }
       return false;
     }
@@ -7502,10 +7514,10 @@ export default function TablePage({
              to a double top-up. Say which case this is. */
           if (res.code === 'TRANSPORT') {
             toast.error(
-              'The Connection Dropped Before The Table Answered. Your Chips May Have Been Added. Check Your Stack Before Trying Again.'
+              `The Connection Dropped Before The Table Answered. Your ${topUpUnits} May Have Been Added. Check Your Stack Before Trying Again.`
             );
           } else {
-            toast.error(res.error || 'Unable To Add Chips - Your Wallet Was Not Charged.');
+            toast.error(res.error || `Unable To Add ${topUpUnits} - Your Wallet Was Not Charged.`);
           }
         }
         return false;
@@ -7521,7 +7533,7 @@ export default function TablePage({
       if (typeof window !== 'undefined') {
         if (applied < amount) {
           toast.info(
-            `Added ${applied.toLocaleString()} Chips. That Is This Table's Maximum Top-Up Right Now.`
+            `Added ${applied.toLocaleString()} ${topUpUnits}. That Is This Table's Maximum Top-Up Right Now.`
           );
         }
         if (res.queued) {
@@ -10126,7 +10138,7 @@ export default function TablePage({
   // FIX-232: Polls at 0s/2s/5s intervals but STOPS once cards are received (Bug #7).
   // FIX-232: Uses cardsPreSortRef to avoid stale closure (Bug #6).
   useEffect(() => {
-    if (!tableId || !userId) return;
+    if (!tableId || !userId || userId === 'guest') return;
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -11157,13 +11169,16 @@ export default function TablePage({
       if (eventType === 'bbj_near_miss') {
         const nmUser = handState.user_id as string;
         const nmMessage = handState.message as string;
+        /* WHICH JACKPOT NEARLY PAID (phase 3, 2026-09-11). The engine prefixes
+           every mini reason `mini_`, and the rest of the table sees a rewritten
+           headline rather than the personal one - so a MINI near miss was being
+           announced to everyone under the MAIN jackpot's name. */
+        const nmReason = String(handState.reason || '');
+        const nmLabel = nmReason.startsWith('mini_') ? 'Mini Bad Beat:' : 'Bad Beat Jackpot:';
         if (nmMessage) {
           // The player who held the hand gets the personal framing; the rest
           // of the table sees it happened (jackpot awareness) without noise.
-          toast.info(
-            nmUser === userId ? nmMessage : nmMessage.replace('So close!', 'Bad Beat Jackpot:'),
-            4000
-          );
+          toast.info(nmUser === userId ? nmMessage : nmMessage.replace('So close!', nmLabel), 4000);
         }
         return;
       }
@@ -11378,20 +11393,21 @@ export default function TablePage({
             }, 4500);
           }
 
-          // Phase E: Notify all table players via in-app Notifications tab
-          if (userId && userId !== 'guest') {
-            notificationService
-              .create({
-                userId,
-                type: 'bonus',
-                title: 'Bad Beat Jackpot Hit!',
-                message: `The BBJ paid out a total of $${totalPayout.toLocaleString()} at ${tableState.tableName}!`,
-                metadata: { tableId: tableId || '', totalPayout },
-              })
-              .catch(() => {
-                /* non-critical */
-              });
-          }
+          /* THE ENGINE WRITES THE NOTIFICATION, AND ONLY THE ENGINE (2026-09-11).
+             A client-side `notificationService.create` used to fire here, so
+             every seated player received TWO rows for one jackpot - and the
+             client's was the wrong one twice over. It was titled "Bad Beat
+             Jackpot Hit!" with no knowledge of `kind`, so every MINI announced
+             itself as the main jackpot; and it reported the table TOTAL rather
+             than the reader's own share, so a player owed 12.40 was told the
+             jackpot paid 4,075.
+             `processBBJPayout` (server/src/services/supabase/bbj.ts) already
+             inserts one row per recipient, naming the right jackpot, carrying
+             that recipient's own share and whether it is credited or pending,
+             with `kind` in the metadata. It reaches players who were dealt in
+             and have already closed the tab, which a browser never could.
+             A duplicate written from the only place that cannot see the whole
+             payout is not a second safety net, it is a second answer. */
 
           // Clear the hit ref
           bbjHitDataRef.current = null;
@@ -22309,7 +22325,7 @@ export default function TablePage({
               />
             </svg>
           </button>
-          {tableState.arenaAsset === 'chips' && (
+          {canTopUpSeat && (
             <button
               className="header-btn add-chips-icon"
               onClick={() => {
@@ -22382,23 +22398,14 @@ export default function TablePage({
                         badge: standUpNextBB ? 'ON' : undefined,
                         onClick: () => setStandUpNextBB(!standUpNextBB),
                       },
-                      ...(tableState.arenaAsset !== 'chips'
-                        ? []
-                        : tableState.isTournament
-                          ? [
-                              {
-                                id: 'rebuy',
-                                label: 'Rebuy',
-                                icon: <RebuyIcon />,
-                                onClick: handleTournamentRebuy,
-                              },
-                              {
-                                id: 'addon',
-                                label: 'Add-On',
-                                icon: <AddOnIcon />,
-                                onClick: handleTournamentAddOn,
-                              },
-                            ]
+                      /* A Diamond cash seat tops up; a Diamond tournament does
+                         not, because tournament funding is a later phase and
+                         the custody door refuses a tournament table outright.
+                         Offering the control there would promise a seat
+                         something no writer can give it. */
+                      ...(tableState.arenaAsset === 'diamonds'
+                        ? !canTopUpSeat
+                          ? []
                           : [
                               {
                                 id: 'rebuy',
@@ -22406,7 +22413,32 @@ export default function TablePage({
                                 icon: <RebuyIcon />,
                                 onClick: () => setShowCashier(true),
                               },
-                            ]),
+                            ]
+                        : tableState.arenaAsset !== 'chips'
+                          ? []
+                          : tableState.isTournament
+                            ? [
+                                {
+                                  id: 'rebuy',
+                                  label: 'Rebuy',
+                                  icon: <RebuyIcon />,
+                                  onClick: handleTournamentRebuy,
+                                },
+                                {
+                                  id: 'addon',
+                                  label: 'Add-On',
+                                  icon: <AddOnIcon />,
+                                  onClick: handleTournamentAddOn,
+                                },
+                              ]
+                            : [
+                                {
+                                  id: 'rebuy',
+                                  label: 'Top Up',
+                                  icon: <RebuyIcon />,
+                                  onClick: () => setShowCashier(true),
+                                },
+                              ]),
                       ...(tableState.arenaAsset === 'chips'
                         ? [
                             {
@@ -25340,7 +25372,7 @@ export default function TablePage({
                 <span className="menu-item-arrow">›</span>
               </button>
             )}
-            {tableState.arenaAsset === 'chips' && (
+            {canTopUpSeat && (
               <button
                 className="menu-item"
                 onClick={() => {

@@ -98,6 +98,18 @@ type AssetFilter = 'all' | 'free' | 'vip' | 'favorites' | 'recent';
  */
 const STUDIO_READ_RETRY = { maxRetries: 4, baseDelayMs: 500 } as const;
 
+function readStudioThemeSettings(userId: string) {
+  return retryFetch(
+    () =>
+      supabase
+        .from('user_theme_settings')
+        .select('game_type, theme_id, table_id, button_id, background_id, cards_id, updated_at')
+        .eq('user_id', userId)
+        .then((result) => result),
+    STUDIO_READ_RETRY
+  );
+}
+
 interface ThemeAsset {
   id: string;
   name: string;
@@ -658,6 +670,11 @@ export function ThemeSettingsModal({
   const themeLoadScopeRef = useRef<string | null>(null);
   const themeLoadRequestRef = useRef(0);
   const themeLoadReadyScopeRef = useRef<string | null>(null);
+  const themeReadRef = useRef<{
+    scope: string | null;
+    mutationRevision: number;
+    promise: ReturnType<typeof readStudioThemeSettings>;
+  } | null>(null);
   const selectionMutationRevisionRef = useRef(0);
   const pendingSavesRef = useRef(0);
   useEffect(() => {
@@ -1178,7 +1195,10 @@ export function ThemeSettingsModal({
     const nextScope = isOpen ? `${userId || 'anonymous'}:${canonicalGameType(gameType)}` : null;
     const scopeChanged = themeLoadScopeRef.current !== nextScope;
     themeLoadScopeRef.current = nextScope;
-    if (scopeChanged) themeLoadReadyScopeRef.current = null;
+    if (scopeChanged) {
+      themeLoadReadyScopeRef.current = null;
+      themeReadRef.current = null;
+    }
     if (!isOpen) {
       themeLoadRequestRef.current += 1;
       setThemeLoadState('idle');
@@ -1195,21 +1215,23 @@ export function ThemeSettingsModal({
     let mounted = true;
     const requestedScope = nextScope;
     const requestId = ++themeLoadRequestRef.current;
-    const mutationRevision = selectionMutationRevisionRef.current;
     if (scopeChanged) setThemeLoadState('loading');
+    // A refresh must not abandon a slow snapshot every two seconds. Share
+    // the active read within this account/bucket; only the newest effect may
+    // apply it. Keep the mutation revision from when the network read began,
+    // so a refresh arriving after a tap cannot make an older row look fresh.
+    if (!themeReadRef.current || themeReadRef.current.scope !== requestedScope) {
+      themeReadRef.current = {
+        scope: requestedScope,
+        mutationRevision: selectionMutationRevisionRef.current,
+        promise: readStudioThemeSettings(userId),
+      };
+    }
+    const themeRead = themeReadRef.current;
+    const mutationRevision = themeRead.mutationRevision;
     const load = async () => {
       try {
-        const { data, error } = await retryFetch(
-          () =>
-            supabase
-              .from('user_theme_settings')
-              .select(
-                'game_type, theme_id, table_id, button_id, background_id, cards_id, updated_at'
-              )
-              .eq('user_id', userId)
-              .then((result) => result),
-          STUDIO_READ_RETRY
-        );
+        const { data, error } = await themeRead.promise;
 
         if (error) {
           // A FAILED READ IS NOT "YOU HAVE THE DEFAULT THEME" (2026-08-25).
@@ -1284,6 +1306,8 @@ export function ThemeSettingsModal({
           setThemeLoadState('error');
           toast.error('Could Not Load Your Saved Theme. Try Again In A Moment.');
         }
+      } finally {
+        if (themeReadRef.current === themeRead) themeReadRef.current = null;
       }
     };
 

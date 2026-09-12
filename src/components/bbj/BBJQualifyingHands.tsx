@@ -62,6 +62,20 @@ const BLOCKS: VariantBlock[] = [
     note: 'An 8-High Straight Flush Or Better Must Lose. Exactly Two Cards From The Hand Must Play, For Both Players.',
   },
   {
+    /* PINEAPPLE IS A LIVE VARIANT AND HAD NO ROW HERE (2026-09-11).
+       Before the rule was unified, `normalizeVariantKey('pineapple')` fell
+       through to 'nlh' and this strip highlighted the HOLD'EM row - the wrong
+       bar, but a row. Giving the client its real `pineapple` entry made the bar
+       correct everywhere else and left this strip with nothing to highlight:
+       `blockKeyFor` returned 'pineapple' and no block had that key. It cannot
+       collapse onto PLO4 either - same Quad Kings bar, but PLO4's note states
+       Omaha's exactly-two-cards rule, which Pineapple does not have. */
+    key: 'pineapple',
+    games: 'Pineapple',
+    cards: [c('K', 's'), c('K', 'h'), c('K', 'c'), c('K', 'd'), c('2', 's')],
+    note: 'Quad Kings Or Better Must Lose. Both Of The Player\u2019s Hole Cards Must Play.',
+  },
+  {
     key: 'plo6',
     games: 'PLO6',
     cards: [],
@@ -93,6 +107,16 @@ const MINI_BLOCKS: VariantBlock[] = BLOCKS.map((b) => {
   if (!info.eligible) return { ...b, cards: [], note: '' };
   const holdem = info.rule === 'holdem_aces_full';
   const hiLo = b.key === 'plo8';
+  /* A RANKED BAR STATES ITS OWN RANK (Dan, 2026-09-12). PLO5/FLO5 is Quad Tens
+     and Pineapple is Quad Deuces, so neither can take the generic "any four of
+     a kind" note below - one of them would be wrong. The sentence is built
+     from the variant's own label so it cannot drift from the bar. */
+  if (info.rule === 'ranked_quads') {
+    return { ...b, cards: info.minLosingHandCards, note: info.shortLabel + '. ' + info.subLabel };
+  }
+  /* Pineapple's MAIN bar is Quad Kings, so `info.rule` is plo_quads and it
+     takes the "not only Quad Kings" note below - which is exactly right for
+     it. Nothing here assumes an Omaha table. */
   return {
     ...b,
     cards: info.minLosingHandCards,
@@ -111,6 +135,16 @@ function blockKeyFor(variantKey: string | null | undefined): string | null {
   if (raw === 'flh') return 'nlh';
   if (raw === 'plo') return 'plo4';
   if (raw === 'plo_hilo') return 'plo8';
+  /* FLO8 is the same GAME as PLO8 - four cards, exactly-two, 8-or-better low;
+     only the betting differs, and betting has nothing to do with which hand
+     qualifies. It had no block and no alias, so an FLO8 table highlighted
+     nothing. (`pineapple` is NOT aliased: it has its own block above, because
+     its note is not PLO4's.) */
+  if (raw === 'flo8') return 'plo8';
+  /* Same reasoning for the other two fixed-limit Omaha names, added with their
+     BBJ_QUALIFYING_HANDS keys on 2026-09-12. */
+  if (raw === 'flo4') return 'plo4';
+  if (raw === 'flo5') return 'plo5';
   return raw;
 }
 
@@ -136,9 +170,16 @@ export function BBJQualifyingHands({
           {BBJ_RULES.requireBothHoleCards
             ? ' Both Players Must Use Two Cards From Their Own Hand.'
             : ''}
+          {/* THE RULE, NOT THE ASPIRATION (2026-09-11). This branch printed
+              "The Prize Is Divided Between Them" whenever the flag was true,
+              and the flag was true while the engine paid a single holder. The
+              engine evaluates every loser and pays the strongest qualifying
+              hand, which is the one that took the worse beat; a player has to
+              be able to read that and predict it. If the flag is ever turned
+              on, the sentence follows it back. */}
           {BBJ_RULES.splitIfMultipleQualify
             ? ' If More Than One Player Loses With A Qualifying Hand, The Prize Is Divided Between Them.'
-            : ''}
+            : ' If More Than One Player Loses With A Qualifying Hand, The Strongest Losing Hand Takes It.'}
         </p>
       )}
 

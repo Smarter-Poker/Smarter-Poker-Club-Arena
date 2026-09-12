@@ -12,3 +12,7 @@ gates the mini keeps (winner holds quads or better, the pot floor, the
 players-dealt floor, variant eligibility, double-board exclusion) and the two it
 deliberately drops (Ace in hand, both cards play), because those two are what
 make it the near-miss catcher rather than a second main jackpot.
+
+It also pins the mini's own counters: a mini is counted as a mini and never as
+a main, so `detected == paid` keeps meaning what it means for each jackpot, and
+a replay (`already_paid`) is not written down as a refusal.

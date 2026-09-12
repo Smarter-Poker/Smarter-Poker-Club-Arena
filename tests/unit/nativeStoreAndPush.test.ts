@@ -89,11 +89,9 @@ describe('a notification tap is routed like a deep link', () => {
   });
 
   it('a Club Arena url goes through the app; any other Hub page opens the in-app browser; nothing goes nowhere', async () => {
-    // The real module is not mocked (the pushClient mock above targets the
-    // pushClient consumers); import it fresh.
-    vi.doUnmock('../../src/lib/native/push');
-    vi.resetModules();
-    const { openPushUrl } = await import('../../src/lib/native/push');
+    // Exercise the actual navigation helper without importing a phone's
+    // device-token plugins or changing the other tests' transport mock.
+    const { openPushUrl } = await import('../../src/lib/native/openPushUrl');
 
     await openPushUrl('/hub/club-arena/clubs/abc?tab=tables');
     expect(handleAppUrl).toHaveBeenCalledWith(
@@ -169,6 +167,8 @@ describe('wiring that only a phone can exercise', () => {
     expect(push).toContain('pushDeviceId()');
     expect(push).toContain('pushAuthHeaders()');
     expect(push).toContain("method: 'DELETE'");
+    expect(push).toContain("import { openPushUrl } from './openPushUrl'");
+    expect(push).toContain("void openPushUrl(typeof data.url === 'string' ? data.url : undefined)");
   });
 
   it('sign-up in the app asks for a date of birth and never sends a minor to signUp()', () => {

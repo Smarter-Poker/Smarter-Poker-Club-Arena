@@ -320,6 +320,25 @@
    and z-index stays under the deck's 30, so if the two ever meet, this row
    passes beneath the deck rather than over it. */
 @media (max-width: 900px) {
+  /* Native focus/scroll-into-view must use the space between the real chrome.
+     The header and selector deck already publish their measured heights;
+     LobbyTable measures this bar on its actual document or in-tab scrollport. */
+  [data-lobby-scrollport='true'] {
+    scroll-padding-top: calc(
+      var(
+          --ca-global-header-height,
+          var(--ca-in-tab-header-height, calc(env(safe-area-inset-top, 0px) + 10.2vw))
+        ) +
+        var(--ca-lobby-controls-h, 0px) + var(--ca-lobby-sortbar-h, 0px)
+    );
+    scroll-padding-bottom: var(--bottom-nav-clearance, 74px);
+  }
+
+  .arena-lobby-card-list button,
+  .arena-lobby-card-list [tabindex] {
+    scroll-margin-block: 8px;
+  }
+
   .lobby-sortbar {
     /* The menu anchors to the bar, and the bar anchors to the deck. */
     position: sticky;

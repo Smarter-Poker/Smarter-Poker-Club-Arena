@@ -11,7 +11,8 @@
  * (stakesValue / buyInValue / startValue), never the formatted strings.
  */
 
-import { memo, useMemo, useRef, useState, useEffect, useCallback } from 'react';
+import { memo, useMemo, useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react';
+import { observeLobbyScrollClearance } from './lobbyScrollClearance';
 import type { LobbyEntry, LobbyStatusKey, LobbyTournamentRow } from './lobbyEntries';
 import { tournamentBlinds, tournamentLevel } from './tournamentFigures';
 import {
@@ -903,7 +904,21 @@ const COL_ACTIONS: ColumnDef = {
               {waiting ? 'Leave Waitlist' : 'Join Waitlist'}
             </button>
           )}
-          {!closed && !full && ctx.onJoinTable && (
+          {/* A board nobody may sit at says so, rather than offering a seat the
+              buy-in door will refuse. A player already seated still returns to
+              their own table: the closed gate is about taking a NEW seat. */}
+          {!closed && !full && ctx.seatsClosedLabel && !seated && (
+            <button
+              type="button"
+              className="lt-act"
+              data-act="closed"
+              disabled
+              aria-label={`${e.name}: ${ctx.seatsClosedLabel}`}
+            >
+              {ctx.seatsClosedLabel}
+            </button>
+          )}
+          {!closed && !full && ctx.onJoinTable && !(ctx.seatsClosedLabel && !seated) && (
             <button
               type="button"
               className="lt-act lt-act--primary"
@@ -1572,6 +1587,12 @@ export default function LobbyTable({
   );
   const bodyRef = useRef<HTMLTableSectionElement>(null);
   const mobileCardsRef = useRef<HTMLDivElement>(null);
+  const sortbarRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (sortbarRef.current && mobileCardsRef.current) {
+      return observeLobbyScrollClearance(sortbarRef.current, mobileCardsRef.current);
+    }
+  }, [category]);
   /* Which chip of the mobile sort toolbar owns the single tab stop. */
   const sortChipsRef = useRef<HTMLDivElement>(null);
   const [sortFocus, setSortFocus] = useState(0);
@@ -1891,6 +1912,7 @@ export default function LobbyTable({
       {sortableColumns.length > 0 && (
         <div
           className="lobby-sortbar"
+          ref={sortbarRef}
           role="toolbar"
           aria-label="Sort Games"
           aria-orientation="horizontal"

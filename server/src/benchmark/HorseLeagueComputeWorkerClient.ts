@@ -15,6 +15,13 @@ import { fileURLToPath } from 'node:url';
 import { liveHorseDecisionWorkerStatus } from '../engine/horseDecision/client.js';
 import { horseDecisionSolverStoresAreValid } from '../engine/horseDecision/protocol.js';
 import type { LeagueMatchup, LeagueResult } from './HorseLeague.js';
+import {
+  pairedConfidence99,
+  tournamentRunCanPromote,
+  tournamentLeagueEntrants,
+  type TournamentLeagueRequest,
+  type TournamentLeagueResult,
+} from './HorseTournamentLeague.js';
 import type { AgreementResult } from './HorseSolverAgreement.js';
 import type { GtoV31AgreementResult } from './HorseSolverAgreementV31.js';
 import type {
@@ -104,9 +111,14 @@ export interface HorseLeagueComputeWorkerClientOptions {
 interface PendingJob<T> {
   resolve: (result: T) => void;
   reject: (error: Error) => void;
-  resultType: 'MATCHUP_RESULT' | 'AGREEMENT_RESULT' | 'GTO_V31_AGREEMENT_RESULT';
+  resultType:
+    | 'MATCHUP_RESULT'
+    | 'AGREEMENT_RESULT'
+    | 'GTO_V31_AGREEMENT_RESULT'
+    | 'TOURNAMENT_RESULT';
   heartbeatTimer: ReturnType<typeof setTimeout>;
   cancelTimer: ReturnType<typeof setInterval> | null;
+  tournamentRequest?: TournamentLeagueRequest;
 }
 
 export interface HorseLeagueCompute {
@@ -150,6 +162,9 @@ function defaultWorkerFactory(hydrateSolverStores: boolean): () => WorkerLike {
         env: {
           ...process.env,
           HORSE_LEAGUE_HYDRATE_SOLVER_STORES: hydrateSolverStores ? '1' : '0',
+          // An offline paired experiment must not change its sample count
+          // because another process or the preceding policy used more CPU.
+          EQUITY_GOVERNOR: 'off',
         },
         serialization: 'advanced',
         stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
@@ -391,9 +406,155 @@ function isAgreementResult(
 }
 
 /** Runtime guard for the child-process structured-clone boundary. */
-function horseLeagueComputeResponseIsValid(value: unknown): value is HorseLeagueComputeResponse {
+export function horseLeagueComputeResponseIsValid(
+  value: unknown
+): value is HorseLeagueComputeResponse {
   if (!isRecord(value) || typeof value.type !== 'string') return false;
   switch (value.type) {
+    case 'TOURNAMENT_RESULT': {
+      if (
+        !hasExactKeys(value, ['type', 'jobId', 'result']) ||
+        !isJobId(value.jobId) ||
+        !isRecord(value.result)
+      )
+        return false;
+      const r = value.result;
+      const numeric = [
+        'entrants',
+        'seed',
+        'requestedPairs',
+        'pairs',
+        'meanDifference',
+        'standardError',
+        'candidateReturn',
+        'baselineReturn',
+        'chipDifference',
+        'bountyDifference',
+        'candidateBustRate',
+        'baselineBustRate',
+        'decisions',
+        'eligible',
+        'fired',
+        'changed',
+        'illegalActions',
+        'conservationErrors',
+        'truncatedHands',
+        'candidateDeepOnePairCommitments',
+        'baselineDeepOnePairCommitments',
+        'preventedCommitments',
+        'budgetExhaustions',
+        'referenceRegret',
+        'durationMs',
+      ];
+      if (
+        !hasExactKeys(r, [
+          ...numeric,
+          'version',
+          'candidateMode',
+          'evidenceMode',
+          'objective',
+          'complete',
+          'primaryMetric',
+          'confidence99',
+          'candidateFinish',
+          'baselineFinish',
+          'reference',
+          'latencyMs',
+          'promotionEligible',
+        ])
+      )
+        return false;
+      if (
+        !numeric.every((k) => isFiniteNumber(r[k])) ||
+        !isNonnegativeSafeInteger(r.pairs) ||
+        !isNonnegativeSafeInteger(r.requestedPairs) ||
+        (r.pairs as number) > (r.requestedPairs as number) ||
+        r.version !== 'horse-tournament-postflop-round1-v2' ||
+        !['mtt', 'sng', 'spin', 'satellite', 'pko', 'mystery'].includes(String(r.objective)) ||
+        typeof r.complete !== 'boolean' ||
+        typeof r.promotionEligible !== 'boolean' ||
+        !['funded_pool_return', 'seat_attainment'].includes(String(r.primaryMetric)) ||
+        r.reference !== 'phase7_action_utility_not_external_solver'
+      )
+        return false;
+      const integer = [
+        'seed',
+        'requestedPairs',
+        'pairs',
+        'decisions',
+        'eligible',
+        'fired',
+        'changed',
+        'illegalActions',
+        'conservationErrors',
+        'truncatedHands',
+        'candidateDeepOnePairCommitments',
+        'baselineDeepOnePairCommitments',
+        'preventedCommitments',
+        'budgetExhaustions',
+      ];
+      if (
+        !integer.every((k) => isNonnegativeSafeInteger(r[k])) ||
+        !(Number(r.seed) > 0) ||
+        !(Number(r.requestedPairs) > 0) ||
+        Number(r.requestedPairs) > 1024 ||
+        !['off', 'shadow', 'candidate'].includes(String(r.candidateMode)) ||
+        !['fixture', 'promotion'].includes(String(r.evidenceMode)) ||
+        r.complete !== (r.pairs === r.requestedPairs) ||
+        r.primaryMetric !==
+          (r.objective === 'satellite' ? 'seat_attainment' : 'funded_pool_return') ||
+        Number(r.fired) > Number(r.eligible) ||
+        Number(r.changed) > Number(r.fired) ||
+        Number(r.eligible) > Number(r.decisions) ||
+        Number(r.standardError) < 0 ||
+        Number(r.durationMs) < 0 ||
+        Number(r.referenceRegret) < 0
+      )
+        return false;
+      if (
+        !['candidateReturn', 'baselineReturn', 'candidateBustRate', 'baselineBustRate'].every(
+          (k) => Number(r[k]) >= 0 && Number(r[k]) <= 1
+        ) ||
+        Math.abs(
+          Number(r.meanDifference) - (Number(r.candidateReturn) - Number(r.baselineReturn))
+        ) > 1e-8
+      )
+        return false;
+      for (const key of ['confidence99', 'candidateFinish', 'baselineFinish']) {
+        if (!Array.isArray(r[key]) || !(r[key] as unknown[]).every((x) => isFiniteNumber(x)))
+          return false;
+      }
+      if (
+        (r.confidence99 as unknown[]).length !== 2 ||
+        !isRecord(r.latencyMs) ||
+        !hasExactKeys(r.latencyMs, ['p50', 'p95', 'p99', 'max']) ||
+        !['p50', 'p95', 'p99', 'max'].every((k) =>
+          isFiniteNumber((r.latencyMs as Record<string, unknown>)[k], 0)
+        )
+      )
+        return false;
+      for (const key of ['candidateFinish', 'baselineFinish']) {
+        const finish = r[key] as number[];
+        if (
+          finish.length !==
+            tournamentLeagueEntrants(r.objective as TournamentLeagueResult['objective']) ||
+          !finish.every(isNonnegativeSafeInteger) ||
+          finish.reduce((s, v) => s + v, 0) !== r.pairs
+        )
+          return false;
+      }
+      const lat = r.latencyMs as Record<string, number>;
+      if (lat.p50 > lat.p95 || lat.p95 > lat.p99 || lat.p99 > lat.max) return false;
+      const typed = r as unknown as TournamentLeagueResult;
+      if (typed.entrants !== tournamentLeagueEntrants(typed.objective)) return false;
+      const ci = typed.pairs
+        ? pairedConfidence99(typed.meanDifference, typed.standardError, typed.pairs)
+        : [0, 0];
+      return (
+        typed.confidence99.every((v, i) => Math.abs(v - ci[i]) < 1e-8) &&
+        typed.promotionEligible === tournamentRunCanPromote(typed)
+      );
+    }
     case 'READY':
       return (
         (hasExactKeys(value, ['type', 'solverStores']) ||
@@ -504,8 +665,19 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
     );
   }
 
+  runTournamentLeague(
+    request: TournamentLeagueRequest,
+    shouldContinue: () => boolean = () => true
+  ): Promise<TournamentLeagueResult> {
+    return this.dispatch<TournamentLeagueResult>(
+      { type: 'RUN_TOURNAMENT', request },
+      shouldContinue
+    );
+  }
+
   private async dispatch<T>(
     command:
+      | Omit<Extract<HorseLeagueComputeRequest, { type: 'RUN_TOURNAMENT' }>, 'jobId'>
       | Omit<Extract<HorseLeagueComputeRequest, { type: 'RUN_MATCHUP' }>, 'jobId'>
       | Omit<Extract<HorseLeagueComputeRequest, { type: 'SCORE_SOLVER_AGREEMENT' }>, 'jobId'>
       | Omit<Extract<HorseLeagueComputeRequest, { type: 'SCORE_GTO_V31_AGREEMENT' }>, 'jobId'>,
@@ -518,11 +690,13 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
     }
     const jobId = this.nextJobId++;
     const resultType =
-      command.type === 'RUN_MATCHUP'
-        ? 'MATCHUP_RESULT'
-        : command.type === 'SCORE_SOLVER_AGREEMENT'
-          ? 'AGREEMENT_RESULT'
-          : 'GTO_V31_AGREEMENT_RESULT';
+      command.type === 'RUN_TOURNAMENT'
+        ? 'TOURNAMENT_RESULT'
+        : command.type === 'RUN_MATCHUP'
+          ? 'MATCHUP_RESULT'
+          : command.type === 'SCORE_SOLVER_AGREEMENT'
+            ? 'AGREEMENT_RESULT'
+            : 'GTO_V31_AGREEMENT_RESULT';
     return new Promise<T>((resolve, reject) => {
       const heartbeatTimer = setTimeout(
         () => this.fail(new Error(`horse league compute worker job ${jobId} stopped heartbeating`)),
@@ -553,6 +727,7 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
           resultType,
           heartbeatTimer,
           cancelTimer,
+          ...(command.type === 'RUN_TOURNAMENT' ? { tournamentRequest: command.request } : {}),
         },
       };
       try {
@@ -665,6 +840,19 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
     }
 
     if (pending.job.cancelTimer) clearInterval(pending.job.cancelTimer);
+    if (message.type === 'TOURNAMENT_RESULT' && pending.job.tournamentRequest) {
+      const request = pending.job.tournamentRequest;
+      if (
+        message.result.seed !== request.seed ||
+        message.result.objective !== request.objective ||
+        message.result.requestedPairs !== request.pairs ||
+        message.result.candidateMode !== (request.candidateMode ?? 'candidate') ||
+        message.result.evidenceMode !== (request.evidenceMode ?? 'fixture')
+      ) {
+        this.fail(new Error('Tournament result does not match the requested paired run'));
+        return;
+      }
+    }
     this.pending = null;
     pending.job.resolve(message.result);
   }

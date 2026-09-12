@@ -674,6 +674,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
      The countdown reads nothing at all on a chip club: `null` is the "already
      know the time" seam, so the hook issues no query there. */
   const arenaFreeroll = useDiamondFreerollCountdown(isAutomaticArena ? undefined : null);
+  /* Undefined for every chip club, so their cards are untouched. */
+  const arenaSeatsClosedLabel =
+    isAutomaticArena && arenaAccess?.cashGamesEnabled !== true ? 'Not Open Yet' : undefined;
   useVisibilityRefresh(() => loadClubData());
   const navigate = useAppNavigate();
   const isMountedRef = useIsMounted();
@@ -1379,19 +1382,26 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          about a jackpot by watching a counter, or not at all. One
          `bbj_winners` INSERT per hit, straight to BBJ_HIT_GLOBAL, which
          BBJHitAnnouncer already owns (lib/bbjHitFeed). */
-      stopBbjPool = watchBbjPool(resolvedId, (snap) => {
-        if (!isCurrent()) return;
-        setJackpotAmount(snap.mainBalance);
-        if (snap.poolId && snap.poolId !== watchedBbjPoolId) {
-          watchedBbjPoolId = snap.poolId;
-          if (stopBbjHits) stopBbjHits();
-          stopBbjHits = watchBbjHits(snap.poolId);
-        }
-      });
-      stopBbjMini = watchBbjMini(resolvedId, (snap) => {
-        if (!isCurrent()) return;
-        setLobbyMini(snap);
-      });
+      /* The jackpot is a chip pool banked by chip rake, and a Diamond hand
+         pays neither: the arena has no pool to watch, its strip does not
+         render, and these two feeds were only asking the database a question
+         with no answer. One of them came back as a statement timeout and a
+         500 on the live arena lobby. Both are chip club feeds now. */
+      if (!automaticMembershipRef.current) {
+        stopBbjPool = watchBbjPool(resolvedId, (snap) => {
+          if (!isCurrent()) return;
+          setJackpotAmount(snap.mainBalance);
+          if (snap.poolId && snap.poolId !== watchedBbjPoolId) {
+            watchedBbjPoolId = snap.poolId;
+            if (stopBbjHits) stopBbjHits();
+            stopBbjHits = watchBbjHits(snap.poolId);
+          }
+        });
+        stopBbjMini = watchBbjMini(resolvedId, (snap) => {
+          if (!isCurrent()) return;
+          setLobbyMini(snap);
+        });
+      }
 
       /**
        * A DROPPED SOCKET USED TO MEAN A STALE LOBBY UNTIL THE NEXT RELOAD.
@@ -1947,13 +1957,18 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     [memberRefresh]
   );
 
+  /* An arena whose membership the server grants automatically has no
+     `club_members` rows to watch, and subscribing to them there opened a
+     realtime channel that failed on every arena load: CHANNEL_ERROR on
+     club-members-diamond-arena. Nothing was listening for an answer; the rail
+     shows who is playing, not who is a member. */
   useMasterBusChannel({
     channelName: clubId ? `club-members-${clubId}` : null,
     table: 'club_members',
     filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
     event: '*',
     onPayload: handleMemberUpdate,
-    enabled: !!resolvedClubId,
+    enabled: !!resolvedClubId && !isAutomaticArena,
   });
 
   useMasterBusChannel({
@@ -2820,6 +2835,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         clubTournamentQuery,
         (async () => {
           try {
+            /* The third jackpot read. An arena pays no rake and banks no
+               pool, so this one asks for a row that cannot exist there;
+               the other two were closed on 2026-09-11 and this one was
+               missed because it is inlined in a Promise.all rather than
+               named like the feeds. */
+            if (automaticMembershipRef.current) return { data: null, error: null };
             // BUGFIX: resolve the CORRECT BBJ pool. Union clubs contribute to the
             // UNION pool (that's the one that grows); a club-level pool row may exist
             // but is stale. Fetch by union_id when in a union, else club_id.
@@ -2947,9 +2968,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
       // BBJ jackpot. Number() is load-bearing, not cosmetic: main_balance is
       // numeric(14,2) and arrives as the STRING "10500.67". Assigning it raw
-      // put a string into a number-typed state, which then failed BBJTicker's
-      // `typeof poolAmount === 'number'` ownership check and left the ticker
-      // and the page disagreeing about who owns the value.
+      // put a string into a number-typed state, which failed a `typeof
+      // poolAmount === 'number'` ownership check downstream and left two
+      // surfaces disagreeing about who owned the value. The component that
+      // check lived in (BBJTicker) was deleted on 2026-09-12 for being mounted
+      // nowhere; the coercion stays, because every reader of this state still
+      // expects a number and the string is what the database actually sends.
       if (bbjResult?.data && !(bbjResult as any).error) {
         if (Array.isArray(bbjResult.data)) {
           let sum = 0;
@@ -4157,6 +4181,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         );
       },
       onJoinTable: (e) => handleJoinTable(e.id),
+      /* Diamond Arena's ladder is listed while funded play is closed, and the
+         buy-in door refuses every seat until it opens. Say so on the card
+         rather than offering a Join that the server will reject. */
+      seatsClosedLabel: arenaSeatsClosedLabel,
       /* A full table's primary action is the waitlist, not a join that cannot
          succeed. The page already owns this flow for the panel; the card runs
          the same one rather than inventing a second. */
@@ -5547,6 +5575,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           busy={actionBusy || waitlistActionBusy || isRegisteringMtt || deletingTableId !== null}
           onClose={() => setPanelOpen(false)}
           onJoinTable={handleJoinTable}
+          seatsClosedLabel={arenaSeatsClosedLabel}
           onWaitlistToggle={handleWaitlistToggle}
           onRegister={handleRegister}
           onUnregister={handleUnregister}

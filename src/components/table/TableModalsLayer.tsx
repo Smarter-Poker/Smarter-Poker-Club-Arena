@@ -1106,7 +1106,15 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
 
       {/* Cashier Modal */}
       <CashierModal
-        isOpen={showCashier && arenaAsset === 'chips'}
+        /* Diamond seats top up through the same cashier. The door underneath is
+           not the same one: a Diamond amount is reserved into the seat's own
+           custody row by fn_poker_diamond_top_up, which is why every number
+           this modal offers there is whole. */
+        isOpen={
+          showCashier && (arenaAsset === 'chips' || (arenaAsset === 'diamonds' && !isTournament))
+        }
+        wholeUnits={arenaAsset === 'diamonds'}
+        currency={arenaAsset === 'diamonds' ? 'Diamonds' : undefined}
         onClose={onCloseCashier}
         // Passed straight through. Wrapping these in `async (a) => { await f(a) }`
         // is what threw the success flag away originally.

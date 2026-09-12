@@ -1,0 +1,131 @@
+{
+  "status": "passed",
+  "postgres": "postgres (PostgreSQL) 17.11 (Homebrew)",
+  "cases": [
+    {
+      "name": "exact helper unchanged; stable SQL definer with qualified path and service-only ACL",
+      "status": "passed",
+      "milliseconds": 10
+    },
+    {
+      "name": "null identities and missing table return one explicit fail-closed result",
+      "status": "passed",
+      "milliseconds": 5
+    },
+    {
+      "name": "active seat bypasses observer membership only; expired and foreign seats do not grant",
+      "status": "passed",
+      "milliseconds": 8
+    },
+    {
+      "name": "active and approved membership; inactive foreign null and duplicate memberships",
+      "status": "passed",
+      "milliseconds": 5
+    },
+    {
+      "name": "union shell, union-only and mapped child scopes retain exact installed helper semantics",
+      "status": "passed",
+      "milliseconds": 24
+    },
+    {
+      "name": "diamond automatic membership requires exact valid platform arena",
+      "status": "passed",
+      "milliseconds": 25
+    },
+    {
+      "name": "malformed chip arena and missing ownership never inherit a seat grant",
+      "status": "passed",
+      "milliseconds": 18
+    },
+    {
+      "name": "ban scope covers club, attached union, shell union and union-only; unrelated ban does not apply",
+      "status": "passed",
+      "milliseconds": 23
+    },
+    {
+      "name": "ban expiration uses statement clock, including a transaction that began before expiration",
+      "status": "passed",
+      "milliseconds": 98
+    },
+    {
+      "name": "live IP and observer settings are not cached and nullable settings do not grant invalid scope",
+      "status": "passed",
+      "milliseconds": 5
+    },
+    {
+      "name": "exact function runs READ ONLY without changing any projected source relation",
+      "status": "passed",
+      "milliseconds": 7
+    },
+    {
+      "name": "temporary relations cannot replace qualified arena, seat or membership authority",
+      "status": "passed",
+      "milliseconds": 5
+    },
+    {
+      "name": "actual TypeScript decoder composes with native RPC and refuses malformed identity, flags and errors",
+      "status": "passed",
+      "milliseconds": 117
+    },
+    {
+      "name": "blocked actual stable RPC sees one pre-commit snapshot; following RPC sees entire revocation",
+      "status": "passed",
+      "milliseconds": 11
+    }
+  ],
+  "inputs": {
+    "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-pipeline-live-certificate/supabase/migrations/20260911195214_engine_table_connection_one_snapshot_verdict.sql": "43ea9061906f7b7a27da796ab2b3f4aa54a2443a838de7664176f3ce03ce2264",
+    "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-pipeline-live-certificate/server/src/services/TableConnectionAccess.ts": "8e43fcd4b487731c1c0b7b6749ee81d21d72292ea2d2c0dd4c1ec2d3d5531ec4",
+    "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-pipeline-live-certificate/supabase/migrations/20260823_03_club_members_overview.sql": "8c20fed1695e92696653e97419d37f718e148f73178211ef8acf134c193bec75",
+    "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-table-connection-native/tests/connection-verdict/native.py": "023d91a55b8437d0a7fdbd6ecb9dcc00fa11b85d19a9947d0b3658cb44ae99ed",
+    "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-table-connection-native/tests/connection-verdict/integration.mjs": "eeeb31cf84060745bdee61c38337c658f9fb1ad9727447d45954ee73f0361d71"
+  },
+  "scope": "Isolated projected schema and exact helper/RPC; no production identity, writes or deployed transport claim.",
+  "reviewed_commit": "d546e00a63d15117ec808e94a997f7363b731abc",
+  "node": "22.23.2",
+  "helper_body_md5": "9fc3bbf5ebbf941e06141b3a65584ef4",
+  "snapshot_trace": [
+    {
+      "pid": 56802,
+      "wait_event_type": "Lock",
+      "wait_event": "relation"
+    },
+    {
+      "old": {
+        "banned": false,
+        "reason": "seated",
+        "allowed": true,
+        "user_id": "aaaaaaaa-0000-4000-8000-000000000100",
+        "scope_id": "aaaaaaaa-0000-4000-8000-000000000001",
+        "table_id": "aaaaaaaa-0000-4000-8000-000000000200",
+        "ip_restricted": false
+      },
+      "next": {
+        "banned": true,
+        "reason": "membership_required",
+        "allowed": false,
+        "user_id": "aaaaaaaa-0000-4000-8000-000000000100",
+        "scope_id": "aaaaaaaa-0000-4000-8000-000000000001",
+        "table_id": "aaaaaaaa-0000-4000-8000-000000000200",
+        "ip_restricted": true
+      }
+    }
+  ],
+  "qualification_limits": [
+    "Projected columns/indexes and local roles; not full production RLS/data/trigger/default-ACL equivalence.",
+    "Association-only union_clubs membership is not additional blacklist authority.",
+    "One statement snapshot does not certify freshness after query completion or physical PostgREST request lifetime.",
+    "Actual TypeScript source executes with a controlled native RPC transport instead of importing a production Supabase client.",
+    "No production migrations, host actions, credentials, World Hub edits or activation."
+  ],
+  "evidence_sha256": {
+    "work/connection-verdict/native-final/result.json": "26a397ae7b2ee718d9f1289b11d1cb0f634dc529b6e96d79a4471ea780453315",
+    "work/connection-verdict/native-final/snapshot-trace.json": "d724f0fa8585d80e255402526814dbe052a44282affc65722d34727f9e39101a",
+    "work/connection-verdict/native-final/shutdown.log": "ca19178a35ab4153b75b494963b66ce8243e1b94c173107c87b44d09db23652d"
+  },
+  "owned_sources_sha256": {
+    "tests/connection-verdict/native.py": "023d91a55b8437d0a7fdbd6ecb9dcc00fa11b85d19a9947d0b3658cb44ae99ed",
+    "tests/connection-verdict/integration.mjs": "eeeb31cf84060745bdee61c38337c658f9fb1ad9727447d45954ee73f0361d71",
+    "docs/changelog/2026-09-11-connection-verdict-native-qualification.md": "d390c8dbc74ed0ec69aac36b7ec8c35b21bfe9af0d3f8cb78464b141406bfa65"
+  }
+}

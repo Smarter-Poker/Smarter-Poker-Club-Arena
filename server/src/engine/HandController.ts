@@ -209,11 +209,19 @@ export class HandController {
       }
       // Phase 6 certifies plain NLH cash. Later variants and paid deductions
       // stay closed until their own accounting and release gates are approved.
+      //
+      // RUN IT TWICE LEFT THIS LIST ON 2026-09-12. It was here because the RIT
+      // runout cut every pot into integer CENTS, so a five Diamond pot over two
+      // runs paid two and a half Diamonds a board and this guard would then
+      // have refused the hand it had just dealt. The runout now cuts in the
+      // table's own unit and tells determineWinners what that unit is, so both
+      // the per-board slice and a tie chopped on one board are whole Diamonds.
+      // Bomb pots stay: their award rides the p_units lane the accepted-hand
+      // commit refuses for a Diamond hand.
       if (
         config.isTournament ||
         config.gameVariant !== 'nlh' ||
         config.bombPot ||
-        config.ritEnabled ||
         config.insuranceEnabled ||
         config.rakeConfig.percent !== 0 ||
         config.rakeConfig.cap !== 0 ||
@@ -2278,7 +2286,7 @@ export class HandController {
     //
     // DOUBLE-BOARD BOMB POT 2026-08-20 / TRIPLE-BOARD 2026-08-27 (spec §8/§9):
     // with N full boards, EVERY pot layer (main and each side pot) is split in
-    // integer cents into N board shares — indivisible remainder cents go to
+    // configured chip units into N board shares — indivisible remainder units go to
     // the lowest board numbers first (Board 1, then Board 2, then Board 3;
     // spec's LOWEST_BOARD_NUMBER policy) — and each share is awarded
     // independently on its own board among that pot layer's eligible players.
@@ -2296,14 +2304,21 @@ export class HandController {
       const boardCount = settlementBoards.length;
       // Per-board pot arrays: potsByBoard[b][p] is pot layer p's share on
       // board b. splitAcrossBoards (spec §18.1): floor division, remainder
-      // cents to ascending board order.
+      // units to ascending board order. Tournament/diamond chips must stay
+      // whole before any high/low or tied-winner split, not only afterwards.
       const potsByBoard: Pot[][] = Array.from({ length: boardCount }, () => []);
       for (const pot of pots) {
         const cents = Math.round(pot.amount * 100);
-        const base = Math.floor(cents / boardCount);
-        const remainder = cents % boardCount;
+        const unitCents = this.config.isTournament || this.config.asset === 'diamonds' ? 100 : 1;
+        const units = Math.floor(cents / unitCents);
+        const subUnitCents = cents - units * unitCents;
+        const base = Math.floor(units / boardCount);
+        const remainder = units % boardCount;
         for (let b = 0; b < boardCount; b++) {
-          const shareCents = base + (b < remainder ? 1 : 0);
+          // Preserve legacy sub-unit residue once, on the first board, using
+          // the same conservation contract as determineWinners.
+          const shareCents =
+            (base + (b < remainder ? 1 : 0)) * unitCents + (b === 0 ? subUnitCents : 0);
           potsByBoard[b].push({
             amount: shareCents / 100,
             eligiblePlayers: [...pot.eligiblePlayers],

@@ -23,6 +23,11 @@
  */
 
 import type { Card } from '../types.js';
+import {
+  CONTINUATION_POLICY,
+  continuationStrength,
+  type TournamentContinuationStreet,
+} from './HorseTournamentContinuation.js';
 import { scoreFiveCards } from './HorseFiveCardScore.js';
 import { SUITS, RANKS, RANK_VALUES } from './PokerEngine.js';
 import {
@@ -2107,6 +2112,7 @@ export function equitySampleSizeOfLastCall(): number {
 
 /** One range-conditioned showdown sampled inside the canonical equity pass. */
 export interface HorseEquityOutcomeSample {
+  continuationStreets?: TournamentContinuationStreet[];
   heroHigh: number;
   opponentHigh: number[];
   /** Opponent strength at the decision point, before sampled future cards. */
@@ -2123,6 +2129,7 @@ export interface HorseEquityOutcomeSample {
  * that from one scalar equity.
  */
 export interface HorseEquityOutcomeCollector {
+  captureContinuation?: boolean;
   maxSamples: number;
   samples: HorseEquityOutcomeSample[];
 }
@@ -2300,6 +2307,28 @@ export function simulateEquity(
     const opponentHigh: number[] = [];
     const opponentDecisionStrength: number[] = [];
     const opponentLow: Array<number | null> = [];
+    const continuationStreets: TournamentContinuationStreet[] = [];
+    if (
+      outcomeOut?.captureContinuation &&
+      !vi.isOmaha &&
+      !vi.isShortDeck &&
+      holeCards.length === 2 &&
+      boardCards.length >= 3 &&
+      outcomeOut.samples.length <
+        Math.min(outcomeOut.maxSamples, CONTINUATION_POLICY.maxOutcomeSamples)
+    ) {
+      for (let size = boardCards.length; size <= 5; size++) {
+        const publicBoard = board.slice(0, size);
+        continuationStreets.push({
+          street: size === 3 ? 'flop' : size === 4 ? 'turn' : 'river',
+          heroStrength: continuationStrength(
+            connectsBoard(holeCards, publicBoard, false),
+            holdemPreflopScore(holeCards[0], holeCards[1], false)
+          ),
+          opponentStrength: [],
+        });
+      }
+    }
 
     for (let o = 0; o < numOpponents; o++) {
       const windowStart = dealIdx;
@@ -2535,6 +2564,15 @@ export function simulateEquity(
       if (outcomeOut) {
         opponentHigh.push(oppHi);
         opponentDecisionStrength.push(decisionStrength(oppCards));
+        for (const next of continuationStreets) {
+          const size = next.street === 'flop' ? 3 : next.street === 'turn' ? 4 : 5;
+          next.opponentStrength.push(
+            continuationStrength(
+              connectsBoard(oppCards, board.slice(0, size), false),
+              holdemPreflopScore(oppCards[0], oppCards[1], false)
+            )
+          );
+        }
       }
 
       if (vi.isHiLo) {
@@ -2565,6 +2603,7 @@ export function simulateEquity(
         opponentDecisionStrength,
         heroLow: heroLow === Infinity ? null : heroLow,
         opponentLow,
+        ...(continuationStreets.length > 0 ? { continuationStreets } : {}),
       });
     }
 

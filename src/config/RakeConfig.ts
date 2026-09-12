@@ -60,6 +60,19 @@ export interface BBJQualifyingHand {
   handRank?: string;
   minRankValue?: string;
   eligible?: boolean;
+  /* THE MINI'S OWN BAR FOR THIS VARIANT (Dan, 2026-09-12).
+
+     The mini used to derive its bar from the MAIN rule's family: `full_house`
+     meant hold'em, so aces-full-or-better; anything else meant Omaha, so ANY
+     quads. That is a two-value guess standing in for a per-game decision, and
+     Dan made the decision: PLO5/FLO5 is Quad Tens or better, Pineapple is Quad
+     Deuces. Where `miniMinQuadRank` is set it is the lowest QUAD rank that
+     clears the mini bar (A=14 ... 2=2) and it replaces the family default;
+     where it is absent the family default still applies, so every other game
+     is untouched. `miniBarLabel` is what a player is told, and it lives beside
+     the number so the two cannot drift. */
+  miniMinQuadRank?: number;
+  miniBarLabel?: string;
 }
 
 export interface RakeConfigResult {
@@ -370,10 +383,51 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
     ],
     handRank: 'straight_flush',
     minRankValue: '87654',
+    /* MINI: Quad Tens or better (Dan, 2026-09-12). Stricter than the Omaha
+       family default of any quads - five hole cards make quads common. */
+    miniMinQuadRank: 10,
+    miniBarLabel: 'Quad Tens Or Better',
   },
   // BBJ-SYNC 2026-08-18: server (the authority that actually detects hits)
   // marks PLO6 ineligible — this entry used to advertise an 8-high SF rule the
   // engine never pays. Synced to match server/src/config/RakeConfig.ts.
+  /* FLO4 / FLO5 ARE THE SAME GAMES AS PLO4 / PLO5 (2026-09-12). Both labels
+     have always read "PLO4 / FLO4" and "PLO5 / FLO5", but neither key existed,
+     and the engine's BBJ detectors look this table up by the RAW variant - only
+     the client normalises. So an FLO5 table would have taken the mini's
+     "variant not covered" branch and paid NO mini at all, while getRakeConfig's
+     `|| BBJ_QUALIFYING_HANDS.nlh` fallback judged its MAIN bar by hold'em
+     rules. That is the Pineapple defect exactly: a key on one side and not the
+     other. No such table exists in production today (nlh, plo4, plo5, plo6,
+     plo8, short_deck, pineapple, flh, flo8 are the live variants), so this
+     closes a trap rather than repairing a loss - and `flo8` and `flh` were
+     already here for the same reason. */
+  flo4: {
+    label: 'PLO4 / FLO4',
+    minLosingHand: 'KKKK2',
+    description: 'Four Of A Kind (Kings) Or Better Must LOSE',
+    rules: [
+      'Must use exactly 2 cards from hand',
+      'Both players must use two cards from their hole cards',
+    ],
+    handRank: 'four_of_a_kind',
+    minRankValue: 'KKKK',
+  },
+  flo5: {
+    label: 'PLO5 / FLO5',
+    minLosingHand: '87654',
+    description: 'Straight Flush (8-High) Or Better Must LOSE',
+    rules: [
+      'Must use exactly 2 cards from hand',
+      'Both players must use two cards from their hole cards',
+    ],
+    handRank: 'straight_flush',
+    minRankValue: '87654',
+    /* MINI: Quad Tens or better (Dan, 2026-09-12) - the same bar as plo5,
+       because it is the same game. */
+    miniMinQuadRank: 10,
+    miniBarLabel: 'Quad Tens Or Better',
+  },
   plo6: {
     label: 'PLO6',
     minLosingHand: null,
@@ -387,6 +441,32 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
     description: 'BBJ Not Available For Short Deck',
     rules: [],
     eligible: false,
+  },
+  /* PINEAPPLE IS A LIVE VARIANT AND ITS BAR IS NOT HOLD'EM'S (2026-09-11).
+     The server has carried this entry all along; the client did not, and
+     `normalizeVariantKey` falls through to 'nlh' for any key it does not
+     know. So every Pineapple table told its players the HOLD'EM rule -
+     "aces full or better must lose", plus the Ace-in-the-hole and
+     both-cards-play technicalities - while the engine was enforcing Quad
+     Kings or better. Measured that day: 293 Pineapple tables, 11,606
+     BBJ-raked hands in seven days, and FOUR real jackpot hits paid under
+     the rule the client was not showing. A player holding aces full on a
+     Pineapple table was reading a qualifying hand that does not qualify. */
+  pineapple: {
+    label: 'Pineapple',
+    minLosingHand: 'KKKK2',
+    description: 'Four Of A Kind (Kings) Or Better Must LOSE',
+    rules: [
+      'Must use exactly 2 cards from hand',
+      'Both players must use two cards from their hole cards',
+    ],
+    handRank: 'four_of_a_kind',
+    minRankValue: 'KKKK',
+    /* MINI: Quad Deuces (Dan, 2026-09-12) - every quad clears it. Same effect
+       as the old family default for this game, written down explicitly so the
+       bar is a stated rule rather than a fall-through nobody chose. */
+    miniMinQuadRank: 2,
+    miniBarLabel: 'Quad Deuces Or Better',
   },
 };
 
@@ -437,6 +517,13 @@ const BBJ_SHORT_LABELS: Record<string, string> = {
   plo8: 'Quad Kings or better must lose (high hand only)',
   plo_hilo: 'Quad Kings or better must lose (high hand only)',
   plo5: '8-high Straight Flush or better must lose',
+  flo4: 'Quad Kings or better must lose',
+  flo5: '8-high Straight Flush or better must lose',
+  flo8: 'Quad Kings or better must lose (high hand only)',
+  /* Without this, Pineapple fell through to `q.description` and printed
+     SHOUTY "Four Of A Kind (Kings) Or Better Must LOSE" where every other row
+     prints a sentence. */
+  pineapple: 'Quad Kings or better must lose',
 };
 
 /**
@@ -469,13 +556,29 @@ export function getBBJQualifyingInfo(gameType: string | null | undefined): BBJWi
       variantLabel: q.label,
     };
   }
-  const isOmaha = key.startsWith('plo');
+  /* WHICH SENTENCE GOES UNDER THE BAR IS A PROPERTY OF THE GAME, NOT OF HOW
+     ITS KEY IS SPELLED (2026-09-11).
+
+     This was `key.startsWith('plo')`. `pineapple` and `flo8` both fail that
+     test, so both were handed the HOLD'EM sentence - "Both hole cards must
+     play (with an Ace for the full house)" - and Pineapple now carries a Quad
+     Kings bar, for which there is no full house and no Ace rule at all. FLO8
+     is four-card Omaha and was told the same thing.
+
+     The exactly-two-cards rule is Omaha's, and Omaha is what `four_of_a_kind`
+     or `straight_flush` on a FOUR-plus-card game means; the Ace-in-the-hole
+     clause belongs to the full-house bar and nothing else. Both are read from
+     the rank now. */
+  const isFullHouseBar = q.handRank === 'full_house';
+  const isOmahaFamily = key.startsWith('plo') || key.startsWith('flo');
   return {
     eligible: true,
     shortLabel: BBJ_SHORT_LABELS[key] || q.description,
-    subLabel: isOmaha
+    subLabel: isOmahaFamily
       ? 'Exactly two hole cards must play (both players).'
-      : 'Both hole cards must play (with an Ace for the full house).',
+      : isFullHouseBar
+        ? 'Both hole cards must play (with an Ace for the full house).'
+        : 'Both hole cards must play.',
     variantLabel: q.label,
   };
 }
@@ -484,16 +587,59 @@ export function getBBJQualifyingInfo(gameType: string | null | undefined): BBJWi
 // BBJ GENERAL RULES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * HOW A MAIN JACKPOT IS DIVIDED, IN ONE PLACE (2026-09-11).
+ *
+ * 50 to the bad-beat hand, 25 to the hand that won it, 25 shared by everyone
+ * dealt in - `server/src/config/RakeConfig.ts` computes exactly this as
+ * `totalPayoutPercent / 2`, `/ 4`, `/ 4`, and `fn_bbj_payout_atomic` applies
+ * it in SQL.
+ *
+ * It was typed as bare `0.5` / `0.25` arithmetic and bare "50%" / "25%" text
+ * across six client surfaces - the jackpot page's bar, the celebration, the
+ * info modal, the basic panel, the rules panel - with nothing tying the words
+ * to the arithmetic beside them. `BBJ_MINI_SPLIT_PERCENT` was created for the
+ * mini on exactly this reasoning ("a caption quietly disagreeing with the
+ * number under it"); the main, which is the larger money, had no equivalent.
+ */
+export const BBJ_MAIN_SPLIT = { loser: 0.5, winner: 0.25, table: 0.25 } as const;
+
+/** The percentage a surface PRINTS, derived from the split rather than typed. */
+export const BBJ_MAIN_SPLIT_PERCENT: Record<keyof typeof BBJ_MAIN_SPLIT, string> = {
+  loser: `${Math.round(BBJ_MAIN_SPLIT.loser * 100)}%`,
+  winner: `${Math.round(BBJ_MAIN_SPLIT.winner * 100)}%`,
+  table: `${Math.round(BBJ_MAIN_SPLIT.table * 100)}%`,
+};
+
 export const BBJ_RULES = {
   /**
    * PAYOUT floor ONLY (Dan 2026-08-29): the drop is collected on every flop
    * with 3+ dealt regardless of pot size; this threshold gates winning only.
    */
   minPotBB: 10,
-  minPlayersDealt: 4,
+  /* THREE, NOT FOUR (2026-09-11).
+     This read 4 while the engine has enforced 3 since FIX 145
+     (`RAKE_SPEC.rules.bbjMinPlayersDealt = 3`, server/src/config/rakeSpec.ts).
+     So every rules surface told players a three-handed pot could not win the
+     jackpot, and the engine paid it. A player dealt into a 3-handed hand was
+     reading that they were ineligible when they were not - the same shape as
+     the Pineapple bar this phase fixed, in the same constant family, and found
+     by the audit that followed it.
+     `tests/one-qualifying-rule-for-one-jackpot.law.test.ts` pins the two
+     halves together now, so this cannot drift again. */
+  minPlayersDealt: 3,
+  /* The MINI's own floor, mirroring server BBJ_RULES.miniMinPlayersDealt.
+     Ships equal to the main's; a surface must state the mini's own number
+     rather than borrowing the main's the moment they differ. */
+  miniMinPlayersDealt: 3,
   excludeDoubleBoard: true,
   onlyFirstRunout: true,
-  splitIfMultipleQualify: true,
+  /* FALSE, MIRRORING server BBJ_RULES.splitIfMultipleQualify (2026-09-11).
+     This read `true` and BBJQualifyingHands printed a promise that the prize
+     is divided between multiple qualifying losers. The engine has always paid
+     the STRONGEST qualifying losing hand - one holder, deterministically, the
+     worse beat. The surface now says that. */
+  splitIfMultipleQualify: false,
   requireBothHoleCards: true,
 } as const;
 
@@ -644,10 +790,20 @@ export function getRakeConfig(
     bbjEnabled: bbjEligible,
     bbjFeeBB: bbjEligible ? bbjFeeBB : 0,
     bbjPoolAllocation: BBJ_POOL_ALLOCATION,
-    bbjPayoutTotal: 100,
-    bbjPayoutLoser: 50,
-    bbjPayoutWinner: 25,
-    bbjPayoutTable: 25,
+    /* DERIVED FROM THE TIER, AS THE ENGINE DOES (2026-09-11).
+       These four read `100, 50, 25, 25` - flat literals - and the first of
+       them was simply WRONG. No stakes tier pays 100% of the pool: the tiers
+       pay 15 / 25 / 40 / 55 / 70 / 85 (`bbjPayoutTotalPercent` above), which
+       is what `server/src/config/RakeConfig.ts` returns from the same fields.
+       Nothing on the client read these yet, so nothing was displaying the
+       wrong number - which is the only reason this was a latent defect and
+       not a live one. A wrong constant sitting in a config waiting for its
+       first reader is worse than a missing one, because the reader has no
+       reason to doubt it. Derived here so the two halves cannot disagree. */
+    bbjPayoutTotal: tier.bbjPayoutTotalPercent,
+    bbjPayoutLoser: tier.bbjPayoutTotalPercent * BBJ_MAIN_SPLIT.loser,
+    bbjPayoutWinner: tier.bbjPayoutTotalPercent * BBJ_MAIN_SPLIT.winner,
+    bbjPayoutTable: tier.bbjPayoutTotalPercent * BBJ_MAIN_SPLIT.table,
     qualifyingHand: qualifying,
     rules: BBJ_RULES,
     _exactMatch: !!scheduleMatch,

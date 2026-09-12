@@ -16,7 +16,10 @@
     "soak": "tsx sim/soak-conservation.ts",
     "horses:tag": "tsx src/scripts/horsesTag.ts",
     "freebuy:verify": "tsx --env-file=.env src/scripts/freeBuyVerify.ts",
-    "horse:gto-v31-evaluate": "tsx --env-file=.env src/scripts/gtoV31Evaluate.ts"
+    "horse:gto-v31-evaluate": "tsx --env-file=.env src/scripts/gtoV31Evaluate.ts",
+    "horse:omaha-evaluate": "tsx src/scripts/horseOmahaEvaluate.ts",
+    "horse:plo4-evaluate": "node --import tsx src/scripts/plo4PolicyEvaluate.ts",
+    "horse:omaha-variants-evaluate": "node --import tsx src/scripts/omahaVariantPolicyEvaluate.ts"
   },
   "dependencies": {
     "@sentry/node": "^10.46.0",

@@ -86,6 +86,22 @@ The first version of the reachability pin was a census of `arenaAsset` condition
 
 That work found two defects it did not fix, both in the multi-table tab bar's menu, both about the seat's money rather than a side feature, and both belonging to line two. The tab bar renders "Add Chips" and "Auto Top Up" unconditionally because it does not know the arena; at a Diamond table the first does nothing, since the `REBUY` bus case still breaks for any non-chip asset even though a Diamond cash seat now has a funded top-up writer, and the second flips a badge the auto-top-up effect ignores. Neither is reachable by a real player while public funded Diamond games remain closed. They are the starting point of the line two work.
 
+## Execution Update, September 12, 2026, Every Game The Estate Deals
+
+Checklist line one is claimed. The arena opened with one game; the chip cash create screen offers nine, and a one to one clone deals the same nine: nlh, plo4, plo5, plo6, plo8, pineapple, short deck, fixed limit hold'em and fixed limit Omaha hi-lo.
+
+The only question another game asks of an indivisible unit is whether it divides a pot somewhere the cent-denominated code did not have to care about. Every such place was already made unit-aware while this arena was NLH only, and the one this list newly reaches is the hi-lo split, which takes the same unit the tie chop takes: the low half of a Diamond pot is a whole number of Diamonds and the odd unit goes to high. A one Diamond pot therefore pays high entirely, which is not a rounding defect but what an indivisible pot means, and the same answer a live room gives with one chip in the middle. Nothing else divides, and that was checked rather than assumed: pot-limit sizing is pure addition, fixed limit multiplies the blind and its two halvings are reopen thresholds that are never wagered, short deck derives no ante.
+
+The refusal was written in five places, which is how the plain-cash rule had drifted into five rules earlier the same day, so the games are named exactly twice, once per language, and a law holds the two together. That law also derives the TypeScript list from the chip create screen's own list, so the arena cannot fall behind it.
+
+Two things were quietly backwards and are now right. The bomb-pot override compared against the literal nlh rather than the table's own game, which is indistinguishable from the real rule while there is one game and exactly backwards once there are nine. And a NULL game was neither admitted nor refused, because NULL IN is NULL: every caller happened to treat unknown as refusal, which is the kind of accident that holds until one of them does not.
+
+The creation door hardcoded its game and had no parameter for one. It names the game now, refuses one the arena does not deal, and proves the row it wrote would be admitted before returning it. Its six-argument signature is dropped rather than replaced, because an ambiguous staff door is worse than a missing one.
+
+The strongest evidence was already written and had been skipping the Diamond arm under a note that had stopped being true: a multi-board suite crossing plo4, plo8 and flo8 against two and three boards and three denominations, checked against an independent reference allocator rather than the engine's opinion of itself. It runs now. The configuration matrix gained its fourth axis, and the isolated fixture went from 41 checks to 63. Evidence: [the variants changelog](changelog/2026-09-12-diamond-phase-7-every-game-the-estate-deals.md).
+
+Line two remains the only open line in Phase 7: mid-hand add-ons need a custody holding lane of their own, because a Diamond seat's stack must EQUAL its custody balance at every commit, and waitlists, offers, seat changes, must move and clusters are still to certify.
+
 ## Approved Product Contract
 
 This replaces the earlier recommendation for two separate World Hub destinations. The World Hub has one player-facing Poker Arena entrance. Reuse the existing Club Arena application as the shared shell, lobby and game implementation. Diamond Arena is a diamond-only skin and operating policy inside it, not a second poker application.
@@ -312,7 +328,7 @@ Phase 6 Of 12 Is Done, verified September 11, 2026. Implementation merge 85da647
 
 ### Phase 7 Of 12: Cash Game Parity And Table Features
 
-- [ ] Enable each intended Club Arena variant only after corresponding Diamond tests.
+- [x] Enable each intended Club Arena variant only after corresponding Diamond tests.
 - [ ] Reuse waitlists, offers, rebuys/add-ons, seat changes, must-move and multi-table flows.
 - [x] Reuse supported bomb pots, board counts, straddles and run-it-twice.
 - [x] Integrate table skins, cards, time banks, rabbit hunt, chat, voice and throwables where supported.

@@ -36,6 +36,7 @@ import {
   isOmahaVariant,
   isShortDeckVariant,
 } from './VariantRules.js';
+import { isDiamondCashVariant } from '../domain/DiamondCashBoundary.js';
 
 import type {
   Card,
@@ -231,13 +232,18 @@ export class HandController {
       // whose ante could not be whole, so neither half can produce a fraction.
       if (
         config.isTournament ||
-        config.gameVariant !== 'nlh' ||
+        /* 2026-09-12: the nine games the chip cash screen offers, not the one
+           this arena opened with. Every place a pot is divided was already
+           made unit-aware while it was NLH only, the hi-lo split included, so
+           what this list changes is which deck is dealt rather than how the
+           money is cut. See DIAMOND_CASH_VARIANTS for the full argument. */
+        !isDiamondCashVariant(config.gameVariant) ||
         config.insuranceEnabled ||
         config.rakeConfig.percent !== 0 ||
         config.rakeConfig.cap !== 0 ||
         config.bbjConfig?.enabled
       ) {
-        throw new Error('Diamond Cash Certification Requires Plain NLH With No Deductions');
+        throw new Error('Diamond Cash Certification Requires A Supported Game With No Deductions');
       }
     }
     this.config = config;

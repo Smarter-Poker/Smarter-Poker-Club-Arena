@@ -4,6 +4,12 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypt
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const encode = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
 
+// Canonical fn_club_members_ledger_writer uses this attribution key when a
+// service JWT has no subject. It references auth.users, not public.users.
+export const LEDGER_ATTRIBUTION_ID = '2d1cd6c3-5700-4af9-a271-d4863fdab20d';
+const LEDGER_EMAIL = 'fixture-ledger@smarter-poker.invalid';
+const LEDGER_PURPOSE = 'source-defined-ledger-attribution';
+
 // The pinned GoTrue binary's version command includes a literal v prefix.
 // A word-boundary before the first digit rejects that genuine output.
 export function assertFixtureAuthVersion(output) {
@@ -98,7 +104,7 @@ function authEndpoint(endpoint) {
 export function fixtureAuth({ endpoint = 'http://127.0.0.1:9999', serviceKey, jwtSecret }) {
   const origin = authEndpoint(endpoint);
   assert.equal(verifyFixtureToken(serviceKey, jwtSecret).role, 'service_role');
-  async function request(route, body, token = serviceKey) {
+  async function request(route, body, token = serviceKey, expectUserBanned = false) {
     const response = await fetch(origin + route, {
       method: 'POST',
       redirect: 'error',
@@ -106,7 +112,11 @@ export function fixtureAuth({ endpoint = 'http://127.0.0.1:9999', serviceKey, jw
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(10000),
     });
-    if (!response.ok) {
+    if (expectUserBanned && response.status !== 400) {
+      await response.body?.cancel();
+      throw new Error('FIXTURE_LEDGER_AUTH_BAN_REQUIRED');
+    }
+    if (!response.ok && !expectUserBanned) {
       await response.body?.cancel();
       const failure = new Error('fixture Auth request refused');
       failure.auth_http_status = response.status;
@@ -114,7 +124,7 @@ export function fixtureAuth({ endpoint = 'http://127.0.0.1:9999', serviceKey, jw
     }
     // Genuine TOTP enrollment includes an SVG QR image. Bound that one route
     // separately and enforce byte limits while reading, before buffering it all.
-    const limit = route === '/factors' ? 1024 * 1024 : 128 * 1024;
+    const limit = expectUserBanned ? 4096 : route === '/factors' ? 1024 * 1024 : 128 * 1024;
     const reader = response.body?.getReader();
     assert.ok(reader, 'local auth response body absent');
     const chunks = [];
@@ -127,7 +137,14 @@ export function fixtureAuth({ endpoint = 'http://127.0.0.1:9999', serviceKey, jw
         assert.ok(bytes <= limit, 'local auth response too large');
         chunks.push(value);
       }
-      return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)));
+      const result = JSON.parse(
+        new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))
+      );
+      if (expectUserBanned) {
+        assert.ok(result.error_code === 'user_banned', 'FIXTURE_LEDGER_AUTH_BAN_REQUIRED');
+        return;
+      }
+      return result;
     } finally {
       await reader.cancel().catch(() => {});
       reader.releaseLock();
@@ -144,6 +161,43 @@ export function fixtureAuth({ endpoint = 'http://127.0.0.1:9999', serviceKey, jw
     return { ...session, expires_at: claims.exp };
   }
   return {
+    async createLedgerAttributionIdentity() {
+      // Real GoTrue admin creation runs the canonical signup triggers. GoTrue
+      // generates an unknown password when omitted; no password/session is
+      // retained. The 100-year ban covers this disposable fixture's lifetime.
+      const user = await request('/admin/users', {
+        id: LEDGER_ATTRIBUTION_ID,
+        email: LEDGER_EMAIL,
+        role: 'authenticated',
+        email_confirm: true,
+        ban_duration: '876000h',
+        user_metadata: {
+          component_qualification: true,
+          fixture_purpose: LEDGER_PURPOSE,
+          poker_alias: 'FixtureLedger',
+        },
+      });
+      assert.ok(
+        user.id === LEDGER_ATTRIBUTION_ID &&
+          user.email === LEDGER_EMAIL &&
+          user.role === 'authenticated' &&
+          user.user_metadata?.component_qualification === true &&
+          user.user_metadata?.fixture_purpose === LEDGER_PURPOSE &&
+          Date.parse(user.banned_until) > Date.now() + 86400000 &&
+          !user.last_sign_in_at,
+        'FIXTURE_LEDGER_ATTRIBUTION_IDENTITY_REQUIRED'
+      );
+      // Pinned GoTrue checks the ban before password comparison. An arbitrary
+      // wrong password alone is not evidence: require its exact user_banned
+      // refusal, then read back zero persisted sessions in the owned database.
+      await request(
+        '/token?grant_type=password',
+        { email: LEDGER_EMAIL, password: randomBytes(32).toString('base64url') },
+        serviceKey,
+        true
+      );
+      return LEDGER_ATTRIBUTION_ID;
+    },
     async createUsers() {
       const users = [];
       for (const name of ['actor-one', 'actor-two', 'spectator']) {
@@ -216,6 +270,35 @@ export function fixtureAuth({ endpoint = 'http://127.0.0.1:9999', serviceKey, jw
       }
     },
   };
+}
+
+export async function assertLedgerAttributionIdentity(db) {
+  const identity = await db.query(
+    `SELECT current_database() = 'club_arena_qualification' AS owned_database,
+      inet_server_addr() IS NULL AS local_socket, current_user = 'postgres' AS owner,
+      (SELECT count(*)::integer FROM auth.users) AS users,
+      (SELECT count(*)::integer FROM auth.users WHERE id=$1 AND email=$2
+        AND role='authenticated' AND banned_until>now()+interval '1 day'
+        AND last_sign_in_at IS NULL
+        AND raw_user_meta_data->'component_qualification'='true'::jsonb
+        AND raw_user_meta_data->>'fixture_purpose'=$3) AS attribution_users,
+      (SELECT count(*)::integer FROM auth.sessions WHERE user_id=$1) AS sessions,
+      (SELECT count(*)::integer FROM auth.refresh_tokens WHERE user_id=$1::text) AS refresh_tokens`,
+    [LEDGER_ATTRIBUTION_ID, LEDGER_EMAIL, LEDGER_PURPOSE]
+  );
+  assert.deepEqual(
+    identity.rows[0],
+    {
+      owned_database: true,
+      local_socket: true,
+      owner: true,
+      users: 4,
+      attribution_users: 1,
+      sessions: 0,
+      refresh_tokens: 0,
+    },
+    'FIXTURE_LEDGER_ATTRIBUTION_PERSISTENCE_REQUIRED'
+  );
 }
 
 export function browserStorage(session, supabaseHost) {

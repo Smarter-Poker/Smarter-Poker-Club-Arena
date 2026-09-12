@@ -12,6 +12,7 @@ import {
   fixtureAuth,
   assertFixtureAuthVersion,
   assertFixtureAuthMigrations,
+  assertLedgerAttributionIdentity,
 } from './auth-fixture.mjs';
 import { startObservationBridge } from './observation-bridge.mjs';
 import {
@@ -459,6 +460,10 @@ async function services() {
       1
     );
 
+    stage = 'gotrue-disabled-ledger-attribution';
+    await api.createLedgerAttributionIdentity();
+    await assertLedgerAttributionIdentity(db);
+
     stage = 'postgrest-14-5-authentication-and-rls';
     // Small native protocol fixture only; the full schema artifact is qualified separately.
     await db.query(`
@@ -813,6 +818,7 @@ async function services() {
         extensions: 6,
         auth: '2.196.0',
         mfa: 'aal2',
+        ledger_attribution: 'banned-without-session',
         postgrest: '14.5',
         realtime: '2.134.10',
         realtime_listener: '127.0.0.1:4000',

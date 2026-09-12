@@ -12,9 +12,69 @@ import {
   fixtureAuth,
   fixtureSecrets,
   issueFixtureToken,
+  LEDGER_ATTRIBUTION_ID,
   totp,
   verifyFixtureToken,
 } from '../../operations/release/fixture/auth-fixture.mjs';
+
+for (const fault of ['none', 'missing-ban', 'wrong-id', 'wrong-refusal', 'session-issued']) {
+  test(`ledger attribution uses Auth and requires a banned login (${fault})`, async () => {
+    let created;
+    let loginAttempts = 0;
+    const server = http.createServer(async (request, response) => {
+      const chunks = [];
+      for await (const chunk of request) chunks.push(chunk);
+      const input = JSON.parse(Buffer.concat(chunks).toString());
+      response.setHeader('content-type', 'application/json');
+      if (request.url === '/admin/users') {
+        assert.equal(input.id, LEDGER_ATTRIBUTION_ID);
+        assert.ok(input.email.endsWith('@smarter-poker.invalid'));
+        assert.equal(Object.hasOwn(input, 'password'), false);
+        assert.equal(input.ban_duration, '876000h');
+        created = input;
+        response.end(
+          JSON.stringify({
+            ...input,
+            id: fault === 'wrong-id' ? randomUUID() : input.id,
+            banned_until: fault === 'missing-ban' ? null : '2126-01-01T00:00:00Z',
+          })
+        );
+      } else {
+        assert.equal(request.url, '/token?grant_type=password');
+        assert.equal(input.email, created.email);
+        loginAttempts++;
+        response.statusCode = fault === 'session-issued' ? 200 : 400;
+        response.end(
+          JSON.stringify(
+            fault === 'session-issued'
+              ? { access_token: 'PRIVATE_UNEXPECTED_TOKEN' }
+              : { error_code: fault === 'wrong-refusal' ? 'invalid_credentials' : 'user_banned' }
+          )
+        );
+      }
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    try {
+      const api = fixtureAuth({
+        endpoint: `http://127.0.0.1:${server.address().port}`,
+        ...fixtureSecrets(),
+      });
+      if (fault === 'none')
+        assert.equal(await api.createLedgerAttributionIdentity(), LEDGER_ATTRIBUTION_ID);
+      else
+        await assert.rejects(api.createLedgerAttributionIdentity(), (error) => {
+          assert.match(error.message, /^FIXTURE_LEDGER_/);
+          assert.ok(!String(error.stack).includes('PRIVATE_UNEXPECTED_TOKEN'));
+          return true;
+        });
+      assert.equal(loginAttempts, ['missing-ban', 'wrong-id'].includes(fault) ? 0 : 1);
+    } finally {
+      server.closeAllConnections();
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+}
 
 for (const missingSession of [false, true]) {
   test(`real HTTP sign-in ${missingSession ? 'refuses an absent' : 'retains the signed'} session identity`, async () => {

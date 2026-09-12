@@ -11,6 +11,7 @@ import {
   fixtureAuth,
   browserStorage,
   assertFixtureAuthMigrations,
+  assertLedgerAttributionIdentity,
 } from './auth-fixture.mjs';
 import { createFixtureGateway, loadStaticManifest, findPublicAnonKey } from './gateway.mjs';
 import {
@@ -696,6 +697,40 @@ async function start(args) {
       spectatorId: users[2].id,
       sessionIds: users.map((user) => user.sessionId),
     });
+    stage = 'disabled-ledger-attribution';
+    const attributionId = await api.createLedgerAttributionIdentity();
+    await assertLedgerAttributionIdentity(db);
+    const attribution = await db.query(
+      `SELECT
+      (SELECT count(*)::integer FROM public.profiles) AS profiles,
+      (SELECT count(*)::integer FROM public.club_members) AS members,
+      (SELECT count(*)::integer FROM public.table_seats) AS seats,
+      (SELECT count(*)::integer FROM public.ca_mint_ledger) AS mints,
+      (SELECT count(*)::integer FROM public.club_members WHERE user_id=$1) AS attribution_memberships,
+      (SELECT count(*)::integer FROM public.table_seats WHERE user_id=$1) AS attribution_seats,
+      (SELECT sum(chip_treasury)::text FROM public.clubs) AS treasury,
+      (SELECT sum(chip_balance)::text FROM public.club_members) AS wallets,
+      (SELECT sum(stack)::text FROM public.table_seats) AS stacks`,
+      [attributionId]
+    );
+    const balances = attribution.rows[0];
+    for (const field of ['treasury', 'wallets', 'stacks'])
+      balances[field] = Number(balances[field]);
+    assert.deepEqual(
+      balances,
+      {
+        profiles: 4,
+        members: 3,
+        seats: 2,
+        mints: 1,
+        attribution_memberships: 0,
+        attribution_seats: 0,
+        treasury: 96000,
+        wallets: 3600,
+        stacks: 400,
+      },
+      'FIXTURE_ATTRIBUTION_MUST_NOT_CHANGE_CHIP_SEED'
+    );
     const spectator = users[2];
     stage = 'private-observation-bridge';
     const { startObservationBridge } = await import('./observation-bridge.mjs');

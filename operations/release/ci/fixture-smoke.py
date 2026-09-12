@@ -31,7 +31,7 @@ NATIVE_STAGES = frozenset((
     'postgresql-extension-inventory', 'gotrue-genuine-migrations-and-mfa',
     'gotrue-database-namespace', 'gotrue-migrate-command', 'gotrue-migration-ledger', 'gotrue-server-start',
     'gotrue-server-ready', 'gotrue-real-user-signin', 'gotrue-real-mfa-enrollment',
-    'gotrue-real-mfa-persistence',
+    'gotrue-real-mfa-persistence', 'gotrue-disabled-ledger-attribution',
     'postgrest-14-5-authentication-and-rls', 'realtime-genuine-migrations-and-change',
     'postgrest-server-start', 'postgrest-server-ready', 'postgrest-anonymous-rls', 'postgrest-invalid-token',
     'realtime-migrate-command', 'realtime-seed-command', 'realtime-tenant-row',
@@ -220,6 +220,7 @@ def smoke_records(output):
                 'observation_bridge': 'native-synthetic-protocol', 'postgres_socket': 'denied'}
     services = {'scope': 'native-service-smoke', 'postgres': '17.11',
                 'extensions': 6, 'auth': '2.196.0', 'mfa': 'aal2',
+                'ledger_attribution': 'banned-without-session',
                 'postgrest': '14.5', 'realtime': '2.134.10',
                 'change': 'observed', 'retries': 0,
                 'realtime_listener': '127.0.0.1:4000',

@@ -329,6 +329,18 @@ fails; no partially initialized identity becomes ready. A nonempty database
 cannot be seeded again. Source/SQL-layer checks do not qualify full Auth,
 application-schema parity or an engine hand.
 
+After the three-player seed, the real Auth admin API creates one additional
+disabled identity at the ledger writer's source-defined attribution UUID.
+`chip_ledger.performed_by` references `auth.users`; a legacy `public.users` row
+alone cannot satisfy that constraint. This synthetic identity has a distinct
+fixture alias and a 100-year ban. GoTrue generates an unknown password when
+none is supplied. The fixture requires GoTrue's exact `user_banned` response,
+then verifies the persisted ban, zero sessions and zero refresh tokens. The
+full runtime also checks that this signup added no club membership, seat or
+chip supply. Canonical signup triggers remain enabled; the service JWT retains
+no subject and ledger functions are unchanged. The native service smoke covers
+the real Auth API behavior; full-schema cashout qualification is separate.
+
 `actors.mjs` exports async `startFixtureActors({tableId, users, onFailure})`,
 returning `{close()}` after both authenticated subscriptions and initial native
 snapshots arrive. Supply exactly two real GoTrue sessions after the engine is

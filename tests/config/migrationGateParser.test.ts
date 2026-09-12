@@ -27,28 +27,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-
-const gate = readFileSync(
-  resolve(__dirname, '../../scripts/ci/check-migrations-applied.mjs'),
-  'utf8'
-);
-
-/** The gate's cleaning step, mirrored. */
-const clean = (sql: string) =>
-  sql
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/--[^\n]*/g, '')
-    .replace(/'(?:[^']|'')*'/g, "''");
-
-/** The gate's CREATE TABLE matcher, mirrored. */
-const tables = (sql: string) =>
-  [
-    ...clean(sql).matchAll(
-      /create\s+table\s+(?:if\s+not\s+exists\s+)?(?:public\.)?"?([a-z0-9_]+)"?/gi
-    ),
-  ].map((m) => m[1]);
+import { declaredObjects, executableSql } from '../../scripts/ci/check-migrations-applied.mjs';
+const tables = (sql: string) => declaredObjects(sql).tables;
 
 describe('the gate still finds what it must find', () => {
   it('sees a real CREATE TABLE', () => {
@@ -92,19 +72,15 @@ describe('the gate no longer invents tables out of quoted text', () => {
   });
 });
 
-describe('the fix is actually in the gate, not just in this test', () => {
-  it('strips string literals', () => {
-    expect(gate).toMatch(/replace\(\/'\(\?:\[\^'\]\|''\)\*'\/g/);
+describe('the exported gate cleaner preserves lexical boundaries', () => {
+  it('removes single-quoted prose', () => {
+    expect(executableSql("COMMENT ON TABLE x IS 'CREATE TABLE phantom';")).not.toContain('phantom');
   });
-
-  it('strips comments first, and says why', () => {
-    const idxBlockComments = gate.indexOf('replace(/\\/\\*[\\s\\S]*?\\*\\//g');
-    const idxComments = gate.indexOf('replace(/--[^\\n]*/g');
-    const idxStrings = gate.indexOf("replace(/'(?:[^']|'')*'/g");
-    expect(idxBlockComments).toBeGreaterThan(-1);
-    expect(idxComments).toBeGreaterThan(idxBlockComments);
-    expect(idxComments).toBeGreaterThan(-1);
-    expect(idxStrings).toBeGreaterThan(idxComments);
-    expect(gate).toMatch(/cannot unbalance the quote scan/);
+  it('handles comments before strings without unbalancing quotes', () => {
+    expect(
+      tables(
+        "/* somebody's note */ -- another's note\nCREATE TABLE public.real_one(id int); COMMENT ON TABLE real_one IS 'CREATE TABLE phantom';"
+      )
+    ).toEqual(['real_one']);
   });
 });

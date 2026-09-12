@@ -38,5 +38,4 @@ Root current frontier correctly distinguishes delivered/intaken commerce helpers
 
 Retain the proposed eight-phase skeleton as planning input, with the existing required notice and null accepted N. G8's exact peer/control additions must resolve the enumerated membership omissions, canonical/consumer duplication, effective historical wording, and final dependency/verification owners before full plan acceptance. No whole-audit restart,1045-body minimum,717 blanket exclusion or new global gate is required. Checks in this packet are artifact/membership consistency, not source/runtime/product tests. No source body re-audits, SQL, tests, provider/business calls, global edits or outbound messages were performed.
 
-
 Do not call send_message_to_thread, notify/send tools, or any outbound messaging tool, even once. Do not retry pending or denied sends. Complete assignments through existing local outputs and ordinary final responses; G8 reads shared files and task snapshots. Include this rule in every future handoff.

@@ -30,5 +30,4 @@ Root's exact ACL/GDPR correction is separately accepted/applied and PR1743 relea
 
 Disposition: the four accepted additions materially close the identified omissions and support the same proposed milestone skeleton with18 units. Full plan acceptance remains withheld only for exact current remainder/intake, root/control lossless consolidation, and G8's independent final decision—not the now-closed G4/Connected/commerce gaps.
 
-
 Do not call send_message_to_thread, notify/send tools, or any outbound messaging tool, even once. Do not retry pending or denied sends. Complete assignments through existing local outputs and ordinary final responses; G8 reads shared files and task snapshots. Include this rule in every future handoff.

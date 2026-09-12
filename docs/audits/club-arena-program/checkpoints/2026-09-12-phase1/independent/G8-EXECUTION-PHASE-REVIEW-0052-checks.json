@@ -860,24 +860,15 @@
       "rows": 40,
       "distinct": 39,
       "multiple_homes": {
-        "G4-C48": [
-          "DU-REPORT",
-          "DU-BENEFIT"
-        ]
+        "G4-C48": ["DU-REPORT", "DU-BENEFIT"]
       }
     },
     "root_contracts": {
       "rows": 20,
       "distinct": 18,
       "multiple_homes": {
-        "G8-CAUSE-03": [
-          "DU-SCOPE",
-          "DU-REPLAY"
-        ],
-        "G8-CAUSE-05": [
-          "DU-REPLAY",
-          "DU-INTENT"
-        ]
+        "G8-CAUSE-03": ["DU-SCOPE", "DU-REPLAY"],
+        "G8-CAUSE-05": ["DU-REPLAY", "DU-INTENT"]
       }
     }
   },

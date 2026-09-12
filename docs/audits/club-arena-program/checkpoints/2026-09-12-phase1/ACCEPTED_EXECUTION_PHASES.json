@@ -25,12 +25,7 @@
     {
       "number": 2,
       "name": "Contract integrity",
-      "units": [
-        "DU-SCOPE",
-        "DU-REPLAY",
-        "DU-JOURNAL",
-        "DU-LEGACY"
-      ],
+      "units": ["DU-SCOPE", "DU-REPLAY", "DU-JOURNAL", "DU-LEGACY"],
       "core_contracts": [
         "G5-CAUSE-015",
         "G5-CAUSE-082",
@@ -66,10 +61,7 @@
       "interfaces": [
         "Existing original estate, actor, amount, Accounting envelope and receipt semantics for the exact edited path; no new blanket predecessor gate."
       ],
-      "first_candidates": [
-        "FWP-01",
-        "FWP-02"
-      ],
+      "first_candidates": ["FWP-01", "FWP-02"],
       "parallel_eligibility": "Consumer design can proceed with accepted narrow receipt/estate/amount contracts. Consumers wait only for a changed interface they actually invoke, not all journal or legacy work.",
       "exit_rule": "Exact candidate accepted before protected integration; applicable original normal funded route and durable receipt proof, served identity and accounted cleanup accepted afterward. No phase complete from source review alone.",
       "state": "Accepted execution scope; exact writer/candidate/protected integration/normal-route/served gates apply",
@@ -78,13 +70,7 @@
     {
       "number": 3,
       "name": "Funded wallet and admission",
-      "units": [
-        "DU-INTENT",
-        "DU-CREDIT",
-        "DU-CASH",
-        "DU-IDENTITY",
-        "DU-RESERVE"
-      ],
+      "units": ["DU-INTENT", "DU-CREDIT", "DU-CASH", "DU-IDENTITY", "DU-RESERVE"],
       "core_contracts": [
         "G5-CAUSE-002",
         "G5-CAUSE-005",
@@ -136,11 +122,7 @@
         "Original operation actor/estate/amount/result used by the affected caller",
         "Existing cash occupancy and payment authority"
       ],
-      "first_candidates": [
-        "FWP-03",
-        "FWP-05",
-        "FWP-06"
-      ],
+      "first_candidates": ["FWP-03", "FWP-05", "FWP-06"],
       "parallel_eligibility": "These three first repairs can proceed independently with existing contracts after assignment. Changed canonical receipt fields create only the exact caller dependency.",
       "exit_rule": "Exact candidate accepted before protected integration; applicable original normal funded route and durable receipt proof, served identity and accounted cleanup accepted afterward. No phase complete from source review alone.",
       "state": "Accepted execution scope; exact writer/candidate/protected integration/normal-route/served gates apply",
@@ -149,11 +131,7 @@
     {
       "number": 4,
       "name": "Accepted hand and occupancy",
-      "units": [
-        "DU-HAND",
-        "DU-OWED",
-        "DU-JACKPOT"
-      ],
+      "units": ["DU-HAND", "DU-OWED", "DU-JACKPOT"],
       "core_contracts": [
         "G5-CAUSE-028",
         "G5-CAUSE-036",
@@ -166,10 +144,7 @@
         "Accepted-hand contract owned by Accounting",
         "Lease generation contract for actual manager writes"
       ],
-      "first_candidates": [
-        "FWP-04",
-        "FWP-07"
-      ],
+      "first_candidates": ["FWP-04", "FWP-07"],
       "parallel_eligibility": "Input refusal and projection traversal changes need existing accepted-envelope semantics, not all payout/format policy. Unresolved economics holds only the affected offer/award change.",
       "exit_rule": "Exact candidate accepted before protected integration; applicable original normal funded route and durable receipt proof, served identity and accounted cleanup accepted afterward. No phase complete from source review alone.",
       "state": "Accepted execution scope; exact writer/candidate/protected integration/normal-route/served gates apply",
@@ -178,10 +153,7 @@
     {
       "number": 5,
       "name": "MTT movement and clocks",
-      "units": [
-        "DU-MTT",
-        "DU-LAUNCH"
-      ],
+      "units": ["DU-MTT", "DU-LAUNCH"],
       "core_contracts": [],
       "result": "Normal RUNNING MTTs balance, retire tables and recover the destination safely; launch recovery consumes separately proven funding and canonical time.",
       "interfaces": [
@@ -189,11 +161,7 @@
         "Manager generation and source/destination custody",
         "F03 financial/time contract for DU-LAUNCH only"
       ],
-      "first_candidates": [
-        "MTT-R01",
-        "MTT-R02",
-        "MTT-R03"
-      ],
+      "first_candidates": ["MTT-R01", "MTT-R02", "MTT-R03"],
       "parallel_eligibility": "Run normal-RUNNING movement work while F03 waits for its exact financial/time authority. All18 movement boundaries remain mandatory for final movement acceptance.",
       "exit_rule": "Exact candidate accepted before protected integration; applicable original normal funded route and durable receipt proof, served identity and accounted cleanup accepted afterward. No phase complete from source review alone.",
       "state": "Accepted execution scope; exact writer/candidate/protected integration/normal-route/served gates apply",
@@ -202,10 +170,7 @@
     {
       "number": 6,
       "name": "Configured tournament closure",
-      "units": [
-        "DU-TERMINAL",
-        "DU-CREATE"
-      ],
+      "units": ["DU-TERMINAL", "DU-CREATE"],
       "core_contracts": [
         "G5-CAUSE-033",
         "G5-CAUSE-041",
@@ -229,9 +194,7 @@
     {
       "number": 7,
       "name": "Paid and promotional outcomes",
-      "units": [
-        "DU-BENEFIT"
-      ],
+      "units": ["DU-BENEFIT"],
       "core_contracts": [],
       "result": "Actual shared Diamond and commerce consideration yields its original durable award/benefit/refund, with exact authority and recovery semantics.",
       "interfaces": [
@@ -247,9 +210,7 @@
     {
       "number": 8,
       "name": "Financial truth and foundation proof",
-      "units": [
-        "DU-REPORT"
-      ],
+      "units": ["DU-REPORT"],
       "core_contracts": [
         "G5-CAUSE-001",
         "G5-CAUSE-004",

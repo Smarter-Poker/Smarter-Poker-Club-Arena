@@ -8,6 +8,8 @@ import { equityGovernor } from '../EquityLoadGovernor.js';
 import { bettingStructureFor } from '../BettingStructure.js';
 import { calculateContestablePot } from '../PokerEngine.js';
 import { horseVariantRulesFor, isKnownVariant } from '../VariantRules.js';
+import { buildJointCardLayout, type JointCardLayoutInput } from '../multiway/JointCardLayout.js';
+import { validateDealtSeatCensus } from '../multiway/DealtSeatCensus.js';
 import { buildTournamentMState, TOURNAMENT_CONTEXT_INCOMPLETE } from '../HorseTournamentPreflop.js';
 import { noteDecisionMs, noteFire } from '../BrainTelemetry.js';
 import { gtoChartCount } from '../GtoCharts.js';
@@ -385,6 +387,8 @@ export class HorseDecisionWorkerRuntime {
         request.opts.phase11Omaha === 'candidate' ||
         request.opts.phase12Remaining === 'candidate' ||
         'phase12EvidenceMode' in request.opts ||
+        request.opts.phase13Joint === 'candidate' ||
+        'phase13EvidenceMode' in request.opts ||
         'phase11EvidenceMode' in request.opts ||
         'phase10EvidenceMode' in request.opts)
     ) {
@@ -470,6 +474,14 @@ export class HorseDecisionWorkerRuntime {
       }
     }
     const publicHero = gs.players.find((seat) => seat.seat === gs.heroSeat);
+    if (gs.dealtSeatIds !== undefined)
+      validateDealtSeatCensus(gs.players, request.player.seat, gs.dealtSeatIds);
+    if (
+      (gs.chipUnit !== undefined || gs.asset !== undefined) &&
+      (!['chips', 'diamonds'].includes(gs.asset ?? '') ||
+        gs.chipUnit !== (gs.asset === 'diamonds' || gs.gameMode === 'tournament' ? 1 : 0.01))
+    )
+      throw new Error('horse state settlement chip rules are invalid');
     if (!publicHero || publicHero.user_id !== request.player.user_id) {
       throw new Error('horse state must include the same public hero identity');
     }
@@ -568,6 +580,33 @@ export class HorseDecisionWorkerRuntime {
         physicalKnown.length
     ) {
       throw new Error('horse state known discard or physical cards are invalid');
+    }
+    const boardPresent = (board: unknown) =>
+      board !== undefined && (!Array.isArray(board) || board.length > 0);
+    const secondBoard = boardPresent(gs.communityCards2);
+    const thirdBoard = boardPresent(gs.communityCards3);
+    if (gs.boardCount !== undefined && ![1, 2, 3].includes(gs.boardCount))
+      throw new Error('joint_cards_invalid_board_count');
+    if ((gs.boardCount ?? 1) > 1 || secondBoard || thirdBoard) {
+      const boardCount = gs.boardCount ?? (thirdBoard ? 3 : 2);
+      if ((boardCount < 3 && thirdBoard) || (boardCount < 2 && secondBoard))
+        throw new Error('joint_cards_invalid_board_count');
+      // A betting decision uses distinct bomb boards. Shared-prefix all-in
+      // runouts have no remaining betting decision and belong to settlement.
+      buildJointCardLayout({
+        variant: gs.gameVariant,
+        stage: gs.stage as JointCardLayoutInput['stage'],
+        heroCards: request.player.cards,
+        knownDeadCards: knownDead,
+        dealtSeats: validateDealtSeatCensus(gs.players, request.player.seat, gs.dealtSeatIds)
+          .length,
+        boards: [
+          gs.communityCards,
+          gs.communityCards2!,
+          ...(boardCount === 3 ? [gs.communityCards3!] : []),
+        ],
+        layout: 'independent',
+      });
     }
     if (
       request.player.cards.some(

@@ -5,9 +5,7 @@
     "phase": 3,
     "original_contract": {
       "group_id": "G8-CAUSE-01",
-      "primary_record_ids": [
-        "G5-WALLET-INTENT-0001"
-      ],
+      "primary_record_ids": ["G5-WALLET-INTENT-0001"],
       "accountable_lead": "G5",
       "review_lane": "G5 identity / G6 client",
       "disposition": "proposed repair",
@@ -25,21 +23,11 @@
           "evidence_id": "G5-WALLET-INTENT-0001",
           "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/intent-audit/FINDINGS.json",
           "source_sha256": "2cfae07535b0985270c8d95665456a59128074be334442a7aaf8539092653d38",
-          "canonical_controls": [
-            "CA-04-06",
-            "CA-04-12",
-            "CA-07-06",
-            "CA-12-01"
-          ],
+          "canonical_controls": ["CA-04-06", "CA-04-12", "CA-07-06", "CA-12-01"],
           "control_family_links": [],
           "original_controls": [],
           "control_field_provenance": {
-            "canonical_controls": [
-              "CA-04-06",
-              "CA-04-12",
-              "CA-07-06",
-              "CA-12-01"
-            ]
+            "canonical_controls": ["CA-04-06", "CA-04-12", "CA-07-06", "CA-12-01"]
           },
           "classification": "Confirmed client-contract violation; financial duplicate outcome not exercised",
           "title_or_observation": "Unresolved Union Wallet identity is replaced after24h or removed on sign-out",
@@ -56,12 +44,7 @@
             "deployment_status": "No repair deployed",
             "historical_impact": "No financial rows queried; historical cases unmeasured. Never perform guessed corrections.",
             "id": "G5-WALLET-INTENT-0001",
-            "canonical_controls": [
-              "CA-04-06",
-              "CA-04-12",
-              "CA-07-06",
-              "CA-12-01"
-            ],
+            "canonical_controls": ["CA-04-06", "CA-04-12", "CA-07-06", "CA-12-01"],
             "title": "Unresolved Union Wallet identity is replaced after24h or removed on sign-out",
             "severity": "P1; retries may become separatemoneyoperations",
             "status": "Confirmed client-contract violation; financial duplicate outcome not exercised",
@@ -99,9 +82,7 @@
     "phase": 2,
     "original_contract": {
       "group_id": "G8-CAUSE-02",
-      "primary_record_ids": [
-        "G5-WALLET-INTENT-0002"
-      ],
+      "primary_record_ids": ["G5-WALLET-INTENT-0002"],
       "accountable_lead": "G5",
       "review_lane": "G5 identity / G6 client",
       "disposition": "proposed repair",
@@ -119,19 +100,11 @@
           "evidence_id": "G5-WALLET-INTENT-0002",
           "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/intent-audit/FINDINGS.json",
           "source_sha256": "2cfae07535b0985270c8d95665456a59128074be334442a7aaf8539092653d38",
-          "canonical_controls": [
-            "CA-04-12",
-            "CA-07-06",
-            "CA-12-01"
-          ],
+          "canonical_controls": ["CA-04-12", "CA-07-06", "CA-12-01"],
           "control_family_links": [],
           "original_controls": [],
           "control_field_provenance": {
-            "canonical_controls": [
-              "CA-04-12",
-              "CA-07-06",
-              "CA-12-01"
-            ]
+            "canonical_controls": ["CA-04-12", "CA-07-06", "CA-12-01"]
           },
           "classification": "Confirmed sourceclassification defect; transport-path execution pending",
           "title_or_observation": "Union Wallet treats every returned RPC error object as definitive and accepts malformed pull results",
@@ -148,11 +121,7 @@
             "deployment_status": "No repair deployed",
             "historical_impact": "No financial rows queried; historical cases unmeasured. Never perform guessed corrections.",
             "id": "G5-WALLET-INTENT-0002",
-            "canonical_controls": [
-              "CA-04-12",
-              "CA-07-06",
-              "CA-12-01"
-            ],
+            "canonical_controls": ["CA-04-12", "CA-07-06", "CA-12-01"],
             "title": "Union Wallet treats every returned RPC error object as definitive and accepts malformed pull results",
             "severity": "P1; unknowncommit may be retried undernewidentity",
             "status": "Confirmed sourceclassification defect; transport-path execution pending",
@@ -189,9 +158,7 @@
     "phase": 2,
     "original_contract": {
       "group_id": "G8-CAUSE-03",
-      "primary_record_ids": [
-        "G5-UNION-REPLAY-0001"
-      ],
+      "primary_record_ids": ["G5-UNION-REPLAY-0001"],
       "accountable_lead": "G5",
       "review_lane": "G5 union authority",
       "disposition": "proposed repair",
@@ -209,23 +176,11 @@
           "evidence_id": "G5-UNION-REPLAY-0001",
           "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/intent-audit/FINDINGS.json",
           "source_sha256": "2cfae07535b0985270c8d95665456a59128074be334442a7aaf8539092653d38",
-          "canonical_controls": [
-            "CA-04-06",
-            "CA-04-12",
-            "CA-06-01",
-            "CA-06-08",
-            "CA-12-01"
-          ],
+          "canonical_controls": ["CA-04-06", "CA-04-12", "CA-06-01", "CA-06-08", "CA-12-01"],
           "control_family_links": [],
           "original_controls": [],
           "control_field_provenance": {
-            "canonical_controls": [
-              "CA-04-06",
-              "CA-04-12",
-              "CA-06-01",
-              "CA-06-08",
-              "CA-12-01"
-            ]
+            "canonical_controls": ["CA-04-06", "CA-04-12", "CA-06-01", "CA-06-08", "CA-12-01"]
           },
           "classification": "Confirmed deployedfunction sourcegap; no unauthorizedoperation attempted",
           "title_or_observation": "Union member transfer cachedreplay bypasses reauthorization and semanticpayloadbinding",
@@ -240,13 +195,7 @@
             "deployment_status": "No repair deployed",
             "historical_impact": "No financial rows queried; historical cases unmeasured. Never perform guessed corrections.",
             "id": "G5-UNION-REPLAY-0001",
-            "canonical_controls": [
-              "CA-04-06",
-              "CA-04-12",
-              "CA-06-01",
-              "CA-06-08",
-              "CA-12-01"
-            ],
+            "canonical_controls": ["CA-04-06", "CA-04-12", "CA-06-01", "CA-06-08", "CA-12-01"],
             "title": "Union member transfer cachedreplay bypasses reauthorization and semanticpayloadbinding",
             "severity": "P1; authenticatedknownoperationkey can retrievepriorresult underwrongscope/payload",
             "status": "Confirmed deployedfunction sourcegap; no unauthorizedoperation attempted",
@@ -279,9 +228,7 @@
     "phase": 3,
     "original_contract": {
       "group_id": "G8-CAUSE-04",
-      "primary_record_ids": [
-        "G5-UNION-FLOOR-0001"
-      ],
+      "primary_record_ids": ["G5-UNION-FLOOR-0001"],
       "accountable_lead": "G5",
       "review_lane": "G5 union authority",
       "disposition": "qualified atomicity and policy question",
@@ -297,17 +244,11 @@
           "evidence_id": "G5-UNION-FLOOR-0001",
           "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/intent-audit/FINDINGS.json",
           "source_sha256": "2cfae07535b0985270c8d95665456a59128074be334442a7aaf8539092653d38",
-          "canonical_controls": [
-            "CA-04-06",
-            "CA-12-01"
-          ],
+          "canonical_controls": ["CA-04-06", "CA-12-01"],
           "control_family_links": [],
           "original_controls": [],
           "control_field_provenance": {
-            "canonical_controls": [
-              "CA-04-06",
-              "CA-12-01"
-            ]
+            "canonical_controls": ["CA-04-06", "CA-12-01"]
           },
           "classification": "Discovered; shared guard review found no independent floor enforcement, concurrent commit and policy provenance proof pending",
           "title_or_observation": "Union clubclawback openinggrantfloor check precedes serializeddebit",
@@ -322,10 +263,7 @@
             "deployment_status": "No repair deployed",
             "historical_impact": "No financial rows queried; historical cases unmeasured. Never perform guessed corrections.",
             "id": "G5-UNION-FLOOR-0001",
-            "canonical_controls": [
-              "CA-04-06",
-              "CA-12-01"
-            ],
+            "canonical_controls": ["CA-04-06", "CA-12-01"],
             "title": "Union clubclawback openinggrantfloor check precedes serializeddebit",
             "severity": "P1 proposed; concurrentclawbacks maycrossprotectedopeningfloor",
             "status": "Discovered; shared guard review found no independent floor enforcement, concurrent commit and policy provenance proof pending",
@@ -359,9 +297,7 @@
     "phase": 3,
     "original_contract": {
       "group_id": "G8-CAUSE-05",
-      "primary_record_ids": [
-        "G5-UNION-IDENTITY-0001"
-      ],
+      "primary_record_ids": ["G5-UNION-IDENTITY-0001"],
       "accountable_lead": "G5",
       "review_lane": "G5 union authority",
       "disposition": "proposed repair",
@@ -377,19 +313,11 @@
           "evidence_id": "G5-UNION-IDENTITY-0001",
           "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/intent-audit/FINDINGS.json",
           "source_sha256": "2cfae07535b0985270c8d95665456a59128074be334442a7aaf8539092653d38",
-          "canonical_controls": [
-            "CA-04-06",
-            "CA-04-12",
-            "CA-12-01"
-          ],
+          "canonical_controls": ["CA-04-06", "CA-04-12", "CA-12-01"],
           "control_family_links": [],
           "original_controls": [],
           "control_field_provenance": {
-            "canonical_controls": [
-              "CA-04-06",
-              "CA-04-12",
-              "CA-12-01"
-            ]
+            "canonical_controls": ["CA-04-06", "CA-04-12", "CA-12-01"]
           },
           "classification": "Confirmed captured source mismatch; no runtime invocation or historical loss demonstrated",
           "title_or_observation": "Union send suppresses distinct equal-amount intents using a20-second history heuristic",
@@ -401,11 +329,7 @@
             "accountable_owner": "G5; root union routing review",
             "author_and_source_reader": "G8 /root",
             "independent_reviewer": "01a0923b-657e-78f3-94c7-58584d18073a / G8-FINDING-REVIEW-0005 generation2",
-            "canonical_controls": [
-              "CA-04-06",
-              "CA-04-12",
-              "CA-12-01"
-            ],
+            "canonical_controls": ["CA-04-06", "CA-04-12", "CA-12-01"],
             "title": "Union send suppresses distinct equal-amount intents using a20-second history heuristic",
             "severity": "P1 proposed; valid transfer can report success without paying its intended recipient",
             "status": "Confirmed captured source mismatch; no runtime invocation or historical loss demonstrated",
@@ -414,9 +338,7 @@
             "runtime_reference": "../runtime/nested-helper-definitions.json:fn_union_send_to_member_zd3core(uuid,uuid,text,numeric,text,text)",
             "runtime_observed_at": "2026-09-11 21:30:15 UTC",
             "runtime_md5": "0622761d01cce3ff085ea57264921983",
-            "source_references": [
-              "sources/fn_union_send_to_member_zd3core.sql:40-54"
-            ],
+            "source_references": ["sources/fn_union_send_to_member_zd3core.sql:40-54"],
             "runtime_to_git_mapping": "Not established",
             "trigger": "Authorized call reaches core with valid amount/kind and earlier matching debit visible. PostgreSQL transaction-time predicate matches even a distinct deliberate operation, including a second intentional identical-payload transfer.",
             "root_cause": "Time/amount/actor similarity is substituted for durable semantic operation identity",
@@ -438,9 +360,7 @@
     "phase": 8,
     "original_contract": {
       "group_id": "G8-CAUSE-06",
-      "primary_record_ids": [
-        "G5-WALLET-VIEW-0001"
-      ],
+      "primary_record_ids": ["G5-WALLET-VIEW-0001"],
       "accountable_lead": "G5",
       "review_lane": "G6 financial presentation",
       "disposition": "conditional repair",
@@ -458,17 +378,11 @@
           "evidence_id": "G5-WALLET-VIEW-0001",
           "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/intent-audit/FINDINGS.json",
           "source_sha256": "2cfae07535b0985270c8d95665456a59128074be334442a7aaf8539092653d38",
-          "canonical_controls": [
-            "CA-04-12",
-            "CA-07-06"
-          ],
+          "canonical_controls": ["CA-04-12", "CA-07-06"],
           "control_family_links": [],
           "original_controls": [],
           "control_field_provenance": {
-            "canonical_controls": [
-              "CA-04-12",
-              "CA-07-06"
-            ]
+            "canonical_controls": ["CA-04-12", "CA-07-06"]
           },
           "classification": "Discovered static omission; actual cross-scope rendering depends on component lifetime",
           "title_or_observation": "Union ledger response has no request-generation guard before updating the active wallet view",
@@ -480,17 +394,12 @@
             "accountable_owner": "G5 with G6 financial presentation slice",
             "author_and_source_reader": "G8 /root",
             "independent_reviewer": "Pending",
-            "canonical_controls": [
-              "CA-04-12",
-              "CA-07-06"
-            ],
+            "canonical_controls": ["CA-04-12", "CA-07-06"],
             "title": "Union ledger response has no request-generation guard before updating the active wallet view",
             "status": "Discovered static omission; actual cross-scope rendering depends on component lifetime",
             "source_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
             "also_unchanged_at": "575b9763a2c83f0a9c9e88ae04d5e5b75ac0c35d",
-            "source_references": [
-              "src/components/union/UnionWalletModal.tsx:225-313,320-367"
-            ],
+            "source_references": ["src/components/union/UnionWalletModal.tsx:225-313,320-367"],
             "actual": "Directory fetches use directoryLoadVersion, but loadLedger has no identity/generation check after awaited RPC. Changing union/wallet/open state resets ledger and can start another request; an older response can still set rows/totals/error/loading afterward. User identity is absent from loadLedger callback dependencies.",
             "limits": "No current browser trace, cross-user disclosure or wrong balance effect demonstrated. Parent mounting and response ordering remain unreviewed. No database rows queried.",
             "expected": "Only a response for the active authenticated wallet scope/request generation may update that view; authorized old results must not overwrite a new scope.",
@@ -511,9 +420,7 @@
     "phase": 3,
     "original_contract": {
       "group_id": "G8-CAUSE-07",
-      "primary_record_ids": [
-        "HORSE-CORE-Q01"
-      ],
+      "primary_record_ids": ["HORSE-CORE-Q01"],
       "accountable_lead": "G5",
       "review_lane": "G4 horse admission / lifecycle",
       "disposition": "qualified original funding question",
@@ -531,17 +438,11 @@
           "evidence_id": "HORSE-CORE-Q01",
           "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/acceptance/horse-core-question-current-overlay.json",
           "source_sha256": "9c58d7acf04dc76c601ef45b883a1d7d8c6bd77fb977c288f99d32ca4ebeae39",
-          "canonical_controls": [
-            "CA-03-01",
-            "CA-03-11"
-          ],
+          "canonical_controls": ["CA-03-01", "CA-03-11"],
           "control_family_links": [],
           "original_controls": [],
           "control_field_provenance": {
-            "controls": [
-              "CA-03-01",
-              "CA-03-11"
-            ]
+            "controls": ["CA-03-01", "CA-03-11"]
           },
           "classification": "Retained conditional acceptance question",
           "title_or_observation": "See retained evidence record",
@@ -555,18 +456,12 @@
             "needed": "Exact original entitlement/refund/terminal applicability and all relevant paid-seat/registration guard join; no duplicate implementation owner or financial incident asserted.",
             "earlier_question": {
               "id": "HORSE-CORE-Q01",
-              "controlIds": [
-                "CA-03-01",
-                "CA-03-11"
-              ],
+              "controlIds": ["CA-03-01", "CA-03-11"],
               "question": "Which current paid-seat/roster guard proves that an arbitrary historical matching registration cannot be reused after refund, withdrawal or terminal status?",
               "evidence": "Seat core69\u201379 and108\u2013110",
               "status": "Observed source branch; actual accepted financial consequence conditional"
             },
-            "controls": [
-              "CA-03-01",
-              "CA-03-11"
-            ],
+            "controls": ["CA-03-01", "CA-03-11"],
             "evidence_sources": [
               {
                 "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/horse-paid-seat-core/EFFECTS_AND_QUESTIONS.json",
@@ -590,9 +485,7 @@
     "phase": 4,
     "original_contract": {
       "group_id": "G8-CAUSE-08",
-      "primary_record_ids": [
-        "HORSE-CORE-Q02"
-      ],
+      "primary_record_ids": ["HORSE-CORE-Q02"],
       "accountable_lead": "G5",
       "review_lane": "G4 horse admission / lifecycle",
       "disposition": "qualified pending-entry question",
@@ -600,9 +493,7 @@
       "specific_dependencies": "Exact reachable unique violation in horse119 and prior successfully funded202 registration.",
       "preserved_protections": "Registration40001 rolls back its own collision; legitimate funded pending liability must remain discoverable.",
       "acceptance_evidence": "Conflict cannot strand or duplicate original funded obligation; recovery uses home-first path, no guessed refund.",
-      "same_or_related_peer_joins": [
-        "G4 original pending-entry owner"
-      ],
+      "same_or_related_peer_joins": ["G4 original pending-entry owner"],
       "implementation_writer": null,
       "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
       "original_records": [
@@ -610,17 +501,11 @@
           "evidence_id": "HORSE-CORE-Q02",
           "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/acceptance/horse-core-question-current-overlay.json",
           "source_sha256": "9c58d7acf04dc76c601ef45b883a1d7d8c6bd77fb977c288f99d32ca4ebeae39",
-          "canonical_controls": [
-            "CA-03-01",
-            "CA-07-08"
-          ],
+          "canonical_controls": ["CA-03-01", "CA-07-08"],
           "control_family_links": [],
           "original_controls": [],
           "control_field_provenance": {
-            "controls": [
-              "CA-03-01",
-              "CA-07-08"
-            ]
+            "controls": ["CA-03-01", "CA-07-08"]
           },
           "classification": "Retained conditional recovery question",
           "title_or_observation": "See retained evidence record",
@@ -633,18 +518,12 @@
             "addition": "202 registration insertion conflicts raise40001, closing that local rollback concern; separate119 seat INSERT nested caught unique_violation may still retain preceding funded registration. Home-first recovery and legitimate pending liability remain preserved.",
             "earlier_question": {
               "id": "HORSE-CORE-Q02",
-              "controlIds": [
-                "CA-03-01",
-                "CA-07-08"
-              ],
+              "controlIds": ["CA-03-01", "CA-07-08"],
               "question": "If seat INSERT fails with unique_violation after a successful new registration, what durable pending-entry receipt/recovery contract owns the retained funded registration and caller seat_taken response?",
               "evidence": "Seat core74 and100\u2013105, existing top-up home-first caller recovery",
               "status": "Requires actual reachable violation and intended admission contract; no blanket requirement to erase legitimate liability"
             },
-            "controls": [
-              "CA-03-01",
-              "CA-07-08"
-            ],
+            "controls": ["CA-03-01", "CA-07-08"],
             "evidence_sources": [
               {
                 "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/horse-paid-seat-core/EFFECTS_AND_QUESTIONS.json",
@@ -668,9 +547,7 @@
     "phase": 3,
     "original_contract": {
       "group_id": "G8-CAUSE-09",
-      "primary_record_ids": [
-        "HORSE-CORE-Q03"
-      ],
+      "primary_record_ids": ["HORSE-CORE-Q03"],
       "accountable_lead": "G5",
       "review_lane": "G4 horse admission / lifecycle",
       "disposition": "closed body gap with remaining verification",
@@ -686,15 +563,11 @@
           "evidence_id": "HORSE-CORE-Q03",
           "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/acceptance/horse-core-question-current-overlay.json",
           "source_sha256": "9c58d7acf04dc76c601ef45b883a1d7d8c6bd77fb977c288f99d32ca4ebeae39",
-          "canonical_controls": [
-            "CA-03-01"
-          ],
+          "canonical_controls": ["CA-03-01"],
           "control_family_links": [],
           "original_controls": [],
           "control_field_provenance": {
-            "controls": [
-              "CA-03-01"
-            ]
+            "controls": ["CA-03-01"]
           },
           "classification": "Named body gap CLOSED by complete202 read; downstream ownership joins retained",
           "title_or_observation": "See retained evidence record",
@@ -707,15 +580,11 @@
             "addition": "Actual wallet lower core complete. Capacity247/wake45 have G5 full manifest references; no detailed semantic note was located in the supplied capacity reuse manifest. Root owns actual late-seat chain. No acceptance automatically follows coverage.",
             "earlier_question": {
               "id": "HORSE-CORE-Q03",
-              "controlIds": [
-                "CA-03-01"
-              ],
+              "controlIds": ["CA-03-01"],
               "question": "Complete fn_register_horse_for_tournament_before_maintenance_gate body and existing capacity/wake dependencies are needed to close actual wallet entry.",
               "status": "One precisely named original monetary body remains unreviewed here"
             },
-            "controls": [
-              "CA-03-01"
-            ],
+            "controls": ["CA-03-01"],
             "evidence_sources": [
               {
                 "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/horse-paid-seat-core/EFFECTS_AND_QUESTIONS.json",
@@ -739,9 +608,7 @@
     "phase": 5,
     "original_contract": {
       "group_id": "G8-CAUSE-10",
-      "primary_record_ids": [
-        "MTT-CLIENT-001"
-      ],
+      "primary_record_ids": ["MTT-CLIENT-001"],
       "accountable_lead": "G5",
       "review_lane": "G2 lifecycle with G5 dependency",
       "disposition": "proposed conditional repair",
@@ -759,13 +626,9 @@
           "evidence_id": "MTT-CLIENT-001",
           "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/mtt-client-audit/FINDINGS.json",
           "source_sha256": "e6a8e137286286c7d284afcf066b50c421f189941cfdf222afb870323ae4b4ec",
-          "canonical_controls": [
-            "CA-03-09"
-          ],
+          "canonical_controls": ["CA-03-09"],
           "control_family_links": [],
-          "original_controls": [
-            "BX14"
-          ],
+          "original_controls": ["BX14"],
           "control_field_provenance": {
             "canonical_controls": []
           },
@@ -790,29 +653,15 @@
                 "path": "src/pages/TablePage.tsx",
                 "sha256": "1ffa48fec2214d0b92efac32d71800314d16b710c89aa53f68bb8bf16b893f24",
                 "ranges": [
-                  [
-                    12963,
-                    12987
-                  ],
-                  [
-                    13459,
-                    13504
-                  ],
-                  [
-                    14102,
-                    14150
-                  ]
+                  [12963, 12987],
+                  [13459, 13504],
+                  [14102, 14150]
                 ]
               },
               {
                 "path": "src/pages/MultiTablePage.tsx",
                 "sha256": "5f0a2801b25663e02d72289989cb108f3618122b6bcf312df585e26b49ff758a",
-                "ranges": [
-                  [
-                    2924,
-                    3014
-                  ]
-                ]
+                "ranges": [[2924, 3014]]
               }
             ],
             "observation": "table_rebalance awaits a roster query then directly navigates without a lifecycle/read-generation check or parent move callback. Cleanup cannot cancel an already-started coroutine. Background-tab route ownership also bypassed. Existing parent move callback limits URL replacement to source route and updates tab identity in place.",
@@ -855,9 +704,7 @@
     "phase": 5,
     "original_contract": {
       "group_id": "G8-CAUSE-11",
-      "primary_record_ids": [
-        "BUS-Q01"
-      ],
+      "primary_record_ids": ["BUS-Q01"],
       "accountable_lead": "G5",
       "review_lane": "G6 shared delivery / G2 dependency",
       "disposition": "qualified ownership question",
@@ -894,10 +741,7 @@
               "SDK rejoin behavior",
               "Last-release and reset teardown"
             ],
-            "sources": [
-              "BUS_HANDOFF.json",
-              "BUS_REVIEW_MANIFEST.json"
-            ],
+            "sources": ["BUS_HANDOFF.json", "BUS_REVIEW_MANIFEST.json"],
             "independent_review": "G8-MTT-CLIENT-BUS-REVIEW-0014",
             "owner": "G5 shared delivery dependency; G6 later domain, G8 assigns implementation",
             "canonical_controls": []
@@ -914,9 +758,7 @@
     "phase": 5,
     "original_contract": {
       "group_id": "G8-CAUSE-12",
-      "primary_record_ids": [
-        "BUS-Q02"
-      ],
+      "primary_record_ids": ["BUS-Q02"],
       "accountable_lead": "G5",
       "review_lane": "G6 shared delivery / G2 dependency",
       "disposition": "qualified ownership question",
@@ -953,10 +795,7 @@
               "Private-channel authentication guard",
               "SDK broadcast binding differs from Postgres binding negotiation"
             ],
-            "sources": [
-              "BUS_HANDOFF.json",
-              "BUS_REVIEW_MANIFEST.json"
-            ],
+            "sources": ["BUS_HANDOFF.json", "BUS_REVIEW_MANIFEST.json"],
             "independent_review": "G8-MTT-CLIENT-BUS-REVIEW-0014",
             "owner": "G5 shared delivery dependency; G6 later domain, G8 assigns implementation",
             "canonical_controls": []
@@ -973,9 +812,7 @@
     "phase": 3,
     "original_contract": {
       "group_id": "G8-CAUSE-13",
-      "primary_record_ids": [
-        "APP-BOOT-Q01"
-      ],
+      "primary_record_ids": ["APP-BOOT-Q01"],
       "accountable_lead": "G5",
       "review_lane": "G8 bootstrap",
       "disposition": "join existing cause",
@@ -983,9 +820,7 @@
       "specific_dependencies": "Accepted App import guard and fullServiceBootstrap/OfflineQueue/cron peers.",
       "preserved_protections": "Disposed-before-import guard and optional-service/error isolation.",
       "acceptance_evidence": "Teardown during already-started awaited boot cannot restart retired work.",
-      "same_or_related_peer_joins": [
-        "SAME coordinated cause Backlog CAUSE01"
-      ],
+      "same_or_related_peer_joins": ["SAME coordinated cause Backlog CAUSE01"],
       "implementation_writer": null,
       "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
       "original_records": [
@@ -1033,9 +868,7 @@
     "phase": 2,
     "original_contract": {
       "group_id": "G8-CAUSE-14",
-      "primary_record_ids": [
-        "APP-BOOT-Q02"
-      ],
+      "primary_record_ids": ["APP-BOOT-Q02"],
       "accountable_lead": "G5",
       "review_lane": "G8 bootstrap",
       "disposition": "join safeguard and bookkeeping cause",
@@ -1093,9 +926,7 @@
     "phase": 8,
     "original_contract": {
       "group_id": "G8-CAUSE-15",
-      "primary_record_ids": [
-        "APP-BOOT-O03"
-      ],
+      "primary_record_ids": ["APP-BOOT-O03"],
       "accountable_lead": "G5",
       "review_lane": "G8 inventory",
       "disposition": "retain scope evidence",
@@ -1147,9 +978,7 @@
     "phase": 6,
     "original_contract": {
       "group_id": "G8-CAUSE-16",
-      "primary_record_ids": [
-        "G8-TOURNAMENT-ENTRY-001"
-      ],
+      "primary_record_ids": ["G8-TOURNAMENT-ENTRY-001"],
       "accountable_lead": "G5",
       "review_lane": "G2 creation with G5 economics",
       "disposition": "conditional repair",
@@ -1204,9 +1033,7 @@
     "phase": 6,
     "original_contract": {
       "group_id": "G8-CAUSE-17",
-      "primary_record_ids": [
-        "G8-TOURNAMENT-ENTRY-002"
-      ],
+      "primary_record_ids": ["G8-TOURNAMENT-ENTRY-002"],
       "accountable_lead": "G5",
       "review_lane": "G2 creation with G5 economics",
       "disposition": "conditional original operation repair",
@@ -1263,9 +1090,7 @@
     "phase": 6,
     "original_contract": {
       "group_id": "G8-CAUSE-18",
-      "primary_record_ids": [
-        "G8-TOURNAMENT-ENTRY-003"
-      ],
+      "primary_record_ids": ["G8-TOURNAMENT-ENTRY-003"],
       "accountable_lead": "G5",
       "review_lane": "G2 scope / G5 estate",
       "disposition": "qualified authorization question",
@@ -1316,9 +1141,7 @@
     "phase": 8,
     "original_contract": {
       "group_id": "G8-CAUSE-19",
-      "primary_record_ids": [
-        "G8-TOURNAMENT-ENTRY-004"
-      ],
+      "primary_record_ids": ["G8-TOURNAMENT-ENTRY-004"],
       "accountable_lead": "G5",
       "review_lane": "G2 lifecycle presentation",
       "disposition": "qualified display question",
@@ -1369,9 +1192,7 @@
     "phase": 8,
     "original_contract": {
       "group_id": "G8-CAUSE-20",
-      "primary_record_ids": [
-        "G8-TOURNAMENT-ENTRY-005"
-      ],
+      "primary_record_ids": ["G8-TOURNAMENT-ENTRY-005"],
       "accountable_lead": "G5",
       "review_lane": "G2 lifecycle reads",
       "disposition": "qualified completeness question",
@@ -1422,9 +1243,7 @@
     "phase": 2,
     "original_contract": {
       "group_id": "G8-CAUSE-21",
-      "primary_record_ids": [
-        "G8-TOURNAMENT-ENTRY-006"
-      ],
+      "primary_record_ids": ["G8-TOURNAMENT-ENTRY-006"],
       "accountable_lead": "G5",
       "review_lane": "G2 movement",
       "disposition": "dormant legacy disposition",
@@ -1475,9 +1294,7 @@
     "phase": 3,
     "original_contract": {
       "group_id": "G8-CAUSE-22",
-      "primary_record_ids": [
-        "G8-TOURNAMENT-ENTRY-007"
-      ],
+      "primary_record_ids": ["G8-TOURNAMENT-ENTRY-007"],
       "accountable_lead": "G5",
       "review_lane": "G2 admission",
       "disposition": "qualified order/acknowledgment question",
@@ -1528,9 +1345,7 @@
     "phase": 6,
     "original_contract": {
       "group_id": "G8-CAUSE-23",
-      "primary_record_ids": [
-        "G8-TOURNAMENT-ENTRY-SQL-001"
-      ],
+      "primary_record_ids": ["G8-TOURNAMENT-ENTRY-SQL-001"],
       "accountable_lead": "G5",
       "review_lane": "G2 creator / G5 payout",
       "disposition": "proposed repair",
@@ -1589,11 +1404,7 @@
     "phase": 8,
     "original_contract": {
       "group_id": "G8-CAUSE-24",
-      "primary_record_ids": [
-        "TPS-POS-001",
-        "TPS-POS-002",
-        "TPS-POS-003"
-      ],
+      "primary_record_ids": ["TPS-POS-001", "TPS-POS-002", "TPS-POS-003"],
       "accountable_lead": "G5",
       "review_lane": "G5 financial statement / G6 UI",
       "disposition": "retain safeguards",
@@ -1609,15 +1420,11 @@
           "evidence_id": "TPS-POS-001",
           "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/tournament-payment-status-audit/OBSERVATIONS.json",
           "source_sha256": "e96f6e594ba8e3a6da2d1ab420a6af24dde646cfbea67059fcc99c82ff6a2288",
-          "canonical_controls": [
-            "CA-05-10"
-          ],
+          "canonical_controls": ["CA-05-10"],
           "control_family_links": [],
           "original_controls": [],
           "control_field_provenance": {
-            "controls": [
-              "CA-05-10"
-            ]
+            "controls": ["CA-05-10"]
           },
           "classification": "Source safeguard",
           "title_or_observation": "Financial payment rows remount by user/event/club key. Initial reads use effect cancellation; append uses mounted ref. Refresh is disabled during either load. Unconfirmed/owed/partial/paid are explicit, and satellite paid value is labeled transferred. No payment mutation exists in this component.",
@@ -1627,31 +1434,21 @@
           "evidence_record": {
             "id": "TPS-POS-001",
             "classification": "Source safeguard",
-            "controls": [
-              "CA-05-10"
-            ],
+            "controls": ["CA-05-10"],
             "observation": "Financial payment rows remount by user/event/club key. Initial reads use effect cancellation; append uses mounted ref. Refresh is disabled during either load. Unconfirmed/owed/partial/paid are explicit, and satellite paid value is labeled transferred. No payment mutation exists in this component.",
             "limits": "Actual hook/store/auth generation and served behavior are separate; no browser or payment test. Appendix state-only loading guard is not a claim of cross-context serialization."
           },
-          "additive_qualifications": [
-            "work/g8/acceptance/independent-review0028-intake.json"
-          ]
+          "additive_qualifications": ["work/g8/acceptance/independent-review0028-intake.json"]
         },
         {
           "evidence_id": "TPS-POS-002",
           "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/tournament-payment-status-audit/OBSERVATIONS.json",
           "source_sha256": "e96f6e594ba8e3a6da2d1ab420a6af24dde646cfbea67059fcc99c82ff6a2288",
-          "canonical_controls": [
-            "CA-05-10",
-            "CA-06-01"
-          ],
+          "canonical_controls": ["CA-05-10", "CA-06-01"],
           "control_family_links": [],
           "original_controls": [],
           "control_field_provenance": {
-            "controls": [
-              "CA-05-10",
-              "CA-06-01"
-            ]
+            "controls": ["CA-05-10", "CA-06-01"]
           },
           "classification": "Source contract safeguard",
           "title_or_observation": "Parser validates response user and every requested event/club scope, finite nonnegative exact safe-cent amounts and paid<=owed. State derives from remaining balance; tuple cursor must match the last item exactly. Errors refuse page rather than substitute a paid state.",
@@ -1661,32 +1458,21 @@
           "evidence_record": {
             "id": "TPS-POS-002",
             "classification": "Source contract safeguard",
-            "controls": [
-              "CA-05-10",
-              "CA-06-01"
-            ],
+            "controls": ["CA-05-10", "CA-06-01"],
             "observation": "Parser validates response user and every requested event/club scope, finite nonnegative exact safe-cent amounts and paid<=owed. State derives from remaining balance; tuple cursor must match the last item exactly. Errors refuse page rather than substitute a paid state.",
             "limits": "No independently verified obligation payment or entitlement issuance. Row ids/dates/kinds validation is source contract; caller passes expected authenticated store user and backend binds auth.uid."
           },
-          "additive_qualifications": [
-            "work/g8/acceptance/independent-review0028-intake.json"
-          ]
+          "additive_qualifications": ["work/g8/acceptance/independent-review0028-intake.json"]
         },
         {
           "evidence_id": "TPS-POS-003",
           "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/tournament-payment-status-audit/OBSERVATIONS.json",
           "source_sha256": "e96f6e594ba8e3a6da2d1ab420a6af24dde646cfbea67059fcc99c82ff6a2288",
-          "canonical_controls": [
-            "CA-05-10",
-            "CA-06-01"
-          ],
+          "canonical_controls": ["CA-05-10", "CA-06-01"],
           "control_family_links": [],
           "original_controls": [],
           "control_field_provenance": {
-            "controls": [
-              "CA-05-10",
-              "CA-06-01"
-            ]
+            "controls": ["CA-05-10", "CA-06-01"]
           },
           "classification": "Current SQL reader safeguard",
           "title_or_observation": "Authenticated-only definer refuses null auth, invalid limit1..100 and partial cursor. Own obligations join event, honor optional event/club, order(created_at,id) and use strict tuple continuation with limit+1. JSON returns both cursor parts. No writes or custom helper children.",
@@ -1696,16 +1482,11 @@
           "evidence_record": {
             "id": "TPS-POS-003",
             "classification": "Current SQL reader safeguard",
-            "controls": [
-              "CA-05-10",
-              "CA-06-01"
-            ],
+            "controls": ["CA-05-10", "CA-06-01"],
             "observation": "Authenticated-only definer refuses null auth, invalid limit1..100 and partial cursor. Own obligations join event, honor optional event/club, order(created_at,id) and use strict tuple continuation with limit+1. JSON returns both cursor parts. No writes or custom helper children.",
             "limits": "This closes the direct reader gap and is contrary evidence against generalizing CORE094 to every statement. Tournament name/club are current parent projections; underlying original entitlement/source retention remains G5-owned metadata and financial authority. No business rows queried."
           },
-          "additive_qualifications": [
-            "work/g8/acceptance/independent-review0028-intake.json"
-          ]
+          "additive_qualifications": ["work/g8/acceptance/independent-review0028-intake.json"]
         }
       ],
       "implementation_authorized_by_this_packet": false
@@ -1718,9 +1499,7 @@
     "phase": 3,
     "original_contract": {
       "group_id": "G8-CAUSE-25",
-      "primary_record_ids": [
-        "TPS-OBS-001"
-      ],
+      "primary_record_ids": ["TPS-OBS-001"],
       "accountable_lead": "G5",
       "review_lane": "G8 bootstrap",
       "disposition": "join qualified hydration cause",
@@ -1728,9 +1507,7 @@
       "specific_dependencies": "Actual store/auth listener lifetime and same user loadProfile contract.",
       "preserved_protections": "Existing effect cancellation, key remount and server auth.uid scope.",
       "acceptance_evidence": "Out-of-order hydration cannot replace current identity or repaint old financial scope.",
-      "same_or_related_peer_joins": [
-        "Backlog CAUSE04/19 related current account boundary"
-      ],
+      "same_or_related_peer_joins": ["Backlog CAUSE04/19 related current account boundary"],
       "implementation_writer": null,
       "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
       "original_records": [
@@ -1738,17 +1515,11 @@
           "evidence_id": "TPS-OBS-001",
           "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/tournament-payment-status-audit/OBSERVATIONS.json",
           "source_sha256": "e96f6e594ba8e3a6da2d1ab420a6af24dde646cfbea67059fcc99c82ff6a2288",
-          "canonical_controls": [
-            "CA-06-01",
-            "CA-05-10"
-          ],
+          "canonical_controls": ["CA-06-01", "CA-05-10"],
           "control_family_links": [],
           "original_controls": [],
           "control_field_provenance": {
-            "controls": [
-              "CA-06-01",
-              "CA-05-10"
-            ]
+            "controls": ["CA-06-01", "CA-05-10"]
           },
           "classification": "Qualified shared authentication hydration boundary",
           "title_or_observation": "useAuthUser reads a session when local user is null, checks effect cancellation before setUser, then starts loadProfile without awaiting it. Its effect depends on user only; isAuthenticated output accepts a nonnull store user. Mounted helper resets/refuses correctly across effect cleanup and key-remount.",
@@ -1758,16 +1529,11 @@
           "evidence_record": {
             "id": "TPS-OBS-001",
             "classification": "Qualified shared authentication hydration boundary",
-            "controls": [
-              "CA-06-01",
-              "CA-05-10"
-            ],
+            "controls": ["CA-06-01", "CA-05-10"],
             "observation": "useAuthUser reads a session when local user is null, checks effect cancellation before setUser, then starts loadProfile without awaiting it. Its effect depends on user only; isAuthenticated output accepts a nonnull store user. Mounted helper resets/refuses correctly across effect cleanup and key-remount.",
             "limits": "Store-only hydration/current-auth generation belongs existing bootstrap context findings. This is not an independently proved logout race or backend authentication bypass; SDK/server state is not changed by setUser. Existing useUserStore peer body and auth listener ownership remain, with no duplicated store audit."
           },
-          "additive_qualifications": [
-            "work/g8/acceptance/independent-review0028-intake.json"
-          ]
+          "additive_qualifications": ["work/g8/acceptance/independent-review0028-intake.json"]
         }
       ],
       "implementation_authorized_by_this_packet": false

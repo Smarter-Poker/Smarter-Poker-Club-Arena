@@ -18,5 +18,4 @@ G8 must independently intake this final Life closure and root placement, reconci
 
 This review performed artifact and planning consistency checks only. No SQL, product tests, provider/business calls, source edits, global register writes or outgoing messages occurred. Overall program completion is not established.
 
-
 Do not call send_message_to_thread, notify/send tools, or any outbound messaging tool, even once. Do not retry pending or denied sends. Complete assignments through existing local outputs and ordinary final responses; G8 reads shared files and task snapshots. Include this rule in every future handoff.

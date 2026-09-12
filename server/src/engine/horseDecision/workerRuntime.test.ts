@@ -1,4 +1,5 @@
 import { HorseLogic } from '../HorseLogic.js';
+import { jointPolicyFixture } from '../multiway/JointRangeFixture.test-support.js';
 import { describe, expect, it } from 'vitest';
 
 import type { HorseDecideOpts } from '../HorseLogic.js';
@@ -250,6 +251,153 @@ const fastRequest = (requestId = 1): FastHorseDecisionRequest => ({
 const rekey = (request: FastHorseDecisionRequest): FastHorseDecisionRequest => ({
   ...request,
   decisionKey: buildHorseDecisionKey(request),
+});
+
+describe('Phase 13 cross-board worker boundary', () => {
+  it.each([
+    'nlh',
+    'plo4',
+    'plo5',
+    'plo6',
+    'plo8',
+    'flo8',
+    'flh',
+    'pineapple',
+    'short_deck',
+  ] as const)(
+    '%s carries real shadow analysis or an explicit real-time budget refusal through the live worker',
+    async (variant) => {
+      const s = jointPolicyFixture(variant, 2, 'cash', 'flop');
+      const h = harness(true);
+      const request = rekey({
+        ...fastRequest(),
+        player: s.hero,
+        gameState: s.state,
+        style: 'balanced',
+        mods: {},
+        opts: { mind: false },
+      });
+      h.runtime.receive(request);
+      await h.runtime.drain();
+      const result = h.messages.find((m) => m.type === 'FAST_RESULT');
+      expect(result?.type, JSON.stringify(h.messages)).toBe('FAST_RESULT');
+      if (result?.type !== 'FAST_RESULT') return;
+      const copy = structuredClone(result);
+      expect(copy.decision.jointPolicy).toMatchObject({
+        variant,
+        mode: 'shadow',
+        applied: false,
+        executionStatus: 'pending',
+      });
+      expect(copy.decision.jointPolicy?.finalAction).toBe(copy.decision.action);
+      expect(copy.decision.jointPolicy?.completedSamples).toBeGreaterThanOrEqual(0);
+      // A contended test runner may exhaust the production deadline; it may
+      // never forge an offline clock or serialize private opponent deals.
+      expect([
+        'work_budget',
+        'insufficient_joint_samples',
+        'joint_samples_unavailable',
+        'joint_cash_action_distribution',
+      ]).toContain(copy.decision.jointPolicy?.reason);
+      expect(JSON.stringify(copy.decision.jointPolicy)).not.toMatch(
+        /"rank"|"suit"|originalHands|availableCards/
+      );
+      expect(h.decisionOpts[0].phase13EvidenceMode).toBeUndefined();
+    }
+  );
+  const multiboard = () => {
+    const request = structuredClone(fastRequest());
+    const card = (rank: string, suit: 'clubs' | 'diamonds' | 'hearts') => ({ rank, suit }) as const;
+    request.gameState.stage = 'flop';
+    request.gameState.bombPot = true;
+    request.gameState.boardCount = 3;
+    request.gameState.dealtSeatIds = request.gameState.players.map((p) => p.seat);
+    request.gameState.communityCards = ['2', '3', '4'].map((r) => card(r, 'clubs')) as any;
+    request.gameState.communityCards2 = ['5', '6', '7'].map((r) => card(r, 'diamonds')) as any;
+    request.gameState.communityCards3 = ['8', '9', 'T'].map((r) => card(r, 'hearts')) as any;
+    return request;
+  };
+  it('accepts a complete physical triple-board betting snapshot', async () => {
+    const h = harness();
+    h.runtime.receive(rekey(multiboard()));
+    await h.runtime.drain();
+    expect(h.messages.at(-1)?.type).toBe('FAST_RESULT');
+    expect(h.decisionsAtRng).toHaveLength(1);
+  });
+  it.each([
+    'missing',
+    'duplicate',
+    'unknown',
+    'omitted_live',
+    'omitted_hero',
+    'invalid_seat',
+  ] as const)('refuses %s dealt census', async (fault) => {
+    const request = multiboard();
+    if (fault === 'missing') delete request.gameState.dealtSeatIds;
+    if (fault === 'duplicate') request.gameState.dealtSeatIds = [2, 3, 3];
+    if (fault === 'unknown') request.gameState.dealtSeatIds = [2, 3, 99];
+    if (fault === 'omitted_live') request.gameState.dealtSeatIds = [2];
+    if (fault === 'omitted_hero') request.gameState.dealtSeatIds = [3];
+    if (fault === 'invalid_seat') {
+      request.gameState.players[1].seat = 11;
+      request.gameState.dealtSeatIds = [2, 11];
+    }
+    const h = harness();
+    h.runtime.receive(rekey(request));
+    await h.runtime.drain();
+    expect(h.decisionsAtRng).toEqual([]);
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: expect.stringContaining('dealt_census'),
+    });
+  });
+  it('counts folded disconnected cards when checking deck exhaustion', async () => {
+    const request = multiboard();
+    for (const seat of [1, 4, 5, 6, 7, 8, 9, 10])
+      request.gameState.players.push({
+        ...request.gameState.players[1],
+        seat,
+        user_id: `folded-${seat}`,
+        is_folded: true,
+        is_sitting_out: true,
+        bet: 0,
+        totalInvested: 0,
+      });
+    request.gameState.dealtSeatIds = request.gameState.players.map((p) => p.seat);
+    const h = harness();
+    h.runtime.receive(rekey(request));
+    await h.runtime.drain();
+    expect(h.decisionsAtRng).toEqual([]);
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: expect.stringContaining('deck_exhausted'),
+    });
+  });
+  it.each([
+    'hero_collision',
+    'board_collision',
+    'third_board_short',
+    'declared_count',
+    'invalid_rank',
+    'malformed_board',
+  ] as const)('refuses %s before running strategy', async (fault) => {
+    const request = multiboard(),
+      gs = request.gameState;
+    if (fault === 'hero_collision') gs.communityCards2![0] = request.player.cards[0];
+    if (fault === 'board_collision') gs.communityCards3![0] = gs.communityCards2![0];
+    if (fault === 'third_board_short') gs.communityCards3!.pop();
+    if (fault === 'declared_count') gs.boardCount = 2;
+    if (fault === 'invalid_rank') gs.communityCards2![0].rank = 'X' as any;
+    if (fault === 'malformed_board') gs.communityCards3 = {} as any;
+    const h = harness();
+    h.runtime.receive(rekey(request));
+    await h.runtime.drain();
+    expect(h.decisionsAtRng).toEqual([]);
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: expect.stringMatching(/joint_cards/),
+    });
+  });
 });
 
 function phase6TournamentRequest(requestId = 50): FastHorseDecisionRequest {
@@ -992,6 +1140,9 @@ describe('HorseDecisionWorkerRuntime', () => {
     { phase11EvidenceMode: true },
     { phase12Remaining: 'candidate' },
     { phase12EvidenceMode: true },
+    { phase13Joint: 'candidate' },
+    { phase13EvidenceMode: true },
+    { phase13EvidenceMode: false },
   ])('rejects offline candidate selectors at the live worker boundary: %j', async (opts) => {
     const h = harness();
     h.runtime.receive({

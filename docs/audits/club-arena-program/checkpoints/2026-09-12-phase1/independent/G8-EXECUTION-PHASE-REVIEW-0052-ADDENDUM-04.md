@@ -8,5 +8,4 @@ This closes the input-reference question and does not repeat the frozen1508 revi
 
 No source/global edits, SQL, tests, provider/business operations or outbound messaging occurred.
 
-
 Do not call send_message_to_thread, notify/send tools, or any outbound messaging tool, even once. Do not retry pending or denied sends. Complete assignments through existing local outputs and ordinary final responses; G8 reads shared files and task snapshots. Include this rule in every future handoff.

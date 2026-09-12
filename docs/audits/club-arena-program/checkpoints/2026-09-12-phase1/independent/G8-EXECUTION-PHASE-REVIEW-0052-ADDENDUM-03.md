@@ -18,5 +18,4 @@ Root reports admission0017 and grade0009 intaken. Their known policy, applicabil
 
 No full source re-audit, SQL, test, provider/business call, source/global edit or outbound messaging occurred. FWP03/04 candidate acceptance is separately sealed in review0053 and is not full delivery proof. Overall completion remains false.
 
-
 Do not call send_message_to_thread, notify/send tools, or any outbound messaging tool, even once. Do not retry pending or denied sends. Complete assignments through existing local outputs and ordinary final responses; G8 reads shared files and task snapshots. Include this rule in every future handoff.

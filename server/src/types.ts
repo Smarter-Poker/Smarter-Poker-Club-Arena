@@ -927,9 +927,13 @@ export interface HorseTournamentUtilityLedger {
 }
 
 export interface HorseDecision {
+  /** Existing catastrophe owner rejected this committed continuation. An
+   * uncalibrated later joint proposal cannot reopen its rejected call-off. */
+  continuationGuard?: 'multiway_commitment_floor' | 'dominated_commitment_floor';
   plo4Policy?: import('./engine/plo4/Plo4LivePolicy.js').Plo4LiveReceipt;
   omahaVariantPolicy?: import('./engine/omaha/OmahaVariantLivePolicy.js').OmahaVariantReceipt;
   remainingVariantPolicy?: import('./engine/remainingVariants/RemainingVariantLivePolicy.js').RemainingVariantReceipt;
+  jointPolicy?: import('./engine/multiway/JointLivePolicy.js').JointPolicyReceipt;
   tournamentPostflop?: import('./engine/HorseTournamentPostflop.js').HorseTournamentPostflopLedger;
   action: ActionType;
   amount?: number;

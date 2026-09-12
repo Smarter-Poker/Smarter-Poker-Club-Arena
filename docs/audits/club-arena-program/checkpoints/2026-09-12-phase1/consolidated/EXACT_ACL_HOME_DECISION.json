@@ -1,9 +1,6 @@
 {
   "primary_home": "DU-IDENTITY",
-  "secondary_interfaces": [
-    "DU-SCOPE",
-    "DU-JOURNAL"
-  ],
+  "secondary_interfaces": ["DU-SCOPE", "DU-JOURNAL"],
   "existing_group": "Diamond G04",
   "record": "EXEC-QUAL-01",
   "reason": "Exact EXECUTE authority boundary is one already deployed correction; preserve G5 journal/estate and Diamond scope links as interfaces rather than duplicate work. Broader G04 remains open.",

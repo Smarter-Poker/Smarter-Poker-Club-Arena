@@ -254,6 +254,11 @@ const drainResultCounts: Record<HandProjectionDrainResult, number> = {
   failed: 0,
 };
 let drainsTotal = 0;
+/* Passes that spent the WHOLE budget and were cancelled at it. This is the
+   series that says the budget is too small for real load - a number nobody
+   has to read a log to find, and the one that would have to move before
+   HAND_PROJECTION_DRAIN_DEADLINE_MS is worth changing. */
+let drainDeadlineCuts = 0;
 let lastDrainStartedAt = 0;
 
 /** Read-only view for /metrics and specs. */
@@ -291,6 +296,9 @@ export function handProjectionWakesToPrometheus(): string[] {
     '# HELP poker_hand_projection_drain_age_ms Age of the drain pass in flight, zero when none is.',
     '# TYPE poker_hand_projection_drain_age_ms gauge',
     `poker_hand_projection_drain_age_ms ${drainPromise === null ? 0 : Math.max(0, Date.now() - lastDrainStartedAt)}`,
+    '# HELP poker_hand_projection_drain_deadline_cuts_total Drain passes cancelled at HAND_PROJECTION_DRAIN_DEADLINE_MS. A pass cut here settled and queued a continuation; a rising rate means the budget is too small for the arriving load.',
+    '# TYPE poker_hand_projection_drain_deadline_cuts_total counter',
+    `poker_hand_projection_drain_deadline_cuts_total ${drainDeadlineCuts}`,
     '# HELP poker_hand_projection_drain_concurrency Per-table chains the drain projects at once (HAND_PROJECTION_DRAIN_CONCURRENCY).',
     '# TYPE poker_hand_projection_drain_concurrency gauge',
     `poker_hand_projection_drain_concurrency ${handProjectionDrainConcurrency()}`,
@@ -344,23 +352,42 @@ function emptySummary(): HandProjectionDrainSummary {
 async function projectChain(
   chain: ProjectionRow[],
   blockedTables: Set<string>,
-  summary: HandProjectionDrainSummary
-): Promise<void> {
+  summary: HandProjectionDrainSummary,
+  deadlineAt: number,
+  budget: AbortSignal
+): Promise<boolean> {
   const key = chainKey(chain[0]);
+  /* Rows this pass will not reach are DEFERRED, never dropped: the outbox row
+     is untouched and the continuation the pass queues comes back for it. */
+  const deferRest = (from: number): false => {
+    const remaining = chain.length - from;
+    summary.deferred += remaining;
+    drainResultCounts.deferred += remaining;
+    return false;
+  };
   for (let i = 0; i < chain.length; i++) {
-    if (stopping) return;
+    if (stopping) return false;
     const row = chain[i];
     if (blockedTables.has(key)) {
       const remaining = chain.length - i;
       summary.deferred += remaining;
       drainResultCounts.deferred += remaining;
-      return;
+      return true;
     }
+    /* THE BUDGET IS READ HERE TOO (2026-09-12, second repair). This loop used
+       to test `stopping` and nothing else, so a chain that started before the
+       deadline ran every one of its up-to-DRAIN_PAGE rows after it. */
+    if (budget.aborted || Date.now() >= deadlineAt) return deferRest(i);
     try {
-      const { data: projected, error: projectError } = await supabase.rpc(
-        'fn_project_hand_side_effects',
-        { p_hand_id: row.hand_id }
-      );
+      const { data: projected, error: projectError } = await supabase
+        .rpc('fn_project_hand_side_effects', { p_hand_id: row.hand_id })
+        .abortSignal(budget);
+      /* THE PASS CANCELLED ITS OWN CALL. Not a failed hand: the durable row is
+         still there, and if the transaction committed anyway the next pass
+         reads `not_pending` and counts it already_completed. The shared client
+         already abandons any call at SUPABASE_TIMEOUT_MS (15 s) exactly this
+         way, so cancelling mid-RPC is a path this worker has always taken. */
+      if (budget.aborted) return deferRest(i);
       if (projectError)
         throw new Error(`fn_project_hand_side_effects failed: ${describeError(projectError)}`);
       const result = (projected ?? {}) as ProjectionResult;
@@ -388,6 +415,10 @@ async function projectChain(
         );
       }
     } catch (err) {
+      // A cancelled call arrives here when the transport rejects rather than
+      // answering. Same reading as above: the budget ended the pass, and a
+      // routine handoff is not an Error anyone should be paged for.
+      if (budget.aborted) return deferRest(i);
       summary.failed++;
       drainResultCounts.failed++;
       blockedTables.add(key);
@@ -397,6 +428,7 @@ async function projectChain(
       });
     }
   }
+  return true;
 }
 
 /**
@@ -430,7 +462,8 @@ async function projectChains(
   concurrency: number,
   blockedTables: Set<string>,
   summary: HandProjectionDrainSummary,
-  deadlineAt: number
+  deadlineAt: number,
+  budget: AbortSignal
 ): Promise<Set<string>> {
   let next = 0;
   const completed = new Set<string>();
@@ -440,7 +473,9 @@ async function projectChains(
       while (!stopping && Date.now() < deadlineAt) {
         const chain = chains[next++];
         if (!chain) return;
-        await projectChain(chain, blockedTables, summary);
+        // Only a chain the lane walked to its end may advance the cursor past
+        // its rows. A chain cut by the budget leaves the cursor behind it.
+        if (!(await projectChain(chain, blockedTables, summary, deadlineAt, budget))) return;
         completed.add(chainKey(chain[0]));
       }
     })
@@ -462,6 +497,27 @@ function projectionHandNumber(row: unknown): number {
   return number;
 }
 
+/**
+ * One of the pass's own reads, under the pass's budget.
+ *
+ * A cancelled request rejects on some transports and answers with an error
+ * object on others - PostgREST through supabase-js does the latter, an aborted
+ * fetch the former - and the pass must read the same either way. It must never
+ * turn its OWN budget into a thrown failure: `beginDrain` reports a rejected
+ * pass as HandProjection.drain_failed, and a handoff is not a fault.
+ */
+async function readUnderBudget(
+  read: PromiseLike<{ data: unknown; error: unknown }>,
+  budget: AbortSignal
+): Promise<{ data: unknown; error: unknown }> {
+  try {
+    return await read;
+  } catch (err) {
+    if (!budget.aborted) throw err;
+    return { data: null, error: err };
+  }
+}
+
 function projectionRows(data: unknown, limit: number): ProjectionRow[] {
   if (!Array.isArray(data) || data.length > limit) {
     throw new Error('projection ordering response malformed');
@@ -475,7 +531,66 @@ function projectionRows(data: unknown, limit: number): ProjectionRow[] {
   return data as ProjectionRow[];
 }
 
+/**
+ * A BUDGET THAT CANNOT END A CALL IS NOT A BUDGET (2026-09-12, second repair).
+ *
+ * The first repair moved the deadline out of a wrapper and into the pass's own
+ * loops, so that nothing could start beside a pass still in flight. It did
+ * stop a second pass - and it did not stop the first one. Every `Date.now() <
+ * deadlineAt` sits BETWEEN awaits, and no call the pass makes was ever handed
+ * anything that could cancel it, so a PostgREST call that does not answer
+ * parks the pass for as long as it likes. `drainPromise` stays non-null,
+ * `pollIsDue` returns false at its first line, and the 5 s safety poll - the
+ * only cross-process wake left on the engine host - stays off until the
+ * process is replaced.
+ *
+ * Measured on engine-01 running exactly that repair (6d15727d, live 06:56:02Z
+ * to 07:55:56Z on 2026-09-12). One pass started at 07:35:12Z and was still in
+ * flight when the process was replaced twenty minutes later:
+ *
+ *   poker_hand_projection_drain_age_ms      109,245 -> 1,187,842  (9.9x 120 s)
+ *   poker_hand_projection_drains_total      frozen at 641 for 19 min
+ *   ..._drain_results_total{projected}      frozen at 23,625 - zero rows
+ *   ..._drain_results_total{deferred|failed|already_completed}  frozen too
+ *   ..._wakes_total{source="poll"}          frozen at 83 - poll never ran
+ *   ..._wakes_total{source="local"}         24,758 -> 25,844 - all swallowed
+ *   poker_hand_projection_outbox_depth      1,230 -> 2,205
+ *   poker_event_loop_delay_p99_ms           21 ms, flat - it was not busy
+ *
+ * So the pass owns an AbortController now, the budget aborts it, and every
+ * call the pass makes carries its signal. At the bound the calls in flight are
+ * CANCELLED rather than abandoned: each await settles, the loops unwind, the
+ * pass returns its summary, the lane clears, and the continuation it queues is
+ * the only thing that runs next. That is both invariants at once - the promise
+ * always settles (2026-09-11) and nothing runs beside the pass (2026-09-12).
+ */
 async function runDrain(): Promise<HandProjectionDrainSummary> {
+  drainsTotal++;
+  lastDrainStartedAt = Date.now();
+  const deadlineAt = lastDrainStartedAt + DRAIN_DEADLINE_MS;
+  const budget = new AbortController();
+  const budgetTimer = setTimeout(() => {
+    drainDeadlineCuts++;
+    budget.abort(
+      new Error(
+        `[HandProjection] drain pass spent its ${DRAIN_DEADLINE_MS}ms budget - ` +
+          'cancelling the calls it still owns so it settles and queues a continuation'
+      )
+    );
+  }, DRAIN_DEADLINE_MS);
+  budgetTimer.unref?.();
+  try {
+    return await drainPass(deadlineAt, budget.signal);
+  } finally {
+    // The pass is over either way; a live timer here would abort the next one.
+    clearTimeout(budgetTimer);
+  }
+}
+
+async function drainPass(
+  deadlineAt: number,
+  budget: AbortSignal
+): Promise<HandProjectionDrainSummary> {
   const summary = emptySummary();
   const generation = ++drainGeneration;
   const epoch = lifecycleEpoch;
@@ -488,26 +603,35 @@ async function runDrain(): Promise<HandProjectionDrainSummary> {
   // A table whose chain stopped in an earlier page of this pass stays
   // blocked for the whole pass: its later rows need the same predecessor.
   const blockedTables = new Set(sweep.blocked);
-  drainsTotal++;
-  lastDrainStartedAt = Date.now();
   /* THE PASS IS BOUNDED, NOT ABANDONED (2026-09-12). The deadline must be
      observed by the loop doing the work: a wrapper that merely rejects leaves
      this pass running and hands its lane to a second pass beside it - the one
      thing this worker must never do, because per-table chain order is its
      entire purpose. Orphaned passes kept PostgREST chains alive on the same
      client the lease heartbeats use and starved them, which killed and rebuilt
-     every table on the platform for five hours until a restart cleared them. */
-  const deadlineAt = lastDrainStartedAt + DRAIN_DEADLINE_MS;
+     every table on the platform for five hours until a restart cleared them.
+     `deadlineAt` and `budget` are the same bound read two ways: the loops read
+     the timestamp before they start more work, and the signal ends the work
+     already in flight. runDrain above owns both. */
 
   while (!stopping && visited < DRAIN_MAX && Date.now() < deadlineAt) {
     let query = supabase
       .from('hand_projection_outbox')
       .select('hand_id,table_id,hand_number')
       .gt('hand_number', cursor)
-      .order('hand_number', { ascending: true });
+      .order('hand_number', { ascending: true })
+      .abortSignal(budget);
     if (ceiling !== null) query = query.lte('hand_number', ceiling);
-    const { data, error } = await query.limit(Math.min(DRAIN_PAGE, DRAIN_MAX - visited));
+    const { data, error } = await readUnderBudget(
+      query.limit(Math.min(DRAIN_PAGE, DRAIN_MAX - visited)),
+      budget
+    );
     if (!ownsSweep()) return summary;
+    // The budget cancelled this read. That is the bound doing its job, not a
+    // transport fault: end the pass here and let the block below queue the
+    // continuation. Reporting a routine handoff as an Error is what made the
+    // first version of this bound look like an outage in Sentry.
+    if (budget.aborted) break;
     if (error) throw new Error(`projection outbox read failed: ${describeError(error)}`);
 
     const rows = projectionRows(data, Math.min(DRAIN_PAGE, DRAIN_MAX - visited));
@@ -531,7 +655,8 @@ async function runDrain(): Promise<HandProjectionDrainSummary> {
       concurrency,
       blockedTables,
       summary,
-      deadlineAt
+      deadlineAt,
+      budget
     );
     // A deadline may leave chains unstarted. Advance only the contiguous
     // prefix handled by settled chains, never across the first unstarted row.
@@ -546,6 +671,19 @@ async function runDrain(): Promise<HandProjectionDrainSummary> {
 
   if (!ownsSweep()) return summary;
   const retryOwed = sweep.retryOwed || summary.failed > 0 || summary.deferred > 0;
+  if (budget.aborted) {
+    /* THE PASS SPENT ITS BUDGET, so it publishes no sweep. It cannot know its
+       own frontier - the read that would capture one is cancelled with
+       everything else - and a ceiling a pass never saw is not a bound. What it
+       does owe is a return, so the next pass starts from a clean cursor under
+       the causal retry. This is the one exit that must not throw: a pass
+       ending at its bound is a handoff, and reporting a handoff as an Error is
+       how the first version of this bound filled Sentry with
+       HandProjection.drain_failed every two minutes for ninety minutes. */
+    resetSweep();
+    sweep.retryOwed = true;
+    return summary;
+  }
   if (
     (visited >= DRAIN_MAX || Date.now() >= deadlineAt) &&
     (ceiling === null || cursor < ceiling)
@@ -553,12 +691,23 @@ async function runDrain(): Promise<HandProjectionDrainSummary> {
     // Capture a finite frontier once, so continuous inserts cannot postpone
     // returning to an older blocked table forever.
     if (ceiling === null) {
-      const { data, error } = await supabase
-        .from('hand_projection_outbox')
-        .select('hand_id,table_id,hand_number')
-        .order('hand_number', { ascending: false })
-        .limit(1);
+      const { data, error } = await readUnderBudget(
+        supabase
+          .from('hand_projection_outbox')
+          .select('hand_id,table_id,hand_number')
+          .order('hand_number', { ascending: false })
+          .abortSignal(budget)
+          .limit(1),
+        budget
+      );
       if (!ownsSweep()) return summary;
+      if (budget.aborted) {
+        // The budget cancelled the frontier read itself. No sweep may be
+        // published carrying a ceiling this pass never saw.
+        resetSweep();
+        sweep.retryOwed = true;
+        return summary;
+      }
       if (error) throw new Error(`projection frontier read failed: ${describeError(error)}`);
       const frontier = projectionRows(data, 1);
       // Only a verified empty array proves there is no remaining frontier.
@@ -625,6 +774,22 @@ function armCausalRetry(): void {
  * exists to preserve, so two concurrent passes is the one thing that must not
  * happen. A bounded pass restores every net that already exists: the promise
  * clears, `pollIsDue` answers again, and the causal retry re-arms.
+ *
+ * WHY 120,000 STAYS (measured 2026-09-12, engine-01, Prometheus at 15 s).
+ * Two separate repairs have now been written for this bound and neither of
+ * them was about the NUMBER, so it is worth saying what the number is:
+ *
+ *   quiet outbox (depth 0-50)      drain_age_ms 100 - 3,000
+ *   working a backlog             drain_age_ms 39,226 / 61,052 / 79,670
+ *   the longest pass that settled  98,166 ms   (06:20Z, depth ~870)
+ *   passes over 120,000 in 24 h    one, and it was the wedge above
+ *
+ * So real load reaches about 82% of this budget and stops. A bigger number
+ * would not have saved the wedged pass - it ran to 9.9x - and a smaller one
+ * would cut passes that are working. The bound was never the defect; being
+ * unenforceable was. poker_hand_projection_drain_deadline_cuts_total is the
+ * series to read before anyone changes it: a rate that climbs while
+ * `projected` also climbs is a budget too small for the arriving load.
  */
 const DRAIN_DEADLINE_MS = boundedEnvInt(
   'HAND_PROJECTION_DRAIN_DEADLINE_MS',

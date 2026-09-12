@@ -276,6 +276,25 @@ AS $function$
   );
 $function$;
 
+-- A CREATE OR REPLACE on this database hands EXECUTE to PUBLIC/authenticated by
+-- default and the [autorevoke] event trigger does not strip `authenticated`
+-- (20260906231557_a_trigger_function_is_not_a_browser_routine spells this out).
+-- ca_stats_health() is engine telemetry - it returns fleet-wide hand counts and
+-- writer cursors - so it is closed explicitly here rather than left to whatever
+-- the replace happened to do. This restates the ACL production already has
+-- (postgres + service_role), so it changes nothing live and cannot drift later.
+-- PUBLIC is named as well as anon, because anon inherits whatever PUBLIC holds
+-- and revoking anon alone reads as a fix while doing nothing.
+REVOKE ALL ON FUNCTION public.ca_stats_health()
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.ca_stats_health() TO service_role;
+
+-- Same reasoning for the trigger function, with no GRANT: firing a trigger does
+-- not check EXECUTE on the trigger function, so it needs none, and a browser
+-- role holding one is the inert-but-flagged grant 20260906231557 closed.
+REVOKE ALL ON FUNCTION public.trg_ca_stats_live_from_hand()
+  FROM PUBLIC, anon, authenticated;
+
 -- ---------------------------------------------------------------------------
 -- 3. The legacy path can reach the positional projector.
 -- ---------------------------------------------------------------------------
@@ -324,6 +343,19 @@ BEGIN
      OR has_function_privilege('authenticated',
         'public.fn_process_hand_position_stats(jsonb,jsonb,jsonb)'::regprocedure, 'EXECUTE') THEN
     RAISE EXCEPTION 'VERIFY FAILED: a browser role holds EXECUTE on fn_process_hand_position_stats';
+  END IF;
+
+  -- No browser role can reach the telemetry read or the trigger function.
+  IF has_function_privilege('anon', 'public.ca_stats_health()'::regprocedure, 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.ca_stats_health()'::regprocedure, 'EXECUTE') THEN
+    RAISE EXCEPTION 'VERIFY FAILED: a browser role holds EXECUTE on ca_stats_health';
+  END IF;
+  IF NOT has_function_privilege('service_role', 'public.ca_stats_health()'::regprocedure, 'EXECUTE') THEN
+    RAISE EXCEPTION 'VERIFY FAILED: service_role cannot execute ca_stats_health - the engine monitor would go blind';
+  END IF;
+  IF has_function_privilege('anon', 'public.trg_ca_stats_live_from_hand()'::regprocedure, 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.trg_ca_stats_live_from_hand()'::regprocedure, 'EXECUTE') THEN
+    RAISE EXCEPTION 'VERIFY FAILED: a browser role holds EXECUTE on trg_ca_stats_live_from_hand';
   END IF;
 
   -- The health read answers, and answers with the two new blocks.

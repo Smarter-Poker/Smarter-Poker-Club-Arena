@@ -90,6 +90,7 @@ describe('a permitted change lands without a restart', () => {
       'auto_utg_straddle',
     ],
     ['run it twice', { run_it_twice: true, allow_run_it_twice: true }, 'run_it_twice'],
+    ['a bomb pot', { bomb_pot_enabled: true, bomb_pot_ante_multiplier: 2 }, 'bomb_pot_enabled'],
   ])('%s', async (_name, change, column) => {
     const e = arenaEngine();
     expect(e.tableInfo[column]).toBe(false);
@@ -105,8 +106,19 @@ describe('a change the boundary would refuse never lands', () => {
     ['rake', { rake_percent: 5 }, 'rake_percent', 0],
     ['a rake cap', { rake_cap_bb: 3 }, 'rake_cap_bb', 0],
     ['insurance', { insurance_enabled: true }, 'insurance_enabled', false],
-    ['a bomb pot', { bomb_pot_enabled: true }, 'bomb_pot_enabled', false],
     ['the seven-deuce side bet', { seven_deuce_enabled: true }, 'seven_deuce_enabled', false],
+    [
+      'a bomb pot whose ante is not a whole Diamond',
+      { big_blind: 1, bomb_pot_enabled: true, bomb_pot_ante_multiplier: 1.5 },
+      'bomb_pot_enabled',
+      false,
+    ],
+    [
+      'a bomb pot in a game the table is not certified for',
+      { bomb_pot_enabled: true, bomb_pot_variant: 'plo4' },
+      'bomb_pot_enabled',
+      false,
+    ],
     ['a nit game', { nit_game: true }, 'nit_game', false],
     ['an unset run-it column', { run_it_twice: null }, 'run_it_twice', false],
   ])('%s', async (_name, change, column, keeps) => {

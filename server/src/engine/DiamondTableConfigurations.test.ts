@@ -73,6 +73,22 @@ const FEATURES: Array<[string, Record<string, unknown>]> = [
       allow_run_it_twice: true,
     },
   ],
+  ['a bomb pot', { bomb_pot_enabled: true }],
+  ['a bomb pot on a fixed ante', { bomb_pot_enabled: true, bomb_pot_ante_fixed: 5 }],
+  [
+    'a three-board bomb pot',
+    { bomb_pot_enabled: true, bomb_pot_board_count: 3, bomb_pot_double_board: true },
+  ],
+  [
+    'everything the arena can open at once',
+    {
+      straddle_enabled: true,
+      voluntary_straddle: true,
+      run_it_twice: true,
+      allow_run_it_twice: true,
+      bomb_pot_enabled: true,
+    },
+  ],
 ];
 
 const LIVE_STATUSES = ['waiting', 'running', 'playing', 'active'];
@@ -188,7 +204,6 @@ describe('every rung of the ladder deals and conserves in whole Diamonds', () =>
 describe('a configuration the arena cannot open is refused, one reason at a time', () => {
   it.each([
     ['insurance', { insurance_enabled: true }],
-    ['a bomb pot', { bomb_pot_enabled: true }],
     ['the seven-deuce side bet', { seven_deuce_enabled: true }],
     ['a nit game', { nit_game: true }],
     ['all in or fold', { all_in_or_fold: true }],
@@ -216,5 +231,22 @@ describe('a configuration the arena cannot open is refused, one reason at a time
     for (const [, feature] of FEATURES) {
       expect(() => assertDiamondCashTable({ ...plain, ...feature, ...change })).toThrow();
     }
+  });
+
+  /* The bomb columns bind only while the feature is on, so they are their own
+     pair rather than another row above: a stale multiplier on a table that is
+     not bombing is not a reason to refuse the table. */
+  it.each([
+    ['an ante that is not a whole Diamond', { big_blind: 1, bomb_pot_ante_multiplier: 1.5 }],
+    ['a fixed ante that is not a whole Diamond', { bomb_pot_ante_fixed: 2.5 }],
+    ['an ante of nothing', { bomb_pot_ante_multiplier: 0 }],
+    ['bombs in a game the table is not certified for', { bomb_pot_variant: 'plo4' }],
+  ])('a bomb pot with %s is refused', (_why, change) => {
+    expect(() => assertDiamondCashTable({ ...plain, bomb_pot_enabled: true, ...change })).toThrow();
+    /* And the same row with bombs OFF is fine, which is what makes the refusal
+       about the bomb rather than about the column. */
+    expect(() =>
+      assertDiamondCashTable({ ...plain, bomb_pot_enabled: false, ...change })
+    ).not.toThrow();
   });
 });

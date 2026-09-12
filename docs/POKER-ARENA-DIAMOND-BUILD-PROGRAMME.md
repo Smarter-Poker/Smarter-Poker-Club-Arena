@@ -64,6 +64,16 @@ Three suites. A denomination law pins all FOUR dividers a Diamond pot can meet -
 
 The claim is scoped honestly: line seven is met for every configuration the arena CAN open today. Bomb pots and the variants beyond NLH are not omitted cells, they are features the boundary still refuses, and both matrices are written as arrays so a new feature joins them rather than forcing a rewrite. Evidence: [the lifecycle and denomination audit](audits/2026-09-12-diamond-phase-7-lifecycle-and-denomination-regressions.md).
 
+## Execution Update, September 12, 2026, Diamond Bomb Pots And Line Three Complete
+
+The last of line three's four features, and the line is now complete: bomb pots, board counts, straddles and run it twice are all reusable at a Diamond table, each behind its own Diamond tests.
+
+A Diamond bomb pot was not a missing feature, it was a contradiction. A bomb hand that paid anybody must carry its per-pot award breakdown, and the Diamond branch of the accepted-hand commit refused any hand that carried one, so the hand could be dealt and could never be committed. The breakdown is a record, not a movement, so the Diamond rule became the rule that commit already applies to every other amount on the hand: each unit's amount must be whole. The multi-board settlement needed nothing at all; it has cut its shares in the table's own unit since the tournament fix, so one, two and three board bombs divide in whole Diamonds by the same rule run it twice does.
+
+Two things about the row are still refused, because either one deals a hand the boundary then rejects: an ante that could not be a whole Diamond, and a bomb variant override, which is refused for the same reason plo4 is refused on the table itself. Evidence: [the bomb pot changelog](changelog/2026-09-12-diamond-phase-7-bomb-pots.md).
+
+Both migrations edit the live function definition in place rather than restating it. `fn_ca_commit_hand_settlement` is 34,418 characters and every chip hand in the estate settles through it; retyping 34KB to change three lines is an estate-wide outage waiting on a typo. The body is read with `pg_get_functiondef`, one clause is replaced, and the result re-created, with the starting md5 pinned, the match required to be unique, and every refusal the branch already carried re-asserted afterwards. The function grew by exactly the difference in length between the two clauses.
+
 ## Approved Product Contract
 
 This replaces the earlier recommendation for two separate World Hub destinations. The World Hub has one player-facing Poker Arena entrance. Reuse the existing Club Arena application as the shared shell, lobby and game implementation. Diamond Arena is a diamond-only skin and operating policy inside it, not a second poker application.
@@ -292,7 +302,7 @@ Phase 6 Of 12 Is Done, verified September 11, 2026. Implementation merge 85da647
 
 - [ ] Enable each intended Club Arena variant only after corresponding Diamond tests.
 - [ ] Reuse waitlists, offers, rebuys/add-ons, seat changes, must-move and multi-table flows.
-- [ ] Reuse supported bomb pots, board counts, straddles and run-it-twice.
+- [x] Reuse supported bomb pots, board counts, straddles and run-it-twice.
 - [ ] Integrate table skins, cards, time banks, rabbit hunt, chat, voice and throwables where supported.
 - [x] Keep feature diamond charges separate from game stakes, with no double charge.
 - [x] Audit insurance and side-feature liabilities before enabling any such product.

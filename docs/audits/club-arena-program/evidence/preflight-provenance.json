@@ -1,0 +1,70 @@
+{
+  "recorded_at": "2026-09-11T20:56:55.129831+00:00",
+  "source_package": {
+    "path": "PACKAGE_IDENTITY.json",
+    "original_path": "/Users/smarter.poker/Downloads/Club_Arena_All_In_One_Start_Here.md",
+    "method": "Local full-byte read, SHA256, marker and exact paragraph comparisons",
+    "independent_check": "evidence/review-generation1.md.txt"
+  },
+  "repository_identity": {
+    "method": "Authenticated gh api repos/Smarter-Poker/Smarter-Poker-Club-Arena read; tool output chunk d64a6a in main task",
+    "reconfirmed_this_revision": true,
+    "result": {
+      "full_name": "Smarter-Poker/Smarter-Poker-Club-Arena",
+      "default_branch": "main",
+      "permissions": {
+        "admin": true,
+        "maintain": true,
+        "pull": true,
+        "push": true,
+        "triage": true
+      },
+      "archived": false,
+      "disabled": false
+    },
+    "separate_worktree_independent_evidence": "evidence/review-generation1-evidence.json.txt"
+  },
+  "database_metadata": {
+    "classification": "Coordinator-observed tool result; original serialized result not retained",
+    "tool": "Configured Supabase execute_sql, read-only SELECT of server version, database, current_user and now",
+    "observed_database_time_utc": "2026-09-11 20:45:51.393912+00",
+    "project_id": "kuklfnapbkmacvwxktbh",
+    "result": {
+      "server_version": "17.6",
+      "current_database": "postgres",
+      "current_user": "postgres"
+    },
+    "limits": "No player/money records or schema mutation; not independent behavior/DR certification"
+  },
+  "inventories": [
+    {
+      "path": "evidence/open-prs.json.txt",
+      "sha256": "fc84dc105b3bfa6c1e994b77ea34b9d4ab1b3971136b14ab88477e3d2b0a824c",
+      "original_acquisition_time": null,
+      "time_limit": "Original acquisition command/time not durably retained. File and item update times are not asserted to be acquisition time.",
+      "method": "G8 authenticated GitHub CLI read; returned raw JSON saved during initial preflight",
+      "superseding_recovery_owner": "G8-BACKLOG-0001 for issues/PRs; existing pipeline for runs"
+    },
+    {
+      "path": "evidence/open-issues.json.txt",
+      "sha256": "7960535d16749a1dff41ef58d7f00a6e7ffd728e3e88d80da06251753939fcdf",
+      "original_acquisition_time": null,
+      "time_limit": "Original acquisition command/time not durably retained. File and item update times are not asserted to be acquisition time.",
+      "method": "G8 authenticated GitHub CLI read; returned raw JSON saved during initial preflight",
+      "superseding_recovery_owner": "G8-BACKLOG-0001 for issues/PRs; existing pipeline for runs"
+    },
+    {
+      "path": "evidence/workflow-runs.json.txt",
+      "sha256": "e283f2643030122ea50957a253bd729448f0bfd6d7acd205922009983f29cc86",
+      "original_acquisition_time": null,
+      "time_limit": "Original acquisition command/time not durably retained. File and item update times are not asserted to be acquisition time.",
+      "method": "G8 authenticated GitHub CLI read; returned raw JSON saved during initial preflight",
+      "superseding_recovery_owner": "G8-BACKLOG-0001 for issues/PRs; existing pipeline for runs"
+    }
+  ],
+  "public_identity_receipts": [
+    "evidence/direct-origin.json.txt",
+    "evidence/public-origin.json.txt",
+    "evidence/engine-health.json.txt"
+  ]
+}

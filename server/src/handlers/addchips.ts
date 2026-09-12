@@ -48,8 +48,13 @@ export async function handleAddchips(
        horse rotator has no HTTP retry problem) and strictly validated — it
        becomes part of a DB idempotency key. */
     const rawOpId = body.opId;
-    const opId =
-      typeof rawOpId === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(rawOpId) ? rawOpId : undefined;
+    if (
+      Object.prototype.hasOwnProperty.call(body, 'opId') &&
+      (typeof rawOpId !== 'string' || !/^[A-Za-z0-9-]{8,64}$/.test(rawOpId))
+    ) {
+      return sendJSON(res, 400, { success: false, error: 'Invalid opId' });
+    }
+    const opId: string | undefined = rawOpId;
 
     // 2026-08-27: `!amount || amount <= 0` alone lets a non-numeric string
     // through - `!"abc"` is false and `"abc" <= 0` is false - so a garbage body

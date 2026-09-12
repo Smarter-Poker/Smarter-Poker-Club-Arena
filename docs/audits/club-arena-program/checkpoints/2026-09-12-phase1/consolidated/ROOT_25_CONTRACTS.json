@@ -1,0 +1,1543 @@
+[
+  {
+    "id": "G8-CAUSE-01",
+    "primary_home": "DU-INTENT",
+    "phase": 3,
+    "original_contract": {
+      "group_id": "G8-CAUSE-01",
+      "primary_record_ids": ["G5-WALLET-INTENT-0001"],
+      "accountable_lead": "G5",
+      "review_lane": "G5 identity / G6 client",
+      "disposition": "proposed repair",
+      "deliverable": "Retain secure original Union Wallet operation recovery through age, remount and sign-out; unknown operations never become new intent by expiry.",
+      "specific_dependencies": "Current durable claim lookup, secure account recovery and approved device cleanup.",
+      "preserved_protections": "Do not retain secret payload on shared device or weaken tenant isolation.",
+      "acceptance_evidence": "Original operation recovered after24h, lost response, reload and logout/relogin; genuinely new intent gets new ID only after resolution.",
+      "same_or_related_peer_joins": [
+        "Related CORE013/053/063 identity lifetime; distinct routes, shared contract"
+      ],
+      "implementation_writer": null,
+      "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
+      "original_records": [
+        {
+          "evidence_id": "G5-WALLET-INTENT-0001",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/intent-audit/FINDINGS.json",
+          "source_sha256": "2cfae07535b0985270c8d95665456a59128074be334442a7aaf8539092653d38",
+          "canonical_controls": ["CA-04-06", "CA-04-12", "CA-07-06", "CA-12-01"],
+          "control_family_links": [],
+          "original_controls": [],
+          "control_field_provenance": {
+            "canonical_controls": ["CA-04-06", "CA-04-12", "CA-07-06", "CA-12-01"]
+          },
+          "classification": "Confirmed client-contract violation; financial duplicate outcome not exercised",
+          "title_or_observation": "Unresolved Union Wallet identity is replaced after24h or removed on sign-out",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "accountable_owner": "G5; G6 client delivery and G4 authority boundaries delegated throughG8",
+            "source_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+            "also_unchanged_at": "575b9763a2c83f0a9c9e88ae04d5e5b75ac0c35d",
+            "phase": "Phase1; deliveryphase not yet assigned",
+            "repair_authority": "No new sourcewriter; complete baseline prerequisite, activeexistingownerspreserved",
+            "implementation_status": "Open; no repair",
+            "deployment_status": "No repair deployed",
+            "historical_impact": "No financial rows queried; historical cases unmeasured. Never perform guessed corrections.",
+            "id": "G5-WALLET-INTENT-0001",
+            "canonical_controls": ["CA-04-06", "CA-04-12", "CA-07-06", "CA-12-01"],
+            "title": "Unresolved Union Wallet identity is replaced after24h or removed on sign-out",
+            "severity": "P1; retries may become separatemoneyoperations",
+            "status": "Confirmed client-contract violation; financial duplicate outcome not exercised",
+            "expected": "Preserve an authenticated recoverable association with the original unresolved operation until authoritative disposition, without requiring sensitive payload retention on a shared device. Secure server recovery may satisfy this.",
+            "actual": "readRecord returns null when age>24h; nextreserve replacesUUID. clearUserCaches includesunionintentprefix and removes localrecords on IdentityDNA SIGNED_OUT.",
+            "source_references": [
+              "src/services/UnionWalletRecovery.ts:37-38,92-113,143-170",
+              "src/utils/clearUserCaches.ts:101-103,112-130,178-179",
+              "src/core/IdentityDNA.ts:242-258"
+            ],
+            "evidence": [
+              "expiry-probe-result.json",
+              "sources/src__components__union__UnionWalletModal.tsx:434-450"
+            ],
+            "root_cause": "Uncertainfinancialintent treated as expiring/disposable accountcache.",
+            "proposed_correction": "Preserve scoped original-operation recovery through age and sign-out; resolve only against an authoritative outcome. Source proves local identity removal, not absence of all possible server recovery.",
+            "acceptance": "Sameunresolvedoperation after24h,reload,logout/relogin and lostack remainsoriginal; newdeliberateoperation after verifiedresolution receivesnewidentity; no crosseduseraccess.",
+            "required_tests": [
+              "Existing sixunitcases reused aspriorcoverage; newisolatedactualhelperageprobe demonstratesFAIL",
+              "Later browserlostack/logout and real-roleRPC sameidentity proof; do not use memoryfixture as fullmoneycert"
+            ],
+            "author_and_source_reader": "G8 /root",
+            "independent_reviewer": "01a0923b-657e-78f3-94c7-58584d18073a / G8-FINDING-REVIEW-0005 generation1",
+            "backlog_reconciliation": "G8-BACKLOG-0002: no same-cause match or current writer established within183 captured GitHub items plus11 local records; bounded negative result only; provisional observation ID does not increase canonical issue count"
+          }
+        }
+      ],
+      "implementation_authorized_by_this_packet": false
+    },
+    "qualification": "One closure owner; all named existing Backlog/Accounting/Lifecycle consumer joins and exact policy/proof boundaries retained."
+  },
+  {
+    "id": "G8-CAUSE-02",
+    "primary_home": "DU-REPLAY",
+    "phase": 2,
+    "original_contract": {
+      "group_id": "G8-CAUSE-02",
+      "primary_record_ids": ["G5-WALLET-INTENT-0002"],
+      "accountable_lead": "G5",
+      "review_lane": "G5 identity / G6 client",
+      "disposition": "proposed repair",
+      "deliverable": "Classify known refusal, unknown and committed by exact matching authoritative receipt; reject malformed success and retain unknown intent.",
+      "specific_dependencies": "Actual Supabase returned-error/transport peers; exact Union send/pull response contracts.",
+      "preserved_protections": "Keep original receipt and guards; unknown is not blanket failure or success.",
+      "acceptance_evidence": "Lost postcommit response and malformed/null bodies never announce unproved success or replace original identity.",
+      "same_or_related_peer_joins": [
+        "Related Backlog CAUSE19/21 auth transport, Life Diamond refusal scope differs"
+      ],
+      "implementation_writer": null,
+      "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
+      "original_records": [
+        {
+          "evidence_id": "G5-WALLET-INTENT-0002",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/intent-audit/FINDINGS.json",
+          "source_sha256": "2cfae07535b0985270c8d95665456a59128074be334442a7aaf8539092653d38",
+          "canonical_controls": ["CA-04-12", "CA-07-06", "CA-12-01"],
+          "control_family_links": [],
+          "original_controls": [],
+          "control_field_provenance": {
+            "canonical_controls": ["CA-04-12", "CA-07-06", "CA-12-01"]
+          },
+          "classification": "Confirmed sourceclassification defect; transport-path execution pending",
+          "title_or_observation": "Union Wallet treats every returned RPC error object as definitive and accepts malformed pull results",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "accountable_owner": "G5; G6 client delivery and G4 authority boundaries delegated throughG8",
+            "source_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+            "also_unchanged_at": "575b9763a2c83f0a9c9e88ae04d5e5b75ac0c35d",
+            "phase": "Phase1; deliveryphase not yet assigned",
+            "repair_authority": "No new sourcewriter; complete baseline prerequisite, activeexistingownerspreserved",
+            "implementation_status": "Open; no repair",
+            "deployment_status": "No repair deployed",
+            "historical_impact": "No financial rows queried; historical cases unmeasured. Never perform guessed corrections.",
+            "id": "G5-WALLET-INTENT-0002",
+            "canonical_controls": ["CA-04-12", "CA-07-06", "CA-12-01"],
+            "title": "Union Wallet treats every returned RPC error object as definitive and accepts malformed pull results",
+            "severity": "P1; unknowncommit may be retried undernewidentity",
+            "status": "Confirmed sourceclassification defect; transport-path execution pending",
+            "expected": "Only a verified knownrejection or matchingcommittedreceipt mayresolveintent; network/response-loss remainsunknown.",
+            "actual": "Returned member/pull RPC error objects receive the definitive marker and clear the pending identity. Thrown exceptions without that marker retain it. Member null/missing success is marked definitive refusal; pull null or a non-error body without success:false is announced as success and clears the identity.",
+            "source_references": [
+              "src/components/union/UnionWalletModal.tsx:142-143,468-484,549-601,604-616"
+            ],
+            "root_cause": "Returned RPC errors and incomplete result bodies lack authoritative outcome classification and strict matching receipt validation. Installed adapter transport wrapping remains unverified.",
+            "proposed_correction": "Use explicit knownrejected/unknown/committed contracts, validatefullscopedreceipt; retainunknownidentity.",
+            "acceptance": "Lostpostcommitresponse, emptybody and gatewaytimeout never announceunprovedsuccess or mintfreshretry; definiterefusal yields correctUX.",
+            "required_tests": [
+              "Inspect existing Supabaseclient rejection wrapping and exactnativeRPCscope beforefinalclassification",
+              "Focused controlledbrowser transportfailure and malformedreceipts; runtimefinancialpostcommitlostack later"
+            ],
+            "author_and_source_reader": "G8 /root",
+            "independent_reviewer": "01a0923b-657e-78f3-94c7-58584d18073a / G8-FINDING-REVIEW-0005 generation1",
+            "backlog_reconciliation": "G8-BACKLOG-0002: no same-cause match or current writer established within183 captured GitHub items plus11 local records; bounded negative result only; provisional observation ID does not increase canonical issue count",
+            "subcases": [
+              "Returned error object classified definitive",
+              "Malformed member result classified refused",
+              "Malformed pull result classified committed"
+            ]
+          }
+        }
+      ],
+      "implementation_authorized_by_this_packet": false
+    },
+    "qualification": "One closure owner; all named existing Backlog/Accounting/Lifecycle consumer joins and exact policy/proof boundaries retained."
+  },
+  {
+    "id": "G8-CAUSE-03",
+    "primary_home": "DU-REPLAY",
+    "phase": 2,
+    "original_contract": {
+      "group_id": "G8-CAUSE-03",
+      "primary_record_ids": ["G5-UNION-REPLAY-0001"],
+      "accountable_lead": "G5",
+      "review_lane": "G5 union authority",
+      "disposition": "proposed repair",
+      "deliverable": "Authorize actor and financial estate before cached result, then bind full immutable original semantic payload to claim.",
+      "specific_dependencies": "Current fn_union_send_to_member claim/core and canonical actor/tenant authority.",
+      "preserved_protections": "Original operation uniqueness and transaction locks; known-key precondition and no observed unauthorized operation retained.",
+      "acceptance_evidence": "Same original retry returns original result; changed actor/union/recipient/amount/source/kind cannot redisclose result or move money.",
+      "same_or_related_peer_joins": [
+        "Connected CONN-S01S02-001 is HTTP memory cache boundary, related contract not same function"
+      ],
+      "implementation_writer": null,
+      "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
+      "original_records": [
+        {
+          "evidence_id": "G5-UNION-REPLAY-0001",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/intent-audit/FINDINGS.json",
+          "source_sha256": "2cfae07535b0985270c8d95665456a59128074be334442a7aaf8539092653d38",
+          "canonical_controls": ["CA-04-06", "CA-04-12", "CA-06-01", "CA-06-08", "CA-12-01"],
+          "control_family_links": [],
+          "original_controls": [],
+          "control_field_provenance": {
+            "canonical_controls": ["CA-04-06", "CA-04-12", "CA-06-01", "CA-06-08", "CA-12-01"]
+          },
+          "classification": "Confirmed deployedfunction sourcegap; no unauthorizedoperation attempted",
+          "title_or_observation": "Union member transfer cachedreplay bypasses reauthorization and semanticpayloadbinding",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "accountable_owner": "G5; G6 client delivery and G4 authority boundaries delegated throughG8",
+            "phase": "Phase1; deliveryphase not yet assigned",
+            "repair_authority": "No new sourcewriter; complete baseline prerequisite, activeexistingownerspreserved",
+            "implementation_status": "Open; no repair",
+            "deployment_status": "No repair deployed",
+            "historical_impact": "No financial rows queried; historical cases unmeasured. Never perform guessed corrections.",
+            "id": "G5-UNION-REPLAY-0001",
+            "canonical_controls": ["CA-04-06", "CA-04-12", "CA-06-01", "CA-06-08", "CA-12-01"],
+            "title": "Union member transfer cachedreplay bypasses reauthorization and semanticpayloadbinding",
+            "severity": "P1; authenticatedknownoperationkey can retrievepriorresult underwrongscope/payload",
+            "status": "Confirmed deployedfunction sourcegap; no unauthorizedoperation attempted",
+            "expected": "Reauthorizecachedresult tocurrentactor/tenant; identicalscopedpayload reusesoutcome and conflictingpayload refuses.",
+            "actual": "fn_union_send_to_member SELECTca_op_claims byfn_name/op_id thenreturnsresult at19-24 beforecoreauthorization, without comparingactor,union,target,kind,source oramount.",
+            "runtime_reference": "../runtime/core-and-union-routines.json:fn_union_send_to_member(uuid,uuid,text,numeric,text,text,text)",
+            "runtime_observed_at": "2026-09-11 21:23:17 UTC",
+            "runtime_md5": "4758d36acff34f922bf1129ae6eecc1d",
+            "root_cause": "Operationclaim key-only resultcache treated as sufficient replayauthority.",
+            "proposed_correction": "Bindimmutablecanonicalsemanticpayload and actor/tenant scope; reauthorizebeforecachedreturn, preserveoriginalidentity/result and properconcurrentclaimbehavior.",
+            "acceptance": "Samekeychangedactor/union/beneficiary/amount/source/kind failswithoutredisclosingornewmoney; originalauthorizedretry returnssameoutcome.",
+            "required_tests": [
+              "Real-scoped-roleexistingreceipt replay and conflictingpayload tests inisolatedDB; no productionattack"
+            ],
+            "author_and_source_reader": "G8 /root",
+            "independent_reviewer": "01a0923b-657e-78f3-94c7-58584d18073a / G8-FINDING-REVIEW-0005 generation1",
+            "backlog_reconciliation": "G8-BACKLOG-0002: no same-cause match or current writer established within183 captured GitHub items plus11 local records; bounded negative result only; provisional observation ID does not increase canonical issue count",
+            "runtime_to_git_mapping": "Not established; runtime observation is independently dated and hashed",
+            "limits": "Known-key precondition; no unauthorized invocation, key acquisition, duplicate movement, particular personal-data disclosure or complete effective call-chain assessment demonstrated."
+          }
+        }
+      ],
+      "implementation_authorized_by_this_packet": false
+    },
+    "qualification": "One closure owner; all named existing Backlog/Accounting/Lifecycle consumer joins and exact policy/proof boundaries retained."
+  },
+  {
+    "id": "G8-CAUSE-04",
+    "primary_home": "DU-CREDIT",
+    "phase": 3,
+    "original_contract": {
+      "group_id": "G8-CAUSE-04",
+      "primary_record_ids": ["G5-UNION-FLOOR-0001"],
+      "accountable_lead": "G5",
+      "review_lane": "G5 union authority",
+      "disposition": "qualified atomicity and policy question",
+      "deliverable": "Establish approved opening grant floor; if applicable, enforce it in the serialized debit and retain original operation.",
+      "specific_dependencies": "Full shared guard closure already accepted; exact policy provenance and isolated two-transaction commit evidence remain.",
+      "preserved_protections": "Canonical posting/journal and valid funded liabilities; no historical corrective money without original authority.",
+      "acceptance_evidence": "Overlapping clawbacks cannot jointly cross applicable floor; journal/receipt match each allowed movement. No invented floor policy.",
+      "same_or_related_peer_joins": [],
+      "implementation_writer": null,
+      "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
+      "original_records": [
+        {
+          "evidence_id": "G5-UNION-FLOOR-0001",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/intent-audit/FINDINGS.json",
+          "source_sha256": "2cfae07535b0985270c8d95665456a59128074be334442a7aaf8539092653d38",
+          "canonical_controls": ["CA-04-06", "CA-12-01"],
+          "control_family_links": [],
+          "original_controls": [],
+          "control_field_provenance": {
+            "canonical_controls": ["CA-04-06", "CA-12-01"]
+          },
+          "classification": "Discovered; shared guard review found no independent floor enforcement, concurrent commit and policy provenance proof pending",
+          "title_or_observation": "Union clubclawback openinggrantfloor check precedes serializeddebit",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "accountable_owner": "G5; G6 client delivery and G4 authority boundaries delegated throughG8",
+            "phase": "Phase1; deliveryphase not yet assigned",
+            "repair_authority": "No new sourcewriter; complete baseline prerequisite, activeexistingownerspreserved",
+            "implementation_status": "Open; no repair",
+            "deployment_status": "No repair deployed",
+            "historical_impact": "No financial rows queried; historical cases unmeasured. Never perform guessed corrections.",
+            "id": "G5-UNION-FLOOR-0001",
+            "canonical_controls": ["CA-04-06", "CA-12-01"],
+            "title": "Union clubclawback openinggrantfloor check precedes serializeddebit",
+            "severity": "P1 proposed; concurrentclawbacks maycrossprotectedopeningfloor",
+            "status": "Discovered; shared guard review found no independent floor enforcement, concurrent commit and policy provenance proof pending",
+            "expected": "For clubs satisfying the opening-grant existence condition at42\u201344, preserve the100000 floor described by this function and recovered historical handoff. Raw approved policy provenance, all independent guards and concurrent commit behavior remain pending.",
+            "actual": "Function tests v_now-p_amount>=v_floor viaunlockedSELECT46-50 thenUPDATE63-65guards onlybalance>=amount.",
+            "runtime_reference": "../runtime/core-and-union-routines.json:fn_union_clawback_from_club(uuid,uuid,numeric,text,uuid)",
+            "runtime_observed_at": "2026-09-11 21:23:17 UTC",
+            "runtime_md5": "f7bcdc0eab243e9372d28a3aab5f80b6",
+            "root_cause_hypothesis": "Eligibilityfloor not partoflockedconditionalupdate; independenttriggercouldalterassessment.",
+            "proposed_correction": "Ifconfirmed, makefloor eligibilityatomicwithactualdebit usingcanonicalpostingpath, preservingoriginaloperationidentity.",
+            "acceptance": "Twooverlappingclawbacks whosecombinedvaluewouldcrossfloor commitatmostpermittedamount; realroles, preservedledger/receipt and unchangedvalidroutes.",
+            "required_tests": [
+              "G5 shared guard closure complete and reused; no same-source reread necessary",
+              "Isolated actual COMMIT/concurrency proof with assigned database/fixture ownership; raw approved policy provenance still required"
+            ],
+            "author_and_source_reader": "G8 /root",
+            "independent_reviewer": "01a0923b-657e-78f3-94c7-58584d18073a / G8-FINDING-REVIEW-0005 generation1",
+            "backlog_reconciliation": "G8-BACKLOG-0002: no same-cause match or current writer established within183 captured GitHub items plus11 local records; bounded negative result only; provisional observation ID does not increase canonical issue count",
+            "runtime_to_git_mapping": "Not established; runtime observation is independently dated and hashed",
+            "shared_guard_evidence": "../acceptance/core-revision3-intake.json and ../../g5/core-audit/checkpoints/revision-3/CLUB_FLOOR_CLOSURE.md"
+          }
+        }
+      ],
+      "implementation_authorized_by_this_packet": false
+    },
+    "qualification": "One closure owner; all named existing Backlog/Accounting/Lifecycle consumer joins and exact policy/proof boundaries retained."
+  },
+  {
+    "id": "G8-CAUSE-05",
+    "primary_home": "DU-INTENT",
+    "phase": 3,
+    "original_contract": {
+      "group_id": "G8-CAUSE-05",
+      "primary_record_ids": ["G5-UNION-IDENTITY-0001"],
+      "accountable_lead": "G5",
+      "review_lane": "G5 union authority",
+      "disposition": "proposed repair",
+      "deliverable": "Use durable operation identity for duplicate suppression; distinct deliberate same-amount transfers receive distinct authorized outcomes.",
+      "specific_dependencies": "Current core20-second time/amount/actor heuristic and enclosing original claim.",
+      "preserved_protections": "Keep valid same-operation replay; do not simply remove safety without durable replacement.",
+      "acceptance_evidence": "Two distinct authorized recipients or intents within20seconds both have correct outcomes; same original retries once.",
+      "same_or_related_peer_joins": [],
+      "implementation_writer": null,
+      "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
+      "original_records": [
+        {
+          "evidence_id": "G5-UNION-IDENTITY-0001",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/intent-audit/FINDINGS.json",
+          "source_sha256": "2cfae07535b0985270c8d95665456a59128074be334442a7aaf8539092653d38",
+          "canonical_controls": ["CA-04-06", "CA-04-12", "CA-12-01"],
+          "control_family_links": [],
+          "original_controls": [],
+          "control_field_provenance": {
+            "canonical_controls": ["CA-04-06", "CA-04-12", "CA-12-01"]
+          },
+          "classification": "Confirmed captured source mismatch; no runtime invocation or historical loss demonstrated",
+          "title_or_observation": "Union send suppresses distinct equal-amount intents using a20-second history heuristic",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "id": "G5-UNION-IDENTITY-0001",
+            "accountable_owner": "G5; root union routing review",
+            "author_and_source_reader": "G8 /root",
+            "independent_reviewer": "01a0923b-657e-78f3-94c7-58584d18073a / G8-FINDING-REVIEW-0005 generation2",
+            "canonical_controls": ["CA-04-06", "CA-04-12", "CA-12-01"],
+            "title": "Union send suppresses distinct equal-amount intents using a20-second history heuristic",
+            "severity": "P1 proposed; valid transfer can report success without paying its intended recipient",
+            "status": "Confirmed captured source mismatch; no runtime invocation or historical loss demonstrated",
+            "expected": "Only the same durable operation and canonical semantic payload reuses an earlier result; a distinct authorized beneficiary/source/kind operation has its own outcome",
+            "actual": "fn_union_send_to_member_zd3core searches recent union_wallet_transactions by union, actor, amount and either member_send or promo_member_send. It does not match target_user_id, exact kind, source wallet or business operation key. If found, it returns success:true/duplicate_suppressed before resolving recipient membership or executing any transfer. The wrapper can cache this response for the new operation.",
+            "runtime_reference": "../runtime/nested-helper-definitions.json:fn_union_send_to_member_zd3core(uuid,uuid,text,numeric,text,text)",
+            "runtime_observed_at": "2026-09-11 21:30:15 UTC",
+            "runtime_md5": "0622761d01cce3ff085ea57264921983",
+            "source_references": ["sources/fn_union_send_to_member_zd3core.sql:40-54"],
+            "runtime_to_git_mapping": "Not established",
+            "trigger": "Authorized call reaches core with valid amount/kind and earlier matching debit visible. PostgreSQL transaction-time predicate matches even a distinct deliberate operation, including a second intentional identical-payload transfer.",
+            "root_cause": "Time/amount/actor similarity is substituted for durable semantic operation identity",
+            "limits": "No duplicate payout or observed unpaid recipient asserted; no query of transaction rows; no live replay performed. Source test and complete effective ledger closure remain pending. Distinct from cached-result reauthorization issue.",
+            "implementation_status": "No new source writer or repair",
+            "deployment_status": "No repair",
+            "backlog_reconciliation": "G8-BACKLOG-0002 generation2: no same-cause match/current writer established in183captureditems+7localrecords; bounded negative result",
+            "phase": "Phase1; deliveryphase not assigned"
+          }
+        }
+      ],
+      "implementation_authorized_by_this_packet": false
+    },
+    "qualification": "One closure owner; all named existing Backlog/Accounting/Lifecycle consumer joins and exact policy/proof boundaries retained."
+  },
+  {
+    "id": "G8-CAUSE-06",
+    "primary_home": "DU-REPORT",
+    "phase": 8,
+    "original_contract": {
+      "group_id": "G8-CAUSE-06",
+      "primary_record_ids": ["G5-WALLET-VIEW-0001"],
+      "accountable_lead": "G5",
+      "review_lane": "G6 financial presentation",
+      "disposition": "conditional repair",
+      "deliverable": "Publish Union ledger rows/totals/error/loading only for current account, union, wallet and request generation.",
+      "specific_dependencies": "Actual component lifetime and old response ordering; existing directory generation is a separate guard.",
+      "preserved_protections": "Precise authorized query filters and known good state.",
+      "acceptance_evidence": "Older success or failure cannot replace a newer scope; same-scope reload still works.",
+      "same_or_related_peer_joins": [
+        "CORE049/064/077/086 related publication family, not automatic duplicate"
+      ],
+      "implementation_writer": null,
+      "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
+      "original_records": [
+        {
+          "evidence_id": "G5-WALLET-VIEW-0001",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/intent-audit/FINDINGS.json",
+          "source_sha256": "2cfae07535b0985270c8d95665456a59128074be334442a7aaf8539092653d38",
+          "canonical_controls": ["CA-04-12", "CA-07-06"],
+          "control_family_links": [],
+          "original_controls": [],
+          "control_field_provenance": {
+            "canonical_controls": ["CA-04-12", "CA-07-06"]
+          },
+          "classification": "Discovered static omission; actual cross-scope rendering depends on component lifetime",
+          "title_or_observation": "Union ledger response has no request-generation guard before updating the active wallet view",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "id": "G5-WALLET-VIEW-0001",
+            "accountable_owner": "G5 with G6 financial presentation slice",
+            "author_and_source_reader": "G8 /root",
+            "independent_reviewer": "Pending",
+            "canonical_controls": ["CA-04-12", "CA-07-06"],
+            "title": "Union ledger response has no request-generation guard before updating the active wallet view",
+            "status": "Discovered static omission; actual cross-scope rendering depends on component lifetime",
+            "source_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+            "also_unchanged_at": "575b9763a2c83f0a9c9e88ae04d5e5b75ac0c35d",
+            "source_references": ["src/components/union/UnionWalletModal.tsx:225-313,320-367"],
+            "actual": "Directory fetches use directoryLoadVersion, but loadLedger has no identity/generation check after awaited RPC. Changing union/wallet/open state resets ledger and can start another request; an older response can still set rows/totals/error/loading afterward. User identity is absent from loadLedger callback dependencies.",
+            "limits": "No current browser trace, cross-user disclosure or wrong balance effect demonstrated. Parent mounting and response ordering remain unreviewed. No database rows queried.",
+            "expected": "Only a response for the active authenticated wallet scope/request generation may update that view; authorized old results must not overwrite a new scope.",
+            "implementation_status": "No repair or new writer",
+            "deployment_status": "No repair",
+            "phase": "Phase1; no completed delivery phase",
+            "backlog_reconciliation": "Pending same-cause match"
+          }
+        }
+      ],
+      "implementation_authorized_by_this_packet": false
+    },
+    "qualification": "One closure owner; all named existing Backlog/Accounting/Lifecycle consumer joins and exact policy/proof boundaries retained."
+  },
+  {
+    "id": "G8-CAUSE-07",
+    "primary_home": "DU-CASH",
+    "phase": 3,
+    "original_contract": {
+      "group_id": "G8-CAUSE-07",
+      "primary_record_ids": ["HORSE-CORE-Q01"],
+      "accountable_lead": "G5",
+      "review_lane": "G4 horse admission / lifecycle",
+      "disposition": "qualified original funding question",
+      "deliverable": "Resolve whether current original entitlement and terminal/refund guards prohibit reusing an unfunded historical registration; repair only demonstrated accepted gap.",
+      "specific_dependencies": "G4 full119 paid seat and202 registration, shared roster/seat guards and original issuance/refund source.",
+      "preserved_protections": "Existing seat continuity and active roster guards; no free-entry incident asserted.",
+      "acceptance_evidence": "Actual prior-refund/withdrawal/terminal versus genuinely pending funded registration cases distinguish refusal from valid recovery.",
+      "same_or_related_peer_joins": [
+        "G4 horse-paid-core finding owner retained; Life paid-human route similar but distinct"
+      ],
+      "implementation_writer": null,
+      "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
+      "original_records": [
+        {
+          "evidence_id": "HORSE-CORE-Q01",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/acceptance/horse-core-question-current-overlay.json",
+          "source_sha256": "9c58d7acf04dc76c601ef45b883a1d7d8c6bd77fb977c288f99d32ca4ebeae39",
+          "canonical_controls": ["CA-03-01", "CA-03-11"],
+          "control_family_links": [],
+          "original_controls": [],
+          "control_field_provenance": {
+            "controls": ["CA-03-01", "CA-03-11"]
+          },
+          "classification": "Retained conditional acceptance question",
+          "title_or_observation": "See retained evidence record",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "id": "HORSE-CORE-Q01",
+            "status": "Retained conditional acceptance question",
+            "addition": "202 lines68\u201371 also recognizes any historical row. Verified existing three seat guards prove exclusive authority/parent/active roster, but G5 explicitly does not claim they prove fresh funding for reused/refunded registration.",
+            "needed": "Exact original entitlement/refund/terminal applicability and all relevant paid-seat/registration guard join; no duplicate implementation owner or financial incident asserted.",
+            "earlier_question": {
+              "id": "HORSE-CORE-Q01",
+              "controlIds": ["CA-03-01", "CA-03-11"],
+              "question": "Which current paid-seat/roster guard proves that an arbitrary historical matching registration cannot be reused after refund, withdrawal or terminal status?",
+              "evidence": "Seat core69\u201379 and108\u2013110",
+              "status": "Observed source branch; actual accepted financial consequence conditional"
+            },
+            "controls": ["CA-03-01", "CA-03-11"],
+            "evidence_sources": [
+              {
+                "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/horse-paid-seat-core/EFFECTS_AND_QUESTIONS.json",
+                "sha256": "a3913be466eaddf5815b9fe622f7c323c2cc4a43a02237804b5e8a9b4d391000"
+              },
+              {
+                "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/horse-registration-money-core/EFFECTS_AND_QUESTIONS.json",
+                "sha256": "e22dfa74454882f554c2d831da96b91c78f889a88821fffc50db56f0bd2c8316"
+              }
+            ]
+          }
+        }
+      ],
+      "implementation_authorized_by_this_packet": false
+    },
+    "qualification": "One closure owner; all named existing Backlog/Accounting/Lifecycle consumer joins and exact policy/proof boundaries retained."
+  },
+  {
+    "id": "G8-CAUSE-08",
+    "primary_home": "DU-OWED",
+    "phase": 4,
+    "original_contract": {
+      "group_id": "G8-CAUSE-08",
+      "primary_record_ids": ["HORSE-CORE-Q02"],
+      "accountable_lead": "G5",
+      "review_lane": "G4 horse admission / lifecycle",
+      "disposition": "qualified pending-entry question",
+      "deliverable": "Define durable recovery ownership for funded registration retained after nested seat insertion conflict.",
+      "specific_dependencies": "Exact reachable unique violation in horse119 and prior successfully funded202 registration.",
+      "preserved_protections": "Registration40001 rolls back its own collision; legitimate funded pending liability must remain discoverable.",
+      "acceptance_evidence": "Conflict cannot strand or duplicate original funded obligation; recovery uses home-first path, no guessed refund.",
+      "same_or_related_peer_joins": ["G4 original pending-entry owner"],
+      "implementation_writer": null,
+      "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
+      "original_records": [
+        {
+          "evidence_id": "HORSE-CORE-Q02",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/acceptance/horse-core-question-current-overlay.json",
+          "source_sha256": "9c58d7acf04dc76c601ef45b883a1d7d8c6bd77fb977c288f99d32ca4ebeae39",
+          "canonical_controls": ["CA-03-01", "CA-07-08"],
+          "control_family_links": [],
+          "original_controls": [],
+          "control_field_provenance": {
+            "controls": ["CA-03-01", "CA-07-08"]
+          },
+          "classification": "Retained conditional recovery question",
+          "title_or_observation": "See retained evidence record",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "id": "HORSE-CORE-Q02",
+            "status": "Retained conditional recovery question",
+            "addition": "202 registration insertion conflicts raise40001, closing that local rollback concern; separate119 seat INSERT nested caught unique_violation may still retain preceding funded registration. Home-first recovery and legitimate pending liability remain preserved.",
+            "earlier_question": {
+              "id": "HORSE-CORE-Q02",
+              "controlIds": ["CA-03-01", "CA-07-08"],
+              "question": "If seat INSERT fails with unique_violation after a successful new registration, what durable pending-entry receipt/recovery contract owns the retained funded registration and caller seat_taken response?",
+              "evidence": "Seat core74 and100\u2013105, existing top-up home-first caller recovery",
+              "status": "Requires actual reachable violation and intended admission contract; no blanket requirement to erase legitimate liability"
+            },
+            "controls": ["CA-03-01", "CA-07-08"],
+            "evidence_sources": [
+              {
+                "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/horse-paid-seat-core/EFFECTS_AND_QUESTIONS.json",
+                "sha256": "a3913be466eaddf5815b9fe622f7c323c2cc4a43a02237804b5e8a9b4d391000"
+              },
+              {
+                "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/horse-registration-money-core/EFFECTS_AND_QUESTIONS.json",
+                "sha256": "e22dfa74454882f554c2d831da96b91c78f889a88821fffc50db56f0bd2c8316"
+              }
+            ]
+          }
+        }
+      ],
+      "implementation_authorized_by_this_packet": false
+    },
+    "qualification": "One closure owner; all named existing Backlog/Accounting/Lifecycle consumer joins and exact policy/proof boundaries retained."
+  },
+  {
+    "id": "G8-CAUSE-09",
+    "primary_home": "DU-CASH",
+    "phase": 3,
+    "original_contract": {
+      "group_id": "G8-CAUSE-09",
+      "primary_record_ids": ["HORSE-CORE-Q03"],
+      "accountable_lead": "G5",
+      "review_lane": "G4 horse admission / lifecycle",
+      "disposition": "closed body gap with remaining verification",
+      "deliverable": "Retain complete202-body and capacity/wake/late-seat peer receipts; no repeat audit for the earlier missing body.",
+      "specific_dependencies": "Normal funded horse admission and first-play verification remains separate.",
+      "preserved_protections": "Original current evidence dates and zero whole-program completion claim.",
+      "acceptance_evidence": "Peer hashes and full ranges retained; actual required behavioral verification occurs in owning delivery phase.",
+      "same_or_related_peer_joins": [],
+      "implementation_writer": null,
+      "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
+      "original_records": [
+        {
+          "evidence_id": "HORSE-CORE-Q03",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/acceptance/horse-core-question-current-overlay.json",
+          "source_sha256": "9c58d7acf04dc76c601ef45b883a1d7d8c6bd77fb977c288f99d32ca4ebeae39",
+          "canonical_controls": ["CA-03-01"],
+          "control_family_links": [],
+          "original_controls": [],
+          "control_field_provenance": {
+            "controls": ["CA-03-01"]
+          },
+          "classification": "Named body gap CLOSED by complete202 read; downstream ownership joins retained",
+          "title_or_observation": "See retained evidence record",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "id": "HORSE-CORE-Q03",
+            "status": "Named body gap CLOSED by complete202 read; downstream ownership joins retained",
+            "addition": "Actual wallet lower core complete. Capacity247/wake45 have G5 full manifest references; no detailed semantic note was located in the supplied capacity reuse manifest. Root owns actual late-seat chain. No acceptance automatically follows coverage.",
+            "earlier_question": {
+              "id": "HORSE-CORE-Q03",
+              "controlIds": ["CA-03-01"],
+              "question": "Complete fn_register_horse_for_tournament_before_maintenance_gate body and existing capacity/wake dependencies are needed to close actual wallet entry.",
+              "status": "One precisely named original monetary body remains unreviewed here"
+            },
+            "controls": ["CA-03-01"],
+            "evidence_sources": [
+              {
+                "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/horse-paid-seat-core/EFFECTS_AND_QUESTIONS.json",
+                "sha256": "a3913be466eaddf5815b9fe622f7c323c2cc4a43a02237804b5e8a9b4d391000"
+              },
+              {
+                "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/horse-registration-money-core/EFFECTS_AND_QUESTIONS.json",
+                "sha256": "e22dfa74454882f554c2d831da96b91c78f889a88821fffc50db56f0bd2c8316"
+              }
+            ]
+          }
+        }
+      ],
+      "implementation_authorized_by_this_packet": false
+    },
+    "qualification": "One closure owner; all named existing Backlog/Accounting/Lifecycle consumer joins and exact policy/proof boundaries retained."
+  },
+  {
+    "id": "G8-CAUSE-10",
+    "primary_home": "DU-MTT",
+    "phase": 5,
+    "original_contract": {
+      "group_id": "G8-CAUSE-10",
+      "primary_record_ids": ["MTT-CLIENT-001"],
+      "accountable_lead": "G5",
+      "review_lane": "G2 lifecycle with G5 dependency",
+      "disposition": "proposed conditional repair",
+      "deliverable": "Route completed movement through existing parent in-place tab-move owner; fence post-await roster result to event, user, original table and latest move.",
+      "specific_dependencies": "Committed server move receipt/order, shared channel lifecycle and retained-event callbacks.",
+      "preserved_protections": "Keep scoped roster query, recorded errors, parent authoritative resync and background-tab URL ownership.",
+      "acceptance_evidence": "Delayed events, two sequential moves, background tab and account/route changes preserve correct tab identity; reconnect opens committed destination and player takes correct next hand.",
+      "same_or_related_peer_joins": [
+        "Related Backlog CAUSE10/13 and lifecycle movement package; actual18-boundary matrix remains required"
+      ],
+      "implementation_writer": null,
+      "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
+      "original_records": [
+        {
+          "evidence_id": "MTT-CLIENT-001",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/mtt-client-audit/FINDINGS.json",
+          "source_sha256": "e6a8e137286286c7d284afcf066b50c421f189941cfdf222afb870323ae4b4ec",
+          "canonical_controls": ["CA-03-09"],
+          "control_family_links": [],
+          "original_controls": ["BX14"],
+          "control_field_provenance": {
+            "canonical_controls": []
+          },
+          "classification": "Provisional source control-flow finding; no observed browser or financial incident",
+          "title_or_observation": "Rebalance roster response bypasses existing tab-move generation and route ownership boundary",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "id": "MTT-CLIENT-001",
+            "title": "Rebalance roster response bypasses existing tab-move generation and route ownership boundary",
+            "classification": "Provisional source control-flow finding; no observed browser or financial incident",
+            "canonical_controls": [],
+            "original_requirement_coordinates": [
+              "G2-full-prompt.md:260 requirement4",
+              "G2-full-prompt.md:273 verification scenarios",
+              "User explicit MTT movement scope September11,2026"
+            ],
+            "source_revision": "575b9763a2c83f0a9c9e88ae04d5e5b75ac0c35d",
+            "evidence": [
+              {
+                "path": "src/pages/TablePage.tsx",
+                "sha256": "1ffa48fec2214d0b92efac32d71800314d16b710c89aa53f68bb8bf16b893f24",
+                "ranges": [
+                  [12963, 12987],
+                  [13459, 13504],
+                  [14102, 14150]
+                ]
+              },
+              {
+                "path": "src/pages/MultiTablePage.tsx",
+                "sha256": "5f0a2801b25663e02d72289989cb108f3618122b6bcf312df585e26b49ff758a",
+                "ranges": [[2924, 3014]]
+              }
+            ],
+            "observation": "table_rebalance awaits a roster query then directly navigates without a lifecycle/read-generation check or parent move callback. Cleanup cannot cancel an already-started coroutine. Background-tab route ownership also bypassed. Existing parent move callback limits URL replacement to source route and updates tab identity in place.",
+            "prerequisites": [
+              "A delayed read must resolve after source effect replacement for stale navigation",
+              "A moved table must be embedded and off-route for background navigation concern",
+              "No live browser trace or source/SQL economic defect established"
+            ],
+            "preserved_protections": [
+              "Roster read scoped by tournament and user",
+              "Returned errors are thrown and recorded",
+              "Parent authoritative seat refresh and in-place tab move already exist"
+            ],
+            "dependencies": [
+              "Complete parent seat resync/route lifecycle",
+              "Server committed move/broadcast order",
+              "MasterBus shared subscription lifecycle",
+              "Destination reconnect and next actual hand"
+            ],
+            "implementation_owner": "Unassigned; preserve existing page writers",
+            "accountable_lead": "G5 foundation / G2 lifecycle",
+            "acceptance_owner": "G8 with independent reviewer required",
+            "status": "Discovered; canonical reconciliation and independent challenge pending"
+          },
+          "additive_qualifications": [
+            "work/g8/mtt-client-audit/CONTROL_MAPPING_OVERLAY.json",
+            "work/g8/mtt-client-audit/CONTINUATION_HANDOFF.json",
+            "work/g8/mtt-client-audit/BUS_HANDOFF.json",
+            "work/g8/acceptance/mtt-bus-independent0014.json"
+          ]
+        }
+      ],
+      "implementation_authorized_by_this_packet": false
+    },
+    "qualification": "One closure owner; all named existing Backlog/Accounting/Lifecycle consumer joins and exact policy/proof boundaries retained."
+  },
+  {
+    "id": "G8-CAUSE-11",
+    "primary_home": "DU-MTT",
+    "phase": 5,
+    "original_contract": {
+      "group_id": "G8-CAUSE-11",
+      "primary_record_ids": ["BUS-Q01"],
+      "accountable_lead": "G5",
+      "review_lane": "G6 shared delivery / G2 dependency",
+      "disposition": "qualified ownership question",
+      "deliverable": "Verify recovery monitor reference ownership; if defect, give recovery its own retained generation/ref instead of consuming consumer references.",
+      "specific_dependencies": "Actual key/holder/factory evolution during repeated dead-channel recovery.",
+      "preserved_protections": "Critical no-factory exemption, SDK rejoin and last-release teardown.",
+      "acceptance_evidence": "Repeated recovery cannot decrement live consumers or resurrect retired channel; required current consumers still recover.",
+      "same_or_related_peer_joins": [],
+      "implementation_writer": null,
+      "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
+      "original_records": [
+        {
+          "evidence_id": "BUS-Q01",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/mtt-client-audit/AUXILIARY_QUESTIONS.json",
+          "source_sha256": "f34e526bf418ab5af370cf7cd64e6a30bd7f817e7a95944fef66b52b528baa76",
+          "canonical_controls": [],
+          "control_family_links": [],
+          "original_controls": [],
+          "control_field_provenance": {
+            "canonical_controls": []
+          },
+          "classification": "Auxiliary conditional recovery question, not an accepted outage or unique defect",
+          "title_or_observation": "Shared channel health recovery can consume references held by consumers",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "id": "BUS-Q01",
+            "title": "Shared channel health recovery can consume references held by consumers",
+            "status": "Auxiliary conditional recovery question, not an accepted outage or unique defect",
+            "observation": "The monitor releases a channel reference without acquiring its own. Repeated dead-channel ticks may consume consumer references, or a factory may reacquire the retained channel. Actual key, state, holder and factory evolution remains unproved.",
+            "preserved": [
+              "Critical-channel no-factory exemption",
+              "SDK rejoin behavior",
+              "Last-release and reset teardown"
+            ],
+            "sources": ["BUS_HANDOFF.json", "BUS_REVIEW_MANIFEST.json"],
+            "independent_review": "G8-MTT-CLIENT-BUS-REVIEW-0014",
+            "owner": "G5 shared delivery dependency; G6 later domain, G8 assigns implementation",
+            "canonical_controls": []
+          }
+        }
+      ],
+      "implementation_authorized_by_this_packet": false
+    },
+    "qualification": "One closure owner; all named existing Backlog/Accounting/Lifecycle consumer joins and exact policy/proof boundaries retained."
+  },
+  {
+    "id": "G8-CAUSE-12",
+    "primary_home": "DU-MTT",
+    "phase": 5,
+    "original_contract": {
+      "group_id": "G8-CAUSE-12",
+      "primary_record_ids": ["BUS-Q02"],
+      "accountable_lead": "G5",
+      "review_lane": "G6 shared delivery / G2 dependency",
+      "disposition": "qualified ownership question",
+      "deliverable": "Bind shared recovery factory installation/removal to its owner/generation if actual shared registration topology requires it.",
+      "specific_dependencies": "More than one consumer sharing key; exact factory register/remove schedule.",
+      "preserved_protections": "Private-channel authentication, effect-local alive guards and SDK channel semantics.",
+      "acceptance_evidence": "One retired consumer cannot delete live owner factory; no duplicate channel or unauthorized wider subscription.",
+      "same_or_related_peer_joins": [],
+      "implementation_writer": null,
+      "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
+      "original_records": [
+        {
+          "evidence_id": "BUS-Q02",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/mtt-client-audit/AUXILIARY_QUESTIONS.json",
+          "source_sha256": "f34e526bf418ab5af370cf7cd64e6a30bd7f817e7a95944fef66b52b528baa76",
+          "canonical_controls": [],
+          "control_family_links": [],
+          "original_controls": [],
+          "control_field_provenance": {
+            "canonical_controls": []
+          },
+          "classification": "Auxiliary conditional recovery question, not an accepted outage or unique defect",
+          "title_or_observation": "Single recovery factory is shared by multiple channel holders",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "id": "BUS-Q02",
+            "title": "Single recovery factory is shared by multiple channel holders",
+            "status": "Auxiliary conditional recovery question, not an accepted outage or unique defect",
+            "observation": "One factory is stored per key while multiple holders share that key, and cleanup removes the factory without ownership identity. Exact shared factory registration and cleanup topology remains required. The inspected direct tournament consumers do not establish that topology.",
+            "preserved": [
+              "Effect-local alive guards in reusable hooks",
+              "Private-channel authentication guard",
+              "SDK broadcast binding differs from Postgres binding negotiation"
+            ],
+            "sources": ["BUS_HANDOFF.json", "BUS_REVIEW_MANIFEST.json"],
+            "independent_review": "G8-MTT-CLIENT-BUS-REVIEW-0014",
+            "owner": "G5 shared delivery dependency; G6 later domain, G8 assigns implementation",
+            "canonical_controls": []
+          }
+        }
+      ],
+      "implementation_authorized_by_this_packet": false
+    },
+    "qualification": "One closure owner; all named existing Backlog/Accounting/Lifecycle consumer joins and exact policy/proof boundaries retained."
+  },
+  {
+    "id": "G8-CAUSE-13",
+    "primary_home": "DU-IDENTITY",
+    "phase": 3,
+    "original_contract": {
+      "group_id": "G8-CAUSE-13",
+      "primary_record_ids": ["APP-BOOT-Q01"],
+      "accountable_lead": "G5",
+      "review_lane": "G8 bootstrap",
+      "disposition": "join existing cause",
+      "deliverable": "Use Backlog CAUSE01 startup/teardown generation deliverable; do not open another App-only repair.",
+      "specific_dependencies": "Accepted App import guard and fullServiceBootstrap/OfflineQueue/cron peers.",
+      "preserved_protections": "Disposed-before-import guard and optional-service/error isolation.",
+      "acceptance_evidence": "Teardown during already-started awaited boot cannot restart retired work.",
+      "same_or_related_peer_joins": ["SAME coordinated cause Backlog CAUSE01"],
+      "implementation_writer": null,
+      "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
+      "original_records": [
+        {
+          "evidence_id": "APP-BOOT-Q01",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bootstrap-audit/FINDINGS.json",
+          "source_sha256": "3edc6a6e6e7d25cf624982a67e22d11a60f313dccca7cb660727010f34c35d92",
+          "canonical_controls": [],
+          "control_family_links": [],
+          "original_controls": [],
+          "control_field_provenance": {
+            "canonical_controls": []
+          },
+          "classification": "Conditional source question; imported service review assigned",
+          "title_or_observation": "Deferred service startup and shutdown need the actual service lifetime contract",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "id": "APP-BOOT-Q01",
+            "title": "Deferred service startup and shutdown need the actual service lifetime contract",
+            "status": "Conditional source question; imported service review assigned",
+            "observation": "App prevents deferred imports from starting after disposal, but once started it does not await bootServices or join it before shutdownServices. The helper may already enforce generation ownership.",
+            "preserved": [
+              "Disposed-before-import guard",
+              "Error handling and cleanup for started logger/watchdog"
+            ],
+            "limits": [
+              "No late restart, duplicate job or financial operation observed",
+              "Do not duplicate a finding if the service helper already guards the schedule"
+            ],
+            "source": "SOURCE_REVIEW_MANIFEST.json",
+            "owner": "G8 bootstrap; assigned service review by support task",
+            "canonical_controls": []
+          }
+        }
+      ],
+      "implementation_authorized_by_this_packet": false
+    },
+    "qualification": "One closure owner; all named existing Backlog/Accounting/Lifecycle consumer joins and exact policy/proof boundaries retained."
+  },
+  {
+    "id": "G8-CAUSE-14",
+    "primary_home": "DU-REPLAY",
+    "phase": 2,
+    "original_contract": {
+      "group_id": "G8-CAUSE-14",
+      "primary_record_ids": ["APP-BOOT-Q02"],
+      "accountable_lead": "G5",
+      "review_lane": "G8 bootstrap",
+      "disposition": "join safeguard and bookkeeping cause",
+      "deliverable": "Use Backlog CAUSE03/44; keep financial replay categorically refused and report refused/unavailable honestly.",
+      "specific_dependencies": "Full retired OfflineQueue and root online banner consumer.",
+      "preserved_protections": "No financial replay enabled by reconnect; listeners removed and table routes retain own handling.",
+      "acceptance_evidence": "Failed storage or refused queue never claims money synced or retries payment.",
+      "same_or_related_peer_joins": [
+        "Backlog CAUSE03 primary bookkeeping, CAUSE44 retained retirement"
+      ],
+      "implementation_writer": null,
+      "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
+      "original_records": [
+        {
+          "evidence_id": "APP-BOOT-Q02",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bootstrap-audit/FINDINGS.json",
+          "source_sha256": "3edc6a6e6e7d25cf624982a67e22d11a60f313dccca7cb660727010f34c35d92",
+          "canonical_controls": [],
+          "control_family_links": [],
+          "original_controls": [],
+          "control_field_provenance": {
+            "canonical_controls": []
+          },
+          "classification": "Financial caller dependency and copy qualification; no defect outcome accepted",
+          "title_or_observation": "Root reconnect replay requires account and original-operation identity closure",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "id": "APP-BOOT-Q02",
+            "title": "Root reconnect replay requires account and original-operation identity closure",
+            "status": "Financial caller dependency and copy qualification; no defect outcome accepted",
+            "observation": "The global online listener invokes OfflineQueueService.replayQueue. Per-operation admission, original identity and current-account authorization belong to that service and its consumers, now assigned for full review.",
+            "preserved": [
+              "Online/offline listeners removed on cleanup",
+              "Table and multi-table routes excluded from the general reconnect banner"
+            ],
+            "limits": [
+              "No claim table actions are queued",
+              "No duplicated money or lost queued action observed"
+            ],
+            "source": "SOURCE_REVIEW_MANIFEST.json",
+            "owner": "G8 bootstrap; assigned service review by support task",
+            "canonical_controls": []
+          }
+        }
+      ],
+      "implementation_authorized_by_this_packet": false
+    },
+    "qualification": "One closure owner; all named existing Backlog/Accounting/Lifecycle consumer joins and exact policy/proof boundaries retained."
+  },
+  {
+    "id": "G8-CAUSE-15",
+    "primary_home": "DU-REPORT",
+    "phase": 8,
+    "original_contract": {
+      "group_id": "G8-CAUSE-15",
+      "primary_record_ids": ["APP-BOOT-O03"],
+      "accountable_lead": "G5",
+      "review_lane": "G8 inventory",
+      "disposition": "retain scope evidence",
+      "deliverable": "Preserve actual Trade/classic/global cashier route ownership and all134 routes in audit inventory.",
+      "specific_dependencies": "Full Trade/core pages and source pins already recorded.",
+      "preserved_protections": "Registered route is not proof of money mutation or authorization.",
+      "acceptance_evidence": "No original financial front door omitted from final evidence/control map.",
+      "same_or_related_peer_joins": [],
+      "implementation_writer": null,
+      "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
+      "original_records": [
+        {
+          "evidence_id": "APP-BOOT-O03",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/bootstrap-audit/FINDINGS.json",
+          "source_sha256": "3edc6a6e6e7d25cf624982a67e22d11a60f313dccca7cb660727010f34c35d92",
+          "canonical_controls": [],
+          "control_family_links": [],
+          "original_controls": [],
+          "control_field_provenance": {
+            "canonical_controls": []
+          },
+          "classification": "Positive scope inventory, not a financial defect",
+          "title_or_observation": "Actual financial route roots include the separate club Trade cashier",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "id": "APP-BOOT-O03",
+            "title": "Actual financial route roots include the separate club Trade cashier",
+            "status": "Positive scope inventory, not a financial defect",
+            "observation": "The club cashier route renders CashierTradePage; CashierPage is also registered globally and at the club classic route. All134 static paths are retained so the original source queue cannot silently omit actual financial front doors.",
+            "source": "ROUTE_REGISTRATIONS.json",
+            "owner": "G8 source-closure scheduling",
+            "limits": [
+              "A registered route is not proof that its imported page executes a financial mutation",
+              "No complete financial UI audit or permission acceptance"
+            ],
+            "canonical_controls": []
+          }
+        }
+      ],
+      "implementation_authorized_by_this_packet": false
+    },
+    "qualification": "One closure owner; all named existing Backlog/Accounting/Lifecycle consumer joins and exact policy/proof boundaries retained."
+  },
+  {
+    "id": "G8-CAUSE-16",
+    "primary_home": "DU-CREATE",
+    "phase": 6,
+    "original_contract": {
+      "group_id": "G8-CAUSE-16",
+      "primary_record_ids": ["G8-TOURNAMENT-ENTRY-001"],
+      "accountable_lead": "G5",
+      "review_lane": "G2 creation with G5 economics",
+      "disposition": "conditional repair",
+      "deliverable": "Return creation complete only when requested mystery configuration is committed or durably pending with original recovery ownership.",
+      "specific_dependencies": "Current creation defaults/constraints and exact mystery configuration authority; fullLife creators reused.",
+      "preserved_protections": "Valid created event retained; no guessed cancellation or duplicate new creation.",
+      "acceptance_evidence": "Configuration failure after creation gives truthful recoverable result and original event identity, then exact requested approved outcome.",
+      "same_or_related_peer_joins": [],
+      "implementation_writer": null,
+      "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
+      "original_records": [
+        {
+          "evidence_id": "G8-TOURNAMENT-ENTRY-001",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/tournament-entry-audit/OBSERVATIONS.json",
+          "source_sha256": "cce2639a9640da308afd6bfa3f851515401bcde3f7a2f51aaebac792401cedcf",
+          "canonical_controls": [],
+          "control_family_links": [],
+          "original_controls": [],
+          "control_field_provenance": {},
+          "classification": "Conditional source finding or explicitly dormant capability; independent review pending",
+          "title_or_observation": "Creation and requested mystery configuration have separate commits",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "id": "G8-TOURNAMENT-ENTRY-001",
+            "title": "Creation and requested mystery configuration have separate commits",
+            "source_references": "src/services/TournamentService.ts:1153\u20131258",
+            "observed": "The create RPC precedes a second mystery-config RPC. Configuration errors/non-ok results warn and creation continues to refetch/return the event.",
+            "limits": "Actual SQL creation defaults/constraints and configuration authority may constrain consequences; no wrongly funded live event established.",
+            "expected": "Requested accepted configuration must be atomic or explicitly recoverable before announcing complete creation.",
+            "classification": "Conditional source finding or explicitly dormant capability; independent review pending",
+            "accountable": "G5",
+            "acceptance_owner": "G8 independent peer required",
+            "implementation_status": "No new writer or repair",
+            "deployment_status": "Not verified",
+            "canonical_control_mapping": "Pending exact backlog mapping; do not invent canonical IDs"
+          },
+          "additive_qualifications": [
+            "work/g8/tournament-entry-audit/runtime-0002/QUALIFICATIONS_AND_DEPENDENCIES.json",
+            "work/g8/acceptance/independent-review0022-intake.json"
+          ]
+        }
+      ],
+      "implementation_authorized_by_this_packet": false
+    },
+    "qualification": "One closure owner; all named existing Backlog/Accounting/Lifecycle consumer joins and exact policy/proof boundaries retained."
+  },
+  {
+    "id": "G8-CAUSE-17",
+    "primary_home": "DU-CREATE",
+    "phase": 6,
+    "original_contract": {
+      "group_id": "G8-CAUSE-17",
+      "primary_record_ids": ["G8-TOURNAMENT-ENTRY-002"],
+      "accountable_lead": "G5",
+      "review_lane": "G2 creation with G5 economics",
+      "disposition": "conditional original operation repair",
+      "deliverable": "Bind human create request to original event across uncertain response and retry.",
+      "specific_dependencies": "Current server duplicate/authorization contract and operation lookup; do not infer financial loss from missing client key.",
+      "preserved_protections": "Authorized distinct deliberate events remain possible; registration identity path preserved.",
+      "acceptance_evidence": "Lost creation acknowledgment resolves same event; changed request conflicts or becomes explicit new intent.",
+      "same_or_related_peer_joins": [
+        "Life creator request identity findings require exact same-cause reconciliation"
+      ],
+      "implementation_writer": null,
+      "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
+      "original_records": [
+        {
+          "evidence_id": "G8-TOURNAMENT-ENTRY-002",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/tournament-entry-audit/OBSERVATIONS.json",
+          "source_sha256": "cce2639a9640da308afd6bfa3f851515401bcde3f7a2f51aaebac792401cedcf",
+          "canonical_controls": [],
+          "control_family_links": [],
+          "original_controls": [],
+          "control_field_provenance": {},
+          "classification": "Conditional source finding or explicitly dormant capability; independent review pending",
+          "title_or_observation": "Creation caller lacks the durable operation identity used for registration",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "id": "G8-TOURNAMENT-ENTRY-002",
+            "title": "Creation caller lacks the durable operation identity used for registration",
+            "source_references": "src/services/TournamentService.ts:1150\u20131185",
+            "observed": "The create call supplies config/club but no durable request key and exposes a generic retry on an unknown response.",
+            "limits": "No duplicate creation observed; exact server duplicate/authorization contract remains required.",
+            "expected": "Resolve uncertain original creation before treating a retry as a new deliberate event.",
+            "classification": "Conditional source finding or explicitly dormant capability; independent review pending",
+            "accountable": "G5",
+            "acceptance_owner": "G8 independent peer required",
+            "implementation_status": "No new writer or repair",
+            "deployment_status": "Not verified",
+            "canonical_control_mapping": "Pending exact backlog mapping; do not invent canonical IDs"
+          },
+          "additive_qualifications": [
+            "work/g8/tournament-entry-audit/runtime-0002/QUALIFICATIONS_AND_DEPENDENCIES.json",
+            "work/g8/acceptance/independent-review0022-intake.json"
+          ]
+        }
+      ],
+      "implementation_authorized_by_this_packet": false
+    },
+    "qualification": "One closure owner; all named existing Backlog/Accounting/Lifecycle consumer joins and exact policy/proof boundaries retained."
+  },
+  {
+    "id": "G8-CAUSE-18",
+    "primary_home": "DU-CREATE",
+    "phase": 6,
+    "original_contract": {
+      "group_id": "G8-CAUSE-18",
+      "primary_record_ids": ["G8-TOURNAMENT-ENTRY-003"],
+      "accountable_lead": "G5",
+      "review_lane": "G2 scope / G5 estate",
+      "disposition": "qualified authorization question",
+      "deliverable": "Reconcile creation/listing settings errors with exact SQL/access authority and private-event exposure; change only supported mismatch.",
+      "specific_dependencies": "Full GameAccessService and current private/union source guards, creator/scheduler counterparts.",
+      "preserved_protections": "Do not widen access or treat malformed configuration as approval.",
+      "acceptance_evidence": "Actual authorized/unauthorized scope and unavailable settings cases remain truthful and scoped.",
+      "same_or_related_peer_joins": [],
+      "implementation_writer": null,
+      "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
+      "original_records": [
+        {
+          "evidence_id": "G8-TOURNAMENT-ENTRY-003",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/tournament-entry-audit/OBSERVATIONS.json",
+          "source_sha256": "cce2639a9640da308afd6bfa3f851515401bcde3f7a2f51aaebac792401cedcf",
+          "canonical_controls": [],
+          "control_family_links": [],
+          "original_controls": [],
+          "control_field_provenance": {},
+          "classification": "Conditional source finding or explicitly dormant capability; independent review pending",
+          "title_or_observation": "Cross-club configuration read failure has different creation/listing semantics",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "id": "G8-TOURNAMENT-ENTRY-003",
+            "title": "Cross-club configuration read failure has different creation/listing semantics",
+            "source_references": "src/services/TournamentService.ts:632\u2013815,1000\u20131149",
+            "observed": "Creation can proceed after settings parse failure while listing handling refuses/omits failed configuration. Union listing has no explicit is_private filter in this caller.",
+            "limits": "GameAccessService and current SQL/RLS remain separate guards. No unauthorized creation or private listing established.",
+            "expected": "Join exact access helpers and SQL; preserve original club/union/private estate.",
+            "classification": "Conditional source finding or explicitly dormant capability; independent review pending",
+            "accountable": "G5",
+            "acceptance_owner": "G8 independent peer required",
+            "implementation_status": "No new writer or repair",
+            "deployment_status": "Not verified",
+            "canonical_control_mapping": "Pending exact backlog mapping; do not invent canonical IDs"
+          }
+        }
+      ],
+      "implementation_authorized_by_this_packet": false
+    },
+    "qualification": "One closure owner; all named existing Backlog/Accounting/Lifecycle consumer joins and exact policy/proof boundaries retained."
+  },
+  {
+    "id": "G8-CAUSE-19",
+    "primary_home": "DU-REPORT",
+    "phase": 8,
+    "original_contract": {
+      "group_id": "G8-CAUSE-19",
+      "primary_record_ids": ["G8-TOURNAMENT-ENTRY-004"],
+      "accountable_lead": "G5",
+      "review_lane": "G2 lifecycle presentation",
+      "disposition": "qualified display question",
+      "deliverable": "Show authoritative actual blind state beyond stored ladder rather than silently using last stored row when different.",
+      "specific_dependencies": "Reviewed server overflow synthesis and actual consumer contract.",
+      "preserved_protections": "No server forced-bet defect inferred; approved game rules unchanged.",
+      "acceptance_evidence": "Displayed current/next blind level agrees with actual server for last and overflow levels.",
+      "same_or_related_peer_joins": [],
+      "implementation_writer": null,
+      "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
+      "original_records": [
+        {
+          "evidence_id": "G8-TOURNAMENT-ENTRY-004",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/tournament-entry-audit/OBSERVATIONS.json",
+          "source_sha256": "cce2639a9640da308afd6bfa3f851515401bcde3f7a2f51aaebac792401cedcf",
+          "canonical_controls": [],
+          "control_family_links": [],
+          "original_controls": [],
+          "control_field_provenance": {},
+          "classification": "Conditional source finding or explicitly dormant capability; independent review pending",
+          "title_or_observation": "Client level display clamps beyond the stored ladder",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "id": "G8-TOURNAMENT-ENTRY-004",
+            "title": "Client level display clamps beyond the stored ladder",
+            "source_references": "src/services/TournamentService.ts:1693\u20131867",
+            "observed": "The current index can exceed the ladder while displayed blind amounts select its last row; missing data uses fallback amounts/durations.",
+            "limits": "Server overflow synthesis is separately reviewed; no incorrect forced bet claimed. Actual consumer and advertised ladder parity remain required.",
+            "expected": "Display authoritative current blind state without silently inventing an advertised rule.",
+            "classification": "Conditional source finding or explicitly dormant capability; independent review pending",
+            "accountable": "G5",
+            "acceptance_owner": "G8 independent peer required",
+            "implementation_status": "No new writer or repair",
+            "deployment_status": "Not verified",
+            "canonical_control_mapping": "Pending exact backlog mapping; do not invent canonical IDs"
+          }
+        }
+      ],
+      "implementation_authorized_by_this_packet": false
+    },
+    "qualification": "One closure owner; all named existing Backlog/Accounting/Lifecycle consumer joins and exact policy/proof boundaries retained."
+  },
+  {
+    "id": "G8-CAUSE-20",
+    "primary_home": "DU-REPORT",
+    "phase": 8,
+    "original_contract": {
+      "group_id": "G8-CAUSE-20",
+      "primary_record_ids": ["G8-TOURNAMENT-ENTRY-005"],
+      "accountable_lead": "G5",
+      "review_lane": "G2 lifecycle reads",
+      "disposition": "qualified completeness question",
+      "deliverable": "Expose unavailable/partial financial-lifecycle collections distinctly from verified absence in actual callers.",
+      "specific_dependencies": "Named fullservice methods, effective rowcap/cardinality and consumer use; no unbounded generic query.",
+      "preserved_protections": "Existing per-method report and precise filters.",
+      "acceptance_evidence": "Failed and capped reads cannot trigger false empty/recovery decisions; complete reads retain stable continuation.",
+      "same_or_related_peer_joins": [],
+      "implementation_writer": null,
+      "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
+      "original_records": [
+        {
+          "evidence_id": "G8-TOURNAMENT-ENTRY-005",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/tournament-entry-audit/OBSERVATIONS.json",
+          "source_sha256": "cce2639a9640da308afd6bfa3f851515401bcde3f7a2f51aaebac792401cedcf",
+          "canonical_controls": [],
+          "control_family_links": [],
+          "original_controls": [],
+          "control_field_provenance": {},
+          "classification": "Conditional source finding or explicitly dormant capability; independent review pending",
+          "title_or_observation": "Collection failures and unpaged reads can return conclusive-shaped partial values",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "id": "G8-TOURNAMENT-ENTRY-005",
+            "title": "Collection failures and unpaged reads can return conclusive-shaped partial values",
+            "source_references": "src/services/TournamentService.ts:632\u2013846,2312\u20132334,2563\u20132692",
+            "observed": "Several collection helpers return empty/false/partial shapes after errors and do not establish complete result sets.",
+            "limits": "Per-method reporting/filters remain. Effective cap, cardinality, active consumer and runtime impact unproved.",
+            "expected": "Distinguish unavailable/partial reads from verified absence in actual financial/lifecycle callers.",
+            "classification": "Conditional source finding or explicitly dormant capability; independent review pending",
+            "accountable": "G5",
+            "acceptance_owner": "G8 independent peer required",
+            "implementation_status": "No new writer or repair",
+            "deployment_status": "Not verified",
+            "canonical_control_mapping": "Pending exact backlog mapping; do not invent canonical IDs"
+          }
+        }
+      ],
+      "implementation_authorized_by_this_packet": false
+    },
+    "qualification": "One closure owner; all named existing Backlog/Accounting/Lifecycle consumer joins and exact policy/proof boundaries retained."
+  },
+  {
+    "id": "G8-CAUSE-21",
+    "primary_home": "DU-LEGACY",
+    "phase": 2,
+    "original_contract": {
+      "group_id": "G8-CAUSE-21",
+      "primary_record_ids": ["G8-TOURNAMENT-ENTRY-006"],
+      "accountable_lead": "G5",
+      "review_lane": "G2 movement",
+      "disposition": "dormant legacy disposition",
+      "deliverable": "Keep active server movement/receipt/retirement as authority; do not activate or separately rebuild dormant client table helpers.",
+      "specific_dependencies": "Complete method-name census and eventual retirement applicability; actual18movement acceptance requirements.",
+      "preserved_protections": "Active move journal and destination custody protections; source absence limited to surveyed scope.",
+      "acceptance_evidence": "Actual moved-player path verified independently; dormant helpers cannot substitute for breaking/balancing proof.",
+      "same_or_related_peer_joins": [],
+      "implementation_writer": null,
+      "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
+      "original_records": [
+        {
+          "evidence_id": "G8-TOURNAMENT-ENTRY-006",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/tournament-entry-audit/OBSERVATIONS.json",
+          "source_sha256": "cce2639a9640da308afd6bfa3f851515401bcde3f7a2f51aaebac792401cedcf",
+          "canonical_controls": [],
+          "control_family_links": [],
+          "original_controls": [],
+          "control_field_provenance": {},
+          "classification": "Conditional source finding or explicitly dormant capability; independent review pending",
+          "title_or_observation": "Legacy client table helpers are not active movement proof",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "id": "G8-TOURNAMENT-ENTRY-006",
+            "title": "Legacy client table helpers are not active movement proof",
+            "source_references": "src/services/TournamentService.ts:2293\u20132462",
+            "observed": "balance/check merge/final helpers retain historical hard-coded capacity/variant and incomplete movement/ack behavior. Static whole-src method-name census finds only this file definitions/comments/internal calls.",
+            "limits": "Dormant static capability, not current MTT defect or repository-wide dynamic absence. Preserve active server move/receipt/retirement authority; no automatic legacy removal or activation.",
+            "expected": "Certify the actual server and mounted client flow against the18-row movement matrix.",
+            "classification": "Conditional source finding or explicitly dormant capability; independent review pending",
+            "accountable": "G5",
+            "acceptance_owner": "G8 independent peer required",
+            "implementation_status": "No new writer or repair",
+            "deployment_status": "Not verified",
+            "canonical_control_mapping": "Pending exact backlog mapping; do not invent canonical IDs"
+          }
+        }
+      ],
+      "implementation_authorized_by_this_packet": false
+    },
+    "qualification": "One closure owner; all named existing Backlog/Accounting/Lifecycle consumer joins and exact policy/proof boundaries retained."
+  },
+  {
+    "id": "G8-CAUSE-22",
+    "primary_home": "DU-CASH",
+    "phase": 3,
+    "original_contract": {
+      "group_id": "G8-CAUSE-22",
+      "primary_record_ids": ["G8-TOURNAMENT-ENTRY-007"],
+      "accountable_lead": "G5",
+      "review_lane": "G2 admission",
+      "disposition": "qualified order/acknowledgment question",
+      "deliverable": "Use current waitlist authority for ordering and acknowledged leave/promotion; correct count-plus-one/zero-row handling only where constraints/dispatcher do not provide contract.",
+      "specific_dependencies": "Exact waitlist constraints/RLS/dispatcher and live XMTT caller.",
+      "preserved_protections": "Own-user/target filter and reported read errors.",
+      "acceptance_evidence": "Concurrent joins, repeated leave and actual promotion preserve ordered eligible original entry and correct destination.",
+      "same_or_related_peer_joins": [],
+      "implementation_writer": null,
+      "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
+      "original_records": [
+        {
+          "evidence_id": "G8-TOURNAMENT-ENTRY-007",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/tournament-entry-audit/OBSERVATIONS.json",
+          "source_sha256": "cce2639a9640da308afd6bfa3f851515401bcde3f7a2f51aaebac792401cedcf",
+          "canonical_controls": [],
+          "control_family_links": [],
+          "original_controls": [],
+          "control_field_provenance": {},
+          "classification": "Conditional source finding or explicitly dormant capability; independent review pending",
+          "title_or_observation": "Waitlist order reservation and completion need authority joins",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "id": "G8-TOURNAMENT-ENTRY-007",
+            "title": "Waitlist order reservation and completion need authority joins",
+            "source_references": "src/services/TournamentService.ts:2587\u20132692",
+            "observed": "join computes count+1 before insertion; leave awaits delete without checking affected row count. XMTTPage has an actual join caller.",
+            "limits": "Read errors and own target filters are present. Current constraints/RLS/dispatcher may serialize or reject; no duplicate seat or lost player established.",
+            "expected": "Verify concurrent ordering, identity and actual promotion/seat placement through the current server path.",
+            "classification": "Conditional source finding or explicitly dormant capability; independent review pending",
+            "accountable": "G5",
+            "acceptance_owner": "G8 independent peer required",
+            "implementation_status": "No new writer or repair",
+            "deployment_status": "Not verified",
+            "canonical_control_mapping": "Pending exact backlog mapping; do not invent canonical IDs"
+          }
+        }
+      ],
+      "implementation_authorized_by_this_packet": false
+    },
+    "qualification": "One closure owner; all named existing Backlog/Accounting/Lifecycle consumer joins and exact policy/proof boundaries retained."
+  },
+  {
+    "id": "G8-CAUSE-23",
+    "primary_home": "DU-CREATE",
+    "phase": 6,
+    "original_contract": {
+      "group_id": "G8-CAUSE-23",
+      "primary_record_ids": ["G8-TOURNAMENT-ENTRY-SQL-001"],
+      "accountable_lead": "G5",
+      "review_lane": "G2 creator / G5 payout",
+      "disposition": "proposed repair",
+      "deliverable": "Use canonical tournament_id returned by creation to bind approved payout choice to that same event in the transaction.",
+      "specific_dependencies": "Actual caller capability to supply payout choice; current builder omission must remain qualified.",
+      "preserved_protections": "Existing accepted defaults, atomic creation and approval policy; no new percentage adopted.",
+      "acceptance_evidence": "Supported15/20 choice on exact API path reaches same created event; absent input retains correct default without false claim.",
+      "same_or_related_peer_joins": [
+        "Independent0022 supports mismatch; current builder has no explicit payoutPercent"
+      ],
+      "implementation_writer": null,
+      "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
+      "original_records": [
+        {
+          "evidence_id": "G8-TOURNAMENT-ENTRY-SQL-001",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/tournament-entry-audit/runtime-0001/OBSERVATIONS.json",
+          "source_sha256": "bb6991d6d9f6f1af69d0650f0aaf4c862c18a98f90e0fb2275886338117e34fd",
+          "canonical_controls": [],
+          "control_family_links": [],
+          "original_controls": [],
+          "control_field_provenance": {},
+          "classification": "Confirmed current nested return-key mismatch; actual created event not invoked",
+          "title_or_observation": "Creation wrapper cannot locate returned event ID for selected payout percentage",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "id": "G8-TOURNAMENT-ENTRY-SQL-001",
+            "title": "Creation wrapper cannot locate returned event ID for selected payout percentage",
+            "classification": "Confirmed current nested return-key mismatch; actual created event not invoked",
+            "source_references": [
+              "fn_create_tournament26\u201330",
+              "fn_create_tournament_governed_legacy272\u2013274"
+            ],
+            "observed": "Wrapper extracts tournamentId or id; its sole called creation core returns tournament_id. The wrapper follow-up therefore has null v_id and cannot apply requested15/20 payout_percent. It still returns the core successful result.",
+            "limits": "No actual creation, money, player row or served UI was exercised. Underlying defaults/other triggers and actual input still require joins; this proves the advertised wrapper update is ineffective, not a measured financial loss. Existing numeric policy is not changed.",
+            "expected": "Preserve the existing canonical creation response and correctly bind the approved payout choice to the same created event within one transaction.",
+            "accountable": "G5",
+            "independent_acceptance": "Pending",
+            "implementation_status": "No new repair writer",
+            "deployment_status": "Unverified"
+          },
+          "additive_qualifications": [
+            "work/g8/tournament-entry-audit/runtime-0002/QUALIFICATIONS_AND_DEPENDENCIES.json",
+            "work/g8/acceptance/independent-review0022-intake.json"
+          ]
+        }
+      ],
+      "implementation_authorized_by_this_packet": false
+    },
+    "qualification": "One closure owner; all named existing Backlog/Accounting/Lifecycle consumer joins and exact policy/proof boundaries retained."
+  },
+  {
+    "id": "G8-CAUSE-24",
+    "primary_home": "DU-REPORT",
+    "phase": 8,
+    "original_contract": {
+      "group_id": "G8-CAUSE-24",
+      "primary_record_ids": ["TPS-POS-001", "TPS-POS-002", "TPS-POS-003"],
+      "accountable_lead": "G5",
+      "review_lane": "G5 financial statement / G6 UI",
+      "disposition": "retain safeguards",
+      "deliverable": "Preserve scoped own-obligation reader, exact safe-cent/status parser, complete tuple cursor and keyed component lifetime.",
+      "specific_dependencies": "Independent0028 full411source+53SQL; actual original payment authority separate.",
+      "preserved_protections": "No mutation; unknown/owed/partial/paid explicit; safe parser rejects badscope/amount; paidprojection is not bankproof.",
+      "acceptance_evidence": "Delivery changes retain current-role scope and cursor guarantees; never mark ledger/deployment paid from display alone.",
+      "same_or_related_peer_joins": [],
+      "implementation_writer": null,
+      "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
+      "original_records": [
+        {
+          "evidence_id": "TPS-POS-001",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/tournament-payment-status-audit/OBSERVATIONS.json",
+          "source_sha256": "e96f6e594ba8e3a6da2d1ab420a6af24dde646cfbea67059fcc99c82ff6a2288",
+          "canonical_controls": ["CA-05-10"],
+          "control_family_links": [],
+          "original_controls": [],
+          "control_field_provenance": {
+            "controls": ["CA-05-10"]
+          },
+          "classification": "Source safeguard",
+          "title_or_observation": "Financial payment rows remount by user/event/club key. Initial reads use effect cancellation; append uses mounted ref. Refresh is disabled during either load. Unconfirmed/owed/partial/paid are explicit, and satellite paid value is labeled transferred. No payment mutation exists in this component.",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "id": "TPS-POS-001",
+            "classification": "Source safeguard",
+            "controls": ["CA-05-10"],
+            "observation": "Financial payment rows remount by user/event/club key. Initial reads use effect cancellation; append uses mounted ref. Refresh is disabled during either load. Unconfirmed/owed/partial/paid are explicit, and satellite paid value is labeled transferred. No payment mutation exists in this component.",
+            "limits": "Actual hook/store/auth generation and served behavior are separate; no browser or payment test. Appendix state-only loading guard is not a claim of cross-context serialization."
+          },
+          "additive_qualifications": ["work/g8/acceptance/independent-review0028-intake.json"]
+        },
+        {
+          "evidence_id": "TPS-POS-002",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/tournament-payment-status-audit/OBSERVATIONS.json",
+          "source_sha256": "e96f6e594ba8e3a6da2d1ab420a6af24dde646cfbea67059fcc99c82ff6a2288",
+          "canonical_controls": ["CA-05-10", "CA-06-01"],
+          "control_family_links": [],
+          "original_controls": [],
+          "control_field_provenance": {
+            "controls": ["CA-05-10", "CA-06-01"]
+          },
+          "classification": "Source contract safeguard",
+          "title_or_observation": "Parser validates response user and every requested event/club scope, finite nonnegative exact safe-cent amounts and paid<=owed. State derives from remaining balance; tuple cursor must match the last item exactly. Errors refuse page rather than substitute a paid state.",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "id": "TPS-POS-002",
+            "classification": "Source contract safeguard",
+            "controls": ["CA-05-10", "CA-06-01"],
+            "observation": "Parser validates response user and every requested event/club scope, finite nonnegative exact safe-cent amounts and paid<=owed. State derives from remaining balance; tuple cursor must match the last item exactly. Errors refuse page rather than substitute a paid state.",
+            "limits": "No independently verified obligation payment or entitlement issuance. Row ids/dates/kinds validation is source contract; caller passes expected authenticated store user and backend binds auth.uid."
+          },
+          "additive_qualifications": ["work/g8/acceptance/independent-review0028-intake.json"]
+        },
+        {
+          "evidence_id": "TPS-POS-003",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/tournament-payment-status-audit/OBSERVATIONS.json",
+          "source_sha256": "e96f6e594ba8e3a6da2d1ab420a6af24dde646cfbea67059fcc99c82ff6a2288",
+          "canonical_controls": ["CA-05-10", "CA-06-01"],
+          "control_family_links": [],
+          "original_controls": [],
+          "control_field_provenance": {
+            "controls": ["CA-05-10", "CA-06-01"]
+          },
+          "classification": "Current SQL reader safeguard",
+          "title_or_observation": "Authenticated-only definer refuses null auth, invalid limit1..100 and partial cursor. Own obligations join event, honor optional event/club, order(created_at,id) and use strict tuple continuation with limit+1. JSON returns both cursor parts. No writes or custom helper children.",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "id": "TPS-POS-003",
+            "classification": "Current SQL reader safeguard",
+            "controls": ["CA-05-10", "CA-06-01"],
+            "observation": "Authenticated-only definer refuses null auth, invalid limit1..100 and partial cursor. Own obligations join event, honor optional event/club, order(created_at,id) and use strict tuple continuation with limit+1. JSON returns both cursor parts. No writes or custom helper children.",
+            "limits": "This closes the direct reader gap and is contrary evidence against generalizing CORE094 to every statement. Tournament name/club are current parent projections; underlying original entitlement/source retention remains G5-owned metadata and financial authority. No business rows queried."
+          },
+          "additive_qualifications": ["work/g8/acceptance/independent-review0028-intake.json"]
+        }
+      ],
+      "implementation_authorized_by_this_packet": false
+    },
+    "qualification": "One closure owner; all named existing Backlog/Accounting/Lifecycle consumer joins and exact policy/proof boundaries retained."
+  },
+  {
+    "id": "G8-CAUSE-25",
+    "primary_home": "DU-IDENTITY",
+    "phase": 3,
+    "original_contract": {
+      "group_id": "G8-CAUSE-25",
+      "primary_record_ids": ["TPS-OBS-001"],
+      "accountable_lead": "G5",
+      "review_lane": "G8 bootstrap",
+      "disposition": "join qualified hydration cause",
+      "deliverable": "Join Backlog CAUSE04/19 identity-hydration and request-generation work; no separate payment-reader authentication repair.",
+      "specific_dependencies": "Actual store/auth listener lifetime and same user loadProfile contract.",
+      "preserved_protections": "Existing effect cancellation, key remount and server auth.uid scope.",
+      "acceptance_evidence": "Out-of-order hydration cannot replace current identity or repaint old financial scope.",
+      "same_or_related_peer_joins": ["Backlog CAUSE04/19 related current account boundary"],
+      "implementation_writer": null,
+      "writer_status": "G8 must identify and assign sole current writer after plan acceptance; no writer inferred from history",
+      "original_records": [
+        {
+          "evidence_id": "TPS-OBS-001",
+          "source": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/tournament-payment-status-audit/OBSERVATIONS.json",
+          "source_sha256": "e96f6e594ba8e3a6da2d1ab420a6af24dde646cfbea67059fcc99c82ff6a2288",
+          "canonical_controls": ["CA-06-01", "CA-05-10"],
+          "control_family_links": [],
+          "original_controls": [],
+          "control_field_provenance": {
+            "controls": ["CA-06-01", "CA-05-10"]
+          },
+          "classification": "Qualified shared authentication hydration boundary",
+          "title_or_observation": "useAuthUser reads a session when local user is null, checks effect cancellation before setUser, then starts loadProfile without awaiting it. Its effect depends on user only; isAuthenticated output accepts a nonnull store user. Mounted helper resets/refuses correctly across effect cleanup and key-remount.",
+          "accountable_lead": "G5",
+          "acceptance_owner": "G8",
+          "acceptance": "Registration only; use separate exact acceptance decisions and qualification overlays. No aggregate correctness acceptance.",
+          "evidence_record": {
+            "id": "TPS-OBS-001",
+            "classification": "Qualified shared authentication hydration boundary",
+            "controls": ["CA-06-01", "CA-05-10"],
+            "observation": "useAuthUser reads a session when local user is null, checks effect cancellation before setUser, then starts loadProfile without awaiting it. Its effect depends on user only; isAuthenticated output accepts a nonnull store user. Mounted helper resets/refuses correctly across effect cleanup and key-remount.",
+            "limits": "Store-only hydration/current-auth generation belongs existing bootstrap context findings. This is not an independently proved logout race or backend authentication bypass; SDK/server state is not changed by setUser. Existing useUserStore peer body and auth listener ownership remain, with no duplicated store audit."
+          },
+          "additive_qualifications": ["work/g8/acceptance/independent-review0028-intake.json"]
+        }
+      ],
+      "implementation_authorized_by_this_packet": false
+    },
+    "qualification": "One closure owner; all named existing Backlog/Accounting/Lifecycle consumer joins and exact policy/proof boundaries retained."
+  }
+]

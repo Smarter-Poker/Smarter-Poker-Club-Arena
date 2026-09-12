@@ -223,12 +223,15 @@ export class HandController {
       // have refused the hand it had just dealt. The runout now cuts in the
       // table's own unit and tells determineWinners what that unit is, so both
       // the per-board slice and a tie chopped on one board are whole Diamonds.
-      // Bomb pots stay: their award rides the p_units lane the accepted-hand
-      // commit refuses for a Diamond hand.
+      // BOMB POTS LEFT IT LATER THE SAME DAY. Their award breakdown rides the
+      // p_units lane, which the accepted-hand commit refused outright for a
+      // Diamond hand; it now requires every unit amount to be whole, the same
+      // rule it already applied to every other amount on the hand. The ante is
+      // rounded to the table's own unit below and the boundary refuses a row
+      // whose ante could not be whole, so neither half can produce a fraction.
       if (
         config.isTournament ||
         config.gameVariant !== 'nlh' ||
-        config.bombPot ||
         config.insuranceEnabled ||
         config.rakeConfig.percent !== 0 ||
         config.rakeConfig.cap !== 0 ||
@@ -761,12 +764,24 @@ export class HandController {
      * Rounding here fixes both, because this is the single value both the
      * charge and the announcement are derived from.
      */
+    /* AND TO THE UNIT, NOT ONLY TO THE CENT (2026-09-12). A cent is the
+       indivisible unit of a chip and half of a Diamond, and the multiplier
+       slider steps by 0.5, so 1.5x a one Diamond blind is one and a half
+       Diamonds - a forced bet the hand guard refuses, from a table that has
+       already dealt. The boundary refuses a row whose ante could not be whole;
+       this is the second half of the same rule, at the single value both the
+       charge and the announcement are derived from. */
+    const anteUnitCents = this.config.isTournament || this.config.asset === 'diamonds' ? 100 : 1;
     const anteAmount =
-      Math.round(
-        (bombPot.anteFixed && bombPot.anteFixed > 0
+      (Math.round(
+        ((bombPot.anteFixed && bombPot.anteFixed > 0
           ? bombPot.anteFixed
-          : bigBlind * bombPot.anteMultiplier) * 100
-      ) / 100;
+          : bigBlind * bombPot.anteMultiplier) *
+          100) /
+          anteUnitCents
+      ) *
+        anteUnitCents) /
+      100;
 
     const dealtIn = this.state.players.filter((p) => !p.is_sitting_out);
 

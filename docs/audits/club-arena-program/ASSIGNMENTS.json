@@ -1,0 +1,537 @@
+[
+  {
+    "id": "G5-INTAKE-0001",
+    "generation": 1,
+    "worker": "/root/g5_foundation_lead",
+    "role": "G5 technical lead",
+    "accountable_lead": "/root/g5_foundation_lead",
+    "coordinator": "/root",
+    "phase": "Phase 1, Total Phases Not Yet Determined",
+    "package_revision": 4,
+    "package_sha256": "12904b8264d125e72949ceab6cf87d45f135e2cc062e8afb6946688705867550",
+    "base_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+    "full_prompts": ["handoff/G5-full-prompt.rev4.txt"],
+    "allowed_write_paths": [
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5"
+    ],
+    "allowed_runtime_objects": "Read-only recovery/metadata; no financial probes",
+    "prohibited_mutations": [
+      "Shared code/index",
+      "Live financial state",
+      "Credentials",
+      "Other owners resources",
+      "Deployments"
+    ],
+    "resource_reservations": [],
+    "delegation_allowance": "None; flat siblings managed by G8",
+    "evidence_inputs": [
+      "Canonical existing registers linked from PROGRAM_INDEX.md",
+      "Recovered PR/issues snapshot",
+      "Existing owner acknowledgments"
+    ],
+    "deliverable": "Recovered canonical accounting IDs/evidence and engineering research/oracles; return missing/delta audit assignments",
+    "return_condition": "Submit exact references, scope and limitations to G8 and G5; no phase completion claim",
+    "acceptance_owner": "/root",
+    "checkpoints": [
+      "Research review before substantive audit",
+      "Baseline review before ordinary implementation",
+      "Independent integration/release acceptance",
+      "Post-delivery/foundation acceptance"
+    ],
+    "main_coordination_task": "01a0908a-36f9-7042-b4a2-02fb14d5a53e",
+    "status": "Submitted; G8 intake review completed with combined research gaps retained"
+  },
+  {
+    "id": "G5-LIFE-INTAKE-0001",
+    "generation": 1,
+    "worker": "/root/foundation_lifecycle",
+    "role": "G1/G2/G3 bounded foundation delegate",
+    "accountable_lead": "/root/g5_foundation_lead",
+    "coordinator": "/root",
+    "phase": "Phase 1, Total Phases Not Yet Determined",
+    "package_revision": 4,
+    "package_sha256": "12904b8264d125e72949ceab6cf87d45f135e2cc062e8afb6946688705867550",
+    "base_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+    "full_prompts": [
+      "handoff/G1-full-prompt.rev4.txt",
+      "handoff/G2-full-prompt.rev4.txt",
+      "handoff/G3-full-prompt.rev4.txt"
+    ],
+    "allowed_write_paths": [
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-lifecycle"
+    ],
+    "allowed_runtime_objects": "Read-only recovery/metadata; no financial probes",
+    "prohibited_mutations": [
+      "Shared code/index",
+      "Live financial state",
+      "Credentials",
+      "Other owners resources",
+      "Deployments"
+    ],
+    "resource_reservations": [],
+    "delegation_allowance": "None; flat siblings managed by G8",
+    "evidence_inputs": [
+      "Canonical existing registers linked from PROGRAM_INDEX.md",
+      "Recovered PR/issues snapshot",
+      "Existing owner acknowledgments"
+    ],
+    "deliverable": "Official operator lifecycle oracles, approved route roster leads, existing evidence and necessary dependencies",
+    "return_condition": "Submit exact references, scope and limitations to G8 and G5; no phase completion claim",
+    "acceptance_owner": "/root",
+    "checkpoints": [
+      "Research review before substantive audit",
+      "Baseline review before ordinary implementation",
+      "Independent integration/release acceptance",
+      "Post-delivery/foundation acceptance"
+    ],
+    "main_coordination_task": "01a0908a-36f9-7042-b4a2-02fb14d5a53e",
+    "status": "Submitted; G8 intake review completed with combined research gaps retained"
+  },
+  {
+    "id": "G5-CONTRACT-INTAKE-0001",
+    "generation": 1,
+    "worker": "/root/foundation_contract_review",
+    "role": "G4/G6/G7 bounded foundation delegate/reviewer",
+    "accountable_lead": "/root/g5_foundation_lead",
+    "coordinator": "/root",
+    "phase": "Phase 1, Total Phases Not Yet Determined",
+    "package_revision": 4,
+    "package_sha256": "12904b8264d125e72949ceab6cf87d45f135e2cc062e8afb6946688705867550",
+    "base_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+    "full_prompts": [
+      "handoff/G4-full-prompt.rev4.txt",
+      "handoff/G6-full-prompt.rev4.txt",
+      "handoff/G7-full-prompt.rev4.txt"
+    ],
+    "allowed_write_paths": [
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review"
+    ],
+    "allowed_runtime_objects": "Read-only recovery/metadata; no financial probes",
+    "prohibited_mutations": [
+      "Shared code/index",
+      "Live financial state",
+      "Credentials",
+      "Other owners resources",
+      "Deployments"
+    ],
+    "resource_reservations": [],
+    "delegation_allowance": "None; flat siblings managed by G8",
+    "evidence_inputs": [
+      "Canonical existing registers linked from PROGRAM_INDEX.md",
+      "Recovered PR/issues snapshot",
+      "Existing owner acknowledgments"
+    ],
+    "deliverable": "Approved economic/delivery/recovery contracts, evidence applicability and explicit decision gaps",
+    "return_condition": "Submit exact references, scope and limitations to G8 and G5; no phase completion claim",
+    "acceptance_owner": "/root",
+    "checkpoints": [
+      "Research review before substantive audit",
+      "Baseline review before ordinary implementation",
+      "Independent integration/release acceptance",
+      "Post-delivery/foundation acceptance"
+    ],
+    "main_coordination_task": "01a0908a-36f9-7042-b4a2-02fb14d5a53e",
+    "status": "Submitted; G8 intake review completed with combined research gaps retained"
+  },
+  {
+    "id": "G8-CONNECTED-0001",
+    "generation": 1,
+    "role": "G8 bounded support task, not technical lead",
+    "task_title": "G8 Connected Service Recovery",
+    "thread_id": "01a0923b-2fea-7a40-a872-fd98e90b8094",
+    "accountable_lead": "G8",
+    "base_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+    "package_revision": 4,
+    "package_sha256": "12904b8264d125e72949ceab6cf87d45f135e2cc062e8afb6946688705867550",
+    "deliverable": "External WH/workers authority records",
+    "allowed_write_paths": [
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/work",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/outputs"
+    ],
+    "prohibited_mutations": [
+      "Shared code/index",
+      "Live financial state",
+      "Credentials",
+      "Other owners resources",
+      "Deployments",
+      "All live and isolated financial tests or runtime mutations",
+      "Issue/PR edits, comments, closures and merge enablement",
+      "Production deployments, host changes, backup/restore drills",
+      "Shared Git indexes and source files"
+    ],
+    "resource_reservations": [],
+    "delegation_allowance": "None",
+    "acceptance_owner": "G8",
+    "return_condition": "Exact bounded evidence to main coordination task; no technical phase acceptance",
+    "main_coordination_task": "01a0908a-36f9-7042-b4a2-02fb14d5a53e",
+    "coordinator": "G8 /root",
+    "phase": "Phase 1 preparation; no independent technical phase",
+    "full_prompts": [
+      {
+        "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/program-records/handoff/G5-full-prompt.rev4.txt",
+        "archived_relative_path": "handoff/G5-full-prompt.rev4.txt",
+        "sha256": "434f8f3dbe1ac520d4d7a00023f061fb7b2cb0abaea96595d33cadbdeb8c62e9"
+      },
+      {
+        "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/program-records/handoff/G8-full-prompt.rev4.txt",
+        "archived_relative_path": "handoff/G8-full-prompt.rev4.txt",
+        "sha256": "72a4ba2b62303c71ae8fac3fbba4cd55ee7a9809b4b8a5d7bd974707d7385a97"
+      }
+    ],
+    "allowed_runtime_objects": "Read-only source, task, GitHub and bounded metadata recovery only; no mutation, financial probes or tests",
+    "evidence_inputs": [
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/recovery/open-prs.json",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/recovery/open-issues.json",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/RECOVERY.md",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/LEGACY_FINDINGS_CROSSWALK.csv",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/program-records/OWNERSHIP.md",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/program-records/PROGRAM_INDEX.md"
+    ],
+    "checkpoints": [
+      "Return exact evidence provenance and limitations to main task",
+      "G8 reviews support evidence before technical use; this is not phase acceptance"
+    ],
+    "status": "Running at last observed snapshot; return pending",
+    "metadata_amendment": {
+      "recorded_at": "2026-09-11T20:56:55.129831+00:00",
+      "generation": 1,
+      "reason": "R2: preserve full original dispatch in durable envelope; no scope expansion"
+    }
+  },
+  {
+    "id": "G8-DR-0001",
+    "generation": 1,
+    "role": "G8 bounded support task, not technical lead",
+    "task_title": "G8 Durability Evidence Recovery",
+    "thread_id": "01a0923b-44f8-7911-979c-6633cca1adc1",
+    "accountable_lead": "G8",
+    "base_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+    "package_revision": 4,
+    "package_sha256": "12904b8264d125e72949ceab6cf87d45f135e2cc062e8afb6946688705867550",
+    "deliverable": "Original infrastructure durability/restore evidence",
+    "allowed_write_paths": [
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-durability-evidence/work",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-durability-evidence/outputs"
+    ],
+    "prohibited_mutations": [
+      "Shared code/index",
+      "Live financial state",
+      "Credentials",
+      "Other owners resources",
+      "Deployments",
+      "All live and isolated financial tests or runtime mutations",
+      "Issue/PR edits, comments, closures and merge enablement",
+      "Production deployments, host changes, backup/restore drills",
+      "Shared Git indexes and source files"
+    ],
+    "resource_reservations": [],
+    "delegation_allowance": "None",
+    "acceptance_owner": "G8",
+    "return_condition": "Exact bounded evidence to main coordination task; no technical phase acceptance",
+    "main_coordination_task": "01a0908a-36f9-7042-b4a2-02fb14d5a53e",
+    "coordinator": "G8 /root",
+    "phase": "Phase 1 preparation; no independent technical phase",
+    "full_prompts": [
+      {
+        "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/program-records/handoff/G5-full-prompt.rev4.txt",
+        "archived_relative_path": "handoff/G5-full-prompt.rev4.txt",
+        "sha256": "434f8f3dbe1ac520d4d7a00023f061fb7b2cb0abaea96595d33cadbdeb8c62e9"
+      },
+      {
+        "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/program-records/handoff/G8-full-prompt.rev4.txt",
+        "archived_relative_path": "handoff/G8-full-prompt.rev4.txt",
+        "sha256": "72a4ba2b62303c71ae8fac3fbba4cd55ee7a9809b4b8a5d7bd974707d7385a97"
+      }
+    ],
+    "allowed_runtime_objects": "Read-only source, task, GitHub and bounded metadata recovery only; no mutation, financial probes or tests",
+    "evidence_inputs": [
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/recovery/open-prs.json",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/recovery/open-issues.json",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/RECOVERY.md",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/LEGACY_FINDINGS_CROSSWALK.csv",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/program-records/OWNERSHIP.md",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/program-records/PROGRAM_INDEX.md"
+    ],
+    "checkpoints": [
+      "Return exact evidence provenance and limitations to main task",
+      "G8 reviews support evidence before technical use; this is not phase acceptance"
+    ],
+    "status": "Running at last observed snapshot; return pending",
+    "metadata_amendment": {
+      "recorded_at": "2026-09-11T20:56:55.129831+00:00",
+      "generation": 1,
+      "reason": "R2: preserve full original dispatch in durable envelope; no scope expansion"
+    }
+  },
+  {
+    "id": "G8-BACKLOG-0001",
+    "generation": 1,
+    "role": "G8 bounded support task, not technical lead",
+    "task_title": "G8 Backlog Reconciliation",
+    "thread_id": "01a0923b-542c-7433-9466-795e3a50f483",
+    "accountable_lead": "G8",
+    "base_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+    "package_revision": 4,
+    "package_sha256": "12904b8264d125e72949ceab6cf87d45f135e2cc062e8afb6946688705867550",
+    "deliverable": "GitHub body/comment links to canonical IDs",
+    "allowed_write_paths": [
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-backlog-reconciliation/work",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-backlog-reconciliation/outputs"
+    ],
+    "prohibited_mutations": [
+      "Shared code/index",
+      "Live financial state",
+      "Credentials",
+      "Other owners resources",
+      "Deployments",
+      "All live and isolated financial tests or runtime mutations",
+      "Issue/PR edits, comments, closures and merge enablement",
+      "Production deployments, host changes, backup/restore drills",
+      "Shared Git indexes and source files"
+    ],
+    "resource_reservations": [],
+    "delegation_allowance": "None",
+    "acceptance_owner": "G8",
+    "return_condition": "Exact bounded evidence to main coordination task; no technical phase acceptance",
+    "main_coordination_task": "01a0908a-36f9-7042-b4a2-02fb14d5a53e",
+    "coordinator": "G8 /root",
+    "phase": "Phase 1 preparation; no independent technical phase",
+    "full_prompts": [
+      {
+        "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/program-records/handoff/G5-full-prompt.rev4.txt",
+        "archived_relative_path": "handoff/G5-full-prompt.rev4.txt",
+        "sha256": "434f8f3dbe1ac520d4d7a00023f061fb7b2cb0abaea96595d33cadbdeb8c62e9"
+      },
+      {
+        "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/program-records/handoff/G8-full-prompt.rev4.txt",
+        "archived_relative_path": "handoff/G8-full-prompt.rev4.txt",
+        "sha256": "72a4ba2b62303c71ae8fac3fbba4cd55ee7a9809b4b8a5d7bd974707d7385a97"
+      }
+    ],
+    "allowed_runtime_objects": "Read-only source, task, GitHub and bounded metadata recovery only; no mutation, financial probes or tests",
+    "evidence_inputs": [
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/recovery/open-prs.json",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/recovery/open-issues.json",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/RECOVERY.md",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/LEGACY_FINDINGS_CROSSWALK.csv",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/program-records/OWNERSHIP.md",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/program-records/PROGRAM_INDEX.md"
+    ],
+    "checkpoints": [
+      "Return exact evidence provenance and limitations to main task",
+      "G8 reviews support evidence before technical use; this is not phase acceptance"
+    ],
+    "status": "Running at last observed snapshot; return pending",
+    "metadata_amendment": {
+      "recorded_at": "2026-09-11T20:56:55.129831+00:00",
+      "generation": 1,
+      "reason": "R2: preserve full original dispatch in durable envelope; no scope expansion"
+    }
+  },
+  {
+    "id": "G8-REVIEW-0001",
+    "generation": 1,
+    "role": "G8 bounded support task, not technical lead",
+    "task_title": "G8 Independent Program Review",
+    "thread_id": "01a0923b-657e-78f3-94c7-58584d18073a",
+    "accountable_lead": "G8",
+    "base_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+    "package_revision": 4,
+    "package_sha256": "12904b8264d125e72949ceab6cf87d45f135e2cc062e8afb6946688705867550",
+    "deliverable": "Independent G8 document-candidate review",
+    "allowed_write_paths": [
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/work",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-program-review/outputs"
+    ],
+    "prohibited_mutations": [
+      "Shared code/index",
+      "Live financial state",
+      "Credentials",
+      "Other owners resources",
+      "Deployments",
+      "All live and isolated financial tests or runtime mutations",
+      "Issue/PR edits, comments, closures and merge enablement",
+      "Production deployments, host changes, backup/restore drills",
+      "Shared Git indexes and source files"
+    ],
+    "resource_reservations": [],
+    "delegation_allowance": "None",
+    "acceptance_owner": "Independent document reviewer 01a0923b-657e-78f3-94c7-58584d18073a; G8 records returned verdict only",
+    "return_condition": "Exact bounded evidence to main coordination task; no technical phase acceptance",
+    "main_coordination_task": "01a0908a-36f9-7042-b4a2-02fb14d5a53e",
+    "coordinator": "G8 /root",
+    "phase": "Phase 1 preparation; no independent technical phase",
+    "full_prompts": [
+      {
+        "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/program-records/handoff/G5-full-prompt.rev4.txt",
+        "archived_relative_path": "handoff/G5-full-prompt.rev4.txt",
+        "sha256": "434f8f3dbe1ac520d4d7a00023f061fb7b2cb0abaea96595d33cadbdeb8c62e9"
+      },
+      {
+        "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/program-records/handoff/G8-full-prompt.rev4.txt",
+        "archived_relative_path": "handoff/G8-full-prompt.rev4.txt",
+        "sha256": "72a4ba2b62303c71ae8fac3fbba4cd55ee7a9809b4b8a5d7bd974707d7385a97"
+      }
+    ],
+    "allowed_runtime_objects": "Read-only source, task, GitHub and bounded metadata recovery only; no mutation, financial probes or tests",
+    "evidence_inputs": [
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/recovery/open-prs.json",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/recovery/open-issues.json",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/RECOVERY.md",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/LEGACY_FINDINGS_CROSSWALK.csv",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/program-records/OWNERSHIP.md",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/program-records/PROGRAM_INDEX.md",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/program-records",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/handoff/read-integrity.json"
+    ],
+    "checkpoints": [
+      "Independent document verdict on exact candidate hashes by this reviewer; G8 cannot self-approve its authored document",
+      "Focused R1-R6 recheck; no publication or technical acceptance authority"
+    ],
+    "status": "Needs Changes returned; focused recheck to be requested",
+    "metadata_amendment": {
+      "recorded_at": "2026-09-11T20:56:55.129831+00:00",
+      "generation": 1,
+      "reason": "R2: preserve full original dispatch in durable envelope; no scope expansion"
+    }
+  },
+  {
+    "id": "G5-LIFE-RESEARCH-0002",
+    "generation": 1,
+    "worker": "/root/foundation_lifecycle",
+    "role": "G1/G2/G3 bounded foundation research delegate",
+    "accountable_lead": "/root/g5_foundation_lead",
+    "coordinator": "G8 /root",
+    "main_coordination_task": "01a0908a-36f9-7042-b4a2-02fb14d5a53e",
+    "phase": "Phase 1, Total Phases Not Yet Determined",
+    "package_revision": 4,
+    "package_sha256": "12904b8264d125e72949ceab6cf87d45f135e2cc062e8afb6946688705867550",
+    "base_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+    "full_prompts": [
+      {
+        "path": "handoff/G1-full-prompt.rev4.txt",
+        "sha256": "10705e78338af2f33a0167964e7e73f0fa2905b1a1227b1c3008e43542c9c488"
+      },
+      {
+        "path": "handoff/G2-full-prompt.rev4.txt",
+        "sha256": "c54de7b859cf29b84d948ac74bc322adfad23e3326bbf91b235b94564f44a37c"
+      },
+      {
+        "path": "handoff/G3-full-prompt.rev4.txt",
+        "sha256": "72181f6f0a7523efd902d7b9a6702f76881c1aab351573fd54ff1db812de2b14"
+      }
+    ],
+    "allowed_write_paths": [
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-lifecycle/research-completion"
+    ],
+    "allowed_runtime_objects": "Read-only official research and existing decision/evidence recovery",
+    "prohibited_mutations": [
+      "Code audits before combined research acceptance",
+      "All financial tests and live/isolated runtime mutations",
+      "Shared code/index, credentials, deployments, house-policy changes"
+    ],
+    "resource_reservations": [],
+    "delegation_allowance": "None; flat G8-managed team",
+    "evidence_inputs": [
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/RESEARCH.md",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-lifecycle/RESEARCH.md",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/CONTRACT-RECOVERY.md"
+    ],
+    "deliverable": "Complete cash/table stakes, variant/bomb/multi-board financial lifecycle operator research; retain explicit house-policy unknowns",
+    "return_condition": "Submit exact sources/oracles and explicit unknowns to G5 and G8",
+    "acceptance_owner": "G8 /root",
+    "checkpoints": ["G8 combined research gate before substantive audit"],
+    "status": "Running",
+    "dispatched_at_recorded_by_coordinator": "2026-09-11T20:56:55.129831+00:00"
+  },
+  {
+    "id": "G5-POLICY-RESEARCH-0002",
+    "generation": 1,
+    "worker": "/root/foundation_contract_review",
+    "role": "G4/G6/G7 bounded foundation research delegate",
+    "accountable_lead": "/root/g5_foundation_lead",
+    "coordinator": "G8 /root",
+    "main_coordination_task": "01a0908a-36f9-7042-b4a2-02fb14d5a53e",
+    "phase": "Phase 1, Total Phases Not Yet Determined",
+    "package_revision": 4,
+    "package_sha256": "12904b8264d125e72949ceab6cf87d45f135e2cc062e8afb6946688705867550",
+    "base_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+    "full_prompts": [
+      {
+        "path": "handoff/G4-full-prompt.rev4.txt",
+        "sha256": "c151265d3d47a515f75cb369ad6421b43e30d892b9664ccf2480846ffbbda997"
+      },
+      {
+        "path": "handoff/G6-full-prompt.rev4.txt",
+        "sha256": "e000df0c5fbcd5350761de28806b77ddeb06062147b78cedf6f0e4e32a22b5bb"
+      },
+      {
+        "path": "handoff/G7-full-prompt.rev4.txt",
+        "sha256": "9e78d21a4774c61297adf72f1713f96f659a709ebeafa4104fc1f4f09e08e423"
+      }
+    ],
+    "allowed_write_paths": [
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/research-completion"
+    ],
+    "allowed_runtime_objects": "Read-only official research and existing decision/evidence recovery",
+    "prohibited_mutations": [
+      "Code audits before combined research acceptance",
+      "All financial tests and live/isolated runtime mutations",
+      "Shared code/index, credentials, deployments, house-policy changes"
+    ],
+    "resource_reservations": [],
+    "delegation_allowance": "None; flat G8-managed team",
+    "evidence_inputs": [
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/RESEARCH.md",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-lifecycle/RESEARCH.md",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/CONTRACT-RECOVERY.md"
+    ],
+    "deliverable": "Official rake/jackpot comparison and original policy provenance; resolve supersession where evidenced without choosing new policy",
+    "return_condition": "Submit exact sources/oracles and explicit unknowns to G5 and G8",
+    "acceptance_owner": "G8 /root",
+    "checkpoints": ["G8 combined research gate before substantive audit"],
+    "status": "Running",
+    "dispatched_at_recorded_by_coordinator": "2026-09-11T20:56:55.129831+00:00"
+  },
+  {
+    "id": "G5-RESEARCH-GATE-0002",
+    "generation": 1,
+    "worker": "/root/g5_foundation_lead",
+    "role": "G5 accountable technical lead",
+    "accountable_lead": "/root/g5_foundation_lead",
+    "coordinator": "G8 /root",
+    "main_coordination_task": "01a0908a-36f9-7042-b4a2-02fb14d5a53e",
+    "phase": "Phase 1, Total Phases Not Yet Determined",
+    "package_revision": 4,
+    "package_sha256": "12904b8264d125e72949ceab6cf87d45f135e2cc062e8afb6946688705867550",
+    "base_revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+    "full_prompts": [
+      {
+        "path": "handoff/G5-full-prompt.rev4.txt",
+        "sha256": "434f8f3dbe1ac520d4d7a00023f061fb7b2cb0abaea96595d33cadbdeb8c62e9"
+      }
+    ],
+    "allowed_write_paths": [
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/research-gate"
+    ],
+    "allowed_runtime_objects": "Read-only official research and existing decision/evidence recovery",
+    "prohibited_mutations": [
+      "Code audits before combined research acceptance",
+      "All financial tests and live/isolated runtime mutations",
+      "Shared code/index, credentials, deployments, house-policy changes"
+    ],
+    "resource_reservations": [],
+    "delegation_allowance": "None; flat G8-managed team",
+    "evidence_inputs": [
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/RESEARCH.md",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-lifecycle/RESEARCH.md",
+      "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/CONTRACT-RECOVERY.md"
+    ],
+    "deliverable": "Unified rule-family research-gate checklist consuming sibling outputs; distinguish missing research from missing house policy",
+    "return_condition": "Submit exact sources/oracles and explicit unknowns to G5 and G8",
+    "acceptance_owner": "G8 /root",
+    "checkpoints": ["G8 combined research gate before substantive audit"],
+    "status": "Running",
+    "dispatched_at_recorded_by_coordinator": "2026-09-11T20:56:55.129831+00:00"
+  }
+]

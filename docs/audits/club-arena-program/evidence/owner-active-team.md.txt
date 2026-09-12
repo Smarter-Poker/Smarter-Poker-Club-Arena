@@ -1,0 +1,15 @@
+# Active engine and pipeline team
+
+Created September11 at the user's explicit request. PIPELINE STABILITY remains the sole production operator. Trivia is no longer a helper or coordination dependency.
+
+| Dedicated task | Task ID | Owned work |
+| --- | --- | --- |
+| Release controller completion | 01a0922e-26d5-7570-b7ee-beacb008b761 | Exclusive editing ownership of codex-pipeline-component-certification; aggregate source/build/publication, semantic compatibility, callback and controller integration |
+| Engine lease and maintenance repairs | 01a0922e-6cdb-7252-9eb0-f71d996c466e | D6 transport/lease and maintenance commit-visibility protocols, actual consumer integration and isolated native qualification |
+| Engine accounting integration | 01a0922e-72ca-7002-bda1-4c95f95f987c | Remaining accounting and engine integration, source packages, seat/move/funding/settlement/refund/reentry native regressions |
+
+The parent also launched three internal agents: release_observer, repair_review and control_review. All three were confirmed running. The observer follows the existing publication/certificate read-only. The control reviewer now prepares exact parent-run, attempt and component correlation in a separate isolated worktree. The repair reviewer completed the independent urgent repair and D9/current contract reviews and is auditing first-attempt failure diagnostics. None owns production changes; original held release branches remain unchanged by these new assignments.
+
+The dedicated tasks may prepare code and native tests in their own Club Arena .agent-trees worktrees. They may not independently merge, enable auto-merge, publish, dispatch/cancel workflows, apply production SQL, restart hosts, change protections/settings/credentials, or create a freeze. No World Hub writes are authorized to this team. Existing pending production publication and certification remain under the parent operator's reconciliation.
+
+Earlier inactive internal agents stopped or completed. Their source and evidence are preserved. The controller task received the latest preserved source and the parent's15-test native composition receipt before editing ownership transferred.

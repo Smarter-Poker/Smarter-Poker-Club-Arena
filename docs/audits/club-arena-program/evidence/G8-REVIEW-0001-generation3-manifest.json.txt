@@ -1,0 +1,367 @@
+{
+  "assignment": "G8-REVIEW-0001",
+  "generation": 3,
+  "decision": "Accepted",
+  "scope": "Exact document candidate only; not publication or technical acceptance",
+  "reviewed_at_utc": "2026-09-11T21:00:34.218199+00:00",
+  "snapshot_captured_at_utc": "2026-09-11T20:59:53.427379+00:00",
+  "candidate_manifest_sha256": "6870d64bc57dfd9d3fcdc2b8fe33920b4ba67d90b0911de1043b6926d90e0b6a",
+  "source_manifest_sha256": "5ad517c181f2eec894cc50d04a6303b8e6951052fa35738c1262f901d9dfce13",
+  "source_manifest_exact_match": true,
+  "files": [
+    {
+      "path": "ASSIGNMENTS.json",
+      "bytes": 27774,
+      "sha256": "13752931a4382e4043c6d45bc2053b6e6a32e7fea1171093c7eece6a30549bf9"
+    },
+    {
+      "path": "CAPABILITIES.md",
+      "bytes": 2651,
+      "sha256": "db3a454032a8a327fbe8d3bbaa52a7f9af75123a7d434af74b47969ffd445efc"
+    },
+    {
+      "path": "DECISIONS.md",
+      "bytes": 3529,
+      "sha256": "5c04f95f0fddba9e3782bfb7bd33b7a590fc69912bdb0e6992c1a78266fd11f1"
+    },
+    {
+      "path": "DEPENDENCIES.md",
+      "bytes": 2916,
+      "sha256": "a80da46539a017e16d890d5cf543b4614ad77f9a58ab65a38a9b0b2a2b0b4ac7"
+    },
+    {
+      "path": "EVIDENCE_INDEX.md",
+      "bytes": 8576,
+      "sha256": "5de0f3f757f142bf943096a6d1ad286a7b94f6e741eea92f256190f384033007"
+    },
+    {
+      "path": "HANDOFF.md",
+      "bytes": 2850,
+      "sha256": "b07e9d55de32bfe5127ac42d2d00df169d23c2f8f04f07b48719307c862f4966"
+    },
+    {
+      "path": "OWNERSHIP.md",
+      "bytes": 6959,
+      "sha256": "1cd4c69b0652801d8c8f42b4e81158193f4f11fa405abd08498e4d6037591c72"
+    },
+    {
+      "path": "PACKAGE_IDENTITY.json",
+      "bytes": 2554,
+      "sha256": "ce6b697ffc8095f2e8d1d0a13842cd0b5cf7236331669ee6762f4f7683ef0b9a"
+    },
+    {
+      "path": "PROGRAM_INDEX.md",
+      "bytes": 7429,
+      "sha256": "2dd2b6c44d26b2d7f3f6ec73bf3cc982aaa0517e61b86f4026d6559c08bc6b38"
+    },
+    {
+      "path": "PROGRAM_ISSUES.json",
+      "bytes": 13040,
+      "sha256": "af0e40f1513c1ee24d83e4d7b80191938ebe989d3af3d52ec692f326c7fcc128"
+    },
+    {
+      "path": "PROJECT_STATUS.json",
+      "bytes": 11267,
+      "sha256": "33d9e20feb13421635accfaa238e2bb17dce028dbebb2dff171672799b7acced"
+    },
+    {
+      "path": "VERIFICATION.md",
+      "bytes": 3784,
+      "sha256": "ab8d318a842dc2f0d4d994b596e46f4e1c2354af75e4ff6064732f59a678f1a0"
+    },
+    {
+      "path": "evidence/direct-origin.json.txt",
+      "bytes": 293,
+      "sha256": "dcd185b83bb29938cfd4d677755060ad0b1788f348cc50a58ab0775daa0395cd"
+    },
+    {
+      "path": "evidence/engine-health.json.txt",
+      "bytes": 693,
+      "sha256": "149124a744a4f08dc56227a2a4a5c51eab0a2309871213680e1b22fd64b5cbd1"
+    },
+    {
+      "path": "evidence/open-issues.json.txt",
+      "bytes": 20758,
+      "sha256": "7960535d16749a1dff41ef58d7f00a6e7ffd728e3e88d80da06251753939fcdf"
+    },
+    {
+      "path": "evidence/open-prs.json.txt",
+      "bytes": 14507,
+      "sha256": "fc84dc105b3bfa6c1e994b77ea34b9d4ab1b3971136b14ab88477e3d2b0a824c"
+    },
+    {
+      "path": "evidence/owner-active-team.md.txt",
+      "bytes": 2175,
+      "sha256": "e29a40c7ebad86ccfc503650ffced5817a8620695a672b06fe4b723fa36b3b66"
+    },
+    {
+      "path": "evidence/owner-engine-pipeline-readiness.md.txt",
+      "bytes": 11865,
+      "sha256": "4c09800975d71489910f7e43fd5bd175dd1e252e74f3b9dd8d6c73ee830b3a18"
+    },
+    {
+      "path": "evidence/preflight-provenance.json",
+      "bytes": 3313,
+      "sha256": "0469b690a4a5ddbf007be8d398904ea9e97962bb43b94172145cec3c5f802ef3"
+    },
+    {
+      "path": "evidence/public-origin.json.txt",
+      "bytes": 297,
+      "sha256": "8c17e4be7e13a1d9814c5b5b188bddf59276312731bd525f5dc84ac5cc547451"
+    },
+    {
+      "path": "evidence/recovered/2026-09-09-accounting-phase-two-acceptance.json.txt",
+      "bytes": 8749,
+      "sha256": "9cf6bc3944a5a8b2543392f0d92bc8dfe567303098e234cb17a78a89901fa2bb"
+    },
+    {
+      "path": "evidence/recovered/2026-09-10-phase3-independent-acceptance.json.txt",
+      "bytes": 10691,
+      "sha256": "855c194017826fa520b7c5d1133cdefc01b514bcf463fa93b6892bbefca2f080"
+    },
+    {
+      "path": "evidence/recovered/2026-09-10-phase3-independent-release-review.json.txt",
+      "bytes": 4099,
+      "sha256": "f15ffa1fec039925cf0ae4be7c5afc6b30d4ad3996e3141c6fd151565252e673"
+    },
+    {
+      "path": "evidence/recovered/2026-09-11-spin-full-current-terminal-native-evidence.json.txt",
+      "bytes": 279314,
+      "sha256": "d2333e70c4e6178d873e5f997f82aa147575f2a4b53740a9f60b4ed4efb64c5d"
+    },
+    {
+      "path": "evidence/recovered/phase-three-activate-current-terminal-authorities.sql",
+      "bytes": 276794,
+      "sha256": "1f6c8ac88ead4612085c8c6de0da258914d50eb06d94300cf9931bb343eafb40"
+    },
+    {
+      "path": "evidence/recovered-source-manifest.json",
+      "bytes": 3486,
+      "sha256": "0bc566d35c2ca9a8405946db3e21f97a07a559035704d83bcf138cfbaf49d6b1"
+    },
+    {
+      "path": "evidence/review-generation1-evidence.json.txt",
+      "bytes": 11904,
+      "sha256": "e5c42b915f0ca3cc7bb6adbd4347818d8e78b2f2d97999985affc62d34949b90"
+    },
+    {
+      "path": "evidence/review-generation1-manifest.json.txt",
+      "bytes": 13789,
+      "sha256": "d1c9e38614c3b1669e569bd98b14381ca7872359eab32325bf0ef3bac92ace3b"
+    },
+    {
+      "path": "evidence/review-generation1.md.txt",
+      "bytes": 12485,
+      "sha256": "6c12c6c29cb4be7009ed55e26eb2670084527c20fe3f2902f6761fbbc5b4cffa"
+    },
+    {
+      "path": "evidence/spin-applicability.json.txt",
+      "bytes": 13073,
+      "sha256": "e81f4934369ac4a466e27abcc052ef46a5b63ee5f26850f1eee60500552bdccd"
+    },
+    {
+      "path": "evidence/workflow-runs.json.txt",
+      "bytes": 5588,
+      "sha256": "e283f2643030122ea50957a253bd729448f0bfd6d7acd205922009983f29cc86"
+    },
+    {
+      "path": "handoff/Club_Arena_All_In_One_Start_Here.rev4.txt",
+      "bytes": 600042,
+      "sha256": "da7f5bb24393d7a30145509d669d5b64925eaf1cae70ffcf0990402d5fe184a6"
+    },
+    {
+      "path": "handoff/G1-full-prompt.rev4.txt",
+      "bytes": 72006,
+      "sha256": "10705e78338af2f33a0167964e7e73f0fa2905b1a1227b1c3008e43542c9c488"
+    },
+    {
+      "path": "handoff/G2-full-prompt.rev4.txt",
+      "bytes": 72466,
+      "sha256": "c54de7b859cf29b84d948ac74bc322adfad23e3326bbf91b235b94564f44a37c"
+    },
+    {
+      "path": "handoff/G3-full-prompt.rev4.txt",
+      "bytes": 72859,
+      "sha256": "72181f6f0a7523efd902d7b9a6702f76881c1aab351573fd54ff1db812de2b14"
+    },
+    {
+      "path": "handoff/G4-full-prompt.rev4.txt",
+      "bytes": 71461,
+      "sha256": "c151265d3d47a515f75cb369ad6421b43e30d892b9664ccf2480846ffbbda997"
+    },
+    {
+      "path": "handoff/G5-full-prompt.rev4.txt",
+      "bytes": 75080,
+      "sha256": "434f8f3dbe1ac520d4d7a00023f061fb7b2cb0abaea96595d33cadbdeb8c62e9"
+    },
+    {
+      "path": "handoff/G6-full-prompt.rev4.txt",
+      "bytes": 72531,
+      "sha256": "e000df0c5fbcd5350761de28806b77ddeb06062147b78cedf6f0e4e32a22b5bb"
+    },
+    {
+      "path": "handoff/G7-full-prompt.rev4.txt",
+      "bytes": 75254,
+      "sha256": "9e78d21a4774c61297adf72f1713f96f659a709ebeafa4104fc1f4f09e08e423"
+    },
+    {
+      "path": "handoff/G8-full-prompt.rev4.txt",
+      "bytes": 65375,
+      "sha256": "72a4ba2b62303c71ae8fac3fbba4cd55ee7a9809b4b8a5d7bd974707d7385a97"
+    }
+  ],
+  "checks": {
+    "archive_renames": [
+      {
+        "old": "evidence/direct-origin.json",
+        "new": "evidence/direct-origin.json.txt",
+        "identical_bytes": true,
+        "sha256": "dcd185b83bb29938cfd4d677755060ad0b1788f348cc50a58ab0775daa0395cd"
+      },
+      {
+        "old": "evidence/engine-health.json",
+        "new": "evidence/engine-health.json.txt",
+        "identical_bytes": true,
+        "sha256": "149124a744a4f08dc56227a2a4a5c51eab0a2309871213680e1b22fd64b5cbd1"
+      },
+      {
+        "old": "evidence/open-issues.json",
+        "new": "evidence/open-issues.json.txt",
+        "identical_bytes": true,
+        "sha256": "7960535d16749a1dff41ef58d7f00a6e7ffd728e3e88d80da06251753939fcdf"
+      },
+      {
+        "old": "evidence/open-prs.json",
+        "new": "evidence/open-prs.json.txt",
+        "identical_bytes": true,
+        "sha256": "fc84dc105b3bfa6c1e994b77ea34b9d4ab1b3971136b14ab88477e3d2b0a824c"
+      },
+      {
+        "old": "evidence/owner-active-team.md",
+        "new": "evidence/owner-active-team.md.txt",
+        "identical_bytes": true,
+        "sha256": "e29a40c7ebad86ccfc503650ffced5817a8620695a672b06fe4b723fa36b3b66"
+      },
+      {
+        "old": "evidence/owner-engine-pipeline-readiness.md",
+        "new": "evidence/owner-engine-pipeline-readiness.md.txt",
+        "identical_bytes": true,
+        "sha256": "4c09800975d71489910f7e43fd5bd175dd1e252e74f3b9dd8d6c73ee830b3a18"
+      },
+      {
+        "old": "evidence/public-origin.json",
+        "new": "evidence/public-origin.json.txt",
+        "identical_bytes": true,
+        "sha256": "8c17e4be7e13a1d9814c5b5b188bddf59276312731bd525f5dc84ac5cc547451"
+      },
+      {
+        "old": "evidence/recovered/2026-09-09-accounting-phase-two-acceptance.json",
+        "new": "evidence/recovered/2026-09-09-accounting-phase-two-acceptance.json.txt",
+        "identical_bytes": true,
+        "sha256": "9cf6bc3944a5a8b2543392f0d92bc8dfe567303098e234cb17a78a89901fa2bb"
+      },
+      {
+        "old": "evidence/recovered/2026-09-10-phase3-independent-acceptance.json",
+        "new": "evidence/recovered/2026-09-10-phase3-independent-acceptance.json.txt",
+        "identical_bytes": true,
+        "sha256": "855c194017826fa520b7c5d1133cdefc01b514bcf463fa93b6892bbefca2f080"
+      },
+      {
+        "old": "evidence/recovered/2026-09-10-phase3-independent-release-review.json",
+        "new": "evidence/recovered/2026-09-10-phase3-independent-release-review.json.txt",
+        "identical_bytes": true,
+        "sha256": "f15ffa1fec039925cf0ae4be7c5afc6b30d4ad3996e3141c6fd151565252e673"
+      },
+      {
+        "old": "evidence/recovered/2026-09-11-spin-full-current-terminal-native-evidence.json",
+        "new": "evidence/recovered/2026-09-11-spin-full-current-terminal-native-evidence.json.txt",
+        "identical_bytes": true,
+        "sha256": "d2333e70c4e6178d873e5f997f82aa147575f2a4b53740a9f60b4ed4efb64c5d"
+      },
+      {
+        "old": "evidence/review-generation1-evidence.json",
+        "new": "evidence/review-generation1-evidence.json.txt",
+        "identical_bytes": true,
+        "sha256": "e5c42b915f0ca3cc7bb6adbd4347818d8e78b2f2d97999985affc62d34949b90"
+      },
+      {
+        "old": "evidence/review-generation1-manifest.json",
+        "new": "evidence/review-generation1-manifest.json.txt",
+        "identical_bytes": true,
+        "sha256": "d1c9e38614c3b1669e569bd98b14381ca7872359eab32325bf0ef3bac92ace3b"
+      },
+      {
+        "old": "evidence/review-generation1.md",
+        "new": "evidence/review-generation1.md.txt",
+        "identical_bytes": true,
+        "sha256": "6c12c6c29cb4be7009ed55e26eb2670084527c20fe3f2902f6761fbbc5b4cffa"
+      },
+      {
+        "old": "evidence/spin-applicability.json",
+        "new": "evidence/spin-applicability.json.txt",
+        "identical_bytes": true,
+        "sha256": "e81f4934369ac4a466e27abcc052ef46a5b63ee5f26850f1eee60500552bdccd"
+      },
+      {
+        "old": "evidence/workflow-runs.json",
+        "new": "evidence/workflow-runs.json.txt",
+        "identical_bytes": true,
+        "sha256": "e283f2643030122ea50957a253bd729448f0bfd6d7acd205922009983f29cc86"
+      }
+    ],
+    "handoff_unchanged": true,
+    "broken_active_markdown_links": [],
+    "recovered_manifest_hash_checks": [
+      {
+        "path": "evidence/recovered/2026-09-09-accounting-phase-two-acceptance.json.txt",
+        "bytes_match": true,
+        "sha256_match": true
+      },
+      {
+        "path": "evidence/recovered/2026-09-10-phase3-independent-acceptance.json.txt",
+        "bytes_match": true,
+        "sha256_match": true
+      },
+      {
+        "path": "evidence/recovered/2026-09-10-phase3-independent-release-review.json.txt",
+        "bytes_match": true,
+        "sha256_match": true
+      },
+      {
+        "path": "evidence/recovered/2026-09-11-spin-full-current-terminal-native-evidence.json.txt",
+        "bytes_match": true,
+        "sha256_match": true
+      },
+      {
+        "path": "evidence/recovered/phase-three-activate-current-terminal-authorities.sql",
+        "bytes_match": true,
+        "sha256_match": true
+      }
+    ],
+    "preflight_pointers_resolve": true,
+    "canonical_references": [
+      {
+        "field": "canonical_technical_register",
+        "url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/11a37306788567e9b60d6ac1ab32455b865de5c1/docs/audits/2026-09-08-comprehensive-club-arena-backlog/feature-backlog.csv",
+        "revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+        "path": "docs/audits/2026-09-08-comprehensive-club-arena-backlog/feature-backlog.csv",
+        "git_show_exit": 0,
+        "sha256": "2f3a24138895f73d9d9f8696d9e2f50085b7fc89fd90a1973cd04b3c82d66ae9"
+      },
+      {
+        "field": "canonical_requirements",
+        "url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/11a37306788567e9b60d6ac1ab32455b865de5c1/docs/audits/2026-09-08-platform-coverage/phase-requirements.json",
+        "revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+        "path": "docs/audits/2026-09-08-platform-coverage/phase-requirements.json",
+        "git_show_exit": 0,
+        "sha256": "55f4bc6f419d3cf04a84a88a7f3d737203fad58b7d887cb532433edd586060b9"
+      }
+    ],
+    "parsed_json_documents": 19,
+    "final_hash_check_at_utc": "2026-09-11T21:00:34.218199+00:00",
+    "source_changes_after_snapshot": []
+  },
+  "R1": "Resolved in generation3",
+  "R2_R6": "Prior resolved findings reused after semantic delta check",
+  "remaining_required_document_findings": 0
+}

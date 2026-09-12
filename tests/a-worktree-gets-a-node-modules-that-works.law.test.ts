@@ -1,5 +1,5 @@
 /**
- * A WORKTREE GETS A node_modules THAT WORKS
+ * NON-MAC WORKTREE DEPENDENCY PROVISIONING
  *
  * scripts/agent-workspace.sh is byte-identical across this estate, and on
  * 2026-09-08 the World Hub's main clone held ONE package (typescript) after a
@@ -9,17 +9,116 @@
  * repairs.
  *
  * The fix landed in the World Hub first (#1658) and is copied here byte for
- * byte, because a guard that differs between repos is a guard that is only
- * true where somebody last looked.
+ * byte. The 2026-09-11 user instruction now prohibits Mac worktree copies and
+ * installs in Club Arena; separate executable tests cover that policy. World
+ * Hub is outside this task's write scope.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const ROOT = process.cwd();
 const script = readFileSync(join(ROOT, 'scripts/agent-workspace.sh'), 'utf8');
 const code = script.replace(/^\s*#.*$/gm, '');
+
+describe('Mac workspaces never recreate the purged dependencies', () => {
+  for (const scenario of [
+    'workspace',
+    'older-main',
+    'missing-shared',
+    'gutted-shared',
+    'journal-probe',
+  ]) {
+    it(`executes the ${scenario} path without installs, dependency copies or repairs`, () => {
+      const temporary = mkdtempSync(join(tmpdir(), 'ca-mac-dependency-policy-'));
+      try {
+        const clone = join(temporary, 'clone');
+        const trees = join(temporary, 'trees');
+        const tree = join(trees, 'probe');
+        const bin = join(temporary, 'bin');
+        const trace = join(temporary, 'unexpected-mutation');
+        for (const dir of [clone, tree, bin, join(clone, 'scripts')])
+          mkdirSync(dir, { recursive: true });
+        for (const dir of [clone, tree, join(clone, 'server'), join(tree, 'server')]) {
+          mkdirSync(dir, { recursive: true });
+          writeFileSync(join(dir, 'package.json'), '{}');
+        }
+        writeFileSync(
+          join(clone, 'scripts/check-node-modules.sh'),
+          readFileSync(join(ROOT, 'scripts/check-node-modules.sh'))
+        );
+        if (scenario !== 'missing-shared') {
+          mkdirSync(join(clone, 'node_modules/typescript'), { recursive: true });
+          writeFileSync(join(clone, 'node_modules/typescript/KEEP'), 'existing package bytes');
+        }
+        const executable = (name: string, text: string) =>
+          writeFileSync(join(bin, name), '#!/bin/bash\n' + text, { mode: 0o755 });
+        executable('uname', "printf 'Darwin\\n'\n");
+        for (const name of ['npm', 'cp'])
+          executable(
+            name,
+            'printf "%s\\n" "unexpected ' + name + '" >> "$MAC_TEST_TRACE"\nexit 79\n'
+          );
+        executable(
+          'git',
+          `case "$*" in
+          'rev-parse --path-format=absolute --git-common-dir') printf '%s/.git\\n' "$MAC_TEST_CLONE";;
+          *'fetch origin main --quiet') exit 0;;
+          *'show origin/main:scripts/agent-workspace.sh')
+            if [ "$MAC_TEST_OLD_MAIN" = 1 ]; then printf '# old dependency provisioner\\n';
+            else cat "$MAC_TEST_SOURCE"; fi;;
+          *'rev-parse --git-dir') printf '.git\\n';;
+          *'status --porcelain') printf ' M retained-source.ts\\n';;
+          *'branch --show-current') printf 'agent/probe/fix-disk\\n';;
+          *'rev-list --count HEAD..origin/main') printf '0\\n';;
+          *) printf 'unexpected git mutation\\n' >> "$MAC_TEST_TRACE"; exit 79;;
+        esac\n`
+        );
+        const env = {
+          ...process.env,
+          PATH: bin + ':' + process.env.PATH,
+          AGENT_WORKTREE_ROOT: trees,
+          AGENT_WORKSPACE_REEXEC: '',
+          MAC_TEST_CLONE: clone,
+          MAC_TEST_TRACE: trace,
+          MAC_TEST_SOURCE: join(ROOT, 'scripts/agent-workspace.sh'),
+          MAC_TEST_OLD_MAIN: scenario === 'older-main' ? '1' : '0',
+        };
+        const workspace = ['workspace', 'older-main'].includes(scenario);
+        const args = workspace
+          ? [join(ROOT, 'scripts/agent-workspace.sh'), 'probe', 'fix-disk', '--print-path']
+          : [
+              join(
+                ROOT,
+                scenario === 'journal-probe'
+                  ? 'scripts/ci/probes/chip-journal-atomicity/run-isolated.sh'
+                  : 'scripts/check-node-modules.sh'
+              ),
+            ];
+        let exitCode = 0;
+        let output = '';
+        try {
+          output = execFileSync('bash', args, { cwd: tree, env, encoding: 'utf8', stdio: 'pipe' });
+        } catch (error) {
+          exitCode = Number((error as { status: number }).status);
+        }
+        expect(exitCode).toBe(scenario === 'workspace' ? 0 : 1);
+        if (scenario === 'workspace') expect(output.trim()).toBe(tree);
+        expect(existsSync(trace)).toBe(false);
+        expect(existsSync(join(tree, 'node_modules'))).toBe(false);
+        expect(existsSync(join(tree, 'server/node_modules'))).toBe(false);
+        if (scenario !== 'missing-shared')
+          expect(readFileSync(join(clone, 'node_modules/typescript/KEEP'), 'utf8')).toBe(
+            'existing package bytes'
+          );
+      } finally {
+        rmSync(temporary, { recursive: true, force: true });
+      }
+    });
+  }
+});
 
 describe('the provisioner judges a node_modules by its payload', () => {
   it('has a usability test, not a presence test', () => {
@@ -62,7 +161,7 @@ describe('the provisioner judges a node_modules by its payload', () => {
     expect(code).toContain('v.optional) continue');
   });
 
-  it('finishes a clone that does not satisfy the lockfile with npm ci in the tree itself', () => {
+  it('retains the non-Mac installer for a clone that does not satisfy its lockfile', () => {
     expect(code).toContain(
       'node_modules_matches_lockfile "$dst/node_modules" "$dst/package-lock.json"'
     );
@@ -119,7 +218,7 @@ describe('the provisioner does not trust the copy of itself that it is', () => {
     // inherit a tree the stale copy had already made, which is the one
     // arrangement worse than either script running alone.
     const handover = code.indexOf('AGENT_WORKSPACE_REEXEC=1 exec bash');
-    const worktreeAdd = code.indexOf('worktree add');
+    const worktreeAdd = code.indexOf('git -C "$ROOT" worktree add');
     expect(handover).toBeGreaterThan(-1);
     expect(worktreeAdd).toBeGreaterThan(-1);
     expect(handover).toBeLessThan(worktreeAdd);

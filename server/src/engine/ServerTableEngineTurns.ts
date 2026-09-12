@@ -2644,6 +2644,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     let pendingUtilityLedger: HorseDecision['tournamentUtility'];
     let pendingPostflopLedger: HorseDecision['tournamentPostflop'];
     let pendingPlo4Ledger: HorseDecision['plo4Policy'];
+    let pendingOmahaLedger: HorseDecision['omahaVariantPolicy'];
 
     const retirePlo4 = (ledger: HorseDecision['plo4Policy']): void => {
       if (ledger?.executionStatus === 'pending') {
@@ -2651,8 +2652,16 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         noteFire('phase10_execution_not_executed');
       }
     };
+    const retireOmaha = (ledger: HorseDecision['omahaVariantPolicy']): void => {
+      if (ledger?.executionStatus === 'pending') {
+        ledger.executionStatus = 'not_executed';
+        noteFire('phase11_execution_not_executed');
+        noteFire(`phase11_${ledger.variant}_execution_not_executed`);
+      }
+    };
     const markPendingUtilityNotExecuted = (): void => {
       retirePlo4(pendingPlo4Ledger);
+      retireOmaha(pendingOmahaLedger);
       if (pendingPostflopLedger?.executionStatus === 'pending') {
         pendingPostflopLedger.executionStatus = 'not_executed';
         noteFire('phase8_execution_not_executed');
@@ -2944,17 +2953,22 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         };
       })
       .then((fastResult) => {
+        // Own the returned receipts before validating the response fence. A
+        // rejected early result never acts, but its analysis must be retired
+        // just like a result rejected later during the think-time window.
+        let decision = fastResult.decision;
+        pendingUtilityLedger = decision.tournamentUtility;
+        pendingPostflopLedger = decision.tournamentPostflop;
+        pendingPlo4Ledger = decision.plo4Policy;
+        pendingOmahaLedger = decision.omahaVariantPolicy;
         if (
           fastResult.generation !== turnToken ||
           fastResult.fence !== fence ||
           !fenceIsCurrent('fast_result')
         ) {
+          markPendingUtilityNotExecuted();
           return;
         }
-        let decision = fastResult.decision;
-        pendingUtilityLedger = decision.tournamentUtility;
-        pendingPostflopLedger = decision.tournamentPostflop;
-        pendingPlo4Ledger = decision.plo4Policy;
 
         // Humanlike think time comes from the decision engine itself (style- and
         // situation-aware, 0.7-8s). Clamp inside the table's action timer window.
@@ -3118,6 +3132,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                   !fenceIsCurrent('deep_result')
                 ) {
                   retirePlo4(deepResult.decision.plo4Policy);
+                  retireOmaha(deepResult.decision.omahaVariantPolicy);
                   if (deepResult.decision.tournamentPostflop?.executionStatus === 'pending') {
                     deepResult.decision.tournamentPostflop.executionStatus = 'not_executed';
                     noteFire('phase8_execution_not_executed');
@@ -3131,6 +3146,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                 if (verdict) {
                   noteFire('v44_second_look_flipped');
                   retirePlo4(pendingPlo4Ledger);
+                  retireOmaha(pendingOmahaLedger);
                   if (pendingPostflopLedger?.executionStatus === 'pending') {
                     pendingPostflopLedger.executionStatus = 'not_executed';
                     noteFire('phase8_execution_not_executed');
@@ -3148,8 +3164,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                   pendingUtilityLedger = decision.tournamentUtility;
                   pendingPostflopLedger = decision.tournamentPostflop;
                   pendingPlo4Ledger = decision.plo4Policy;
+                  pendingOmahaLedger = decision.omahaVariantPolicy;
                 } else {
                   retirePlo4(deepResult.decision.plo4Policy);
+                  retireOmaha(deepResult.decision.omahaVariantPolicy);
                   if (deepResult.decision.tournamentPostflop?.executionStatus === 'pending') {
                     deepResult.decision.tournamentPostflop.executionStatus = 'not_executed';
                     noteFire('phase8_execution_not_executed');
@@ -3180,7 +3198,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           const utilityLedger = decision.tournamentUtility;
           const postflopLedger = decision.tournamentPostflop;
           const plo4Ledger = decision.plo4Policy;
+          const omahaLedger = decision.omahaVariantPolicy;
           pendingPlo4Ledger = plo4Ledger;
+          pendingOmahaLedger = omahaLedger;
           pendingPostflopLedger = postflopLedger;
           pendingUtilityLedger = utilityLedger;
           if (!fenceIsCurrent('commit')) return;
@@ -3430,6 +3450,23 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                     ? 'intended'
                     : 'coerced';
               noteFire(`phase10_execution_${plo4Ledger.executionStatus}`);
+            }
+            if (omahaLedger) {
+              omahaLedger.executedAction = executedAction;
+              omahaLedger.executedAmount = executedAmount;
+              const matched =
+                executedAction === omahaLedger.finalAction &&
+                (!['bet', 'raise'].includes(omahaLedger.finalAction) ||
+                  executedAmount === omahaLedger.finalAmount);
+              omahaLedger.executionStatus = !applied
+                ? 'not_executed'
+                : !intendedApplied
+                  ? 'fallback'
+                  : matched
+                    ? 'intended'
+                    : 'coerced';
+              noteFire(`phase11_execution_${omahaLedger.executionStatus}`);
+              noteFire(`phase11_${omahaLedger.variant}_execution_${omahaLedger.executionStatus}`);
             }
             if (postflopLedger) {
               postflopLedger.executedAction = executedAction;

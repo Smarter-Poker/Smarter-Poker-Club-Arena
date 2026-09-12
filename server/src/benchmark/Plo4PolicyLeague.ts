@@ -5,6 +5,11 @@ import { HorseMind } from '../engine/HorseMind.js';
 import { restoreFastRandom, saveFastRandom, seedFastRandom } from '../engine/HorseEval.js';
 import { calculateContestablePot } from '../engine/PokerEngine.js';
 import { horseVariantRulesFor } from '../engine/VariantRules.js';
+import {
+  OMAHA_VARIANT_PACKS,
+  omahaVariantSeatCap,
+  type OmahaPolicyVariant,
+} from '../engine/omaha/OmahaVariantPolicyPack.js';
 import { PLO4_POLICY_PACK } from '../engine/plo4/Plo4PolicyPack.js';
 import { referenceDeck, uniqueCards } from './OmahaReference.js';
 import type { Plo4PolicyMode } from './Plo4PolicyProgram.js';
@@ -27,7 +32,9 @@ export function plo4LeagueSeating(index: number, seats: number) {
   return { heroSeat, button, relativePosition: (heroSeat - button + seats) % seats };
 }
 
+// Shared physical controller/paired accounting. Each variant supplies its own pack and fixed population.
 export interface Plo4LeagueProfile {
+  variant?: OmahaPolicyVariant;
   id: string;
   seats: number;
   stackBB: number;
@@ -146,6 +153,7 @@ export async function playPlo4PolicyHand(
   samples: number,
   shouldContinue = () => true
 ): Promise<Plo4HandReceipt> {
+  const variant = profile.variant ?? 'plo4';
   const receipt: Plo4HandReceipt = {
     complete: false,
     net: [],
@@ -176,9 +184,9 @@ export async function playPlo4PolicyHand(
     is_horse: true,
   }));
   const config: HandConfig = {
-    tableId: 'phase10-offline-league',
+    tableId: `${profile.variant ? 'phase11' : 'phase10'}-offline-league`,
     handNumber: 1,
-    gameVariant: 'plo4',
+    gameVariant: variant,
     smallBlind: 1,
     bigBlind: BB,
     ante: profile.anteBB * BB,
@@ -251,7 +259,7 @@ export async function playPlo4PolicyHand(
         currentPlayerSeat: hero.seat,
         gameMode: profile.tournament ? 'tournament' : 'cash',
         format: profile.tournament ? 'sng' : 'cash',
-        gameVariant: 'plo4',
+        gameVariant: variant,
         bigBlind: BB,
         ante: config.ante,
         straddleActive: profile.straddle,
@@ -263,7 +271,7 @@ export async function playPlo4PolicyHand(
         bettingStructure: menu.structure,
         pots: controller.computeLivePots(),
         contestablePot: calculateContestablePot(state.players, hero.user_id, menu.toCall),
-        variantRules: horseVariantRulesFor('plo4'),
+        variantRules: horseVariantRulesFor(variant),
         rakeConfig: config.rakeConfig,
         actionHistory: state.actionHistory.map((a, i) => ({ ...a, timestamp: i + 1 })),
         ...(profile.tournament
@@ -318,8 +326,10 @@ export async function playPlo4PolicyHand(
             decisionTimeMs: 0,
             v9Mood: false,
             phase8Postflop: 'off',
-            phase10Plo4: hero.seat === heroSeat ? mode : 'off',
+            phase10Plo4: !profile.variant && hero.seat === heroSeat ? mode : 'off',
             phase10EvidenceMode: true,
+            phase11Omaha: profile.variant && hero.seat === heroSeat ? mode : 'off',
+            phase11EvidenceMode: true,
           }
         )
       );
@@ -328,8 +338,8 @@ export async function playPlo4PolicyHand(
         const work = String(equitySampleSizeOfLastCall());
         receipt.equityWork[work] = (receipt.equityWork[work] ?? 0) + 1;
       }
-      if (hero.seat === heroSeat && baseline.plo4Policy) {
-        const policy = baseline.plo4Policy;
+      const policy = profile.variant ? baseline.omahaVariantPolicy : baseline.plo4Policy;
+      if (hero.seat === heroSeat && policy) {
         receipt.eligible += Number(policy.eligible);
         receipt.changed += Number(policy.applied);
         const node = `${gs.gameMode}/${gs.stage}/${policy.role ?? 'outside_domain'}`;
@@ -366,7 +376,7 @@ export async function playPlo4PolicyHand(
   }
 }
 
-export async function runPlo4PolicyLeague(
+export async function runOmahaPolicyLeague(
   options: {
     profileId: string;
     pairs: number;
@@ -374,11 +384,16 @@ export async function runPlo4PolicyLeague(
     mode?: Plo4PolicyMode;
     samples?: number;
   },
-  shouldContinue = () => true
+  shouldContinue = () => true,
+  profiles: readonly Readonly<Plo4LeagueProfile>[] = PLO4_LEAGUE_PROFILES
 ) {
-  const profile = PLO4_LEAGUE_PROFILES.find((p) => p.id === options.profileId);
+  const profile = profiles.find((p) => p.id === options.profileId);
   if (
     !profile ||
+    (profile.variant &&
+      (profile.seats < 2 ||
+        profile.seats >
+          omahaVariantSeatCap(profile.variant, profile.tournament ? 'tournament' : 'cash'))) ||
     !Number.isInteger(options.pairs) ||
     options.pairs < 1 ||
     options.pairs > PLO4_POLICY_PACK.maxPairs ||
@@ -450,11 +465,13 @@ export async function runPlo4PolicyLeague(
       : [Math.max(-bound, mean - width), Math.min(bound, mean + width)];
   const all = [...pairs.flatMap((p) => [p.candidate, p.baseline]), ...incompleteHands];
   return {
-    version: PLO4_POLICY_PACK.version,
+    version: profile.variant
+      ? OMAHA_VARIANT_PACKS[profile.variant].version
+      : PLO4_POLICY_PACK.version,
     fixedWork: {
       governor: 'off',
       scale: 1,
-      requestedBaselineIterations: variantInfo('plo4').iterations,
+      requestedBaselineIterations: variantInfo(profile.variant ?? 'plo4').iterations,
       policyClock: 'fixed_work_no_wall_clock_branch',
       runtimeStores: {
         charts: gtoChartCount(),
@@ -482,7 +499,9 @@ export async function runPlo4PolicyLeague(
       ? 'single_hand_chip_ev_only_not_tournament_prize_ev'
       : 'matched_hero_after_rake_chip_ev',
     promotionEligible: false,
-    populationRangeModel: 'public_line_conditioned_HorseMind_population_prior_uncalibrated',
+    populationRangeModel: profile.variant
+      ? 'variant_sequential_public_line_prior_and_HorseMind_opponents_uncalibrated'
+      : 'public_line_conditioned_HorseMind_population_prior_uncalibrated',
     changed: all.reduce((s, h) => s + h.changed, 0),
     illegalActions: all.reduce((s, h) => s + h.illegalActions, 0),
     conservationErrors: all.reduce((s, h) => s + h.conservationErrors, 0),
@@ -492,4 +511,12 @@ export async function runPlo4PolicyLeague(
     pairs,
     incompleteHands,
   };
+}
+
+/** Phase 10 population and results remain fixed; Phase 11 uses the shared controller through its own registry. */
+export function runPlo4PolicyLeague(
+  options: Parameters<typeof runOmahaPolicyLeague>[0],
+  shouldContinue = () => true
+) {
+  return runOmahaPolicyLeague(options, shouldContinue);
 }

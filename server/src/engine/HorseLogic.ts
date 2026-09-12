@@ -1,4 +1,9 @@
 import {
+  evaluateOmahaVariantPolicy,
+  type OmahaVariantMode,
+} from './omaha/OmahaVariantLivePolicy.js';
+import { isOmahaPolicyVariant } from './omaha/OmahaVariantPolicyPack.js';
+import {
   evaluatePlo4LivePolicy,
   type Plo4EquityEvidence,
   type Plo4LiveMode,
@@ -1870,6 +1875,9 @@ export interface HorseDecideOpts {
   phase10Plo4?: Plo4LiveMode;
   /** Offline fixed-work evaluation only; rejected at the live worker boundary. */
   phase10EvidenceMode?: boolean;
+  /** Phase 11 variant policies are live shadow; candidate/evidence controls are offline only. */
+  phase11Omaha?: OmahaVariantMode;
+  phase11EvidenceMode?: boolean;
   /** V44 (2026-09-05): the SECOND LOOK. When set above 1, every Monte Carlo
    *  read in this decision runs at that multiple of its budgeted sample. The
    *  engine uses it to replay a close decision inside the think time it was
@@ -2034,6 +2042,7 @@ interface Phase7EquityEvidence {
  */
 let phase7EquityEvidence: Phase7EquityEvidence | null = null;
 let phase10EquityEvidence: Plo4EquityEvidence | null = null;
+let phase11DecisionEquityCeiling: number | null = null;
 
 function phase7PlayersBehind(gs: HorseGameStateV2, hero: SeatPlayer): Set<string> {
   if (gs.dealerSeat === undefined) return new Set<string>();
@@ -2337,6 +2346,7 @@ export class HorseLogic {
       difficultyHint = 0;
       phase7EquityEvidence = null;
       phase10EquityEvidence = null;
+      phase11DecisionEquityCeiling = null;
       const toCall = Math.max(0, (gameState.currentBet || 0) - (player.bet || 0));
       return toCall === 0
         ? { action: 'check', thinkTime: 1500 }
@@ -2344,6 +2354,7 @@ export class HorseLogic {
     } finally {
       phase7EquityEvidence = null;
       phase10EquityEvidence = null;
+      phase11DecisionEquityCeiling = null;
       HorseMind.setDecisionScope(null);
     }
   }
@@ -2357,6 +2368,7 @@ export class HorseLogic {
   ): HorseDecision {
     phase7EquityEvidence = null;
     phase10EquityEvidence = null;
+    phase11DecisionEquityCeiling = null;
     const base = STYLE_PARAMS[styleName] || STYLE_PARAMS.balanced;
     const params: StyleParams = {
       ...base,
@@ -2544,6 +2556,21 @@ export class HorseLogic {
           )
         : null;
     if (phase10) decision = this.legalize(phase10.decision, player, gs, vi);
+    const phase11 =
+      isOmahaPolicyVariant(gs.gameVariant) && opts.phase11Omaha !== 'off'
+        ? evaluateOmahaVariantPolicy(
+            player,
+            gs,
+            decision,
+            null,
+            opts.phase11Omaha ?? 'shadow',
+            opts.phase11EvidenceMode && !tele ? () => 0 : undefined,
+            phase11DecisionEquityCeiling ?? 1
+          )
+        : null;
+    if (phase11) decision = this.legalize(phase11.decision, player, gs, vi);
+    const variantPolicy = phase10 ?? phase11;
+
     let phase8UtilityInput: TournamentUtilityInput | null = null;
     let phase8ReuseUtility: TournamentContinuationRunner | undefined;
     if (
@@ -2649,25 +2676,25 @@ export class HorseLogic {
             },
           };
           const evaluation = evaluateTournamentUtilityDetailed(phase8UtilityInput);
-          if (phase10) {
-            if (phase10.receipt.mode === 'shadow' && phase10.receipt.fired) {
+          if (variantPolicy) {
+            if (variantPolicy.receipt.mode === 'shadow' && variantPolicy.receipt.fired) {
               const shadowStart = performance.now();
               const shadow = evaluateTournamentUtilityDetailed({
                 ...phase8UtilityInput,
-                baseline: this.legalize(phase10.proposal, player, gs, vi),
+                baseline: this.legalize(variantPolicy.proposal, player, gs, vi),
                 showdownSamples: phase8UtilityInput.showdownSamples.slice(0, 32),
                 withinBudget:
-                  opts.phase10EvidenceMode && !tele
+                  (opts.phase10EvidenceMode || opts.phase11EvidenceMode) && !tele
                     ? () => true
                     : () => performance.now() - shadowStart < 4,
               });
-              phase10.receipt.utilityLatencyMs = performance.now() - shadowStart;
-              phase10.receipt.utilityOwner = shadow.result
+              variantPolicy.receipt.utilityLatencyMs = performance.now() - shadowStart;
+              variantPolicy.receipt.utilityOwner = shadow.result
                 ? 'phase7_evaluated'
                 : 'phase7_unavailable';
-              if (shadow.result) phase10.receipt.shadowUtility = shadow.result.ledger;
+              if (shadow.result) variantPolicy.receipt.shadowUtility = shadow.result.ledger;
             } else
-              phase10.receipt.utilityOwner = evaluation.result
+              variantPolicy.receipt.utilityOwner = evaluation.result
                 ? 'phase7_evaluated'
                 : 'phase7_unavailable';
           }
@@ -2794,6 +2821,37 @@ export class HorseLogic {
         if (phase10.receipt.applied) noteFire('phase10_applied');
         else noteFire('phase10_baseline_retained');
         noteFire(`phase10_utility_${phase10.receipt.utilityOwner}`);
+      }
+    }
+    if (phase11) {
+      if (isTournamentMode(gs) && phase11.receipt.utilityOwner !== 'phase7_evaluated') {
+        phase11.receipt.utilityOwner = 'phase7_unavailable';
+        if (phase11.receipt.mode === 'candidate') {
+          decision = beforePhase10;
+          phase11.receipt.applied = false;
+        }
+      }
+      phase11.receipt.finalAction = decision.action;
+      phase11.receipt.finalAmount = decision.amount ?? null;
+      decision = { ...decision, omahaVariantPolicy: phase11.receipt };
+      if (tele) {
+        noteFire('phase11_seen');
+        noteFire(`phase11_variant_${phase11.receipt.variant}`);
+        noteDecisionMs('phase11', phase11.receipt.latencyMs);
+        noteDecisionMs(`phase11_${phase11.receipt.variant}`, phase11.receipt.latencyMs);
+        noteFire(`phase11_${phase11.receipt.variant}_reason_${phase11.receipt.reason}`);
+        if (phase11.receipt.eligible) noteFire(`phase11_${phase11.receipt.variant}_eligible`);
+        if (phase11.receipt.fired) noteFire(`phase11_${phase11.receipt.variant}_fired`);
+        noteFire(`phase11_reason_${phase11.receipt.reason}`);
+        if (phase11.receipt.eligible) noteFire('phase11_eligible');
+        if (phase11.receipt.fired) {
+          noteFire('phase11_fired');
+          noteFire(`phase11_street_${gs.stage}`);
+        }
+        if (phase11.receipt.changed) noteFire('phase11_shadow_changed');
+        if (phase11.receipt.applied) noteFire('phase11_applied');
+        else noteFire('phase11_baseline_retained');
+        noteFire(`phase11_utility_${phase11.receipt.utilityOwner}`);
       }
     }
     decision.thinkTime = this.computeThinkTime(
@@ -3021,6 +3079,7 @@ export class HorseLogic {
         reportError(error, 'HorseLogic.phase7_preflop_equity');
         phase7EquityEvidence = null;
         phase10EquityEvidence = null;
+        phase11DecisionEquityCeiling = null;
       }
     }
     const stackBB = player.stack / bb;
@@ -6255,6 +6314,10 @@ export class HorseLogic {
         phase7EquityEvidence.sampleSize > 0
           ? Math.sqrt((bounded7 * (1 - bounded7)) / phase7EquityEvidence.sampleSize)
           : 0;
+    }
+
+    if (isOmahaPolicyVariant(gs.gameVariant) && eq15 < equity) {
+      phase11DecisionEquityCeiling = clamp01(eq15);
     }
 
     if (gs.gameVariant === 'plo4') {

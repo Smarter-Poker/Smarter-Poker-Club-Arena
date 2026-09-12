@@ -17,7 +17,7 @@ export const OMAHA_EQUITY_LIMITS = {
   maxExactDeals: 4096,
   maxCombos: 256,
   attemptsPerSample: 128,
-  maxPlayers: 8,
+  maxPlayers: 10,
   maxBoards: 3,
 } as const;
 export type OmahaRange = { uniform: true } | { combos: { cards: Card[]; weight: number }[] };
@@ -58,6 +58,13 @@ export interface OmahaEquityResult {
   confidence99: [number, number];
   distribution: { share: number; probability: number }[];
   perBoard: { highEquity: number; lowEquity: number; equity: number }[];
+  perPot: {
+    amount: number;
+    eligiblePlayers: string[];
+    highEquity: number;
+    lowEquity: number;
+    equity: number;
+  }[];
   boardCovariance: number[][];
   eligiblePot: number;
   refunds: Record<string, number>;
@@ -193,6 +200,15 @@ export async function evaluateOmahaEquity(
     confidence99: [0, 1],
     distribution: [],
     perBoard: request.boards.map(() => ({ highEquity: 0, lowEquity: 0, equity: 0 })),
+    perPot: pots
+      .filter((p) => p.eligible.includes(request.heroId))
+      .map((p) => ({
+        amount: p.amount,
+        eligiblePlayers: [...p.eligible].sort(),
+        highEquity: 0,
+        lowEquity: 0,
+        equity: 0,
+      })),
     boardCovariance: request.boards.map(() => request.boards.map(() => 0)),
     eligiblePot,
     refunds,
@@ -285,6 +301,21 @@ export async function evaluateOmahaEquity(
       settlement.awards
         .filter((a) => a.playerId === request.heroId && a.half === 'low')
         .reduce((s, a) => s + a.amount, 0) / eligiblePot;
+    const heroPots = settlement.pots
+      .map((pot, index) => ({ pot, index }))
+      .filter(({ pot }) => pot.eligible.includes(request.heroId));
+    heroPots.forEach(({ pot, index }, eligibleIndex) => {
+      const awards = settlement.awards.filter(
+        (a) => a.potIndex === index && a.playerId === request.heroId
+      );
+      const hi =
+        awards.filter((a) => a.half === 'high').reduce((n, a) => n + a.amount, 0) / pot.amount;
+      const lo =
+        awards.filter((a) => a.half === 'low').reduce((n, a) => n + a.amount, 0) / pot.amount;
+      result.perPot[eligibleIndex].highEquity += weight * hi;
+      result.perPot[eligibleIndex].lowEquity += weight * lo;
+      result.perPot[eligibleIndex].equity += weight * (hi + lo);
+    });
     const share = high + low;
     const key = share.toFixed(12);
     const bin = histogram.get(key) ?? { share, weight: 0 };
@@ -356,7 +387,7 @@ export async function evaluateOmahaEquity(
     result.distribution = [...histogram.values()]
       .map((b) => ({ share: b.share, probability: b.weight / totalWeight }))
       .sort((a, b) => a.share - b.share);
-    result.perBoard.forEach((b) => {
+    [...result.perBoard, ...result.perPot].forEach((b) => {
       b.highEquity /= totalWeight;
       b.lowEquity /= totalWeight;
       b.equity /= totalWeight;

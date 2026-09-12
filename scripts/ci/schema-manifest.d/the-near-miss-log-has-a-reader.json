@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/bbj-the-near-miss-log-has-a-reader",
+  "functions": ["fn_bbj_near_miss_summary"]
+}

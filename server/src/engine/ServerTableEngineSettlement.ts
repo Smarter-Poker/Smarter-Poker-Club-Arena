@@ -2387,6 +2387,38 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           }
         } catch (err) {
           const message = describeError(err);
+          /* ═══ THE KILL MUST NOT PRE-EMPT THE RETRY BUDGET (2026-09-12) ═════
+             `killForRestart` below sets `terminal = true; running = false`
+             SYNCHRONOUSLY, and it used to run for every refusal - including
+             the one the database raises specifically to ask for another
+             attempt. `runStep` decides whether to retry AFTER this body
+             returns, and its third condition is `!this.lifecycleCanMutate()`,
+             which is false the instant this generation is terminal. So the
+             budget `hand_history` was given could never be spent: the step
+             killed the engine on attempt 1 and the retry loop then refused to
+             run attempt 2 because the engine was dead. A retry that is
+             unreachable is not a retry.
+
+             So a refusal the database rolled back whole, for a reason Postgres
+             defines as "run it again", leaves here untouched: no kill, no
+             critical alert, no terminal loop phase. `runStep` re-runs this
+             step - the body above is pure, and every write it performs goes
+             through one idempotent RPC keyed on (table_id, hand_number). If
+             the budget runs out, the throw reaches `await lanes.record`,
+             `authoritativeCommitSucceeded` is still false, and the existing
+             `authoritative_hand_commit_not_proved` kill and the step's own
+             `postHandTasks.hand_history_failed` critical alert both stand.
+
+             Production, 2026-09-12 10:04:25Z onward: 1,021 of 1,023 semantic
+             refusals were this, and every one killed a live table. */
+          if (ServerTableEngineBase.isRolledBackSerializationRefusal(err)) {
+            this.setLoopPhase('settlement_lane_contended');
+            reportError(err, 'ServerTableEngine.authoritative_hand_lane_contended', {
+              tableId: this.tableId,
+              handNumber: snap.handNumber,
+            });
+            throw err;
+          }
           const semantic = message.includes('atomic hand commit refused');
           const alertCode = semantic
             ? 'ServerTableEngine.authoritative_hand_semantic_refusal'

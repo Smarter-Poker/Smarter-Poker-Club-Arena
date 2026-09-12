@@ -38,6 +38,24 @@ import { POSTGREST_PAGE } from './supabase/pagination.js';
 const HYDRATION_WINDOW_HOURS = 72;
 const HYDRATION_MAX_HANDS = 12000;
 
+type HistoryCursor = { created_at: string; id: string };
+const HISTORY_UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
+const HISTORY_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.(\d{1,6}))?(?:Z|[+-]\d{2}:\d{2})$/;
+/** Keep PostgreSQL microseconds: Date.parse alone collapses distinct cursors. */
+function historyTime(value: unknown): bigint | null {
+  if (typeof value !== 'string') return null;
+  const match = HISTORY_TIME.exec(value),
+    milliseconds = Date.parse(value);
+  if (!match || !Number.isSafeInteger(milliseconds)) return null;
+  return BigInt(milliseconds) * 1000n + BigInt((match[1] ?? '').padEnd(6, '0').slice(3));
+}
+
+function precedes(row: HistoryCursor, cursor: HistoryCursor): boolean {
+  const time = historyTime(row.created_at)!,
+    prior = historyTime(cursor.created_at)!;
+  return time < prior || (time === prior && row.id < cursor.id);
+}
+
 /**
  * @param sinceIso V12: when the DB hydration already restored the flushed
  * stats, only the un-flushed tail needs replaying — pass the last flush
@@ -48,27 +66,40 @@ export async function hydrateHorseMind(sinceIso?: string | null): Promise<void> 
   try {
     const t0 = Date.now();
     const windowStart = new Date(Date.now() - HYDRATION_WINDOW_HOURS * 3600 * 1000).toISOString();
-    const since = sinceIso && sinceIso > windowStart ? sinceIso : windowStart;
+    const suppliedTime = historyTime(sinceIso),
+      floor = historyTime(windowStart)!;
+    const ceiling = BigInt(t0) * 1000n;
+    const since =
+      suppliedTime !== null && suppliedTime >= floor && suppliedTime <= ceiling
+        ? sinceIso!
+        : windowStart;
+    const sinceTime = historyTime(since)!;
+    const through = new Date(t0).toISOString();
 
     /* PAGED, NEWEST FIRST (2026-09-09). This was one select with
        `.limit(12000)`, and PostgREST caps every select at db-max-rows (1,000)
        without a word - so the replay was the OLDEST thousand hands of the
        window, ascending from seventy-two hours ago, out of the 1.56 million
-       the window holds. Keyset on created_at, descending, up to the cap, then
+       the window holds. Keyset on (created_at, id), descending, up to the cap, then
        replayed in the order they were dealt. A short read replays what it
        read: fewer hands is the pre-V6 engine, not a wrong engine. */
-    type HandRow = { actions: unknown; created_at: string };
+    type HandRow = HistoryCursor & { actions: unknown };
     const newestFirst: HandRow[] = [];
-    let cursor: string | null = null;
+    let cursor: HistoryCursor | null = null;
     while (newestFirst.length < HYDRATION_MAX_HANDS) {
       const want = Math.min(POSTGREST_PAGE, HYDRATION_MAX_HANDS - newestFirst.length);
       let q = supabase
         .from('hand_history')
-        .select('actions, created_at')
+        .select('id, actions, created_at')
         .gt('created_at', since)
+        .lte('created_at', through)
         .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
         .limit(want);
-      if (cursor) q = q.lt('created_at', cursor);
+      if (cursor)
+        q = q.or(
+          `created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id})`
+        );
       const { data: rows, error } = await q;
       if (error) {
         reportError(
@@ -78,11 +109,39 @@ export async function hydrateHorseMind(sinceIso?: string | null): Promise<void> 
         break; // replay what was read
       }
       const got = (rows ?? []) as HandRow[];
+      // Validate the entire page before replay. A repeated or malformed cursor
+      // must not duplicate evidence or widen the next database filter.
+      let previous = cursor;
+      let valid = Array.isArray(got) && got.length <= want;
+      if (valid)
+        for (const row of got) {
+          const at = row && historyTime(row.created_at);
+          if (
+            !row ||
+            typeof row.id !== 'string' ||
+            !HISTORY_UUID.test(row.id) ||
+            at === null ||
+            at <= sinceTime ||
+            at > ceiling ||
+            (previous && !precedes(row, previous))
+          ) {
+            valid = false;
+            break;
+          }
+          previous = row;
+        }
+      if (!valid) {
+        reportError(
+          new Error('history page identity or ordering invalid'),
+          'HorseMindHydrator.page'
+        );
+        break;
+      }
       newestFirst.push(...got);
       if (got.length < want) break;
-      const last = got[got.length - 1]?.created_at;
+      const last = got[got.length - 1];
       if (!last) break;
-      cursor = last;
+      cursor = { created_at: last.created_at, id: last.id };
     }
     const data = newestFirst.reverse();
     if (data.length === 0) {

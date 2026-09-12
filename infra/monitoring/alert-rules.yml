@@ -1721,6 +1721,49 @@ groups:
       # nothing. Four consecutive busies inside the twenty-second proof window
       # is an expiry. One busy is ordinary contention; a rate of them is a
       # table that will restart.
+      # ── THE RENEWAL LOOP STOPPED, AND NOTHING SAID SO ─────────────────────
+      #
+      # runOwnershipLeaseRenewalLoop renews every cash lease and every
+      # tournament lease in the process. It is launched once and nothing
+      # relaunches it. On 2026-09-12 it stopped for at least two hours:
+      # heartbeat_table_leases_v4 and heartbeat_tournament_leases_v4 held at
+      # exactly 27,886 and 27,765 calls across a 73-second window while
+      # claim_table_lease_v2 took 283 in the same window - 233 a minute. Every
+      # one of the 78 cash tables was killed by its own 20-second proof
+      # watchdog and re-claimed, 26,129 times, three quarters of those lives
+      # dealing no hands, at tables holding 9 of 9 seats.
+      #
+      # There was no log line, no error and no metric, because nothing FAILED.
+      # It was not running, and an engine not doing a thing reads exactly like
+      # an engine with nothing to do. This is the rule that tells them apart.
+      #
+      # A pass runs every 5 seconds, so 5m of zero completed passes is
+      # sixty missed renewals against a twenty second proof window. By then
+      # every lease in the process is already being lost and re-claimed.
+      - alert: LeaseRenewalLoopStopped
+        expr: |
+          sum(rate(poker_lease_renewal_passes_total{outcome="completed"}[5m])) == 0
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 5m
+        labels:
+          severity: critical
+          page: sms
+          component: club-arena-engine
+        annotations:
+          summary: 'No ownership lease renewal pass has completed for 5 minutes'
+          description: |
+            The one lifecycle that renews every cash and tournament lease in
+            the engine has stopped completing passes. Nothing relaunches it.
+            Every lease will reach its twenty second proof window unrenewed,
+            every table will be killed by its own watchdog and re-claimed, and
+            hands in flight will be abandoned mid-play. Read
+            poker_lease_renewal_loop_running: 0 means the loop left, 1 means it
+            is wedged inside a pass. Check
+            poker_lease_renewal_passes_total{outcome="abandoned"} for a pass
+            that never settled, and claim_table_lease_v2 call rate for the
+            re-claim storm that follows.
+          runbook: docs/changelog/2026-09-12-the-loop-that-renews-every-lease-stopped.md
+
       - alert: LeaseHeartbeatsNotBeingKept
         expr: |
           sum by (scope) (rate(poker_lease_heartbeat_outcomes_total{state!="kept"}[10m]))

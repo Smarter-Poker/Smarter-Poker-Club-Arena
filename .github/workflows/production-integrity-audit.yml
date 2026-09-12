@@ -114,6 +114,27 @@ jobs:
         if: always()
         run: bash .github/scripts/origin-contract.sh
 
+      # ── IS THE PIPELINE GETTING WORSE? (2026-09-12) ────────────────────────
+      # The step above answers "is production running main" as a BOOLEAN, and
+      # it had been answering "no" continuously since 2026-09-11 00:25 - issue
+      # #4219 was open the whole time. So when production went from one release
+      # behind to FOURTEEN releases and four and a half hours behind, nothing
+      # anywhere changed state and there was no new signal to notice. A chronic
+      # alarm that never clears is the same blind spot as no alarm.
+      #
+      # This reads the pipeline's own append-only ledger and asks the question
+      # the boolean cannot: are commits being offered to production faster than
+      # production is taking them, and is the release lane itself the reason.
+      # Read-only. No dispatch, retry, repair, or mutation authority.
+      - name: The engine pipeline is not starving
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          npm install pg@8 --no-save --ignore-scripts --no-audit --no-fund >/dev/null 2>&1 || true
+          node .github/scripts/check-engine-deploy-starvation.mjs
+
   # ───────────────────────────────────────────────────────────────────────────
   # IS ANYTHING RED ON MAIN THAT NOBODY IS LOOKING AT?
   #

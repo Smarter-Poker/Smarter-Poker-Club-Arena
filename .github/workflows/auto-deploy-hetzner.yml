@@ -112,6 +112,7 @@ jobs:
       contents: read
     outputs:
       release_result: ${{ steps.release.outputs.result || 'not completed' }}
+      superseded_by: ${{ steps.release.outputs.superseded_by || '' }}
       verified: ${{ steps.verify.outputs.verified || 'false' }}
       shipped: ${{ (steps.release.outputs.result == 'sealed' || steps.release.outputs.result == 'already-released') && steps.verify.outputs.verified == 'true' }}
     env:
@@ -305,6 +306,20 @@ jobs:
           DISPATCH_FINALIZE_RESERVE_SECONDS=15
           ACTOR_B64="$(printf '%s' "$RUN_ACTOR" | base64 -w 0)"
           [[ "$ACTOR_B64" =~ ^[A-Za-z0-9+/]*={0,2}$ ]]
+          # A release that stood down because protected main moved is not a broken
+          # build, and until 2026-09-12 both were recorded as "release ended
+          # without complete production proof". Fourteen consecutive stand-downs
+          # read as fourteen failed production proofs, and the investigation went
+          # looking for a sick engine that was healthy the whole time.
+          classify_release_failure() {
+            local log stale
+            log="$RUNNER_TEMP/engine-release-$RUN_KEY.log"
+            [ -r "$log" ] || return 0
+            stale="$(sed -n 's/.*is stale; protected main requires \([0-9a-f]\{40\}\).*/\1/p' "$log" | tail -1)"
+            [[ "$stale" =~ ^[0-9a-f]{40}$ ]] || return 0
+            echo "result=superseded" >> "$GITHUB_OUTPUT"
+            echo "superseded_by=$stale" >> "$GITHUB_OUTPUT"
+          }
           uncertain_status() {
             local status="$1"
             [ "$status" -eq 255 ] || [ "$status" -eq 124 ] \
@@ -384,12 +399,13 @@ jobs:
               if uncertain_status "$SSH_RC"; then
                 continue
               fi
+              classify_release_failure
               echo "::error::Hetzner release transaction failed while reattaching ($SSH_RC)"
               exit "$SSH_RC"
             done
           fi
           [ "$SSH_RC" -eq 0 ] \
-            || { echo "::error::could not reattach to the durable Hetzner release transaction ($SSH_RC)"; exit "$SSH_RC"; }
+            || { classify_release_failure; echo "::error::could not reattach to the durable Hetzner release transaction ($SSH_RC)"; exit "$SSH_RC"; }
           RESULT="$(sed -n 's/^ENGINE_RELEASE_RESULT=//p' "$RUNNER_TEMP/engine-release-$RUN_KEY.log" | tail -1)"
           UNIT_RESULT="$(sed -n 's/^ENGINE_RELEASE_UNIT_RESULT=//p' "$RUNNER_TEMP/engine-release-$RUN_KEY.log" | tail -1)"
           RESULT_SHA="$(sed -n 's/^ENGINE_RELEASE_SHA=//p' "$RUNNER_TEMP/engine-release-$RUN_KEY.log" | tail -1)"
@@ -538,7 +554,10 @@ jobs:
           RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
           RUN_ACTOR: ${{ github.actor }}
           STRICT_RECEIPT: '1'
-          REASON: ${{ needs.deploy.outputs.release_result == 'already-released' && 'production already proved this exact release' || needs.deploy.outputs.verified == 'true' && 'Hetzner transaction sealed and independently verified' || 'release ended without complete production proof' }}
+          # Four outcomes, four reasons. This used to collapse every non-shipping
+          # path into one sentence about a production proof, which named the
+          # wrong half of the pipeline on every stand-down.
+          REASON: ${{ needs.deploy.outputs.release_result == 'already-released' && 'production already proved this exact release' || needs.deploy.outputs.verified == 'true' && 'Hetzner transaction sealed and independently verified' || needs.deploy.outputs.release_result == 'superseded' && format('stood down before cutover; protected main had moved to {0}', needs.deploy.outputs.superseded_by) || needs.deploy.outputs.release_result == 'not completed' && 'the durable Hetzner release transaction did not complete; production still runs the previously sealed release' || 'the release sealed but production identity could not be independently proved' }}
         run: |
           set -euo pipefail
           RECEIPT_REMAINING=$((RELEASE_RECEIPT_DEADLINE_EPOCH - $(date +%s)))
@@ -573,6 +592,38 @@ jobs:
             echo "- Durable transaction: \`$RELEASE_RESULT\`"
             echo "- Independent exact-SHA proof: \`$VERIFIED\`"
             echo '- Image build: owned and bounded by the durable Hetzner transaction'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # A run that ships nothing must say so where a person actually looks.
+      # On 2026-09-12 fourteen consecutive runs shipped nothing over four and a
+      # half hours and the only trace was a red row in a list of 1,500 runs and
+      # a ledger nobody was reading. A red tick says "a step failed"; it does
+      # not say "production is still on last night's engine".
+      - name: Say plainly when nothing shipped
+        if: always()
+        env:
+          SHIPPED: ${{ needs.deploy.outputs.shipped }}
+          TARGET_SHA: ${{ needs.preflight.outputs.target_sha }}
+          RELEASE_RESULT: ${{ needs.deploy.outputs.release_result }}
+          SUPERSEDED_BY: ${{ needs.deploy.outputs.superseded_by }}
+          VERIFIED: ${{ needs.deploy.outputs.verified }}
+        run: |
+          set -euo pipefail
+          if [ "$SHIPPED" = 'true' ]; then
+            echo "Production is serving $TARGET_SHA."
+            exit 0
+          fi
+          DETAIL="durable transaction result '$RELEASE_RESULT', independent proof '$VERIFIED'"
+          if [ -n "$SUPERSEDED_BY" ]; then
+            DETAIL="stood down before cutover; protected main had moved to $SUPERSEDED_BY"
+          fi
+          echo "::warning title=NOT DEPLOYED::$TARGET_SHA did not reach production ($DETAIL). The engine still runs the previously sealed release."
+          {
+            echo
+            echo '### NOT DEPLOYED'
+            echo "\`$TARGET_SHA\` did not reach production."
+            echo "- Why: $DETAIL"
+            echo '- The engine still runs the previously sealed release.'
           } >> "$GITHUB_STEP_SUMMARY"
 
   certify-production:

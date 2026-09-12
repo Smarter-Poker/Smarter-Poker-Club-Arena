@@ -50,10 +50,17 @@ jobs:
           MAIN_SHA="$(git rev-parse --verify 'origin/main^{commit}')"
           git merge-base --is-ancestor "$RESOLVED_SHA" "$MAIN_SHA" \
             || { echo "::error::target is not contained in protected main $MAIN_SHA"; exit 1; }
+          # Behind main is not the same as going backwards (2026-09-12); see the
+          # note on the freshness recheck below. Containment in protected main
+          # is proved directly above and still gates. Never moving the engine
+          # backwards is enforced against the sealed runtime on the box, in
+          # engine-release-transaction.sh, which is the only place that knows
+          # what is actually running.
           LATEST_REQUIRED="$(git log "$MAIN_SHA" -1 --format=%H -- \
             'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**')"
           [ "$RESOLVED_SHA" = "$LATEST_REQUIRED" ] \
-            || { echo "::error::stale engine request; protected main requires $LATEST_REQUIRED"; exit 1; }
+            && echo "request is the newest engine component on main" \
+            || echo "::notice::engine request is behind main ($LATEST_REQUIRED); the box refuses only a backwards move"
           echo "sha=$RESOLVED_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Use the production Node major
@@ -180,10 +187,26 @@ jobs:
             || { echo '::error::release target left protected-main history'; exit 1; }
           git merge-base --is-ancestor "$CONTROL_SHA" "$MAIN_SHA" \
             || { echo '::error::workflow control commit left protected-main history'; exit 1; }
+          # BEHIND MAIN IS NOT THE SAME AS GOING BACKWARDS (2026-09-12).
+          #
+          # This required the queued target to BE the newest engine-component
+          # commit on main. At roughly nineteen merges an hour, against a FIFO
+          # wait and a :55 break window up to fifty minutes away, that is
+          # unsatisfiable: eight consecutive releases died on it and the engine
+          # ran one build for four and a half hours, including through a live
+          # fault whose fix was sitting on main unable to ship.
+          #
+          # Ancestry above is what catches a rewind or a build off some other
+          # history, and it still runs. The property this check was reaching
+          # for - never move the engine backwards - is enforced where the
+          # answer is actually known, against the runtime the box has sealed,
+          # in engine-release-transaction.sh. A runner cannot know that, so it
+          # no longer guesses at it.
           LATEST_REQUIRED="$(git log "$MAIN_SHA" -1 --format=%H -- \
             'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**')"
           [ "$LATEST_REQUIRED" = "$SHA" ] \
-            || { echo "::error::queued target is stale; protected main requires $LATEST_REQUIRED"; exit 1; }
+            && echo "queued target is the newest engine component on main" \
+            || echo "::notice::queued target is behind main ($LATEST_REQUIRED); the box refuses only a backwards move"
 
       - name: Establish pinned ephemeral SSH transport
         id: ssh
@@ -252,9 +275,15 @@ jobs:
             git -C "$REPO_DIR" cat-file -e "$commit^{commit}"
             git -C "$REPO_DIR" merge-base --is-ancestor "$commit" "$MAIN_SHA"
           done
+          # Behind main is not the same as going backwards (2026-09-12). Both
+          # commits were just proved contained in protected main by the loop
+          # above; the backwards rule belongs to the transaction, against the
+          # sealed runtime. Staging control bytes for a target that is merely
+          # behind main is safe and is what lets a release survive its wait.
           LATEST_REQUIRED="$(git -C "$REPO_DIR" log "$MAIN_SHA" -1 --format=%H -- \
             'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**')"
-          [ "$LATEST_REQUIRED" = "$TARGET_SHA" ]
+          [ "$LATEST_REQUIRED" = "$TARGET_SHA" ] \
+            || echo "staging a target that is behind main ($LATEST_REQUIRED)"
           STAGE="/var/lib/club-arena/control-staging/$RUN_KEY"
           [[ "$STAGE" =~ ^/var/lib/club-arena/control-staging/[1-9][0-9]*-[1-9][0-9]*$ ]]
           rm -rf -- "$STAGE"

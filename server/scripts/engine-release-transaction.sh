@@ -271,7 +271,58 @@ source_target_is_current() {
     || die 'bounded target server tree lookup failed'
   flock -u 8
   [[ "$latest" =~ ^[0-9a-f]{40}$ ]] || die 'latest engine component SHA is unreadable'
-  [ "$latest" = "$SHA" ] || die "target $SHA is stale; protected main requires $latest"
+  # ── BEHIND MAIN IS NOT THE SAME AS GOING BACKWARDS (2026-09-12) ───────────
+  #
+  # This required the target to BE the newest engine-component commit on
+  # protected main, re-checked here and again while the transaction waits for
+  # its :55 break window. At this repo's merge rate that is unsatisfiable: the
+  # wait runs up to fifty minutes and main takes roughly nineteen commits an
+  # hour, so a build that is perfectly valid when it is cut is "stale" long
+  # before its window opens.
+  #
+  # Measured 2026-09-12. The engine ran d68cc549 for four and a half hours
+  # while eight consecutive release transactions built their image, waited, and
+  # died here - including the one carrying the fix for a live fault that was
+  # killing every cash table every twenty seconds:
+  #
+  #   03:07  image for 367a6ade built and validated
+  #   03:32  main moved   367a6adec..43216b121
+  #   03:41  main moved   43216b121..f894216ca
+  #   03:53  main moved   f894216ca..35f1b585e
+  #   03:53  FATAL: target 367a6adecd is stale; protected main requires 35f1b585ef
+  #
+  # Every deploy is behind main the instant it lands, so being behind cannot be
+  # the thing that makes one unsafe. Two properties are what actually matter,
+  # and both are kept:
+  #
+  #   * the target is contained in protected main - proved above by ancestry,
+  #     which is what catches a rewind, a force-push or a build off some other
+  #     history;
+  #   * the engine never moves BACKWARDS - proved here against the runtime this
+  #     box has sealed, which is also what serialises two releases racing: an
+  #     older one cannot land on top of a newer one that already sealed.
+  #
+  # Identity was a blunt approximation of the second property. It is replaced
+  # by the second property itself.
+  if [ "$latest" != "$SHA" ]; then
+    local sealed_sha seal_wait
+    seal_wait="$(remaining_seconds)" \
+      || die 'deadline expired before sealed-runtime comparison'
+    [ "$seal_wait" -le 10 ] || seal_wait=10
+    sealed_sha="$(timeout --signal=TERM --kill-after=1s "${seal_wait}s" \
+      "$RELEASE_SEAL" get desired-sha)" \
+      || die 'could not read the sealed desired SHA for the backwards check'
+    [[ "$sealed_sha" =~ ^[0-9a-f]{40}$ ]] \
+      || die 'sealed desired SHA is unreadable for the backwards check'
+    if [ "$sealed_sha" != "$SHA" ]; then
+      seal_wait="$(remaining_seconds)" \
+        || die 'deadline expired before sealed-runtime ancestry proof'
+      [ "$seal_wait" -le 10 ] || seal_wait=10
+      timeout --signal=TERM --kill-after=1s "${seal_wait}s" env GIT_NO_REPLACE_OBJECTS=1 \
+        git -C "$REPO_DIR" merge-base --is-ancestor "$sealed_sha" "$SHA" \
+        || die "target $SHA does not descend from the sealed runtime $sealed_sha"
+    fi
+  fi
   [[ "$EXPECTED_SERVER_TREE" =~ ^[0-9a-f]{40}$ ]] || die 'target server tree is unreadable'
 }
 

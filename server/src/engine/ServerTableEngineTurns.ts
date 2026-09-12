@@ -26,6 +26,7 @@ import type {
   HorseDecision,
   SeatPlayer,
   AuthoritativeActionState,
+  AcceptedActionOrigin,
 } from '../types.js';
 
 import { HorseLogic, resolveHorseStyle, type HorseGameStateV2 } from './HorseLogic.js';
@@ -664,8 +665,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // next seat's freshly scheduled work instead.
       this.cancelHorseDecisionWork();
       try {
-        applied = this.handController.performAction(seat, forced as any);
-        if (!applied) applied = this.handController.performAction(seat, 'fold' as any);
+        applied = this.handController.performAction(seat, forced as any, undefined, 'forced');
+        if (!applied)
+          applied = this.handController.performAction(seat, 'fold' as any, undefined, 'forced');
       } catch (err) {
         reportError(err, 'ServerTableEngine.' + this.tableId + '.watchdog_force_action_failed');
       }
@@ -718,7 +720,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const order: Array<'check' | 'fold'> = preferCheck ? ['check', 'fold'] : ['fold'];
     for (const a of order) {
       try {
-        if (this.handController.performAction(seat, a as any)) return true;
+        if (this.handController.performAction(seat, a as any, undefined, 'forced')) return true;
       } catch (err) {
         reportError(err, 'ServerTableEngine.' + this.tableId + '.force_' + a + '_threw');
       }
@@ -1496,7 +1498,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         player.stack
       );
       if (preResult.executed && preResult.action) {
-        const acted = this.handlePlayerAction(userId, preResult.action, preResult.amount);
+        const acted = this.handlePlayerAction(
+          userId,
+          preResult.action,
+          preResult.amount,
+          undefined,
+          'pre_action'
+        );
         if (acted.success) {
           console.log(
             `[ServerTableEngine:${this.tableId}] Pre-action armed mid-turn executed immediately: ${userId} -> ${preResult.action}${preResult.amount ? ` ${preResult.amount}` : ''}`
@@ -1526,7 +1534,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     userId: string,
     action: string,
     amount?: number,
-    actionContext?: string | null
+    actionContext?: string | null,
+    trustedOrigin?: 'pre_action'
   ): { success: boolean; error?: string; code?: string; hint?: Record<string, unknown> } {
     if (!this.lifecycleCanMutate()) {
       return {
@@ -1556,7 +1565,16 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     }
     this.actionLock = true;
     try {
-      return this._handlePlayerActionInner(userId, action, amount);
+      return this._handlePlayerActionInner(
+        userId,
+        action,
+        amount,
+        actionContext !== undefined
+          ? 'player'
+          : trustedOrigin === 'pre_action'
+            ? 'pre_action'
+            : 'unknown'
+      );
     } finally {
       this.actionLock = false;
     }
@@ -1565,7 +1583,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   protected _handlePlayerActionInner(
     userId: string,
     action: string,
-    amount?: number
+    amount?: number,
+    origin: AcceptedActionOrigin = 'unknown'
   ): { success: boolean; error?: string; code?: string; hint?: Record<string, unknown> } {
     if (!this.handController) {
       return { success: false, error: 'No active hand' };
@@ -1865,7 +1884,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       const actionApplied = this.handController.performAction(
         seat,
         normalizedAction as any,
-        amount
+        amount,
+        origin
       );
       if (!actionApplied) {
         // Restore whatever was pending; this action contributed nothing.
@@ -2235,7 +2255,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         preApplied = controllerAtBeat.performAction(
           seat,
           preResult.action as any,
-          preResult.amount
+          preResult.amount,
+          'pre_action'
         );
       } catch (err) {
         reportError(err, 'ServerTableEngine.' + this.tableId + '.preaction_threw');
@@ -3395,7 +3416,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           const worker = getLiveHorseDecisionWorker();
           worker.runWithDispatchBarrier(() => {
             try {
-              applied = handControllerRef.performAction(seat, action as any, amount);
+              applied = handControllerRef.performAction(
+                seat,
+                action as any,
+                amount,
+                safeWorkerFallback ? 'horse_fallback' : 'horse_policy'
+              );
               intendedApplied = applied;
               if (applied) {
                 executedAction = action as ActionType;
@@ -3441,12 +3467,22 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                 // above produced no broadcast, so the clock must start again for
                 // whichever of these two lands.
                 this.lastActionAcceptedAtMs = Date.now();
-                applied = handControllerRef.performAction(seat, 'check' as any);
+                applied = handControllerRef.performAction(
+                  seat,
+                  'check' as any,
+                  undefined,
+                  'horse_fallback'
+                );
                 if (applied) {
                   executedAction = 'check';
                   executedAmount = null;
                 } else {
-                  applied = handControllerRef.performAction(seat, 'fold' as any);
+                  applied = handControllerRef.performAction(
+                    seat,
+                    'fold' as any,
+                    undefined,
+                    'horse_fallback'
+                  );
                   if (applied) {
                     executedAction = 'fold';
                     executedAmount = null;

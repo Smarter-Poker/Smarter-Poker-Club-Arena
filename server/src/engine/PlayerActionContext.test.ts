@@ -10,7 +10,7 @@ import { mockReq, mockRes, parseJson } from '../handlers/_testHelpers.js';
 import { playerActionContext } from './PlayerActionContext.js';
 import { HandController } from './HandController.js';
 import { ServerTableEngine } from './ServerTableEngine.js';
-import type { HandConfig, SeatPlayer } from '../types.js';
+import type { AcceptedActionOrigin, HandConfig, HandEvent, SeatPlayer } from '../types.js';
 
 function hand() {
   const h = new HandController(
@@ -45,9 +45,11 @@ function harness() {
   engine.handController = h;
   engine.lifecycleCanMutate = () => true;
   engine.actionLock = false;
-  engine._handlePlayerActionInner = vi.fn((user: string, action: string, amount?: number) => ({
-    success: h.performAction(Number(user.slice(1)), action as any, amount),
-  }));
+  engine._handlePlayerActionInner = vi.fn(
+    (user: string, action: string, amount?: number, origin?: AcceptedActionOrigin) => ({
+      success: h.performAction(Number(user.slice(1)), action as any, amount, origin),
+    })
+  );
   return { h, engine };
 }
 describe('HTTP decision context before engine mutation', () => {
@@ -117,6 +119,26 @@ async function post(engine: any, body: Record<string, unknown>) {
 }
 describe('HTTP retries preserve the decision boundary', () => {
   beforeEach(() => _resetActionIdempotencyForTests());
+  it('ignores caller-supplied provenance and does not create another origin on retry', async () => {
+    const { h, engine } = harness();
+    engine.recordActionPerformance = vi.fn();
+    const events: Array<Extract<HandEvent, { type: 'PLAYER_ACTION' }>> = [];
+    h.onEvent((event) => {
+      if (event.type === 'PLAYER_ACTION') events.push(event);
+    });
+    const body = {
+      tableId: 'context-test',
+      action: 'call',
+      actionContext: engine.getActionContext(),
+      idempotencyKey: 'origin-key-0001',
+      origin: 'horse_policy',
+      trustedOrigin: 'pre_action',
+    };
+    expect((await post(engine, body)).body.success).toBe(true);
+    expect((await post(engine, body)).body.replayed).toBe(true);
+    expect(events).toHaveLength(1);
+    expect(events[0].origin).toBe('player');
+  });
   it('replays once, then rejects the obsolete decision even after cache eviction', async () => {
     const { h, engine } = harness();
     engine.recordActionPerformance = vi.fn();

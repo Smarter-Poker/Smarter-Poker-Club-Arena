@@ -495,6 +495,52 @@ for (const outcome of ['completed', 'partial', 'frozen', 'error', 'coalesced']) 
   bountyRecoverySweepRunsTotal.inc(0, { outcome });
 }
 
+/**
+ * ═══ WHY A LEASE WAS NOT RENEWED (2026-09-12) ════════════════════════════════
+ *
+ * Every cash table on the live engine was re-claiming its lease roughly every
+ * twenty seconds - 63 tables, 923 `cash_lease_proof_expired` restarts in five
+ * minutes, the lease_generation changing on every cycle - while the main loop
+ * sat idle (event-loop p99 21.9 ms), the database answered
+ * heartbeat_table_leases_v4 in 5.2 ms, and nothing anywhere said why.
+ *
+ * It could not say why, because every branch that declines to renew is silent:
+ *
+ *   - the database heartbeat takes `FOR NO KEY UPDATE ... SKIP LOCKED`, so a
+ *     locked row is skipped rather than waited for, and comes back `busy`;
+ *   - `busy` is then `continue`d in tableLease.ts with no counter, on purpose
+ *     (it must extend nothing), and four consecutive ones are an expiry;
+ *   - a table whose local proof had already lapsed when the pass reached it is
+ *     put in lostEngines, and the report is skipped entirely when the table is
+ *     tournament-owned.
+ *
+ * Each of those is correct behaviour and none of them leaves a number. So the
+ * engine could restart every cash table three times a minute, for hours, and
+ * the only trace was a reason string in a log line.
+ *
+ * state: what the database said about the claim -
+ *   kept     renewed, the only outcome that extends a proof;
+ *   busy     the row was locked and skipped; extends nothing, and REPEATED
+ *            busies are the signature to look for;
+ *   taken    another instance holds it;
+ *   stale    the row exists but is past the audited stale window;
+ *   missing  no row at all;
+ *   malformed the response could not be read as an answer.
+ * scope: table | tournament.
+ */
+export const leaseHeartbeatOutcomesTotal: Counter = alwaysOnRegistry.counter(
+  'poker_lease_heartbeat_outcomes_total',
+  'Lease heartbeat claims by what the database said (labels: scope=table|tournament, state=kept|busy|taken|stale|missing|malformed)'
+);
+/* Zero-seeded across the domain: an alert on a name with no series evaluates
+   to an empty vector, which reads exactly like health. See
+   anAlertCannotWaitForAFailureToExist.law.test.ts. */
+for (const scope of ['table', 'tournament']) {
+  for (const state of ['kept', 'busy', 'taken', 'stale', 'missing', 'malformed']) {
+    leaseHeartbeatOutcomesTotal.inc(0, { scope, state });
+  }
+}
+
 /** Actions processed, bounded by audience x tournament format. */
 export const actionsFleetTotal: Counter = alwaysOnRegistry.counter(
   'poker_actions_fleet_total',

@@ -41,6 +41,10 @@
  */
 
 import { supabase } from './supabase/client.js';
+/* Counted, not merely returned: every branch below that declines to renew a
+   lease used to be silent, and repeated silent declines are exactly how a
+   table ends up restarting every twenty seconds with nothing to read. */
+import { leaseHeartbeatOutcomesTotal } from '../observability/engineInstruments.js';
 import { INSTANCE_ID, INSTANCE_VERSION } from './tableLease.js';
 
 /** Matches the table lease, and the RPC default. */
@@ -349,6 +353,11 @@ export async function heartbeatTournaments(
     const lostTournamentIds: string[] = [];
     for (const claim of claims) {
       const row = rowsById.get(claim.tournamentId)!;
+      try {
+        leaseHeartbeatOutcomesTotal.inc(1, { scope: 'tournament', state: String(row.state) });
+      } catch {
+        /* metrics must never affect a lease decision */
+      }
       const exactGeneration =
         typeof row.leaseGeneration === 'string' &&
         row.leaseGeneration.toLowerCase() === claim.leaseGeneration.toLowerCase();

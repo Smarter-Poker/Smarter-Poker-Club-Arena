@@ -115,6 +115,43 @@ sweep, reads the check in the same pass and raises on a non-zero answer. That
 adds no new scheduled job anywhere. It is written down in the register with
 that root fix named, rather than left for the next audit to rediscover.
 
+## BBJTicker is deleted
+
+The other half of phase 4. `src/components/bbj/BBJTicker.tsx` was 211 lines of
+a component that subscribed to `bbj_winners` INSERTs, resolved the pool, and
+**rendered on no page**. It was not forgotten - the reachability law
+_allowlisted_ it, so it was parked.
+
+Parked is the worst of the three states, and it cost something every time
+somebody looked at it. Three separate files reasoned about it as live, and one
+of those was a claim about what a player sees: `bbjHitFeed.ts` offered "it
+appears in the ticker" as one of three compensations for not announcing a mini
+platform-wide, and that compensation had not existed for weeks. The mini test's
+own docblock said the same thing. Two agents wrote those sentences in good
+faith from a file that was sitting right there.
+
+**Deleted rather than mounted**, and the reasoning is in `DynamicWallet`'s own
+comment: mounting it would have put a second live subscription on the same
+jackpot number, which is how one screen ends up showing two different figures.
+Both halves of what it did already have live homes - `ClubBBJShell` is the
+lobby jackpot tile (mounted on `DynamicWallet` and `ClubHomePage`) and
+`BBJRecentHits` is the recent-hits list (mounted on `BadBeatJackpotPage` and
+inside `BBJInfoModal`). Deleting changes nothing a player sees; mounting would
+have changed what every player sees, unasked.
+
+Removed with it: two entries from the reachability allowlist, one row from the
+discarded-error ratchet, and the five comments that named it - in
+`BBJRecentHits`, `DynamicWallet`, `bbjHitFeed`, `ClubHomePage`,
+`BBJThresholdPanel.css` and `theMiniDoesNotTakeOverEveryScreen`. The
+`ClubHomePage` `Number()` coercion **stays**: the ownership check that
+motivated it lived in the deleted component, but `main_balance` still arrives
+from the database as a string and every remaining reader of that state expects
+a number.
+
+If the lobby should have a scrolling ticker, it is in git history at this SHA -
+and mounting it starts with deciding which single surface owns the live pool
+number, not with restoring the file.
+
 ## The law
 
 `tests/the-promo-sweep-names-what-drives-it.law.test.ts` (6 tests), registered

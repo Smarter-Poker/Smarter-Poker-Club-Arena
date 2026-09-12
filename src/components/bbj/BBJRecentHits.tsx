@@ -245,8 +245,8 @@ export function BBJRecentHits({
    * Bumped by a live `bbj_winners` INSERT.
    *
    * AUDIT 2026-08-27: every other BBJ surface was already live — the table's
-   * pool ticker, BBJTicker, BadBeatJackpotPage's toast — and this one, the list
-   * a player actually opens after a jackpot lands, was the only mount-only
+   * pool ticker, BadBeatJackpotPage's toast — and this one, the list a player
+   * actually opens after a jackpot lands, was the only mount-only
    * fetch on the feature. Its effect keyed on [poolId, limit], and neither
    * changes when a hit arrives, so the rows sat stale until the component
    * unmounted. The pool number above it would tick up while the list under it
@@ -260,8 +260,8 @@ export function BBJRecentHits({
       .channel(`bbj-recent-hits-${poolId}`)
       /* FILTERED. The channel NAME was scoped to the pool and the subscription
          was not, so every jackpot anywhere on the platform - any club, any
-         union - forced a full refetch of this pool's list. Both sibling
-         surfaces (BBJTicker, BadBeatJackpotPage) already filter on pool_id. */
+         union - forced a full refetch of this pool's list. The sibling surface
+         (BadBeatJackpotPage) already filters on pool_id. */
       .on(
         'postgres_changes',
         {

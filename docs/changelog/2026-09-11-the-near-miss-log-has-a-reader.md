@@ -136,7 +136,7 @@ an audit.
 
 ## The law
 
-`tests/the-near-miss-log-has-a-reader.law.test.ts` (9 tests), registered in
+`tests/the-near-miss-log-has-a-reader.law.test.ts` (11 tests), registered in
 `docs/laws.d/the-near-miss-log-has-a-reader.md`. It pins that the reader exists
 in a migration and is called by the panel - either half alone is the defect
 again - that every gate the engine can name has a label, that an unlabelled

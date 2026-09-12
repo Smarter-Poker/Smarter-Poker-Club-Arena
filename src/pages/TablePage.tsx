@@ -849,6 +849,10 @@ import { HAND_HISTORY_PAGE, prependHand, shouldRefetchHandHistory } from '../lib
 import { useUserStore } from '../stores/useUserStore';
 import { resolveLobbyClubId, resolveLobbyClubIdSync } from '../utils/clubQuickLink';
 import { relayTournamentEvent } from '../services/tournamentEventBridge';
+import {
+  useTournamentRebalance,
+  type TournamentRebalanceOptions,
+} from '../hooks/useTournamentRebalance';
 import { publicOrigin } from '../lib/appBase';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -11654,6 +11658,29 @@ export default function TablePage({
      only one of them is worth a retry button. null = loaded, or still trying. */
   const [tableLoadFailure, setTableLoadFailure] = useState<'missing' | 'unreachable' | null>(null);
 
+  const subscribeRebalanceAuth = useCallback<TournamentRebalanceOptions['subscribeAuth']>(
+    (listener) => masterBus.subscribe('AUTH_STATE_CHANGED', (event) => listener(event.payload)),
+    []
+  );
+  const handleTournamentRebalance = useTournamentRebalance({
+    tableId,
+    userId,
+    routeTableId,
+    embeddedTableId,
+    subscribeAuth: subscribeRebalanceAuth,
+    readRoster: (tournamentId, playerId) =>
+      supabase
+        .from('tournament_players')
+        .select('table_id')
+        .eq('tournament_id', tournamentId)
+        .eq('user_id', playerId)
+        .maybeSingle(),
+    onTableInfoUpdate,
+    navigate,
+    refresh: () => setTableState((prev) => ({ ...prev, refreshTrigger: Date.now() })),
+    report: (error) => reportError(error, 'TablePage.Error_checking_player_table_during_rebal'),
+  });
+
   // Load table info from Supabase on mount
   useEffect(() => {
     let isMounted = true;
@@ -12991,6 +13018,12 @@ export default function TablePage({
             )
             .on('broadcast', { event: 'tournament_event' }, (payload: any) => {
               const data = payload.payload;
+              if (data?.type === 'table_rebalance') {
+                // The production hook owns read/publication authority. The
+                // enclosing subscription supplies its own retained-binding guard.
+                void handleTournamentRebalance(table.tournament_id, () => isMounted);
+                return;
+              }
               /* Relay the breaks onto MasterBus. TournamentClock (rendered on
                  this page during an MTT) subscribes to BREAK_START /
                  TOURNAMENT_BREAK there and nothing had ever emitted them, so
@@ -13468,48 +13501,6 @@ export default function TablePage({
                   });
                   goToLobbyWithResult(1, prize, 7000);
                 }
-              } else if (data?.type === 'table_rebalance') {
-                // Players moved between tables — check if current user was moved
-                console.debug('[TablePage] Table rebalance detected');
-                (async () => {
-                  try {
-                    // BUG-G FIX: Use table.tournament_id (closure-safe local)
-                    // instead of stale tableState.tournamentId
-                    if (userId && table.tournament_id) {
-                      /* ROUND 9 (2026-08-29): a resolved error here meant the
-                         player who had just been MOVED by a rebalance was
-                         neither redirected NOR refreshed - null fell through
-                         both branches while the catch (which refreshes) only
-                         sees throws. A resolved error now takes the same
-                         refresh fallback a thrown one always did. */
-                      const { data: playerData, error: rebalanceErr } = await supabase
-                        .from('tournament_players')
-                        .select('table_id')
-                        .eq('tournament_id', table.tournament_id)
-                        .eq('user_id', userId)
-                        .maybeSingle();
-                      if (rebalanceErr) throw rebalanceErr;
-
-                      if (playerData?.table_id && playerData.table_id !== tableId) {
-                        // Current user was moved to a different table — redirect
-                        console.debug(
-                          `[TablePage] User moved from ${tableId} to ${playerData.table_id}`
-                        );
-                        navigate(`/table/${playerData.table_id}`); // FIX: was /clubs/:clubId/table/:tableId which is not a defined route
-                      } else if (playerData?.table_id === tableId) {
-                        // User stayed at this table — just refresh seats
-                        setTableState((prev) => ({ ...prev, refreshTrigger: Date.now() }));
-                      }
-                    } else {
-                      // Not a tournament or no user — just refresh
-                      setTableState((prev) => ({ ...prev, refreshTrigger: Date.now() }));
-                    }
-                  } catch (err) {
-                    reportError(err, 'TablePage.Error_checking_player_table_during_rebal');
-                    // Fallback: just refresh seats
-                    setTableState((prev) => ({ ...prev, refreshTrigger: Date.now() }));
-                  }
-                })();
               } else if (data?.type === 'late_reg_closed') {
                 // Late registration window has closed
                 setTableState((prev) => ({

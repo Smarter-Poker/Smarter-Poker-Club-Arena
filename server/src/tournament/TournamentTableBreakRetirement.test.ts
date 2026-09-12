@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { GameServer } from '../GameServer.js';
 import type { ServerTableEngine } from '../engine/ServerTableEngine.js';
+import type { MoveInstruction } from '../engine/TableBalancer.js';
 import { supabase } from '../services/supabase.js';
+import * as errorReporter from '../services/errorReporter.js';
 import { TournamentManager } from './TournamentManager.js';
 import { unregisterOwnedTournamentTableEngine } from './TournamentManagerOwnership.js';
 
@@ -21,6 +23,10 @@ class TableBreakHarness extends TournamentManager {
 
   close(engine: ServerTableEngine): Promise<boolean> {
     return this.closeBrokenTableAndReleaseEngine(TABLE_ID, engine);
+  }
+
+  public override executePlayerMoves(moves: MoveInstruction[]): Promise<number> {
+    return super.executePlayerMoves(moves);
   }
 
   ownsEngine(engine: ServerTableEngine): boolean {
@@ -136,5 +142,60 @@ describe('tournament table-break retirement is one durable ownership chain', () 
     expect(f.manager.ownsEngine(f.engine)).toBe(true);
     expect(f.globalEngines.get(TABLE_ID)).toBe(f.engine);
     expect(f.tournamentOwnedTables.has(TABLE_ID)).toBe(true);
+  });
+});
+
+describe('closed-source ambiguity reaches the actual manager diagnostic', () => {
+  it('reports both observed sources without choosing a stack or executing a move', async () => {
+    const f = fixture();
+    const tables = [
+      { id: 'open', status: 'running', max_players: 9 },
+      { id: 'closed-a', status: 'closed', max_players: 9 },
+      { id: 'closed-b', status: 'closed', max_players: 9 },
+    ];
+    const seats = [
+      { table_id: 'closed-b', user_id: 'twice', seat_number: 2, stack: '250.00' },
+      { table_id: 'closed-a', user_id: 'twice', seat_number: 1, stack: 100 },
+    ];
+    const tableFilter = vi.fn().mockResolvedValue({ data: tables, error: null });
+    const liveFilter = vi.fn().mockResolvedValue({ data: seats, error: null });
+    const seatFilter = vi.fn(() => ({ is: liveFilter }));
+    const tableSelect = vi.fn(() => ({ eq: tableFilter }));
+    const seatSelect = vi.fn(() => ({ in: seatFilter }));
+    const reads = vi.spyOn(supabase, 'from').mockImplementation(((relation: string) => {
+      if (relation === 'tables') return { select: tableSelect };
+      if (relation === 'table_seats') return { select: seatSelect };
+      throw new Error(`Unexpected relation: ${relation}`);
+    }) as never);
+    const report = vi.spyOn(errorReporter, 'reportError').mockImplementation(() => {});
+    const moves = vi.spyOn(f.manager, 'executePlayerMoves').mockResolvedValue(0);
+    const rpc = vi.spyOn(supabase, 'rpc').mockImplementation((() => {
+      throw new Error('Ambiguous-only recovery must not call an RPC');
+    }) as never);
+
+    await expect(f.manager.absorbOrphanedSeats()).resolves.toBe(0);
+
+    expect(reads.mock.calls.map(([relation]) => relation)).toEqual(['tables', 'table_seats']);
+    expect(tableSelect).toHaveBeenCalledWith('id, status, is_deleted, max_players');
+    expect(tableFilter).toHaveBeenCalledWith('tournament_id', TOURNAMENT_ID);
+    expect(seatSelect).toHaveBeenCalledWith('table_id, user_id, seat_number, stack');
+    expect(seatFilter).toHaveBeenCalledWith(
+      'table_id',
+      tables.map(({ id }) => id)
+    );
+    expect(liveFilter).toHaveBeenCalledWith('left_at', null);
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report).toHaveBeenCalledWith(
+      expect.any(Error),
+      'Tournament.orphan_closed_sources_ambiguous_not_moved',
+      {
+        tournamentId: TOURNAMENT_ID,
+        ambiguousClosedSources: [{ userId: 'twice', sources: [seats[1], seats[0]] }],
+      }
+    );
+    expect(moves).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
+    expect(f.engine.stop).not.toHaveBeenCalled();
+    expect(f.unregister).not.toHaveBeenCalled();
   });
 });

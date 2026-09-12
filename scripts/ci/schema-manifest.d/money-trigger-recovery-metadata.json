@@ -1,0 +1,5 @@
+{
+  "_owner": "G8 Rev4 foundation coordination",
+  "_comment": "Exact public helper independently verified after actual migration 20260912112511. Refreshed catalog observation 2026-09-12 11:48:42 UTC confirms public.fn_ci_money_trigger_recovery(text[]), owned by postgres, stable security definer, search_path=pg_catalog, executable only by postgres and service_role. This scoped manifest records installed object presence; it grants no permissions and does not request SQL replay.",
+  "functions": ["fn_ci_money_trigger_recovery"]
+}

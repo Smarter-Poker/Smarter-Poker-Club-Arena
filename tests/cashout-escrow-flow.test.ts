@@ -221,19 +221,19 @@ describe('a player cannot ask for an amount the server is bound to refuse', () =
     }
   });
 
-  it('nor does a fractional chip count', async () => {
-    await expect(cashoutService.requestCashout('p1', 'club-1', 308.5)).rejects.toThrow(
-      /Whole Number/i
+  it('nor does a fractional cent count', async () => {
+    await expect(cashoutService.requestCashout('p1', 'club-1', 1.001)).rejects.toThrow(
+      /Whole Cents/i
     );
     expect(rpc).not.toHaveBeenCalled();
   });
 
   it('the sheet refuses the same three before it touches the service', () => {
-    expect(MODAL).toContain("setError('Enter An Amount Greater Than Zero')");
-    expect(MODAL).toContain("setError('Enter A Whole Number Of Chips')");
+    expect(MODAL).toContain('validateCashoutAmount(amount)');
+    expect(MODAL).toContain('setError(validation.error)');
     expect(MODAL).toContain("setError('That Is More Than Your Available Balance')");
-    // The quick buttons floor, so 25% of 1,234 is 308 and not 308.5.
-    expect(MODAL).toContain('Math.floor((currentBalance * pct) / 100)');
+    // Presets select an explicitly displayed amount at the cent quantum.
+    expect(MODAL).toContain('cashoutPercentage(currentBalance, pct)');
   });
 });
 

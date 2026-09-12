@@ -1,0 +1,7 @@
+{
+  "_owner": "agent/claude-diamond-phase-8/feature/the-diamond-tournament-door",
+  "_comment": "Migration 20260912112311 gives ca_arena_settings a tournaments_enabled switch, NOT NULL and defaulting to false, and gates the tournament_entry branch of fn_poker_diamond_reserve on it inside the same fail-closed lookup that finds the tournament, exactly as fn_poker_diamond_buyin gates the cash branch on cash_games_enabled. That branch previously checked nothing at all. No function is added or removed; the switch ships closed and no tournament_entry custody row exists. No full product qualification is claimed.",
+  "columns": {
+    "ca_arena_settings": ["tournaments_enabled"]
+  }
+}

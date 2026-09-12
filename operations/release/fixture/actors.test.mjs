@@ -270,6 +270,15 @@ test('financial actor transports top-up replay and offer acceptance over authent
   });
   await wait(500);
   assert.equal(h.actions.length, 2, 'financial sequence must not begin a second hand');
+  const states = runner.stateObservations();
+  assert.deepEqual(
+    states.map((row) => row.actor_id),
+    ids
+  );
+  assert.ok(states.every((row) => row.sequence === 3 && row.state.hand_number === 2));
+  states[0].state.players[0].stack = 0;
+  assert.ok(runner.stateObservations()[0].state.players[0].stack > 0);
+  assert.ok(!JSON.stringify(states).includes('access_token'));
   assert.deepEqual(h.failures, []);
 });
 

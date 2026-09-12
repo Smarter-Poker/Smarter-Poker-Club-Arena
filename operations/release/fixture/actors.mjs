@@ -447,7 +447,17 @@ export async function startFixtureActors({
     await ready;
     return Object.freeze({
       close: stop,
-      ...(financial ? { financialObservations: () => financial.observations() } : {}),
+      ...(financial
+        ? {
+            financialObservations: () => financial.observations(),
+            stateObservations: () =>
+              actors.map((actor) => ({
+                actor_id: actor.user.id,
+                sequence: actor.seq,
+                state: structuredClone(actor.state),
+              })),
+          }
+        : {}),
     });
   } catch (error) {
     if (!closed) fail('FIXTURE_ACTOR_START_FAILED');

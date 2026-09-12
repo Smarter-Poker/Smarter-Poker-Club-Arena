@@ -3,6 +3,8 @@ import { HorseLogic, type HorseDecideOpts } from '../HorseLogic.js';
 import { saveFastRandom, seedFastRandom } from '../HorseEval.js';
 import type { GameVariant } from '../../types.js';
 import { jointPolicyFixture } from './JointRangeFixture.test-support.js';
+import { remainingCards } from '../../benchmark/RemainingVariantPolicyEvidence.js';
+import { calculatePots } from '../PokerEngine.js';
 
 const variants: GameVariant[] = [
   'nlh',
@@ -29,6 +31,60 @@ const action = (d: ReturnType<typeof HorseLogic.decide>) => ({
   thinkTime: d.thinkTime,
 });
 describe('Phase13 actual HorseLogic integration', () => {
+  it.each(['plo4', 'plo5', 'plo6'] as const)(
+    '%s preserves a rejected non-nut flush-draw call-off against two all-ins',
+    (variant) => {
+      const s = jointPolicyFixture(variant, 1, 'cash', 'flop');
+      s.hero.cards = remainingCards('9s 8s Kc Qd Jh Tc').slice(0, Number(variant.slice(-1)));
+      s.state.communityCards = remainingCards('As 7s 2d');
+      s.hero.totalInvested = 20;
+      s.state.players[0].totalInvested = 20;
+      for (const opponent of s.state.players.slice(1, 3)) {
+        Object.assign(opponent, { stack: 0, bet: 100, totalInvested: 120, is_all_in: true });
+      }
+      Object.assign(s.state, {
+        currentBet: 100,
+        toCall: 100,
+        pot: 265,
+        contestablePot: 265,
+        legalActions: ['fold', 'all_in'],
+        minRaiseTo: null,
+        maxRaiseTo: null,
+      });
+      s.state.pots = calculatePots(s.state.players);
+      s.state.actionHistory = s.state.players.slice(1, 3).map((p, i) => ({
+        seat: p.seat,
+        userId: p.user_id,
+        action: 'all_in',
+        amount: 100,
+        timestamp: i + 1,
+        stage: 'flop',
+        isFullRaise: true,
+      }));
+      for (let seed = 131001; seed < 131013; seed++) {
+        seedFastRandom(seed);
+        const baseline = HorseLogic.decide(
+          s.hero,
+          s.state,
+          'balanced',
+          {},
+          { ...opts, phase13Joint: 'off' }
+        );
+        seedFastRandom(seed);
+        const candidate = HorseLogic.decide(
+          s.hero,
+          s.state,
+          'balanced',
+          {},
+          { ...opts, phase13Joint: 'candidate', phase13EvidenceMode: true }
+        );
+        expect(baseline.action).toBe('fold');
+        expect(candidate.action).toBe('fold');
+        expect(candidate.jointPolicy?.fired, candidate.jointPolicy?.reason).toBe(true);
+        expect(candidate.jointPolicy?.reason).toContain('protected_');
+      }
+    }
+  );
   it.each(variants)(
     '%s retains baseline action and RNG across supported multiway streets and boards',
     (variant) => {

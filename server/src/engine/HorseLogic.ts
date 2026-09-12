@@ -2350,7 +2350,9 @@ function enforceAuthoritativeDecision(
   if (decision.action === 'call') return call();
   if (decision.action === 'check') return legal.has('check') ? decision : safe();
   if (decision.action === 'fold') {
-    return toCall <= 0.005 && legal.has('check') ? { action: 'check', thinkTime: 0 } : safe();
+    const normalized =
+      toCall <= 0.005 && legal.has('check') ? { action: 'check' as const, thinkTime: 0 } : safe();
+    return normalized.action === 'fold' ? { ...decision, ...normalized } : normalized;
   }
   if (decision.action === 'all_in' && legal.has('all_in')) return decision;
 
@@ -2935,6 +2937,8 @@ export class HorseLogic {
         noteFire(`phase12_utility_${phase12.receipt.utilityOwner}`);
       }
     }
+    if (decision.action === 'fold' && beforePhase10.continuationGuard)
+      decision = { ...decision, continuationGuard: beforePhase10.continuationGuard };
     const beforePhase13 = decision;
     const jointPolicy =
       opts.phase13Joint === 'off'
@@ -3009,6 +3013,11 @@ export class HorseLogic {
         if (jointPolicy.receipt.utilityOwner !== 'phase7_evaluated') proposal = beforePhase13;
       } else if (jointPolicy.receipt.mode === 'candidate' && jointPolicy.receipt.fired)
         decision = { ...beforePhase13, ...proposal };
+      if (beforePhase13.action === 'fold' && beforePhase13.continuationGuard) {
+        proposal = beforePhase13;
+        decision = beforePhase13;
+        jointPolicy.receipt.reason = 'protected_' + beforePhase13.continuationGuard;
+      }
       const sameAction = (a: HorseDecision, b: HorseDecision) =>
         a.action === b.action && (!['bet', 'raise'].includes(a.action) || a.amount === b.amount);
       const receipt = jointPolicy.receipt;
@@ -6654,7 +6663,15 @@ export class HorseLogic {
       // V34: a solver-approved draw call is honored here too — the committed
       // bar must never fold a hand the solver's own range priced as a call.
       if (eq15 >= required || solverCall32) return { action: 'call', amount: toCall, thinkTime: 0 };
-      return { action: 'fold', thinkTime: 0 };
+      return {
+        action: 'fold',
+        thinkTime: 0,
+        ...(useV20 && pressure20 >= 2
+          ? { continuationGuard: 'multiway_commitment_floor' as const }
+          : dominated21 || (vi.isOmaha && made40?.weak && eq15 < equity)
+            ? { continuationGuard: 'dominated_commitment_floor' as const }
+            : {}),
+      };
     }
 
     // Raise for value. V4: out of position lean harder on the check-raise

@@ -16,6 +16,8 @@ export const JOINT_LIVE_DOMAIN = Object.freeze({
   maxStackBB: 250,
   maxActions: 256,
   defaultSamples: 16,
+  fullSampleMaxDealtPlayers: 4,
+  largeTableSamples: 8,
   minSamples: 8,
   liveBudgetMs: 4,
   samplingDeadlineMs: 2,
@@ -115,6 +117,10 @@ export function evaluateJointLivePolicy(
       proposal = baseline;
     }
     if (!receipt.fired) proposal = baseline;
+    if (receipt.fired && baseline.action === 'fold' && baseline.continuationGuard) {
+      proposal = baseline;
+      reason = 'protected_' + baseline.continuationGuard;
+    }
     if (!s.legalActions?.includes(proposal.action)) {
       reason = 'proposal_outside_legal_menu';
       receipt.fired = false;
@@ -224,7 +230,9 @@ export function evaluateJointLivePolicy(
   const requested = Math.max(
     JOINT_LIVE_DOMAIN.minSamples,
     Math.floor(
-      JOINT_LIVE_DOMAIN.defaultSamples * Math.max(0, Math.min(1, equityGovernor.current()))
+      (ids.length > JOINT_LIVE_DOMAIN.fullSampleMaxDealtPlayers
+        ? JOINT_LIVE_DOMAIN.largeTableSamples
+        : JOINT_LIVE_DOMAIN.defaultSamples) * Math.max(0, Math.min(1, equityGovernor.current()))
     )
   );
   receipt.eligible = true;

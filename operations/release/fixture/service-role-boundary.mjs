@@ -48,6 +48,31 @@ export const serviceBoundaryReceipt = Object.freeze({
   production_application_privilege_parity: false,
 });
 
+// This must run after the reviewed application schema and before any signup.
+// The source composer owns demotion and grants. The runtime must refuse an
+// unchanged privileged restore owner, never silently change its authority.
+export async function assertApplicationOwnerBoundary(db) {
+  const result = await db.query(`SELECT current_database()='club_arena_qualification'
+    AND inet_server_addr() IS NULL AND current_user='postgres' AND session_user='postgres'
+    AS owned_database,
+    (SELECT rolcanlogin AND rolinherit AND rolbypassrls AND rolcreaterole AND NOT rolsuper
+      FROM pg_roles WHERE rolname='postgres') AS application_owner_boundary`);
+  assert.deepEqual(
+    result.rows,
+    [{ owned_database: true, application_owner_boundary: true }],
+    'FIXTURE_NON_SUPERUSER_APPLICATION_OWNER_REQUIRED'
+  );
+  return {
+    role: 'postgres',
+    superuser: false,
+    bypassrls: true,
+    inherit: true,
+    login: true,
+    createrole: true,
+    complete_application_acl_parity: false,
+  };
+}
+
 /** Native migrated readback, not an assertion about the full application role graph. */
 export async function assertNativeServiceRoleBoundary(db) {
   const result = await db.query(`SELECT

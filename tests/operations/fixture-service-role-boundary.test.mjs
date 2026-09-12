@@ -5,6 +5,7 @@ import {
   assertNativeServiceRoleBoundary,
   serviceBoundaryReceipt,
   createFixtureApplicationOwner,
+  assertApplicationOwnerBoundary,
 } from '../../operations/release/fixture/service-role-boundary.mjs';
 
 const boundary = {
@@ -59,6 +60,25 @@ test('an ordinary or later-created superuser cannot create the fixture applicati
     /FIXTURE_INITDB_IDENTITY_REQUIRED/
   );
   assert.equal(queries, 1, 'refusal must occur before privileged DDL');
+});
+
+test('application signup refuses a restore owner that is still a superuser', async () => {
+  await assert.rejects(
+    assertApplicationOwnerBoundary({
+      query: async () => ({
+        rows: [{ owned_database: true, application_owner_boundary: false }],
+      }),
+    }),
+    /FIXTURE_NON_SUPERUSER_APPLICATION_OWNER_REQUIRED/
+  );
+});
+
+test('application owner flags alone do not certify complete application privileges', async () => {
+  const result = await assertApplicationOwnerBoundary({
+    query: async () => ({ rows: [{ owned_database: true, application_owner_boundary: true }] }),
+  });
+  assert.equal(result.superuser, false);
+  assert.equal(result.complete_application_acl_parity, false);
 });
 
 for (const [field, bad] of [

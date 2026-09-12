@@ -18,6 +18,7 @@ import {
   serviceRoleBootstrapSql,
   assertNativeServiceRoleBoundary,
   createFixtureApplicationOwner,
+  assertApplicationOwnerBoundary,
 } from './service-role-boundary.mjs';
 import { createFixtureGateway, loadStaticManifest, findPublicAnonKey } from './gateway.mjs';
 import {
@@ -671,6 +672,7 @@ async function start(args) {
     // does not prove they succeeded. Read their exact pinned installed set;
     // never stamp a migration row to make an incomplete service look current.
     await supervisor.until(() => realtimeMigrated(db));
+    const serviceRoles = await assertNativeServiceRoleBoundary(db);
     // Application DDL is restored verbatim. The reviewed schema composer
     // must reconcile service-managed objects with the pinned real migrations.
     // Missing/duplicate objects fail here; no migration history is fabricated.
@@ -688,7 +690,7 @@ async function start(args) {
       '-f',
       schemaRoot + '/schema.sql',
     ]);
-    const serviceRoles = await assertNativeServiceRoleBoundary(db);
+    const applicationOwner = await assertApplicationOwnerBoundary(db);
     await supervisor.start('auth', '/usr/local/bin/auth', ['serve'], env.auth);
     await supervisor.until(() => health('http://127.0.0.1:9999/health'));
     stage = 'real-users-and-financial-seed';
@@ -795,6 +797,7 @@ async function start(args) {
         source_contract: template.source_contract,
         bootstrap_proof: {
           service_roles: serviceRoles,
+          application_owner: applicationOwner,
           signup: fixture.signup_proof,
           attribution_signup: attributionSignup,
         },

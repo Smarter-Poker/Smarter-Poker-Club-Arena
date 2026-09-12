@@ -30,6 +30,16 @@ No Phase 7 checklist item is claimed by that work. The survey the rest of the ph
 
 Dan also asked, on the same day, for Diamond Arena to use a white or light colour scheme against Club Arena's dark one, explicitly in the next phase rather than this one.
 
+## Execution Update, September 12, 2026, Phase 7 Custody Top-Up And Feature Charge Audit
+
+Two Phase 7 checklist lines are now ticked, and one new money door exists.
+
+A seated Diamond player could not add to a stack. The chip add-on debits `club_members.chip_balance` and a Diamond entitlement has no row in that table, so `addChips` refused. `fn_poker_diamond_top_up` (migration 20260912004100, applied once to kuklfnapbkmacvwxktbh) reserves settled Diamonds into the SAME custody row the seat is bound to and raises `table_seats.stack` in the same transaction, which is the only shape the deferred seat-keeps-custody constraint allows. It is engine-only, whole units, capped at the table maximum, refused mid hand and refused again on a stale seat. Twenty-two assertions in the isolated Phase 6 fixture cover every refusal, the money move, the journal, idempotent replay, a hand settling on the topped-up stack and the full return of every Diamond on cash-out. Evidence: [the top-up changelog](changelog/2026-09-12-diamond-phase-7-custody-top-up.md). Mid hand add-ons, Auto Top Up and bust rebuy remain honestly unavailable for Diamond. Checklist line two is NOT claimed: it also covers seat changes, must move and clusters, which stay outside this phase.
+
+Checklist lines five and six are claimed, on the evidence in [the feature charge and side feature audit](audits/2026-09-12-diamond-phase-7-feature-charges-and-side-features.md): no feature charge writer and no Diamond stake writer share any storage in either direction, every in-game feature door is idempotent under a caller-held request id, and insurance and BBJ stay refused at all six layers because their counterparty is a chip account that Phase 9 owns.
+
+That audit also found a defect it deliberately did not fix. `fn_purchase_feature` is a shim that mints a fresh request id before delegating to the idempotent `fn_purchase_feature_v2`, so for the four `per_use` features a lost response followed by a second tap on the VIP page's a-la-carte grid charges twice. It is not a Diamond path and the fix belongs to the customization and VIP commerce estate; it is recorded in the audit and reported to Dan rather than repaired inside a Diamond slice.
+
 ## Approved Product Contract
 
 This replaces the earlier recommendation for two separate World Hub destinations. The World Hub has one player-facing Poker Arena entrance. Reuse the existing Club Arena application as the shared shell, lobby and game implementation. Diamond Arena is a diamond-only skin and operating policy inside it, not a second poker application.
@@ -260,8 +270,8 @@ Phase 6 Of 12 Is Done, verified September 11, 2026. Implementation merge 85da647
 - [ ] Reuse waitlists, offers, rebuys/add-ons, seat changes, must-move and multi-table flows.
 - [ ] Reuse supported bomb pots, board counts, straddles and run-it-twice.
 - [ ] Integrate table skins, cards, time banks, rabbit hunt, chat, voice and throwables where supported.
-- [ ] Keep feature diamond charges separate from game stakes, with no double charge.
-- [ ] Audit insurance and side-feature liabilities before enabling any such product.
+- [x] Keep feature diamond charges separate from game stakes, with no double charge.
+- [x] Audit insurance and side-feature liabilities before enabling any such product.
 - [ ] Run table lifecycle and denomination regression tests across configurations.
 
 Exit: explicit supported-feature matrix passed; unsupported features remain honestly unavailable.

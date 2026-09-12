@@ -32,6 +32,24 @@ async function buildRenewer(pass: () => Promise<void>): Promise<Renewer> {
   }) as Renewer;
 }
 
+type LoopRunner = Renewer & {
+  runOwnershipLeaseRenewalLoop: (generation: number) => Promise<void>;
+};
+
+/**
+ * The loop needs two more collaborators than a single pass does: the admission
+ * check that ends it, and `sleep`, which is real so the fake clock drives it.
+ */
+async function buildLoopRunner(
+  pass: () => Promise<void>,
+  isCurrent: () => boolean
+): Promise<LoopRunner> {
+  const server = (await buildRenewer(pass)) as LoopRunner;
+  return Object.assign(server, {
+    directAdmissionIsCurrent: () => isCurrent(),
+  }) as LoopRunner;
+}
+
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -115,5 +133,90 @@ describe('a wedged lease renewal pass does not stop every later pass', () => {
       server.ownershipLeaseRenewalOperation,
       'the abandoned pass settling must not evict its successor'
     ).toBe(successor);
+  });
+});
+
+/**
+ * AND THE LOOP ITSELF HAS TO BE RELEASED, NOT JUST THE SLOT.
+ *
+ * The abandon timer above frees `ownershipLeaseRenewalOperation` so a new pass
+ * CAN start. This loop is the only thing that ever starts one, and it was
+ * still awaiting the promise that timer had just given up on, so the slot
+ * opened and nobody walked through it.
+ *
+ * Measured on production 2026-09-12, on the release carrying the abandon
+ * timer:
+ *
+ *     10:30  passes_total{abandoned} 0 -> 1
+ *     10:30  passes_total{completed} frozen at 374
+ *     10:31  cash_lease_proof_expired resumes at ~113 a minute
+ *     10:45  still frozen at 374; only a restart cleared it
+ *
+ * `loop_running` read 1 throughout and `threw` stayed 0, so the loop was alive
+ * and had simply stopped iterating on one await that never returned. No second
+ * pass was ever abandoned either, which is the proof that none was started.
+ */
+describe('the loop does not wait for a pass that was already abandoned', () => {
+  it('starts the next pass after the abandon deadline, even though the first never settles', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    let started = 0;
+    let live = true;
+    const server = await buildLoopRunner(
+      () => {
+        started += 1;
+        // EVERY pass hangs. The loop must still keep starting them.
+        return new Promise<void>(() => {});
+      },
+      () => live
+    );
+
+    const loop = server.runOwnershipLeaseRenewalLoop(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(started, 'the first pass runs immediately').toBe(1);
+
+    // Inside the abandon deadline the loop is right to still be waiting.
+    await vi.advanceTimersByTimeAsync(19_000);
+    expect(started, 'must not start a second pass inside the proof window').toBe(1);
+
+    // Past abandon + one cadence, the loop must have moved on.
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(
+      started,
+      'the loop stayed awaiting a pass the abandon timer had already given up on'
+    ).toBeGreaterThan(1);
+
+    live = false;
+    await vi.advanceTimersByTimeAsync(60_000);
+    /* Bounded on purpose. Without the fix the loop is still stuck on its very
+       first pass and never re-reads the admission check, so awaiting it here
+       would turn the clear assertion failure above into a file-level timeout
+       and hide which pin actually broke. */
+    await Promise.race([loop, vi.advanceTimersByTimeAsync(1)]);
+  });
+
+  it('still runs back-to-back at the ordinary cadence when passes settle', async () => {
+    vi.useFakeTimers();
+    let started = 0;
+    let live = true;
+    const server = await buildLoopRunner(
+      () => {
+        started += 1;
+        return Promise.resolve();
+      },
+      () => live
+    );
+
+    const loop = server.runOwnershipLeaseRenewalLoop(1);
+    await vi.advanceTimersByTimeAsync(21_000);
+    // A healthy pass must not be paced by the abandon deadline: at a 5s cadence
+    // twenty-one seconds is four or five passes, never one.
+    expect(started).toBeGreaterThan(3);
+
+    live = false;
+    await vi.advanceTimersByTimeAsync(60_000);
+    await loop;
   });
 });

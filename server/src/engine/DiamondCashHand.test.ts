@@ -179,11 +179,20 @@ describe('Diamond cash uses the shared NLH controller with indivisible units', (
     expect(hc.getState()).toEqual(before);
   });
   it.each<Partial<HandConfig>>([
-    { ritEnabled: true },
+    { bombPot: { anteMultiplier: 2 } },
     { insuranceEnabled: true },
     { gameVariant: 'plo4' },
   ])('keeps later financial game features outside the initial certificate: %j', (feature) => {
     expect(() => new HandController(config(feature), players(), 1)).toThrow('Plain NLH');
+  });
+
+  /* RUN IT TWICE LEFT THAT LIST ON 2026-09-12. It was there because the RIT
+     runout cut every pot into integer cents, so a five Diamond pot over two
+     runs paid two and a half Diamonds a board and this very guard would have
+     refused the hand it had just dealt. The runout now cuts in the table's own
+     unit; the money proof for that lives in RunItTwice.money.test.ts. */
+  it('lets a Diamond hand be dealt with run it twice on', () => {
+    expect(() => new HandController(config({ ritEnabled: true }), players(), 1)).not.toThrow();
   });
   it('preserves cent-denominated chip betting', () => {
     const hc = new HandController(

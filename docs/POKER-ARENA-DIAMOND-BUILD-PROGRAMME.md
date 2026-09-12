@@ -48,6 +48,14 @@ Certifying it in the isolated fixture found a defect in the admission door that 
 
 Line three is NOT claimed. Bomb pots, board counts and run it twice remain. Run it twice halves a pot and an odd pot of whole Diamonds does not halve, so it needs an odd-unit rule certified first; bomb pots ride the `p_units` award lane, which the accepted-hand commit refuses for a Diamond hand.
 
+## Execution Update, September 12, 2026, Diamond Run It Twice
+
+The second of Phase 7 line three's four features. Run it twice was refused for Diamond because of arithmetic rather than policy: the runout cut every pot into integer CENTS, which is the indivisible unit of a chip and HALF of a Diamond, so a five Diamond pot over two runs paid two and a half Diamonds a board and the hand guard would have refused the hand the table had just dealt. A pot meets two divisions on that path and both now happen in the table's own unit, with the odd unit going where it always went: to the earliest board, and inside a chop to the first seat clockwise of the button. The chip arithmetic is unchanged by construction. Evidence: [the run it twice changelog](changelog/2026-09-12-diamond-phase-7-run-it-twice.md).
+
+The two run-it columns still have to be STATED, because the engine reads an absent one as true and this arena inherits nothing from the chip schedule; what changed is that the answer may now be either boolean. A staff door writes all three columns so the engine's composite is exactly the answer it was given.
+
+Line three is NOT claimed. Bomb pots and their board counts remain: a bomb pot's award rides the `p_units` lane that the accepted-hand commit refuses for a Diamond hand, so it needs a Diamond obligation lane rather than a rounding rule.
+
 ## Approved Product Contract
 
 This replaces the earlier recommendation for two separate World Hub destinations. The World Hub has one player-facing Poker Arena entrance. Reuse the existing Club Arena application as the shared shell, lobby and game implementation. Diamond Arena is a diamond-only skin and operating policy inside it, not a second poker application.

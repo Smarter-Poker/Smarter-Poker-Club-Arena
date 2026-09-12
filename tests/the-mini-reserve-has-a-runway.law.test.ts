@@ -237,12 +237,27 @@ describe('the mini has its own near misses and its own players floor', () => {
        nobody cleared the bar, so nothing is recorded. */
     const noCandidate = fn.slice(fn.indexOf('if (!best) {'), fn.indexOf('const base ='));
     expect(noCandidate, 'the no-candidate branch must exist').toBeTruthy();
+    /* AN ORDINARY HAND IS STILL NOTHING. That is the property this case was
+       written for and it is unchanged: two pair, a straight, a hand nobody
+       nearly won - `return none`. */
     expect(noCandidate).toMatch(/return none;/);
-    /* On the CODE, not the prose: the function explains in a comment what the
-       retired reason was, and asserting on raw text would make that
-       explanation illegal - the same trap the promo law documents. */
-    const rakeCode = rake.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-    expect(rakeCode).not.toContain("'mini_loser_below_bar'");
+
+    /* THE ABSOLUTE BAN ON `mini_loser_below_bar` IS LIFTED (Dan, 2026-09-12),
+       and this is the reasoning rather than a weakened assertion.
+
+       It was banned as "a value no caller ever read". Two things changed. The
+       panel grew a label for it, so it has a reader; and Dan's ranked bars
+       changed what the phrase covers - on PLO5/FLO5 the bar is Quad Tens, so a
+       loser BELOW it can be quad nines beaten by quad aces, a hand that paid
+       the mini the day before. Dropping that silently makes the cost of the
+       new bar unmeasurable.
+
+       So the reason may exist, but only inside the ranked-bar branch and only
+       for a loser who actually holds quads. This asserts that shape rather
+       than its absence: an ordinary hand can still never reach it. */
+    expect(noCandidate).toMatch(/qualifying\.miniMinQuadRank/);
+    expect(noCandidate).toMatch(/HAND_RANK\.FOUR_OF_A_KIND/);
+    expect(noCandidate).toMatch(/reason: 'mini_loser_below_bar'/);
   });
 
   it('settlement asks the mini the question, and cannot break on the answer', () => {

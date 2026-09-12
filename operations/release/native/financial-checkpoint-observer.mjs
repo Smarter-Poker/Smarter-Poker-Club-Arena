@@ -180,7 +180,10 @@ export function createFinancialCheckpointObserver({
         const saved = { entry, facts: data, felt };
         if (entry.phase === 'settlement.observed') {
           insurance = verifyInsuranceEconomics({
-            owner: bound, offered: journal[4], accepted: journal[6], settled: saved,
+            owner: bound,
+            offered: journal[4],
+            accepted: journal[6],
+            settled: saved,
           });
         }
         assert.ok(

@@ -80,8 +80,9 @@ jobs:
   # every one ran the server engine suite, and a third never touch src/ yet
   # every one built the bundle, ran the unit suite and drove a browser.
   #
-  # This job answers "what changed" once, from the API, with no checkout, and
-  # the heavy jobs below gate on it. A job skipped by a job-level `if` reports
+  # This job compares the event-bound base/head Git commits, including old
+  # and new rename paths. Unavailable or uncertain input runs every suite.
+  # The heavy jobs below gate on that immutable classification. A job skipped by a job-level `if` reports
   # as SKIPPED, and a ruleset counts a skipped required check as satisfied - so
   # nothing has to change in branch protection and no pull request can be left
   # waiting on a check that never runs. That is the whole reason this is a job
@@ -93,109 +94,28 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   changes:
     name: What changed
-    # Pull-request metadata is untrusted input. Never run it on the persistent
-    # estate hosts used by privileged workflows.
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
     if: github.event_name == 'pull_request'
-    # The gh call below is a 403 without this. GITHUB_TOKEN defaults to read on
-    # contents only, and there is no top-level permissions block in this file.
     permissions:
       contents: read
-      pull-requests: read
     outputs:
       src: ${{ steps.f.outputs.src }}
       server: ${{ steps.f.outputs.server }}
       tests: ${{ steps.f.outputs.tests }}
       phase4: ${{ steps.f.outputs.phase4 }}
+      fixture: ${{ steps.f.outputs.fixture }}
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
       - id: f
         env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-          REPO: ${{ github.repository }}
-        run: |
-          # V13: retry, and FAIL OPEN. This call fails the entire CI run on a
-          # transient GitHub 500 ("this diff is temporarily unavailable due to
-          # heavy server load"), which happened on PR #436 and blocked a green
-          # branch on an infrastructure hiccup. A path filter is an
-          # OPTIMISATION - when it cannot tell what changed, the safe answer is
-          # to run everything, never to fail the build.
-          # PAGINATION (Dan 2026-08-31). This asked for per_page=300, and the
-          # GitHub REST API caps per_page at 100 - silently. It does not error,
-          # it returns the first 100 filenames. A pull request touching more
-          # than 100 files would therefore be classified on a truncated list,
-          # and a change to server/** sitting at position 101 would report
-          # server=false. The Server Engine job would then be SKIPPED, and a
-          # ruleset counts a skipped required check as SATISFIED - the exact
-          # silent-green failure the fail-open logic above exists to prevent,
-          # arriving through the door next to it.
-          #
-          # No pull request in this repo has come close to 100 files yet (the
-          # largest of the last 60 is 19), so this is a latent hole rather than
-          # a live one. --paginate walks every page, so it is closed whether or
-          # not that day arrives.
-          FILES=""
-          for attempt in 1 2 3; do
-            if FILES=$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename'); then
-              break
-            fi
-            echo "::warning::could not list changed files (attempt $attempt) - retrying"
-            FILES=""
-            sleep $((attempt * 5))
-          done
-          if [ -z "$FILES" ]; then
-            echo "::notice::changed-file list unavailable - running everything"
-            echo "src=true"    >> "$GITHUB_OUTPUT"
-            echo "server=true" >> "$GITHUB_OUTPUT"
-            echo "tests=true"  >> "$GITHUB_OUTPUT"
-            echo "phase4=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "$FILES" | sed 's/^/  /'
-          has() { echo "$FILES" | grep -qE "$1" && echo true || echo false; }
-          # A change to the workflow, the lockfile or the build config can break
-          # anything, so treat those as touching everything.
-          # .npmrc and .nvmrc are in this list because they change how
-          # dependencies INSTALL and which runtime runs them, so they can break
-          # anything - added 2026-08-23 when the pull request REMOVING an .npmrc
-          # setting skipped the build job that was supposed to prove it safe.
-          # EVERY workflow, not only this one (2026-09-05). Nine unit tests
-          # read the OTHER workflow files as text (deployCannotPinStaleCode,
-          # deployAndPublishAreHonest, theCopyRulesReachTheEngineAndTheDatabase,
-          # the-break-clocks-agree ...). #3070 rewrote auto-deploy-hetzner.yml
-          # and nothing else, so this list said "no src, no tests", the unit
-          # suite was skipped, the ruleset counted the skip as green, and main
-          # was red for every pull request after it (five pins, three files).
-          WIDE=$(has '^(package(-lock)?\.json|vite\.config|vitest\.config|tsconfig|\.npmrc|\.nvmrc|\.node-version|\.github/workflows/)')
-          PHASE4=$(has '^(\.github/workflows/ci\.yml|scripts/ci/probes/horse-phase4-certified-solver/|supabase/migrations/20260909(165541|170039|170749|171644|172537|175000|180000)_|server/src/(benchmark/(HorseLeague|HorseSolverAgreementV31)|engine/(GtoDecisionContext|GtoPostflopV31|GtoV31|HorseDataLedger|HorseLogic|LiveHorseDecisionWorkerHealth|horseDecision/)|services/GtoPostflopV31Loader))')
-          if [ "$WIDE" = "true" ]; then
-            echo "src=true"    >> "$GITHUB_OUTPUT"
-            echo "server=true" >> "$GITHUB_OUTPUT"
-            echo "tests=true"  >> "$GITHUB_OUTPUT"
-            echo "phase4=$PHASE4" >> "$GITHUB_OUTPUT"
-            echo "::notice::build/config change - running everything"
-            exit 0
-          fi
-          # supabase/migrations/ counts as touching server AND tests: law
-          # tests in both suites read the migration FILES (the GTO batch-floor
-          # guard, migration-version uniqueness). On 2026-09-02 a migrations-only
-          # backfill PR (#2580) merged with the server suite skipped, turned the
-          # clobber-era floor into the newest clamp declaration, and every
-          # hourly deploy after it was refused by its own test gate.
-          # server/ ALSO counts as touching the client suite. 96 files under
-          # tests/ readFileSync server/src/** to pin engine behaviour, and
-          # `vitest related` cannot see a readFileSync. On 2026-09-02 #2695 -
-          # a correct engine fix that added `maintenancePaused` to
-          # isPausedByDesign() - merged with "Client Unit Tests" SKIPPED as a
-          # server-only diff, turned tournamentRakeAndBreaks.test.ts red on
-          # main, and the ONE publisher's shard 1/4 failed on every merge after
-          # it. Production froze at 19:10 while main kept moving. Same lesson
-          # as the migrations line above, one directory over.
-          echo "src=$(has '^src/')"       >> "$GITHUB_OUTPUT"
-          echo "server=$(has '^(server/|supabase/migrations/|scripts/dev/)')" >> "$GITHUB_OUTPUT"
-          echo "tests=$(has '^(tests/|supabase/migrations/|server/|scripts/dev/)')"   >> "$GITHUB_OUTPUT"
-          echo "phase4=$PHASE4" >> "$GITHUB_OUTPUT"
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/ci/classify-ci-changes.mjs
 
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 1: TypeScript compilation check (fast — ~40s)
@@ -282,14 +202,53 @@ jobs:
           fi
           echo "No bare TODO or FIXME markers found."
 
+  fixture_native:
+    name: Native fixture prerequisites
+    needs: changes
+    if: >-
+      always() && github.event_name == 'pull_request' &&
+      (needs.changes.result != 'success' || needs.changes.outputs.fixture != 'false')
+    permissions:
+      contents: read
+    uses: ./.github/workflows/component-fixture-native-smoke.yml
+    with:
+      source_sha: ${{ github.event.pull_request.head.sha }}
+
+  # Keep the existing required check name, but never allow a skipped native
+  # prerequisite to masquerade as successful verification of affected source.
   typecheck:
+    name: TypeScript Check
+    needs: [typecheck_compile, changes, fixture_native]
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Require compilation and every applicable native fixture proof
+        env:
+          CI_EVENT_NAME: ${{ github.event_name }}
+          COMPILE_RESULT: ${{ needs.typecheck_compile.result }}
+          DIFF_RESULT: ${{ needs.changes.result }}
+          FIXTURE_CHANGED: ${{ needs.changes.outputs.fixture }}
+          NATIVE_RESULT: ${{ needs.fixture_native.result }}
+          NATIVE_VERIFIED: ${{ needs.fixture_native.outputs.native_verified }}
+          NATIVE_SOURCE_SHA: ${{ needs.fixture_native.outputs.source_sha }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/ci/fixture-native-gate.mjs
+
+  typecheck_compile:
     # COST 2026-08-23: this already ran, and passed, on the pull request -
     # the ruleset will not merge without it. Re-running it on the merge
     # commit tests an identical tree. 34 of every 100 CI runs were that
     # duplicate, and CI is six jobs, each billed as a whole minute even
     # when it takes twenty seconds.
     if: github.event_name == 'pull_request'
-    name: TypeScript Check
+    name: TypeScript compilation and repository checks
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -306,6 +265,9 @@ jobs:
         with:
           node-version: 20
           cache: npm
+
+      - name: Native fixture gate rejects missing and skipped proof
+        run: node --test tests/operations/fixture-required-ci.test.mjs
 
       - name: Mac dependency policy keeps Linux enforcement
         run: node --test tests/operations/local-dependency-policy.test.mjs
@@ -1338,13 +1300,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     if: always()
-    needs: [changes, stub_gate, typecheck, unit, server]
+    needs: [changes, stub_gate, typecheck, typecheck_compile, fixture_native, unit, server]
     steps:
       - name: Say what ran, and what did not
         run: |
           UNIT='${{ needs.unit.result }}'
           SERVER='${{ needs.server.result }}'
           TYPECHECK='${{ needs.typecheck.result }}'
+          COMPILE='${{ needs.typecheck_compile.result }}'
+          NATIVE='${{ needs.fixture_native.result }}'
           STUB='${{ needs.stub_gate.result }}'
           CHANGES='${{ needs.changes.result }}'
 
@@ -1355,7 +1319,9 @@ jobs:
             echo "| --- | --- |"
             echo "| What changed | $CHANGES |"
             echo "| Stub Gate | $STUB |"
-            echo "| TypeScript + repo invariants | $TYPECHECK |"
+            echo "| Required compilation + fixture result | $TYPECHECK |"
+            echo "| TypeScript + repo invariants | $COMPILE |"
+            echo "| Native fixture prerequisites | $NATIVE |"
             echo "| Client Unit Tests | $UNIT |"
             echo "| Server Engine | $SERVER |"
             echo ""

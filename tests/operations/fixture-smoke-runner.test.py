@@ -24,7 +24,7 @@ RECORDS = [dict(scope='native-service-smoke', observer='passed', browser='chromi
                           metadata_api='schedule-alter-unschedule-rollback',
                           application_ddl='denied', background_jobs='disabled',
                           production_binary_parity=False, complete_cron_acl_parity=False), auth='2.196.0', mfa='aal2',
-                safeupdate={'library': 'safeupdate-1.4', 'source': '104f78d27b607076b49f22927ba33828fd0a98a0', 'fresh_session': 'authenticator-native-loaded', 'sql_refusals': 'update-delete-cte-21000', 'ordinary_disable': '42501', 'http': 'unfiltered-denied-filtered-committed', 'probe_cleanup': 'rows-restored-objects-absent', 'production_binary_parity': False, 'complete_role_graph_parity': False, 'production_pre_request_parity': False},
+                safeupdate={'library': 'safeupdate-1.4', 'source': '104f78d27b607076b49f22927ba33828fd0a98a0', 'fresh_session': 'authenticator-native-loaded', 'protected_setting_read': 'sql-and-http-42501', 'sql_refusals': 'update-delete-cte-21000', 'ordinary_disable': '42501', 'http': 'unfiltered-denied-filtered-committed', 'probe_cleanup': 'rows-restored-objects-absent', 'production_binary_parity': False, 'complete_role_graph_parity': False, 'production_pre_request_parity': False},
                 ledger_attribution='banned-without-session',
                 service_roles=dict(auth_admin_inheritance='disabled',
                                    auth_claim_helpers='service-owned-and-http-verified',
@@ -55,6 +55,8 @@ class RunnerTests(unittest.TestCase):
     def test_safeupdate_proof_requires_native_http_and_cleanup(self):
         for transform in [lambda rows: rows[1].pop('safeupdate'),
                           lambda rows: rows[1]['safeupdate'].update(http='configuration-only'),
+                          lambda rows: rows[1]['safeupdate'].pop('protected_setting_read'),
+                          lambda rows: rows[1]['safeupdate'].update(protected_setting_read='allowed'),
                           lambda rows: rows[1]['safeupdate'].update(probe_cleanup='retained'),
                           lambda rows: rows[1]['safeupdate'].update(production_pre_request_parity=True)]:
             rows = json.loads(json.dumps(RECORDS))

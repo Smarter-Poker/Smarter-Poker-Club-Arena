@@ -19,7 +19,9 @@ publisher. The full source-contract readiness check still refuses incomplete
 application schemas, and native service smoke cannot issue a product certificate.
 The journal-backed `financial-observations.native.test.mjs` remains on PR4353;
 this package does not provide or claim that separate native test coverage.
-The workflow here remains a draft-PR smoke lane, not a post-publication gate.
+Ordinary pull-request CI invokes the reusable native workflow for affected or unknown diffs, regardless of draft status. The required TypeScript Check depends on compilation and successful native verification; unexpected skips fail. Compilation runs in parallel. Unrelated, positively classified diffs report their native skip explicitly. This is a prerequisite check, not a post-publication or product certificate.
+
+The classifier compares the event's exact Git base/head commits without rename detection, retaining both old and new paths. It covers the previous native workflow's entire path set; failed, incomplete or mismatched Git evidence requires native execution. The native workflow emits proof and its exact source SHA only after service assertions and mandatory cleanup pass. The required result rejects absent or mismatched proof even if a wrapper reports success. Classification, native execution and the result checker all check out the event head without retaining repository credentials; compilation keeps its existing merge-context checks in parallel.
 
 The earlier native service baseline is retained below as historical evidence;
 it does not certify this candidate's managed event-trigger or application ACLs.
@@ -286,7 +288,7 @@ install full dependency trees, or copy `node_modules` into Mac agent worktrees.
 Local source checks may reuse an existing shared installation without changing
 its packages; preserve the repository's normal commit and push hooks.
 
-After the normal draft PR includes the complete reviewed runtime files, use a
+After the normal PR includes the complete reviewed runtime files, CI uses a
 native Linux amd64 Docker runner with repository read permission and no secrets.
 Do not use a privileged production runner or a workflow-dispatch workaround.
 
@@ -299,7 +301,7 @@ The build refuses untracked/missing runtime sources and a dirty fixture tree.
 It labels the image with the exact checked-out commit and never pushes. The
 smoke uses the local immutable image ID and a fresh internal Docker network
 with no egress or published ports. Only the fixture and its separate refusal
-probe peer join that network. It checks six real extensions,
+probe peer join that network. It checks seven real extensions,
 GoTrue migrations/users/TOTP to AAL2, PostgREST authentication/RLS, a causal
 Realtime database event, separate-user credential denial and read-only SQL,
 and Chromium fetching the authenticated native endpoint. It creates no trace,
@@ -308,7 +310,7 @@ version/count facts; raw logs and session values stay in disposable memory.
 Readiness is bounded; failed services, browsers and assertions are never retried.
 The enclosing script removes both exact containers and their network, then
 verifies absence even on failure. No success statement is printed until that
-cleanup succeeds. The outer runner also records and checks all three absences.
+cleanup succeeds. The outer runner also removes the exact image and requires all four cleanup observations.
 
 For a runner-owned timeout cleanup, set `FIXTURE_SMOKE_CONTAINER` to exactly
 `ca-fixture-smoke-` followed by 32 lowercase hexadecimal characters. Without the
@@ -440,6 +442,6 @@ The original isolated bootstrap identity installs the genuine extension only int
 
 The fixture builds pg-safeupdate1.4 at upstream commit104f78d27b607076b49f22927ba33828fd0a98a0 against its pinned PostgreSQL17.11 ABI in CI. The archive is checksum-pinned; no SQL shim supplies its parser hook. The original bootstrap configures the initially unused authenticator role before any API connection, matching the captured `session_preload_libraries=safeupdate` setting. No existing live session is counted as fresh.
 
-Native smoke uses a new authenticator connection and the actual PostgREST14.5 process. Unqualified UPDATE, DELETE and modifying CTEs must return21000; ordinary disabling must return42501. Filtered SQL writes roll back. Filtered authenticated HTTP writes commit only two disposable probe rows, which are restored and checked before both probe objects are dropped. Driver cleanup still verifies container, peer, network and image removal. Auth/MFA and separate Realtime/RLS checks remain required.
+Native smoke uses a new authenticator connection and the actual PostgREST14.5 process. The ordinary session verifies the registered boolean, superuser-settable safeupdate setting and actual hook behavior. PostgreSQL protects the preload-list setting from ordinary reads; both SQL identities and an invoker HTTP RPC must receive42501 when attempting to read it. No monitoring grant or definer function is added to make that observation pass. Unqualified UPDATE, DELETE and modifying CTEs must return21000; ordinary disabling must return42501. Filtered SQL writes roll back. Filtered authenticated HTTP writes commit only two disposable probe rows, which are restored and checked before both probe objects are dropped. Driver cleanup still verifies container, peer, network and image removal. Auth/MFA and separate Realtime/RLS checks remain required.
 
 This is accidental whole-table-operation protection, not authorization against a caller supplying a broad WHERE condition. It does not qualify production binary identity, the full role graph, full application data or the production pre-request function. That exact function and its dependencies remain separate full-schema inputs; the smoke does not replace it with a fixture stub. Primary protocol reference: https://docs.postgrest.org/en/v14/integrations/pg-safeupdate.html.

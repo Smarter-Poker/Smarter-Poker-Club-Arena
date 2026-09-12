@@ -36,10 +36,15 @@ export const safeupdateProbeSetupSql = `
   CREATE FUNCTION public.fixture_safeupdate_session() RETURNS jsonb LANGUAGE sql STABLE
     SECURITY INVOKER AS $$SELECT jsonb_build_object(
       'session_user',session_user,'current_user',current_user,
-      'database',current_database(),'library',current_setting('session_preload_libraries'),
-      'enabled',current_setting('safeupdate.enabled'))$$;
+      'database',current_database(),'enabled',current_setting('safeupdate.enabled'),
+      'setting_type',(SELECT vartype FROM pg_settings WHERE name='safeupdate.enabled'),
+      'setting_context',(SELECT context FROM pg_settings WHERE name='safeupdate.enabled'))$$;
   REVOKE ALL ON FUNCTION public.fixture_safeupdate_session() FROM PUBLIC;
   GRANT EXECUTE ON FUNCTION public.fixture_safeupdate_session() TO authenticated;
+  CREATE FUNCTION public.fixture_safeupdate_protected_setting() RETURNS text LANGUAGE sql STABLE
+    SECURITY INVOKER AS $$SELECT current_setting('session_preload_libraries')$$;
+  REVOKE ALL ON FUNCTION public.fixture_safeupdate_protected_setting() FROM PUBLIC;
+  GRANT EXECUTE ON FUNCTION public.fixture_safeupdate_protected_setting() TO authenticated;
 `;
 
 export async function assertSafeupdateSqlRefusal(db, sql, code) {
@@ -60,7 +65,8 @@ export async function assertFixtureSafeupdateSession(db) {
   const identity = await db.query(`SELECT current_database()='club_arena_qualification'
     AND inet_server_addr()='127.0.0.1'::inet AND session_user='authenticator'
     AND current_user='authenticator' AND NOT (SELECT rolsuper FROM pg_roles WHERE rolname=current_user)
-    AND current_setting('session_preload_libraries')='safeupdate'
+    AND EXISTS(SELECT FROM pg_settings WHERE name='safeupdate.enabled'
+      AND vartype='bool' AND context='superuser' AND setting='on')
     AND current_setting('safeupdate.enabled')='on' AS fresh_native_session`);
   assert.deepEqual(
     identity.rows,
@@ -69,7 +75,20 @@ export async function assertFixtureSafeupdateSession(db) {
   );
   await db.query('BEGIN');
   try {
+    // PostgreSQL protects the preload list even from SHOW/current_setting.
+    // Keep that denial; the genuine registered setting and DML hooks prove
+    // loading without granting pg_read_all_settings or adding a definer.
+    await assertSafeupdateSqlRefusal(
+      db,
+      "SELECT current_setting('session_preload_libraries')",
+      '42501'
+    );
     await db.query('SET LOCAL ROLE authenticated');
+    await assertSafeupdateSqlRefusal(
+      db,
+      "SELECT current_setting('session_preload_libraries')",
+      '42501'
+    );
     for (const sql of [
       'UPDATE public.fixture_safeupdate_probe SET marker=999',
       'DELETE FROM public.fixture_safeupdate_probe',
@@ -127,9 +146,13 @@ export async function assertFixtureSafeupdateHttp(db, accessToken) {
     session_user: 'authenticator',
     current_user: 'authenticated',
     database: 'club_arena_qualification',
-    library: 'safeupdate',
     enabled: 'on',
+    setting_type: 'bool',
+    setting_context: 'superuser',
   });
+  const protectedSetting = await request('rpc/fixture_safeupdate_protected_setting');
+  assert.equal(protectedSetting.status, 403);
+  assert.equal((await protectedSetting.json()).code, '42501');
   for (const method of ['PATCH', 'DELETE']) {
     const response = await request(
       'fixture_safeupdate_probe',
@@ -155,12 +178,13 @@ export async function assertFixtureSafeupdateHttp(db, accessToken) {
   await db.query('INSERT INTO public.fixture_safeupdate_probe VALUES(2,20)');
   assert.deepEqual(await rows(), baseline);
   await db.query(
-    'DROP FUNCTION public.fixture_safeupdate_session(); DROP TABLE public.fixture_safeupdate_probe'
+    'DROP FUNCTION public.fixture_safeupdate_session(); DROP FUNCTION public.fixture_safeupdate_protected_setting(); DROP TABLE public.fixture_safeupdate_probe'
   );
   assert.deepEqual(
     (
       await db.query(`SELECT to_regclass('public.fixture_safeupdate_probe') IS NULL
-    AND to_regprocedure('public.fixture_safeupdate_session()') IS NULL AS absent`)
+    AND to_regprocedure('public.fixture_safeupdate_session()') IS NULL
+    AND to_regprocedure('public.fixture_safeupdate_protected_setting()') IS NULL AS absent`)
     ).rows,
     [{ absent: true }]
   );
@@ -168,6 +192,7 @@ export async function assertFixtureSafeupdateHttp(db, accessToken) {
     library: 'safeupdate-1.4',
     source: '104f78d27b607076b49f22927ba33828fd0a98a0',
     fresh_session: 'authenticator-native-loaded',
+    protected_setting_read: 'sql-and-http-42501',
     sql_refusals: 'update-delete-cte-21000',
     ordinary_disable: '42501',
     http: 'unfiltered-denied-filtered-committed',

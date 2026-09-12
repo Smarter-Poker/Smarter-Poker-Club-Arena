@@ -91,6 +91,7 @@ function sameStamps(a: Map<string, number>, b: Map<string, number>): boolean {
 }
 import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { TableRouteBoundary } from '../components/table/TableRouteBoundary';
 import { withClubContext } from '../utils/clubScopedPath';
 import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cachedIdentity';
 import { formatGameTitle } from '../utils/formatGameTitle';
@@ -1474,7 +1475,15 @@ function warmSeatsToPlayers(
   return players;
 }
 
-export default function TablePage({
+export default function TablePage(props: TablePageProps = {}) {
+  return (
+    <TableRouteBoundary embeddedTableId={props.embeddedTableId}>
+      {(tableId) => <LiveTablePage {...props} embeddedTableId={tableId} />}
+    </TableRouteBoundary>
+  );
+}
+
+function LiveTablePage({
   embeddedTableId,
   onTableInfoUpdate,
   isMultiTable = false,

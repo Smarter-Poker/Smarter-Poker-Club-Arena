@@ -1,0 +1,21 @@
+{
+  "checks": [
+    {
+      "check": "Frozen phase bytes equal sealed input and addendum",
+      "pass": true
+    },
+    {
+      "check": "Proposed8 accepted N null in frozen input",
+      "pass": true
+    },
+    {
+      "check": "Frozen phases1-8 incomplete",
+      "pass": true
+    }
+  ],
+  "references": {
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/baseline-planning/consolidated-current-0001-INPUT_REFERENCE_ADDENDUM.json": "3a36d8c9af5603b4c689909babba53e7f6deaf9526a1cb75f3a45b3308d83fd9",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/baseline-planning/consolidated-current-input-snapshots/PROPOSED_EXECUTION_PHASES.json": "83b04d482ab97c373f9255c9234d30ca5e08d3145407d7230b8cd62d19bd7716",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/baseline-planning/consolidated-current-0001/INPUTS.json": "41be2966ae3a8e8d3e6c4ed83bc5f10095477080eda08a9489c83b83b457dee6"
+  }
+}

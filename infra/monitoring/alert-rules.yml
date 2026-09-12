@@ -151,7 +151,7 @@ groups:
         annotations:
           summary: '{{ $value }} Open Claw job(s) past their staleness threshold'
           description: 'SELECT * FROM v_openclaw_job_staleness WHERE is_stale. A job that stops being dispatched produces no errors at all - it simply stops appearing.'
-          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       # humanizeDuration reads its input as SECONDS. This gauge is minutes -
       # its name says so and the threshold below is in minutes - so the first
@@ -193,7 +193,7 @@ groups:
         annotations:
           summary: 'An Open Claw job has been silent for {{ $value | humanize }} minutes'
           description: 'More than a day with no successful run. The worst case observed before this alert existed was 18.3 days.'
-          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       # Twelve at once on 2026-09-04, all 'job startup timeout', including the
       # snapshot prune and the daily-missions outbox drain.
@@ -208,7 +208,7 @@ groups:
         annotations:
           summary: '{{ $value }} pg_cron failures in the last hour'
           description: "SELECT jobname, status, return_message FROM cron.job_run_details JOIN cron.job USING (jobid) WHERE status <> 'succeeded' ORDER BY start_time DESC."
-          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       # 856 runs an hour is normal. A collapse means the scheduler itself has
       # stopped, which no per-job alert can see.
@@ -224,7 +224,7 @@ groups:
         annotations:
           summary: 'Only {{ $value }} pg_cron runs in the last hour'
           description: 'The fleet normally runs ~856 an hour. The collector is fresh, so this is the scheduler, not the gauge.'
-          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       - alert: CronMetricsBlind
         expr: |
@@ -239,7 +239,7 @@ groups:
           component: cron
         annotations:
           summary: 'Cron fleet gauges are stale ({{ $value }}s)'
-          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
   # ── POSTGRES ──────────────────────────────────────────────────────────
   # Also empty until 2026-09-04, and pointedly so: the realtime replication
@@ -294,7 +294,7 @@ groups:
         annotations:
           summary: 'Engine and database clocks differ by {{ $value }}ms'
           description: 'Turn timers, maintenance-break windows and every retention cutoff are computed against one clock or the other.'
-          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       - alert: DatabaseRpcErrorsElevated
         expr: |
@@ -307,7 +307,7 @@ groups:
         annotations:
           summary: 'Engine RPC errors at {{ $value }}/s'
           description: 'The engine reaches Postgres only through PostgREST. A sustained error rate here is seats, hands and settlements failing to write.'
-          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
   # ── vercel-health: DELETED 2026-09-04, deliberately ───────────────────
   # This group existed with no rules in it. Filling it honestly is not
@@ -571,7 +571,7 @@ groups:
         annotations:
           summary: '{{ $value | humanizePercentage }} of hands are failing to settle'
           description: 'fn_ca_settle_hand_stacks_absolute is refusing hands whole. Read ca_settlements.error_detail for the reason before changing anything. The 2026-09-04 cause was a BEFORE UPDATE trigger on table_seats that cancelled no-op writes, making a correct seat write look like a failed one.'
-          runbook: 'docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       # Baseline before the incident was 0.0-0.2%. A rate that merely doubles
       # is worth knowing about long before it reaches a quarter of all hands.
@@ -585,7 +585,7 @@ groups:
           component: money
         annotations:
           summary: 'Settlement failure rate {{ $value | humanizePercentage }}, above the 0.2% baseline'
-          runbook: 'docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       # No hands settling at all is not a quiet table - this platform settles
       # ~500 hands a minute. The failure-rate gauge is ABSENT in this state, so
@@ -602,7 +602,7 @@ groups:
         annotations:
           summary: 'No hand has settled in five minutes'
           description: 'The collector is fresh and reports zero terminal settlements. Either the engine has stopped dealing or settlement is failing before it reaches a terminal state.'
-          runbook: 'docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       - alert: SettlementsStuckMidStateMachine
         expr: |
@@ -614,7 +614,7 @@ groups:
           component: money
         annotations:
           summary: '{{ $value }} settlements are neither final nor failed'
-          runbook: 'docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       - alert: SettlementMetricsBlind
         expr: |
@@ -630,7 +630,7 @@ groups:
         annotations:
           summary: 'Settlement gauges are stale ({{ $value }}s)'
           description: 'fn_settlement_health has not returned in over ten minutes. Whether hands are settling is currently unknown, and unknown is what thirteen hours of this looked like.'
-          runbook: 'docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
   # ── HAND PROJECTION OUTBOX (2026-09-10) ────────────────────────────────
   # Every accepted hand leaves one row in public.hand_projection_outbox; the
@@ -765,7 +765,7 @@ groups:
         annotations:
           summary: '{{ $value }} undeclared trigger(s) on a money or seat table'
           description: 'A trigger is live on table_seats, club_members, wallets, chip_ledger, tournaments, tournament_players or ca_settlements with no row in ca_declared_money_triggers. Run SELECT * FROM fn_undeclared_money_triggers(). Either it is a legitimate change missing its declaration, or it is an unreviewed one - and the last unreviewed one broke a third of all hand settlements.'
-          runbook: 'docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       # Criticals nobody has looked at in a day. Deliberately NOT the raw
       # unresolved count: a critical raised a minute ago is the system working.
@@ -779,7 +779,7 @@ groups:
         annotations:
           summary: '{{ $value }} critical money alerts open longer than 24h'
           description: "financial_alerts is accumulating criticals nobody has resolved. A deep backlog is dangerous mainly because it hides a real one - on 2026-09-04 it was 1,345 rows deep and contained five 'player was never paid' alerts, all of which had in fact been paid within thirty minutes."
-          runbook: 'docs/changelog/2026-09-04-the-money-alerts-nobody-was-told-about.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       - alert: MoneyAlertBacklogGrowing
         expr: |
@@ -791,7 +791,7 @@ groups:
         annotations:
           summary: '{{ $value }} unresolved money alerts'
           description: 'Above the 1,345 the backlog stood at when it was first measured. Check poker_financial_alerts_distinct_conditions - if the row count is climbing and the condition count is not, the table is duplicating rather than finding new problems.'
-          runbook: 'docs/changelog/2026-09-04-the-money-alerts-nobody-was-told-about.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       - alert: MoneyHealthBlind
         expr: |
@@ -807,7 +807,7 @@ groups:
         annotations:
           summary: 'Money-health gauges are stale ({{ $value }}s)'
           description: 'Neither the alert backlog nor the undeclared-trigger check has returned in over ten minutes. poker_money_undeclared_triggers is ABSENT rather than 0 in this state, deliberately - a zero here would be an all-clear the collector has not earned.'
-          runbook: 'docs/changelog/2026-09-04-the-money-alerts-nobody-was-told-about.md'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
   # ── Action latency (Realtime programme Phase 1, 2026-09-04) ──────────────
   # poker_act_to_broadcast_ms is the time from a player's action being

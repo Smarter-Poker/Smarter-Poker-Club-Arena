@@ -139,3 +139,19 @@ The new check 8 still earns its place, for a reason that has nothing to do with 
 Two alerts written that morning to catch a silent pager, silent from birth for the same reason as the fifteen. The check found them the first time it was pointed at the rebased branch, several hours after I wrote them.
 
 `prometheus.yml` gains the `alertmanager` scrape job, `REQUIRED_SCRAPE_JOBS` gains the name, and check 8 gains the general form: a metric belonging to a known exporter prefix now requires that exporter's scrape job to exist, because `alertmanager_*` having a producer says nothing at all about whether anything asks for it.
+
+## The runbooks were aspirational too
+
+Twenty-three of these rules carried `runbook:` links to three changelog files that were never written:
+
+| Runbook named                                                | Rules pointing at it |
+| ------------------------------------------------------------ | -------------------- |
+| `2026-09-04-the-headings-that-alerted-on-nothing.md`         | 13                   |
+| `2026-09-04-settlement-was-failing-a-third-of-every-hand.md` | 7                    |
+| `2026-09-04-the-money-alerts-nobody-was-told-about.md`       | 3                    |
+
+They were authored on 2026-09-04 beside the metrics that had no producer, and the whole batch was aspirational in the same way: the rule, the metric it read and the document it pointed at were all written as intentions, and only the rule ever existed.
+
+The runbook is the first thing read by whoever a page wakes up, so a dangling one costs its reader the worst minutes of an incident. All 23 now point at this document, which is the account of what those metrics are, where they come from and what each number means. That is a repoint rather than three new documents on purpose: those incidents were real and I was not there for them, and inventing their detail would be worse than linking the page to something true.
+
+`check-monitoring-drift.mjs` gains check 10: a repo-relative `runbook:` must resolve to a file that exists. An `http(s)` runbook is somebody else's server and CI has no business reaching for it mid-build, so those are left alone.

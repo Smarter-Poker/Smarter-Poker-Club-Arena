@@ -392,6 +392,44 @@ const EXPORTER_JOBS = {
   }
 }
 
+// ── 10. a runbook link must lead somewhere ──────────────────────────────────
+//
+// The runbook is what the person woken by a page reads first. A link that does
+// not resolve costs its reader the worst minutes of an incident, and nothing
+// was checking: 23 alerts - including HandsAreFailingToSettle,
+// OpenClawFleetLongSilence and MoneyAlertsGoingUnread, all of which paged on
+// 2026-09-11 - pointed at three changelog files that were never written. They
+// were authored on 2026-09-04 alongside the metrics that had no producer, and
+// the whole batch was aspirational in the same way.
+//
+// Only repo-relative paths are checked. An http(s) runbook is somebody else's
+// server and CI has no business reaching for it during a build.
+{
+  const ruleFiles = onDisk.filter((f) => loadedNames.includes(f));
+  const dangling = new Map(); // path -> alerts that name it
+  for (const f of ruleFiles) {
+    const lines = readFileSync(resolve(DIR, f), 'utf8').split('\n');
+    let owner = '(unnamed)';
+    for (const line of lines) {
+      const named = /^\s*-\s*(?:alert|record):\s*['"]?([\w:.-]+)/.exec(line);
+      if (named) owner = named[1];
+      const rb = /^\s*runbook:\s*['"]?([^'"\s]+)/.exec(line);
+      if (!rb) continue;
+      const target = rb[1];
+      if (/^https?:\/\//.test(target)) continue;
+      if (existsSync(resolve(root, target))) continue;
+      if (!dangling.has(target)) dangling.set(target, []);
+      dangling.get(target).push(`${f}:${owner}`);
+    }
+  }
+  for (const [target, owners] of [...dangling].sort()) {
+    errors.push(
+      `runbook ${target} does not exist, and ${owners.length} rule(s) point at it (${owners.slice(0, 4).join(', ')}${owners.length > 4 ? ', ...' : ''}). ` +
+        `The runbook is the first thing read by whoever the page wakes up. Write it, or point the rule at a document that exists.`
+    );
+  }
+}
+
 if (errors.length) {
   console.error('\nFAIL: monitoring wiring is broken.\n');
   for (const e of errors) console.error(`  - ${e}`);
@@ -400,5 +438,5 @@ if (errors.length) {
 }
 
 console.log(
-  `OK: ${explicit.length} rule file(s) loaded, mounted at matching paths, non-empty; every metric they and the dashboards name has a producer; alerts route to a receiver that delivers`
+  `OK: ${explicit.length} rule file(s) loaded, mounted at matching paths, non-empty; every metric they and the dashboards name has a producer; every runbook resolves; alerts route to a receiver that delivers`
 );

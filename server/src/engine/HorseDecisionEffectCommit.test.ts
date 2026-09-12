@@ -129,6 +129,7 @@ function harness(intendedActionAccepted: boolean) {
     }),
     computeLivePots: () => [{ amount: 10, eligiblePlayers: ['horse-1', 'human-2'] }],
     getContestablePotForCall: () => 10,
+    getChipRulesSnapshot: () => ({ asset: 'chips', chipUnit: 0.01 }),
     getRakeConfigSnapshot: () => ({
       percent: 10,
       cap: 5,
@@ -162,6 +163,23 @@ afterEach(() => {
 });
 
 describe('authoritative horse action effect commit', () => {
+  it('retains folded disconnected deals without exposing their cards', () => {
+    const { engine, player, enginePlayer, state } = harness(true);
+    state.players[1].is_folded = true;
+    state.players.push({ ...state.players[1], seat: 3, user_id: 'never-dealt', cards: [] });
+    engine.disconnectEngine.isSittingOut = (_table: string, userId: string) =>
+      userId !== player.user_id;
+    engine.scheduleHorseAction(player, 1, enginePlayer, state);
+    const snapshot = decisionWorker.decideFast.mock.calls[0]?.[0] as any;
+    expect(snapshot.gameState.players[1].is_sitting_out).toBe(true);
+    expect(snapshot.gameState.dealtSeatIds).toEqual([1, 2]);
+    expect(snapshot.gameState.chipUnit).toBe(0.01);
+    expect(snapshot.gameState.asset).toBe('chips');
+    expect(snapshot.gameState.players.every((seat: any) => seat.cards.length === 0)).toBe(true);
+    state.players[1].cards.pop();
+    expect(snapshot.gameState.dealtSeatIds).toEqual([1, 2]);
+  });
+
   it('publishes one canonical public state and never exposes any seat private cards', () => {
     const { engine, player, enginePlayer, state } = harness(true);
 

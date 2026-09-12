@@ -9,6 +9,7 @@ import { bettingStructureFor } from '../BettingStructure.js';
 import { calculateContestablePot } from '../PokerEngine.js';
 import { horseVariantRulesFor, isKnownVariant } from '../VariantRules.js';
 import { buildJointCardLayout, type JointCardLayoutInput } from '../multiway/JointCardLayout.js';
+import { validateDealtSeatCensus } from '../multiway/DealtSeatCensus.js';
 import { buildTournamentMState, TOURNAMENT_CONTEXT_INCOMPLETE } from '../HorseTournamentPreflop.js';
 import { noteDecisionMs, noteFire } from '../BrainTelemetry.js';
 import { gtoChartCount } from '../GtoCharts.js';
@@ -471,6 +472,14 @@ export class HorseDecisionWorkerRuntime {
       }
     }
     const publicHero = gs.players.find((seat) => seat.seat === gs.heroSeat);
+    if (gs.dealtSeatIds !== undefined)
+      validateDealtSeatCensus(gs.players, request.player.seat, gs.dealtSeatIds);
+    if (
+      (gs.chipUnit !== undefined || gs.asset !== undefined) &&
+      (!['chips', 'diamonds'].includes(gs.asset ?? '') ||
+        gs.chipUnit !== (gs.asset === 'diamonds' || gs.gameMode === 'tournament' ? 1 : 0.01))
+    )
+      throw new Error('horse state settlement chip rules are invalid');
     if (!publicHero || publicHero.user_id !== request.player.user_id) {
       throw new Error('horse state must include the same public hero identity');
     }
@@ -587,7 +596,8 @@ export class HorseDecisionWorkerRuntime {
         stage: gs.stage as JointCardLayoutInput['stage'],
         heroCards: request.player.cards,
         knownDeadCards: knownDead,
-        dealtSeats: gs.players.filter((seat) => !seat.is_sitting_out).length,
+        dealtSeats: validateDealtSeatCensus(gs.players, request.player.seat, gs.dealtSeatIds)
+          .length,
         boards: [
           gs.communityCards,
           gs.communityCards2!,

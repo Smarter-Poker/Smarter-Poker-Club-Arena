@@ -949,6 +949,12 @@ export interface HorseGameStateV2 extends HorseGameState {
   /** Phase 5 Round 1 canonical live-decision contract. Offline fixtures may
    * omit it; every live worker request is runtime-validated at version 1. */
   stateSchemaVersion?: 1;
+  /** Public deal census captured before stripping private cards. Connectivity
+   * and folding never return a dealt hand to the physical deck. */
+  dealtSeatIds?: number[];
+  /** Settlement units from the active controller, including whole Diamonds. */
+  chipUnit?: 0.01 | 1;
+  asset?: 'chips' | 'diamonds';
   heroSeat?: number;
   currentPlayerSeat?: number;
   legalActions?: ActionType[];

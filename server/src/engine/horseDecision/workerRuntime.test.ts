@@ -259,6 +259,7 @@ describe('Phase 13 cross-board worker boundary', () => {
     request.gameState.stage = 'flop';
     request.gameState.bombPot = true;
     request.gameState.boardCount = 3;
+    request.gameState.dealtSeatIds = request.gameState.players.map((p) => p.seat);
     request.gameState.communityCards = ['2', '3', '4'].map((r) => card(r, 'clubs')) as any;
     request.gameState.communityCards2 = ['5', '6', '7'].map((r) => card(r, 'diamonds')) as any;
     request.gameState.communityCards3 = ['8', '9', 'T'].map((r) => card(r, 'hearts')) as any;
@@ -270,6 +271,47 @@ describe('Phase 13 cross-board worker boundary', () => {
     await h.runtime.drain();
     expect(h.messages.at(-1)?.type).toBe('FAST_RESULT');
     expect(h.decisionsAtRng).toHaveLength(1);
+  });
+  it.each(['missing', 'duplicate', 'unknown', 'omitted_live', 'omitted_hero'] as const)(
+    'refuses %s dealt census',
+    async (fault) => {
+      const request = multiboard();
+      if (fault === 'missing') delete request.gameState.dealtSeatIds;
+      if (fault === 'duplicate') request.gameState.dealtSeatIds = [2, 3, 3];
+      if (fault === 'unknown') request.gameState.dealtSeatIds = [2, 3, 99];
+      if (fault === 'omitted_live') request.gameState.dealtSeatIds = [2];
+      if (fault === 'omitted_hero') request.gameState.dealtSeatIds = [3];
+      const h = harness();
+      h.runtime.receive(rekey(request));
+      await h.runtime.drain();
+      expect(h.decisionsAtRng).toEqual([]);
+      expect(h.messages.at(-1)).toMatchObject({
+        type: 'ERROR',
+        message: expect.stringContaining('dealt_census'),
+      });
+    }
+  );
+  it('counts folded disconnected cards when checking deck exhaustion', async () => {
+    const request = multiboard();
+    for (let seat = 4; seat <= 11; seat++)
+      request.gameState.players.push({
+        ...request.gameState.players[1],
+        seat,
+        user_id: `folded-${seat}`,
+        is_folded: true,
+        is_sitting_out: true,
+        bet: 0,
+        totalInvested: 0,
+      });
+    request.gameState.dealtSeatIds = request.gameState.players.map((p) => p.seat);
+    const h = harness();
+    h.runtime.receive(rekey(request));
+    await h.runtime.drain();
+    expect(h.decisionsAtRng).toEqual([]);
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: expect.stringContaining('deck_exhausted'),
+    });
   });
   it.each([
     'hero_collision',

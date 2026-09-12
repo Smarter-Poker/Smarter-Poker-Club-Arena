@@ -2811,6 +2811,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     });
     const gameState: HorseGameStateV2 = {
       stateSchemaVersion: 1,
+      dealtSeatIds: state.players
+        .filter((candidate) => candidate.cards.length > 0)
+        .map((candidate) => candidate.seat)
+        .sort((a, b) => a - b),
+      ...handControllerRef.getChipRulesSnapshot(),
       heroSeat: boundedActions.heroSeat,
       currentPlayerSeat: boundedActions.currentPlayerSeat,
       legalActions: [...boundedActions.legalActions],

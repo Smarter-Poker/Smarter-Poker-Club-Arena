@@ -11,7 +11,7 @@ export interface JointCardLayoutInput {
   heroCards: readonly Card[];
   /** Only the acting player's own discard may be supplied. */
   knownDeadCards?: readonly Card[];
-  /** Includes folded dealt seats; sitting-out seats are excluded by the caller. */
+  /** Includes every original deal, including subsequently disconnected/folded seats. */
   dealtSeats: number;
   boards: readonly (readonly Card[])[];
   /** Bomb boards have disjoint cards. Runouts may repeat only their named prefix. */

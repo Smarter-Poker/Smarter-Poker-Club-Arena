@@ -48,7 +48,7 @@ export const REMAINING_VARIANT_PACKS = Object.freeze({
     multiway: 0.02,
   }),
   flh: Object.freeze({
-    version: 'fixed-limit-holdem-round1-v1',
+    version: 'fixed-limit-holdem-round1-v2',
     holes: 2,
     deck: 52,
     splitLow: false,
@@ -69,7 +69,7 @@ export const REMAINING_VARIANT_PACKS = Object.freeze({
     multiway: 0.008,
   }),
   flo8: Object.freeze({
-    version: 'fixed-limit-omaha8-round1-v1',
+    version: 'fixed-limit-omaha8-round1-v2',
     holes: 4,
     deck: 52,
     splitLow: true,
@@ -95,6 +95,9 @@ export const REMAINING_VARIANT_DOMAIN = Object.freeze({
   calibratedConfidence: null,
   defaultMode: 'shadow',
   maxStackBB: 250,
+  // Existing fixed-limit tables permit a1000BB buy-in. Canonical fixed
+  // wagers bound exposure; the ordinary no-limit depth domain stays separate.
+  fixedLimitMaxStackBB: 1000,
   maxAnteBB: 1,
   maxRakePercent: 10,
   liveBudgetMs: 4,

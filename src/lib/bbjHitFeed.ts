@@ -121,11 +121,18 @@ async function announce(row: BbjWinnerRow, poolId: string): Promise<void> {
      interrupt everybody else.
 
      CORRECTED 2026-09-11: this list used to include "it appears in the
-     ticker". `BBJTicker` is not mounted on any page - `tests/every-file-under-
-     src-is-reachable.law.test.ts` allowlists it as read only by a test - so
-     one of the three compensations offered here for not announcing a mini
-     platform-wide did not exist. The surfaces named above are the ones that
-     actually render, checked file by file rather than remembered.
+     ticker". `BBJTicker` was mounted on no page - the reachability law
+     allowlisted it as read only by a test - so one of the three compensations
+     offered here for not announcing a mini platform-wide did not exist. The
+     surfaces named above are the ones that actually render, checked file by
+     file rather than remembered.
+
+     AND THE FILE IS GONE (2026-09-12, phase 4). A component that exists,
+     renders nowhere, and sits on an allowlist is one every reader has to
+     re-check; this claim is the proof, because it was written on the strength
+     of a surface that had not existed for weeks. Deleted rather than mounted:
+     mounting it would have added a second live subscription to the same
+     jackpot number, which is how one screen ends up showing two figures.
 
      A row with no `kind` is a main jackpot - every row written before today. */
   if ((row.kind || 'main') !== 'main') {

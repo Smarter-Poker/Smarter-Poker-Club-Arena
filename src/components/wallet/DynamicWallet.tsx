@@ -143,12 +143,16 @@ interface DynamicWalletProps {
    *
    * This said the club lobby passes false "because BBJTicker already owns the
    * jackpot up there". Checked 2026-09-11: nothing passes this prop at all,
-   * and `BBJTicker` is mounted on no page. What the club lobby actually
-   * renders is its own `ClubBBJShell` tile, so the reasoning survives even
-   * though the component named in it does not - two live copies of the same
-   * number on two subscriptions is still how one screen ends up showing two
-   * different figures. Kept as the escape hatch for a surface that grows its
-   * own jackpot tile, with the reason stated rather than a dead file cited.
+   * and that component was mounted on no page; it was DELETED on 2026-09-12
+   * (phase 4 of the BBJ audit) rather than left parked on a reachability
+   * allowlist for a third agent to reason about as live. What the club lobby
+   * actually renders is its own `ClubBBJShell` tile, so the reasoning survives
+   * even though the component named in it does not - two live copies of the
+   * same number on two subscriptions is still how one screen ends up showing
+   * two different figures, and that hazard is precisely why the dead ticker
+   * was removed instead of mounted. Kept as the escape hatch for a surface
+   * that grows its own jackpot tile, with the reason stated rather than a dead
+   * file cited.
    */
   showBBJ?: boolean;
   /**

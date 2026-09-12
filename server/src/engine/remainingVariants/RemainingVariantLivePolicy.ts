@@ -190,7 +190,10 @@ export function evaluateRemainingVariantPolicy(
   if (
     !Number.isFinite(depth) ||
     depth <= 0 ||
-    depth > REMAINING_VARIANT_DOMAIN.maxStackBB ||
+    depth >
+      (limit
+        ? REMAINING_VARIANT_DOMAIN.fixedLimitMaxStackBB
+        : REMAINING_VARIANT_DOMAIN.maxStackBB) ||
     (s.ante ?? 0) / s.bigBlind > 1
   )
     return finish('depth_or_ante_outside_pack');

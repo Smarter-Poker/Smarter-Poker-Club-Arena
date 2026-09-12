@@ -2745,10 +2745,17 @@ export class HorseLogic {
                 ? 'phase7_evaluated'
                 : 'phase7_unavailable';
               if (shadow.result) variantPolicy.receipt.shadowUtility = shadow.result.ledger;
-            } else
+              else
+                variantPolicy.receipt.utilityUnavailableReason =
+                  shadow.unavailableReason ?? 'unknown';
+            } else {
               variantPolicy.receipt.utilityOwner = evaluation.result
                 ? 'phase7_evaluated'
                 : 'phase7_unavailable';
+              if (!evaluation.result)
+                variantPolicy.receipt.utilityUnavailableReason =
+                  evaluation.unavailableReason ?? 'unknown';
+            }
           }
           phase8ReuseUtility = evaluation.continuePostflop;
           const result = evaluation.result;
@@ -2787,6 +2794,7 @@ export class HorseLogic {
           }
         } catch (error) {
           reportError(error, 'HorseLogic.phase7_tournament_utility');
+          if (variantPolicy) variantPolicy.receipt.utilityUnavailableReason = 'exception';
           if (tele) {
             noteFire('phase7_utility_unavailable');
             noteFire('phase7_unavailable_exception');
@@ -2852,6 +2860,7 @@ export class HorseLogic {
     if (phase10) {
       if (isTournamentMode(gs) && phase10.receipt.utilityOwner !== 'phase7_evaluated') {
         phase10.receipt.utilityOwner = 'phase7_unavailable';
+        phase10.receipt.utilityUnavailableReason ??= 'context_or_equity_evidence_unavailable';
         if (phase10.receipt.mode === 'candidate') {
           decision = beforePhase10;
           phase10.receipt.applied = false;
@@ -2873,11 +2882,14 @@ export class HorseLogic {
         if (phase10.receipt.applied) noteFire('phase10_applied');
         else noteFire('phase10_baseline_retained');
         noteFire(`phase10_utility_${phase10.receipt.utilityOwner}`);
+        if (phase10.receipt.utilityUnavailableReason)
+          noteFire(`phase10_unavailable_utility_${phase10.receipt.utilityUnavailableReason}`);
       }
     }
     if (phase11) {
       if (isTournamentMode(gs) && phase11.receipt.utilityOwner !== 'phase7_evaluated') {
         phase11.receipt.utilityOwner = 'phase7_unavailable';
+        phase11.receipt.utilityUnavailableReason ??= 'context_or_equity_evidence_unavailable';
         if (phase11.receipt.mode === 'candidate') {
           decision = beforePhase10;
           phase11.receipt.applied = false;
@@ -2904,11 +2916,14 @@ export class HorseLogic {
         if (phase11.receipt.applied) noteFire('phase11_applied');
         else noteFire('phase11_baseline_retained');
         noteFire(`phase11_utility_${phase11.receipt.utilityOwner}`);
+        if (phase11.receipt.utilityUnavailableReason)
+          noteFire(`phase11_unavailable_utility_${phase11.receipt.utilityUnavailableReason}`);
       }
     }
     if (phase12) {
       if (isTournamentMode(gs) && phase12.receipt.utilityOwner !== 'phase7_evaluated') {
         phase12.receipt.utilityOwner = 'phase7_unavailable';
+        phase12.receipt.utilityUnavailableReason ??= 'context_or_equity_evidence_unavailable';
         if (phase12.receipt.mode === 'candidate') {
           decision = beforePhase10;
           phase12.receipt.applied = false;
@@ -2935,6 +2950,8 @@ export class HorseLogic {
         if (phase12.receipt.applied) noteFire('phase12_applied');
         else noteFire('phase12_baseline_retained');
         noteFire(`phase12_utility_${phase12.receipt.utilityOwner}`);
+        if (phase12.receipt.utilityUnavailableReason)
+          noteFire(`phase12_unavailable_utility_${phase12.receipt.utilityUnavailableReason}`);
       }
     }
     if (decision.action === 'fold' && beforePhase10.continuationGuard)

@@ -23,7 +23,7 @@ const names = [
   'insurance.accepted',
   'settlement.observed',
 ];
-function fixture() {
+function fixture(overrides = {}) {
   const initial = Object.fromEntries(Object.keys(FINANCIAL_SECTIONS).map((name) => [name, []]));
   Object.assign(initial, {
     actor_ids: [...owner.actorIds],
@@ -125,18 +125,24 @@ function fixture() {
     owner,
     observations: {
       binding: { table_id: id(1) },
-      financialFacts: async (binding) => {
-        reads.push(structuredClone(binding));
-        return rows[index];
-      },
+      financialFacts:
+        overrides.financialFacts ??
+        (async (binding) => {
+          reads.push(structuredClone(binding));
+          return rows[index];
+        }),
     },
-    readEngineIdentity: async () => ({ source_sha: source, instance_id: instance, running: true }),
-    sampleFelt: async () =>
-      owner.actorIds.map((actor_id) => ({
-        actor_id,
-        sequence: index,
-        state: { table_id: id(1), hand_number: hand },
-      })),
+    readEngineIdentity:
+      overrides.readEngineIdentity ??
+      (async () => ({ source_sha: source, instance_id: instance, running: true })),
+    sampleFelt:
+      overrides.sampleFelt ??
+      (async () =>
+        owner.actorIds.map((actor_id) => ({
+          actor_id,
+          sequence: index,
+          state: { table_id: id(1), hand_number: hand },
+        }))),
     now: () => clock,
     sleep: async (ms) => {
       clock += ms;
@@ -254,3 +260,105 @@ test('wrong table, hand identity or settlement counters refuse', async () => {
     await assert.rejects(f.run(7));
   }
 });
+
+for (const stage of [
+  'initial engine identity',
+  'financial facts',
+  'felt state',
+  'final engine identity',
+]) {
+  test(`the original deadline bounds a hung ${stage} callback`, async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
+    let resolveLate;
+    const pending = new Promise((resolve) => {
+      resolveLate = resolve;
+    });
+    let identityReads = 0;
+    const identity = { source_sha: owner.sourceSha, instance_id: 'owned-boot-1', running: true };
+    const f = fixture({
+      ...(stage === 'financial facts' ? { financialFacts: () => pending } : {}),
+      ...(stage === 'felt state' ? { sampleFelt: () => pending } : {}),
+      ...(['initial engine identity', 'final engine identity'].includes(stage)
+        ? {
+            readEngineIdentity: () =>
+              ++identityReads === (stage === 'initial engine identity' ? 1 : 2)
+                ? pending
+                : Promise.resolve(identity),
+          }
+        : {}),
+    });
+    if (stage !== 'initial engine identity') await f.observer.start();
+    if (stage === 'final engine identity') for (let i = 0; i < 7; i++) await f.run(i);
+    let result = 'pending';
+    const operation =
+      stage === 'initial engine identity'
+        ? f.observer.start()
+        : f.run(stage === 'final engine identity' ? 7 : 0);
+    operation.then(
+      () => {
+        result = 'resolved';
+      },
+      (error) => {
+        result = error.message;
+      }
+    );
+    await new Promise(setImmediate);
+    f.advance(120000);
+    context.mock.timers.tick(120000);
+    await new Promise(setImmediate);
+    assert.match(result, /FINANCIAL_CHECKPOINT_DEADLINE/);
+    resolveLate(identity);
+    await new Promise(setImmediate);
+    assert.throws(() => f.observer.observations(), /CLOSED/);
+    await assert.rejects(f.observer.start(), /ALREADY_STARTED/);
+  });
+}
+
+test('the initial identity read consumes the original budget instead of renewing it', async () => {
+  let resolveIdentity;
+  const f = fixture({
+    readEngineIdentity: () =>
+      new Promise((resolve) => {
+        resolveIdentity = resolve;
+      }),
+  });
+  const starting = f.observer.start();
+  await new Promise(setImmediate);
+  f.advance(119999);
+  resolveIdentity({ source_sha: owner.sourceSha, instance_id: 'owned-boot-1', running: true });
+  await starting;
+  f.advance(2);
+  await assert.rejects(f.run(0), /EXPIRED/);
+});
+
+for (const [checkpoint, budget] of [
+  [4, 5000],
+  [7, 15000],
+]) {
+  test(`a hung persistence read keeps the ${budget}ms checkpoint deadline`, async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
+    let index = 0,
+      hang = false;
+    const f = fixture({
+      financialFacts: () => (hang ? new Promise(() => {}) : Promise.resolve(f.rows[index])),
+    });
+    await f.observer.start();
+    for (; index < checkpoint; index++) await f.run(index);
+    hang = true;
+    let result = 'pending';
+    f.run(index).then(
+      () => {
+        result = 'resolved';
+      },
+      (error) => {
+        result = error.message;
+      }
+    );
+    await new Promise(setImmediate);
+    f.advance(budget);
+    context.mock.timers.tick(budget);
+    await new Promise(setImmediate);
+    assert.match(result, /FINANCIAL_CHECKPOINT_PERSISTENCE_TIMEOUT/);
+    assert.throws(() => f.observer.observations(), /CLOSED/);
+  });
+}

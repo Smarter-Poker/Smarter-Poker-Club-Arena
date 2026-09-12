@@ -50,8 +50,27 @@ export function createFinancialCheckpointObserver({
   function live() {
     assert.ok(started && !failed && now() < deadline, 'FINANCIAL_CHECKPOINT_CLOSED_OR_EXPIRED');
   }
+  async function within(operation, end = deadline, message = 'FINANCIAL_CHECKPOINT_DEADLINE') {
+    assert.ok(!failed && now() < end, message);
+    let timer;
+    try {
+      // A callback may never settle. Bound the observation itself, including
+      // the first identity read; a late result cannot reopen this observer.
+      // This does not claim to cancel the callback's underlying I/O.
+      const result = await Promise.race([
+        Promise.resolve().then(operation),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error(message)), Math.max(1, Math.ceil(end - now())));
+        }),
+      ]);
+      assert.ok(!failed && now() < end, message);
+      return result;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
   async function engine() {
-    const result = await readEngineIdentity();
+    const result = await within(readEngineIdentity);
     assert.equal(result.running, true, 'FINANCIAL_ENGINE_NOT_RUNNING');
     assert.equal(result.source_sha, bound.sourceSha, 'FINANCIAL_ENGINE_SOURCE');
     assert.ok(
@@ -62,9 +81,11 @@ export function createFinancialCheckpointObserver({
     );
     return { source_sha: result.source_sha, instance_id: result.instance_id };
   }
-  async function facts() {
+  async function facts(end = deadline, message) {
     live();
-    const data = validateFinancialData(await observations.financialFacts(financial));
+    const data = validateFinancialData(
+      await within(() => observations.financialFacts(financial), end, message)
+    );
     live();
     assert.deepEqual(data.actor_ids, bound.actorIds, 'FINANCIAL_CHECKPOINT_ACTORS');
     assert.deepEqual(
@@ -77,10 +98,14 @@ export function createFinancialCheckpointObserver({
   async function until(predicate, milliseconds) {
     const end = Math.min(deadline, now() + milliseconds);
     for (;;) {
-      const data = await facts();
+      const data = await facts(end, 'FINANCIAL_CHECKPOINT_PERSISTENCE_TIMEOUT');
       assert.ok(now() < end, 'FINANCIAL_CHECKPOINT_PERSISTENCE_TIMEOUT');
       if (predicate(data)) return data;
-      await sleep(Math.min(100, end - now()));
+      await within(
+        () => sleep(Math.min(100, end - now())),
+        end,
+        'FINANCIAL_CHECKPOINT_PERSISTENCE_TIMEOUT'
+      );
     }
   }
   return Object.freeze({
@@ -88,8 +113,8 @@ export function createFinancialCheckpointObserver({
       assert.ok(!started && !failed && !busy, 'FINANCIAL_CHECKPOINT_ALREADY_STARTED');
       busy = true;
       try {
-        identity = await engine();
         deadline = now() + FINANCIAL_MS;
+        identity = await engine();
         started = true;
       } catch (error) {
         failed = true;
@@ -165,7 +190,7 @@ export function createFinancialCheckpointObserver({
         }
         if (entry.phase === 'insurance.accepted')
           assert.equal(entry.actor_id, journal[4].entry.actor_id);
-        const felt = structuredClone(await sampleFelt());
+        const felt = structuredClone(await within(sampleFelt));
         assert.ok(Array.isArray(felt) && felt.length === 2, 'FINANCIAL_FELT_CLIENT_COUNT');
         assert.deepEqual(felt.map((r) => r.actor_id).sort(), [...bound.actorIds].sort());
         for (const sample of felt) {

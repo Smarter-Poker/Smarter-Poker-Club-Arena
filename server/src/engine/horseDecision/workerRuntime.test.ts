@@ -1097,7 +1097,11 @@ describe('HorseDecisionWorkerRuntime', () => {
         { rank: 'K', suit: 'hearts' },
         { rank: '2', suit: 'clubs' },
       ],
-      communityCards: [],
+      communityCards: [
+        { rank: '7', suit: 'hearts' },
+        { rank: '8', suit: 'hearts' },
+        { rank: '3', suit: 'clubs' },
+      ],
       gameVariant: 'pineapple',
     });
     await h.runtime.drain();
@@ -1108,6 +1112,41 @@ describe('HorseDecisionWorkerRuntime', () => {
       computeMs: 6,
       governorScale: 0.2,
     });
+    expect(h.rng()).toBe(101);
+  });
+
+  it.each([
+    'missing_flop',
+    'future_board',
+    'wrong_variant',
+    'duplicate_hole',
+    'board_collision',
+    'invalid_card',
+  ])('rejects an invalid discard snapshot before computation: %s', async (fault) => {
+    const h = harness();
+    const request = {
+      type: 'DECIDE_DISCARD' as const,
+      requestId: 1,
+      generation: 4,
+      fence: 'table:hand:discard:2',
+      cards: structuredClone(pineappleCards),
+      communityCards: [
+        { rank: '7', suit: 'hearts' },
+        { rank: '8', suit: 'hearts' },
+        { rank: '3', suit: 'clubs' },
+      ] as typeof snapshot.player.cards,
+      gameVariant: 'pineapple',
+    };
+    if (fault === 'missing_flop') request.communityCards = [];
+    if (fault === 'future_board') request.communityCards.push({ rank: '4', suit: 'clubs' });
+    if (fault === 'wrong_variant') request.gameVariant = 'short_deck';
+    if (fault === 'duplicate_hole') request.cards[1] = request.cards[0];
+    if (fault === 'board_collision') request.communityCards[0] = request.cards[0];
+    if (fault === 'invalid_card') request.cards[0] = null as unknown as (typeof request.cards)[0];
+    h.runtime.receive(request);
+    await h.runtime.drain();
+    expect(h.messages.at(-1)).toMatchObject({ type: 'ERROR', requestId: 1 });
+    expect(h.decisionsAtRng).toEqual([]);
     expect(h.rng()).toBe(101);
   });
 

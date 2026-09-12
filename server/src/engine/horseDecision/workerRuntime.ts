@@ -406,11 +406,20 @@ export class HorseDecisionWorkerRuntime {
       if (!Array.isArray(request.cards) || request.cards.length !== 3) {
         throw new Error('pineapple discard requires exactly three cards');
       }
-      if (!Array.isArray(request.communityCards) || request.communityCards.length > 5) {
-        throw new Error('pineapple discard communityCards must contain at most five cards');
+      if (!Array.isArray(request.communityCards) || request.communityCards.length !== 3) {
+        throw new Error('pineapple discard requires the exact three-card flop');
       }
-      if (typeof request.gameVariant !== 'string' || request.gameVariant.length === 0) {
-        throw new Error('pineapple discard gameVariant must be non-empty');
+      if (request.gameVariant !== 'pineapple') {
+        throw new Error('pineapple discard requires the canonical pineapple variant');
+      }
+      const ranks = new Set(['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']);
+      const suits = new Set(['clubs', 'diamonds', 'hearts', 'spades']);
+      const known = [...request.cards, ...request.communityCards];
+      if (
+        known.some((card) => !card || !ranks.has(card.rank) || !suits.has(card.suit)) ||
+        new Set(known.map((card) => `${card.rank}:${card.suit}`)).size !== known.length
+      ) {
+        throw new Error('pineapple discard requires six distinct physical cards');
       }
     }
   }

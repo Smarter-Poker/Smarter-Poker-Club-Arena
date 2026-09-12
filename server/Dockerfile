@@ -11,11 +11,15 @@ COPY package.json package-lock.json ./
 RUN npm ci --include=dev --no-audit --no-fund
 
 # Copy source
-COPY tsconfig.json ./
+COPY tsconfig.json tsconfig.runtime.json ./
 COPY src/ ./src/
 
-# Build TypeScript
-RUN npx tsc
+# Exact-source release preflight performs the full typecheck and tests in CI.
+# Emit runtime files here without repeating that memory-heavy check on the
+# game host. Resource CI compares every emitted runtime file to the full build.
+# The runtime project omits unit-test entrypoints and unused declarations.
+# Full test compilation and execution remain in the exact-source CI preflight.
+RUN ulimit -c 0 && node --max-old-space-size=768 ./node_modules/typescript/bin/tsc --project tsconfig.runtime.json --noCheck
 
 # Remove dev dependencies
 RUN npm prune --omit=dev --no-audit --no-fund

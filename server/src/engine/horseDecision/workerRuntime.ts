@@ -2,6 +2,7 @@ import { performance } from 'node:perf_hooks';
 
 import { HorseLogic } from '../HorseLogic.js';
 import { HorseMind } from '../HorseMind.js';
+import { prepareTournamentFutureHandFacts } from '../HorseTournamentFutureHand.js';
 import type { CapturedHorseMindDecision, HorseMindDecisionEffect } from '../HorseMind.js';
 import { restoreFastRandom, saveFastRandom } from '../HorseEval.js';
 import { equityGovernor } from '../EquityLoadGovernor.js';
@@ -113,6 +114,10 @@ async function startOwnedServices(): Promise<HorseDecisionWorkerReadiness> {
       loadGtoPostflop(),
       loadGtoPostflopV31(),
     ]);
+
+    // The fixed rollout population belongs to this worker. Prepare its card
+    // facts before READY so the first eligible decisions pay no scoring cost.
+    prepareTournamentFutureHandFacts();
 
     // Periodic refresh begins only after the first authoritative load. The
     // loader start functions are idempotent and own unref'd timers.

@@ -1,0 +1,92 @@
+{
+  "schema": "smarter_private",
+  "tables": [
+    "smarter_private.f06_attempts",
+    "smarter_private.f06_cursors",
+    "smarter_private.f06_dispatch",
+    "smarter_private.f06_hand_dispatch",
+    "smarter_private.f06_hand_permits",
+    "smarter_private.f06_members",
+    "smarter_private.f06_operations"
+  ],
+  "columns": {
+    "smarter_private.f06_cursors": ["tournament_id", "ordinal", "revision"],
+    "smarter_private.f06_members": [
+      "break_id",
+      "user_id",
+      "source_seat_id",
+      "source_seat_number",
+      "occupancy_id"
+    ],
+    "smarter_private.f06_attempts": [
+      "request_id",
+      "break_id",
+      "user_id",
+      "revision",
+      "predecessor",
+      "amendment_id",
+      "amendment_payload",
+      "destination_table_id",
+      "destination_seat_number",
+      "generation",
+      "state",
+      "receipt"
+    ],
+    "smarter_private.f06_dispatch": [
+      "request_id",
+      "xid",
+      "occupancy_id",
+      "source_seat_id",
+      "lifecycle"
+    ],
+    "smarter_private.f06_operations": [
+      "break_id",
+      "ordinal",
+      "tournament_id",
+      "source_table_id",
+      "lifecycle",
+      "boundary_id",
+      "origin_generation",
+      "state",
+      "manifest",
+      "revision",
+      "custody_id",
+      "custody_generation",
+      "cleanup_kind",
+      "close_receipt",
+      "created_at"
+    ],
+    "smarter_private.f06_hand_permits": [
+      "permit_id",
+      "tournament_id",
+      "table_id",
+      "lifecycle",
+      "hand_number",
+      "custody_id",
+      "generation",
+      "state",
+      "evidence_id"
+    ],
+    "smarter_private.f06_hand_dispatch": ["permit_id", "xid"]
+  },
+  "version": 1,
+  "complete": true,
+  "functions": [
+    "smarter_private.f06_accept_hand",
+    "smarter_private.f06_allocate_number_above",
+    "smarter_private.f06_authority",
+    "smarter_private.f06_hand_dispatch_guard",
+    "smarter_private.f06_immutable_identity",
+    "smarter_private.f06_lock_break",
+    "smarter_private.f06_move_guard",
+    "smarter_private.f06_new_lifecycle",
+    "smarter_private.f06_prefix",
+    "smarter_private.f06_receipt_guard",
+    "smarter_private.f06_source_guard",
+    "smarter_private.f06_state",
+    "smarter_private.f06_table_guard",
+    "smarter_private.f06_try_lane",
+    "smarter_private.f06_validate_destination",
+    "smarter_private.fn_smarter_data_api_pre_request"
+  ]
+}

@@ -1,6 +1,7 @@
 import { HorseLogic } from '../HorseLogic.js';
 import { jointPolicyFixture } from '../multiway/JointRangeFixture.test-support.js';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { performance } from 'node:perf_hooks';
 
 import type { HorseDecideOpts } from '../HorseLogic.js';
 import type { HorseMindDecisionEffect } from '../HorseMind.js';
@@ -1502,30 +1503,38 @@ it('Phase 10 real PLO4 policy receipt survives the canonical live worker boundar
 it.each(['plo5', 'plo6', 'plo8'] as const)(
   'Phase 11 %s receipt survives the live worker boundary',
   async (variant) => {
-    const { omahaVariantSpot } = await import('../../benchmark/OmahaVariantPolicyEvidence.js');
-    const h = harness(true);
-    const input = omahaVariantSpot(variant, 'preflop');
-    const request = {
-      type: 'DECIDE_FAST' as const,
-      requestId: 511,
-      ...structuredClone(snapshot),
-      style: 'balanced' as const,
-      mods: {},
-      opts: { mind: false, telemetry: false },
-      player: input.hero,
-      gameState: input.state,
-    };
-    request.decisionKey = buildHorseDecisionKey(request);
-    h.runtime.receive(request);
-    await h.runtime.drain();
-    const result = h.messages.find((m) => m.type === 'FAST_RESULT');
-    if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(h.messages));
-    expect(result.decision.omahaVariantPolicy?.mode).toBe('shadow');
-    expect(result.decision.omahaVariantPolicy?.eligible).toBe(true);
-    expect(result.decision.omahaVariantPolicy?.fired).toBe(true);
-    expect(structuredClone(result).decision.omahaVariantPolicy?.finalAction).toBe(
-      result.decision.action
-    );
+    // This fixture proves the real policy receipt reaches the worker result.
+    // Keep its compute clock deterministic under parallel test load. Dedicated
+    // policy-budget tests and the actual-controller benchmark retain time limits.
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+    try {
+      const { omahaVariantSpot } = await import('../../benchmark/OmahaVariantPolicyEvidence.js');
+      const h = harness(true);
+      const input = omahaVariantSpot(variant, 'preflop');
+      const request = {
+        type: 'DECIDE_FAST' as const,
+        requestId: 511,
+        ...structuredClone(snapshot),
+        style: 'balanced' as const,
+        mods: {},
+        opts: { mind: false, telemetry: false },
+        player: input.hero,
+        gameState: input.state,
+      };
+      request.decisionKey = buildHorseDecisionKey(request);
+      h.runtime.receive(request);
+      await h.runtime.drain();
+      const result = h.messages.find((m) => m.type === 'FAST_RESULT');
+      if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(h.messages));
+      expect(result.decision.omahaVariantPolicy?.mode).toBe('shadow');
+      expect(result.decision.omahaVariantPolicy?.eligible).toBe(true);
+      expect(result.decision.omahaVariantPolicy?.fired).toBe(true);
+      expect(structuredClone(result).decision.omahaVariantPolicy?.finalAction).toBe(
+        result.decision.action
+      );
+    } finally {
+      clock.mockRestore();
+    }
   }
 );
 

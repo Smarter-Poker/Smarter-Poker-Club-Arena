@@ -78,6 +78,31 @@ down here with the evidence rather than fixed on the way past or dropped.
 (The slug it built, `midway-Union`, also carries a capital letter mid-slug.
 Same note, same reasoning.)
 
+### A law that had been passing on luck
+
+The full suite went red on a case this phase never touched:
+`tests/stage-b-retired-unapplied-migrations.law.test.ts` reported
+**`Test timed out in 5000ms`** - which names no cause, and means the assertion
+never ran.
+
+It `readFileSync`s every file under `tests/`, `server/src/`, `scripts/` and the
+migration directory, several thousand files with the migrations alone in the
+thousands, then substring-scans each against every retired token. Measured:
+**380 ms alone, 6,415 ms inside the full suite**, against vitest's default
+5,000 ms. It had passed in all three earlier full runs this session, so it was
+not newly broken - it was passing on luck and the load tipped it over.
+
+Fixed with a 30-second budget, and the headroom is the point. CLAUDE.md 10.86
+rule 4 is about exactly the wrong version of this fix: two agents de-flaked a
+wait and set the budget to the ceiling they had just measured, so the wait got
+robust and the headroom went to zero. 30 s is ~5x the worst observation and
+~78x the solo run. Full suite after: **1,430 files, 19,445 tests, zero
+failures.**
+
+Not this phase's defect, but "never push a red test" does not care whose it is,
+and a branch that can go red for an unrelated reason is a branch whose CI
+result means nothing.
+
 ## What this phase did not do
 
 It did not verify the states that need a different account or a stalled

@@ -353,17 +353,29 @@ describe('the accepted-hand projection worker', () => {
     const executable = blankNonCode(source);
     // One interval: the safety poll. The causal retry stays the one setTimeout.
     expect(executable.match(/\bsetInterval\s*\(/g)).toHaveLength(1);
-    /* TWO TIMERS, BOTH DELIBERATE (2026-09-11). The first is the causal
-       retry. The second is the drain deadline, added because a pass whose
-       promise never settled left `drainPromise` non-null for ever and
-       `pollIsDue` opens by returning false on exactly that - so one hung pass
-       took the only remaining wake out of service. Measured live:
-       drains_total frozen at 324 for fifteen minutes while the outbox climbed
-       past 27,000 rows and fifty-one minutes. Both timers are unref'd; a third
-       is still a regression worth catching here. */
-    expect(executable.match(/\bsetTimeout\s*\(/g)).toHaveLength(2);
-    expect(source).toContain('const active = withDeadline(runDrain());');
-    expect(source).toContain('function withDeadline(');
+    /* ONE TIMER, AND LOSING THE SECOND ONE IS THE POINT (2026-09-12). The
+       survivor is the causal retry. The drain deadline was the second, and it
+       was a timer RACING the pass: at expiry the wrapper settled, `beginDrain`
+       released the lane, and a second `runDrain` started beside a first that
+       nothing had cancelled. Per-table chain order is this worker's entire
+       purpose, so that is the one thing it must never do - and the orphans
+       held PostgREST chains open on the same client the table lease heartbeats
+       use, starved them, and had every table on the platform killed and
+       rebuilt for five hours (2026-09-12 00:04-05:14) until a restart cleared
+       them. The deadline is a timestamp the pass's own loops read now. A third
+       timer - or the second one coming back - is a regression worth catching
+       here. */
+    expect(executable.match(/\bsetTimeout\s*\(/g)).toHaveLength(1);
+    expect(source).toContain('const active = runDrain();');
+    expect(executable).not.toContain('withDeadline');
+    expect(source).toContain('const deadlineAt = lastDrainStartedAt + DRAIN_DEADLINE_MS;');
+    expect(source).toContain(
+      'while (!stopping && visited < DRAIN_MAX && Date.now() < deadlineAt) {'
+    );
+    expect(source).toContain('while (!stopping && Date.now() < deadlineAt) {');
+    expect(source).toContain(
+      'if (!stopping && (visited >= DRAIN_MAX || Date.now() >= deadlineAt)) wakeAfterDrain = true;'
+    );
     expect(source).toContain('if (!workerActive || stopping) return;');
     expect(source).toContain('drainRunning: drainPromise !== null,');
     expect(source).toContain('retryArmed: retryTimer !== null,');
@@ -371,28 +383,73 @@ describe('the accepted-hand projection worker', () => {
     expect(source).toContain('cancelCausalRetry(true)');
   });
 
-  it('a drain pass cannot run for ever, because the only remaining wake is gated on it', async () => {
-    /* THE WEDGE, in one test. `pollIsDue` returns false while a drain is
-       running, and the escape hatch beneath it is about a stuck RETRY, so a
-       pass that never settles disables the safety poll permanently. On
-       2026-09-11 that is exactly what happened on engine-01: the Realtime
-       channel was in CHANNEL_ERROR, LISTEN was unconfigured, the 5 s poll was
-       the whole net, and a pass that hung during an image build on the same
-       host switched it off. The lane is bounded now, so the promise always
-       settles and every existing net resumes. */
+  it('a drain pass cannot run for ever, and the deadline stops the pass, not a wrapper', async () => {
+    /* THE WEDGE AND ITS FIRST REPAIR, in one test.
+
+       `pollIsDue` returns false while a drain is running and the escape hatch
+       beneath it is about a stuck RETRY, so a pass that never settles disables
+       the safety poll permanently. 2026-09-11, engine-01: Realtime in
+       CHANNEL_ERROR, LISTEN unconfigured, the 5 s poll the whole net, and a
+       pass that hung during an image build switched it off.
+
+       The repair raced a timer against the pass and could not cancel it. At
+       the deadline the wrapper settled, the lane was released, and a SECOND
+       pass started beside a first that was still in flight - the one thing
+       this worker must never do, because per-table chain order is its entire
+       purpose. The orphans held PostgREST chains open on the same client the
+       table lease heartbeats use and starved them: 2026-09-12 00:04-05:14,
+       zero tournament hands dealt, ~180-204 cash_lease_proof_expired a minute,
+       every table killed and rebuilt until the 05:14 restart.
+
+       So the pass observes its own deadline. It stops, it settles, and nothing
+       runs beside it. */
     expect(worker.HAND_PROJECTION_DRAIN_DEADLINE_MS).toBeGreaterThanOrEqual(10_000);
 
-    const neverSettles = new Promise<never>(() => {});
-    await expect(worker.withDrainDeadlineForTest(neverSettles, 25)).rejects.toThrow(
-      /did not settle/
-    );
+    vi.useFakeTimers();
+    try {
+      // A full page of ready work, behind a read that outlives the deadline.
+      const page = Array.from({ length: 100 }, (_, index) => ({
+        hand_id: `h-${600 + index}`,
+        table_id: `t-${index}`,
+        hand_number: 600 + index,
+      }));
+      let releasePage!: (reply: OutboxReply) => void;
+      const heldRead = new Promise<OutboxReply>((resolve) => {
+        releasePage = resolve;
+      });
+      outboxReplies.push(heldRead);
+      projectionReplies.push(
+        ...page.map((row) => ({ data: { ok: true, hand_id: row.hand_id }, error: null }))
+      );
 
-    // A pass that DOES settle is passed through untouched, and its timer is
-    // cleared rather than left to fire.
-    const summary = { projected: 3, alreadyCompleted: 0, deferred: 0, failed: 0 };
-    await expect(worker.withDrainDeadlineForTest(Promise.resolve(summary), 25)).resolves.toEqual(
-      summary
-    );
+      const pass = worker.wakeHandProjection();
+      await vi.advanceTimersByTimeAsync(worker.HAND_PROJECTION_DRAIN_DEADLINE_MS + 1_000);
+
+      // NOT ABANDONED. The expired pass still owns the lane and nothing has
+      // been reported as failed; the wrapper this replaces had released the
+      // lane here and let its replacement start a second outbox read.
+      expect(queryCalls).toHaveLength(1);
+      expect(mockReportError).not.toHaveBeenCalled();
+
+      releasePage({ data: page, error: null });
+
+      // BOUNDED. It settles - so `drainPromise` clears and `pollIsDue` answers
+      // again - and it projects nothing past its own deadline, with a hundred
+      // replies queued and waiting to be served.
+      await expect(pass).resolves.toEqual({
+        projected: 0,
+        alreadyCompleted: 0,
+        deferred: 0,
+        failed: 0,
+      });
+      expect(rpcCalls).toHaveLength(0);
+
+      // Fence the continuation `wakeAfterDrain` queues before the clock moves
+      // back; the bounded-work-budget test above covers that it is queued.
+      await worker.stopHandProjectionWorker();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('pollIsDue: a running drain always wins, an armed retry wins only while it can still fire', () => {

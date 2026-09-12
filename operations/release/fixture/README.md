@@ -384,7 +384,7 @@ managed configuration observed on September12. The installed production binary
 version was not exposed by its catalog; this is an explicitly pinned native
 behavior prerequisite, not a production binary-version match.
 
-The native probe creates, changes ownership of, and fires an event trigger as
+The native probe creates, reasserts the existing ownership of, and fires an event trigger as
 NOSUPERUSER postgres. A separate unprivileged role fires the same trigger but
 must receive SQLSTATE42501 when creating one. The probe rolls back all schema,
 trigger, role and membership changes and verifies absence before proceeding.

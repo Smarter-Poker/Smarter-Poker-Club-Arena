@@ -7,7 +7,7 @@ Supautils in Linux CI and loads its managed privilege hooks. Application
 postgres starts without SUPERUSER; only the separate initdb identity bootstraps
 service roles and schemas.
 
-A native transaction probes owned event-trigger creation, ownership change,
+A native transaction probes owned event-trigger creation, owner reassertion,
 ordinary DDL execution, unprivileged creation refusal and complete rollback.
 Actual Auth, PostgREST, Realtime and observer boundaries must still pass using
 the restricted application identity. Full-schema, funded engine-route and

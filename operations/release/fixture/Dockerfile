@@ -95,7 +95,7 @@ FROM postgres-runtime AS supautils-builder
 USER root
 ADD --checksum=sha256:36c758bd7facda65e1c8ce4a59ebf714d36f3054a2d898a1e8d53cae37e71bec https://codeload.github.com/supabase/supautils/tar.gz/e35f8affc4467202ff0d98f8dd14cb955bc13c75 /tmp/supautils.tar.gz
 RUN apt-get update -o APT::Update::Error-Mode=any \
-    && apt-get install -y --no-install-recommends build-essential postgresql-server-dev-17=17.11-0+deb13u1 \
+    && apt-get install -y --no-install-recommends build-essential libicu-dev libxml2-dev postgresql-server-dev-17=17.11-0+deb13u1 \
     && mkdir /tmp/supautils \
     && tar -xzf /tmp/supautils.tar.gz --strip-components=1 -C /tmp/supautils \
     && make -C /tmp/supautils PG_CONFIG=/usr/lib/postgresql/17/bin/pg_config \

@@ -2332,6 +2332,20 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
     expect(transaction).toContain('MIN_BREAK_MS="$MIN_BREAK_REMAINING_MS"');
   });
 
+  it('executes short-window queue refusal, retry, deadline, supersession and cancellation cases', () => {
+    const result = spawnSync(
+      'python3',
+      [join(ROOT, 'tests/operations/engine-release-window-queue.py')],
+      {
+        cwd: ROOT,
+        encoding: 'utf8',
+        timeout: 10_000,
+      }
+    );
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+    expect(result.stderr).toContain('Ran 10 tests');
+  });
+
   it('guarantee and rollback can only recover the durable desired image', () => {
     const abort = recovery.indexOf('engine-release-seal.py" abort');
     const reconcile = recovery.indexOf('engine-supervisor.sh', abort);

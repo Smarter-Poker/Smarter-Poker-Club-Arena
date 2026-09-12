@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/claude-diamond-phase-7/feature/diamond-custody-top-up. Phase 7 checklist item two: a seated Diamond player had no way to add to a stack, because the chip add-on debits club_members.chip_balance and no such row exists in the arena. fn_poker_diamond_top_up reserves settled Diamonds into the SAME poker_diamond_custody row the seat is bound to and raises table_seats.stack in one transaction, which is the only shape the deferred constraint fn_poker_diamond_seat_keeps_custody allows. Applied to kuklfnapbkmacvwxktbh on 2026-09-12 as 20260912004100, registered in ca_money_rpc_registry above its own CREATE as that guard requires. No new table or column; the function is the only new object.",
+  "functions": ["fn_poker_diamond_top_up"]
+}

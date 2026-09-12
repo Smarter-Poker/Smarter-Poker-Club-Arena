@@ -114,3 +114,96 @@
 .bbj-admin__bar-promo {
   background: #af52de;
 }
+
+/* WHY IT HAS NOT PAID - the near-miss reader (2026-09-11).
+   Mobile-first at 375px: the count is a fixed gutter and the label wraps
+   beside it rather than truncating, because the gate that refused is the
+   whole content of the row. */
+.bbj-admin__misses {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.bbj-admin__misses-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.bbj-admin__misses-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.bbj-admin__misses-sub {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.bbj-admin__misses-empty {
+  font-size: 11px;
+  line-height: 1.5;
+  opacity: 0.7;
+}
+
+/* "Could not read" never wears the same face as "nothing was refused". */
+.bbj-admin__misses-empty.is-unknown {
+  opacity: 0.95;
+  color: #fbbf24;
+}
+
+.bbj-admin__miss {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.bbj-admin__miss:first-of-type {
+  border-top: none;
+}
+
+.bbj-admin__miss-count {
+  flex: 0 0 34px;
+  text-align: right;
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #d5dae2;
+}
+
+.bbj-admin__miss-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.bbj-admin__miss-label {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.bbj-admin__miss-sub {
+  font-size: 10px;
+  opacity: 0.55;
+}
+
+/* A hand that QUALIFIED and was turned away is an incident, not a statistic. */
+.bbj-admin__miss.is-turned-away .bbj-admin__miss-count,
+.bbj-admin__miss.is-turned-away .bbj-admin__miss-label {
+  color: #f87171;
+}
+
+/* The engine's own sentence for the player, under the gate that refused it. */
+.bbj-admin__miss-eg {
+  font-size: 10px;
+  line-height: 1.4;
+  opacity: 0.65;
+  font-style: italic;
+  margin-top: 2px;
+}

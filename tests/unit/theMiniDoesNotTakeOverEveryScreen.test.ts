@@ -2,13 +2,17 @@
  * THE MINI DOES NOT TAKE OVER EVERY SCREEN
  *
  * BBJ phase 6 shipped a second jackpot tier that writes a `bbj_winners` row -
- * the same table the platform-wide announcement listens to. Three surfaces
- * subscribe to that INSERT, and none of them knew the difference:
+ * the same table the platform-wide announcement listens to. The surfaces that
+ * subscribe to that INSERT did not know the difference:
  *
  *   lib/bbjHitFeed          -> BBJ_HIT_GLOBAL -> BBJHitAnnouncer, a full
  *                              announcement on EVERY page every player has open
- *   BBJTicker               -> the scrolling strip
  *   BBJRecentHits           -> the Previous Winners list
+ *
+ * This list used to name a third, `BBJTicker`, "the scrolling strip". That
+ * component was mounted on no page and was deleted on 2026-09-12 (phase 4 of
+ * the BBJ audit). It is called out here because the sentence at the bottom of
+ * this comment was written on the strength of it.
  *
  * The main jackpot fires about once a fortnight and pays six figures, which is
  * what earns it a takeover. A mini fires ABOUT FOUR TIMES A DAY for a few
@@ -17,8 +21,8 @@
  * background noise inside a week - CLAUDE.md 10.84's "an alarm that is always
  * on is an alarm that gets muted", except what gets muted here is the jackpot.
  *
- * So: the mini celebrates at its own table, appears in the ticker and the list
- * BADGED, and does not interrupt anybody else.
+ * So: the mini celebrates at its own table, appears BADGED in the Previous
+ * Winners list, and does not interrupt anybody else.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 

@@ -120,3 +120,125 @@ weakened): the drill-consulted-only-on-a-miss pin now reads the destructured
 claim and asserts `effectiveBbjResult` takes a drill's verdict only for a main
 arm; and the log pin now requires the line to name **which** drill fired, which
 is stronger than the literal it replaced.
+
+---
+
+## What the adversarial review of this phase found
+
+The change above was reviewed with the instruction to break it. Ten findings —
+three defects, three gaps, four nits — and every one is closed in the same
+branch. Three of them were the same mistake in three costumes: **the guard I
+wrote was not the guard the payout applies.**
+
+### 1. The mini arm's guard was not the payout's guard (defect)
+
+```
+arm    : backup_balance - mini_reserve_floor  <  largest_enabled_tier
+payout : backup - fn_bbj_parked_reserve(pool,'backup') - THIS tier's amount < floor
+```
+
+Three holes, each of which fires the arm and then has the payout refuse it —
+the exact failure the guard was written to prevent:
+
+- **the parked reserve was ignored.** `fn_bbj_parked_reserve` sums unpaid
+  `bbj_unclaimed_shares`: chips still sitting in `backup_balance` and already
+  owed to somebody. A pool with parked shares passed the arm and got
+  `reserve_at_floor` from the payout.
+- **the wrong tier's enabled flag.** The arm checked the largest _enabled_
+  tier's **amount**; the payout checks **this table's** tier's `enabled` bit.
+  With `nosebleeds` on and `nano` off, arming a nano table passed and the
+  payout refused.
+- **the variant was never checked.** A mini drill bypasses `detectMiniBBJHit`
+  entirely, so the arm was the only place it could be asked — and it did not.
+  A mini drill on a Short Deck table would have paid a mini for a variant the
+  jackpot does not cover, and filed it in the winners history.
+
+**And the reasoning that justified the shortcut was wrong about the facts.**
+The first cut said using the largest tier avoided "a big-blind-to-tier mapping
+duplicated in SQL". That mapping was _already_ in SQL: `bbj_stakes_tiers`
+carries `min_bb`/`max_bb`, and `fn_bbj_mini_for_club` already joins it to
+compute exactly this predicate. The argument was invented to defend a
+simplification, and the simplification was the defect.
+
+### 2. The arm recorded the wrong bank (defect)
+
+`pool_balance_at_arm` stored `main_balance` for a **mini** arm — the one number
+a mini arm has nothing to do with — and handed it back to the operator as
+confirmation, and put it in the `financial_alerts` context. A mini arm now
+records the bank it is armed against and names it: the answer carries `bank`,
+`balance`, `kind` and, for a mini, the `tierId` it will pay.
+
+### 3. `already_armed` was checked last (gap)
+
+Pre-existing, and **widened by this phase from two masking refusals to five**:
+an operator with an open arm was told `pool_above_drill_ceiling` and went to
+chase a pool balance when the fix was to fire or clear the arm they already
+had. It is now asked as soon as the table is known, before any balance is read.
+
+### 4. The arms listing could not tell the kinds apart (gap)
+
+`fn_bbj_drill_arms()` is the surface the runbook sends an operator to, and it
+did not return `kind` — so a mini arm and a main arm looked identical, beside a
+`pool_balance_at_arm` that meant a different bank for each.
+
+### 5. `detected - drills` became false (defect)
+
+`bbjDrillsFiredTotal` is documented in `engineInstruments.ts` **and in the
+runbook** as the subtrahend in _detected minus drills = genuine bad beats_. A
+mini drill incremented it while incrementing the **mini's** detected counter —
+so that subtraction under-counted genuine main bad beats by one per mini drill
+and could go negative in any window where minis were drilled and no main
+jackpot hit.
+
+That is the same error the block directly above it in that file was written the
+same day to fix, made again one counter along. Each family has its own drill
+counter now, and the runbook states the two subtractions explicitly and says
+never to do one across families.
+
+### 6. The runbook still documented a feature nobody could use (gap)
+
+Arming is SQL by hand — there is no UI — so the runbook **is** the interface. It
+still showed the two-argument call, and its refusal table listed five reasons
+and none of the five new ones. It now carries both calls, all the mini
+refusals, the `bank`/`kind`/`tierId` in the answer, and a note that a mini arm
+deliberately does **not** check the 1,000 ceiling: that ceiling bounds a share
+of a pool, and a mini pays a flat tier the tier table already bounds. Which is
+why a long-running club whose main pool is far above the ceiling can still be
+drilled for a mini.
+
+### Nits, all closed
+
+- `expect(migCode).not.toMatch(/big_blind/)` was trivially true — the token
+  appears nowhere in that file, not even in prose. Replaced with assertions
+  that fail if the fix is removed.
+- `expect(drill).toMatch(/kind: 'main' \| 'mini'/)` pinned a **type
+  annotation** while its comment claimed it pinned a runtime default; it would
+  have survived the default being changed to `'mini'`. It now pins the ternary.
+- `'drill'` escaped the declared `miniRule` union by way of a widening
+  assignment plus a cast — it typechecked, and no compiler would have caught a
+  typo. `'drill'` is in the union now.
+- The grants are declared in two migrations. Harmless and idempotent; recorded
+  rather than tidied, because the second one is the file that makes the guard
+  pass on a rebuild.
+
+### And a trap that caught me for the fourth time
+
+The corrective migration asserts at apply time that the arm no longer records
+the main balance — so it **quotes** the forbidden string. A law asserting that
+absence over the whole file matched the check that exists to forbid it. The law
+slices to the function bodies; the runtime assertion stays, because it is the
+one that reads the _live_ body rather than the file.
+
+## Proved again, rolled back
+
+```
+table bb=20.00 variant=plo4 parked=0
+
+MINI ARM       -> ok  bank=backup  balance=13,699.07  tierId=high
+second arm     -> already_armed                    (was pool_above_drill_ceiling)
+tier disabled  -> mini_disabled_for_this_tier      (the payout's question)
+short_deck     -> variant_is_not_eligible_for_the_jackpot
+```
+
+The balance in that first line is the **backup** bank. Before the fix it read
+19,700.66 — the main pool.

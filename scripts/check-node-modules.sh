@@ -13,20 +13,32 @@
 # nothing. Nobody would guess "another agent ran npm install in a different
 # directory" from that.
 #
-# This probe resolves what the hooks actually need and, if the shared install is
-# gutted, repairs it rather than reporting it. `npm ci` in the main clone is the
-# fix, it takes about a minute, and it is safe: it installs exactly the lockfile.
+# This probe resolves what the hooks actually need. On the Mac it is always
+# read-only: dependency installation belongs in CI, including repairs to a
+# shared install. Non-Mac callers retain the explicit legacy repair behavior.
 #
-#     bash scripts/check-node-modules.sh           # probe, repair if broken
+#     bash scripts/check-node-modules.sh           # Mac: probe only
 #     bash scripts/check-node-modules.sh --check   # probe only, exit 1 if broken
 set -euo pipefail
 
 CHECK_ONLY=0
 [ "${1:-}" = "--check" ] && CHECK_ONLY=1
+MAC_HOST=0
+if [ "$(uname -s)" = Darwin ]; then
+  MAC_HOST=1
+  CHECK_ONLY=1
+fi
 
 ROOT=$(git rev-parse --path-format=absolute --git-common-dir); ROOT=${ROOT%/.git}
 NM="$ROOT/node_modules"
-[ -d "$NM" ] || { echo "  no node_modules in $ROOT - run: (cd $ROOT && npm ci)"; exit 1; }
+[ -d "$NM" ] || {
+  if [ "$MAC_HOST" = 1 ]; then
+    echo "  no shared node_modules in $ROOT; install and verify dependencies in CI"
+  else
+    echo "  no node_modules in $ROOT - run: (cd $ROOT && npm ci)"
+  fi
+  exit 1
+}
 
 # The packages the hooks import. A package whose directory exists but whose
 # package.json does not is the exact shape npm leaves behind.
@@ -51,7 +63,11 @@ echo ""
 echo "  Every worktree symlinks this directory, so every worktree's hooks are"
 echo "  broken right now, not just yours. The cause is always the same: an"
 echo "  \`npm install\` or \`npm ci\` run INSIDE a worktree, which writes through"
-echo "  the symlink. Add dependencies in $ROOT and run npm ci THERE."
+if [ "$MAC_HOST" = 1 ]; then
+  echo "  the symlink. No Mac install or repair will run; use CI for dependency checks."
+else
+  echo "  the symlink. Add dependencies in $ROOT and run npm ci THERE."
+fi
 echo "  ─────────────────────────────────────────────────────────────────────"
 echo ""
 

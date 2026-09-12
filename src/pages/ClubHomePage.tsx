@@ -674,6 +674,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
      The countdown reads nothing at all on a chip club: `null` is the "already
      know the time" seam, so the hook issues no query there. */
   const arenaFreeroll = useDiamondFreerollCountdown(isAutomaticArena ? undefined : null);
+  /* Undefined for every chip club, so their cards are untouched. */
+  const arenaSeatsClosedLabel =
+    isAutomaticArena && arenaAccess?.cashGamesEnabled !== true ? 'Not Open Yet' : undefined;
   useVisibilityRefresh(() => loadClubData());
   const navigate = useAppNavigate();
   const isMountedRef = useIsMounted();
@@ -2965,9 +2968,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
       // BBJ jackpot. Number() is load-bearing, not cosmetic: main_balance is
       // numeric(14,2) and arrives as the STRING "10500.67". Assigning it raw
-      // put a string into a number-typed state, which then failed BBJTicker's
-      // `typeof poolAmount === 'number'` ownership check and left the ticker
-      // and the page disagreeing about who owns the value.
+      // put a string into a number-typed state, which failed a `typeof
+      // poolAmount === 'number'` ownership check downstream and left two
+      // surfaces disagreeing about who owned the value. The component that
+      // check lived in (BBJTicker) was deleted on 2026-09-12 for being mounted
+      // nowhere; the coercion stays, because every reader of this state still
+      // expects a number and the string is what the database actually sends.
       if (bbjResult?.data && !(bbjResult as any).error) {
         if (Array.isArray(bbjResult.data)) {
           let sum = 0;
@@ -4175,6 +4181,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         );
       },
       onJoinTable: (e) => handleJoinTable(e.id),
+      /* Diamond Arena's ladder is listed while funded play is closed, and the
+         buy-in door refuses every seat until it opens. Say so on the card
+         rather than offering a Join that the server will reject. */
+      seatsClosedLabel: arenaSeatsClosedLabel,
       /* A full table's primary action is the waitlist, not a join that cannot
          succeed. The page already owns this flow for the panel; the card runs
          the same one rather than inventing a second. */
@@ -5565,6 +5575,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           busy={actionBusy || waitlistActionBusy || isRegisteringMtt || deletingTableId !== null}
           onClose={() => setPanelOpen(false)}
           onJoinTable={handleJoinTable}
+          seatsClosedLabel={arenaSeatsClosedLabel}
           onWaitlistToggle={handleWaitlistToggle}
           onRegister={handleRegister}
           onUnregister={handleUnregister}

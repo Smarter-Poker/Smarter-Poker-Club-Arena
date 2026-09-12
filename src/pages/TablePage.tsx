@@ -7450,19 +7450,31 @@ export default function TablePage({
   /** The hand in which the engine last answered "already at the maximum" to
    *  an automatic top-up; no retry until the hand number changes. */
   const autoTopUpRefusedForHandRef = useRef<number | null>(null);
+  /* The cashier is offered to a seat that has a funded top-up writer behind it:
+     every chip seat, and a Diamond CASH seat. A Diamond tournament seat has no
+     such writer (prize escrow is a later phase and the custody door refuses a
+     tournament table), so it is not offered a control that cannot work. */
+  const canTopUpSeat =
+    tableState.arenaAsset === 'chips' ||
+    (tableState.arenaAsset === 'diamonds' && !tableState.isTournament);
   const handleAddChips = async (
     amount: number,
     opId?: string,
     opts?: { source?: 'manual' | 'auto' }
   ): Promise<boolean> => {
-    if (tableStateRef.current.arenaAsset !== 'chips') return false;
+    /* A Diamond seat tops up too, through the same engine call. What differs is
+       the door underneath it (fn_poker_diamond_top_up, whole units, the seat's
+       own custody row) and the word for what moved. */
+    const topUpAsset = tableStateRef.current.arenaAsset;
+    if (topUpAsset !== 'chips' && topUpAsset !== 'diamonds') return false;
+    const topUpUnits = topUpAsset === 'diamonds' ? 'Diamonds' : 'Chips';
     if (!userId || userId === 'guest' || !tableId) {
       reportError(
         new Error('Cannot add chips: not authenticated'),
         'TablePage.Cannot_add_chips_not_authenticated'
       );
       if (typeof window !== 'undefined') {
-        toast.error('Sign in to add chips at this table.');
+        toast.error(`Sign in to add ${topUpUnits.toLowerCase()} at this table.`);
       }
       return false;
     }
@@ -7502,10 +7514,10 @@ export default function TablePage({
              to a double top-up. Say which case this is. */
           if (res.code === 'TRANSPORT') {
             toast.error(
-              'The Connection Dropped Before The Table Answered. Your Chips May Have Been Added. Check Your Stack Before Trying Again.'
+              `The Connection Dropped Before The Table Answered. Your ${topUpUnits} May Have Been Added. Check Your Stack Before Trying Again.`
             );
           } else {
-            toast.error(res.error || 'Unable To Add Chips - Your Wallet Was Not Charged.');
+            toast.error(res.error || `Unable To Add ${topUpUnits} - Your Wallet Was Not Charged.`);
           }
         }
         return false;
@@ -7521,7 +7533,7 @@ export default function TablePage({
       if (typeof window !== 'undefined') {
         if (applied < amount) {
           toast.info(
-            `Added ${applied.toLocaleString()} Chips. That Is This Table's Maximum Top-Up Right Now.`
+            `Added ${applied.toLocaleString()} ${topUpUnits}. That Is This Table's Maximum Top-Up Right Now.`
           );
         }
         if (res.queued) {
@@ -22313,7 +22325,7 @@ export default function TablePage({
               />
             </svg>
           </button>
-          {tableState.arenaAsset === 'chips' && (
+          {canTopUpSeat && (
             <button
               className="header-btn add-chips-icon"
               onClick={() => {
@@ -22386,23 +22398,14 @@ export default function TablePage({
                         badge: standUpNextBB ? 'ON' : undefined,
                         onClick: () => setStandUpNextBB(!standUpNextBB),
                       },
-                      ...(tableState.arenaAsset !== 'chips'
-                        ? []
-                        : tableState.isTournament
-                          ? [
-                              {
-                                id: 'rebuy',
-                                label: 'Rebuy',
-                                icon: <RebuyIcon />,
-                                onClick: handleTournamentRebuy,
-                              },
-                              {
-                                id: 'addon',
-                                label: 'Add-On',
-                                icon: <AddOnIcon />,
-                                onClick: handleTournamentAddOn,
-                              },
-                            ]
+                      /* A Diamond cash seat tops up; a Diamond tournament does
+                         not, because tournament funding is a later phase and
+                         the custody door refuses a tournament table outright.
+                         Offering the control there would promise a seat
+                         something no writer can give it. */
+                      ...(tableState.arenaAsset === 'diamonds'
+                        ? !canTopUpSeat
+                          ? []
                           : [
                               {
                                 id: 'rebuy',
@@ -22410,7 +22413,32 @@ export default function TablePage({
                                 icon: <RebuyIcon />,
                                 onClick: () => setShowCashier(true),
                               },
-                            ]),
+                            ]
+                        : tableState.arenaAsset !== 'chips'
+                          ? []
+                          : tableState.isTournament
+                            ? [
+                                {
+                                  id: 'rebuy',
+                                  label: 'Rebuy',
+                                  icon: <RebuyIcon />,
+                                  onClick: handleTournamentRebuy,
+                                },
+                                {
+                                  id: 'addon',
+                                  label: 'Add-On',
+                                  icon: <AddOnIcon />,
+                                  onClick: handleTournamentAddOn,
+                                },
+                              ]
+                            : [
+                                {
+                                  id: 'rebuy',
+                                  label: 'Top Up',
+                                  icon: <RebuyIcon />,
+                                  onClick: () => setShowCashier(true),
+                                },
+                              ]),
                       ...(tableState.arenaAsset === 'chips'
                         ? [
                             {
@@ -25344,7 +25372,7 @@ export default function TablePage({
                 <span className="menu-item-arrow">›</span>
               </button>
             )}
-            {tableState.arenaAsset === 'chips' && (
+            {canTopUpSeat && (
               <button
                 className="menu-item"
                 onClick={() => {

@@ -541,6 +541,47 @@ for (const scope of ['table', 'tournament']) {
   }
 }
 
+/**
+ * THE ONE LOOP THAT RENEWS EVERY LEASE, AND WHETHER IT IS STILL RUNNING
+ * (2026-09-12).
+ *
+ * `runOwnershipLeaseRenewalLoop` renews every cash lease and every tournament
+ * lease in the process. It is launched once and nothing relaunches it, and it
+ * had two silent exits: a clean return when its admission generation moves on,
+ * and a wedge on a serialized pass that never settles.
+ *
+ * On 2026-09-12 it stopped. `heartbeat_table_leases_v4` and
+ * `heartbeat_tournament_leases_v4` held at exactly 27,886 and 27,765 calls
+ * across a 73-second window while `claim_table_lease_v2` took 283 in the same
+ * window. Nothing renewed a lease for at least two hours. Every one of the 78
+ * cash tables was killed by its own 20-second proof watchdog and re-claimed,
+ * 26,129 times, and three quarters of those engine lives dealt no hands, at
+ * tables the log shows holding 9 of 9 seats. There was no log line, no
+ * `reportError` and no metric, because nothing failed - it simply was not
+ * running, and an engine that is not doing a thing looks exactly like an engine
+ * with nothing to do.
+ *
+ * `outcome=completed` going flat is the signal, and it is a rate rather than an
+ * absence, so it cannot read as health. `leaseRenewalLoopRunning` answers the
+ * cruder question directly.
+ */
+export const leaseRenewalPassesTotal: Counter = alwaysOnRegistry.counter(
+  'poker_lease_renewal_passes_total',
+  'Ownership lease renewal passes (labels: outcome=completed|threw|abandoned)'
+);
+/* Zero-seeded: an alert on a name with no series is an empty vector, which
+   reads exactly like health. See anAlertCannotWaitForAFailureToExist. */
+for (const outcome of ['completed', 'threw', 'abandoned']) {
+  leaseRenewalPassesTotal.inc(0, { outcome });
+}
+
+/** 1 while the ownership lease renewal lifecycle is running, 0 once it leaves. */
+export const leaseRenewalLoopRunning: Gauge = alwaysOnRegistry.gauge(
+  'poker_lease_renewal_loop_running',
+  'Whether the ownership lease renewal lifecycle is running (1) or has left (0)'
+);
+leaseRenewalLoopRunning.set(0);
+
 /** Actions processed, bounded by audience x tournament format. */
 export const actionsFleetTotal: Counter = alwaysOnRegistry.counter(
   'poker_actions_fleet_total',

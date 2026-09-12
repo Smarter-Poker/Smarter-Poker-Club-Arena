@@ -164,8 +164,16 @@ export function createDefaultMenuSections(
           onClick: handlers.onStandUpBB || (() => {}),
         },
         {
+          /* 'Add Chips' until 2026-09-12, which was two problems in one label.
+             It named a denomination at a table this menu cannot see the arena
+             of, so it said "Chips" at a Diamond seat; and it disagreed with
+             the table page's own control for the SAME action, which has said
+             "Top Up" on a cash seat all along. 'Top Up' is the product's word
+             for this and carries no denomination, so it is right at every
+             table. The tournament seat's own menu still says "Rebuy": that
+             one knows what kind of table it is on. */
           id: 'rebuy',
-          label: 'Add Chips',
+          label: 'Top Up',
           icon: <RebuyIcon />,
           onClick: handlers.onRebuy || (() => {}),
         },

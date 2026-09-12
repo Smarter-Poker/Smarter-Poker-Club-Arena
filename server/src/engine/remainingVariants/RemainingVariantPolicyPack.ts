@@ -98,6 +98,8 @@ export const REMAINING_VARIANT_DOMAIN = Object.freeze({
   maxAnteBB: 1,
   maxRakePercent: 10,
   liveBudgetMs: 4,
+  // Leave headroom for completing a physical sample, pot receipts and GC.
+  samplingDeadlineMs: 2.5,
   defaultSamples: 32,
   maxSamples: 128,
   maxActionsPerHand: 256,

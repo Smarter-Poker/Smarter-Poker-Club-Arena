@@ -20,7 +20,7 @@ Phase 8's original three Spin promotion runs remain rejected and are not reinter
 
 ## Verification and closeout
 
-Preserve original evidence and append new source hashes, tests, fixed seeds/results and release proof. Report implementation, independent verification, publication, natural execution and promotion separately. No Phase 11 implementation begins while applicable first-round acceptance gates are open.
+Preserve original evidence and append new source hashes, tests, fixed seeds/results and release proof. Report implementation, independent verification, publication, natural execution and promotion separately. The user's subsequent direction permits independent next-phase implementation during background publication. This productive overlap does not close or defer the earlier phase's publication and natural-execution gates.
 
 ## Second audit corrections
 

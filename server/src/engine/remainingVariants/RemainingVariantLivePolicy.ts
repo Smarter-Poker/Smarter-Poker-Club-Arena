@@ -2,6 +2,7 @@ import type { HorseDecision, SeatPlayer } from '../../types.js';
 import type { HorseGameStateV2 } from '../HorseLogic.js';
 import { calculateContestablePot, calculateRake } from '../PokerEngine.js';
 import { nlhNutStatus } from '../HorseEval.js';
+import { fixedLimitStreetBounds } from '../BettingStructure.js';
 import { omahaCardFacts } from '../omaha/OmahaCardFacts.js';
 import {
   validOmahaVariantEquity,
@@ -170,12 +171,15 @@ export function evaluateRemainingVariantPolicy(
     return finish('invalid_wager_geometry');
   const limit = pack.structure === 'fixed_limit';
   const fixedSize = s.bigBlind * (['turn', 'river'].includes(s.stage) ? 2 : 1);
+  const fixedRaise = limit
+    ? fixedLimitStreetBounds(s.actionHistory ?? [], s.stage, fixedSize, s.currentBet).raiseSize
+    : 0;
   if (
     limit &&
     (s.fixedBetSize !== fixedSize ||
       (s.wagersCapped && canWager) ||
       (canWager &&
-        (Math.abs(s.minRaiseTo! - (s.currentBet + fixedSize)) > 0.011 ||
+        (Math.abs(s.minRaiseTo! - (s.currentBet + fixedRaise)) > 0.011 ||
           Math.abs(s.maxRaiseTo! - s.minRaiseTo!) > 0.011)))
   )
     return finish('fixed_limit_geometry_unavailable');
@@ -309,8 +313,18 @@ export function evaluateRemainingVariantPolicy(
           : passive()
     );
   }
+  // Reserve the sampler's remaining time after computing exact card facts.
+  // Doing the FLO8 facts after sampling spent a fresh millisecond after the
+  // sampler's deadline on wide flops and discarded otherwise valid reads.
+  const splitFacts =
+    variant === 'flo8' ? omahaCardFacts(hero.cards, s.communityCards, true, true) : null;
   if (!evidence && sampleWhenMissing) {
-    evidence = sampleRemainingVariantEquity(variant, hero, s, () => now() - start < 3);
+    evidence = sampleRemainingVariantEquity(
+      variant,
+      hero,
+      s,
+      () => now() - start < REMAINING_VARIANT_DOMAIN.samplingDeadlineMs
+    );
     if (evidence) evidence.decisionEquityCeiling = decisionEquityCeiling;
   }
   const contestable = calculateContestablePot(s.players, hero.user_id, callCost),
@@ -346,7 +360,7 @@ export function evaluateRemainingVariantPolicy(
     draw = false,
     dominated = false;
   if (variant === 'flo8') {
-    const facts = omahaCardFacts(hero.cards, s.communityCards, true, true);
+    const facts = splitFacts!;
     lowOnly = facts.nutLow && e.highEquity < 0.15;
     quarterRisk = e.quarterOrLessProbability >= 0.2 || e.sixthOrLessProbability >= 0.1;
     draw =

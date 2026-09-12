@@ -14,8 +14,9 @@ RUN npm ci --include=dev --no-audit --no-fund
 COPY tsconfig.json ./
 COPY src/ ./src/
 
-# Build TypeScript
-RUN npx tsc
+# Keep compiler heap growth within the dedicated builder's 1280 MiB cgroup.
+# This applies only while compiling; the running engine keeps its own settings.
+RUN node --max-old-space-size=768 ./node_modules/typescript/bin/tsc
 
 # Remove dev dependencies
 RUN npm prune --omit=dev --no-audit --no-fund

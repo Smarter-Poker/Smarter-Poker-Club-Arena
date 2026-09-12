@@ -2092,14 +2092,44 @@ if [ "$1" = image ] && [ "$2" = inspect ]; then
   fi
   exit 0
 fi
-if [ "$1" = build ]; then
-  shift
+if [ "$1" = buildx ]; then
+  if [ "$2" = create ]; then
+    printf '%s\\n' "$@" > "$STATE_DIR/builder-create"
+    touch "$STATE_DIR/builder"
+    exit 0
+  fi
+  if [ "$2" = inspect ]; then
+    [ -f "$STATE_DIR/builder" ] || exit 1
+    if [[ "$*" == *--format* ]]; then printf '%s\\n' "\${FAKE_BUILDER_DRIVER:-docker-container}"; fi
+    exit 0
+  fi
+  if [ "$2" = stop ]; then printf 'stop\\n' >> "$STATE_DIR/builder-stops"; exit 0; fi
+fi
+if [ "$1" = inspect ]; then
+  printf '%s\\n' 'moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8 1342177280 1342177280 100000 100000 no'
+  exit 0
+fi
+if [ "$1" = exec ]; then
+  case "$4" in
+    */memory.max) printf '%s\\n' "\${FAKE_CGROUP_MEMORY:-1342177280}" ;;
+    */memory.peak) printf '1048576000\\n' ;;
+    */memory.swap.max) printf '0\\n' ;;
+    */cpu.max) printf '100000 100000\\n' ;;
+    *) exit 9 ;;
+  esac
+  exit 0
+fi
+if [ "$1" = buildx ] && [ "$2" = build ]; then
+  shift 2
   [ -f "$PWD/src/tracked.ts" ]
   [ ! -e "$PWD/src/untracked-sentinel.ts" ]
   [ ! -e "$PWD/.env" ]
   printf '%s\\n' "$PWD" > "$STATE_DIR/context-path"
   while [ "$#" -gt 0 ]; do
     case "$1" in
+      --builder) [ "$2" = club-arena-engine-bounded-v1 ]; shift 2 ;;
+      --load) shift ;;
+      --progress) [ "$2" = plain ]; shift 2 ;;
       --build-arg) printf '%s' "$2" > "$STATE_DIR/build-arg"; shift 2 ;;
       --label)
         case "$2" in
@@ -2125,6 +2155,11 @@ exit 5
 `;
       writeFileSync(join(bin, 'docker'), fakeDocker);
       chmodSync(join(bin, 'docker'), 0o755);
+      writeFileSync(
+        join(bin, 'awk'),
+        '#!/usr/bin/env bash\nprintf "%s\\n" "${FAKE_AVAILABLE_KIB:-2097152}"\n'
+      );
+      chmodSync(join(bin, 'awk'), 0o755);
       writeFileSync(join(bin, 'flock'), '#!/usr/bin/env bash\nexit 0\n');
       chmodSync(join(bin, 'flock'), 0o755);
       writeFileSync(
@@ -2206,6 +2241,46 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
         { encoding: 'utf8', env: { ...env, FAKE_GIT_ARCHIVE_FAILURE: '47' } }
       );
       expect(failedArchive.status, failedArchive.stderr).toBe(47);
+      expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
+      expect(readdirSync(contextRoot)).toEqual([]);
+
+      // Failed cgroup readback never enters Docker's build operation. It stops
+      // the owned builder and removes the source staging directory.
+      const noLimit = spawnSync(
+        'bash',
+        [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
+        {
+          encoding: 'utf8',
+          env: { ...env, FAKE_CGROUP_MEMORY: 'max' },
+        }
+      );
+      expect(noLimit.status).toBe(1);
+      expect(noLimit.stderr).toContain('cgroup limits are not enforced');
+      expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
+      expect(readFileSync(join(dockerState, 'builder-stops'), 'utf8')).toBe('stop\nstop\n');
+      expect(readdirSync(contextRoot)).toEqual([]);
+      const noHeadroom = spawnSync(
+        'bash',
+        [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
+        {
+          encoding: 'utf8',
+          env: { ...env, FAKE_AVAILABLE_KIB: '40000' },
+        }
+      );
+      expect(noHeadroom.status).toBe(1);
+      expect(noHeadroom.stderr).toContain('insufficient memory headroom');
+      expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
+      expect(readdirSync(contextRoot)).toEqual([]);
+      const wrongDriver = spawnSync(
+        'bash',
+        [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
+        {
+          encoding: 'utf8',
+          env: { ...env, FAKE_BUILDER_DRIVER: 'docker' },
+        }
+      );
+      expect(wrongDriver.status).toBe(1);
+      expect(wrongDriver.stderr).toContain('not the dedicated container driver');
       expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
       expect(readdirSync(contextRoot)).toEqual([]);
     } finally {

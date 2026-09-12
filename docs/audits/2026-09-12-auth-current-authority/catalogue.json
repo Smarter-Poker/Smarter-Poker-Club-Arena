@@ -1,0 +1,337 @@
+[
+  {
+    "captured_at": "2026-09-12 10:37:51.399106+00",
+    "nspname": "public",
+    "proname": "fn_guard_profile_privileged_columns",
+    "identity_arguments": "",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_guard_profile_privileged_columns()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_changed text;\n  v_stack text;\nBEGIN\n  IF public.fn_is_service_context() THEN RETURN NEW; END IF;\n\n  GET DIAGNOSTICS v_stack = PG_CONTEXT;\n  IF v_stack ~ 'function (public[.])?deduct_diamonds[(]'\n     OR v_stack ~ 'function (public[.])?fn_union_send_to_member[(]'\n     OR v_stack ~ 'function (public[.])?claim_daily_challenge[(]'\n     OR v_stack ~ 'function (public[.])?claim_daily_challenges[(]'\n     OR v_stack ~ 'function (public[.])?fn_ca_daily_bonus_claim[(]'\n     OR v_stack ~ 'function (public[.])?fn_ca_daily_bonus_boost_extra[(]'\n     OR v_stack ~ 'function (public[.])?fn_wheel_spin[(]'\n     OR v_stack ~ 'function (public[.])?fn_wheel_free_spin[(]'\n     OR v_stack ~ 'function (public[.])?fn_plinko_drop[(]'\n     OR v_stack ~ 'function (public[.])?fn_crash_start[(]'\n     OR v_stack ~ 'function (public[.])?fn_wheel_spin_core[(]'\n     OR v_stack ~ 'function (public[.])?fn_ca_mint[(]'\n     OR v_stack ~ 'function (public[.])?fn_ca_burn[(]'\n     OR v_stack ~ 'function (public[.])?send_stream_gift[(]'\n     OR v_stack ~ 'function (public[.])?fn_arena_deposit[(]'\n     OR v_stack ~ 'function (public[.])?fn_arena_withdraw[(]'\n  THEN\n    RETURN NEW;\n  END IF;\n\n  IF NEW.diamonds IS DISTINCT FROM OLD.diamonds THEN v_changed := 'diamonds';\n  ELSIF NEW.diamond_balance IS DISTINCT FROM OLD.diamond_balance THEN v_changed := 'diamond_balance';\n  ELSIF NEW.diamond_multiplier IS DISTINCT FROM OLD.diamond_multiplier THEN v_changed := 'diamond_multiplier';\n  ELSIF NEW.is_vip IS DISTINCT FROM OLD.is_vip THEN v_changed := 'is_vip';\n  ELSIF NEW.vip_tier IS DISTINCT FROM OLD.vip_tier THEN v_changed := 'vip_tier';\n  ELSIF NEW.vip_expires_at IS DISTINCT FROM OLD.vip_expires_at THEN v_changed := 'vip_expires_at';\n  END IF;\n\n  IF v_changed IS NOT NULL THEN\n    RAISE EXCEPTION\n      'profiles.% is server-managed and cannot be modified by role %',\n      v_changed, current_user\n      USING ERRCODE = '42501',\n            HINT = 'Use a server-authoritative, ledgered money RPC.';\n  END IF;\n\n  RETURN NEW;\nEND;\n$function$\n",
+    "body_md5": "ea0e1846a0f6f6459eea336fbab0dc48",
+    "owner": "postgres",
+    "prosecdef": false,
+    "proconfig": ["search_path=public"],
+    "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+    "provolatile": "v",
+    "proparallel": "u",
+    "proisstrict": false,
+    "proleakproof": false,
+    "result_type": "trigger",
+    "effective_roles": [
+      {
+        "role": "anon",
+        "execute": false,
+        "inherit": true,
+        "bypassrls": false,
+        "superuser": false,
+        "schema_usage": true
+      },
+      {
+        "role": "authenticated",
+        "execute": false,
+        "inherit": true,
+        "bypassrls": false,
+        "superuser": false,
+        "schema_usage": true
+      },
+      {
+        "role": "authenticator",
+        "execute": false,
+        "inherit": false,
+        "bypassrls": false,
+        "superuser": false,
+        "schema_usage": true
+      },
+      {
+        "role": "postgres",
+        "execute": true,
+        "inherit": true,
+        "bypassrls": true,
+        "superuser": false,
+        "schema_usage": true
+      },
+      {
+        "role": "service_role",
+        "execute": true,
+        "inherit": true,
+        "bypassrls": true,
+        "superuser": false,
+        "schema_usage": true
+      },
+      {
+        "role": "supabase_auth_admin",
+        "execute": false,
+        "inherit": false,
+        "bypassrls": false,
+        "superuser": false,
+        "schema_usage": true
+      }
+    ]
+  },
+  {
+    "captured_at": "2026-09-12 10:37:51.399106+00",
+    "nspname": "public",
+    "proname": "fn_join_club",
+    "identity_arguments": "p_club_id uuid",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_join_club(p_club_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'extensions', 'pg_temp'\n SET lock_timeout TO '5s'\nAS $function$\nDECLARE\n  v_uid uuid := auth.uid();\n  v_result jsonb;\n  v_row public.club_members%ROWTYPE;\n  v_owner uuid;\n  v_requires_approval boolean;\n  v_lifecycle text;\n  v_active_count integer;\n  v_previous_source text := coalesce(current_setting('app.club_membership_source', true), '');\n  v_previous_lifecycle text := coalesce(current_setting('app.club_membership_lifecycle_write', true), '');\nBEGIN\n  IF v_uid IS NULL THEN\n    RAISE EXCEPTION 'Authentication required' USING ERRCODE = '28000';\n  END IF;\n\n  PERFORM set_config('app.club_membership_source', 'join_club', true);\n  BEGIN\n    v_result := public.fn_join_club_membership_impl(p_club_id);\n\n    IF coalesce(v_result ->> 'membership_lifecycle_status', 'active') = 'departed' THEN\n      PERFORM pg_advisory_xact_lock(\n        hashtextextended('cashier-hierarchy:' || p_club_id::text, 0)\n      );\n      SELECT c.owner_id, coalesce(c.requires_approval, false),\n             coalesce(to_jsonb(c) ->> 'lifecycle_status', 'active')\n        INTO v_owner, v_requires_approval, v_lifecycle\n        FROM public.clubs c\n       WHERE c.id = p_club_id\n       FOR UPDATE;\n      IF NOT FOUND THEN RAISE EXCEPTION 'Club not found'; END IF;\n      IF v_lifecycle = 'retired' THEN\n        RAISE EXCEPTION 'This Club Is Retired And Cannot Accept Members' USING ERRCODE = '55000';\n      END IF;\n\n      SELECT count(*) INTO v_active_count\n        FROM public.club_members cm\n       WHERE cm.user_id = v_uid\n         AND cm.club_id <> p_club_id\n         AND cm.membership_lifecycle_status = 'active'\n         AND cm.status::text IN ('active', 'approved');\n      IF v_uid <> v_owner AND v_active_count >= 10 THEN\n        RAISE EXCEPTION 'You can only be a member of up to 10 clubs. Leave a club to join a new one.';\n      END IF;\n\n      PERFORM set_config('app.club_membership_lifecycle_write', 'rejoin', true);\n      UPDATE public.club_members cm\n         SET membership_lifecycle_status = 'active',\n             status = CASE\n               WHEN v_uid = v_owner OR NOT v_requires_approval THEN 'active'\n               ELSE 'pending'\n             END,\n             is_active = true,\n             departed_at = NULL,\n             departed_by = NULL,\n             departure_reason = NULL,\n             updated_at = clock_timestamp()\n       WHERE cm.club_id = p_club_id\n         AND cm.user_id = v_uid\n         AND cm.membership_lifecycle_status = 'departed'\n       RETURNING * INTO v_row;\n      IF NOT FOUND THEN\n        RAISE EXCEPTION 'membership lifecycle changed during rejoin' USING ERRCODE = '40001';\n      END IF;\n      v_result := to_jsonb(v_row);\n    END IF;\n  EXCEPTION WHEN OTHERS THEN\n    PERFORM set_config('app.club_membership_source', v_previous_source, true);\n    PERFORM set_config('app.club_membership_lifecycle_write', v_previous_lifecycle, true);\n    RAISE;\n  END;\n\n  PERFORM set_config('app.club_membership_source', v_previous_source, true);\n  PERFORM set_config('app.club_membership_lifecycle_write', v_previous_lifecycle, true);\n  RETURN v_result;\nEND\n$function$\n",
+    "body_md5": "58ceec3c4db67dffb8a7798459d0fa5b",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": ["search_path=public, extensions, pg_temp", "lock_timeout=5s"],
+    "proacl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+    "provolatile": "v",
+    "proparallel": "u",
+    "proisstrict": false,
+    "proleakproof": false,
+    "result_type": "jsonb",
+    "effective_roles": [
+      {
+        "role": "anon",
+        "execute": false,
+        "inherit": true,
+        "bypassrls": false,
+        "superuser": false,
+        "schema_usage": true
+      },
+      {
+        "role": "authenticated",
+        "execute": true,
+        "inherit": true,
+        "bypassrls": false,
+        "superuser": false,
+        "schema_usage": true
+      },
+      {
+        "role": "authenticator",
+        "execute": false,
+        "inherit": false,
+        "bypassrls": false,
+        "superuser": false,
+        "schema_usage": true
+      },
+      {
+        "role": "postgres",
+        "execute": true,
+        "inherit": true,
+        "bypassrls": true,
+        "superuser": false,
+        "schema_usage": true
+      },
+      {
+        "role": "service_role",
+        "execute": true,
+        "inherit": true,
+        "bypassrls": true,
+        "superuser": false,
+        "schema_usage": true
+      },
+      {
+        "role": "supabase_auth_admin",
+        "execute": false,
+        "inherit": false,
+        "bypassrls": false,
+        "superuser": false,
+        "schema_usage": true
+      }
+    ]
+  },
+  {
+    "captured_at": "2026-09-12 10:37:51.399106+00",
+    "nspname": "public",
+    "proname": "fn_sync_mfa_required_on_club_role",
+    "identity_arguments": "",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_sync_mfa_required_on_club_role()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n    IF NEW.role IN ('owner', 'co_owner', 'admin', 'manager', 'agent') THEN\n        UPDATE public.profiles\n           SET mfa_required = TRUE\n         WHERE id = NEW.user_id\n           AND mfa_required = FALSE;\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n",
+    "body_md5": "c25251b2e4f7929d38f4c3c80d34b31c",
+    "owner": "postgres",
+    "prosecdef": false,
+    "proconfig": ["search_path=public, pg_temp"],
+    "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+    "provolatile": "v",
+    "proparallel": "u",
+    "proisstrict": false,
+    "proleakproof": false,
+    "result_type": "trigger",
+    "effective_roles": [
+      {
+        "role": "anon",
+        "execute": false,
+        "inherit": true,
+        "bypassrls": false,
+        "superuser": false,
+        "schema_usage": true
+      },
+      {
+        "role": "authenticated",
+        "execute": false,
+        "inherit": true,
+        "bypassrls": false,
+        "superuser": false,
+        "schema_usage": true
+      },
+      {
+        "role": "authenticator",
+        "execute": false,
+        "inherit": false,
+        "bypassrls": false,
+        "superuser": false,
+        "schema_usage": true
+      },
+      {
+        "role": "postgres",
+        "execute": true,
+        "inherit": true,
+        "bypassrls": true,
+        "superuser": false,
+        "schema_usage": true
+      },
+      {
+        "role": "service_role",
+        "execute": true,
+        "inherit": true,
+        "bypassrls": true,
+        "superuser": false,
+        "schema_usage": true
+      },
+      {
+        "role": "supabase_auth_admin",
+        "execute": false,
+        "inherit": false,
+        "bypassrls": false,
+        "superuser": false,
+        "schema_usage": true
+      }
+    ]
+  },
+  {
+    "captured_at": "2026-09-12 10:37:51.399106+00",
+    "nspname": "public",
+    "proname": "fn_sync_mfa_required_on_role_change",
+    "identity_arguments": "",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_sync_mfa_required_on_role_change()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n    IF (NEW.role = 'admin' OR NEW.is_vip = TRUE) AND NOT NEW.mfa_required THEN\n        -- Only force the login challenge if the user can actually pass it.\n        IF EXISTS (\n            SELECT 1 FROM public.user_mfa_factors\n            WHERE user_id = NEW.id AND enabled = TRUE\n        ) THEN\n            NEW.mfa_required := TRUE;\n        END IF;\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n",
+    "body_md5": "14c12589ddbaad544af6653847d7b666",
+    "owner": "postgres",
+    "prosecdef": false,
+    "proconfig": ["search_path=public, pg_temp"],
+    "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+    "provolatile": "v",
+    "proparallel": "u",
+    "proisstrict": false,
+    "proleakproof": false,
+    "result_type": "trigger",
+    "effective_roles": [
+      {
+        "role": "anon",
+        "execute": false,
+        "inherit": true,
+        "bypassrls": false,
+        "superuser": false,
+        "schema_usage": true
+      },
+      {
+        "role": "authenticated",
+        "execute": false,
+        "inherit": true,
+        "bypassrls": false,
+        "superuser": false,
+        "schema_usage": true
+      },
+      {
+        "role": "authenticator",
+        "execute": false,
+        "inherit": false,
+        "bypassrls": false,
+        "superuser": false,
+        "schema_usage": true
+      },
+      {
+        "role": "postgres",
+        "execute": true,
+        "inherit": true,
+        "bypassrls": true,
+        "superuser": false,
+        "schema_usage": true
+      },
+      {
+        "role": "service_role",
+        "execute": true,
+        "inherit": true,
+        "bypassrls": true,
+        "superuser": false,
+        "schema_usage": true
+      },
+      {
+        "role": "supabase_auth_admin",
+        "execute": false,
+        "inherit": false,
+        "bypassrls": false,
+        "superuser": false,
+        "schema_usage": true
+      }
+    ]
+  },
+  {
+    "captured_at": "2026-09-12 10:37:51.399106+00",
+    "nspname": "public",
+    "proname": "handle_new_user_v2_create_wallet",
+    "identity_arguments": "",
+    "definition": "CREATE OR REPLACE FUNCTION public.handle_new_user_v2_create_wallet()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  INSERT INTO public.wallets (user_id, wallet_type, balance, locked_balance)\n  VALUES (NEW.id, 'PLAYER', 0, 0)\n  ON CONFLICT (user_id, wallet_type) DO NOTHING;\n  RETURN NEW;\nEXCEPTION WHEN OTHERS THEN\n  BEGIN\n    INSERT INTO public.signup_errors (user_id, email, trigger_name, error_code, error_msg)\n    VALUES (NEW.id, NEW.email, 'handle_new_user_v2_create_wallet', SQLSTATE, SQLERRM);\n  EXCEPTION WHEN OTHERS THEN NULL;\n  END;\n  RETURN NEW;\nEND;\n$function$\n",
+    "body_md5": "8965de467c9b1832823613e245dc7da1",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": ["search_path=public"],
+    "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+    "provolatile": "v",
+    "proparallel": "u",
+    "proisstrict": false,
+    "proleakproof": false,
+    "result_type": "trigger",
+    "effective_roles": [
+      {
+        "role": "anon",
+        "execute": false,
+        "inherit": true,
+        "bypassrls": false,
+        "superuser": false,
+        "schema_usage": true
+      },
+      {
+        "role": "authenticated",
+        "execute": false,
+        "inherit": true,
+        "bypassrls": false,
+        "superuser": false,
+        "schema_usage": true
+      },
+      {
+        "role": "authenticator",
+        "execute": false,
+        "inherit": false,
+        "bypassrls": false,
+        "superuser": false,
+        "schema_usage": true
+      },
+      {
+        "role": "postgres",
+        "execute": true,
+        "inherit": true,
+        "bypassrls": true,
+        "superuser": false,
+        "schema_usage": true
+      },
+      {
+        "role": "service_role",
+        "execute": true,
+        "inherit": true,
+        "bypassrls": true,
+        "superuser": false,
+        "schema_usage": true
+      },
+      {
+        "role": "supabase_auth_admin",
+        "execute": false,
+        "inherit": false,
+        "bypassrls": false,
+        "superuser": false,
+        "schema_usage": true
+      }
+    ]
+  }
+]

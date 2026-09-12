@@ -44,6 +44,17 @@ export const realtimeDatabaseErrorNames = Object.freeze([
   'object_not_in_prerequisite_state',
   'invalid_schema_name',
   'invalid_parameter_value',
+  'permission denied for database',
+  'permission denied for schema',
+  'permission denied for table',
+  'permission denied for relation',
+  'must be owner of',
+  'permission denied to create',
+  'must have admin option',
+  'permission denied to grant',
+  'must be member of role',
+  'must be able to set role',
+  'no schema has been selected',
 ]);
 export function realtimeLogDiagnostic(output) {
   if (typeof output !== 'string' || output.length > 8 * 1024 * 1024) return {};

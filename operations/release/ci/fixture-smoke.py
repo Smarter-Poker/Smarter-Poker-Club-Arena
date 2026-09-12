@@ -81,7 +81,12 @@ def native_failures(output):
             allowed_errors = {'insufficient_privilege', 'undefined_object', 'undefined_function',
                               'undefined_table', 'undefined_column', 'datatype_mismatch',
                               'unique_violation', 'object_not_in_prerequisite_state',
-                              'invalid_schema_name', 'invalid_parameter_value'}
+                              'invalid_schema_name', 'invalid_parameter_value',
+                              'permission denied for database', 'permission denied for schema',
+                              'permission denied for table', 'permission denied for relation',
+                              'must be owner of', 'permission denied to create', 'must have admin option',
+                              'permission denied to grant', 'must be member of role',
+                              'must be able to set role', 'no schema has been selected'}
             errors = realtime['realtime_database_errors']
             if (not isinstance(errors, list) or not 1 <= len(errors) <= len(allowed_errors)
                     or any(not isinstance(error, str) or error not in allowed_errors for error in errors)

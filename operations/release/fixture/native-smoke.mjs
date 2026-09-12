@@ -496,6 +496,9 @@ async function services() {
       401
     );
     stage = 'realtime-genuine-migrations-and-change';
+    stage = 'native-migrated-service-role-boundary';
+    await assertNativeServiceRoleBoundary(db);
+    stage = 'realtime-genuine-migrations-and-change';
     const realtimeEnv = {
       PORT: '4000',
       DB_HOST: '127.0.0.1',

@@ -38,6 +38,7 @@ export async function assertNativeServiceRoleBoundary(db) {
     current_database()='club_arena_qualification' AND inet_server_addr() IS NULL
       AND current_user='postgres' AS owned_database,
     (SELECT rolsuper FROM pg_roles WHERE rolname='postgres') AS bootstrap_superuser,
+    (SELECT rolcanlogin AND rolsuper AND rolinherit FROM pg_roles WHERE rolname='supabase_admin') AS realtime_bootstrap_superuser,
     (SELECT rolcanlogin AND NOT rolinherit AND NOT rolsuper AND NOT rolbypassrls AND rolcreaterole
       FROM pg_roles WHERE rolname='supabase_auth_admin') AS auth_admin_boundary,
     (SELECT rolcanlogin AND NOT rolinherit AND NOT rolsuper AND NOT rolbypassrls AND NOT rolcreaterole
@@ -63,6 +64,7 @@ export async function assertNativeServiceRoleBoundary(db) {
       {
         owned_database: true,
         bootstrap_superuser: true,
+        realtime_bootstrap_superuser: true,
         auth_admin_boundary: true,
         authenticator_boundary: true,
         authenticator_memberships: 3,

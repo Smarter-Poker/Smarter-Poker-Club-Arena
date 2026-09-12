@@ -9,6 +9,7 @@ import {
 const boundary = {
   owned_database: true,
   bootstrap_superuser: true,
+  realtime_bootstrap_superuser: true,
   auth_admin_boundary: true,
   authenticator_boundary: true,
   authenticator_memberships: 3,

@@ -34,7 +34,15 @@
  * Exit: 0 clean · 1 drift · 2 could not ask (NEVER silently green)
  */
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
+import {
+  extractExpressions,
+  metricsIn,
+  producerHaystack,
+  recordedNames,
+  readDeclaredAbsent,
+  isProduced,
+} from './rule-metric-producers.mjs';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
@@ -64,6 +72,10 @@ function declaredAlerts() {
 /**
  * Every metric NAME an expression in the loaded rule files reads.
  *
+ * ---------------------------------------------------------------------------
+ *  RULES THAT READ A SERIES PROMETHEUS HAS NEVER SEEN
+ * ---------------------------------------------------------------------------
+ *
  * ADDED 2026-09-09, because this check reconciled rule NAMES between the repo
  * and the box and never asked whether the rules could ever fire. Fifteen of
  * them referenced series with no producer anywhere - among them
@@ -73,42 +85,43 @@ function declaredAlerts() {
  * about the last set: "loaded and silently evaluated to nothing, which is
  * worse than not having them." Nothing was checking.
  *
- * Deliberately loose: it collects bare identifiers that look like metric
- * names and skips PromQL keywords, functions, label matchers and recording
- * rules (which begin with a group prefix like `sp:`). A false positive here
- * is a name to explain; a false negative is an alert nobody will ever get.
+ * 2026-09-11: this now uses the same extractor as check-monitoring-drift.mjs
+ * rather than its own. Its own read `sp:action_to_broadcast:p95_ms` as the
+ * metric `p95_ms`, because its identifier pattern did not treat `:` as part of
+ * a name, and the comment below claiming it skipped recording-rule prefixes was
+ * describing an intention the code did not carry out. `max_ms` and `p95_ms`
+ * were reported as phantoms on every run, and this job had failed on them four
+ * times running since 2026-09-09. A check that fails for a reason nobody can
+ * act on is a check people stop reading, and this one was right about eleven
+ * real metrics at the same time.
+ *
+ * A false positive here is not a cheap thing to pay. It is the whole cost.
+ *
+ * So the answer is now in two tiers, because they ask for opposite actions.
+ * Both start from the same fact - `label/__name__/values` has never seen the
+ * name - and they differ on whether anything in this repo would ever emit it:
+ *
+ *   PHANTOM (fatal): nothing emits the name. The rule is structurally
+ *   unfirable and will read as health forever. Someone writes the producer or
+ *   deletes the rule; there is no third option and no waiting it out.
+ *
+ *   HAVE A PRODUCER, NO SERIES YET (reported, not fatal): the emitting code
+ *   exists but has not run. An engine restarted ten minutes ago reads exactly
+ *   like this, and failing on it would paint every post-restart deploy red
+ *   until traffic happened to touch that path - which is how a gate stops
+ *   being read. It is still printed, because a producer that never runs is
+ *   worth seeing; `anAlertCannotWaitForAFailureToExist.law.test.ts` is what
+ *   makes the zero-seeding binding.
  */
-const PROMQL_WORDS = new Set([
-  'and', 'or', 'unless', 'by', 'without', 'on', 'ignoring', 'group_left',
-  'group_right', 'offset', 'bool', 'if', 'default', 'inf', 'nan',
-  'rate', 'irate', 'increase', 'sum', 'avg', 'min', 'max', 'count', 'topk',
-  'bottomk', 'quantile', 'stddev', 'stdvar', 'absent', 'absent_over_time',
-  'delta', 'idelta', 'deriv', 'predict_linear', 'histogram_quantile',
-  'label_replace', 'label_join', 'time', 'timestamp', 'vector', 'scalar',
-  'clamp_max', 'clamp_min', 'round', 'abs', 'ceil', 'floor', 'exp', 'ln',
-  'log2', 'log10', 'sqrt', 'changes', 'resets', 'sort', 'sort_desc',
-  'avg_over_time', 'min_over_time', 'max_over_time', 'sum_over_time',
-  'count_over_time', 'quantile_over_time', 'stddev_over_time',
-  'last_over_time', 'present_over_time', 'group', 'count_values',
-]);
 
 function metricsReferenced() {
   const out = new Map();
   for (const f of loadedRuleFiles()) {
     const p = join(MON, f);
     if (!existsSync(p)) continue;
-    const txt = readFileSync(p, 'utf8').replace(/^\s*#[^\n]*$/gm, '');
-    for (const m of txt.matchAll(/^\s*expr:\s*\|?\s*\n?([\s\S]*?)(?=\n\s*(?:-\s|for:|labels:|annotations:|record:|alert:|$))/gm)) {
-      const expr = m[1];
-      for (const id of expr.matchAll(/\b([a-zA-Z_][a-zA-Z0-9_]*)\b(?!\s*[:"])/g)) {
-        const name = id[1];
-        if (PROMQL_WORDS.has(name)) continue;
-        if (!name.includes('_')) continue;          // labels, bare words
-        if (/^(job|instance|severity|component|alertname|le|quantile)$/.test(name)) continue;
-        // a label INSIDE a matcher is followed by = or !=, never a metric
-        const at = id.index ?? 0;
-        const after = expr.slice(at + name.length).replace(/^\s+/, '');
-        if (after.startsWith('=') || after.startsWith('!=') || after.startsWith('=~')) continue;
+    for (const expr of extractExpressions(readFileSync(p, 'utf8'))) {
+      for (const name of metricsIn(expr)) {
+        if (!name.includes('_') && !name.includes(':')) continue; // bare words
         if (!out.has(name)) out.set(name, f);
       }
     }
@@ -176,9 +189,25 @@ function main() {
   for (const g of rules?.data?.groups ?? []) {
     for (const r of g.rules ?? []) if (r.type === 'recording') recorded.add(r.name);
   }
-  const phantom = [...metricsReferenced().entries()]
+  /* Two very different things look identical from Prometheus alone.
+     A name with NO PRODUCER can never have a series: that is the 2026-09-04
+     defect and it is fatal. A name with a producer that has simply not been
+     emitted yet is a counter waiting for its first event - six horse counters
+     were in exactly that state on 2026-09-11 and appeared on their own within
+     hours. Failing a deploy on the second is how the first stopped being read. */
+  const repoRoot = resolve(MON, '..', '..');
+  const haystack = producerHaystack(repoRoot);
+  const declaredAbsent = readDeclaredAbsent(MON);
+  const recordedInRepo = recordedNames(MON, loadedRuleFiles());
+  const referenced = [...metricsReferenced().entries()]
     .filter(([name]) => !known.has(name) && !recorded.has(name))
     .sort(([a], [b]) => a.localeCompare(b));
+  const phantom = referenced.filter(
+    ([name]) => !isProduced(name, haystack, recordedInRepo, declaredAbsent)
+  );
+  const notYetEmitted = referenced.filter(([name]) =>
+    isProduced(name, haystack, recordedInRepo, declaredAbsent)
+  );
 
   const missing = [...declared.keys()].filter((a) => !loaded.has(a)).sort();
   const extra = [...loaded].filter((a) => !declared.has(a)).sort();
@@ -220,13 +249,23 @@ function main() {
   if (phantom.length) {
     bad = true;
     console.error('');
-    console.error(`RULES THAT READ A SERIES PROMETHEUS HAS NEVER SEEN (${phantom.length}):`);
+    console.error(`RULES THAT READ A METRIC NOTHING EMITS (${phantom.length}):`);
     for (const [name, file] of phantom) console.error(`   ${name}   (${file})`);
     console.error('  These rules load, evaluate to an empty vector, and can never cross a');
     console.error('  threshold - so they read as coverage and provide none. Either publish');
     console.error('  the metric, point the rule at the name the producer actually emits, or');
     console.error('  delete the rule. Do not leave it: alert-rules.QUARANTINED.yml already');
     console.error('  records what a directory of these costs.');
+  }
+
+  if (notYetEmitted.length) {
+    console.log('');
+    console.log(`HAVE A PRODUCER, NO SERIES YET (${notYetEmitted.length}) - not a failure:`);
+    for (const [name, file] of notYetEmitted) console.log(`   ${name}   (${file})`);
+    console.log('  Something in this repo emits each of these. A counter has no series until');
+    console.log('  its first event, and a gauge has none until its first scrape after release.');
+    console.log('  check-monitoring-drift.mjs check 8 is what proves the producer exists, and');
+    console.log('  it runs on the pull request rather than after the merge.');
   }
 
   if (!bad) console.log('[alert-rules] OK - the box runs what this repo declares, every rule reads a real series, and the canary is alive.');

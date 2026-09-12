@@ -32,6 +32,9 @@ interface CronStatus {
     agentsChecked: number;
     agentsSuspended: number;
     agentsWarned: number;
+    unavailable?: boolean;
+    checkedAt?: string;
+    disabled?: boolean;
   } | null;
   config: {
     reconciliationIntervalMs: number;
@@ -230,6 +233,17 @@ export default function FinancialHealthPage() {
         </div>
         {status?.lastSuspensionCheck ? (
           <div className="fh-suspension-stats">
+            {status.lastSuspensionCheck.checkedAt && (
+              <div>Last attempt: {formatDateTime(status.lastSuspensionCheck.checkedAt)}</div>
+            )}
+            {status.lastSuspensionCheck.unavailable && (
+              <div role="alert">
+                Suspension check unavailable or incomplete. Counts below are partial.{' '}
+                {status.lastSuspensionCheck.disabled
+                  ? 'Automatic checks are paused after repeated failures. Reload the app to retry.'
+                  : 'Run again to retry.'}
+              </div>
+            )}
             <div className="fh-stat">
               <span className="fh-stat-value">{status.lastSuspensionCheck.agentsChecked}</span>
               <span className="fh-stat-label">Agents Checked</span>

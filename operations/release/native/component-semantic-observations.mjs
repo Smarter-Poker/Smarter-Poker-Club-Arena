@@ -245,6 +245,10 @@ export async function observeFinancialFacts(db, tableId, actorIds, financial) {
     assert.match(id, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   const tables = [
     'tables',
+    'clubs',
+    'club_wallets',
+    'union_wallets',
+    'hand_history',
     'club_members',
     'table_seats',
     'table_pending_addons',
@@ -259,7 +263,7 @@ export async function observeFinancialFacts(db, tableId, actorIds, financial) {
   // ACCESS SHARE freezes relation identity for these fixed queries without
   // blocking ordinary game writes. Missing/replaced relation kinds refuse.
   await db.query(
-    'LOCK TABLE public.tables, public.club_members, public.table_seats, public.table_pending_addons, public.table_addon_idempotency, public.entry_purchase_idempotency_receipts, public.chip_ledger, public.wallet_transactions, public.insurance_transactions, public.insurance_offer_events, public.hand_atomic_commits IN ACCESS SHARE MODE'
+    'LOCK TABLE public.tables, public.clubs, public.club_wallets, public.union_wallets, public.hand_history, public.club_members, public.table_seats, public.table_pending_addons, public.table_addon_idempotency, public.entry_purchase_idempotency_receipts, public.chip_ledger, public.wallet_transactions, public.insurance_transactions, public.insurance_offer_events, public.hand_atomic_commits IN ACCESS SHARE MODE'
   );
   const identity = await db.query(
     "SELECT c.relname FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname=ANY($1::text[]) AND c.relkind IN ('r','p') ORDER BY c.relname",
@@ -274,6 +278,12 @@ export async function observeFinancialFacts(db, tableId, actorIds, financial) {
   const key = `addon:${tableId}:${actor}:${financial.op_id}`;
   const args = [tableId, actorIds, key, financial.hand_number];
   const queries = {
+    scope:
+      'SELECT jsonb_build_array(t.id::text,t.club_id::text,t.union_id::text,c.union_id::text,t.is_private::text,t.tournament_id::text) AS row FROM public.tables t JOIN public.clubs c ON c.id=t.club_id WHERE t.id=$1 LIMIT 2',
+    banks:
+      "SELECT jsonb_build_array('club',t.club_id::text,w.id::text,w.insurance_balance::text) AS row FROM public.tables t LEFT JOIN public.club_wallets w ON w.club_id=t.club_id WHERE t.id=$1 UNION ALL SELECT jsonb_build_array('union',coalesce(t.union_id,c.union_id)::text,w.id::text,w.insurance_wallet::text) AS row FROM public.tables t JOIN public.clubs c ON c.id=t.club_id LEFT JOIN public.union_wallets w ON w.union_id=coalesce(t.union_id,c.union_id) WHERE t.id=$1 AND NOT coalesce(t.is_private,false) AND coalesce(t.union_id,c.union_id) IS NOT NULL LIMIT 3",
+    hands:
+      'SELECT jsonb_build_array(id::text,hand_number::text,pot_size::text,rake_amount::text,bbj_amount::text) AS row FROM public.hand_history WHERE table_id=$1 AND hand_number=$4 ORDER BY id LIMIT 3',
     wallets:
       'SELECT jsonb_build_array(user_id::text,chip_balance::text) AS row FROM public.club_members WHERE club_id=(SELECT club_id FROM public.tables WHERE id=$1) AND user_id=ANY($2::uuid[]) ORDER BY user_id LIMIT 3',
     seats:
@@ -307,5 +317,6 @@ export async function observeFinancialFacts(db, tableId, actorIds, financial) {
     data[name] = result.rows.map((r) => r.row);
   }
   assert.equal(data.wallets.length, 2, 'FINANCIAL_OBSERVATION_ACTOR_MEMBERSHIP');
+  assert.equal(data.scope.length, 1, 'FINANCIAL_OBSERVATION_TABLE_SCOPE');
   return validateFinancialData(data);
 }

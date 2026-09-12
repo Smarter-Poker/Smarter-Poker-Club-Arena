@@ -60,6 +60,9 @@ export function validateFinancial(value) {
 // Exact tuple widths and caps. SQL produces only selected facts, not arbitrary
 // JSON objects or a fixture-authored success/certificate flag.
 export const FINANCIAL_SECTIONS = Object.freeze({
+  scope: [1, 6],
+  banks: [2, 4],
+  hands: [2, 5],
   wallets: [2, 2],
   seats: [8, 4],
   addons: [8, 7],

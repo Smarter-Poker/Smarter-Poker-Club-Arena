@@ -19,7 +19,11 @@ async function fixture(t) {
   const db = await connect(config);
   t.after(() => db.end());
   await db.query(`
-    CREATE TABLE public.tables(id uuid primary key,club_id uuid);
+    CREATE TABLE public.tables(id uuid primary key,club_id uuid,union_id uuid,is_private boolean DEFAULT false,tournament_id uuid);
+    CREATE TABLE public.clubs(id uuid primary key,union_id uuid);
+    CREATE TABLE public.club_wallets(club_id uuid,insurance_balance numeric,id uuid DEFAULT gen_random_uuid());
+    CREATE TABLE public.union_wallets(union_id uuid,insurance_wallet numeric,id uuid DEFAULT gen_random_uuid());
+    CREATE TABLE public.hand_history(id uuid,table_id uuid,hand_number bigint,pot_size numeric,rake_amount numeric,bbj_amount numeric);
     CREATE TABLE public.club_members(user_id uuid,club_id uuid,chip_balance numeric);
     CREATE TABLE public.table_seats(occupancy_id uuid,user_id uuid,table_id uuid,stack numeric,left_at timestamptz);
     CREATE TABLE public.table_pending_addons(id uuid,user_id uuid,table_id uuid,amount numeric,kind text,resolved_at timestamptz,applied_to_stack numeric,refunded numeric);
@@ -38,7 +42,16 @@ async function fixture(t) {
     other = randomUUID();
   const financial = { actor_index: 0, op_id: 'owned-reader-0001', hand_number: 1000001 };
   const key = `addon:${table}:${actors[0]}:${financial.op_id}`;
-  await db.query('INSERT INTO public.tables VALUES($1,$3),($2,$3)', [table, foreign, club]);
+  await db.query('INSERT INTO public.clubs(id) VALUES($1)', [club]);
+  await db.query('INSERT INTO public.tables(id,club_id) VALUES($1,$3),($2,$3)', [
+    table,
+    foreign,
+    club,
+  ]);
+  await db.query(
+    'INSERT INTO public.club_wallets(club_id,insurance_balance,id) VALUES($1,27.25,$1)',
+    [club]
+  );
   await db.query('INSERT INTO public.club_members VALUES($1,$4,1900),($2,$4,1800),($3,$4,9999)', [
     ...actors,
     other,
@@ -79,7 +92,7 @@ async function fixture(t) {
       await db.query('ROLLBACK');
     }
   }
-  return { db, table, foreign, actors, other, key, financial, read };
+  return { db, table, foreign, club, actors, other, key, financial, read };
 }
 test('fixed native reader scopes actors/table/key/hand and preserves exact numeric strings', async (t) => {
   const f = await fixture(t),
@@ -90,6 +103,8 @@ test('fixed native reader scopes actors/table/key/hand and preserves exact numer
   assert.equal(data.addon_keys.length, 1);
   assert.equal(data.receipts.length, 1);
   assert.equal(data.offers.length, 1);
+  assert.deepEqual(data.scope, [[f.table, f.club, null, null, 'false', null]]);
+  assert.deepEqual(data.banks, [['club', f.club, f.club, '27.25']]);
   assert.equal(data.addons[0][2], '10');
   assert.equal(data.addon_keys[0][3], 'false');
   assert.ok(!JSON.stringify(data).includes(f.other));
@@ -121,4 +136,39 @@ test('native reader refuses a missing actor wallet instead of treating it as zer
   const f = await fixture(t);
   await f.db.query('DELETE FROM public.club_members WHERE user_id=$1', [f.actors[1]]);
   await assert.rejects(f.read(), /ACTOR_MEMBERSHIP/);
+});
+
+test('bank observations derive union routing from the bound table and preserve private-game isolation', async (t) => {
+  const f = await fixture(t),
+    union = randomUUID(),
+    unrelated = randomUUID();
+  await f.db.query('UPDATE public.clubs SET union_id=$1 WHERE id=$2', [union, f.club]);
+  await f.db.query(
+    'INSERT INTO public.union_wallets(union_id,insurance_wallet,id) VALUES($1,42,$1),($2,999,$2)',
+    [union, unrelated]
+  );
+  assert.deepEqual((await f.read()).banks, [
+    ['club', f.club, f.club, '27.25'],
+    ['union', union, union, '42'],
+  ]);
+  await f.db.query('UPDATE public.tables SET is_private=true WHERE id=$1', [f.table]);
+  assert.deepEqual((await f.read()).banks, [['club', f.club, f.club, '27.25']]);
+  await f.db.query('DELETE FROM public.club_wallets WHERE club_id=$1', [f.club]);
+  assert.deepEqual(
+    (await f.read()).banks,
+    [['club', f.club, null, null]],
+    'absence is not fabricated as a zero balance'
+  );
+});
+
+test('only the selected hand contributes fee facts and a missing club scope refuses', async (t) => {
+  const f = await fixture(t),
+    hand = randomUUID();
+  await f.db.query(
+    'INSERT INTO public.hand_history VALUES($1,$2,1000001,400,3,1),($3,$2,1000002,999,9,9)',
+    [hand, f.table, randomUUID()]
+  );
+  assert.deepEqual((await f.read()).hands, [[hand, '1000001', '400', '3', '1']]);
+  await f.db.query('DELETE FROM public.clubs WHERE id=$1', [f.club]);
+  await assert.rejects(f.read(), /TABLE_SCOPE/);
 });

@@ -2623,8 +2623,21 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       ':'
     );
     let pendingUtilityLedger: HorseDecision['tournamentUtility'];
+    let pendingPostflopLedger: HorseDecision['tournamentPostflop'];
+    let pendingPlo4Ledger: HorseDecision['plo4Policy'];
 
+    const retirePlo4 = (ledger: HorseDecision['plo4Policy']): void => {
+      if (ledger?.executionStatus === 'pending') {
+        ledger.executionStatus = 'not_executed';
+        noteFire('phase10_execution_not_executed');
+      }
+    };
     const markPendingUtilityNotExecuted = (): void => {
+      retirePlo4(pendingPlo4Ledger);
+      if (pendingPostflopLedger?.executionStatus === 'pending') {
+        pendingPostflopLedger.executionStatus = 'not_executed';
+        noteFire('phase8_execution_not_executed');
+      }
       if (!pendingUtilityLedger || pendingUtilityLedger.executionStatus !== 'pending') return;
       pendingUtilityLedger.executedAction = null;
       pendingUtilityLedger.executedAmount = null;
@@ -2893,6 +2906,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         }
         let decision = fastResult.decision;
         pendingUtilityLedger = decision.tournamentUtility;
+        pendingPostflopLedger = decision.tournamentPostflop;
+        pendingPlo4Ledger = decision.plo4Policy;
 
         // Humanlike think time comes from the decision engine itself (style- and
         // situation-aware, 0.7-8s). Clamp inside the table's action timer window.
@@ -3055,6 +3070,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                   deepResult.fence !== fence ||
                   !fenceIsCurrent()
                 ) {
+                  retirePlo4(deepResult.decision.plo4Policy);
+                  if (deepResult.decision.tournamentPostflop?.executionStatus === 'pending') {
+                    deepResult.decision.tournamentPostflop.executionStatus = 'not_executed';
+                    noteFire('phase8_execution_not_executed');
+                  }
                   return;
                 }
                 const verdict = ServerTableEngineTurns.secondLookVerdict(
@@ -3063,6 +3083,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                 );
                 if (verdict) {
                   noteFire('v44_second_look_flipped');
+                  retirePlo4(pendingPlo4Ledger);
+                  if (pendingPostflopLedger?.executionStatus === 'pending') {
+                    pendingPostflopLedger.executionStatus = 'not_executed';
+                    noteFire('phase8_execution_not_executed');
+                  }
                   decision = {
                     // The deep replay owns the Phase 7 utility receipt too.
                     // Keeping the fast object while changing only its action
@@ -3074,6 +3099,14 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                     thinkTime: decision.thinkTime,
                   };
                   pendingUtilityLedger = decision.tournamentUtility;
+                  pendingPostflopLedger = decision.tournamentPostflop;
+                  pendingPlo4Ledger = decision.plo4Policy;
+                } else {
+                  retirePlo4(deepResult.decision.plo4Policy);
+                  if (deepResult.decision.tournamentPostflop?.executionStatus === 'pending') {
+                    deepResult.decision.tournamentPostflop.executionStatus = 'not_executed';
+                    noteFire('phase8_execution_not_executed');
+                  }
                 }
               })
               .catch((error) => {
@@ -3098,6 +3131,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         this.horseActionTimer = setTimeout(() => {
           this.horseActionTimer = null;
           const utilityLedger = decision.tournamentUtility;
+          const postflopLedger = decision.tournamentPostflop;
+          const plo4Ledger = decision.plo4Policy;
+          pendingPlo4Ledger = plo4Ledger;
+          pendingPostflopLedger = postflopLedger;
           pendingUtilityLedger = utilityLedger;
           if (!fenceIsCurrent()) return;
           if (!handControllerRef) {
@@ -3330,6 +3367,44 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               } else {
                 noteFire('phase7_utility_not_executed');
               }
+            }
+            if (plo4Ledger) {
+              plo4Ledger.executedAction = executedAction;
+              plo4Ledger.executedAmount = executedAmount;
+              const matched =
+                executedAction === plo4Ledger.finalAction &&
+                (!['bet', 'raise'].includes(plo4Ledger.finalAction) ||
+                  executedAmount === plo4Ledger.finalAmount);
+              plo4Ledger.executionStatus = !applied
+                ? 'not_executed'
+                : !intendedApplied
+                  ? 'fallback'
+                  : matched
+                    ? 'intended'
+                    : 'coerced';
+              noteFire(`phase10_execution_${plo4Ledger.executionStatus}`);
+            }
+            if (postflopLedger) {
+              postflopLedger.executedAction = executedAction;
+              postflopLedger.executedAmount = executedAmount;
+              const plannedAction = postflopLedger.applied
+                ? postflopLedger.candidateAction
+                : postflopLedger.baselineAction;
+              const plannedAmount = postflopLedger.applied
+                ? postflopLedger.candidateAmount
+                : postflopLedger.baselineAmount;
+              const matched =
+                executedAction === plannedAction &&
+                (!(plannedAction === 'bet' || plannedAction === 'raise') ||
+                  executedAmount === plannedAmount);
+              postflopLedger.executionStatus = !applied
+                ? 'not_executed'
+                : !intendedApplied
+                  ? 'fallback'
+                  : matched
+                    ? 'intended'
+                    : 'coerced';
+              noteFire(`phase8_execution_${postflopLedger.executionStatus}`);
             }
           });
           // Unconditional markProgress() here reset watchdogTrips even when all

@@ -6,7 +6,9 @@
  * first version and was right to: it resolves a className against the CSS the
  * component itself pulls in, so styles that live only in the page's sheet are
  * styles this panel cannot be shown to have. The repo's other panels
- * (BBJTicker.css, TickerManagementPanel.module.css) already do it this way.
+ * (TickerManagementPanel.module.css, BBJAdminAnalytics.css) already do it this
+ * way. BBJTicker.css used to be cited here too and was deleted with its
+ * component on 2026-09-12 - a precedent has to be a file somebody can open.
  */
 /* ── THE JACKPOT ANNOUNCEMENTS (BBJ phase 3.4, 2026-09-07) ─────────────────
    A list of amounts and a small form under them. Mobile-first (375px): the

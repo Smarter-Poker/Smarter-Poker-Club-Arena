@@ -13,7 +13,7 @@
  * NOTE: "Horses" — NEVER call them anything else.
  */
 
-import { supabase } from './supabase.js';
+import { supabase, seedingSupabase } from './supabase.js';
 import { isChipFleetTable } from './HorseFleetFundingBoundary.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import {
@@ -502,6 +502,20 @@ const DEFAULT_TABLES: TableConfig[] = [
 // ═══════════════════════════════════════════════════════════════════════════════
 // HORSE FLEET MANAGER CLASS
 // ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * How long a seeding cycle may keep STARTING new seats.
+ *
+ * The cycle runs on a 30-second interval and a tick that finds the previous
+ * cycle still running is dropped, so a cycle that overruns does not merely run
+ * late: it deletes the refills that should have happened while it ran. Eighteen
+ * seconds leaves room for one abandoned five-second buy-in and the Stable Hand
+ * state write (3.5 s measured) inside the thirty, so the next tick always
+ * fires. Raise it only with a measurement of what the extra time buys.
+ */
+const SEED_CYCLE_SEATING_BUDGET_MS = Number(
+  process.env.HORSE_SEED_CYCLE_SEATING_BUDGET_MS ?? 18_000
+);
 
 export class HorseFleetManager {
   private isRunning = false;
@@ -1919,6 +1933,9 @@ export class HorseFleetManager {
       });
       /* How many more horses may take a seat anywhere this cycle. Infinity is
          the default and means "no ceiling", which is today's behaviour. */
+      /* Tables this cycle has reached the seating stage for. Only used by the
+         time budget, which must always let the first one through. */
+      let tablesConsidered = 0;
       let seatBudget =
         globalPolicy.maxHorses === null
           ? Number.POSITIVE_INFINITY
@@ -2558,6 +2575,49 @@ export class HorseFleetManager {
             if (diag) diag.withheld = 'max_horses_reached';
             continue;
           }
+          /* ── THE CYCLE'S OWN CLOCK (2026-09-11) ───────────────────────────
+             A seat budget counts bodies. Nothing counted TIME, and the cycle
+             runs on a 30-second interval whose tick is dropped outright while
+             a previous cycle is still going.
+
+             Measured over three hours on 2026-09-11, every single cycle
+             overran: 31, 34, 36, 49, 50, 60, 63, 65, 67, 75, 76, 84 and 109
+             seconds, each one logging the ticks it cost. Not one finished
+             inside its own budget, so the floor went unrefilled continuously
+             rather than occasionally.
+
+             Stopping here is not a failure. A table not seeded this cycle is
+             seeded on the next one thirty seconds later, which is the same
+             answer the seat budget above already gives, and far better than a
+             cycle that runs so long the next two never start. Paired with the
+             five-second seeding deadline in supabase/client.ts, the worst case
+             is this budget plus one abandoned call plus the state write, which
+             lands inside the tick. */
+          if (tablesConsidered > 0 && Date.now() - cycleStartedAt >= SEED_CYCLE_SEATING_BUDGET_MS) {
+            beat.withheldTables++;
+            if (firstTableWithheld === null) firstTableWithheld = 'cycle_time_budget';
+            if (diag) diag.withheld = 'cycle_time_budget';
+            continue;
+          }
+          /* `tablesConsidered > 0` above is not a rounding detail. The budget is
+             measured from the START of the cycle, which includes the load phase
+             (tag book, doors, policy - 5.3 s measured). If that phase ever ran
+             past the budget, an unguarded check would withhold EVERY table and
+             the floor would stop being seeded at all, silently, with a reason
+             that reads like ordinary throttling. One table is always tried, so
+             a cycle can never seat nobody for want of time alone, and a load
+             phase that has eaten the budget says so on its own line. */
+          if (
+            tablesConsidered === 0 &&
+            Date.now() - cycleStartedAt >= SEED_CYCLE_SEATING_BUDGET_MS
+          ) {
+            console.warn(
+              `[HorseFleet] the load phase used the whole ${SEED_CYCLE_SEATING_BUDGET_MS}ms seating ` +
+                `budget (${Date.now() - cycleStartedAt}ms) - seeding one table anyway so the floor ` +
+                'is never starved by setup alone'
+            );
+          }
+          tablesConsidered++;
 
           const target = occupancyTargetFor(
             table.id,
@@ -4463,7 +4523,7 @@ export class HorseFleetManager {
       // really is a member there, so the database debits the roll the engine
       // reasoned about instead of hashing its own pick. Null when the
       // membership map did not load: then the database decides alone.
-      let { error: rpcErr } = await supabase.rpc('atomic_table_buyin', {
+      let { error: rpcErr } = await seedingSupabase.rpc('atomic_table_buyin', {
         p_user_id: horseId,
         p_table_id: tableId,
         p_seat_number: seatNumber,
@@ -4484,7 +4544,7 @@ export class HorseFleetManager {
       if (rpcErr && floorMatch) {
         const required = Number(floorMatch[1]);
         if (Number.isFinite(required) && required > buyIn) {
-          ({ error: rpcErr } = await supabase.rpc('atomic_table_buyin', {
+          ({ error: rpcErr } = await seedingSupabase.rpc('atomic_table_buyin', {
             p_user_id: horseId,
             p_table_id: tableId,
             p_seat_number: seatNumber,

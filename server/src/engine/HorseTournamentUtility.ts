@@ -28,6 +28,18 @@ import type {
 import { mdfFold } from './HorseEvEngine.js';
 import { createIcmEquityEstimator, type IcmMethod } from './IcmModel.js';
 import { calculatePots } from './PokerEngine.js';
+import {
+  simulateTournamentFutureHands,
+  FUTURE_HAND_POLICY,
+  type FutureHandConfig,
+  type FutureHandDraw,
+  type FutureHandResult,
+} from './HorseTournamentFutureHand.js';
+import {
+  simulateTournamentContinuation,
+  CONTINUATION_POLICY,
+  type TournamentContinuationStreet,
+} from './HorseTournamentContinuation.js';
 
 const EPS = 0.005;
 const CONFIDENCE_Z_999 = 3.291;
@@ -50,6 +62,7 @@ export interface TournamentUtilityOpponentEvidence {
 }
 
 export interface TournamentUtilityBoardOutcome {
+  continuationStreets?: TournamentContinuationStreet[];
   heroHigh: number;
   opponentHigh: number[];
   /** Strength at the decision point; never includes sampled future cards. */
@@ -105,6 +118,16 @@ export interface TournamentUtilityContext {
 }
 
 export interface TournamentUtilityInput {
+  /** Internal deadline for an optional shadow evaluation. Never from live worker input. */
+  withinBudget?: () => boolean;
+  /** Explicit Phase 8 counterfactual. Absent preserves Phase 7 exactly. */
+  continuation?: {
+    dealerSeat: number;
+    bigBlind: number;
+    shortStackThresholdChips?: number;
+    futureHands?: FutureHandConfig;
+    withinBudget?: () => boolean;
+  };
   street: HandStage;
   hero: SeatPlayer;
   players: SeatPlayer[];
@@ -144,6 +167,30 @@ export interface TournamentUtilityEvaluation {
     ledger: HorseTournamentUtilityLedger;
   } | null;
   unavailableReason: TournamentUtilityUnavailableReason | null;
+  /** Decision-local workspace reuse. Never attached to a serialized receipt. */
+  continuePostflop?: TournamentContinuationRunner;
+}
+
+export type TournamentContinuationRunner = (
+  baseline: HorseDecision,
+  continuation: NonNullable<TournamentUtilityInput['continuation']>,
+  maxSamples: number
+) => TournamentUtilityEvaluation;
+
+/** Spread bounded work over the captured continuation pool, not just its prefix. */
+export function selectContinuationSamples(
+  samples: TournamentUtilityShowdownSample[],
+  maxSamples: number
+) {
+  const available = Math.min(samples.length, CONTINUATION_POLICY.maxOutcomeSamples);
+  const count = Math.min(available, maxSamples);
+  return Array.from({ length: count }, (_, i) => samples[Math.floor((i * available) / count)]);
+}
+
+interface UtilityWorkspace {
+  field: FieldState;
+  estimateCache: Map<string, Estimate>;
+  actionIcm: ReturnType<typeof createIcmEquityEstimator>;
 }
 
 type CandidateKind = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'jam';
@@ -174,12 +221,16 @@ interface BranchResult {
   heroFinishedPaid: boolean;
   bountyWonPct: number;
   bountyDeniedPct: number;
+  /** Current-hand PKO growth carried into Phase 8's next-hand valuation. */
+  futureBountyHeads?: Record<string, number>;
   heroBusted: boolean;
   heroWon: boolean;
   wonBounty: boolean;
   allFold: boolean;
   sidePotCount: number;
   conservationError: number;
+  shortStackCollision: boolean;
+  coveredStacks: number;
 }
 
 interface Estimate {
@@ -211,7 +262,7 @@ interface CandidateEvaluationFailure {
   ledger: null;
   unavailableReason: Extract<
     TournamentUtilityUnavailableReason,
-    'candidate_settlement' | 'recovery_option'
+    'candidate_settlement' | 'recovery_option' | 'operation_budget'
   >;
 }
 
@@ -822,6 +873,27 @@ function settleSample(args: {
     commit(opponent, Math.max(0, target - Math.max(0, opponent.bet)));
   }
   const allFold = wager && discretionaryCallers === 0 && forcedCallers === 0;
+  if (input.continuation && !hero.is_folded && !hero.is_all_in && !allFold) {
+    const streets = sample.boards[0]?.continuationStreets;
+    if (
+      sample.boards.length !== 1 ||
+      !streets ||
+      !simulateTournamentContinuation(
+        seats,
+        {
+          ...input.continuation,
+          heroId: hero.user_id,
+          currentStreet: input.street,
+          heroChecked: candidate.kind === 'check',
+          opponentIds: input.sampledOpponentIds,
+          sampleIndex: args.sampleIndex,
+          streets,
+        },
+        commit
+      )
+    )
+      return null;
+  }
   const branchPots = calculatePots(seats);
   const branchTotal = branchPots.reduce((sum, pot) => sum + pot.amount, 0);
   const expectedBranchPot =
@@ -901,10 +973,19 @@ function settleSample(args: {
 
   let bountyWonPct = 0;
   let wonBounty = false;
-  if (!hero.is_folded) {
+  const futureBountyHeads =
+    input.continuation?.futureHands && input.context.isPko && !input.context.isMysteryBounty
+      ? Object.fromEntries(
+          input.players.map((p) => [
+            p.user_id,
+            Math.max(0, input.context.bountyByUser[p.user_id] ?? input.context.meanBountyCents),
+          ])
+        )
+      : undefined;
+  if (!hero.is_folded || futureBountyHeads) {
     for (const opponentId of bustedIds) {
-      if (opponentId === input.hero.user_id) continue;
-      let ownership = 0;
+      if (opponentId === hero.user_id && !futureBountyHeads) continue;
+      let claimants: string[] = [];
       let lastEligiblePot = -1;
       for (let index = 0; index < branchPots.length; index++) {
         if (branchPots[index].eligiblePlayers.includes(opponentId)) lastEligiblePot = index;
@@ -915,11 +996,21 @@ function settleSample(args: {
       // usable winner other than the busted player, walk down as production
       // attribution does instead of inventing proportional ownership.
       for (let index = lastEligiblePot; index >= 0; index--) {
-        const claimants = [...winnersByPot[index]].filter((userId) => userId !== opponentId);
+        claimants = [...winnersByPot[index]].filter((userId) => userId !== opponentId);
         if (claimants.length === 0) continue;
-        if (claimants.includes(input.hero.user_id)) ownership = 1 / claimants.length;
         break;
       }
+      if (futureBountyHeads) {
+        // Use pre-hand heads for simultaneous knockouts. Growth is retained
+        // head value, not an additional immediate prize to the winner.
+        for (const claimant of claimants)
+          futureBountyHeads[claimant] += targetBountyCents(input, opponentId) / claimants.length;
+        futureBountyHeads[opponentId] = 0;
+      }
+      const ownership =
+        !hero.is_folded && opponentId !== hero.user_id && claimants.includes(hero.user_id)
+          ? 1 / claimants.length
+          : 0;
       if (ownership <= 0) continue;
       bountyWonPct += ownership * currencyToPoolPct(input, targetBountyCents(input, opponentId));
       wonBounty = true;
@@ -934,12 +1025,31 @@ function settleSample(args: {
     heroFinishedPaid,
     bountyWonPct,
     bountyDeniedPct,
+    ...(futureBountyHeads ? { futureBountyHeads } : {}),
     heroBusted,
     heroWon: !hero.is_folded && heroAward > EPS,
     wonBounty,
     allFold,
     sidePotCount: branchPots.length,
     conservationError: Math.abs(total - field.conservationTarget),
+    shortStackCollision:
+      Boolean(input.continuation) &&
+      seats.some((p) => {
+        const original = input.players.find((x) => x.user_id === p.user_id)!;
+        return (
+          p.user_id !== hero.user_id &&
+          !p.is_folded &&
+          original.stack > 0 &&
+          original.stack <= (input.continuation?.shortStackThresholdChips ?? 0) &&
+          p.totalInvested > original.totalInvested
+        );
+      }),
+    coveredStacks: seats.filter(
+      (p) =>
+        p.user_id !== hero.user_id &&
+        vector[field.localIndex.get(p.user_id)!] > 0 &&
+        vector[field.localIndex.get(p.user_id)!] < vector[field.heroIndex]
+    ).length,
   };
 }
 
@@ -1130,6 +1240,8 @@ function evaluateCandidate(args: {
   effectiveSamples: number;
   estimate: (vector: number[]) => Estimate;
   payoutWeight: number;
+  futureDraws: Map<string, FutureHandDraw>;
+  futureResults: Map<string, FutureHandResult>;
 }): CandidateEvaluation {
   const chipMoment = { sum: 0, square: 0 };
   const payoutMoment = { sum: 0, square: 0 };
@@ -1143,13 +1255,25 @@ function evaluateCandidate(args: {
   let sidePotCount = 0;
   let conservationError = 0;
   let icmError = 0;
+  let shortStackCollision = 0;
+  let coveredStacks = 0;
+  let noFullBlindRaise = 0;
+  let futureHands = 0;
+  let futureLevelEnvelope = 0;
+  let futureForcedPaid = 0;
   const methods = new Set<IcmMethod>();
   const vectors = new Set<string>();
 
   for (let index = 0; index < args.input.showdownSamples.length; index++) {
+    if (
+      args.input.withinBudget?.() === false ||
+      args.input.continuation?.withinBudget?.() === false
+    ) {
+      return { ledger: null, unavailableReason: 'operation_budget' };
+    }
     const weight = args.sampleWeights[index] ?? 0;
     if (weight <= 0) continue;
-    const branch = settleSample({
+    let branch = settleSample({
       input: args.input,
       field: args.field,
       candidate: args.candidate,
@@ -1159,6 +1283,110 @@ function evaluateCandidate(args: {
     });
     if (!branch || branch.conservationError > EPS) {
       return { ledger: null, unavailableReason: 'candidate_settlement' };
+    }
+    // Every current-action branch funds its own future hand. Evaluate explicit
+    // current/next-level bounds separately; their probabilities are unknown.
+    // Select the conservative utility bound and include their span as model error.
+    const future = args.input.continuation?.futureHands;
+    let futureError = 0;
+    if (future && !branch.heroBusted) {
+      const levels = future.nextLevelDue ? future.levels.slice(-1) : future.levels;
+      if (!levels.length || levels.length > 2)
+        return { ledger: null, unavailableReason: 'candidate_settlement' };
+      const bounds: Array<{
+        branch: BranchResult;
+        utility: number;
+        hands: number;
+        forced: number;
+      }> = [];
+      for (const level of levels) {
+        const rolloutKey = `${index}:${level.smallBlind}:${level.bigBlind}:${level.ante}:${level.anteType}:${branch.vector.join(',')}`;
+        const rollout =
+          args.futureResults.get(rolloutKey) ??
+          simulateTournamentFutureHands({
+            players: args.input.players,
+            vector: branch.vector,
+            localIndex: args.field.localIndex,
+            heroId: args.input.hero.user_id,
+            dealerSeat: args.input.continuation!.dealerSeat,
+            level,
+            sampleIndex: index,
+            withinBudget: args.input.continuation!.withinBudget,
+            drawCache: args.futureDraws,
+          });
+        if (!rollout)
+          return {
+            ledger: null,
+            unavailableReason:
+              args.input.continuation?.withinBudget?.() === false
+                ? 'operation_budget'
+                : 'candidate_settlement',
+          };
+        args.futureResults.set(rolloutKey, rollout);
+        const next = {
+          ...branch,
+          vector: rollout.vector,
+          heroFinalStack: rollout.vector[args.field.heroIndex],
+          conservationError: Math.max(branch.conservationError, rollout.conservationError),
+        };
+        for (const event of rollout.eliminations) {
+          if (event.userId === args.input.hero.user_id) {
+            next.heroBusted = true;
+            next.heroFinishedPaid = event.places.some(
+              (place) => place <= args.input.context.payoutPct.length
+            );
+            next.realizedPayoutPct +=
+              (event.places.reduce(
+                (sum, place) => sum + (args.input.context.payoutPct[place - 1] ?? 0),
+                0
+              ) /
+                event.places.length) *
+              args.payoutWeight;
+            next.bountyDeniedPct += currencyToPoolPct(
+              args.input,
+              branch.futureBountyHeads
+                ? branch.futureBountyHeads[event.userId] * 0.5
+                : ownBountyCents(args.input)
+            );
+          } else if (event.claimants.includes(args.input.hero.user_id)) {
+            next.bountyWonPct +=
+              currencyToPoolPct(
+                args.input,
+                branch.futureBountyHeads
+                  ? branch.futureBountyHeads[event.userId] * 0.5
+                  : targetBountyCents(args.input, event.userId)
+              ) / event.claimants.length;
+            next.wonBounty = true;
+          }
+        }
+        const forecast = args.estimate(next.vector);
+        const recovery = optionValue(
+          args.input,
+          args.field,
+          next.vector,
+          next.heroBusted,
+          next.heroFinishedPaid,
+          args.estimate
+        );
+        if (!recovery) return { ledger: null, unavailableReason: 'recovery_option' };
+        bounds.push({
+          branch: next,
+          utility:
+            forecast.payout +
+            next.realizedPayoutPct +
+            next.bountyWonPct -
+            next.bountyDeniedPct +
+            recovery.value,
+          hands: rollout.hands,
+          forced: rollout.forcedPaid[args.input.hero.user_id] ?? 0,
+        });
+      }
+      bounds.sort((a, b) => a.utility - b.utility);
+      futureError = bounds[bounds.length - 1].utility - bounds[0].utility;
+      branch = bounds[0].branch;
+      futureHands += weight * bounds[0].hands;
+      futureForcedPaid += weight * bounds[0].forced;
+      futureLevelEnvelope = Math.max(futureLevelEnvelope, futureError);
     }
     const icm = args.estimate(branch.vector);
     const option = optionValue(
@@ -1182,9 +1410,13 @@ function evaluateCandidate(args: {
     heroWin += weight * (branch.heroWon ? 1 : 0);
     bountyWin += weight * (branch.wonBounty ? 1 : 0);
     allFold += weight * (branch.allFold ? 1 : 0);
+    shortStackCollision += weight * Number(branch.shortStackCollision);
+    coveredStacks += weight * branch.coveredStacks;
+    noFullBlindRaise +=
+      weight * Number(branch.heroFinalStack <= (args.input.continuation?.bigBlind ?? 0));
     sidePotCount = Math.max(sidePotCount, branch.sidePotCount);
     conservationError = Math.max(conservationError, branch.conservationError);
-    icmError = Math.max(icmError, icm.error + option.error);
+    icmError = Math.max(icmError, icm.error + option.error + futureError);
     methods.add(icm.method);
     vectors.add(branch.vector.map((stack) => Math.round(stack * 100) / 100).join(','));
   }
@@ -1218,6 +1450,19 @@ function evaluateCandidate(args: {
     terminalForHero: terminalForHero(args.input, args.candidate),
     sidePotCount,
     stackConservationError: conservationError,
+    ...(args.input.continuation
+      ? {
+          continuation: {
+            shortStackCollisionProbability: shortStackCollision,
+            futureHands,
+            futureForcedPaid,
+            futureLevelUtilityEnvelope: futureLevelEnvelope,
+            expectedRetainedStackBb: chipMoment.sum / args.input.continuation.bigBlind,
+            expectedCoveredStacks: coveredStacks,
+            noFullBlindRaiseProbability: noFullBlindRaise,
+          },
+        }
+      : {}),
   };
   return { ledger, icmError, methods, unavailableReason: null };
 }
@@ -1265,6 +1510,15 @@ function terminalForHero(
 export function evaluateTournamentUtilityDetailed(
   input: TournamentUtilityInput
 ): TournamentUtilityEvaluation {
+  return evaluateWithWorkspace(input);
+}
+
+function evaluateWithWorkspace(
+  input: TournamentUtilityInput,
+  workspace?: UtilityWorkspace
+): TournamentUtilityEvaluation {
+  if (input.withinBudget?.() === false)
+    return { result: null, unavailableReason: 'operation_budget' };
   if (!validateInput(input)) {
     return { result: null, unavailableReason: 'invalid_input' };
   }
@@ -1272,7 +1526,7 @@ export function evaluateTournamentUtilityDetailed(
   if (actionCandidates.length === 0) {
     return { result: null, unavailableReason: 'no_action_candidates' };
   }
-  const field = buildField(input);
+  const field = workspace?.field ?? buildField(input);
   if (
     field.heroIndex < 0 ||
     field.fieldPlayersModeled !== field.fieldPlayersActual ||
@@ -1289,19 +1543,29 @@ export function evaluateTournamentUtilityDetailed(
   }
 
   const payoutWeight = payoutPoolWeight(input);
-  const estimateCache = new Map<string, Estimate>();
-  const actionIcm = createIcmEquityEstimator(
-    field.stacks,
-    input.context.payoutPct,
-    field.heroIndex,
-    [...field.localIndex.values()]
-  );
+  const boundedFuture = Boolean(input.continuation?.futureHands);
+  const estimateCache = (!boundedFuture && workspace?.estimateCache) || new Map<string, Estimate>();
+  const actionIcm =
+    workspace?.actionIcm ||
+    createIcmEquityEstimator(
+      field.stacks,
+      input.context.payoutPct,
+      field.heroIndex,
+      [...field.localIndex.values()],
+      boundedFuture ? FUTURE_HAND_POLICY.maxIcmTrials : undefined
+    );
   let operationBudgetHit = false;
   const estimate = (vector: number[]): Estimate => {
     const key = vector.map((stack) => Math.round(stack * 100) / 100).join(',');
     const cached = estimateCache.get(key);
     if (cached) return cached;
-    if (estimateCache.size >= MAX_ACTION_ICM_VECTORS) {
+    // A future hand can consume the continuation deadline after the sample's
+    // initial check. Do not begin another ICM pass after that budget is spent.
+    if (
+      input.withinBudget?.() === false ||
+      input.continuation?.withinBudget?.() === false ||
+      estimateCache.size >= MAX_ACTION_ICM_VECTORS
+    ) {
       operationBudgetHit = true;
       return {
         equity: 0,
@@ -1311,7 +1575,13 @@ export function evaluateTournamentUtilityDetailed(
         method: actionIcm.method,
       };
     }
-    const icm = actionIcm.estimate(vector);
+    // Phase 7 already generated these common clocks. A bounded prefix produces
+    // the same Phase 8 estimates as a fresh workspace, with its wider error,
+    // without rebuilding and sorting the entire remote field on the action clock.
+    const icm = actionIcm.estimate(
+      vector,
+      boundedFuture ? FUTURE_HAND_POLICY.maxIcmTrials : undefined
+    );
     const result = {
       equity: icm.equity,
       equityError: icm.errorBound,
@@ -1329,6 +1599,8 @@ export function evaluateTournamentUtilityDetailed(
   ) {
     return { result: null, unavailableReason: 'sample_calibration' };
   }
+  const futureDraws = new Map<string, FutureHandDraw>();
+  const futureResults = new Map<string, FutureHandResult>();
   const candidateEvaluations = actionCandidates.map((candidate) =>
     evaluateCandidate({
       input,
@@ -1338,6 +1610,8 @@ export function evaluateTournamentUtilityDetailed(
       effectiveSamples: calibrated.effectiveSamples,
       estimate,
       payoutWeight,
+      futureDraws,
+      futureResults,
     })
   );
   if (operationBudgetHit) {
@@ -1372,7 +1646,7 @@ export function evaluateTournamentUtilityDetailed(
   }
   let baselineRetainedForUncertainty = false;
   let baselineRetainedForContinuation = false;
-  if (!sameDecision(selected, input.baseline) && !selected.terminalForHero) {
+  if (!sameDecision(selected, input.baseline) && !selected.terminalForHero && !input.continuation) {
     selected = baselineCandidate;
     baselineRetainedForContinuation = true;
   } else if (!sameDecision(selected, input.baseline)) {
@@ -1407,8 +1681,12 @@ export function evaluateTournamentUtilityDetailed(
   const decision = decisionFromCandidate(selected, input.toCall);
   const ledger: HorseTournamentUtilityLedger = {
     schemaVersion: 1,
-    model: 'horse-tournament-utility-phase7-round1',
-    outcomeModel: 'conditioned_showdown_samples',
+    model: input.continuation
+      ? 'horse-tournament-utility-phase8-round1'
+      : 'horse-tournament-utility-phase7-round1',
+    outcomeModel: input.continuation
+      ? 'conditioned_public_street_continuation'
+      : 'conditioned_showdown_samples',
     objective: objectiveOf(input.context),
     utilityUnit: 'total_funded_pool_pct',
     chipEvUnit: 'tournament_chips',
@@ -1458,7 +1736,20 @@ export function evaluateTournamentUtilityDetailed(
     componentReconciliationError: reconciliationError,
     candidates: evaluated.map((item) => item.ledger),
   };
-  return { result: { decision, ledger }, unavailableReason: null };
+  return {
+    result: { decision, ledger },
+    unavailableReason: null,
+    continuePostflop: (baseline, continuation, maxSamples) =>
+      evaluateWithWorkspace(
+        {
+          ...input,
+          baseline,
+          continuation,
+          showdownSamples: selectContinuationSamples(input.showdownSamples, maxSamples),
+        },
+        { field, estimateCache, actionIcm }
+      ),
+  };
 }
 
 export function evaluateTournamentUtility(input: TournamentUtilityInput): {

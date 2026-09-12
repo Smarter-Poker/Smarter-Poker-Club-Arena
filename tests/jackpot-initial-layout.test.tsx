@@ -200,6 +200,53 @@ it('keeps pending child reads mounted across routine hand refreshes', async () =
   expect(pending(container)).toHaveLength(0);
 });
 
+it.each(['rows', 'error', 'rejected'] as const)(
+  'waits for the current near-miss %s outcome before declaring admin layout settled',
+  async (outcome) => {
+    requests.fn_bbj_near_miss_summary = deferred();
+    const { container } = render(<BBJAdminAnalytics poolId="pool-a" />);
+    await act(async () => {
+      requests.fn_bbj_analytics.resolve(result([{ contributions_7d: 7, net_pool_position: 3 }]));
+    });
+    expect(screen.getByText('Jackpot Health')).toBeInTheDocument();
+    expect(pending(container)).toHaveLength(1);
+    await act(async () => {
+      const request = requests.fn_bbj_near_miss_summary;
+      if (outcome === 'rejected') request.reject(new Error('offline'));
+      else if (outcome === 'error') request.resolve({ data: null, error: { message: 'denied' } });
+      else
+        request.resolve(
+          result([{ kind: 'main', reason: 'pot_too_small', refusals: 2, biggest_pot: 5 }])
+        );
+    });
+    expect(pending(container)).toHaveLength(0);
+    if (outcome === 'rows')
+      expect(screen.getByText('Pot Did Not Reach The Minimum')).toBeInTheDocument();
+    else expect(screen.getByText(/The Refusal Log Could Not Be Read/)).toBeInTheDocument();
+  }
+);
+
+it('ignores a retired near-miss response while the next pool still loads', async () => {
+  requests.fn_bbj_near_miss_summary = deferred();
+  const retired = requests.fn_bbj_near_miss_summary;
+  const { container, rerender } = render(<BBJAdminAnalytics poolId="pool-a" />);
+  await act(async () => requests.fn_bbj_analytics.resolve(result([{ net_pool_position: 3 }])));
+  requests.fn_bbj_analytics = deferred();
+  requests.fn_bbj_near_miss_summary = deferred();
+  rerender(<BBJAdminAnalytics poolId="pool-b" />);
+  await act(async () => {
+    requests.fn_bbj_analytics.resolve(result([{ net_pool_position: 4 }]));
+    retired.resolve(
+      result([{ kind: 'main', reason: 'pot_too_small', refusals: 2, biggest_pot: 5 }])
+    );
+  });
+  expect(pending(container)).toHaveLength(1);
+  expect(screen.queryByText('Pot Did Not Reach The Minimum')).not.toBeInTheDocument();
+  await act(async () => requests.fn_bbj_near_miss_summary.resolve(result([])));
+  expect(pending(container)).toHaveLength(0);
+  expect(screen.getByText(/No Hand Was Refused In 30 Days/)).toBeInTheDocument();
+});
+
 it('does not settle or expose the old pool after a scope switch', async () => {
   const oldHits = requests.fn_bbj_recent_hits;
   const oldAdmin = requests.fn_bbj_analytics;

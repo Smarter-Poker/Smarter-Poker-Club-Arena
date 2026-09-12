@@ -1622,6 +1622,49 @@ groups:
             auto-checked for ten minutes. The horses are seated and cannot play.
           runbook: docs/changelog/2026-09-11-the-horse-audit.md
 
+      # ── A LEASE THAT IS NOT RENEWED ───────────────────────────────────────
+      #
+      # Measured 2026-09-12: every cash table on the engine was re-claiming its
+      # lease roughly every twenty seconds - 63 tables, 923
+      # cash_lease_proof_expired restarts in five minutes, the lease_generation
+      # changing each cycle - while the main loop sat idle (event-loop p99
+      # 21.9 ms) and the database answered heartbeat_table_leases_v4 in 5.2 ms.
+      #
+      # Each restart mints a new lease generation, and a new generation fails
+      # the authority fence of every horse turn in flight at that table, which
+      # is the lease_lost reason on poker_horse_turns_abandoned_total and the
+      # clock-fold behind HorseTurnTimeoutStorm. This is the cause; those are
+      # the symptom.
+      #
+      # `busy` is the one to watch. The database heartbeat takes
+      # FOR NO KEY UPDATE ... SKIP LOCKED so it never queues behind a
+      # settlement, so a locked row comes back busy, and busy correctly extends
+      # nothing. Four consecutive busies inside the twenty-second proof window
+      # is an expiry. One busy is ordinary contention; a rate of them is a
+      # table that will restart.
+      - alert: LeaseHeartbeatsNotBeingKept
+        expr: |
+          sum by (scope) (rate(poker_lease_heartbeat_outcomes_total{state!="kept"}[10m]))
+            /
+          clamp_min(sum by (scope) (rate(poker_lease_heartbeat_outcomes_total[10m])), 0.001)
+            > 0.05
+        for: 10m
+        labels:
+          severity: critical
+          page: sms
+          component: club-arena-engine
+        annotations:
+          summary: '{{ $value | humanizePercentage }} of {{ $labels.scope }} lease heartbeats are not being kept'
+          description: |
+            More than one heartbeat in twenty is coming back as something other
+            than kept, for ten minutes. Read
+            poker_lease_heartbeat_outcomes_total by state: busy is a locked row
+            the heartbeat skipped rather than waited for, and repeated busies
+            inside the twenty-second proof window expire the lease and restart
+            the table under its players. taken means another instance holds it.
+            stale or missing mean the row is gone or past the audited window.
+          runbook: docs/changelog/2026-09-12-a-lease-that-is-not-renewed-says-so.md
+
       - alert: HorseDecisionFallbacks
         # The worker failed or expired a job and the seat took the legal
         # check/fold. The path reported to Sentry only before this release, so

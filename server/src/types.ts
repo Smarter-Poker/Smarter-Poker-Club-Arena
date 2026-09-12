@@ -867,6 +867,16 @@ export interface HorseTournamentUtilityCandidateLedger {
   sidePotCount: number;
   /** Maximum absolute chip-conservation error over this action's outcomes. */
   stackConservationError: number;
+  /** Phase 8 sampled continuation facts; resource units never added to payout. */
+  continuation?: {
+    shortStackCollisionProbability: number;
+    futureHands?: number;
+    futureForcedPaid?: number;
+    futureLevelUtilityEnvelope?: number;
+    expectedRetainedStackBb: number;
+    expectedCoveredStacks: number;
+    noFullBlindRaiseProbability: number;
+  };
 }
 
 /**
@@ -876,8 +886,8 @@ export interface HorseTournamentUtilityCandidateLedger {
  */
 export interface HorseTournamentUtilityLedger {
   schemaVersion: 1;
-  model: 'horse-tournament-utility-phase7-round1';
-  outcomeModel: 'conditioned_showdown_samples';
+  model: 'horse-tournament-utility-phase7-round1' | 'horse-tournament-utility-phase8-round1';
+  outcomeModel: 'conditioned_showdown_samples' | 'conditioned_public_street_continuation';
   objective: HorseTournamentUtilityObjective;
   utilityUnit: 'total_funded_pool_pct';
   chipEvUnit: 'tournament_chips';
@@ -914,6 +924,8 @@ export interface HorseTournamentUtilityLedger {
 }
 
 export interface HorseDecision {
+  plo4Policy?: import('./engine/plo4/Plo4LivePolicy.js').Plo4LiveReceipt;
+  tournamentPostflop?: import('./engine/HorseTournamentPostflop.js').HorseTournamentPostflopLedger;
   action: ActionType;
   amount?: number;
   thinkTime: number;

@@ -22,6 +22,70 @@ export interface BBJAdminAnalyticsProps {
   poolId: string | null;
 }
 
+/**
+ * WHY IT HAS NOT PAID — the reader for `bbj_near_misses` (2026-09-11).
+ *
+ * `days_since_last_hit` has been on this panel since 2026-08-18 posing a
+ * question with nothing beside it to answer: a jackpot that has not paid in
+ * twenty days is either strict rules working exactly as written, or something
+ * refusing hands that should have paid, and those two look identical from
+ * here. The engine has been writing down which gate refused each near miss
+ * since 2026-09-07 — and for four days nothing in either repo selected those
+ * rows. This is that reader (CLAUDE.md 10.86 rule 3).
+ *
+ * The labels are keyed on the reason strings the ENGINE emits, in
+ * `server/src/config/RakeConfig.ts`. They are not keyed on the vocabulary in
+ * the log's creating migration, which names five gates no writer has ever
+ * emitted. `tests/the-near-miss-log-has-a-reader.law.test.ts` holds the two
+ * lists against each other, so a gate added to the engine without a label here
+ * fails CI rather than rendering as a bare snake_case string to an operator.
+ */
+const NEAR_MISS_LABELS: Record<string, string> = {
+  not_enough_players: 'Not Enough Players Dealt In',
+  pot_too_small: 'Pot Did Not Reach The Minimum',
+  winner_not_quads: 'Winning Hand Was Not Quads Or Better',
+  both_cards_must_play: 'Both Hole Cards Did Not Play',
+  mini_not_enough_players: 'Mini: Not Enough Players Dealt In',
+  mini_pot_too_small: 'Mini: Pot Did Not Reach The Minimum',
+  mini_winner_not_quads: 'Mini: Winning Hand Was Not Quads Or Better',
+  mini_loser_below_bar: 'Mini: Losing Hand Below The Qualifying Bar',
+  mini_double_board: 'Mini: Double Board Hand',
+  unspecified: 'Reason Not Recorded',
+};
+
+function nearMissLabel(reason: string | null | undefined): string {
+  /* `bbj_near_misses.reason` IS NULLABLE and nothing enforces otherwise. The
+     engine's writer defaults to 'unspecified', but any other path into the
+     table can leave a null, and `null.startsWith(...)` throws during render -
+     one malformed row would blank the whole Jackpot Health panel. The reader
+     COALESCEs it in SQL; this is the second belt, because a UI that throws on
+     data it did not expect is its own defect. */
+  if (!reason) return NEAR_MISS_LABELS.unspecified;
+
+  /* A mini the PAYOUT turned away carries the refusal after a colon. It is not
+     a near miss and never reads as one: a player made the hand. */
+  if (reason.startsWith('mini_refused:')) {
+    const why = reason.slice('mini_refused:'.length);
+    return `Mini Qualified But Was Turned Away (${NEAR_MISS_LABELS[why] ?? why})`;
+  }
+  return NEAR_MISS_LABELS[reason] ?? reason;
+}
+
+interface NearMiss {
+  kind: string;
+  reason: string;
+  refusals: number;
+  last_at: string | null;
+  biggest_pot: number;
+  example: string | null;
+}
+
+/* THREE OUTCOMES, NOT TWO (CLAUDE.md 10.86 rule 1). "No hand was refused" and
+   "the refusal log could not be read" are opposite findings that would render
+   identically as an empty list, and the emptier one is the one that reads like
+   good news. They are named separately here and printed differently. */
+type NearMissState = 'loading' | 'ok' | 'unavailable';
+
 interface Analytics {
   main_balance: number;
   backup_balance: number;
@@ -56,6 +120,9 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
   const [data, setData] = useState<Analytics | null>(null);
   const [denied, setDenied] = useState(false);
   const [settledPool, setSettledPool] = useState<string | null>(null);
+  const [nearMisses, setNearMisses] = useState<NearMiss[]>([]);
+  const [nearMissState, setNearMissState] = useState<NearMissState>('loading');
+  const [nearMissPool, setNearMissPool] = useState<string | null>(null);
 
   useEffect(() => {
     if (!poolId) return;
@@ -85,6 +152,38 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
     };
   }, [poolId]);
 
+  /* Its OWN effect, so the refusal log and the balances cannot take each other
+     down. Each RPC enforces its own server-side authorisation. */
+  useEffect(() => {
+    if (!poolId) return;
+    let alive = true;
+    setNearMissPool(null);
+    setNearMisses([]);
+    setNearMissState('loading');
+    (async () => {
+      try {
+        const { data: rows, error } = await supabase.rpc('fn_bbj_near_miss_summary', {
+          p_pool_id: poolId,
+          p_days: 30,
+        });
+        if (!alive) return;
+        if (error) {
+          setNearMissState('unavailable');
+          return;
+        }
+        setNearMisses((Array.isArray(rows) ? rows : []) as NearMiss[]);
+        setNearMissState('ok');
+      } catch {
+        if (alive) setNearMissState('unavailable');
+      } finally {
+        if (alive) setNearMissPool(poolId);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [poolId]);
+
   if (poolId && settledPool !== poolId) return <div data-initial-layout="pending" />;
   if (!poolId || denied || !data) return <div data-initial-layout="settled" hidden />;
 
@@ -93,7 +192,10 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
   const netPositive = Number(data.net_pool_position) >= 0;
 
   return (
-    <div className="bbj-admin" data-initial-layout="settled">
+    <div
+      className="bbj-admin"
+      data-initial-layout={nearMissPool === poolId ? 'settled' : 'pending'}
+    >
       <div className="bbj-admin__header">
         <h3 className="bbj-admin__title">Jackpot Health</h3>
         <span className="bbj-admin__subtitle">Admin Only &middot; From The Payout Ledger</span>
@@ -233,6 +335,60 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
         <div className="bbj-admin__bar-label" style={{ marginTop: 6, opacity: 0.75 }}>
           Promo Is Not A Bank Here - It Is Swept To The Club Or Union Promo Wallet As It Arrives.
         </div>
+      </div>
+
+      {/* WHY IT HAS NOT PAID. The answer to the "Last Hit" tile above it. */}
+      <div className="bbj-admin__misses">
+        <div className="bbj-admin__misses-head">
+          <span className="bbj-admin__misses-title">Why It Has Not Paid</span>
+          <span className="bbj-admin__misses-sub">Hands Refused In The Last 30 Days</span>
+        </div>
+
+        {nearMissState === 'loading' && (
+          <div className="bbj-admin__misses-empty">Reading The Refusal Log...</div>
+        )}
+
+        {/* NOT AN EMPTY LIST. The log could not be read, which is a different
+            finding from "nothing was refused" and must not be able to pass for
+            it. */}
+        {nearMissState === 'unavailable' && (
+          <div className="bbj-admin__misses-empty is-unknown">
+            The Refusal Log Could Not Be Read, So This Is Not An Answer Either Way.
+          </div>
+        )}
+
+        {nearMissState === 'ok' && nearMisses.length === 0 && (
+          <div className="bbj-admin__misses-empty">
+            No Hand Was Refused In 30 Days. Across {Number(data.hands_7d).toLocaleString()}{' '}
+            Qualifying Hands In The Last 7 Days, Nothing Reached The Losing Hand Bar. The Rules Are
+            Not Turning Hands Away, They Are Simply Not Being Met.
+          </div>
+        )}
+
+        {nearMissState === 'ok' &&
+          nearMisses.map((m) => (
+            <div
+              key={`${m.kind}:${m.reason}`}
+              className={`bbj-admin__miss ${m.kind === 'mini_refused' ? 'is-turned-away' : ''}`}
+            >
+              <span className="bbj-admin__miss-count">{Number(m.refusals).toLocaleString()}</span>
+              <span className="bbj-admin__miss-body">
+                <span className="bbj-admin__miss-label">{nearMissLabel(m.reason)}</span>
+                <span className="bbj-admin__miss-sub">
+                  {m.last_at ? `Last ${new Date(m.last_at).toLocaleDateString()}` : ''}
+                  {Number(m.biggest_pot) > 0
+                    ? ` - Biggest Pot $${money(Number(m.biggest_pot), 0)}`
+                    : ''}
+                </span>
+                {/* The sentence the ENGINE already wrote for the player at the
+                    table, from the most recent hand in this group. It is why
+                    the reader returns `example` at all: without it this field
+                    was selected, justified in the migration header, and shown
+                    to nobody. */}
+                {m.example ? <span className="bbj-admin__miss-eg">{m.example}</span> : null}
+              </span>
+            </div>
+          ))}
       </div>
     </div>
   );

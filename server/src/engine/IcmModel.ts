@@ -37,7 +37,8 @@ export interface IcmEstimate {
  * table-local stacks that may change; every other stack is checked immutable.
  */
 export interface IcmEquityEstimator {
-  estimate(stacks: number[]): IcmEstimate;
+  /** Optional bounded prefix of the same clocks; never regenerates or extends them. */
+  estimate(stacks: number[], maximumTrials?: number): IcmEstimate;
   method: IcmMethod;
   trials: number;
   randomClockDraws: number;
@@ -97,11 +98,14 @@ export function exactIcmEquity(stacks: number[], payouts: number[], heroIdx: num
   const n = clean.length;
   const fullMask = (1 << n) - 1;
   const paidDepth = Math.min(n, prizes.length);
-  const memo = new Map<number, number>();
+  // At most 1,024 masks: indexed storage avoids hashing and per-entry allocation
+  // on every candidate vector while retaining the exact recursion and sum order.
+  const memo = new Float64Array(1 << n);
+  memo.fill(Number.NaN);
 
   const recurse = (mask: number): number => {
-    const cached = memo.get(mask);
-    if (cached !== undefined) return cached;
+    const cached = memo[mask];
+    if (!Number.isNaN(cached)) return cached;
     if ((mask & (1 << compactHero)) === 0) return 0;
 
     let remaining = 0;
@@ -123,7 +127,7 @@ export function exactIcmEquity(stacks: number[], payouts: number[], heroIdx: num
           ? probability * prizes[place]
           : probability * recurse(mask & ~(1 << winner));
     }
-    memo.set(mask, equity);
+    memo[mask] = equity;
     return equity;
   };
 
@@ -167,7 +171,8 @@ export function createIcmEquityEstimator(
   stacks: number[],
   payouts: number[],
   heroIdx: number,
-  mutableIndices: number[] = stacks.map((_, index) => index)
+  mutableIndices: number[] = stacks.map((_, index) => index),
+  maximumTrials: number = MC_MAX_TRIALS
 ): IcmEquityEstimator {
   const reference = cleanStacks(stacks);
   const prizes = cleanPayouts(payouts);
@@ -209,7 +214,16 @@ export function createIcmEquityEstimator(
   const fixed = reference
     .map((stack, index) => ({ stack, index }))
     .filter((entry) => entry.stack > 0 && !mutableSet.has(entry.index));
-  const trials = mcTrials(live);
+  const trials = Math.min(
+    mcTrials(live),
+    Math.max(
+      MC_MIN_TRIALS,
+      Math.min(
+        MC_MAX_TRIALS,
+        Number.isFinite(maximumTrials) ? Math.floor(maximumTrials) : MC_MAX_TRIALS
+      )
+    )
+  );
   const mutableDraws = mutable.map(() => new Float64Array(trials));
   const remoteClocks: Float64Array[] = new Array(trials);
 
@@ -259,7 +273,7 @@ export function createIcmEquityEstimator(
     method: 'plackett_luce_mc',
     trials,
     randomClockDraws: trials * (fixed.length + mutable.length),
-    estimate(vector: number[]): IcmEstimate {
+    estimate(vector: number[], trialLimit: number = trials): IcmEstimate {
       if (vector.length !== reference.length) {
         throw new Error('ICM candidate vector length changed inside one action');
       }
@@ -271,20 +285,24 @@ export function createIcmEquityEstimator(
       }
       const heroStack = clean[heroIdx] ?? 0;
       const modeledPlayers = clean.filter((stack) => stack > 0).length;
+      const sampleTrials = Math.min(
+        trials,
+        Math.max(MC_MIN_TRIALS, Number.isFinite(trialLimit) ? Math.floor(trialLimit) : trials)
+      );
       if (heroStack <= 0 || payoutMass(prizes) <= 0) {
         return {
           equity: 0,
           errorBound: 0,
           method: 'plackett_luce_mc',
           modeledPlayers,
-          trials,
+          trials: sampleTrials,
           standardError: 0,
         };
       }
 
       let mean = 0;
       let m2 = 0;
-      for (let trial = 0; trial < trials; trial++) {
+      for (let trial = 0; trial < sampleTrials; trial++) {
         const heroClock = mutableDraws[heroSlot][trial] / heroStack;
         let playersAhead = lowerBound(remoteClocks[trial], heroClock);
         for (let slot = 0; slot < mutable.length; slot++) {
@@ -299,14 +317,17 @@ export function createIcmEquityEstimator(
         m2 += delta * (value - mean);
       }
 
-      const variance = trials > 1 ? m2 / (trials - 1) : 0;
+      const variance = sampleTrials > 1 ? m2 / (sampleTrials - 1) : 0;
       return {
         equity: mean,
-        errorBound,
+        errorBound:
+          sampleTrials === trials
+            ? errorBound
+            : maximum * Math.sqrt(Math.log(2 / MC_ERROR_ALPHA) / (2 * sampleTrials)),
         method: 'plackett_luce_mc',
         modeledPlayers,
-        trials,
-        standardError: Math.sqrt(Math.max(0, variance) / trials),
+        trials: sampleTrials,
+        standardError: Math.sqrt(Math.max(0, variance) / sampleTrials),
       };
     },
   };

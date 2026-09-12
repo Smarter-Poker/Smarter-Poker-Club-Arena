@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "$(uname -s)" != Linux ]]; then
+  echo 'Run this dependency-installing PostgreSQL probe in Linux CI, not a Mac worktree.' >&2
+  exit 1
+fi
 probe_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 npm ci --prefix "$probe_dir/postgres-runtime" --ignore-scripts --no-audit --no-fund
 if [[ -z "${PGBIN:-}" ]]; then

@@ -1,0 +1,6 @@
+{
+  "_owner": "fix/bbj-the-mini-can-be-drilled-too. 20260911230511: the drill could prove the MAIN payout end to end and the mini could not be exercised at all, and a drill firing silently skipped mini detection - bbj_drill_arms gains a kind and fn_bbj_arm_drill takes p_kind, guarded on the mini's own preconditions. 20260911230639: adding p_kind created an OVERLOAD rather than replacing the function, so the old two-argument body still won for every existing caller; it is dropped. 20260911233306: an adversarial review found the mini arm's guard was not the payout's guard (parked reserve ignored, the largest tier's amount checked instead of THIS tier's enabled bit, variant never checked), that a mini arm recorded the MAIN balance, that already_armed was masked by five other refusals, and that fn_bbj_drill_arms could not tell the kinds apart - all closed",
+  "columns": {
+    "bbj_drill_arms": ["kind"]
+  }
+}

@@ -206,6 +206,26 @@ export const bbjMiniPayoutsRefusedTotal: Counter = alwaysOnRegistry.counter(
 );
 
 /**
+ * THE MINI'S DRILLS, COUNTED SEPARATELY FROM THE MAIN'S (2026-09-11).
+ *
+ * `bbjDrillsFiredTotal` above is documented as the subtrahend in
+ * `detected - drills = genuine bad beats`, and the runbook says the same. The
+ * moment the drill learned to fire a MINI, that arithmetic became false: a
+ * mini drill incremented `drills_fired` and `mini_hits_detected`, so
+ * `bbj_hits_detected - bbj_drills_fired` under-counted genuine MAIN bad beats
+ * by one per mini drill and could go negative in any window where minis were
+ * drilled and no main jackpot hit.
+ *
+ * That is the same error the block above was written the same day to fix, made
+ * again one counter along. Each family now has its own drill counter, so
+ * `detected - drills` holds for both and neither borrows from the other.
+ */
+export const bbjMiniDrillsFiredTotal: Counter = alwaysOnRegistry.counter(
+  'poker_bbj_mini_drills_fired_total',
+  'MINI Bad Beat Jackpot DRILLS fired by an armed table - real payouts, synthetic verdict (fleet total)'
+);
+
+/**
  * Span exporter is attached ONLY when the flag is on, so span export is a no-op
  * by default. Span duration always feeds handDuration when a span is created,
  * but the engine only creates spans under the same flag, so with the flag unset
@@ -475,11 +495,83 @@ for (const outcome of ['completed', 'partial', 'frozen', 'error', 'coalesced']) 
   bountyRecoverySweepRunsTotal.inc(0, { outcome });
 }
 
+/**
+ * ═══ WHY A LEASE WAS NOT RENEWED (2026-09-12) ════════════════════════════════
+ *
+ * Every cash table on the live engine was re-claiming its lease roughly every
+ * twenty seconds - 63 tables, 923 `cash_lease_proof_expired` restarts in five
+ * minutes, the lease_generation changing on every cycle - while the main loop
+ * sat idle (event-loop p99 21.9 ms), the database answered
+ * heartbeat_table_leases_v4 in 5.2 ms, and nothing anywhere said why.
+ *
+ * It could not say why, because every branch that declines to renew is silent:
+ *
+ *   - the database heartbeat takes `FOR NO KEY UPDATE ... SKIP LOCKED`, so a
+ *     locked row is skipped rather than waited for, and comes back `busy`;
+ *   - `busy` is then `continue`d in tableLease.ts with no counter, on purpose
+ *     (it must extend nothing), and four consecutive ones are an expiry;
+ *   - a table whose local proof had already lapsed when the pass reached it is
+ *     put in lostEngines, and the report is skipped entirely when the table is
+ *     tournament-owned.
+ *
+ * Each of those is correct behaviour and none of them leaves a number. So the
+ * engine could restart every cash table three times a minute, for hours, and
+ * the only trace was a reason string in a log line.
+ *
+ * state: what the database said about the claim -
+ *   kept     renewed, the only outcome that extends a proof;
+ *   busy     the row was locked and skipped; extends nothing, and REPEATED
+ *            busies are the signature to look for;
+ *   taken    another instance holds it;
+ *   stale    the row exists but is past the audited stale window;
+ *   missing  no row at all;
+ *   malformed the response could not be read as an answer.
+ * scope: table | tournament.
+ */
+export const leaseHeartbeatOutcomesTotal: Counter = alwaysOnRegistry.counter(
+  'poker_lease_heartbeat_outcomes_total',
+  'Lease heartbeat claims by what the database said (labels: scope=table|tournament, state=kept|busy|taken|stale|missing|malformed)'
+);
+/* Zero-seeded across the domain: an alert on a name with no series evaluates
+   to an empty vector, which reads exactly like health. See
+   anAlertCannotWaitForAFailureToExist.law.test.ts. */
+for (const scope of ['table', 'tournament']) {
+  for (const state of ['kept', 'busy', 'taken', 'stale', 'missing', 'malformed']) {
+    leaseHeartbeatOutcomesTotal.inc(0, { scope, state });
+  }
+}
+
 /** Actions processed, bounded by audience x tournament format. */
 export const actionsFleetTotal: Counter = alwaysOnRegistry.counter(
   'poker_actions_fleet_total',
   'Player actions processed (labels: audience=human|horse, format=cash|spin|hu_sng|sng|mtt)'
 );
+/**
+ * Zero-seeded across the whole label domain, and the reason is the alert that
+ * reads it.
+ *
+ * `HorseCashActionsStopped` (critical, page: sms) is
+ *
+ *   sum(rate(poker_actions_fleet_total{audience="horse",format="cash"}[10m])) * 60 < 150
+ *
+ * A counter has no series until something increments it. On an engine that
+ * started and never got a single horse cash action onto the felt - the TOTAL
+ * failure this alert is named for - that series does not exist, rate() is an
+ * empty vector, sum() of empty is empty, and `empty < 150` is empty. The alert
+ * cannot fire. It works only once horses have already acted, which is to say
+ * it catches a decline and misses an outage.
+ *
+ * Seeded, a cold engine publishes 0, rate() is 0, and the page goes out.
+ *
+ * Ten series, deliberately enumerated rather than filled in on first use: the
+ * whole point is that they exist BEFORE the first use, and 2 x 5 is a domain
+ * this file already writes out by hand for horseForcedSitOutsTotal.
+ */
+for (const audience of ['human', 'horse']) {
+  for (const format of ['cash', 'spin', 'hu_sng', 'sng', 'mtt']) {
+    actionsFleetTotal.inc(0, { audience, format });
+  }
+}
 
 /**
  * ═══ THE HORSE'S INPUT DEVICE, COUNTED (2026-09-11) ══════════════════════════
@@ -569,6 +661,7 @@ bbjMiniHitsDetectedTotal.inc(0);
 bbjMiniPayoutsPaidTotal.inc(0);
 bbjMiniPayoutsQueuedTotal.inc(0);
 bbjMiniPayoutsRefusedTotal.inc(0);
+bbjMiniDrillsFiredTotal.inc(0);
 bbjSharesParkedTotal.inc(0);
 bbjDrillsFiredTotal.inc(0);
 showdownHandsTotal.inc(0);

@@ -111,6 +111,8 @@ export interface DeepHorseDecisionRequest extends LiveHorseDecisionSnapshot {
 }
 
 export interface CompletedHandObservation extends HorseDecisionFence {
+  /** UUID returned by the accepted hand transaction; absent on legacy replay. */
+  committedHandId?: string;
   handKey: string;
   actions:
     | Array<{

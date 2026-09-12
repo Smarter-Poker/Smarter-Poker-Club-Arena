@@ -564,6 +564,7 @@ export async function logHandHistory(params: {
         'observe',
       ].join(':'),
       handKey,
+      committedHandId: handId,
       actions: acceptedActions,
       bigBlind: params.bigBlind,
       showdown: params.showdownReveal ?? null,

@@ -132,6 +132,15 @@ describe('the hand owns its exact tournament stack payload until one receipt is 
     });
 
     expect(mock.rpc).toHaveBeenCalledTimes(5);
+    expect(mock.observeCompletedHand).toHaveBeenCalledTimes(1);
+    expect(mock.observeCompletedHand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        committedHandId: HISTORY_ID,
+        handKey: `${TABLE_ID}:7001`,
+        generation: 7001,
+        actions: [],
+      })
+    );
     const payloads = mock.rpc.mock.calls.map(([, payload]) => payload);
     expect(payloads.every((payload) => payload === payloads[0])).toBe(true);
     expect(payloads[0]).toMatchObject({
@@ -160,6 +169,7 @@ describe('the hand owns its exact tournament stack payload until one receipt is 
     );
     expect(mock.rpc).toHaveBeenCalledTimes(1);
     expect(mock.wakeProjection).not.toHaveBeenCalled();
+    expect(mock.observeCompletedHand).not.toHaveBeenCalled();
   });
 
   it('fails the engine boundary after the bounded replay instead of handing money to a timer', async () => {
@@ -175,5 +185,6 @@ describe('the hand owns its exact tournament stack payload until one receipt is 
     await vi.runAllTimersAsync();
     await rejected;
     expect(mock.rpc).toHaveBeenCalledTimes(HAND_COMMIT_RETRY_DELAYS_MS.length + 1);
+    expect(mock.observeCompletedHand).not.toHaveBeenCalled();
   });
 });

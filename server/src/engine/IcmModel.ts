@@ -147,9 +147,9 @@ function mcTrials(players: number): number {
 }
 
 /** First index whose clock is not strictly less than `target`. */
-function lowerBound(sorted: Float64Array, target: number): number {
+function lowerBound(sorted: Float64Array, target: number, maximumRank = sorted.length): number {
   let low = 0;
-  let high = sorted.length;
+  let high = Math.min(sorted.length, maximumRank);
   while (low < high) {
     const mid = (low + high) >>> 1;
     if (sorted[mid] < target) low = mid + 1;
@@ -284,14 +284,18 @@ export function createIcmEquityEstimator(
         const stack = vector[index];
         return Number.isFinite(stack) && stack > 0 ? stack : 0;
       });
-      let modeledPlayers = localStacks.filter((stack) => stack > 0).length;
+      let modeledPlayers = localStacks.filter((stack) => stack > 0).length + fixed.length;
       for (const entry of immutable) {
         const raw = vector[entry.index];
+        // Equal reference values already have their validated live count.
+        // The slow path retains sanitization and the numeric drift boundary.
+        if (raw === entry.stack) continue;
         const stack = Number.isFinite(raw) && raw > 0 ? raw : 0;
         if (Math.abs(stack - entry.stack) > 0.005) {
           throw new Error('ICM remote stack changed inside one action');
         }
-        if (stack > 0) modeledPlayers++;
+        if (stack > 0 && entry.stack <= 0) modeledPlayers++;
+        else if (stack <= 0 && entry.stack > 0) modeledPlayers--;
       }
       const heroStack = localStacks[heroSlot];
       const sampleTrials = Math.min(
@@ -313,8 +317,11 @@ export function createIcmEquityEstimator(
       let m2 = 0;
       for (let trial = 0; trial < sampleTrials; trial++) {
         const heroClock = mutableDraws[heroSlot][trial] / heroStack;
-        let playersAhead = lowerBound(remoteClocks[trial], heroClock);
-        for (let slot = 0; slot < mutable.length; slot++) {
+        // A rank beyond the complete payout curve contributes exactly zero.
+        // Keep every remote clock and every paid place, but stop searching
+        // after this trial is already proven unpaid. Trial order is unchanged.
+        let playersAhead = lowerBound(remoteClocks[trial], heroClock, prizes.length);
+        for (let slot = 0; slot < mutable.length && playersAhead < prizes.length; slot++) {
           if (slot === heroSlot || localStacks[slot] <= 0) continue;
           if (mutableDraws[slot][trial] / localStacks[slot] < heroClock) playersAhead++;
         }

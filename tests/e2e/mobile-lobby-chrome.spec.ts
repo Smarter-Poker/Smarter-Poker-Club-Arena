@@ -23,6 +23,7 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { settleLayout as settle } from './lib/settle-layout';
 
 const css = (p: string) => readFileSync(p, 'utf8');
 
@@ -207,14 +208,6 @@ async function measureCountLine(page: Page) {
  * waits for it rather than measuring a frame in the middle of it - which
  * reads as an 8px "gap" that a player never sees.
  */
-async function settle(page: Page) {
-  await page.evaluate(async () => {
-    await document.fonts.ready;
-    await Promise.all(document.getAnimations().map((a) => a.finished.catch(() => undefined)));
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-  });
-}
-
 async function measureChrome(page: Page) {
   await settle(page);
   return page.evaluate(() => {

@@ -34,7 +34,7 @@ describe('post-deploy E2E concurrency', () => {
     );
     expect(workflow).toContain("fs.appendFileSync(output, 'should_run=true\\n')");
     expect(workflow).toContain('needs: publication-gate');
-    expect(workflow).toContain("if: needs.publication-gate.outputs.should_run == 'true'");
+    expect(workflow).toContain("needs.publication-gate.outputs.should_run == 'true'");
   });
 
   it('still serializes genuine production checks so authenticated writes cannot overlap', () => {
@@ -43,6 +43,7 @@ describe('post-deploy E2E concurrency', () => {
 
     expect(concurrency).toContain('cancel-in-progress: false');
     expect(concurrency).toContain('group: post-deploy-e2e-production');
+    expect(concurrency).toContain('queue: max');
     expect(concurrency).not.toContain('manual-');
   });
 

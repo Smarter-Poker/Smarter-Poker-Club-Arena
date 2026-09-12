@@ -1,0 +1,62 @@
+name: Draft component fixture native smoke
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, converted_to_draft]
+    paths:
+      - operations/release/fixture/**
+      - operations/release/ci/fixture-smoke.py
+      - operations/release/native/**
+      - tests/operations/financial-*.test.mjs
+      - tests/operations/fixture-runtime-files.test.mjs
+      - tests/operations/fixture-seed.test.mjs
+      - tests/operations/fixture-auth-bootstrap.test.mjs
+      - tests/operations/fixture-service-role-boundary.test.mjs
+      - tests/operations/fixture-native-diagnostics.test.mjs
+      - tests/operations/fixture-native-diagnostics.test.py
+      - tests/operations/component-source-contract.test.mjs
+      - tests/operations/native-component-semantics.test.py
+      - tests/operations/fixture-smoke-runner.test.py
+      - .github/workflows/release-component-qualification.yml
+      - .github/workflows/component-fixture-native-smoke.yml
+permissions:
+  contents: read
+concurrency:
+  group: draft-fixture-smoke-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+jobs:
+  native-smoke:
+    if: github.event.pull_request.draft == true && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.23.2'
+      - name: Install locked fixture test dependencies on the disposable CI runner
+        run: npm ci --prefix operations/release/fixture --ignore-scripts --no-audit --no-fund
+      - name: Check financial route and fixture ownership boundaries
+        run: |
+          node --test operations/release/fixture/actors.test.mjs operations/release/fixture/financial-route-phase.test.mjs tests/operations/financial-checkpoint-observer.test.mjs tests/operations/financial-topup-verifier.test.mjs tests/operations/financial-insurance-verifier.test.mjs tests/operations/fixture-runtime-files.test.mjs tests/operations/financial-route-suite.test.mjs tests/operations/component-source-contract.test.mjs tests/operations/fixture-seed.test.mjs
+          node --test tests/operations/fixture-auth-bootstrap.test.mjs tests/operations/fixture-service-role-boundary.test.mjs
+          node --test tests/operations/fixture-native-diagnostics.test.mjs
+          python3 tests/operations/native-component-semantics.test.py
+          python3 tests/operations/fixture-smoke-runner.test.py
+          python3 tests/operations/fixture-native-diagnostics.test.py
+      - name: Build exact committed fixture and smoke native services
+        env:
+          FIXTURE_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 operations/release/ci/fixture-smoke.py . "$RUNNER_TEMP/fixture-smoke-evidence" "$FIXTURE_SOURCE_SHA"
+      - name: Preserve sanitized native smoke and cleanup observations
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: draft-native-fixture-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/fixture-smoke-evidence/native-smoke-receipt.json
+            ${{ runner.temp }}/fixture-smoke-evidence/native-build.log
+          if-no-files-found: error
+          retention-days: 7

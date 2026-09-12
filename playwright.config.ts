@@ -77,7 +77,8 @@ export default defineConfig({
       name: 'webkit-footer',
       /* The mobile lobby chrome spec runs here too: the three defects it pins
          were photographed on an iPad, and WebKit is the engine that iPad runs. */
-      testMatch: /(?:footer-(?:visual-regression|route)|mobile-lobby-chrome)\.spec\.ts$/,
+      testMatch:
+        /(?:footer-(?:visual-regression|route)|mobile-lobby-chrome|css-harness-boundaries)\.spec\.ts$/,
       use: { ...devices['iPhone 13'] },
     },
     {

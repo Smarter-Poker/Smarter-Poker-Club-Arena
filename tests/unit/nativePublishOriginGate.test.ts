@@ -44,7 +44,7 @@ function runOriginVerification(liveSha: string) {
     expect(step.id).toBe('verified');
     expect(step.if).toBe("steps.verdict.outputs.verdict == 'publish'");
     expect(workflow.jobs['publish-to-origin'].outputs.verified_sha).toBe(
-      '${{ steps.verified.outputs.sha }}'
+      '${{ steps.verified.outputs.sha || steps.retained.outputs.sha }}'
     );
     const command = step.run.replace('${{ steps.verdict.outputs.ours }}', target);
     expect(command).not.toContain('${{');

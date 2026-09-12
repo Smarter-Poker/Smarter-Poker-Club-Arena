@@ -37,7 +37,7 @@
  * is where the `page.request.get` + `expect(res.ok())` shape comes from.
  */
 
-import { test, type Page } from '@playwright/test';
+import { test, type Page, type Route } from '@playwright/test';
 
 export interface LiveCssLoad {
   /** Stylesheets actually installed. Zero means the bundle could not be read. */
@@ -100,9 +100,10 @@ async function readBundle(
 
 /**
  * Install the stylesheets the bundle at `arena` is serving into a blank
- * document at that origin, exactly as the five copies did: navigate to the
- * built index so relative url() and font paths still resolve, empty the body
- * so the app cannot re-render over the fixture, then add each sheet.
+ * document at that origin. Read the real bundle through the request client,
+ * but serve only an empty document to this page's single navigation. Clearing
+ * a mounted app's body does not stop its scripts, timers or route effects.
+ * Keeping the actual URL preserves relative stylesheet/font/asset resolution.
  */
 export async function loadLiveCss(
   page: Page,
@@ -137,10 +138,19 @@ export async function loadLiveCss(
       continue;
     }
 
-    await page.goto(`${base}index.html`, { waitUntil: 'domcontentloaded' });
-    await page.evaluate(() => {
-      document.body.innerHTML = '';
-    });
+    const documentUrl = `${base}index.html`;
+    const blankDocument = (route: Route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body></body></html>',
+      });
+    await page.route(documentUrl, blankDocument, { times: 1 });
+    try {
+      await page.goto(documentUrl, { waitUntil: 'domcontentloaded' });
+    } finally {
+      await page.unroute(documentUrl, blankDocument);
+    }
     for (const content of contents) await page.addStyleTag({ content });
     if (animationSpeed !== null) {
       await page.evaluate(

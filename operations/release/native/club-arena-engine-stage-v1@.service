@@ -1,0 +1,22 @@
+[Unit]
+Description=Stage one journal-owned Club Arena image %i
+After=docker.service
+Requires=docker.service
+StartLimitIntervalSec=3600
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+User=root
+UMask=0077
+ExecStart=/usr/local/lib/club-arena-release-controller/engine-stage-boundary.py apply %i
+TimeoutStartSec=1500
+TimeoutStopSec=30
+KillMode=control-group
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/club-arena /var/run/docker.sock /var/lock

@@ -213,9 +213,14 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
 
   it('requires both the built artifact and the test verdict before publishing', () => {
     const origin = job(publish, 'publish-to-origin');
-    expect(origin).toContain('needs: [publish-needed, build-and-store, client-tests]');
+    expect(origin).toContain(
+      'needs: [publish-needed, frontend-identity, build-and-store, client-tests]'
+    );
+    expect(origin).toContain("needs.frontend-identity.result == 'success'");
     expect(origin).toContain("needs.build-and-store.result == 'success'");
+    expect(origin).toContain("needs.frontend-identity.outputs.retained == 'true'");
     expect(origin).toContain("needs.client-tests.result == 'success'");
+    expect(origin).toContain("needs.publish-needed.outputs.tests_proven == 'true'");
   });
 
   it('checks out the exact publish control before invoking repository proof scripts', () => {

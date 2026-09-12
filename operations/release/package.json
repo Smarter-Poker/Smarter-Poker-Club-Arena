@@ -1,0 +1,20 @@
+{
+  "name": "club-arena-release-journal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Private release journal and installed provider boundary; observation by default",
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "pg": "8.16.3"
+  },
+  "scripts": {
+    "test": "node --test --test-concurrency=1 ../../tests/operations/*.test.mjs fixture/*.test.mjs",
+    "test:native": "python3 -B ../../tests/operations/native-install.test.py && python3 -B ../../tests/operations/native-engine.test.py && python3 -B ../../tests/operations/native-qualification.test.py && python3 -B ../../tests/operations/native-stage.test.py && python3 -B ../../tests/operations/native-operation-v2.test.py && python3 -B ../../tests/operations/native-wiring-v2.test.py && python3 -B ../../tests/operations/native-frontend-proof.test.py && python3 -B ../../tests/operations/native-component-semantics.test.py",
+    "observe": "node cli.mjs observe",
+    "controller": "node controller.mjs",
+    "provider": "node provider-cli.mjs"
+  }
+}

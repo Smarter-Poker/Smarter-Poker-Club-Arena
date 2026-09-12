@@ -193,7 +193,7 @@ jobs:
           # it. Production froze at 19:10 while main kept moving. Same lesson
           # as the migrations line above, one directory over.
           echo "src=$(has '^src/')"       >> "$GITHUB_OUTPUT"
-          echo "server=$(has '^(server/|supabase/migrations/|scripts/dev/)')" >> "$GITHUB_OUTPUT"
+          echo "server=$(has '^(server/|supabase/migrations/|scripts/dev/|operations/release/|tests/operations/)')" >> "$GITHUB_OUTPUT"
           echo "tests=$(has '^(tests/|supabase/migrations/|server/|scripts/dev/)')"   >> "$GITHUB_OUTPUT"
           echo "phase4=$PHASE4" >> "$GITHUB_OUTPUT"
 
@@ -1154,6 +1154,13 @@ jobs:
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
           sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17
+      - name: Release journal FIFO, fencing, receipts and recovery
+        env:
+          RELEASE_TEST_POSTGRES_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          npm ci --ignore-scripts --prefix operations/release
+          npm ci --ignore-scripts --prefix operations/release/fixture
+          npm test --prefix operations/release
       - name: BBJ bank replay identity and drift-safe installation
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
@@ -2092,7 +2099,7 @@ jobs:
         # above and torn down in an always() step below; all three suites share
         # it. See the note on "Serve one build to every suite".
         run: |
-          npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line --retries=1
+          npx playwright test tests/e2e/harness/css-harness-boundaries.spec.ts tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line --retries=1
 
       # Unlike the CSS fixtures above, this mounts the production Studio and
       # drives its real Supabase client through a deterministic browser mock.

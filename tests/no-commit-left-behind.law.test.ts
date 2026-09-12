@@ -41,7 +41,12 @@ describe('no commit left behind means exact, fail-closed release events', () => 
       ...publisher.matchAll(/uses: actions\/checkout@v4\n((?:\s{8,}.*\n)*)/g),
     ].map((match) => match[1]);
     expect(checkoutBlocks.length).toBeGreaterThanOrEqual(2);
-    for (const block of checkoutBlocks) expect(block).toContain(`ref: ${target}`);
+    const controls = checkoutBlocks.filter((block) => /^\s+path: control$/m.test(block));
+    expect(controls).toHaveLength(2);
+    for (const block of checkoutBlocks) {
+      expect(block).toContain(`ref: ${controls.includes(block) ? '${{ github.sha }}' : target}`);
+      if (controls.includes(block)) expect(block).toContain('persist-credentials: false');
+    }
 
     expect(publisher).toContain(`"ca_sha": "${target}"`);
     expect(publisher).toContain(`VITE_APP_VERSION: ${target}`);
@@ -77,7 +82,9 @@ describe('one event creates one publish attempt', () => {
   });
 
   it('keeps one non-cancelling publisher', () => {
-    expect(publisher).toMatch(/concurrency:\s*\n\s*group: [^\n]+\n\s*cancel-in-progress: false/);
+    expect(publisherCode).toMatch(
+      /concurrency:\s*\n\s*group: publish-club-arena-production\n\s*queue: max\n\s*cancel-in-progress: false/
+    );
     const publishers = readdirSync(resolve(__dirname, '../.github/workflows')).filter((file) => {
       if (!/\.ya?ml$/.test(file)) return false;
       return /^ {2}publish-to-origin:/m.test(read(`.github/workflows/${file}`));

@@ -115,7 +115,12 @@ describe('Daily Missions production certification', () => {
     expect(helper).toContain("{ table: 'notifications', column: 'actor_id' as const }");
     expect(helper).toContain("{ table: 'profiles', column: 'id' as const }");
     expect(helper).toContain("{ table: 'users', column: 'id' as const }");
-    expect(spec).toContain('hand history: exact fixture row remains');
+    expect(spec).toContain('cleanupOwnedMissionHand(environment, account)');
+    expect(source('operations/release/mission-fixture-hand.mjs')).toContain(
+      'FIXTURE_HAND_ABSENCE_REQUIRED'
+    );
+    expect(spec).not.toContain('enqueue_daily_mission_reset_notifications');
+    expect(spec).toContain('insertOwnedMissionNotification');
     expect(helper).toContain('reserved fixture residue remains after cleanup');
     // Certification owns and removes the exact UUID it creates. Listing the
     // entire Auth tenant first makes an unrelated damaged account capable of

@@ -1,0 +1,3 @@
+Schema fingerprint reads now preserve the caller's transaction-local database settings through commit. Previously, restoring a temporary search path with session scope made the caller's local path persist after commit. The observer now isolates its canonical path with a savepoint, or an owned read-only transaction when called outside a transaction, while retaining the existing schema and permission fingerprint.
+
+Validation: a native PostgreSQL 17 regression reproduces the leaked path before the change and verifies standalone reads, two caller-local paths, read-only state, matching fingerprints, and the original session state after commit.

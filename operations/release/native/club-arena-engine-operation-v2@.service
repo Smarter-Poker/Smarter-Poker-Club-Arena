@@ -1,0 +1,28 @@
+[Unit]
+Description=One journal-owned Club Arena maintenance cutover @OPERATION@
+After=docker.service network-online.target
+Requires=docker.service
+StartLimitIntervalSec=600
+StartLimitBurst=12
+
+[Service]
+Type=oneshot
+User=root
+UMask=0077
+ExecStart=/usr/bin/python3 -B @BUNDLE@/native/engine-operation-v2.py apply @OPERATION@
+ExecStopPost=/usr/bin/python3 -B @BUNDLE@/native/engine-operation-v2.py recover @OPERATION@
+TimeoutStartSec=1800
+TimeoutStopSec=660
+KillMode=control-group
+Restart=on-failure
+RestartPreventExitStatus=1
+RestartSec=15
+LoadCredential=@CREDENTIAL_NAME@:@CREDENTIAL_PATH@
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/club-arena /var/run/docker.sock /var/lock /var/log/club-arena-engine /etc/systemd/system/multi-user.target.wants
+
+[Install]
+WantedBy=multi-user.target

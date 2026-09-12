@@ -21,12 +21,34 @@ function actualListener(e: any, releaseHandWait: () => void) {
     new URL('../engine/ServerTableEngineDealing.ts', import.meta.url),
     'utf8'
   );
-  const start = 'unsub = controllerForHand.onEvent((event: HandEvent) => {';
-  const body = source.split(start)[1].split('\n        });\n        this.activeHandWaitRelease')[0];
-  if (!body) throw new Error('listener source not found');
-  const js = ts.transpileModule('function listener(event: HandEvent) {' + body + '\n}', {
-    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
-  }).outputText;
+  const file = ts.createSourceFile('Dealing.ts', source, ts.ScriptTarget.Latest, true);
+  const listeners: ts.ArrowFunction[] = [];
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      ts.isIdentifier(node.expression.expression) &&
+      node.expression.expression.text === 'controllerForHand' &&
+      node.expression.name.text === 'onEvent'
+    ) {
+      const callback = node.arguments[0];
+      if (callback && ts.isArrowFunction(callback) && ts.isBlock(callback.body))
+        listeners.push(callback);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  if (listeners.length !== 1) throw new Error('expected exactly one controllerForHand listener');
+  const callback = listeners[0];
+  const js = ts.transpileModule(
+    'function listener(' +
+      callback.parameters.map((p) => p.getText(file)).join(',') +
+      ') ' +
+      callback.body.getText(file),
+    {
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+    }
+  ).outputText;
   return new Function(
     'players',
     'persistenceGeneration',

@@ -836,10 +836,14 @@ export class GameServer {
       abandoned();
     }, OWNERSHIP_LEASE_RENEWAL_ABANDON_MS);
     abandon.unref?.();
-    void tracked.then(
-      () => clearTimeout(abandon),
-      () => clearTimeout(abandon)
-    );
+    void tracked
+      .then(
+        () => clearTimeout(abandon),
+        () => clearTimeout(abandon)
+      )
+      .catch(() => {
+        // Observe cleanup callback failure without changing the caller's tracked result.
+      });
     return tracked;
   }
 

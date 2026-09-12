@@ -94,6 +94,8 @@ import {
   equityWorkerPoolLastCompletionAgeMs,
   mainEventLoopGovernorSamplerLateMs,
   mainEventLoopGovernorScale,
+  leaseRenewalPassesTotal,
+  leaseRenewalLoopRunning,
 } from './observability/engineInstruments.js';
 import { clientConnectionPrometheusLines } from './observability/ClientConnectionEvents.js';
 import {
@@ -244,6 +246,39 @@ const TOURNAMENT_RESUME_STAGGER_MS = 40;
  */
 const OWNERSHIP_LEASE_RENEWAL_CADENCE_MS = Math.floor(
   Math.min(TABLE_LEASE_PROOF_WINDOW_MS, TOURNAMENT_LEASE_PROOF_WINDOW_MS) / 4
+);
+
+/**
+ * A RENEWAL PASS THAT NEVER SETTLES MUST NOT POISON EVERY LATER PASS
+ * (2026-09-12).
+ *
+ * `renewOwnedEngineLeaseProofs` serialises on `ownershipLeaseRenewalOperation`
+ * and returns the in-flight promise to any later caller. That is correct while
+ * a pass finishes. If one never settles, the slot is never cleared, every
+ * subsequent tick returns the same hung promise, and the loop awaits it
+ * forever - renewing nothing, throwing nothing, logging nothing.
+ *
+ * Measured on 2026-09-12: `heartbeat_table_leases_v4` and
+ * `heartbeat_tournament_leases_v4` both sat at exactly 27,886 and 27,765 calls
+ * across a 73-second window while `claim_table_lease_v2` took 283 calls in the
+ * same window - 233 a minute. No lease was renewed at all. Every one of the 78
+ * cash tables was being killed by its own 20-second proof watchdog and
+ * re-claimed, 26,129 times in 2h10m, and three quarters of those engine lives
+ * dealt no hands. `heartbeat_at` equalled `acquired_at` on all 78 rows, the
+ * database function returned `kept` when called by hand, and the container log
+ * carried not one `[lease]` line, because nothing was failing. Nothing was
+ * running.
+ *
+ * A pass is abandoned once it has outlived the proof window it exists to
+ * defend: past that point its answer cannot renew anything anyway, because
+ * `renewEngineLeaseProof` refuses a deadline that has already passed. The
+ * in-flight RPC is left to finish or time out on its own - it is not cancelled,
+ * and it cannot do damage, because every result is re-checked against the exact
+ * engine and generation captured at pass start before it is applied.
+ */
+const OWNERSHIP_LEASE_RENEWAL_ABANDON_MS = Number(
+  process.env.OWNERSHIP_LEASE_RENEWAL_ABANDON_MS ??
+    Math.min(TABLE_LEASE_PROOF_WINDOW_MS, TOURNAMENT_LEASE_PROOF_WINDOW_MS)
 );
 
 /**
@@ -420,6 +455,9 @@ export class GameServer {
   private serverLifecycleJobs = new Set<Promise<void>>();
   /** Keeps exact table/tournament authority alive only through shutdown drain. */
   private ownershipLeaseRenewalOperation: Promise<void> | null = null;
+  /** When a renewal pass last SETTLED. Age past the proof window means the one
+   *  lifecycle that keeps every lease alive has stopped. */
+  private ownershipLeaseRenewalCompletedAtMs: number = Date.now();
   private shutdownOwnershipLeaseRenewalActive = false;
   private shutdownOwnershipLeaseRenewalOperation: Promise<void> | null = null;
   /** One distributed claim + manager publication operation per tournament id. */
@@ -727,9 +765,31 @@ export class GameServer {
     tracked = operation.finally(() => {
       if (this.ownershipLeaseRenewalOperation === tracked) {
         this.ownershipLeaseRenewalOperation = null;
+        this.ownershipLeaseRenewalCompletedAtMs = Date.now();
       }
     });
     this.ownershipLeaseRenewalOperation = tracked;
+
+    /* See OWNERSHIP_LEASE_RENEWAL_ABANDON_MS. The slot is released on a timer
+       as well as on settlement, so a pass that never settles costs one window
+       rather than every window after it. The abandoned pass keeps running and
+       its `finally` above is identity-guarded, so it cannot clear a successor's
+       slot when it eventually lands. */
+    const abandon = setTimeout(() => {
+      if (this.ownershipLeaseRenewalOperation !== tracked) return;
+      this.ownershipLeaseRenewalOperation = null;
+      leaseRenewalPassesTotal.inc(1, { outcome: 'abandoned' });
+      reportError(
+        new Error(
+          `ownership lease renewal pass did not settle within ${OWNERSHIP_LEASE_RENEWAL_ABANDON_MS}ms; ` +
+            'abandoning it so the next pass can run'
+        ),
+        'GameServer.ownership_lease_renewal_pass_abandoned'
+      );
+    }, OWNERSHIP_LEASE_RENEWAL_ABANDON_MS);
+    if (typeof abandon.unref === 'function') abandon.unref();
+    void tracked.finally(() => clearTimeout(abandon));
+
     return tracked;
   }
 
@@ -836,19 +896,48 @@ export class GameServer {
    * next sleep rather than silently added to the authority gap.
    */
   private async runOwnershipLeaseRenewalLoop(generation: number): Promise<void> {
-    while (this.directAdmissionIsCurrent(generation)) {
-      const passStartedAt = performance.now();
-      try {
-        await this.renewOwnedEngineLeaseProofs();
-      } catch (error) {
-        // A programming or transport surprise cannot permanently remove the
-        // platform's primary ownership lifecycle. Existing local deadlines stay
-        // authoritative and the next serialized pass still runs.
-        reportError(error, 'GameServer.ownership_lease_renewal_pass_threw');
+    /* THIS LOOP LEAVING IS AN EVENT, NOT A DETAIL (2026-09-12).
+     *
+     * It is the only thing that renews every cash lease and every tournament
+     * lease in the process. `launchServerLifecycleJob` does not relaunch, so
+     * both of its exits used to be permanent and silent: a clean return when
+     * the admission generation moves on, and a wedge on a pass that never
+     * settles. On 2026-09-12 one of them stopped every renewal in the platform
+     * for at least two hours and nothing anywhere said so - no log line, no
+     * `reportError`, no metric. The engine kept claiming leases 233 times a
+     * minute and kept killing every table on its 20-second proof.
+     *
+     * The wedge is closed in `renewOwnedEngineLeaseProofs`. The clean exit is
+     * closed here: leaving is recorded, and leaving while this generation is
+     * still the live one is a fault, because nothing will start it again. */
+    try {
+      while (this.directAdmissionIsCurrent(generation)) {
+        const passStartedAt = performance.now();
+        try {
+          await this.renewOwnedEngineLeaseProofs();
+          leaseRenewalPassesTotal.inc(1, { outcome: 'completed' });
+        } catch (error) {
+          // A programming or transport surprise cannot permanently remove the
+          // platform's primary ownership lifecycle. Existing local deadlines stay
+          // authoritative and the next serialized pass still runs.
+          leaseRenewalPassesTotal.inc(1, { outcome: 'threw' });
+          reportError(error, 'GameServer.ownership_lease_renewal_pass_threw');
+        }
+        if (!this.directAdmissionIsCurrent(generation)) return;
+        const elapsedMs = Math.max(0, performance.now() - passStartedAt);
+        await this.sleep(Math.max(0, OWNERSHIP_LEASE_RENEWAL_CADENCE_MS - elapsedMs));
       }
-      if (!this.directAdmissionIsCurrent(generation)) return;
-      const elapsedMs = Math.max(0, performance.now() - passStartedAt);
-      await this.sleep(Math.max(0, OWNERSHIP_LEASE_RENEWAL_CADENCE_MS - elapsedMs));
+    } finally {
+      leaseRenewalLoopRunning.set(0);
+      if (this.directAdmissionIsCurrent(generation)) {
+        reportError(
+          new Error(
+            'ownership lease renewal loop left while its admission generation was still current; ' +
+              'nothing relaunches it, so every lease in this process will expire'
+          ),
+          'GameServer.ownership_lease_renewal_loop_left_early'
+        );
+      }
     }
   }
 
@@ -2162,6 +2251,7 @@ export class GameServer {
       /* Ownership renewal is a primary lifecycle, independent of the much
          heavier discovery/adoption/reaper loops. A blocked discovery RPC must
          never consume the 20-second local authority proof of a healthy dealer. */
+      leaseRenewalLoopRunning.set(1);
       this.launchServerLifecycleJob(
         this.runOwnershipLeaseRenewalLoop(generation),
         'GameServer.ownership_lease_renewal_fatal_err'

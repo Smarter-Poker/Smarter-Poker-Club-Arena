@@ -59,22 +59,64 @@ describe('the first Diamond game stays inside the custody boundary', () => {
       { is_template: true },
       { insurance_enabled: true },
       { bomb_pot_enabled: true },
-      { run_it_twice: true },
-      { straddle_enabled: true },
-      { auto_utg_straddle: true },
       { seven_deuce_enabled: true },
       { nit_game: true },
       { all_in_or_fold: true },
       { pineapple_holdem: true },
       { cap_enabled: true },
       { rake_cap_bb: 1 },
-      { allow_run_it_twice: true },
       { small_blind: 0.5 },
       { min_buy_in: 0 },
       { max_buy_in: Infinity },
       { ante: 0.5 },
     ])
       expect(() => assertDiamondCashTable({ ...table, ...change })).toThrow();
+  });
+
+  /* STRADDLES ARE ADMITTED (2026-09-12). A straddle is priced at exactly two
+     times the current blind and this guard already refuses a table whose blinds
+     are not whole positive integers, so it is whole by construction with no
+     counterparty and no ledger. The three columns are also safe to read as
+     absent-means-off, unlike the run-it columns below: every engine read of
+     them is truthy, so an unset column disables the feature in the engine
+     exactly as it did here. */
+  it('admits a straddling table and still refuses the side bet next to it', () => {
+    for (const change of [
+      { straddle_enabled: true },
+      { straddle_enabled: true, auto_utg_straddle: true },
+      { straddle_enabled: true, voluntary_straddle: true },
+    ])
+      expect(() => assertDiamondCashTable({ ...table, ...change })).not.toThrow();
+    for (const key of ['straddle_enabled', 'auto_utg_straddle', 'voluntary_straddle'] as const) {
+      const missing: Record<string, unknown> = { ...table };
+      delete missing[key];
+      expect(() => assertDiamondCashTable(missing), `${key} unset was refused`).not.toThrow();
+      expect(() => assertDiamondCashTable({ ...table, [key]: null })).not.toThrow();
+    }
+    /* seven-deuce is not a straddle. It is a side bet at a table-configured
+       amount, and this phase has not certified that money fact. */
+    expect(() =>
+      assertDiamondCashTable({ ...table, straddle_enabled: true, seven_deuce_enabled: true })
+    ).toThrow('Diamond Plain Cash Table Required');
+  });
+
+  /* RUN IT TWICE IS ADMITTED (2026-09-12), and the two columns still have to be
+     STATED. The engine reads an absent one as true, which would make the chip
+     schedule's default this arena's answer. `run_it_twice_enabled` reads as
+     false when absent and only ever turns the feature on, so it is free. */
+  it('admits a table that runs it twice, and still refuses one that never said', () => {
+    for (const change of [
+      { run_it_twice: true, allow_run_it_twice: true },
+      { run_it_twice: true, allow_run_it_twice: false },
+      { run_it_twice_enabled: true },
+      { run_it_twice_enabled: false },
+    ])
+      expect(() => assertDiamondCashTable({ ...table, ...change })).not.toThrow();
+    for (const key of ['run_it_twice', 'allow_run_it_twice'] as const) {
+      expect(() => assertDiamondCashTable({ ...table, [key]: null })).toThrow(
+        'Diamond Plain Cash Table Required'
+      );
+    }
   });
 
   /* UNSET IS NOT OFF. The engine's default for each of these columns is the

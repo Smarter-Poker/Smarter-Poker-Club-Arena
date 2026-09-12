@@ -10,11 +10,21 @@ CONTROL_DIR="${ENGINE_CONTROL_DIR:-/usr/local/lib/club-arena/engine-control}"
 CONTROL_PARENT="$(dirname "$CONTROL_DIR")"
 GENERATION_ROOT="$CONTROL_PARENT/engine-control-generations"
 UNIT_WRAPPER_V1="$CONTROL_PARENT/engine-release-unit-wrapper-v1.sh"
+# The money/settlement/cron collector is installed at a stable path OUTSIDE the
+# active generation, unlike verify-recovery-stack.sh. It takes no part in a
+# release: it must keep publishing across one, including a failed one, and
+# binding it to the generation symlink would stop money monitoring for the
+# duration of every switch. Fifteen alert rules read what it writes.
+HEALTH_COLLECTOR="$CONTROL_PARENT/collect-monitoring-health.sh"
 RELEASE_UNIT_V1="/etc/systemd/system/club-arena-engine-release-v1@.service"
 PROTOCOL_V1_FILE="engine-release-protocol-v1.schema"
 PROTOCOL_V1_SHA256="7c5aba4d2bc572edc5ef84c5280e1ffe517e5949b41788c18eeb003abea74044"
 LOCK_FILE="${LOCK_FILE:-/var/lock/club-arena-engine-up.lock}"
 SOURCE_LOCK="${SOURCE_LOCK_FILE:-/var/lock/club-arena-source.lock}"
+# The engine's existing environment file. collect-monitoring-health.sh reads
+# SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY from it. Nothing here creates,
+# rotates or embeds a credential.
+ENGINE_ENV_FILE="${ENGINE_ENV_FILE:-/opt/club-arena/server/.env}"
 CONTROL_SHA="${ENGINE_CONTROL_SHA:-}"
 RUN_ID="${ENGINE_RELEASE_RUN_ID:-}"
 RUN_URL="${ENGINE_RELEASE_RUN_URL:-}"
@@ -27,6 +37,7 @@ REQUIRED_FILES=(
   engine-release-protocol-v1.schema
   engine-release-seal.py
   verify-recovery-stack.sh
+  collect-monitoring-health.sh
   engine-release-database-proof.py
   engine-release-transaction.sh
   engine-release-recover.sh
@@ -217,6 +228,7 @@ ARCHIVE_STAGE="$(mktemp -d /run/club-arena-control-archive.XXXXXXXX)"
 UNIT_STAGE="$(mktemp -d /run/club-arena-engine-units.XXXXXXXX)"
 GENERATION_STAGE=''
 NEXT_WRAPPER=''
+NEXT_COLLECTOR=''
 NEXT_LINK=''
 NEXT_UNIT=''
 NEXT_RELEASE_UNIT=''
@@ -230,10 +242,11 @@ cleanup_stages() {
       *) echo "[install-engine-supervisor] refusing unsafe stage cleanup: $path" >&2 ;;
     esac
   done
-  for path in "$NEXT_WRAPPER" "$NEXT_LINK" "$NEXT_UNIT" "$NEXT_RELEASE_UNIT"; do
+  for path in "$NEXT_WRAPPER" "$NEXT_COLLECTOR" "$NEXT_LINK" "$NEXT_UNIT" "$NEXT_RELEASE_UNIT"; do
     [ -n "$path" ] || continue
     case "$path" in
       "$CONTROL_PARENT"/.engine-release-unit-wrapper-v1.next.*|\
+      "$CONTROL_PARENT"/.collect-monitoring-health.next.*|\
       "$CONTROL_PARENT"/.engine-control.next.*|\
       /etc/systemd/system/.*.next.*)
         rm -f -- "$path"
@@ -294,6 +307,7 @@ else
   chmod 0644 "$GENERATION_STAGE/control-sha" "$GENERATION_STAGE/generation-files"
   for script in \
     engine-supervisor.sh engine-up.sh build-engine-image.sh verify-recovery-stack.sh \
+    collect-monitoring-health.sh \
     engine-release-transaction.sh engine-release-recover.sh engine-release-unit-wrapper.sh \
     observe-engine-release.sh launch-engine-release.sh engine-release-intake.sh \
     install-engine-intake.sh retain-engine-images.sh install-engine-supervisor.sh; do
@@ -343,6 +357,14 @@ else
   fsync_paths "$CONTROL_PARENT"
 fi
 
+NEXT_COLLECTOR="$CONTROL_PARENT/.collect-monitoring-health.next.$$"
+install -m 0755 "$SOURCE_DIR/collect-monitoring-health.sh" "$NEXT_COLLECTOR"
+bash -n "$NEXT_COLLECTOR"
+fsync_paths "$NEXT_COLLECTOR" "$CONTROL_PARENT"
+mv -T "$NEXT_COLLECTOR" "$HEALTH_COLLECTOR"
+NEXT_COLLECTOR=''
+fsync_paths "$CONTROL_PARENT"
+
 # Unit policy is static and generation-independent. The release wrapper reads
 # a request-bound immutable generation. The historical 60-second supervisor
 # units are intentionally absent: exact desired restoration is a synchronous
@@ -371,6 +393,37 @@ OnCalendar=*-*-* 09:17:00 UTC
 Persistent=true
 RandomizedDelaySec=120
 Unit=club-arena-verify.service
+
+[Install]
+WantedBy=timers.target
+UNIT
+
+cat > "$UNIT_STAGE/club-arena-money-health.service" <<UNIT
+[Unit]
+Description=Publish the Club Arena money, settlement and cron health gauges
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Fifteen alert rules read the gauges this writes. It is a oneshot on a timer
+# rather than a daemon so that a failure is a failure: nothing is published,
+# the collection timestamp ages, and the three *MetricsBlind alerts fire. A
+# long-lived process that kept answering with stale numbers would not.
+ExecStart=/bin/bash $HEALTH_COLLECTOR
+Environment=ENGINE_ENV_FILE=$ENGINE_ENV_FILE
+TimeoutStartSec=45s
+UNIT
+
+cat > "$UNIT_STAGE/club-arena-money-health.timer" <<'UNIT'
+[Unit]
+Description=Collect Club Arena money, settlement and cron health every minute
+
+[Timer]
+OnBootSec=90s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=club-arena-money-health.service
 
 [Install]
 WantedBy=timers.target
@@ -410,7 +463,8 @@ UNIT
 
 systemd-analyze verify "$UNIT_STAGE"/*
 fsync_paths "$UNIT_STAGE"/* "$UNIT_STAGE"
-for unit_name in club-arena-verify.service club-arena-verify.timer; do
+for unit_name in club-arena-verify.service club-arena-verify.timer \
+  club-arena-money-health.service club-arena-money-health.timer; do
   NEXT_UNIT="/etc/systemd/system/.$unit_name.next.$$"
   install -m 0644 "$UNIT_STAGE/$unit_name" "$NEXT_UNIT"
   fsync_paths "$NEXT_UNIT"
@@ -490,6 +544,10 @@ systemctl enable --now club-arena-verify.timer \
   || retry 'could not activate the recovery verification timer'
 systemctl is-enabled club-arena-verify.timer | grep -qx enabled \
   || retry 'recovery verification timer is not durably enabled'
+systemctl enable --now club-arena-money-health.timer \
+  || retry 'could not activate the money health collection timer'
+systemctl is-enabled club-arena-money-health.timer | grep -qx enabled \
+  || retry 'money health collection timer is not durably enabled'
 systemctl enable docker >/dev/null \
   || retry 'could not enable Docker for host boot'
 systemctl is-enabled docker | grep -qx enabled \

@@ -40,6 +40,22 @@ Checklist lines five and six are claimed, on the evidence in [the feature charge
 
 That audit also found a defect it deliberately did not fix. `fn_purchase_feature` is a shim that mints a fresh request id before delegating to the idempotent `fn_purchase_feature_v2`, so for the four `per_use` features a lost response followed by a second tap on the VIP page's a-la-carte grid charges twice. It is not a Diamond path and the fix belongs to the customization and VIP commerce estate; it is recorded in the audit and reported to Dan rather than repaired inside a Diamond slice.
 
+## Execution Update, September 12, 2026, Diamond Straddles
+
+Phase 7 checklist line three has started with the only one of its four features that asks nothing of the chip economy. A straddle is priced at exactly two times the current blind, every Diamond guard already refuses a table whose blinds are not whole, and HandController never refused a straddle for Diamond in the first place. Two places did, the table-load boundary and the SQL admission door, and both now admit one. A new staff door turns straddles on for a table that already exists, carries the creation door's authority, moves no money and refuses any table the boundary would not admit afterwards. Evidence: [the straddle changelog](changelog/2026-09-12-diamond-phase-7-straddles.md).
+
+Certifying it in the isolated fixture found a defect in the admission door that was not the one being changed: UNSET IS NOT OFF was taught to the TypeScript boundary on September 11 and never to the SQL. A table with a NULL run-it column passed the door, reserved the player's Diamonds and seated them, and would then have been refused by the engine's own table load on every hand. `rake_cap_bb` was not read there at all. Migration 20260912014500 makes the door read all four columns the way the engine does; all seventeen live tables already carry explicit zeros and falses, so nothing that exists today changed.
+
+Line three is NOT claimed. Bomb pots, board counts and run it twice remain. Run it twice halves a pot and an odd pot of whole Diamonds does not halve, so it needs an odd-unit rule certified first; bomb pots ride the `p_units` award lane, which the accepted-hand commit refuses for a Diamond hand.
+
+## Execution Update, September 12, 2026, Diamond Run It Twice
+
+The second of Phase 7 line three's four features. Run it twice was refused for Diamond because of arithmetic rather than policy: the runout cut every pot into integer CENTS, which is the indivisible unit of a chip and HALF of a Diamond, so a five Diamond pot over two runs paid two and a half Diamonds a board and the hand guard would have refused the hand the table had just dealt. A pot meets two divisions on that path and both now happen in the table's own unit, with the odd unit going where it always went: to the earliest board, and inside a chop to the first seat clockwise of the button. The chip arithmetic is unchanged by construction. Evidence: [the run it twice changelog](changelog/2026-09-12-diamond-phase-7-run-it-twice.md).
+
+The two run-it columns still have to be STATED, because the engine reads an absent one as true and this arena inherits nothing from the chip schedule; what changed is that the answer may now be either boolean. A staff door writes all three columns so the engine's composite is exactly the answer it was given.
+
+Line three is NOT claimed. Bomb pots and their board counts remain: a bomb pot's award rides the `p_units` lane that the accepted-hand commit refuses for a Diamond hand, so it needs a Diamond obligation lane rather than a rounding rule.
+
 ## Approved Product Contract
 
 This replaces the earlier recommendation for two separate World Hub destinations. The World Hub has one player-facing Poker Arena entrance. Reuse the existing Club Arena application as the shared shell, lobby and game implementation. Diamond Arena is a diamond-only skin and operating policy inside it, not a second poker application.

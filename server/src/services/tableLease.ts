@@ -45,6 +45,10 @@ import { randomUUID } from 'node:crypto';
 // re-exports every submodule, so importing it from here would pull the whole
 // data layer into the module graph for one rpc() call.
 import { supabase } from './supabase/client.js';
+/* Counted, not merely returned: every branch below that declines to renew a
+   lease used to be silent, and repeated silent declines are exactly how a
+   table ends up restarting every twenty seconds with nothing to read. */
+import { leaseHeartbeatOutcomesTotal } from '../observability/engineInstruments.js';
 
 /**
  * Per-process identity. Regenerated on every boot on purpose: a restarted
@@ -442,6 +446,11 @@ export async function heartbeatTables(
 
     for (const claim of claims) {
       const row = rowsById.get(claim.tableId)!;
+      try {
+        leaseHeartbeatOutcomesTotal.inc(1, { scope: 'table', state: String(row.state) });
+      } catch {
+        /* metrics must never affect a lease decision */
+      }
       const exactGeneration =
         typeof row.leaseGeneration === 'string' &&
         row.leaseGeneration.toLowerCase() === claim.leaseGeneration.toLowerCase();

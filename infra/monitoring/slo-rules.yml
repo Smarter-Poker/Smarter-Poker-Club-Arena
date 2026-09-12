@@ -110,3 +110,36 @@ groups:
       - record: sp:db_error:rate10m
         expr: |
           rate(poker_rpc_errors_total[10m])
+
+  # ── HOW OLD THE MONEY, SETTLEMENT AND CRON READINGS ARE ─────────────────
+  #
+  # 2026-09-11. Fifteen rules were written on 2026-09-04 against thirteen
+  # metric names that nothing emitted. Three of those rules exist to catch
+  # exactly that - CronMetricsBlind, MoneyHealthBlind, SettlementMetricsBlind -
+  # and each was written as `poker_..._stale_seconds > 600`, which is an empty
+  # vector when the collector never ran at all. The blindness detector was
+  # blind in the one case it was built for.
+  #
+  # collect-monitoring-health.sh now publishes one collection timestamp
+  # alongside those gauges. Staleness is DERIVED from it here rather than
+  # written by the collector, because a collector can only ever write zero for
+  # its own age: the moment it stops, a self-reported age freezes at zero and
+  # reads as perfectly fresh forever. Computed against time(), it climbs.
+  #
+  # All three names resolve to the same reading because one collector produces
+  # all three families. They stay three names because the alerts are three
+  # alerts, and a later split should not have to rewrite them.
+  - name: money-health-freshness
+    interval: 30s
+    rules:
+      - record: poker_settlement_metrics_stale_seconds
+        expr: |
+          time() - poker_health_collected_timestamp_seconds
+
+      - record: poker_money_health_stale_seconds
+        expr: |
+          time() - poker_health_collected_timestamp_seconds
+
+      - record: poker_cron_metrics_stale_seconds
+        expr: |
+          time() - poker_health_collected_timestamp_seconds

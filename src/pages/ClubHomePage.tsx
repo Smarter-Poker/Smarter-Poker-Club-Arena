@@ -2968,9 +2968,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
       // BBJ jackpot. Number() is load-bearing, not cosmetic: main_balance is
       // numeric(14,2) and arrives as the STRING "10500.67". Assigning it raw
-      // put a string into a number-typed state, which then failed BBJTicker's
-      // `typeof poolAmount === 'number'` ownership check and left the ticker
-      // and the page disagreeing about who owns the value.
+      // put a string into a number-typed state, which failed a `typeof
+      // poolAmount === 'number'` ownership check downstream and left two
+      // surfaces disagreeing about who owned the value. The component that
+      // check lived in (BBJTicker) was deleted on 2026-09-12 for being mounted
+      // nowhere; the coercion stays, because every reader of this state still
+      // expects a number and the string is what the database actually sends.
       if (bbjResult?.data && !(bbjResult as any).error) {
         if (Array.isArray(bbjResult.data)) {
           let sum = 0;

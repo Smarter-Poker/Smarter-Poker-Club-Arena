@@ -495,11 +495,124 @@ for (const outcome of ['completed', 'partial', 'frozen', 'error', 'coalesced']) 
   bountyRecoverySweepRunsTotal.inc(0, { outcome });
 }
 
+/**
+ * ═══ WHY A LEASE WAS NOT RENEWED (2026-09-12) ════════════════════════════════
+ *
+ * Every cash table on the live engine was re-claiming its lease roughly every
+ * twenty seconds - 63 tables, 923 `cash_lease_proof_expired` restarts in five
+ * minutes, the lease_generation changing on every cycle - while the main loop
+ * sat idle (event-loop p99 21.9 ms), the database answered
+ * heartbeat_table_leases_v4 in 5.2 ms, and nothing anywhere said why.
+ *
+ * It could not say why, because every branch that declines to renew is silent:
+ *
+ *   - the database heartbeat takes `FOR NO KEY UPDATE ... SKIP LOCKED`, so a
+ *     locked row is skipped rather than waited for, and comes back `busy`;
+ *   - `busy` is then `continue`d in tableLease.ts with no counter, on purpose
+ *     (it must extend nothing), and four consecutive ones are an expiry;
+ *   - a table whose local proof had already lapsed when the pass reached it is
+ *     put in lostEngines, and the report is skipped entirely when the table is
+ *     tournament-owned.
+ *
+ * Each of those is correct behaviour and none of them leaves a number. So the
+ * engine could restart every cash table three times a minute, for hours, and
+ * the only trace was a reason string in a log line.
+ *
+ * state: what the database said about the claim -
+ *   kept     renewed, the only outcome that extends a proof;
+ *   busy     the row was locked and skipped; extends nothing, and REPEATED
+ *            busies are the signature to look for;
+ *   taken    another instance holds it;
+ *   stale    the row exists but is past the audited stale window;
+ *   missing  no row at all;
+ *   malformed the response could not be read as an answer.
+ * scope: table | tournament.
+ */
+export const leaseHeartbeatOutcomesTotal: Counter = alwaysOnRegistry.counter(
+  'poker_lease_heartbeat_outcomes_total',
+  'Lease heartbeat claims by what the database said (labels: scope=table|tournament, state=kept|busy|taken|stale|missing|malformed)'
+);
+/* Zero-seeded across the domain: an alert on a name with no series evaluates
+   to an empty vector, which reads exactly like health. See
+   anAlertCannotWaitForAFailureToExist.law.test.ts. */
+for (const scope of ['table', 'tournament']) {
+  for (const state of ['kept', 'busy', 'taken', 'stale', 'missing', 'malformed']) {
+    leaseHeartbeatOutcomesTotal.inc(0, { scope, state });
+  }
+}
+
+/**
+ * THE ONE LOOP THAT RENEWS EVERY LEASE, AND WHETHER IT IS STILL RUNNING
+ * (2026-09-12).
+ *
+ * `runOwnershipLeaseRenewalLoop` renews every cash lease and every tournament
+ * lease in the process. It is launched once and nothing relaunches it, and it
+ * had two silent exits: a clean return when its admission generation moves on,
+ * and a wedge on a serialized pass that never settles.
+ *
+ * On 2026-09-12 it stopped. `heartbeat_table_leases_v4` and
+ * `heartbeat_tournament_leases_v4` held at exactly 27,886 and 27,765 calls
+ * across a 73-second window while `claim_table_lease_v2` took 283 in the same
+ * window. Nothing renewed a lease for at least two hours. Every one of the 78
+ * cash tables was killed by its own 20-second proof watchdog and re-claimed,
+ * 26,129 times, and three quarters of those engine lives dealt no hands, at
+ * tables the log shows holding 9 of 9 seats. There was no log line, no
+ * `reportError` and no metric, because nothing failed - it simply was not
+ * running, and an engine that is not doing a thing looks exactly like an engine
+ * with nothing to do.
+ *
+ * `outcome=completed` going flat is the signal, and it is a rate rather than an
+ * absence, so it cannot read as health. `leaseRenewalLoopRunning` answers the
+ * cruder question directly.
+ */
+export const leaseRenewalPassesTotal: Counter = alwaysOnRegistry.counter(
+  'poker_lease_renewal_passes_total',
+  'Ownership lease renewal passes (labels: outcome=completed|threw|abandoned)'
+);
+/* Zero-seeded: an alert on a name with no series is an empty vector, which
+   reads exactly like health. See anAlertCannotWaitForAFailureToExist. */
+for (const outcome of ['completed', 'threw', 'abandoned']) {
+  leaseRenewalPassesTotal.inc(0, { outcome });
+}
+
+/** 1 while the ownership lease renewal lifecycle is running, 0 once it leaves. */
+export const leaseRenewalLoopRunning: Gauge = alwaysOnRegistry.gauge(
+  'poker_lease_renewal_loop_running',
+  'Whether the ownership lease renewal lifecycle is running (1) or has left (0)'
+);
+leaseRenewalLoopRunning.set(0);
+
 /** Actions processed, bounded by audience x tournament format. */
 export const actionsFleetTotal: Counter = alwaysOnRegistry.counter(
   'poker_actions_fleet_total',
   'Player actions processed (labels: audience=human|horse, format=cash|spin|hu_sng|sng|mtt)'
 );
+/**
+ * Zero-seeded across the whole label domain, and the reason is the alert that
+ * reads it.
+ *
+ * `HorseCashActionsStopped` (critical, page: sms) is
+ *
+ *   sum(rate(poker_actions_fleet_total{audience="horse",format="cash"}[10m])) * 60 < 150
+ *
+ * A counter has no series until something increments it. On an engine that
+ * started and never got a single horse cash action onto the felt - the TOTAL
+ * failure this alert is named for - that series does not exist, rate() is an
+ * empty vector, sum() of empty is empty, and `empty < 150` is empty. The alert
+ * cannot fire. It works only once horses have already acted, which is to say
+ * it catches a decline and misses an outage.
+ *
+ * Seeded, a cold engine publishes 0, rate() is 0, and the page goes out.
+ *
+ * Ten series, deliberately enumerated rather than filled in on first use: the
+ * whole point is that they exist BEFORE the first use, and 2 x 5 is a domain
+ * this file already writes out by hand for horseForcedSitOutsTotal.
+ */
+for (const audience of ['human', 'horse']) {
+  for (const format of ['cash', 'spin', 'hu_sng', 'sng', 'mtt']) {
+    actionsFleetTotal.inc(0, { audience, format });
+  }
+}
 
 /**
  * ═══ THE HORSE'S INPUT DEVICE, COUNTED (2026-09-11) ══════════════════════════
@@ -541,12 +654,71 @@ export const horseForcedSitOutsTotal: Counter = alwaysOnRegistry.counter(
   'poker_horse_forced_sit_outs_total',
   'Horses sat out by the consecutive-timeout ladder (label: format=cash|spin|hu_sng|sng|mtt)'
 );
+/**
+ * A horse turn that scheduleHorseAction ABANDONED because the authority it
+ * started under is no longer current, labelled with which authority and at
+ * which stage.
+ *
+ * Added 2026-09-11, because this was the one horse failure with no number at
+ * all. `scheduleHorseAction` guards every stage with the same fence - abort
+ * signal, turn token, hand controller, hand number, lifecycle, current seat,
+ * engine lease generation - and three of its four call sites simply
+ * `return`ed. A horse whose table lost its lease mid-turn was therefore never
+ * scheduled, never asked the worker for anything, and counted nowhere: the
+ * seventeen-second clock resolved the seat as a forced check/fold, and every
+ * decision-path gauge stayed perfect while it happened.
+ *
+ * Measured that evening: `poker_horse_decision_fallbacks_total` 0 and the
+ * worker idle (queue depth 0, 4.9 ms compute) while `turn_timeouts{kind=timer}`
+ * ran at 19-40 a minute against 164 hands a minute, alongside 1,652 engine
+ * lease losses a minute across 1,570 tables. The same counts were zero in the
+ * quiet window half an hour earlier. Nothing in the horse subsystem could say
+ * that, which is why nothing did.
+ *
+ * reason: why the fence refused -
+ *   aborted           this turn's controller was aborted;
+ *   superseded        a newer turn replaced this one;
+ *   hand_replaced     the hand controller or hand number moved on;
+ *   lifecycle_locked  the table may not mutate right now;
+ *   seat_moved        the table is no longer on this seat;
+ *   lease_lost        the engine lease generation changed or stopped verifying.
+ * stage: how far the turn got - schedule | fallback | fast_result |
+ *   deep_start | deep_result | commit.
+ * A `commit` abandonment is the expensive one: the decision was computed and
+ * then dropped.
+ */
+export const horseTurnsAbandonedTotal: Counter = alwaysOnRegistry.counter(
+  'poker_horse_turns_abandoned_total',
+  'Horse turns abandoned because the authority they began under was no longer current (labels: reason, stage)'
+);
 horseTurnTimeoutsTotal.inc(0, { kind: 'timer' });
 horseTurnTimeoutsTotal.inc(0, { kind: 'timebank' });
 horseDecisionFallbacksTotal.inc(0);
 horseSeatUnactableTotal.inc(0);
 for (const format of ['cash', 'spin', 'hu_sng', 'sng', 'mtt']) {
   horseForcedSitOutsTotal.inc(0, { format });
+}
+/* Zero-seeded so a rule reading this never faces an absent metric: an alert on
+   a name with no series cannot fire, which is the failure this whole evening
+   was spent removing. */
+for (const reason of [
+  'aborted',
+  'superseded',
+  'hand_replaced',
+  'lifecycle_locked',
+  'seat_moved',
+  'lease_lost',
+]) {
+  for (const stage of [
+    'schedule',
+    'fallback',
+    'fast_result',
+    'deep_start',
+    'deep_result',
+    'commit',
+  ]) {
+    horseTurnsAbandonedTotal.inc(0, { reason, stage });
+  }
 }
 
 /**

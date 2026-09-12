@@ -23,7 +23,13 @@ export interface BBJAdminAnalyticsProps {
 }
 
 /**
- * WHY IT HAS NOT PAID — the reader for `bbj_near_misses` (2026-09-11).
+ * HANDS THE RULES TURNED AWAY — the reader for `bbj_near_misses` (2026-09-11).
+ *
+ * This block was titled "WHY IT HAS NOT PAID" until 2026-09-12, which is also
+ * what the section heading said, and the heading was changed because it
+ * asserts something the panel cannot know - see the comment above the markup.
+ * The title is kept in step so nobody reads it here and renames the heading
+ * back to match.
  *
  * `days_since_last_hit` has been on this panel since 2026-08-18 posing a
  * question with nothing beside it to answer: a jackpot that has not paid in
@@ -315,11 +321,25 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
         </div>
       </div>
 
-      {/* WHY IT HAS NOT PAID. The answer to the "Last Hit" tile above it. */}
+      {/* WHICH GATE REFUSED, for the hands that reached the jackpot decision
+          and did not clear it.
+
+          THE HEADING USED TO READ "Why It Has Not Paid" AND THAT WAS A CLAIM,
+          NOT A LABEL. Looked at on a real screen for the first time on
+          2026-09-12, it sat four rows under the LAST HIT tile, which read
+          `0.3d` on both live pools - the section announced that the jackpot
+          had not paid, directly below the number saying it had paid that
+          morning. The rows underneath were all correct; the heading asserted a
+          premise nobody had checked against the tile above it.
+
+          This one is true whichever way the pool is running, which is what a
+          heading on an operator panel has to be: the list is worth reading
+          when the jackpot is cold AND when it is paying, and it says the same
+          thing in both cases. */}
       <div className="bbj-admin__misses">
         <div className="bbj-admin__misses-head">
-          <span className="bbj-admin__misses-title">Why It Has Not Paid</span>
-          <span className="bbj-admin__misses-sub">Hands Refused In The Last 30 Days</span>
+          <span className="bbj-admin__misses-title">Hands The Rules Turned Away</span>
+          <span className="bbj-admin__misses-sub">Last 30 Days</span>
         </div>
 
         {nearMissState === 'loading' && (

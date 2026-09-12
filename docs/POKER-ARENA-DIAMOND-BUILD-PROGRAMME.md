@@ -56,6 +56,14 @@ The two run-it columns still have to be STATED, because the engine reads an abse
 
 Line three is NOT claimed. Bomb pots and their board counts remain: a bomb pot's award rides the `p_units` lane that the accepted-hand commit refuses for a Diamond hand, so it needs a Diamond obligation lane rather than a rounding rule.
 
+## Execution Update, September 12, 2026, Lifecycle And Denomination Regressions
+
+Checklist line seven is claimed. Until September 12 a Diamond table had exactly one shape, and a regression suite for one shape is a suite for one row; straddles and run it twice made it a matrix, which is where a feature quietly stops working in the cell nobody tests.
+
+Three suites. A denomination law pins all FOUR dividers a Diamond pot can meet - the run-it-twice per-board slice, the multi-board settlement, the tie chop inside one board and the payout unit - to the same rule, and then pins each one to READING the asset, because a fifth divider written in cents would pass every arithmetic case and still deal a hand that cannot settle. A configuration matrix crosses six permitted shapes with the four live statuses, with the five terminal ones, and with all seventeen rungs of Dan's stake ladder, dealing a full hand at the maximum buy-in on every rung; twenty-three refusal reasons are each asserted against all six shapes, because a permitted flag must never launder a forbidden one. And a lifecycle pair proves that a permitted change lands on a running table without a restart while a refused row is refused whole, so the permitted half of a mixed row does not sneak in beside the forbidden half.
+
+The claim is scoped honestly: line seven is met for every configuration the arena CAN open today. Bomb pots and the variants beyond NLH are not omitted cells, they are features the boundary still refuses, and both matrices are written as arrays so a new feature joins them rather than forcing a rewrite. Evidence: [the lifecycle and denomination audit](audits/2026-09-12-diamond-phase-7-lifecycle-and-denomination-regressions.md).
+
 ## Approved Product Contract
 
 This replaces the earlier recommendation for two separate World Hub destinations. The World Hub has one player-facing Poker Arena entrance. Reuse the existing Club Arena application as the shared shell, lobby and game implementation. Diamond Arena is a diamond-only skin and operating policy inside it, not a second poker application.
@@ -288,7 +296,7 @@ Phase 6 Of 12 Is Done, verified September 11, 2026. Implementation merge 85da647
 - [ ] Integrate table skins, cards, time banks, rabbit hunt, chat, voice and throwables where supported.
 - [x] Keep feature diamond charges separate from game stakes, with no double charge.
 - [x] Audit insurance and side-feature liabilities before enabling any such product.
-- [ ] Run table lifecycle and denomination regression tests across configurations.
+- [x] Run table lifecycle and denomination regression tests across configurations.
 
 Exit: explicit supported-feature matrix passed; unsupported features remain honestly unavailable.
 

@@ -2,7 +2,7 @@
 
 Revised September 11, 2026 at the user's direction, following the Phase 6–10 parity audit.
 
-This is the acceptance playbook for the Phase 8–10 backfill and the first rounds of Phases 11–15. It supersedes the September 11 progression note that described Phase 8 as functionally complete and treated publication/live proof as a later-round task. The completed Phase 6 and Phase 7 implementations establish the minimum depth. Phases 8–10 must satisfy this standard before Phase 11 implementation begins. Planning Phases 11–15 does not mark them started or complete.
+This is the acceptance playbook for the Phase 8–10 backfill and the first rounds of Phases 11–15. It supersedes the September 11 progression note that described Phase 8 as functionally complete and treated publication/live proof as a later-round task. The completed Phase 6 and Phase 7 implementations establish the minimum depth. The user subsequently authorized Phase 11 implementation while Phases 8–10 await background publication. This sequencing exception allows productive overlap; it does not waive first-round verification, publication or natural-use gates. Phase 11 is in progress and remains unpromoted.
 
 ## What basic functionality means
 
@@ -79,4 +79,4 @@ Reconcile every production variant/configuration with an implemented pack or an 
 
 ## Required closeout record for every phase
 
-Record scope and exact source/version; implemented dimensions and named fallbacks; real callers and final executor; independent fixtures and critical regressions; test counts and declared skips; bounded performance under load; frozen benchmark manifest and all outcomes; protected merge/deployment and served identity; natural receipt deltas; activation/promotion state; remaining external gates. Set separate statuses for implementation, verification, publication, natural execution and strength promotion. Advance only after all applicable first-round gates pass, with unresolved gates explicitly retained rather than silently moved to later rounds.
+Record scope and exact source/version; implemented dimensions and named fallbacks; real callers and final executor; independent fixtures and critical regressions; test counts and declared skips; bounded performance under load; frozen benchmark manifest and all outcomes; protected merge/deployment and served identity; natural receipt deltas; activation/promotion state; remaining external gates. Set separate statuses for implementation, verification, publication, natural execution and strength promotion. Certify each phase only after all applicable first-round gates pass. The user authorizes independent implementation of the next phase during background operations, with unresolved gates explicitly retained rather than silently moved to later rounds.

@@ -937,6 +937,8 @@ describe('HorseDecisionWorkerRuntime', () => {
     { phase8Postflop: 'candidate' },
     { phase10Plo4: 'candidate' },
     { phase10EvidenceMode: true },
+    { phase11Omaha: 'candidate' },
+    { phase11EvidenceMode: true },
   ])('rejects offline candidate selectors at the live worker boundary: %j', async (opts) => {
     const h = harness();
     h.runtime.receive({
@@ -1292,3 +1294,33 @@ it('Phase 10 real PLO4 policy receipt survives the canonical live worker boundar
   expect(result.decision.plo4Policy?.fired).toBe(true);
   expect(structuredClone(result).decision.plo4Policy?.finalAction).toBe(result.decision.action);
 });
+
+it.each(['plo5', 'plo6', 'plo8'] as const)(
+  'Phase 11 %s receipt survives the live worker boundary',
+  async (variant) => {
+    const { omahaVariantSpot } = await import('../../benchmark/OmahaVariantPolicyEvidence.js');
+    const h = harness(true);
+    const input = omahaVariantSpot(variant, 'preflop');
+    const request = {
+      type: 'DECIDE_FAST' as const,
+      requestId: 511,
+      ...structuredClone(snapshot),
+      style: 'balanced' as const,
+      mods: {},
+      opts: { mind: false, telemetry: false },
+      player: input.hero,
+      gameState: input.state,
+    };
+    request.decisionKey = buildHorseDecisionKey(request);
+    h.runtime.receive(request);
+    await h.runtime.drain();
+    const result = h.messages.find((m) => m.type === 'FAST_RESULT');
+    if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(h.messages));
+    expect(result.decision.omahaVariantPolicy?.mode).toBe('shadow');
+    expect(result.decision.omahaVariantPolicy?.eligible).toBe(true);
+    expect(result.decision.omahaVariantPolicy?.fired).toBe(true);
+    expect(structuredClone(result).decision.omahaVariantPolicy?.finalAction).toBe(
+      result.decision.action
+    );
+  }
+);

@@ -113,6 +113,21 @@ describe('historical unapplied Stage-B migrations cannot re-enter the active cha
     }
   });
 
+  /* THIRTY SECONDS, AND THE HEADROOM IS THE POINT. This case `readFileSync`s
+     every file under tests/, server/src/, scripts/ and the migration directory
+     - several thousand files, the migrations alone numbering in the thousands -
+     and then substring-scans each one against every retired token. Measured
+     2026-09-12: 380 ms run on its own, 6,415 ms inside the full suite, against
+     vitest's default 5,000 ms budget. It had been passing on luck; it failed on
+     a run where nothing about it had changed.
+
+     The fix is NOT a budget set to the number just measured. CLAUDE.md 10.86
+     rule 4 is about exactly that: two agents de-flaked a wait and set the
+     budget to the ceiling they had read, so the wait got robust and the
+     headroom went to zero. 30 s is ~5x the worst observation and ~78x the
+     solo run, so a slower disk or a busier machine does not make this law
+     report a timeout - which names no cause and means the assertion never
+     ran - instead of an answer. */
   it('leaves no executable consumer resolving a retired filename or stable suffix', () => {
     const executableRoots = [
       resolve(root, 'tests'),
@@ -140,5 +155,5 @@ describe('historical unapplied Stage-B migrations cannot re-enter the active cha
     }
 
     expect(matches).toEqual([]);
-  });
+  }, 30_000);
 });

@@ -135,6 +135,10 @@
 }
 
 .bbj-admin__misses-title {
+  /* `margin: 0` because this is an h4 now, matching .bbj-admin__title above.
+     Without it the browser's default heading margin opens a gap the flex
+     baseline alignment then fights. */
+  margin: 0;
   font-size: 13px;
   font-weight: 600;
 }

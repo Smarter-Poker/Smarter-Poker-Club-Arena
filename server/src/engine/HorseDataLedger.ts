@@ -544,6 +544,16 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase10'
   ),
   flag(
+    'phase11Omaha',
+    'separate PLO5/PLO6/PLO8 policy; shadow by default; candidate selection is offline only',
+    'Phase11'
+  ),
+  flag(
+    'phase11EvidenceMode',
+    'offline fixed-work variant evidence clock; rejected by the live decision worker',
+    'Phase11'
+  ),
+  flag(
     'v43Tempo',
     'tempo reads: a river big bet priced by how fast it was made against what this player shows down at that tempo',
     'V43'
@@ -1654,6 +1664,88 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'ServerTableEngineTurns',
     'authoritative action or retired decision accounting',
     'Phase10'
+  ),
+  receipt(
+    'phase11_seen',
+    'HorseLogic -> evaluateOmahaVariantPolicy',
+    'natural PLO5/PLO6/PLO8 decisions entering the versioned policy',
+    'Phase11'
+  ),
+  receipt(
+    'phase11_eligible',
+    'evaluateOmahaVariantPolicy',
+    'complete supported single-board PLO5/PLO6/PLO8 nodes',
+    'Phase11'
+  ),
+  receipt(
+    'phase11_fired',
+    'evaluateOmahaVariantPolicy',
+    'completed bounded PLO5/PLO6/PLO8 policy evaluation',
+    'Phase11'
+  ),
+  receipt(
+    'phase11_shadow_changed',
+    'evaluateOmahaVariantPolicy',
+    'proposal differs from baseline; not a live action claim',
+    'Phase11'
+  ),
+  receipt(
+    'phase11_applied',
+    'HorseLogic',
+    'approved policy proposal accepted before final utility and enforcement',
+    'Phase11'
+  ),
+  receipt(
+    'phase11_baseline_retained',
+    'HorseLogic',
+    'shadow or unavailable policy retained the existing action',
+    'Phase11'
+  ),
+  receipt(
+    'phase11_reason_*',
+    'evaluateOmahaVariantPolicy',
+    'exact selection or unavailable reason',
+    'Phase11',
+    'phase11_seen',
+    0.99
+  ),
+  receipt(
+    'phase11_street_*',
+    'evaluateOmahaVariantPolicy',
+    'street coverage for completed policy evaluations',
+    'Phase11',
+    'phase11_fired',
+    0.99
+  ),
+  receipt(
+    'phase11_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'cash or existing tournament utility ownership',
+    'Phase11',
+    'phase11_seen',
+    0.99
+  ),
+  receipt(
+    'phase11_execution_*',
+    'ServerTableEngineTurns',
+    'authoritative action or retired decision accounting',
+    'Phase11'
+  ),
+  receipt(
+    'phase11_variant_*',
+    'HorseLogic',
+    'partition entering decisions by exact variant',
+    'Phase11',
+    'phase11_seen',
+    0.99
+  ),
+  ...(['plo5', 'plo6', 'plo8'] as const).map((variant) =>
+    receipt(
+      `phase11_${variant}_*`,
+      'HorseLogic; ServerTableEngineTurns',
+      'per-variant eligibility, completion, reason and final execution; depends on table mix',
+      'Phase11'
+    )
   ),
   receipt(
     'phase8_seen',

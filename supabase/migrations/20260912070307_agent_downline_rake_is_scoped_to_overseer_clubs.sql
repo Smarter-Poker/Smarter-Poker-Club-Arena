@@ -1,7 +1,8 @@
+SET LOCAL lock_timeout = '1000ms';
+SET LOCAL statement_timeout = '15000ms';
 -- FWP01 scratch candidate: version/path reserved by integration owner later.
 -- Scope only the overseer authorization alternative and its recursive club rows.
 -- No table data, amount allocator, helper, signature, owner or ACL changes.
-BEGIN;
 DO $migration$
 DECLARE
   v_oid oid := to_regprocedure('public.fn_agent_downline_rake(uuid,uuid,timestamptz,timestamptz,text,integer)');
@@ -86,4 +87,3 @@ $new1$);
 END;
 $migration$;
 NOTIFY pgrst, 'reload schema';
-COMMIT;

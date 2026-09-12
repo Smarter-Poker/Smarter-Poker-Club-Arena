@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/rake-bbj-installed-receipts",
+  "_comment": "Generated from scoped production pg_proc reads after migrations20260912070307 and20260912070357. Exact bodies and unchanged owner/ACL in docs/audits/2026-09-12-rake-bbj-installed-receipts.json. No full product qualification is claimed.",
+  "functions": ["fn_agent_downline_rake", "fn_bbj_move_between_banks"]
+}

@@ -1,3 +1,5 @@
+SET LOCAL lock_timeout = '1000ms';
+SET LOCAL statement_timeout = '15000ms';
 -- SCRATCH PROPOSAL ONLY: root must assign migration ownership and execution lane.
 -- Run in the migration runner's transaction, under exclusive function-DDL ownership.
 -- No business function is invoked. Existing object ownership/ACL must be preserved.

@@ -52,6 +52,7 @@ interface CompletedHandObservationPayload {
   generation: number;
   fence: string;
   handKey: string;
+  committedHandId?: string;
   actions: unknown;
   bigBlind: number;
   showdown: unknown;
@@ -316,6 +317,7 @@ describe('logHandHistory - worker-owned completed-hand observation', () => {
       sessionKey: expect.stringMatching(/^[a-f0-9]{64}$/),
     });
     expect(mockObserveCompletedHand.mock.calls[0][0].actions).toEqual(actions);
+    expect(mockObserveCompletedHand.mock.calls[0][0].committedHandId).toBe(historyId);
     const serialized = JSON.stringify(actions);
     expect(serialized).not.toMatch(/seat_joined_at|seat_id|username|hole_cards/);
     // Re-entry with a different worker/lease fence must not mint new evidence.
@@ -323,6 +325,7 @@ describe('logHandHistory - worker-owned completed-hand observation', () => {
     input.atomicCommit.leaseGeneration = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
     await logHandHistory(input);
     expect((rpcCalls[1].args.p_hand_row as Record<string, any>).actions).toEqual(actions);
+    expect(mockObserveCompletedHand.mock.calls[1][0].committedHandId).toBe(historyId);
     expect(mockObserveCompletedHand.mock.calls[1][0].fence).not.toBe(
       mockObserveCompletedHand.mock.calls[0][0].fence
     );
@@ -353,6 +356,7 @@ describe('logHandHistory - worker-owned completed-hand observation', () => {
       expect((rpcCalls[1].args.p_hand_row as Record<string, any>).actions).toEqual(acceptedActions);
       expect(mockObserveCompletedHand).toHaveBeenCalledTimes(1);
       expect(mockObserveCompletedHand.mock.calls[0][0].actions).toEqual(acceptedActions);
+      expect(mockObserveCompletedHand.mock.calls[0][0].committedHandId).toBe(historyId);
     } finally {
       vi.useRealTimers();
     }
@@ -411,6 +415,7 @@ describe('logHandHistory - worker-owned completed-hand observation', () => {
       generation: input.handNumber,
       fence: `${input.tableId}:${input.handNumber}:${leaseGeneration}:observe`,
       handKey: `${input.tableId}:${input.handNumber}`,
+      committedHandId: historyId,
       actions: input.actions,
       bigBlind: input.bigBlind,
       showdown: showdownReveal,
@@ -507,6 +512,7 @@ describe('logHandHistory - accepted-hand transaction', () => {
       generation: input.handNumber,
       fence: `${input.tableId}:${input.handNumber}:${leaseGeneration}:observe`,
       handKey: `${input.tableId}:${input.handNumber}`,
+      committedHandId: historyId,
       actions: input.actions,
       bigBlind: input.bigBlind,
       showdown: null,

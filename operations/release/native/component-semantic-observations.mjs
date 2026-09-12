@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 
 // The function is separately testable against native PostgreSQL. The caller
@@ -45,13 +45,27 @@ export async function verifyPersistedHand(db, tableId, cycle, userId) {
 
 export async function schemaCatalogue(db) {
   // pg_get_* deparsers depend on search_path. Canonicalize it for producer and
-  // bridge alike without changing application ACLs or persistent settings.
-  const previous = (await db.query("SELECT current_setting('search_path') AS value")).rows[0].value;
-  await db.query("SELECT pg_catalog.set_config('search_path','pg_catalog',false)");
+  // bridge alike. The caller supplies an exclusive connection. A savepoint
+  // preserves both session and SET LOCAL settings without committing the
+  // caller's transaction. Standalone callers get an owned read-only transaction.
+  const savepoint = `catalogue_${randomUUID().replaceAll('-', '')}`;
+  let ownsTransaction = false;
   try {
+    await db.query(`SAVEPOINT ${savepoint}`);
+  } catch (error) {
+    if (error.code !== '25P01') throw error;
+    await db.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    ownsTransaction = true;
+  }
+  try {
+    await db.query('SET LOCAL search_path = pg_catalog');
     return await canonicalSchemaCatalogue(db);
   } finally {
-    await db.query("SELECT pg_catalog.set_config('search_path',$1,false)", [previous]);
+    if (ownsTransaction) await db.query('ROLLBACK');
+    else {
+      await db.query(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+      await db.query(`RELEASE SAVEPOINT ${savepoint}`);
+    }
   }
 }
 async function canonicalSchemaCatalogue(db) {

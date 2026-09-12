@@ -86,6 +86,32 @@ async function fixture(t, overrides = {}) {
 }
 const hand = { hand_number: 17, next_hand_number: 18 };
 
+test('catalogue reads preserve caller-local settings through commit', async (t) => {
+  const f = await fixture(t);
+  const settings = async () =>
+    (
+      await f.admin.query(
+        "SELECT current_setting('search_path') AS path, current_setting('transaction_read_only') AS read_only"
+      )
+    ).rows[0];
+  const initial = await settings();
+  const schema = await observations.schemaCatalogue(f.admin);
+  assert.deepEqual(await settings(), initial, 'standalone read must preserve session settings');
+  await f.admin.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+  await f.admin.query('SET LOCAL search_path = pg_catalog');
+  assert.equal(await observations.schemaCatalogue(f.admin), schema);
+  assert.deepEqual(await settings(), { path: 'pg_catalog', read_only: 'on' });
+  await f.admin.query('SET LOCAL search_path = public, pg_catalog');
+  assert.equal(await observations.schemaCatalogue(f.admin), schema);
+  assert.deepEqual(await settings(), { path: 'public, pg_catalog', read_only: 'on' });
+  await f.admin.query('COMMIT');
+  assert.deepEqual(
+    await settings(),
+    initial,
+    'committing the caller must not leak its local path into the session'
+  );
+});
+
 test('private fixed-query bridge returns actual scoped PG facts and preserves application ACLs', async (t) => {
   const f = await fixture(t);
   const schema = await observations.schemaCatalogue(f.admin);

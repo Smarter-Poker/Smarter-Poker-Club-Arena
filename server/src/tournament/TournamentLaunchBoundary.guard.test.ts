@@ -198,7 +198,17 @@ describe('a tournament launch crosses maintenance exactly once', () => {
       /throw new Error\(\s*`Tournament table \$\{i \+ 1\} was not created:/
     );
     expect(tableBuild).toContain("'Tournament.atomic_launch_seat_refused_or_unknown'");
-    expect(tableBuild).toMatch(/throw new Error\(\s*`Tournament atomic seat assignment failed/);
+    // 2026-09-09: one refused chair no longer fails the launch. The loop
+    // finishes the roster, releases a registrant the database cannot seat
+    // through the launch door, and fails closed only when a refused
+    // registrant could not be released or an outcome is unknown.
+    expect(tableBuild).toContain('classifySeatRefusal(reason)');
+    expect(tableBuild).toContain('releaseUnseatableRegistrantAtLaunch({');
+    expect(tableBuild).toMatch(
+      /throw new Error\('Tournament launch left refused registrants unreleased'\)/
+    );
+    expect(tableBuild).toMatch(/Tournament seat assignment outcome unknown for/);
+    expect(tableBuild).not.toMatch(/throw new Error\(\s*`Tournament atomic seat assignment failed/);
     expect(tableBuild).not.toMatch(/from\('table_seats'\)\.insert/);
     expect(tableBuild).not.toMatch(
       /from\('tournament_players'\)[\s\S]{0,300}?\.update\(\{\s*table_id:/

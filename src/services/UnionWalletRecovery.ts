@@ -1,5 +1,6 @@
 import { uuid } from '../utils/uuid';
 import { UNION_WALLET_RECOVERY_PREFIX } from '../utils/clearUserCaches';
+import { UUID_SHAPE as UUID_PATTERN } from '../utils/uuidShape';
 
 export { UNION_WALLET_RECOVERY_PREFIX };
 
@@ -38,7 +39,6 @@ export interface UnionWalletRecoveryStorage {
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const FUTURE_SKEW_MS = 5 * 60 * 1000;
 const MAX_SIGNATURE_LENGTH = 512;
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const WALLET_KEYS: ReadonlySet<RecoverableUnionWalletKey> = new Set([
   'chips',
   'rake',

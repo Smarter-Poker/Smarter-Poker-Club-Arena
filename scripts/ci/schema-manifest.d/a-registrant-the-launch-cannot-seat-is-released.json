@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/the-field-seats-past-a-refused-chair",
+  "functions": ["fn_ca_release_unseatable_registrant_at_launch"]
+}

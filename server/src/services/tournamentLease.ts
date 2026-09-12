@@ -46,6 +46,7 @@ import { supabase } from './supabase/client.js';
    table ends up restarting every twenty seconds with nothing to read. */
 import { leaseHeartbeatOutcomesTotal } from '../observability/engineInstruments.js';
 import { INSTANCE_ID, INSTANCE_VERSION } from './tableLease.js';
+import { UUID_SHAPE } from '../lib/uuidShape.js';
 
 /** Matches the table lease, and the RPC default. */
 export const TOURNAMENT_LEASE_STALE_SECONDS = 30;
@@ -104,7 +105,7 @@ let heartbeatErrors = 0;
 /** Legacy health counter: successful heartbeats that proved the row was gone. */
 let reclaimableHeartbeats = 0;
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_PATTERN = UUID_SHAPE;
 
 export interface TournamentLeaseHeartbeatClaim {
   tournamentId: string;

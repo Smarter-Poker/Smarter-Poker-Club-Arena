@@ -1,4 +1,5 @@
 import { CASHIER_RECOVERY_PREFIX, CASHIER_REQUEST_RECOVERY_PREFIX } from '../utils/clearUserCaches';
+import { UUID_SHAPE as UUID_PATTERN } from '../utils/uuidShape';
 
 export { CASHIER_RECOVERY_PREFIX, CASHIER_REQUEST_RECOVERY_PREFIX };
 
@@ -48,7 +49,6 @@ interface CashierRecoveryEnvelope {
 /** Account-scoped financial intent; its prefix is shared with the sign-out purge. */
 const CASHIER_RECOVERY_FUTURE_SKEW_MS = 5 * 60 * 1000;
 const CASHIER_RECOVERY_MAX_BATCHES = 20;
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const browserRecoveryStorage = (): CashierRecoveryStorage | null => {
   try {

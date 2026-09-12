@@ -14,6 +14,7 @@ import { retryFetch } from '../utils/retryFetch';
 import { reportError } from '../utils/errorReporter';
 import { titleCase } from '../utils/titleCase';
 import { uuid } from '../utils/uuid';
+import { UUID_SHAPE } from '../utils/uuidShape';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -830,8 +831,7 @@ export const MONTHLY_CHALLENGE_POOL: DailyChallenge[] = [
 // SERVICE
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const DAILY_MISSION_UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const DAILY_MISSION_UUID_PATTERN = UUID_SHAPE;
 
 const DAILY_MISSION_PERIOD_PATTERNS: Record<Tier, RegExp> = {
   daily: /^\d{4}-\d{2}-\d{2}$/,

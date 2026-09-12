@@ -41,6 +41,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { UUID_SHAPE } from '../lib/uuidShape.js';
 // Straight from the client module, never the `supabase.js` barrel: the barrel
 // re-exports every submodule, so importing it from here would pull the whole
 // data layer into the module graph for one rpc() call.
@@ -145,7 +146,7 @@ const conflicts = new Map<string, LeaseConflict>();
 let claimErrors = 0;
 let heartbeatErrors = 0;
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_PATTERN = UUID_SHAPE;
 
 export interface TableLeaseHeartbeatClaim {
   tableId: string;

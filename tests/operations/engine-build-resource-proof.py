@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Real Linux build and cgroup OOM proof; runs only in disposable CI."""
 import json
+import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -11,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BUILDER = "club-arena-engine-bounded-v1"
 CONTAINER = f"buildx_buildkit_{BUILDER}0"
 NODE = "node:22-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5"
-LIMIT = 1342177280
+LIMIT = 1073741824
 
 
 def run(args, *, timeout=60, check=True, env=None):
@@ -34,6 +35,12 @@ def counter(name):
     return text.strip()
 
 
+def runtime_hashes(directory):
+    return {str(p.relative_to(directory)): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in directory.rglob("*") if p.is_file()
+            and not p.name.endswith((".d.ts", ".d.ts.map", ".tsbuildinfo"))}
+
+
 def main():
     if sys.platform != "linux" or os.environ.get("GITHUB_ACTIONS") != "true":
         raise RuntimeError("resource proof requires a disposable Linux Actions runner")
@@ -41,6 +48,7 @@ def main():
     tag = f"club-arena-engine:{sha}"
     sentinel = f"engine-build-sentinel-{os.getpid()}"
     failed_tag = f"engine-build-oom-{os.getpid()}"
+    image_reader = f"engine-build-output-{os.getpid()}"
     out = ROOT / "work" / "engine-build-resource-proof"
     out.mkdir(parents=True, exist_ok=True)
     receipt = {"source_sha": sha, "scope": "isolated-build-resource-containment",
@@ -67,6 +75,20 @@ def main():
             if list(Path(temp, "contexts").iterdir()):
                 raise RuntimeError("successful build left source staging behind")
             receipt["image_id"] = inspect(tag)["Id"]
+            run(["docker", "create", "--name", image_reader, tag])
+            image_output = Path(temp, "image-dist")
+            run(["docker", "cp", f"{image_reader}:/app/dist", str(image_output)])
+            expected = runtime_hashes(ROOT / "server/dist")
+            actual = runtime_hashes(image_output)
+            if not expected or expected != actual:
+                delta = {"missing": sorted(expected.keys() - actual.keys()),
+                         "extra": sorted(actual.keys() - expected.keys()),
+                         "changed": sorted(k for k in expected.keys() & actual.keys()
+                                           if expected[k] != actual[k])}
+                (out / "runtime-output-difference.json").write_text(json.dumps(delta, indent=2))
+                raise RuntimeError("runtime emission differs from the full typechecked CI build")
+            receipt["typechecked_runtime_files_matched"] = len(expected)
+            receipt["runtime_file_hashes"] = actual
             run(["docker", "buildx", "inspect", BUILDER, "--bootstrap"], timeout=120)
             receipt["memory_max"] = counter("memory.max")
             receipt["swap_max"] = counter("memory.swap.max")
@@ -102,7 +124,7 @@ def main():
             receipt["status"] = "passed"
     finally:
         cleanup = {}
-        for name in [sentinel, CONTAINER]:
+        for name in [sentinel, image_reader, CONTAINER]:
             run(["docker", "rm", "--force", name], check=False)
             cleanup[name] = run(["docker", "inspect", name], check=False).returncode != 0
         run(["docker", "buildx", "rm", "--force", BUILDER], check=False)

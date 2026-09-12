@@ -14,9 +14,11 @@ RUN npm ci --include=dev --no-audit --no-fund
 COPY tsconfig.json ./
 COPY src/ ./src/
 
-# Keep compiler heap growth within the dedicated builder's 1280 MiB cgroup.
-# This applies only while compiling; the running engine keeps its own settings.
-RUN node --max-old-space-size=768 ./node_modules/typescript/bin/tsc
+# Exact-source release preflight performs the full typecheck and tests in CI.
+# Emit runtime files here without repeating that memory-heavy check on the
+# game host. Resource CI compares every emitted runtime file to the full build.
+# Declaration files serve no runtime purpose and can require extra inference.
+RUN node --max-old-space-size=512 ./node_modules/typescript/bin/tsc --noCheck --declaration false --declarationMap false
 
 # Remove dev dependencies
 RUN npm prune --omit=dev --no-audit --no-fund

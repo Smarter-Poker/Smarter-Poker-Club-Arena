@@ -60,7 +60,7 @@ describe('0064 actual Manager and transport proposal resolution', () => {
     const calls: any[] = [];
     let durable = state();
     vi.spyOn(supabase, 'rpc').mockImplementation((async (name: string, p: any) => {
-      if (name === 'fn_f06_reconcile_break') return ok(durable);
+      if (name === 'fn_f06_break_state') return ok(durable);
       calls.push(p);
       if (calls.length === 1) return capacity;
       durable = {
@@ -87,7 +87,7 @@ describe('0064 actual Manager and transport proposal resolution', () => {
     const m = manager();
     const calls: any[] = [];
     vi.spyOn(supabase, 'rpc').mockImplementation((async (name: string, p: any) => {
-      if (name === 'fn_f06_reconcile_break') return ok(state(false));
+      if (name === 'fn_f06_break_state') return ok(state(false));
       calls.push(p);
       if (calls.length === 1) return capacity;
       return ok({
@@ -224,7 +224,7 @@ describe('0064 actual Manager and transport proposal resolution', () => {
     vi.spyOn(supabase, 'from').mockReturnValue(query);
     const calls: any[] = [];
     vi.spyOn(supabase, 'rpc').mockImplementation((async (name: string, p: any) => {
-      if (name === 'fn_f06_reconcile_break') return ok(state(false));
+      if (name === 'fn_f06_break_state') return ok(state(false));
       calls.push(p);
       if (calls.length === 1) return capacity;
       return ok({
@@ -279,7 +279,7 @@ describe('0064 actual Manager and transport proposal resolution', () => {
       },
     ];
     vi.spyOn(supabase, 'rpc').mockImplementation((async (name: string, p: any) => {
-      if (name === 'fn_f06_reconcile_break') return ok(state());
+      if (name === 'fn_f06_break_state') return ok(state());
       proposals.push(p);
       if (proposals.length === 1) {
         occupied = 3;

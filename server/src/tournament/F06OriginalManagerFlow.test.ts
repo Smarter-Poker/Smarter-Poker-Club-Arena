@@ -131,7 +131,7 @@ async function fixture(failure = '', beginOutcome = 'committed') {
       };
       return ok(clone());
     }
-    if (name === 'fn_f06_reconcile_break') return ok(clone());
+    if (name === 'fn_f06_break_state') return ok(clone());
     if (name === 'fn_f06_claim_custody') {
       durable.custody_id = p.p_custody_id;
       durable.custody_generation = lease;

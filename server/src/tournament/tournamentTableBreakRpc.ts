@@ -301,7 +301,7 @@ export class TournamentTableBreakRpc {
     });
   }
   reconcile(breakId: string) {
-    return this.operation('fn_f06_reconcile_break', breakId);
+    return this.operation('fn_f06_break_state', breakId);
   }
   close(breakId: string) {
     return this.operation('fn_f06_close_break', breakId);

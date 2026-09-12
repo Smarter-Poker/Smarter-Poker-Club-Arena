@@ -7,6 +7,11 @@ import type {
 } from '../types.js';
 import { isKnownVariant, isShortDeckVariant } from './VariantRules.js';
 import {
+  captureHorsePublicTournamentStage,
+  type HorsePublicTournamentStage,
+  type HorsePublicTournamentReader,
+} from './HorsePublicTournamentStage.js';
+import {
   captureHorsePublicDeductions,
   type HorsePublicDeductions,
 } from './HorsePublicDeductions.js';
@@ -20,6 +25,8 @@ export type HorsePublicActionNode =
       status: 'captured';
       variant: HandConfig['gameVariant'];
       mode: 'cash' | 'tournament';
+      /** Absent in older observations; missing stage cannot imply cash. */
+      tournamentStage?: HorsePublicTournamentStage;
       asset: 'chips' | 'diamonds';
       chipUnit: 0.01 | 1;
       /** Absent on earlier schema-1 rows; those rows cannot establish net EV. */
@@ -72,7 +79,8 @@ export function captureHorsePublicActionNode(
   config: HandConfig,
   state: GameState,
   rights: AuthoritativeActionState | null,
-  boardCount: number
+  boardCount: number,
+  readTournamentStage?: HorsePublicTournamentReader
 ): HorsePublicActionNode {
   const unavailable = () => unavailablePublicActionNode('invalid_public_state');
   if (!['preflop', 'flop', 'turn', 'river'].includes(state.stage))
@@ -200,6 +208,7 @@ export function captureHorsePublicActionNode(
     status: 'captured',
     variant: config.gameVariant,
     mode: config.isTournament ? 'tournament' : 'cash',
+    tournamentStage: captureHorsePublicTournamentStage(config, readTournamentStage),
     asset: config.asset === 'diamonds' ? 'diamonds' : 'chips',
     chipUnit: config.isTournament || config.asset === 'diamonds' ? 1 : 0.01,
     deductions: captureHorsePublicDeductions(config),

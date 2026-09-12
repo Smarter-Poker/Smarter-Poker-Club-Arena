@@ -350,6 +350,22 @@ export async function heartbeatTournaments(
         'malformed_response',
         '[tournament-lease] heartbeat returned an incomplete or malformed generation proof'
       );
+      /* EVERY CLAIM IS ACCOUNTED FOR, ESPECIALLY THE UNREADABLE ONES (2026-09-12)
+         `state=malformed` has been declared and zero-seeded in engineInstruments
+         since this counter shipped, described there as "the response could not be
+         read as an answer". Nothing ever incremented it: both whole-answer refusals
+         return here, above the per-row loop that is the counter's only writer, so
+         production read exactly 0 while this path fenced the fleet.
+         That silence is not cosmetic. `LeaseHeartbeatsNotBeingKept` (critical, SMS)
+         is a RATIO of not-kept to total, so a refusal that increments neither half
+         contributes nothing to either - the one event that loses every lease in a
+         scope at once was the one event that alert could not see. Counting the
+         claims here is what makes it 100% not-kept and fires it. */
+      try {
+        leaseHeartbeatOutcomesTotal.inc(claims.length, { scope: 'tournament', state: 'malformed' });
+      } catch {
+        /* metrics must never affect a lease decision */
+      }
       return { status: 'answered', proofs: [], lostTournamentIds: tournamentIds };
     }
 

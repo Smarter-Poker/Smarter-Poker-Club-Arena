@@ -20,6 +20,7 @@ CONTROL_FILES = tuple('operations/release/native/' + name for name in (
     'component-semantic-observations.mjs'))
 NATIVE_STAGES = frozenset((
     'managed-postgres-event-trigger-boundary',
+    'gotrue-platform-helper-authority', 'gotrue-platform-helper-http',
     'initialization', 'observer-user-isolation', 'native-observation-bridge',
     'chromium-native-read-and-rls', 'postgresql-17-extensions',
     'postgresql-version', 'postgrest-version', 'gotrue-version', 'postgresql-initialize',
@@ -241,6 +242,7 @@ def smoke_records(output):
                 'extensions': 6, 'auth': '2.196.0', 'mfa': 'aal2',
                 'ledger_attribution': 'banned-without-session',
                 'service_roles': {'auth_admin_inheritance': 'disabled',
+                                  'auth_claim_helpers': 'service-owned-and-http-verified',
                                   'authenticator_membership': 'set-without-inherit',
                                   'auth_schema_owner': 'supabase_admin',
                                   'auth_schema_create': 'auth-admin-only-among-application-callers',

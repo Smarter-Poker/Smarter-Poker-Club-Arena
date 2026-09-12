@@ -22,6 +22,9 @@ import {
   assertManagedPostgresBoundary,
   assertBootstrapPostgresConfiguration,
   sealFixtureAuthMigrationLedger,
+  alignFixtureAuthPlatformHelperGrants,
+  assertFixtureAuthPlatformHelpers,
+  assertFixtureAuthPlatformWriteDenied,
 } from './service-role-boundary.mjs';
 import { startObservationBridge } from './observation-bridge.mjs';
 import {
@@ -442,9 +445,13 @@ async function services() {
     try {
       await authBootstrap.connect();
       await sealFixtureAuthMigrationLedger(authBootstrap);
+      await alignFixtureAuthPlatformHelperGrants(authBootstrap);
     } finally {
       await databaseOwner.end(authBootstrap);
     }
+    stage = 'gotrue-platform-helper-authority';
+    await assertFixtureAuthPlatformHelpers(db);
+    await assertFixtureAuthPlatformWriteDenied(db);
     stage = 'gotrue-migration-ledger';
     assertFixtureAuthMigrations(
       (await db.query('SELECT version FROM auth.schema_migrations')).rows.map((row) => row.version)
@@ -486,6 +493,11 @@ async function services() {
       GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
       GRANT SELECT ON public.fixture_smoke TO anon, authenticated, service_role;
       CREATE PUBLICATION supabase_realtime FOR TABLE public.fixture_smoke;
+      CREATE FUNCTION public.fixture_auth_claims() RETURNS jsonb LANGUAGE sql STABLE
+        AS $$SELECT jsonb_build_object('uid',auth.uid(),'role',auth.role(),
+          'email',auth.email(),'jwt_sub',auth.jwt()->>'sub')$$;
+      REVOKE ALL ON FUNCTION public.fixture_auth_claims() FROM PUBLIC;
+      GRANT EXECUTE ON FUNCTION public.fixture_auth_claims() TO anon, authenticated;
     `);
     await db.query('INSERT INTO public.fixture_smoke(owner_id,payload) VALUES($1,$2)', [
       users[1].id,
@@ -503,6 +515,27 @@ async function services() {
     });
     stage = 'postgrest-server-ready';
     await eventually(() => healthy('http://127.0.0.1:3000/'));
+    stage = 'gotrue-platform-helper-http';
+    for (const actor of [users[1], user]) {
+      const claimResponse = await fetch('http://127.0.0.1:3000/rpc/fixture_auth_claims', {
+        headers: { authorization: `Bearer ${actor.session.access_token}` },
+      });
+      assert.equal(claimResponse.status, 200);
+      assert.deepEqual(await claimResponse.json(), {
+        uid: actor.id,
+        role: 'authenticated',
+        email: actor.email,
+        jwt_sub: actor.id,
+      });
+    }
+    const anonymousClaims = await fetch('http://127.0.0.1:3000/rpc/fixture_auth_claims');
+    assert.equal(anonymousClaims.status, 200);
+    assert.deepEqual(await anonymousClaims.json(), {
+      uid: null,
+      role: 'anon',
+      email: null,
+      jwt_sub: null,
+    });
     stage = 'postgrest-anonymous-rls';
     const anonymous = await fetch('http://127.0.0.1:3000/fixture_smoke');
     assert.equal(anonymous.status, 200);
@@ -919,7 +952,7 @@ async function services() {
         auth: '2.196.0',
         mfa: 'aal2',
         ledger_attribution: 'banned-without-session',
-        service_roles: serviceRoles,
+        service_roles: { ...serviceRoles, auth_claim_helpers: 'service-owned-and-http-verified' },
         managed_postgres: managedPostgres,
         postgrest: '14.5',
         realtime: '2.134.10',

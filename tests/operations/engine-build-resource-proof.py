@@ -75,14 +75,17 @@ def wrapper_fault(temp, out, mode, sentinel, before, owned_tags):
         process = subprocess.Popen(args, cwd=ROOT, env=env, stdout=stream,
                                    stderr=subprocess.STDOUT, start_new_session=True)
         try:
-            if mode == "cancellation":
+            if mode.endswith("cancellation"):
                 deadline = time.monotonic() + 120
                 while not re.search(rf"^#\d+\s+\d+(?:\.\d+)? {marker}$",
                                     log.read_text(), re.MULTILINE):
                     if process.poll() is not None or time.monotonic() >= deadline:
                         raise RuntimeError("wrapper cancellation never reached its real build step")
                     time.sleep(0.2)
-                os.killpg(process.pid, signal.SIGTERM)
+                if mode == "parent-cancellation":
+                    process.send_signal(signal.SIGTERM)
+                else:
+                    os.killpg(process.pid, signal.SIGTERM)
             code = process.wait(timeout=120)
         finally:
             if process.poll() is None:
@@ -106,8 +109,10 @@ def wrapper_fault(temp, out, mode, sentinel, before, owned_tags):
         facts["real_build_step_exit_23_observed"] = "exit code: 23" in log.read_text()
         if not facts["real_build_step_exit_23_observed"]:
             raise RuntimeError("wrapper failure did not reach its intended real build failure")
-    if mode == "cancellation":
-        facts["signal_delivery"] = "SIGTERM to the wrapper process group after real RUN output"
+    if mode.endswith("cancellation"):
+        facts["signal_delivery"] = ("SIGTERM to the wrapper PID after real RUN output"
+                                    if mode == "parent-cancellation" else
+                                    "SIGTERM to the wrapper process group after real RUN output")
         if code != 143:
             raise RuntimeError(f"wrapper cancellation returned an unexpected status: {facts}")
     if code == 0 or not all(v for k, v in facts.items() if k.endswith("before_harness_cleanup")):
@@ -199,6 +204,8 @@ def main():
                 temp, out, "failure", sentinel, before, owned_tags)
             receipt["wrapper_cancellation"] = wrapper_fault(
                 temp, out, "cancellation", sentinel, before, owned_tags)
+            receipt["wrapper_parent_cancellation"] = wrapper_fault(
+                temp, out, "parent-cancellation", sentinel, before, owned_tags)
             after = inspect(sentinel)
             assert after["State"]["Running"]
             assert after["State"]["StartedAt"] == before["State"]["StartedAt"]

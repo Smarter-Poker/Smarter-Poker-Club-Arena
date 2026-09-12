@@ -2165,6 +2165,8 @@ exit 5
       chmodSync(join(bin, 'awk'), 0o755);
       writeFileSync(join(bin, 'flock'), '#!/usr/bin/env bash\nexit 0\n');
       chmodSync(join(bin, 'flock'), 0o755);
+      writeFileSync(join(bin, 'setsid'), '#!/usr/bin/env bash\nexec "$@"\n');
+      chmodSync(join(bin, 'setsid'), 0o755);
       writeFileSync(
         join(bin, 'timeout'),
         '#!/usr/bin/env bash\nset -e\nwhile [[ "${1:-}" == --* ]]; do shift; done\n[[ "${1:-}" =~ ^[0-9]+s$ ]] && shift\nexec "$@"\n'

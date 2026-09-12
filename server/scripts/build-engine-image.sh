@@ -3,6 +3,8 @@
 # `server` tree. The mutable host checkout is only an object database: it is
 # never the Docker build context.
 set -euo pipefail
+# The background build owns a separate session; never enable job control here.
+set +m
 
 REPO_DIR="${1:-}"
 TARGET_SHA="${2:-}"
@@ -85,10 +87,14 @@ BUILD_CONTEXT="$(mktemp -d "${BUILD_CONTEXT_ROOT%/}/context.XXXXXXXX")"
 CANDIDATE_REF="$IMAGE_REF-candidate-$$"
 CANDIDATE_TAGGED=0
 BUILDER_STARTED=0
+BUILD_PID=''
 BUILDER_CONFIG="${BUILD_CONTEXT}.buildkitd.toml"
 
 cleanup_build() {
   local resource_cleanup_failed=0
+  if [ -n "$BUILD_PID" ]; then
+    kill -TERM -- "-$BUILD_PID" 2>/dev/null || true
+  fi
   if [ "$BUILDER_STARTED" = 1 ]; then
     # Stop only our builder, preserving its configured cache for the next release.
     # Cancellation must not leave a compiler competing with the live engine.
@@ -98,6 +104,12 @@ cleanup_build() {
         resource_cleanup_failed=1
       fi
     fi
+  fi
+  if [ -n "$BUILD_PID" ]; then
+    # The client group belongs to this invocation, including timeout and Buildx.
+    # After stopping its builder, reap it without an unbounded wait.
+    kill -KILL -- "-$BUILD_PID" 2>/dev/null || true
+    wait "$BUILD_PID" 2>/dev/null || true
   fi
   if [ "$CANDIDATE_TAGGED" = 1 ]; then
     docker image rm "$CANDIDATE_REF" >/dev/null 2>&1 || true
@@ -133,6 +145,7 @@ AVAILABLE_KIB="$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)"
 [[ "$AVAILABLE_KIB" =~ ^[0-9]+$ ]] || die 'host memory availability is unreadable'
 [ "$AVAILABLE_KIB" -ge "$((BUILD_MEMORY_BYTES / 1024 + BUILD_RESERVE_KIB))" ] \
   || die 'insufficient memory headroom for the bounded engine build'
+command -v setsid >/dev/null || die 'owned build process sessions are unavailable'
 
 if ! docker buildx inspect "$BUILDER" >/dev/null 2>&1; then
   cat > "$BUILDER_CONFIG" <<'BUILDKIT_CONFIG'
@@ -182,14 +195,21 @@ echo "ENGINE_BUILD_RESOURCE_BOUNDARY=memory:$CGROUP_MEMORY,swap:$CGROUP_SWAP,cpu
 CANDIDATE_TAGGED=1
 (
   cd "$BUILD_CONTEXT"
-  timeout --signal=TERM --kill-after=15s 1500s docker buildx build \
+  exec setsid timeout --signal=TERM --kill-after=15s 1500s docker buildx build \
     --builder "$BUILDER" --load --progress plain \
     --build-arg "GIT_COMMIT_SHA=$TARGET_SHA" \
     --label "org.opencontainers.image.revision=$TARGET_SHA" \
     --label "com.smarterpoker.engine.source-tree=$SERVER_TREE" \
     --label "com.smarterpoker.engine.build-contract=$BUILD_CONTRACT" \
     -t "$CANDIDATE_REF" .
-)
+) &
+BUILD_PID=$!
+# Bash defers traps while waiting on a foreground external command. Waiting on
+# this owned background job instead lets TERM/HUP enter cleanup immediately.
+BUILD_STATUS=0
+wait "$BUILD_PID" || BUILD_STATUS=$?
+BUILD_PID=''
+[ "$BUILD_STATUS" = 0 ] || exit "$BUILD_STATUS"
 BUILD_MEMORY_PEAK="$(docker exec "$BUILDER_CONTAINER" cat /sys/fs/cgroup/memory.peak)"
 [[ "$BUILD_MEMORY_PEAK" =~ ^[0-9]+$ ]] || die 'engine build memory peak is unreadable'
 echo "ENGINE_BUILD_MEMORY_PEAK_BYTES=$BUILD_MEMORY_PEAK"

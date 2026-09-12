@@ -27,13 +27,17 @@ every reused builder. This collection target is not a filesystem quota; active
 build storage can exceed it. The committed server
 archive, immutable image labels, release locks and certified cutover remain in
 place. This is a build containment change, not an application memory-leak fix.
+The build client runs in an owned process session and the wrapper uses an
+interruptible background wait. A foreground wait previously deferred TERM
+cleanup until the client exited; the native cancellation test exposed that
+delay. Cleanup terminates only this build's client session and builder.
 
 Validation includes the executable release-law suite and a separate Linux job
 that builds the exact engine, compares every emitted runtime file to the full
 typechecked CI build, reads actual cgroup limits, deliberately causes a
 build OOM, and checks that a neighboring container neither exits nor restarts.
 It also runs the production wrapper against a deliberately failing build and
-a build cancelled by a process-group termination signal, verifying that the
+builds cancelled by either a direct wrapper signal or a process-group signal, verifying that the
 wrapper stops its builder and removes staging and candidate tags before the
 test harness performs any cleanup.
 The job retains its build logs, memory peak, OOM counters and cleanup receipt.

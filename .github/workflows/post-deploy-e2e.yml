@@ -222,6 +222,19 @@ jobs:
           node scripts/ci/check-phantom-columns.mjs
           node scripts/ci/check-embed-relationships.mjs
 
+      # The live-table suite already requires this exact engine. Check that
+      # prerequisite before creating a production account or spending the full
+      # browser budget on a release which cannot pass. Keep the preceding
+      # read-only schema/FK audits and the later in-suite identity checks.
+      - name: Require the exact engine before opening production browser fixtures
+        env:
+          EXPECTED_ENGINE_SHA: ${{ steps.engine.outputs.sha }}
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 20 -H 'Cache-Control: no-cache' \
+            "https://engine.smarter.poker/health?certificate=$GITHUB_RUN_ID" \
+            | node scripts/ci/production-e2e-provenance.mjs engine-ready "$EXPECTED_ENGINE_SHA"
+
       - name: Install Chromium and WebKit
         run: npx playwright install chromium webkit --with-deps
 

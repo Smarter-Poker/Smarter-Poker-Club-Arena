@@ -1225,7 +1225,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Every required server shard passed
+      - name: Every shard passed
         env:
           MATRIX_RESULT: ${{ needs.server_shards.result }}
           DIFF_RESULT: ${{ needs.changes.result }}

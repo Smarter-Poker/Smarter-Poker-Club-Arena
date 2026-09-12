@@ -1,3 +1,7 @@
+## 2026-09-12: Explicit zero closes tournament late registration
+
+`20260912033500_explicit_zero_closes_tournament_late_registration.sql` makes the existing prize-finalization trigger respect `late_reg_levels=0`, matching the registration reader. It retains NULL fallback and all rebuy, re-entry, timed-entry and add-on guards. Exact body/authority preimages, postimage and metadata checks protect the one-expression replacement. No row or chip movement occurs. See the corresponding dated changelog and 19-case native PostgreSQL probe; production application is not claimed.
+
 ## 2026-09-10: Restore Bounded Rake Attribution Retries
 
 Prepare an exact-source guarded restoration of the committed attribution retry loop while preserving settlement lane exclusion and function metadata. Thirty-five native rollback assertions passed; the tracked composer reproduces the executed proof exactly. See docs/changelog/2026-09-10-rake-attribution-retry-restoration.md for scope and limits. Application remains separate from source publication.

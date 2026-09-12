@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/prize-window-zero-is-closed",
+  "_comment": "Guarded replacement of the existing prize finalization trigger; no production application claimed.",
+  "functions": ["trg_tournament_pool_finalization_window_guard"]
+}

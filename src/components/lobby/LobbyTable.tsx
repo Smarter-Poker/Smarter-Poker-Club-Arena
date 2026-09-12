@@ -2051,7 +2051,6 @@ export default function LobbyTable({
             entry={entry}
             ctx={rowCtx}
             selected={entry.id === selectedId}
-            onSelect={onSelect}
           />
         ))}
       </div>

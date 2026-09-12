@@ -52,6 +52,7 @@ interface CompletedHandObservationPayload {
   generation: number;
   fence: string;
   handKey: string;
+  committedHandId?: string;
   actions: unknown;
   bigBlind: number;
   showdown: unknown;

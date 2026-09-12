@@ -107,6 +107,13 @@ const MINI_BLOCKS: VariantBlock[] = BLOCKS.map((b) => {
   if (!info.eligible) return { ...b, cards: [], note: '' };
   const holdem = info.rule === 'holdem_aces_full';
   const hiLo = b.key === 'plo8';
+  /* A RANKED BAR STATES ITS OWN RANK (Dan, 2026-09-12). PLO5/FLO5 is Quad Tens
+     and Pineapple is Quad Deuces, so neither can take the generic "any four of
+     a kind" note below - one of them would be wrong. The sentence is built
+     from the variant's own label so it cannot drift from the bar. */
+  if (info.rule === 'ranked_quads') {
+    return { ...b, cards: info.minLosingHandCards, note: info.shortLabel + '. ' + info.subLabel };
+  }
   /* Pineapple's MAIN bar is Quad Kings, so `info.rule` is plo_quads and it
      takes the "not only Quad Kings" note below - which is exactly right for
      it. Nothing here assumes an Omaha table. */
@@ -134,6 +141,10 @@ function blockKeyFor(variantKey: string | null | undefined): string | null {
      nothing. (`pineapple` is NOT aliased: it has its own block above, because
      its note is not PLO4's.) */
   if (raw === 'flo8') return 'plo8';
+  /* Same reasoning for the other two fixed-limit Omaha names, added with their
+     BBJ_QUALIFYING_HANDS keys on 2026-09-12. */
+  if (raw === 'flo4') return 'plo4';
+  if (raw === 'flo5') return 'plo5';
   return raw;
 }
 

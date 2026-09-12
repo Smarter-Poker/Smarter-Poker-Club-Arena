@@ -13,3 +13,5 @@ The repeatable native probe is scripts/ci/probes/horse-committed-snapshot-native
 This component is not called by the live engine yet. Acquisition and qualification must run in an isolated background worker, outside the main and decision workers. Durable scoped persistence, replay receipts, counterfactual net-utility proposals, independent held-out/shadow evaluation, activation/rollback and natural full-pipeline evidence remain unfinished. No adaptive action or promotion is enabled by this change.
 
 The first integrated source `9424bae6a8c1ff3b5339488a15dd956412488737` passed 11,255 tests with 145 existing skips before that final budget hardening. Its result is preserved separately; it is not substituted for the final revised-source gate.
+
+Final revised source `80c6373b891bb3182dcf2e321091a86356cff7d6` passed compilation and the complete integrated server suite: 11,256 tests passed, 145 existing skips, 767 passed files and one skipped file (72.75 seconds). All five source/migration/compiled bindings matched the final bounded native proof. Publication and the missing live consumer remain separate open gates.

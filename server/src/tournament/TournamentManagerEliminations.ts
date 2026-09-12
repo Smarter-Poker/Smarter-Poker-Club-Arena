@@ -1110,8 +1110,23 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         }
 
         if (bustBatchHasMore) {
+          /* A BACKLOG IS NOT A REASON TO SKIP THE REST OF THE SWEEP (2026-09-12,
+             drift incident 7ab0dcbe). This `return` left eliminationSweepCursor
+             at stage 1, so every later stage was unreachable for as long as more
+             than SWEEP_MUTATION_BATCH_SIZE zero-chip players existed - including
+             balanceStage, the ONLY caller of checkTableBalance. On a 200 runner
+             field that is the whole event, and it is self-reinforcing: no
+             consolidation means tables drain to one player, a table of one
+             cannot deal, and the busts that caused the backlog are never
+             recorded. Afternoon Free Buy 94b24ce3 wrote 200 seat rows for 199
+             players and NOT ONE balancer move, stopped dealing at 22:09Z on 23
+             tables holding one player each, and left 151 players unranked and
+             250.90 in escrow payable to nobody. Platform-wide when this was
+             found: 45 events in that state, 243 unranked players, 5,430.90
+             pinned. The backlog still re-arms the next sweep - it just no
+             longer holds the cursor hostage, so the remaining busts are taken
+             one batch per full cycle while the field actually consolidates. */
           this.requestEliminationSweep();
-          return;
         }
 
         if (completedStage(2)) return;

@@ -3,6 +3,7 @@ import { performance } from 'node:perf_hooks';
 import { FINANCIAL_MS, validateFinancialData } from './component-observation-protocol.mjs';
 import { createTopupVerifier } from './financial-topup-verifier.mjs';
 import { verifyInsuranceEconomics } from './financial-insurance-verifier.mjs';
+import { verifyFinancialSettlement } from './financial-settlement-verifier.mjs';
 
 const phases = Object.freeze([
   'topup.before',
@@ -43,6 +44,7 @@ export function createFinancialCheckpointObserver({
     deadline,
     topup,
     insurance,
+    settlement,
     started = false,
     busy = false,
     failed = false;
@@ -99,8 +101,7 @@ export function createFinancialCheckpointObserver({
     );
     return structuredClone(data);
   }
-  async function until(predicate, milliseconds) {
-    const end = Math.min(deadline, now() + milliseconds);
+  async function until(predicate, milliseconds, end = Math.min(deadline, now() + milliseconds)) {
     for (;;) {
       const data = await facts(end, 'FINANCIAL_CHECKPOINT_PERSISTENCE_TIMEOUT');
       assert.ok(now() < end, 'FINANCIAL_CHECKPOINT_PERSISTENCE_TIMEOUT');
@@ -155,7 +156,7 @@ export function createFinancialCheckpointObserver({
         if (index < 4) assert.equal(entry.actor_id, bound.actorIds[financial.actor_index]);
         else if (index < 7)
           assert.ok(bound.actorIds.includes(entry.actor_id), 'FINANCIAL_CHECKPOINT_ACTOR');
-        let data;
+        let data, settlementEnd;
         if (entry.phase === 'insurance.offered') {
           assert.equal(entry.offer.table_id, bound.tableId);
           assert.equal(entry.offer.hand_number, financial.hand_number);
@@ -173,12 +174,14 @@ export function createFinancialCheckpointObserver({
             5000
           );
         } else if (entry.phase === 'settlement.observed') {
+          settlementEnd = Math.min(deadline, now() + 15000);
           assert.equal(entry.event.table_id, bound.tableId);
           assert.equal(entry.event.hand_number, financial.hand_number);
           data = await until(
             (row) =>
               row.commits.length === 1 && row.commits[0][3] !== null && row.hands.length === 1,
-            15000
+            15000,
+            settlementEnd
           );
           assert.equal(data.hands[0][0], data.commits[0][0], 'FINANCIAL_COMMITTED_HAND_ID');
           const post = JSON.parse(data.commits[0][5]);
@@ -199,7 +202,7 @@ export function createFinancialCheckpointObserver({
         }
         if (entry.phase === 'insurance.accepted')
           assert.equal(entry.actor_id, journal[4].entry.actor_id);
-        const felt = structuredClone(await within(sampleFelt));
+        const felt = structuredClone(await within(sampleFelt, settlementEnd ?? deadline));
         assert.ok(Array.isArray(felt) && felt.length === 2, 'FINANCIAL_FELT_CLIENT_COUNT');
         assert.deepEqual(felt.map((r) => r.actor_id).sort(), [...bound.actorIds].sort());
         for (const sample of felt) {
@@ -219,6 +222,29 @@ export function createFinancialCheckpointObserver({
             accepted: journal[6],
             settled: saved,
           });
+          for (;;) {
+            settlement = verifyFinancialSettlement({
+              owner: bound,
+              before: journal[0],
+              accepted: journal[2],
+              settled: saved,
+              insurance,
+            });
+            if (settlement) break;
+            await within(
+              () => sleep(Math.min(100, settlementEnd - now())),
+              settlementEnd,
+              'FINANCIAL_FELT_SETTLEMENT_TIMEOUT'
+            );
+            saved.felt = structuredClone(
+              await within(sampleFelt, settlementEnd, 'FINANCIAL_FELT_SETTLEMENT_TIMEOUT')
+            );
+          }
+          assert.deepEqual(
+            await within(engine, settlementEnd, 'FINANCIAL_FELT_SETTLEMENT_TIMEOUT'),
+            identity,
+            'FINANCIAL_ENGINE_REPLACED'
+          );
         }
         assert.ok(
           Buffer.byteLength(JSON.stringify([...journal, saved])) <= 262144,
@@ -241,10 +267,10 @@ export function createFinancialCheckpointObserver({
         engine_identity: structuredClone(identity),
         topup_database: topup.receipt(),
         insurance_database: structuredClone(insurance),
+        settled_player_felt: structuredClone(settlement),
         checkpoints: structuredClone(journal),
         product_certificate: false,
         remaining: [
-          'felt-to-database settlement reconciliation',
           'canonical fixture cleanup',
           'source closure and deployed release certification',
         ],

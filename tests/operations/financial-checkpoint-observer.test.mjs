@@ -84,6 +84,8 @@ function fixture(overrides = {}) {
     ],
   ];
   final.insurance = [[id(12), id(4), '12', '200', '0', '-12', 'true', 'club', id(2)]];
+  final.seats[0][2] = '10'; // Losing actor's one deferred top-up.
+  final.seats[1][2] = '385'; // Winner: 400 pot -3 rake -12 premium.
   final.banks = [['club', id(2), id(13), '12']];
   final.ledger.push([
     id(14),
@@ -122,6 +124,21 @@ function fixture(overrides = {}) {
     instance = 'owned-boot-1',
     source = owner.sourceSha;
   const reads = [];
+  const defaultFelt = () =>
+    owner.actorIds.map((actor_id) => ({
+      actor_id,
+      sequence: index,
+      state: {
+        table_id: id(1),
+        hand_number: hand,
+        stage: index === 7 ? 'showdown' : 'preflop',
+        players: rows[index].seats.map((row) => ({
+          user_id: row[1],
+          stack: Number(row[2]),
+          bet: 200,
+        })),
+      },
+    }));
   const options = {
     owner,
     observations: {
@@ -136,14 +153,7 @@ function fixture(overrides = {}) {
     readEngineIdentity:
       overrides.readEngineIdentity ??
       (async () => ({ source_sha: source, instance_id: instance, running: true })),
-    sampleFelt:
-      overrides.sampleFelt ??
-      (async () =>
-        owner.actorIds.map((actor_id) => ({
-          actor_id,
-          sequence: index,
-          state: { table_id: id(1), hand_number: hand },
-        }))),
+    sampleFelt: overrides.sampleFelt ?? (async () => defaultFelt()),
     now: () => clock,
     sleep: async (ms) => {
       clock += ms;
@@ -156,6 +166,7 @@ function fixture(overrides = {}) {
     reads,
     observer,
     options,
+    defaultFelt,
     setIndex: (value) => {
       index = value;
     },
@@ -367,7 +378,9 @@ test('ordered fixed observations compare the scoped economics without certifying
   assert.equal(result.topup_database.debited_cents, '1000');
   assert.equal(result.insurance_database.premium_cents, '1200');
   assert.equal(result.product_certificate, false);
-  assert.ok(result.remaining.includes('felt-to-database settlement reconciliation'));
+  assert.equal(result.settled_player_felt.final_player_cents, '398500');
+  assert.equal(result.settled_player_felt.applied_addon_cents, '1000');
+  assert.equal(result.settled_player_felt.clients.length, 2);
   for (const read of f.reads)
     assert.deepEqual(read, { actor_index: 0, hand_number: hand, op_id: owner.opId });
   result.checkpoints[0].facts.wallets[0][1] = '0';
@@ -389,6 +402,97 @@ test('changed actor or hand cannot repin an active sequence', async () => {
     await assert.rejects(f.run(1));
     await assert.rejects(f.run(0), /CLOSED/);
   }
+});
+for (const [name, change, reason] of [
+  [
+    'double-applied pending chips',
+    (f) => {
+      f.rows[7].seats[0][2] = '20';
+    },
+    /CHIP_CONSERVATION/,
+  ],
+  [
+    'second wallet debit',
+    (f) => {
+      f.rows[7].wallets[0][1] = '1780';
+    },
+    /EXTRA_WALLET_CHANGE/,
+  ],
+  [
+    'changed occupancy',
+    (f) => {
+      f.rows[7].seats[0][0] = id(99);
+    },
+    /OCCUPANCY_REPLACED/,
+  ],
+  [
+    'partial pending application',
+    (f) => {
+      f.rows[7].addons[0][5] = '5';
+    },
+    /ADDON_APPLIED/,
+  ],
+  [
+    'unrequested refund',
+    (f) => {
+      f.rows[7].addons[0][6] = '10';
+    },
+    /ADDON_REFUNDED/,
+  ],
+])
+  test(`final settlement refuses ${name}`, async () => {
+    const f = fixture();
+    await f.observer.start();
+    for (let i = 0; i < 7; i++) await f.run(i);
+    change(f);
+    await assert.rejects(f.run(7), reason);
+  });
+test('both felt clients must catch up within the original settlement deadline', async () => {
+  let finalReads = 0;
+  const f = fixture({
+    sampleFelt: async () => {
+      const value = f.defaultFelt();
+      if (value[0].state.stage === 'showdown' && finalReads++ === 0)
+        value[1].state.players[0].stack += 10;
+      return value;
+    },
+  });
+  await f.observer.start();
+  for (let i = 0; i < 8; i++) await f.run(i);
+  assert.equal(finalReads, 2);
+  assert.equal(f.observer.observations().settled_player_felt.clients.length, 2);
+});
+test('persistent felt over-credit cannot borrow a new settlement deadline', async () => {
+  const f = fixture({
+    sampleFelt: async () => {
+      const value = f.defaultFelt();
+      if (value[0].state.stage === 'showdown') value[1].state.players[0].stack += 10;
+      return value;
+    },
+  });
+  await f.observer.start();
+  for (let i = 0; i < 7; i++) await f.run(i);
+  await assert.rejects(f.run(7), /FELT_SETTLEMENT_TIMEOUT/);
+});
+test('next-hand live blinds reconcile to the prior committed seats without counting old bets twice', async () => {
+  const f = fixture({
+    sampleFelt: async () => {
+      const value = f.defaultFelt();
+      if (value[0].state.stage === 'showdown')
+        for (const sample of value) {
+          sample.state.hand_number++;
+          sample.state.stage = 'preflop';
+          for (const player of sample.state.players) {
+            player.stack -= 1;
+            player.bet = 1;
+          }
+        }
+      return value;
+    },
+  });
+  await f.observer.start();
+  for (let i = 0; i < 8; i++) await f.run(i);
+  assert.equal(f.observer.observations().settled_player_felt.clients[0].hand_number, hand + 1);
 });
 test('insurance refusal cannot mutate fixed financial facts', async () => {
   const f = fixture();

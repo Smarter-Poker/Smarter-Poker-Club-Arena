@@ -57,6 +57,8 @@ async function harness(
     subprotocol = 'bearer',
     financialProof,
     financialResponse = () => [400, { success: false }],
+    signal,
+    replyToSubscribe = true,
   } = {}
 ) {
   const actions = [],
@@ -101,7 +103,7 @@ async function harness(
         const frame = JSON.parse(String(raw));
         frames.push(frame);
         assert.ok(['SUBSCRIBE', 'PONG'].includes(frame.type), 'WS never transports actions');
-        if (frame.type === 'SUBSCRIBE') {
+        if (frame.type === 'SUBSCRIBE' && replyToSubscribe) {
           assert.equal(frame.tableId, tableId);
           ws.send(JSON.stringify({ type: 'SNAPSHOT', tableId, seq: 1, state }));
           ws.send(JSON.stringify({ type: 'SUBSCRIBED', tableId }));
@@ -124,6 +126,7 @@ async function harness(
     startFixtureActors({
       tableId,
       users,
+      signal,
       ...(financialProof ? { financialProof } : {}),
       onFailure: (error) => failures.push(error.message),
       testEndpoints: {
@@ -475,6 +478,41 @@ test('explicit close stops queued actions without reporting fixture failure', as
   await wait(450);
   assert.equal(fixture.actions.length, 0);
   assert.deepEqual(fixture.failures, []);
+});
+
+test('an observer abort stops both real sockets and their queued actions', async (t) => {
+  const controller = new AbortController();
+  const fixture = await harness(t, {
+    signal: controller.signal,
+    state: snapshot(ids[0], 'aborted-action'),
+  });
+  await fixture.start();
+  controller.abort();
+  await until(() => [...fixture.sockets.values()].every((socket) => socket.readyState === 3));
+  await wait(350);
+  assert.deepEqual(fixture.actions, []);
+  assert.deepEqual(fixture.failures, []);
+});
+
+test('an observer abort interrupts actor startup without waiting for its startup timer', async (t) => {
+  const controller = new AbortController();
+  const fixture = await harness(t, { signal: controller.signal, replyToSubscribe: false });
+  const starting = fixture.start();
+  const refused = assert.rejects(starting, /FIXTURE_ACTOR_ABORTED/);
+  await until(() => fixture.sockets.size === 2);
+  controller.abort();
+  await refused;
+  await until(() => [...fixture.sockets.values()].every((socket) => socket.readyState === 3));
+  assert.deepEqual(fixture.failures, []);
+});
+
+test('an already aborted observer cannot start an actor connection', async () => {
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(
+    startFixtureActors({ tableId, users, signal: controller.signal, onFailure() {} }),
+    { name: 'AbortError' }
+  );
 });
 
 test('only two matching authenticated sessions can start, endpoints remain local', async () => {

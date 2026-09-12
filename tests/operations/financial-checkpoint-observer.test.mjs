@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { FINANCIAL_SECTIONS } from '../../operations/release/native/component-observation-protocol.mjs';
 import { createFinancialCheckpointObserver } from '../../operations/release/native/financial-checkpoint-observer.mjs';
+import { runFinancialRoute } from '../../operations/release/native/financial-route-runner.mjs';
 
 const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const owner = {
@@ -121,7 +122,7 @@ function fixture(overrides = {}) {
     instance = 'owned-boot-1',
     source = owner.sourceSha;
   const reads = [];
-  const observer = createFinancialCheckpointObserver({
+  const options = {
     owner,
     observations: {
       binding: { table_id: id(1) },
@@ -147,12 +148,17 @@ function fixture(overrides = {}) {
     sleep: async (ms) => {
       clock += ms;
     },
-  });
+  };
+  const observer = createFinancialCheckpointObserver(options);
   return {
     rows,
     entries,
     reads,
     observer,
+    options,
+    setIndex: (value) => {
+      index = value;
+    },
     setSource: (v) => {
       source = v;
     },
@@ -167,6 +173,143 @@ function fixture(overrides = {}) {
       await observer.checkpoint(entries[i]);
     },
   };
+}
+
+function runnerFixture(f, startActors) {
+  return runFinancialRoute({
+    ...f.options,
+    users: owner.actorIds.map((id) => ({ id, session: { user: { id } } })),
+    startActors,
+  });
+}
+
+test('runner couples every checkpoint to its own two client samples and closes the actors', async () => {
+  const f = fixture();
+  let closed = 0,
+    signal;
+  const result = await runnerFixture(f, (input) => {
+    signal = input.signal;
+    assert.equal(input.tableId, owner.tableId);
+    assert.deepEqual(
+      input.users.map((user) => user.id),
+      owner.actorIds
+    );
+    assert.equal(input.financialProof.opId, owner.opId);
+    void (async () => {
+      for (let index = 0; index < 8; index++) {
+        f.setIndex(index);
+        await input.financialProof.checkpoint(f.entries[index]);
+      }
+    })().catch(input.onFailure);
+    return {
+      stateObservations: f.options.sampleFelt,
+      close() {
+        closed++;
+      },
+    };
+  });
+  assert.equal(result.checkpoints.length, 8);
+  assert.equal(result.product_certificate, false);
+  assert.equal(signal.aborted, true);
+  assert.equal(closed, 1);
+});
+
+test('runner refuses changed economics and aborts its actors without retry', async () => {
+  const f = fixture();
+  f.rows[2].wallets[0][1] = '1700';
+  let starts = 0,
+    closed = 0,
+    signal;
+  await assert.rejects(
+    runnerFixture(f, (input) => {
+      starts++;
+      signal = input.signal;
+      void (async () => {
+        for (let index = 0; index < 3; index++) {
+          f.setIndex(index);
+          await input.financialProof.checkpoint(f.entries[index]);
+        }
+      })().catch(input.onFailure);
+      return {
+        stateObservations: f.options.sampleFelt,
+        close() {
+          closed++;
+        },
+      };
+    }),
+    /WALLET_DELTA/
+  );
+  assert.equal(starts, 1);
+  assert.equal(closed, 1);
+  assert.equal(signal.aborted, true);
+});
+
+test('runner never starts actors after an incorrect engine identity', async () => {
+  const f = fixture();
+  f.setSource('b'.repeat(40));
+  let starts = 0;
+  await assert.rejects(
+    runnerFixture(f, () => {
+      starts++;
+    }),
+    /ENGINE_SOURCE/
+  );
+  assert.equal(starts, 0);
+});
+
+test('runner propagates actor startup failure and aborts the same attempt', async () => {
+  const f = fixture();
+  let signal;
+  await assert.rejects(
+    runnerFixture(f, (input) => {
+      signal = input.signal;
+      throw new Error('FIXTURE_ACTOR_START_FAILED');
+    }),
+    /START_FAILED/
+  );
+  assert.equal(signal.aborted, true);
+});
+
+for (const lateStart of [false, true]) {
+  test(`runner's original deadline closes ${lateStart ? 'a late startup handle' : 'idle actors with no further checkpoint'}`, async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
+    const f = fixture();
+    let signal,
+      resolveStart,
+      closed = 0,
+      outcome = 'pending';
+    const handle = {
+      stateObservations: f.options.sampleFelt,
+      close() {
+        closed++;
+      },
+    };
+    const running = runnerFixture(f, (input) => {
+      signal = input.signal;
+      return lateStart
+        ? new Promise((resolve) => {
+            resolveStart = resolve;
+          })
+        : handle;
+    });
+    running.then(
+      () => {
+        outcome = 'resolved';
+      },
+      (error) => {
+        outcome = error.message;
+      }
+    );
+    await new Promise(setImmediate);
+    f.advance(120000);
+    context.mock.timers.tick(120000);
+    await new Promise(setImmediate);
+    assert.match(outcome, /FINANCIAL_RUNNER_DEADLINE/);
+    assert.equal(signal.aborted, true);
+    if (lateStart) resolveStart(handle);
+    await new Promise(setImmediate);
+    assert.equal(closed, 1);
+  });
 }
 test('ordered fixed observations compare the scoped economics without certifying the product', async () => {
   const f = fixture();

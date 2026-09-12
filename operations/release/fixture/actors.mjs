@@ -140,9 +140,14 @@ export async function startFixtureActors({
   onFailure,
   testEndpoints,
   financialProof,
+  signal,
 }) {
   assert.match(tableId, uuid);
   assert.equal(typeof onFailure, 'function');
+  if (signal !== undefined) {
+    assert.ok(signal instanceof AbortSignal, 'FIXTURE_ACTOR_ABORT_SIGNAL');
+    signal.throwIfAborted();
+  }
   assert.ok(Array.isArray(users) && users.length === 2);
   const actorIds = new Set(users.map((user) => user.id));
   assert.equal(actorIds.size, 2);
@@ -222,6 +227,7 @@ export async function startFixtureActors({
 
   function stop() {
     closed = true;
+    signal?.removeEventListener('abort', aborted);
     clearTimeout(startupTimer);
     clearTimeout(lifetimeTimer);
     clearInterval(watchdog);
@@ -231,6 +237,11 @@ export async function startFixtureActors({
       actor.controller?.abort();
       actor.socket.close();
     }
+  }
+
+  function aborted() {
+    stop();
+    rejectReady(new Error('FIXTURE_ACTOR_ABORTED'));
   }
 
   function fail(code) {
@@ -408,7 +419,10 @@ export async function startFixtureActors({
     if (actors.some((actor) => Date.now() - actor.lastFrameAt > 45000))
       fail('FIXTURE_ACTOR_SILENT_SOCKET');
   }, 1000);
+  signal?.addEventListener('abort', aborted, { once: true });
+  if (signal?.aborted) aborted();
   try {
+    signal?.throwIfAborted();
     for (const user of users) {
       const socket = new WebSocket(`${target.ws}/ws/multi?v=0`, [
         'bearer',

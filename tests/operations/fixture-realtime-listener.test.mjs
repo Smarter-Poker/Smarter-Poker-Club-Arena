@@ -15,13 +15,18 @@ const source = await readFile(
   'utf8'
 );
 
-test('exact upstream runtime config receives only the HTTP socket bind adaptation', () => {
+test('exact upstream config isolates HTTP and gives cluster discovery a non-secret bounded channel', () => {
   const after = loopbackRealtimeConfiguration(source);
+  const channel = after.match(/channel_name: "([^"]+)"/)?.[1];
+  assert.equal(channel, 'fixture_realtime_cluster');
+  assert.ok(Buffer.byteLength(channel) <= 63);
   assert.equal(
-    after.replace(
-      'socket_opts: [realtime_ip_version, {:ip, {127, 0, 0, 1}}]',
-      'socket_opts: [realtime_ip_version]'
-    ),
+    after
+      .replace(
+        'socket_opts: [realtime_ip_version, {:ip, {127, 0, 0, 1}}]',
+        'socket_opts: [realtime_ip_version]'
+      )
+      .replace('              channel_name: "fixture_realtime_cluster",\n', ''),
     source
   );
   for (const changed of [source + '\n', source.replace('PORT', 'OTHER_PORT'), after]) {

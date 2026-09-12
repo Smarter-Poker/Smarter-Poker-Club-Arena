@@ -99,6 +99,9 @@ export async function adaptRealtimeLauncher() {
 
 // The pinned upstream HTTP listener otherwise binds every interface. Keep the
 // genuine endpoint/auth implementation, but expose it only to our local gateway.
+// libcluster_postgres otherwise reuses the OTP cookie as a LISTEN channel. Our
+// 96-byte private cookie exceeds Postgrex's 63-byte channel limit and must never
+// serve as a database channel name. Keep authentication and discovery separate.
 export function loopbackRealtimeConfiguration(source) {
   assert.equal(
     createHash('sha256').update(source).digest('hex'),
@@ -107,7 +110,11 @@ export function loopbackRealtimeConfiguration(source) {
   );
   const before = 'socket_opts: [realtime_ip_version]';
   assert.equal(source.split(before).length - 1, 1);
-  return source.replace(before, 'socket_opts: [realtime_ip_version, {:ip, {127, 0, 0, 1}}]');
+  const discovery = 'strategy: LibclusterPostgres.Strategy,\n            config: [\n';
+  assert.equal(source.split(discovery).length - 1, 1);
+  return source
+    .replace(before, 'socket_opts: [realtime_ip_version, {:ip, {127, 0, 0, 1}}]')
+    .replace(discovery, discovery + '              channel_name: "fixture_realtime_cluster",\n');
 }
 
 export async function adaptRealtimeConfiguration() {

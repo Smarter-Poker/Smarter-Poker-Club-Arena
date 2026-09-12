@@ -559,6 +559,7 @@ async function services() {
         'hash = fn value -> Base.encode16(:crypto.hash(:sha256, value), case: :lower) end; ' +
           'IO.write(Jason.encode!(%{node: Atom.to_string(node()), named: Node.alive?(), ' +
           'otp: hash.(Atom.to_string(:erlang.get_cookie())), gen_rpc: hash.(:gen_rpc_auth.get_cookie()), ' +
+          'cluster_channel_is_fixed: (get_in(Application.get_env(:libcluster, :topologies), [:postgres, :config, :channel_name]) == "fixture_realtime_cluster"), ' +
           'http_listener: (case Phoenix.Endpoint.Cowboy2Adapter.server_info(RealtimeWeb.Endpoint, :http) do ' +
           '{:ok, {addr, port}} -> %{port: port, address: cond do ' +
           'addr == {127, 0, 0, 1} -> "ipv4-loopback"; addr == {0, 0, 0, 0} -> "ipv4-wildcard"; ' +
@@ -578,6 +579,7 @@ async function services() {
       named: true,
       otp: realtimeCookie.sha256,
       gen_rpc: realtimeCookie.sha256,
+      cluster_channel_is_fixed: true,
       override_absent: true,
       insecure_fallback: false,
     });

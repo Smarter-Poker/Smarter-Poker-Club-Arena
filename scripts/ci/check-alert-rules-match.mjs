@@ -72,6 +72,10 @@ function declaredAlerts() {
 /**
  * Every metric NAME an expression in the loaded rule files reads.
  *
+ * ---------------------------------------------------------------------------
+ *  RULES THAT READ A SERIES PROMETHEUS HAS NEVER SEEN
+ * ---------------------------------------------------------------------------
+ *
  * ADDED 2026-09-09, because this check reconciled rule NAMES between the repo
  * and the box and never asked whether the rules could ever fire. Fifteen of
  * them referenced series with no producer anywhere - among them
@@ -92,6 +96,22 @@ function declaredAlerts() {
  * real metrics at the same time.
  *
  * A false positive here is not a cheap thing to pay. It is the whole cost.
+ *
+ * So the answer is now in two tiers, because they ask for opposite actions.
+ * Both start from the same fact - `label/__name__/values` has never seen the
+ * name - and they differ on whether anything in this repo would ever emit it:
+ *
+ *   PHANTOM (fatal): nothing emits the name. The rule is structurally
+ *   unfirable and will read as health forever. Someone writes the producer or
+ *   deletes the rule; there is no third option and no waiting it out.
+ *
+ *   HAVE A PRODUCER, NO SERIES YET (reported, not fatal): the emitting code
+ *   exists but has not run. An engine restarted ten minutes ago reads exactly
+ *   like this, and failing on it would paint every post-restart deploy red
+ *   until traffic happened to touch that path - which is how a gate stops
+ *   being read. It is still printed, because a producer that never runs is
+ *   worth seeing; `anAlertCannotWaitForAFailureToExist.law.test.ts` is what
+ *   makes the zero-seeding binding.
  */
 
 function metricsReferenced() {

@@ -585,12 +585,13 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
            */
           const stage = event.stage ?? hcState?.stage ?? 'preflop';
           const actingPlayer = hcState?.players.find((p) => p.seat === event.seat);
+          const actorId = event.record?.userId ?? actingPlayer?.user_id ?? '';
           this.currentHandActions.push({
             seat: event.seat,
-            userId: actingPlayer?.user_id ?? '', // Bible V8 §2.5
+            userId: actorId, // Bible V8 §2.5
             action: event.action,
             amount: event.amount,
-            timestamp: Date.now(), // Bible V8 §2.5
+            timestamp: event.record?.timestamp ?? Date.now(), // Bible V8 §2.5
             stage,
             // V12.3: carry isFullRaise into hand_history. HandController
             // records it on its own actionHistory (a short all-in is NOT a
@@ -601,7 +602,11 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
             // boot replay every all-in counted as NEITHER aggression NOR
             // passivity, biasing hydrated reads passive for anyone who shoves
             // and hiding all-in 3-bets from the anti-exploit pair counters.
-            isFullRaise: hcState?.actionHistory[hcState.actionHistory.length - 1]?.isFullRaise,
+            // An absent flag on an accepted check/call/discard is also final;
+            // do not fill it from the controller's most recent raise.
+            isFullRaise: event.record
+              ? event.record.isFullRaise
+              : hcState?.actionHistory[hcState.actionHistory.length - 1]?.isFullRaise,
           });
 
           // ── ADDITIVE event-sourcing shadow (#1): record PlayerActed ──
@@ -616,8 +621,7 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           // Bible V8 §4.15: When a bet or raise occurs, invalidate all auto_check pre-actions
           // (they're no longer valid because there's now a bet to face)
           if (event.action === 'bet' || event.action === 'raise' || event.action === 'all_in') {
-            const actingPlayer = this.seatedPlayers.find((p) => p.seat_number === event.seat);
-            this.preActionEngine.onBetPlaced(this.tableId, actingPlayer?.user_id || '');
+            this.preActionEngine.onBetPlaced(this.tableId, actorId);
           }
 
           // 2026-04-14 USER FEEDBACK FIX: emit a discrete player_action event so
@@ -632,11 +636,11 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
             table_id: this.tableId,
             hand_number: this.handCount,
             seat: event.seat,
-            user_id: actingPlayer?.user_id ?? '',
+            user_id: actorId,
             action: event.action,
             amount: event.amount ?? 0,
             stage,
-            timestamp: Date.now(),
+            timestamp: event.record?.timestamp ?? Date.now(),
           });
         }
         this.broadcastCurrentState();

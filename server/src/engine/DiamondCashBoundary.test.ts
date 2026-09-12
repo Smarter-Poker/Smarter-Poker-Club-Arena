@@ -60,8 +60,6 @@ describe('the first Diamond game stays inside the custody boundary', () => {
       { insurance_enabled: true },
       { bomb_pot_enabled: true },
       { run_it_twice: true },
-      { straddle_enabled: true },
-      { auto_utg_straddle: true },
       { seven_deuce_enabled: true },
       { nit_game: true },
       { all_in_or_fold: true },
@@ -75,6 +73,33 @@ describe('the first Diamond game stays inside the custody boundary', () => {
       { ante: 0.5 },
     ])
       expect(() => assertDiamondCashTable({ ...table, ...change })).toThrow();
+  });
+
+  /* STRADDLES ARE ADMITTED (2026-09-12). A straddle is priced at exactly two
+     times the current blind and this guard already refuses a table whose blinds
+     are not whole positive integers, so it is whole by construction with no
+     counterparty and no ledger. The three columns are also safe to read as
+     absent-means-off, unlike the run-it columns below: every engine read of
+     them is truthy, so an unset column disables the feature in the engine
+     exactly as it did here. */
+  it('admits a straddling table and still refuses the side bet next to it', () => {
+    for (const change of [
+      { straddle_enabled: true },
+      { straddle_enabled: true, auto_utg_straddle: true },
+      { straddle_enabled: true, voluntary_straddle: true },
+    ])
+      expect(() => assertDiamondCashTable({ ...table, ...change })).not.toThrow();
+    for (const key of ['straddle_enabled', 'auto_utg_straddle', 'voluntary_straddle'] as const) {
+      const missing: Record<string, unknown> = { ...table };
+      delete missing[key];
+      expect(() => assertDiamondCashTable(missing), `${key} unset was refused`).not.toThrow();
+      expect(() => assertDiamondCashTable({ ...table, [key]: null })).not.toThrow();
+    }
+    /* seven-deuce is not a straddle. It is a side bet at a table-configured
+       amount, and this phase has not certified that money fact. */
+    expect(() =>
+      assertDiamondCashTable({ ...table, straddle_enabled: true, seven_deuce_enabled: true })
+    ).toThrow('Diamond Plain Cash Table Required');
   });
 
   /* UNSET IS NOT OFF. The engine's default for each of these columns is the

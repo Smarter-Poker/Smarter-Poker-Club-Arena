@@ -46,7 +46,14 @@ describe('engine deployment reports what actually happened', () => {
     expect(preflight).toMatch(/^ {8}working-directory: server$/m);
     expect(preflight).toMatch(/^\s+npm ci --no-audit --no-fund\s*$/m);
     expect(preflight).toMatch(/^\s+npm run build\s*$/m);
-    expect(preflight).toMatch(/^\s+npm test\s*$/m);
+    // All four partitions must finish before the matrix dependency releases
+    // either privileged job. No conditional/excluded shard or ignored failure.
+    expect(preflight).toMatch(
+      /^ {4}strategy:\n {6}fail-fast: false\n {6}max-parallel: 4\n {6}matrix:\n {8}shard: \[1, 2, 3, 4\]$/m
+    );
+    expect(preflight).toMatch(/^ {10}RELEASE_TEST_SHARD: \$\{\{ matrix\.shard \}\}$/m);
+    expect(preflight).toMatch(/^\s+npm test -- --shard="\$RELEASE_TEST_SHARD\/4"\s*$/m);
+    expect(preflight).not.toMatch(/^\s+(?:if|exclude|include|continue-on-error):/m);
     expect(preflight).not.toMatch(/\$\{\{[^}\n]*\bsecrets\b[^}\n]*\}\}/);
     expect(preflight).not.toContain('SSH_USER: root');
 

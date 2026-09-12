@@ -59,6 +59,19 @@ export interface BBJQualifyingHand {
   handRank?: string;
   minRankValue?: string;
   eligible?: boolean;
+  /* THE MINI'S OWN BAR FOR THIS VARIANT (Dan, 2026-09-12).
+
+     The mini used to derive its bar from the MAIN rule's family: `full_house`
+     meant hold'em, so aces-full-or-better; anything else meant Omaha, so ANY
+     quads. That is a two-value guess standing in for a per-game decision, and
+     Dan made the decision: PLO5/FLO5 is Quad Tens or better, Pineapple is Quad
+     Deuces. Where `miniMinQuadRank` is set it is the lowest QUAD rank that
+     clears the mini bar (A=14 ... 2=2) and it replaces the family default;
+     where it is absent the family default still applies, so every other game
+     is untouched. `miniBarLabel` is what a player is told, and it lives beside
+     the number so the two cannot drift. */
+  miniMinQuadRank?: number;
+  miniBarLabel?: string;
 }
 
 export interface ServerRakeConfigResult {
@@ -251,6 +264,47 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
     ],
     handRank: 'straight_flush',
     minRankValue: '87654',
+    /* MINI: Quad Tens or better (Dan, 2026-09-12). Stricter than the Omaha
+       family default of any quads - five hole cards make quads common. */
+    miniMinQuadRank: 10,
+    miniBarLabel: 'Quad Tens Or Better',
+  },
+  /* FLO4 / FLO5 ARE THE SAME GAMES AS PLO4 / PLO5 (2026-09-12). Both labels
+     have always read "PLO4 / FLO4" and "PLO5 / FLO5", but neither key existed,
+     and the engine's BBJ detectors look this table up by the RAW variant - only
+     the client normalises. So an FLO5 table would have taken the mini's
+     "variant not covered" branch and paid NO mini at all, while getRakeConfig's
+     `|| BBJ_QUALIFYING_HANDS.nlh` fallback judged its MAIN bar by hold'em
+     rules. That is the Pineapple defect exactly: a key on one side and not the
+     other. No such table exists in production today (nlh, plo4, plo5, plo6,
+     plo8, short_deck, pineapple, flh, flo8 are the live variants), so this
+     closes a trap rather than repairing a loss - and `flo8` and `flh` were
+     already here for the same reason. */
+  flo4: {
+    label: 'PLO4 / FLO4',
+    minLosingHand: 'KKKK2',
+    description: 'Four Of A Kind (Kings) Or Better Must LOSE',
+    rules: [
+      'Must use exactly 2 cards from hand',
+      'Both players must use two cards from their hole cards',
+    ],
+    handRank: 'four_of_a_kind',
+    minRankValue: 'KKKK',
+  },
+  flo5: {
+    label: 'PLO5 / FLO5',
+    minLosingHand: '87654',
+    description: 'Straight Flush (8-High) Or Better Must LOSE',
+    rules: [
+      'Must use exactly 2 cards from hand',
+      'Both players must use two cards from their hole cards',
+    ],
+    handRank: 'straight_flush',
+    minRankValue: '87654',
+    /* MINI: Quad Tens or better (Dan, 2026-09-12) - the same bar as plo5,
+       because it is the same game. */
+    miniMinQuadRank: 10,
+    miniBarLabel: 'Quad Tens Or Better',
   },
   plo6: {
     label: 'PLO6',
@@ -276,6 +330,11 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
     ],
     handRank: 'four_of_a_kind',
     minRankValue: 'KKKK',
+    /* MINI: Quad Deuces (Dan, 2026-09-12) - every quad clears it. Same effect
+       as the old family default for this game, written down explicitly so the
+       bar is a stated rule rather than a fall-through nobody chose. */
+    miniMinQuadRank: 2,
+    miniBarLabel: 'Quad Deuces Or Better',
   },
 };
 
@@ -1115,7 +1174,25 @@ export interface BBJMiniDetectionResult extends BBJDetectionResult {
    * this type admits, and the near-miss message and the payout metadata that
    * interpolate it can be read against a list rather than against a hope.
    */
-  miniRule?: 'holdem_aces_full' | 'plo_quads' | 'drill';
+  miniRule?: 'holdem_aces_full' | 'plo_quads' | 'ranked_quads' | 'drill';
+}
+
+/**
+ * Quads of a given rank or better (Dan, 2026-09-12).
+ *
+ * `kickers[0]` on a four-of-a-kind is the QUAD rank, A=14 down to 2 - the same
+ * encoding `doesHandQualify` reads for the main rule's `minRankValue: 'KKKK'`,
+ * so the mini and the main are judging the same number and not two guesses at
+ * it. Anything ABOVE quads (straight flush, royal) clears every quad bar.
+ */
+function isQuadsOfRankOrBetter(
+  handRanking: number,
+  kickers: number[],
+  minQuadRank: number
+): boolean {
+  if (handRanking > HAND_RANK.FOUR_OF_A_KIND) return true;
+  if (handRanking < HAND_RANK.FOUR_OF_A_KIND) return false;
+  return kickers.length >= 1 && kickers[0] >= minQuadRank;
 }
 
 /** Aces full or better: a full house whose trips are Aces, or anything above. */
@@ -1195,10 +1272,17 @@ export function detectMiniBBJNearMiss(
   if (!winner || losers.length === 0) return none;
 
   const isHoldemFamily = qualifying.handRank === 'full_house';
+  /* THE SAME BAR detectMiniBBJHit APPLIES, including the per-variant ranked
+     quad (Dan, 2026-09-12). If these two drift, a hand the payout refused is
+     reported as refused for a rule the payout never used - which is worse than
+     no near miss at all, because it reads as an explanation. */
+  const rankedQuadBar = qualifying.miniMinQuadRank;
   const meetsMiniBar = (r: (typeof showdownResults)[number]): boolean =>
-    isHoldemFamily
-      ? isAcesFullOrBetter(r.handRanking, r.kickers)
-      : r.handRanking >= HAND_RANK.FOUR_OF_A_KIND;
+    rankedQuadBar != null
+      ? isQuadsOfRankOrBetter(r.handRanking, r.kickers, rankedQuadBar)
+      : isHoldemFamily
+        ? isAcesFullOrBetter(r.handRanking, r.kickers)
+        : r.handRanking >= HAND_RANK.FOUR_OF_A_KIND;
 
   // The strongest loser who cleared the MINI's hand bar - the same choice
   // detectMiniBBJHit makes, so the two name the same player.
@@ -1214,7 +1298,8 @@ export function detectMiniBBJNearMiss(
     }
   }
 
-  const bar = isHoldemFamily ? 'Aces Full or better' : 'Quads or better';
+  const bar =
+    qualifying.miniBarLabel ?? (isHoldemFamily ? 'Aces Full or better' : 'Quads or better');
   if (!best) {
     /* Nobody cleared the bar. That is not a near miss - it is an ordinary hand,
        and recording it would bury the real ones.
@@ -1313,13 +1398,19 @@ export function detectMiniBBJHit(
   if (winner.handRanking < HAND_RANK.FOUR_OF_A_KIND) return noHit;
 
   const isHoldemFamily = qualifying.handRank === 'full_house';
-  const rule: BBJMiniDetectionResult['miniRule'] = isHoldemFamily
-    ? 'holdem_aces_full'
-    : 'plo_quads';
+  /* A RANKED QUAD BAR BEATS THE FAMILY DEFAULT (Dan, 2026-09-12). PLO5/FLO5 is
+     Quad Tens or better and Pineapple is Quad Deuces; every other game keeps
+     the family rule it had. The bar lives on the variant, not in a branch
+     here, so adding a third game is a config line rather than another `if`. */
+  const rankedQuadBar = qualifying.miniMinQuadRank;
+  const rule: BBJMiniDetectionResult['miniRule'] =
+    rankedQuadBar != null ? 'ranked_quads' : isHoldemFamily ? 'holdem_aces_full' : 'plo_quads';
   const meetsMiniBar = (r: (typeof showdownResults)[number]): boolean =>
-    isHoldemFamily
-      ? isAcesFullOrBetter(r.handRanking, r.kickers)
-      : r.handRanking >= HAND_RANK.FOUR_OF_A_KIND;
+    rankedQuadBar != null
+      ? isQuadsOfRankOrBetter(r.handRanking, r.kickers, rankedQuadBar)
+      : isHoldemFamily
+        ? isAcesFullOrBetter(r.handRanking, r.kickers)
+        : r.handRanking >= HAND_RANK.FOUR_OF_A_KIND;
 
   // The strongest qualifying loser, exactly as the main chooses one: the worse
   // beat wins, deterministically, rather than whoever sat first.
@@ -1344,7 +1435,8 @@ export function detectMiniBBJHit(
     winnerHand: { ranking: winner.handRanking, name: winner.handName, kickers: winner.kickers },
     dealtInPlayerIds,
     variant: normalizedVariant,
-    qualifyingHandLabel: isHoldemFamily ? 'Aces Full Or Better' : 'Quads Or Better',
+    qualifyingHandLabel:
+      qualifying.miniBarLabel ?? (isHoldemFamily ? 'Aces Full Or Better' : 'Quads Or Better'),
     miniRule: rule,
   };
 }

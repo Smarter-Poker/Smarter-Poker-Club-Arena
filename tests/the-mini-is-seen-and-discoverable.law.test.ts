@@ -126,14 +126,23 @@ describe('the client rule mirrors the engine rule', () => {
   });
 
   it('the two rule names and the two engine labels are identical strings', () => {
+    /* `ranked_quads` joined the set on 2026-09-12 when Dan set PLO5/FLO5 to
+       Quad Tens and Pineapple to Quad Deuces: the mini bar became per-variant,
+       so the family binary needed a third member. Both halves still have to
+       carry the SAME set, which is what this law is for. */
     expect(serverRake).toMatch(
-      /miniRule\?: 'holdem_aces_full' \| 'plo_quads';|'holdem_aces_full'\s*:\s*'plo_quads'/
+      /miniRule\?: 'holdem_aces_full' \| 'plo_quads' \| 'ranked_quads' \| 'drill';/
     );
-    expect(miniConfig).toContain("export type BBJMiniRule = 'holdem_aces_full' | 'plo_quads';");
+    expect(miniConfig).toContain(
+      "export type BBJMiniRule = 'holdem_aces_full' | 'plo_quads' | 'ranked_quads';"
+    );
     // qualifyingHandLabel is what the celebration prints; the client must not
     // invent a different wording for the same bar.
+    /* The label now prefers the variant's own `miniBarLabel` and falls back to
+       the family wording, so a ranked bar prints its rank ("Quad Tens Or
+       Better") and every other game prints exactly what it printed before. */
     expect(serverRake).toContain(
-      "qualifyingHandLabel: isHoldemFamily ? 'Aces Full Or Better' : 'Quads Or Better',"
+      "qualifying.miniBarLabel ?? (isHoldemFamily ? 'Aces Full Or Better' : 'Quads Or Better')"
     );
     expect(miniConfig).toMatch(/holdem_aces_full: 'Aces Full Or Better',/);
     expect(miniConfig).toMatch(/plo_quads: 'Quads Or Better',/);

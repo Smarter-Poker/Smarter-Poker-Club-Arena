@@ -124,6 +124,62 @@ function preflopStrength(cards: Card[]): number {
   );
 }
 
+function syntheticRandom(sampleIndex: number): () => number {
+  let seed = Math.imul(sampleIndex + 1, 0x9e3779b1) >>> 0;
+  return () => {
+    seed ^= seed << 13;
+    seed ^= seed >>> 17;
+    seed ^= seed << 5;
+    return (seed >>> 0) / 0x100000000;
+  };
+}
+
+function buildSyntheticDealFacts(count: number, random: () => number): SyntheticDealFacts {
+  const deck: Card[] = [];
+  for (const suit of ['clubs', 'diamonds', 'hearts', 'spades'] as const)
+    for (const rank of '23456789TJQKA') deck.push({ rank: rank as Card['rank'], suit });
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+  const cards = Array.from({ length: count }, () => [deck.pop()!, deck.pop()!]);
+  const board = Array.from({ length: 5 }, () => deck.pop()!);
+  return {
+    board,
+    seats: cards.map((cards) => {
+      const preflop = preflopStrength(cards);
+      return {
+        cards,
+        preflop,
+        showdown: scoreHoldem([...cards, ...board], 7, false),
+        streets: [3, 4, 5].map((size) =>
+          continuationStrength(
+            Math.floor(
+              scoreHoldem([...cards, ...board.slice(0, size)], size + 2, false) / 0x100000
+            ),
+            preflop
+          )
+        ),
+      };
+    }),
+  };
+}
+
+/** Prepare the bounded, identity-free model facts before accepting decisions.
+ * No betting, settlement, observation, telemetry or live cards are involved.
+ * Repeated startup calls reuse the same facts; caller draws remain copies.
+ */
+export function prepareTournamentFutureHandFacts(): void {
+  if (FUTURE_HAND_POLICY.maxHands !== 1) return;
+  for (let sample = 0; sample < CONTINUATION_POLICY.maxOutcomeSamples; sample++) {
+    for (let seats = 2; seats <= FUTURE_HAND_POLICY.maxSeats; seats++) {
+      const key = `${sample}:${seats}`;
+      if (!syntheticDealFacts.has(key))
+        syntheticDealFacts.set(key, buildSyntheticDealFacts(seats, syntheticRandom(sample)));
+    }
+  }
+}
+
 export function commitFutureChips(
   p: SeatPlayer,
   requested: number,
@@ -170,13 +226,7 @@ export function simulateTournamentFutureHands(args: {
   const forcedPaid: Record<string, number> = {};
   let dealerSeat = args.dealerSeat;
   let hands = 0;
-  let seed = Math.imul(args.sampleIndex + 1, 0x9e3779b1) >>> 0;
-  const random = () => {
-    seed ^= seed << 13;
-    seed ^= seed >>> 17;
-    seed ^= seed << 5;
-    return (seed >>> 0) / 0x100000000;
-  };
+  const random = syntheticRandom(args.sampleIndex);
   for (let hand = 0; hand < FUTURE_HAND_POLICY.maxHands; hand++) {
     if (args.withinBudget?.() === false) return null;
     const players = args.players
@@ -224,38 +274,10 @@ export function simulateTournamentFutureHands(args: {
       args.drawCache?.set(drawKey, draw);
     }
     if (!draw) {
-      const deck: Card[] = [];
-      for (const suit of ['clubs', 'diamonds', 'hearts', 'spades'] as const)
-        for (const rank of '23456789TJQKA') deck.push({ rank: rank as Card['rank'], suit });
-      for (let i = deck.length - 1; i > 0; i--) {
-        const j = Math.floor(random() * (i + 1));
-        [deck[i], deck[j]] = [deck[j], deck[i]];
-      }
-      for (const p of players) p.cards = [deck.pop()!, deck.pop()!];
-      const board = Array.from({ length: 5 }, () => deck.pop()!);
+      const facts = buildSyntheticDealFacts(players.length, random);
       draw = {
-        board,
-        seats: new Map(
-          players.map((p) => {
-            const preflop = preflopStrength(p.cards);
-            return [
-              p.user_id,
-              {
-                cards: p.cards,
-                preflop,
-                showdown: scoreHoldem([...p.cards, ...board], 7, false),
-                streets: [3, 4, 5].map((size) =>
-                  continuationStrength(
-                    Math.floor(
-                      scoreHoldem([...p.cards, ...board.slice(0, size)], size + 2, false) / 0x100000
-                    ),
-                    preflop
-                  )
-                ),
-              },
-            ];
-          })
-        ),
+        board: facts.board,
+        seats: new Map(players.map((p, index) => [p.user_id, facts.seats[index]])),
       };
       if (templateKey !== null)
         syntheticDealFacts.set(templateKey, {

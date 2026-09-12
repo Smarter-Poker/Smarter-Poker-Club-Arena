@@ -4,6 +4,15 @@ import type { TickerItem } from '../../src/components/tournament/tickerMessages'
 
 const mocks = vi.hoisted(() => ({
   userId: 'viewer-a' as string | null,
+  /* The route is /clubs/club-a - a SLUG, which is a legitimate club
+     identifier here (resolveClubIdFilter accepts uuid, integer code or slug).
+     What resolveClubUUID hands BACK has to be a real uuid though, because the
+     ticker now checks it before putting it in a uuid column: the resolver's
+     documented fallback is to return its own input, and that fallback is what
+     wrote 243 rows of Postgres 22P02 into horse_bug_reports.
+     See tests/a-route-segment-is-not-an-id.law.test.ts. */
+  clubUuid: '11111111-2222-4333-8444-555555555555',
+  warn: vi.fn(),
   hidden: false,
   read: vi.fn(),
   settings: vi.fn(),
@@ -84,7 +93,10 @@ vi.mock('react-router-dom', () => ({
   useNavigate: () => vi.fn(),
   useLocation: () => ({ pathname: '/clubs/club-a' }),
 }));
-vi.mock('../../src/utils/errorReporter', () => ({ reportError: mocks.report }));
+vi.mock('../../src/utils/errorReporter', () => ({
+  reportError: mocks.report,
+  reportWarning: mocks.warn,
+}));
 vi.mock('../../src/core/MasterBus', () => ({ busToast: mocks.toast }));
 vi.mock('../../src/hooks/useTableSettings', () => ({
   useTableSettings: () => ({ settings: { showTicker: true } }),
@@ -109,7 +121,12 @@ vi.mock('../../src/services/TickerManagementService', () => ({
   resetTickerSettingsCache: mocks.resetSettings,
   tickerManagementService: { get: mocks.settings },
 }));
-vi.mock('../../src/utils/clubIdResolver', () => ({ resolveClubUUID: async () => 'club-a' }));
+/* importActual keeps the REAL isUUID, so this suite exercises the actual
+   guard rather than a copy of it that could drift away from it. */
+vi.mock('../../src/utils/clubIdResolver', async (importActual) => ({
+  ...(await importActual<typeof import('../../src/utils/clubIdResolver')>()),
+  resolveClubUUID: async () => mocks.clubUuid,
+}));
 vi.mock('../../src/components/tournament/useTopChromeOffset', () => ({
   useTopChromeOffset: () => 0,
 }));

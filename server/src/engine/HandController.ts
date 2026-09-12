@@ -36,6 +36,7 @@ import {
   isOmahaVariant,
   isShortDeckVariant,
 } from './VariantRules.js';
+import { isDiamondCashVariant } from '../domain/DiamondCashBoundary.js';
 
 import type {
   Card,
@@ -151,6 +152,13 @@ export class HandController {
   private eventHandlers: ((event: HandEvent) => void)[] = [];
   /** FIX 120: Crazy Pineapple — tracks seats that still need to discard after flop */
   private pineappleDiscardsRemaining: Set<number> = new Set();
+  /** Private per-hand knowledge; deliberately absent from public GameState. */
+  private pineappleKnownDeadCards = new Map<number, Card>();
+
+  public getPineappleKnownDeadCards(seat: number): Card[] {
+    const card = this.pineappleKnownDeadCards.get(seat);
+    return card ? [{ ...card }] : [];
+  }
   /**
    * All-in Pineapple has no player-action discard round, but showdown is still
    * a two-card game. The table engine computes those choices on the live horse
@@ -216,18 +224,26 @@ export class HandController {
       // have refused the hand it had just dealt. The runout now cuts in the
       // table's own unit and tells determineWinners what that unit is, so both
       // the per-board slice and a tie chopped on one board are whole Diamonds.
-      // Bomb pots stay: their award rides the p_units lane the accepted-hand
-      // commit refuses for a Diamond hand.
+      // BOMB POTS LEFT IT LATER THE SAME DAY. Their award breakdown rides the
+      // p_units lane, which the accepted-hand commit refused outright for a
+      // Diamond hand; it now requires every unit amount to be whole, the same
+      // rule it already applied to every other amount on the hand. The ante is
+      // rounded to the table's own unit below and the boundary refuses a row
+      // whose ante could not be whole, so neither half can produce a fraction.
       if (
         config.isTournament ||
-        config.gameVariant !== 'nlh' ||
-        config.bombPot ||
+        /* 2026-09-12: the nine games the chip cash screen offers, not the one
+           this arena opened with. Every place a pot is divided was already
+           made unit-aware while it was NLH only, the hi-lo split included, so
+           what this list changes is which deck is dealt rather than how the
+           money is cut. See DIAMOND_CASH_VARIANTS for the full argument. */
+        !isDiamondCashVariant(config.gameVariant) ||
         config.insuranceEnabled ||
         config.rakeConfig.percent !== 0 ||
         config.rakeConfig.cap !== 0 ||
         config.bbjConfig?.enabled
       ) {
-        throw new Error('Diamond Cash Certification Requires Plain NLH With No Deductions');
+        throw new Error('Diamond Cash Certification Requires A Supported Game With No Deductions');
       }
     }
     this.config = config;
@@ -754,12 +770,24 @@ export class HandController {
      * Rounding here fixes both, because this is the single value both the
      * charge and the announcement are derived from.
      */
+    /* AND TO THE UNIT, NOT ONLY TO THE CENT (2026-09-12). A cent is the
+       indivisible unit of a chip and half of a Diamond, and the multiplier
+       slider steps by 0.5, so 1.5x a one Diamond blind is one and a half
+       Diamonds - a forced bet the hand guard refuses, from a table that has
+       already dealt. The boundary refuses a row whose ante could not be whole;
+       this is the second half of the same rule, at the single value both the
+       charge and the announcement are derived from. */
+    const anteUnitCents = this.config.isTournament || this.config.asset === 'diamonds' ? 100 : 1;
     const anteAmount =
-      Math.round(
-        (bombPot.anteFixed && bombPot.anteFixed > 0
+      (Math.round(
+        ((bombPot.anteFixed && bombPot.anteFixed > 0
           ? bombPot.anteFixed
-          : bigBlind * bombPot.anteMultiplier) * 100
-      ) / 100;
+          : bigBlind * bombPot.anteMultiplier) *
+          100) /
+          anteUnitCents
+      ) *
+        anteUnitCents) /
+      100;
 
     const dealtIn = this.state.players.filter((p) => !p.is_sitting_out);
 
@@ -1085,7 +1113,7 @@ export class HandController {
     if (!player.cards || player.cards.length !== 3) {
       return false; // Invalid state — should have 3 cards
     }
-    if (cardIndex < 0 || cardIndex >= player.cards.length) {
+    if (!Number.isInteger(cardIndex) || cardIndex < 0 || cardIndex >= player.cards.length) {
       return false; // Invalid card index
     }
 
@@ -1100,6 +1128,7 @@ export class HandController {
        result has been unused since the variant shipped, which is why the
        replay could say "Discard" but never which card. */
     if (discarded[0]) {
+      this.pineappleKnownDeadCards.set(seat, { ...discarded[0] });
       this.emit({ type: 'PINEAPPLE_DISCARDED', seat, card: discarded[0] });
     }
 
@@ -2063,6 +2092,7 @@ export class HandController {
          left their hand and it is still theirs to review. Same private event,
          same RLS-protected destination. */
       if (forced[0]) {
+        this.pineappleKnownDeadCards.set(player.seat, { ...forced[0] });
         this.emit({ type: 'PINEAPPLE_DISCARDED', seat: player.seat, card: forced[0] });
       }
 
@@ -3425,6 +3455,18 @@ export class HandController {
       timedRake: this.config.rakeConfig.timedRake
         ? { ...this.config.rakeConfig.timedRake }
         : undefined,
+    };
+  }
+
+  public getChipRulesSnapshot(): {
+    asset: 'chips' | 'diamonds';
+    chipUnit: 0.01 | 1;
+    bbjConfig: HandConfig['bbjConfig'] | null;
+  } {
+    return {
+      asset: this.config.asset === 'diamonds' ? 'diamonds' : 'chips',
+      chipUnit: this.config.isTournament || this.config.asset === 'diamonds' ? 1 : 0.01,
+      bbjConfig: this.config.bbjConfig ? { ...this.config.bbjConfig } : null,
     };
   }
 

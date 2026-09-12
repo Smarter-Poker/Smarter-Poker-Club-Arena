@@ -28,6 +28,7 @@ import type {
 import { mdfFold } from './HorseEvEngine.js';
 import { createIcmEquityEstimator, type IcmMethod } from './IcmModel.js';
 import { calculatePots } from './PokerEngine.js';
+import { prepareJointPots, settleJointScores } from './multiway/JointPotDistribution.js';
 import {
   simulateTournamentFutureHands,
   FUTURE_HAND_POLICY,
@@ -118,6 +119,9 @@ export interface TournamentUtilityContext {
 }
 
 export interface TournamentUtilityInput {
+  /** Phase13 exact board/odd-chip settlement. The existing Phase7 objective
+   * still owns payout, bounty and recovery utility; no second ICM is added. */
+  settlement?: { chipUnit: 1; dealerSeat: number; splitLow: boolean };
   /** Internal deadline for an optional shadow evaluation. Never from live worker input. */
   withinBudget?: () => boolean;
   /** Explicit Phase 8 counterfactual. Absent preserves Phase 7 exactly. */
@@ -291,7 +295,22 @@ function uniqueCandidate(
 }
 
 /** Finite, legal action abstraction used inside the synchronous engine. */
-export function buildTournamentActionCandidates(input: TournamentUtilityInput): ActionCandidate[] {
+export function buildTournamentActionCandidates(
+  input: Pick<
+    TournamentUtilityInput,
+    | 'hero'
+    | 'toCall'
+    | 'legalActions'
+    | 'minRaiseTo'
+    | 'maxRaiseTo'
+    | 'pot'
+    | 'currentBet'
+    | 'bettingStructure'
+    | 'baseline'
+  > & {
+    settlement?: { chipUnit: 0.01 | 1 };
+  }
+): ActionCandidate[] {
   const legal = new Set(input.legalActions);
   const candidates: ActionCandidate[] = [];
   const seen = new Set<string>();
@@ -366,7 +385,15 @@ export function buildTournamentActionCandidates(input: TournamentUtilityInput): 
     amounts.push(maxTo);
 
     for (const rawAmount of amounts) {
-      const amount = chips(clamp(rawAmount, minTo, maxTo));
+      const unit = input.settlement?.chipUnit;
+      const amount = unit
+        ? clamp(
+            Math.round(rawAmount / unit) * unit,
+            Math.ceil((minTo - EPS) / unit) * unit,
+            Math.floor((maxTo + EPS) / unit) * unit
+          )
+        : chips(clamp(rawAmount, minTo, maxTo));
+      if (amount < minTo - EPS || amount > maxTo + EPS) continue;
       // HorseLogic's final legalizer intentionally commits near-stack wagers
       // as the canonical all_in action (92% for a bet, 95% for a raise). Do
       // not create a second, differently-labeled candidate that the executor
@@ -420,6 +447,15 @@ function strengthOf(evidence: TournamentUtilityOpponentEvidence | undefined): nu
 }
 
 function validateInput(input: TournamentUtilityInput): boolean {
+  if (
+    input.settlement &&
+    (input.settlement.chipUnit !== 1 ||
+      !Number.isInteger(input.settlement.dealerSeat) ||
+      input.settlement.dealerSeat < 1 ||
+      input.settlement.dealerSeat > 10 ||
+      typeof input.settlement.splitLow !== 'boolean')
+  )
+    return false;
   const wholeNonNegative = (value: number): boolean =>
     Number.isFinite(value) && value >= 0 && Math.abs(value - Math.round(value)) <= EPS;
   const wholePositive = (value: number): boolean => wholeNonNegative(value) && value > 0;
@@ -761,7 +797,7 @@ function responseDraw(sampleIndex: number, userId: string): number {
 }
 
 function scoreFor(
-  input: TournamentUtilityInput,
+  input: Pick<TournamentUtilityInput, 'hero' | 'sampledOpponentIds'>,
   board: TournamentUtilityBoardOutcome,
   userId: string
 ): { high: number; low: number | null } | null {
@@ -772,7 +808,7 @@ function scoreFor(
 }
 
 function winnersFor(
-  input: TournamentUtilityInput,
+  input: Pick<TournamentUtilityInput, 'hero' | 'sampledOpponentIds'>,
   board: TournamentUtilityBoardOutcome,
   eligible: string[]
 ): { high: string[]; low: string[] } | null {
@@ -894,7 +930,24 @@ function settleSample(args: {
     )
       return null;
   }
-  const branchPots = calculatePots(seats);
+  let exactSettlement: ReturnType<typeof settleJointScores> | null = null;
+  let branchPots: Pot[];
+  try {
+    if (input.settlement) {
+      const prepared = prepareJointPots(seats, input.settlement.chipUnit);
+      branchPots = prepared.pots;
+      exactSettlement = settleJointScores({
+        prepared,
+        heroId: input.hero.user_id,
+        opponentIds: input.sampledOpponentIds,
+        sample,
+        dealerSeat: input.settlement.dealerSeat,
+        splitLow: input.settlement.splitLow,
+      });
+    } else branchPots = calculatePots(seats);
+  } catch {
+    return null;
+  }
   const branchTotal = branchPots.reduce((sum, pot) => sum + pot.amount, 0);
   const expectedBranchPot =
     input.pot +
@@ -902,7 +955,10 @@ function settleSample(args: {
       const original = input.players[index];
       return sum + Math.max(0, player.totalInvested - original.totalInvested);
     }, 0);
-  if (Math.abs(branchTotal - expectedBranchPot) > EPS) return null;
+  const refundsTotal = exactSettlement
+    ? Object.values(exactSettlement.refunds).reduce((a, b) => a + b, 0)
+    : 0;
+  if (Math.abs(branchTotal + refundsTotal - expectedBranchPot) > EPS) return null;
 
   const winnersByPot = branchPots.map(() => new Set<string>());
   let heroAward = 0;
@@ -913,32 +969,41 @@ function settleSample(args: {
     if (userId === input.hero.user_id) heroAward += amount;
   };
 
-  for (let layerIndex = 0; layerIndex < branchPots.length; layerIndex++) {
-    const layer = branchPots[layerIndex];
-    const liveEligible = layer.eligiblePlayers.filter((userId) => !seatById.get(userId)?.is_folded);
-    if (liveEligible.length === 0) return null;
-    const boardAmount = layer.amount / sample.boards.length;
-    for (const board of sample.boards) {
-      const winners = winnersFor(input, board, liveEligible);
-      if (!winners) {
-        if (liveEligible.length !== 1) return null;
-        winnersByPot[layerIndex].add(liveEligible[0]);
-        award(liveEligible[0], boardAmount);
-        continue;
-      }
-      const highAmount = winners.low.length > 0 ? boardAmount / 2 : boardAmount;
-      for (const userId of winners.high) {
-        winnersByPot[layerIndex].add(userId);
-        award(userId, highAmount / winners.high.length);
-      }
-      if (winners.low.length > 0) {
-        for (const userId of winners.low) {
+  if (exactSettlement) {
+    for (const [userId, amount] of Object.entries(exactSettlement.refunds)) award(userId, amount);
+    for (const item of exactSettlement.awards) {
+      award(item.playerId, item.amount);
+      winnersByPot[item.potIndex].add(item.playerId);
+    }
+  } else
+    for (let layerIndex = 0; layerIndex < branchPots.length; layerIndex++) {
+      const layer = branchPots[layerIndex];
+      const liveEligible = layer.eligiblePlayers.filter(
+        (userId) => !seatById.get(userId)?.is_folded
+      );
+      if (liveEligible.length === 0) return null;
+      const boardAmount = layer.amount / sample.boards.length;
+      for (const board of sample.boards) {
+        const winners = winnersFor(input, board, liveEligible);
+        if (!winners) {
+          if (liveEligible.length !== 1) return null;
+          winnersByPot[layerIndex].add(liveEligible[0]);
+          award(liveEligible[0], boardAmount);
+          continue;
+        }
+        const highAmount = winners.low.length > 0 ? boardAmount / 2 : boardAmount;
+        for (const userId of winners.high) {
           winnersByPot[layerIndex].add(userId);
-          award(userId, boardAmount / 2 / winners.low.length);
+          award(userId, highAmount / winners.high.length);
+        }
+        if (winners.low.length > 0) {
+          for (const userId of winners.low) {
+            winnersByPot[layerIndex].add(userId);
+            award(userId, boardAmount / 2 / winners.low.length);
+          }
         }
       }
     }
-  }
 
   const bustedIds = input.players
     .filter((player) => {
@@ -1017,7 +1082,8 @@ function settleSample(args: {
     }
   }
   const bountyDeniedPct = heroBusted ? currencyToPoolPct(input, ownBountyCents(input)) : 0;
-  const total = vector.reduce((sum, stack) => sum + stack, 0);
+  let total = 0;
+  for (let index = 0; index < vector.length; index++) total += vector[index];
   return {
     vector,
     heroFinalStack: vector[field.heroIndex],
@@ -1164,7 +1230,7 @@ function optionValue(
 }
 
 function heroShareInSample(
-  input: TournamentUtilityInput,
+  input: Pick<TournamentUtilityInput, 'hero' | 'sampledOpponentIds'>,
   sample: TournamentUtilityShowdownSample
 ): number {
   let share = 0;
@@ -1181,6 +1247,19 @@ function heroShareInSample(
     share += boardShare / sample.boards.length;
   }
   return share;
+}
+
+/** Preserve the unweighted joint sample population when another policy
+ * supplies actual shared-deck outcomes to this utility owner. */
+export function tournamentSampleEquity(
+  input: Pick<TournamentUtilityInput, 'hero' | 'sampledOpponentIds' | 'showdownSamples'>
+) {
+  const shares = input.showdownSamples.map((sample) => heroShareInSample(input, sample));
+  if (!shares.length) throw new Error('joint_utility_empty_samples');
+  const n = shares.length,
+    equity = shares.reduce((a, b) => a + b, 0) / n;
+  const variance = n > 1 ? shares.reduce((s, v) => s + (v - equity) ** 2, 0) / (n - 1) : 0.25;
+  return { equity, sampleSize: n, standardError: Math.max(Math.sqrt(variance / n), 1 / (2 * n)) };
 }
 
 /** Exponential tilting preserves sample shapes while matching the safety-capped equity. */
@@ -1204,7 +1283,14 @@ function calibratedSampleWeights(input: TournamentUtilityInput): {
   };
 
   let result = meanFor(0);
-  if (target > minimum + 1e-9 && target < maximum - 1e-9) {
+  // Joint samples already carry their exact uniform mean. Tilting that same
+  // mean through sixty bisections introduced rounding noise: eight equally
+  // weighted outcomes became 7.999999999999998 effective outcomes and failed
+  // the eight-outcome gate. Keep the original distribution when it matches to
+  // numerical precision; different targets still use the calibrated weights.
+  if (Math.abs(result.mean - target) <= 1e-12) {
+    // Uniform weights are the exact lambda=0 solution.
+  } else if (target > minimum + 1e-9 && target < maximum - 1e-9) {
     let low = -40;
     let high = 40;
     for (let step = 0; step < 60; step++) {
@@ -1242,6 +1328,7 @@ function evaluateCandidate(args: {
   payoutWeight: number;
   futureDraws: Map<string, FutureHandDraw>;
   futureResults: Map<string, FutureHandResult>;
+  vectorKey: (vector: number[], rounded: boolean) => string;
 }): CandidateEvaluation {
   const chipMoment = { sum: 0, square: 0 };
   const payoutMoment = { sum: 0, square: 0 };
@@ -1300,7 +1387,7 @@ function evaluateCandidate(args: {
         forced: number;
       }> = [];
       for (const level of levels) {
-        const rolloutKey = `${index}:${level.smallBlind}:${level.bigBlind}:${level.ante}:${level.anteType}:${branch.vector.join(',')}`;
+        const rolloutKey = `${index}:${level.smallBlind}:${level.bigBlind}:${level.ante}:${level.anteType}:${args.vectorKey(branch.vector, false)}`;
         const rollout =
           args.futureResults.get(rolloutKey) ??
           simulateTournamentFutureHands({
@@ -1418,7 +1505,7 @@ function evaluateCandidate(args: {
     conservationError = Math.max(conservationError, branch.conservationError);
     icmError = Math.max(icmError, icm.error + option.error + futureError);
     methods.add(icm.method);
-    vectors.add(branch.vector.map((stack) => Math.round(stack * 100) / 100).join(','));
+    vectors.add(args.vectorKey(branch.vector, true));
   }
 
   const variance = Math.max(0, utilityMoment.square - utilityMoment.sum ** 2);
@@ -1544,6 +1631,26 @@ function evaluateWithWorkspace(
 
   const payoutWeight = payoutPoolWeight(input);
   const boundedFuture = Boolean(input.continuation?.futureHands);
+  const localIndices = [...field.localIndex.values()].sort((a, b) => a - b);
+  const localSet = new Set(localIndices);
+  const remoteIndices = field.stacks.map((_, i) => i).filter((i) => !localSet.has(i));
+  const vectorKey = (vector: number[], rounded: boolean) => {
+    if (!boundedFuture)
+      return (rounded ? vector.map((stack) => Math.round(stack * 100) / 100) : vector).join(',');
+    // The remote field is immutable within this action. Check it without
+    // allocating a thousand formatted numbers for every candidate/future
+    // bound. Only table-local coordinates can distinguish valid vectors.
+    if (vector.length !== field.stacks.length)
+      throw new Error('Continuation changed the immutable remote field');
+    for (let slot = 0; slot < remoteIndices.length; slot++) {
+      const index = remoteIndices[slot];
+      if (vector[index] !== field.stacks[index])
+        throw new Error('Continuation changed the immutable remote field');
+    }
+    return localIndices
+      .map((i) => (rounded ? Math.round(vector[i] * 100) / 100 : vector[i]))
+      .join(',');
+  };
   const estimateCache = (!boundedFuture && workspace?.estimateCache) || new Map<string, Estimate>();
   const actionIcm =
     workspace?.actionIcm ||
@@ -1556,7 +1663,7 @@ function evaluateWithWorkspace(
     );
   let operationBudgetHit = false;
   const estimate = (vector: number[]): Estimate => {
-    const key = vector.map((stack) => Math.round(stack * 100) / 100).join(',');
+    const key = vectorKey(vector, true);
     const cached = estimateCache.get(key);
     if (cached) return cached;
     // A future hand can consume the continuation deadline after the sample's
@@ -1612,6 +1719,7 @@ function evaluateWithWorkspace(
       payoutWeight,
       futureDraws,
       futureResults,
+      vectorKey,
     })
   );
   if (operationBudgetHit) {

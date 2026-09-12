@@ -1125,7 +1125,12 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         maxStack={maxBuyIn}
       />
       <BuyInModal
-        isOpen={bustRebuyOpen && arenaAsset === 'chips'}
+        /* A Diamond cash seat is felted the same way and re-enters through
+           `fn_poker_diamond_top_up`, so the prompt is no longer chip-only.
+           `currency` is what makes the slider, the cap and the balance read in
+           whole Diamonds, exactly as the ordinary buy-in sheet does. */
+        isOpen={bustRebuyOpen && (arenaAsset === 'chips' || arenaAsset === 'diamonds')}
+        currency={arenaAsset === 'diamonds' ? 'diamonds' : ''}
         onClose={onCancelBustRebuy}
         onConfirm={async (amount: number) => {
           await onConfirmBustRebuy(amount);

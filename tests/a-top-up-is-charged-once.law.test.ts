@@ -36,7 +36,12 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { sliceEnclosingBlock, sliceMethod, blankNonCode } from './helpers/sourceWindow';
+import {
+  sliceEnclosingBlock,
+  sliceMethod,
+  sliceStatement,
+  blankNonCode,
+} from './helpers/sourceWindow';
 
 const ROOT = join(__dirname, '..');
 const read = (...p: string[]) => readFileSync(join(ROOT, ...p), 'utf8');
@@ -92,12 +97,22 @@ describe('LAW 2/3 - held across retries, keyed by amount, released when spent', 
       /if \(!autoTopUpKeyRef\.current \|\| autoTopUpKeyRef\.current\.hand !== topUpHand\)/
     );
     expect(block).toContain('crypto.randomUUID()');
-    // And the amount itself is a cent amount before it is ever sent: an
-    // unrounded float reaches `atomic_table_addon`, which stores it verbatim,
-    // and a non-cent `table_pending_addons.amount` can never be resolved
-    // against the post-commit obligation. (The computation sits just above
-    // this block, hence the file-level assertion.)
-    expect(TABLE_PAGE).toMatch(/Math\.round\(Math\.min\(maxBuyIn - currentStack/);
+    /* And the amount itself is sized to the table's own unit before it is
+       ever sent. A chip amount must be a cent amount: an unrounded float
+       reaches `atomic_table_addon`, which stores it verbatim, and a non-cent
+       `table_pending_addons.amount` can never be resolved against the
+       post-commit obligation. A Diamond amount must be whole, because the
+       custody door reserves whole units and floors anything else.
+
+       Pinned on the declaration rather than on the file (2026-09-12): the
+       computation gained its second denomination and the old file-level
+       regex named the single expression that used to do both jobs. */
+    const amount = sliceStatement(TABLE_PAGE, 'const topUpAmount =');
+    expect(amount).toMatch(/Math\.round\(shortfall \* 100\) \/ 100/);
+    expect(amount).toMatch(/Math\.floor\(shortfall\)/);
+    expect(sliceStatement(TABLE_PAGE, 'const shortfall =')).toMatch(
+      /Math\.min\(maxBuyIn - currentStack/
+    );
   });
 
   it('the automatic key is cleared only after the chips actually moved', () => {

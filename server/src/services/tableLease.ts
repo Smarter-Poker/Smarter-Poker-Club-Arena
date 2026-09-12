@@ -41,6 +41,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { warnThrottled, _resetLeaseWarnThrottleForTests } from './leaseWarningThrottle.js';
 // Straight from the client module, never the `supabase.js` barrel: the barrel
 // re-exports every submodule, so importing it from here would pull the whole
 // data layer into the module graph for one rpc() call.
@@ -187,6 +188,7 @@ export function _resetLeaseState(): void {
   claimErrors = 0;
   heartbeatErrors = 0;
   reclaimableHeartbeats = 0;
+  _resetLeaseWarnThrottleForTests();
 }
 
 function unverifiedClaimResult(
@@ -197,12 +199,11 @@ function unverifiedClaimResult(
   detail: string
 ): TableLeaseClaimResult {
   claimErrors++;
-  if (claimErrors <= 3) {
-    console.warn(
-      `[lease] claim_table_lease ${reason} for ${tableId} (${detail}) - ` +
-        'refusing to deal until ownership can be proven'
-    );
-  }
+  warnThrottled(
+    'claim',
+    `[lease] claim_table_lease ${reason} for ${tableId} (${detail}) - ` +
+      'refusing to deal until ownership can be proven'
+  );
   return { status: 'retryable_failure', reason, requestedGeneration, mayHaveCommitted };
 }
 
@@ -379,8 +380,25 @@ export async function heartbeatTables(
     claims.some((claim) => !UUID_PATTERN.test(claim.leaseGeneration))
   ) {
     heartbeatErrors++;
-    if (heartbeatErrors <= 3) {
-      console.warn('[lease] heartbeat refused malformed or duplicate generation claims');
+    warnThrottled(
+      'malformed_claims',
+      '[lease] heartbeat refused malformed or duplicate generation claims'
+    );
+    /* EVERY CLAIM IS ACCOUNTED FOR, ESPECIALLY THE UNREADABLE ONES (2026-09-12)
+         `state=malformed` has been declared and zero-seeded in engineInstruments
+         since this counter shipped, described there as "the response could not be
+         read as an answer". Nothing ever incremented it: both whole-answer refusals
+         return here, above the per-row loop that is the counter's only writer, so
+         production read exactly 0 while this path fenced the fleet.
+         That silence is not cosmetic. `LeaseHeartbeatsNotBeingKept` (critical, SMS)
+         is a RATIO of not-kept to total, so a refusal that increments neither half
+         contributes nothing to either - the one event that loses every lease in a
+         scope at once was the one event that alert could not see. Counting the
+         claims here is what makes it 100% not-kept and fires it. */
+    try {
+      leaseHeartbeatOutcomesTotal.inc(claims.length, { scope: 'table', state: 'malformed' });
+    } catch {
+      /* metrics must never affect a lease decision */
     }
     return { status: 'answered', proofs: [], lostTableIds: tableIds };
   }
@@ -396,11 +414,10 @@ export async function heartbeatTables(
     });
     if (error) {
       heartbeatErrors++;
-      if (heartbeatErrors <= 3) {
-        console.warn(
-          `[lease] heartbeat failed (${error.message}) - retaining only the prior proof window`
-        );
-      }
+      warnThrottled(
+        'rpc_error',
+        `[lease] heartbeat failed (${error.message}) - retaining only the prior proof window`
+      );
       return { status: 'uncertain', reason: 'rpc_error' };
     }
 
@@ -435,8 +452,15 @@ export async function heartbeatTables(
 
     if (malformed || rowsById.size !== claims.length) {
       heartbeatErrors++;
-      if (heartbeatErrors <= 3) {
-        console.warn('[lease] heartbeat returned an incomplete or malformed ownership proof');
+      warnThrottled(
+        'malformed_response',
+        '[lease] heartbeat returned an incomplete or malformed ownership proof'
+      );
+      /* See the note on the first whole-answer refusal above. */
+      try {
+        leaseHeartbeatOutcomesTotal.inc(claims.length, { scope: 'table', state: 'malformed' });
+      } catch {
+        /* metrics must never affect a lease decision */
       }
       return { status: 'answered', proofs: [], lostTableIds: [...tableIds] };
     }
@@ -491,11 +515,10 @@ export async function heartbeatTables(
     return { status: 'answered', proofs, lostTableIds };
   } catch (err) {
     heartbeatErrors++;
-    if (heartbeatErrors <= 3) {
-      console.warn(
-        `[lease] heartbeat threw (${(err as Error)?.message}) - retaining only the prior proof window`
-      );
-    }
+    warnThrottled(
+      'rpc_threw',
+      `[lease] heartbeat threw (${(err as Error)?.message}) - retaining only the prior proof window`
+    );
     return { status: 'uncertain', reason: 'rpc_threw' };
   }
 }

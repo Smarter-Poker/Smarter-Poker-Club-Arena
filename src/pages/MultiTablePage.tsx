@@ -430,12 +430,27 @@ const makeLobbyTab = (): TableInstance => ({
 /**
  * Dan 2026-08-21: "4-table cap ... Desktop could reasonably run 6-8."
  *
- * Six on a desktop-sized screen, four on a phone - four 2x2 tiles is already
- * the most a 375px screen can show without the felt becoming unreadable, and
- * the strip has to stay tappable. The SERVER is the real rule (migration
- * 2026-08-21 raised atomic_table_buyin's v_max_tables to 6, cash tables only,
- * tournaments still uncapped); this is the client refusing to offer a seat it
- * knows the server would decline, and never the other way round.
+ * FOUR EVERYWHERE, BECAUSE FOUR IS WHAT THE SERVER ENFORCES (2026-09-12).
+ *
+ * This was six on a desktop-sized screen and four on a phone, on the stated
+ * reasoning that "the SERVER is the real rule ... this is the client refusing
+ * to offer a seat it knows the server would decline, and never the other way
+ * round". The reasoning was right and the number was stale. The migration it
+ * cites raised the cap to six on 2026-08-21; migration
+ * `20260902170804_four_games_is_the_max_and_the_database_agrees.sql` lowered
+ * it back to FOUR eleven days later, and this line was not part of that change.
+ *
+ * So on every desktop since, the client opened tabs five and six and the
+ * buy-in was refused at the door - which is exactly the "other way round" the
+ * comment forbids. The server says four in three independent places: the chip
+ * buy-in body, the Diamond buy-in door, and the `table_seats` trigger
+ * `fn_enforce_four_table_limit`, which counts cash seats AND tournament
+ * bookings across every arena. A Diamond seat and a chip seat take the same
+ * slot in all three.
+ *
+ * The other note in this file, on the tile grid further down, already said
+ * four. Two notes in one file disagreed about the same number; now neither
+ * does.
  *
  * Read once at module load: a mid-session rotation cannot strand open tables,
  * and the server still has the final say on every buy-in.
@@ -450,7 +465,7 @@ const makeLobbyTab = (): TableInstance => ({
    is now drawn inline at the button; see the note there. Restore this const
    and the <img> together if the artwork is ever re-cut transparent. */
 
-const MAX_TABLES = typeof window !== 'undefined' && window.innerWidth >= 1024 ? 6 : 4;
+const MAX_TABLES = 4;
 
 /* `parseTimed` LIVED HERE TOO, AND main DID NOT COMPILE (2026-09-05).
    Two agents fixed the same production outage the same day - the temporal

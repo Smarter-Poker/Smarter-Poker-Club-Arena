@@ -1,0 +1,32 @@
+# Run the complete release preflight in four CI shards
+
+Consecutive engine releases spent about 15 minutes repeating the full server
+suite before staging. Several became stale during that delay. The release
+preflight now partitions the same suite across four CI jobs, each checking out
+and compiling the requested immutable source. All four must succeed before the
+production database check or deployment can start.
+
+Protected PR CI uses the same four-way partition after a full server job hit its
+15-minute ceiling. Its aggregate retains the required
+`Server Engine (typecheck + tests)` name. It fails on any failed or cancelled
+shard and accepts a skipped suite only when successful change detection explicitly
+found no server changes on a pull request. PostgreSQL accounting remains a
+prerequisite of every shard.
+
+The change reduces the test portion of the publication delay. It keeps source
+freshness checks, production database checks, the single durable publisher,
+maintenance cutover and recovery intact. It does not reuse a prior commit's
+test verdict or dispatch a replacement release.
+
+Validation covers all 735 real Vitest suite files in disjoint groups of
+184/184/184/183, existing release safety checks, the complete matrix/dependency
+chain, and execution of the CI aggregate's success/failure/skip verdicts. Actual
+CI run 34678322392 completed all four server jobs in 3 minutes 38 seconds to
+5 minutes 20 seconds, with each complete test shard passing. That run exposed two
+stale dependency assertions in the client tests; they now follow the accounting
+prerequisite through the server shards. Publication timing remains to be measured
+on a protected release using this workflow.
+
+# Browser failure evidence
+
+CI now retains the Table Studio mock suite's failed browser trace and screenshot for three days, before another suite can replace its output. The existing failure still blocks the PR. Run 34678990946 passed all four engine groups and their required aggregate, but its second-tab Studio readiness assertion failed; that browser failure remains under investigation.

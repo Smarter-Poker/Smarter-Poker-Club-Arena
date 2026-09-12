@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/claude-diamond-phase-7/feature/diamond-bomb-pots. Phase 7 checklist line three, last feature, which completes the line. Two migrations applied to kuklfnapbkmacvwxktbh on 2026-09-12: 20260912041500 lets the accepted-hand commit accept a Diamond bomb hand's award-unit breakdown provided every unit amount is whole (it refused any breakdown at all, while another rule refuses a bomb hand that carries none, so a Diamond bomb pot could be dealt and never committed); 20260912043000 drops bomb_pot_enabled from the admission door's refusal list, adds the whole-ante and table-game rules in its place, and adds the staff door below. Both edit the live function definition in place rather than restating it, because fn_ca_commit_hand_settlement is 34KB and every chip hand settles through it. No new table or column; the staff door is the only new object.",
+  "functions": ["fn_poker_diamond_set_table_bomb_pot"]
+}

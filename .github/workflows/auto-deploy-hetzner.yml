@@ -21,9 +21,17 @@ concurrency:
 
 jobs:
   preflight:
-    name: Test The Exact Engine Release Request
+    name: Test The Exact Engine Release Request (shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # Each shard builds the same immutable server tree. Downstream jobs depend
+    # on the entire matrix, so one failed/cancelled shard cannot admit a release.
+    # Finish all shards on failure to retain the complete diagnostic result.
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: [1, 2, 3, 4]
     permissions:
       contents: read
     outputs:
@@ -65,11 +73,14 @@ jobs:
 
       - name: Compile and test the exact server tree
         working-directory: server
+        env:
+          RELEASE_TEST_SHARD: ${{ matrix.shard }}
         run: |
           set -euo pipefail
+          [[ "$RELEASE_TEST_SHARD" =~ ^[1-4]$ ]]
           npm ci --no-audit --no-fund
           npm run build
-          npm test
+          npm test -- --shard="$RELEASE_TEST_SHARD/4"
 
   engine-doors:
     name: Prove The Exact Engine Has Every Production Door

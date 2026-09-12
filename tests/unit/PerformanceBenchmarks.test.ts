@@ -9,6 +9,11 @@
 
 import { describe, it, expect, vi } from 'vitest';
 
+// Isolate the canonical identity boundary; these tests do not bootstrap authentication.
+vi.mock('../../src/core/IdentityDNA', () => ({
+  getIdentityDNAStatus: () => ({ loaded: true, authenticated: false, userId: null }),
+}));
+
 // ─── Mock dependencies (needed for imports) ───────────────────────────────
 
 vi.mock('../../src/lib/supabase', () => ({

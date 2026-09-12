@@ -234,7 +234,43 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     opId?: string
   ): Promise<{ success: boolean; error?: string; queued?: boolean; applied?: number }> {
     if (midHand) {
-      return { success: false, error: 'Diamond Top Ups Land Between Hands' };
+      /* AN INTENT, NOT A DEBIT (2026-09-12). See `diamondTopUpIntents` on the
+         base for why this arena cannot take the money now and land it later:
+         the deferred seat-keeps-custody trigger requires a Diamond seat's
+         stack to EQUAL its custody balance at every commit, so the chip lane's
+         two steps have no ordering this arena permits. Nothing moves here. The
+         whole top-up happens between hands, in the one transaction that is
+         allowed, through the door that is already certified. */
+      const requested = Math.floor(amount);
+      if (!(requested >= 1)) {
+        return { success: false, error: 'Diamond Top Ups Are Whole Diamonds' };
+      }
+      const stack = Number(player.stack || 0);
+      if (!Number.isSafeInteger(stack) || stack < 0) {
+        return { success: false, error: 'Diamond Top Ups Require A Whole Stack' };
+      }
+      /* The headroom is measured against the stack AND everything already
+         intended for this seat, so three taps during one hand cannot promise
+         more than the table can hold. It is measured again at landing, because
+         the pot moves the stack in between. */
+      const intended = [...this.diamondTopUpIntents.values()]
+        .filter((intent) => intent.userId === userId)
+        .reduce((sum, intent) => sum + intent.amount, 0);
+      const headroom = Math.max(0, Math.floor(maxBuyIn) - stack - intended);
+      const applied = Math.min(requested, headroom);
+      if (applied < 1) {
+        return { success: false, error: 'Already at the maximum buy-in for this table' };
+      }
+      const requestId = uuidv5(
+        `diamond-top-up:${this.tableId}:${userId}:${opId || randomUUID()}`,
+        uuidv5.URL
+      );
+      /* Keyed by request id: the same tap retried overwrites itself, two
+         genuine taps both count, and the SQL door de-duplicates a replay of
+         the landing on the same id. */
+      this.diamondTopUpIntents.set(requestId, { userId, amount: applied });
+      this.pendingAddOnSweepNeeded = true;
+      return { success: true, queued: true, applied };
     }
     const stack = Number(player.stack || 0);
     if (!Number.isSafeInteger(stack) || stack < 0) {
@@ -293,6 +329,60 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     return { success: false, error: 'Diamond Top Up Failed' };
   }
 
+  /**
+   * Land every mid-hand Diamond intent, now that the hand is over.
+   *
+   * Each one goes through `fn_poker_diamond_top_up` on its own request id, so
+   * the door's own idempotency covers a replay of this sweep, and each is
+   * re-measured against the stack AS IT IS NOW - the pot moved it while the
+   * intent waited, which is the whole reason the amount could not be fixed at
+   * request time.
+   *
+   * An intent that can no longer be honoured is DROPPED rather than retried
+   * forever: the seat is gone, the seat is full, or the player spent those
+   * Diamonds elsewhere. Nothing was taken, so dropping it costs nobody
+   * anything, and a queue that never empties is how a table stops dealing.
+   * This is the opposite of the chip rule one method below, and deliberately
+   * so: an unresolved chip row is money already taken and must be left open.
+   */
+  protected async applyDiamondTopUpIntents(players: SeatedPlayer[]): Promise<void> {
+    if (this.diamondTopUpIntents.size === 0) return;
+    if (this.handController) return;
+    const maxBuyIn = Math.floor(this.getMaxBuyIn());
+    for (const [requestId, intent] of [...this.diamondTopUpIntents]) {
+      const player = players.find((p) => p.user_id === intent.userId);
+      const stack = Number(player?.stack ?? 0);
+      if (!player || !Number.isSafeInteger(stack) || stack < 0) {
+        this.diamondTopUpIntents.delete(requestId);
+        continue;
+      }
+      const applied = Math.min(intent.amount, Math.max(0, maxBuyIn - stack));
+      if (applied < 1) {
+        this.diamondTopUpIntents.delete(requestId);
+        continue;
+      }
+      const { data, error } = await supabase.rpc('fn_poker_diamond_top_up', {
+        p_user_id: intent.userId,
+        p_table_id: this.tableId,
+        p_amount: applied,
+        p_expected_stack: stack,
+        p_request_id: requestId,
+      });
+      this.diamondTopUpIntents.delete(requestId);
+      if (error) {
+        reportError(error, `ServerTableEngine.${this.tableId}.diamond_intent_failed`, {
+          userId: intent.userId,
+          amount: applied,
+          requestId,
+        });
+        continue;
+      }
+      const written = Number((data as { stack?: number } | null)?.stack);
+      player.stack = Number.isSafeInteger(written) ? written : stack + applied;
+      this.broadcastCurrentState();
+    }
+  }
+
   /*
    * CHIP CONTINUITY (Operation Table Stakes, Slice 0, 2026-09-04): there is
    * no partial cash-out. `withdrawChips`, `POST /withdrawchips` and the SQL
@@ -323,7 +413,14 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    * next engine start) picks it up. Nothing is dropped on the floor.
    */
   protected async processPendingAddOns(players: SeatedPlayer[]): Promise<void> {
-    if (this.tableInfo?.arena?.asset === 'diamonds') return;
+    if (this.tableInfo?.arena?.asset === 'diamonds') {
+      /* This used to return here and nothing else, because a Diamond seat had
+         no mid-hand lane at all. It has one now, and it is an INTENT lane: no
+         `table_pending_addons` row was ever written, so there is nothing for
+         the chip resolver below to resolve and everything for this to do. */
+      await this.applyDiamondTopUpIntents(players);
+      return;
+    }
     if (!this.pendingAddOnSweepNeeded && this.pendingAddOns.size === 0) return;
 
     const authority = this.getEngineLeaseAuthority();

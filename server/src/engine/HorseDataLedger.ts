@@ -554,6 +554,26 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase11'
   ),
   flag(
+    'phase12Remaining',
+    'separate Short Deck/Pineapple/FLH/FLO8 policies; shadow by default; candidate selection is offline only',
+    'Phase12'
+  ),
+  flag(
+    'phase12EvidenceMode',
+    'offline fixed-work remaining-variant clock; rejected by the live decision worker',
+    'Phase12'
+  ),
+  flag(
+    'phase13Joint',
+    'joint multiway and bomb policy; live shadow with offline-only candidate selection',
+    'Phase13'
+  ),
+  flag(
+    'phase13EvidenceMode',
+    'offline fixed-work joint evaluation; rejected by the live worker',
+    'Phase13'
+  ),
+  flag(
     'v43Tempo',
     'tempo reads: a river big bet priced by how fast it was made against what this player shows down at that tempo',
     'V43'
@@ -736,6 +756,13 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   state('pots', 'live side-pot layers and exact eligible player ids'),
   state('rakeConfig', 'exact active per-hand rake percent and player-count cap schedule'),
+  state('bbjConfig', 'active hand jackpot fee configuration; null explicitly disables deductions'),
+  state(
+    'chipUnit',
+    'controller settlement unit: whole tournament or Diamond chips, cent-unit cash chips'
+  ),
+  state('asset', 'controller chip or Diamond asset, governing fee and precision rules'),
+  state('dealtSeatIds', 'public original dealt-seat census; folded deals still occupy the deck'),
   state('variantRules', 'explicit hole-card, board-use, deck and hi-lo rules'),
   state('communityCards', 'board 1'),
   state('communityCards2', 'board 2 (bomb pots)'),
@@ -1652,6 +1679,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     0.99
   ),
   receipt(
+    'phase10_unavailable_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'exact reason the existing tournament utility owner refused evaluation',
+    'Phase10'
+  ),
+  receipt(
     'phase10_utility_*',
     'HorseLogic -> HorseTournamentUtility',
     'cash or existing tournament utility ownership',
@@ -1718,6 +1751,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     0.99
   ),
   receipt(
+    'phase11_unavailable_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'exact reason the existing tournament utility owner refused evaluation',
+    'Phase11'
+  ),
+  receipt(
     'phase11_utility_*',
     'HorseLogic -> HorseTournamentUtility',
     'cash or existing tournament utility ownership',
@@ -1746,6 +1785,192 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
       'per-variant eligibility, completion, reason and final execution; depends on table mix',
       'Phase11'
     )
+  ),
+  receipt(
+    'phase12_seen',
+    'HorseLogic -> evaluateRemainingVariantPolicy',
+    'natural Short Deck/Pineapple/FLH/FLO8 decisions entering the versioned policy',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_eligible',
+    'evaluateRemainingVariantPolicy',
+    'complete supported single-board Short Deck/Pineapple/FLH/FLO8 nodes',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_fired',
+    'evaluateRemainingVariantPolicy',
+    'completed bounded Short Deck/Pineapple/FLH/FLO8 policy evaluation',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_shadow_changed',
+    'evaluateRemainingVariantPolicy',
+    'proposal differs from baseline; not a live action claim',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_applied',
+    'HorseLogic',
+    'approved policy proposal accepted before final utility and enforcement',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_baseline_retained',
+    'HorseLogic',
+    'shadow or unavailable policy retained the existing action',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_reason_*',
+    'evaluateRemainingVariantPolicy',
+    'exact selection or unavailable reason',
+    'Phase12',
+    'phase12_seen',
+    0.99
+  ),
+  receipt(
+    'phase12_street_*',
+    'evaluateRemainingVariantPolicy',
+    'street coverage for completed policy evaluations',
+    'Phase12',
+    'phase12_fired',
+    0.99
+  ),
+  receipt(
+    'phase12_unavailable_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'exact reason the existing tournament utility owner refused evaluation',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'cash or existing tournament utility ownership',
+    'Phase12',
+    'phase12_seen',
+    0.99
+  ),
+  receipt(
+    'phase12_execution_*',
+    'ServerTableEngineTurns',
+    'authoritative action or retired decision accounting',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_variant_*',
+    'HorseLogic',
+    'partition entering decisions by exact variant',
+    'Phase12',
+    'phase12_seen',
+    0.99
+  ),
+  ...(['short_deck', 'pineapple', 'flh', 'flo8'] as const).map((variant) =>
+    receipt(
+      `phase12_${variant}_*`,
+      'HorseLogic; ServerTableEngineTurns',
+      'per-variant eligibility, completion, reason and final execution; depends on table mix',
+      'Phase12'
+    )
+  ),
+  receipt(
+    'phase13_seen',
+    'HorseLogic -> evaluateJointLivePolicy',
+    'natural multiway and bomb-pot decisions entering the versioned policy',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_eligible',
+    'evaluateJointLivePolicy',
+    'complete supported multiway and bomb-pot nodes',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_fired',
+    'evaluateJointLivePolicy',
+    'completed bounded multiway and bomb-pot policy evaluation',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_shadow_changed',
+    'evaluateJointLivePolicy',
+    'proposal differs from baseline; not a live action claim',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_applied',
+    'HorseLogic',
+    'approved policy proposal accepted before final utility and enforcement',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_baseline_retained',
+    'HorseLogic',
+    'shadow or unavailable policy retained the existing action',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_reason_*',
+    'evaluateJointLivePolicy',
+    'exact selection or unavailable reason',
+    'Phase13',
+    'phase13_seen',
+    0.99
+  ),
+  receipt(
+    'phase13_street_*',
+    'evaluateJointLivePolicy',
+    'street coverage for completed policy evaluations',
+    'Phase13',
+    'phase13_fired',
+    0.99
+  ),
+  receipt(
+    'phase13_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'cash or existing tournament utility ownership',
+    'Phase13',
+    'phase13_seen',
+    0.99
+  ),
+  receipt(
+    'phase13_execution_*',
+    'ServerTableEngineTurns',
+    'authoritative action or retired decision accounting',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_unavailable_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'explicit utility refusal, budget, context or legalization failure',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_variant_*',
+    'HorseLogic',
+    'partition entering decisions by exact variant',
+    'Phase13',
+    'phase13_seen',
+    0.99
+  ),
+  ...(
+    ['nlh', 'plo4', 'plo5', 'plo6', 'plo8', 'short_deck', 'pineapple', 'flh', 'flo8'] as const
+  ).map((variant) =>
+    receipt(
+      `phase13_${variant}_*`,
+      'HorseLogic; ServerTableEngineTurns',
+      'per-variant eligibility, completion, reason and final execution; depends on table mix',
+      'Phase13'
+    )
+  ),
+  receipt(
+    'phase13_board_*',
+    'HorseLogic',
+    'actual controller board-count coverage',
+    'Phase13',
+    'phase13_seen',
+    0.99
   ),
   receipt(
     'phase8_seen',

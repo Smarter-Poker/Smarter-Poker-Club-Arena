@@ -13,8 +13,9 @@
  * buy-in is two million Diamonds and every guard is a safe-integer check.
  */
 import { describe, expect, it } from 'vitest';
-import { assertDiamondCashTable } from '../domain/DiamondCashBoundary.js';
+import { assertDiamondCashTable, DIAMOND_CASH_VARIANTS } from '../domain/DiamondCashBoundary.js';
 import { HandController } from './HandController.js';
+import { HAND_COMPLETION } from '../config/handCompletionSpec.js';
 import type { HandConfig, SeatPlayer } from '../types.js';
 
 /** A table the boundary admits: every deduction zero, every run-it stated. */
@@ -73,9 +74,33 @@ const FEATURES: Array<[string, Record<string, unknown>]> = [
       allow_run_it_twice: true,
     },
   ],
+  ['a bomb pot', { bomb_pot_enabled: true }],
+  ['a bomb pot on a fixed ante', { bomb_pot_enabled: true, bomb_pot_ante_fixed: 5 }],
+  [
+    'a three-board bomb pot',
+    { bomb_pot_enabled: true, bomb_pot_board_count: 3, bomb_pot_double_board: true },
+  ],
+  [
+    'everything the arena can open at once',
+    {
+      straddle_enabled: true,
+      voluntary_straddle: true,
+      run_it_twice: true,
+      allow_run_it_twice: true,
+      bomb_pot_enabled: true,
+    },
+  ],
 ];
 
 const LIVE_STATUSES = ['waiting', 'running', 'playing', 'active'];
+
+/* THE FOURTH AXIS (2026-09-12). This matrix crossed features, statuses and
+   rungs while the arena dealt one game. It deals nine now - the same nine the
+   chip cash create screen offers - and a game is exactly the kind of thing
+   that works in the cell nobody tested. Written as an array for the same
+   reason the other three are: a tenth game joins it rather than forcing a
+   rewrite. */
+const VARIANTS = [...DIAMOND_CASH_VARIANTS];
 
 function players(stacks: number[]): SeatPlayer[] {
   return stacks.map(
@@ -118,6 +143,41 @@ describe('a Diamond table is admitted in every shape the arena can open', () => 
       expect(() => assertDiamondCashTable({ ...plain, ...feature, status })).toThrow(
         'Diamond Plain Cash Table Required'
       );
+    }
+  });
+
+  it.each(VARIANTS)('%s, in every shape and at every live status', (game_variant) => {
+    for (const [, feature] of FEATURES) {
+      for (const status of LIVE_STATUSES) {
+        expect(() =>
+          assertDiamondCashTable({ ...plain, ...feature, game_variant, status })
+        ).not.toThrow();
+      }
+    }
+  });
+
+  it.each(VARIANTS)('%s may bomb in its own game and in no other', (game_variant) => {
+    /* The bomb override names a game, and the rule is the TABLE's game rather
+       than a literal. Both halves are asserted for every variant, because a
+       rule that reads one literal and a rule that reads the row are
+       indistinguishable until there is more than one row. */
+    expect(() =>
+      assertDiamondCashTable({
+        ...plain,
+        game_variant,
+        bomb_pot_enabled: true,
+        bomb_pot_variant: game_variant,
+      })
+    ).not.toThrow();
+    for (const other of VARIANTS.filter((v) => v !== game_variant)) {
+      expect(() =>
+        assertDiamondCashTable({
+          ...plain,
+          game_variant,
+          bomb_pot_enabled: true,
+          bomb_pot_variant: other,
+        })
+      ).toThrow('Diamond Bomb Pots Require The Table Game');
     }
   });
 
@@ -167,6 +227,58 @@ describe('every rung of the ladder deals and conserves in whole Diamonds', () =>
     }
   });
 
+  it.each(VARIANTS)('%s deals a full hand and conserves in whole Diamonds', async (gameVariant) => {
+    /* One rung is enough here: the rung axis is covered above for the game the
+       arena opened with, and what a NEW game changes is how the pot is cut,
+       not how big it is. The top rung is the one where a fractional slice
+       would be largest, so it is the one used. */
+    const [sb, bb, , max] = LADDER[LADDER.length - 1];
+    const stacks = [max, max, max];
+    const hc = new HandController(
+      handConfig({ smallBlind: sb, bigBlind: bb, gameVariant } as Record<string, unknown>),
+      players(stacks),
+      1
+    );
+    hc.start();
+    for (let step = 0; step < 80 && hc.getState().stage !== 'showdown'; step++) {
+      const state = hc.getState();
+      /* Pineapple's discard is an ACTION, not a street to be checked through:
+         the engine folds a seat that misses it. Every live seat discards its
+         third card and the hand resumes. */
+      if (state.stage === 'pineapple_discard') {
+        for (const p of state.players) {
+          if (!p.is_folded && hc.owesPineappleDiscard(p.seat)) {
+            expect(hc.performDiscard(p.seat, 2), `${gameVariant} refused a discard`).toBe(true);
+          }
+        }
+        /* The flop is held for DISCARD_SETTLE_MS after the last card is in, so
+           the discard is visible before the board arrives. A synchronous loop
+           never yields and the timer never fires, so this waits for the beat
+           rather than spinning through it. */
+        await new Promise((resolve) => setTimeout(resolve, HAND_COMPLETION.DISCARD_SETTLE_MS + 50));
+        continue;
+      }
+      const player = state.players.find((p) => p.seat === state.currentPlayerSeat);
+      if (!player || player.is_all_in) {
+        hc.continueRunout();
+        continue;
+      }
+      const action = player.bet < state.currentBet ? 'call' : 'check';
+      expect(hc.performAction(player.seat, action), `${gameVariant} refused a ${action}`).toBe(
+        true
+      );
+    }
+    expect(hc.getState().stage, `${gameVariant} never reached showdown`).toBe('showdown');
+    const after = hc.getState().players;
+    expect(after.reduce((s, p) => s + p.stack, 0)).toBe(stacks.reduce((s, x) => s + x, 0));
+    for (const p of after) {
+      expect(
+        Number.isSafeInteger(p.stack),
+        `${p.user_id} holds ${p.stack} after a hand of ${gameVariant}`
+      ).toBe(true);
+    }
+  });
+
   it('the largest rung is still nowhere near the guard ceiling', () => {
     /* Every Diamond guard is a 32-bit check: a stack, a buy-in and a pot must
        each fit in 2147483647. Three players at the top rung is six million,
@@ -188,14 +300,17 @@ describe('every rung of the ladder deals and conserves in whole Diamonds', () =>
 describe('a configuration the arena cannot open is refused, one reason at a time', () => {
   it.each([
     ['insurance', { insurance_enabled: true }],
-    ['a bomb pot', { bomb_pot_enabled: true }],
     ['the seven-deuce side bet', { seven_deuce_enabled: true }],
     ['a nit game', { nit_game: true }],
     ['all in or fold', { all_in_or_fold: true }],
     ['pineapple', { pineapple_holdem: true }],
     ['a betting cap', { cap_enabled: true }],
     ['a template', { is_template: true }],
-    ['a variant beyond NLH', { game_variant: 'plo4' }],
+    /* `plo4` was here until 2026-09-12; the nine games the chip cash screen
+       offers are admitted now, and a game nobody deals takes its place. The
+       admitted nine are asserted positively further down. */
+    ['a game this estate does not deal', { game_variant: 'razz' }],
+    ['a variant that is not a variant', { game_variant: '' }],
     ['a tournament table', { tournament_id: 't' }],
     ['a cluster table', { cluster_id: 'c' }],
     ['rake', { rake_percent: 1 }],
@@ -216,5 +331,22 @@ describe('a configuration the arena cannot open is refused, one reason at a time
     for (const [, feature] of FEATURES) {
       expect(() => assertDiamondCashTable({ ...plain, ...feature, ...change })).toThrow();
     }
+  });
+
+  /* The bomb columns bind only while the feature is on, so they are their own
+     pair rather than another row above: a stale multiplier on a table that is
+     not bombing is not a reason to refuse the table. */
+  it.each([
+    ['an ante that is not a whole Diamond', { big_blind: 1, bomb_pot_ante_multiplier: 1.5 }],
+    ['a fixed ante that is not a whole Diamond', { bomb_pot_ante_fixed: 2.5 }],
+    ['an ante of nothing', { bomb_pot_ante_multiplier: 0 }],
+    ['bombs in a game the table is not certified for', { bomb_pot_variant: 'plo4' }],
+  ])('a bomb pot with %s is refused', (_why, change) => {
+    expect(() => assertDiamondCashTable({ ...plain, bomb_pot_enabled: true, ...change })).toThrow();
+    /* And the same row with bombs OFF is fine, which is what makes the refusal
+       about the bomb rather than about the column. */
+    expect(() =>
+      assertDiamondCashTable({ ...plain, bomb_pot_enabled: false, ...change })
+    ).not.toThrow();
   });
 });

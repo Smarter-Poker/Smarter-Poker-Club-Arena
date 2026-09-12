@@ -1,3 +1,4 @@
+import { validateCashoutAmount } from '../utils/cashoutAmount';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CASHOUT SERVICE — Player Chip Cashout Management
@@ -183,16 +184,8 @@ class CashoutServiceClass {
     note?: string,
     opId?: string
   ): Promise<CashoutRequest | null> {
-    // A NaN from an empty input arrives at Postgres as null, where the RPC
-    // answers 'Amount Must Be Greater Than Zero' - a full round trip to be told
-    // something knowable here. Chip balances are whole chips, so a fractional
-    // request is a guaranteed refusal too.
-    if (!Number.isFinite(amount) || amount <= 0) {
-      throw new Error('Enter An Amount Greater Than Zero');
-    }
-    if (!Number.isInteger(amount)) {
-      throw new Error('Enter A Whole Number Of Chips');
-    }
+    const validation = validateCashoutAmount(typeof amount === 'number' ? amount : NaN);
+    if (!validation.ok) throw new Error(validation.error);
 
     const resolvedClubId = await resolveClubUUID(clubId);
 

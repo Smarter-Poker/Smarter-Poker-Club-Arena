@@ -1,0 +1,14 @@
+# Dependency And Acceptance Graph
+
+1. Complete package/read and repository/capability preflight: verified; initial assignment wave running.
+2. Recover applicable canonical evidence and active ownership; complete G5 engineering plus necessary domain research. G8 reviews documented behavior oracles and unknowns before new substantive audit slices.
+3. G5 completes actual financial authority and lifecycle source/runtime coverage, findings and finite plan. Reuse original 109 items and 216 controls. Reuse applicable coverage and review all missing, previously unreviewed or invalidated scope; those inventories are not a scope ceiling. Missing source/runtime access prevents complete coverage. Demonstrated defects may leave downstream dynamic checks explicitly pending against canonical IDs.
+4. G8 accepts the Phase 1 baseline independently, with real N derived from backlog. No normal new implementation before that checkpoint. Existing independently authorized work continues under its current owner and is recovered into this plan.
+5. Issue-bounded delivery phases: independent candidate acceptance before integration/release; existing operator executes its sole lane; post-deployment checks then final phase acceptance. No future deployment evidence demanded before permitting its prerequisite release.
+6. G5 submits full FOUNDATION_ACCEPTANCE.md and FINANCIAL_ROUTE_MATRIX.md, all required format lifecycle matrices, corrections/retirement/durability/cutover evidence and deployed identities. G8 alone accepts or rejects foundation. It is not accepted now.
+7. Only after foundation acceptance release G1/G2/G3/G4/G6/G7 full audits and backlog-derived phases, subject to actual contract dependencies and four-agent capacity. G1 owns shared hand rules, G2 shared tournament/brackets, G3 satellite/special admission, G4 hierarchy/economics, G5 posting, G6 delivery, G7 retirement. Do not impose a guessed linear phase count.
+8. Coherent combined release and cross-domain matrix, all seven exits and no required unresolved lifecycle or financial findings precede final G8 acceptance.
+
+Current external checkpoint: release owner permits local preparation and a verified backup/draft-only proposal that cannot auto-merge. Ordinary documentation integration follows corrected #4346 publication/certificate/cleanup and queued #4333 control closure. No G8 publication is scheduled or independently dispatched. No live financial tests duplicate the active certificate or accounting owner's fixtures.
+
+Current owner-reported accounting dependencies: D9 historical receipts do not prove current compatibility; composed seat scopes and manager-target publication, deferred/in-flight guards, accepted-bust verification and atomic normal-finish claims remain under its owner. D8 house authority is prepared; funding/debt reconciliation is unexecuted. These are recovered pending gates, not newly diagnosed duplicate defects.

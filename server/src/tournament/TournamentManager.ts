@@ -842,7 +842,7 @@ export class TournamentManager extends TournamentManagerEliminations {
 
     const moves = planOrphanReseats(tableRows as OrphanTableRow[], seatRows as OrphanSeatRow[]);
 
-    const { duplicateSeat, noChips } = describeUnmovableOrphans(
+    const { duplicateSeat, noChips, ambiguousClosedSources } = describeUnmovableOrphans(
       tableRows as OrphanTableRow[],
       seatRows as OrphanSeatRow[]
     );
@@ -852,6 +852,13 @@ export class TournamentManager extends TournamentManagerEliminations {
           `[Tournament:${this.tournamentId.slice(0, 8)}] ${duplicateSeat.length} player(s) hold a live seat on BOTH a closed table and an open one. Which stack is real is a money decision, so nothing was moved: ${duplicateSeat.map((id) => id.slice(0, 8)).join(', ')}`
         ),
         'Tournament.orphan_seat_duplicate_not_moved'
+      );
+    }
+    if (ambiguousClosedSources.length > 0) {
+      reportError(
+        new Error('Players hold multiple positive closed-table sources; no source was selected'),
+        'Tournament.orphan_closed_sources_ambiguous_not_moved',
+        { tournamentId: this.tournamentId, ambiguousClosedSources }
       );
     }
     if (noChips.length > 0) {

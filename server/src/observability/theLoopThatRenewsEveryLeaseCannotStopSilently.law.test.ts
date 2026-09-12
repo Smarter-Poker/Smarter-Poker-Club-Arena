@@ -35,6 +35,7 @@ import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { alwaysOnRegistry } from './engineInstruments.js';
+import { reportError, reportWarning } from '../services/errorReporter.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(here, '../../..');
@@ -95,6 +96,82 @@ describe('the loop that renews every lease cannot stop silently', () => {
     const f = flat(gameServer);
     expect(f).toContain("leaseRenewalPassesTotal.inc(1, { outcome: 'completed' })");
     expect(f).toContain("leaseRenewalPassesTotal.inc(1, { outcome: 'threw' })");
+  });
+
+  /**
+   * 2026-09-12, SAME DAY, SECOND HALF. The law above made the loop's exit
+   * VISIBLE. It was still PERMANENT: `launchServerLifecycleJob` reports what a
+   * job throws and then forgets it, and this is the only loop in the process
+   * that renews a lease. Reporting the death of the platform's primary
+   * ownership lifecycle is not a fix for it.
+   *
+   * Extended here rather than written as a second law, because two laws about
+   * one loop is how a repo ends up with a coin flip (CLAUDE.md 10.8).
+   */
+  it('a loop that leaves while its generation is live is relaunched, not just mourned', () => {
+    const f = flat(gameServer);
+    // Boot launches the supervisor, never the loop bare.
+    expect(f).toContain(
+      'this.launchServerLifecycleJob( this.superviseOwnershipLeaseRenewal(generation), ' +
+        "'GameServer.ownership_lease_renewal_fatal_err' );"
+    );
+    // The supervisor's fence is the same generation check the loop itself uses,
+    // so a stopped or superseded server ends it instead of resurrecting a dead
+    // generation's renewals - and the gauge comes back with every relaunch.
+    const supervisorAt = f.indexOf(
+      'private async superviseOwnershipLeaseRenewal(generation: number): Promise<void> {'
+    );
+    expect(supervisorAt).toBeGreaterThan(-1);
+    const supervisor = f.slice(
+      supervisorAt,
+      f.indexOf('private startShutdownOwnershipLeaseRenewal()', supervisorAt)
+    );
+    expect(supervisor).toContain(
+      'while (this.directAdmissionIsCurrent(generation)) { leaseRenewalLoopRunning.set(1); try { await this.runOwnershipLeaseRenewalLoop(generation); }'
+    );
+    // Relaunch only while the generation is still current, and never hot-spin.
+    const recheck = supervisor.indexOf('if (!this.directAdmissionIsCurrent(generation)) return;');
+    const count = supervisor.indexOf('leaseRenewalLoopRelaunchesTotal.inc(1);');
+    const cadence = supervisor.indexOf('await this.sleep(OWNERSHIP_LEASE_RENEWAL_CADENCE_MS);');
+    expect(recheck).toBeGreaterThan(-1);
+    expect(count).toBeGreaterThan(recheck);
+    expect(cadence).toBeGreaterThan(count);
+  });
+
+  it('a relaunch is a number, so the cure cannot hide the disease', () => {
+    /* A supervised loop that dies and restarts looks exactly like a healthy
+       one: passes keep completing and the gauge is back at 1 inside a tick.
+       Without this counter the fix would have removed the outage AND the only
+       evidence it ever happened. */
+    expect(alwaysOnRegistry.renderPrometheus()).toMatch(
+      /poker_lease_renewal_loop_relaunches_total(\{[^}]*\})?\s+0/
+    );
+  });
+
+  it('neither the loop nor its supervisor can be killed by its own error report', () => {
+    /* `console.error` writes to fd 2 synchronously and throws EPIPE/EAGAIN on a
+       container whose log pipe is saturated or gone. It used to be the FIRST
+       line of reportError and outside every try, so the catch handler written
+       to keep the loop alive was itself able to end it - with no log line,
+       because the thing that failed was the log line. */
+    const reporter = read('server/src/services/errorReporter.ts');
+    expect(flat(reporter)).toContain('try { // Always log to console');
+    expect(flat(reporter)).toContain('try { console.warn(`[${context}] ${message}`); } catch {');
+    expect(() => reportError(new Error('x'), 'law.test.reportError')).not.toThrow();
+    expect(() => reportWarning('x', 'law.test.reportWarning')).not.toThrow();
+
+    // And the callers do not rely on that alone: both report sites in the loop
+    // and the one in its supervisor are themselves wrapped.
+    const f = flat(gameServer);
+    expect(f).toContain(
+      "try { reportError(error, 'GameServer.ownership_lease_renewal_pass_threw'); } catch {"
+    );
+    expect(f).toContain(
+      "try { reportError( new Error( 'ownership lease renewal loop left while its admission generation was still current; '"
+    );
+    expect(f).toContain(
+      "try { reportError(error, 'GameServer.ownership_lease_renewal_loop_threw'); } catch {"
+    );
   });
 
   it('an alert reads the completed rate and pages', () => {

@@ -193,6 +193,24 @@ describe('the near-miss log has a reader', () => {
     }
   });
 
+  it('the section heading is a label, not a claim about whether the pool paid', () => {
+    /* FOUND BY LOOKING AT IT, 2026-09-12 - the first time any of this audit
+       was seen on a screen. The heading read "Why It Has Not Paid" and sat
+       four rows under the LAST HIT tile, which showed `0.3d` on BOTH live
+       pools: the panel announced that the jackpot had not paid, directly
+       below the number saying it had paid that morning.
+
+       The rows were right; the heading asserted a premise nobody had checked
+       against the tile above it. A heading on an operator panel has to be
+       true whichever way the pool is running, because the list is worth
+       reading when the jackpot is cold and when it is paying. */
+    const panel = read(PANEL);
+    const head = panel.slice(panel.indexOf('bbj-admin__misses-head'));
+    const title = /bbj-admin__misses-title">([^<]+)</.exec(head)?.[1] ?? '';
+    expect(title).toBeTruthy();
+    expect(title).not.toMatch(/has not paid|hasn't paid|not paying|overdue/i);
+  });
+
   it('the fiction in the creating migration is not a source of labels', () => {
     const panel = read(PANEL);
     /* These five are named by 20260907201404's prose and by no writer. If one

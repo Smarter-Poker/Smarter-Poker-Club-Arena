@@ -524,6 +524,45 @@ describe('Phase 8 counterfactual selection', () => {
       }
     }
   );
+  it('refuses a conserved remote-field swap before reusing a local-coordinate cache', () => {
+    const { gs, hero, input } = scenario();
+    input.context.fieldStacks.push(100, 200);
+    input.context.playersLeft = 5;
+    gs.tournament!.stacks!.push(100, 200);
+    gs.tournament!.playersLeft = 5;
+    const previous = evaluateTournamentUtilityDetailed(input);
+    expect(previous.result).not.toBeNull();
+    const baseline = { ...previous.result!.decision, tournamentUtility: previous.result!.ledger };
+    const original = FutureHand.simulateTournamentFutureHands;
+    const future = vi
+      .spyOn(FutureHand, 'simulateTournamentFutureHands')
+      .mockImplementation((args) => {
+        const result = original(args);
+        if (result) {
+          const local = new Set(args.localIndex.values());
+          const remote = result.vector.map((_, i) => i).filter((i) => !local.has(i));
+          result.vector[remote[0]] += 1;
+          result.vector[remote[1]] -= 1;
+        }
+        return result;
+      });
+    try {
+      const out = evaluateTournamentPostflop(
+        hero,
+        gs,
+        baseline,
+        input,
+        'shadow',
+        () => 0,
+        previous.continuePostflop
+      );
+      expect(out.ledger.reason).toBe('continuation_numerical_error');
+      expect(out.ledger.fired).toBe(false);
+      expect(out.decision).toBe(baseline);
+    } finally {
+      future.mockRestore();
+    }
+  });
   it('refuses a budget breach and a private-card boundary violation', () => {
     const { gs, hero, input } = scenario();
     const previous = evaluateTournamentUtility(input)!;

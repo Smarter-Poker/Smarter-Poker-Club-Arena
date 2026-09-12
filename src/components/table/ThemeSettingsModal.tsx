@@ -1268,6 +1268,15 @@ export function ThemeSettingsModal({
             selectionMutationRevisionRef.current !== mutationRevision
           ) {
             if (themeLoadReadyScopeRef.current === requestedScope) setThemeLoadState('ready');
+            else if (pendingSavesRef.current === 0) {
+              // A cross-tab update can invalidate the very first snapshot
+              // before Realtime connects. There is no ready editor or live
+              // reconciliation timer yet. Read a fresh complete row instead
+              // of leaving every control disabled after discarding this one.
+              // Never spin on an outstanding local save.
+              themeReadRef.current = null;
+              setThemeLoadRevision((revision) => revision + 1);
+            }
             return;
           }
           /* The reader and this editor now use the same precedence: exact

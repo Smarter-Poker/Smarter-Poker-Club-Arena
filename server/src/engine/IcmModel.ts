@@ -277,14 +277,23 @@ export function createIcmEquityEstimator(
       if (vector.length !== reference.length) {
         throw new Error('ICM candidate vector length changed inside one action');
       }
-      const clean = cleanStacks(vector);
+      // Only table-local rates enter the trial loop. Preserve the exact
+      // sanitization and immutable-field check without allocating a cleaned
+      // copy of a thousand-player field for each candidate/future vector.
+      const localStacks = mutable.map((index) => {
+        const stack = vector[index];
+        return Number.isFinite(stack) && stack > 0 ? stack : 0;
+      });
+      let modeledPlayers = localStacks.filter((stack) => stack > 0).length;
       for (const entry of immutable) {
-        if (Math.abs(clean[entry.index] - entry.stack) > 0.005) {
+        const raw = vector[entry.index];
+        const stack = Number.isFinite(raw) && raw > 0 ? raw : 0;
+        if (Math.abs(stack - entry.stack) > 0.005) {
           throw new Error('ICM remote stack changed inside one action');
         }
+        if (stack > 0) modeledPlayers++;
       }
-      const heroStack = clean[heroIdx] ?? 0;
-      const modeledPlayers = clean.filter((stack) => stack > 0).length;
+      const heroStack = localStacks[heroSlot];
       const sampleTrials = Math.min(
         trials,
         Math.max(MC_MIN_TRIALS, Number.isFinite(trialLimit) ? Math.floor(trialLimit) : trials)
@@ -306,9 +315,8 @@ export function createIcmEquityEstimator(
         const heroClock = mutableDraws[heroSlot][trial] / heroStack;
         let playersAhead = lowerBound(remoteClocks[trial], heroClock);
         for (let slot = 0; slot < mutable.length; slot++) {
-          const index = mutable[slot];
-          if (index === heroIdx || clean[index] <= 0) continue;
-          if (mutableDraws[slot][trial] / clean[index] < heroClock) playersAhead++;
+          if (slot === heroSlot || localStacks[slot] <= 0) continue;
+          if (mutableDraws[slot][trial] / localStacks[slot] < heroClock) playersAhead++;
         }
         const value = prizes[playersAhead] ?? 0;
         const sample = trial + 1;

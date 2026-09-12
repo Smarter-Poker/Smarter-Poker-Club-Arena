@@ -1088,6 +1088,41 @@ export class TournamentManager extends TournamentManagerEliminations {
       return null;
     }
 
+    // ════════════════════════════════════════════════════════════════════════
+    //  THE PLANNER MUST SEE THE CHAIRS THE ROSTER STILL HOLDS (2026-09-12)
+    // ════════════════════════════════════════════════════════════════════════
+    //
+    // `fn_move_tournament_player` refuses a destination chair whose
+    // `tournament_players` row is still `registered`/`playing` there, even
+    // when no live `table_seats` row occupies it — an unrecorded bust keeps
+    // its roster chair until the elimination sweep records it. Planning off
+    // the live seats alone therefore proposes chairs the database will not
+    // accept: measured on event 05e104c7, 294 of 378 planned chairs came back
+    // `tournament move destination roster is occupied` and only 42 of 378
+    // were genuinely free.
+    //
+    // One more chunked read per pass, on the same ID-list bound as the two
+    // above — never one query per table.
+    const rosterRead = await selectInChunks<{
+      table_id: string | null;
+      seat_number: number | null;
+    }>(
+      tableIds,
+      (batch) =>
+        supabase
+          .from('tournament_players')
+          .select('table_id, seat_number')
+          .eq('tournament_id', this.tournamentId)
+          .in('status', ['registered', 'playing'])
+          .in('table_id', batch),
+      `Tournament.${label}.roster(${this.tournamentId.slice(0, 8)})`
+    );
+    if (!this.eliminationMutationAllowed()) return null;
+    if (!rosterRead.complete) {
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      return null;
+    }
+
     const tableById = new Map(tableRead.rows.map((row) => [row.id, row]));
     if (tableById.size !== new Set(tableIds).size) {
       reportError(
@@ -1105,13 +1140,26 @@ export class TournamentManager extends TournamentManagerEliminations {
       seats.push(seat);
       seatsByTable.set(seat.table_id, seats);
     }
+    const rosterChairsByTable = new Map<string, Set<number>>();
+    for (const row of rosterRead.rows) {
+      if (!row.table_id || !row.seat_number) continue;
+      const chairs = rosterChairsByTable.get(row.table_id) ?? new Set<number>();
+      chairs.add(row.seat_number);
+      rosterChairsByTable.set(row.table_id, chairs);
+    }
     return tableIds.map((tableId) => {
       const seats = seatsByTable.get(tableId) ?? [];
+      const liveSeats = new Set(seats.map((seat) => seat.seat_number || 0));
       return {
         tableId,
         playerCount: seats.length,
         maxSeats: tableById.get(tableId)?.max_players || 9,
         buttonSeat: this.tableEngines.get(tableId)?.getCurrentButtonSeat() ?? 0,
+        // Roster chairs with no live seat row. The move door refuses them, so
+        // they are not free chairs to the planner either.
+        reservedSeats: [...(rosterChairsByTable.get(tableId) ?? [])].filter(
+          (chair) => !liveSeats.has(chair)
+        ),
         players: seats.map((seat) => ({
           userId: seat.user_id,
           stack: seat.stack || 0,
@@ -1219,8 +1267,10 @@ export class TournamentManager extends TournamentManagerEliminations {
 
   /**
    * Own the exact source-table generation before a seat can be vacated.
-   * Closed-orphan recovery is the sole no-engine mode; its database function
-   * independently proves that the source table is closed or deleted.
+   *
+   * A source table with no engine generation in EITHER registry has no hand in
+   * flight to fence. Closed-orphan recovery and a table of one both take that
+   * vacuous boundary; the database function independently proves the rest.
    */
   private async claimTournamentMoveBoundary(
     move: MoveInstruction,
@@ -1241,6 +1291,29 @@ export class TournamentManager extends TournamentManagerEliminations {
         this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
         return null;
       }
+      return { sourceMode, engine: null };
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  A TABLE OF ONE HAS NO HAND TO FENCE (2026-09-12)
+    // ════════════════════════════════════════════════════════════════════════
+    //
+    // A table holding exactly one player cannot deal, so it holds no engine
+    // generation anywhere in this process. The live-source fence below then
+    // refused the move for ever: this method returned null, every planned move
+    // was skipped, `movedCount !== breakMoves.length`, and the balancer
+    // re-planned the identical move every five seconds. That is a STABLE
+    // DEADLOCK, not a starvation - nothing in it can ever change. 65 events
+    // were in that state. The database had always permitted the move:
+    // `fn_move_tournament_player(..., 'live_source')` succeeded on exactly
+    // these tables, so only this in-process fence refused.
+    //
+    // No engine generation means no hand in flight and the boundary is
+    // satisfied vacuously — the same reasoning that makes closed_orphan safe.
+    // The lease still fences other processes, and fn_move_tournament_player
+    // re-proves exactly-one-live-seat, the exact stack against the roster
+    // mirror, and the destination chair under its own locks.
+    if (!managerEngine && !serverEngine) {
       return { sourceMode, engine: null };
     }
 
@@ -1294,12 +1367,14 @@ export class TournamentManager extends TournamentManagerEliminations {
     outcomeWasAlreadyUnknown = false
   ): Promise<VerifiedTournamentSeatMoveReceipt> {
     if (!boundary.engine) {
+      // The mode no longer decides this: an engineless source is exact in ANY
+      // mode (2026-09-12, a table of one). What must still hold is that no
+      // engine generation has appeared in either registry since the claim.
       if (
-        input.sourceMode !== 'closed_orphan' ||
         this.tableEngines.has(input.sourceTableId) ||
         this.gameServer.getTableEngine(input.sourceTableId)
       ) {
-        return Promise.reject(new Error('closed-orphan source boundary is no longer exact'));
+        return Promise.reject(new Error('engineless source boundary is no longer exact'));
       }
       return moveTournamentPlayerAtomically(input, {
         outcomeWasAlreadyUnknown,

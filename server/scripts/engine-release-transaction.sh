@@ -38,6 +38,18 @@ BREAK_CUTOVER_PROOF_SECONDS=150
 BREAK_ROLLBACK_RESERVE_SECONDS=135
 BREAK_DEADLINE_SLACK_SECONDS=0
 NON_BREAK_RECOVERY_MAX_SECONDS=300
+# CLAUDE.md 13: the engine restarts inside the announced break that opens at
+# :55 of every hour. This is the same minute every other surface reads, and
+# tests/the-break-clocks-agree.law.test.ts pins them together.
+BREAK_START_MINUTE=55
+# How close to that break a newer commit stops being a reason to stand down.
+# A successor has to be detected, dispatched, tested, staged and BUILT before
+# it can hold the cutover lock. Measured 2026-09-12 on run 34673869399:
+# 800 seconds from run creation to cutover-ready, and stage-engine-release
+# adds a further 60-180 seconds to detect the push and dispatch it. Inside 900
+# seconds of a break, a commit that merges now provably cannot reach it, so
+# standing down for it gives the break to nobody.
+SUPERSESSION_YIELD_SECONDS=900
 MIN_BREAK_REMAINING_MS=$(((BREAK_CUTOVER_PROOF_SECONDS + BREAK_ROLLBACK_RESERVE_SECONDS + BREAK_DEADLINE_SLACK_SECONDS) * 1000))
 
 die() {
@@ -55,6 +67,7 @@ GITHUB_RUN_ID="${RUN_ID%%-*}"
 [ "$MAX_RUNTIME_SECONDS" -ge 1200 ] && [ "$MAX_RUNTIME_SECONDS" -le 8400 ] \
   || die 'runtime budget must be between twenty minutes and two hours twenty minutes'
 STARTED_EPOCH="$(date +%s)"
+SUPERSEDED_BY=""
 DEADLINE=0
 CERTIFICATE_DEADLINE=0
 
@@ -204,8 +217,25 @@ release_engine_lock() {
   LOCK_HELD=0
 }
 
+# Whole-hour arithmetic only: the break opens on a fixed minute of every hour
+# and runs to the top of the next one, so the answer never depends on the local
+# timezone or on the engine being reachable. Zero means a break is open NOW -
+# the wrap-around reading it replaced said the next break was an hour away at
+# :56, which is inside the break this transaction is trying to use.
+seconds_to_next_break() {
+  local past break_at
+  past=$(( $(date -u +%s) % 3600 ))
+  break_at=$(( BREAK_START_MINUTE * 60 ))
+  if [ "$past" -ge "$break_at" ]; then
+    echo 0
+  else
+    echo $(( break_at - past ))
+  fi
+}
+
 source_target_is_current() {
   local main_sha latest remaining lock_wait fetch_wait attempt fetched source_deadline
+  local high_water high_water_contained
   remaining="$(remaining_seconds)" || die 'deadline expired before protected-main verification'
   source_deadline="$DEADLINE"
   if [ "${BREAK_END_EPOCH:-0}" -gt 0 ]; then
@@ -269,10 +299,58 @@ source_target_is_current() {
   EXPECTED_SERVER_TREE="$(timeout --signal=TERM --kill-after=1s "${remaining}s" env \
     GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" rev-parse --verify "$SHA:server")" \
     || die 'bounded target server tree lookup failed'
+  # The forward-only proof. Until 2026-09-12 the tip check below provided this
+  # incidentally: a target that was the newest engine commit on protected main
+  # could not be behind the sealed release. The tip check is no longer absolute
+  # (see the supersession verdict), so the property it was carrying is stated
+  # and proved here in its own right. Production never moves backwards.
+  remaining=$((source_deadline - $(date +%s)))
+  [ "$remaining" -gt 2 ] || die 'source verification deadline expired before forward-only proof'
+  [ "$remaining" -le 10 ] || remaining=10
+  high_water="$(timeout --signal=TERM --kill-after=1s 5s "$RELEASE_SEAL" get high-water-sha 2>/dev/null || true)"
+  high_water_contained=0
+  if [[ "$high_water" =~ ^[0-9a-f]{40}$ ]]; then
+    if timeout --signal=TERM --kill-after=1s "${remaining}s" env GIT_NO_REPLACE_OBJECTS=1 \
+      git -C "$REPO_DIR" merge-base --is-ancestor "$high_water" "$SHA" 2>/dev/null; then
+      high_water_contained=1
+    fi
+  fi
   flock -u 8
   [[ "$latest" =~ ^[0-9a-f]{40}$ ]] || die 'latest engine component SHA is unreadable'
-  [ "$latest" = "$SHA" ] || die "target $SHA is stale; protected main requires $latest"
   [[ "$EXPECTED_SERVER_TREE" =~ ^[0-9a-f]{40}$ ]] || die 'target server tree is unreadable'
+  if [ "$latest" = "$SHA" ]; then
+    if [[ "$high_water" =~ ^[0-9a-f]{40}$ ]] && [ "$high_water_contained" != 1 ]; then
+      echo "[engine-release-transaction] WARN: newest engine component $SHA does not contain the sealed high-water release $high_water" >&2
+    fi
+    return 0
+  fi
+
+  # SUPERSEDED. Standing down hands the next certified break to the newer
+  # commit, and that is the right answer for as long as the newer commit can
+  # actually get there. It cannot get there from inside SUPERSESSION_YIELD_SECONDS
+  # of the break, and it certainly cannot get there once this transaction is
+  # already inside one. Standing down then does not give the break to the newer
+  # commit; it gives the break to nobody, and the next candidate meets the same
+  # wall an hour later. That is how production sat 4h25m and 14 consecutive
+  # releases behind protected main on 2026-09-12, every attempt recorded as
+  # "release ended without complete production proof" while the engine was
+  # healthy the entire time. A proof that can only succeed while nothing is
+  # merging is not a gate; it is a treadmill.
+  if [ "${BREAK_END_EPOCH:-0}" -le 0 ] \
+    && [ "$(seconds_to_next_break)" -gt "$SUPERSESSION_YIELD_SECONDS" ]; then
+    die "target $SHA is stale; protected main requires $latest"
+  fi
+
+  # The escape refuses rather than guesses. It exists only because the tip
+  # check can no longer be relied on for ordering, so the ordering proof it was
+  # carrying has to hold explicitly here, or this release does not happen.
+  [[ "$high_water" =~ ^[0-9a-f]{40}$ ]] \
+    || die "target $SHA is superseded by $latest and the sealed high-water release is unreadable"
+  [ "$high_water_contained" = 1 ] \
+    || die "target $SHA is superseded by $latest and does not contain the sealed high-water release $high_water"
+  SUPERSEDED_BY="$latest"
+  echo "ENGINE_RELEASE_SUPERSEDED_BY=$latest"
+  echo "[engine-release-transaction] SUPERSEDED INSIDE THE BREAK WINDOW: protected main requires $latest, which cannot build and reach this break. Shipping $SHA, which contains the sealed high-water release $high_water. Protected-main containment, forward-only ordering, the maintenance certificate and every cutover proof are unchanged." >&2
 }
 
 parse_health_instance_for_sha() {
@@ -994,10 +1072,17 @@ assert_time_remaining
 assert_break_proof_time
 
 set +e
+SEAL_REASON='local, public, and elected-leader compatibility proofs passed'
+if [ -n "$SUPERSEDED_BY" ]; then
+  # Written into the durable seal and therefore into engine-release-audit.jsonl.
+  # An override nobody can count afterwards is an override that becomes the
+  # normal path without anyone deciding that it should.
+  SEAL_REASON="$SEAL_REASON; shipped inside the break window while superseded by $SUPERSEDED_BY"
+fi
 bounded_break_command 10 "$RELEASE_SEAL" commit \
   --sha "$SHA" --image "$TARGET_IMAGE_ID" --container "$CONTAINER" \
   --run-id "$RUN_ID" --run-url "$RUN_URL" --actor "$ACTOR" \
-  --reason 'local, public, and elected-leader compatibility proofs passed'
+  --reason "$SEAL_REASON"
 COMMIT_RC=$?
 set -e
 [ "$COMMIT_RC" -eq 0 ] \

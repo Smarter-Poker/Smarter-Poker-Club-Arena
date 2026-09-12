@@ -54,6 +54,38 @@ const removedChannels: FakeChannel[] = [];
 
 type StatusCallback = (status: string) => void;
 
+/**
+ * What an AbortSignal does to a request in flight.
+ *
+ * PostgrestBuilder.abortSignal() hands the signal to fetch, and undici rejects
+ * the request when it fires. The fakes below do the same, because "the drain
+ * pass can end a call it is waiting on" is the property these tests exist to
+ * hold: a fake that ignored the signal would let a wire-up regression pass.
+ * The underlying reply is left to settle on its own, exactly as the real
+ * transaction may still commit after the client has stopped listening.
+ */
+function abortable<T>(reply: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return reply;
+  if (signal.aborted) {
+    void reply.catch(() => undefined);
+    return Promise.reject(signal.reason);
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+    reply.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(error);
+      }
+    );
+  });
+}
+
 class FakeChannel {
   changeCallback: (() => void) | null = null;
   statusCallback: StatusCallback | null = null;
@@ -77,6 +109,7 @@ vi.mock('./client.js', () => ({
       requestActors.push(dataActorHeaders().get('x-smarter-data-actor')!);
       const call = { table } as (typeof queryCalls)[number];
       queryCalls.push(call);
+      let signal: AbortSignal | undefined;
       const query = {
         select(columns: string) {
           call.columns = columns;
@@ -94,36 +127,59 @@ vi.mock('./client.js', () => ({
           call.ascending = options.ascending;
           return query;
         },
+        abortSignal(value: AbortSignal) {
+          signal = value;
+          return query;
+        },
         limit(value: number) {
           call.limit = value;
-          return Promise.resolve(
-            outboxModel?.(call) ?? outboxReplies.shift() ?? { data: [], error: null }
+          return abortable(
+            Promise.resolve(
+              outboxModel?.(call) ?? outboxReplies.shift() ?? { data: [], error: null }
+            ),
+            signal
           );
         },
       };
       return query;
     },
-    rpc: async (fn: string, args: Record<string, unknown>) => {
+    rpc: (fn: string, args: Record<string, unknown>) => {
       requestActors.push(dataActorHeaders().get('x-smarter-data-actor')!);
       rpcCalls.push({ fn, args });
       rpcInFlight.now++;
       rpcInFlight.max = Math.max(rpcInFlight.max, rpcInFlight.now);
-      try {
-        if (projectionModel) return await projectionModel(String(args.p_hand_id));
-        const byId = projectionRepliesById.get(String(args.p_hand_id));
-        if (byId) {
-          projectionRepliesById.delete(String(args.p_hand_id));
-          return await byId;
-        }
-        return (
-          projectionReplies.shift() ?? {
-            data: { ok: false, reason: 'missing_test_reply' },
-            error: null,
+      const reply = (async (): Promise<RpcReply> => {
+        try {
+          if (projectionModel) return await projectionModel(String(args.p_hand_id));
+          const byId = projectionRepliesById.get(String(args.p_hand_id));
+          if (byId) {
+            projectionRepliesById.delete(String(args.p_hand_id));
+            return await byId;
           }
-        );
-      } finally {
-        rpcInFlight.now--;
-      }
+          return (
+            projectionReplies.shift() ?? {
+              data: { ok: false, reason: 'missing_test_reply' },
+              error: null,
+            }
+          );
+        } finally {
+          rpcInFlight.now--;
+        }
+      })();
+      // PostgrestClient.rpc() returns a builder, not a promise: it is awaited
+      // through `then`, and `.abortSignal()` may be chained before that.
+      let awaited: Promise<RpcReply> = reply;
+      const builder = {
+        abortSignal(signal: AbortSignal) {
+          awaited = abortable(reply, signal);
+          return builder;
+        },
+        then: <A, B>(
+          onOk?: ((value: RpcReply) => A | PromiseLike<A>) | null,
+          onErr?: ((reason: unknown) => B | PromiseLike<B>) | null
+        ) => awaited.then(onOk, onErr),
+      };
+      return builder;
     },
     channel: () => {
       const channel = new FakeChannel();
@@ -162,6 +218,12 @@ beforeEach(async () => {
   mockReportError.mockReset();
   worker.startHandProjectionWorker();
   await vi.waitFor(() => expect(queryCalls).toHaveLength(1));
+  /* JOIN THE STARTUP PASS, not merely its first read. `runDrain` issues that
+     read synchronously, so waitFor is satisfied while the pass is still in
+     flight - and a wake that arrives then is coalesced onto it, so the test
+     would read the startup pass's empty summary instead of its own. One
+     macrotask is enough for a pass whose reply is already resolved. */
+  await new Promise((resolve) => setTimeout(resolve, 0));
   queryCalls.length = 0;
   rpcCalls.length = 0;
   mockReportError.mockReset();
@@ -394,21 +456,29 @@ describe('the accepted-hand projection worker', () => {
     const executable = blankNonCode(source);
     // One interval: the safety poll. The causal retry stays the one setTimeout.
     expect(executable.match(/\bsetInterval\s*\(/g)).toHaveLength(1);
-    /* ONE TIMER, AND LOSING THE SECOND ONE IS THE POINT (2026-09-12). The
-       survivor is the causal retry. The drain deadline was the second, and it
-       was a timer RACING the pass: at expiry the wrapper settled, `beginDrain`
-       released the lane, and a second `runDrain` started beside a first that
-       nothing had cancelled. Per-table chain order is this worker's entire
-       purpose, so that is the one thing it must never do - and the orphans
-       held PostgREST chains open on the same client the table lease heartbeats
-       use, starved them, and had every table on the platform killed and
-       rebuilt for five hours (2026-09-12 00:04-05:14) until a restart cleared
-       them. The deadline is a timestamp the pass's own loops read now. A third
-       timer - or the second one coming back - is a regression worth catching
-       here. */
-    expect(executable.match(/\bsetTimeout\s*\(/g)).toHaveLength(1);
+    /* TWO TIMERS, AND WHICH TWO IS THE POINT (2026-09-12, second repair).
+       The first is the causal retry. The second is the pass's OWN budget, and
+       it is not the timer this test used to forbid: that one RACED the pass -
+       at expiry the wrapper settled, `beginDrain` released the lane, and a
+       second `runDrain` started beside a first that nothing had cancelled.
+       Per-table chain order is this worker's entire purpose, so that is the
+       one thing it must never do - and the orphans held PostgREST chains open
+       on the same client the table lease heartbeats use, starved them, and had
+       every table on the platform killed and rebuilt for five hours
+       (2026-09-12 00:04-05:14) until a restart cleared them.
+       This timer does not settle anything and does not touch the lane. It
+       aborts the signal the pass's own calls carry, so the pass ends ITSELF:
+       the calls in flight are cancelled, the loops unwind, and the promise
+       settles with nothing left running. A timer that resolves or rejects a
+       wrapper is the regression to catch here, so `withDeadline` stays
+       forbidden by name and `beginDrain` stays unwrapped. */
+    expect(executable.match(/\bsetTimeout\s*\(/g)).toHaveLength(2);
     expect(source).toContain('const active = runDrain();');
     expect(executable).not.toContain('withDeadline');
+    // The budget reaches the work: every call the pass owns carries its signal.
+    expect(executable.match(/\.abortSignal\(budget\)/g)).toHaveLength(3);
+    expect(source).toContain('budget.abort(');
+    expect(source).toContain('clearTimeout(budgetTimer);');
     expect(source).toContain('const deadlineAt = lastDrainStartedAt + DRAIN_DEADLINE_MS;');
     expect(source).toContain(
       'while (!stopping && visited < DRAIN_MAX && Date.now() < deadlineAt) {'
@@ -422,8 +492,8 @@ describe('the accepted-hand projection worker', () => {
     expect(source).toContain('cancelCausalRetry(true)');
   });
 
-  it('a drain pass cannot run for ever, and the deadline stops the pass, not a wrapper', async () => {
-    /* THE WEDGE AND ITS FIRST REPAIR, in one test.
+  it('a drain pass cannot run for ever: the budget cancels the read it is waiting on', async () => {
+    /* THE WEDGE AND BOTH OF ITS REPAIRS, in one test.
 
        `pollIsDue` returns false while a drain is running and the escape hatch
        beneath it is about a stuck RETRY, so a pass that never settles disables
@@ -431,60 +501,107 @@ describe('the accepted-hand projection worker', () => {
        CHANNEL_ERROR, LISTEN unconfigured, the 5 s poll the whole net, and a
        pass that hung during an image build switched it off.
 
-       The repair raced a timer against the pass and could not cancel it. At
+       REPAIR ONE raced a timer against the pass and could not cancel it. At
        the deadline the wrapper settled, the lane was released, and a SECOND
        pass started beside a first that was still in flight - the one thing
-       this worker must never do, because per-table chain order is its entire
-       purpose. The orphans held PostgREST chains open on the same client the
-       table lease heartbeats use and starved them: 2026-09-12 00:04-05:14,
-       zero tournament hands dealt, ~180-204 cash_lease_proof_expired a minute,
-       every table killed and rebuilt until the 05:14 restart.
+       this worker must never do. The orphans held PostgREST chains open on the
+       client the table lease heartbeats use and starved them: 2026-09-12
+       00:04-05:14, zero tournament hands, ~180-204 cash_lease_proof_expired a
+       minute, every table killed and rebuilt until the 05:14 restart.
 
-       So the pass observes its own deadline. It stops, it settles, and nothing
-       runs beside it. */
+       REPAIR TWO moved the deadline into the pass's own loops - and every one
+       of those reads sits BETWEEN awaits, so it stopped the second pass and
+       not the first. Measured on engine-01 running exactly that, 2026-09-12:
+       one pass started 07:35:12Z and was still in flight at 07:55:56Z when the
+       process was replaced. drain_age_ms 109,245 -> 1,187,842 (9.9x the
+       120,000 budget); drains_total frozen at 641; every drain_results_total
+       counter frozen, projected at 23,625; wakes{poll} frozen at 83 for
+       nineteen minutes; outbox_depth 1,230 -> 2,205; event-loop p99 flat at
+       21 ms, so it was not busy - it was waiting.
+
+       THIS TEST HELD THE READ AND THEN ANSWERED IT ITSELF, which is why it
+       passed against a worker that could not settle. Nothing answers it now.
+       The budget aborts the signal the read carries, the read rejects, the
+       pass returns its summary, and the lane clears on its own. */
     expect(worker.HAND_PROJECTION_DRAIN_DEADLINE_MS).toBeGreaterThanOrEqual(10_000);
 
     vi.useFakeTimers();
     try {
-      // A full page of ready work, behind a read that outlives the deadline.
-      const page = Array.from({ length: 100 }, (_, index) => ({
-        hand_id: `h-${600 + index}`,
-        table_id: `t-${index}`,
-        hand_number: 600 + index,
-      }));
-      let releasePage!: (reply: OutboxReply) => void;
-      const heldRead = new Promise<OutboxReply>((resolve) => {
-        releasePage = resolve;
-      });
-      outboxReplies.push(heldRead);
-      projectionReplies.push(
-        ...page.map((row) => ({ data: { ok: true, hand_id: row.hand_id }, error: null }))
-      );
+      // A read nobody will ever answer.
+      outboxReplies.push(new Promise<OutboxReply>(() => {}));
 
       const pass = worker.wakeHandProjection();
-      await vi.advanceTimersByTimeAsync(worker.HAND_PROJECTION_DRAIN_DEADLINE_MS + 1_000);
+      await vi.advanceTimersByTimeAsync(worker.HAND_PROJECTION_DRAIN_DEADLINE_MS - 1_000);
 
-      // NOT ABANDONED. The expired pass still owns the lane and nothing has
-      // been reported as failed; the wrapper this replaces had released the
-      // lane here and let its replacement start a second outbox read.
+      // NOT ABANDONED. Inside the budget the pass still owns the lane: no
+      // second read, nothing reported, no replacement pass beside it.
       expect(queryCalls).toHaveLength(1);
       expect(mockReportError).not.toHaveBeenCalled();
 
-      releasePage({ data: page, error: null });
+      await vi.advanceTimersByTimeAsync(2_000);
 
-      // BOUNDED. It settles - so `drainPromise` clears and `pollIsDue` answers
-      // again - and it projects nothing past its own deadline, with a hundred
-      // replies queued and waiting to be served.
+      // BOUNDED, WITHOUT HELP. `drainPromise` clears, so `pollIsDue` answers
+      // again and every wake this worker has is back in service.
       await expect(pass).resolves.toEqual({
         projected: 0,
         alreadyCompleted: 0,
         deferred: 0,
         failed: 0,
       });
-      expect(rpcCalls).toHaveLength(0);
+      // A HANDOFF IS NOT AN ERROR. The bound firing is the design working; the
+      // wrapper this replaces reported HandProjection.drain_failed every two
+      // minutes for ninety minutes and paged nobody to any purpose.
+      expect(mockReportError).not.toHaveBeenCalled();
+      // It is still COUNTED, on the series that says the budget is too small.
+      expect(worker.handProjectionWakesToPrometheus()).toContain(
+        'poker_hand_projection_drain_deadline_cuts_total 1'
+      );
 
-      // Fence the continuation `wakeAfterDrain` queues before the clock moves
-      // back; the bounded-work-budget test above covers that it is queued.
+      // And the worker goes back to work: the causal retry this pass owes
+      // drains again, off a cursor no cancelled read was allowed to advance.
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(queryCalls.length).toBeGreaterThan(1);
+      expect(queryCalls[queryCalls.length - 1].after).toBe(0);
+
+      await worker.stopHandProjectionWorker();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('the budget cancels an RPC mid-chain, and defers that hand rather than failing it', async () => {
+    /* The read is not the only unbounded await in a pass: `projectChain` walks
+       up to DRAIN_PAGE rows of one table and used to test `stopping` and
+       nothing else, so a chain that started before the deadline ran every one
+       of its rows after it. A cancelled projection is DEFERRED, not failed:
+       the outbox row is untouched, and if the transaction committed anyway the
+       next pass reads not_pending and counts it already_completed. Nothing is
+       reported - this is the bound, not a refusal. */
+    vi.useFakeTimers();
+    try {
+      outboxReplies.push({
+        data: [
+          { hand_id: 'gated-1', table_id: 't-gated', hand_number: 1 },
+          { hand_id: 'gated-2', table_id: 't-gated', hand_number: 2 },
+        ],
+        error: null,
+      });
+      // The first row's projection never answers, so the chain never reaches
+      // its second row on its own.
+      projectionRepliesById.set('gated-1', new Promise<RpcReply>(() => {}));
+
+      const pass = worker.wakeHandProjection();
+      await vi.advanceTimersByTimeAsync(worker.HAND_PROJECTION_DRAIN_DEADLINE_MS + 1_000);
+
+      await expect(pass).resolves.toEqual({
+        projected: 0,
+        alreadyCompleted: 0,
+        deferred: 2,
+        failed: 0,
+      });
+      expect(mockReportError).not.toHaveBeenCalled();
+      expect(rpcCalls.map((c) => c.args.p_hand_id)).toEqual(['gated-1']);
+
       await worker.stopHandProjectionWorker();
     } finally {
       vi.useRealTimers();
@@ -1408,25 +1525,42 @@ describe('fair sweep boundaries', () => {
         await settle();
         expect(rpcInFlight.now).toBe(lanes);
         const queryCount = queryCalls.length;
-        await vi.advanceTimersByTimeAsync(worker.HAND_PROJECTION_DRAIN_DEADLINE_MS + 1);
+        // Inside its budget the pass owns the lane: wakes are coalesced onto
+        // it and none of them starts a second read beside it.
         for (let i = 0; i < 8; i++) void worker.wakeHandProjection();
         await settle();
         expect(queryCalls).toHaveLength(queryCount);
         expect(rpcInFlight.now).toBe(lanes);
-        for (const gate of gates) gate.resolve({ data: { ok: true }, error: null });
-        await pass;
-        await vi.advanceTimersByTimeAsync(0);
-        expect(completed).toContain(`timed-${lanes + 2}`);
-        expect(completed).toContain('timed-1205');
+
+        /* AND THE BUDGET ENDS IT, with the gated calls still unanswered
+           (2026-09-12, second repair). This advanced past
+           HAND_PROJECTION_DRAIN_DEADLINE_MS and then asserted that the pass
+           STILL owned the lane and STILL had its calls in flight, and only
+           settled once the test itself resolved the gates - the wedge, written
+           down as the contract. Nothing here answers them now. */
+        await vi.advanceTimersByTimeAsync(worker.HAND_PROJECTION_DRAIN_DEADLINE_MS + 1);
+        await expect(pass).resolves.toMatchObject({ failed: 0 });
+        expect(mockReportError).not.toHaveBeenCalled();
+        // Lanes stayed physical: `lanes` calls at once and never more, and the
+        // cut did not let a replacement pass read beside this one.
         expect(rpcInFlight.max).toBe(lanes);
-        expect(rpcCalls.filter((c) => c.args.p_hand_id === 'timed-1')).toHaveLength(1);
-        const ascending = queryCalls.filter((c) => c.ascending === true);
-        expect(ascending[1].after).toBe(lanes + 1);
+        expect(queryCalls).toHaveLength(queryCount);
+
+        for (const gate of gates) gate.resolve({ data: { ok: true }, error: null });
         blocked = false;
-        await vi.advanceTimersByTimeAsync(250);
+        await vi.advanceTimersByTimeAsync(30_000);
+        /* A cut pass publishes no sweep: it never read its own frontier, and a
+           ceiling it never saw is not a bound. So the next pass resumes from
+           the oldest durable row and revisits every chain this one did not
+           finish, rather than stepping over them on a cursor no finished chain
+           earned. */
+        const ascending = queryCalls.filter((c) => c.ascending === true);
+        expect(ascending[1].after).toBe(0);
         expect(pending).toHaveLength(0);
         expect(new Set(completed).size).toBe(1205);
         expect(completed).toHaveLength(1205);
+        expect(completed).toContain(`timed-${lanes + 2}`);
+        expect(completed).toContain('timed-1205');
       } finally {
         await worker.stopHandProjectionWorker();
         vi.useRealTimers();

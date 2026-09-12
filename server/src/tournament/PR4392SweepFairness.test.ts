@@ -297,12 +297,15 @@ describe('PR4392 actual staged sweep fairness', () => {
     );
     expect(manager.requestUrgentEliminationSweepAfter).toHaveBeenCalled();
   });
-  it('a first refused ordered elimination still aborts before balancing', async () => {
-    const { manager, pending } = backlog({ refuse: true });
+  it('a first refusal preserves the ordered backlog while balancing continues', async () => {
+    const { manager, pending, ranks } = backlog({ refuse: true });
     await sweep(manager);
     expect(manager.eliminatePlayer).toHaveBeenCalledTimes(1);
     expect(pending.size).toBe(25);
-    expect(manager.checkTableBalance).not.toHaveBeenCalled();
+    expect(ranks).toEqual([]);
+    expect(manager.checkTableBalance).toHaveBeenCalledTimes(1);
+    expect(manager.eliminationSweepCursor.nextStage).toBe(6);
+    expect(manager.requestUrgentEliminationSweepAfter).toHaveBeenCalled();
     expect(manager.finishTournament).not.toHaveBeenCalled();
   });
   it('maintenance still prevents balance dispatch at its reached stage', async () => {

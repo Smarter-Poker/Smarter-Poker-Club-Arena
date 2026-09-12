@@ -1724,6 +1724,17 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
        them - for want of a second try 250ms later. */
     const STEP_RETRY: Record<string, number> = {
       leave_pending: 2,
+      /* THE RECORD OF THE HAND IS WORTH THE SAME TWO WAITS AS THE SEATS
+         (2026-09-12). `hand_history` had no budget at all, so `attempts > 0`
+         was true on the first throw and every refusal was terminal - including
+         the one the database raises specifically to ask for another attempt.
+         Production, the two hours to 11:00 on 2026-09-12: 240 then 172 hands
+         whose history was never written, every one of them
+         `atomic hand commit refused (atomic_hand_rolled_back):
+         F06_RETRY_CANONICAL_LANE`, which is a contended advisory lock during
+         tournament terminal settlement and nothing else. The hand had already
+         been played; only its record was lost. */
+      hand_history: 2,
     };
     /* Two short waits, inside one hand boundary. The felt already holds for
        2.1-3.5s between hands, so 250ms + 1s costs nothing a player can see,

@@ -82,7 +82,9 @@ describe('LAW 1/2/4 - the always-on registry', () => {
     // counted nor timed - a silent hole in the horse series, and unequal
     // treatment (CLAUDE.md 10.5). Keying on the same `applied` that
     // markProgress() uses is what makes it whichever-attempt-landed.
-    const degradeAt = afterHorse.indexOf("performAction(seat, 'fold' as any)");
+    const degradeAt = afterHorse.search(
+      /performAction\(\s*seat,\s*'fold' as any,\s*undefined,\s*'horse_fallback'/
+    );
     const countAt = afterHorse.indexOf('actionsFleetTotal.inc(');
     expect(degradeAt).toBeGreaterThan(0);
     expect(

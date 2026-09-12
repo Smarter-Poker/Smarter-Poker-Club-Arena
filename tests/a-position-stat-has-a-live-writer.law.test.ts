@@ -150,4 +150,20 @@ describe('a position stat has a live writer', () => {
       'the banner must keep naming the version collision, which is the mechanism'
     ).toContain('20260312002_tournament_flights.sql');
   });
+
+  it('keeps the stranded migration inert, so it cannot be applied by accident', () => {
+    const live = readFileSync(join(ROOT, STRANDED_MIGRATION), 'utf8')
+      .split('\n')
+      .map((l, i) => [l, i + 1] as const)
+      .filter(([l]) => l.trim() !== '' && !l.trimStart().startsWith('--'));
+    expect(
+      live.map(([l, n]) => `${n}: ${l.trim()}`),
+      'The retired migration has executable SQL in it again. It declares a\n' +
+        'SECURITY DEFINER writer that never consults auth.uid()/auth.role() and\n' +
+        'never revokes EXECUTE from PUBLIC, anon or authenticated - applying it\n' +
+        'would hand a browser an unguarded writer over player_position_stats, and\n' +
+        'would add a second unsynchronised writer to counters the\n' +
+        'hand_history_position_stats trigger already owns. Keep it commented.'
+    ).toEqual([]);
+  });
 });

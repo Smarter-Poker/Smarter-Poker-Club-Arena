@@ -1,3 +1,4 @@
+import { getIdentityDNAStatus } from '../core/IdentityDNA';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  FINANCIAL CRON SERVICE — Automated Financial Health Checks
@@ -48,6 +49,10 @@ export interface ReconciliationResult {
 }
 
 export interface SuspensionCheckResult {
+  checkedAt?: string;
+  disabled?: boolean;
+  /** Unknown or disabled is not a completed clean scan. */
+  unavailable?: boolean;
   agentsChecked: number;
   agentsSuspended: number;
   agentsWarned: number;
@@ -64,6 +69,7 @@ export const FinancialCronService = {
   _rakebackSettlementTimer: null as ReturnType<typeof setInterval> | null,
   _startupTimer: null as ReturnType<typeof setTimeout> | null,
   _isRunning: false,
+  _scopeGeneration: 0,
   _lastReconciliation: null as ReconciliationResult | null,
   _lastSuspensionCheck: null as SuspensionCheckResult | null,
   /** FIX-216: Circuit breaker — disable suspension checks after persistent failures */
@@ -80,6 +86,10 @@ export const FinancialCronService = {
    */
   start(config: FinancialCronConfig = {}): void {
     if (this._isRunning) this.stop();
+    this._scopeGeneration++;
+    this._suspensionCheckFailed = 0;
+    this._suspensionCheckDisabled = false;
+    this._lastSuspensionCheck = null;
 
     this._config = {
       reconciliationIntervalMs: config.reconciliationIntervalMs ?? 24 * 60 * 60 * 1000,
@@ -143,6 +153,7 @@ export const FinancialCronService = {
    * Stop all cron jobs
    */
   stop(): void {
+    this._scopeGeneration++;
     if (this._startupTimer) clearTimeout(this._startupTimer);
     if (this._reconciliationTimer) clearInterval(this._reconciliationTimer);
     if (this._suspensionTimer) clearInterval(this._suspensionTimer);
@@ -206,9 +217,29 @@ export const FinancialCronService = {
    * Otherwise, just log warnings for ops review.
    */
   async runSuspensionCheck(): Promise<SuspensionCheckResult> {
+    const generation = this._scopeGeneration;
+    const current = () => generation === this._scopeGeneration;
+    let unavailable = false;
+    const publish = (result: SuspensionCheckResult): SuspensionCheckResult => {
+      result = {
+        ...result,
+        checkedAt: new Date().toISOString(),
+        disabled: this._suspensionCheckDisabled,
+      };
+      if (current()) this._lastSuspensionCheck = result;
+      return result;
+    };
+    const unknown = (): SuspensionCheckResult =>
+      publish({
+        agentsChecked: 0,
+        agentsSuspended: 0,
+        agentsWarned: 0,
+        unavailable: true,
+      });
+    if (!cronIdentityReady() || !current()) return unknown();
     // FIX-216: Circuit breaker — skip if disabled after 2+ consecutive global failures
     if (this._suspensionCheckDisabled) {
-      return { agentsChecked: 0, agentsSuspended: 0, agentsWarned: 0 };
+      return unknown();
     }
 
     // Generate this week's credit invoices BEFORE checking for overdue ones. This is the
@@ -221,8 +252,14 @@ export const FinancialCronService = {
     // Open Claw cron handoff — this client cadence covers the common case.)
     try {
       const { error: genErr } = await supabase.rpc('fn_generate_all_credit_invoices');
-      if (genErr) reportError(genErr, 'FinancialCronService.generateCreditInvoices');
+      if (!current()) return unknown();
+      if (genErr) {
+        unavailable = true;
+        reportError(genErr, 'FinancialCronService.generateCreditInvoices');
+      }
     } catch (e) {
+      if (!current()) return unknown();
+      unavailable = true;
       reportError(e, 'FinancialCronService.generateCreditInvoices.exception');
     }
 
@@ -238,15 +275,18 @@ export const FinancialCronService = {
         .eq('is_prepaid', false)
         .gt('credit_limit', 0);
 
-      if (error || !agents) {
+      if (!current()) return unknown();
+      if (error || !Array.isArray(agents)) {
         this._suspensionCheckFailed++;
         if (this._suspensionCheckFailed >= 2) {
           this._suspensionCheckDisabled = true;
           console.debug('[FinancialCron] Suspension check disabled after repeated failures');
         }
         reportError(error, 'FinancialCronService.runSuspensionCheck.fetchAgents');
-        return { agentsChecked: 0, agentsSuspended: 0, agentsWarned: 0 };
+        return unknown();
       }
+
+      this._suspensionCheckFailed = 0;
 
       // FIX-216: Track per-agent failures; if ALL fail, disable future runs
       let consecutiveFailures = 0;
@@ -259,11 +299,12 @@ export const FinancialCronService = {
 
         try {
           const result = await CreditService.checkSuspension(agent.id);
-          consecutiveFailures = 0; // Reset on success
+          if (!current()) return unknown();
 
           if (result.shouldSuspend) {
             if (this._config.autoSuspendEnabled) {
               await CreditService.suspendAgent(agent.id, result.reason || 'Overdue invoices');
+              if (!current()) return unknown();
               agentsSuspended++;
 
               await FinancialAlertService.logWarning(
@@ -280,7 +321,11 @@ export const FinancialCronService = {
               );
             }
           }
+          if (!current()) return unknown();
+          consecutiveFailures = 0; // The whole agent attempt succeeded.
         } catch (e: unknown) {
+          if (!current()) return unknown();
+          unavailable = true;
           consecutiveFailures++;
           // FIX-216: If first 3 agents all fail, the infrastructure is broken — stop spamming
           if (consecutiveFailures >= 3) {
@@ -290,16 +335,30 @@ export const FinancialCronService = {
             );
             break;
           }
-          reportError(e, 'FinancialCronService.runSuspensionCheck.agent', { agentId: agent.id });
+          reportError(e, 'FinancialCronService.runSuspensionCheck.agent', {
+            agentId: agent.id,
+          });
         }
       }
 
-      const result: SuspensionCheckResult = { agentsChecked, agentsSuspended, agentsWarned };
-      this._lastSuspensionCheck = result;
-      return result;
+      const result: SuspensionCheckResult = {
+        agentsChecked,
+        agentsSuspended,
+        agentsWarned,
+        ...(unavailable ? { unavailable: true } : {}),
+      };
+      return publish(result);
     } catch (err: unknown) {
+      if (!current()) return unknown();
+      this._suspensionCheckFailed++;
+      if (this._suspensionCheckFailed >= 2) this._suspensionCheckDisabled = true;
       reportError(err, 'FinancialCronService.runSuspensionCheck');
-      return { agentsChecked, agentsSuspended, agentsWarned };
+      return publish({
+        agentsChecked,
+        agentsSuspended,
+        agentsWarned,
+        unavailable: true,
+      });
     }
   },
 
@@ -343,7 +402,10 @@ export const FinancialCronService = {
    * then settles rakeback via Supabase RPC for each, which persists accumulated
    * rakeback to the `rakeback_periods` table for player claiming via RakebackPage.
    */
-  async settleAllClubRakebacks(): Promise<{ clubsSettled: number; totalDistributed: number }> {
+  async settleAllClubRakebacks(): Promise<{
+    clubsSettled: number;
+    totalDistributed: number;
+  }> {
     let clubsSettled = 0;
     let totalDistributed = 0;
     let periodsRemaining = 0;
@@ -395,7 +457,9 @@ export const FinancialCronService = {
             );
           }
         } catch (err) {
-          reportError(err, 'FinancialCronService.settleClubRakeback', { clubId: club.id });
+          reportError(err, 'FinancialCronService.settleClubRakeback', {
+            clubId: club.id,
+          });
         }
       }
 
@@ -455,7 +519,9 @@ export const FinancialCronService = {
             { disputeId: dispute.id, clubId: dispute.club_id }
           );
         } catch (e: unknown) {
-          reportError(e, 'FinancialCronService.escalateStaleDisputes', { disputeId: dispute.id });
+          reportError(e, 'FinancialCronService.escalateStaleDisputes', {
+            disputeId: dispute.id,
+          });
         }
       }
 
@@ -476,3 +542,23 @@ export const FinancialCronService = {
 };
 
 export default FinancialCronService;
+
+// A new authenticated scope must not inherit another account's scan circuit.
+let cronIdentity: string | null | undefined;
+function cronIdentityReady(): boolean {
+  const snapshot = getIdentityDNAStatus();
+  // Do not start debt reads/scans while canonical auth initialization is incomplete.
+  if (!snapshot?.loaded) return false;
+  if (cronIdentity === undefined) cronIdentity = snapshot.authenticated ? snapshot.userId : null;
+  return true;
+}
+
+masterBus.subscribe('AUTH_STATE_CHANGED', (event) => {
+  const nextIdentity = event.payload.isAuthenticated ? event.payload.userId : null;
+  if (cronIdentity === nextIdentity) return;
+  cronIdentity = nextIdentity;
+  FinancialCronService._scopeGeneration++;
+  FinancialCronService._suspensionCheckFailed = 0;
+  FinancialCronService._suspensionCheckDisabled = false;
+  FinancialCronService._lastSuspensionCheck = null;
+});

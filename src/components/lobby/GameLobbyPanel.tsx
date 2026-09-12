@@ -375,14 +375,16 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
           run: () => onWaitlistToggle(entry.id, false),
           needsAuth: true,
         };
-      if (full)
-        return {
-          label: 'Join Waitlist',
-          kind: 'secondary' as const,
-          run: () => onWaitlistToggle(entry.id, true),
-          needsAuth: true,
-        };
-      /* The arena's ladder is listed while funded play is closed and the
+      /* THE CLOSED GATE COMES BEFORE THE QUEUE (2026-09-12). This tested
+         `full` first, so the one board that could still offer an action while
+         the arena was closed was a board with no seats on it: a full table
+         offered Join Waitlist, and the queue's entire purpose is to lead to a
+         buy-in the door would then refuse. The hold it promises is sixty
+         seconds long, so the player is not queuing for later, they are queuing
+         to be handed a seat they cannot take. Leaving a queue stays available
+         above, because a player already on one must always be able to get off.
+
+         The arena's ladder is listed while funded play is closed and the
          buy-in door refuses every seat. Offering the action here would send
          the player to a panel whose only outcome is an error. */
       if (seatsClosedLabel)
@@ -390,6 +392,13 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
           label: seatsClosedLabel,
           kind: 'disabled' as const,
           note: 'The Tables Are Listed So You Can Watch. Seats Open Later.',
+        };
+      if (full)
+        return {
+          label: 'Join Waitlist',
+          kind: 'secondary' as const,
+          run: () => onWaitlistToggle(entry.id, true),
+          needsAuth: true,
         };
       return {
         label: game ? 'Join Game' : 'Join Table',

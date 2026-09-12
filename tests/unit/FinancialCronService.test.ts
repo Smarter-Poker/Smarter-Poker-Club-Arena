@@ -12,6 +12,11 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+// Isolate the canonical identity boundary; these tests do not bootstrap authentication.
+vi.mock('../../src/core/IdentityDNA', () => ({
+  getIdentityDNAStatus: () => ({ loaded: true, authenticated: false, userId: null }),
+}));
+
 // Hoisted so the M4 tests can assert which tables the client touches.
 const { mockFrom } = vi.hoisted(() => ({ mockFrom: vi.fn() }));
 

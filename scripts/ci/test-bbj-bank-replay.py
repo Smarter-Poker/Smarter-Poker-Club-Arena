@@ -33,9 +33,9 @@ child_env['LC_ALL']='C'
 short_temp='/tmp' if Path('/tmp').is_dir() else tempfile.gettempdir()
 fixture_path=ROOT/'scripts/ci/probes/bbj-bank-replay/fixture.sql'
 cases_path=fixture_path.with_name('cases.sql')
-installer_path=ROOT/'supabase/migrations/20260912054700_bbj_bank_move_replay_matches_payload.sql'
+installer_path=ROOT/'supabase/migrations/20260912070357_bbj_bank_move_replay_matches_payload.sql'
 expected_hashes={
- 'installer':'92556d69907be409b43f0ceb5c82597576263207fe1389de5d287092f3d7ff8c',
+ 'installer':'c70c4ee46dab55852206cfa31cc3adcfe721cd2746a79c436cc555fb66ddb6d4',
  'fixture':'03e7e5412d98a82b54e2cae7a9185d3268235e37583dffa5ed3908b281f0ffc4',
  'cases':'f69bb0f2af55c74290efed61d92479a5c99b292bd0d7efc33096d3107b77831a',
  'before':'cc76e59820fde27688cb96e61d7617599f354afdf47873b86224805ef1528546',

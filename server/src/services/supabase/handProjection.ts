@@ -311,6 +311,24 @@ let runOwnedDrain: (() => Promise<HandProjectionDrainSummary>) | null = null;
 let lifecycleEpoch = 0;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let retryAttempt = 0;
+// Sweep state is scheduling only. Durable outbox/SQL receipts remain authority.
+let sweep = {
+  cursor: 0,
+  ceiling: null as number | null,
+  blocked: new Set<string>(),
+  retryOwed: false,
+};
+let continueSweep = false;
+let drainGeneration = 0;
+function resetSweep(): void {
+  sweep = {
+    cursor: 0,
+    ceiling: null,
+    blocked: new Set<string>(),
+    retryOwed: false,
+  };
+  continueSweep = false;
+}
 
 function emptySummary(): HandProjectionDrainSummary {
   return { projected: 0, alreadyCompleted: 0, deferred: 0, failed: 0 };
@@ -413,8 +431,9 @@ async function projectChains(
   blockedTables: Set<string>,
   summary: HandProjectionDrainSummary,
   deadlineAt: number
-): Promise<void> {
+): Promise<Set<string>> {
   let next = 0;
+  const completed = new Set<string>();
   const lanes = Math.max(1, Math.min(concurrency, chains.length));
   await Promise.all(
     Array.from({ length: lanes }, async () => {
@@ -422,19 +441,53 @@ async function projectChains(
         const chain = chains[next++];
         if (!chain) return;
         await projectChain(chain, blockedTables, summary);
+        completed.add(chainKey(chain[0]));
       }
     })
   );
+  return completed;
+}
+
+// Pagination deliberately supports only positive, exactly representable integers.
+// Reject unsupported BIGINT values rather than rounding a durable ordering key.
+function projectionHandNumber(row: unknown): number {
+  if (!row || typeof row !== 'object') throw new Error('projection ordering row malformed');
+  const value = (row as { hand_number?: unknown }).hand_number;
+  if (typeof value !== 'number' && !(typeof value === 'string' && /^[1-9][0-9]*$/.test(value)))
+    throw new Error('projection ordering number malformed');
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number <= 0) {
+    throw new Error('projection ordering number unsupported');
+  }
+  return number;
+}
+
+function projectionRows(data: unknown, limit: number): ProjectionRow[] {
+  if (!Array.isArray(data) || data.length > limit) {
+    throw new Error('projection ordering response malformed');
+  }
+  for (const row of data) {
+    projectionHandNumber(row);
+    if (typeof row.hand_id !== 'string' || !row.hand_id) {
+      throw new Error('projection ordering identity malformed');
+    }
+  }
+  return data as ProjectionRow[];
 }
 
 async function runDrain(): Promise<HandProjectionDrainSummary> {
   const summary = emptySummary();
-  let cursor = 0;
+  const generation = ++drainGeneration;
+  const epoch = lifecycleEpoch;
+  const ownsSweep = () => !stopping && generation === drainGeneration && epoch === lifecycleEpoch;
+  let cursor = sweep.cursor;
+  let ceiling = sweep.ceiling;
+  if (cursor === 0) sweep.retryOwed = false;
   let visited = 0;
   const concurrency = handProjectionDrainConcurrency();
   // A table whose chain stopped in an earlier page of this pass stays
   // blocked for the whole pass: its later rows need the same predecessor.
-  const blockedTables = new Set<string>();
+  const blockedTables = new Set(sweep.blocked);
   drainsTotal++;
   lastDrainStartedAt = Date.now();
   /* THE PASS IS BOUNDED, NOT ABANDONED (2026-09-12). The deadline must be
@@ -447,35 +500,78 @@ async function runDrain(): Promise<HandProjectionDrainSummary> {
   const deadlineAt = lastDrainStartedAt + DRAIN_DEADLINE_MS;
 
   while (!stopping && visited < DRAIN_MAX && Date.now() < deadlineAt) {
-    const { data, error } = await supabase
+    let query = supabase
       .from('hand_projection_outbox')
       .select('hand_id,table_id,hand_number')
       .gt('hand_number', cursor)
-      .order('hand_number', { ascending: true })
-      .limit(Math.min(DRAIN_PAGE, DRAIN_MAX - visited));
+      .order('hand_number', { ascending: true });
+    if (ceiling !== null) query = query.lte('hand_number', ceiling);
+    const { data, error } = await query.limit(Math.min(DRAIN_PAGE, DRAIN_MAX - visited));
+    if (!ownsSweep()) return summary;
     if (error) throw new Error(`projection outbox read failed: ${describeError(error)}`);
 
-    const rows = (data ?? []) as ProjectionRow[];
+    const rows = projectionRows(data, Math.min(DRAIN_PAGE, DRAIN_MAX - visited));
     if (rows.length === 0) break;
 
     // The page is in global hand_number order, so for every table it holds
     // that table's OLDEST pending rows: no chain starts behind a row this
     // pass has not seen. Pages are projected one after another for the same
     // reason - a table split across two pages keeps its order.
+    let nextCursor = cursor;
     for (const row of rows) {
-      visited++;
-      cursor = Math.max(cursor, Number(row.hand_number) || cursor);
+      const number = projectionHandNumber(row);
+      if (number <= nextCursor || (ceiling !== null && number > ceiling)) {
+        throw new Error('projection ordering page outside bounds');
+      }
+      nextCursor = number;
     }
-    await projectChains(chainsByTable(rows), concurrency, blockedTables, summary, deadlineAt);
+    // Validate the entire page before advancing or projecting any of its rows.
+    const completed = await projectChains(
+      chainsByTable(rows),
+      concurrency,
+      blockedTables,
+      summary,
+      deadlineAt
+    );
+    // A deadline may leave chains unstarted. Advance only the contiguous
+    // prefix handled by settled chains, never across the first unstarted row.
+    for (const row of rows) {
+      if (!completed.has(chainKey(row))) break;
+      cursor = projectionHandNumber(row);
+    }
+    visited += rows.length;
 
     if (rows.length < DRAIN_PAGE) break;
   }
 
-  // A bounded drain yields the event loop after DRAIN_MAX rows, but it must
-  // not mistake its own work budget for an empty outbox. Queue one coalesced
-  // continuation while the current promise still owns the worker. This is
-  // event-driven backlog continuation, not a correctness poll or timer.
-  if (!stopping && (visited >= DRAIN_MAX || Date.now() >= deadlineAt)) wakeAfterDrain = true;
+  if (!ownsSweep()) return summary;
+  const retryOwed = sweep.retryOwed || summary.failed > 0 || summary.deferred > 0;
+  if (
+    (visited >= DRAIN_MAX || Date.now() >= deadlineAt) &&
+    (ceiling === null || cursor < ceiling)
+  ) {
+    // Capture a finite frontier once, so continuous inserts cannot postpone
+    // returning to an older blocked table forever.
+    if (ceiling === null) {
+      const { data, error } = await supabase
+        .from('hand_projection_outbox')
+        .select('hand_id,table_id,hand_number')
+        .order('hand_number', { ascending: false })
+        .limit(1);
+      if (!ownsSweep()) return summary;
+      if (error) throw new Error(`projection frontier read failed: ${describeError(error)}`);
+      const frontier = projectionRows(data, 1);
+      // Only a verified empty array proves there is no remaining frontier.
+      ceiling =
+        frontier.length === 0 ? cursor : Math.max(cursor, projectionHandNumber(frontier[0]));
+    }
+    sweep = { cursor, ceiling, blocked: blockedTables, retryOwed };
+    continueSweep = cursor < ceiling;
+  }
+  if (!continueSweep) {
+    resetSweep();
+    sweep.retryOwed = retryOwed;
+  }
 
   return summary;
 }
@@ -545,6 +641,7 @@ function beginDrain(): Promise<HandProjectionDrainSummary> {
     wakeAfterDrain = true;
     return drainPromise;
   }
+  continueSweep = false;
   const active = runDrain();
   drainPromise = active;
   let causalRetryOwed = false;
@@ -554,14 +651,17 @@ function beginDrain(): Promise<HandProjectionDrainSummary> {
     })
     .catch((err) => {
       causalRetryOwed = true;
+      drainGeneration++; // A failed pass cannot publish stale sweep state.
       reportError(err, 'HandProjection.drain_failed');
     })
     .finally(() => {
       if (drainPromise === active) drainPromise = null;
-      if (wakeAfterDrain && workerActive && !stopping) {
+      causalRetryOwed ||= sweep.retryOwed;
+      if ((continueSweep || (wakeAfterDrain && !causalRetryOwed)) && workerActive && !stopping) {
         wakeAfterDrain = false;
         void beginDrain();
       } else if (causalRetryOwed && workerActive && !stopping) {
+        wakeAfterDrain = false;
         armCausalRetry();
       } else if (!causalRetryOwed) {
         retryAttempt = 0;
@@ -606,6 +706,8 @@ export function startHandProjectionWorker(): void {
   workerActive = true;
   stopping = false;
   lifecycleEpoch++;
+  drainGeneration++;
+  resetSweep();
   cancelCausalRetry(true);
 
   const ch = supabase
@@ -662,6 +764,8 @@ export async function stopHandProjectionWorker(): Promise<void> {
   stopping = true;
   runOwnedDrain = null;
   lifecycleEpoch++;
+  drainGeneration++;
+  resetSweep();
   wakeAfterDrain = false;
   cancelCausalRetry(true);
   if (pollTimer) clearInterval(pollTimer);

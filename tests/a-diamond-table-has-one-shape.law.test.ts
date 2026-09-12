@@ -43,12 +43,23 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { sliceBetween, sliceMethod } from './helpers/sourceWindow';
+import { DIAMOND_CASH_VARIANTS } from '../server/src/domain/DiamondCashBoundary';
 
 const at = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
+/* Comments stripped for any assertion about CODE: this file's own notes quote
+   the `!== 'nlh'` they exist to describe, which is the anchor-in-a-comment
+   collision tests/helpers/sourceWindow.ts was written about, arriving from the
+   other direction - the comment is not moving the window, it IS the match. */
+const code = (p: string) =>
+  at(p)
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
 
 const MIGRATION =
   'supabase/migrations/20260912061500_one_rule_says_what_a_plain_diamond_cash_table_is.sql';
 const BOUNDARY = 'server/src/domain/DiamondCashBoundary.ts';
+const VARIANT_MIGRATION =
+  'supabase/migrations/20260912070000_the_diamond_arena_deals_the_games_the_estate_deals.sql';
 
 /** Every column the rule decides with, in the order it does not matter. */
 const SHAPE_COLUMNS = [
@@ -122,6 +133,47 @@ describe('LAW - the SQL rule and the engine boundary decide with the same column
 
   it('so neither side can learn about a column the other has not', () => {
     expect(namesIn(sqlRule)).toEqual(namesIn(boundaryShape));
+  });
+
+  /* ─── AND THE SAME FOR THE GAMES (2026-09-12) ──────────────────────────
+     The arena deals nine games rather than one now, and a list of games is
+     the same kind of thing as a list of columns: written down twice, it
+     drifts. SQL names them in `fn_poker_diamond_cash_variant` and nowhere
+     else; TypeScript names them in `DIAMOND_CASH_VARIANTS` and nowhere else;
+     this holds the two together. */
+  it('the SQL list and the TypeScript list name the same games', () => {
+    const sql = at(VARIANT_MIGRATION);
+    const inSql = (sql.match(/'[a-z_0-9]+'/g) ?? [])
+      .map((q) => q.slice(1, -1))
+      .filter((word) => (DIAMOND_CASH_VARIANTS as readonly string[]).includes(word));
+    expect([...new Set(inSql)].sort(), 'a game is named on one side and not the other').toEqual(
+      [...DIAMOND_CASH_VARIANTS].sort()
+    );
+  });
+
+  it('and the TypeScript list is the games the chip cash screen offers', () => {
+    /* The point of the arena is that it is the same estate in another
+       denomination, so the list is not an independent product decision: it is
+       whatever the chip create screen offers. Derived from that file rather
+       than retyped, so adding a tenth game for chips fails here until the
+       arena is told about it too. */
+    const cash = at('src/config/cashGames.ts');
+    const offered = (cash.match(/'[a-z_0-9]+'/g) ?? [])
+      .map((q) => q.slice(1, -1))
+      .filter((word) => (DIAMOND_CASH_VARIANTS as readonly string[]).includes(word));
+    expect([...new Set(offered)].sort()).toEqual([...DIAMOND_CASH_VARIANTS].sort());
+  });
+
+  it('no Diamond door keeps a game literal of its own', () => {
+    /* The refusal that had to be lifted in five places, written as the thing
+       that must never come back. `nlh` appearing beside `game_variant` in a
+       Diamond door is the exact shape of the bug this line repaired. */
+    for (const file of [BOUNDARY, 'server/src/engine/HandController.ts']) {
+      const src = code(file);
+      expect(src, `${file} compares a game to a literal`).not.toMatch(
+        /game_?[Vv]ariant\s*!==\s*'nlh'/
+      );
+    }
   });
 
   it('the hand settler is exempt, and that is deliberate', () => {

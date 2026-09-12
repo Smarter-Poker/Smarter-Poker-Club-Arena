@@ -42,12 +42,16 @@ describe('Phase 9 multiboard Omaha awards keep the configured chip unit', () => 
               players,
               1
             );
-          if (currency === 'diamonds') {
-            // Diamond cash currently admits plain NLH only. Keep that existing
-            // capability boundary; the settlement repair does not enable Omaha.
-            expect(createController).toThrow('Diamond Cash Certification Requires Plain NLH');
-            return;
-          }
+          /* THE DIAMOND ARM USED TO RETURN HERE (2026-09-12). It asserted the
+             refusal instead of the arithmetic, because Diamond cash admitted
+             plain NLH only, and the note said "the settlement repair does not
+             enable Omaha" - which was true of that repair and is no longer
+             true of this arena. Now that the nine chip variants are admitted,
+             this case runs, and it is the strongest per-variant evidence there
+             is: plo4, plo8 and flo8, over two and three boards, checked
+             against an INDEPENDENT reference allocator rather than against the
+             engine's own opinion of itself. plo8 and flo8 are the hi-lo games,
+             so the split this line newly reaches is covered here twice over. */
           const controller = createController();
           controller.onEvent((event) => events.push(event));
           controller.start();

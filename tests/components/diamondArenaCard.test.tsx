@@ -45,7 +45,12 @@ describe('DiamondArenaCard', () => {
     expect(container.querySelector('.club-card-viewport img')).not.toBeNull();
     expect(container.querySelector('.club-card-name-plate')?.textContent).toBe('DIAMOND ARENA');
     expect(container.querySelectorAll('.club-card-stats-row .club-card-stat')).toHaveLength(2);
-    expect(screen.getByText('ACTIVE PLAYERS')).toBeTruthy();
+    /* Dan 2026-09-11, of this card: "HAVE IT SAY JUST 'ACTIVE' AND THE NUMBER
+       UNDER IT." It said ACTIVE PLAYERS until 2026-09-12, which was also the
+       one label on the carousel that did not match its neighbours - every chip
+       club card says ACTIVE - so the pin moved with the label. */
+    expect(screen.getByText('ACTIVE')).toBeTruthy();
+    expect(screen.queryByText('ACTIVE PLAYERS'), 'the label Dan asked to shorten').toBeNull();
     expect(screen.getByText('NEXT FREEROLL')).toBeTruthy();
     expect(screen.getByText('1,284')).toBeTruthy();
     expect(screen.getByRole('timer').textContent).toBe('42:17');

@@ -7550,12 +7550,31 @@ export default function TablePage({
              against the stack after the pot, and the difference comes back.
              Say so now, in the amount that was taken, so the later
              "Add-On Adjusted" notice (add_on_adjusted frame) is a resolution
-             of something the player was told to expect, not a surprise. */
+             of something the player was told to expect, not a surprise.
+
+             AND A DIAMOND QUEUE IS A DIFFERENT PROMISE (2026-09-12). The chip
+             sentence says the difference RETURNS to your wallet, because the
+             chips were taken when you tapped. A Diamond seat cannot take them
+             then - the seat-keeps-custody constraint forbids the intermediate
+             state - so nothing has been taken yet and there is nothing to
+             return. Saying otherwise would be the more comfortable sentence
+             and the false one. */
           toast.info(
-            `${applied.toFixed(2)} Lands When This Hand Ends. If The Pot Puts You Over The Table Maximum, The Difference Returns To Your Wallet.`
+            topUpAsset === 'diamonds'
+              ? `${applied.toLocaleString()} ${applied === 1 ? 'Diamond Lands' : 'Diamonds Land'} When This Hand Ends, And Are Taken Then. Keep Them Settled Until It Does.`
+              : `${applied.toFixed(2)} Lands When This Hand Ends. If The Pot Puts You Over The Table Maximum, The Difference Returns To Your Wallet.`
           );
         }
       }
+      /* NOTHING MOVED, SO NOTHING IS COUNTED (2026-09-12). Everything below
+         records a debit that has happened: the local balance, the session
+         buy-in total, the rebuy count, the peak stack and the CHIPS_ADDED bus
+         event. A queued DIAMOND top-up has not happened - it is an intent the
+         engine will act on when the hand ends - so counting it here would show
+         the player a balance they still have and a session P/L built on a
+         purchase nobody made. The landing broadcasts the real stack and the
+         balance is re-read from it. */
+      if (res.queued && topUpAsset === 'diamonds') return true;
       // Engine ack'd the single debit -- reflect it locally + in session trackers.
       /* A local delta on an UNKNOWN balance would invent a number. Stay
          unknown until a real read lands (see the accountBalance decl). */
@@ -25102,6 +25121,13 @@ export default function TablePage({
                         pot={tableState.pot}
                         bigBlind={bb}
                         smallBlind={safeSB(tableState.blinds, bb / 2)}
+                        /* A Diamond does not divide, and the engine refuses a
+                           fractional one outright, so every preset has to land
+                           on a whole Diamond. Both the indivisible unit and
+                           the denomination the derived sizings snap to are one
+                           Diamond; a chip table keeps the cent and the small
+                           blind it has always had. */
+                        unit={tableState.arenaAsset === 'diamonds' ? 1 : 0.01}
                         /* Multiplier presets are multiples of the bet being
                            faced, not of the blind — without this they all
                            clamped to minRaise and 2X/3X/4X/5X produced the

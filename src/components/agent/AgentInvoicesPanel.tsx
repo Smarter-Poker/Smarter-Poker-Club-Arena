@@ -8,7 +8,7 @@
  *  FinancialCronService suspension cadence). Mobile-first, no emoji.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import {
   CreditService,
   OWED_INVOICE_STATUSES,
@@ -52,52 +52,81 @@ function fmtDate(iso: string): string {
 
 export default function AgentInvoicesPanel({ agentId }: Props) {
   const toast = useToast();
-  const [invoices, setInvoices] = useState<CreditInvoice[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [state, setState] = useState<{
+    agentId: string | null;
+    rows: CreditInvoice[];
+    loading: boolean;
+    unavailable: boolean;
+  }>({ agentId, rows: [], loading: true, unavailable: false });
   const [payingId, setPayingId] = useState<string | null>(null);
+  const scope = useRef(0);
+  const request = useRef(0);
+  const payment = useRef<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!agentId) {
-      setInvoices([]);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
+    const generation = scope.current;
+    const read = ++request.current;
+    const current = () => generation === scope.current && read === request.current;
+    setState({ agentId, rows: [], loading: !!agentId, unavailable: false });
+    if (!agentId) return;
     try {
       const rows = await CreditService.getAgentInvoices(agentId);
-      setInvoices(rows);
+      if (current()) setState({ agentId, rows, loading: false, unavailable: false });
     } catch (e) {
+      if (!current()) return;
       reportError(e, 'AgentInvoicesPanel.load', { agentId });
-    } finally {
-      setLoading(false);
+      setState({ agentId, rows: [], loading: false, unavailable: true });
     }
   }, [agentId]);
 
-  useEffect(() => {
-    load();
+  useLayoutEffect(() => {
+    scope.current++;
+    payment.current = null;
+    setPayingId(null);
+    void load();
+    return () => {
+      scope.current++;
+      request.current++;
+    };
   }, [load]);
 
-  const handlePay = useCallback(
-    async (inv: CreditInvoice) => {
-      if (payingId || inv.amountRemaining <= 0) return;
-      setPayingId(inv.id);
-      try {
-        await CreditService.processPayment(inv.id, inv.amountRemaining, 'wallet');
-        toast.success(`Paid ${fmt(inv.amountRemaining)} chips toward invoice`);
-        masterBus.emit('BALANCE_UPDATED', { source: 'credit_invoice_payment' });
-        await load();
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : 'Payment failed';
-        reportError(e, 'AgentInvoicesPanel.handlePay', { invoiceId: inv.id });
-        toast.error(
-          msg.includes('insufficient') ? 'Insufficient wallet balance' : 'Payment failed'
-        );
-      } finally {
+  const visible = state.agentId === agentId;
+  const invoices = visible && !state.loading && !state.unavailable ? state.rows : [];
+  const loading = !visible || state.loading;
+  const unavailable = visible && state.unavailable;
+  const actionScope = scope.current;
+  const actionRequest = request.current;
+  const handlePay = async (inv: CreditInvoice) => {
+    const current = () => actionScope === scope.current && actionRequest === request.current;
+    if (
+      !current() ||
+      payment.current ||
+      !invoices.includes(inv) ||
+      !OWED_INVOICE_STATUSES.has(inv.status) ||
+      inv.amountRemaining <= 0
+    )
+      return;
+    payment.current = inv.id;
+    setPayingId(inv.id);
+    try {
+      await CreditService.processPayment(inv.id, inv.amountRemaining, 'wallet');
+      // A sent payment may commit; only consume its result in the original selection.
+      if (!current()) return;
+      toast.success(`Paid ${fmt(inv.amountRemaining)} chips toward invoice`);
+      masterBus.emit('BALANCE_UPDATED', { source: 'credit_invoice_payment' });
+      await load();
+    } catch (e) {
+      if (!current()) return;
+      const msg = e instanceof Error ? e.message : 'Payment failed';
+      reportError(e, 'AgentInvoicesPanel.handlePay', { invoiceId: inv.id });
+      toast.error(msg.includes('insufficient') ? 'Insufficient wallet balance' : 'Payment failed');
+    } finally {
+      if (actionScope === scope.current) {
+        payment.current = null;
         setPayingId(null);
       }
-    },
-    [payingId, toast, load]
-  );
+    }
+  };
 
   const outstanding = invoices.filter((i) => i.amountRemaining > 0);
 
@@ -129,6 +158,13 @@ export default function AgentInvoicesPanel({ agentId }: Props) {
 
       {loading ? (
         <div style={{ fontSize: '13px', opacity: 0.6, padding: '8px 0' }}>Loading Invoices...</div>
+      ) : unavailable ? (
+        <div role="alert">
+          Invoices Unavailable. Try Again To Check Your Balance.
+          <button type="button" onClick={() => void load()}>
+            Retry
+          </button>
+        </div>
       ) : invoices.length === 0 ? (
         <div style={{ fontSize: '13px', opacity: 0.6, padding: '8px 0' }}>
           No Invoices. Weekly Invoices Appear Here When Your Account Carries A Balance.

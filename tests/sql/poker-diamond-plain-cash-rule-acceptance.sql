@@ -73,7 +73,12 @@ BEGIN
       ('a tournament',                      'tournament',          false),
       ('a template',                        'template',            false),
       ('a closed table',                    'closed',              false),
-      ('another variant',                   'plo4',                false),
+      /* plo4 moved from refused to admitted on 2026-09-12, and the case moved
+         with it rather than being deleted: a game the arena DOES deal is as
+         much a part of this matrix as one it does not. The nine are asserted
+         one by one in section F. */
+      ('a second game',                     'plo4',                true),
+      ('a game nobody deals',               'razz',                false),
       ('a cap game',                        'cap',                 false),
       ('seven deuce',                       'seven_deuce',         false),
       ('a nit game',                        'nit',                 false),
@@ -102,6 +107,7 @@ BEGIN
         WHEN 'template'     THEN v_row.is_template:=true;
         WHEN 'closed'       THEN v_row.status:='closed';
         WHEN 'plo4'         THEN v_row.game_variant:='plo4';
+        WHEN 'razz'         THEN v_row.game_variant:='razz';
         WHEN 'cap'          THEN v_row.cap_enabled:=true;
         WHEN 'seven_deuce'  THEN v_row.seven_deuce_enabled:=true;
         WHEN 'nit'          THEN v_row.nit_game:=true;
@@ -227,6 +233,70 @@ DO $do$ DECLARE r text; BEGIN
     '70000000-0000-0000-0000-0000000000f1'::uuid)$$);
   PERFORM pg_temp.expect('the buy-in door still refuses an unset rake cap',
     r LIKE '%plain_cash_table_required%', r);
+END $do$;
+
+-- ===========================================================================
+-- F. THE GAMES THIS ARENA DEALS, and the one list that names them.
+-- ===========================================================================
+DO $do$
+DECLARE
+  v_t public.tables%ROWTYPE;
+  v_game text;
+BEGIN
+  SELECT * INTO v_t FROM public.tables WHERE id='30000000-0000-0000-0000-000000000001';
+  v_t.game_variant:='nlh'; v_t.tournament_id:=NULL; v_t.cluster_id:=NULL;
+  v_t.is_template:=false; v_t.status:='waiting';
+  v_t.rake_percent:=0; v_t.rake_cap_bb:=0; v_t.bbj_percent:=0;
+  v_t.insurance_enabled:=false;
+  v_t.run_it_twice:=false; v_t.allow_run_it_twice:=false;
+  v_t.seven_deuce_enabled:=false; v_t.nit_game:=false;
+  v_t.all_in_or_fold:=false; v_t.pineapple_holdem:=false; v_t.cap_enabled:=false;
+
+  FOREACH v_game IN ARRAY ARRAY['nlh','plo4','plo5','plo6','plo8','pineapple',
+                                'short_deck','flh','flo8'] LOOP
+    DECLARE v_row public.tables%ROWTYPE := v_t;
+    BEGIN
+      v_row.game_variant:=v_game;
+      PERFORM pg_temp.expect('the arena deals ' || v_game,
+        public.fn_poker_diamond_cash_variant(v_game)
+          AND public.fn_poker_diamond_plain_cash_table(v_row));
+    END;
+  END LOOP;
+
+  FOREACH v_game IN ARRAY ARRAY['razz','stud','badugi','NLH','PLO4','holdem',''] LOOP
+    DECLARE v_row public.tables%ROWTYPE := v_t;
+    BEGIN
+      v_row.game_variant:=v_game;
+      PERFORM pg_temp.expect('the arena does not deal ' || coalesce(nullif(v_game,''),'(blank)'),
+        NOT public.fn_poker_diamond_cash_variant(v_game)
+          AND NOT public.fn_poker_diamond_plain_cash_table(v_row));
+    END;
+  END LOOP;
+
+  DECLARE v_row public.tables%ROWTYPE := v_t;
+  BEGIN
+    v_row.game_variant:=NULL;
+    PERFORM pg_temp.expect('a table with no game at all is refused',
+      NOT public.fn_poker_diamond_plain_cash_table(v_row));
+  END;
+END $do$;
+
+-- Every door that names a game names it through the one list, so a tenth game
+-- is added in one place rather than found in four.
+DO $do$
+DECLARE v_name text; v_def text;
+BEGIN
+  FOREACH v_name IN ARRAY ARRAY['fn_poker_diamond_plain_cash_table',
+                                'fn_poker_diamond_settle_cash_hand'] LOOP
+    SELECT pg_get_functiondef(p.oid) INTO v_def FROM pg_proc p
+      JOIN pg_namespace n ON n.oid=p.pronamespace
+     WHERE n.nspname='public' AND p.proname=v_name AND p.prokind='f';
+    PERFORM pg_temp.expect(v_name || ' names its games through the one list',
+      v_def IS NOT NULL AND v_def LIKE '%fn_poker_diamond_cash_variant(%');
+    PERFORM pg_temp.expect(v_name || ' keeps no literal game of its own',
+      v_def IS NOT NULL AND v_def NOT LIKE '%game_variant=''nlh''%'
+                        AND v_def NOT LIKE '%game_variant = ''nlh''%');
+  END LOOP;
 END $do$;
 
 -- ===========================================================================

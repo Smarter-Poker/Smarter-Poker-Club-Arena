@@ -38,6 +38,9 @@ def run():
    value=call([str(pg/'psql'),'-X','-qAt','-v','ON_ERROR_STOP=1','-h',str(socket),'-p',port,'-U','postgres','postgres'],input=sql)
    if value.returncode:raise RuntimeError(value.stderr)
    return value.stdout.strip()
+  def install_migration():
+   # Match the production migration runner: one transaction owns SET LOCAL and DDL.
+   return psql('BEGIN;\n'+migration.read_text()+'\nCOMMIT;\n')
   def uid(n):return f'00000000-0000-4000-8000-{n:012d}'
   value=call([str(pg/'initdb'),'-D',str(cluster),'-U','postgres','--auth=trust','--no-locale','-E','UTF8']);assert value.returncode==0
   value=call([str(pg/'pg_ctl'),'-D',str(cluster),'-l',str(runtime/'postgres.log'),'-o',f"-k {socket} -p {port} -c listen_addresses=''",'-w','start']);assert value.returncode==0;started=True
@@ -51,7 +54,7 @@ def run():
    if version=='baseline':
     psql((fixture/'baseline.sql').read_text()+"; REVOKE ALL ON FUNCTION fn_agent_downline_rake(uuid,uuid,timestamptz,timestamptz,text,integer) FROM PUBLIC; GRANT EXECUTE ON FUNCTION fn_agent_downline_rake(uuid,uuid,timestamptz,timestamptz,text,integer) TO authenticated,service_role;")
    else:
-    psql(migration.read_text());psql(migration.read_text())
+    install_migration();install_migration()
    definition=psql("SELECT pg_get_functiondef('fn_agent_downline_rake(uuid,uuid,timestamptz,timestamptz,text,integer)'::regprocedure);")+'\n'
    (evidence/(version+'-pg-definition.sql')).write_text(definition)
    result[version]={}
@@ -83,13 +86,13 @@ def run():
   for label,change,error in [('acl','GRANT EXECUTE ON FUNCTION fn_agent_downline_rake(uuid,uuid,timestamptz,timestamptz,text,integer) TO anon;','authority metadata drift'),('definition',"COMMENT ON FUNCTION fn_agent_downline_rake(uuid,uuid,timestamptz,timestamptz,text,integer) IS 'no effect';",None)]:
    if error:
     psql(change)
-    try:psql(migration.read_text());rejected=False
+    try:install_migration();rejected=False
     except RuntimeError as e:rejected=error in str(e)
     checks.append({'case':'migration_rejects_'+label+'_drift','pass':rejected})
     psql('REVOKE EXECUTE ON FUNCTION fn_agent_downline_rake(uuid,uuid,timestamptz,timestamptz,text,integer) FROM anon;')
   drift=(fixture/'candidate.sql').read_text().replace("RAISE EXCEPTION 'no_agent'","RAISE EXCEPTION 'no_agent_drift'")
   psql(drift+';')
-  try:psql(migration.read_text());rejected=False
+  try:install_migration();rejected=False
   except RuntimeError as e:rejected='target definition drift' in str(e)
   checks.append({'case':'migration_rejects_definition_drift','pass':rejected})
   checks.append({'case':'all_fixture_rows_unchanged_by_reads','pass':before_data==footprint()})

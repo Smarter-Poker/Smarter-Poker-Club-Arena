@@ -45,7 +45,39 @@
 export function computePlacePrize(
   pool: number,
   payouts: Array<{ place?: number; percentage?: number }>,
-  place: number
+  place: number,
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  THE SMALLEST AMOUNT THIS TOURNAMENT CAN PAY (2026-09-12)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * A cent for a chip tournament, which is every tournament that has ever
+   * run, and which is why this defaults to 1 and the chip ladder is unchanged
+   * BY CONSTRUCTION rather than by inspection: `Math.round(x / 1) * 1` is
+   * `Math.round(x)`.
+   *
+   * One hundred for a Diamond tournament, because a Diamond does not divide.
+   * The comment above calls the single division at the end "the one place a
+   * half-cent is legitimately decided", and that is exactly right for chips
+   * and exactly wrong for an indivisible unit: a half Diamond is not a small
+   * imprecision, it is an amount no door in this estate will accept. The
+   * custody reserve floors it, the hand settler refuses it, and the wallet
+   * stores diamonds as an integer column.
+   *
+   * The ladder's own guarantee survives unchanged. The last paid place takes
+   * whatever remains, so the places still sum to the pool EXACTLY; and since
+   * a Diamond pool is a whole number of Diamonds and every share above is
+   * snapped to a whole Diamond, the remainder is a whole Diamond too, by
+   * induction rather than by hope. The adjustment still lands on the smallest
+   * prize and never on a headline one.
+   *
+   * This is the same move that made the cash tables safe - the run-it-twice
+   * slice, the multi-board settlement, the tie chop and the hi-lo split all
+   * read their table's unit rather than assuming a cent - arriving at the
+   * prize ladder, which is the last place in the estate that still assumed
+   * one.
+   */
+  unitCents = 1
 ): number {
   if (!Array.isArray(payouts) || payouts.length === 0) return 0;
   if (!Number.isFinite(place)) return 0;
@@ -133,6 +165,9 @@ export function computePlacePrize(
   const poolCents = Math.round(safePool * 100);
   if (poolCents <= 0) return 0;
 
+  /** The unit, normalised once. A nonsense value is a cent, never a grid. */
+  const unit = Number.isSafeInteger(unitCents) && unitCents >= 1 ? unitCents : 1;
+
   /** A percentage as an integer number of basis points. 3.5% -> 350. */
   const bp = (pct: number) => Math.round(pct * 100);
 
@@ -158,6 +193,46 @@ export function computePlacePrize(
   let remaining = poolCents;
   const centsByPlace = new Map<number, number>();
 
+  /**
+   * ─── THE SHORT FIELD (2026-09-12) ───────────────────────────────────────
+   *
+   * When the pool holds fewer UNITS than there are places to pay, every share
+   * below rounds to zero and the last place absorbs the whole pool as its
+   * "residual". First place is paid nothing and ninth is paid everything.
+   *
+   * That has always been the arithmetic. At cent granularity it needs a nine
+   * place event with a pool under nine cents to reach, so it has never
+   * happened and would have been a rounding curiosity if it had. At Diamond
+   * granularity the unit is a hundred times larger, the case is a hundred
+   * times closer, and it is not a curiosity: it is the entire prize going to
+   * the wrong player.
+   *
+   * A pool that cannot pay every place pays the places it CAN, from the top.
+   * One unit each, in finishing order, until it is spent. There is no fairer
+   * answer available - an indivisible unit cannot be split nine ways - and
+   * every other answer pays somebody more than the player who beat them.
+   *
+   * ONLY WHEN THE UNIT IS LARGER THAN A CENT, and that is a scope decision
+   * rather than a claim that the chip rule is right. The same defect is in
+   * the chip ladder, at pools under nine cents, and
+   * payoutExactness.law.test.ts proves it: its BigInt reference reproduces the
+   * old answer exactly, because the SQL reconciler
+   * `fn_tournament_payout_reconcile` implements the same rule and the law's
+   * purpose is that the two agree. Repairing it for chips means moving the
+   * reconciler and the law's reference in the same commit, which is a chip
+   * estate change and does not belong inside a Diamond slice. It is reported
+   * rather than smuggled. A nine place chip event with a pool under nine
+   * cents is not reachable; a nine place Diamond event with a pool under nine
+   * Diamonds is one short field away.
+   */
+  const unitsInPool = Math.floor(poolCents / unit);
+  if (unit > 1 && unitsInPool < ordered.length) {
+    for (let i = 0; i < ordered.length; i++) {
+      centsByPlace.set(ordered[i].place, i < unitsInPool ? unit : 0);
+    }
+    return (centsByPlace.get(place) ?? 0) / 100;
+  }
+
   for (let i = 0; i < ordered.length; i++) {
     const isLast = i === ordered.length - 1;
     // The last paid place takes whatever is left, so the places sum to the
@@ -165,7 +240,10 @@ export function computePlacePrize(
     // cancels. Everyone else takes their share, but never more than is left.
     const share = isLast
       ? remaining
-      : Math.min(remaining, Math.round((poolCents * bp(ordered[i].percentage)) / totalBp));
+      : Math.min(
+          remaining,
+          Math.round(Math.round((poolCents * bp(ordered[i].percentage)) / totalBp) / unit) * unit
+        );
     const cents = Math.max(0, share);
     centsByPlace.set(ordered[i].place, cents);
     remaining -= cents;

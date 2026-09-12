@@ -236,12 +236,56 @@ describe('Diamond cash uses the shared NLH controller with indivisible units', (
     ).toThrow('Whole Units');
     expect(hc.getState()).toEqual(before);
   });
-  it.each<Partial<HandConfig>>([{ insuranceEnabled: true }, { gameVariant: 'plo4' }])(
+  it.each<Partial<HandConfig>>([{ insuranceEnabled: true }])(
     'keeps later financial game features outside the initial certificate: %j',
     (feature) => {
-      expect(() => new HandController(config(feature), players(), 1)).toThrow('Plain NLH');
+      expect(() => new HandController(config(feature), players(), 1)).toThrow(
+        'Requires A Supported Game With No Deductions'
+      );
     }
   );
+
+  /* PLO4 LEFT THAT LIST ON 2026-09-12, and for the same kind of reason run it
+     twice did below: it was never a POLICY refusal, it was a refusal standing
+     in for arithmetic nobody had checked. The only question another game asks
+     of an indivisible unit is whether it divides a pot somewhere the
+     cent-denominated code did not have to care about, and the answer is the
+     hi-lo split - which takes the same `chipUnit` the tie chop takes, so the
+     low half of a Diamond pot is a whole number of Diamonds and the odd unit
+     goes to high. Pot-limit sizing is pure addition; fixed-limit multiplies
+     the blind; short deck derives no ante. The nine games the chip cash screen
+     offers are admitted, and the money proof for the Omaha family is in
+     Phase9MultiboardUnits.test.ts, which checks plo4, plo8 and flo8 over two
+     and three boards against an INDEPENDENT reference allocator. */
+  it.each<string>([
+    'nlh',
+    'plo4',
+    'plo5',
+    'plo6',
+    'plo8',
+    'pineapple',
+    'short_deck',
+    'flh',
+    'flo8',
+  ])('deals %s for Diamonds', (gameVariant) => {
+    expect(
+      () => new HandController(config({ gameVariant } as Partial<HandConfig>), players(), 1)
+    ).not.toThrow();
+  });
+
+  it('and still refuses a game this estate does not deal', () => {
+    expect(
+      () =>
+        new HandController(
+          /* `razz` is deliberately not a GameVariant: the point of the case is
+             that the boundary refuses a game this estate has no rules for, and
+             a value the type already forbids is the only way to write it. */
+          config({ gameVariant: 'razz' } as unknown as Partial<HandConfig>),
+          players(),
+          1
+        )
+    ).toThrow('Requires A Supported Game With No Deductions');
+  });
 
   /* RUN IT TWICE LEFT THAT LIST ON 2026-09-12. It was there because the RIT
      runout cut every pot into integer cents, so a five Diamond pot over two

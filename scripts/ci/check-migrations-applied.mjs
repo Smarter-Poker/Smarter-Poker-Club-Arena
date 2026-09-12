@@ -29,13 +29,17 @@
  * never applied (apply it with the Supabase MCP `apply_migration`) or the
  * manifest is stale (regenerate it in the same PR). Both are things the author
  * must do; neither is something to discover a day later.
+ * Explicit non-public namespaces retain their qualified names. This public
+ * snapshot cannot certify them; a private declaration stays unverified rather
+ * than being misread as a public table named after its schema.
  *
  * Usage:  node scripts/ci/check-migrations-applied.mjs [baseRef]
  * Exit:   0 clean · 1 an unapplied object · 2 script error
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadSchemaManifest, loadColumnsManifest } from './schema-manifest.mjs';
 
 const REPO = process.cwd();
@@ -161,60 +165,51 @@ function migrationFileFor(version) {
  *  already exists, so every other check stays green. A column is the most
  *  common thing a migration adds and the easiest thing to strand. */
 function executableSql(sql) {
+  // Remove comments first so an apostrophe in prose cannot unbalance the quote scan.
   return sql
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/--[^\n]*/g, '')
     .replace(/'(?:[^']|'')*'/g, "''");
 }
 
-function declaredObjects(sql) {
-  /**
-   * Comments FIRST, then string literals.
-   *
-   * A quoted string is not a declaration, and until 2026-08-23 this function
-   * could not tell the difference. An event-trigger migration that legitimately
-   * contains
-   *
-   *   WHEN TAG IN ('CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO')
-   *
-   * was read as declaring a table named "as", and a COMMENT ON FUNCTION whose
-   * prose said "CREATE TABLE here inherits ..." was read as declaring a table
-   * named "here". Both are phantoms by construction: the gate then demands they
-   * exist in the live schema, and no amount of applying the migration can ever
-   * satisfy it.
-   *
-   * Stripping quoted strings cannot hide a real declaration, because a real
-   * CREATE TABLE is never inside quotes. The order matters: comments are
-   * removed first so that an apostrophe in prose ("someone else's change")
-   * cannot unbalance the quote scan that follows.
-   */
-  const clean = executableSql(sql);
-  const fns = [
-    ...clean.matchAll(
-      /create\s+(?:or\s+replace\s+)?function\s+(?:public\.)?"?([a-z0-9_]+)"?\s*\(/gi
-    ),
-  ].map((m) => m[1]);
-  const tables = [
-    ...clean.matchAll(/create\s+table\s+(?:if\s+not\s+exists\s+)?(?:public\.)?"?([a-z0-9_]+)"?/gi),
-  ].map((m) => m[1]);
-  const views = [
-    ...clean.matchAll(
-      /create\s+(?:or\s+replace\s+)?(?:materialized\s+)?view\s+(?:if\s+not\s+exists\s+)?(?:public\.)?"?([a-z0-9_]+)"?/gi
-    ),
-  ].map((m) => m[1]);
-  // ALTER TABLE [IF EXISTS] [ONLY] [public.]t ADD [COLUMN] [IF NOT EXISTS] c
-  const columns = [
-    ...clean.matchAll(
-      /alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?(?:public\.)?"?([a-z0-9_]+)"?\s+add\s+(?:column\s+)?(?:if\s+not\s+exists\s+)?"?([a-z0-9_]+)"?/gi
-    ),
-  ]
-    // ADD CONSTRAINT / PRIMARY / FOREIGN / UNIQUE / CHECK read identically to
-    // ADD COLUMN under that regex and are not columns. Without this filter
-    // every constraint is reported as a phantom column forever, and a gate
-    // that cries wolf is a gate somebody disables.
-    .filter((m) => !/^(constraint|primary|foreign|unique|check|exclude)$/i.test(m[2]))
-    .map((m) => [m[1], m[2]]);
+// Preserve schema identity. An explicit private schema is not a public table
+// with the schema's name, and dropping private.f cannot cancel public.f.
+const sqlIdentifier = String.raw`(?:"(?:[^"]|"")*"|[a-z_][a-z0-9_$]*)`;
+const qualifiedIdentifier = `(${sqlIdentifier})(?:\\s*\\.\\s*(${sqlIdentifier}))?(?![a-z0-9_$]|\\s*\\.)`;
+function identifierValue(value) {
+  return value.startsWith('"') ? value.slice(1, -1).replaceAll('""', '"') : value.toLowerCase();
+}
+function objectIdentity(first, second) {
+  const schema = second === undefined ? 'public' : identifierValue(first);
+  const name = identifierValue(second === undefined ? first : second);
+  return schema === 'public' ? name : `${schema}.${name}`;
+}
+function declarations(clean, prefix, suffix = '') {
+  return [...clean.matchAll(new RegExp(prefix + qualifiedIdentifier + suffix, 'gi'))];
+}
 
+export function declaredObjects(sql) {
+  const clean = executableSql(sql);
+  const fns = declarations(
+    clean,
+    String.raw`create\s+(?:or\s+replace\s+)?function\s+`,
+    String.raw`\s*\(`
+  ).map((m) => objectIdentity(m[1], m[2]));
+  const tables = declarations(clean, String.raw`create\s+table\s+(?:if\s+not\s+exists\s+)?`).map(
+    (m) => objectIdentity(m[1], m[2])
+  );
+  const views = declarations(
+    clean,
+    String.raw`create\s+(?:or\s+replace\s+)?(?:materialized\s+)?view\s+(?:if\s+not\s+exists\s+)?`
+  ).map((m) => objectIdentity(m[1], m[2]));
+  const columns = declarations(
+    clean,
+    String.raw`alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?`,
+    String.raw`\s+add\s+(?:column\s+)?(?:if\s+not\s+exists\s+)?` +
+      `(${sqlIdentifier})(?![a-z0-9_$])`
+  )
+    .filter((m) => !/^(constraint|primary|foreign|unique|check|exclude)$/i.test(m[3]))
+    .map((m) => [objectIdentity(m[1], m[2]), identifierValue(m[3])]);
   return {
     fns: [...new Set(fns)],
     tables: [...new Set([...tables, ...views])],
@@ -239,16 +234,15 @@ function declaredObjects(sql) {
  *
  * Scoped to the branch's OWN migrations: dropping something an earlier commit
  * created is not covered here and is still checked by everything else. */
-function droppedObjects(sql) {
+export function droppedObjects(sql) {
   const clean = executableSql(sql);
-  const fns = [
-    ...clean.matchAll(/drop\s+function\s+(?:if\s+exists\s+)?(?:public\.)?"?([a-z0-9_]+)"?/gi),
-  ].map((m) => m[1]);
-  const tables = [
-    ...clean.matchAll(
-      /drop\s+(?:materialized\s+)?(?:table|view)\s+(?:if\s+exists\s+)?(?:public\.)?"?([a-z0-9_]+)"?/gi
-    ),
-  ].map((m) => m[1]);
+  const fns = declarations(clean, String.raw`drop\s+function\s+(?:if\s+exists\s+)?`).map((m) =>
+    objectIdentity(m[1], m[2])
+  );
+  const tables = declarations(
+    clean,
+    String.raw`drop\s+(?:materialized\s+)?(?:table|view)\s+(?:if\s+exists\s+)?`
+  ).map((m) => objectIdentity(m[1], m[2]));
   return { fns: new Set(fns), tables: new Set(tables) };
 }
 
@@ -361,7 +355,7 @@ function main() {
   }
 
   console.log(
-    `[check-migrations-applied] ${files.length} changed migration(s) vs ${base}; ${problems.length} unapplied object(s).`
+    `[check-migrations-applied] ${files.length} changed migration(s) vs ${base}; ${problems.length} unverified object(s).`
   );
 
   if (problems.length === 0) {
@@ -369,21 +363,27 @@ function main() {
     return;
   }
 
-  console.error('\nA MIGRATION IN THIS BRANCH DECLARES SOMETHING THE LIVE SCHEMA DOES NOT HAVE:\n');
+  console.error(
+    '\nA MIGRATION IN THIS BRANCH DECLARES SOMETHING THE LIVE SCHEMA SNAPSHOT DOES NOT VERIFY:\n'
+  );
   for (const [file, kind, name] of problems) console.error(`  ${file}\n    ${kind} ${name}`);
   console.error(
     '\nEither the migration was never applied — apply it with the Supabase MCP' +
       '\n`apply_migration`, which is the only sanctioned path — or the manifest is' +
       '\nstale: regenerate it with scripts/ci/gen-schema-manifest.mjs in this same PR.' +
+      '\nNon-public declarations require schema-specific deployed evidence; the public' +
+      '\nmanifest cannot certify them, and a public placeholder is not such evidence.' +
       '\nA migration file that never ran is a feature the code believes in and the' +
       '\ndatabase has never heard of.'
   );
   process.exit(1);
 }
 
-try {
-  main();
-} catch (err) {
-  console.error('[check-migrations-applied] script error:', err?.message || err);
-  process.exit(2);
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try {
+    main();
+  } catch (err) {
+    console.error('[check-migrations-applied] script error:', err?.message || err);
+    process.exit(2);
+  }
 }

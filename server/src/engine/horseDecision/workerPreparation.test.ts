@@ -56,10 +56,10 @@ describe('real worker-owned startup preparation', () => {
     let release!: () => void;
     vi.mocked(loadGtoCharts).mockImplementationOnce(
       () =>
-        new Promise<void>((resolve) => {
+        new Promise<number>((resolve) => {
           release = () => {
             hydrated = true;
-            resolve();
+            resolve(0);
           };
         })
     );

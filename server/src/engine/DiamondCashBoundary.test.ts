@@ -466,7 +466,13 @@ describe('the first Diamond game stays inside the custody boundary', () => {
     // The hand ended with the hero up: 40 became 150, so only 50 will fit.
     engine.seatedPlayers[0].stack = 150;
     engine.broadcastCurrentState = () => {};
-    const rpc = vi.spyOn(supabase, 'rpc').mockResolvedValue({ data: { stack: 200 }, error: null });
+    const rpc = vi.spyOn(supabase, 'rpc').mockResolvedValue({
+      data: { stack: 200 },
+      error: null,
+      count: null,
+      status: 200,
+      statusText: 'OK',
+    });
     await engine.processPendingAddOns(engine.seatedPlayers);
     expect(rpc).toHaveBeenCalledTimes(1);
     expect(rpc.mock.calls[0][0]).toBe('fn_poker_diamond_top_up');

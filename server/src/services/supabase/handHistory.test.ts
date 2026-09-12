@@ -205,6 +205,23 @@ beforeEach(() => {
 });
 
 describe('logHandHistory - worker-owned completed-hand observation', () => {
+  it('preserves action-node metadata in the accepted row and worker payload without adding player cards', async () => {
+    acceptAtomicHand();
+    const publicNode = Object.freeze({
+      version: 1 as const,
+      status: 'unavailable' as const,
+      reason: 'private_discard_choice' as const,
+    });
+    const input = atomicParams(GLOBAL_HAND + 810);
+    const actions = input.actions.map((action) => ({ ...action, publicNode }));
+    await logHandHistory({ ...input, actions });
+    expect((rpcCalls[0].args.p_hand_row as Record<string, unknown>).actions).toEqual(actions);
+    expect(mockObserveCompletedHand.mock.calls[0][0].actions).toEqual(actions);
+    expect(JSON.stringify(mockObserveCompletedHand.mock.calls[0][0].actions)).not.toMatch(
+      /hole_cards|username|private-name/
+    );
+  });
+
   it('sends the exact immutable hand payload and accepted authority fence', async () => {
     acceptAtomicHand();
     const showdownReveal = [
@@ -372,6 +389,7 @@ describe('logHandHistory - accepted-hand transaction', () => {
     );
     expect(rpcCalls).toHaveLength(0);
     expect(mockWakeHandProjection).not.toHaveBeenCalled();
+    expect(mockObserveCompletedHand).not.toHaveBeenCalled();
   });
 
   it('does not accept an ordinary hand receipt for the obligations-aware door', async () => {

@@ -534,6 +534,8 @@ export interface ActionRecord {
   stage: HandStage;
   /** Bible V8 §4.14: Short all-in (less than a full raise) does NOT reopen betting */
   isFullRaise?: boolean;
+  /** Accepted-hand learning metadata, omitted from controller/UI history. */
+  publicNode?: import('./engine/HorsePublicActionNode.js').HorsePublicActionNode;
 }
 
 export type HandEvent =
@@ -587,6 +589,7 @@ export type HandEvent =
       stage?: HandStage;
       /** Accepted immutable history; late consumers must not read a later action. */
       record?: Readonly<ActionRecord>;
+      publicNode?: import('./engine/HorsePublicActionNode.js').HorsePublicActionNode;
     }
   | { type: 'POT_UPDATE'; pot: number; pots: Pot[] }
   | { type: 'TURN_CHANGE'; seat: number; availableActions: ActionType[] }

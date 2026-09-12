@@ -318,6 +318,7 @@ export async function logHandHistory(params: {
     amount?: number;
     timestamp?: number;
     stage: string;
+    publicNode?: import('../../engine/HorsePublicActionNode.js').HorsePublicActionNode;
   }[];
   showdownResults?: {
     userId: string;
@@ -518,8 +519,8 @@ export async function logHandHistory(params: {
   const inserted = await insertHandHistoryRow(row, bombUnits, params.atomicCommit);
   const handId = inserted.id;
 
-  // V28 AUDIT FIX (2026-08-29): observe regardless of whether the history row
-  // landed. ROOT-CAUSE CAPACITY FIX (2026-09-08): HorseMind now lives beside
+  // Observe only after the authoritative transaction accepts the hand above.
+  // ROOT-CAUSE CAPACITY FIX (2026-09-08): HorseMind now lives beside
   // HorseLogic in the sole worker FIFO. Enqueueing establishes the ordering:
   // this observation is ahead of every decision the table can request next.
   // Waiting for its ACK here would instead hold this table's settlement behind

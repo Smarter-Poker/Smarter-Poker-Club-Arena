@@ -43,6 +43,8 @@ export function validOmahaVariantEquity(
 ): e is OmahaVariantEquityEvidence {
   if (
     !e ||
+    !Number.isFinite(eligiblePot) ||
+    eligiblePot <= 0 ||
     !Number.isInteger(e.samples) ||
     e.samples < 1 ||
     e.samples > 4096 ||
@@ -83,6 +85,7 @@ export function validOmahaVariantEquity(
   if (
     e.distribution.some(
       (b) =>
+        !b ||
         !Number.isFinite(b.share) ||
         b.share < 0 ||
         b.share > 1 + 1e-9 ||
@@ -97,6 +100,7 @@ export function validOmahaVariantEquity(
   return (
     e.perPot.every(
       (p) =>
+        !!p &&
         Number.isFinite(p.amount) &&
         p.amount > 0 &&
         Array.isArray(p.eligiblePlayers) &&

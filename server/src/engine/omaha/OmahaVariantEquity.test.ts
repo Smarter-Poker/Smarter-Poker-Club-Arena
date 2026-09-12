@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SeatPlayer } from '../../types.js';
 import type { HorseEquityOutcomeSample } from '../HorseEval.js';
-import { omahaVariantEquityFromShowdowns } from './OmahaVariantEquity.js';
+import { omahaVariantEquityFromShowdowns, validOmahaVariantEquity } from './OmahaVariantEquity.js';
 
 const seat = (id: string, index: number, invested: number): SeatPlayer => ({
   user_id: id,
@@ -24,6 +24,24 @@ const sample = (high: number[], low: Array<number | null>): HorseEquityOutcomeSa
 });
 
 describe('Phase 11 joint-showdown pot pricing', () => {
+  it('rejects malformed nested evidence and invalid pot targets without throwing', () => {
+    const evidence = omahaVariantEquityFromShowdowns({
+      variant: 'plo8',
+      players: [seat('hero', 1, 100), seat('other', 2, 100)],
+      heroId: 'hero',
+      callCost: 0,
+      opponentIds: ['other'],
+      samples: [sample([2, 1], [null, null])],
+    })!;
+    expect(validOmahaVariantEquity(evidence, 200)).toBe(true);
+    for (const field of ['distribution', 'perPot'] as const) {
+      const malformed = { ...evidence, [field]: [null] } as unknown as typeof evidence;
+      expect(validOmahaVariantEquity(malformed, 200)).toBe(false);
+    }
+    for (const pot of [NaN, Infinity, -1, 0]) {
+      expect(validOmahaVariantEquity(evidence, pot)).toBe(false);
+    }
+  });
   it('lets a hero win the large side pot although the short stack beats both halves of the main pot', () => {
     const result = omahaVariantEquityFromShowdowns({
       variant: 'plo8',

@@ -810,6 +810,43 @@ jobs:
             exit 1
           fi
 
+      # A LEASE HOLDER DOES NOT STARVE ITS OWN HEARTBEAT (2026-09-12).
+      #
+      # heartbeat_table_leases_v4 renews with FOR NO KEY UPDATE ... SKIP LOCKED
+      # so it never queues behind a settlement. FOR SHARE conflicts with that,
+      # so a holder taking FOR SHARE on the lease row makes the heartbeat skip
+      # and extend nothing for the length of its transaction.
+      #
+      # This is LATENT, not an incident. Measured contention across the 78 cash
+      # lease rows was 0.8% of rows, and an expiry needs four consecutive
+      # misses. The restart loop it was found next to is engine-side and is not
+      # this. Saying otherwise was the first draft's mistake.
+      #
+      # It is refused anyway because it buys nothing in exchange. The PK is the
+      # id alone, so a takeover is a NON-KEY update and takes the same strength
+      # as the heartbeat - no holder lock can block one and admit the other.
+      # Exclusion belongs to the takeover. The tournament half was fixed
+      # 2026-09-10 and the cash half was missed, eleven lines apart in one
+      # function.
+      - name: Supabase Invariants - No FOR SHARE On A Lease Row
+        run: |
+          set -o pipefail
+          echo "## Lease Lock Strength" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-lease-lock-strength.mjs 2>&1 | tee /tmp/leaselock.log; then
+            echo "OK - no new holder takes FOR SHARE on an engine lease row." >> $GITHUB_STEP_SUMMARY
+          else
+            code=$?
+            if [ "$code" = "2" ]; then
+              echo "COULD NOT TELL - the diff was unreadable. Not reported as clean." >> $GITHUB_STEP_SUMMARY
+            else
+              echo "A migration takes FOR SHARE on an engine lease row. That starves the" >> $GITHUB_STEP_SUMMARY
+              echo "heartbeat the lease depends on and excludes nothing in return. Use" >> $GITHUB_STEP_SUMMARY
+              echo "FOR KEY SHARE if you are a holder, FOR UPDATE if you are a takeover." >> $GITHUB_STEP_SUMMARY
+            fi
+            exit 1
+          fi
+
       # NO BAND-AIDS (CLAUDE.md 10.12, Dan 2026-09-07). 10.11 had already said a
       # detector is not a fix, in writing, and the day after the platform still
       # paid 558 payouts / 48,146.94 chips in seven days through repair

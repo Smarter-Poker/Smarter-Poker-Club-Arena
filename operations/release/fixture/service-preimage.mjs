@@ -1,5 +1,49 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { constants } from 'node:fs';
+import { open } from 'node:fs/promises';
+
+// Only the fixed default is used by the committed container command. The
+// optional harness supplies owned local files for filesystem refusal tests.
+export async function readFixtureServicePreimage({
+  file = '/run/club-arena-qualification/service-preimage.json',
+  uid = 1000,
+  gid = 1000,
+} = {}) {
+  const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  const requireFile = (condition) => {
+    if (!condition) throw new Error('FIXTURE_SERVICE_PREIMAGE_FILE_REFUSED');
+  };
+  try {
+    const before = await handle.stat();
+    requireFile(
+      before.isFile() &&
+        before.nlink === 1 &&
+        before.uid === uid &&
+        before.gid === gid &&
+        (before.mode & 0o222) === 0 &&
+        before.size > 0 &&
+        before.size <= 1024 * 1024
+    );
+    const bytes = Buffer.alloc(before.size + 1);
+    let received = 0;
+    while (received < bytes.length) {
+      const { bytesRead } = await handle.read(bytes, received, bytes.length - received, null);
+      if (bytesRead === 0) break;
+      received += bytesRead;
+    }
+    const after = await handle.stat();
+    requireFile(
+      received === before.size &&
+        ['dev', 'ino', 'mode', 'nlink', 'uid', 'gid', 'size', 'mtimeMs', 'ctimeMs'].every(
+          (field) => before[field] === after[field]
+        )
+    );
+    return bytes.subarray(0, received);
+  } finally {
+    await handle.close();
+  }
+}
 
 // Original owned bootstrap only, after verified genuine service migrations.
 // No passwords, application rows, arbitrary server settings or vault data.

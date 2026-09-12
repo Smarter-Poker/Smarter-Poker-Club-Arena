@@ -1,7 +1,75 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { captureFixtureServicePreimage } from '../../operations/release/fixture/service-preimage.mjs';
+import { mkdtemp, writeFile, readFile, chmod, rm, symlink, link, truncate } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import {
+  captureFixtureServicePreimage,
+  readFixtureServicePreimage,
+} from '../../operations/release/fixture/service-preimage.mjs';
+
+test('the in-container reader preserves exact immutable catalog bytes', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'preimage-reader-'));
+  try {
+    const file = join(root, 'catalog.json');
+    const bytes = Buffer.from('{"catalog":"fixture-only"}\n');
+    await writeFile(file, bytes, { mode: 0o400 });
+    const actual = await readFixtureServicePreimage({
+      file,
+      uid: process.getuid(),
+      gid: process.getgid(),
+    });
+    assert.deepEqual(actual, bytes);
+    assert.deepEqual(await readFile(file), bytes);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+for (const fault of [
+  'empty',
+  'oversize',
+  'writable',
+  'wrong-uid',
+  'wrong-gid',
+  'symlink',
+  'hardlink',
+  'fifo',
+  'directory',
+]) {
+  test(`the in-container reader refuses ${fault} before exporting metadata`, async () => {
+    const root = await mkdtemp(join(tmpdir(), 'preimage-reader-'));
+    try {
+      let file = join(root, 'catalog.json');
+      await writeFile(file, '{"catalog":true}\n', { mode: 0o600 });
+      if (fault === 'empty') await truncate(file, 0);
+      if (fault === 'oversize') await truncate(file, 1024 * 1024 + 1);
+      if (fault !== 'writable') await chmod(file, 0o400);
+      if (fault === 'symlink' || fault === 'hardlink') {
+        const other = join(root, 'other');
+        if (fault === 'symlink') await symlink(file, other);
+        else await link(file, other);
+        file = other;
+      }
+      if (fault === 'fifo') {
+        file = join(root, 'fifo');
+        execFileSync('mkfifo', [file]);
+      }
+      if (fault === 'directory') file = root;
+      await assert.rejects(
+        readFixtureServicePreimage({
+          file,
+          uid: process.getuid() + (fault === 'wrong-uid' ? 1 : 0),
+          gid: process.getgid() + (fault === 'wrong-gid' ? 1 : 0),
+        })
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+}
 
 // Driver tests separately validate every nested field before artifact exposure.
 // These tests exercise the collector's connection/transaction failure boundary.

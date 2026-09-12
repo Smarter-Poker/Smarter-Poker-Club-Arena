@@ -150,7 +150,23 @@ while ! docker exec "$preimage" test -f /run/club-arena-qualification/service-pr
   sleep 1
 done
 smoke_step=preimage-copy
-docker cp "$preimage:/run/club-arena-qualification/service-preimage.json" "$preimage_output"
+# Docker's archive copy API does not reliably expose live tmpfs mounts. Read
+# this single fixed file inside its mount namespace; never extract an archive.
+# Both sides bound the bytes. Pipefail prevents ACK after a partial/failed read.
+docker exec "$preimage" node --input-type=module -e '
+import { readFixtureServicePreimage } from "/opt/qualification/runtime/service-preimage.mjs";
+process.stdout.write(await readFixtureServicePreimage());
+' | python3 -c '
+import os, sys
+raw = sys.stdin.buffer.read(1024 * 1024 + 1)
+if not 0 < len(raw) <= 1024 * 1024:
+    sys.exit(1)
+fd = os.open(sys.argv[1], os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+with os.fdopen(fd, "wb") as output:
+    output.write(raw)
+    output.flush()
+    os.fsync(output.fileno())
+' "$preimage_output"
 smoke_step=preimage-ack
 docker exec "$preimage" touch /run/club-arena-qualification/service-preimage.copied
 smoke_step=preimage-shutdown

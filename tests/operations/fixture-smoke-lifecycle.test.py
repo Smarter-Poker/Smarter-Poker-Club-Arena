@@ -23,9 +23,9 @@ p = Path(os.environ['SIM_STATE'])
 s = json.loads(p.read_text())
 s['calls'].append(a)
 fault = os.environ['SIM_FAULT']
-def end(output='', code=0):
+def end(output='', code=0, newline=True):
     p.write_text(json.dumps(s))
-    print(output)
+    sys.stdout.write(output + ('\n' if newline else ''))
     sys.exit(code)
 if a[:2] == ['image', 'inspect']:
     if fault == 'image-identity': end('PRIVATE IMAGE ERROR', 7)
@@ -49,10 +49,19 @@ if a[0] == 'run':
     end('container-id')
 if a[0] == 'exec':
     name = next(n for n in s['containers'] if n in a)
+    if any('readFixtureServicePreimage' in arg for arg in a):
+        assert s['containers'][name]['running'], 'tmpfs already gone'
+        if fault == 'copy': end('partial private bytes', 7)
+        if fault == 'copy-empty': end('', newline=False)
+        if fault == 'copy-oversize': end('x' * (1024 * 1024 + 1))
+        if fault == 'copy-destination': Path(os.environ['SIM_OUTPUT']).write_text('preserve other owner')
+        s['copied'] = True
+        end('{"fixture_metadata": true}')
     if 'test' in a and fault == 'preimage-ready' and name.endswith('-preimage'): end('', 1)
     if '--oracle' in a and fault == 'oracle': end('PRIVATE ORACLE ERROR', 7)
     if 'touch' in a:
         assert s['copied'] and s['containers'][name]['running']
+        assert Path(os.environ['SIM_OUTPUT']).read_bytes() == b'{"fixture_metadata": true}\n'
         if fault == 'preimage-ack': end('PRIVATE ACK ERROR', 7)
         s['containers'][name].update(running=False, exit=7 if os.environ['SIM_FAULT'] == 'shutdown' else 0)
     end()
@@ -65,12 +74,6 @@ if a[0] == 'logs':
 if a[0] == 'inspect':
     item = s['containers'][a[-1]]
     end(str(item['running']).lower() if 'Running' in a[2] else str(item['exit']))
-if a[0] == 'cp':
-    item = s['containers'][a[1].split(':')[0]]
-    assert item['running'], 'tmpfs already gone'
-    if os.environ['SIM_FAULT'] == 'copy': end('', 7)
-    Path(a[2]).write_text('{"fixture_metadata": true}\n')
-    s['copied'] = True; end()
 if a[:2] == ['rm', '--force']:
     if fault == 'cleanup' and a[-1].endswith('-peer'): end('PRIVATE CLEANUP ERROR', 7)
     del s['containers'][a[-1]]; end()
@@ -96,6 +99,7 @@ class LifecycleTests(unittest.TestCase):
             output = root / 'preimage.json'
             env = {**os.environ, 'PATH': str(bindir) + os.pathsep + os.environ['PATH'],
                    'SIM_STATE': str(state), 'SIM_HEAD': head, 'SIM_FAULT': fault,
+                   'SIM_OUTPUT': str(output),
                    'FIXTURE_SMOKE_CONTAINER': 'ca-fixture-smoke-' + 'a' * 32,
                    'FIXTURE_SERVICE_PREIMAGE_PATH': str(output)}
             result = subprocess.run(['bash', 'operations/release/fixture/smoke-image.sh',
@@ -107,13 +111,15 @@ class LifecycleTests(unittest.TestCase):
             else:
                 self.assertEqual(observed['containers'], {}, result.stderr)
             self.assertEqual(observed['networks'], [], result.stderr)
+            if fault == 'copy-destination': self.assertEqual(output.read_text(), 'preserve other owner')
+            self.assertFalse(any(c[0] == 'cp' for c in observed['calls']))
             return result, observed
 
     def test_copy_completes_while_tmpfs_is_live_before_ack_and_shutdown(self):
         result, state = self.exercise()
         self.assertEqual(result.returncode, 0, result.stderr)
         calls = state['calls']
-        copy_index = next(i for i, c in enumerate(calls) if c[0] == 'cp')
+        copy_index = next(i for i, c in enumerate(calls) if any('readFixtureServicePreimage' in a for a in c))
         ack_index = next(i for i, c in enumerate(calls) if 'touch' in c)
         cleanup_index = next(i for i, c in enumerate(calls) if c[:2] == ['rm', '--force'])
         self.assertLess(copy_index, ack_index)
@@ -131,6 +137,16 @@ class LifecycleTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertTrue(state['copied'])
         self.assertNotIn('cleanup passed', result.stdout)
+
+    def test_empty_oversized_or_occupied_destination_never_acknowledges(self):
+        for fault in ['copy-empty', 'copy-oversize', 'copy-destination']:
+            with self.subTest(fault=fault):
+                result, state = self.exercise(fault)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(any('touch' in c for c in state['calls']))
+                self.assertIn(dict(stage='smoke-shell-preimage-copy', category='Error', exit_code=1),
+                              driver.native_failures(result.stdout + '\n' + result.stderr))
+                self.assertNotIn('cleanup passed', result.stdout)
 
     def test_actual_shell_failures_retain_only_fixed_stage_and_exit(self):
         for fault, step, code in [('image-identity', 'image-identity', 7),

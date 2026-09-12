@@ -10,6 +10,24 @@ import {
 } from './IcmModel.js';
 
 describe('icmEquity', () => {
+  it('bounds optional future-hand work with truthful uncertainty and unchanged default work', () => {
+    const stacks = Array.from({ length: 18 }, () => 1000),
+      payouts = [50, 30, 20];
+    const baseline = createIcmEquityEstimator(stacks, payouts, 0);
+    const future = createIcmEquityEstimator(stacks, payouts, 0, undefined, 128);
+    expect(baseline.trials).toBe(1200);
+    expect(future.trials).toBe(128);
+    const a = baseline.estimate(stacks),
+      b = future.estimate(stacks);
+    expect(b.errorBound).toBeGreaterThan(a.errorBound);
+    expect(Math.abs(b.equity - 100 / 18)).toBeLessThanOrEqual(b.errorBound);
+    expect(future.estimate(stacks)).toEqual(b);
+    expect(createIcmEquityEstimator(stacks, payouts, 0, undefined, 1).trials).toBe(96);
+    expect(createIcmEquityEstimator(stacks, payouts, 0, undefined, 100000).trials).toBe(1200);
+    expect(
+      createIcmEquityEstimator([100, 200], [100], 0, undefined, 128).estimate([100, 200])
+    ).toEqual(createIcmEquityEstimator([100, 200], [100], 0).estimate([100, 200]));
+  });
   it('two players: closed form p*(P1-P2)+P2', () => {
     // 60/40 chips, payouts 100/60: hero(60%) = 0.6*100 + 0.4*60 = 84
     expect(icmEquity([600, 400], [100, 60], 0)).toBeCloseTo(84, 6);
@@ -26,6 +44,18 @@ describe('icmEquity', () => {
     expect(e0).toBeCloseTo(e1, 6);
     expect(e1).toBeCloseTo(e2, 6);
     expect(e0 + e1 + e2).toBeCloseTo(100, 6);
+  });
+
+  it('prices every finishing place symmetrically at the ten-player exact boundary', () => {
+    const stacks = Array.from({ length: 10 }, () => 1000);
+    // A unit prize at one rank isolates that rank's probability. Exchangeable
+    // stacks must give every hero exactly 1/10, including the deepest rank.
+    for (let rank = 0; rank < 10; rank++) {
+      const prizes = Array.from({ length: 10 }, (_, i) => Number(i === rank));
+      const equities = stacks.map((_, hero) => icmEquity(stacks, prizes, hero));
+      for (const equity of equities) expect(equity).toBeCloseTo(0.1, 12);
+      expect(equities.reduce((sum, equity) => sum + equity, 0)).toBeCloseTo(1, 12);
+    }
   });
 
   it('a chip lead is worth LESS than proportional (the ICM curve)', () => {

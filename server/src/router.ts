@@ -175,7 +175,12 @@ export function createRouter(
     // ─────────────────────────────────────────────────────────────────────────
     // Telemetry routes — handlers/health.ts (Phase U3.1).
     // ─────────────────────────────────────────────────────────────────────────
-    if (url === '/health' || url === '/') return handleHealth(res, { gameServer });
+    if (url === '/health' || url === '/')
+      return handleHealth(
+        res,
+        { gameServer },
+        new URLSearchParams((req.url || '').split('?')[1] || '')
+      );
     // Operation Stable Hand Section 15. Read-only: it plans and reports, and
     // deliberately never executes what it plans.
     if (url === '/stable-hand') return handleStableHand(res);

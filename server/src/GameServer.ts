@@ -9,6 +9,10 @@ import { bindToProcessRoot } from './services/supabase/dataActorContext.js';
  */
 
 import { randomUUID } from 'node:crypto';
+import {
+  selectPublicTableLiveness,
+  type PublicTableLivenessQuery,
+} from './observability/PublicTableLiveness.js';
 import { AsyncResource } from 'node:async_hooks';
 
 import { ServerTableEngine } from './engine/ServerTableEngine.js';
@@ -3058,7 +3062,7 @@ export class GameServer {
     console.log('[GameServer] Shutdown complete.');
   }
 
-  getStatus() {
+  getStatus(livenessQuery?: PublicTableLivenessQuery) {
     const now = Date.now();
     const liveHorseDecision = liveHorseDecisionWorkerStatus();
     const equityWorkers = equityWorkerPoolStatus();
@@ -3442,17 +3446,11 @@ export class GameServer {
        * broadcast and horse decision round trip. Docker polls this endpoint
        * every twenty seconds, and so do the deploy gate and the supervisor.
        *
-       * Nothing outside this process ever read it. Not a workflow, not a
-       * script, not the client. And the answer it was there to give already
-       * sat one line above, capped: `stalledTables.slice(0, 20)`, plus
-       * `humansSeatedTotal`, `handsInFlightTotal` and the settlement health
-       * spread in below, all of which are derived from the same array.
-       *
-       * So the array stays inside the process, where every consumer of it
-       * already lives, and the endpoint carries the counts instead. A reader
-       * that wants to NAME a table still has `stalledTables`; a reader that
-       * wants a total now gets one that is always present rather than one it
-       * has to reduce a thousand objects to compute.
+       * Live-table certification does need per-table progress. Explicit
+       * requests now select at most 32 exact table IDs, or 32 tournament
+       * tables in a required format/club scope, from this same snapshot.
+       * The ordinary Docker/Caddy/deploy probe retains only the counts and
+       * capped stalled-table list; it never serializes the whole fleet.
        */
       tableLivenessSummary: {
         tables: tableLiveness.length,
@@ -3461,6 +3459,9 @@ export class GameServer {
         maxMsSinceProgress: tableLiveness.reduce((max, t) => Math.max(max, t.msSinceProgress), 0),
         dealableSeats: tableLiveness.reduce((sum, t) => sum + t.dealable, 0),
       },
+      ...(livenessQuery
+        ? { tableLiveness: selectPublicTableLiveness(tableLiveness, livenessQuery) }
+        : {}),
       // Optional calculator capacity may recover after initial readiness
       // without taking a healthy dealer out of routing. Startup, exhausted
       // cooldown, and shutdown remain non-routing states.
@@ -4039,7 +4040,7 @@ export class GameServer {
         // generation never enter /health; null makes an incomplete tournament
         // admission visible instead of guessing and letting the certificate
         // select a table its isolated account cannot observe.
-        gameFormat: tournament?.gameFormat ?? (engine.isTournament() ? null : 'cash'),
+        gameFormat: tournament?.gameFormat ?? (engine.isTournament() ? null : ('cash' as const)),
         clubId: tournament?.clubId ?? null,
         seated: engine.seatedCount(),
         dealable: engine.dealableCount(),

@@ -100,9 +100,23 @@ function requireCertificationConfiguration(testInfo: TestInfo, browserName: stri
   }
 }
 
-async function readEngineHealth(request: APIRequestContext): Promise<EngineHealth> {
-  const separator = ENGINE_HEALTH_URL.includes('?') ? '&' : '?';
-  const response = await request.get(`${ENGINE_HEALTH_URL}${separator}cb=${Date.now()}`, {
+type LivenessScope = { tableIds: string[] } | { gameFormat: (typeof TOURNAMENT_FORMATS)[number] };
+
+async function readEngineHealth(
+  request: APIRequestContext,
+  scope: LivenessScope
+): Promise<EngineHealth> {
+  const url = new URL(ENGINE_HEALTH_URL);
+  url.searchParams.set('cb', String(Date.now()));
+  if ('tableIds' in scope) {
+    expect(scope.tableIds.length).toBeGreaterThan(0);
+    expect(scope.tableIds.length).toBeLessThanOrEqual(32);
+    url.searchParams.set('liveness_table_ids', scope.tableIds.join(','));
+  } else {
+    url.searchParams.set('liveness_format', scope.gameFormat);
+    url.searchParams.set('liveness_club_ids', [CLUB_ID, UNION_ID].join(','));
+  }
+  const response = await request.get(url.toString(), {
     timeout: 15_000,
     headers: { 'cache-control': 'no-store' },
   });
@@ -130,6 +144,40 @@ async function readEngineHealth(request: APIRequestContext): Promise<EngineHealt
   expect(Array.isArray(health.tableLiveness), 'engine health omitted per-table liveness').toBe(
     true
   );
+  expect(
+    health.tableLiveness.length,
+    'scoped health exceeded its public response bound'
+  ).toBeLessThanOrEqual(32);
+  expect(
+    new Set(health.tableLiveness.map((t) => t.tableId)).size,
+    'duplicate table progress evidence'
+  ).toBe(health.tableLiveness.length);
+  for (const table of health.tableLiveness) {
+    expect(table.tableId, 'progress evidence omitted a table UUID').toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+    );
+    for (const count of [table.seated, table.dealable, table.handCount]) {
+      expect(Number.isSafeInteger(count), 'progress evidence omitted an integer counter').toBe(
+        true
+      );
+      expect(count).toBeGreaterThanOrEqual(0);
+    }
+    expect(
+      Number.isFinite(table.msSinceProgress),
+      'progress evidence omitted its inactivity clock'
+    ).toBe(true);
+    expect(table.msSinceProgress).toBeGreaterThanOrEqual(0);
+    expect(typeof table.paused).toBe('boolean');
+    expect(typeof table.loopPhase).toBe('string');
+    if ('tableIds' in scope)
+      expect(scope.tableIds, 'health returned an unrequested table').toContain(table.tableId);
+    else {
+      expect(table.gameFormat).toBe(scope.gameFormat);
+      expect([CLUB_ID, UNION_ID], 'health returned an out-of-scope tournament').toContain(
+        table.clubId
+      );
+    }
+  }
   return health;
 }
 
@@ -213,10 +261,13 @@ async function selectOccupiedRunningCashTable(
     }
     const candidates = await visibleRunningCashCandidates(page);
     if (candidates.length === 0) continue;
-    const health = await readEngineHealth(request);
-    for (const candidate of candidates) {
-      const table = healthyRunningTable(health, candidate.id, candidate.gameFormat);
-      if (table) return { candidate, health, table };
+    for (let offset = 0; offset < candidates.length; offset += 32) {
+      const batch = candidates.slice(offset, offset + 32);
+      const health = await readEngineHealth(request, { tableIds: batch.map((c) => c.id) });
+      for (const candidate of batch) {
+        const table = healthyRunningTable(health, candidate.id, candidate.gameFormat);
+        if (table) return { candidate, health, table };
+      }
     }
   }
 
@@ -237,7 +288,7 @@ async function proveTableProgressedBeforeNavigation(
   await expect
     .poll(
       async () => {
-        after = await readEngineHealth(request);
+        after = await readEngineHealth(request, { tableIds: [candidate.id] });
         if (
           !continuouslyActive(after.tableLiveness.find((table) => table.tableId === candidate.id))
         )
@@ -271,7 +322,7 @@ async function selectProgressingTournamentTable(
   request: APIRequestContext,
   gameFormat: (typeof TOURNAMENT_FORMATS)[number]
 ): Promise<{ candidate: RunningTableCandidate; evidence: PreNavigationEngineEvidence }> {
-  const before = await readEngineHealth(request);
+  const before = await readEngineHealth(request, { gameFormat });
   /* The live SNG board is presently heads-up, so two seats is a real SNG,
      not an unstable fallback. Spins and MTTs retain a three-player floor to
      avoid selecting a table already on its terminal heads-up hand. */
@@ -307,7 +358,7 @@ async function selectProgressingTournamentTable(
   await expect
     .poll(
       async () => {
-        after = await readEngineHealth(request);
+        after = await readEngineHealth(request, { tableIds: baselines.map((t) => t.tableId) });
         for (const baseline of baselines) {
           if (
             !continuouslyActive(

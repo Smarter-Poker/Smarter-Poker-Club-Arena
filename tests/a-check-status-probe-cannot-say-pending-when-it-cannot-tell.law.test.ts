@@ -210,8 +210,18 @@ describe('a check-status probe cannot say pending when it cannot tell', () => {
     expect(pb, 'the playbook must warn that /commits/:sha/status reports pending').toMatch(
       /commits\/:sha\/status/
     );
-    expect(pb, 'the playbook must record that gh is not installed on the Mac').toMatch(
-      /gh` is not installed|not installed on this Mac/
+    // 2026-09-12: this required the playbook to say "`gh` is not installed".
+    // It IS installed - /opt/homebrew/bin/gh, v2.86.0, authenticated as
+    // Smarter-Poker - and THIS ASSERTION is why the falsehood survived six days
+    // of agents reading it and believing it: the claim was load-bearing in CI,
+    // so correcting the doc turned the suite red and every agent put it back.
+    //
+    // The constraint the playbook must still record is the real one, and it has
+    // a different fix: the binary is absent from a NON-INTERACTIVE PATH, which
+    // is also why scripts/guard-merged-branch.sh (fail-closed, needs `gh`)
+    // refused pushes that were fine. Pin the remedy, not the diagnosis.
+    expect(pb, 'the playbook must record how to make `gh` resolvable on the Mac').toMatch(
+      /\/opt\/homebrew\/bin/
     );
   });
 });

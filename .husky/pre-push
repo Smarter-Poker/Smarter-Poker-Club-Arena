@@ -30,6 +30,32 @@ bash "$(git rev-parse --show-toplevel)/scripts/guard-shared-clone.sh" push
 # that presents as somebody else's bug (see scripts/worktree-pressure.sh).
 bash "$(git rev-parse --show-toplevel)/scripts/worktree-pressure.sh" || true
 
+# ── THE CLONE YOU ARE NOT PUSHING FROM IS THE ONE THAT ROTS (2026-09-12) ────
+#
+# Every guard in this hook protects the tree being pushed. Nothing protected
+# ~/Documents/club-arena, because `guard-shared-clone.sh` above forbids pushing
+# from it - so the canonical clone, the one every Cowork agent is pointed at
+# and reads CLAUDE.md and .claude/skills/ out of, is the single tree no
+# pre-push check ever looked at.
+#
+# On 2026-09-12 it was 759 commits and six days behind origin/main. A commit
+# made directly on local `main` on 2026-09-06 was never pushed, so every
+# `git pull --ff-only` after it refused, and the estate runs that as
+# `pull -q --ff-only`. Three agents read that tree, believed it was production,
+# and were wrong: the deploy-hetzner skill on disk still named the TURN server
+# as the engine, and CLAUDE.md 10.82 still documented a guard bypass that had
+# been deleted.
+#
+# `agent-workspace.sh` had already hit this on 2026-09-11 at 624 commits and
+# worked around it. Nobody measured it, so it kept drifting.
+#
+# ADVISORY, never blocking. A stale clone somewhere else on the machine is not
+# a reason to refuse THIS push from a fresh worktree, and
+# tests/unit/doctrineIsReadFromMain.test.ts is explicit that a freshness guard
+# which can wedge every push is worse than the staleness. --quiet prints
+# nothing when every clone is current, and skips the worktree census.
+bash "$(git rev-parse --show-toplevel)/scripts/check-checkout-freshness.sh" --quiet || true
+
 REMOTE="$1"
 URL="$2"
 FAIL=0
@@ -57,11 +83,41 @@ FAIL=0
 # node's DIRECTORY goes on PATH rather than resolving a single binary, so that
 # child processes inherit it too - npx is itself a node script and fails its
 # own shebang with `env: node: No such file or directory` otherwise.
-if ! command -v node >/dev/null 2>&1; then
+# THE SAME BUG THEN HAPPENED TO `gh` (2026-09-12), because this repair named
+# ONE tool instead of the set the guards need.
+#
+# `scripts/guard-merged-branch.sh` was rewritten to fail CLOSED on a missing
+# `gh` - correctly: a guard that waves a push through when it cannot reach
+# GitHub is how three commits were lost on World Hub #1387. But `gh` lives in
+# /opt/homebrew/bin, which is NOT on a non-interactive PATH on this Mac, and
+# the node repair above only reached that directory when node was ALSO
+# missing. Every agent that follows CLAUDE.md 11.0 and puts nvm's node on PATH
+# therefore satisfies the node check, never triggers the repair, and gets:
+#
+#     [merged-branch guard] BLOCKED: GitHub CLI is required to verify
+#     destination branch '<branch>'.
+#
+# on a push that was never wrong. Reproduced 2026-09-12:
+#
+#     $ env -i PATH="$HOME/.nvm/versions/node/v24.15.0/bin:/usr/bin:/bin" bash
+#     $ command -v node   ->  .../v24.15.0/bin/node     (repair skipped)
+#     $ command -v gh     ->  (nothing)                 (guard fails closed)
+#
+# The docs said "`gh` is not installed" for days, which is the RIGHT
+# OBSERVATION with the WRONG CAUSE: it is installed (v2.86.0, authenticated),
+# it is simply not on this PATH. So repair the whole SET, and let
+# `tests/the-docs-describe-this-environment.law.test.ts` fail if a guard ever
+# starts requiring a tool that is not in this list.
+# APPENDED, not prepended. Prepending /opt/homebrew/bin to find `gh` would
+# also put Homebrew's node ahead of the nvm node the agent deliberately chose,
+# silently changing which runtime runs the checks below. Appending finds the
+# missing tool and leaves every tool that already resolved exactly where it was.
+for TOOL in node gh; do
+  command -v "$TOOL" >/dev/null 2>&1 && continue
   for d in /opt/homebrew/bin /usr/local/bin; do
-    [ -x "$d/node" ] && PATH="$d:$PATH" && export PATH && break
+    [ -x "$d/$TOOL" ] && PATH="$PATH:$d" && export PATH && break
   done
-fi
+done
 if ! command -v node >/dev/null 2>&1; then
   echo "[club-arena pre-push] BLOCKED: node was not found on PATH, so the"
   echo "  JavaScript checks below cannot run. This is NOT a content failure."
@@ -360,6 +416,19 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
     if ! node scripts/ci/check-unqualified-writes.mjs "$UQW_BASE"; then
       echo "[club-arena pre-push] BLOCKED: an UPDATE or DELETE with no WHERE clause."
       echo "                      PostgREST refuses it; a migration does not. See above."
+      FAIL=1
+    fi
+  fi
+
+  # A trigger on a money table declares itself in the migration that creates
+  # it. UndeclaredTriggerOnAMoneyTable is critical and pages by SMS; it read 76
+  # on 2026-09-12 having read 74 ninety minutes before, so it is saturated and
+  # one more makes no visible difference. Enforced where the trigger is written.
+  if [ -f scripts/ci/check-money-trigger-declared.mjs ]; then
+    MTD_BASE=$(git merge-base HEAD origin/main 2>/dev/null || echo "HEAD~1")
+    if ! node scripts/ci/check-money-trigger-declared.mjs "$MTD_BASE"; then
+      echo "[club-arena pre-push] BLOCKED: an undeclared trigger on a money table."
+      echo "                      Declare it in the same migration. See above."
       FAIL=1
     fi
   fi

@@ -1005,6 +1005,22 @@ accident, while looking at something else.
    prints the recovery. Missing authority or an unreadable answer fails closed;
    there is no environment-variable or hook bypass.
 
+   **Fail-closed is settled: do not add a bypass back.** The failure this guard
+   prevents is a push that EXITS 0 and reaches nobody, so "allow it through
+   when we cannot check" recreates exactly the defect. An earlier version of
+   this section documented `AGENT_MERGED_BRANCH_OK=1`; the script has had no
+   such variable since it was rewritten, and an escape hatch that does not
+   exist costs an agent more time than no documentation would.
+   `tests/the-docs-describe-this-environment.law.test.ts` now fails if any doc
+   documents an override nothing reads.
+
+   **If it blocks you with "GitHub CLI is required", that is PATH, not a
+   missing install.** `gh` is at `/opt/homebrew/bin/gh` and authenticated;
+   `/opt/homebrew/bin` is not on a non-interactive PATH, so the guard could not
+   see it and correctly refused. `.husky/pre-push` now repairs PATH for every
+   tool its guards require. Calling the guard by hand:
+   `export PATH="/opt/homebrew/bin:$PATH"`.
+
 2. **Verify the FILES, never the tick.** `git fetch origin main` then
    `git cat-file -e origin/main:<path>`. This is section 1.4's rule - only
    production serving the sha counts as deployed - applied to merges, and for
@@ -1071,16 +1087,29 @@ that answers confidently when it cannot tell.** Every one of these was found in
 a single day, and not one was carelessness - each is a reasonable component
 giving a well-formed answer it had no business giving:
 
-| what answered                        | what it said                                     | what was true                           |
-| ------------------------------------ | ------------------------------------------------ | --------------------------------------- |
-| `GET /commits/:sha/status`           | `pending`, HTTP 200                              | red for fifteen hours                   |
-| `GET /commits/:sha/check-runs`       | 403 -> `.check_runs` is `undefined` -> `\|\| []` | "nothing failed"                        |
-| a wait budget equal to `testTimeout` | `Test timed out in 10000ms`                      | names no cause; the assertion never ran |
-| `pr-status.mjs` on a 403             | "the token lacks a scope"                        | rate limited; the token was fine        |
-| the `--all` mergeability read        | every branch clean                               | eight conflicted                        |
-| CLAUDE.md 11.0                       | "the GitHub MCP returns Bad credentials"         | it works                                |
-| AGENT-PLAYBOOK's CI section          | four `gh` commands                               | `gh` is not installed here              |
-| this section, 10.83                  | "a detector raises the issue"                    | not in this repo it did not             |
+| what answered                        | what it said                                     | what was true                             |
+| ------------------------------------ | ------------------------------------------------ | ----------------------------------------- |
+| `GET /commits/:sha/status`           | `pending`, HTTP 200                              | red for fifteen hours                     |
+| `GET /commits/:sha/check-runs`       | 403 -> `.check_runs` is `undefined` -> `\|\| []` | "nothing failed"                          |
+| a wait budget equal to `testTimeout` | `Test timed out in 10000ms`                      | names no cause; the assertion never ran   |
+| `pr-status.mjs` on a 403             | "the token lacks a scope"                        | rate limited; the token was fine          |
+| the `--all` mergeability read        | every branch clean                               | eight conflicted                          |
+| CLAUDE.md 11.0                       | "the GitHub MCP returns Bad credentials"         | it works                                  |
+| AGENT-PLAYBOOK's CI section          | four `gh` commands                               | `gh` is installed; not on the hook's PATH |
+| this section, 10.83                  | "a detector raises the issue"                    | not in this repo it did not               |
+
+**The `gh` row was itself wrong, and stayed wrong for six days (corrected
+2026-09-12).** It described the GitHub CLI as absent from this machine. It is
+present:
+`/opt/homebrew/bin/gh`, v2.86.0, authenticated as `Smarter-Poker`. What is true
+is narrower and has a different fix - `/opt/homebrew/bin` is not on a
+NON-INTERACTIVE PATH, so `command -v gh` fails inside a hook or a tool-driven
+shell while the binary sits right there. This is rule 1 applied to this file:
+"I could not run it" was folded into "it is not installed", and every agent
+that read the row agreed and stopped looking. `.husky/pre-push` now repairs
+PATH for every tool its guards require, and
+`tests/the-docs-describe-this-environment.law.test.ts` refuses to let any
+binding doc call a tool absent while one of this repo's guards demands it.
 
 ### The four rules
 
@@ -1486,6 +1515,76 @@ ship the plaster and call the defect handled.
 
 ---
 
+## 10.87 THE CLONE NOBODY PUSHES FROM IS THE ONE THAT ROTS (2026-09-12, BINDING)
+
+Every guard in `.husky/pre-push` protects the tree being pushed.
+`scripts/guard-shared-clone.sh` forbids pushing from `~/Documents/club-arena`
+at all. So the canonical clone - the tree every Cowork agent is pointed at, and
+the tree an agent LOADS `CLAUDE.md` and `.claude/skills/**` out of - was the one
+tree no check ever looked at.
+
+On 2026-09-12 it was **759 commits and six days behind `origin/main`**, at
+`ec745dbb18` (2026-09-06). The mechanism was small and completely silent:
+
+1. A commit was made **directly on local `main`** at 18:18 on 2026-09-06 and
+   never pushed. Local `main` was then 1 ahead as well as behind.
+2. Every `git pull --ff-only` after that **could not fast-forward, so it
+   refused**. The estate runs it as `pull -q --ff-only`. Nothing printed.
+3. The index was left holding an older tree, so 392 paths read as "staged",
+   which made the clone look busy rather than stuck.
+
+`git fetch` worked the whole time. `origin/main` in `.git` was current. Nobody
+was measuring the distance between the refs and the files.
+
+What agents read out of that tree, and believed:
+
+- `.claude/skills/deploy-hetzner/SKILL.md` at **v1.0.0**, naming VPS
+  `178.156.160.206` as the engine and telling agents to `ssh root@` it and run
+  `docker build`. That address is `club-arena-turn`, the **TURN server**. The
+  engine is `5.161.252.33`. `origin/main` had carried the corrected v2.0.0 for
+  days. **The on-disk skill is what an agent loads, not `origin/main`.**
+- This file's own 10.82, still documenting a fail-OPEN merged-branch guard with
+  an `AGENT_MERGED_BRANCH_OK=1` bypass, months after both had been replaced.
+- `.github/scripts/engine-watchdog.sh`, deleted in #4189.
+
+`scripts/agent-workspace.sh` had already hit this on 2026-09-11 at 624 commits
+and 408 staged entries. It worked around it - re-execing `origin/main`'s copy of
+itself - and that was the right local fix. But nothing measured the clone, so
+it kept drifting for another 135 commits.
+
+### The rules
+
+1. **Measure the clone, not just the branch.**
+   `bash scripts/check-checkout-freshness.sh` reports every clone of this repo
+   on the machine and its distance from `origin/main`. It is read-only: it
+   never pulls, resets, prunes or deletes. `--quiet` speaks only when something
+   is wrong, and `.husky/pre-push` runs it that way on every push. It is
+   ADVISORY there and must stay advisory: a freshness guard that can wedge
+   every push in the estate is worse than the staleness it reports
+   (`tests/unit/doctrineIsReadFromMain.test.ts` says the same thing about
+   doctrine). Exit `3` means COULD NOT TELL, and is not `0`.
+
+2. **Never `git reset --hard` a clone you have not inventoried.** Run
+   `scripts/check-unpushed-work.sh` first. On 2026-09-12 the repair was only
+   safe because the one unpushed commit was proved byte-identical to
+   `origin/main` per file, and the staged tree was proved identical to
+   `7cf1c5f32a`, already an ancestor of `origin/main`. Both were tagged
+   (`rescue/canonical-*-2026-09-12`) before anything moved, and all 38
+   untracked files were archived to `~/Documents/_agent-backups/`.
+
+3. **A commit on local `main` is the thing that jams it.** `main` here is a
+   mirror of `origin/main` and nothing else. If you find one, preserve it on a
+   tag or branch and get `main` back onto `origin/main`; do not leave it to be
+   discovered by the next agent who wonders why production looks odd.
+
+4. **A stranded `.git/index.lock` stops a clone dead and says nothing.** The
+   second Club Arena clone on this Mac carried a 0-byte one from 2026-09-09 for
+   three days; every `git checkout` and `git pull` in it failed. The freshness
+   check reports locks older than an hour. Confirm with `lsof` that no git
+   process holds it before removing it.
+
+---
+
 ## 11. AGENT NETWORK + DEPLOY PLAYBOOK
 
 ### 11.0 FIRST: WHICH ENVIRONMENT ARE YOU IN? (added 2026-09-01, binding)
@@ -1508,7 +1607,11 @@ and `api.github.com` is reachable. Then:
   covering your diff). Launch the push with
   `nohup git push > /tmp/push.log 2>&1 < /dev/null & disown`, return
   immediately, and poll the log in later calls. Never `--no-verify`.
-- **Use the authenticated `gh` CLI for GitHub reads and pull requests.** Never
+- **Use the authenticated `gh` CLI for GitHub reads and pull requests.** It is
+  installed and logged in (`/opt/homebrew/bin/gh`, v2.86.0, account
+  `Smarter-Poker`), but like `node` it is **NOT on the non-interactive PATH**:
+  `export PATH="/opt/homebrew/bin:$PATH"` before you call it, or `command -v gh`
+  will say no while the binary sits in that directory. Never
   scrape a repository `.env` for GitHub credentials and never put a token on a
   command line. A pushed agent branch emits the no-secret proposal signal;
   the reviewed default-branch workflow opens and queues its pull request.

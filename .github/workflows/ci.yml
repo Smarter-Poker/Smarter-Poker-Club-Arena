@@ -850,6 +850,31 @@ jobs:
             exit 1
           fi
 
+      # A TRIGGER ON A MONEY TABLE DECLARES ITSELF (2026-09-12).
+      # UndeclaredTriggerOnAMoneyTable is critical and pages by SMS, and it read
+      # 76 on 2026-09-12 having read 74 ninety minutes earlier: saturated, and
+      # still climbing. A counter that only goes up cannot be acted on, so the
+      # declaration is enforced where the trigger is WRITTEN. The last
+      # unreviewed one broke a third of all hand settlements.
+      - name: Supabase Invariants - A Money Trigger Declares Itself
+        run: |
+          set -o pipefail
+          echo "## Money Trigger Declarations" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-money-trigger-declared.mjs 2>&1 | tee /tmp/trigdecl.log; then
+            echo "OK - every trigger created on a money table declares itself." >> $GITHUB_STEP_SUMMARY
+          else
+            code=$?
+            if [ "$code" = "2" ]; then
+              echo "COULD NOT TELL - the diff was unreadable. Not reported as clean." >> $GITHUB_STEP_SUMMARY
+            else
+              echo "A migration creates a trigger on a money table without declaring it" >> $GITHUB_STEP_SUMMARY
+              echo "in the same migration. Add the ca_declared_money_triggers row there;" >> $GITHUB_STEP_SUMMARY
+              echo "a declaration in a later migration is a promise, not a declaration." >> $GITHUB_STEP_SUMMARY
+            fi
+            exit 1
+          fi
+
       # NO BAND-AIDS (CLAUDE.md 10.12, Dan 2026-09-07). 10.11 had already said a
       # detector is not a fix, in writing, and the day after the platform still
       # paid 558 payouts / 48,146.94 chips in seven days through repair

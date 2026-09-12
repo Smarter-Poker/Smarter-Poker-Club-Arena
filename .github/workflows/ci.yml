@@ -1093,6 +1093,10 @@ jobs:
         env:
           PGBIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/probe-departure-postgres.sh
+      - name: Standalone rake burns once and union rake stays banked
+        env:
+          PG17_BINDIR: /usr/lib/postgresql/17/bin
+        run: python3 scripts/dev/probe-standalone-rake-burn-pg17.py
       - name: Tournament reminder receipts, rollback and overlapping consumers
         env:
           PGBIN: /usr/lib/postgresql/17/bin

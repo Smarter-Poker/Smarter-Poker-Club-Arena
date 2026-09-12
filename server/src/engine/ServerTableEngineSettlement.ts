@@ -2651,7 +2651,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // bbj_atomic_payout_v2. In a single SECURITY DEFINER transaction it gates on
     // the hand (idempotent no-op on retry/restart), writes the durable
     // rake_records audit, credits the club_wallets accumulator, and routes the
-    // spendable rake (union rake_wallet OR standalone chip_treasury) via a
+    // rake (union rake_wallet OR standalone chip_retirement) via a
     // per-leg claim ledger, so a missing leg is re-driven WITHOUT double-crediting.
     // UNION MODEL UNCHANGED: the union still holds 100% of cash rake; the weekly
     // settlement still returns 90% to clubs (nets 10%).

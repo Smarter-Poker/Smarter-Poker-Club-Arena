@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { createServer, type Server } from 'node:http';
-import { loadLiveCss } from './lib/live-css';
-import { settleLayout } from './lib/settle-layout';
+import { loadLiveCss } from '../lib/live-css';
+import { settleLayout } from '../lib/settle-layout';
 
 let server: Server;
 let arena: string;

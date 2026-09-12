@@ -1,0 +1,9 @@
+{
+  "at": "2026-09-12T05:01:21.326697+00:00",
+  "reason": "Root current phase status advanced after draft seal. Reconstructed exact pre-update planning input bytes by reverting only the status/link delta and matched the recorded SHA256; preserve immutable source input here.",
+  "original_path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/baseline-planning/PROPOSED_EXECUTION_PHASES.json",
+  "snapshot": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/baseline-planning/consolidated-current-input-snapshots/PROPOSED_EXECUTION_PHASES.json",
+  "sha256": "83b04d482ab97c373f9255c9234d30ca5e08d3145407d7230b8cd62d19bd7716",
+  "sealed_packet_unchanged": true,
+  "no_phase_acceptance": true
+}

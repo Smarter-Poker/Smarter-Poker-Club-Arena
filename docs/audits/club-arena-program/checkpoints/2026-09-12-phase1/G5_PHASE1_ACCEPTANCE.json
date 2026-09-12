@@ -1,0 +1,36 @@
+{
+  "at": "2026-09-12T05:06:27.430097+00:00",
+  "decision_owner": "G8",
+  "decision": "ACCEPT G5 Phase1 research, recovered complete audit baseline and backlog-derived delivery plan. Begin execution under the accepted eight-phase G5 plan.",
+  "phase": 1,
+  "total_g5_phases": 8,
+  "phase1_complete": true,
+  "scope": "Audit/plan checkpoint only. Known defects, precise policy questions, conditional authority questions, retained safeguards/history, and postrepair verification remain open in their assigned delivery homes.",
+  "gates": {
+    "full_handoff_and_terminal_marker": "Verified earlier: complete600042-byte file and all8Rev4 prompts; preserve original full-file receipt.",
+    "research": "Accepted earlier G5 research gate, authoritative standards and existing architecture/recovery evidence retained.",
+    "existing_work_and_ownership": "Recovered shared clones/active branches/deployments/109backlog/216controls, original owners preserved, exact new writers acknowledged before edits.",
+    "actual_foundation_audit": "Assigned core wallet/ledger/routing/game lifecycle plus actual financial admission/trivia/gift/commerce/training boundaries classified using sealed source/runtime and explicit limits; no1045-body minimum or717blanket exclusion.",
+    "lossless_backlog": "1551 original current evidence objects,95core contracts,67G4 primary/40supplemental/299later,312Connected evidence keys/236contracts,14Diamond groups and additions,Life packages,25root contracts retain exact original dispositions and cause joins.",
+    "plan": "18 output-based units grouped into7 delivery milestones plus audit phase.201new home decisions resolve158older gaps+43new identities;9primary/secondary joins explicit. Every original control/status retained.",
+    "independent": "Review0052 plus ADD01/02/03/04 independently challenges skeleton, accepted additions, frozen root, final1551 consolidation and frozen input reference. Final recommendation ACCEPT; no substantive placement blocker."
+  },
+  "accepted_plan_artifacts": [
+    "work/g8/baseline-planning/consolidated-current-0001/INTEGRITY.json",
+    "work/g8/baseline-planning/consolidated-current-0001-INPUT_REFERENCE_ADDENDUM.json",
+    "work/g8/baseline-planning/consolidated-current-input-snapshots/PROPOSED_EXECUTION_PHASES.json"
+  ],
+  "execution_rules": [
+    "One specific acknowledged writer per changed file/authority; independent candidate reviewer differs from implementer.",
+    "Only actual consumed contract/policy/resource dependencies serialize work. Advance eligible next work during publication; ordinary RUNNING MTT need not wait for F03 launch.",
+    "No delivery phase complete until relevant original normal funded flow, durable receipt, failure/retry/role/restart/cleanup and exact served provenance pass.",
+    "All18MTT execution boundaries stay OPEN. No existing continuity or pure diagnostic success substitutes for source-to-destination next real accepted hand.",
+    "F03 exact financial/time authority and unavailable house/backup inputs constrain only affected work.",
+    "OriginalG07 has zero work; C12 qualification and human-content activation restrictions retained; no StageB global freeze.",
+    "G1\u20134/G6/G7 broader project release still waits for actual G5 foundation acceptance."
+  ],
+  "current_execution": "FWP03/04 independently accepted candidate PR4389 in protected CI; next normalMTT source/owner preflight and design proceeds. Eligible phase2\u20138 work follows exact interfaces; no whole-phase serialization inferred.",
+  "financial_foundation_accepted": false,
+  "g5_project_complete": false,
+  "seven_project_program_complete": false
+}

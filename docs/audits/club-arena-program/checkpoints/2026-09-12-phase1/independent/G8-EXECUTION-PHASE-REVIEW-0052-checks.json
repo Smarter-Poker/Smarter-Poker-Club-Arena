@@ -1,0 +1,1267 @@
+{
+  "checks": [
+    {
+      "check": "Candidate artifact CANDIDATE.md",
+      "pass": true
+    },
+    {
+      "check": "Candidate artifact CANDIDATE_DELIVERY_PHASES.json",
+      "pass": true
+    },
+    {
+      "check": "Candidate artifact CLOSED_BASELINE_BODY_GAPS.json",
+      "pass": true
+    },
+    {
+      "check": "Candidate artifact EXACT_DELIVERY_UNITS.json",
+      "pass": true
+    },
+    {
+      "check": "Candidate artifact FINITE_BASELINE_DECISIONS.json",
+      "pass": true
+    },
+    {
+      "check": "Candidate artifact FIRST_ELIGIBLE_AND_WAITING.json",
+      "pass": true
+    },
+    {
+      "check": "Candidate artifact ORIGINAL_REQUIREMENTS_AND_MTT18.json",
+      "pass": true
+    },
+    {
+      "check": "Candidate artifact PEER_CONTRACT_PLACEMENT.json",
+      "pass": true
+    },
+    {
+      "check": "Candidate artifact REFERENCES.json",
+      "pass": true
+    },
+    {
+      "check": "Candidate artifact STATUS.json",
+      "pass": true
+    },
+    {
+      "check": "Candidate artifact VERIFICATION.json",
+      "pass": true
+    },
+    {
+      "check": "Candidate artifact build_packet.py",
+      "pass": true
+    },
+    {
+      "check": "Pinned planning input core95",
+      "pass": true
+    },
+    {
+      "check": "Pinned planning input effective_core",
+      "pass": true
+    },
+    {
+      "check": "Pinned planning input core095_alternatives",
+      "pass": true
+    },
+    {
+      "check": "Pinned planning input g4_causes",
+      "pass": true
+    },
+    {
+      "check": "Pinned planning input g4_supplemental",
+      "pass": true
+    },
+    {
+      "check": "Pinned planning input root_causes",
+      "pass": true
+    },
+    {
+      "check": "Pinned planning input original109",
+      "pass": true
+    },
+    {
+      "check": "Pinned planning input original216",
+      "pass": true
+    },
+    {
+      "check": "Pinned planning input mtt",
+      "pass": true
+    },
+    {
+      "check": "Pinned planning input backlog_retry_overlay",
+      "pass": true
+    },
+    {
+      "check": "Pinned planning input diamond_sem004",
+      "pass": true
+    },
+    {
+      "check": "Pinned planning input life_addendum",
+      "pass": true
+    },
+    {
+      "check": "95 core unique homes",
+      "pass": true
+    },
+    {
+      "check": "15 unique units",
+      "pass": true
+    },
+    {
+      "check": "Root phase definition pin",
+      "pass": true
+    },
+    {
+      "check": "Proposed8 accepted count null",
+      "pass": true
+    },
+    {
+      "check": "Exact phase unit membership Contract integrity",
+      "pass": true
+    },
+    {
+      "check": "Exact phase core membership Contract integrity",
+      "pass": true
+    },
+    {
+      "check": "Exact phase unit membership Funded wallet and admission",
+      "pass": true
+    },
+    {
+      "check": "Exact phase core membership Funded wallet and admission",
+      "pass": true
+    },
+    {
+      "check": "Exact phase unit membership Accepted hand and occupancy",
+      "pass": true
+    },
+    {
+      "check": "Exact phase core membership Accepted hand and occupancy",
+      "pass": true
+    },
+    {
+      "check": "Exact phase unit membership MTT movement and clocks",
+      "pass": true
+    },
+    {
+      "check": "Exact phase core membership MTT movement and clocks",
+      "pass": true
+    },
+    {
+      "check": "Exact phase unit membership Configured tournament closure",
+      "pass": true
+    },
+    {
+      "check": "Exact phase core membership Configured tournament closure",
+      "pass": true
+    },
+    {
+      "check": "Exact phase unit membership Paid and promotional outcomes",
+      "pass": true
+    },
+    {
+      "check": "Exact phase core membership Paid and promotional outcomes",
+      "pass": true
+    },
+    {
+      "check": "Exact phase unit membership Financial truth and foundation proof",
+      "pass": true
+    },
+    {
+      "check": "Exact phase core membership Financial truth and foundation proof",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-015",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-082",
+      "pass": true
+    },
+    {
+      "check": "DU-SCOPE explicit preintegration_acceptance",
+      "pass": true
+    },
+    {
+      "check": "DU-SCOPE explicit deployment_dependent",
+      "pass": true
+    },
+    {
+      "check": "DU-SCOPE explicit disposition_rule",
+      "pass": true
+    },
+    {
+      "check": "DU-SCOPE explicit writer_rule",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-010",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-011",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-025",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-055",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-071",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-072",
+      "pass": true
+    },
+    {
+      "check": "DU-REPLAY explicit preintegration_acceptance",
+      "pass": true
+    },
+    {
+      "check": "DU-REPLAY explicit deployment_dependent",
+      "pass": true
+    },
+    {
+      "check": "DU-REPLAY explicit disposition_rule",
+      "pass": true
+    },
+    {
+      "check": "DU-REPLAY explicit writer_rule",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-016",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-017",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-018",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-031",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-032",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-039",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-043",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-051",
+      "pass": true
+    },
+    {
+      "check": "DU-JOURNAL explicit preintegration_acceptance",
+      "pass": true
+    },
+    {
+      "check": "DU-JOURNAL explicit deployment_dependent",
+      "pass": true
+    },
+    {
+      "check": "DU-JOURNAL explicit disposition_rule",
+      "pass": true
+    },
+    {
+      "check": "DU-JOURNAL explicit writer_rule",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-002",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-005",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-012",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-013",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-053",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-054",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-062",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-063",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-065",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-066",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-074",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-079",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-080",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-084",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-085",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-089",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-090",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-091",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-092",
+      "pass": true
+    },
+    {
+      "check": "DU-INTENT explicit preintegration_acceptance",
+      "pass": true
+    },
+    {
+      "check": "DU-INTENT explicit deployment_dependent",
+      "pass": true
+    },
+    {
+      "check": "DU-INTENT explicit disposition_rule",
+      "pass": true
+    },
+    {
+      "check": "DU-INTENT explicit writer_rule",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-022",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-052",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-056",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-057",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-058",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-059",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-060",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-061",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-067",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-068",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-069",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-070",
+      "pass": true
+    },
+    {
+      "check": "DU-CREDIT explicit preintegration_acceptance",
+      "pass": true
+    },
+    {
+      "check": "DU-CREDIT explicit deployment_dependent",
+      "pass": true
+    },
+    {
+      "check": "DU-CREDIT explicit disposition_rule",
+      "pass": true
+    },
+    {
+      "check": "DU-CREDIT explicit writer_rule",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-027",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-029",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-030",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-034",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-037",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-038",
+      "pass": true
+    },
+    {
+      "check": "DU-CASH explicit preintegration_acceptance",
+      "pass": true
+    },
+    {
+      "check": "DU-CASH explicit deployment_dependent",
+      "pass": true
+    },
+    {
+      "check": "DU-CASH explicit disposition_rule",
+      "pass": true
+    },
+    {
+      "check": "DU-CASH explicit writer_rule",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-048",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-049",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-064",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-075",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-077",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-078",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-086",
+      "pass": true
+    },
+    {
+      "check": "DU-IDENTITY explicit preintegration_acceptance",
+      "pass": true
+    },
+    {
+      "check": "DU-IDENTITY explicit deployment_dependent",
+      "pass": true
+    },
+    {
+      "check": "DU-IDENTITY explicit disposition_rule",
+      "pass": true
+    },
+    {
+      "check": "DU-IDENTITY explicit writer_rule",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-028",
+      "pass": true
+    },
+    {
+      "check": "DU-HAND explicit preintegration_acceptance",
+      "pass": true
+    },
+    {
+      "check": "DU-HAND explicit deployment_dependent",
+      "pass": true
+    },
+    {
+      "check": "DU-HAND explicit disposition_rule",
+      "pass": true
+    },
+    {
+      "check": "DU-HAND explicit writer_rule",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-036",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-040",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-047",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-050",
+      "pass": true
+    },
+    {
+      "check": "DU-OWED explicit preintegration_acceptance",
+      "pass": true
+    },
+    {
+      "check": "DU-OWED explicit deployment_dependent",
+      "pass": true
+    },
+    {
+      "check": "DU-OWED explicit disposition_rule",
+      "pass": true
+    },
+    {
+      "check": "DU-OWED explicit writer_rule",
+      "pass": true
+    },
+    {
+      "check": "DU-MTT explicit preintegration_acceptance",
+      "pass": true
+    },
+    {
+      "check": "DU-MTT explicit deployment_dependent",
+      "pass": true
+    },
+    {
+      "check": "DU-MTT explicit disposition_rule",
+      "pass": true
+    },
+    {
+      "check": "DU-MTT explicit writer_rule",
+      "pass": true
+    },
+    {
+      "check": "DU-LAUNCH explicit preintegration_acceptance",
+      "pass": true
+    },
+    {
+      "check": "DU-LAUNCH explicit deployment_dependent",
+      "pass": true
+    },
+    {
+      "check": "DU-LAUNCH explicit disposition_rule",
+      "pass": true
+    },
+    {
+      "check": "DU-LAUNCH explicit writer_rule",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-033",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-041",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-042",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-044",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-045",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-046",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-083",
+      "pass": true
+    },
+    {
+      "check": "DU-TERMINAL explicit preintegration_acceptance",
+      "pass": true
+    },
+    {
+      "check": "DU-TERMINAL explicit deployment_dependent",
+      "pass": true
+    },
+    {
+      "check": "DU-TERMINAL explicit disposition_rule",
+      "pass": true
+    },
+    {
+      "check": "DU-TERMINAL explicit writer_rule",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-001",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-004",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-073",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-076",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-081",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-087",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-088",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-093",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-094",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-095",
+      "pass": true
+    },
+    {
+      "check": "DU-REPORT explicit preintegration_acceptance",
+      "pass": true
+    },
+    {
+      "check": "DU-REPORT explicit deployment_dependent",
+      "pass": true
+    },
+    {
+      "check": "DU-REPORT explicit disposition_rule",
+      "pass": true
+    },
+    {
+      "check": "DU-REPORT explicit writer_rule",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-003",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-006",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-007",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-008",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-009",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-014",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-019",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-020",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-021",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-023",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-024",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-026",
+      "pass": true
+    },
+    {
+      "check": "Core retained fields G5-CAUSE-035",
+      "pass": true
+    },
+    {
+      "check": "DU-LEGACY explicit preintegration_acceptance",
+      "pass": true
+    },
+    {
+      "check": "DU-LEGACY explicit deployment_dependent",
+      "pass": true
+    },
+    {
+      "check": "DU-LEGACY explicit disposition_rule",
+      "pass": true
+    },
+    {
+      "check": "DU-LEGACY explicit writer_rule",
+      "pass": true
+    },
+    {
+      "check": "DU-BENEFIT explicit preintegration_acceptance",
+      "pass": true
+    },
+    {
+      "check": "DU-BENEFIT explicit deployment_dependent",
+      "pass": true
+    },
+    {
+      "check": "DU-BENEFIT explicit disposition_rule",
+      "pass": true
+    },
+    {
+      "check": "DU-BENEFIT explicit writer_rule",
+      "pass": true
+    },
+    {
+      "check": "155 placement rows 152 distinct",
+      "pass": true
+    },
+    {
+      "check": "original109 exact row count",
+      "pass": true
+    },
+    {
+      "check": "original216 exact row count",
+      "pass": true
+    },
+    {
+      "check": "Original G07 excluded",
+      "pass": true
+    },
+    {
+      "check": "No core G07 actionable mapping",
+      "pass": true
+    },
+    {
+      "check": "M01-M18 retained",
+      "pass": true
+    },
+    {
+      "check": "MTT no blanket F03 wait",
+      "pass": true
+    }
+  ],
+  "references": {
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-delivery-candidate-0002/CANDIDATE.md": "77333d030328f60605313390109c207339c213bcde465954677708a1d91fd9fd",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-delivery-candidate-0002/CANDIDATE_DELIVERY_PHASES.json": "335ca2364643162af8c900ee4b5178cf9f6b30680019fd42f0cfe16a80d22336",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-delivery-candidate-0002/CLOSED_BASELINE_BODY_GAPS.json": "0ca8abcf7042667b80612cd842cd1c11eb868b2cc00a97328ac9196f1c2c487a",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-delivery-candidate-0002/EXACT_DELIVERY_UNITS.json": "2c7fedf200821244bfa111b8afe7abd0b5094b71198f8ee20f9e63e85d34ac94",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-delivery-candidate-0002/FINITE_BASELINE_DECISIONS.json": "d11e9ce1e08f6e5293170c69568da34deca09d565966237c3dd1d8abcd66c8ea",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-delivery-candidate-0002/FIRST_ELIGIBLE_AND_WAITING.json": "5acea1097a7d83ab919d58450dac339a55a4ffe7964337aaa6ccd1adef2c0768",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-delivery-candidate-0002/ORIGINAL_REQUIREMENTS_AND_MTT18.json": "997748df002c6fd33ba31f6f4699d552e703e6723bdde63bfa9c03f12aafd3f9",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-delivery-candidate-0002/PEER_CONTRACT_PLACEMENT.json": "c5be681be127a8869f3d359f2d00e8c74d1455b4abd18786757b1be985e26de0",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-delivery-candidate-0002/REFERENCES.json": "1108be5ec88746b2ef07adcac0cb1c3f34687e1c3dd7d6b83d14884ab6ed50a8",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-delivery-candidate-0002/STATUS.json": "67beaa2e40d14d432af9a4b93ebee0ceb7c2d38cd1acc054652d8be9d00efbab",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-delivery-candidate-0002/VERIFICATION.json": "5aba81aca646d391727f0143b752d003a42983eeddfa5e4377129cfd8198edd2",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-delivery-candidate-0002/build_packet.py": "46dba9886914c050eed16abf61bf48394d29f184f29d8d42519c924d8482c8df",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/merged-phase1-plan-revision59/CORE_95_CAUSE_DISPOSITION_MAP.json": "9f0f49ae1c29c14f732ecebdc3b7017d6d50e3aa978d3cfd9e9585a09c550867",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/phase1-disposition-integration-04/EFFECTIVE_CORE_025_026_052_060.json": "f7b7d592100587f1915ea7d4bbfd86babceb97fcb5100636380a95fc5023f97e",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/phase1-disposition-integration-04/CORE095_BOUNDED_DELIVERY_QUALIFICATION.json": "9453afaf176a35a4fffe8ff63ca3d17374c3bf156d3091ff842a005ff1ba92d0",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/cause-disposition-phase-input/CAUSE_GROUPS_FINAL.json": "ed3c82b46adb4019376cb4f27a2112c35de556e8f011204459dce3cb9e1bbf9f",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/cause-disposition-phase-input/SUPPLEMENTAL_CAUSE_DISPOSITIONS_FINAL.json": "1fd6b60171be0fe99a018c6c9020a909c43b186d77f703a0ffacb81e3db96580",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/root-cause-disposition-0001/CAUSE_GROUPS.json": "e619045eb8d093d15e4e569acfff69838e8c9cd7c2d46884aa5ca8f7d179b63d",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-gate-inventory-0001/ORIGINAL_109_UNCHANGED.csv": "f3218daac4bd864f47297a13c3705335b890e62aceec3ba0a240ca63e815cbd3",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-gate-inventory-0001/ORIGINAL_216_UNCHANGED.csv": "13779f2c9a3b29d944fbe1d76a45dfeeddd6c770ad18e395a213eb6ed8a349c4",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-lifecycle/source-audit/mtt-wave-0001/ACCEPTANCE_BOUNDARY_MAP.json": "0930a80cb74a23cd5d571d87cad3c4a7b1d236c7ad7bc109f02b5656386d187c",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/phase1-disposition-integration-05/CB10_EFFECTIVE_GROUP_OVERLAY.json": "44832ce8dfb27e5599e1b7f51c5cce9dd66a5effab8d1dc143cd2a83ed4cbe2f",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/phase1-disposition-integration-05/DIAMOND_CONNECTED_EFFECTIVE_QUALIFICATIONS.json": "655e26bba1d0bb40a51f4bdb7b06bf6242db465ec293bb0e7dd5a3edb33b93d3",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-lifecycle/source-audit/cause-disposition-0001-addendum-0002/HANDOFF.json": "8ff708b4a1cd239f5f6a80b132b30415d1d2f5bbc8d919b3af2f44b0900cfde9",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/baseline-planning/PROPOSED_EXECUTION_PHASES.json": "7073614b0a2fa8f5f0b3fbb5a570c137a99c1e584f9585f63851ff5c880e5c74",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/baseline-planning/FINITE_BASELINE_DECISIONS_CURRENT.json": "ac24e3364669ee6d6396d172f2341a44ee8bbfc6adf2e091eee5435def62e9d7",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-backlog-reconciliation/outputs/milestone-placement-0001/HANDOFF.md": "aa33d5afc024fdbd961901da33032dab8ae4e62481b16e088fc263df61dc368f",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-backlog-reconciliation/outputs/milestone-placement-0001/VERIFICATION.json": "24354214dba6c5744c7a7a901599c9c0d13f19350c843f561b11d2947e252829",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-backlog-reconciliation/outputs/milestone-placement-0001/BOUNDARIES.json": "dea1170ca48017a487698f96d27c8236505d19fe718cd28b3be3f0ff7ed2006e",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-backlog-reconciliation/outputs/milestone-placement-0001/COMMERCE-0050-QUALIFICATIONS.json": "3c93e074cb9a28220467c6d116f2c95ab4fe8f11af67aedecdbd9e38bdb0d28c",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-backlog-reconciliation/outputs/milestone-placement-0001/MANDATORY-G4-OVERLAY.json": "d5a9b7ad6b8635173e88973e567e69d8548915b0a9f68d9226c24067ec7a7722"
+  },
+  "placement_counts": {
+    "core_contracts": {
+      "rows": 95,
+      "distinct": 95,
+      "multiple_homes": {}
+    },
+    "g4_contracts": {
+      "rows": 40,
+      "distinct": 39,
+      "multiple_homes": {
+        "G4-C48": [
+          "DU-REPORT",
+          "DU-BENEFIT"
+        ]
+      }
+    },
+    "root_contracts": {
+      "rows": 20,
+      "distinct": 18,
+      "multiple_homes": {
+        "G8-CAUSE-03": [
+          "DU-SCOPE",
+          "DU-REPLAY"
+        ],
+        "G8-CAUSE-05": [
+          "DU-REPLAY",
+          "DU-INTENT"
+        ]
+      }
+    }
+  },
+  "unplaced_existing_groups": {
+    "g4_causes": [
+      {
+        "group_id": "G4-C01",
+        "disposition": "Concrete proposed repair deliverable; G8 baseline/ownership/acceptance gates remain",
+        "deliverable": "Make the payout-floor predicate and rejection explanation match the recovered strictly-greater-than floor."
+      },
+      {
+        "group_id": "G4-C02",
+        "disposition": "Exact policy or applicability/proof prerequisite before dependent repair",
+        "deliverable": "Recover and version the multiple-qualifier/tie contract, then deliver recipient allocation for that contract."
+      },
+      {
+        "group_id": "G4-C03",
+        "disposition": "Exact policy or applicability/proof prerequisite before dependent repair",
+        "deliverable": "Replace the superseded main25% pivot only within a complete versioned approved allocation contract."
+      },
+      {
+        "group_id": "G4-C04",
+        "disposition": "Exact policy or applicability/proof prerequisite before dependent repair",
+        "deliverable": "Use one validated supported-variant domain for collection and qualification; refuse unsupported input before pricing if caller closure permits it."
+      },
+      {
+        "group_id": "G4-C08",
+        "disposition": "Concrete proposed repair deliverable; G8 baseline/ownership/acceptance gates remain",
+        "deliverable": "Return queued only after exact durable claim is confirmed; preserve unknown claim outcome explicitly."
+      },
+      {
+        "group_id": "G4-C09",
+        "disposition": "Concrete proposed repair deliverable; G8 baseline/ownership/acceptance gates remain",
+        "deliverable": "Do not close an already accepted jackpot obligation solely on permission/deployment failure."
+      },
+      {
+        "group_id": "G4-C10",
+        "disposition": "Concrete proposed repair deliverable; G8 baseline/ownership/acceptance gates remain",
+        "deliverable": "Deliver recipient notifications from committed result using durable event identity and catch-up."
+      },
+      {
+        "group_id": "G4-C11",
+        "disposition": "Concrete proposed repair deliverable; G8 baseline/ownership/acceptance gates remain",
+        "deliverable": "Normalize persisted hand-winner, losing-hand jackpot recipient, hitting club and share role semantics."
+      },
+      {
+        "group_id": "G4-C12",
+        "disposition": "Concrete proposed repair deliverable; G8 baseline/ownership/acceptance gates remain",
+        "deliverable": "Carry original paid pool and authorized event scope into jackpot announcements."
+      },
+      {
+        "group_id": "G4-C15",
+        "disposition": "Exact policy or applicability/proof prerequisite before dependent repair",
+        "deliverable": "Select one approved reporting/settlement window contract and use it consistently."
+      },
+      {
+        "group_id": "G4-C20",
+        "disposition": "Concrete proposed repair deliverable; G8 baseline/ownership/acceptance gates remain",
+        "deliverable": "Represent Mini already_paid as original committed result instead of refused eligibility."
+      },
+      {
+        "group_id": "G4-C22",
+        "disposition": "Concrete proposed repair deliverable; G8 baseline/ownership/acceptance gates remain",
+        "deliverable": "Carry committed recipient destination, parked state and occupancy into payout reflection."
+      },
+      {
+        "group_id": "G4-C25",
+        "disposition": "Concrete proposed repair deliverable; G8 baseline/ownership/acceptance gates remain",
+        "deliverable": "Acknowledge condition alerts only after confirmed identity/current context write; retain failed refresh for retry."
+      },
+      {
+        "group_id": "G4-C27",
+        "disposition": "Concrete proposed repair deliverable; G8 baseline/ownership/acceptance gates remain",
+        "deliverable": "Use the same winner/board eligibility facts for main near-miss explanations as for hit detection."
+      },
+      {
+        "group_id": "G4-C30",
+        "disposition": "Concrete proposed repair deliverable; G8 baseline/ownership/acceptance gates remain",
+        "deliverable": "Exclude accepted atomic hands from historical equal-weight requeue and recover only approved historical source debt."
+      },
+      {
+        "group_id": "G4-C32",
+        "disposition": "Concrete proposed repair deliverable; G8 baseline/ownership/acceptance gates remain",
+        "deliverable": "Use immutable original/private jackpot pool for accepted first execution and any retained historical recovery."
+      },
+      {
+        "group_id": "G4-C33",
+        "disposition": "Exact policy or applicability/proof prerequisite before dependent repair",
+        "deliverable": "State detector coverage against immutable owed amount and exact payment-source identities, without treating equal amounts as semantic duplicates."
+      },
+      {
+        "group_id": "G4-C35",
+        "disposition": "Exact policy or applicability/proof prerequisite before dependent repair",
+        "deliverable": "Bind Seven Deuce payer/beneficiary/amount facts to accepted hand and deliver only committed evidence."
+      },
+      {
+        "group_id": "G4-C38",
+        "disposition": "Exact policy or applicability/proof prerequisite before dependent repair",
+        "deliverable": "Bind postcommit stack refresh/reflection to original occupancy and generation or prove transition exclusion."
+      },
+      {
+        "group_id": "G4-C39",
+        "disposition": "Concrete proposed repair deliverable; G8 baseline/ownership/acceptance gates remain",
+        "deliverable": "Recover the original paid rabbit result or authorized compensation after offer-memory loss without repurchase."
+      },
+      {
+        "group_id": "G4-C40",
+        "disposition": "Exact policy or applicability/proof prerequisite before dependent repair",
+        "deliverable": "Bind rabbit purchase to the displayed quote/version under the approved effective-price rule."
+      },
+      {
+        "group_id": "G4-C45",
+        "disposition": "Exact policy or applicability/proof prerequisite before dependent repair",
+        "deliverable": "Use original table/tenant/asset/format context in delayed historical projection or establish its immutability."
+      },
+      {
+        "group_id": "G4-C51",
+        "disposition": "Exact policy or applicability/proof prerequisite before dependent repair",
+        "deliverable": "Apply the approved positive-price/granularity rule consistently to partial insurance terms."
+      },
+      {
+        "group_id": "G4-C60",
+        "disposition": "Exact policy or applicability/proof prerequisite before dependent repair",
+        "deliverable": "Price only the approved legal Pineapple insured event at its allowed discard state."
+      },
+      {
+        "group_id": "G4-C62",
+        "disposition": "Concrete proposed repair deliverable; G8 baseline/ownership/acceptance gates remain",
+        "deliverable": "Remove blanket no-execution assumption for503/PGRST001 and gate retries by original operation recoverability."
+      },
+      {
+        "group_id": "G4-C63",
+        "disposition": "Exact policy or applicability/proof prerequisite before dependent repair",
+        "deliverable": "Bound verified-token cache by processed expiry and explicit allowed clock leeway, retaining exact-token verification."
+      },
+      {
+        "group_id": "G4-C65",
+        "disposition": "Concrete proposed repair deliverable; G8 baseline/ownership/acceptance gates remain",
+        "deliverable": "Require approved current membership status for initial private club-channel access."
+      },
+      {
+        "group_id": "G4-C66",
+        "disposition": "Exact policy or applicability/proof prerequisite before dependent repair",
+        "deliverable": "Resolve and consistently enforce approved unknown-bankroll risk-gate behavior across Rotator/Recurring/rebuy."
+      }
+    ],
+    "g4_supplemental": [
+      {
+        "group_id": "G4-S01",
+        "disposition": "Existing G5 CORE-OBS-028, not new cause",
+        "deliverable": "Join declared insurance premium/payout to actually applied stack/inflow and retained unpaid liability."
+      },
+      {
+        "group_id": "G4-S02",
+        "disposition": "Missing exact house insurance contract",
+        "deliverable": "Define covered pot/half/win/loss/push and accepted odds provenance before dependent pricing repair."
+      },
+      {
+        "group_id": "G4-S03",
+        "disposition": "Original accepted intent and derivative recovery proof",
+        "deliverable": "Recover consent/insurance/facts from original durable source; never ordinary single-run fallback after financial credit."
+      },
+      {
+        "group_id": "G4-S04",
+        "disposition": "Existing accepted-hand proof join",
+        "deliverable": "Map natural hand identity, original opening and requested-versus-returned stacks to current G5 guards/restart receipt."
+      },
+      {
+        "group_id": "G4-S05",
+        "disposition": "Existing lifecycle authority/protocol proof join",
+        "deliverable": "Resolve supported verified:false and post-await lifecycle/maintenance entry applicability using current owner roots."
+      },
+      {
+        "group_id": "G4-S06",
+        "disposition": "Existing snapshot/shutdown owner proof",
+        "deliverable": "Join snapshot completion and projection start/stop ordering to existing lifecycle recovery receipts."
+      },
+      {
+        "group_id": "G4-S07",
+        "disposition": "Existing drill applicability and operator authority proof",
+        "deliverable": "Define the authorized real-chip drill scope and match its actual interrupted operation to required recovery proof."
+      },
+      {
+        "group_id": "G4-S08",
+        "disposition": "Existing CORE-OBS-035 retained source reconstruction",
+        "deliverable": "Establish permanent sufficient original source/receipt retention for allowed replay and financial narrative."
+      },
+      {
+        "group_id": "G4-S09",
+        "disposition": "Current-affiliation reporting contract question",
+        "deliverable": "Bind derivative home-club/tournament allocation to approved historical scope or explicitly label current-affiliation reporting."
+      },
+      {
+        "group_id": "G4-S10",
+        "disposition": "PS LEASE existing ownership; conditional protocol question",
+        "deliverable": "Resolve absent-row delayed claim/current generation reuse against exact row/advisory lock protocol and original caller generation."
+      },
+      {
+        "group_id": "G4-S11",
+        "disposition": "Missing approved read visibility boundary",
+        "deliverable": "Resolve public versus protected tournament/Spin state payload and enforce its approved audience where needed."
+      },
+      {
+        "group_id": "G4-S12",
+        "disposition": "Bounded G6 delivery and replay contract",
+        "deliverable": "Provide request-scoped replay completion and authoritative financial catch-up across multiple sockets/tabs."
+      },
+      {
+        "group_id": "G4-S13",
+        "disposition": "Operational configuration/proof question",
+        "deliverable": "Validate bounded timeout/transport configuration and relevant close/backpressure contract."
+      },
+      {
+        "group_id": "G4-S14",
+        "disposition": "Planner-time occupancy proof question",
+        "deliverable": "Bind original planner occupancy/engine generation to deferred voluntary commands if that is approved intent."
+      },
+      {
+        "group_id": "G4-S15",
+        "disposition": "Concurrent configuration/version proof question",
+        "deliverable": "Make owned settings/status updates preserve concurrent approved configuration and lifecycle intent."
+      },
+      {
+        "group_id": "G4-S16",
+        "disposition": "Behavioral risk/selection policy question",
+        "deliverable": "Resolve victim/priority/stake assignment/buy-in helper contract using actual original consumers before changing behavior."
+      },
+      {
+        "group_id": "G4-S17",
+        "disposition": "Concrete outcome-language/acknowledgement repair candidate",
+        "deliverable": "Distinguish accepted deferred request, completed operation and partial committed batch in returned counts/metrics."
+      },
+      {
+        "group_id": "G4-S18",
+        "disposition": "Derivative retention and visibility disposition",
+        "deliverable": "Retain beats as derivative operational history; provide host-specific unavailable/freshness semantics where required."
+      },
+      {
+        "group_id": "G4-S19",
+        "disposition": "Dormant/manual provisioning applicability",
+        "deliverable": "Recover any active caller and original approved horse creation/funding receipt before retiring or repairing split provisioning."
+      },
+      {
+        "group_id": "G4-S20",
+        "disposition": "Session risk-accounting proof question",
+        "deliverable": "Scope investment to original occupancy/session and distinguish partial history from complete investment."
+      },
+      {
+        "group_id": "G4-S21",
+        "disposition": "Waitlist participant classification question",
+        "deliverable": "Classify queued users independently of the currently seated horse set."
+      },
+      {
+        "group_id": "G4-S22",
+        "disposition": "Original sit-out reason/occupancy recovery question",
+        "deliverable": "Recover only owned due breaks and keep failed restore retryable; preserve intentional/disconnect sit-out."
+      },
+      {
+        "group_id": "G4-S23",
+        "disposition": "Seat-change intent and outcome proof question",
+        "deliverable": "Bind original stay/destination where required and distinguish planned status from completed transfer; retain failed-intent retry."
+      },
+      {
+        "group_id": "G4-S24",
+        "disposition": "Historical entry revival applicability question",
+        "deliverable": "Prove historical/refunded/withdrawn registration cannot become a newly funded seat without valid entitlement."
+      },
+      {
+        "group_id": "G4-S25",
+        "disposition": "Funded pending-seat recovery applicability",
+        "deliverable": "Identify durable owner of committed registration when caught seat conflict returns seat_taken."
+      },
+      {
+        "group_id": "G4-S26",
+        "disposition": "Creator original request/replay proof question",
+        "deliverable": "Recover original event creation identity/payload after ambiguous reply or progressed current event."
+      },
+      {
+        "group_id": "G4-S27",
+        "disposition": "Actual numeric domain proof join",
+        "deliverable": "Map every reached producer amount domain to current parent/wallet/escrow bounds and exact cent arithmetic."
+      },
+      {
+        "group_id": "G4-S28",
+        "disposition": "Guarantee selector versus funded liability question",
+        "deliverable": "Keep nominal headcount top-up selection distinct from actual prize/bounty/ticket/overlay funding."
+      },
+      {
+        "group_id": "G4-S29",
+        "disposition": "Role and candidate policy applicability",
+        "deliverable": "Resolve approved membership/status/union authority and preserve final write authorization."
+      },
+      {
+        "group_id": "G4-S30",
+        "disposition": "Aggregate waitlist hold concurrency question",
+        "deliverable": "Prove table capacity and per-user simultaneous holds serialize at an actual authoritative boundary."
+      },
+      {
+        "group_id": "G4-S31",
+        "disposition": "Cashout authority/asset receipt proof join",
+        "deliverable": "Bind original admin authority and exact asset/economic result to immutable occupancy closeout."
+      },
+      {
+        "group_id": "G4-S32",
+        "disposition": "Action cache/unknown result proof question",
+        "deliverable": "Keep ephemeral action cache distinct from original action-context acceptance and unknown500 result."
+      },
+      {
+        "group_id": "G4-S33",
+        "disposition": "Selective reveal input clarification",
+        "deliverable": "Reject malformed supplied selective-card input rather than silently selecting full-show if contract requires selection."
+      },
+      {
+        "group_id": "G4-S34",
+        "disposition": "Action-preview wake authorization question",
+        "deliverable": "Decide whether authenticated nonviewer may trigger engine wake through actions preview."
+      },
+      {
+        "group_id": "G4-S35",
+        "disposition": "Concrete original-route repair candidate",
+        "deliverable": "Allow the existing zero-additional-seed reactivation contract through the Hub route while retaining full SQL funding/source authorization."
+      },
+      {
+        "group_id": "G4-S36",
+        "disposition": "Existing Connected cause; original operation receipt repair input",
+        "deliverable": "Carry one actor/club/action/cycle/payload operation identity through panel, route and original SQL result."
+      },
+      {
+        "group_id": "G4-S37",
+        "disposition": "Stale-scope client result question",
+        "deliverable": "Fence overlapping Spin state loads by current club/request generation."
+      },
+      {
+        "group_id": "G4-S38",
+        "disposition": "Original reserve-owner and deactivation liability proof",
+        "deliverable": "Bind pending Spin liabilities and activation/deactivation cycle to original owner, preserving current configuration writes."
+      },
+      {
+        "group_id": "G4-S39",
+        "disposition": "Seed evidence retention proof/repair input",
+        "deliverable": "Retain immutable original seed/activation/cycle/source receipt sufficient to reconstruct funds and obligations."
+      },
+      {
+        "group_id": "G4-S40",
+        "disposition": "Installment policy and caller applicability question",
+        "deliverable": "Resolve sub-chip remaining-seed installment treatment within existing approved repayment policy."
+      }
+    ],
+    "root_causes": [
+      {
+        "group_id": "G8-CAUSE-04",
+        "disposition": "qualified atomicity and policy question",
+        "deliverable": "Establish approved opening grant floor; if applicable, enforce it in the serialized debit and retain original operation."
+      },
+      {
+        "group_id": "G8-CAUSE-11",
+        "disposition": "qualified ownership question",
+        "deliverable": "Verify recovery monitor reference ownership; if defect, give recovery its own retained generation/ref instead of consuming consumer references."
+      },
+      {
+        "group_id": "G8-CAUSE-12",
+        "disposition": "qualified ownership question",
+        "deliverable": "Bind shared recovery factory installation/removal to its owner/generation if actual shared registration topology requires it."
+      },
+      {
+        "group_id": "G8-CAUSE-13",
+        "disposition": "join existing cause",
+        "deliverable": "Use Backlog CAUSE01 startup/teardown generation deliverable; do not open another App-only repair."
+      },
+      {
+        "group_id": "G8-CAUSE-14",
+        "disposition": "join safeguard and bookkeeping cause",
+        "deliverable": "Use Backlog CAUSE03/44; keep financial replay categorically refused and report refused/unavailable honestly."
+      },
+      {
+        "group_id": "G8-CAUSE-15",
+        "disposition": "retain scope evidence",
+        "deliverable": "Preserve actual Trade/classic/global cashier route ownership and all134 routes in audit inventory."
+      },
+      {
+        "group_id": "G8-CAUSE-22",
+        "disposition": "qualified order/acknowledgment question",
+        "deliverable": "Use current waitlist authority for ordering and acknowledged leave/promotion; correct count-plus-one/zero-row handling only where constraints/dispatcher do not provide contract."
+      }
+    ]
+  }
+}

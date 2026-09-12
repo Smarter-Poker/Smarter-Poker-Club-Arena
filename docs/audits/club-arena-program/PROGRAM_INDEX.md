@@ -1,5 +1,7 @@
 # Club Arena Program Coordination
 
+> Current checkpoint: [G5 Phase 1 acceptance and eight-phase execution plan](checkpoints/2026-09-12-phase1/README.md). The intake below is historical; current financial foundation and seven-project acceptance remain incomplete.
+
 Revision 4 adopted 2026-09-11T20:48:10.974806+00:00. G8 is the sole writer of this index. Main coordination task: FULL CLUB ARENA AUDIT, `01a0908a-36f9-7042-b4a2-02fb14d5a53e`.
 
 The current coordinator-owned draft is `/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/program-records/`. The proposed repository location is `docs/audits/club-arena-program/` on branch `agent/g8-rev4/docs/program-coordination`, based on `11a37306788567e9b60d6ac1ab32455b865de5c1` in `/Users/smarter.poker/Documents/.agent-trees/club-arena/g8-rev4-program`. These records are an additive coordination layer over the existing canonical technical registers. They are not a second repair queue or release authority. At this revision the proposed repository directory has not been populated or committed. Independent document review requested changes; this is the corrected candidate pending focused recheck. It is not integrated or published. Publication status must be updated from evidence.

@@ -11,6 +11,7 @@ on:
       - tests/operations/fixture-seed.test.mjs
       - tests/operations/fixture-auth-bootstrap.test.mjs
       - tests/operations/fixture-service-role-boundary.test.mjs
+      - tests/operations/fixture-cron-provider.test.mjs
       - tests/operations/fixture-supervisor.test.mjs
       - tests/operations/fixture-database-owner.test.mjs
       - tests/operations/fixture-auth.test.mjs
@@ -48,7 +49,7 @@ jobs:
       - name: Check financial route and fixture ownership boundaries
         run: |
           node --test operations/release/fixture/actors.test.mjs operations/release/fixture/financial-route-phase.test.mjs tests/operations/financial-checkpoint-observer.test.mjs tests/operations/financial-topup-verifier.test.mjs tests/operations/financial-insurance-verifier.test.mjs tests/operations/fixture-runtime-files.test.mjs tests/operations/financial-route-suite.test.mjs tests/operations/component-source-contract.test.mjs tests/operations/fixture-seed.test.mjs
-          node --test tests/operations/fixture-auth-bootstrap.test.mjs tests/operations/fixture-service-role-boundary.test.mjs
+          node --test tests/operations/fixture-auth-bootstrap.test.mjs tests/operations/fixture-service-role-boundary.test.mjs tests/operations/fixture-cron-provider.test.mjs
           node --test tests/operations/fixture-supervisor.test.mjs tests/operations/fixture-database-owner.test.mjs tests/operations/fixture-auth.test.mjs tests/operations/fixture-gateway.native.test.mjs tests/operations/fixture-realtime-launcher.test.mjs tests/operations/fixture-realtime-listener.test.mjs
           node --test tests/operations/fixture-native-diagnostics.test.mjs
           python3 tests/operations/native-component-semantics.test.py

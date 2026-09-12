@@ -1,3 +1,9 @@
+import {
+  cronPostgresArguments,
+  installFixtureCron,
+  assertFixtureCronCatalog,
+  assertFixtureCronMetadataApi,
+} from './cron-provider.mjs';
 // Real binaries/protocols in an internal-network fixture, with a separate peer.
 // This deliberately does not emit a product semantic certificate.
 import assert from 'node:assert/strict';
@@ -302,7 +308,8 @@ async function services() {
     '-c',
     'max_wal_senders=20',
     '-c',
-    'shared_preload_libraries=pg_stat_statements',
+    'shared_preload_libraries=pg_stat_statements,pg_cron',
+    ...cronPostgresArguments,
     ...managedPostgresArguments,
   ]);
   stage = 'postgresql-ready';
@@ -334,6 +341,8 @@ async function services() {
   await bootstrap.connect();
   stage = 'postgresql-bootstrap-roles';
   await bootstrap.query(serviceRoleBootstrapSql(password));
+  stage = 'postgresql-native-cron-install';
+  await installFixtureCron(bootstrap);
   await databaseOwner.end(bootstrap);
   const db = databaseOwner.own(
     new pg.Client({
@@ -345,6 +354,8 @@ async function services() {
   await db.connect();
   let bridge, gateway;
   try {
+    stage = 'postgresql-native-cron-metadata';
+    const cron = await assertFixtureCronMetadataApi(db);
     stage = 'postgresql-slot-identity';
     const slotIdentity = await db.query(`
       SELECT current_user = 'postgres' AND session_user = 'postgres' AS identity,
@@ -393,9 +404,9 @@ async function services() {
     }
     stage = 'postgresql-extension-inventory';
     const extensions = await db.query(
-      "SELECT extname FROM pg_extension WHERE extname IN ('dblink','pg_stat_statements','pg_trgm','pgcrypto','uuid-ossp','vector')"
+      "SELECT extname FROM pg_extension WHERE extname IN ('dblink','pg_stat_statements','pg_trgm','pgcrypto','uuid-ossp','vector','pg_cron')"
     );
-    assert.equal(extensions.rowCount, 6);
+    assert.equal(extensions.rowCount, 7);
     stage = 'gotrue-genuine-migrations-and-mfa';
     const authEnv = {
       GOTRUE_API_HOST: '127.0.0.1',
@@ -944,11 +955,13 @@ async function services() {
     const serviceRoles = await assertNativeServiceRoleBoundary(db);
     stage = 'managed-postgres-event-trigger-boundary';
     const managedPostgres = await assertManagedPostgresBoundary(db);
+    await assertFixtureCronCatalog(db);
     console.log(
       JSON.stringify({
         scope: 'native-service-smoke',
         postgres: '17.11',
-        extensions: 6,
+        extensions: 7,
+        cron,
         auth: '2.196.0',
         mfa: 'aal2',
         ledger_attribution: 'banned-without-session',

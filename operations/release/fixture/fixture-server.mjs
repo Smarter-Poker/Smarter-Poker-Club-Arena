@@ -1,3 +1,8 @@
+import {
+  cronPostgresArguments,
+  installFixtureCron,
+  assertFixtureCronCatalog,
+} from './cron-provider.mjs';
 import assert from 'node:assert/strict';
 import { spawn, execFile } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -634,7 +639,8 @@ async function start(args) {
       '-c',
       'max_wal_senders=20',
       '-c',
-      'shared_preload_libraries=pg_stat_statements',
+      'shared_preload_libraries=pg_stat_statements,pg_cron',
+      ...cronPostgresArguments,
       ...managedPostgresArguments,
     ]);
     await supervisor.until(async () => {
@@ -672,6 +678,8 @@ async function start(args) {
     );
     await db.connect();
     await db.query(serviceRoleBootstrapSql(secrets.databasePassword));
+    stage = 'postgresql-native-cron-install';
+    await installFixtureCron(db);
     await supervisor.databaseOwner.end(db);
     db = supervisor.databaseOwner.own(new pg.Client({ ...connection, database }));
     await db.connect();
@@ -731,6 +739,7 @@ async function start(args) {
     ]);
     const applicationOwner = await assertApplicationOwnerBoundary(db);
     await assertFixtureAuthPlatformHelpers(db);
+    await assertFixtureCronCatalog(db);
     await assertFixtureAuthPlatformWriteDenied(db);
     await supervisor.start('auth', '/usr/local/bin/auth', ['serve'], env.auth);
     await supervisor.until(() => health('http://127.0.0.1:9999/health'));

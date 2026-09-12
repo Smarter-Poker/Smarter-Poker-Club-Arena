@@ -79,7 +79,7 @@ RUN test "$(dpkg --print-architecture)" = amd64 \
 
 WORKDIR /opt/qualification
 # These are trusted, reviewed runtime files, never supplied by a candidate archive.
-COPY fixture-server.mjs runtime-files.mjs gateway.mjs auth-fixture.mjs auth-bootstrap-proof.mjs service-role-boundary.mjs actors.mjs financial-route-phase.mjs seed-fixture.mjs native-smoke.mjs observation-bridge.mjs /opt/qualification/runtime/
+COPY fixture-server.mjs runtime-files.mjs gateway.mjs auth-fixture.mjs auth-bootstrap-proof.mjs service-role-boundary.mjs actors.mjs financial-route-phase.mjs seed-fixture.mjs native-smoke.mjs observation-bridge.mjs cron-provider.mjs /opt/qualification/runtime/
 RUN node --input-type=module -e "import {adaptRealtimeLauncher,adaptRealtimeConfiguration} from '/opt/qualification/runtime/fixture-server.mjs'; await adaptRealtimeLauncher(); await adaptRealtimeConfiguration();" \
     && printf '#!/bin/sh\nexec /usr/local/bin/node /opt/qualification/runtime/fixture-server.mjs "$@"\n' > /usr/local/bin/fixture-server \
     && chmod 0555 /usr/local/bin/fixture-server \
@@ -95,11 +95,29 @@ FROM postgres-runtime AS supautils-builder
 USER root
 ADD --checksum=sha256:36c758bd7facda65e1c8ce4a59ebf714d36f3054a2d898a1e8d53cae37e71bec https://codeload.github.com/supabase/supautils/tar.gz/e35f8affc4467202ff0d98f8dd14cb955bc13c75 /tmp/supautils.tar.gz
 RUN apt-get update -o APT::Update::Error-Mode=any \
-    && apt-get install -y --no-install-recommends build-essential libicu-dev libxml2-dev postgresql-server-dev-17=17.11-0+deb13u1 \
+    && apt-get install -y --no-install-recommends build-essential patch libicu-dev libxml2-dev postgresql-server-dev-17=17.11-0+deb13u1 \
     && mkdir /tmp/supautils \
     && tar -xzf /tmp/supautils.tar.gz --strip-components=1 -C /tmp/supautils \
     && make -C /tmp/supautils PG_CONFIG=/usr/lib/postgresql/17/bin/pg_config \
     && test -s /tmp/supautils/supautils.so
 
+# Real pg_cron 1.6.4 with the official Supabase heap-table patch. Its upstream
+# control version is 1.6; Supabase's schema-identical alignment migration names
+# that same SQL schema 1.6.4. This single-version fixture retains that provenance.
+FROM supautils-builder AS cron-builder
+ADD --checksum=sha256:d89bcf7197f8b883ac1726ece0fbd72305e91dfa149f69d95e003a3eb6a7dcfd https://codeload.github.com/citusdata/pg_cron/tar.gz/9490f9cc9803f75105f2f7d89839a998f011f8d8 /tmp/pg-cron.tar.gz
+ADD --checksum=sha256:47134f2c718dfb6bdad59da4fde12af4fb82db1f7725c02729aaf7521392bc0c https://raw.githubusercontent.com/supabase/postgres/18464f5d928cc2bfb2f9d5b018894d808f5c705f/nix/ext/pg_cron/pg_cron-heap-tables.patch /tmp/pg-cron-heap.patch
+RUN mkdir /tmp/pg-cron \
+    && tar -xzf /tmp/pg-cron.tar.gz --strip-components=1 -C /tmp/pg-cron \
+    && cd /tmp/pg-cron \
+    && patch --batch --fuzz=0 -p1 < /tmp/pg-cron-heap.patch \
+    && make PG_CONFIG=/usr/lib/postgresql/17/bin/pg_config \
+    && make PG_CONFIG=/usr/lib/postgresql/17/bin/pg_config DESTDIR=/tmp/cron-install install \
+    && test -s /tmp/cron-install/usr/lib/postgresql/17/lib/pg_cron.so \
+    && sed -i "s/^default_version = '1.6'$/default_version = '1.6.4'/" /tmp/cron-install/usr/share/postgresql/17/extension/pg_cron.control \
+    && printf '%s\n' '-- Alignment migration: 1.6 and 1.6.4 are schema-identical.' > /tmp/cron-install/usr/share/postgresql/17/extension/pg_cron--1.6--1.6.4.sql
+
 FROM postgres-runtime
+COPY --from=cron-builder --chmod=0555 /tmp/cron-install/usr/lib/postgresql/17/lib/pg_cron.so /usr/lib/postgresql/17/lib/pg_cron.so
+COPY --from=cron-builder /tmp/cron-install/usr/share/postgresql/17/extension/pg_cron* /usr/share/postgresql/17/extension/
 COPY --from=supautils-builder --chmod=0555 /tmp/supautils/supautils.so /usr/lib/postgresql/17/lib/supautils.so

@@ -83,6 +83,8 @@ function fixture() {
     ],
   ];
   final.insurance = [[id(12), id(4), '12', '200', '0', '-12', 'true', 'club', id(2)]];
+  final.banks = [['club', id(2), id(13), '12']];
+  final.ledger.push([id(14), 'table_stack', id(1), 'insurance_bank', id(13), '12', 'insurance', null]);
   const rows = [initial, initial, accepted, accepted, offered, offered, offered, final].map((r) =>
     structuredClone(r)
   );
@@ -91,8 +93,9 @@ function fixture() {
     hand_number: hand,
     ...(i < 7 ? { actor_id: i < 4 ? id(3) : id(4) } : {}),
   }));
-  entries[4].offer = { table_id: id(1), hand_number: hand, offers: [{ playerId: id(4) }] };
-  entries[7].event = { type: 'hand_complete', table_id: id(1), hand_number: hand };
+  entries[4].offer = { type: 'insurance_offers', table_id: id(1), hand_number: hand, street: 'turn', offers: [{ playerId: id(4), fullPremium: 12, fullInsuredAmount: 200 }] };
+  entries[6].response = { success: true, status: 'accepted', premium: 12, insuredAmount: 200 };
+  entries[7].event = { type: 'hand_complete', table_id: id(1), hand_number: hand, winner_ids: [id(4)] };
   let index = 0,
     clock = 0,
     instance = 'owned-boot-1',
@@ -139,13 +142,14 @@ function fixture() {
     },
   };
 }
-test('ordered fixed observations bind one actor attempt, hand and engine instance without certifying economics', async () => {
+test('ordered fixed observations compare the scoped economics without certifying the product', async () => {
   const f = fixture();
   await f.observer.start();
   for (let i = 0; i < 8; i++) await f.run(i);
   const result = f.observer.observations();
   assert.equal(result.checkpoints.length, 8);
   assert.equal(result.topup_database.debited_cents, '1000');
+  assert.equal(result.insurance_database.premium_cents, '1200');
   assert.equal(result.product_certificate, false);
   assert.ok(result.remaining.includes('felt-to-database settlement reconciliation'));
   for (const read of f.reads)

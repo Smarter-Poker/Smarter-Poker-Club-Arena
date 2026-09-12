@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import { FINANCIAL_MS, validateFinancialData } from './component-observation-protocol.mjs';
 import { createTopupVerifier } from './financial-topup-verifier.mjs';
+import { verifyInsuranceEconomics } from './financial-insurance-verifier.mjs';
 
 const phases = Object.freeze([
   'topup.before',
@@ -41,6 +42,7 @@ export function createFinancialCheckpointObserver({
     financial,
     deadline,
     topup,
+    insurance,
     started = false,
     busy = false,
     failed = false;
@@ -176,6 +178,11 @@ export function createFinancialCheckpointObserver({
         }
         live();
         const saved = { entry, facts: data, felt };
+        if (entry.phase === 'settlement.observed') {
+          insurance = verifyInsuranceEconomics({
+            owner: bound, offered: journal[4], accepted: journal[6], settled: saved,
+          });
+        }
         assert.ok(
           Buffer.byteLength(JSON.stringify([...journal, saved])) <= 262144,
           'FINANCIAL_CHECKPOINT_JOURNAL_SIZE'
@@ -196,10 +203,10 @@ export function createFinancialCheckpointObserver({
         owner: structuredClone(bound),
         engine_identity: structuredClone(identity),
         topup_database: topup.receipt(),
+        insurance_database: structuredClone(insurance),
         checkpoints: structuredClone(journal),
         product_certificate: false,
         remaining: [
-          'insurance economics and bank conservation',
           'felt-to-database settlement reconciliation',
           'canonical fixture cleanup',
           'source closure and deployed release certification',

@@ -1,3 +1,8 @@
+import {
+  CASHOUT_AMOUNT_LIMIT,
+  cashoutPercentage,
+  validateCashoutAmount,
+} from '../../utils/cashoutAmount';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CASHOUT REQUEST MODAL — Player Chip Cashout UI
@@ -334,20 +339,12 @@ export default function CashoutRequestModal({
     // isSubmitting === false and both reached the RPC.
     if (submitLockRef.current) return;
 
-    const cashoutAmount = Number(amount);
-
-    if (!Number.isFinite(cashoutAmount) || cashoutAmount <= 0) {
-      setError('Enter An Amount Greater Than Zero');
+    const validation = validateCashoutAmount(amount);
+    if (!validation.ok) {
+      setError(validation.error);
       return;
     }
-
-    // Chip balances are whole chips. A fractional request travelled all the way
-    // to Postgres to be refused there, which reads as the app being broken
-    // rather than as the number being wrong.
-    if (!Number.isInteger(cashoutAmount)) {
-      setError('Enter A Whole Number Of Chips');
-      return;
-    }
+    const cashoutAmount = validation.amount;
 
     if (cashoutAmount > currentBalance) {
       setError('That Is More Than Your Available Balance');
@@ -547,34 +544,43 @@ export default function CashoutRequestModal({
                     placeholder="0"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
-                    max={currentBalance}
-                    min={1}
-                    step={1}
-                    inputMode="numeric"
+                    max={Math.min(currentBalance, CASHOUT_AMOUNT_LIMIT)}
+                    min={0.01}
+                    step={0.01}
+                    inputMode="decimal"
                   />
                   <span className="chip-label">Chips</span>
                 </div>
                 <div className="quick-amounts">
-                  {[25, 50, 100].map((pct) => (
-                    <button
-                      key={pct}
-                      type="button"
-                      className="quick-btn"
-                      // Math.floor, not a 2-decimal truncation: chips are held
-                      // in an INTEGER column and the server rejects fractional
-                      // amounts outright, so "25%" of 1,234 used to produce
-                      // 308.5 and a guaranteed rejection.
-                      onClick={() => setAmount(String(Math.floor((currentBalance * pct) / 100)))}
-                    >
-                      {pct}%
-                    </button>
-                  ))}
+                  {([25, 50, 100] as const).map((pct) => {
+                    const selected = cashoutPercentage(currentBalance, pct);
+                    return (
+                      <button
+                        key={pct}
+                        type="button"
+                        className="quick-btn"
+                        disabled={selected === null}
+                        onClick={() => {
+                          if (selected !== null) setAmount(selected);
+                        }}
+                      >
+                        {pct}%{selected !== null ? ` · ${selected}` : ''}
+                      </button>
+                    );
+                  })}
                   <button
                     type="button"
                     className="quick-btn"
-                    onClick={() => setAmount(String(Math.floor(currentBalance)))}
+                    disabled={cashoutPercentage(currentBalance, 100) === null}
+                    onClick={() => {
+                      const selected = cashoutPercentage(currentBalance, 100);
+                      if (selected !== null) setAmount(selected);
+                    }}
                   >
                     Max
+                    {cashoutPercentage(currentBalance, 100) !== null
+                      ? ` · ${cashoutPercentage(currentBalance, 100)}`
+                      : ''}
                   </button>
                 </div>
               </div>

@@ -228,6 +228,89 @@ body {
   overflow-x: clip;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   DIAMOND ARENA IS LIGHT, AND ONLY DIAMOND ARENA
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Dan, 2026-09-11: "ONLY DIFFERENCE BETWEEN THEM IS DIAMOND ARENA SHOULD BE
+   WHITE, OR LIGHT SCHEMA, CLUB ARENA DARK."
+
+   That lands on top of 2026-08-30's "THE WHOLE BACKGROUND SHOULD BE SOLID
+   BLACK AND ALL THE SAME COLOR", which is the note on the body rule above.
+   The two only disagree if the light one is global. Scoped, they are one
+   instruction: black is the rule for the chip estate, and the Diamond Arena
+   is the one room that is not part of it.
+
+   WHY THIS SHEET. `design-tokens.css` holds the existing [data-theme='light']
+   block, but it is not loaded globally - main.tsx imports this file, and only
+   seven component sheets @import that one. A scheme that has to hold for the
+   whole room has to be declared where the whole room can see it.
+
+   WHY IT WINS. `html[data-arena-scheme='light']` is specificity 0,1,1 against
+   `:root`'s 0,1,0, so it beats both token blocks whatever order the sheets
+   load in, and it beats a bare `[data-theme='light']` too. That matters for
+   the player who has chosen light in Settings: their choice is not fought,
+   it is simply already satisfied here.
+
+   WHAT IT DOES NOT DECLARE. Not one table token. `--seat-bg`, `--seat-border`,
+   `--seat-text`, `--felt-color`, `--rail-highlight`, `--timer-color` and
+   `--timer-glow` are held dark in every scheme by
+   tests/seat-plates-stay-dark.law.test.ts, and that law is about hole cards
+   being readable rather than about Club Arena being dark, so it binds here
+   too. A light FELT, if one is ever wanted, is a table theme preset. This is
+   chrome only: the ground, the surfaces raised off it, the text on them and
+   the lines between them.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+html[data-arena-scheme='light'] {
+  /* The ground and the surfaces raised off it. Cool rather than paper white:
+     the arena's own accent is the brand blue, and a neutral-warm white under
+     it reads as beige next to the Diamond artwork. */
+  --club-black: #eef1f7;
+  --club-dark: #f4f6fb;
+  --club-surface: #ffffff;
+  --club-elevated: #ffffff;
+  --club-card: #ffffff;
+
+  --bg-primary: #f4f6fb;
+  --bg-secondary: #eef1f7;
+  --bg-surface: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-overlay: rgba(16, 20, 28, 0.45);
+  --bg-header: rgba(255, 255, 255, 0.86);
+
+  /* Ink. `--text-inverse` flips with everything else: it means "legible on the
+     opposite of the ground", and the ground has moved. */
+  --text-primary: #10141c;
+  --text-secondary: rgba(16, 20, 28, 0.68);
+  --text-tertiary: rgba(16, 20, 28, 0.5);
+  --text-muted: rgba(16, 20, 28, 0.5);
+  --text-disabled: rgba(16, 20, 28, 0.32);
+  --text-inverse: #ffffff;
+
+  /* Lines. The dark scheme draws them in white at low alpha, which on a light
+     ground is not a line at all; these are the same idea in ink. */
+  --border-subtle: rgba(16, 20, 28, 0.1);
+  --border-strong: rgba(16, 20, 28, 0.18);
+  --border-default: rgba(16, 20, 28, 0.1);
+  --border-active: rgba(16, 20, 28, 0.18);
+
+  /* The brand blue is unchanged and still the accent. Its GLOW is not: a
+     50%-alpha blue bloom is a light source, and a light source on a white
+     ground is a smudge. */
+  --club-blue-glow: rgba(65, 105, 225, 0.28);
+  --club-blue-dim: rgba(65, 105, 225, 0.1);
+
+  color-scheme: light;
+}
+
+/* The page ground itself. The dark estate paints `#000` on the body rule above
+   with Dan's note attached; this is the same decision for the other room. */
+html[data-arena-scheme='light'] body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
 /* Keyboard entry point. This lives in the loaded Club Engine sheet (the former
    rule was stranded in the legacy, unimported globals.css file). Keep it fully
    outside the viewport until focused so it never occupies layout space. */

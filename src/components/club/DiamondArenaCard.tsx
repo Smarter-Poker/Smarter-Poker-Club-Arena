@@ -121,7 +121,11 @@ export const DiamondArenaCard: React.FC<DiamondArenaCardProps> = ({
           <div
             className={`club-card-stat ${(activePlayers ?? 0) > 0 ? 'club-card-stat--active' : ''}`}
           >
-            <span className="club-card-stat-label">ACTIVE PLAYERS</span>
+            {/* Dan 2026-09-11, of this card: "HAVE IT SAY JUST 'ACTIVE' AND
+                THE NUMBER UNDER IT." It said ACTIVE PLAYERS, which was also
+                the one label on the carousel that did not match its
+                neighbours: every chip club card says ACTIVE. */}
+            <span className="club-card-stat-label">ACTIVE</span>
             <span className="club-card-stat-value">{activeText}</span>
           </div>
           <div

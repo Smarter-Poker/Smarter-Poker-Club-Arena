@@ -86,6 +86,20 @@ The first version of the reachability pin was a census of `arenaAsset` condition
 
 That work found two defects it did not fix, both in the multi-table tab bar's menu, both about the seat's money rather than a side feature, and both belonging to line two. The tab bar renders "Add Chips" and "Auto Top Up" unconditionally because it does not know the arena; at a Diamond table the first does nothing, since the `REBUY` bus case still breaks for any non-chip asset even though a Diamond cash seat now has a funded top-up writer, and the second flips a badge the auto-top-up effect ignores. Neither is reachable by a real player while public funded Diamond games remain closed. They are the starting point of the line two work.
 
+## Execution Update, September 12, 2026, Diamond Arena Is The Light Room
+
+Dan asked on September 11 for Diamond Arena to use a white or light colour scheme against Club Arena's dark one, explicitly in this phase rather than the last. It is built.
+
+It lands on top of his older instruction, "THE WHOLE BACKGROUND SHOULD BE SOLID BLACK AND ALL THE SAME COLOR", which is written on the body rule, on the lobby ground and in the layout, and which an earlier piece of work enforced by deleting a per-route art system. The two only disagree if the light one is global. Scoped, they are one instruction: black is the rule for the chip estate, and the Diamond Arena is the one room that is not part of it. Every note carrying the black instruction is left exactly as it was.
+
+`<html>` already carried two theme attributes that had to be prised apart after a production incident served the light palette to players who had chosen dark, so this is a third attribute with one writer rather than a fourth writer on an existing one: `data-arena-scheme` says where the player IS, while `data-theme` says what they PREFER and `data-color-theme` says what the felt looks like. It never reads or writes the player's setting. Its input is the same pair the club footer takes, because the in-table "+" opens a club lobby as a tab while the URL stays on the table.
+
+It paints the room and not the table. The seat-plate law holds plates, felt and timer dark in every scheme because it is about hole cards being readable, and the new law enforces that same token list a second time, since the original reads a sheet this scheme is deliberately not declared in. Measured against production's own DOM before any of it was written: of 85 elements over 80 by 40, 79 carry no opaque background of their own and follow the ground, so they came with it. The lobby is the shared Club Arena lobby, which is the point of a one to one clone, so the scheme is the same page in a different room rather than a fork, and only the surfaces that decide light from dark are overridden. Evidence: [the light room changelog](changelog/2026-09-12-diamond-arena-is-the-light-room.md).
+
+The Diamond Arena card on the home carousel also said ACTIVE PLAYERS. Dan asked for "JUST 'ACTIVE' AND THE NUMBER UNDER IT", and it was the one label on that carousel not matching its neighbours. It says ACTIVE now.
+
+Still dark, and said so plainly: the club card panels and the global header, which are artwork with their own guards, and the table page, which the seat-plate law binds.
+
 ## Approved Product Contract
 
 This replaces the earlier recommendation for two separate World Hub destinations. The World Hub has one player-facing Poker Arena entrance. Reuse the existing Club Arena application as the shared shell, lobby and game implementation. Diamond Arena is a diamond-only skin and operating policy inside it, not a second poker application.

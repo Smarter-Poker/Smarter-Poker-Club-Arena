@@ -585,6 +585,8 @@ export type HandEvent =
       action: ActionType;
       amount: number;
       stage?: HandStage;
+      /** Accepted immutable history; late consumers must not read a later action. */
+      record?: Readonly<ActionRecord>;
     }
   | { type: 'POT_UPDATE'; pot: number; pots: Pot[] }
   | { type: 'TURN_CHANGE'; seat: number; availableActions: ActionType[] }

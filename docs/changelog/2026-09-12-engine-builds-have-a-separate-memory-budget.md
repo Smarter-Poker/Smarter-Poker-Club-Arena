@@ -1,0 +1,44 @@
+# Engine builds have a separate memory budget
+
+The 11:16 UTC engine publication compiled TypeScript on the production host
+until 11:22:47. During that build, global memory pressure stopped public health
+and SSH responses; the kernel killed the running engine at 11:22:43. The same
+engine image restarted automatically. The build and engine kill are confirmed
+by the host journal; allocation history for every participating process is not
+fully reconstructed.
+
+Uncached image builds now use one dedicated, digest-pinned BuildKit container
+with a 1024 MiB memory limit, zero swap and one CPU. The publisher verifies both
+Docker configuration and the effective cgroup limits before compiling. It
+refuses to start with less than the builder budget plus 256 MiB of available
+host memory. Exact-source release preflight retains its full TypeScript check
+and tests in CI. The image build emits runtime files with a 768 MiB compiler
+heap and omits test entrypoints and declaration files; core dumps are disabled
+for the compiler. A separate runtime project leaves the full test project
+unchanged. The original project included 753 test files alongside 387 other
+source files, making every host build parse and emit the entire test suite.
+Runtime engine settings are unchanged.
+There is no fallback to the unbounded daemon builder.
+
+The builder stops on completion or cancellation. Its cache stays available
+with automatic collection configured for a 2 GB target. The publisher also
+reads back the worker and collection configuration on
+every reused builder. This collection target is not a filesystem quota; active
+build storage can exceed it. The committed server
+archive, immutable image labels, release locks and certified cutover remain in
+place. This is a build containment change, not an application memory-leak fix.
+The build client runs in an owned process session and the wrapper uses an
+interruptible background wait. A foreground wait previously deferred TERM
+cleanup until the client exited; the native cancellation test exposed that
+delay. Cleanup terminates only this build's client session and builder.
+
+Validation includes the executable release-law suite and a separate Linux job
+that builds the exact engine, compares every emitted runtime file to the full
+typechecked CI build, reads actual cgroup limits, deliberately causes a
+build OOM, and checks that a neighboring container neither exits nor restarts.
+It also runs the production wrapper against a deliberately failing build and
+builds cancelled by either a direct wrapper signal or a process-group signal, verifying that the
+wrapper stops its builder and removes staging and candidate tags before the
+test harness performs any cleanup.
+The job retains its build logs, memory peak, OOM counters and cleanup receipt.
+Passing those checks does not substitute for installation and live release proof.

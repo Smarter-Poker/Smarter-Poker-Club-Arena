@@ -1,0 +1,13 @@
+# Accepted action history foundation
+
+Phase 14's source audit found that the persisted action consumer still read the latest controller action's `isFullRaise`, the current seat occupant and its own drain time. A delayed full raise, call, short all-in and call could therefore all be recorded as full raises by a replacement actor at one later timestamp. Street attribution already traveled on the event and was correct.
+
+The controller now attaches the frozen accepted `ActionRecord` to each of its four `PLAYER_ACTION` emitters. History, public action attribution and pre-action invalidation consume the original accepted facts. An absent raise flag on a call or discard remains absent; it cannot borrow a later raise's flag. Legacy events without a record retain their prior fallback. A fold for a missed Pineapple discard also enters the controller's history, matching its emitted and persisted action. The record contains existing public fields only, and the public broadcast does not include the internal record or private cards.
+
+## Verification and boundaries
+
+- The original native controller and actual event consumer from `2d530dc6de963b3aafa6b2fa86247a5e0eb64bdb` reproduced four wrong actors, four drain-time timestamps and four full-raise classifications. The corrected native path retained actors u4/u1/u2/u3, four accepted timestamps and classifications true/absent/false/absent, and attributed pre-action invalidation to the original raisers. The isolated regression blocked network access.
+- Build and 51 focused tests passed. Coverage includes delayed consumption, full and short raises, calls, stale/rejected actions, explicit and missed Pineapple discards, immutable records, public-event privacy and legacy compatibility.
+- The full server suite on implementation `961da3b0aedd752bc1ca29a842ec12453cf95b56` passed 10,994 tests with 145 existing skips (754 files passed, one skipped). The final legacy pre-action fallback correction `e0a593f50cf400e7e67d158997b7ea9105faba8e` passed build, the 51 focused tests and the original-versus-current native regression.
+
+This is a history correctness repair required by learning and existing hand reviews. It does not implement or certify Phase 14's full public-node capture, immutable hand/session observation lineage, scoped statistical model, proposal generation, held-out/shadow uplift gates, durable idempotence or activation/rollback pipeline. Those first-round requirements remain open. No new learner, adaptive action or promotion is activated by this change. Protected review, publication and served-source proof remain required.

@@ -1063,7 +1063,7 @@ export class HandController {
     this.snapChips();
     actualAmount = Math.round(actualAmount * 100) / 100;
 
-    this.state.actionHistory.push({
+    const record: Readonly<ActionRecord> = Object.freeze({
       seat,
       userId: player.user_id,
       action,
@@ -1072,6 +1072,7 @@ export class HandController {
       stage: this.state.stage,
       isFullRaise: isFullRaiseFlag,
     });
+    this.state.actionHistory.push(record);
 
     // The stage travels WITH the action. This is the same value just written
     // to actionHistory above, so the persisted hand history and the
@@ -1082,6 +1083,7 @@ export class HandController {
       action,
       amount: actualAmount,
       stage: this.state.stage,
+      record,
     });
     this.emit({ type: 'POT_UPDATE', pot: this.state.pot, pots: calculatePots(this.state.players) });
     this.advanceGame();
@@ -1159,7 +1161,7 @@ export class HandController {
        isBettingRoundComplete), so a zero-amount 'discard' on a stage none of
        them bet in is inert to all of them - and it makes the in-memory history
        agree with the persisted one, which is what HorseMind hydrates from. */
-    this.state.actionHistory.push({
+    const record: Readonly<ActionRecord> = Object.freeze({
       seat,
       userId: player.user_id,
       action: 'discard',
@@ -1167,6 +1169,7 @@ export class HandController {
       timestamp: Date.now(),
       stage: this.state.stage,
     });
+    this.state.actionHistory.push(record);
 
     // Emit discard action for logging
     this.emit({
@@ -1175,6 +1178,7 @@ export class HandController {
       action: 'discard',
       amount: 0,
       stage: this.state.stage,
+      record,
     });
     // Send updated cards to the player (secure per-player)
     this.emit({ type: 'CARDS_DEALT', seat, cards: [...player.cards] });
@@ -1221,6 +1225,16 @@ export class HandController {
     player.is_folded = true;
     this.pineappleDiscardsRemaining.delete(seat);
 
+    const record: Readonly<ActionRecord> = Object.freeze({
+      seat,
+      userId: player.user_id,
+      action: 'fold',
+      amount: 0,
+      timestamp: Date.now(),
+      stage: this.state.stage,
+    });
+    this.state.actionHistory.push(record);
+
     // Announce it the same way any fold is announced, so seats grey out and
     // the hand history records a fold rather than a phantom discard.
     this.emit({
@@ -1230,6 +1244,7 @@ export class HandController {
       action: 'fold',
       amount: 0,
       stage: this.state.stage,
+      record,
     } as unknown as HandEvent);
 
     // Everyone else folding to one player ends the hand here - there is no
@@ -2115,7 +2130,7 @@ export class HandController {
          CLAUDE.md 10.6 says an animation is owed every time it is owed, not
          on the paths that happen to be convenient. Announced identically here,
          BEFORE the cards go out, so ordering matches performDiscard. */
-      this.state.actionHistory.push({
+      const record: Readonly<ActionRecord> = Object.freeze({
         seat: player.seat,
         userId: player.user_id,
         action: 'discard',
@@ -2123,12 +2138,14 @@ export class HandController {
         timestamp: Date.now(),
         stage: discardStage,
       });
+      this.state.actionHistory.push(record);
       this.emit({
         type: 'PLAYER_ACTION',
         seat: player.seat,
         action: 'discard',
         amount: 0,
         stage: discardStage,
+        record,
       });
 
       this.emit({ type: 'CARDS_DEALT', seat: player.seat, cards: [...player.cards] });

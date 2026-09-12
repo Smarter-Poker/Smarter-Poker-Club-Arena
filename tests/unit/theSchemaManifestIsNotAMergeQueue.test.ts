@@ -78,7 +78,7 @@ describe('the CI gates read the overlay, not the raw base file', () => {
   ]) {
     it(`${script} loads through schema-manifest.mjs`, () => {
       const src = read(script);
-      expect(src).toContain("from './schema-manifest.mjs'");
+      expect(src).toMatch(/\bfrom\s+(['"])\.\/schema-manifest\.mjs\1/);
       expect(src).not.toMatch(/JSON\.parse\(\s*readFileSync\(\s*MANIFEST/);
     });
   }

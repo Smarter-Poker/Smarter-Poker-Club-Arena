@@ -30,6 +30,20 @@ export interface BalancerTable {
    * the smallest stack. Omit / 0 to fall back to the stack-based heuristic.
    */
   buttonSeat?: number;
+  /**
+   * 2026-09-12: chairs this table's tournament roster still holds that have no
+   * live seat row. An unrecorded bust keeps its `tournament_players` chair
+   * until the elimination sweep records it, and `fn_move_tournament_player`
+   * refuses a destination whose roster row is still `registered`/`playing`
+   * there ('tournament move destination roster is occupied'). Measured on
+   * event 05e104c7: 294 of 378 planned chairs were refused for exactly this
+   * reason, and only 42 of 378 were genuinely free.
+   *
+   * Treated as occupied when a destination chair is chosen. The blind-cycle
+   * arithmetic still runs off the live `players` ring alone, so a reserved
+   * chair removes a candidate without distorting anybody's hops-to-big-blind.
+   */
+  reservedSeats?: number[];
 }
 
 export interface BalancerPlayer {
@@ -560,7 +574,10 @@ export class TableBalancer {
     opts?: { bbSeat?: number | null; sourceHops?: number | null }
   ): SeatChoice {
     const sourceHops = opts?.sourceHops ?? null;
-    const occupiedSeats = new Set(table.players.map((p) => p.seat));
+    const occupiedSeats = new Set<number>([
+      ...table.players.map((p) => p.seat),
+      ...(table.reservedSeats ?? []),
+    ]);
     const free: number[] = [];
     for (let seat = 1; seat <= table.maxSeats; seat++) {
       if (!occupiedSeats.has(seat)) free.push(seat);

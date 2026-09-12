@@ -14,6 +14,32 @@ through World Hub environment files, embed a token in a remote URL, copy a
 credential into a command, or print a value. The autopilot application and both
 Hetzner publishers read their own write-only Club Arena repository secrets.
 
+## Before your first push: `gh` must be resolvable
+
+`.husky/pre-push` runs `scripts/guard-merged-branch.sh`, which asks GitHub
+whether this branch's pull request has already merged. It **fails closed**
+without the GitHub CLI, and it is right to: the defect it prevents is a push
+that exits 0 and reaches nobody.
+
+`gh` IS installed and authenticated on this Mac (`/opt/homebrew/bin/gh`,
+v2.86.0, account `Smarter-Poker`, verified 2026-09-12). What it is not is
+**on a non-interactive PATH**. A tool-driven or hook shell gets
+`/usr/bin:/bin:/usr/sbin:/sbin`, `command -v gh` fails, and the guard refuses a
+push that was never wrong with:
+
+    [merged-branch guard] BLOCKED: GitHub CLI is required to verify
+    destination branch '<branch>'.
+
+The hook now repairs PATH for every tool its guards require. If you are running
+any of them by hand, or you see that message:
+
+```bash
+export PATH="/opt/homebrew/bin:$PATH"
+```
+
+This is a PATH fact, not a credential one. Do not go looking for a token: the
+credential boundary above still holds, and `gh` already carries its own.
+
 ## Push paths, in order of preference
 
 1. Work in an isolated worktree on a feature branch.

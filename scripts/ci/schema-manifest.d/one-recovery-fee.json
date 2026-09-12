@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/claude-diamond-phase-8/feature/the-rebuy-fee-ratio",
+  "_comment": "Migration 20260912103907 collapsed the three SQL copies of the rebuy and re-entry fee derivation into one rule and gave it the tournament's unit. These three are the new shared primitives; the three callers (fn_ca_tournament_charge_split, fn_ca_process_tournament_chip_purchase_money_v1, fn_ca_tournament_escrow) already existed and keep their names and signatures. All three new functions are created owner-only in the declaring migration. Chip answers were proved unchanged inside the migration against 2,000 real charge shapes through the refund authority, 150 real tournaments through the escrow view, and the entire reachable gross-by-ratio input space for the money core's arithmetic. No full product qualification is claimed.",
+  "functions": ["fn_ca_recovery_fee_cents", "fn_ca_tournament_fee_ratio", "fn_ca_unit_floor_cents"]
+}

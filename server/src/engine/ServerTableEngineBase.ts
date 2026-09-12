@@ -3718,7 +3718,62 @@ export abstract class ServerTableEngineBase {
       msg.includes('supabase_timeout') ||
       msg.includes('This operation was aborted') ||
       msg.includes('The operation was aborted') ||
-      msg.includes('deal_step_timeout')
+      msg.includes('deal_step_timeout') ||
+      /* A SERIALIZATION FAILURE IS THE DATABASE BLINKING, BY DEFINITION
+         (2026-09-12).
+         Every entry above is a TRANSPORT failure. The one error Postgres
+         itself defines as "this conflicted, run it again" was missing, so the
+         question in this method's own title was answered "the code is wrong"
+         for the textbook case of the database blinking.
+         `smarter_private.f06_try_lane` raises exactly this when it cannot take
+         the shared `ca:tournament-terminal-settlement:v1` lock, and it spells
+         the remedy into the message:
+             RAISE EXCEPTION 'F06_RETRY_CANONICAL_LANE' USING ERRCODE='40001'
+         Nothing has been written when it fires - the lock is taken before the
+         work - and the caller sees `atomic_hand_rolled_back`, so a retry
+         re-runs a transaction that committed nothing.
+         Measured on production 2026-09-12: 412 hands in two hours whose
+         history was never written, 820 alerts in all, because the engine
+         treated an explicit request to retry as a terminal refusal. */
+      msg.includes('F06_RETRY_CANONICAL_LANE') ||
+      /^40001$/.test(String((err as { code?: unknown })?.code ?? '')) ||
+      msg.includes('could not serialize access') ||
+      msg.includes('deadlock detected')
+    );
+  }
+
+  /**
+   * Did the database roll the WHOLE hand back and ask to be run again?
+   *
+   * `fn_ca_commit_hand_settlement` answers a refusal with a reason, and two of
+   * those reasons mean "this transaction wrote nothing":
+   * `atomic_hand_rolled_back` (the accepted-hand core's own
+   * `EXCEPTION WHEN OTHERS`) and `rolled_back` (the stack core's). They reach
+   * the engine as `atomic hand commit refused (<reason>): <sqlerrm>`, and
+   * `insertHandHistoryRow` throws them without a retry because every string
+   * containing "atomic hand commit refused" is treated as deterministic.
+   *
+   * Most of them ARE deterministic and must stay terminal - a conservation
+   * violation, a negative stack, a constraint, a missing column. What
+   * separates the rest is the SQLERRM the reason carries, so this asks BOTH
+   * questions: the database said it rolled back, AND the cause is the one
+   * Postgres defines as "this conflicted, run it again". Only then is another
+   * attempt a re-run of a transaction that committed nothing.
+   *
+   * Measured on production 2026-09-12, 10:00-11:35 UTC: 1,021 of 1,023
+   * semantic refusals were exactly this pair - `atomic_hand_rolled_back` or
+   * `rolled_back`, carrying `F06_RETRY_CANONICAL_LANE`. Not one carried a
+   * rounding, denomination, pot-total or seat-set reason.
+   */
+  protected static isRolledBackSerializationRefusal(err: unknown): boolean {
+    const msg =
+      err instanceof Error
+        ? err.message
+        : (err as { message?: string })?.message ||
+          (typeof err === 'object' && err !== null ? JSON.stringify(err) : String(err));
+    return (
+      /atomic hand commit refused \((?:atomic_hand_)?rolled_back\)/.test(msg) &&
+      ServerTableEngineBase.isTransientDbError(err)
     );
   }
 

@@ -1,0 +1,44 @@
+name: Engine Build Resource Containment
+on:
+  pull_request:
+    paths:
+      - server/Dockerfile
+      - server/tsconfig.json
+      - server/tsconfig.runtime.json
+      - server/scripts/build-engine-image.sh
+      - tests/operations/engine-build-resource-proof.py
+      - .github/workflows/engine-build-resource-proof.yml
+permissions:
+  contents: read
+concurrency:
+  group: engine-build-resource-proof-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  containment:
+    name: Compile the engine and contain a real build OOM
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - name: Produce the reference runtime with the full TypeScript check
+        working-directory: server
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build -- --project tsconfig.runtime.json
+      - name: Real bounded image build and neighboring process survival
+        run: python3 tests/operations/engine-build-resource-proof.py
+      - name: Preserve exact build, fault and cleanup evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-build-resource-proof
+          path: work/engine-build-resource-proof/
+          if-no-files-found: error
+          retention-days: 7

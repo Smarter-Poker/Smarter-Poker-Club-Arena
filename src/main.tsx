@@ -89,10 +89,21 @@ function reportDeferredImportFailure(error: unknown, context: string): void {
 // from event handlers, bus listeners, or realtime callbacks without try/catch.
 // This prevents those from silently crashing the app or causing undefined state.
 window.addEventListener('unhandledrejection', (event) => {
+  // PREVENT FIRST, REPORT SECOND.
+  //
+  // These two statements were the other way round until 2026-09-12, and the
+  // order was load-bearing in the worst way. `reportError` used to throw on a
+  // DOMException reason (it assigned to `message`, which a DOMException makes
+  // read-only), so for every IndexedDB rejection the listener exited on the
+  // FIRST line: `preventDefault()` never ran, the browser re-raised the
+  // reporter's own TypeError through `window.onerror`, and HorseBugReporter
+  // filed that as a second, critical bug - 2,844 of them, one per rejection.
+  // The reporter no longer throws, and the handler no longer depends on that
+  // being true: the rejection is marked handled before anything that could
+  // fail is allowed to run.
+  event.preventDefault();
   // Log but don't crash — the page's error state should handle degraded display
   reportError(event.reason, 'main.Unhandled_promise_rejection_caught');
-  // Prevent the default browser behavior (console error + potential crash)
-  event.preventDefault();
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

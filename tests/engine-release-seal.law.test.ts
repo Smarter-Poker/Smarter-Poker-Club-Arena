@@ -2115,6 +2115,9 @@ if [ "$1" = exec ]; then
     */memory.peak) printf '1048576000\\n' ;;
     */memory.swap.max) printf '0\\n' ;;
     */cpu.max) printf '100000 100000\\n' ;;
+    /etc/buildkit/buildkitd.toml)
+      printf '[worker.oci]\\nmax-parallelism = %s\\ngc = true\\nreservedSpace = "512MB"\\nmaxUsedSpace = "%s"\\nminFreeSpace = "2GB"\\n' "\${FAKE_WORKER_PARALLELISM:-1}" "\${FAKE_CACHE_TARGET:-2GB}"
+      ;;
     *) exit 9 ;;
   esac
   exit 0
@@ -2283,6 +2286,20 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
       expect(wrongDriver.stderr).toContain('not the dedicated container driver');
       expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
       expect(readdirSync(contextRoot)).toEqual([]);
+      for (const drift of [{ FAKE_WORKER_PARALLELISM: '4' }, { FAKE_CACHE_TARGET: '20GB' }]) {
+        const changedWorker = spawnSync(
+          'bash',
+          [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
+          { encoding: 'utf8', env: { ...env, ...drift } }
+        );
+        expect(changedWorker.status).toBe(1);
+        expect(changedWorker.stderr).toContain('worker configuration could not be verified');
+        expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
+        expect(readdirSync(contextRoot)).toEqual([]);
+      }
+      expect(readFileSync(join(dockerState, 'builder-stops'), 'utf8')).toBe(
+        'stop\nstop\nstop\nstop\n'
+      );
     } finally {
       rmSync(sandbox, { recursive: true, force: true });
     }

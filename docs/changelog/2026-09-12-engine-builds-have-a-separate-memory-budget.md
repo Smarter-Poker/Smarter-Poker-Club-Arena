@@ -21,7 +21,10 @@ Runtime engine settings are unchanged.
 There is no fallback to the unbounded daemon builder.
 
 The builder stops on completion or cancellation. Its cache stays available
-with automatic collection configured for a 2 GB target. The committed server
+with automatic collection configured for a 2 GB target. The publisher also
+reads back the worker and collection configuration on
+every reused builder. This collection target is not a filesystem quota; active
+build storage can exceed it. The committed server
 archive, immutable image labels, release locks and certified cutover remain in
 place. This is a build containment change, not an application memory-leak fix.
 
@@ -29,5 +32,9 @@ Validation includes the executable release-law suite and a separate Linux job
 that builds the exact engine, compares every emitted runtime file to the full
 typechecked CI build, reads actual cgroup limits, deliberately causes a
 build OOM, and checks that a neighboring container neither exits nor restarts.
+It also runs the production wrapper against a deliberately failing build and
+a build cancelled by a process-group termination signal, verifying that the
+wrapper stops its builder and removes staging and candidate tags before the
+test harness performs any cleanup.
 The job retains its build logs, memory peak, OOM counters and cleanup receipt.
 Passing those checks does not substitute for installation and live release proof.

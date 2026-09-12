@@ -1,11 +1,11 @@
 {
-  "migration": "supabase/migrations/20260912060700_agent_downline_rake_is_scoped_to_overseer_clubs.sql",
+  "migration": "supabase/migrations/20260912070307_agent_downline_rake_is_scoped_to_overseer_clubs.sql",
   "inputs": {
     "scripts/dev/fixtures/agent-downline-rake-scope/candidate.sql": "d69f3a111987f2a28389efc069916a31621a96ca91fd634a6adca42187f26c87",
     "scripts/dev/fixtures/agent-downline-rake-scope/baseline.sql": "5a6b0cab452c3943744be1b4043b36b90e66465b6d57acd0f3d0987b84ffd7b3",
     "scripts/dev/fixtures/agent-downline-rake-scope/bootstrap.sql": "25efd12617f7023903a1a9c75c63dc4414190ffeb7c15e7c2493af9b80864b17",
     "scripts/dev/fixtures/agent-downline-rake-scope/current-helper-receipt.json": "aabe2ea2c534a2e01d615bb67b9f8663c63b6960894081b0e2ce7dbe9e910101",
-    "supabase/migrations/20260912060700_agent_downline_rake_is_scoped_to_overseer_clubs.sql": "685b39aec817aba9f12319465aa1ee6fff0860b81ddf11deff4515ecb18dd199"
+    "supabase/migrations/20260912070307_agent_downline_rake_is_scoped_to_overseer_clubs.sql": "be0750fd711ffa377090bf711b0d94718989d1a3a3b73094b3503ae703b9972c"
   },
   "helpers": [
     {

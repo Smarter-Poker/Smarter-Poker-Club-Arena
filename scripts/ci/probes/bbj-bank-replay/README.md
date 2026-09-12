@@ -10,7 +10,7 @@ Set PG_BIN to the existing PostgreSQL bin directory if needed. Otherwise the run
 
 The runner creates an owned0700 temporary directory and private Unix socket, disables TCP, ignores inherited PG connection configuration, and stops/removes its cluster in finally (including normal interrupt handling). If stopping fails, it leaves that owned directory for diagnosis, records failure and exits unsuccessfully. Uncatchable process termination cannot run finally.
 
-The migration20260912054700_bbj_bank_move_replay_matches_payload.sql is the sole function source. Exact before/candidate dollar-quoted definitions are extracted and SHA256-verified; no third function copy is maintained. The installer, fixture and case bytes are pinned. Intentional future changes require reviewed hash updates rather than silent drift.
+The migration20260912070357_bbj_bank_move_replay_matches_payload.sql is the sole function source. Exact before/candidate dollar-quoted definitions are extracted and SHA256-verified; no third function copy is maintained. The installer, fixture and case bytes are pinned. Intentional future changes require reviewed hash updates rather than silent drift.
 
 fixture.sql preserves the nine exact saved table/sequence/default/local-constraint blocks recovered from schema SHA256 d02010755997f961fb6f449d2436708daf398cbe2be77a3010238c12f0eeea9e. Its two pool rows and prior immutable receipt are isolated seeds. Both tables reject all mutation statements after seeding; reserve and ledger helper boundaries unconditionally raise. cases.sql is the exact19-case reviewed before/after harness.
 

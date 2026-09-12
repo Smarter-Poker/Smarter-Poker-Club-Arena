@@ -30,8 +30,28 @@ const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*
 
 describe('every client door that sizes a chip amount rounds it first', () => {
   it('the auto top-up rounds before it sends', () => {
-    expect(strip(read('src/pages/TablePage.tsx'))).toMatch(
-      /Math\.round\(Math\.min\(maxBuyIn - currentStack, accountBalance \?\? 0\) \* 100\) \/ 100/
+    /* THE PIN MOVED WITH THE CODE (2026-09-12). The expression gained a second
+       denomination: the shortfall is computed once and then sized by the
+       TABLE'S own unit. Whole Diamonds, because the custody door reserves
+       whole units and floors anything else, so a fractional request would
+       report one number and move another. Cents for chips, for the reason
+       this whole file exists - `atomic_table_addon` stores the number
+       verbatim, and a non-cent `table_pending_addons.amount` can never be
+       resolved against the post-commit obligation.
+
+       The chip half is what this file is about and it is unchanged. The
+       Diamond half is asserted here too, because "two decimals on every money
+       path" is the wrong rule for a unit that has none, and a reader arriving
+       at this pin should find out why rather than assume an omission. */
+    const page = read('src/pages/TablePage.tsx');
+    const shortfall = sliceStatement(page, 'const shortfall =');
+    expect(shortfall).toMatch(/Math\.min\(maxBuyIn - currentStack, accountBalance \?\? 0\)/);
+    const amount = sliceStatement(page, 'const topUpAmount =');
+    expect(amount, 'a chip top-up is still sized to the cent').toMatch(
+      /Math\.round\(shortfall \* 100\) \/ 100/
+    );
+    expect(amount, 'and a Diamond is never divided into cents').toMatch(
+      /arenaAsset === 'diamonds'[\s\S]*Math\.floor\(shortfall\)/
     );
   });
 

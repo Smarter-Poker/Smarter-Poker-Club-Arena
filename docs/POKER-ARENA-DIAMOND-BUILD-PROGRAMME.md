@@ -74,6 +74,18 @@ Two things about the row are still refused, because either one deals a hand the 
 
 Both migrations edit the live function definition in place rather than restating it. `fn_ca_commit_hand_settlement` is 34,418 characters and every chip hand in the estate settles through it; retyping 34KB to change three lines is an estate-wide outage waiting on a typo. The body is read with `pg_get_functiondef`, one clause is replaced, and the result re-created, with the starting md5 pinned, the match required to be unique, and every refusal the branch already carried re-asserted afterwards. The function grew by exactly the difference in length between the two clauses.
 
+## Execution Update, September 12, 2026, Diamond Side Features And Line Four Complete
+
+Checklist line four is claimed. Skins, card decks, time banks, rabbit hunt, chat, voice and throwables were never built for chips: every one of them is priced in `profiles.diamonds` and charged through `deduct_diamonds`, and has been since long before this arena existed. At a Diamond table they are not being ported, they are being left alone, so the work of this line is proving that nothing hides them by asset and nothing about them can reach a stake.
+
+Three properties, each a way the integration could have been wrong. Reachable: no asset condition appears anywhere in chat, voice, throwables, the throw controller, the rabbit hunt panel, the time bank store, the skins and card deck modal, or the per-player feature toggles, and inside the table page the same is proved per control because that file legitimately does read the asset for the cashier. Separate: no charge door names custody, a seat or a stack. Idempotent: each charge carries a caller-held request id, and the rabbit hunt's is derived from the table, the hand and the player rather than minted per attempt.
+
+Where supported is answered in the data rather than by assumption. All seventeen live Diamond cash tables carry the same explicit side-feature settings as all 7,083 chip cash tables, with no NULL in any of those columns on either side. They agree because the values are stated, not because nobody looked, which is the same UNSET IS NOT OFF rule the admission door was corrected for on September 12.
+
+The first version of the reachability pin was a census of `arenaAsset` conditions bounded by a guessed number, which would have gone red for an unrelated cashier change and green for a gate added to the rabbit hunt. It is a property of the controls now, bounded by the structures it watches, and both pins were checked by mutation. Evidence: [the side features changelog](changelog/2026-09-12-diamond-phase-7-side-features.md).
+
+That work found two defects it did not fix, both in the multi-table tab bar's menu, both about the seat's money rather than a side feature, and both belonging to line two. The tab bar renders "Add Chips" and "Auto Top Up" unconditionally because it does not know the arena; at a Diamond table the first does nothing, since the `REBUY` bus case still breaks for any non-chip asset even though a Diamond cash seat now has a funded top-up writer, and the second flips a badge the auto-top-up effect ignores. Neither is reachable by a real player while public funded Diamond games remain closed. They are the starting point of the line two work.
+
 ## Approved Product Contract
 
 This replaces the earlier recommendation for two separate World Hub destinations. The World Hub has one player-facing Poker Arena entrance. Reuse the existing Club Arena application as the shared shell, lobby and game implementation. Diamond Arena is a diamond-only skin and operating policy inside it, not a second poker application.
@@ -303,7 +315,7 @@ Phase 6 Of 12 Is Done, verified September 11, 2026. Implementation merge 85da647
 - [ ] Enable each intended Club Arena variant only after corresponding Diamond tests.
 - [ ] Reuse waitlists, offers, rebuys/add-ons, seat changes, must-move and multi-table flows.
 - [x] Reuse supported bomb pots, board counts, straddles and run-it-twice.
-- [ ] Integrate table skins, cards, time banks, rabbit hunt, chat, voice and throwables where supported.
+- [x] Integrate table skins, cards, time banks, rabbit hunt, chat, voice and throwables where supported.
 - [x] Keep feature diamond charges separate from game stakes, with no double charge.
 - [x] Audit insurance and side-feature liabilities before enabling any such product.
 - [x] Run table lifecycle and denomination regression tests across configurations.

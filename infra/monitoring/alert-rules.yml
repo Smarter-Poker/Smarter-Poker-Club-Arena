@@ -661,10 +661,24 @@ groups:
         # poll - the only cross-process wake left on this host, with Realtime in
         # CHANNEL_ERROR and LISTEN unconfigured - was switched off. Measured that
         # evening: drains_total frozen at 324 for fifteen minutes while the outbox
-        # climbed to 27,356 rows and fifty-one minutes old. The pass is bounded
-        # now (HAND_PROJECTION_DRAIN_DEADLINE_MS, 120s), so this should be
-        # unreachable; if it fires, the bound itself has failed.
-        expr: poker_hand_projection_drain_age_ms > 180000
+        # climbed to 27,356 rows and fifty-one minutes old.
+        #
+        # AND UNTIL TODAY IT COULD NOT FIRE AT ALL (2026-09-12). It asked for
+        # 180000 on a gauge that reads
+        # `drainPromise === null ? 0 : Date.now() - lastDrainStartedAt`, and
+        # lastDrainStartedAt is reset by every pass. The pass stops itself at
+        # HAND_PROJECTION_DRAIN_DEADLINE_MS (120s), so the gauge is capped near
+        # 120000 and 180000 is unreachable by construction: this rule did not
+        # fire once during the five-hour outage of 00:04-05:14, when orphaned
+        # drain passes starved the table lease heartbeats on the shared
+        # PostgREST client and every table on the platform was killed and
+        # rebuilt. A threshold above the bound is not a strict alert, it is a
+        # rule that is always silent.
+        #
+        # 90000 is three quarters of the bound, which is what "this pass is
+        # running long" has to mean when the pass ends itself at the bound. So
+        # a firing means the lane is genuinely slow - not that the bound failed.
+        expr: poker_hand_projection_drain_age_ms > 90000
         for: 2m
         labels:
           severity: critical
@@ -672,10 +686,14 @@ groups:
         annotations:
           summary: 'A hand projection drain has been in flight for {{ $value | printf "%.0f" }} ms'
           description: |
-            One drain pass has not settled. While a pass is in flight the safety
-            poll does not run, so nothing else will project a hand until it
-            clears. The pass carries its own deadline; this firing means the
-            deadline did not release the lane.
+            One drain pass has been in flight for three quarters of its deadline.
+            While a pass is in flight the safety poll does not run, so nothing
+            else will project a hand until it clears. The pass observes the
+            deadline itself: at HAND_PROJECTION_DRAIN_DEADLINE_MS (120s) its
+            loops stop, it settles, and it queues one continuation. So this
+            firing means the lane is slow, not that the bound has failed - read
+            poker_hand_projection_drain_results_total by result and
+            pg_stat_activity for lock waits on hand-projection:<table>.
       - alert: HandProjectionOutboxBacklog
         expr: |
           poker_hand_projection_outbox_oldest_age_seconds > 300

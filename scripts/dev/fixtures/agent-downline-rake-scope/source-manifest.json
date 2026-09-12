@@ -1,0 +1,48 @@
+{
+  "migration": "supabase/migrations/20260912060700_agent_downline_rake_is_scoped_to_overseer_clubs.sql",
+  "inputs": {
+    "scripts/dev/fixtures/agent-downline-rake-scope/candidate.sql": "d69f3a111987f2a28389efc069916a31621a96ca91fd634a6adca42187f26c87",
+    "scripts/dev/fixtures/agent-downline-rake-scope/baseline.sql": "5a6b0cab452c3943744be1b4043b36b90e66465b6d57acd0f3d0987b84ffd7b3",
+    "scripts/dev/fixtures/agent-downline-rake-scope/bootstrap.sql": "25efd12617f7023903a1a9c75c63dc4414190ffeb7c15e7c2493af9b80864b17",
+    "scripts/dev/fixtures/agent-downline-rake-scope/current-helper-receipt.json": "aabe2ea2c534a2e01d615bb67b9f8663c63b6960894081b0e2ce7dbe9e910101",
+    "supabase/migrations/20260912060700_agent_downline_rake_is_scoped_to_overseer_clubs.sql": "685b39aec817aba9f12319465aa1ee6fff0860b81ddf11deff4515ecb18dd199"
+  },
+  "helpers": [
+    {
+      "signature": "fn_is_union_overseer(uuid,uuid)",
+      "sha256": "fad7f6412aea9234020af2b28dccdecdaf82cc62f8b3cf60067fb67093e8de58",
+      "observed_at": "2026-09-12 06:01:32.392975+00"
+    },
+    {
+      "signature": "fn_is_agent_ancestor(uuid,uuid,uuid)",
+      "sha256": "a63a8020ddb99c13543ce6d6a5f61da69db433a6d83f12eb681c285329f84ca2",
+      "observed_at": "2026-09-12 06:01:32.39296+00"
+    },
+    {
+      "signature": "fn_is_club_admin_uid(uuid)",
+      "sha256": "f60911a69306ab6d5a35060e73aef87ec626e9d708b7abb914b90dfc7a98a96f",
+      "observed_at": "2026-09-12 06:01:32.392972+00"
+    },
+    {
+      "signature": "fn_union_week_start(timestamp with time zone)",
+      "sha256": "185e48e40d03997a5dc7e13aee8161983156e0e47aaa4be3dcb5bee7305acb1c",
+      "observed_at": "2026-09-12 06:01:32.392999+00"
+    },
+    {
+      "signature": "fn_allocate_rake_credits(numeric,jsonb,text)",
+      "sha256": "0fc066c4bb7219a8948eb112c5a5037444269601a72bb21d99bf1ab585269063",
+      "observed_at": "2026-09-12 06:01:32.392785+00"
+    },
+    {
+      "signature": "fn_rake_shares_for_record(uuid,numeric,jsonb,text)",
+      "sha256": "a3b181c551dfae1d8138ed15687a9b42a410795738514e161cf240aa2fb5bae6",
+      "observed_at": "2026-09-12 06:01:32.392977+00"
+    },
+    {
+      "signature": "fn_arena_name(text,text,text,text,text,text)",
+      "sha256": "9a9cc29d8d8b736175d0522fbc2220ba2a165e230d5578396a00e4b280444207",
+      "observed_at": "2026-09-12 06:01:32.392787+00"
+    }
+  ],
+  "qualification": "Synthetic reduced schema and Auth claims transport; real consumed helper bodies. Not live Auth/session/funded/production proof."
+}

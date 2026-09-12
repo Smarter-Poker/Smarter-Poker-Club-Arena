@@ -1092,6 +1092,10 @@ jobs:
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
           sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17
+      - name: BBJ bank replay identity and drift-safe installation
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-bbj-bank-replay.py
       - name: Atomic departures, ownership, rollback and concurrency
         env:
           PGBIN: /usr/lib/postgresql/17/bin
@@ -1106,6 +1110,11 @@ jobs:
         env:
           PGBIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/probe-a-bust-is-ranked-by-when-it-happened-pg17.sh
+
+      - name: Agent downline rake stays in overseer clubs
+        env:
+          PGBIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/dev/probe-agent-downline-rake-scope-pg17.py
 
       - name: Certified V31 PostgreSQL 17 behavior gate
         if: >-

@@ -50,6 +50,7 @@ describe('planOrphanReseats', () => {
     });
     // Seat 2 is taken on the destination, so the lowest free seat is 1.
     expect(plan[0].toSeat).toBe(1);
+    expect(describeUnmovableOrphans(tables, seats).ambiguousClosedSources).toEqual([]);
   });
 
   it('never moves a player who is already sitting on open felt', () => {
@@ -59,6 +60,7 @@ describe('planOrphanReseats', () => {
     // Two live seats is a money question (which stack is real), not a repair.
     expect(planOrphanReseats(tables, seats)).toEqual([]);
     expect(describeUnmovableOrphans(tables, seats).duplicateSeat).toEqual(['p1']);
+    expect(describeUnmovableOrphans(tables, seats).ambiguousClosedSources).toEqual([]);
   });
 
   it('never moves a stranded seat with no chips', () => {
@@ -67,6 +69,7 @@ describe('planOrphanReseats', () => {
 
     expect(planOrphanReseats(tables, seats)).toEqual([]);
     expect(describeUnmovableOrphans(tables, seats).noChips).toEqual(['busted']);
+    expect(describeUnmovableOrphans(tables, seats).ambiguousClosedSources).toEqual([]);
   });
 
   it('plans nothing when there is no open table - the reopen sweep owns that', () => {
@@ -126,6 +129,24 @@ describe('planOrphanReseats', () => {
     const seats = [seat('t2', 'twice', 1, 100), seat('t3', 'twice', 2, 250)];
 
     expect(planOrphanReseats(tables, seats)).toEqual([]);
+    const expected = [{ userId: 'twice', sources: seats }];
+    expect(describeUnmovableOrphans(tables, seats).ambiguousClosedSources).toEqual(expected);
+    expect(describeUnmovableOrphans(tables, [...seats].reverse()).ambiguousClosedSources).toEqual(
+      expected
+    );
+  });
+
+  it('preserves raw closed-source observations without mutating the input', () => {
+    const tables = [open('t1'), closed('t2'), closed('t3')];
+    const seats = [seat('t3', 'twice', 2, '250.00'), seat('t2', 'twice', 1, 100)];
+    const before = seats.map((row) => ({ ...row }));
+    const diagnostic = describeUnmovableOrphans(tables, seats);
+    expect(diagnostic.ambiguousClosedSources).toEqual([
+      { userId: 'twice', sources: [before[1], before[0]] },
+    ]);
+    expect(seats).toEqual(before);
+    expect(diagnostic.ambiguousClosedSources[0].sources[0]).not.toBe(seats[1]);
+    expect(planOrphanReseats(tables, seats)).toEqual([]);
   });
 
   it('ignores a seat pointing at a table this tournament does not own', () => {
@@ -133,6 +154,7 @@ describe('planOrphanReseats', () => {
     const seats = [seat('someone-elses-table', 'p1', 1, 100)];
 
     expect(planOrphanReseats(tables, seats)).toEqual([]);
+    expect(describeUnmovableOrphans(tables, seats).ambiguousClosedSources).toEqual([]);
   });
 
   it('respects the per-pass budget so a broken board cannot become an outage', () => {

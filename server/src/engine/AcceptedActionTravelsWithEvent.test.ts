@@ -35,12 +35,16 @@ function harness(stacks: number[], variant: HandConfig['gameVariant'] = 'nlh') {
   controller.start();
   return { controller, events };
 }
-async function drain(events: ActionEvent[], lateState: ReturnType<HandController['getState']>) {
+async function drain(
+  events: ActionEvent[],
+  lateState: ReturnType<HandController['getState']>,
+  missingController = false
+) {
   const owner = {
     tableId: 'accepted-action',
     handCount: 1,
     currentHandActions: [] as ActionRecord[],
-    handController: { getState: () => lateState },
+    handController: missingController ? undefined : { getState: () => lateState },
     markProgress: vi.fn(),
     broadcastCurrentState: vi.fn(),
     seatedPlayers: lateState.players.map((p) => ({ ...p, seat_number: p.seat })),
@@ -166,5 +170,13 @@ describe('accepted action facts survive a delayed history consumer', () => {
       isFullRaise: false,
       stage: 'preflop',
     });
+    const legacyWithoutController = await drain(
+      [{ type: 'PLAYER_ACTION', seat: 1, action: 'all_in', amount: 200, stage: 'preflop' }],
+      state,
+      true
+    );
+    expect(legacyWithoutController.preActionEngine.onBetPlaced.mock.calls).toEqual([
+      ['accepted-action', 'u1'],
+    ]);
   });
 });

@@ -621,7 +621,12 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           // Bible V8 §4.15: When a bet or raise occurs, invalidate all auto_check pre-actions
           // (they're no longer valid because there's now a bet to face)
           if (event.action === 'bet' || event.action === 'raise' || event.action === 'all_in') {
-            this.preActionEngine.onBetPlaced(this.tableId, actorId);
+            this.preActionEngine.onBetPlaced(
+              this.tableId,
+              event.record?.userId ??
+                this.seatedPlayers.find((p) => p.seat_number === event.seat)?.user_id ??
+                ''
+            );
           }
 
           // 2026-04-14 USER FEEDBACK FIX: emit a discrete player_action event so

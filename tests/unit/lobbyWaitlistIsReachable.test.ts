@@ -57,11 +57,13 @@ describe('a full cash table offers the waitlist', () => {
     // Join Table must be gated on the table NOT being full. Since the
     // 2026-09-09 must-move audit it is also gated on the table not being
     // CLOSED - a cluster table the controller closed cannot be joined either -
-    // so the pin asserts the full-gate as a substring of whatever guards
-    // precede it, and asserts the closed-gate separately rather than pinning
-    // one exact spelling of the whole condition.
-    expect(tsx).toContain('!full && ctx.onJoinTable && (');
-    expect(tsx).toMatch(/\{!closed && !full && ctx\.onJoinTable && \(/);
+    // and since 2026-09-11 on the board not being a closed arena, whose
+    // buy-in door refuses every seat while its ladder is listed. Three gates
+    // now, and a fourth is likely, so the pin asserts that each required gate
+    // is PRESENT ahead of the handler rather than pinning one exact spelling
+    // of the whole condition, which is what went red when the third arrived.
+    expect(tsx).toContain('!full && ctx.onJoinTable');
+    expect(tsx).toMatch(/\{!closed && !full && ctx\.onJoinTable/);
     expect(tsx).toMatch(/\{!closed && full && ctx\.onWaitlistToggle && \(/);
   });
 

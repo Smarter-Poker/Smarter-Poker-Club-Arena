@@ -5572,6 +5572,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           busy={actionBusy || waitlistActionBusy || isRegisteringMtt || deletingTableId !== null}
           onClose={() => setPanelOpen(false)}
           onJoinTable={handleJoinTable}
+          seatsClosedLabel={arenaSeatsClosedLabel}
           onWaitlistToggle={handleWaitlistToggle}
           onRegister={handleRegister}
           onUnregister={handleUnregister}

@@ -52,6 +52,8 @@ export interface GameLobbyPanelProps {
   busy: boolean;
   onClose: () => void;
   onJoinTable: (tableId: string) => void;
+  /** Why no seat can be taken on this whole board; see LobbyRowContext. */
+  seatsClosedLabel?: string;
   onWaitlistToggle: (tableId: string, joining: boolean) => void;
   onRegister: (t: LobbyTournamentRow) => void;
   onUnregister: (t: LobbyTournamentRow) => void;
@@ -111,6 +113,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
     busy,
     onClose,
     onJoinTable,
+    seatsClosedLabel,
     onWaitlistToggle,
     onRegister,
     onUnregister,
@@ -379,6 +382,15 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
           run: () => onWaitlistToggle(entry.id, true),
           needsAuth: true,
         };
+      /* The arena's ladder is listed while funded play is closed and the
+         buy-in door refuses every seat. Offering the action here would send
+         the player to a panel whose only outcome is an error. */
+      if (seatsClosedLabel)
+        return {
+          label: seatsClosedLabel,
+          kind: 'disabled' as const,
+          note: 'The Tables Are Listed So You Can Watch. Seats Open Later.',
+        };
       return {
         label: game ? 'Join Game' : 'Join Table',
         kind: 'primary' as const,
@@ -482,6 +494,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
       needsAuth: true,
     };
   }, [
+    seatsClosedLabel,
     entry,
     isCash,
     seated,

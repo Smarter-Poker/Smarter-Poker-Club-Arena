@@ -411,13 +411,14 @@ async function projectChains(
   chains: ProjectionRow[][],
   concurrency: number,
   blockedTables: Set<string>,
-  summary: HandProjectionDrainSummary
+  summary: HandProjectionDrainSummary,
+  deadlineAt: number
 ): Promise<void> {
   let next = 0;
   const lanes = Math.max(1, Math.min(concurrency, chains.length));
   await Promise.all(
     Array.from({ length: lanes }, async () => {
-      while (!stopping) {
+      while (!stopping && Date.now() < deadlineAt) {
         const chain = chains[next++];
         if (!chain) return;
         await projectChain(chain, blockedTables, summary);
@@ -436,8 +437,16 @@ async function runDrain(): Promise<HandProjectionDrainSummary> {
   const blockedTables = new Set<string>();
   drainsTotal++;
   lastDrainStartedAt = Date.now();
+  /* THE PASS IS BOUNDED, NOT ABANDONED (2026-09-12). The deadline must be
+     observed by the loop doing the work: a wrapper that merely rejects leaves
+     this pass running and hands its lane to a second pass beside it - the one
+     thing this worker must never do, because per-table chain order is its
+     entire purpose. Orphaned passes kept PostgREST chains alive on the same
+     client the lease heartbeats use and starved them, which killed and rebuilt
+     every table on the platform for five hours until a restart cleared them. */
+  const deadlineAt = lastDrainStartedAt + DRAIN_DEADLINE_MS;
 
-  while (!stopping && visited < DRAIN_MAX) {
+  while (!stopping && visited < DRAIN_MAX && Date.now() < deadlineAt) {
     const { data, error } = await supabase
       .from('hand_projection_outbox')
       .select('hand_id,table_id,hand_number')
@@ -457,7 +466,7 @@ async function runDrain(): Promise<HandProjectionDrainSummary> {
       visited++;
       cursor = Math.max(cursor, Number(row.hand_number) || cursor);
     }
-    await projectChains(chainsByTable(rows), concurrency, blockedTables, summary);
+    await projectChains(chainsByTable(rows), concurrency, blockedTables, summary, deadlineAt);
 
     if (rows.length < DRAIN_PAGE) break;
   }
@@ -466,7 +475,7 @@ async function runDrain(): Promise<HandProjectionDrainSummary> {
   // not mistake its own work budget for an empty outbox. Queue one coalesced
   // continuation while the current promise still owns the worker. This is
   // event-driven backlog continuation, not a correctness poll or timer.
-  if (!stopping && visited >= DRAIN_MAX) wakeAfterDrain = true;
+  if (!stopping && (visited >= DRAIN_MAX || Date.now() >= deadlineAt)) wakeAfterDrain = true;
 
   return summary;
 }
@@ -528,42 +537,6 @@ const DRAIN_DEADLINE_MS = boundedEnvInt(
   600_000
 );
 
-/** Reject if the pass has not settled inside its deadline. */
-function withDeadline(
-  pass: Promise<HandProjectionDrainSummary>,
-  budgetMs: number = DRAIN_DEADLINE_MS
-): Promise<HandProjectionDrainSummary> {
-  return new Promise<HandProjectionDrainSummary>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(
-        new Error(
-          `[HandProjection] drain pass did not settle within ${budgetMs}ms - ` +
-            'releasing the lane so the safety poll can run again'
-        )
-      );
-    }, budgetMs);
-    timer.unref?.();
-    pass.then(
-      (summary) => {
-        clearTimeout(timer);
-        resolve(summary);
-      },
-      (err) => {
-        clearTimeout(timer);
-        reject(err);
-      }
-    );
-  });
-}
-
-/** Test seam: the deadline wrapper with an explicit budget. */
-export function withDrainDeadlineForTest(
-  pass: Promise<HandProjectionDrainSummary>,
-  budgetMs: number
-): Promise<HandProjectionDrainSummary> {
-  return withDeadline(pass, budgetMs);
-}
-
 export { DRAIN_DEADLINE_MS as HAND_PROJECTION_DRAIN_DEADLINE_MS };
 
 /** Start or join the one process-wide ordered drain. */
@@ -572,7 +545,7 @@ function beginDrain(): Promise<HandProjectionDrainSummary> {
     wakeAfterDrain = true;
     return drainPromise;
   }
-  const active = withDeadline(runDrain());
+  const active = runDrain();
   drainPromise = active;
   let causalRetryOwed = false;
   void active

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { spawnSync } from 'node:child_process';
 
 const read = (path: string) => readFileSync(resolve(__dirname, '../..', path), 'utf8');
 const uncommented = (source: string) =>
@@ -9,7 +10,7 @@ const uncommented = (source: string) =>
     .filter((line) => !/^\s*#/.test(line))
     .join('\n');
 const job = (yaml: string, name: string) => {
-  const start = yaml.indexOf(`  ${name}:`);
+  const start = yaml.search(new RegExp(`^ {2}${name}:$`, 'm'));
   expect(start, `missing job ${name}`).toBeGreaterThan(-1);
   const rest = yaml.slice(start + `  ${name}:`.length);
   const next = /^ {2}[A-Za-z0-9_-]+:\s*$/m.exec(rest);
@@ -20,6 +21,56 @@ const deploy = read('.github/workflows/auto-deploy-hetzner.yml');
 const publish = read('.github/workflows/publish-club-arena.yml');
 const publishCode = uncommented(publish);
 const buildProvenance = read('scripts/stamp-build-provenance.mjs');
+const ci = read('.github/workflows/ci.yml');
+
+describe('the required server check accounts for every shard', () => {
+  const shards = uncommented(job(ci, 'server_shards'));
+  const aggregate = uncommented(job(ci, 'server'));
+  it('retains the required name and the complete matrix prerequisite', () => {
+    expect(aggregate).toMatch(/^ {4}name: Server Engine \(typecheck \+ tests\)$/m);
+    expect(aggregate).toMatch(/^ {4}needs: \[changes, server_shards\]$/m);
+    expect(aggregate).toMatch(/^ {4}if: always\(\)$/m);
+    expect(shards).toMatch(/^ {8}shard: \[1, 2, 3, 4\]$/m);
+    expect(shards).not.toMatch(/^\s+(?:include|exclude|continue-on-error):/m);
+    expect(shards).toMatch(/^\s+npm test -- --shard="\$SERVER_TEST_SHARD\/4"\s*$/m);
+    expect(shards).toContain("needs.changes.result != 'success'");
+    expect(shards).toContain("needs.accounting_postgres.result != 'success'");
+  });
+  const script = aggregate
+    .match(/^ {8}run: \|\n((?:^ {10}.+\n?)+)/m)?.[1]
+    .split('\n')
+    .map((line) => line.slice(10))
+    .join('\n');
+  for (const [result, event, diff, changed, expected] of [
+    ['success', 'pull_request', 'success', 'true', 0],
+    ['success', 'schedule', 'skipped', '', 0],
+    ['skipped', 'pull_request', 'success', 'false', 0],
+    ['skipped', 'pull_request', 'success', 'true', 1],
+    ['skipped', 'pull_request', 'failure', 'false', 1],
+    ['skipped', 'pull_request', 'success', '', 1],
+    ['skipped', 'schedule', 'skipped', '', 1],
+    ['failure', 'pull_request', 'success', 'true', 1],
+    ['cancelled', 'pull_request', 'success', 'true', 1],
+    ['unknown', 'pull_request', 'success', 'false', 1],
+  ] as const) {
+    it(`executes the aggregate for ${result}/${event}/${diff}/${changed || 'missing'}`, () => {
+      expect(script).toBeTruthy();
+      expect(script).toMatch(/^case "\$MATRIX_RESULT" in/);
+      const run = spawnSync('bash', ['-euo', 'pipefail', '-c', script!], {
+        encoding: 'utf8',
+        timeout: 2000,
+        env: {
+          PATH: process.env.PATH,
+          MATRIX_RESULT: result,
+          CI_EVENT_NAME: event,
+          DIFF_RESULT: diff,
+          SERVER_CHANGED: changed,
+        },
+      });
+      expect(run.status, run.stderr).toBe(expected);
+    });
+  }
+});
 
 describe('engine deployment reports what actually happened', () => {
   it('calls a release shipped only after the durable transaction and independent proof agree', () => {

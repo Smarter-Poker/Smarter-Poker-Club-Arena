@@ -1116,7 +1116,7 @@ jobs:
           PG17_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/ci/probes/horse-phase4-certified-solver/run-pg17.sh
 
-  server:
+  server_shards:
     # COST 2026-08-23: this already ran, and passed, on the pull request -
     # the ruleset will not merge without it. Re-running it on the merge
     # commit tests an identical tree. 34 of every 100 CI runs were that
@@ -1145,9 +1145,14 @@ jobs:
        (github.event_name == 'pull_request' &&
         (needs.changes.result != 'success' ||
          needs.changes.outputs.server == 'true')))
-    name: Server Engine (typecheck + tests)
+    name: Server Engine shard ${{ matrix.shard }}/4
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: [1, 2, 3, 4]
 
     defaults:
       run:
@@ -1196,7 +1201,11 @@ jobs:
         run: npx vitest run src/engine/FreezeRegression.test.ts src/engine/TableWatchdog.test.ts src/maintenance/MaintenanceBreak.test.ts src/maintenance/thawInstallments.test.ts --reporter=verbose
 
       - name: Full server test suite
-        run: npm test
+        env:
+          SERVER_TEST_SHARD: ${{ matrix.shard }}
+        run: |
+          [[ "$SERVER_TEST_SHARD" =~ ^[1-4]$ ]]
+          npm test -- --shard="$SERVER_TEST_SHARD/4"
 
       # Guards the single highest-impact line of the freeze fix. The all-in
       # dead-buttons bug (production hand #1315: 30.1s between a river shove
@@ -1206,6 +1215,34 @@ jobs:
       - name: All-in action panel must never be pointer-events:none
         working-directory: .
         run: node scripts/ci/check-allin-pointer-events.mjs
+
+  # Preserve the required check name. A cancelled/failed matrix, or an
+  # unexplained skip, must never satisfy branch protection through one shard.
+  server:
+    needs: [changes, server_shards]
+    if: always()
+    name: Server Engine (typecheck + tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Every required server shard passed
+        env:
+          MATRIX_RESULT: ${{ needs.server_shards.result }}
+          DIFF_RESULT: ${{ needs.changes.result }}
+          SERVER_CHANGED: ${{ needs.changes.outputs.server }}
+          CI_EVENT_NAME: ${{ github.event_name }}
+        run: |
+          case "$MATRIX_RESULT" in
+            success) echo 'All four server shards passed.' ;;
+            skipped)
+              if [ "$CI_EVENT_NAME" = pull_request ] && [ "$DIFF_RESULT" = success ] && [ "$SERVER_CHANGED" = false ]; then
+                echo 'Server tests skipped: the checked diff does not change the server.'
+              else
+                echo '::error::Required server tests were unexpectedly skipped.'
+                exit 1
+              fi ;;
+            *) echo "::error::The server matrix did not pass ($MATRIX_RESULT)."; exit 1 ;;
+          esac
 
   # ═══════════════════════════════════════════════════════════════════════════
   #  WHAT DID THIS RUN ACTUALLY VERIFY?

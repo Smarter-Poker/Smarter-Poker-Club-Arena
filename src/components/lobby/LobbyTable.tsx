@@ -893,7 +893,13 @@ const COL_ACTIONS: ColumnDef = {
               {game ? 'Game' : 'Table'} {e.statusLabel}
             </button>
           )}
-          {!closed && full && ctx.onWaitlistToggle && (
+          {/* THE CLOSED GATE COMES BEFORE THE QUEUE (2026-09-12), same repair
+              as GameLobbyPanel's. A full table in a closed arena offered Join
+              Waitlist, and the queue exists to lead to a buy-in the door then
+              refuses, on a hold that lasts sixty seconds. `waiting` keeps the
+              LEAVE action reachable: a player already queued must always be
+              able to get off. */}
+          {!closed && full && ctx.onWaitlistToggle && !(ctx.seatsClosedLabel && !waiting) && (
             <button
               type="button"
               className={`lt-act ${waiting ? 'lt-act--done' : 'lt-act--primary'}`}
@@ -907,7 +913,7 @@ const COL_ACTIONS: ColumnDef = {
           {/* A board nobody may sit at says so, rather than offering a seat the
               buy-in door will refuse. A player already seated still returns to
               their own table: the closed gate is about taking a NEW seat. */}
-          {!closed && !full && ctx.seatsClosedLabel && !seated && (
+          {!closed && ctx.seatsClosedLabel && !seated && !waiting && (
             <button
               type="button"
               className="lt-act"

@@ -13,6 +13,11 @@ import {
   assertFixtureAuthMigrations,
   assertLedgerAttributionIdentity,
 } from './auth-fixture.mjs';
+import { assertCanonicalSignup, assertAttributionChipSeed } from './auth-bootstrap-proof.mjs';
+import {
+  serviceRoleBootstrapSql,
+  assertNativeServiceRoleBoundary,
+} from './service-role-boundary.mjs';
 import { createFixtureGateway, loadStaticManifest, findPublicAnonKey } from './gateway.mjs';
 import {
   extractArchive,
@@ -466,6 +471,8 @@ async function checkPackage() {
     'runtime-files.mjs',
     'gateway.mjs',
     'auth-fixture.mjs',
+    'auth-bootstrap-proof.mjs',
+    'service-role-boundary.mjs',
     'actors.mjs',
     'financial-route-phase.mjs',
     'seed-fixture.mjs',
@@ -640,19 +647,7 @@ async function start(args) {
     await supervisor.databaseOwner.end(db);
     db = supervisor.databaseOwner.own(new pg.Client({ ...connection, database }));
     await db.connect();
-    await db.query(`CREATE ROLE anon NOLOGIN NOBYPASSRLS;
-      CREATE ROLE authenticated NOLOGIN NOBYPASSRLS;
-      CREATE ROLE service_role NOLOGIN BYPASSRLS;
-      CREATE ROLE authenticator LOGIN NOINHERIT PASSWORD '${secrets.databasePassword}';
-      GRANT anon, authenticated, service_role TO authenticator;
-      CREATE ROLE supabase_auth_admin LOGIN CREATEROLE PASSWORD '${secrets.databasePassword}';
-      CREATE ROLE supabase_admin LOGIN SUPERUSER PASSWORD '${secrets.databasePassword}';
-      CREATE ROLE dashboard_user NOLOGIN;
-      GRANT anon, authenticated, service_role TO supabase_admin WITH ADMIN OPTION;
-      CREATE SCHEMA auth AUTHORIZATION supabase_auth_admin;
-      ALTER ROLE supabase_auth_admin SET search_path TO auth;
-      GRANT CREATE ON DATABASE ${database} TO supabase_auth_admin;
-      CREATE SCHEMA _realtime AUTHORIZATION supabase_admin;`);
+    await db.query(serviceRoleBootstrapSql(secrets.databasePassword));
     stage = 'genuine-auth-migrations';
     await supervisor.command('/usr/local/bin/auth', ['migrate'], env.auth);
     assertFixtureAuthMigrations(
@@ -686,6 +681,7 @@ async function start(args) {
       '-f',
       schemaRoot + '/schema.sql',
     ]);
+    const serviceRoles = await assertNativeServiceRoleBoundary(db);
     await supervisor.start('auth', '/usr/local/bin/auth', ['serve'], env.auth);
     await supervisor.until(() => health('http://127.0.0.1:9999/health'));
     stage = 'real-users-and-financial-seed';
@@ -703,37 +699,8 @@ async function start(args) {
     stage = 'disabled-ledger-attribution';
     const attributionId = await api.createLedgerAttributionIdentity();
     await assertLedgerAttributionIdentity(db);
-    const attribution = await db.query(
-      `SELECT
-      (SELECT count(*)::integer FROM public.profiles) AS profiles,
-      (SELECT count(*)::integer FROM public.club_members) AS members,
-      (SELECT count(*)::integer FROM public.table_seats) AS seats,
-      (SELECT count(*)::integer FROM public.ca_mint_ledger) AS mints,
-      (SELECT count(*)::integer FROM public.club_members WHERE user_id=$1) AS attribution_memberships,
-      (SELECT count(*)::integer FROM public.table_seats WHERE user_id=$1) AS attribution_seats,
-      (SELECT sum(chip_treasury)::text FROM public.clubs) AS treasury,
-      (SELECT sum(chip_balance)::text FROM public.club_members) AS wallets,
-      (SELECT sum(stack)::text FROM public.table_seats) AS stacks`,
-      [attributionId]
-    );
-    const balances = attribution.rows[0];
-    for (const field of ['treasury', 'wallets', 'stacks'])
-      balances[field] = Number(balances[field]);
-    assert.deepEqual(
-      balances,
-      {
-        profiles: 4,
-        members: 3,
-        seats: 2,
-        mints: 1,
-        attribution_memberships: 0,
-        attribution_seats: 0,
-        treasury: 96000,
-        wallets: 3600,
-        stacks: 400,
-      },
-      'FIXTURE_ATTRIBUTION_MUST_NOT_CHANGE_CHIP_SEED'
-    );
+    const attributionSignup = await assertCanonicalSignup(db, [attributionId]);
+    await assertAttributionChipSeed(db, attributionId);
     const spectator = users[2];
     stage = 'private-observation-bridge';
     const { startObservationBridge } = await import('./observation-bridge.mjs');
@@ -819,6 +786,11 @@ async function start(args) {
         version: 1,
         scope: capabilities.scope,
         source_contract: template.source_contract,
+        bootstrap_proof: {
+          service_roles: serviceRoles,
+          signup: fixture.signup_proof,
+          attribution_signup: attributionSignup,
+        },
         observation_bridge: { ...bridge.binding, socket: '/run/fixture-observer/observation.sock' },
         table_id: fixture.table_id,
         spectator_user_id: spectator.id,

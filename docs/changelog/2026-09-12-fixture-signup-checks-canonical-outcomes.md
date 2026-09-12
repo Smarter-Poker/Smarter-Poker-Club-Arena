@@ -1,0 +1,7 @@
+# Fixture signup checks canonical outcomes
+
+Real Auth can create a user even when a signup trigger catches an error. The isolated component fixture now checks each of its three ordinary signups before funding: the profile and legacy mirror, zero PLAYER wallet, all three diamond mirrors, the 500-diamond promotional signup mint and linked journal, finalized mint claim, initial daily streak, and absence of signup errors or diamond incidents. The banned attribution identity remains after the exact-three seed and receives its own signup check. Its chip conservation check counts chip mint rows separately from legitimate diamond grants.
+
+Both native entrypoints share the same role bootstrap. Auth admin uses NOINHERIT, the Auth schema belongs to supabase_admin with explicit consumed schema grants, and the unnecessary application-role memberships on supabase_admin are removed. Native readback checks migration access, application schema boundaries, and authenticator SET membership without inherited authority after the real services run.
+
+The sanitized role receipt explicitly records local-superuser postgres and `production_application_privilege_parity: false`. Native service smoke does not restore the whole application schema and does not certify canonical signup or funded product behavior. Full application ACL composition, current source authority, the coordinated pre-request hook, and the existing schema readiness gate remain required. No production migration, account, balance or configuration is changed by this patch.

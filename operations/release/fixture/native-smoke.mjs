@@ -14,6 +14,10 @@ import {
   assertFixtureAuthMigrations,
   assertLedgerAttributionIdentity,
 } from './auth-fixture.mjs';
+import {
+  serviceRoleBootstrapSql,
+  assertNativeServiceRoleBoundary,
+} from './service-role-boundary.mjs';
 import { startObservationBridge } from './observation-bridge.mjs';
 import {
   prepareRealtimeCookie,
@@ -354,24 +358,10 @@ async function services() {
     stage = 'postgresql-wal2json-slot-drop';
     await db.query("SELECT pg_drop_replication_slot('fixture_wal2json_probe')");
     stage = 'postgresql-bootstrap-roles';
-    await db.query(`
-      CREATE ROLE dashboard_user NOLOGIN;
-      CREATE ROLE anon NOLOGIN;
-      CREATE ROLE authenticated NOLOGIN;
-      CREATE ROLE service_role NOLOGIN BYPASSRLS;
-      CREATE ROLE authenticator LOGIN NOINHERIT PASSWORD '${password}';
-      GRANT anon, authenticated, service_role TO authenticator;
-      CREATE ROLE supabase_auth_admin LOGIN CREATEROLE PASSWORD '${password}';
-      CREATE ROLE supabase_admin LOGIN SUPERUSER PASSWORD '${password}';
-      GRANT anon, authenticated, service_role TO supabase_admin WITH ADMIN OPTION;
-    `);
+    await db.query(serviceRoleBootstrapSql(password));
     stage = 'postgresql-bootstrap-schemas';
     await db.query(`
-      CREATE SCHEMA auth AUTHORIZATION supabase_auth_admin;
-      ALTER ROLE supabase_auth_admin SET search_path TO auth;
-      GRANT CREATE ON DATABASE ${database} TO supabase_auth_admin;
       CREATE SCHEMA extensions;
-      CREATE SCHEMA _realtime AUTHORIZATION supabase_admin;
     `);
     for (const [name, statement] of [
       ['dblink', 'CREATE EXTENSION dblink'],
@@ -878,6 +868,8 @@ async function services() {
     }, 90000);
     assert.equal(await readFile('/tmp/native-smoke-oracle-complete', 'utf8'), 'complete');
     databaseOwner.check();
+    stage = 'native-migrated-service-role-boundary';
+    const serviceRoles = await assertNativeServiceRoleBoundary(db);
     console.log(
       JSON.stringify({
         scope: 'native-service-smoke',
@@ -886,6 +878,7 @@ async function services() {
         auth: '2.196.0',
         mfa: 'aal2',
         ledger_attribution: 'banned-without-session',
+        service_roles: serviceRoles,
         postgrest: '14.5',
         realtime: '2.134.10',
         realtime_listener: '127.0.0.1:4000',

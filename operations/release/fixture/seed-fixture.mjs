@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { pathToFileURL } from 'node:url';
+import { assertCanonicalSignup } from './auth-bootstrap-proof.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CLUB_REQUEST = '90000000-0000-4000-8000-000000000001';
@@ -67,6 +68,7 @@ export async function seedFixture({
   let stage = 'begin';
   let locked = false;
   let claims;
+  let signupProof;
   const transaction = async (action, actorIndex = null) => {
     await db.query('BEGIN ISOLATION LEVEL SERIALIZABLE');
     try {
@@ -133,6 +135,8 @@ export async function seedFixture({
         assert.equal(session.aal, index === 2 ? 'aal2' : 'aal1', 'FIXTURE_SESSION_AAL_REQUIRED');
         return { sub: id, role: 'authenticated', session_id: session.id, aal: session.aal };
       });
+      stage = 'canonical-signup-outcomes';
+      signupProof = await assertCanonicalSignup(db, ids);
       stage = 'empty-database';
       const empty = await db.query(`SELECT
         NOT EXISTS(SELECT 1 FROM public.clubs) AND NOT EXISTS(SELECT 1 FROM public.tables) AND
@@ -262,6 +266,7 @@ export async function seedFixture({
       table_id: tableId,
       actor_user_ids: [actorOne, actorTwo],
       spectator_user_id: spectator,
+      signup_proof: signupProof,
     };
   } catch (error) {
     const code =

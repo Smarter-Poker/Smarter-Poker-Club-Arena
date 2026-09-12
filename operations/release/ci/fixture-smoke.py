@@ -11,7 +11,8 @@ import sys
 import uuid
 
 FILES = ('Dockerfile', 'package.json', 'package-lock.json', 'fixture-server.mjs',
-         'runtime-files.mjs', 'gateway.mjs', 'auth-fixture.mjs', 'actors.mjs', 'financial-route-phase.mjs',
+         'runtime-files.mjs', 'gateway.mjs', 'auth-fixture.mjs', 'auth-bootstrap-proof.mjs',
+         'service-role-boundary.mjs', 'actors.mjs', 'financial-route-phase.mjs',
          'seed-fixture.mjs', 'native-smoke.mjs', 'observation-bridge.mjs', 'build-image.sh', 'smoke-image.sh')
 PREFIX = 'operations/release/fixture/'
 CONTROL_FILES = tuple('operations/release/native/' + name for name in (
@@ -222,6 +223,12 @@ def smoke_records(output):
     services = {'scope': 'native-service-smoke', 'postgres': '17.11',
                 'extensions': 6, 'auth': '2.196.0', 'mfa': 'aal2',
                 'ledger_attribution': 'banned-without-session',
+                'service_roles': {'auth_admin_inheritance': 'disabled',
+                                  'authenticator_membership': 'set-without-inherit',
+                                  'auth_schema_owner': 'supabase_admin',
+                                  'auth_schema_create': 'auth-admin-only-among-application-callers',
+                                  'bootstrap_postgres': 'local-superuser',
+                                  'production_application_privilege_parity': False},
                 'postgrest': '14.5', 'realtime': '2.134.10',
                 'change': 'observed', 'retries': 0,
                 'realtime_listener': '127.0.0.1:4000',

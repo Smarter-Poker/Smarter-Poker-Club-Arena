@@ -426,15 +426,31 @@ describe('ROUND 7 (2026-08-29) — the audit sweep', () => {
     expect(SCHED).toMatch(/n: this\.lastDealtInCount/);
   });
 
-  it('the bomb ante is rounded to the cent BEFORE anybody is charged', () => {
+  it('the bomb ante is rounded to the table UNIT before anybody is charged', () => {
     // The only forced-money path in the engine that did not round. The ante
     // multiplier steps by 0.5, so at micro stakes the product is a fraction of
     // a cent; snapChips then rounds each stack independently of state.pot and
     // the table stops conserving chips. Even at legal multiples the raw float
     // (0.1 * 3 = 0.30000000000000004) escaped into the actions log and into
     // hand_history.bomb_pot.ante_amount.
+    //
+    // 2026-09-12: and a cent is the whole unit of a CHIP and half of a
+    // DIAMOND, so rounding to it is only half the rule. A Diamond bomb ante of
+    // 1.5x a one Diamond blind is one and a half Diamonds, which the hand guard
+    // refuses - from a table that has already dealt. The rounding is now to
+    // whichever unit the table plays in, and the pin is on that property rather
+    // than on the one spelling it had while chips were the only asset.
     const fn = sliceMethod(HC, 'private postBombPotAntes');
-    expect(fn).toMatch(/Math\.round\(\s*\(bombPot\.anteFixed/);
+    expect(fn, 'the ante is derived from one value').toMatch(/bombPot\.anteFixed/);
+    expect(fn, 'and that value is rounded before anybody is charged').toMatch(
+      /const anteAmount =\s*\(?Math\.round\(/
+    );
+    expect(fn, 'to the unit the table plays in').toMatch(
+      /anteUnitCents\s*=\s*this\.config\.isTournament \|\| this\.config\.asset === 'diamonds' \? 100 : 1/
+    );
+    expect(fn, 'which is a cent for chips, so the chip ante is unchanged').toMatch(
+      /\/\s*anteUnitCents/
+    );
     expect(fn).toMatch(/const actualAnte = Math\.round\(Math\.min\(anteAmount, player\.stack\)/);
     // And the deck size comes from VariantRules, not a sixth local literal.
     expect(fn).toMatch(/deckSizeFor\(this\.config\.gameVariant\)/);

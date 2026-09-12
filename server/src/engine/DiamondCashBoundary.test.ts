@@ -58,7 +58,6 @@ describe('the first Diamond game stays inside the custody boundary', () => {
       { bbj_percent: 1 },
       { is_template: true },
       { insurance_enabled: true },
-      { bomb_pot_enabled: true },
       { seven_deuce_enabled: true },
       { nit_game: true },
       { all_in_or_fold: true },
@@ -98,6 +97,75 @@ describe('the first Diamond game stays inside the custody boundary', () => {
     expect(() =>
       assertDiamondCashTable({ ...table, straddle_enabled: true, seven_deuce_enabled: true })
     ).toThrow('Diamond Plain Cash Table Required');
+  });
+
+  /* BOMB POTS ARE ADMITTED (2026-09-12). The ante is a forced bet out of a
+     stack and the multi-board settlement has cut its shares in the table's own
+     unit since the tournament fix, so neither half needs the chip economy. What
+     the ROW still has to satisfy is that the ante could be whole and that the
+     bomb plays the table's own game. */
+  it('admits a bomb pot whose ante is whole and whose bombs are the table game', () => {
+    for (const change of [
+      { bomb_pot_enabled: true },
+      { bomb_pot_enabled: true, bomb_pot_ante_multiplier: 1 },
+      { bomb_pot_enabled: true, bomb_pot_ante_multiplier: 3 },
+      { bomb_pot_enabled: true, bomb_pot_ante_fixed: 5 },
+      { bomb_pot_enabled: true, bomb_pot_double_board: true },
+      { bomb_pot_enabled: true, bomb_pot_board_count: 3 },
+      { bomb_pot_enabled: true, bomb_pot_variant: 'nlh' },
+    ])
+      expect(() => assertDiamondCashTable({ ...table, ...change })).not.toThrow();
+  });
+
+  it('refuses a bomb pot that could not ante a whole Diamond', () => {
+    /* The multiplier slider steps by 0.5, so half a blind is a real setting and
+       half a Diamond is not a real bet. big_blind is 2 in this fixture. */
+    expect(() =>
+      assertDiamondCashTable({ ...table, bomb_pot_enabled: true, bomb_pot_ante_multiplier: 1.5 })
+    ).not.toThrow();
+    expect(() =>
+      assertDiamondCashTable({
+        ...table,
+        big_blind: 1,
+        bomb_pot_enabled: true,
+        bomb_pot_ante_multiplier: 1.5,
+      })
+    ).toThrow('Diamond Bomb Pots Require A Whole Ante');
+    expect(() =>
+      assertDiamondCashTable({ ...table, bomb_pot_enabled: true, bomb_pot_ante_fixed: 2.5 })
+    ).toThrow('Diamond Bomb Pots Require A Whole Ante');
+    expect(() =>
+      assertDiamondCashTable({ ...table, bomb_pot_enabled: true, bomb_pot_ante_multiplier: 0 })
+    ).toThrow('Diamond Bomb Pots Require A Whole Ante');
+  });
+
+  it('refuses a bomb pot that would deal a game the table is not certified for', () => {
+    for (const variant of ['plo4', 'plo5', 'short_deck', 'flo8', 'PLO4'])
+      expect(() =>
+        assertDiamondCashTable({ ...table, bomb_pot_enabled: true, bomb_pot_variant: variant })
+      ).toThrow('Diamond Bomb Pots Require The Table Game');
+    /* And the ante rule is not waived by the variant rule passing. */
+    expect(() =>
+      assertDiamondCashTable({
+        ...table,
+        bomb_pot_enabled: true,
+        bomb_pot_variant: 'nlh',
+        bomb_pot_ante_fixed: 2.5,
+      })
+    ).toThrow('Diamond Bomb Pots Require A Whole Ante');
+  });
+
+  it('says nothing about the bomb columns while bomb pots are off', () => {
+    /* A row can carry a stale multiplier from a template it was copied from.
+       The columns only bind when the feature is on. */
+    expect(() =>
+      assertDiamondCashTable({
+        ...table,
+        bomb_pot_enabled: false,
+        bomb_pot_ante_multiplier: 1.5,
+        bomb_pot_variant: 'plo4',
+      })
+    ).not.toThrow();
   });
 
   /* RUN IT TWICE IS ADMITTED (2026-09-12), and the two columns still have to be

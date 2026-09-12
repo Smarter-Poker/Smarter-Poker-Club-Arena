@@ -26,6 +26,31 @@ import type { ArenaIdentity } from './ArenaContext.js';
  * costs nobody a seat.
  */
 /**
+ * BOMB POTS ARE ADMITTED (2026-09-12, Phase 7 line three).
+ *
+ * A bomb pot is an equal forced ante from every dealt-in player and then a
+ * showdown across one to three boards. Neither half needs anything from the
+ * chip economy: the ante leaves a stack and enters the pot, and the multi-board
+ * settlement in HandController has cut its shares in the table's own unit since
+ * the tournament fix, so a Diamond bomb pot divides in whole Diamonds by the
+ * same rule run it twice does.
+ *
+ * Two things about the ROW still have to be refused, because either one deals a
+ * hand the rest of the boundary then rejects, and a table that deals a hand it
+ * cannot settle is worse than a table that never deals:
+ *
+ *   - an ante that is not a whole Diamond. The multiplier slider steps by 0.5,
+ *     so 1.5x a one Diamond blind is one and a half Diamonds, and the hand guard
+ *     refuses a fractional forced bet. Both modes are checked here: a fixed ante
+ *     on its own, and the blind multiple when there is no fixed ante.
+ *   - a bomb variant override. `bomb_pot_variant` lets an NLH table deal PLO
+ *     bombs, which is the classic bomb pot and is refused here for the same
+ *     reason plo4 is refused on the table itself: no variant beyond NLH is
+ *     certified for Diamond yet. An override the scheduler would IGNORE is
+ *     refused too, because a column that says one game while the table deals
+ *     another is a lie whichever way the engine resolves it.
+ */
+/**
  * RUN IT TWICE IS ADMITTED (2026-09-12, Phase 7 line three).
  *
  * It was refused because the RIT runout cut every pot into integer CENTS: a
@@ -69,7 +94,6 @@ export function assertDiamondCashTable(table: Record<string, unknown>): void {
   const disabled = [
     'is_template',
     'insurance_enabled',
-    'bomb_pot_enabled',
     'seven_deuce_enabled',
     'nit_game',
     'all_in_or_fold',
@@ -106,6 +130,18 @@ export function assertDiamondCashTable(table: Record<string, unknown>): void {
   const ante = table.ante ?? 0;
   if (typeof ante !== 'number' || !Number.isSafeInteger(ante) || ante < 0)
     throw new Error('Diamond Cash Requires A Whole Ante');
+  if (table.bomb_pot_enabled === true) {
+    const variant = String(table.bomb_pot_variant ?? '').toLowerCase();
+    if (variant !== '' && variant !== 'nlh')
+      throw new Error('Diamond Bomb Pots Require The Table Game');
+    const fixed = table.bomb_pot_ante_fixed;
+    const bombAnte =
+      typeof fixed === 'number' && fixed > 0
+        ? fixed
+        : Number(table.big_blind) * Number(table.bomb_pot_ante_multiplier ?? 2);
+    if (!Number.isSafeInteger(bombAnte) || bombAnte <= 0)
+      throw new Error('Diamond Bomb Pots Require A Whole Ante');
+  }
 }
 
 /** Refuse unsupported facts rather than suppressing a deduction after it was paid. */

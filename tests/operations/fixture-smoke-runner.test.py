@@ -189,7 +189,7 @@ class RunnerTests(unittest.TestCase):
                         network_present = True
                         raise TimeoutError('PRIVATE TOKEN MUST NOT LEAK')
                     if fault == 'native-stage':
-                        raise m.NativeSmokeFailure(json.dumps({'status': 'failed', 'stage': 'initialization', 'error': 'Error'}) + '\nPRIVATE TOKEN')
+                        raise m.NativeSmokeFailure(json.dumps({'status': 'failed', 'stage': 'initialization', 'error': 'Error'}) + '\nPRIVATE TOKEN', 7)
                     raw, proof = preimage_material()
                     private = Path(env['FIXTURE_SERVICE_PREIMAGE_PATH'])
                     self.assertNotEqual(private.parent, root / 'evidence')
@@ -249,6 +249,7 @@ class RunnerTests(unittest.TestCase):
         code, receipt, _ = self.exercise('native-stage')
         self.assertEqual(code, 1)
         self.assertEqual(receipt['native_failures'], [{'stage': 'initialization', 'category': 'Error'}])
+        self.assertEqual(receipt['native_command_exit_code'], 7)
         self.assertTrue(all(receipt['cleanup'].values()))
 
     def test_timeout_cleans_exact_container_without_success(self):

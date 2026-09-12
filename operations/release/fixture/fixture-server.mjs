@@ -566,16 +566,31 @@ function serviceEnvironments(secrets) {
 }
 
 async function start(args, preimageOnly = false) {
-  if (preimageOnly) assert.equal(args.length, 0);
-  const inputs = preimageOnly ? null : startArguments(args);
-  await checkPackage();
-  process.umask(0o077);
-  await mkdir(root, { mode: 0o755 });
-  await chmod(root, 0o755);
-  await mkdir(privateRoot, { mode: 0o700 });
-  await mkdir('/tmp/fixture/realtime', { recursive: true, mode: 0o700 });
-  await prepareRealtimeCookie();
-  await mkdir('/run/postgresql', { mode: 0o700 });
+  let inputs;
+  let setupStage = 'arguments';
+  try {
+    if (preimageOnly) assert.equal(args.length, 0);
+    inputs = preimageOnly ? null : startArguments(args);
+    setupStage = 'package';
+    await checkPackage();
+    process.umask(0o077);
+    setupStage = 'directories';
+    await mkdir(root, { mode: 0o755 });
+    await chmod(root, 0o755);
+    await mkdir(privateRoot, { mode: 0o700 });
+    await mkdir('/tmp/fixture/realtime', { recursive: true, mode: 0o700 });
+    setupStage = 'cookie';
+    await prepareRealtimeCookie();
+    setupStage = 'postgres-socket';
+    await mkdir('/run/postgresql', { mode: 0o700 });
+  } catch (error) {
+    if (preimageOnly) {
+      process.stderr.write(
+        JSON.stringify(nativeFailureDiagnostic('fixture-preimage-' + setupStage, error)) + '\n'
+      );
+    }
+    throw error;
+  }
   const supervisor = new ServiceSupervisor();
   let db, gateway, actors, bridge;
   let stage = 'archives';
@@ -935,7 +950,7 @@ async function start(args, preimageOnly = false) {
     process.stderr.write(`FIXTURE_FAILED:${stage}\n`);
     if (preimageOnly) {
       process.stderr.write(
-        JSON.stringify(nativeFailureDiagnostic('fixture-service-preimage', error)) + '\n'
+        JSON.stringify(nativeFailureDiagnostic('fixture-preimage-' + stage, error)) + '\n'
       );
     }
     process.exitCode = 1;
@@ -948,6 +963,13 @@ async function start(args, preimageOnly = false) {
         bridge,
         supervisor,
       });
+    } catch (error) {
+      if (preimageOnly) {
+        process.stderr.write(
+          JSON.stringify(nativeFailureDiagnostic('fixture-preimage-cleanup', error)) + '\n'
+        );
+      }
+      throw error;
     } finally {
       process.removeListener('SIGTERM', stop);
       process.removeListener('SIGINT', stop);

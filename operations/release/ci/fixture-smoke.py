@@ -46,7 +46,17 @@ NATIVE_STAGES = frozenset((
     'realtime-two-user-causal-isolation', 'postgrest-two-user-isolation',
     'native-observation-bridge-start', 'observer-and-browser-handoff',
     'realtime-loopback-and-gateway', 'candidate-peer-isolation',
-    'native-migrated-service-role-boundary'))
+    'native-migrated-service-role-boundary',
+    *( 'smoke-shell-' + step for step in (
+        'arguments', 'platform', 'source', 'image-identity', 'helpers', 'owned-names',
+        'helper-staging', 'network-create', 'services-start', 'services-ready', 'peer',
+        'oracle', 'services-shutdown', 'preimage-start', 'preimage-ready', 'preimage-copy',
+        'preimage-ack', 'preimage-shutdown', 'cleanup')),
+    *( 'fixture-preimage-' + step for step in (
+        'arguments', 'package', 'directories', 'cookie', 'postgres-socket', 'archives',
+        'postgresql', 'postgresql-native-cron-install', 'postgresql-safeupdate-configure',
+        'genuine-auth-migrations', 'genuine-realtime-migrations',
+        'managed-postgres-event-trigger-boundary', 'post-service-catalog-preimage', 'cleanup'))))
 NATIVE_ERROR_NAMES = frozenset(('Error', 'AssertionError', 'TypeError', 'RangeError',
                                 'SyntaxError', 'TimeoutError', 'AggregateError', 'error'))
 NATIVE_PG_ROUTINES = frozenset((
@@ -176,9 +186,10 @@ def native_failures(output):
 
 
 class NativeSmokeFailure(RuntimeError):
-    def __init__(self, output):
+    def __init__(self, output, exit_code=None):
         super().__init__('native_fixture_services_failed')
         self.diagnostics = native_failures(output)
+        self.exit_code = exit_code if type(exit_code) is int and 1 <= exit_code <= 255 else None
 
 
 def require(value):
@@ -215,7 +226,7 @@ def command(args, cwd, env, timeout=120):
                 log.write('Reviewed image build only; no native service output.\n')
                 log.write((stdout + '\n' + stderr)[-131072:])
     if process.returncode != 0 and args[:2] == ['bash', PREFIX + 'smoke-image.sh']:
-        raise NativeSmokeFailure(stdout + '\n' + stderr)
+        raise NativeSmokeFailure(stdout + '\n' + stderr, process.returncode)
     require(process.returncode == 0)
     return stdout
 
@@ -454,6 +465,8 @@ def execute(repo, output, expected, run=command):
         # Never serialize command output, environment, service logs, or tokens.
         if isinstance(error, NativeSmokeFailure):
             receipt['native_failures'] = error.diagnostics
+            if error.exit_code is not None:
+                receipt['native_command_exit_code'] = error.exit_code
         failed = True
     finally:
         try:

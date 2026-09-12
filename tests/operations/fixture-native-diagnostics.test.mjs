@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import {
   nativeFailureDiagnostic,
   nativeChildFailure,
@@ -11,6 +12,38 @@ import {
   realtimeLogMarkers,
   realtimeDatabaseErrorNames,
 } from '../../operations/release/fixture/runtime-files.mjs';
+
+test('actual preimage entrypoint retains argument and package refusals without private errors', async () => {
+  const script = fileURLToPath(
+    new URL('../../operations/release/fixture/fixture-server.mjs', import.meta.url)
+  );
+  for (const [args, stage] of [
+    [[script, 'preimage', 'PRIVATE ARGUMENT'], 'fixture-preimage-arguments'],
+    // Deterministic package refusal before any filesystem or service mutation.
+    [
+      ['--import', 'data:text/javascript,process.getuid=()=>-1', script, 'preimage'],
+      'fixture-preimage-package',
+    ],
+  ]) {
+    await assert.rejects(
+      promisify(execFile)(process.execPath, args, { timeout: 5000 }),
+      (error) => {
+        assert.equal(error.code, 1);
+        assert.equal(error.stdout, '');
+        const lines = error.stderr.trim().split('\n');
+        assert.equal(lines.length, 2);
+        assert.deepEqual(JSON.parse(lines[0]), {
+          status: 'failed',
+          stage,
+          error: 'AssertionError',
+        });
+        assert.equal(lines[1], 'FIXTURE_COMMAND_REFUSED');
+        assert.ok(!error.stderr.includes('PRIVATE'));
+        return true;
+      }
+    );
+  }
+});
 
 test('Realtime database errors expose fixed categories without SQL, role names or credentials', () => {
   const actual = realtimeLogDiagnostic(

@@ -12,14 +12,14 @@ import uuid
 
 FILES = ('Dockerfile', 'package.json', 'package-lock.json', 'fixture-server.mjs',
          'runtime-files.mjs', 'gateway.mjs', 'auth-fixture.mjs', 'auth-bootstrap-proof.mjs',
-         'service-role-boundary.mjs', 'actors.mjs', 'financial-route-phase.mjs',
+         'service-role-boundary.mjs', 'cron-provider.mjs', 'actors.mjs', 'financial-route-phase.mjs',
          'seed-fixture.mjs', 'native-smoke.mjs', 'observation-bridge.mjs', 'build-image.sh', 'smoke-image.sh')
 PREFIX = 'operations/release/fixture/'
 CONTROL_FILES = tuple('operations/release/native/' + name for name in (
     'component-observation-protocol.mjs', 'component-observation-client.mjs',
     'component-semantic-observations.mjs'))
 NATIVE_STAGES = frozenset((
-    'managed-postgres-event-trigger-boundary',
+    'managed-postgres-event-trigger-boundary', 'postgresql-native-cron-install', 'postgresql-native-cron-metadata',
     'gotrue-platform-helper-authority', 'gotrue-platform-helper-http',
     'initialization', 'observer-user-isolation', 'native-observation-bridge',
     'chromium-native-read-and-rls', 'postgresql-17-extensions',
@@ -239,7 +239,12 @@ def smoke_records(output):
                 'browser': 'chromium', 'retries': 0,
                 'observation_bridge': 'native-synthetic-protocol', 'postgres_socket': 'denied'}
     services = {'scope': 'native-service-smoke', 'postgres': '17.11',
-                'extensions': 6, 'auth': '2.196.0', 'mfa': 'aal2',
+                'extensions': 7,
+                'cron': {'source': '9490f9cc9803f75105f2f7d89839a998f011f8d8',
+                         'extension_version': '1.6.4', 'native_functions': 7,
+                         'metadata_api': 'schedule-alter-unschedule-rollback',
+                         'application_ddl': 'denied', 'background_jobs': 'disabled',
+                         'production_binary_parity': False, 'complete_cron_acl_parity': False}, 'auth': '2.196.0', 'mfa': 'aal2',
                 'ledger_attribution': 'banned-without-session',
                 'service_roles': {'auth_admin_inheritance': 'disabled',
                                   'auth_claim_helpers': 'service-owned-and-http-verified',

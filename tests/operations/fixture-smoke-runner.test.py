@@ -18,7 +18,12 @@ LABELS = {'org.opencontainers.image.revision': SHA,
           'com.smarter-poker.source-revision': SHA}
 RECORDS = [dict(scope='native-service-smoke', observer='passed', browser='chromium', retries=0,
                 observation_bridge='native-synthetic-protocol', postgres_socket='denied'),
-           dict(scope='native-service-smoke', postgres='17.11', extensions=6, auth='2.196.0', mfa='aal2',
+           dict(scope='native-service-smoke', postgres='17.11', extensions=7,
+                cron=dict(source='9490f9cc9803f75105f2f7d89839a998f011f8d8',
+                          extension_version='1.6.4', native_functions=7,
+                          metadata_api='schedule-alter-unschedule-rollback',
+                          application_ddl='denied', background_jobs='disabled',
+                          production_binary_parity=False, complete_cron_acl_parity=False), auth='2.196.0', mfa='aal2',
                 ledger_attribution='banned-without-session',
                 service_roles=dict(auth_admin_inheritance='disabled',
                                    auth_claim_helpers='service-owned-and-http-verified',
@@ -46,6 +51,16 @@ SMOKE = '\n'.join(map(json.dumps, RECORDS)) + '\nNative service smoke and contai
 
 
 class RunnerTests(unittest.TestCase):
+    def test_cron_provider_proof_is_mandatory_and_cannot_claim_background_execution(self):
+        for transform in [lambda rows: rows[1].pop('cron'),
+                          lambda rows: rows[1]['cron'].update(background_jobs='running'),
+                          lambda rows: rows[1]['cron'].update(native_functions=3),
+                          lambda rows: rows[1]['cron'].update(production_binary_parity=True)]:
+            rows = json.loads(json.dumps(RECORDS))
+            transform(rows)
+            with self.assertRaisesRegex(RuntimeError, 'native_fixture_smoke_requirement_failed'):
+                m.smoke_records('\n'.join(map(json.dumps, rows)) + '\nNative service smoke and container/network cleanup passed (not a product certificate).\n')
+
     def test_failed_actual_build_preserves_bounded_build_diagnostics(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

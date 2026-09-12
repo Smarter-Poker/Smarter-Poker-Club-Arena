@@ -1,4 +1,5 @@
 import { configureFixtureSafeupdate } from './safeupdate-provider.mjs';
+import { captureFixtureServicePreimage } from './service-preimage.mjs';
 import {
   cronPostgresArguments,
   installFixtureCron,
@@ -41,6 +42,7 @@ import {
   fixtureTemplate,
   observationControl,
   NativeDatabaseOwner,
+  nativeFailureDiagnostic,
   financialActorDescriptor,
 } from './runtime-files.mjs';
 
@@ -488,6 +490,7 @@ async function checkPackage() {
     await access(binary, constants.X_OK);
   for (const name of [
     'fixture-server.mjs',
+    'service-preimage.mjs',
     'runtime-files.mjs',
     'gateway.mjs',
     'auth-fixture.mjs',
@@ -562,8 +565,9 @@ function serviceEnvironments(secrets) {
   };
 }
 
-async function start(args) {
-  const inputs = startArguments(args);
+async function start(args, preimageOnly = false) {
+  if (preimageOnly) assert.equal(args.length, 0);
+  const inputs = preimageOnly ? null : startArguments(args);
   await checkPackage();
   process.umask(0o077);
   await mkdir(root, { mode: 0o755 });
@@ -579,29 +583,34 @@ async function start(args) {
   process.once('SIGTERM', stop);
   process.once('SIGINT', stop);
   try {
-    const controlFile = await open(
-      '/inputs/observation-control.json',
-      constants.O_RDONLY | constants.O_NOFOLLOW
-    );
-    let control;
-    try {
-      const details = await controlFile.stat();
-      assert.ok(
-        details.isFile() && details.size > 0 && details.size <= 1024 && (details.mode & 0o222) === 0
-      );
-      control = observationControl(JSON.parse(await controlFile.readFile('utf8')));
-    } finally {
-      await controlFile.close();
-    }
+    let control, template, files, publicAnonKey;
     const schemaRoot = privateRoot + '/schema';
     const webRoot = privateRoot + '/web';
-    await extractArchive(inputs.schema, schemaRoot, { maxBytes: 128 * 1024 * 1024 });
-    await extractArchive(inputs.web, webRoot);
-    const template = fixtureTemplate(
-      JSON.parse(await readFile(schemaRoot + '/fixture.json', 'utf8'))
-    );
-    const files = await loadStaticManifest(webRoot);
-    const publicAnonKey = findPublicAnonKey([...files.values()], template.supabase_host);
+    // The dedicated preimage command stops before any application archive,
+    // signup, gateway or funded actor. Ordinary start keeps every input gate.
+    if (!preimageOnly) {
+      const controlFile = await open(
+        '/inputs/observation-control.json',
+        constants.O_RDONLY | constants.O_NOFOLLOW
+      );
+      try {
+        const details = await controlFile.stat();
+        assert.ok(
+          details.isFile() &&
+            details.size > 0 &&
+            details.size <= 1024 &&
+            (details.mode & 0o222) === 0
+        );
+        control = observationControl(JSON.parse(await controlFile.readFile('utf8')));
+      } finally {
+        await controlFile.close();
+      }
+      await extractArchive(inputs.schema, schemaRoot, { maxBytes: 128 * 1024 * 1024 });
+      await extractArchive(inputs.web, webRoot);
+      template = fixtureTemplate(JSON.parse(await readFile(schemaRoot + '/fixture.json', 'utf8')));
+      files = await loadStaticManifest(webRoot);
+      publicAnonKey = findPublicAnonKey([...files.values()], template.supabase_host);
+    }
     const secrets = fixtureSecrets();
     const env = serviceEnvironments(secrets);
     const pgData = '/var/lib/postgresql/data';
@@ -723,6 +732,36 @@ async function start(args) {
     const serviceRoles = await assertNativeServiceRoleBoundary(db);
     stage = 'managed-postgres-event-trigger-boundary';
     const managedPostgres = await assertManagedPostgresBoundary(db);
+    if (preimageOnly) {
+      stage = 'post-service-catalog-preimage';
+      const preimageBootstrap = supervisor.databaseOwner.own(
+        new pg.Client({ ...connection, user: 'supabase_admin', database })
+      );
+      try {
+        await preimageBootstrap.connect();
+        const captured = await captureFixtureServicePreimage(preimageBootstrap, db.processID);
+        await writeFile(root + '/service-preimage.json', captured.serialized, {
+          flag: 'wx',
+          mode: 0o444,
+        });
+        process.stdout.write(JSON.stringify(captured.proof) + '\n');
+      } finally {
+        await supervisor.databaseOwner.end(preimageBootstrap);
+      }
+      // Docker tmpfs disappears on container stop. Keep this exact bootstrap
+      // alive until the outer owner copies the catalog, then shut down normally.
+      await writeFile(root + '/service-preimage.ready', '', { flag: 'wx', mode: 0o400 });
+      await supervisor.until(async () => {
+        try {
+          await access(root + '/service-preimage.copied', constants.F_OK);
+          return true;
+        } catch (error) {
+          if (error.code === 'ENOENT') return false;
+          throw error;
+        }
+      });
+      return;
+    }
     // Application DDL is restored verbatim. The reviewed schema composer
     // must reconcile service-managed objects with the pinned real migrations.
     // Missing/duplicate objects fail here; no migration history is fabricated.
@@ -890,10 +929,15 @@ async function start(args) {
     }
     await supervisor.failed;
     throw new Error('fixture service stopped');
-  } catch {
+  } catch (error) {
     // Private service logs can include synthetic credentials. Public stderr
     // contains the bounded stage only, never child output or raw SQL/errors.
     process.stderr.write(`FIXTURE_FAILED:${stage}\n`);
+    if (preimageOnly) {
+      process.stderr.write(
+        JSON.stringify(nativeFailureDiagnostic('fixture-service-preimage', error)) + '\n'
+      );
+    }
     process.exitCode = 1;
   } finally {
     try {
@@ -934,6 +978,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   try {
     const [command, ...args] = process.argv.slice(2);
     if (command === 'start') await start(args);
+    else if (command === 'preimage') await start(args, true);
     else {
       assert.equal(args.length, 0);
       if (command === 'capabilities') {

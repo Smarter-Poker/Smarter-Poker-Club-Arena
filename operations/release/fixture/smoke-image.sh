@@ -20,10 +20,13 @@ git -C "$repo_dir" diff --quiet HEAD -- "${helpers[@]}" || { echo 'Commit review
 name=${FIXTURE_SMOKE_CONTAINER:-"ca-fixture-smoke-$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"}
 [[ "$name" =~ ^ca-fixture-smoke-[a-f0-9]{32}$ ]] || { echo 'Invalid owned smoke container name' >&2; exit 2; }
 peer="$name-peer"
+preimage="$name-preimage"
 network="$name-network"
+preimage_output=${FIXTURE_SERVICE_PREIMAGE_PATH:?An explicit owned preimage output path is required}
+[[ "$preimage_output" = /* && ! -e "$preimage_output" && ! -L "$preimage_output" ]] || exit 2
 # Refuse a pre-existing name before installing cleanup; it is not ours to remove.
 existing=$(docker container ls --all --format '{{.Names}}')
-for owned in "$name" "$peer"; do
+for owned in "$name" "$peer" "$preimage"; do
   [[ $'\n'"$existing"$'\n' != *$'\n'"$owned"$'\n'* ]] || { echo 'Owned smoke container name is already occupied' >&2; exit 2; }
 done
 existing_networks=$(docker network ls --format '{{.Name}}')
@@ -33,14 +36,14 @@ cleanup() {
   local result=$?
   trap - EXIT
   local owned
-  for owned in "$peer" "$name"; do
+  for owned in "$preimage" "$peer" "$name"; do
     if docker container inspect "$owned" >/dev/null 2>&1; then
       docker rm --force "$owned" >/dev/null || result=1
     fi
   done
   local inventory
   inventory=$(docker container ls --all --format '{{.Names}}') || result=1
-  for owned in "$peer" "$name"; do
+  for owned in "$preimage" "$peer" "$name"; do
     if [[ $'\n'"$inventory"$'\n' == *$'\n'"$owned"$'\n'* ]]; then result=1; fi
   done
   if docker network inspect "$network" >/dev/null 2>&1; then
@@ -99,4 +102,31 @@ docker exec --user 1001:1001 --env HOME=/tmp/qualification --env XDG_CACHE_HOME=
   "$name" node /opt/qualification/runtime/native-smoke.mjs --oracle
 exit_code=$(docker wait "$name")
 docker logs "$name"
+[[ "$exit_code" == 0 ]]
+
+# A fresh invocation of the actual fixture bootstrap supplies its exact
+# pre-application catalog. The smoke's synthetic schema is not this preimage.
+# No application archive, browser, user signup, engine or external network.
+docker run --detach --name "$preimage" --network "$network" --read-only --user 1000:1000 \
+  --label "com.smarter-poker.fixture-smoke=$name" \
+  --cap-drop=ALL --security-opt=no-new-privileges --pids-limit=1024 --memory=8g --cpus=2 \
+  --add-host realtime-dev.supabase-realtime:127.0.0.1 \
+  --tmpfs /tmp:rw,nosuid,mode=1777,uid=1000,gid=1000,size=2g \
+  --tmpfs /run:rw,nosuid,mode=0755,uid=1000,gid=1000,size=2g \
+  --tmpfs /var/lib/postgresql:rw,nosuid,mode=0700,uid=1000,gid=1000,size=4g \
+  "$image_id" fixture-server preimage >/dev/null
+deadline=$((SECONDS + 180))
+while ! docker exec "$preimage" test -f /run/club-arena-qualification/service-preimage.ready; do
+  [[ $(docker inspect --format '{{.State.Running}}' "$preimage") == true ]] || { docker logs "$preimage"; exit 1; }
+  (( SECONDS < deadline )) || { echo 'Native service preimage capture timed out' >&2; exit 1; }
+  sleep 1
+done
+docker cp "$preimage:/run/club-arena-qualification/service-preimage.json" "$preimage_output"
+docker exec "$preimage" touch /run/club-arena-qualification/service-preimage.copied
+while [[ $(docker inspect --format '{{.State.Running}}' "$preimage") == true ]]; do
+  (( SECONDS < deadline )) || { echo 'Native service preimage capture timed out' >&2; exit 1; }
+  sleep 1
+done
+exit_code=$(docker inspect --format '{{.State.ExitCode}}' "$preimage")
+docker logs "$preimage"
 [[ "$exit_code" == 0 ]]

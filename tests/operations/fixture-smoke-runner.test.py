@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -49,6 +50,33 @@ RECORDS = [dict(scope='native-service-smoke', observer='passed', browser='chromi
            dict(scope='native-service-smoke', peer='passed', gateway='reachable',
                 realtime_direct='refused', tenant_administration='refused')]
 SMOKE = '\n'.join(map(json.dumps, RECORDS)) + '\nNative service smoke and container/network cleanup passed (not a product certificate).\n'
+
+
+def catalog_fixture():
+    def role(name, superuser=False):
+        return dict(name=name, superuser=superuser, inherit=True, create_role=superuser,
+                    create_db=superuser, login=True, replication=False, bypass_rls=False,
+                    connection_limit=-1, valid_until=None, configuration=None)
+    return dict(version=1, scope='owned-post-service-preimage', observed_at='2026-09-12T18:00:00+00:00',
+                database='club_arena_qualification',
+                role_scope='all roles including unconnected builtin and fixture roles',
+                roles=[role('postgres'), role('supabase_admin', True), role('authenticator')],
+                memberships=[dict(role='postgres', member='supabase_admin', grantor='supabase_admin',
+                                  admin=True, inherit=False, set=True)], role_settings=None, default_acl=None,
+                schemas=[dict(name='public', owner='postgres', acl=['postgres=UC/postgres'])],
+                extensions=[dict(name='plpgsql', version='1.0', schema='pg_catalog', owner='supabase_admin')],
+                production_parity=False, contains_passwords_or_user_rows=False)
+
+
+def preimage_material(catalog=None, raw=None):
+    catalog = catalog_fixture() if catalog is None else catalog
+    raw = (json.dumps(catalog) + '\n').encode() if raw is None else raw
+    proof = dict(scope='native-service-preimage', status='captured',
+                 catalog_sha256=hashlib.sha256(raw).hexdigest(),
+                 production_parity=False, application_schema_restored=False)
+    proof.update({k: len(catalog[k] or []) for k in
+                  ('roles', 'memberships', 'schemas', 'extensions', 'role_settings', 'default_acl')})
+    return raw, proof
 
 
 class RunnerTests(unittest.TestCase):
@@ -157,12 +185,23 @@ class RunnerTests(unittest.TestCase):
                     return json.dumps([{'Id': IMAGE, 'Os': 'linux', 'Architecture': 'amd64', 'Config': {'Labels': labels}}])
                 if args[:2] == ['bash', m.PREFIX + 'smoke-image.sh']:
                     if fault == 'timeout':
-                        present.update((env['FIXTURE_SMOKE_CONTAINER'], env['FIXTURE_SMOKE_CONTAINER'] + '-peer'))
+                        present.update((env['FIXTURE_SMOKE_CONTAINER'], env['FIXTURE_SMOKE_CONTAINER'] + '-peer', env['FIXTURE_SMOKE_CONTAINER'] + '-preimage'))
                         network_present = True
                         raise TimeoutError('PRIVATE TOKEN MUST NOT LEAK')
                     if fault == 'native-stage':
                         raise m.NativeSmokeFailure(json.dumps({'status': 'failed', 'stage': 'initialization', 'error': 'Error'}) + '\nPRIVATE TOKEN')
-                    return SMOKE if fault != 'missing-service' else json.dumps(RECORDS[0])
+                    raw, proof = preimage_material()
+                    private = Path(env['FIXTURE_SERVICE_PREIMAGE_PATH'])
+                    self.assertNotEqual(private.parent, root / 'evidence')
+                    if fault == 'preimage-content':
+                        raw = raw.replace(b'"superuser": false', b'"password": "PRIVATE TOKEN", "superuser": false', 1)
+                        proof['catalog_sha256'] = hashlib.sha256(raw).hexdigest()
+                    if fault != 'missing-preimage-file':
+                        private.write_bytes(raw)
+                    if fault == 'preimage-leftover':
+                        present.add(env['FIXTURE_SMOKE_CONTAINER'] + '-preimage')
+                    result = SMOKE if fault != 'missing-service' else json.dumps(RECORDS[0])
+                    return result if fault == 'missing-preimage-proof' else result + json.dumps(proof) + '\n'
                 if args[:3] == ['docker', 'container', 'ls']:
                     owned = args[-1].removeprefix('name=^/').removesuffix('$')
                     return 'container-id' if owned in present else ''
@@ -176,6 +215,12 @@ class RunnerTests(unittest.TestCase):
             code = m.execute(root, root / 'evidence', SHA, run)
             text = (root / 'evidence/native-smoke-receipt.json').read_text()
             self.assertNotIn('PRIVATE TOKEN', text)
+            self.assertFalse(list(root.glob('.ca-fixture-smoke-*-preimage.json')))
+            artifact = root / 'evidence/native-service-preimage.json'
+            if fault in {'missing-preimage-file', 'missing-preimage-proof', 'preimage-content'}:
+                self.assertFalse(artifact.exists())
+            if code == 0:
+                self.assertEqual(artifact.read_bytes(), preimage_material()[0])
             return code, json.loads(text), calls
 
     def test_complete_native_result(self):
@@ -210,11 +255,13 @@ class RunnerTests(unittest.TestCase):
         code, receipt, calls = self.exercise('timeout')
         self.assertEqual(code, 1)
         removals = [call for call in calls if call[:3] == ['docker', 'container', 'rm']]
-        self.assertEqual(removals, [['docker', 'container', 'rm', '--force', receipt['peer']],
+        self.assertEqual(removals, [['docker', 'container', 'rm', '--force', receipt['preimage']],
+                                   ['docker', 'container', 'rm', '--force', receipt['peer']],
                                    ['docker', 'container', 'rm', '--force', receipt['container']]])
         self.assertIn(['docker', 'network', 'rm', receipt['network']], calls)
         self.assertTrue(receipt['cleanup']['container_absent'])
         self.assertTrue(receipt['cleanup']['peer_absent'])
+        self.assertTrue(receipt['cleanup']['preimage_absent'])
         self.assertTrue(receipt['cleanup']['network_absent'])
 
     def test_missing_peer_or_old_service_evidence_cannot_pass(self):
@@ -238,6 +285,106 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(m.native_failures(json.dumps(row)),
                              [{'stage': stage, 'category': 'AssertionError'}])
             self.assertEqual(m.native_failures(json.dumps({**row, 'token': 'PRIVATE'})), [])
+
+    def test_preimage_required_and_unvalidated_bytes_never_published(self):
+        for fault in ('missing-preimage-file', 'missing-preimage-proof', 'preimage-content'):
+            with self.subTest(fault=fault):
+                self.assertEqual(self.exercise(fault)[0], 1)
+
+    def test_preimage_rescue_cleanup_cannot_pass(self):
+        code, receipt, calls = self.exercise('preimage-leftover')
+        self.assertEqual(code, 1)
+        self.assertTrue(receipt['cleanup']['preimage_absent'])
+        self.assertIn(['docker', 'container', 'rm', '--force', receipt['preimage']], calls)
+
+
+class PreimageTests(unittest.TestCase):
+    def validate(self, catalog=None, proof_edit=None, raw=None, path_kind=None, duplicate=False):
+        raw, proof = preimage_material(catalog, raw)
+        if proof_edit:
+            proof_edit(proof)
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'catalog.json'
+            if path_kind == 'symlink':
+                target = Path(temporary) / 'target'
+                target.write_bytes(raw)
+                path.symlink_to(target)
+            elif path_kind == 'fifo':
+                os.mkfifo(path)
+            else:
+                path.write_bytes(raw)
+            line = json.dumps(proof)
+            return m.service_preimage(line + ('\n' + line if duplicate else ''), path)
+
+    def test_exact_capture_hash_and_metadata(self):
+        proof, raw = self.validate()
+        self.assertEqual(hashlib.sha256(raw).hexdigest(), proof['catalog_sha256'])
+        self.assertFalse(proof['production_parity'])
+        self.assertFalse(proof['application_schema_restored'])
+
+    def test_hash_count_and_claim_mutations_refused(self):
+        for edit in (lambda p: p.update(catalog_sha256='f' * 64),
+                     lambda p: p.update(roles=1), lambda p: p.update(roles=True),
+                     lambda p: p.update(production_parity=True),
+                     lambda p: p.update(application_schema_restored=True),
+                     lambda p: p.update(password='PRIVATE TOKEN')):
+            with self.assertRaises(RuntimeError):
+                self.validate(proof_edit=edit)
+        with self.assertRaises(RuntimeError):
+            self.validate(duplicate=True)
+
+    def test_private_file_must_be_regular_bounded_and_not_symlink(self):
+        for kind in ('symlink', 'fifo'):
+            with self.subTest(kind=kind), self.assertRaises((RuntimeError, OSError)):
+                self.validate(path_kind=kind)
+        with self.assertRaises(RuntimeError):
+            self.validate(raw=b' ' * (1024 * 1024 + 1))
+
+    def test_unknown_fields_and_duplicate_catalog_keys_refused(self):
+        mutations = [lambda c: c.update(password='PRIVATE TOKEN'),
+                     lambda c: c['roles'][0].update(password='PRIVATE TOKEN'),
+                     lambda c: c['roles'][0].update(superuser='false'),
+                     lambda c: c.update(database='postgres'),
+                     lambda c: c['memberships'][0].update(grantor='unknown'),
+                     lambda c: c['memberships'].append(dict(c['memberships'][0])),
+                     lambda c: c['schemas'].append(dict(c['schemas'][0])),
+                     lambda c: c.update(extensions=[])]
+        for edit in mutations:
+            catalog = catalog_fixture()
+            edit(catalog)
+            with self.assertRaises(RuntimeError):
+                self.validate(catalog)
+        raw, _ = preimage_material()
+        with self.assertRaises(RuntimeError):
+            self.validate(raw=raw.replace(b'"version": 1', b'"version": "PRIVATE TOKEN", "version": 1'))
+
+    def test_only_reviewed_configuration_values_visible(self):
+        c = catalog_fixture()
+        known = dict(key='search_path', value='"\\$user", public, extensions')
+        known['value_md5'] = hashlib.md5(known['value'].encode()).hexdigest()
+        hidden = dict(key='unreviewed.key', value=None, value_md5='a' * 32)
+        c['roles'][0]['configuration'] = [known, hidden]
+        c['role_settings'] = [dict(role='ALL', database='OWNED_DATABASE', settings=[dict(
+            key='app.settings.jwt_exp', value='3600', value_md5=hashlib.md5(b'3600').hexdigest())])]
+        self.validate(c)
+        for edit in (lambda: hidden.update(value='PRIVATE TOKEN'),
+                     lambda: known.update(value_md5='a' * 32),
+                     lambda: known.update(value=None)):
+            edit()
+            with self.assertRaises(RuntimeError):
+                self.validate(c)
+            hidden['value'] = None
+            known.update(value='"\\$user", public, extensions')
+            known['value_md5'] = hashlib.md5(known['value'].encode()).hexdigest()
+
+    def test_default_acl_full_shape_and_grantor_are_required(self):
+        c = catalog_fixture()
+        c['default_acl'] = [dict(creator='postgres', schema='GLOBAL', type='f', acl=[dict(
+            grantor='postgres', grantee='PUBLIC', privilege='EXECUTE', grantable=False)])]
+        self.validate(c)
+        c['default_acl'][0]['acl'][0]['grantor'] = 'unknown'
+        with self.assertRaises(RuntimeError):
+            self.validate(c)
 
 
 if __name__ == '__main__':

@@ -358,7 +358,7 @@ function scopeOf(node: PublicNode, lines: readonly Line[]): readonly unknown[] {
  * public action history excludes the suffix rather than inventing an empty line.
  * This does not apply updates or promise durable deduplication. */
 export function qualifyAdaptiveHand(
-  hand: CompletedHandObservation,
+  hand: Pick<CompletedHandObservation, 'committedHandId' | 'actions'>,
   nowMs: number
 ): Readonly<{
   observations: readonly QualifiedAdaptiveObservation[];

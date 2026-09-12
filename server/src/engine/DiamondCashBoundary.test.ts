@@ -377,17 +377,136 @@ describe('the first Diamond game stays inside the custody boundary', () => {
     expect(rpc).toHaveBeenCalledTimes(1);
   });
 
-  it('refuses a Diamond top-up while a hand is live', async () => {
+  /* ─── A MID-HAND TOP-UP IS AN INTENT (2026-09-12) ───────────────────────
+     This used to assert a flat refusal, and the refusal was right for as long
+     as there was nothing else a Diamond seat could safely do. There is now:
+     the chip lane takes the money at request time and lands the chips at the
+     end of the hand, and this arena cannot do that - the deferred
+     seat-keeps-custody trigger requires a Diamond seat's stack to EQUAL its
+     custody balance at every COMMIT, so a reservation made now and applied
+     later is a committed state the database refuses - but it CAN record an
+     intent and do the whole thing in one transaction when the hand ends.
+
+     What is asserted here is the part that makes that safe: no money moves
+     now. `rpc` is still never called during the hand. */
+  it('records a mid-hand Diamond top-up as an intent, and moves nothing yet', async () => {
     const engine = new ServerTableEngine('00000000-0000-0000-0000-000000000006') as any;
     engine.tableInfo = { ...table, arena: diamond };
     engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 40, is_horse: false }];
     engine.handController = {};
     const rpc = vi.spyOn(supabase, 'rpc');
     await expect(engine.addChips('hero', 100, 'attempt')).resolves.toEqual({
-      success: false,
-      error: 'Diamond Top Ups Land Between Hands',
+      success: true,
+      queued: true,
+      applied: 100,
     });
+    expect(rpc, 'a mid-hand Diamond top-up moved money').not.toHaveBeenCalled();
+    expect(engine.diamondTopUpIntents.size).toBe(1);
+    expect([...engine.diamondTopUpIntents.values()]).toEqual([{ userId: 'hero', amount: 100 }]);
+  });
+
+  it('sizes the intent against the stack AND everything already intended', async () => {
+    /* Three taps in one hand must not promise more than the table can hold.
+       max_buy_in is 200 in this fixture and the seat holds 40. */
+    const engine = new ServerTableEngine('00000000-0000-0000-0000-000000000006') as any;
+    engine.tableInfo = { ...table, arena: diamond };
+    engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 40, is_horse: false }];
+    engine.handController = {};
+    vi.spyOn(supabase, 'rpc');
+    await expect(engine.addChips('hero', 100, 'one')).resolves.toMatchObject({ applied: 100 });
+    await expect(engine.addChips('hero', 100, 'two')).resolves.toMatchObject({ applied: 60 });
+    await expect(engine.addChips('hero', 100, 'three')).resolves.toEqual({
+      success: false,
+      error: 'Already at the maximum buy-in for this table',
+    });
+    const total = [...engine.diamondTopUpIntents.values()].reduce(
+      (sum: number, i: { amount: number }) => sum + i.amount,
+      0
+    );
+    expect(total + 40, 'the intents promise more than the table holds').toBe(200);
+  });
+
+  it('the same tap retried is one intent, and a second tap is two', async () => {
+    const engine = new ServerTableEngine('00000000-0000-0000-0000-000000000006') as any;
+    engine.tableInfo = { ...table, arena: diamond };
+    engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 0, is_horse: false }];
+    engine.handController = {};
+    vi.spyOn(supabase, 'rpc');
+    await engine.addChips('hero', 10, 'same-tap');
+    await engine.addChips('hero', 10, 'same-tap');
+    expect(engine.diamondTopUpIntents.size, 'a retried tap was counted twice').toBe(1);
+    await engine.addChips('hero', 10, 'another-tap');
+    expect(engine.diamondTopUpIntents.size).toBe(2);
+  });
+
+  it('a whole Diamond or nothing, even as an intent', async () => {
+    const engine = new ServerTableEngine('00000000-0000-0000-0000-000000000006') as any;
+    engine.tableInfo = { ...table, arena: diamond };
+    engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 0, is_horse: false }];
+    engine.handController = {};
+    vi.spyOn(supabase, 'rpc');
+    await expect(engine.addChips('hero', 0.5, 'fraction')).resolves.toEqual({
+      success: false,
+      error: 'Diamond Top Ups Are Whole Diamonds',
+    });
+    expect(engine.diamondTopUpIntents.size).toBe(0);
+  });
+
+  it('lands the intent when the hand ends, on the stack as it is by then', async () => {
+    /* The pot moved the stack while the intent waited, which is the whole
+       reason the amount could not be fixed at request time. The door is told
+       the stack it is actually raising, and the amount is re-measured against
+       the headroom that is left. */
+    const engine = new ServerTableEngine('00000000-0000-0000-0000-000000000006') as any;
+    engine.tableInfo = { ...table, arena: diamond };
+    engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 40, is_horse: false }];
+    engine.handController = {};
+    await engine.addChips('hero', 100, 'attempt');
+    engine.handController = null;
+    // The hand ended with the hero up: 40 became 150, so only 50 will fit.
+    engine.seatedPlayers[0].stack = 150;
+    engine.broadcastCurrentState = () => {};
+    const rpc = vi.spyOn(supabase, 'rpc').mockResolvedValue({ data: { stack: 200 }, error: null });
+    await engine.processPendingAddOns(engine.seatedPlayers);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc.mock.calls[0][0]).toBe('fn_poker_diamond_top_up');
+    expect(rpc.mock.calls[0][1]).toMatchObject({
+      p_user_id: 'hero',
+      p_amount: 50,
+      p_expected_stack: 150,
+    });
+    expect(engine.diamondTopUpIntents.size, 'the intent outlived its landing').toBe(0);
+    expect(engine.seatedPlayers[0].stack).toBe(200);
+  });
+
+  it('drops an intent it can no longer honour rather than retrying it forever', async () => {
+    /* Nothing was taken, so dropping costs nobody anything - and a queue that
+       never empties is how a table stops dealing. This is the opposite of the
+       chip rule, where an unresolved row is money already taken. */
+    const engine = new ServerTableEngine('00000000-0000-0000-0000-000000000006') as any;
+    engine.tableInfo = { ...table, arena: diamond };
+    engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 40, is_horse: false }];
+    engine.handController = {};
+    await engine.addChips('hero', 100, 'attempt');
+    engine.handController = null;
+    // The player left while the hand finished.
+    engine.seatedPlayers = [];
+    const rpc = vi.spyOn(supabase, 'rpc');
+    await engine.processPendingAddOns(engine.seatedPlayers);
     expect(rpc).not.toHaveBeenCalled();
+    expect(engine.diamondTopUpIntents.size).toBe(0);
+  });
+
+  it('never lands an intent while a hand is running', async () => {
+    const engine = new ServerTableEngine('00000000-0000-0000-0000-000000000006') as any;
+    engine.tableInfo = { ...table, arena: diamond };
+    engine.seatedPlayers = [{ user_id: 'hero', seat_number: 1, stack: 40, is_horse: false }];
+    engine.handController = {};
+    await engine.addChips('hero', 100, 'attempt');
+    const rpc = vi.spyOn(supabase, 'rpc');
+    await engine.processPendingAddOns(engine.seatedPlayers);
+    expect(rpc, 'a top-up landed mid-hand').not.toHaveBeenCalled();
+    expect(engine.diamondTopUpIntents.size, 'the intent was dropped mid-hand').toBe(1);
   });
 
   it('leaves chip continuity, idle recovery and horse reload inert', async () => {

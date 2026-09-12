@@ -158,9 +158,17 @@ describe('A Diamond seat tops up from the custody it sat with', () => {
   it('routes the engine add-on to the Diamond door and only between hands', () => {
     const method = sliceMethod(SEATING, 'protected async addDiamonds(');
     expect(method).toMatch(/fn_poker_diamond_top_up/);
-    expect(method, 'the seat and its custody only move together').toMatch(
-      /Diamond Top Ups Land Between Hands/
-    );
+    /* THIS PINNED THE REFUSAL, AND THE REFUSAL MOVED (2026-09-12). A mid-hand
+       Diamond top-up used to answer "Diamond Top Ups Land Between Hands" and
+       do nothing. It is an INTENT now: still nothing moves during the hand,
+       but the request is remembered and the whole top-up happens in the one
+       transaction the seat-keeps-custody constraint allows, once the hand is
+       over. The property the old string stood for is unchanged and is what is
+       asserted instead - no money door is reached from inside the hand - which
+       is the thing that actually made the refusal correct. */
+    const midHand = sliceMethod(method, 'if (midHand) {');
+    expect(midHand, 'the mid-hand branch reaches a money door').not.toMatch(/supabase\.rpc/);
+    expect(midHand, 'the mid-hand request is not remembered').toMatch(/diamondTopUpIntents\.set/);
     expect(method, 'the door is told the stack the caller believes it is raising').toMatch(
       /p_expected_stack: stack/
     );

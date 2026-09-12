@@ -2238,6 +2238,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           logHandHistory({
             tableId: this.tableId,
             handId: v_handId,
+            seatGenerations: snap.seatGenerations,
             bombAwardUnits,
             nitGame: tableInfo.nit_game === true,
             // THE FLOOR TRAVELS WITH THE HAND (2026-09-06). A horse at a

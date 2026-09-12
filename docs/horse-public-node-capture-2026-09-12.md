@@ -17,3 +17,5 @@ Verification before integration:
 - The offline driver initially omitted the explicit synchronous Pineapple-settle flush and the terminal fold-out event; those harness failures are retained. The corrected driver uses the controller's supported flush and HAND_COMPLETE boundary on both sources.
 
 Protected review, publication, the final integrated suite and natural pipeline proof remain open at this checkpoint.
+
+Integrated verification on a2670f055ad6a38a19639dfaa8b77e49fa1036a7 (protected base ab9b1cbd958ff6a48828d9c0455331e4665d73dc): build passed; the full server suite passed11,028 tests with145 existing skips,757 files passed and1 skipped, in149.12seconds. The162-hand native comparison was rerun against this integrated source. Required review, engine publication and full Phase14 pipeline acceptance remain open.

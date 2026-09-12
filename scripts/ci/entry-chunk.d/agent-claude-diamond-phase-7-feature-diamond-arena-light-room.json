@@ -1,4 +1,0 @@
-{
-  "_owner": "agent/claude-diamond-phase-7/feature/diamond-arena-light-room. `src/lib/arenaScheme.ts` decides whether the page is the Diamond Arena's light room or the chip estate's dark one, and writes that answer to <html data-arena-scheme> from App.tsx. It belongs in FIRST PAINT because that is the only place the answer is worth anything: deferred behind a dynamic import, a player opening a Diamond route paints the dark ground first and the page flips to white a tick later, which is the flash the attribute exists to avoid. It is also as small as a module gets - one string constant, one pure predicate over a pathname, and a two-line setAttribute - with no imports beyond two constants from src/lib/constants.ts, which is already in the entry. The measured entry chunk went DOWN in the same build that added it: 206 modules and 151kB gz against a 219-module, 161kB baseline.",
-  "modules": ["src/lib/arenaScheme.ts"]
-}

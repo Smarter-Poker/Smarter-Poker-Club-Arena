@@ -47,12 +47,13 @@ export function createFinancialCheckpointObserver({
     busy = false,
     failed = false;
   const journal = [];
+  const pendingReads = new Set();
   function live() {
     assert.ok(started && !failed && now() < deadline, 'FINANCIAL_CHECKPOINT_CLOSED_OR_EXPIRED');
   }
   async function within(operation, end = deadline, message = 'FINANCIAL_CHECKPOINT_DEADLINE') {
     assert.ok(!failed && now() < end, message);
-    let timer;
+    let timer, closeRead;
     try {
       // A callback may never settle. Bound the observation itself, including
       // the first identity read; a late result cannot reopen this observer.
@@ -60,6 +61,8 @@ export function createFinancialCheckpointObserver({
       const result = await Promise.race([
         Promise.resolve().then(operation),
         new Promise((_, reject) => {
+          closeRead = () => reject(new Error('FINANCIAL_CHECKPOINT_CLOSED'));
+          pendingReads.add(closeRead);
           timer = setTimeout(() => reject(new Error(message)), Math.max(1, Math.ceil(end - now())));
         }),
       ]);
@@ -67,6 +70,7 @@ export function createFinancialCheckpointObserver({
       return result;
     } finally {
       clearTimeout(timer);
+      pendingReads.delete(closeRead);
     }
   }
   async function engine() {
@@ -109,6 +113,11 @@ export function createFinancialCheckpointObserver({
     }
   }
   return Object.freeze({
+    close() {
+      failed = true;
+      for (const closeRead of pendingReads) closeRead();
+      pendingReads.clear();
+    },
     async start() {
       assert.ok(!started && !failed && !busy, 'FINANCIAL_CHECKPOINT_ALREADY_STARTED');
       busy = true;

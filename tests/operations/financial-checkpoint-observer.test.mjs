@@ -183,6 +183,53 @@ function runnerFixture(f, startActors) {
   });
 }
 
+for (const field of ['readEngineIdentity', 'financialFacts', 'sampleFelt']) {
+  test(`closing the observer immediately rejects a pending ${field} observation`, async () => {
+    const f = fixture({ [field]: () => new Promise(() => {}) });
+    if (field !== 'readEngineIdentity') await f.observer.start();
+    const pending = field === 'readEngineIdentity' ? f.observer.start() : f.run(0);
+    const refused = assert.rejects(pending, /FINANCIAL_CHECKPOINT_CLOSED/);
+    await new Promise(setImmediate);
+    f.observer.close();
+    f.observer.close();
+    await refused;
+    await assert.rejects(f.observer.start(), /ALREADY_STARTED/);
+  });
+}
+
+test('closing before startup cannot create a new observer attempt', async () => {
+  const f = fixture();
+  f.observer.close();
+  await assert.rejects(f.observer.start(), /ALREADY_STARTED/);
+  assert.deepEqual(f.reads, []);
+});
+
+test('actor failure also retires a pending observer read before its deadline', async () => {
+  let entered;
+  const reading = new Promise((resolve) => {
+    entered = resolve;
+  });
+  const f = fixture({
+    financialFacts: () => {
+      entered();
+      return new Promise(() => {});
+    },
+  });
+  let checkpointResult = 'pending';
+  await assert.rejects(
+    runnerFixture(f, (input) => {
+      input.financialProof.checkpoint(f.entries[0]).catch((error) => {
+        checkpointResult = error.message;
+      });
+      void reading.then(() => input.onFailure(new Error('FIXTURE_ACTOR_SOCKET_CLOSED')));
+      return { stateObservations: f.options.sampleFelt, close() {} };
+    }),
+    /FIXTURE_ACTOR_SOCKET_CLOSED/
+  );
+  await new Promise(setImmediate);
+  assert.match(checkpointResult, /FINANCIAL_CHECKPOINT_CLOSED/);
+});
+
 test('runner couples every checkpoint to its own two client samples and closes the actors', async () => {
   const f = fixture();
   let closed = 0,

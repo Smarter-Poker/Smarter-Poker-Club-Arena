@@ -11,8 +11,10 @@ startup, stops queued actions, aborts its HTTP requests and closes both sockets.
 The runner receives ordinary disposable user sessions and the caller-owned
 fixed observation client; it creates no database authority or money writer.
 
-The combined financial suite passes 112 checks with zero skips. These include
+The combined financial suite passes 117 checks with zero skips. These include
 six runner lifecycle checks and three real loopback socket cancellation checks.
+Five additional checks prove that closing the observer immediately rejects its
+pending observations, including when an actor fails during a database read.
 The fixture's outer native coordinator still needs to invoke this runner in the
 independent observer process and supply the canonical financial scenario. Full
 consumed schema/ACL qualification, felt reconciliation, genuine funded gameplay

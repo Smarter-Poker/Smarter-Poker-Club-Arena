@@ -95,6 +95,7 @@ export async function runFinancialRoute({
   } finally {
     closed = true;
     clearTimeout(timer);
+    observer.close();
     controller.abort();
     actors?.close();
   }

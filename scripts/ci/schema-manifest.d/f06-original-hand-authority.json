@@ -1,0 +1,26 @@
+{
+  "_owner": "fix/original-table-break-recovery",
+  "_comment": "Scoped public catalog read after exact installed migration20260912100322; private authority identities and privileges are recorded separately in docs/audits/2026-09-12-f06-installed-authority.json. No full funded or live runtime certificate is claimed.",
+  "functions": [
+    "fn_ca_commit_hand_settlement",
+    "fn_f06_ack_cleanup",
+    "fn_f06_allocate_hand_number",
+    "fn_f06_amend_attempt",
+    "fn_f06_begin_break",
+    "fn_f06_begin_hand",
+    "fn_f06_claim_custody",
+    "fn_f06_close_break",
+    "fn_f06_discover_breaks",
+    "fn_f06_finish_hand",
+    "fn_f06_finish_original_no_start",
+    "fn_f06_hand_number_state",
+    "fn_f06_reconcile_break",
+    "fn_f06_request_park",
+    "fn_f06_table_state",
+    "fn_move_tournament_player",
+    "fn_next_hand_number"
+  ],
+  "columns": {
+    "tables": ["f06_lifecycle"]
+  }
+}

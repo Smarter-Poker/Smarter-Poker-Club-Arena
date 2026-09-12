@@ -224,7 +224,7 @@ def validate_financial_native(result, tuple_value, schema, runtime_image):
             financial.get('scope') == 'independent-financial-route-observations' and
             financial.get('product_certificate') is False and
             owner.get('sourceSha') == tuple_value['club-arena-engine']['source_sha'] and
-            [item.get('phase') for item in financial.get('checkpoints', [])] == [
+            [item.get('entry', {}).get('phase') for item in financial.get('checkpoints', [])] == [
                 'topup.before', 'topup.malformed_refused', 'topup.accepted', 'topup.replayed',
                 'insurance.offered', 'insurance.malformed_refused', 'insurance.accepted', 'settlement.observed'] and
             result.get('cleanup') == {'complete': False, 'owner': 'outer-native-driver'},

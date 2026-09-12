@@ -32,6 +32,8 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22.23.2'
+      - name: Install locked fixture test dependencies on the disposable CI runner
+        run: npm ci --prefix operations/release/fixture --ignore-scripts --no-audit --no-fund
       - name: Check financial route and fixture ownership boundaries
         run: |
           node --test operations/release/fixture/actors.test.mjs operations/release/fixture/financial-route-phase.test.mjs tests/operations/financial-checkpoint-observer.test.mjs tests/operations/financial-topup-verifier.test.mjs tests/operations/financial-insurance-verifier.test.mjs tests/operations/fixture-runtime-files.test.mjs tests/operations/financial-route-suite.test.mjs tests/operations/component-source-contract.test.mjs tests/operations/fixture-seed.test.mjs

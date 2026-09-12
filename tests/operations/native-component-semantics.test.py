@@ -106,7 +106,7 @@ class NativeArtifactBoundary(unittest.TestCase):
                   'engine_readiness': {'timeout_ms': 90000, 'elapsed_ms': 1, 'observations': 1,
                                        'source_sha': 'a' * 40, 'running': True},
                   'financial': {'scope': 'independent-financial-route-observations', 'product_certificate': False,
-                                'owner': {'sourceSha': 'a' * 40}, 'checkpoints': [{'phase': phase} for phase in [
+                                'owner': {'sourceSha': 'a' * 40}, 'checkpoints': [{'entry': {'phase': phase}} for phase in [
                                     'topup.before', 'topup.malformed_refused', 'topup.accepted', 'topup.replayed',
                                     'insurance.offered', 'insurance.malformed_refused', 'insurance.accepted', 'settlement.observed']]},
                   'cleanup': {'complete': False, 'owner': 'outer-native-driver'}}
@@ -260,7 +260,7 @@ class NativeArtifactBoundary(unittest.TestCase):
                           'engine_readiness': {'timeout_ms': 90000, 'elapsed_ms': 1, 'observations': 1,
                                                'source_sha': 'a' * 40, 'running': True},
                           'financial': {'scope': 'independent-financial-route-observations', 'product_certificate': False,
-                                        'owner': {'sourceSha': 'a' * 40}, 'checkpoints': [{'phase': phase} for phase in [
+                                        'owner': {'sourceSha': 'a' * 40}, 'checkpoints': [{'entry': {'phase': phase}} for phase in [
                                             'topup.before', 'topup.malformed_refused', 'topup.accepted', 'topup.replayed',
                                             'insurance.offered', 'insurance.malformed_refused', 'insurance.accepted', 'settlement.observed']]},
                           'cleanup': {'complete': False, 'owner': 'outer-native-driver'}}

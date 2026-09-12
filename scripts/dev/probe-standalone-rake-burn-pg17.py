@@ -227,6 +227,34 @@ with tempfile.TemporaryDirectory(prefix="ca-rake-burn-", dir="/tmp") as temporar
  """, True)
         union = f"UPDATE clubs SET union_id='{U}'; UPDATE tables SET is_private=false,union_id='{U}';"
         for kind, operation in [("cash",cash()), ("tournament",tournament())]:
+            case("private game cannot send rake to its club's union " + kind, f"""
+ UPDATE clubs SET union_id='{U}';
+ UPDATE tournaments SET is_private=true,union_id=NULL;
+ SELECT * FROM {operation}; SET CONSTRAINTS ALL IMMEDIATE;
+ SELECT test_assert(NOT EXISTS(SELECT 1 FROM union_wallets),'private union untouched');
+ SELECT test_assert((SELECT sum(amount)=5 AND count(*)=1 FROM ca_mint_ledger WHERE action='burn'),'private rake burned');
+ """,kind=="tournament")
+        case("tournament retains its stamped union after club membership changes", f"""
+ UPDATE tournaments SET is_private=false,union_id='{U}';
+ SELECT {tournament()}; SET CONSTRAINTS ALL IMMEDIATE;
+ SELECT test_assert((SELECT union_id='{U}' AND rake_wallet=5 FROM union_wallets),'stamped union retained');
+ SELECT test_assert(NOT EXISTS(SELECT 1 FROM ca_mint_ledger),'stamped union not burned');
+ """,True)
+        for leg, union_id, club_id in [
+            ("union_rake", "NULL", C),
+            ("chip_treasury", f"'{U}'", C),
+            ("union_rake", f"'{U}'", E),
+        ]:
+            case(f"malformed cash destination refuses {leg} {union_id} {club_id}", f"""
+ INSERT INTO rake_distribution_legs VALUES('{H}','{leg}','{club_id}',{union_id},5);
+ DO $test$ DECLARE before_state jsonb; caught boolean:=false; BEGIN
+  SELECT {STATE} INTO before_state;
+  BEGIN PERFORM {cash()}; EXCEPTION WHEN SQLSTATE '55000' THEN caught:=true; END;
+  IF NOT caught OR before_state IS DISTINCT FROM {STATE} THEN
+   RAISE EXCEPTION 'malformed destination admitted or changed money'; END IF;
+ END; $test$;
+ """)
+        for kind, operation in [("cash",cash()), ("tournament",tournament())]:
             case("union retained once " + kind, union + f"""
  SELECT * FROM {operation};
  SET CONSTRAINTS ALL IMMEDIATE;
@@ -336,4 +364,3 @@ with tempfile.TemporaryDirectory(prefix="ca-rake-burn-", dir="/tmp") as temporar
             raise AssertionError("temporary postgres did not stop")
 print(json.dumps({"passed": len(checks), "checks": checks, "cleanup": "cluster stopped and removed",
                   "production_verified": False, "full_engine_verified": False}))
-

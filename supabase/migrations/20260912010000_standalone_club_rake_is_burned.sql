@@ -256,8 +256,14 @@ BEGIN
     RAISE EXCEPTION 'rake has conflicting destination receipts' USING ERRCODE = '55000';
   END IF;
   IF v_destination_count = 1 THEN
-    SELECT l.union_id INTO v_union_id FROM public.rake_distribution_legs l
+    SELECT l.leg, l.club_id, l.union_id INTO v_prior FROM public.rake_distribution_legs l
      WHERE l.leg_key = v_leg_key AND l.leg IN ('union_rake', 'chip_treasury');
+    IF v_prior.club_id IS DISTINCT FROM p_club_id
+       OR (v_prior.leg = 'union_rake' AND v_prior.union_id IS NULL)
+       OR (v_prior.leg = 'chip_treasury' AND v_prior.union_id IS NOT NULL) THEN
+      RAISE EXCEPTION 'rake destination receipt has invalid ownership' USING ERRCODE = '55000';
+    END IF;
+    v_union_id := v_prior.union_id;
   END IF;
 
   INSERT INTO public.rake_distribution_legs (leg_key, leg, club_id, union_id, amount)
@@ -390,7 +396,7 @@ DECLARE
   v_attempt integer := 0; v_attempts integer := 0; v_state text;
 BEGIN
   PERFORM public.fn_ca_lock_settlement_lane_global();
-  SELECT t.id, t.status, t.club_id, t.name, t.current_players
+  SELECT t.id, t.status, t.club_id, t.name, t.current_players, t.is_private, t.union_id
     INTO v_t FROM public.tournaments t WHERE t.id = p_tournament_id FOR NO KEY UPDATE;
   /* NO KEY UPDATE, not UPDATE (20260906): a cash hand's rake_records row
      references this tournament and takes KEY SHARE on it, which FOR UPDATE
@@ -430,7 +436,16 @@ BEGIN
     RETURN jsonb_build_object('ok', true, 'amount', GREATEST(v_net, 0), 'destination', 'none');
   END IF;
 
-  SELECT c.union_id INTO v_union FROM public.clubs c WHERE c.id = v_t.club_id;
+  -- Match the cash router's game ownership. Private games never credit a
+  -- union; an existing union stamp survives later club membership changes.
+  -- Unstamped historical public events keep their existing club fallback.
+  v_union := NULL;
+  IF NOT COALESCE(v_t.is_private, false) THEN
+    v_union := v_t.union_id;
+    IF v_union IS NULL THEN
+      SELECT c.union_id INTO v_union FROM public.clubs c WHERE c.id = v_t.club_id;
+    END IF;
+  END IF;
 
   /* ONE LOCK ORDER WITH atomic_distribute_rake (20260906). The cash path
      locks club_wallets FIRST and then union_wallets or clubs. This function

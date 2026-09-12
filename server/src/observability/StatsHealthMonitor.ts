@@ -37,7 +37,66 @@
  *     lag climbs to ~600 s. The threshold is 30 minutes, six times the break,
  *     and `paused()` (wired to MaintenanceBreak.isActive) suppresses the raise
  *     outright while a break is on (CLAUDE.md 13, rule 6).
+ *
+ * WHO WRITES THE STAT ROW, AND WHY THIS MONITOR HAD TO BE REWRITTEN
+ * ------------------------------------------------------------------
+ * When this file was written the answer was "the AFTER INSERT trigger
+ * `trg_ca_stats_live_from_hand`, in the hand's own transaction". That stopped
+ * being true on 2026-09-08. Migration
+ * `20260908042100_an_accepted_hand_is_one_commit_and_stats_leave_the_hot_path`
+ * took five synchronous AFTER INSERT triggers off `hand_history` because they
+ * were cancelling the hand they described (726 INSERTs cancelled in one
+ * five-minute window on 2026-09-07), and moved their effects behind a durable
+ * outbox. Every one of those trigger bodies now opens with
+ *
+ *     IF coalesce(current_setting('app.atomic_hand_commit',true),'')='on'
+ *       THEN RETURN NEW; END IF;
+ *
+ * and the accepted-hand RPC sets that GUC immediately before inserting the
+ * hand. So on the path that deals 99.9998% of hands (548,234 of 548,235 in
+ * the 24 h to 2026-09-12 05:00 UTC carried an atomic-commit receipt) the
+ * trigger deliberately declines, a row lands in `hand_projection_outbox`, and
+ * `fn_project_hand_side_effects` - woken by LISTEN/Realtime and drained by
+ * `services/supabase/handProjection.ts` - writes `ca_hand_player_stat` seconds
+ * later, in its own transaction.
+ *
+ * THREE CONSEQUENCES THIS MONITOR NOW HONOURS:
+ *
+ *   1. `recentHandsWithoutStat` is no longer "the trigger failed". It is "the
+ *      projector has not caught up yet", and the 90 s grace in
+ *      `ca_stats_health()` is the only allowance it gets. Under load that is
+ *      routinely not enough, which is why this alert raised and resolved 32
+ *      times in one night (2026-09-11) in a ~15-minute sawtooth: the
+ *      compensating `ca_roll_hand_stats_forward` runs every 15 minutes, wipes
+ *      the window clean for a read or two, and the window refills. Hysteresis
+ *      (below) is what stops a 15-minute compensator driving a 60-second
+ *      alarm.
+ *   2. A COUNT cannot be read without its denominator. The old summary said
+ *      "1 recent hand(s) have no stat row" while the real window held 1,109 -
+ *      identical prose for 0.09% and for 100%. It reports the SHARE now.
+ *   3. "The roll has not run" and "the live writer is not writing" are
+ *      different incidents and must be distinguishable. `liveWriterBacklog`
+ *      (the `hand_projection_outbox` sample that `HandOutboxMetrics` already
+ *      takes once a minute) answers which: a gap with a backed-up outbox is
+ *      the projector; a gap with an empty outbox is a writer defect. A sample
+ *      that is missing or stale renders as UNKNOWN, never as clean.
  */
+
+/**
+ * The live writer's queue, as `HandOutboxMetrics` last sampled it. Structurally
+ * the same object that class returns, so GameServer can hand it straight over.
+ */
+export interface StatsWriterBacklog {
+  /** Rows pending in hand_projection_outbox; -1 until the first sample. */
+  depth: number;
+  /** Seconds the oldest pending row has waited; 0 when the outbox is empty. */
+  oldestAgeSeconds: number;
+  /** Epoch ms of the last SUCCESSFUL sample; 0 means never. */
+  sampledAt: number;
+}
+
+/** What the monitor concluded about the writer, for the alert's own words. */
+export type LiveWriterVerdict = 'current' | 'behind' | 'unknown';
 
 export interface StatsHealthSnapshot {
   checkedAt: string;
@@ -110,6 +169,12 @@ export interface StatsHealthMonitorDeps {
   resolve: (alertname: string, component: string, note: string) => Promise<unknown> | unknown;
   /** True while a maintenance break is on; suppresses the lag alert. */
   paused: () => boolean;
+  /**
+   * The hand-projection outbox sample, or null when this engine does not take
+   * one. It is what separates "the projector is behind" from "a writer is
+   * broken", and its ABSENCE is a third answer, not a clean bill of health.
+   */
+  liveWriterBacklog?: () => StatsWriterBacklog | null;
   now?: () => number;
   log?: (msg: string) => void;
 }
@@ -135,6 +200,63 @@ export const STATS_HEALTH_PERIOD_MS = 60 * 1000;
  */
 export const STATS_EV_COVERAGE_MIN_RATIO = 0.99;
 export const STATS_EV_COVERAGE_MIN_SAMPLE = 50;
+
+/**
+ * THE STAT-GAP BAR, AND EVERY NUMBER IN IT IS MEASURED (CLAUDE.md 10.84).
+ *
+ * Source: `ca_stats_witness_audit_log`, the durable 15-minute record, read on
+ * production 2026-09-12 05:05 UTC over the preceding 24 hours.
+ *
+ * SHARE (0.05). The audit reports `hands` and `hands_without_stat` for its
+ * window, which is the same question this alert asks. Across 30 consecutive
+ * runs the answer was bimodal with nothing in between: 22 runs read EXACTLY
+ * 0/205, 0/5499, 0/216 ... 0.00%, and the 8 runs inside the 2026-09-11
+ * 21:39-23:39 stall read 2556/3605, 2396/3423, 3519/3519, 10163/10163,
+ * 6850/8246, 4597/6623, 1375/1375, 1793/2488 - 69.4% to 100%. Any bar between
+ * 0 and 69% is equally defensible against that record; 0.05 sits just above
+ * the noise floor so that a handful of hands still in flight at the edge of
+ * the window cannot page, while the observed failure mode clears it 14x over.
+ * A raw `> 0` (what this used to be) cannot tell those two apart at all.
+ *
+ * SAMPLE FLOOR (20 hands). `ca_stats_health()` looks at hands aged 90 s to
+ * 3 m 30 s, so the window is two minutes of dealing. At the quietest measured
+ * hour of the day (1,665 hands/h on 2026-09-12 03:00 UTC) that is ~55 hands;
+ * at the peak (43,301 hands/h at 19:00 UTC) ~1,443. 20 is below even the
+ * quiet-hour floor, so this excludes only a fleet that has effectively stopped
+ * dealing - which is `ClubArenaFleetSilent`'s alarm, not this one. It is also
+ * why the old summary could say "1 recent hand": during the 2026-09-11 kill
+ * storm the window held single digits.
+ *
+ * HYSTERESIS (5 breaching reads to raise, 5 clean reads to clear). The alert
+ * flapped 32 times in one night with a period of about 15 minutes. That is not
+ * noise, it is the shape of the system: when the live writer stalls, the
+ * compensating `ca_roll_hand_stats_forward` (every 15 minutes, Open Claw)
+ * backfills up to now() and leaves the window clean for one or two 60-second
+ * reads before it refills. Five consecutive CLEAN reads cannot be collected
+ * inside that sawtooth, so a stall can no longer resolve itself every quarter
+ * hour; five consecutive BREACHING reads mean a single slow projector drain
+ * cannot page. Five reads is five minutes: a third of the compensator's period
+ * and twice the width of its clean phase.
+ */
+export const STATS_TRIGGER_GAP_MIN_SHARE = 0.05;
+export const STATS_TRIGGER_GAP_MIN_HANDS = 20;
+export const STATS_TRIGGER_GAP_RAISE_TICKS = 5;
+export const STATS_TRIGGER_GAP_CLEAR_TICKS = 5;
+
+/**
+ * How long the hand projector may be behind before its backlog is the answer
+ * to "why is the window dirty". `ca_stats_health()` already excuses the newest
+ * 90 seconds, so anything the outbox has still not drained after 120 s is
+ * outside the allowance the gap measure itself gives.
+ */
+export const STATS_LIVE_WRITER_BACKLOG_GRACE_S = 120;
+/**
+ * `HandOutboxMetrics` samples once a minute and never zeroes a good sample on
+ * failure - the sample just stops moving. Past five minutes (five missed
+ * samples) it is no longer evidence about now, and this monitor must say
+ * UNKNOWN rather than read a stale zero as "the projector is current".
+ */
+export const STATS_LIVE_WRITER_SAMPLE_MAX_AGE_S = 300;
 
 const num = (v: unknown): number | null =>
   typeof v === 'number' && Number.isFinite(v)
@@ -215,6 +337,10 @@ export class StatsHealthMonitor {
   /** Direct tick() probes are valid before start, but not after stop. */
   private acceptingTicks = true;
   private inFlight = false;
+  /** Consecutive reads whose stat-gap share was at or above the bar. */
+  private gapBreachingTicks = 0;
+  /** Consecutive reads whose stat-gap share was below it. */
+  private gapClearTicks = 0;
   private readonly now: () => number;
   private readonly log: (msg: string) => void;
 
@@ -340,6 +466,62 @@ export class StatsHealthMonitor {
     }
   }
 
+  /**
+   * The share of the window's hands with no stat row, or null when the window
+   * cannot answer: no denominator, or too few hands to mean anything. Null is
+   * "could not tell" and is handled as its own outcome everywhere below.
+   */
+  private statGapShare(s: StatsHealthSnapshot): number | null {
+    const hands = s.recentHands;
+    const gap = s.recentHandsWithoutStat;
+    if (hands === null || gap === null) return null;
+    if (hands < STATS_TRIGGER_GAP_MIN_HANDS) return null;
+    if (hands <= 0) return null;
+    return gap / hands;
+  }
+
+  /**
+   * Which writer the gap belongs to, in the alert's own words. The stat row on
+   * the atomic path is written by `fn_project_hand_side_effects`, drained from
+   * `hand_projection_outbox`; a backed-up outbox IS the explanation, an empty
+   * one rules it out, and an unsampled one is not evidence either way.
+   */
+  private liveWriterVerdict(): { verdict: LiveWriterVerdict; phrase: string; depth: number } {
+    const sample = this.deps.liveWriterBacklog?.() ?? null;
+    if (sample === null)
+      return {
+        verdict: 'unknown',
+        phrase:
+          'the hand projection backlog is not sampled by this process, so which writer is behind is UNKNOWN',
+        depth: -1,
+      };
+    if (sample.sampledAt === 0 || sample.depth < 0)
+      return {
+        verdict: 'unknown',
+        phrase:
+          'the hand projection backlog has never been sampled, so which writer is behind is UNKNOWN',
+        depth: sample.depth,
+      };
+    const ageS = Math.max(0, Math.round((this.now() - sample.sampledAt) / 1000));
+    if (ageS > STATS_LIVE_WRITER_SAMPLE_MAX_AGE_S)
+      return {
+        verdict: 'unknown',
+        phrase: `the hand projection backlog sample is ${ageS}s old, too stale to read, so which writer is behind is UNKNOWN`,
+        depth: sample.depth,
+      };
+    if (sample.depth > 0 && sample.oldestAgeSeconds > STATS_LIVE_WRITER_BACKLOG_GRACE_S)
+      return {
+        verdict: 'behind',
+        phrase: `the hand projector is BEHIND: ${sample.depth} row(s) pending in hand_projection_outbox, oldest ${sample.oldestAgeSeconds}s`,
+        depth: sample.depth,
+      };
+    return {
+      verdict: 'current',
+      phrase: `the hand projector is CURRENT (${sample.depth} pending), so this gap is not a drain backlog`,
+      depth: sample.depth,
+    };
+  }
+
   /** What /health publishes under `stats`. */
   publish(): StatsHealthPublished | null {
     if (!this.snapshot) return null;
@@ -375,6 +557,16 @@ export class StatsHealthMonitor {
         'poker_stats_recent_hands_without_stat',
         'Hands from the last 3.5 minutes (90 s grace) with no ca_hand_player_stat row; 0 is healthy',
         s?.recentHandsWithoutStat ?? null
+      ),
+      ...g(
+        'poker_stats_recent_hands_without_stat_ratio',
+        "Share of the health window's hands with no ca_hand_player_stat row; NaN when the window is too small to answer",
+        s ? this.statGapShare(s) : null
+      ),
+      ...g(
+        'poker_stats_stat_gap_breaching_reads',
+        'Consecutive health reads whose stat-gap share was at or above the bar; the alert raises at STATS_TRIGGER_GAP_RAISE_TICKS',
+        this.snapshot ? this.gapBreachingTicks : null
       ),
       ...g(
         'poker_stats_witness_disagreements',
@@ -449,39 +641,81 @@ export class StatsHealthMonitor {
         return;
     }
 
-    // 2. The live trigger. A hand with no stat row 90 seconds after it was
-    //    written means trg_ca_stats_live_from_hand raised (it WARNs and lets
-    //    the hand land) - the page is now waiting on the 15-minute roll.
+    // 2. The live stat writer. A hand still without a stat row 90 seconds
+    //    after it committed means whoever owns that write on its path has not
+    //    done it. Since 2026-09-08 that owner is NOT the trigger on the path
+    //    that deals essentially every hand (see the header): it is
+    //    fn_project_hand_side_effects, drained out of hand_projection_outbox.
+    //    Three things this must get right, and the old version got none of
+    //    them: report the SHARE, require the condition to PERSIST, and say
+    //    WHICH writer - or say plainly that it could not tell.
     const gap = s.recentHandsWithoutStat;
-    if (gap !== null && gap > 0) {
-      if (
-        !(await this.deliverAlert(generation, () =>
-          this.deps.raise({
-            alertname: STATS_TRIGGER_GAP_ALERT,
-            severity: 'warning',
-            component: STATS_HEALTH_COMPONENT,
-            summary: `${gap} recent hand(s) have no stat row - the live stats trigger is failing`,
-            description:
-              'trg_ca_stats_live_from_hand writes ca_hand_player_stat inside the hand insert and ' +
-              'swallows its own errors as WARNINGs so the hand always lands. Read the Postgres log ' +
-              'for "trg_ca_stats_live_from_hand:" to see why; the forward roll will backfill, but ' +
-              'the page is not live until this is 0.',
-            labels: { hands_without_stat: String(gap) },
-          })
-        ))
-      )
-        return;
-    } else if (gap === 0) {
-      if (
-        !(await this.deliverAlert(generation, () =>
-          this.deps.resolve(
-            STATS_TRIGGER_GAP_ALERT,
-            STATS_HEALTH_COMPONENT,
-            'Every recent hand has a stat row'
-          )
-        ))
-      )
-        return;
+    const hands = s.recentHands;
+    const share = this.statGapShare(s);
+
+    if (share === null) {
+      // No denominator, or too few hands to mean anything. Neither confirms
+      // the condition nor clears it: hold both counters and leave whatever is
+      // firing exactly as it is. A window that cannot answer must never read
+      // as an all-clear (AGENT-PLAYBOOK 8b).
+      this.gapBreachingTicks = 0;
+      this.gapClearTicks = 0;
+    } else if (share >= STATS_TRIGGER_GAP_MIN_SHARE) {
+      this.gapClearTicks = 0;
+      this.gapBreachingTicks += 1;
+      if (this.gapBreachingTicks >= STATS_TRIGGER_GAP_RAISE_TICKS) {
+        const writer = this.liveWriterVerdict();
+        const pct = (share * 100).toFixed(1);
+        if (
+          !(await this.deliverAlert(generation, () =>
+            this.deps.raise({
+              alertname: STATS_TRIGGER_GAP_ALERT,
+              severity: 'warning',
+              component: STATS_HEALTH_COMPONENT,
+              summary:
+                `${pct}% of recent hands have no stat row (${gap ?? 0} of ${hands ?? 0}), ` +
+                `for ${this.gapBreachingTicks} consecutive reads`,
+              description:
+                'ca_hand_player_stat is written by fn_project_hand_side_effects, which the engine ' +
+                'drains from hand_projection_outbox after the accepted-hand commit (see ' +
+                'services/supabase/handProjection.ts). The AFTER INSERT trigger ' +
+                'trg_ca_stats_live_from_hand declines on that path by design - it returns on its ' +
+                'first statement when app.atomic_hand_commit is on - so there is NO ' +
+                '"trg_ca_stats_live_from_hand:" line in the Postgres log to find, and looking for ' +
+                'one is how this cost a full investigation on 2026-09-11. Start here instead: ' +
+                `${writer.phrase}. Then poker_hand_projection_outbox_depth and ` +
+                'poker_hand_projection_drain_results_total on /metrics, and ' +
+                'SELECT count(*) FROM hand_projection_outbox. ca_roll_hand_stats_forward (Open ' +
+                'Claw, every 15 minutes) will backfill the rows either way, so the money and the ' +
+                'history are not at risk; the stats page is simply not live until this clears.',
+              labels: {
+                hands_without_stat: String(gap ?? 0),
+                recent_hands: String(hands ?? 0),
+                share: share.toFixed(4),
+                breaching_reads: String(this.gapBreachingTicks),
+                live_writer: writer.verdict,
+                outbox_depth: String(writer.depth),
+              },
+            })
+          ))
+        )
+          return;
+      }
+    } else {
+      this.gapBreachingTicks = 0;
+      this.gapClearTicks += 1;
+      if (this.gapClearTicks >= STATS_TRIGGER_GAP_CLEAR_TICKS) {
+        if (
+          !(await this.deliverAlert(generation, () =>
+            this.deps.resolve(
+              STATS_TRIGGER_GAP_ALERT,
+              STATS_HEALTH_COMPONENT,
+              `Recent hands carry their stat rows again (${this.gapClearTicks} consecutive clean reads)`
+            )
+          ))
+        )
+          return;
+      }
     }
 
     // 3. The witness audit. Zero is the only healthy number for all four.

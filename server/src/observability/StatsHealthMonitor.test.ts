@@ -12,6 +12,13 @@ import {
   STATS_HEALTH_COMPONENT,
   STATS_INDEX_LAG_THRESHOLD_S,
   STATS_HEALTH_PERIOD_MS,
+  STATS_TRIGGER_GAP_MIN_SHARE,
+  STATS_TRIGGER_GAP_MIN_HANDS,
+  STATS_TRIGGER_GAP_RAISE_TICKS,
+  STATS_TRIGGER_GAP_CLEAR_TICKS,
+  STATS_LIVE_WRITER_BACKLOG_GRACE_S,
+  STATS_LIVE_WRITER_SAMPLE_MAX_AGE_S,
+  type StatsWriterBacklog,
 } from './StatsHealthMonitor.js';
 
 // What the phase 3 migrations add to the payload: the 7-day all-in runout
@@ -52,7 +59,10 @@ const healthyAudit = {
   durationMs: 10416,
 };
 
-function harness(reads: unknown[], opts: { paused?: boolean } = {}) {
+function harness(
+  reads: unknown[],
+  opts: { paused?: boolean; backlog?: StatsWriterBacklog | null | 'absent' } = {}
+) {
   let i = 0;
   let clock = 1_000_000;
   const raise = vi.fn<(a: StatsHealthAlert) => Promise<boolean>>(async () => true);
@@ -72,8 +82,35 @@ function harness(reads: unknown[], opts: { paused?: boolean } = {}) {
     paused: () => opts.paused ?? false,
     now: () => clock,
     log: () => {},
+    // 'absent' = the dep is not wired at all; null = it is wired and answers
+    // null; undefined = the default, a projector that is keeping up. `??` is
+    // wrong here: it collapses the null case into the default and hides the
+    // very outcome these cases exist to test.
+    ...(opts.backlog === 'absent'
+      ? {}
+      : {
+          liveWriterBacklog: (): StatsWriterBacklog | null =>
+            opts.backlog === undefined || opts.backlog === 'absent'
+              ? DRAINED_OUTBOX(clock)
+              : opts.backlog,
+        }),
   });
   return { mon, raise, resolve, read, advance: (ms: number) => (clock += ms) };
+}
+
+/** A projector that is keeping up: nothing pending, sampled just now. */
+const DRAINED_OUTBOX = (now: number): StatsWriterBacklog => ({
+  depth: 0,
+  oldestAgeSeconds: 0,
+  sampledAt: now,
+});
+
+/** The window is two minutes of dealing; at the measured quiet hour ~55 hands. */
+const BUSY_WINDOW = 1109;
+
+/** Drive `n` reads of the same payload. */
+async function ticks(mon: StatsHealthMonitor, n: number): Promise<void> {
+  for (let k = 0; k < n; k += 1) await mon.tick();
 }
 
 describe('parseStatsHealth', () => {
@@ -149,19 +186,151 @@ describe('StatsHealthMonitor', () => {
     expect(raise).not.toHaveBeenCalled();
   });
 
-  it('raises the trigger-gap alert when a recent hand has no stat row, resolves at zero', async () => {
-    const { mon, raise, resolve } = harness([
-      { ...LIVE_SAMPLE, recentHandsWithoutStat: 3 },
-      { ...LIVE_SAMPLE, recentHandsWithoutStat: 0 },
-    ]);
-    await mon.tick();
-    expect(raise.mock.calls.map((c) => c[0]?.alertname)).toContain(STATS_TRIGGER_GAP_ALERT);
-    await mon.tick();
-    expect(resolve).toHaveBeenCalledWith(
-      STATS_TRIGGER_GAP_ALERT,
-      STATS_HEALTH_COMPONENT,
-      expect.any(String)
-    );
+  /**
+   * THE STAT GAP, REWRITTEN 2026-09-12.
+   *
+   * This block used to be one test: gap of 3 in a window of 897 raises on the
+   * first read, gap of 0 resolves on the next. That is the behaviour that
+   * flapped 32 times on the night of 2026-09-11 and reported "1 recent hand"
+   * for a window holding 1,109. Every case below is one half of that defect.
+   */
+  describe('the stat gap is a share, it must persist, and it names its writer', () => {
+    const gapOf = (missing: number, hands = BUSY_WINDOW) => ({
+      ...LIVE_SAMPLE,
+      recentHands: hands,
+      recentHandsWithoutStat: missing,
+    });
+
+    it('a gap under the bar never raises, however many reads it takes', async () => {
+      // 3 of 1,109 is 0.27%: the old code raised on this, on read one.
+      const { mon, raise } = harness([gapOf(3)]);
+      await ticks(mon, STATS_TRIGGER_GAP_RAISE_TICKS * 3);
+      expect(raise.mock.calls.some((c) => c[0]?.alertname === STATS_TRIGGER_GAP_ALERT)).toBe(false);
+    });
+
+    it('a gap over the bar waits for STATS_TRIGGER_GAP_RAISE_TICKS consecutive reads', async () => {
+      const missing = Math.ceil(BUSY_WINDOW * (STATS_TRIGGER_GAP_MIN_SHARE + 0.02));
+      const { mon, raise } = harness([gapOf(missing)]);
+      await ticks(mon, STATS_TRIGGER_GAP_RAISE_TICKS - 1);
+      expect(raise.mock.calls.some((c) => c[0]?.alertname === STATS_TRIGGER_GAP_ALERT)).toBe(false);
+      await mon.tick();
+      expect(raise.mock.calls.some((c) => c[0]?.alertname === STATS_TRIGGER_GAP_ALERT)).toBe(true);
+    });
+
+    it('one clean read inside the breach resets the count: a 15-minute compensator cannot raise it', async () => {
+      const missing = Math.ceil(BUSY_WINDOW * 0.7); // the measured stall: 69-100%
+      const reads = [];
+      // Four dirty, one clean, four dirty: the shape of the sawtooth.
+      for (let k = 0; k < 4; k += 1) reads.push(gapOf(missing));
+      reads.push(gapOf(0));
+      for (let k = 0; k < 4; k += 1) reads.push(gapOf(missing));
+      const { mon, raise } = harness(reads);
+      await ticks(mon, 9);
+      expect(raise.mock.calls.some((c) => c[0]?.alertname === STATS_TRIGGER_GAP_ALERT)).toBe(false);
+    });
+
+    it('resolves only after STATS_TRIGGER_GAP_CLEAR_TICKS consecutive clean reads', async () => {
+      const missing = Math.ceil(BUSY_WINDOW * 0.7);
+      const dirty = Array.from({ length: STATS_TRIGGER_GAP_RAISE_TICKS }, () => gapOf(missing));
+      const { mon, raise, resolve } = harness([...dirty, gapOf(0)]);
+      await ticks(mon, STATS_TRIGGER_GAP_RAISE_TICKS);
+      expect(raise.mock.calls.some((c) => c[0]?.alertname === STATS_TRIGGER_GAP_ALERT)).toBe(true);
+      await ticks(mon, STATS_TRIGGER_GAP_CLEAR_TICKS - 1);
+      expect(resolve.mock.calls.some((c) => c[0] === STATS_TRIGGER_GAP_ALERT)).toBe(false);
+      await mon.tick();
+      expect(resolve).toHaveBeenCalledWith(
+        STATS_TRIGGER_GAP_ALERT,
+        STATS_HEALTH_COMPONENT,
+        expect.any(String)
+      );
+    });
+
+    it('reports the share and the denominator, never a bare count', async () => {
+      const missing = Math.ceil(BUSY_WINDOW * 0.7);
+      const { mon, raise } = harness([gapOf(missing)]);
+      await ticks(mon, STATS_TRIGGER_GAP_RAISE_TICKS);
+      const a = raise.mock.calls.find((c) => c[0]?.alertname === STATS_TRIGGER_GAP_ALERT)?.[0];
+      expect(a?.summary).toContain(`of ${BUSY_WINDOW}`);
+      expect(a?.summary).toMatch(/\d+\.\d% of recent hands/);
+      expect(a?.labels?.recent_hands).toBe(String(BUSY_WINDOW));
+      expect(a?.labels?.share).toBe((missing / BUSY_WINDOW).toFixed(4));
+    });
+
+    it('never names a Postgres log line that cannot exist on the atomic path', async () => {
+      const { mon, raise } = harness([gapOf(Math.ceil(BUSY_WINDOW * 0.7))]);
+      await ticks(mon, STATS_TRIGGER_GAP_RAISE_TICKS);
+      const a = raise.mock.calls.find((c) => c[0]?.alertname === STATS_TRIGGER_GAP_ALERT)?.[0];
+      // The remediation that cost a full investigation on 2026-09-11.
+      expect(a?.description).not.toMatch(
+        /Read the Postgres log\s+for "trg_ca_stats_live_from_hand:"/
+      );
+      expect(a?.description).toContain('fn_project_hand_side_effects');
+      expect(a?.description).toContain('hand_projection_outbox');
+      expect(a?.description).toContain('app.atomic_hand_commit');
+    });
+
+    it('a window too small to answer neither raises nor resolves', async () => {
+      // During the 2026-09-11 kill storm the window held single digits: that
+      // is "the fleet stopped dealing", which is another alarm's job.
+      const { mon, raise, resolve } = harness([
+        gapOf(STATS_TRIGGER_GAP_MIN_HANDS - 1, STATS_TRIGGER_GAP_MIN_HANDS - 1),
+      ]);
+      await ticks(mon, STATS_TRIGGER_GAP_RAISE_TICKS * 2);
+      expect(raise.mock.calls.some((c) => c[0]?.alertname === STATS_TRIGGER_GAP_ALERT)).toBe(false);
+      expect(resolve.mock.calls.some((c) => c[0] === STATS_TRIGGER_GAP_ALERT)).toBe(false);
+      expect(mon.prometheusLines().join('\n')).toContain(
+        'poker_stats_recent_hands_without_stat_ratio NaN'
+      );
+    });
+
+    it('a backed-up outbox is named as the writer that is behind', async () => {
+      const { mon, raise } = harness([gapOf(Math.ceil(BUSY_WINDOW * 0.7))], {
+        backlog: {
+          depth: 100888,
+          oldestAgeSeconds: STATS_LIVE_WRITER_BACKLOG_GRACE_S + 1,
+          sampledAt: 1_000_000,
+        },
+      });
+      await ticks(mon, STATS_TRIGGER_GAP_RAISE_TICKS);
+      const a = raise.mock.calls.find((c) => c[0]?.alertname === STATS_TRIGGER_GAP_ALERT)?.[0];
+      expect(a?.labels?.live_writer).toBe('behind');
+      expect(a?.labels?.outbox_depth).toBe('100888');
+      expect(a?.description).toContain('BEHIND');
+    });
+
+    it('a drained outbox rules the drain OUT, so the gap is a writer defect', async () => {
+      const { mon, raise } = harness([gapOf(Math.ceil(BUSY_WINDOW * 0.7))]);
+      await ticks(mon, STATS_TRIGGER_GAP_RAISE_TICKS);
+      const a = raise.mock.calls.find((c) => c[0]?.alertname === STATS_TRIGGER_GAP_ALERT)?.[0];
+      expect(a?.labels?.live_writer).toBe('current');
+      expect(a?.description).toContain('not a drain backlog');
+    });
+
+    it('an unsampled or stale backlog reads as UNKNOWN, never as current', async () => {
+      const missing = Math.ceil(BUSY_WINDOW * 0.7);
+      for (const backlog of [
+        'absent' as const,
+        null,
+        { depth: -1, oldestAgeSeconds: 0, sampledAt: 0 },
+        { depth: 0, oldestAgeSeconds: 0, sampledAt: 1 }, // sampled at the epoch: ancient
+      ]) {
+        const { mon, raise } = harness([gapOf(missing)], { backlog });
+        await ticks(mon, STATS_TRIGGER_GAP_RAISE_TICKS);
+        const a = raise.mock.calls.find((c) => c[0]?.alertname === STATS_TRIGGER_GAP_ALERT)?.[0];
+        expect(a?.labels?.live_writer, JSON.stringify(backlog)).toBe('unknown');
+        expect(a?.description).toContain('UNKNOWN');
+      }
+      // and the staleness bar is the one the constant names
+      expect(STATS_LIVE_WRITER_SAMPLE_MAX_AGE_S).toBeGreaterThan(0);
+    });
+
+    it('publishes the share and the breaching-read count as gauges', async () => {
+      const { mon } = harness([gapOf(Math.ceil(BUSY_WINDOW * 0.7))]);
+      await ticks(mon, 2);
+      const lines = mon.prometheusLines().join('\n');
+      expect(lines).toContain('poker_stats_stat_gap_breaching_reads 2');
+      expect(lines).toMatch(/poker_stats_recent_hands_without_stat_ratio 0\.7/);
+    });
   });
 
   it('raises the witness alert on any non-zero audit count, and resolves on a clean one', async () => {

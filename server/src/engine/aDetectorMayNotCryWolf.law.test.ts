@@ -25,6 +25,7 @@ import { describeError } from '../services/errorReporter.js';
 
 const read = (p: string) => readFileSync(resolve(__dirname, p), 'utf8');
 const SETTLEMENT = read('./ServerTableEngineSettlement.ts');
+const STATS_MONITOR = read('../observability/StatsHealthMonitor.ts');
 const PROJECTION = read('../services/supabase/handProjection.ts');
 const MOVES = read('../tournament/TournamentManager.ts');
 const ENGINE = read('./ServerTableEngineBase.ts');
@@ -193,5 +194,61 @@ describe('a dealt hand is not thrown away by the table balancer', () => {
     expect(MOVES).not.toMatch(
       /\.from\(['"]table_seats['"]\)[\s\S]{0,120}\.(?:update|insert|delete)\(/
     );
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE SAME LAW, FROM THE STATS PIPELINE (2026-09-12)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `ClubArenaStatsTriggerGap` raised and resolved 32 times on the night of
+ * 2026-09-11, roughly every fifteen minutes. Nobody was careless: the alarm
+ * read one number, `recentHandsWithoutStat`, over a two-minute window, and
+ * raised whenever it was greater than zero. Underneath it,
+ * `ca_roll_hand_stats_forward` runs every fifteen minutes and backfills the
+ * window clean for a read or two before it refills. A 15-minute compensator
+ * was therefore driving a 60-second alarm, and it did so for a whole night.
+ *
+ * That is this law's own sentence about the Drift board, one system over: an
+ * alarm that fires for a condition which always clears is not a strict alarm,
+ * it is a broken one, because it trains everyone to stop reading it. The pins
+ * here are on the SHAPE of the detector; the behaviour is exercised in
+ * observability/StatsHealthMonitor.test.ts.
+ */
+describe('the stats gap alarm cannot flap, and cannot report a count without its denominator', () => {
+  it('needs more than one breaching read to raise, and more than one clean read to clear', () => {
+    const raiseTicks = /STATS_TRIGGER_GAP_RAISE_TICKS = (\d+)/.exec(STATS_MONITOR);
+    const clearTicks = /STATS_TRIGGER_GAP_CLEAR_TICKS = (\d+)/.exec(STATS_MONITOR);
+    expect(raiseTicks, 'STATS_TRIGGER_GAP_RAISE_TICKS has gone').not.toBeNull();
+    expect(clearTicks, 'STATS_TRIGGER_GAP_CLEAR_TICKS has gone').not.toBeNull();
+    // The compensator's period is 15 minutes and the read period is 60s, so a
+    // clean phase one or two reads wide is normal while the writer is DOWN.
+    expect(Number(raiseTicks![1])).toBeGreaterThan(2);
+    expect(Number(clearTicks![1])).toBeGreaterThan(2);
+  });
+
+  it('raises on a share against a sample floor, never on a bare non-zero count', () => {
+    expect(STATS_MONITOR).toMatch(/STATS_TRIGGER_GAP_MIN_SHARE = 0\.\d+/);
+    expect(STATS_MONITOR).toMatch(/STATS_TRIGGER_GAP_MIN_HANDS = \d+/);
+    // the exact test that produced "1 recent hand(s) have no stat row"
+    expect(STATS_MONITOR).not.toMatch(/gap !== null && gap > 0/);
+  });
+
+  it('a window that cannot answer is a third outcome, not an all-clear', () => {
+    const evaluate = STATS_MONITOR.slice(STATS_MONITOR.indexOf('private async evaluate('));
+    expect(evaluate).toContain('if (share === null)');
+    // and the writer verdict has an UNKNOWN arm that a stale sample falls into
+    expect(STATS_MONITOR).toContain("verdict: 'unknown'");
+    expect(STATS_MONITOR).toMatch(/STATS_LIVE_WRITER_SAMPLE_MAX_AGE_S/);
+  });
+
+  it('never sends the reader to a log line that cannot exist on the path that deals the hands', () => {
+    // trg_ca_stats_live_from_hand returns on its first statement when
+    // app.atomic_hand_commit is on, so it logs nothing, so there is nothing to
+    // grep. Searching for it cost a full investigation on 2026-09-11.
+    expect(STATS_MONITOR).not.toContain('Read the Postgres log');
+    expect(STATS_MONITOR).toContain('fn_project_hand_side_effects');
+    expect(STATS_MONITOR).toContain('hand_projection_outbox');
   });
 });

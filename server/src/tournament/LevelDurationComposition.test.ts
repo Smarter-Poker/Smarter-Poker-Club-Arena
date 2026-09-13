@@ -115,10 +115,26 @@ describe('level publication carries the duration the actual manager timer uses',
         const tableStateHub = { emitEvent: vi.fn() };
         const supabase = {
           from: () => ({ update: () => ({ eq: async () => ({ error: null }) }) }),
+          rpc: async (_name: string, args: any) => ({
+            error: null,
+            data: {
+              ok: true,
+              tournament_id: args.p_tournament_id,
+              current_level: args.p_next_level,
+              level_started_at: new Date(Date.now()).toISOString(),
+              blind_level_state: {
+                index: args.p_next_level,
+                small_blind: args.p_small_blind,
+                big_blind: args.p_big_blind,
+                ante: args.p_ante,
+              },
+            },
+          }),
         };
         const state = manager(!spin, true, spin, { tableStateHub, supabase, reportError: vi.fn() });
         Object.assign(state, {
           tournamentId: 'published-clock',
+          getTournamentLeaseGeneration: () => 'active-generation',
           lifecycleEpoch: { current: () => 1 },
           lifecycleIsCurrent: () => true,
           isOnBreak: () => false,

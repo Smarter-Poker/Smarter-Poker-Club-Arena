@@ -296,3 +296,13 @@ engine/frontend source publication and live acceptance remain open.
 Per-event monitoring source is PR #4529, candidate
 cc6130bdd70612611a66179e458b89c6cfdb75b3. Its database reader is installed;
 engine and loaded-rule verification remain with the pipeline publication owner.
+
+## R18 — atomic field-wide blind publication (20:10 UTC)
+
+Confirmed: sequential table writes could expose mixed levels after a partial failure, and a concurrent table birth could use a cached previous level. A failed fresh request could also consume the unplayed level through its retained request timestamp. The new engine path and service-only RPC publish the full field plus parent clock together, confirm actual rows, retain a replay's durable shifted clock, and lock table births onto the committed snapshot. Resume reads the snapshot. Current hands retain their original stakes.
+
+Both prerequisite/authority migrations are installed and hash/ACL verified; no historical funded contract was altered. Engine publication remains open. Native24groups, service/tournament/hand tests5,171 across340files, final100/4 and TypeScript passed; native scope is synthetic rows/direct trusted context with actual lock/claim functions, not full HTTP/production-trigger/financial certification. See the atomic blind publication changelog for the corrected DDL lock ordering, installed hashes, history and rollback boundary.
+
+Source #4533 (paid-depth creation) merged asb19bbea185a581935a38d2fbdfb79ca01be7c74e with successful CI34778843030. Source merge is distinct from served UI/engine proof.
+
+Live20:03 break observation: all110 sampled multi-table events cleared their shared break; no sampled levels advanced during the paused interval. Engine81fe7fc95d64817866a7d6d9103d2421a72f3152 completed8/8waves and1,358table resumes by20:02:54.522. At20:06 only36of110 had new hands since20:02:40 (461hands). The old stalled-event backlog, M17 continuation, complete payout/bounty/ticket reconciliation and full native terminal acceptance remain OPEN. Passing this break cycle does not close those boundaries.

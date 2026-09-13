@@ -1,3 +1,9 @@
+## 2026-09-13: Publish tournament blinds atomically
+
+The engine replaces per-table blind fan-out with one generation-fenced database transaction and a strict receipt. New table births inherit the committed parent snapshot; restart uses the same amounts. A fresh level starts on database time after successful field writes; replay keeps an intervening break shift. Financial contracts and historical rows are unchanged.
+
+The initial combined DDL deadlocked and rolled back completely. Separate additive schema and trigger/authority transactions applied at20:10UTC as history20260913201030 and20260913201037 (repository20260913195404 and20260913200859). Installed function hashes and service-only access match. Full suites5,171/340, final affected tests100/4, native24groups and server typecheck pass. Engine publication remains open. See docs/changelog/2026-09-13-mtt-atomic-blind-publication.md for behavior, exact proof limits and rollback compatibility.
+
 ## 2026-09-13: Creation retains the actual paid-depth selection
 
 The outer database creator read the wrong event-ID key and swallowed failed contract writes. Source-guarded migration20260913194154 now validates the delegated receipt and atomically persists selected paid depth;31 native wrapper groups pass, with explicit stand-ins and rollback evidence. Applied at19:42UTC as database history20260913194226; source fingerprint b6335e81d6629f8971d2fa378aebe6b1, unchanged authorization metadata and unauthenticated refusal verified. No historical funded events changed.

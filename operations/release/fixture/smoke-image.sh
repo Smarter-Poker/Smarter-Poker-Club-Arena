@@ -141,7 +141,7 @@ docker run --detach --name "$preimage" --network "$network" --read-only --user 1
   --tmpfs /tmp:rw,nosuid,mode=1777,uid=1000,gid=1000,size=2g \
   --tmpfs /run:rw,nosuid,mode=0755,uid=1000,gid=1000,size=2g \
   --tmpfs /var/lib/postgresql:rw,nosuid,mode=0700,uid=1000,gid=1000,size=4g \
-  "$image_id" fixture-server preimage >/dev/null
+  "$image_id" fixture-server align-roles >/dev/null
 smoke_step=preimage-ready
 deadline=$((SECONDS + 180))
 while ! docker exec "$preimage" test -f /run/club-arena-qualification/service-preimage.ready; do

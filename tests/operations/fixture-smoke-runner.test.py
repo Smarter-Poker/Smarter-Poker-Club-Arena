@@ -49,6 +49,7 @@ RECORDS = [dict(scope='native-service-smoke', observer='passed', browser='chromi
                 observation_bridge='native-synthetic-protocol'),
            dict(scope='native-service-smoke', peer='passed', gateway='reachable',
                 realtime_direct='refused', tenant_administration='refused')]
+ROLE_ALIGNMENT = {'scope': 'native-full-role-installer', 'status': 'passed', 'stage': 'complete', 'template_sha256': '75de4863de9a9276e701526389a6fbe0a033589d60844b71dd42eb44fbdf31db', 'install_submitted': True, 'commit_acknowledged': True, 'catalog_outcome': 'committed', 'rollback_acknowledged': False, 'separate_read_only_observers': 4, 'graph_assertion': True, 'membership_assertion': True, 'actual_login_and_default_acl_tests': False, 'post_alignment_services': False, 'full_schema_ready': False, 'funded_or_production_complete': False, 'installer_backend_absent': True, 'all_driver_clients_closed': True, 'original_catalog_sha256': 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', 'aligned_catalog_sha256': 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd'}
 SMOKE = '\n'.join(map(json.dumps, RECORDS)) + '\nNative service smoke and container/network cleanup passed (not a product certificate).\n'
 
 
@@ -201,6 +202,8 @@ class RunnerTests(unittest.TestCase):
                     if fault == 'preimage-leftover':
                         present.add(env['FIXTURE_SMOKE_CONTAINER'] + '-preimage')
                     result = SMOKE if fault != 'missing-service' else json.dumps(RECORDS[0])
+                    if fault != 'missing-role-proof':
+                        result += json.dumps(ROLE_ALIGNMENT) + '\n'
                     return result if fault == 'missing-preimage-proof' else result + json.dumps(proof) + '\n'
                 if args[:3] == ['docker', 'container', 'ls']:
                     owned = args[-1].removeprefix('name=^/').removesuffix('$')
@@ -228,6 +231,31 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertFalse(receipt['product_certificate'])
         self.assertTrue(all(receipt['cleanup'].values()))
+
+    def test_role_installer_native_receipt_is_mandatory(self):
+        self.assertEqual(self.exercise('missing-role-proof')[0], 1)
+
+    def test_role_installer_native_receipt_refuses_incomplete_or_overclaimed_results(self):
+        for key, value in [('status', 'failed'), ('commit_acknowledged', False),
+                           ('catalog_outcome', 'original'), ('rollback_acknowledged', True),
+                           ('separate_read_only_observers', 3), ('separate_read_only_observers', True),
+                           ('graph_assertion', False), ('membership_assertion', False),
+                           ('all_driver_clients_closed', False), ('installer_backend_absent', False),
+                           ('actual_login_and_default_acl_tests', True), ('post_alignment_services', True),
+                           ('full_schema_ready', True), ('funded_or_production_complete', True),
+                           ('template_sha256', 'a'*64), ('aligned_catalog_sha256', 'bad')]:
+            with self.subTest(key=key, value=value):
+                changed = dict(ROLE_ALIGNMENT); changed[key] = value
+                with self.assertRaises(RuntimeError): m.role_alignment_record(json.dumps(changed))
+        with self.assertRaises(RuntimeError):
+            m.role_alignment_record(json.dumps(ROLE_ALIGNMENT) + '\n' + json.dumps(ROLE_ALIGNMENT))
+        changed = dict(ROLE_ALIGNMENT); changed['secret'] = 'PRIVATE'
+        with self.assertRaises(RuntimeError): m.role_alignment_record(json.dumps(changed))
+        with self.assertRaises(RuntimeError):
+            m.role_alignment_record(json.dumps(ROLE_ALIGNMENT).replace('"status": "passed"', '"status": "passed", "status": "passed"'))
+        with self.assertRaises(RuntimeError):
+            m.role_alignment_record(json.dumps(ROLE_ALIGNMENT).replace('"status": "passed"', '"status": "passed", "status": "passed"') + '\n' + json.dumps(ROLE_ALIGNMENT))
+        self.assertEqual(m.role_alignment_record(json.dumps(ROLE_ALIGNMENT)), ROLE_ALIGNMENT)
 
     def test_source_revision_mismatch_prevents_build(self):
         code, _, calls = self.exercise('revision')

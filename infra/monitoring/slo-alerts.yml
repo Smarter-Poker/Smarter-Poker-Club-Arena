@@ -70,9 +70,10 @@ groups:
 
       # A single table wedged for a quarter of an hour is a table of players
       # who cannot act and cannot leave.
+      # Keep the millisecond threshold, then give humanizeDuration seconds.
       - alert: SLOTableHasStalled
         expr: |
-          sp:table_stall:max_ms > 900000
+          (sp:table_stall:max_ms > 900000) / 1000
           unless max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 5m
         labels:

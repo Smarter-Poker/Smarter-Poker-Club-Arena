@@ -1509,7 +1509,6 @@ export abstract class TournamentManagerBase {
      * unconditionally.
      */
     if (this.pendingBlindTransition) {
-      this.pendingBlindTransition.pausedAt ??= Date.now();
       if (this.blindTimer) this.clearLifecycleTimeout(this.blindTimer);
       this.blindTimer = null;
       this.savedBlindTimerRemaining = 1000;
@@ -4481,8 +4480,8 @@ export abstract class TournamentManagerBase {
         // An interrupted or failed level fan-out can leave tables on different
         // blinds. Restore every row from the durable tournament level before
         // admitting any dealer; a failed correction must not start a split field.
-        const restoredLevel = this.resolveBlindLevel(
-          tournament.blind_structure || [],
+        const restoredLevel = this.resolveCommittedBlindLevel(
+          tournament,
           tournament.current_level || 0
         );
         if (restoredLevel) {
@@ -5565,27 +5564,13 @@ export abstract class TournamentManagerBase {
 
     for (let i = alreadyHave; i < alreadyHave + tablesToCreate; i++) {
       const blindStructure = tournament.blind_structure || [];
-      /**
-       * THE LEVEL THIS TABLE IS BEING BORN INTO, NOT LEVEL ONE (2026-09-01).
-       *
-       * This loop runs whenever a tournament needs MORE tables than it has --
-       * late registration, a rebalance -- which by definition happens after
-       * the clock has started. It stamped `stakes` from blindStructure[0]
-       * regardless, so a table created at level 8 advertised the level 1
-       * blinds for the rest of its life. 197 tables across 60 tournaments in
-       * the last three days were created after their tournament started, and
-       * every one of them carries level 1.
-       *
-       * `stakes` is a display string (the lobby reads it; the engine takes its
-       * blinds from the tournament level, never from this row), and the lobby
-       * shows buy-in rather than stakes on a tournament row -- so this is a
-       * lie that is currently hard to see rather than one anybody has
-       * complained about. It is still a lie, and it is the last place in this
-       * file that reached into the structure by index instead of asking
-       * resolveBlindLevel, which is the closing hazard Phase 2.3 went through
-       * the rest of the file to remove.
-       */
-      const firstLevel = this.resolveBlindLevel(blindStructure, this.currentLevel) ||
+      // Recovery uses the committed snapshot when present. The insertion
+      // trigger also serializes with a concurrent level publication and copies
+      // its final blinds, even if this manager prepared the table earlier.
+      const firstLevel = this.resolveCommittedBlindLevel(
+        tournament,
+        tournament.current_level ?? this.currentLevel
+      ) ||
         blindStructure[0] || { smallBlind: 10, bigBlind: 20 };
 
       const { data: table, error } = await supabase
@@ -5879,6 +5864,30 @@ export abstract class TournamentManagerBase {
     return this.capLevelToTournamentChips(escalated);
   }
 
+  /** Keep the committed field snapshot through recovery and later table births. */
+  protected resolveCommittedBlindLevel(tournament: any, index: number): any {
+    const derived = this.resolveBlindLevel(tournament.blind_structure || [], index);
+    const state = tournament.blind_level_state;
+    if (state == null) return derived; // Existing events are adopted on their next transition.
+    const amounts = [state.small_blind, state.big_blind, state.ante];
+    if (
+      state.index !== index ||
+      !amounts.every(
+        (n) => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 10_000_000
+      ) ||
+      state.big_blind <= 0 ||
+      state.small_blind > state.big_blind
+    ) {
+      throw new Error('Committed tournament blind snapshot is invalid');
+    }
+    return {
+      ...derived,
+      smallBlind: state.small_blind,
+      bigBlind: state.big_blind,
+      ante: state.ante,
+    };
+  }
+
   /**
    * ═══════════════════════════════════════════════════════════════════════════
    *  NO BLIND MAY EXCEED THE CHIPS THAT EXIST (2026-08-31)
@@ -5962,8 +5971,6 @@ export abstract class TournamentManagerBase {
     previousLevel: number;
     nextLevel: number;
     level: any;
-    startedAt?: number;
-    pausedAt?: number;
   } | null = null;
   private blindTransitionInFlight = false;
 
@@ -5984,10 +5991,6 @@ export abstract class TournamentManagerBase {
       this.resolveBlindLevel(blindStructure, this.currentLevel) || blindStructure[0];
     const durationMs = this.levelDurationMs(currentLevelData);
     const pending = this.pendingBlindTransition;
-    if (pending?.pausedAt !== undefined) {
-      if (pending.startedAt !== undefined) pending.startedAt += Date.now() - pending.pausedAt;
-      delete pending.pausedAt;
-    }
     const armMs = pending
       ? 1000
       : remainingOverrideMs !== undefined
@@ -6140,14 +6143,20 @@ export abstract class TournamentManagerBase {
        * derivation and the full defect note; the array is never mutated
        * again, which is what makes the answer identical across restarts.
        */
-      const level =
+      const resolved =
         this.pendingBlindTransition?.level ?? this.resolveBlindLevel(blindStructure, nextLevel);
-      if (!level) throw new Error('Next blind level is missing');
-      const transition = (this.pendingBlindTransition ??= {
+      if (!resolved) throw new Error('Next blind level is missing');
+      const level = {
+        ...resolved,
+        smallBlind: Math.min(resolved.smallBlind ?? 0, 10_000_000),
+        bigBlind: Math.min(resolved.bigBlind ?? 0, 10_000_000),
+        ante: Math.min(resolved.ante ?? 0, 10_000_000),
+      };
+      this.pendingBlindTransition ??= {
         previousLevel: prevLevel,
         nextLevel,
         level,
-      });
+      };
       if (level.autoEscalated === true) {
         console.log(
           `[Tournament:${this.tournamentId.slice(0, 8)}] Auto-escalated blinds (level ${nextLevel}, structure has ${blindStructure.length}): ${level.smallBlind}/${level.bigBlind} ante ${level.ante}`
@@ -6158,66 +6167,47 @@ export abstract class TournamentManagerBase {
         `[Tournament:${this.tournamentId.slice(0, 8)}] Level ${nextLevel}: ${level.smallBlind}/${level.bigBlind} ante ${level.ante || 0}`
       );
 
-      for (const tableId of this.tableEngines.keys()) {
-        // FIX: Clamp values before DB write to prevent numeric field overflow
-        const MAX_DB_BLIND = 10_000_000;
-        const safeSmallBlind = Math.min(level.smallBlind || 0, MAX_DB_BLIND);
-        const safeBigBlind = Math.min(level.bigBlind || 0, MAX_DB_BLIND);
-        const safeAnte = Math.min(level.ante || 0, MAX_DB_BLIND);
-        const { error: blindErr } = await supabase
-          .from('tables')
-          .update({
-            small_blind: safeSmallBlind,
-            big_blind: safeBigBlind,
-            ante: safeAnte,
-            /**
-             * KEEP `stakes` HONEST (2026-08-23).
-             *
-             * createTablesAndSeatPlayers writes `stakes` once, as the level-1
-             * blinds, and this update never touched it — so the denormalised
-             * string stayed frozen at the opening level for the life of the
-             * tournament while the numeric columns advanced beside it.
-             * Measured on "Prime Time Main Event (NLH) - Table 4": stakes
-             * '25/50' against small_blind 750 / big_blind 1500. Every reader
-             * that trusts `stakes` (the table masthead, the lobby rows, and
-             * therefore every seat's BB depth badge) was reporting the wrong
-             * level's blinds, and stack depths thirty times too deep.
-             */
-            stakes: `${safeSmallBlind}/${safeBigBlind}`,
-          })
-          .eq('id', tableId);
-        if (!this.lifecycleIsCurrent(lifecycle)) return;
-        if (blindErr) {
-          const blindMsg = blindErr.message?.includes('<!DOCTYPE html>')
-            ? 'Cloudflare/Supabase HTML Error (502/504)'
-            : blindErr.message || JSON.stringify(blindErr) || 'Unknown error';
-          reportError(
-            new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Blind update failed for table ${tableId.slice(0, 8)}: ${blindMsg}`
-            ),
-            `Tournament.${this.tournamentId.slice(0, 8)}.blind_update_failed_for_table`
-          );
-          throw new Error(blindMsg);
+      // One fenced transaction commits the entire field and its clock. The
+      // returned anchor is authoritative on retry, including a maintenance
+      // shift applied after a committed response was lost.
+      const generation = this.getTournamentLeaseGeneration();
+      if (!generation) throw new Error('Blind publication requires the active tournament lease');
+      const smallBlind = Math.min(level.smallBlind ?? 0, 10_000_000);
+      const bigBlind = Math.min(level.bigBlind ?? 0, 10_000_000);
+      const ante = Math.min(level.ante ?? 0, 10_000_000);
+      const { data: receipt, error: levelErr } = await supabase.rpc(
+        'fn_publish_tournament_blind_level',
+        {
+          p_tournament_id: this.tournamentId,
+          p_lease_generation: generation,
+          p_previous_level: prevLevel,
+          p_next_level: nextLevel,
+          p_small_blind: smallBlind,
+          p_big_blind: bigBlind,
+          p_ante: ante,
         }
-      }
-
-      // Publish the new level and its clock anchor together. A replacement
-      // manager must never time this level from the previous level's start.
-      // Retain this anchor if the transaction commits but its response is lost.
-      const levelStartedAt = (transition.startedAt ??= Date.now());
-      const { error: levelErr } = await supabase
-        .from('tournaments')
-        .update({
-          current_level: nextLevel,
-          level_started_at: new Date(levelStartedAt).toISOString(),
-        })
-        .eq('id', this.tournamentId);
+      );
       if (!this.lifecycleIsCurrent(lifecycle)) return;
-      if (levelErr) throw new Error(`Level persist failed: ${levelErr.message}`);
+      if (levelErr) throw new Error(`Blind publication failed: ${levelErr.message}`);
+      const state = receipt?.blind_level_state;
+      const levelStartedAt =
+        typeof receipt?.level_started_at === 'string' ? Date.parse(receipt.level_started_at) : NaN;
+      if (
+        receipt?.ok !== true ||
+        receipt.tournament_id !== this.tournamentId ||
+        receipt.current_level !== nextLevel ||
+        state?.index !== nextLevel ||
+        state.small_blind !== smallBlind ||
+        state.big_blind !== bigBlind ||
+        state.ante !== ante ||
+        !Number.isFinite(levelStartedAt)
+      )
+        throw new Error('Blind publication did not return a matching committed level');
       this.currentLevel = nextLevel;
       this.blindTimerStartedAt = levelStartedAt;
       if (this.tournamentCache) {
         this.tournamentCache.current_level = nextLevel;
+        this.tournamentCache.blind_level_state = state;
         this.tournamentCache.level_started_at = new Date(levelStartedAt).toISOString();
       }
       this.pendingBlindTransition = null;

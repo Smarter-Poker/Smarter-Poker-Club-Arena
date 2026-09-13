@@ -79,6 +79,16 @@ Required engine normalization: explicit speed and depth metadata, one canonical 
 
 ## Feature-by-feature engine acceptance matrix
 
+R12: blind-level transition writes reported errors but still advanced and
+announced success; concurrent calls could also skip a level. The engine now
+retains one intended level and its clock anchor through retries, waits for
+acknowledgments before publishing, preserves that pending work over a break,
+and rearms after notification failure. Seven runtime cases cover these paths.
+All 1,865 tournament checks across 152 files and the server typecheck pass on
+the follow-up candidate. Atomic publication of the tournament level and every
+table in one database transaction remains open; this engine repair does not
+claim to make the existing individual table writes atomic.
+
 R11: the scheduled engine writer rounded explicit fractional bounty amounts to
 whole chips. A runtime regression showed 6.75 becoming 7.00 on a 13.50 entry
 contribution plus 1.50 fee. The repaired writer preserves cents and caps the
@@ -156,4 +166,6 @@ The associated machine-readable inventory preserves the sampled configuration, i
 - All 2,203 recorded recent bounty obligations were settled: 896 PKO, 838 regular, 22 mystery chest and 447 mystery pre-activation. This does not prove that every unprocessed knockout created an obligation.
 - For 2,012 tournaments completed within the past day, cash prize receipts and prize-liability-to-player-wallet ledger postings matched in every one of 2,095 tournament/recipient groups: 110,531.60 on each side, zero mismatches. This excludes noncash satellite tickets/direct entries and does not certify every bounty, fee or historical tournament.
 - The separate integration file tests/integration/tournament-flows.test.ts uses mocked database calls. Its end-to-end title must not be treated as proof of native money movement or served engine execution.
+- A fresh private PostgreSQL 17 rehearsal passed all 15 cash-ladder derivation groups, including cent residuals, shortened fields, bubble reserves and malformed-input refusal. It exercises the captured amount authority on synthetic input tables; it does not execute payments or terminal completion.
+- The retained full_stage1 bounty rehearsal refused its first fixture insert because that older local schema lacks tables.seat_game_scope. Its before/after fingerprints confirmed complete rollback. That failed fixture is not production payout evidence and does not satisfy the native bounty acceptance gate.
 - The trusted money-trigger reporter configuration is absent, but the repository ruleset does not currently require that reporter for this branch. Required normal CI and deployment checks still apply.

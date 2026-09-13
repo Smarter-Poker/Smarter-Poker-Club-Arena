@@ -9,6 +9,9 @@ on:
       - server/scripts/engine-image-archive.py
       - tests/operations/engine-image-archive.test.py
       - tests/operations/engine-build-resource-proof.py
+      - tests/operations/engine-build-resource-proof.test.py
+      - tests/operations/engine-native-import-proof.py
+      - tests/operations/engine-native-import-proof.test.py
       - .github/workflows/engine-build-resource-proof.yml
 permissions:
   contents: read
@@ -31,6 +34,10 @@ jobs:
           cache-dependency-path: server/package-lock.json
       - name: Verify archive identity, bounds and refusal cases
         run: python3 tests/operations/engine-image-archive.test.py
+      - name: Verify importer identity, refusal and cleanup protocols
+        run: python3 tests/operations/engine-native-import-proof.test.py
+      - name: Verify resource cleanup and neighboring process refusal
+        run: python3 tests/operations/engine-build-resource-proof.test.py
       - name: Produce the reference runtime with the full TypeScript check
         working-directory: server
         run: |

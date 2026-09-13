@@ -121,6 +121,96 @@ def wrapper_fault(temp, out, mode, sentinel, before, owned_tags):
     return facts
 
 
+def cleanup_resources(receipt, before, sentinel, image_reader, owned_tags):
+    """Removal is proved by successful inventories, never a failed inspect."""
+    cleanup = {}
+    errors = []
+
+    def attempt(stage, action):
+        try:
+            return action()
+        except Exception as error:
+            errors.append({"stage": stage, "error_type": type(error).__name__})
+            return None
+
+    def names(kind):
+        field = ".Names" if kind == "container" else ".Name"
+        args = ["docker", kind, "ls"]
+        if kind == "container":
+            args.append("--all")
+        observed = run(args + ["--format", "{{json " + field + "}}"], timeout=15, check=False)
+        if observed.returncode != 0:
+            raise RuntimeError("resource cleanup inventory was unavailable")
+        values = [json.loads(line) for line in observed.stdout.splitlines()]
+        if any(not isinstance(value, str) or not value or
+               not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", value) for value in values):
+            raise RuntimeError("resource cleanup inventory was malformed")
+        return set(values)
+
+    def images():
+        observed = run(["docker", "image", "ls", "--format", "{{.Repository}}:{{.Tag}}"],
+                       timeout=15, check=False)
+        if observed.returncode != 0:
+            raise RuntimeError("image cleanup inventory was unavailable")
+        values = observed.stdout.splitlines()
+        if any(value != "<none>:<none>" and
+               not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]*(?::<none>)?", value)
+               for value in values):
+            raise RuntimeError("image cleanup inventory was malformed")
+        return set(values)
+
+    def owns_image(name, image):
+        return name == image or re.fullmatch(re.escape(image) + r"-candidate-[0-9]+", name)
+
+    receipt["neighbor_alive_before_cleanup"] = False
+    if before is not None:
+        current = attempt("observe_neighbor", lambda: inspect(sentinel))
+        if current is not None:
+            try:
+                receipt["neighbor_alive_before_cleanup"] = (
+                    current["State"]["Running"] is True
+                    and current["State"]["StartedAt"] == before["State"]["StartedAt"]
+                    and current["RestartCount"] == before["RestartCount"])
+            except (KeyError, TypeError):
+                errors.append({"stage": "observe_neighbor", "error_type": "MalformedObservation"})
+    containers = (sentinel, image_reader, CONTAINER)
+    for name in containers:
+        attempt("remove_container:" + name,
+                lambda name=name: run(["docker", "rm", "--force", name], timeout=30, check=False))
+    attempt("remove_builder", lambda: run(
+        ["docker", "buildx", "rm", "--force", BUILDER], timeout=30, check=False))
+    volume = f"{CONTAINER}_state"
+    attempt("remove_volume", lambda: run(
+        ["docker", "volume", "rm", volume], timeout=30, check=False))
+    # A failed wrapper can leave only its exact generated candidate name. Preserve
+    # unrelated names even when they happen to share an owned tag's prefix.
+    initial_images = attempt("inventory_images_before_removal", images)
+    to_remove = set(owned_tags)
+    if initial_images is not None:
+        to_remove.update(name for name in initial_images
+                         if any(owns_image(name, image) for image in owned_tags))
+    for image in sorted(to_remove):
+        attempt("remove_image:" + image,
+                lambda image=image: run(["docker", "image", "rm", "--force", image],
+                                       timeout=30, check=False))
+    remaining_containers = attempt("inventory_containers", lambda: names("container"))
+    remaining_volumes = attempt("inventory_volumes", lambda: names("volume"))
+    remaining_images = attempt("inventory_images_after_removal", images)
+    for name in containers:
+        cleanup[name] = remaining_containers is not None and name not in remaining_containers
+    cleanup[volume] = remaining_volumes is not None and volume not in remaining_volumes
+    for image in owned_tags:
+        cleanup[image] = remaining_images is not None and not any(
+            owns_image(name, image) for name in remaining_images)
+    receipt["cleanup"] = cleanup
+    receipt["cleanup_errors"] = errors
+    verified = (receipt["neighbor_alive_before_cleanup"] is True
+                and all(cleanup.values()) and not errors)
+    if not verified:
+        receipt["status"] = "failed"
+    return verified
+
+
 def main():
     if sys.platform != "linux" or os.environ.get("GITHUB_ACTIONS") != "true":
         raise RuntimeError("resource proof requires a disposable Linux Actions runner")
@@ -175,7 +265,7 @@ def main():
                    for name in actual):
                 raise RuntimeError("unit-test entrypoints were included in the runtime image")
             # Reuse this exact successful build; do not compile a second image.
-            # The archives are temporary and never uploaded or loaded on a host.
+            # The archives are temporary, never uploaded or loaded on production.
             raw_archive = Path(temp, "engine-image-save.tar")
             normalized_archive = Path(temp, "engine-image-canonical.tar")
             run(["docker", "image", "save", "--output", str(raw_archive), tag], timeout=120)
@@ -187,6 +277,14 @@ def main():
             receipt["archive_normalization"] = archive_module.normalize_engine_archive(
                 raw_archive, normalized_archive, source_sha=sha,
                 server_tree=server_tree, image_id=receipt["image_id"])
+            # Load this same normalized archive with a separately owned daemon
+            # and containerd in one bounded systemd cgroup. No second compile.
+            import_spec = importlib.util.spec_from_file_location(
+                "engine_native_import", ROOT / "tests/operations/engine-native-import-proof.py")
+            import_module = importlib.util.module_from_spec(import_spec)
+            import_spec.loader.exec_module(import_module)
+            receipt["isolated_native_import"] = import_module.prove_import_matrix(
+                normalized_archive, receipt["archive_normalization"], actual, out)
             run(["docker", "buildx", "inspect", BUILDER, "--bootstrap"], timeout=120)
             receipt["memory_max"] = counter("memory.max")
             receipt["swap_max"] = counter("memory.swap.max")
@@ -227,40 +325,10 @@ def main():
             receipt["sentinel_unchanged"] = True
             receipt["status"] = "passed"
     finally:
-        cleanup = {}
-        if before is not None:
-            try:
-                current = inspect(sentinel)
-                receipt["neighbor_alive_before_cleanup"] = (
-                    current["State"]["Running"]
-                    and current["State"]["StartedAt"] == before["State"]["StartedAt"]
-                    and current["RestartCount"] == before["RestartCount"])
-            except RuntimeError:
-                receipt["neighbor_alive_before_cleanup"] = False
-        for name in [sentinel, image_reader, CONTAINER]:
-            run(["docker", "rm", "--force", name], check=False)
-            cleanup[name] = run(["docker", "inspect", name], check=False).returncode != 0
-        run(["docker", "buildx", "rm", "--force", BUILDER], check=False)
-        volume = f"{CONTAINER}_state"
-        run(["docker", "volume", "rm", volume], check=False)
-        cleanup[volume] = run(["docker", "volume", "inspect", volume], check=False).returncode != 0
-        for image in owned_tags:
-            # Also remove a candidate if a defective wrapper leaked one; the
-            # pre-cleanup assertions above must still fail in that case.
-            named = run(["docker", "image", "ls", "--format", "{{.Repository}}:{{.Tag}}",
-                         "--filter", f"reference={image}*"], check=False)
-            for candidate in named.stdout.splitlines():
-                run(["docker", "image", "rm", "--force", candidate], check=False)
-            run(["docker", "image", "rm", "--force", image], check=False)
-            remaining = run(["docker", "image", "ls", "--format", "{{.Repository}}:{{.Tag}}",
-                             "--filter", f"reference={image}*"], check=False)
-            cleanup[image] = remaining.returncode == 0 and not remaining.stdout.strip()
-        receipt["cleanup"] = cleanup
-        if not all(cleanup.values()):
-            receipt["status"] = "failed"
+        cleanup_verified = cleanup_resources(receipt, before, sentinel, image_reader, owned_tags)
         (out / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
-        if not all(cleanup.values()):
-            raise RuntimeError("isolated resource proof cleanup failed")
+        if not cleanup_verified:
+            raise RuntimeError("isolated resource proof cleanup or neighbor survival failed")
     print(json.dumps(receipt, indent=2))
 
 

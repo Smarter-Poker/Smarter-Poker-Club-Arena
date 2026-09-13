@@ -50,6 +50,33 @@ RECORDS = [dict(scope='native-service-smoke', observer='passed', browser='chromi
            dict(scope='native-service-smoke', peer='passed', gateway='reachable',
                 realtime_direct='refused', tenant_administration='refused')]
 ROLE_ALIGNMENT = {'scope': 'native-full-role-installer', 'status': 'passed', 'stage': 'complete', 'template_sha256': '75de4863de9a9276e701526389a6fbe0a033589d60844b71dd42eb44fbdf31db', 'install_submitted': True, 'commit_acknowledged': True, 'catalog_outcome': 'committed', 'rollback_acknowledged': False, 'separate_read_only_observers': 4, 'graph_assertion': True, 'membership_assertion': True, 'actual_login_and_default_acl_tests': False, 'post_alignment_services': False, 'full_schema_ready': False, 'funded_or_production_complete': False, 'installer_backend_absent': True, 'all_driver_clients_closed': True, 'original_catalog_sha256': 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', 'aligned_catalog_sha256': 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd'}
+ROLE_FAULTS = dict(scope='native-role-fault-matrix', status='passed', stage='complete',
+    all_clients_closed=True, production_or_funded=False, commit_transport_faults_qualified=False,
+    cases=[dict(name=name, expected_refusal=True, rollback_acknowledged=True,
+        original_catalog_sha256='c'*64, password_catalog_restored=True, backends_absent=True)
+        for name in m.ROLE_FAULT_NAMES])
+ROLE_ACCESS = dict(scope='native-role-access-defaults', status='passed', stage='complete',
+    all_clients_closed=True, production_or_funded=False, set_role_pairs=250,
+    administrative_denials=5, expired_cli_scram_denied=True, wrong_password_denied=True,
+    read_only_write_denied=True, ordinary_creations=24, instrumented_default_materializations=3,
+    storage_create_denials=3, temporary_schema_grants_restored=True, failure_cleanup_observed=False,
+    privilege_checks=1080, actual_object_reads=270, all_objects_removed=True,
+    original_aligned_catalog_restored=True, post_alignment_services=False, full_schema_ready=False,
+    login_roles=[dict(name=name, authentication='peer' if name=='postgres' else 'scram-sha-256') for name in m.ROLE_LOGIN_NAMES],
+    future_objects=[dict(creator=creator,schema=schema,type=kind,
+        creation='instrumented-latent-default' if creator=='postgres' and schema=='storage' else 'ordinary',
+        direct_acl_sha256='d'*64) for creator,schema in m.ROLE_DEFAULT_GROUPS for kind in ('S','f','r')])
+PROVIDER_SEMANTICS = {
+    'scope': 'native-five-provider-semantics', 'status': 'passed', 'stage': 'complete',
+    'versions': {'http': '1.6', 'pg_net': '0.19.5', 'plpgsql_check': '2.7', 'postgis': '3.3.7', 'supabase_vault': '0.3.1'},
+    'build_sha256': 'e' * 64, 'catalog_sha256': 'f' * 64,
+    **{key: True for key in ('genuine_symbols', 'role_acl_catalog', 'actual_anon_vault_denial',
+        'postgis_geometry_geography_gist', 'http_private_response', 'pg_net_worker_identity',
+        'pg_net_commit_only', 'pg_net_rollback_absent', 'vault_encrypt_update_rollback',
+        'plpgsql_valid_invalid', 'dummy_objects_removed', 'all_probe_clients_closed', 'private_http_closed')},
+    **{key: False for key in ('production_binary_parity', 'complete_catalog_parity',
+        'actual_login_and_default_acl_tests', 'post_alignment_services', 'full_schema_ready', 'funded_or_production_complete')},
+}
 SMOKE = '\n'.join(map(json.dumps, RECORDS)) + '\nNative service smoke and container/network cleanup passed (not a product certificate).\n'
 
 
@@ -81,6 +108,37 @@ def preimage_material(catalog=None, raw=None):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_role_fault_receipt_requires_all36_and_original_cleanup(self):
+        self.assertEqual(m.role_native_record(json.dumps(ROLE_FAULTS), 'faults'), ROLE_FAULTS)
+        for mutate in [lambda row: row['cases'].pop(),
+                       lambda row: row['cases'][0].update(expected_refusal=False),
+                       lambda row: row['cases'][0].update(password_catalog_restored=False),
+                       lambda row: row['cases'][0].update(name='invented-case'),
+                       lambda row: row.update(status='failed'),
+                       lambda row: row.update(commit_transport_faults_qualified=True)]:
+            row=json.loads(json.dumps(ROLE_FAULTS));mutate(row)
+            with self.assertRaises(RuntimeError):m.role_native_record(json.dumps(row),'faults')
+        with self.assertRaises(RuntimeError):m.role_native_record(json.dumps(ROLE_FAULTS)+'\n'+json.dumps(ROLE_FAULTS),'faults')
+
+    def test_role_access_receipt_never_labels_instrumented_objects_ordinary(self):
+        self.assertEqual(m.role_native_record(json.dumps(ROLE_ACCESS),'access'),ROLE_ACCESS)
+        for mutate in [lambda row:row.update(ordinary_creations=27),
+                       lambda row:row.update(storage_create_denials=0),
+                       lambda row:row.update(temporary_schema_grants_restored=False),
+                       lambda row:row.update(failure_cleanup_observed=True),
+                       lambda row:row['future_objects'][3].update(creation='ordinary'),
+                       lambda row:row['future_objects'][0].update(direct_acl_sha256=''),
+                       lambda row:row.update(privilege_checks=1079),
+                       lambda row:row.update(post_alignment_services=True)]:
+            row=json.loads(json.dumps(ROLE_ACCESS));mutate(row)
+            with self.assertRaises(RuntimeError):m.role_native_record(json.dumps(row),'access')
+
+    def test_role_native_receipts_reject_duplicate_keys_and_extra_fields(self):
+        raw=json.dumps(ROLE_ACCESS)
+        with self.assertRaises(RuntimeError):m.role_native_record(raw.replace('"status": "passed"','"status": "passed", "status": "passed"'),'access')
+        with self.assertRaises(RuntimeError):m.role_native_record(json.dumps(dict(ROLE_ACCESS, token='PRIVATE')),'access')
+
+
     def test_safeupdate_proof_requires_native_http_and_cleanup(self):
         for transform in [lambda rows: rows[1].pop('safeupdate'),
                           lambda rows: rows[1]['safeupdate'].update(http='configuration-only'),
@@ -204,6 +262,9 @@ class RunnerTests(unittest.TestCase):
                     result = SMOKE if fault != 'missing-service' else json.dumps(RECORDS[0])
                     if fault != 'missing-role-proof':
                         result += json.dumps(ROLE_ALIGNMENT) + '\n'
+                        result += json.dumps(ROLE_FAULTS) + '\n' + json.dumps(ROLE_ACCESS) + '\n'
+                    if fault != 'missing-provider-proof':
+                        result += json.dumps(PROVIDER_SEMANTICS) + '\n'
                     return result if fault == 'missing-preimage-proof' else result + json.dumps(proof) + '\n'
                 if args[:3] == ['docker', 'container', 'ls']:
                     owned = args[-1].removeprefix('name=^/').removesuffix('$')
@@ -231,6 +292,29 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertFalse(receipt['product_certificate'])
         self.assertTrue(all(receipt['cleanup'].values()))
+
+    def test_provider_semantic_receipt_is_mandatory(self):
+        self.assertEqual(self.exercise('missing-provider-proof')[0], 1)
+        code, receipt, _ = self.exercise()
+        self.assertEqual(code, 0)
+        self.assertEqual(receipt['provider_semantics'], PROVIDER_SEMANTICS)
+
+    def test_provider_semantic_receipt_refuses_incomplete_or_overclaimed_results(self):
+        for key, value in [('status', 'failed'), ('private_http_closed', False),
+                           ('all_probe_clients_closed', False), ('dummy_objects_removed', False),
+                           ('pg_net_commit_only', False), ('pg_net_rollback_absent', False),
+                           ('vault_encrypt_update_rollback', False), ('genuine_symbols', 1),
+                           ('build_sha256', 'wrong'), ('catalog_sha256', None),
+                           ('production_binary_parity', True), ('funded_or_production_complete', True)]:
+            with self.subTest(key=key):
+                changed = dict(PROVIDER_SEMANTICS, **{key: value})
+                with self.assertRaises(RuntimeError): m.provider_semantic_record(json.dumps(changed))
+        changed = dict(PROVIDER_SEMANTICS)
+        changed.pop('private_http_closed')
+        with self.assertRaises(RuntimeError): m.provider_semantic_record(json.dumps(changed))
+        with self.assertRaises(RuntimeError): m.provider_semantic_record(json.dumps(PROVIDER_SEMANTICS) + '\n' + json.dumps(PROVIDER_SEMANTICS))
+        with self.assertRaises(RuntimeError): m.provider_semantic_record(json.dumps(PROVIDER_SEMANTICS).replace('"status": "passed"', '"status": "passed", "status": "passed"'))
+        self.assertEqual(m.provider_semantic_record(json.dumps(PROVIDER_SEMANTICS)), PROVIDER_SEMANTICS)
 
     def test_role_installer_native_receipt_is_mandatory(self):
         self.assertEqual(self.exercise('missing-role-proof')[0], 1)

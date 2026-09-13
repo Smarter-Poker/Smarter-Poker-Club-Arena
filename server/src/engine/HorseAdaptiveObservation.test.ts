@@ -24,7 +24,8 @@ afterEach(() => vi.restoreAllMocks());
 function hand(
   config: Partial<HandConfig> = {},
   whole = false,
-  allInStack?: number
+  allInStack?: number,
+  bigBlindOptionShove = false
 ): CompletedHandObservation {
   vi.spyOn(Date, 'now').mockReturnValue(NOW);
   const actions: NonNullable<CompletedHandObservation['actions']> = [];
@@ -136,18 +137,19 @@ function hand(
     }
     const actor = state.players.find((p) => p.seat === state.currentPlayerSeat)!;
     const rights = controller.getAuthoritativeActionState(actor.user_id)!;
-    const action =
-      allInStack !== undefined
-        ? 'all_in'
-        : rights.legalActions.includes('check')
-          ? 'check'
-          : rights.legalActions.includes('call')
-            ? 'call'
-            : 'all_in';
+    const shove = bigBlindOptionShove ? n === 1 : allInStack !== undefined;
+    const action = shove
+      ? 'all_in'
+      : rights.legalActions.includes('check')
+        ? 'check'
+        : rights.legalActions.includes('call')
+          ? 'call'
+          : 'all_in';
     expect(controller.performAction(actor.seat, action, undefined, 'player')).toBe(true);
+    if (bigBlindOptionShove && n === 1) break;
     if (!whole) break;
   }
-  if (whole) expect(completed).toBe(true);
+  if (whole && !bigBlindOptionShove) expect(completed).toBe(true);
   return {
     handKey: tableId + ':1',
     committedHandId: handId,
@@ -394,6 +396,25 @@ describe('qualified adaptive observations', () => {
     'classifies a real all-in with stack %s and context %j as %s',
     (stack, config, action) => {
       expect(qualified(hand(config, false, stack)).action).toBe(action);
+    }
+  );
+  it.each(
+    (
+      ['nlh', 'flh', 'flo8', 'plo4', 'plo5', 'plo6', 'plo8', 'pineapple', 'short_deck'] as const
+    ).flatMap((gameVariant) => [false, true].map((isTournament) => ({ gameVariant, isTournament })))
+  )(
+    'classifies the real $gameVariant big-blind option all-in as a raise (tournament=$isTournament)',
+    ({ gameVariant, isTournament }) => {
+      const h = hand({ gameVariant, isTournament }, true, 4, true);
+      const ordinal = h.actions!.findIndex((a) => a.action === 'all_in');
+      const node = h.actions![ordinal].publicNode as Node;
+      expect(node.actorSeat).toBe(2);
+      expect(node.currentBet).toBe(2);
+      expect(node.toCall).toBe(0);
+      const observation = qualifyAdaptiveHand(h, NOW).observations.find(
+        (o) => o.observationId === handId + ':' + ordinal
+      );
+      expect(observation?.action).toBe('raise');
     }
   );
   it('cannot relabel a changed variant or roster as the same public hand history', () => {

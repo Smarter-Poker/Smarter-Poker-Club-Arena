@@ -156,7 +156,14 @@ function validateNode(node: PublicNode): void {
 function category(action: string, node: PublicNode): AdaptiveAction {
   if (action === 'all_in') {
     const actor = node.seats.find((seat) => seat[0] === node.actorSeat)!;
-    return actor[1] <= node.toCall + node.chipUnit / 2 ? 'call' : node.toCall > 0 ? 'raise' : 'bet';
+    // A zero call price does not mean the street has no wager: the big blind
+    // can raise its own matched blind after a limp. Classify against the
+    // existing wager, not the actor's remaining price to match it.
+    return actor[1] <= node.toCall + node.chipUnit / 2
+      ? 'call'
+      : node.currentBet > 0
+        ? 'raise'
+        : 'bet';
   }
   if (!ACTIONS.includes(action)) throw Error('unsupported action');
   return action as AdaptiveAction;

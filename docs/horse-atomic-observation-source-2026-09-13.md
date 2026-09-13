@@ -52,3 +52,8 @@ run passed229checks (47journal tests); the full runtime run above had46journal
 tests. One invocation from the repository root was refused by the server test
 runner's directory guard before running tests, then passed from the required
 server directory. The guard and all timing limits remain unchanged.
+
+The final added negative test initially failed type checking because it tried
+to delete through a readonly fixture view. Its intentionally mutable test view
+is now explicit; no runtime code or acceptance guard changed. The original
+failed post-commit build remains recorded alongside the final-base checks.

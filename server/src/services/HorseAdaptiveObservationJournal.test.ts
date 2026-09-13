@@ -282,7 +282,7 @@ describe('immutable adaptive observation journal boundary', () => {
   it('refuses new preparation without atomic-source acceptance while preserving already prepared replay', async () => {
     const original = prepared();
     const legacy = fixture();
-    delete (legacy.source as Partial<Snapshot['source']>).acceptance;
+    delete (legacy.source as { acceptance?: string }).acceptance;
     expect(prepare(legacy).status).toBe('unavailable');
     mocks.abort.mockResolvedValue({
       data: {

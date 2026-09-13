@@ -2115,3 +2115,15 @@ jobs:
           pid=$(cat /tmp/arena-preview.pid 2>/dev/null || echo "")
           [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
           exit 0
+
+      # These suites already capture failed screenshots and traces, but the
+      # runner discarded them. Keep only browser results from this isolated
+      # preview job; auth state, environment files and the checkout stay local.
+      - name: Preserve failed browser evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: css-beats-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-results/
+          if-no-files-found: warn
+          retention-days: 7

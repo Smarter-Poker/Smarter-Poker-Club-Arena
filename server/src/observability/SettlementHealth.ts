@@ -5,6 +5,7 @@ export interface SettlementTableObservation {
   tableId: string;
   handCount: number;
   settlementAgeMs: number | null;
+  loopPhase?: string;
 }
 
 export function settlementHealthSnapshot(tables: readonly SettlementTableObservation[]) {
@@ -20,6 +21,9 @@ export function settlementHealthSnapshot(tables: readonly SettlementTableObserva
       tableId: table.tableId,
       handCount: table.handCount,
       ageMs: table.settlementAgeMs!,
+      // Already captured by the engine's liveness walk. Keep the blocked
+      // generation's phase without restoring the full fleet to /health.
+      ...(table.loopPhase ? { loopPhase: table.loopPhase } : {}),
     })),
   };
 }

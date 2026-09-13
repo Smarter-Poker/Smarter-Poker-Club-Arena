@@ -8,6 +8,9 @@ from pathlib import Path
 import re
 import shutil
 import signal
+import socket as socket_module
+import stat
+import struct
 import subprocess
 import sys
 import tarfile
@@ -157,6 +160,75 @@ def fetch_binaries(root):
     return destination
 
 
+def private_containerd_configuration(root):
+    """No host config imports, storage paths, listeners or CRI services."""
+    return ("version = 3\n"
+            + "root = " + json.dumps(str(root / "containerd-data")) + "\n"
+            + "state = " + json.dumps(str(root / "containerd-state")) + "\n"
+            + 'disabled_plugins = ["io.containerd.grpc.v1.cri", '
+              '"io.containerd.cri.v1.images", "io.containerd.cri.v1.runtime"]\n'
+            + "[grpc]\naddress = " + json.dumps(str(root / "containerd.sock")) + "\n"
+            + "[ttrpc]\naddress = " + json.dumps(str(root / "containerd-ttrpc.sock")) + "\n"
+            + '[debug]\naddress = ""\nlevel = "warn"\n[metrics]\naddress = ""\n')
+
+
+def verify_process_identity(process, command):
+    require(process.poll() is None, "owned process exited before identity observation")
+    require(Path(f"/proc/{process.pid}/exe").resolve(strict=True) == Path(command[0]),
+            "owned process executable differs")
+    observed = Path(f"/proc/{process.pid}/cmdline").read_bytes().split(b"\0")
+    require(observed == [os.fsencode(arg) for arg in command] + [b""],
+            "owned process command differs")
+
+
+def verify_containerd_ownership(process, command, endpoint):
+    verify_process_identity(process, command)
+    matches = []
+    for entry in Path("/proc").iterdir():
+        if entry.name.isdecimal():
+            try:
+                if (entry / "exe").resolve(strict=True) == Path(command[0]):
+                    matches.append(int(entry.name))
+            except FileNotFoundError:
+                continue
+    require(matches == [process.pid], "one exact owned private containerd required")
+    endpoint_stat = endpoint.lstat()
+    require(stat.S_ISSOCK(endpoint_stat.st_mode) and endpoint_stat.st_uid == 0,
+            "private containerd endpoint is not an owned socket")
+    # A successful API response alone could come from another runtime. Linux
+    # peer credentials bind the actual listener to our live pinned process.
+    with socket_module.socket(socket_module.AF_UNIX, socket_module.SOCK_STREAM) as peer:
+        peer.settimeout(2)
+        peer.connect(str(endpoint))
+        credentials = peer.getsockopt(socket_module.SOL_SOCKET, socket_module.SO_PEERCRED,
+                                      struct.calcsize("3i"))
+    require(struct.unpack("3i", credentials) == (process.pid, 0, 0),
+            "private containerd socket peer differs")
+    return {"pid": process.pid, "executable": command[0], "command": command,
+            "socket": str(endpoint), "socket_peer_pid": process.pid,
+            "socket_peer_uid": 0, "socket_peer_gid": 0}
+
+
+def stop_owned_process(process, result, label):
+    if process is not None:
+        try:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    result[label + "_required_kill"] = True
+                    result["status"] = "failed"
+                    process.kill()
+                    process.wait(timeout=3)
+        except Exception as error:
+            result[label + "_stop_failure"] = type(error).__name__
+            result["status"] = "failed"
+    result[label + "_stopped"] = process is not None and process.poll() is not None
+    if not result[label + "_stopped"]:
+        result["status"] = "failed"
+
+
 def worker(request_path):
     require(sys.platform == "linux" and os.geteuid() == 0
             and os.environ.get("GITHUB_ACTIONS") == "true", "owned CI root worker required")
@@ -183,7 +255,10 @@ def worker(request_path):
         "exec-root": str(root / "exec"), "pidfile": str(root / "dockerd.pid"),
         "bridge": "none", "iptables": False, "ip6tables": False,
         "ip-forward": False, "ip-masq": False, "userland-proxy": False,
-        "features": {"containerd-snapshotter": True},
+        "features": {"containerd-snapshotter": True, "embedded-containerd": False},
+        "containerd": str(root / "containerd.sock"),
+        "containerd-namespace": "owned-engine-import",
+        "containerd-plugin-namespace": "owned-engine-import-plugins",
         "exec-opts": ["native.cgroupdriver=systemd"], "log-level": "warn",
     }
     config_path = root / "daemon.json"
@@ -194,14 +269,35 @@ def worker(request_path):
               "producer_authenticated": False, "scope": "fresh-isolated-native-import",
               "stage": "daemon_start", "input_archive_was_prepared_in_same_CI_runner": True}
     daemon = None
-    containerd = []
+    runtime = None
+    runtime_command = [str(binaries / "containerd"), "--config", str(root / "containerd.toml")]
+    daemon_command = [str(binaries / "dockerd"), "--config-file", str(config_path)]
+    endpoint = root / "containerd.sock"
     daemon_log = root / "daemon.log"
     try:
         before = resource_snapshot(os.getpid(), [os.getpid()])
         result["before"] = before
+        for name in ("containerd-data", "containerd-state", "containerd.sock", "containerd-ttrpc.sock"):
+            candidate = root / name
+            require(not candidate.exists() and not candidate.is_symlink(), "private runtime path already exists")
+        (root / "containerd.toml").write_text(private_containerd_configuration(root))
+        with (root / "containerd.log").open("w") as log:
+            runtime = subprocess.Popen(runtime_command, stdout=log, stderr=subprocess.STDOUT, env=env)
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            require(runtime.poll() is None, "private containerd exited before readiness")
+            if endpoint.exists():
+                try:
+                    result["private_containerd"] = verify_containerd_ownership(runtime, runtime_command, endpoint)
+                    break
+                except (FileNotFoundError, ConnectionRefusedError, TimeoutError):
+                    # bind() can create the pathname immediately before listen().
+                    # Retry only incomplete readiness, never a wrong identity.
+                    pass
+            time.sleep(0.1)
+        require("private_containerd" in result, "private containerd readiness deadline")
         with daemon_log.open("w") as log:
-            daemon = subprocess.Popen([str(binaries / "dockerd"), "--config-file", str(config_path)],
-                                      stdout=log, stderr=subprocess.STDOUT, env=env)
+            daemon = subprocess.Popen(daemon_command, stdout=log, stderr=subprocess.STDOUT, env=env)
         deadline = time.monotonic() + 45
         info = None
         while time.monotonic() < deadline:
@@ -218,16 +314,10 @@ def worker(request_path):
                 and info["DockerRootDir"] == str(data_root)
                 and info["Images"] == 0 and info["Containers"] == 0
                 and info["ID"] != request["main_daemon_id"], "fresh daemon identity differs")
-        for entry in Path("/proc").iterdir():
-            if not entry.name.isdecimal():
-                continue
-            try:
-                if (entry / "exe").resolve() == binaries / "containerd":
-                    containerd.append(int(entry.name))
-            except OSError:
-                continue
-        require(len(containerd) == 1, "one private managed containerd required")
-        pids = [os.getpid(), daemon.pid, *containerd]
+        verify_process_identity(daemon, daemon_command)
+        result["private_containerd"] = verify_containerd_ownership(runtime, runtime_command, endpoint)
+        result["private_containerd_ownership_verified"] = True
+        pids = [os.getpid(), daemon.pid, runtime.pid]
         # Preserve the pre-daemon OOM baseline; startup failures cannot be
         # erased when checking that an intended refusal was uncontaminated.
         result["ready"] = resource_snapshot(os.getpid(), pids)
@@ -293,30 +383,25 @@ def worker(request_path):
         for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
             signal.signal(sig, signal.SIG_IGN)
         result['daemon_alive_before_requested_stop'] = daemon is not None and daemon.poll() is None
-        if result['daemon_alive_before_requested_stop'] and len(containerd) == 1:
+        result['containerd_alive_before_requested_stop'] = runtime is not None and runtime.poll() is None
+        if result['daemon_alive_before_requested_stop'] and result['containerd_alive_before_requested_stop']:
             try:
+                verify_process_identity(daemon, daemon_command)
+                verify_containerd_ownership(runtime, runtime_command, endpoint)
                 result['resource_observation_before_stop'] = resource_snapshot(
-                    os.getpid(), [os.getpid(), daemon.pid, *containerd])
+                    os.getpid(), [os.getpid(), daemon.pid, runtime.pid])
             except Exception as error:
                 result['resource_observation_failure'] = type(error).__name__
                 result['status'] = 'failed'
-        if daemon is not None and daemon.poll() is None:
-            daemon.terminate()
-            try:
-                daemon.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                daemon.kill()
-                daemon.wait(timeout=5)
-                result["status"] = "failed"
-                result["daemon_required_kill"] = True
-        result["daemon_stopped"] = daemon is None or daemon.poll() is not None
-        deadline = time.monotonic() + 5
-        while any(Path(f'/proc/{pid}').exists() for pid in containerd) and time.monotonic() < deadline:
-            time.sleep(0.1)
-        result["managed_containerd_stopped_before_parent_cleanup"] = all(
-            not Path(f"/proc/{pid}").exists() for pid in containerd)
+        # Dockerd is a client of the runtime we own: stop the client first,
+        # then explicitly stop and reap the runtime. Neither may be shared.
+        stop_owned_process(daemon, result, "daemon")
+        stop_owned_process(runtime, result, "containerd")
+        result["managed_containerd_stopped_before_parent_cleanup"] = (
+            result["containerd_stopped"] and not Path(f"/proc/{runtime.pid}").exists())
         if (not result["managed_containerd_stopped_before_parent_cleanup"]
-                or not result['daemon_alive_before_requested_stop']):
+                or not result['daemon_alive_before_requested_stop']
+                or not result['containerd_alive_before_requested_stop']):
             result["status"] = "failed"
         try:
             # The worker still owns the unit here. A daemon dying from an OOM
@@ -367,6 +452,9 @@ def cleanup_import(root, unit, output):
     if (root / 'daemon.log').exists():
         attempt('retain_daemon_log', lambda: shutil.copyfile(
             root / 'daemon.log', output / 'native-import-daemon.log'))
+    if (root / 'containerd.log').exists():
+        attempt('retain_containerd_log', lambda: shutil.copyfile(
+            root / 'containerd.log', output / 'native-import-containerd.log'))
     mountinfo = attempt('observe_mounts', lambda: Path('/proc/self/mountinfo').read_text())
     if mountinfo is not None:
         facts['owned_mounts_absent'] = not any(
@@ -525,10 +613,16 @@ def prove_import_matrix(archive, normalization, runtime_hashes, output):
         assert_limits(snapshot)
         require(type(snapshot.get('memory_peak')) is int
                 and 0 < snapshot['memory_peak'] <= LIMIT, 'native fault memory peak differs')
-        for key in ('daemon_alive_before_requested_stop', 'daemon_stopped',
+        for key in ('private_containerd_ownership_verified', 'containerd_alive_before_requested_stop',
+                    'containerd_stopped', 'daemon_alive_before_requested_stop', 'daemon_stopped',
                     'managed_containerd_stopped_before_parent_cleanup', 'unit_stop_completed',
                     'unit_inactive', 'owned_cgroup_absent', 'owned_mounts_absent', 'owned_files_removed'):
             require(observed.get(key) is True, 'native fault cleanup incomplete: ' + key)
+        # Intended refusals already have status=failed. Worker shutdown errors
+        # must therefore be rejected independently before earning fault credit.
+        for key in ('daemon_required_kill', 'containerd_required_kill',
+                    'daemon_stop_failure', 'containerd_stop_failure'):
+            require(key not in observed, 'native fault shutdown contaminated: ' + key)
         require(observed.get('cleanup_errors') == [], 'native fault cleanup reported errors')
         cases[name] = {'expected_refusal_observed': True, 'operation_receipt': observed}
     return {'scope': 'isolated-native-import-and-refusal-tests', 'status': 'passed',

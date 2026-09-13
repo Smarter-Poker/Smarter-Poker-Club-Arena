@@ -9,6 +9,11 @@ import os
 from pathlib import Path
 import signal
 import subprocess
+import struct
+import stat
+import tomllib
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 import tarfile
 import tempfile
 import unittest
@@ -123,11 +128,12 @@ class CleanupTests(unittest.TestCase):
     unit='ca-engine-import-'+'a'*16+'.service'
 
     def cleanup(self, *, active=False, cgroup=False, mount=False, stop_timeout=False,
-                remove_fail=False, observer_timeout=False):
+                remove_fail=False, observer_timeout=False, logs=False, log_failure=False):
         remaining={'root':True}; commands=[]
         def exists(p):
             if p==self.root: return remaining['root']
             if str(p).startswith('/sys/fs/cgroup/'): return cgroup
+            if logs and p in {self.root/'daemon.log',self.root/'containerd.log'}: return True
             return False
         def run(args, **kwargs):
             commands.append(args)
@@ -140,11 +146,24 @@ class CleanupTests(unittest.TestCase):
                 if not remove_fail: remaining['root']=False
                 return subprocess.CompletedProcess(args,1 if remove_fail else 0,'')
             return subprocess.CompletedProcess(args,0,'')
+        def retain(source,target):
+            commands.append(['retain',source.name,target.name])
+            if log_failure and source.name=='containerd.log': raise OSError('controlled log failure')
         mounts='1 2 3:4 / '+str(self.root)+'/data rw - overlay overlay rw\n' if mount else ''
         with patch.object(proof,'run',side_effect=run), \
              patch.object(Path,'exists',exists),patch.object(Path,'is_symlink',return_value=False), \
-             patch.object(Path,'read_text',return_value=mounts):
+             patch.object(Path,'read_text',return_value=mounts), \
+             patch.object(proof.shutil,'copyfile',side_effect=retain):
             return proof.cleanup_import(self.root,self.unit,Path('/owned-evidence')),commands
+
+    def test_both_owned_logs_are_retained_and_copy_failure_cannot_disappear(self):
+        for fails in (False,True):
+            facts,commands=self.cleanup(logs=True,log_failure=fails)
+            self.assertIn(['retain','daemon.log','native-import-daemon.log'],commands)
+            self.assertIn(['retain','containerd.log','native-import-containerd.log'],commands)
+            self.assertTrue(facts['owned_files_removed'])
+            self.assertEqual(facts['cleanup_errors'],
+                [{'stage':'retain_containerd_log','error_type':'OSError'}] if fails else [])
 
     def test_complete_cleanup(self):
         facts,commands=self.cleanup()
@@ -201,7 +220,8 @@ class NativeMatrixProtocolTests(unittest.TestCase):
                     'memory_events':{'oom':0,'oom_kill':0}},
                 'worker_external_cancellation_sent':bool(fault),'unit_exit_code':1,
                 'cleanup_errors':[]}
-            for key in ('daemon_alive_before_requested_stop','daemon_stopped',
+            for key in ('private_containerd_ownership_verified','containerd_alive_before_requested_stop',
+                    'containerd_stopped','daemon_alive_before_requested_stop','daemon_stopped',
                 'managed_containerd_stopped_before_parent_cleanup','unit_stop_completed',
                 'unit_inactive','owned_cgroup_absent','owned_mounts_absent','owned_files_removed'):
                 record[key]=True
@@ -256,7 +276,8 @@ class NativeMatrixProtocolTests(unittest.TestCase):
             with self.subTest(change=change),self.assertRaises(RuntimeError):self.matrix(change)
 
     def test_each_native_fault_cleanup_fact_is_mandatory(self):
-        for key in ('daemon_alive_before_requested_stop','daemon_stopped',
+        for key in ('private_containerd_ownership_verified','containerd_alive_before_requested_stop',
+                    'containerd_stopped','daemon_alive_before_requested_stop','daemon_stopped',
             'managed_containerd_stopped_before_parent_cleanup','unit_stop_completed',
             'unit_inactive','owned_cgroup_absent','owned_mounts_absent','owned_files_removed'):
             with self.subTest(key=key),self.assertRaises(RuntimeError):
@@ -266,10 +287,36 @@ class NativeMatrixProtocolTests(unittest.TestCase):
     def test_fault_operation_success_is_rejected(self):
         with self.assertRaises(RuntimeError):self.matrix(unexpectedly_pass=True)
 
+    def test_forced_process_shutdown_cannot_earn_expected_fault_credit(self):
+        for label in ('daemon', 'containerd'):
+            with self.subTest(label=label):
+                process = MagicMock(pid=20003)
+                process.poll.side_effect = [None, 0]
+                process.wait.side_effect = [subprocess.TimeoutExpired(label, 10), 0]
+                result = {'status': 'failed'}
+                proof.stop_owned_process(process, result, label)
+                self.assertIs(result[label + '_required_kill'], True)
+                self.assertIs(result[label + '_stopped'], True)
+                process.kill.assert_called_once()
+                with self.assertRaises(RuntimeError):
+                    self.matrix(lambda observed: observed.update(result))
+
+    def test_process_stop_error_cannot_earn_expected_fault_credit(self):
+        for label in ('daemon', 'containerd'):
+            with self.subTest(label=label):
+                process = MagicMock(pid=20003)
+                process.poll.side_effect = [None, 0]
+                process.terminate.side_effect = OSError('controlled concurrent exit')
+                result = {'status': 'failed'}
+                proof.stop_owned_process(process, result, label)
+                self.assertEqual(result[label + '_stop_failure'], 'OSError')
+                self.assertIs(result[label + '_stopped'], True)
+                with self.assertRaises(RuntimeError):
+                    self.matrix(lambda observed: observed.update(result))
 
 
 class WorkerStartupMemoryTests(unittest.TestCase):
-    def run_worker(self, *, oom_phase, successful_import=False):
+    def run_worker(self, *, oom_phase, successful_import=False, runtime_fault=None):
         """Run the worker's real sequencing with controlled processes and commands."""
         with tempfile.TemporaryDirectory(prefix='engine-native-import-', dir='/tmp') as tmp:
             root = Path(tmp)
@@ -289,6 +336,20 @@ class WorkerStartupMemoryTests(unittest.TestCase):
                 def terminate(self): self.stopped = True
                 def wait(self, timeout): self.stopped = True; return 0
             daemon = Daemon()
+            runtime = Daemon(); runtime.pid = 20003
+            events=[]
+            original_terminate=Daemon.terminate
+            def terminate(process):
+                events.append(('stop',process.pid)); original_terminate(process)
+            Daemon.terminate=terminate
+            def popen(command, **kwargs):
+                if command[0].endswith('/containerd'):
+                    events.append(('start',runtime.pid))
+                    if runtime_fault == 'start': raise OSError('controlled startup failure')
+                    return runtime
+                self.assertEqual(events[0],('start',runtime.pid))
+                self.assertTrue(command[0].endswith('/dockerd'))
+                events.append(('start',daemon.pid)); return daemon
             class ProcEntry:
                 name = '20003'
                 def __truediv__(self, child): return self
@@ -301,6 +362,7 @@ class WorkerStartupMemoryTests(unittest.TestCase):
             def run(args, **kwargs):
                 if 'info' in args:
                     output=json.dumps(info)
+                    if runtime_fault == 'exit' and len(events) >= 2: runtime.stopped=True
                 elif 'inspect' in args:
                     output=json.dumps([{'Id':data['image_id'] if successful_import else 'sha256:'+'0'*64,'Architecture':'amd64','Os':'linux',
                         'Config':{'Labels':{'org.opencontainers.image.revision':data['source_sha'],
@@ -313,6 +375,15 @@ class WorkerStartupMemoryTests(unittest.TestCase):
                     self.assertTrue(any(action in args for action in ('load','create','rm')))
                     output='controlled command response'
                 return subprocess.CompletedProcess(args,0,output)
+            ownership_calls=0
+            def ownership(*args):
+                nonlocal ownership_calls
+                ownership_calls += 1
+                if runtime_fault == 'socket_wait' and ownership_calls == 1:
+                    raise ConnectionRefusedError('controlled socket bind/listen window')
+                if runtime_fault == 'wrong_socket':
+                    raise RuntimeError('private containerd socket peer differs')
+                return {'pid':20003}
             count = 0
             def snapshot(owner, pids):
                 nonlocal count
@@ -330,22 +401,61 @@ class WorkerStartupMemoryTests(unittest.TestCase):
             def iterdir(path):
                 return iter([ProcEntry()]) if path==Path('/proc') else original_iterdir(path)
             def exists(path):
-                return False if path==Path('/proc/20003') else original_exists(path)
+                if path==Path('/proc/20003'): return not runtime.stopped
+                if path==root/'containerd.sock': return bool(events)
+                return original_exists(path)
             with patch.object(proof.sys,'platform','linux'), patch.object(proof.os,'geteuid',return_value=0), \
                     patch.dict(proof.os.environ,{'GITHUB_ACTIONS':'true'}), \
                     patch.object(proof,'run',side_effect=run), \
                     patch.object(proof,'resource_snapshot',side_effect=snapshot), \
-                    patch.object(proof.subprocess,'Popen',return_value=daemon), \
+                    patch.object(proof.subprocess,'Popen',side_effect=popen), \
+                    patch.object(proof,'verify_process_identity'), \
+                    patch.object(proof,'verify_containerd_ownership',side_effect=ownership), \
                     patch.object(proof.signal,'signal'), \
                     patch.object(Path,'resolve',resolve), patch.object(Path,'iterdir',iterdir), \
                     patch.object(Path,'exists',exists):
                 raised = None
                 try:
                     proof.worker(request_path)
-                except RuntimeError as error:
+                except (RuntimeError,OSError) as error:
                     raised = error
             observed=json.loads((root/'worker-receipt.json').read_text())
+            if runtime_fault is None:
+                self.assertEqual(events,[('start',20003),('start',20002),('stop',20002),('stop',20003)])
+                config=json.loads((root/'daemon.json').read_text())
+                self.assertEqual(config['containerd'],str(root/'containerd.sock'))
+                self.assertIs(config['features']['embedded-containerd'],False)
+                self.assertEqual(config['containerd-namespace'],'owned-engine-import')
+                self.assertEqual(config['containerd-plugin-namespace'],'owned-engine-import-plugins')
             return observed, raised
+
+    def test_socket_bind_before_listen_is_retried_with_the_same_owned_runtime(self):
+        observed,error=self.run_worker(oom_phase=None,successful_import=True,runtime_fault='socket_wait')
+        self.assertIsNone(error)
+        self.assertEqual(observed['status'],'passed')
+
+    def test_wrong_socket_identity_is_not_retried_as_readiness(self):
+        observed,error=self.run_worker(oom_phase=None,successful_import=True,runtime_fault='wrong_socket')
+        self.assertIsInstance(error,RuntimeError)
+        self.assertEqual(observed['status'],'failed')
+        self.assertEqual(observed['stage'],'daemon_start')
+        self.assertIs(observed['daemon_alive_before_requested_stop'],False)
+        self.assertIs(observed['containerd_stopped'],True)
+
+    def test_runtime_start_failure_cannot_be_a_vacuous_cleanup_success(self):
+        observed,error=self.run_worker(oom_phase=None,runtime_fault='start')
+        self.assertIsInstance(error,OSError)
+        self.assertEqual(observed['status'],'failed')
+        self.assertIs(observed['containerd_stopped'],False)
+        self.assertIs(observed['managed_containerd_stopped_before_parent_cleanup'],False)
+        self.assertNotIn('private_containerd_ownership_verified',observed)
+        self.assertIn('resource_observation_after_stop',observed)
+
+    def test_runtime_early_exit_cannot_preserve_an_import_pass(self):
+        observed,error=self.run_worker(oom_phase=None,successful_import=True,runtime_fault='exit')
+        self.assertIsInstance(error,RuntimeError)
+        self.assertEqual(observed['status'],'failed')
+        self.assertIs(observed['containerd_alive_before_requested_stop'],False)
 
     def test_real_worker_receipt_retains_pre_daemon_oom_baseline(self):
         observed, error=self.run_worker(oom_phase='startup')
@@ -373,6 +483,73 @@ class WorkerStartupMemoryTests(unittest.TestCase):
         self.assertEqual(observed['status'],'passed')
         self.assertEqual(observed['stage'],'complete')
         self.assertNotIn('resource_observation_after_stop_failure',observed)
+
+
+class PrivateRuntimeOwnershipTests(unittest.TestCase):
+    def test_configuration_owns_all_storage_and_listeners_without_host_imports(self):
+        root=Path('/tmp/engine-native-import-configuration')
+        config=tomllib.loads(proof.private_containerd_configuration(root))
+        self.assertEqual(config['version'],3)
+        self.assertEqual(config['root'],str(root/'containerd-data'))
+        self.assertEqual(config['state'],str(root/'containerd-state'))
+        self.assertEqual(config['grpc']['address'],str(root/'containerd.sock'))
+        self.assertEqual(config['ttrpc']['address'],str(root/'containerd-ttrpc.sock'))
+        self.assertEqual(config['debug']['address'],'')
+        self.assertEqual(config['metrics']['address'],'')
+        self.assertNotIn('imports',config)
+        self.assertEqual(set(config['disabled_plugins']),{'io.containerd.grpc.v1.cri',
+                         'io.containerd.cri.v1.images','io.containerd.cri.v1.runtime'})
+
+    def ownership(self, *, exe=None, command=None, pids=None, peer=None, socket_uid=0,
+                  socket_mode=stat.S_IFSOCK, exited=False):
+        root=Path('/tmp/engine-native-import-identity')
+        argv=[str(root/'bin/containerd'),'--config',str(root/'containerd.toml')]
+        process=SimpleNamespace(pid=20003,poll=lambda:0 if exited else None)
+        observed_argv=argv if command is None else command
+        entries=[Path('/proc')/str(pid) for pid in (pids if pids is not None else [20003])]
+        connection=MagicMock()
+        connection.__enter__.return_value=connection
+        connection.getsockopt.return_value=struct.pack('3i',*(peer or (20003,0,0)))
+        with patch.object(Path,'resolve',return_value=Path(exe or argv[0])), \
+                patch.object(Path,'read_bytes',return_value=b'\0'.join(os.fsencode(v) for v in observed_argv)+b'\0'), \
+                patch.object(Path,'iterdir',return_value=iter(entries)), \
+                patch.object(Path,'lstat',return_value=SimpleNamespace(st_mode=socket_mode,st_uid=socket_uid)), \
+                patch.object(proof.socket_module,'socket',return_value=connection), \
+                patch.object(proof.socket_module,'SO_PEERCRED',17,create=True):
+            return proof.verify_containerd_ownership(process,argv,root/'containerd.sock')
+
+    def test_exact_private_process_and_peer_are_required(self):
+        observed=self.ownership()
+        self.assertEqual(observed['pid'],observed['socket_peer_pid'])
+        self.assertEqual(observed['socket_peer_uid'],0)
+        cases=[{'exe':'/usr/bin/containerd'},{'command':['/tmp/bin/containerd']},
+               {'pids':[]},{'pids':[20003,20004]},{'pids':[20004]},
+               {'peer':(40000,0,0)},{'peer':(20003,1000,0)},
+               {'peer':(20003,0,1000)},{'socket_uid':1000},
+               {'socket_mode':stat.S_IFLNK},{'socket_mode':stat.S_IFREG},{'exited':True}]
+        for case in cases:
+            with self.subTest(case=case),self.assertRaises(RuntimeError):self.ownership(**case)
+
+    def test_process_must_be_reaped_and_forced_kill_is_failure(self):
+        process=MagicMock(pid=20003)
+        process.poll.side_effect=[None,0]
+        process.wait.side_effect=[subprocess.TimeoutExpired('containerd',10),0]
+        result={'status':'passed'}
+        proof.stop_owned_process(process,result,'containerd')
+        self.assertEqual(result['status'],'failed')
+        self.assertIs(result['containerd_required_kill'],True)
+        self.assertIs(result['containerd_stopped'],True)
+        process.terminate.assert_called_once();process.kill.assert_called_once()
+
+    def test_failed_process_stop_remains_failure(self):
+        process=MagicMock(pid=20003)
+        process.poll.return_value=None
+        process.terminate.side_effect=OSError('controlled stop failure')
+        result={'status':'passed'}
+        proof.stop_owned_process(process,result,'containerd')
+        self.assertEqual(result['status'],'failed')
+        self.assertIs(result['containerd_stopped'],False)
+        self.assertEqual(result['containerd_stop_failure'],'OSError')
 
 
 if __name__=='__main__':unittest.main()

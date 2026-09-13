@@ -300,7 +300,7 @@ describe('a sponsor sends traffic to its own site (Dan 2026-09-09)', () => {
     // The external branch leaves without logging, and returns before the
     // internal branch's logClick can run.
     expect(activate).toMatch(/if \(external\) \{/);
-    expect(activate.indexOf('window.location.assign(target)')).toBeLessThan(
+    expect(activate.indexOf("openInBrowser(target, 'noopener,noreferrer')")).toBeLessThan(
       activate.indexOf('AdService.logClick')
     );
     expect(activate).toMatch(/return;\s*\}\s*AdService\.logClick/);
@@ -311,7 +311,14 @@ describe('a sponsor sends traffic to its own site (Dan 2026-09-09)', () => {
     expect(SERVICE).toMatch(/export const AD_CLICK_PREFIX = '\/c\/';/);
     expect(SERVICE).toMatch(/export function isExternalAdClick/);
     expect(ROTATOR).toMatch(/const external = isExternalAdClick\(target\);/);
-    expect(ROTATOR).toMatch(/window\.location\.assign\(target\)/);
+    // A NEW TAB since 2026-09-13: the player keeps their lobby or table, and
+    // noopener so a sponsor's page cannot reach back into this one. Through
+    // openInBrowser, the one seam the web bundle leaves by (window.open on
+    // the web, the in-app browser on native) - never a bare window.open.
+    expect(ROTATOR).toMatch(/import \{ openInBrowser \} from '\.\.\/\.\.\/lib\/openExternal';/);
+    expect(ROTATOR).toMatch(/openInBrowser\(target, 'noopener,noreferrer'\)/);
+    expect(ROTATOR).not.toMatch(/window\.open\(/);
+    expect(ROTATOR).not.toMatch(/window\.location\.assign/);
     // Leaving does not need the router, so it is activatable without one.
     expect(ROTATOR).toMatch(
       /const activatable = Boolean\(target\) && \(external \|\| Boolean\(onNavigate\)\);/
@@ -559,19 +566,22 @@ describe('the last two Club Arena slots are wired, and only where they earn it',
      `session_summary` had never carried a single placement row: the CHECK
      permitted them, the resolver served them, and nothing ever named them. A
      slot with no inventory renders nothing, which is indistinguishable from a
-     slot nobody ever built. */
-  const CARD = read('src/components/ads/HouseAdCard.tsx');
+     slot nobody ever built.
+
+     2026-09-13: both are pictures now, through the one rotator. The text card
+     (HouseAdCard) is deleted; the pins below hold the rotator to the same
+     rules the card was held to. */
   const LOBBY_PAGE = read('src/pages/ClubHomePage.tsx');
   const SESSION = read('src/components/session/SessionSummaryHost.tsx');
   const SLOTS_MIGRATION = read(
     'supabase/migrations/20260828040000_house_ads_empty_state_and_session_summary.sql'
   );
 
-  it('the empty state still renders the card; the session summary moved to pictures', () => {
+  it('both surfaces render the rotator, and the text card is gone', () => {
     // The house bug shape: a component that exists and nothing imports.
-    expect(LOBBY_PAGE).toMatch(/import HouseAdCard from '\.\.\/components\/ads\/HouseAdCard'/);
-    expect(LOBBY_PAGE).toMatch(/<HouseAdCard\s+slot="empty_state"/);
-    expect(SESSION).not.toMatch(/HouseAdCard/);
+    expect(() => read('src/components/ads/HouseAdCard.tsx')).toThrow();
+    expect(LOBBY_PAGE).not.toMatch(/HouseAdCard/);
+    expect(LOBBY_PAGE).toMatch(/<HouseAdRotator[\s\n]+slot="empty_state"/);
     expect(SESSION).toMatch(/<HouseAdRotator[\s\n]+slot="session_summary"/);
   });
 
@@ -583,39 +593,25 @@ describe('the last two Club Arena slots are wired, and only where they earn it',
       LOBBY_PAGE.indexOf("'No Tournaments Yet' : 'No Tables Yet'"),
       LOBBY_PAGE.indexOf('Nothing On This Tab Right Now')
     );
-    expect(emptyBlock).toMatch(/<HouseAdCard/);
-    // And nowhere else in the page.
-    expect(LOBBY_PAGE.match(/<HouseAdCard/g)?.length).toBe(1);
+    expect(emptyBlock).toMatch(/<HouseAdRotator[\s\n]+slot="empty_state"/);
+    // Exactly two rotators on the page: the strip and the empty state.
+    expect(LOBBY_PAGE.match(/<HouseAdRotator/g)?.length).toBe(2);
   });
 
-  it('the card logs the click before it navigates', () => {
-    const activate = CARD.slice(CARD.indexOf('const activate'), CARD.indexOf('const inner'));
-    expect(activate.indexOf('AdService.logClick')).toBeGreaterThan(-1);
-    expect(activate.indexOf('AdService.logClick')).toBeLessThan(activate.indexOf('onNavigate?.'));
+  it('the rotator logs the click before it navigates', () => {
+    const proceed = ROTATOR.slice(
+      ROTATOR.indexOf('const proceed = () => {'),
+      ROTATOR.indexOf('const dismiss = () => {')
+    );
+    expect(proceed.indexOf('AdService.logClick')).toBeGreaterThan(-1);
+    expect(proceed.indexOf('AdService.logClick')).toBeLessThan(proceed.indexOf('onNavigate?.'));
   });
 
-  it('the card decides nothing about who is eligible', () => {
-    const code = CARD.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  it('the rotator decides nothing about who is eligible', () => {
+    const code = ROTATOR.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     expect(code).not.toMatch(/is_?[Vv]ip/);
     expect(code).not.toMatch(/audience/);
     expect(code).not.toMatch(/profitLoss/);
-  });
-
-  it('is not activatable when there is nowhere SAFE to go', () => {
-    /* Without this the card was still focusable, still showed a pointer, and
-       did nothing when tapped - the same defect the lobby strip had.
-
-       2026-08-28: the condition was `Boolean(ad.targetUrl)`, i.e. "there is a
-       string in the column". `target_url` is free text typed into the admin
-       panel, so that made the whole card a link to wherever it pointed -
-       including off-site. The rule is now "there is a string AND it is a
-       rooted same-origin path" (isSafeAdTarget), which is strictly stronger:
-       every destination that used to be activatable and is still safe still
-       is. The pin follows the intent rather than the old expression. */
-    expect(CARD).toMatch(
-      /const activatable = isSafeAdTarget\(ad\.targetUrl\) && Boolean\(onNavigate\)/
-    );
-    expect(CARD).toMatch(/house-ad--static/);
   });
 
   it('gives session_summary destinations that do not need a club', () => {
@@ -1093,8 +1089,6 @@ describe('an ad image is a URL every browser fetches without being asked', () =>
   const PLACEMENT_MIGRATION = read(
     'supabase/migrations/20260828100000_placements_images_experiments_and_retention.sql'
   );
-  const CARD = read('src/components/ads/HouseAdCard.tsx');
-
   it('is checked in the database, and again where it renders', () => {
     /* A destination is checked before a browser is sent to it; an image is the
        same question with LESS consent, because the fetch happens on render. An
@@ -1103,7 +1097,7 @@ describe('an ad image is a URL every browser fetches without being asked', () =>
     expect(PLACEMENT_MIGRATION).toMatch(/add constraint ad_catalog_image_is_same_origin/);
     expect(PLACEMENT_MIGRATION).toMatch(/image_url like '\/%' and image_url not like '\/\/%'/);
     expect(SERVICE).toMatch(/export function isSafeAdImage/);
-    expect(CARD).toMatch(/isSafeAdImage\(ad\.imageUrl\)/);
+    expect(ROTATOR).toMatch(/isSafeAdImage\(a\.imageUrl\)/);
   });
 
   it('proves the constraint refuses an external URL rather than trusting it', () => {
@@ -1112,10 +1106,11 @@ describe('an ad image is a URL every browser fetches without being asked', () =>
     expect(PLACEMENT_MIGRATION).toMatch(/when check_violation then null/);
   });
 
-  it('falls back to the glyph when the file is missing', () => {
-    // A broken-image icon in a promotion is worse than no promotion.
-    expect(CARD).toMatch(/onError=\{\(\) => setImageFailed\(true\)\}/);
-    expect(CARD).toMatch(/showImage \? \(/);
+  it('a missing file leaves the rotation rather than showing a hole', () => {
+    // A broken-image icon in a promotion is worse than no promotion, and a
+    // picture surface has no text to fall back to: the creative is dropped.
+    expect(ROTATOR).toMatch(/onError=\{\(\) => dropBroken\(ad\.adId\)\}/);
+    expect(ROTATOR).toMatch(/const dropBroken = useCallback/);
   });
 });
 
@@ -1284,12 +1279,13 @@ describe('a click is only counted when it went somewhere (2026-08-29)', () => {
     expect(ROTATOR).not.toMatch(/activatable =[^;]*Boolean\(ad\.targetUrl\)/);
   });
 
-  it('the card was already right, and stays right', () => {
-    const CARD = read('src/components/ads/HouseAdCard.tsx');
-    expect(CARD).toMatch(/const activatable = isSafeAdTarget\(ad\.targetUrl\)/);
-    const activate = CARD.slice(CARD.indexOf('const activate = () => {'));
-    expect(activate.indexOf('if (!activatable) return;')).toBeLessThan(
-      activate.indexOf('AdService.logClick')
+  it('the popup button refuses before it logs, exactly as the card did', () => {
+    const proceed = ROTATOR.slice(
+      ROTATOR.indexOf('const proceed = () => {'),
+      ROTATOR.indexOf('const dismiss = () => {')
+    );
+    expect(proceed.indexOf('if (!target || !activatable) return;')).toBeLessThan(
+      proceed.indexOf('AdService.logClick')
     );
   });
 

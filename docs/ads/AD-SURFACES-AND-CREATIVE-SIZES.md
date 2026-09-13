@@ -4,6 +4,20 @@ Written 2026-08-29 for Dan, who asked for the inventory before providing
 guidance and creative. UPDATE 2026-09-03: `lobby_strip` and `session_summary` are BUILT as three rotating pictures (`src/components/ads/HouseAdRotator.tsx`, PR agent/cowork-ads3/feat/image-ad-rotator); the creative lives on `ad_placement.image_url` per surface. The other rows are still proposals - the proposed column is a
 proposal.
 
+> **THE STANDARD, 2026-09-13 (Dan, binding, pinned by
+> `tests/an-advert-is-a-picture.law.test.ts`).** Every advert everywhere inside
+> smarter.poker is a **responsive fluid image only** - `width: 100%`, a
+> declared `aspect-ratio` per surface, `object-fit: contain`, so it shrinks
+> with the page and is never cut off or distorted. No text cards, no glyphs.
+> `fn_resolve_ads` refuses to serve a placement with no picture, so a
+> pictureless advert is not inventory on any surface. And **a tap opens the
+> advert full screen**: the poster (3:4, `poster_url`, falling back to the
+> surface creative) in a full-screen popup with one button that goes where the
+> advert points - internal paths through the router, sponsor sites through
+> `/c/<code>` in a new tab. The tap logs nothing; the button is the click,
+> closing is a dismiss. Club Arena: `HouseAdRotator` + `AdInterstitial`.
+> World Hub: `HubPromoRail` (same rules). `HouseAdCard` is deleted.
+
 Two standing rules this document is written under:
 
 1. **Dan 2026-08-29: "DO NOT PUT ADS IN RANDOM PLACES OR OVERLAPPING IMAGES
@@ -18,14 +32,14 @@ Two standing rules this document is written under:
 
 ## 1. Where ads are inserted today
 
-| #   | Slot                  | Where it renders                  | File                                                                         | Position on the page                                                                                                                                                                                                    | Live?                           |
-| --- | --------------------- | --------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| 1   | `lobby_strip`         | Club Arena club lobby             | `src/components/lobby/LobbyAdStrip.tsx`                                      | One line directly under the game action bar, above the table list. Rotates every 7s. Shares the strip with CLUB and UNION notices; house ads always sort **last**.                                                      | Yes — 549 impressions, 6 people |
-| 2   | `hub_promotions`      | World Hub `/hub/promotions`       | `src/components/ads/HubPromoRail.jsx` (World Hub)                            | A rail above the venue / tour / series feed.                                                                                                                                                                            | Yes — 26 impressions, 5 people  |
-| 3   | `empty_state`         | Club Arena club lobby, empty view | `src/pages/ClubHomePage.tsx` line ~4447, via `HouseAdCard`                   | Only in the branch where the club is running **nothing**. The other three empty views carry a "Show All Games" button, and an advert beside a fix competes with the fix.                                                | Yes — 3 impressions, 1 person   |
-| 4   | `session_summary`     | Session Complete popup            | `src/components/session/SessionSummaryHost.tsx` line ~446, via `HouseAdCard` | Below the stats tiles, above Share / Done. Never between the player and Done.                                                                                                                                           | Yes — 3 impressions, 3 people   |
-| 5   | `table_between_hands` | —                                 | —                                                                            | **Declared in the slot list and built into nothing.** Zero placements, no component. Needs your call on whether an advert may appear at a live table at all.                                                            | No                              |
-| —   | ~~Hub home~~          | ~~`pages/hub/index.js`~~          | ~~`HubPromoStrip.js`~~                                                       | **REMOVED 2026-08-29.** This is the one in your screenshot. It sat in normal flow while the 3D carousel is `position: fixed`, so it laid itself across the featured cards. Component deleted, absence pinned by a test. | Gone                            |
+| #   | Slot                  | Where it renders                  | File                                                                       | Position on the page                                                                                                                                                                                                    | Live?                           |
+| --- | --------------------- | --------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| 1   | `lobby_strip`         | Club Arena club lobby             | `src/components/ads/HouseAdRotator.tsx`                                    | One line directly under the game action bar, above the table list. Rotates every 7s. Shares the strip with CLUB and UNION notices; house ads always sort **last**.                                                      | Yes — 549 impressions, 6 people |
+| 2   | `hub_promotions`      | World Hub `/hub/promotions`       | `src/components/ads/HubPromoRail.jsx` (World Hub)                          | A rail above the venue / tour / series feed.                                                                                                                                                                            | Yes — 26 impressions, 5 people  |
+| 3   | `empty_state`         | Club Arena club lobby, empty view | `src/pages/ClubHomePage.tsx`, via `HouseAdRotator` (`.ad-rotator--poster`) | Only in the branch where the club is running **nothing**. The other three empty views carry a "Show All Games" button, and an advert beside a fix competes with the fix.                                                | Yes — 3 impressions, 1 person   |
+| 4   | `session_summary`     | Session Complete popup            | `src/components/session/SessionSummaryHost.tsx`, via `HouseAdRotator`      | Below the stats tiles, above Share / Done. Never between the player and Done.                                                                                                                                           | Yes — 3 impressions, 3 people   |
+| 5   | `table_between_hands` | —                                 | —                                                                          | **Declared in the slot list and built into nothing.** Zero placements, no component. Needs your call on whether an advert may appear at a live table at all.                                                            | No                              |
+| —   | ~~Hub home~~          | ~~`pages/hub/index.js`~~          | ~~`HubPromoStrip.js`~~                                                     | **REMOVED 2026-08-29.** This is the one in your screenshot. It sat in normal flow while the 3D carousel is `position: fixed`, so it laid itself across the featured cards. Component deleted, absence pinned by a test. | Gone                            |
 
 Event counts are production, read 2026-08-29.
 
@@ -67,21 +81,21 @@ Design width is 375px (mobile-first, house rule). "Display" is CSS pixels;
 
 ### 3.2 `hub_promotions` — World Hub promotions rail
 
-|                    |                                                                                                                                                                                    |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Current**        | Card with a **34 x 34** thumbnail beside two lines of text. One column at 375px, `auto-fit minmax(280px, 1fr)` above 768px.                                                        |
-| **Proposed**       | Hero card, **16:9** image above the text. Display **343 x 193** at 375px; **≥280 x 158** per card on desktop. Deliver **1200 x 675**.                                              |
-| **Why this shape** | It sits above venue, tour and series cards written by other people. 16:9 is what those feeds already use, so ours reads as part of the page rather than as a banner stapled to it. |
-| **Work needed**    | Move the image from a 34px inline thumbnail to a full-bleed card header.                                                                                                           |
+|                    |                                                                                                                                                                                                                                                |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Current**        | Card with a **34 x 34** thumbnail beside two lines of text. One column at 375px, `auto-fit minmax(280px, 1fr)` above 768px.                                                                                                                    |
+| **Proposed**       | Hero card, **16:9** image above the text. Display **343 x 193** at 375px; **≥280 x 158** per card on desktop. Deliver **1200 x 675**.                                                                                                          |
+| **Why this shape** | It sits above venue, tour and series cards written by other people. 16:9 is what those feeds already use, so ours reads as part of the page rather than as a banner stapled to it.                                                             |
+| **Work needed**    | DONE 2026-09-13: `HubPromoRail` renders the 16:9 creative as a fluid contained image, three rotating, and a tap opens the full-screen popup. Creatives in `public/assets/ads/*-hub-promotions-v1.webp` (served through the Club Arena origin). |
 
 ### 3.3 `empty_state` — Club Arena, club running nothing
 
-|                    |                                                                                                                                                                                                                           |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Current**        | `HouseAdCard`, **44 x 44** image (36 x 36 under 480px) beside text, card capped at 520px wide.                                                                                                                            |
-| **Proposed**       | Portrait poster, **3:4** — the shape of the Poker Near Me tile in your first screenshot. Display **300 x 400**, centred, capped at 340 wide on phones. Deliver **1080 x 1440**.                                           |
-| **Why this shape** | This is the only surface with genuine vertical room: the club has nothing running, so the space is dead and nothing is being displaced. It is also the only surface where a full poster can carry the message on its own. |
-| **Work needed**    | A poster variant of `HouseAdCard`; the compact row stays for the other slots.                                                                                                                                             |
+|                    |                                                                                                                                                                                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Current**        | `HouseAdCard`, **44 x 44** image (36 x 36 under 480px) beside text, card capped at 520px wide.                                                                                                                                             |
+| **Proposed**       | Portrait poster, **3:4** — the shape of the Poker Near Me tile in your first screenshot. Display **300 x 400**, centred, capped at 340 wide on phones. Deliver **1080 x 1440**.                                                            |
+| **Why this shape** | This is the only surface with genuine vertical room: the club has nothing running, so the space is dead and nothing is being displaced. It is also the only surface where a full poster can carry the message on its own.                  |
+| **Work needed**    | DONE 2026-09-13: `HouseAdRotator` with `className="ad-rotator--poster"` (3:4, capped at 420px, centred). `HouseAdCard` is deleted. Creatives in `public/assets/ads/*-poster-v1.webp`; the same file is the popup poster for every surface. |
 
 ### 3.4 `session_summary` — Session Complete popup
 
@@ -90,7 +104,7 @@ Design width is 375px (mobile-first, house rule). "Display" is CSS pixels;
 | **Current**        | `HouseAdCard`, **44 x 44** image beside text, inside a card `min(100%, 420px)` wide — usable width ~291px on a phone, ~376px on desktop.                                                                                           |
 | **Proposed**       | Compact banner, **3:1**. Display **291 x 97** on a phone, **376 x 125** on desktop. Deliver **900 x 300**.                                                                                                                         |
 | **Why this shape** | The player has just finished a session and is reading a number that matters to them. This surface gets the smallest premium treatment on the platform on purpose — and it must never grow tall enough to push Done below the fold. |
-| **Work needed**    | Same poster/banner variant work as above.                                                                                                                                                                                          |
+| **Work needed**    | DONE 2026-09-13: `HouseAdRotator` at 3:1, three rotating, contained. Creatives in `public/assets/ads/*-session-summary-v1.webp`.                                                                                                   |
 
 ### 3.5 `table_between_hands` — not built
 

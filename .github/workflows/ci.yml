@@ -1124,6 +1124,10 @@ jobs:
         env:
           PGBIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/probe-departure-postgres.sh
+      - name: Horse profile authority, API roles and concurrent writes
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-horse-profile-authority.py
       - name: Tournament reminder receipts, rollback and overlapping consumers
         env:
           PGBIN: /usr/lib/postgresql/17/bin

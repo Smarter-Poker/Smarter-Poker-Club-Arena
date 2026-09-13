@@ -1,3 +1,9 @@
+## 2026-09-13: Observe progress for each MTT and acknowledge lifecycle changes
+
+Club Arena engine repairs merged in PR4503 (scheduler retirement), PR4512 (break acknowledgment and structure metadata), PR4520 (acknowledged blind transitions) and PR4522 (strict final prize receipts). The final prize suite passes 1,890 tests / 153 files with server typechecking. See `docs/audits/2026-09-13-mtt-engine-blueprint.md` for root causes, exact limits and native evidence. No funded historical contract was changed.
+
+`server/src/services/TournamentMetrics.ts` now combines strict, lifecycle-fenced count reads with the new service-only `fn_tournament_progress_metrics`. `infra/monitoring/tournament-rules.yml` adds individually stalled MTT and overdue-break alerts. Previously, healthy cash activity and renewing manager leases concealed silent MTTs. Migration `20260913184615_tournament_progress_is_measured_per_event.sql` was applied via Supabase at 19:34 UTC, recorded as version 20260913193457; ACL and definition fingerprint match. The schema manifest, runtime regression suite and private native probe are included. All 3,225 service tests / 185 files, 23 native groups, server typechecking, monitoring drift and nine-rule Prometheus parsing pass. Engine and loaded-rule publication remain separate. See `docs/changelog/2026-09-13-mtt-progress-monitoring.md`.
+
 ## 2026-09-12: Enforce the tournament variant catalogue
 
 Applied `20260912044409_remaining_tournament_variant_allowlist.sql` through the Supabase migration tool. The governed creator now accepts the existing eight tournament games and four Spin games, with normalized names. Exact source and metadata guards preserve authorization and financial formulas. Native PostgreSQL passed 47 launch cases, idempotence and source-drift rejection; production source fingerprints and authentication refusal match. No historical rows changed. See `docs/horse-brain-phase12-round1.md`. Engine policy release remains separate.

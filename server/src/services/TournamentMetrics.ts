@@ -64,6 +64,9 @@ export interface TournamentMetricsSnapshot {
   seatlessPhantoms: number;
   /** Recently COMPLETED events with a prize pool and not one prize payment. */
   unpaidCompleted: number;
+  /** Each RUNNING MTT is checked independently of cash games or other events. */
+  stalledRunning: number;
+  overdueBreaks: number;
   /** Epoch ms of the read that produced this. 0 = never succeeded. */
   collectedAt: number;
 }
@@ -75,6 +78,8 @@ const EMPTY: TournamentMetricsSnapshot = {
   stuckCompleting: 0,
   seatlessPhantoms: 0,
   unpaidCompleted: 0,
+  stalledRunning: 0,
+  overdueBreaks: 0,
   seatFirstWaiting: 0,
   collectedAt: 0,
 };
@@ -94,10 +99,16 @@ export const OVERDUE_START_MINUTES = 10;
 export const STUCK_COMPLETING_MINUTES = 10;
 /** How far back the unpaid-prize check looks. */
 export const UNPAID_LOOKBACK_HOURS = 6;
+/** Seven-day maximum hand: 214.389s; p99 80.146s over 2,101,203 hands. */
+export const STALLED_MTT_MINUTES = 15;
+/** Extra time after the persisted break/add-on deadline, beyond the five-minute break. */
+export const OVERDUE_BREAK_GRACE_MINUTES = 10;
 
 export class TournamentMetrics {
   private snapshot: TournamentMetricsSnapshot = { ...EMPTY };
   private refreshing = false;
+  private stopped = false;
+  private generation = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
   /** Consecutive failed refreshes, for a single escalation rather than a flood. */
   private consecutiveFailures = 0;
@@ -107,6 +118,8 @@ export class TournamentMetrics {
 
   start(): void {
     if (this.timer) return;
+    this.stopped = false;
+    this.generation++;
     // Refresh once immediately so the first scrape after a boot is not blind
     // for a whole interval, then on the interval.
     void this.refresh();
@@ -116,6 +129,8 @@ export class TournamentMetrics {
   }
 
   stop(): void {
+    this.stopped = true;
+    this.generation++;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
   }
@@ -127,29 +142,49 @@ export class TournamentMetrics {
   /**
    * Read the counts. Never throws, never zeroes a good snapshot on failure.
    *
-   * One RPC (`fn_tournament_metrics`) so the whole thing is a single round trip
-   * and a single plan. A missing function is treated as any other read failure:
-   * the snapshot goes stale and says so.
+   * The established counts and the per-event progress aggregate are independent
+   * read-only RPCs. Both must return complete counts before a fresh snapshot is
+   * published. Missing or malformed evidence keeps the last good snapshot stale.
    */
   async refresh(): Promise<void> {
-    if (this.refreshing) return;
+    if (this.refreshing || this.stopped) return;
+    const generation = this.generation;
     this.refreshing = true;
     try {
-      const { data, error } = await supabase.rpc('fn_tournament_metrics', {
-        p_overdue_minutes: OVERDUE_START_MINUTES,
-        p_completing_minutes: STUCK_COMPLETING_MINUTES,
-        p_unpaid_hours: UNPAID_LOOKBACK_HOURS,
-      });
-
-      const row = Array.isArray(data) ? data[0] : data;
-      if (error || !row) {
-        this.noteFailure(error?.message ?? 'no row returned');
+      const [countRead, progressRead] = await Promise.allSettled([
+        supabase.rpc('fn_tournament_metrics', {
+          p_overdue_minutes: OVERDUE_START_MINUTES,
+          p_completing_minutes: STUCK_COMPLETING_MINUTES,
+          p_unpaid_hours: UNPAID_LOOKBACK_HOURS,
+        }),
+        supabase.rpc('fn_tournament_progress_metrics', {
+          p_stalled_minutes: STALLED_MTT_MINUTES,
+          p_break_grace_minutes: OVERDUE_BREAK_GRACE_MINUTES,
+        }),
+      ]);
+      if (this.stopped || generation !== this.generation) return;
+      if (countRead.status === 'rejected') throw countRead.reason;
+      if (progressRead.status === 'rejected') throw progressRead.reason;
+      const counts = countRead.value;
+      const progress = progressRead.value;
+      const row = Array.isArray(counts.data) ? counts.data[0] : counts.data;
+      const eventProgress = Array.isArray(progress.data) ? progress.data[0] : progress.data;
+      if (counts.error || progress.error || !row || !eventProgress) {
+        this.noteFailure(counts.error?.message ?? progress.error?.message ?? 'no row returned');
         return;
       }
 
-      const n = (v: unknown) => {
-        const x = Number(v);
-        return Number.isFinite(x) && x >= 0 ? Math.floor(x) : 0;
+      const n = (value: unknown): number => {
+        if (
+          (typeof value !== 'number' && typeof value !== 'string') ||
+          (typeof value === 'string' && !/^[0-9]+$/.test(value))
+        )
+          throw new Error('required tournament count is missing or malformed');
+        const count = Number(value);
+        if (!Number.isSafeInteger(count) || count < 0) {
+          throw new Error('required tournament count is not a nonnegative integer');
+        }
+        return count;
       };
 
       this.snapshot = {
@@ -159,12 +194,15 @@ export class TournamentMetrics {
         stuckCompleting: n(row.stuck_completing),
         seatlessPhantoms: n(row.seatless_phantoms),
         unpaidCompleted: n(row.unpaid_completed),
+        stalledRunning: n(eventProgress.stalled_running),
+        overdueBreaks: n(eventProgress.overdue_breaks),
         seatFirstWaiting: n(row.seat_first_waiting),
         collectedAt: Date.now(),
       };
       this.consecutiveFailures = 0;
       this.reportedBlind = false;
     } catch (err) {
+      if (this.stopped || generation !== this.generation) return;
       this.noteFailure(err instanceof Error ? err.message : String(err));
     } finally {
       this.refreshing = false;
@@ -263,6 +301,12 @@ export class TournamentMetrics {
       '# HELP poker_tournament_fleet_unserved 1 when this leader, past boot and on a fresh snapshot, owns NO manager while the database says tournaments are RUNNING. Never set on a standby, a booting instance, or a stale read.',
       '# TYPE poker_tournament_fleet_unserved gauge',
       `poker_tournament_fleet_unserved ${unserved}`,
+      '# HELP poker_mtt_stalled_running RUNNING MTTs with no recent hand for their own event, excluding active breaks, add-ons and startup grace.',
+      '# TYPE poker_mtt_stalled_running gauge',
+      `poker_mtt_stalled_running ${s.stalledRunning}`,
+      '# HELP poker_mtt_overdue_breaks MTTs still on break beyond their persisted break or add-on deadline and grace period.',
+      '# TYPE poker_mtt_overdue_breaks gauge',
+      `poker_mtt_overdue_breaks ${s.overdueBreaks}`,
       '# HELP poker_tournaments_running Tournaments the database says are RUNNING',
       '# TYPE poker_tournaments_running gauge',
       `poker_tournaments_running ${s.running}`,

@@ -79,14 +79,17 @@ describe('durable adaptive journal work boundary', () => {
     expect(trace[0].args).toEqual({ p_payload: b.payload });
     expect(trace[0].signal).toBeInstanceOf(AbortSignal);
   });
-  it.each(['capacity_busy', 'queue_full', 'batch_conflict', 'legacy_batch_payload_unavailable'])(
-    'preserves %s without writing or claiming source completeness',
-    async (reason) => {
-      handler = () => ({ version: 1, status: 'unavailable', reason });
-      expect(await enqueue(source())).toEqual({ status: 'unavailable', reason });
-      expect(trace).toHaveLength(1);
-    }
-  );
+  it.each([
+    'capacity_busy',
+    'queue_full',
+    'batch_conflict',
+    'legacy_batch_payload_unavailable',
+    'source_expired',
+  ])('preserves %s without writing or claiming source completeness', async (reason) => {
+    handler = () => ({ version: 1, status: 'unavailable', reason });
+    expect(await enqueue(source())).toEqual({ status: 'unavailable', reason });
+    expect(trace).toHaveLength(1);
+  });
   it('keeps a lost enqueue reply unknown', async () => {
     handler = () => {
       throw Error('lost response');

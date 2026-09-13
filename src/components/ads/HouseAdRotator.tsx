@@ -36,7 +36,7 @@
  * is. The resolver says which; this file only repeats it.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import {
   AdService,
   isExternalAdClick,
@@ -44,7 +44,13 @@ import {
   isSafeAdTarget,
 } from '../../services/AdService';
 import type { AdSlot, HouseAd } from '../../services/AdService';
+import { openInBrowser } from '../../lib/openExternal';
 import './HouseAdRotator.css';
+
+/* The full-screen popup is fetched on the first tap, not before first paint.
+   Every player downloads the rotator; only the ones who tap an advert need
+   the popup, and a tap is a gesture with a beat of time in it. */
+const AdInterstitial = lazy(() => import('./AdInterstitial'));
 
 /** Per-surface creative shape. The number is the CSS aspect-ratio. */
 export const AD_SURFACE_RATIO: Record<AdSlot, string> = {
@@ -89,8 +95,13 @@ export default function HouseAdRotator({
   const [ads, setAds] = useState<HouseAd[]>([]);
   const [index, setIndex] = useState(0);
   const [reducedMotion, setReducedMotion] = useState(false);
+  /* The full-screen popup. While it is up the rotation holds, so the advert
+     the player opened is the one still on the strip when they close it. */
+  const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const openRef = useRef(false);
+  openRef.current = open;
 
   // ── Load: ask for more than we show, keep only the ones with a picture ────
   useEffect(() => {
@@ -129,6 +140,8 @@ export default function HouseAdRotator({
         // A hidden tab does not rotate: nobody is looking, and advancing the
         // index there would log viewables for creatives no eye ever met.
         if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+        // Nor does a strip whose advert is open full screen.
+        if (openRef.current) return;
         setIndex((i) => (i + 1) % ads.length);
       },
       Math.max(MIN_INTERVAL_MS, intervalMs)
@@ -221,18 +234,43 @@ export default function HouseAdRotator({
   const external = isExternalAdClick(target);
   const activatable = Boolean(target) && (external || Boolean(onNavigate));
 
+  /* A TAP OPENS THE ADVERT FULL SCREEN (Dan 2026-09-13). Nothing is logged
+     here: the impression was counted when the creative was seen, and whether
+     this becomes a click or a dismiss is decided inside the popup. */
   const activate = () => {
+    if (!activatable) return;
+    setOpen(true);
+  };
+
+  /* The popup's button. This is the only place an internal click is logged,
+     and it is logged BEFORE the route changes for the same reason it always
+     was: losing the event to the unmount is how a working click path ends up
+     looking like nobody ever clicked. */
+  const proceed = () => {
     if (!target || !activatable) return;
+    setOpen(false);
     if (external) {
       /* NOT logged here. The redirect at the other end of this path records
-         the click server-side, in the same call that resolves the address,
-         because this page is about to be torn down. Logging in both places
-         would show a sponsor twice the clicks they were given. */
-      window.location.assign(target);
+         the click server-side, in the same call that resolves the address.
+         Logging in both places would show a sponsor twice the clicks they
+         were given. A NEW TAB, not this one: the player keeps their lobby or
+         table, and a sponsor's site is not this app's to navigate into.
+         noopener so the new page cannot reach back into this one. Through
+         the one seam (openInBrowser): window.open on the web, the in-app
+         browser inside the native app, where window.open goes nowhere. */
+      openInBrowser(target, 'noopener,noreferrer');
       return;
     }
     AdService.logClick({ adId: ad.adId }, slot, clubId);
     onNavigate?.(target);
+  };
+
+  /* Closed without going anywhere is a dismiss - the honest name for a
+     click that went nowhere, which is a bug this codebase already fixed
+     once on 2026-08-29. */
+  const dismiss = () => {
+    setOpen(false);
+    AdService.logDismiss({ adId: ad.adId }, slot, clubId);
   };
 
   const ratio = AD_SURFACE_RATIO[slot];
@@ -286,6 +324,17 @@ export default function HouseAdRotator({
         <span className="ad-rotator__kind" aria-hidden="true">
           {kindLabel}
         </span>
+      ) : null}
+      {open ? (
+        <Suspense fallback={null}>
+          <AdInterstitial
+            ad={ad}
+            target={target}
+            external={external}
+            onProceed={proceed}
+            onClose={dismiss}
+          />
+        </Suspense>
       ) : null}
       {ads.length > 1 ? (
         <div className="ad-rotator__dots" role="tablist" aria-label="Promotions">

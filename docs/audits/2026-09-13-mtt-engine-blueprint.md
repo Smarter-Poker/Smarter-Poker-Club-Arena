@@ -229,8 +229,11 @@ fixture's passing result is not current amount-authority certification.
 A separate private PostgreSQL 17 rehearsal passed the funded PKO entry/add-on
 case: 200 entry cost = 175 prize + 5 bounty + 20 fee; the 15 add-on goes to
 prize funding; duplicate requests grant nothing extra and preserve the head.
-The broader native registration/purchase/refund/heads-up suite is still being
-completed. A local psql pipe stall was isolated to the test transport; its two
+The broader native registration/purchase/refund/heads-up suite now passes
+all 69 groups using the existing Node adapter. It covers real funding,
+concurrent last-seat claims, purchases, refund custody, launch races and
+actual cumulative heads-up cash payouts; synthetic hand records do not
+constitute a full native MTT dealer-to-terminal rehearsal. A local psql pipe stall was isolated to the test transport; its two
 private clusters were shut down cleanly, and the existing Node adapter let the
 same tests advance. No production data was used by those fixtures.
 
@@ -239,3 +242,35 @@ hands; p99 80.146 seconds, p99.9 123.504 seconds, maximum 214.389 seconds.
 Per-event monitoring must still account for active hands, legitimate pauses,
 manager ownership and overdue breaks, rather than treating global cash activity
 as proof of MTT health.
+
+## September 13: per-event monitoring and creation-contract finding
+
+PR #4522 is merged as `7514629cdcf988efa75fed60eedad831bf460e5b`; required
+CI run 34775756884 succeeded. Final tournament regressions pass 1,890 tests
+across 153 files, with server typechecking.
+
+**R15: individually stalled MTTs were invisible to aggregate fleet health.**
+The service-only `fn_tournament_progress_metrics` now counts each silent MTT
+and overdue break independently. A busy cash table or another healthy MTT
+cannot clear the count. Active breaks, add-ons and recovery grace are bounded;
+missing break timestamps cannot exempt an event indefinitely. The collector
+retains stale evidence on malformed or failed reads and rejects responses
+after shutdown. Alerts require fresh evidence and suppress maintenance.
+
+The database reader is installed (definition MD5
+48fbeb982336d4303a6eb503e999d064; only postgres/service_role EXECUTE). At
+19:35 UTC it reported 65 stalled MTTs and zero overdue breaks. Runtime tests
+pass 37 cases across three focused files; all service suites pass 3,225 tests
+across 185 files; the private native reader probe passes 23 groups; server
+TypeScript and nine-rule Prometheus parsing pass. Engine publication and the
+loaded alert inventory remain unverified. See the progress-monitoring changelog.
+
+**R16, open: creator silently ignores paid-depth selection.** The current
+fn_create_tournament wrapper (MD5 16305fb3739f13e64af6a1e8eb3bf165) looks for
+`tournamentId` or `id`, but its delegated governed creator returns
+`tournament_id`. Thus selected payoutPercent 15/20 is never applied, leaving
+the default 10. The wrapper also swallows all post-creation errors. The client
+TournamentConfig/buildRpcConfig exposes a payout table but no paid-depth
+field, while the current lock finalizer regenerates non-Spin ladders from
+payout_percent. Native reproduction and a transactional receipt repair are
+next; custom-payout policy and existing funded contracts remain untouched.

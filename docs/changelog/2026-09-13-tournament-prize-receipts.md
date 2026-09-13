@@ -16,9 +16,9 @@ the existing captured definition and verifies its body hash. It does not write
 production data, change stored contracts, or certify monetary allocation.
 
 Validation: the pre-fix methods failed 15 entry-close and 9 add-on receipt cases.
-The focused suite passes 123 tests across six files; the broader tournament run
-passed 1,889 tests and exposed one obsolete source guard, which now passes all
-nine cases after adopting the stricter decoder. Server typechecking passes. The installed percentage
+The focused suite passes 123 tests across six files; the final rebased tournament
+suite passes 1,890 tests across 153 files after updating an obsolete source guard.
+Server typechecking passes. The installed percentage
 generator passes all 22 native groups. Run the native probe from the repository
 root with `python3 scripts/dev/probe-tournament-payout-structure-pg17.py`; it
 creates and removes its own local PostgreSQL cluster and accepts no database URL.

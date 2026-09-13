@@ -1,0 +1,8 @@
+{
+  "_owner": "agent/cowork-ads5/feat/ads-are-pictures-everywhere. Applied to production as migration 20260913182547_an_advert_is_a_picture_everywhere_and_a_tap_opens_it_full_sc: every advert is a responsive fluid picture and a tap opens it full screen. The catalog and the campaign carry a same-origin poster_url for the popup, fn_resolve_ads hands it back as a 13th column and refuses to serve a placement with no picture, and fn_ad_campaign_review copies the poster into the catalog on approval.",
+  "functions": ["fn_resolve_ads", "fn_ad_campaign_review"],
+  "columns": {
+    "ad_catalog": ["poster_url"],
+    "ad_campaign": ["poster_url"]
+  }
+}

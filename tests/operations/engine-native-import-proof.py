@@ -53,6 +53,79 @@ def digest(path):
     return result.hexdigest()
 
 
+def imported_image_identity(image, request, content_root):
+    """Bind containerd's manifest ID to the exact normalized config digest.
+
+    Read only bounded content-addressed metadata from our private store. Docker
+    29's containerd backend reports a manifest digest in Id, not a config digest.
+    Neither labels alone nor equality of two unlike digest types proves identity.
+    """
+    reason = 'imported immutable image identity differs'
+
+    def check(value):
+        require(value, reason)
+
+    def sha(value):
+        return isinstance(value, str) and re.fullmatch('sha256:[0-9a-f]{64}', value)
+
+    def pairs(items):
+        result = {}
+        for key, value in items:
+            check(key not in result)
+            result[key] = value
+        return result
+
+    def blob(descriptor, media_types):
+        check(isinstance(descriptor, dict) and sha(descriptor.get('digest')) and
+              type(descriptor.get('size')) is int and 0 < descriptor['size'] <= 1024 * 1024 and
+              descriptor.get('mediaType') in media_types)
+        path = Path(content_root) / 'blobs/sha256' / descriptor['digest'][7:]
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, 'rb') as source:
+            details = os.fstat(source.fileno())
+            check(stat.S_ISREG(details.st_mode) and details.st_size == descriptor['size'])
+            raw = source.read(1024 * 1024 + 1)
+        check(len(raw) == descriptor['size'] and
+              'sha256:' + hashlib.sha256(raw).hexdigest() == descriptor['digest'])
+        value = json.loads(raw, object_pairs_hook=pairs)
+        check(isinstance(value, dict))
+        return value
+
+    check(isinstance(image, dict) and sha(image.get('Id')))
+    descriptor = image.get('Descriptor')
+    check(isinstance(descriptor, dict) and descriptor.get('digest') == image['Id'])
+    manifest = blob(descriptor, {'application/vnd.docker.distribution.manifest.v2+json',
+                                 'application/vnd.oci.image.manifest.v1+json'})
+    check(type(manifest.get('schemaVersion')) is int and manifest['schemaVersion'] == 2 and
+          isinstance(manifest.get('config'), dict) and
+          manifest['config'].get('digest') == request['image_id'])
+    config = blob(manifest['config'], {'application/vnd.docker.container.image.v1+json',
+                                       'application/vnd.oci.image.config.v1+json'})
+    layers, rootfs = manifest.get('layers'), config.get('rootfs')
+    check(isinstance(layers, list) and 0 < len(layers) <= 64 and
+          all(isinstance(layer, dict) and sha(layer.get('digest')) and
+              type(layer.get('size')) is int and 0 < layer['size'] <= 1024 ** 3
+              for layer in layers) and isinstance(rootfs, dict) and rootfs.get('type') == 'layers' and
+          isinstance(rootfs.get('diff_ids'), list) and len(rootfs['diff_ids']) == len(layers) and
+          all(sha(value) for value in rootfs['diff_ids']))
+    expected_labels = {'org.opencontainers.image.revision': request['source_sha'],
+                       'com.smarterpoker.engine.source-tree': request['server_tree'],
+                       'com.smarterpoker.engine.build-contract': request['build_contract']}
+    for runtime in (config.get('config'), image.get('Config')):
+        check(isinstance(runtime, dict) and isinstance(runtime.get('Labels'), dict) and
+              all(runtime['Labels'].get(key) == value for key, value in expected_labels.items()) and
+              isinstance(runtime.get('Env'), list) and
+              all(isinstance(value, str) for value in runtime['Env']) and
+              [value for value in runtime['Env'] if value.startswith('GIT_COMMIT_SHA=')] ==
+              ['GIT_COMMIT_SHA=' + request['source_sha']])
+    check(config.get('architecture') == image.get('Architecture') == 'amd64' and
+          config.get('os') == image.get('Os') == 'linux' and
+          image.get('RepoTags') == ['club-arena-engine:' + request['source_sha']] and
+          image.get('RootFS') == {'Type': 'layers', 'Layers': rootfs['diff_ids']})
+    return {'config_digest': request['image_id'], 'manifest_digest': image['Id'],
+            'manifest_bytes': descriptor['size'], 'config_bytes': manifest['config']['size']}
+
+
 def run(args, *, timeout=30, check=True, env=None):
     result = subprocess.run(args, text=True, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, timeout=timeout, env=env)
@@ -358,15 +431,10 @@ def worker(request_path):
         image = json.loads(run(docker + ["image", "inspect", tag], env=env).stdout)
         require(len(image) == 1, "one imported image required")
         image = image[0]
-        labels = image["Config"]["Labels"]
-        require(image["Id"] == request["image_id"]
-                and image["Architecture"] == "amd64" and image["Os"] == "linux"
-                and labels["org.opencontainers.image.revision"] == request["source_sha"]
-                and labels["com.smarterpoker.engine.source-tree"] == request["server_tree"]
-                and labels["com.smarterpoker.engine.build-contract"] == "clean-server-archive-v1",
-                "imported immutable image identity differs")
+        result['imported_image_identity'] = imported_image_identity(
+            image, request, root / 'containerd-data/io.containerd.content.v1.content')
         result['stage'] = 'runtime_bytes'
-        run(docker + ["create", "--name", "owned-output-reader", tag], env=env)
+        run(docker + ["create", "--name", "owned-output-reader", image['Id']], env=env)
         output = root / "runtime"
         run(docker + ["cp", "owned-output-reader:/app/dist", str(output)], timeout=60, env=env)
         hashes = {}
@@ -385,7 +453,7 @@ def worker(request_path):
                 and after["memory_events"]["oom_kill"] == before["memory_events"]["oom_kill"],
                 "native import experienced an OOM")
         result.update(status="passed", after=after, runtime_files_matched=len(hashes),
-                      image_id=image["Id"], daemon_version=info["ServerVersion"],
+                      image_id=result['imported_image_identity']['config_digest'], daemon_version=info["ServerVersion"],
                       driver=info["Driver"], daemon_id=info["ID"],
                       private_images_and_containers_absent=True,
                       docker_source_sha256=DOCKER_SHA256, archive_sha256=request["archive_sha256"])

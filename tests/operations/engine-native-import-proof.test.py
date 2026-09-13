@@ -33,6 +33,94 @@ def request():
             'main_daemon_id': 'owned-main-daemon', 'runtime_hashes': {'engine/a.js': 'e'*64}}
 
 
+def content_fixture(root, data, *, persist=True):
+    store = Path(root) / 'containerd-data/io.containerd.content.v1.content'
+    blobs = store / 'blobs/sha256'
+    if persist:
+        blobs.mkdir(parents=True, exist_ok=True)
+
+    def write(value, media):
+        raw = json.dumps(value, separators=(',', ':')).encode()
+        digest = hashlib.sha256(raw).hexdigest()
+        if persist:
+            (blobs / digest).write_bytes(raw)
+        return {'digest': 'sha256:' + digest, 'size': len(raw), 'mediaType': media}
+
+    runtime = {'Labels': {'org.opencontainers.image.revision': data['source_sha'],
+                         'com.smarterpoker.engine.source-tree': data['server_tree'],
+                         'com.smarterpoker.engine.build-contract': data['build_contract']},
+               'Env': ['GIT_COMMIT_SHA=' + data['source_sha']]}
+    config = {'os': 'linux', 'architecture': 'amd64', 'config': runtime,
+              'rootfs': {'type': 'layers', 'diff_ids': ['sha256:' + '1' * 64]}}
+    config_descriptor = write(config, 'application/vnd.docker.container.image.v1+json')
+    data['image_id'] = config_descriptor['digest']
+    manifest = {'schemaVersion': 2, 'config': config_descriptor,
+                'layers': [{'digest': 'sha256:' + '1' * 64, 'size': 123,
+                            'mediaType': 'application/vnd.docker.image.rootfs.diff.tar'}]}
+    descriptor = write(manifest, 'application/vnd.docker.distribution.manifest.v2+json')
+    image = {'Id': descriptor['digest'], 'Descriptor': descriptor,
+             'RepoTags': ['club-arena-engine:' + data['source_sha']],
+             'Architecture': 'amd64', 'Os': 'linux', 'Config': runtime,
+             'RootFS': {'Type': 'layers', 'Layers': config['rootfs']['diff_ids']}}
+    return store, image, manifest, config
+
+
+class ImportedContentIdentityTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='import-identity-')
+        self.addCleanup(self.temp.cleanup)
+        self.data = request()
+        self.store, self.image, self.manifest, self.config = content_fixture(self.temp.name, self.data)
+
+    def check(self, image=None, data=None):
+        return proof.imported_image_identity(image or self.image, data or self.data, self.store)
+
+    def test_manifest_digest_binds_the_exact_distinct_config_digest(self):
+        self.assertNotEqual(self.image['Id'], self.data['image_id'])
+        self.assertEqual(self.check(), {'config_digest': self.data['image_id'],
+            'manifest_digest': self.image['Id'], 'manifest_bytes': self.image['Descriptor']['size'],
+            'config_bytes': self.manifest['config']['size']})
+
+    def test_correct_labels_cannot_substitute_for_the_expected_config_bytes(self):
+        changed = dict(self.data, image_id='sha256:' + '0' * 64)
+        with self.assertRaisesRegex(RuntimeError, 'immutable image identity'):
+            self.check(data=changed)
+
+    def test_tampered_manifest_or_configuration_bytes_are_refused(self):
+        for descriptor in (self.image['Descriptor'], self.manifest['config']):
+            with self.subTest(descriptor=descriptor['mediaType']):
+                file = self.store / 'blobs/sha256' / descriptor['digest'][7:]
+                original = file.read_bytes()
+                file.write_bytes(b' ' + original[1:])
+                with self.assertRaises(RuntimeError): self.check()
+                file.write_bytes(original)
+
+    def test_inspect_id_platform_labels_env_rootfs_and_tag_are_all_bound(self):
+        mutations = [lambda image: image.update(Id='sha256:' + '0' * 64),
+                     lambda image: image.update(Architecture='arm64'),
+                     lambda image: image.update(Os='windows'),
+                     lambda image: image.update(RepoTags=['unrelated:latest']),
+                     lambda image: image['Config']['Labels'].update({'org.opencontainers.image.revision':'f'*40}),
+                     lambda image: image['Config'].update(Env=['GIT_COMMIT_SHA='+'f'*40]),
+                     lambda image: image['RootFS'].update(Layers=['sha256:'+'2'*64])]
+        for mutate in mutations:
+            with self.subTest(mutate=mutate), self.assertRaises(RuntimeError):
+                image = copy.deepcopy(self.image); mutate(image); self.check(image=image)
+
+    def test_wrong_or_unbounded_descriptors_and_indexes_are_refused_before_read(self):
+        for field, value in [('size', True), ('size', 0), ('size', 1024*1024+1),
+                             ('digest', '../../outside'),
+                             ('mediaType', 'application/vnd.oci.image.index.v1+json')]:
+            with self.subTest(field=field, value=value), self.assertRaises(RuntimeError):
+                image = copy.deepcopy(self.image); image['Descriptor'][field] = value
+                self.check(image=image)
+
+    def test_symlinked_metadata_cannot_be_read(self):
+        file = self.store / 'blobs/sha256' / self.image['Id'][7:]
+        other = Path(self.temp.name) / 'other'; file.rename(other); file.symlink_to(other)
+        with self.assertRaises(OSError): self.check()
+
+
 class IdentityTests(unittest.TestCase):
     def test_exact_request(self):
         self.assertTrue(proof.validate_request(request()))
@@ -331,6 +419,9 @@ class WorkerStartupMemoryTests(unittest.TestCase):
             archive = root / 'fixture-archive.tar'
             archive.write_bytes(b'controlled test bytes, never loaded')
             data = request()
+            _, image, _, _ = content_fixture(root, data, persist=False)
+            if not successful_import:
+                data['image_id'] = 'sha256:' + '0' * 64
             data.update(archive=str(archive), archive_bytes=archive.stat().st_size,
                         archive_sha256=hashlib.sha256(archive.read_bytes()).hexdigest())
             request_path = root / 'request.json'
@@ -392,10 +483,10 @@ class WorkerStartupMemoryTests(unittest.TestCase):
                     output=json.dumps(info)
                     if runtime_fault == 'exit' and len(events) >= 2: runtime.stopped=True
                 elif 'inspect' in args:
-                    output=json.dumps([{'Id':data['image_id'] if successful_import else 'sha256:'+'0'*64,'Architecture':'amd64','Os':'linux',
-                        'Config':{'Labels':{'org.opencontainers.image.revision':data['source_sha'],
-                        'com.smarterpoker.engine.source-tree':data['server_tree'],
-                        'com.smarterpoker.engine.build-contract':'clean-server-archive-v1'}}}])
+                    output=json.dumps([image])
+                elif 'load' in args:
+                    content_fixture(root, dict(data))
+                    output='controlled command response'
                 elif 'cp' in args:
                     emitted=root/'runtime/engine/a.js'; emitted.parent.mkdir(parents=True); emitted.write_bytes(b'runtime bytes')
                     output=''

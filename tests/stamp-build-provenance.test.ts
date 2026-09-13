@@ -4,10 +4,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const sourceRoot =
-  process.env.PROVENANCE_REVIEW_ROOT || fileURLToPath(new URL('..', import.meta.url));
+const sourceRoot = process.env.PROVENANCE_REVIEW_ROOT || process.cwd();
 const source = readFileSync(path.join(sourceRoot, 'scripts/stamp-build-provenance.mjs'), 'utf8');
 const workflow = readFileSync(
   path.join(sourceRoot, '.github/workflows/publish-club-arena.yml'),

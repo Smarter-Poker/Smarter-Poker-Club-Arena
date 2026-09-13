@@ -211,15 +211,22 @@ def cleanup_resources(receipt, before, sentinel, image_reader, owned_tags):
     return verified
 
 
-def main():
+def main(*, target_sha=None, reference_directory=None, evidence_directory=None, temporary_root=None, image_ready=None):
     if sys.platform != "linux" or os.environ.get("GITHUB_ACTIONS") != "true":
         raise RuntimeError("resource proof requires a disposable Linux Actions runner")
-    sha = run(["git", "rev-parse", "HEAD"]).stdout.strip()
+    sha = target_sha if target_sha is not None else run(["git", "rev-parse", "HEAD"]).stdout.strip()
+    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise RuntimeError("resource proof requires one exact target commit")
+    reference_directory = Path(reference_directory) if reference_directory is not None else ROOT / "server/dist"
+    if not reference_directory.is_absolute() or not reference_directory.is_dir():
+        raise RuntimeError("resource proof reference directory must exist and be absolute")
     tag = f"club-arena-engine:{sha}"
     sentinel = f"engine-build-sentinel-{os.getpid()}"
     failed_tag = f"engine-build-oom-{os.getpid()}"
     image_reader = f"engine-build-output-{os.getpid()}"
-    out = ROOT / "work" / "engine-build-resource-proof"
+    out = Path(evidence_directory) if evidence_directory is not None else ROOT / "work" / "engine-build-resource-proof"
+    if not out.is_absolute():
+        raise RuntimeError("resource proof evidence directory must be absolute")
     out.mkdir(parents=True, exist_ok=True)
     receipt = {"source_sha": sha, "scope": "isolated-build-resource-containment",
                "production_certificate": False, "status": "failed"}
@@ -229,7 +236,7 @@ def main():
         run(["docker", "run", "--detach", "--name", sentinel, "--memory", "256m",
              "--memory-swap", "256m", NODE, "node", "-e", "setInterval(()=>{},1000)"], timeout=120)
         before = inspect(sentinel)
-        with tempfile.TemporaryDirectory(prefix="engine-build-budget-") as temp:
+        with tempfile.TemporaryDirectory(prefix="engine-build-budget-", dir=temporary_root) as temp:
             env = {**os.environ, "ENGINE_BUILD_CONTEXT_ROOT": f"{temp}/contexts",
                    "ENGINE_BUILD_LOCK_FILE": f"{temp}/build.lock"}
             built = run(["bash", str(ROOT / "server/scripts/build-engine-image.sh"),
@@ -250,7 +257,7 @@ def main():
             run(["docker", "create", "--name", image_reader, tag])
             image_output = Path(temp, "image-dist")
             run(["docker", "cp", f"{image_reader}:/app/dist", str(image_output)])
-            expected = runtime_hashes(ROOT / "server/dist")
+            expected = runtime_hashes(reference_directory)
             actual = runtime_hashes(image_output)
             if not expected or expected != actual:
                 delta = {"missing": sorted(expected.keys() - actual.keys()),
@@ -285,6 +292,11 @@ def main():
             import_spec.loader.exec_module(import_module)
             receipt["isolated_native_import"] = import_module.prove_import_matrix(
                 normalized_archive, receipt["archive_normalization"], actual, out)
+            if image_ready is not None:
+                # This is provisional. The caller must not publish artifacts or
+                # upload outputs until this function returns after final cleanup.
+                image_ready(normalized_archive, receipt["archive_normalization"],
+                            reference_directory, image_output)
             run(["docker", "buildx", "inspect", BUILDER, "--bootstrap"], timeout=120)
             receipt["memory_max"] = counter("memory.max")
             receipt["swap_max"] = counter("memory.swap.max")
@@ -330,6 +342,7 @@ def main():
         if not cleanup_verified:
             raise RuntimeError("isolated resource proof cleanup or neighbor survival failed")
     print(json.dumps(receipt, indent=2))
+    return receipt
 
 
 if __name__ == "__main__":

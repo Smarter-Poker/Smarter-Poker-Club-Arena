@@ -133,7 +133,7 @@ class CleanupTests(unittest.TestCase):
         def exists(p):
             if p==self.root: return remaining['root']
             if str(p).startswith('/sys/fs/cgroup/'): return cgroup
-            if logs and p in {self.root/'daemon.log',self.root/'containerd.log'}: return True
+            if logs and p in {self.root/'daemon.log',self.root/'containerd.log',self.root/'configuration-validation.log'}: return True
             return False
         def run(args, **kwargs):
             commands.append(args)
@@ -161,6 +161,7 @@ class CleanupTests(unittest.TestCase):
             facts,commands=self.cleanup(logs=True,log_failure=fails)
             self.assertIn(['retain','daemon.log','native-import-daemon.log'],commands)
             self.assertIn(['retain','containerd.log','native-import-containerd.log'],commands)
+            self.assertIn(['retain','configuration-validation.log','native-import-configuration-validation.log'],commands)
             self.assertTrue(facts['owned_files_removed'])
             self.assertEqual(facts['cleanup_errors'],
                 [{'stage':'retain_containerd_log','error_type':'OSError'}] if fails else [])
@@ -219,6 +220,7 @@ class NativeMatrixProtocolTests(unittest.TestCase):
                     'memory.swap.max':'0','cpu.max':'100000 100000', 'memory_peak':123456,
                     'memory_events':{'oom':0,'oom_kill':0}},
                 'worker_external_cancellation_sent':bool(fault),'unit_exit_code':1,
+                'docker_configuration_validation':{'status':'passed','exit_code':0},
                 'cleanup_errors':[]}
             for key in ('private_containerd_ownership_verified','containerd_alive_before_requested_stop',
                     'containerd_stopped','daemon_alive_before_requested_stop','daemon_stopped',
@@ -274,6 +276,12 @@ class NativeMatrixProtocolTests(unittest.TestCase):
             lambda r:r['resource_observation_after_stop'].update(memory_peak=proof.LIMIT+1)]
         for change in mutations:
             with self.subTest(change=change),self.assertRaises(RuntimeError):self.matrix(change)
+
+    def test_native_fault_requires_successful_real_configuration_validation(self):
+        for value in ({}, {'status':'failed','exit_code':0}, {'status':'passed','exit_code':1},
+                      {'status':'passed','exit_code':False}):
+            with self.subTest(value=value),self.assertRaisesRegex(RuntimeError,'configuration validation'):
+                self.matrix(lambda r:r.update(docker_configuration_validation=value))
 
     def test_each_native_fault_cleanup_fact_is_mandatory(self):
         for key in ('private_containerd_ownership_verified','containerd_alive_before_requested_stop',
@@ -338,17 +346,20 @@ class WorkerStartupMemoryTests(unittest.TestCase):
             daemon = Daemon()
             runtime = Daemon(); runtime.pid = 20003
             events=[]
+            validations=[]
             original_terminate=Daemon.terminate
             def terminate(process):
                 events.append(('stop',process.pid)); original_terminate(process)
             Daemon.terminate=terminate
             def popen(command, **kwargs):
+                self.assertEqual(len(validations),1, 'exact configuration validation must precede either daemon')
                 if command[0].endswith('/containerd'):
                     events.append(('start',runtime.pid))
                     if runtime_fault == 'start': raise OSError('controlled startup failure')
                     return runtime
                 self.assertEqual(events[0],('start',runtime.pid))
                 self.assertTrue(command[0].endswith('/dockerd'))
+                self.assertEqual(command,validations[0][:-1])
                 events.append(('start',daemon.pid)); return daemon
             class ProcEntry:
                 name = '20003'
@@ -360,6 +371,23 @@ class WorkerStartupMemoryTests(unittest.TestCase):
                     'DockerRootDir':str(root/'data'),'Images':0,'Containers':0,
                     'ID':'controlled-private-daemon'}
             def run(args, **kwargs):
+                if '--validate' in args:
+                    self.assertEqual(events,[], 'validation must run before any daemon')
+                    self.assertEqual(count,1, 'the bounded resource baseline must precede validation')
+                    self.assertEqual(args,[str(root/'bin/dockerd'),'--config-file',str(root/'daemon.json'),
+                                          '--containerd-plugins-namespace','owned-engine-import-plugins','--validate'])
+                    self.assertEqual(kwargs['timeout'],15)
+                    self.assertIs(kwargs['check'],False)
+                    config=json.loads((root/'daemon.json').read_text())
+                    self.assertNotIn('containerd-plugin-namespace',config)
+                    self.assertNotIn('containerd-plugins-namespace',config)
+                    validations.append(args)
+                    if runtime_fault=='config_timeout':raise subprocess.TimeoutExpired(args,15)
+                    if runtime_fault=='config_refused':
+                        return subprocess.CompletedProcess(args,1,'controlled unsupported configuration')
+                    if runtime_fault=='config_changed':
+                        (root/'daemon.json').write_text('{}')
+                    return subprocess.CompletedProcess(args,0,'configuration OK\n')
                 if 'info' in args:
                     output=json.dumps(info)
                     if runtime_fault == 'exit' and len(events) >= 2: runtime.stopped=True
@@ -417,7 +445,7 @@ class WorkerStartupMemoryTests(unittest.TestCase):
                 raised = None
                 try:
                     proof.worker(request_path)
-                except (RuntimeError,OSError) as error:
+                except (RuntimeError,OSError,subprocess.TimeoutExpired) as error:
                     raised = error
             observed=json.loads((root/'worker-receipt.json').read_text())
             if runtime_fault is None:
@@ -426,8 +454,36 @@ class WorkerStartupMemoryTests(unittest.TestCase):
                 self.assertEqual(config['containerd'],str(root/'containerd.sock'))
                 self.assertIs(config['features']['embedded-containerd'],False)
                 self.assertEqual(config['containerd-namespace'],'owned-engine-import')
-                self.assertEqual(config['containerd-plugin-namespace'],'owned-engine-import-plugins')
+                self.assertNotIn('containerd-plugin-namespace',config)
+                self.assertNotIn('containerd-plugins-namespace',config)
+                self.assertEqual(observed['docker_configuration_validation']['status'],'passed')
+                self.assertEqual(observed['docker_configuration_validation']['exit_code'],0)
+                self.assertEqual(observed['docker_configuration_validation']['configuration_sha256'],
+                                 hashlib.sha256((root/'daemon.json').read_bytes()).hexdigest())
+            if runtime_fault in {'config_refused','config_changed','config_timeout'}:
+                self.assertEqual(events,[], 'a rejected validation cannot start a daemon')
             return observed, raised
+
+    def test_configuration_refusal_stops_before_either_daemon(self):
+        observed,error=self.run_worker(oom_phase=None,successful_import=True,runtime_fault='config_refused')
+        self.assertIsInstance(error,RuntimeError)
+        self.assertEqual(observed['status'],'failed')
+        self.assertEqual(observed['stage'],'configuration_validation')
+        self.assertEqual(observed['docker_configuration_validation']['exit_code'],1)
+        self.assertIs(observed['daemon_alive_before_requested_stop'],False)
+        self.assertIs(observed['containerd_alive_before_requested_stop'],False)
+        self.assertIn('resource_observation_after_stop',observed)
+
+    def test_validation_timeout_or_configuration_change_cannot_start_daemons(self):
+        for mode in ('config_timeout','config_changed'):
+            with self.subTest(mode=mode):
+                observed,error=self.run_worker(oom_phase=None,successful_import=True,runtime_fault=mode)
+                self.assertIsNotNone(error)
+                self.assertEqual(observed['status'],'failed')
+                self.assertEqual(observed['stage'],'configuration_validation')
+                self.assertEqual(observed['docker_configuration_validation']['status'],'failed')
+                self.assertIs(observed['daemon_alive_before_requested_stop'],False)
+                self.assertIs(observed['containerd_alive_before_requested_stop'],False)
 
     def test_socket_bind_before_listen_is_retried_with_the_same_owned_runtime(self):
         observed,error=self.run_worker(oom_phase=None,successful_import=True,runtime_fault='socket_wait')

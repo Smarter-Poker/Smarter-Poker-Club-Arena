@@ -258,7 +258,6 @@ def worker(request_path):
         "features": {"containerd-snapshotter": True, "embedded-containerd": False},
         "containerd": str(root / "containerd.sock"),
         "containerd-namespace": "owned-engine-import",
-        "containerd-plugin-namespace": "owned-engine-import-plugins",
         "exec-opts": ["native.cgroupdriver=systemd"], "log-level": "warn",
     }
     config_path = root / "daemon.json"
@@ -271,12 +270,28 @@ def worker(request_path):
     daemon = None
     runtime = None
     runtime_command = [str(binaries / "containerd"), "--config", str(root / "containerd.toml")]
-    daemon_command = [str(binaries / "dockerd"), "--config-file", str(config_path)]
+    # Docker 29.7.2's JSON tag is singular but its accepted option is plural.
+    # Use the directly bound CLI flag so the intended value is actually set.
+    daemon_command = [str(binaries / "dockerd"), "--config-file", str(config_path),
+                      "--containerd-plugins-namespace", "owned-engine-import-plugins"]
     endpoint = root / "containerd.sock"
     daemon_log = root / "daemon.log"
     try:
         before = resource_snapshot(os.getpid(), [os.getpid()])
         result["before"] = before
+        result["stage"] = "configuration_validation"
+        validation = {"status": "failed", "exit_code": None,
+                      "configuration_sha256": digest(config_path),
+                      "command": daemon_command + ["--validate"]}
+        result["docker_configuration_validation"] = validation
+        response = run(validation["command"], timeout=15, check=False, env=env)
+        (root / "configuration-validation.log").write_text(response.stdout)
+        validation["exit_code"] = response.returncode
+        require(response.returncode == 0, "private Docker configuration validation failed")
+        require(digest(config_path) == validation["configuration_sha256"],
+                "private Docker configuration changed during validation")
+        validation["status"] = "passed"
+        result["stage"] = "daemon_start"
         for name in ("containerd-data", "containerd-state", "containerd.sock", "containerd-ttrpc.sock"):
             candidate = root / name
             require(not candidate.exists() and not candidate.is_symlink(), "private runtime path already exists")
@@ -296,6 +311,8 @@ def worker(request_path):
                     pass
             time.sleep(0.1)
         require("private_containerd" in result, "private containerd readiness deadline")
+        require(digest(config_path) == validation["configuration_sha256"],
+                "private Docker configuration changed before startup")
         with daemon_log.open("w") as log:
             daemon = subprocess.Popen(daemon_command, stdout=log, stderr=subprocess.STDOUT, env=env)
         deadline = time.monotonic() + 45
@@ -455,6 +472,9 @@ def cleanup_import(root, unit, output):
     if (root / 'containerd.log').exists():
         attempt('retain_containerd_log', lambda: shutil.copyfile(
             root / 'containerd.log', output / 'native-import-containerd.log'))
+    if (root / 'configuration-validation.log').exists():
+        attempt('retain_configuration_validation_log', lambda: shutil.copyfile(
+            root / 'configuration-validation.log', output / 'native-import-configuration-validation.log'))
     mountinfo = attempt('observe_mounts', lambda: Path('/proc/self/mountinfo').read_text())
     if mountinfo is not None:
         facts['owned_mounts_absent'] = not any(
@@ -592,6 +612,9 @@ def prove_import_matrix(archive, normalization, runtime_hashes, output):
                            'external_cancellation': 'native import proof interrupted'}[name]
         require(observed.get('failure_code') == expected_reason,
                 'native fault did not reach its exact refusal condition')
+        validation = observed.get('docker_configuration_validation', {})
+        require(validation.get('status') == 'passed' and type(validation.get('exit_code')) is int
+                and validation['exit_code'] == 0, 'native fault configuration validation was not observed')
         snapshot = observed.get('resource_observation_before_stop')
         require(snapshot is not None and not observed.get('resource_observation_failure'),
                 'native fault process containment was not observed')

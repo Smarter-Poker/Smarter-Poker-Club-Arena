@@ -21,6 +21,8 @@ Wallet Balances, Prize Allocation, Program Versioning, Or Settlement Authority.
   Inputs And Submitted Amounts Retain Exact Cent Precision; CSV Data Is Unchanged.
 - The Promotion Board Rejects Stale Responses, Clears Previous Pinned Ranks,
   Distinguishes Failure From An Empty Board, And Provides A Working Retry.
+- Its Service Propagates Database Read Failures To That Retry UI. Boundary
+  Tests Verify Failure, Successful Empty Results, And Exact Stored Amounts.
 - Table Leaderboards Now Expose Dialog Semantics, Escape, Focus Containment,
   Selected Period State, And Scroll Restoration.
 

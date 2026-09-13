@@ -37,7 +37,11 @@ import { BOOKING_COUNTS_WITHIN_MS } from './HorseGameLoad.js';
 import { bankrollPolicyFor, canEnterTournament } from './HorseBankroll.js';
 import { bankrollEvent } from './HorseBankrollTelemetry.js';
 import { buildLadder } from '../tournament/blindLadder.js';
-import { MTT_BLIND_PRESETS, mttSpeedColumns } from '../tournament/mttStructurePolicy.js';
+import {
+  MTT_BLIND_PRESETS,
+  mttSpeedColumns,
+  mttPayoutPercent,
+} from '../tournament/mttStructurePolicy.js';
 import { clampSeatsForVariant } from '../config/tableSeating.js';
 import {
   FREE_BUY_HOSTS,
@@ -108,6 +112,7 @@ interface TournamentConfig {
   horsesToRegister: number;
   blindStructure: any[];
   payoutStructure: any[];
+  payoutPercent?: 10 | 15 | 20;
   bountyPercent?: number;
   /**
    * ROLLOUT 2026-08-15 (Dan: "enable on a few recurring formats first").
@@ -133,6 +138,7 @@ interface SNGConfig {
   horsesToRegister: number;
   blindStructure: any[];
   payoutStructure: any[];
+  payoutPercent?: 10 | 15 | 20;
 }
 
 interface SpinConfig {
@@ -176,6 +182,7 @@ interface XMTTConfig {
   horsesToRegister: number;
   blindStructure: any[];
   payoutStructure: any[];
+  payoutPercent?: 10 | 15 | 20;
   bountyPercent?: number;
   /**
    * ROLLOUT 2026-08-15 (Dan: "enable on a few recurring formats first").
@@ -3368,6 +3375,7 @@ export class TournamentRecurringService {
         status: 'REGISTERING',
         blind_structure: config.blindStructure,
         payout_structure: config.payoutStructure,
+        payout_percent: mttPayoutPercent(config.payoutPercent),
         start_time: startTime.toISOString(),
         late_reg_levels: 0,
         late_reg_mins: 0,
@@ -3860,6 +3868,7 @@ export class TournamentRecurringService {
             blind_structure: config.blindStructure,
             ...mttSpeedColumns(config.blindStructure),
             payout_structure: config.payoutStructure || [],
+            payout_percent: mttPayoutPercent(config.payoutPercent),
             start_time: startTime.toISOString(),
             late_reg_levels: 10, // Level-based late reg for XMTT
             late_reg_mins: 10, // Legacy fallback
@@ -4104,6 +4113,7 @@ export class TournamentRecurringService {
             blind_structure: config.blindStructure,
             ...mttSpeedColumns(config.blindStructure),
             payout_structure: config.payoutStructure || [],
+            payout_percent: mttPayoutPercent(config.payoutPercent),
             start_time: startTime.toISOString(),
             late_reg_levels: 8, // Level-based late reg
             late_reg_mins: 8, // Legacy fallback
@@ -4264,6 +4274,7 @@ export class TournamentRecurringService {
         status: 'REGISTERING',
         blind_structure: config.blindStructure,
         payout_structure: config.payoutStructure || [],
+        payout_percent: mttPayoutPercent(config.payoutPercent),
         start_time: startTime.toISOString(),
         late_reg_levels: 0,
         late_reg_mins: 0,

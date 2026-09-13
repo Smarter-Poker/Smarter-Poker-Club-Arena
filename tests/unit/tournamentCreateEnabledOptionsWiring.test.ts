@@ -42,3 +42,20 @@ describe('Phase Three enabled Free Buy creation options', () => {
     expect.soft(rpc.addOnFromStart).toBe(true);
   });
 });
+
+describe('paid depth reaches the authoritative creation and schedule payload', () => {
+  it.each([10, 15, 20] as const)(
+    'transmits selected %i percent without rewriting the pool',
+    (payoutPercent) => {
+      const mapped = buildTournamentConfig(input);
+      const base = tournamentService.buildRpcConfig(mapped);
+      const withDepth = tournamentService.buildRpcConfig({ ...mapped, payoutPercent });
+      expect(withDepth).toEqual({ ...base, payoutPercent });
+    }
+  );
+  it('leaves the server default intact when not selected', () => {
+    expect(tournamentService.buildRpcConfig(buildTournamentConfig(input))).not.toHaveProperty(
+      'payoutPercent'
+    );
+  });
+});

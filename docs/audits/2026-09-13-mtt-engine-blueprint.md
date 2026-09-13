@@ -265,12 +265,34 @@ across 185 files; the private native reader probe passes 23 groups; server
 TypeScript and nine-rule Prometheus parsing pass. Engine publication and the
 loaded alert inventory remain unverified. See the progress-monitoring changelog.
 
-**R16, open: creator silently ignores paid-depth selection.** The current
+**R16: creator silently ignored paid-depth selection; repaired in database and candidate source.** The current
 fn_create_tournament wrapper (MD5 16305fb3739f13e64af6a1e8eb3bf165) looks for
 `tournamentId` or `id`, but its delegated governed creator returns
 `tournament_id`. Thus selected payoutPercent 15/20 is never applied, leaving
 the default 10. The wrapper also swallows all post-creation errors. The client
 TournamentConfig/buildRpcConfig exposes a payout table but no paid-depth
 field, while the current lock finalizer regenerates non-Spin ladders from
-payout_percent. Native reproduction and a transactional receipt repair are
-next; custom-payout policy and existing funded contracts remain untouched.
+payout_percent. The native probe reproduced this and passes31 groups after the transactional
+receipt repair. Migration20260913194154 was applied at19:42UTC, database
+history20260913194226, source MD5 b6335e81d6629f8971d2fa378aebe6b1.
+The selected setting now reaches manual/scheduled payloads and every engine
+creator, and repeats preserve it. Existing funded contracts remain untouched.
+
+**R17: creation built a final-looking ladder from a technical capacity.**
+The current form no longer offers a custom MTT payout-table editor; earlier
+comments describing that editor were stale. It nevertheless ran the old
+client top-15 generator against its one-million capacity. A direct execution
+produced150,000 places,149,999 zero shares and4,688,898bytes. The repaired form
+sends a bounded provisional ladder and offers the database's supported10/15/20
+paid-depth choices (default10). Finalization derives final shares from actual
+entries. Spin and satellite qualification keep their distinct prize rules.
+
+The native31groups use exact wrapper SQL with controlled delegated creation
+and authorization. Full service/structure regression3,251/186, client116/4,
+rendered form4cases and both typechecks pass. See the creation-paid-depth
+changelog for source fingerprints and limits. The database repair is installed;
+engine/frontend source publication and live acceptance remain open.
+
+Per-event monitoring source is PR #4529, candidate
+cc6130bdd70612611a66179e458b89c6cfdb75b3. Its database reader is installed;
+engine and loaded-rule verification remain with the pipeline publication owner.

@@ -71,3 +71,12 @@ export function mttSpeedColumns(structure: readonly unknown[]): {
           : 'standard';
   return { blind_speed: speed, is_turbo: speed === 'turbo' || speed === 'hyper_turbo' };
 }
+
+/** Matches the creator RPC's 10/15/20 paid-depth selection and 10% fallback.
+ * This selects field depth only; the database derives the final funded ladder. */
+export function mttPayoutPercent(value: unknown): 10 | 15 | 20 {
+  if (typeof value === 'string' && !/^[+-]?\d+$/.test(value.trim())) return 10;
+  if (typeof value !== 'string' && typeof value !== 'number') return 10;
+  const depth = Number(value);
+  return depth === 15 || depth === 20 ? depth : 10;
+}

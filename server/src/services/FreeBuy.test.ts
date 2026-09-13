@@ -421,6 +421,10 @@ describe('the row a Free Buy is created as', () => {
       lateRegLevels: 15,
     });
 
+  it('the default paid depth is explicitly retained', () => {
+    expect(rowFor(0, 8).payout_percent).toBe(10);
+  });
+
   it('the first entry is free on both halves - the CHECK constraint refuses anything else', () => {
     const row = rowFor(0, 8);
     expect(row.buy_in_amount).toBe(0);

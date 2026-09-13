@@ -37,7 +37,11 @@ import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
 import { buyInFor, freeBuyColumns, rakeRateFor, wholeChips } from '../config/buyIn.js';
 import { TournamentRecurringService, MTT_PUBLISH_LEAD_MS } from './TournamentRecurringService.js';
-import { MTT_BLIND_PRESETS, mttSpeedColumns } from '../tournament/mttStructurePolicy.js';
+import {
+  MTT_BLIND_PRESETS,
+  mttSpeedColumns,
+  mttPayoutPercent,
+} from '../tournament/mttStructurePolicy.js';
 import { SPIN_SEATS, SPIN_TIERS, spinBlindsForLevel } from '../config/spinSpec.js';
 import {
   HEADS_UP_BLIND_STRUCTURE,
@@ -1192,6 +1196,7 @@ export class ScheduledTournamentService {
       blind_structure: blinds,
       ...mttSpeedColumns(blinds),
       payout_structure: payouts,
+      payout_percent: mttPayoutPercent(cfg.payoutPercent),
       start_time: startTime.toISOString(),
       late_reg_levels: lateRegLevels,
       late_reg_mins: lateRegLevels,
@@ -1365,6 +1370,7 @@ export class ScheduledTournamentService {
     'min_players',
     'blind_structure',
     'payout_structure',
+    'payout_percent',
     'guaranteed_prize',
     'late_reg_levels',
     'late_reg_mins',

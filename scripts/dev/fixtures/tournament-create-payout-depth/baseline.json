@@ -1,0 +1,10 @@
+{
+  "captured_at": "2026-09-13T19:36:00Z",
+  "signature": "fn_create_tournament(uuid,jsonb)",
+  "body_md5": "6d4ba3ccc89f53cf615cfe6c185e43b2",
+  "definition": "CREATE OR REPLACE FUNCTION public.fn_create_tournament(p_club_id uuid, p_config jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\nDECLARE\n  v_uid uuid := auth.uid();\n  v_res jsonb;\n  v_pct smallint;\n  v_id  uuid;\nBEGIN\n  IF v_uid IS NULL THEN\n    RETURN jsonb_build_object('success',false,'error','not_authenticated');\n  END IF;\n  IF NOT public.fn_can_create_games(p_club_id,v_uid) THEN\n    RETURN jsonb_build_object('success',false,'error','not_authorised');\n  END IF;\n\n  v_res := public.fn_create_tournament_governed_legacy(p_club_id,p_config);\n\n  /* What share of the field finishes in the money (Dan, 2026-09-02). The\n     payout TABLE itself is derived at lock from this and the field that\n     actually entered, so the places always match the entrants. */\n  BEGIN\n    v_pct := CASE WHEN (p_config->>'payoutPercent')::int IN (10,15,20)\n                  THEN (p_config->>'payoutPercent')::smallint ELSE 10 END;\n    v_id := COALESCE(NULLIF(v_res->>'tournamentId',''), NULLIF(v_res->>'id',''))::uuid;\n    IF v_id IS NOT NULL AND v_pct IS DISTINCT FROM 10 THEN\n      UPDATE public.tournaments SET payout_percent = v_pct WHERE id = v_id;\n    END IF;\n  EXCEPTION WHEN OTHERS THEN\n    NULL;  -- a bad or absent payoutPercent must never fail a tournament create\n  END;\n\n  RETURN v_res;\nEND $function$\n",
+  "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+  "owner": "postgres",
+  "source_md5": "16305fb3739f13e64af6a1e8eb3bf165",
+  "scope": "Exact installed wrapper. Native fixture replaces only the delegated creator and authorization with controlled stand-ins."
+}

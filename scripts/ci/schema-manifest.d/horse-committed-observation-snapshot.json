@@ -1,0 +1,5 @@
+{
+  "_owner": "Horse Brain Phase 14 committed observation acquisition",
+  "_comment": "Declared by migration 20260912193321; bounded service-only read, verified with native PostgreSQL.",
+  "functions": ["fn_horse_committed_observation_snapshot"]
+}

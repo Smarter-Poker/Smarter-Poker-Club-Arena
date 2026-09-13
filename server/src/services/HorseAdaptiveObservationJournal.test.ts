@@ -85,6 +85,7 @@ function fixture(): Snapshot {
     actorKey: qualified.observations[0].actorKey,
     source: {
       coverage: 'retained_committed_roster_rows',
+      acceptance: 'atomic_hand_receipts',
       fromMs: NOW - 3_600_000,
       throughMs: NOW,
       readAtMs: NOW,
@@ -278,6 +279,23 @@ describe('adaptive journal batch recovery', () => {
 });
 
 describe('immutable adaptive observation journal boundary', () => {
+  it('refuses new preparation without atomic-source acceptance while preserving already prepared replay', async () => {
+    const original = prepared();
+    const legacy = fixture();
+    delete (legacy.source as { acceptance?: string }).acceptance;
+    expect(prepare(legacy).status).toBe('unavailable');
+    mocks.abort.mockResolvedValue({
+      data: {
+        version: 1,
+        status: 'recorded',
+        batchKey: original.batchKey,
+        batchDigest: original.batchDigest,
+        observations: original.observations,
+      },
+      error: null,
+    });
+    expect((await retry(original)).status).toBe('recorded');
+  });
   it('prepares actual completed-controller evidence without private player data or a database call', () => {
     const snapshot = fixture(),
       before = JSON.stringify(snapshot),

@@ -62,7 +62,7 @@ try {
   await c.connect();
   await otherConnection.connect();
   await c.query(
-    'CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role; CREATE TABLE hand_history(id uuid PRIMARY KEY,created_at timestamptz NOT NULL,players jsonb,actions jsonb); CREATE INDEX roster ON hand_history USING gin(players jsonb_path_ops); GRANT SELECT ON hand_history TO service_role;'
+    "CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role; CREATE TABLE hand_history(table_id uuid NOT NULL DEFAULT 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',hand_number bigint GENERATED ALWAYS AS IDENTITY (START WITH 1000000),id uuid PRIMARY KEY,created_at timestamptz NOT NULL,players jsonb,actions jsonb); CREATE INDEX roster ON hand_history USING gin(players jsonb_path_ops); GRANT SELECT ON hand_history TO service_role; CREATE TABLE hand_atomic_commits(hand_id uuid UNIQUE NOT NULL,table_id uuid NOT NULL,hand_number bigint UNIQUE NOT NULL,payload_hash text NOT NULL); GRANT SELECT ON hand_atomic_commits TO service_role;"
   );
   for (const migration of [
     '20260912193321_horse_committed_observation_snapshot.sql',
@@ -178,7 +178,7 @@ try {
     }
     assert.equal(complete, true);
     await c.query(
-      'INSERT INTO hand_history VALUES($1,to_timestamp($2::double precision/1000),$3::jsonb,$4::jsonb)',
+      'INSERT INTO hand_history(id,created_at,players,actions) VALUES($1,to_timestamp($2::double precision/1000),$3::jsonb,$4::jsonb)',
       [
         id(n),
         now - 1500,
@@ -187,6 +187,39 @@ try {
       ]
     );
   }
+  // The fixture models the authoritative receipt separately from history.
+  // First prove that history alone was accepted by the old reader.
+  const beforeReceipt = (
+    await c.query('SELECT fn_horse_committed_observation_snapshot($1,$2,$3) value', [
+      actor,
+      from,
+      through,
+    ])
+  ).rows[0].value;
+  assert.equal(beforeReceipt.status, 'snapshot');
+  assert.equal(beforeReceipt.handCount, 3);
+  await c.query(
+    readFileSync(
+      root + '/supabase/migrations/20260913195856_require_atomic_horse_observation_sources.sql',
+      'utf8'
+    )
+  );
+  const noReceipt = (
+    await c.query('SELECT fn_horse_committed_observation_snapshot($1,$2,$3) value', [
+      actor,
+      from,
+      through,
+    ])
+  ).rows[0].value;
+  assert.equal(noReceipt.reason, 'atomic_receipt_missing');
+  assert.deepEqual(noReceipt.hands, []);
+  await c.query(
+    "INSERT INTO hand_atomic_commits SELECT id,table_id,hand_number,repeat('a',64) FROM hand_history"
+  );
+  results.push({
+    case: 'history-only source accepted before fix; missing atomic receipts refuse complete window after forward migration',
+    passed: true,
+  });
   Date.now = oldNow;
   const calls = [];
   let loseReply = false;

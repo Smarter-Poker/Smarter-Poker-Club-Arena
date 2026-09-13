@@ -60,6 +60,7 @@ export type BusEventType =
   // strip asks the table it is labelling to open its Must Move Lobby.
   | 'OPEN_MUST_MOVE_LOBBY'
   | 'TABLE_CAP_BLOCKED'
+  | 'TOURNAMENT_TABLE_OPEN_RESULT'
   | 'BALANCE_UPDATED'
   // Had a payload in BusPayloadMap but was missing from this union, so five
   // subscribe sites carried `as any` to compile - which switches OFF payload
@@ -445,6 +446,13 @@ export interface BusPayloadMap {
   /** Dan 2026-08-21: a seat could not be opened because the player is at
    *  the 4-table cap. TournamentAutoSeat turns this into the large popup. */
   TABLE_CAP_BLOCKED: { tableId: string };
+  /** Outcome of an account-bound auto-seat attempt, observed after parent commit. */
+  TOURNAMENT_TABLE_OPEN_RESULT: {
+    tableId: string;
+    userId: string;
+    openAttemptId: string;
+    status: 'opened' | 'cap_blocked';
+  };
   BALANCE_UPDATED: { source: string; [key: string]: unknown };
   TRANSACTION_LOGGED: { entry: Record<string, unknown>; direction: 'in' | 'out' };
   VIP_POINTS_UPDATED: { userId: string; added: number; source: string; [key: string]: unknown };
@@ -1261,6 +1269,8 @@ export interface ClubEventPayload {
 
 export interface TableEventPayload {
   tableId: string;
+  /** Optional correlation for TournamentAutoSeat; ordinary seat producers are unchanged. */
+  openAttemptId?: string;
   seat?: number;
   tableName?: string;
   userId?: string;
@@ -1529,6 +1539,13 @@ class MasterBusCore {
     payload: K extends keyof BusPayloadMap ? BusPayloadMap[K] : unknown,
     fromBroadcast: boolean = false
   ): void {
+    // AutoSeat opening is committed by this page's parent. Another browser
+    // page cannot open or acknowledge its attempt, even for the same account.
+    const localTournamentOpen =
+      type === 'TOURNAMENT_TABLE_OPEN_RESULT' ||
+      (type === 'TABLE_SEATED' && Boolean((payload as TableEventPayload)?.openAttemptId));
+    if (fromBroadcast && localTournamentOpen) return;
+
     const event: BusEvent<typeof payload> = {
       type,
       payload,
@@ -1558,7 +1575,7 @@ class MasterBusCore {
     }
 
     // Phase 7: Cross-tab synchronization
-    if (!fromBroadcast && this.broadcastChannel) {
+    if (!fromBroadcast && !localTournamentOpen && this.broadcastChannel) {
       try {
         this.broadcastChannel.postMessage({ type, payload });
       } catch (e: any) {

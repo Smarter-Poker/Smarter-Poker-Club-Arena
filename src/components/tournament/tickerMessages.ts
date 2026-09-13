@@ -78,6 +78,21 @@ export interface TickerItem {
   tone: TickerTone;
   /** The chip at the left edge. Already upper case. */
   flag: string;
+  /**
+   * The chip on a phone, where the full flag eats the message.
+   *
+   * Measured from the harness at 375px: "STARTING SOON" took 185 of 375
+   * pixels - half the viewport - to say the least surprising thing on the bar,
+   * leaving a sliver for the event a player is meant to read.
+   */
+  flagShort: string;
+  /**
+   * How long this announcement's countdown runs in total, for the drain rule
+   * under the strip. Without it the drain was scaled to a hard-coded five
+   * minutes whatever the item was counting, so a registration closing in 4:12
+   * drew a nearly-full bar and a start in 0:19 drew a stub.
+   */
+  windowMs?: number;
   /** Higher wins the bar. */
   severity: number;
   /** Title Cased fields. One may contain the literal token `{clock}`. */
@@ -202,20 +217,28 @@ export interface UpcomingTournament {
  * one on the platform.
  */
 export function startingSoonItem(t: UpcomingTournament): TickerItem {
+  /* A FREEROLL SAYS IT IS FREE, ONCE (fixed 2026-09-13, from a photograph).
+     `formatBuyInShort` returns the house label "Free Buy" at zero, and this
+     line used to prefix it unconditionally, so the live rail read
+     "Buy-In Free Buy". The label already IS the sentence; it does not want a
+     field name in front of it. */
   const cost = formatBuyInShort(t.buyIn, t.buyInFee);
+  const costField = /^\d/.test(cost) ? `buy-in ${cost}` : cost;
   return item({
     id: `soon-${t.id}`,
     kind: 'starting_soon',
     lane: LANE.starting_soon,
     tone: TONE.starting_soon,
     flag: 'STARTING SOON',
+    flagShort: 'SOON',
     severity: SEVERITY.starting_soon,
     parts: [
       copy(`${formatGameTitle(t.name)} starts in ${CLOCK_TOKEN}`),
-      copy(`buy-in ${cost}`),
+      copy(costField),
       copy(`${t.registered.toLocaleString()} entered`),
     ],
     deadlineMs: t.startsAt,
+    windowMs: 5 * 60_000,
     subject: formatGameTitle(t.name),
     registeredByViewer: t.isRegistered,
     // Matches the window the render used to filter on: an event stays on the
@@ -232,6 +255,7 @@ export function overlayItem(a: OverlayAnnouncement): TickerItem {
     lane: LANE.overlays,
     tone: TONE.overlays,
     flag: a.tier === 'live' ? 'OVERLAY' : 'POTENTIAL OVERLAY',
+    flagShort: 'OVERLAY',
     severity: a.tier === 'live' ? SEVERITY.overlays : SEVERITY.overlays - 10,
     parts: [copy(overlayMessage(a))],
     subject: a.name,
@@ -250,9 +274,11 @@ export function registrationClosingItem(
     lane: LANE.registration_closing,
     tone: TONE.registration_closing,
     flag: 'REG CLOSING',
+    flagShort: 'REG',
     severity: SEVERITY.registration_closing,
     parts: [copy(`${formatGameTitle(name)} registration closes in ${CLOCK_TOKEN}`)],
     deadlineMs: closesAtMs,
+    windowMs: 5 * 60_000,
     expiresAt: closesAtMs,
     subject: formatGameTitle(name),
     tournamentId,
@@ -272,6 +298,7 @@ export function guaranteeItem(
     lane: LANE.guarantees,
     tone: TONE.guarantees,
     flag: 'GUARANTEED',
+    flagShort: 'GTD',
     severity: SEVERITY.guarantees,
     parts: [
       copy(`${Math.round(guarantee).toLocaleString()} guaranteed`),
@@ -280,6 +307,7 @@ export function guaranteeItem(
       copy(`starts in ${CLOCK_TOKEN}`),
     ],
     deadlineMs: startsAtMs,
+    windowMs: 2 * 60 * 60_000,
     expiresAt: startsAtMs,
     subject: formatGameTitle(name),
     tournamentId,
@@ -298,6 +326,7 @@ export function winnerResultsItem(
     lane: LANE.winner_results,
     tone: TONE.winner_results,
     flag: 'RESULTS',
+    flagShort: 'RESULTS',
     severity: SEVERITY.winner_results,
     parts: [
       copy(`${formatGameTitle(name)} is complete`),
@@ -322,6 +351,7 @@ export function tableOpeningItem(
     lane: LANE.table_openings,
     tone: TONE.table_openings,
     flag: 'TABLE OPEN',
+    flagShort: 'TABLE',
     severity: SEVERITY.table_openings,
     parts: [
       copy(`new ${formatGameTitle(String(variant || 'poker'))} table open`),
@@ -349,6 +379,7 @@ export function operatorItem(
     lane: LANE[kind],
     tone: TONE[kind],
     flag: kind === 'maintenance' ? 'SERVICE NOTICE' : 'CLUB UPDATE',
+    flagShort: kind === 'maintenance' ? 'SERVICE' : 'CLUB',
     severity: SEVERITY[kind],
     parts: [copy(message)],
     subject: copy(message.slice(0, 40)),

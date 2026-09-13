@@ -46,6 +46,32 @@
       quietly still broken.
    ═══════════════════════════════════════════════════════════════════════════ */
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   #SMARTERCASINOREALISM - THE RAIL IS A MADE OBJECT (Dan 2026-09-13)
+
+   Dan, with a photograph of the live bar under the console header: "its too
+   flat and boring at the moment."
+
+   He is right, and the photograph says why. The header above this strip is
+   milled: lit top edge, dark cavity, a specular line where the light breaks.
+   The rail underneath it was a painted rectangle with a cyan hairline - a
+   wireframe of a casino surface sitting directly beneath the real thing.
+
+   The vocabulary is NOT reinvented here. `docs/laws.d/realism-is-one-vocabulary`
+   is binding: the palette and the three light effects are declared once on
+   :root in club-engine.css, and a surface that wants material reaches for
+   --realism-* rather than inventing a ninth palette. Every var below carries a
+   literal fallback, which that law also requires.
+
+   WHAT CHANGES AND WHAT DOES NOT. The FACE still comes from the operator: the
+   render builds the gradient from the club's saved colour and sets it inline
+   (see railBackground). Material is LIGHT, not hue, so the bevel, the cavity,
+   the lift and the specular line compose over any colour a club picks and none
+   of them touch the brand. The three house rules hold: no hover rule anywhere,
+   the page ground stays black, and reduced motion drops the movement while
+   every border, bevel and colour survives.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 .mtt-ticker {
   position: fixed;
   top: 0;
@@ -55,7 +81,17 @@
   display: flex;
   align-items: stretch;
   height: 38px;
-  border-bottom: 1px solid rgba(0, 212, 255, 0.26);
+  /* An EDGE, not an outline. The cyan hairline read as a border drawn on a
+     web page; gunmetal reads as the milled rim of a panel. */
+  border-bottom: 1px solid var(--realism-gunmetal, #27313c);
+  /* The three light effects, plus the club's own accent as the glow beneath.
+     Composed here rather than inline so the material cannot be overwritten by
+     a colour setting - the render passes only --ticker-glow. */
+  box-shadow:
+    var(--realism-bevel, inset 0 1px 0 rgba(255, 255, 255, 0.07)),
+    var(--realism-cavity, inset 0 -1px 0 rgba(0, 0, 0, 0.6)),
+    var(--realism-lift, 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.45)),
+    var(--ticker-glow, 0 10px 22px -14px rgba(0, 212, 255, 0.55));
   animation: mttDrop 0.3s cubic-bezier(0.17, 0.84, 0.44, 1.03) both;
   /* Safe-area aware so it clears a notch instead of hiding under it. */
   padding-top: env(safe-area-inset-top, 0px);
@@ -65,6 +101,32 @@
      line re-flows once a second as the countdown ticks and the strip shimmers.
      It is the single cheapest thing on this list and the most noticed. */
   font-variant-numeric: tabular-nums;
+}
+
+/* THE SPECULAR LINE. A separate layer, exactly as club-engine.css draws it on
+   a button, so the face underneath can be any colour the club saved without
+   losing the highlight that makes it read as metal. Brightest at the centre,
+   because that is where a light source over a long strip actually breaks. */
+.mtt-ticker::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 0,
+    rgba(255, 255, 255, 0.2) 18%,
+    rgba(255, 255, 255, 0.46) 50%,
+    rgba(255, 255, 255, 0.2) 82%,
+    transparent 100%
+  );
+  /* The cut under the highlight. A milled edge is two lines, not one: the lit
+     land and the shadow where the tool left it. One without the other is a
+     drawn border pretending to be metal. */
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.55);
 }
 
 /* The strip leaves the way it arrived. Something that vanishes reads as
@@ -77,7 +139,25 @@
 /* ── THE FLAG ──────────────────────────────────────────────────────────────
    Filled with the accent, inked by luminance, bevelled so it reads as a
    physical chip seated in the rail rather than a coloured rectangle. */
+/* The chip is a physical key: a lit crown, a body, and a cut at the bottom.
+   The gloss is a separate layer so the accent underneath can be any colour a
+   club saved without losing the highlight that makes it read as moulded. */
+.mtt-ticker__flag::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 52%;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.3) 0%,
+    rgba(255, 255, 255, 0.06) 60%,
+    rgba(255, 255, 255, 0) 100%
+  );
+}
+
 .mtt-ticker__flag {
+  position: relative;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -88,9 +168,21 @@
   background: var(--ticker-flag-bg, linear-gradient(180deg, #00d4ff 0%, #0aa6cc 100%));
   color: var(--ticker-flag-ink, #04121f);
   white-space: nowrap;
+  font-family: var(
+    --realism-font-label,
+    'Roboto Condensed',
+    Rajdhani,
+    Inter,
+    system-ui,
+    sans-serif
+  );
+  /* Seated in the rail rather than laid on it: a lit top edge, a cavity under
+     it, and a gunmetal rim on the side that meets the message. */
+  border-right: 1px solid var(--realism-gunmetal, #27313c);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.45),
-    inset 0 -2px 0 rgba(0, 0, 0, 0.3);
+    inset 0 -2px 0 rgba(0, 0, 0, 0.32),
+    1px 0 0 rgba(0, 0, 0, 0.5);
 }
 
 /* ── THE SCROLLING REGION ──────────────────────────────────────────────────
@@ -183,13 +275,51 @@
   padding: 0 26px;
   font-size: 0.8rem;
   font-weight: 700;
-  color: var(--ticker-text, #eaf4ff);
+  /* The readout colour. The operator's text colour still wins where they set
+     one; chrome-hot is what a machined panel's live readout is lit with
+     everywhere else in this estate. */
+  color: var(--ticker-text, var(--realism-chrome-hot, #e6edf3));
   letter-spacing: 0.015em;
+}
+
+/* One field is ONE flex item so the spaces inside it survive. See itemNodes:
+   three sibling spans put the clock in its own flex box and the trailing space
+   before it was trimmed, which is how the live rail came to read
+   "Starts In0:19". */
+.mtt-ticker__field {
+  display: inline;
+}
+
+/* One of these two is shown, never both. Measured in the harness: the full
+   flag took 185 of a 375px viewport. */
+.mtt-ticker__flag-short {
+  display: none;
 }
 
 .mtt-ticker__item {
   display: inline-flex;
   align-items: center;
+}
+
+/* A COPY ends with a pip too. Between two copies of the same lane there was
+   only padding, so on a phone the wrap read as one broken sentence - the
+   harness caught "…, All Members Welcome      Freeroll At 8 PM". A reader has
+   to be able to see that the line started again. */
+.mtt-ticker__msg::after {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin: 0 18px;
+  transform: rotate(45deg);
+  background: var(--ticker-accent, var(--realism-cyan, #00d4ff));
+  box-shadow: 0 0 6px var(--ticker-accent, var(--realism-cyan, #00d4ff));
+  opacity: 0.9;
+}
+/* ...except when the rail is holding still, where there is no second copy and
+   a trailing pip is just a mark after the sentence. */
+.mtt-ticker[data-static='true'] .mtt-ticker__msg::after {
+  display: none;
 }
 
 /* ── THE SEPARATOR IS AN OBJECT, NOT A CHARACTER ───────────────────────────
@@ -204,13 +334,14 @@
   height: 5px;
   margin: 0 18px;
   transform: rotate(45deg);
-  background: var(--ticker-accent, #00d4ff);
-  opacity: 0.85;
+  background: var(--ticker-accent, var(--realism-cyan, #00d4ff));
+  box-shadow: 0 0 6px var(--ticker-accent, var(--realism-cyan, #00d4ff));
+  opacity: 0.9;
   flex: 0 0 auto;
 }
 
 .mtt-ticker__field-sep {
-  opacity: 0.55;
+  color: var(--realism-muted, #7f8c9b);
   padding: 0 2px;
 }
 
@@ -233,18 +364,33 @@
    pointer-width viewport and hidden below 768px, where the strip is one big
    tap target and the width is worth more than the label. */
 .mtt-ticker__cta {
-  position: absolute;
-  right: 0;
-  top: 0;
-  bottom: 0;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  padding: 0 12px 0 26px;
+  padding: 0 12px;
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.14em;
+  white-space: nowrap;
   color: var(--ticker-accent, #00d4ff);
-  background: linear-gradient(90deg, transparent 0, rgba(0, 0, 0, 0.55) 40%);
+  font-family: var(
+    --realism-font-label,
+    'Roboto Condensed',
+    Rajdhani,
+    Inter,
+    system-ui,
+    sans-serif
+  );
+  /* A plate milled into the strip, not a caption floating over it. */
+  background: linear-gradient(
+    180deg,
+    var(--realism-panel-raised, #111925) 0%,
+    var(--realism-panel, #0b1017) 100%
+  );
+  border-left: 1px solid var(--realism-gunmetal, #27313c);
+  box-shadow:
+    var(--realism-bevel, inset 0 1px 0 rgba(255, 255, 255, 0.07)),
+    var(--realism-cavity, inset 0 -1px 0 rgba(0, 0, 0, 0.6));
   pointer-events: none;
 }
 
@@ -253,13 +399,16 @@
   width: 40px;
   border: none;
   background: transparent;
-  color: #8fb4d8;
+  color: var(--realism-muted, #7f8c9b);
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
+  /* A left rim so the control reads as its own cell in the strip. */
+  border-left: 1px solid rgba(0, 0, 0, 0.45);
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.05);
 }
 .mtt-ticker__close:active {
-  color: var(--ticker-text, #eaf4ff);
+  color: var(--realism-chrome-hot, #e6edf3);
 }
 .mtt-ticker__close:focus-visible {
   outline: 2px solid var(--ticker-accent, #00d4ff);
@@ -272,7 +421,12 @@
   left: 0;
   bottom: 0;
   height: 2px;
-  background: linear-gradient(90deg, var(--ticker-accent, #00d4ff), rgba(255, 255, 255, 0.75));
+  background: linear-gradient(
+    90deg,
+    transparent 0,
+    var(--ticker-accent, var(--realism-cyan, #00d4ff)) 100%
+  );
+  opacity: 0.85;
   transition: width 1s linear;
   pointer-events: none;
 }
@@ -399,6 +553,15 @@
      more than a label. */
   .mtt-ticker__cta {
     display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .mtt-ticker__flag-full {
+    display: none;
+  }
+  .mtt-ticker__flag-short {
+    display: inline;
   }
 }
 

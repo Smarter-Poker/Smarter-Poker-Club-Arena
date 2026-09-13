@@ -1127,7 +1127,7 @@ export default function LeaderboardPage() {
       <h1 className="lb-sr-only">Leaderboards</h1>
       <SpadeConsole
         className="lb-console"
-        eyebrow="Club Arena / Championship"
+        eyebrow="Club Arena"
         title="Leaderboards"
         titleId="leaderboard-title"
         subtitle={

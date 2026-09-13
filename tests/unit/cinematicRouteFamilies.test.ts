@@ -44,7 +44,7 @@ describe('cinematic retained route families', () => {
     const source = readFileSync('src/pages/LeaderboardPage.tsx', 'utf8');
     expect(source).toContain('data-arena-surface="leaderboard-console"');
     expect(source).toContain('<SpadeConsole');
-    expect(source).toContain('Club Arena / Championship');
+    expect(source).toContain('eyebrow="Club Arena"');
     expect(source).not.toContain('className="lb-hero"');
     expect(existsSync('public/assets/club-buttons/console/spade-console-v1/top.png')).toBe(true);
   });

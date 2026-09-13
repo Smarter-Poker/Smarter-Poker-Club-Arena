@@ -364,6 +364,8 @@ export abstract class TournamentManagerBase {
    * resumeFromBreak (this one is over).
    */
   protected breakCountdownStarted: boolean = false;
+  private breakResumePersisting = false;
+  private breakResumeRetryTimer: ReturnType<typeof setTimeout> | null = null;
   // Hand-for-hand sync
   protected handForHandRePauseTimer: NodeJS.Timeout | null = null;
   // Late reg finalization
@@ -1158,6 +1160,7 @@ export abstract class TournamentManagerBase {
     for (const timer of this.lifecycleIntervals) clearInterval(timer);
     this.lifecycleTimeouts.clear();
     this.lifecycleIntervals.clear();
+    this.breakResumeRetryTimer = null;
   }
 
   /**
@@ -1790,14 +1793,13 @@ export abstract class TournamentManagerBase {
    * not resume anything.
    */
   protected async clearPersistedBreak(): Promise<void> {
-    try {
-      await supabase
-        .from('tournaments')
-        .update({ on_break: false, break_ends_at: null })
-        .eq('id', this.tournamentId);
-    } catch (err) {
-      reportError(err, 'TournamentManagerBase.resumeFromBreak_persist');
-    }
+    const { error } = await supabase
+      .from('tournaments')
+      .update({ on_break: false, break_ends_at: null })
+      .eq('id', this.tournamentId);
+    // PostgREST reports rejected writes as a result, not a thrown exception.
+    // The caller must retain its pause (or fail adoption) until acknowledged.
+    if (error) throw error;
   }
 
   /**
@@ -1843,6 +1845,8 @@ export abstract class TournamentManagerBase {
   /** Resume from synchronized break: restart blind timer with remaining time */
   async resumeFromBreak(): Promise<void> {
     if (!this.onBreak) return;
+    const lifecycle = this.running ? this.captureLifecycleToken() : null;
+    if (this.running && !lifecycle) return;
     /**
      * A RUNNING TOURNAMENT COMES OFF ITS BREAK AFTER THE THAW (2026-09-10).
      *
@@ -1873,14 +1877,10 @@ export abstract class TournamentManagerBase {
      * does not wait at all: it only has flags to clear, exactly as before.
      */
     if (this.running && isMaintenanceFrozen()) {
-      const lifecycle = this.captureLifecycleToken();
       if (lifecycle) await this.waitForMaintenanceThaw(lifecycle);
       // Everything the wait may have changed is read again.
       if (!this.onBreak || !lifecycle || !this.lifecycleIsCurrent(lifecycle)) return;
     }
-    this.onBreak = false;
-    this.breakCountdownStarted = false;
-
     /**
      * A TOURNAMENT THAT ENDS ON A BREAK STILL HAS TO COME OFF IT (2026-08-25).
      *
@@ -1896,12 +1896,37 @@ export abstract class TournamentManagerBase {
      * broadcasting, un-pausing engines, re-arming the level clock — is skipped
      * when the tournament is no longer running.
      */
-    await this.clearPersistedBreak();
+    // Keep the hold throughout persistence. Concurrent deadline/adoption calls
+    // must not release twice while the durable clear is still in flight.
+    if (this.breakResumePersisting) return;
+    this.breakResumePersisting = true;
+    try {
+      await this.clearPersistedBreak();
+    } catch (error) {
+      reportError(error, 'TournamentManagerBase.resumeFromBreak_persist');
+      if (lifecycle && this.lifecycleIsCurrent(lifecycle) && !this.breakResumeRetryTimer) {
+        this.breakResumeRetryTimer = this.setLifecycleTimeout(() => {
+          this.breakResumeRetryTimer = null;
+          return this.resumeFromBreak();
+        }, 1_000);
+      }
+      return;
+    } finally {
+      this.breakResumePersisting = false;
+    }
+    if (lifecycle && !this.lifecycleIsCurrent(lifecycle)) return;
+    if (this.breakResumeRetryTimer) {
+      this.clearLifecycleTimeout(this.breakResumeRetryTimer);
+      this.breakResumeRetryTimer = null;
+    }
+    this.onBreak = false;
+    this.breakCountdownStarted = false;
     if (!this.running) return;
 
     console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] BREAK ENDED - resuming play`);
 
     await this.broadcast('break_ended', { level: this.currentLevel });
+    if (!lifecycle || !this.lifecycleIsCurrent(lifecycle)) return;
 
     /* Undo the pause taken in pauseForBreak only when no durable add-on break
        is still holding it. This is the exact Free Buy boundary: the :55
@@ -1962,6 +1987,7 @@ export abstract class TournamentManagerBase {
     if (this.pendingAddOnPeriod && !this.addOnPeriodTriggered) {
       this.pendingAddOnPeriod = false;
       await this.triggerAddOnPeriod();
+      if (!this.lifecycleIsCurrent(lifecycle)) return;
     }
     // Tables may all have parked during the break. Recheck after any deferred
     // add-on has acquired its own hold; no new table completion edge is due.

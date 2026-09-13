@@ -2049,7 +2049,7 @@
   --mission-blue: var(--realism-cyan, #55e8ff);
   --mission-blue-deep: #087d91;
   --mission-gold: var(--realism-gold, #d3a855);
-  --mission-gold-deep: #70531f;
+  --mission-gold-deep: #ffa500;
   --mission-danger: #ff8f79;
 }
 
@@ -2329,7 +2329,7 @@
 }
 
 .milestoneFill {
-  background: linear-gradient(90deg, #6e4b17, var(--mission-gold), #f0d38e);
+  background: linear-gradient(90deg, #ffa500, var(--mission-gold), #f0d38e);
   box-shadow: 0 0 13px rgba(211, 168, 85, 0.48);
 }
 

@@ -552,7 +552,7 @@
 }
 
 .wallet-plate.business .wallet-plate__meter-fill {
-  background: linear-gradient(90deg, #9a7a2c, var(--vault-gold));
+  background: linear-gradient(90deg, #ffa500, var(--vault-gold));
 }
 
 .wallet-plate__desc {

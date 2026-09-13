@@ -26,6 +26,38 @@ afterEach(async () => {
 });
 const ready = (c: Child) => c.emit('message', { type: 'READY' });
 describe('journal worker lifecycle owner', () => {
+  it('reports only validated queue aggregates and expires stale samples while the worker stays responsive', async () => {
+    service.start();
+    ready(children[0]);
+    children[0].emit('message', { type: 'CYCLE_STARTED' });
+    children[0].emit('message', {
+      type: 'QUEUE_HEALTH',
+      value: {
+        version: 1,
+        status: 'snapshot',
+        sampledAtMs: Date.now(),
+        unfinished: 0,
+        queued: 0,
+        leased: 0,
+        quarantined: 0,
+        ready: 0,
+        expiredLeases: 0,
+        bufferedBytes: 0,
+        oldestWorkAgeMs: 0,
+        maxAttempts: 0,
+        payload: 'private',
+      },
+    });
+    children[0].emit('message', { type: 'CYCLE_COMPLETED', work: 'idle', retention: 'pruned' });
+    expect(service.status().queueHealth.status).toBe('snapshot');
+    expect(JSON.stringify(service.status())).not.toContain('private');
+    for (let n = 0; n < 16; n++) {
+      children[0].emit('message', { type: 'HEARTBEAT' });
+      await vi.advanceTimersByTimeAsync(5000);
+    }
+    expect(service.status().phase).toBe('ready');
+    expect(service.status().queueHealth).toEqual({ status: 'unknown' });
+  });
   it('starts one generation and exposes only validated aggregate status', async () => {
     expect(service.start()).toBe(true);
     expect(service.start()).toBe(true);

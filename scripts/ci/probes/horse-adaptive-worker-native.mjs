@@ -38,6 +38,9 @@ export async function exerciseIsolatedWorker({ root, Client, options, c, work, s
       } else if (name === 'fn_finish_horse_adaptive_batch') {
         sql = 'SELECT fn_finish_horse_adaptive_batch($1,$2,$3) value';
         params = [args.p_batch_key, args.p_lease_token, args.p_outcome];
+      } else if (name === 'fn_horse_adaptive_journal_work_health') {
+        sql = 'SELECT fn_horse_adaptive_journal_work_health() value';
+        params = [];
       } else if (name === 'fn_prune_horse_adaptive_journal') {
         sql = 'SELECT fn_prune_horse_adaptive_journal() value';
         params = [];
@@ -88,15 +91,19 @@ export async function exerciseIsolatedWorker({ root, Client, options, c, work, s
     const queued = await work.enqueueAdaptiveJournalWork(snapshot);
     assert.equal(queued.status, 'durable');
     owner.start();
-    await until(() => owner.status().completed === 1);
+    await until(
+      () => owner.status().completed === 1 && owner.status().queueHealth.status === 'snapshot'
+    );
     const first = owner.status();
+    assert.equal(first.queueHealth.unfinished, 0);
     assert.equal(first.phase, 'ready');
     assert.ok(tickCount > 0);
-    assert.deepEqual(calls.slice(0, 4), [
+    assert.deepEqual(calls.slice(0, 5), [
       'fn_claim_horse_adaptive_batch',
       'fn_append_horse_adaptive_observations',
       'fn_finish_horse_adaptive_batch',
       'fn_prune_horse_adaptive_journal',
+      'fn_horse_adaptive_journal_work_health',
     ]);
     assert.equal(
       (

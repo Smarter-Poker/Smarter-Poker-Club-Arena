@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { exerciseJournalWork } from './horse-adaptive-work-native.mjs';
 import { exerciseRetention, oldEmptyBatch } from './horse-adaptive-retention-native.mjs';
 import { exerciseIsolatedWorker } from './horse-adaptive-worker-native.mjs';
+import { exerciseQueueHealth } from './horse-adaptive-queue-health-native.mjs';
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const { Client } = createRequire(root + '/server/package.json')('pg');
 const pg = process.env.HORSE_PROOF_PG_BIN,
@@ -69,6 +70,7 @@ try {
     '20260913170729_horse_adaptive_observation_journal.sql',
     '20260913175935_recoverable_horse_adaptive_journal_batches.sql',
     '20260913181841_durable_horse_adaptive_journal_work.sql',
+    '20260913202005_expose_bounded_horse_journal_queue_health.sql',
   ])
     await c.query(readFileSync(root + '/supabase/migrations/' + migration, 'utf8'));
   const now = Number(
@@ -250,6 +252,9 @@ try {
               } else if (name === 'fn_finish_horse_adaptive_batch') {
                 query = 'SELECT fn_finish_horse_adaptive_batch($1,$2,$3) value';
                 params = [p.p_batch_key, p.p_lease_token, p.p_outcome];
+              } else if (name === 'fn_horse_adaptive_journal_work_health') {
+                query = 'SELECT fn_horse_adaptive_journal_work_health() value';
+                params = [];
               } else if (name === 'fn_prune_horse_adaptive_journal') {
                 query = 'SELECT fn_prune_horse_adaptive_journal() value';
                 params = [];
@@ -737,6 +742,12 @@ try {
       losePruneReply: () => {
         globalThis.horseJournalNative.losePruneReply = true;
       },
+    }))
+  );
+  results.push(
+    ...(await exerciseQueueHealth({
+      c,
+      readHealth: (await bridge('HorseAdaptiveJournalQueueHealth')).readJournalQueueHealth,
     }))
   );
   proof = { results, sourceCalls: calls, productionPostgrestVerified: false };

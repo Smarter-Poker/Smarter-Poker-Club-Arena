@@ -341,6 +341,9 @@ describe('a running tournament comes off its break only after the maintenance th
     // The level clock resumes with exactly what it had at :55, anchored now.
     expect(state.blindTimer.delay).toBe(300000);
     expect(writes).toEqual([{ level_started_at: new Date(Date.now() - 300000).toISOString() }]);
+    // A final survivor on each table cannot create another hand-completion
+    // event. Thaw itself must wake the consolidation work paused by the break.
+    expect(state.requestEliminationSweep).toHaveBeenCalledWith('break_ended');
   });
 
   it('reports a slow thaw once and preserves the clock until the freeze actually lifts', async () => {

@@ -134,8 +134,8 @@ describe('the engine and ACL expose only the atomic doors', () => {
     expect(finish.slice(satellite, ordinary)).toContain(
       'await this.processSatelliteAwards(tournament, winnerId)'
     );
-    expect(finish.slice(satellite, ordinary)).toContain(
-      "this.fenceUnknownTerminalOutcome('Tournament.atomic_satellite_finish_manager_stop_failed')"
+    expect(finish.slice(satellite, ordinary)).toMatch(
+      /this\.fenceUnknownTerminalOutcome\(\s*'Tournament\.atomic_satellite_finish_manager_stop_failed'\s*\)/
     );
     expect(finish.slice(satellite, ordinary)).toContain('return;');
     expect(finish).not.toContain('settleTournamentRake(tournament)');

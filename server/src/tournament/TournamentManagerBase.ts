@@ -1966,6 +1966,10 @@ export abstract class TournamentManagerBase {
     // Tables may all have parked during the break. Recheck after any deferred
     // add-on has acquired its own hold; no new table completion edge is due.
     this.advanceHandForHandBarrier();
+    // Consolidation or elimination may have yielded while every table was
+    // parked. A field split into single-player tables cannot deal the next
+    // hand that would otherwise wake this work; the break end is that edge.
+    this.requestEliminationSweep('break_ended');
   }
 
   /**

@@ -610,8 +610,8 @@ describe('the server treats the atomic receipt as the only success signal', () =
     expect(branch).toContain('satErr instanceof SatelliteSettlementOutcomeUnknownError');
     expect(branch).toContain('satErr instanceof SatelliteSettlementRefusedError');
     expect(branch).toContain('if (provenRefusal) releaseFinishGuard();');
-    expect(branch).toContain(
-      "this.fenceUnknownTerminalOutcome('Tournament.atomic_satellite_finish_manager_stop_failed')"
+    expect(branch).toMatch(
+      /this\.fenceUnknownTerminalOutcome\(\s*'Tournament\.atomic_satellite_finish_manager_stop_failed'\s*\)/
     );
     expect(branch).toContain('await raiseFinancialAlert(');
     expect(branch).toContain('return;');

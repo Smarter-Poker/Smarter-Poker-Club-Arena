@@ -1376,6 +1376,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         if (!isMaintenanceFrozen()) {
           await this.checkTableBalance();
           if (sweepStopped()) return;
+          // Balancing can yield after an admitted move/read consumes the
+          // budget. Its void helper has not proved the stage complete; keep
+          // this cursor so the next admission finishes consolidating tables.
+          if (this.eliminationWorkBudgetExpired()) return;
 
           // The old five-second manager interval also happened to poll final
           // table deal votes. Preserve the feature's intended ten-second

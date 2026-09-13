@@ -63,6 +63,28 @@ export const SPADE_CONSOLE_ZONES = {
   platePrimary: { x: 520, y: 46, width: 381, height: 129 },
 } satisfies Record<string, Zone>;
 
+/**
+ * THE SHARK FAMILY. Dan's shark heads-up master, cut into head / rails / foot
+ * like the spade (Dan 2026-09-13: not every card the same frame). One plate in
+ * the foot, the shark crest below it, the diamond crest in the head. All zone
+ * maths is in this master's own pixels: 733 wide.
+ */
+export const SHARK_CONSOLE_W = 733;
+export const SHARK_CONSOLE_TOP_H = 154;
+export const SHARK_CONSOLE_FOOT_H = 172;
+export const SHARK_CONSOLE_ZONES = {
+  eyebrow: { x: 70, y: 50, width: 440, height: 26 },
+  title: { x: 70, y: 76, width: 590, height: 66 },
+  titleBesidePill: { x: 70, y: 76, width: 440, height: 66 },
+  subtitle: { x: 70, y: 126, width: 440, height: 22 },
+  /** The rounded slot at the right of the well, x 527-642 y 70-122. */
+  pill: { x: 537, y: 79, width: 96, height: 36 },
+  /** The one blue plate's face, inside its chamfered rim. */
+  plate: { x: 110, y: 18, width: 512, height: 76 },
+} as const;
+
+export type ConsoleFamily = 'spade' | 'shark';
+
 export function zonePct(zone: Zone, canvasW: number, canvasH: number): CSSProperties {
   return {
     left: `${(zone.x / canvasW) * 100}%`,
@@ -146,6 +168,7 @@ export function SpadeConsole({
   pill,
   pillInk = 'blue',
   crest = 'spade',
+  family = 'spade',
   foot,
   plates,
   children,
@@ -162,6 +185,8 @@ export function SpadeConsole({
   pillInk?: ConsoleInk;
   /** Which emblem the head wears. Same structure, different dress. */
   crest?: ConsoleCrest;
+  /** Which approved master the frame is cut from. 'shark' carries ONE plate. */
+  family?: ConsoleFamily;
   /** 'plates' paints the two action plates into the foot; 'foot' just closes. */
   foot?: 'plates' | 'foot';
   plates?: {
@@ -173,15 +198,21 @@ export function SpadeConsole({
   as?: 'section' | 'div' | 'article';
 } & Record<string, unknown>) {
   const footKind = foot ?? (plates ? 'plates' : 'foot');
-  const W = SPADE_CONSOLE_W;
+  const shark = family === 'shark';
+  const W = shark ? SHARK_CONSOLE_W : SPADE_CONSOLE_W;
+  const TOP_H = shark ? SHARK_CONSOLE_TOP_H : SPADE_CONSOLE_TOP_H;
+  const Z = shark ? SHARK_CONSOLE_ZONES : SPADE_CONSOLE_ZONES;
   return (
-    <Tag className={`sc sc--${footKind} sc--crest-${crest} ${className}`.trim()} {...rest}>
+    <Tag
+      className={`sc sc--${footKind} sc--crest-${crest} sc--family-${family} ${className}`.trim()}
+      {...rest}
+    >
       <div className="sc__head">
         {eyebrow && (
           <ZoneText
             text={eyebrow}
             className="sc__eyebrow sc-ink--blue"
-            style={zonePct(SPADE_CONSOLE_ZONES.eyebrow, W, SPADE_CONSOLE_TOP_H)}
+            style={zonePct(Z.eyebrow, W, TOP_H)}
           />
         )}
         <ZoneText
@@ -197,17 +228,13 @@ export function SpadeConsole({
              every other zone keeps the default. */
           minRatio={0.44}
           headroom={1.06}
-          style={zonePct(
-            pill ? SPADE_CONSOLE_ZONES.titleBesidePill : SPADE_CONSOLE_ZONES.title,
-            W,
-            SPADE_CONSOLE_TOP_H
-          )}
+          style={zonePct(pill ? Z.titleBesidePill : Z.title, W, TOP_H)}
         />
         {subtitle && (
           <ZoneText
             text={subtitle}
             className="sc__subtitle sc-ink--muted"
-            style={zonePct(SPADE_CONSOLE_ZONES.subtitle, W, SPADE_CONSOLE_TOP_H)}
+            style={zonePct(Z.subtitle, W, TOP_H)}
           />
         )}
         {pill && (
@@ -215,20 +242,28 @@ export function SpadeConsole({
             text={pill}
             className={`sc__pill sc-ink--${pillInk}`}
             headroom={1.06}
-            style={zonePct(SPADE_CONSOLE_ZONES.pill, W, SPADE_CONSOLE_TOP_H)}
+            style={zonePct(Z.pill, W, TOP_H)}
           />
         )}
       </div>
       {children !== undefined && children !== null && <div className="sc__body">{children}</div>}
       <div className="sc__foot">
-        {footKind === 'plates' && plates?.secondary && (
+        {shark && plates?.primary && (
+          <PlateButton
+            zone={SHARK_CONSOLE_ZONES.plate}
+            canvasW={SHARK_CONSOLE_W}
+            canvasH={SHARK_CONSOLE_FOOT_H}
+            {...plates.primary}
+          />
+        )}
+        {!shark && footKind === 'plates' && plates?.secondary && (
           <PlateButton
             zone={SPADE_CONSOLE_ZONES.plateSecondary}
             canvasH={SPADE_CONSOLE_PLATES_H}
             {...plates.secondary}
           />
         )}
-        {footKind === 'plates' && plates?.primary && (
+        {!shark && footKind === 'plates' && plates?.primary && (
           <PlateButton
             zone={SPADE_CONSOLE_ZONES.platePrimary}
             canvasH={SPADE_CONSOLE_PLATES_H}

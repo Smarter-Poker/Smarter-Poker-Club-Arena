@@ -101,6 +101,38 @@
   background-image: url('/assets/club-buttons/console/spade-console-v1/bottom-plates.png');
 }
 
+/* ── THE SHARK FAMILY (Dan 2026-09-13) ─────────────────────────────────
+   "I do not want every single card to look exactly the same, they should not
+   all have the same frame, with the same spade at the top middle." Dan had
+   already approved five different frames; only the spade was ever cut so it
+   could stretch. This is the second: his shark heads-up master
+   (game-cards/heads-up/shark-headsup-premium-v1, 733 wide) cut the same way -
+   a head with the diamond crest, the header well and its pill slot; the plain
+   rails as a median band from rows 738-748 of the master, straight and free of
+   the LED nubs; and a foot carrying ONE blue plate and the shark crest in the
+   bottom rail. A different frame, a different crest, one action instead of
+   two - and all of it his art at native ratio. Zone maths in SHARK_CONSOLE. */
+.sc--family-shark {
+  --sc-max: 733px; /* this master's own width - never raise it */
+}
+
+.sc--family-shark .sc__head {
+  aspect-ratio: 733 / 154;
+  background-image: url('/assets/club-buttons/console/shark-console-v1/top.png');
+}
+
+/* Between the shark's rails: glass runs x 60-673 of 733. */
+.sc--family-shark .sc__body {
+  padding: 0 9% 3cqw;
+  background-image: url('/assets/club-buttons/console/shark-console-v1/mid.png');
+}
+
+.sc--family-shark .sc__foot,
+.sc--family-shark.sc--plates .sc__foot {
+  aspect-ratio: 733 / 172;
+  background-image: url('/assets/club-buttons/console/shark-console-v1/bottom-plate.png');
+}
+
 /* ── Zones: absolute, centred, one line, fitted ───────────────────────── */
 
 .sc-zone {

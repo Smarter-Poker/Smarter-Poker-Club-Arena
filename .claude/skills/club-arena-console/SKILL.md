@@ -695,6 +695,17 @@ A follow-up push to a merged branch exits 0 and reaches nobody. If the PR has
 merged, start a **new branch off current `main`**; the `guard-merged-branch.sh`
 hook refuses that push and prints the recovery.
 
+**7.13 A merge conflict between a console render and a main change is never
+resolved by taking a side.** On 2026-09-13 "main wins on product logic" threw
+away eleven approved renders (Buy-In among them) to keep deltas of 2 to 122
+lines. Rebase the delta onto the render instead: `git checkout
+<render-commit> -- <file>`, then `git diff <merge-base> origin/main -- <file>
+
+> /tmp/d.patch && git apply -3 /tmp/d.patch`, resolve the few hunks by hand,
+and prove it with `git diff -w origin/main -- <file>`(only chassis lines may
+differ). Then re-pair the stylesheet: a TSX from one side with a CSS from the
+other fails`check-css-modules`and grows the`classNamesResolve` baseline.
+
 ---
 
 ## 8. Shipping

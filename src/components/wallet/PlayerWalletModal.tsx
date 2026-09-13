@@ -27,6 +27,7 @@ import { reportError } from '../../utils/errorReporter';
 import { resolveClubUUID, isUUID } from '../../utils/clubIdResolver';
 import { roleLabel } from '../../types/clubRoles';
 import { canHoldAgentWallet } from './walletRows';
+import CashierConsoleSurface from '../cashier/CashierConsoleSurface';
 import './WalletCashierModal.css';
 
 const PAGE = 40;
@@ -306,117 +307,127 @@ export default function PlayerWalletModal({ isOpen, onClose, clubId }: PlayerWal
       onClick={onClose}
     >
       <div className="cbc-panel" onClick={(e) => e.stopPropagation()}>
-        {/* ── Header ─────────────────────────────────────────────────────── */}
-        <div className="cbc-head">
-          <div>
-            <div className="cbc-title">PLAYER WALLET</div>
+        <CashierConsoleSurface
+          eyebrow="Player Cashier"
+          title="Player Wallet"
+          subtitle="Personal Club Statement"
+          pill={loading ? 'Syncing' : error ? 'Attention' : 'Recorded'}
+          pillInk={loading ? 'gold' : error ? 'red' : 'green'}
+          crest="diamond"
+          className="cbc-console"
+        >
+          <div className="cbc-head">
+            <span />
+            <button className="cbc-x" onClick={onClose} aria-label="Close">
+              Close
+            </button>
           </div>
-          <button className="cbc-x" onClick={onClose} aria-label="Close">
-            &times;
-          </button>
-        </div>
 
-        <div className="cbc-bank">
-          <span>Player Wallet Balance</span>
-          <strong aria-live="polite">
-            {balances === null ? '...' : fmt(balances.player_wallet)}
-          </strong>
-        </div>
+          <div className="cbc-bank">
+            <span>Player Wallet Balance</span>
+            <strong aria-live="polite">
+              {balances === null ? '...' : fmt(balances.player_wallet)}
+            </strong>
+          </div>
 
-        <div className="cbc-body">
-          {error && <div className="cbc-empty cbc-empty--bad">{error}</div>}
+          <div className="cbc-body">
+            {error && <div className="cbc-empty cbc-empty--bad">{error}</div>}
 
-          {/* Every balance the member holds in this club. The agent rows only
+            {/* Every balance the member holds in this club. The agent rows only
               exist for agent-shaped roles — a plain player has one wallet and
               is shown one wallet. */}
-          {!error && balances && (
-            <div className="cbc-totals">
-              <div>
-                <span>Role</span>
-                <strong>{roleLabel(role)}</strong>
-              </div>
-              {isAgentShaped && (
+            {!error && balances && (
+              <div className="cbc-totals">
                 <div>
-                  <span>Agent Wallet</span>
-                  <strong>{fmt(balances.agent_wallet)}</strong>
+                  <span>Role</span>
+                  <strong>{roleLabel(role)}</strong>
                 </div>
-              )}
-              {isAgentShaped && (
+                {isAgentShaped && (
+                  <div>
+                    <span>Agent Wallet</span>
+                    <strong>{fmt(balances.agent_wallet)}</strong>
+                  </div>
+                )}
+                {isAgentShaped && (
+                  <div>
+                    <span>Promo Wallet</span>
+                    <strong>{fmt(balances.promo_wallet)}</strong>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!error && totals && (
+              <div className="cbc-totals">
                 <div>
-                  <span>Promo Wallet</span>
-                  <strong>{fmt(balances.promo_wallet)}</strong>
+                  <span>Received</span>
+                  <strong className="cbc-in">{fmt(totals.received)}</strong>
                 </div>
-              )}
-            </div>
-          )}
-
-          {!error && totals && (
-            <div className="cbc-totals">
-              <div>
-                <span>Received</span>
-                <strong className="cbc-in">{fmt(totals.received)}</strong>
-              </div>
-              <div>
-                <span>Sent</span>
-                <strong className="cbc-out">{fmt(totals.sent)}</strong>
-              </div>
-              <div>
-                <span>Net</span>
-                <strong>{fmt(totals.net)}</strong>
-              </div>
-            </div>
-          )}
-
-          {!error && (
-            <div className="cbc-ledger-head">
-              <span>{total.toLocaleString('en-US')} Transactions</span>
-            </div>
-          )}
-
-          {!error &&
-            rows.map((row) => (
-              <div key={row.id} className={row.is_reversed ? 'cbc-tx cbc-tx--reversed' : 'cbc-tx'}>
-                <div className="cbc-tx-top">
-                  <span className="cbc-tx-type">
-                    {labelForTransactionType(row.transaction_type)}
-                  </span>
-                  <span className="cbc-tx-amount">
-                    {row.direction === 'in' ? '+' : '-'}
-                    {fmt(row.amount)}
-                  </span>
+                <div>
+                  <span>Sent</span>
+                  <strong className="cbc-out">{fmt(totals.sent)}</strong>
                 </div>
-                <div className="cbc-tx-mid">
-                  <span>
-                    {row.from_name || 'Club Bank'}
-                    {' → '}
-                    {row.to_name || 'Club Bank'}
-                  </span>
-                  <span className="cbc-tx-when">
-                    {new Date(row.created_at).toLocaleString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: 'numeric',
-                      minute: '2-digit',
-                    })}
-                  </span>
-                </div>
-                <div className="cbc-tx-foot">
-                  {row.notes && <span>{row.notes}</span>}
-                  {row.is_reversed && <span className="cbc-tx-rev">Reversed</span>}
+                <div>
+                  <span>Net</span>
+                  <strong>{fmt(totals.net)}</strong>
                 </div>
               </div>
-            ))}
+            )}
 
-          {!error && !loading && rows.length === 0 && (
-            <div className="cbc-empty">No Transactions Yet. Your Chip Movements Land Here.</div>
-          )}
-          {loading && <div className="cbc-empty">Loading Your Wallet...</div>}
-          {!error && !loading && rows.length < total && (
-            <button className="cbc-more" onClick={() => load(rows.length)}>
-              Load More
-            </button>
-          )}
-        </div>
+            {!error && (
+              <div className="cbc-ledger-head">
+                <span>{total.toLocaleString('en-US')} Transactions</span>
+              </div>
+            )}
+
+            {!error &&
+              rows.map((row) => (
+                <div
+                  key={row.id}
+                  className={row.is_reversed ? 'cbc-tx cbc-tx--reversed' : 'cbc-tx'}
+                >
+                  <div className="cbc-tx-top">
+                    <span className="cbc-tx-type">
+                      {labelForTransactionType(row.transaction_type)}
+                    </span>
+                    <span className="cbc-tx-amount">
+                      {row.direction === 'in' ? '+' : '-'}
+                      {fmt(row.amount)}
+                    </span>
+                  </div>
+                  <div className="cbc-tx-mid">
+                    <span>
+                      {row.from_name || 'Club Bank'}
+                      {' → '}
+                      {row.to_name || 'Club Bank'}
+                    </span>
+                    <span className="cbc-tx-when">
+                      {new Date(row.created_at).toLocaleString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                  </div>
+                  <div className="cbc-tx-foot">
+                    {row.notes && <span>{row.notes}</span>}
+                    {row.is_reversed && <span className="cbc-tx-rev">Reversed</span>}
+                  </div>
+                </div>
+              ))}
+
+            {!error && !loading && rows.length === 0 && (
+              <div className="cbc-empty">No Transactions Yet. Your Chip Movements Land Here.</div>
+            )}
+            {loading && <div className="cbc-empty">Loading Your Wallet...</div>}
+            {!error && !loading && rows.length < total && (
+              <button className="cbc-more" onClick={() => load(rows.length)}>
+                Load More
+              </button>
+            )}
+          </div>
+        </CashierConsoleSurface>
       </div>
     </div>
   );

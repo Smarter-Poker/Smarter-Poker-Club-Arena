@@ -36,6 +36,7 @@ import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import './ChipMintModal.css';
+import CashierConsoleSurface from '../cashier/CashierConsoleSurface';
 import { uuid } from '../../utils/uuid';
 
 const CHIPS_PER_DIAMOND = 100; // 100 diamonds = 10,000 chips
@@ -271,90 +272,98 @@ export default function ChipMintModal({ isOpen, onClose, clubId, onMinted }: Chi
       onClick={() => !busy && onClose()}
     >
       <div className="cmm-panel" onClick={(e) => e.stopPropagation()}>
-        <div className="cmm-title">CHIP MINT</div>
-        <div className="cmm-rate">100 Diamonds = 10,000 Chips</div>
+        <CashierConsoleSurface
+          eyebrow="Club Arena Cashier"
+          title="Chip Mint"
+          subtitle="100 Diamonds Equals 10,000 Chips"
+          pill={target.state === 'loading' ? 'Checking' : canMintHere ? 'Ready' : 'Locked'}
+          pillInk={target.state === 'loading' ? 'gold' : canMintHere ? 'green' : 'red'}
+          crest="diamond"
+          className="cmm-console"
+          actions={{
+            secondary: { label: 'Cancel', onClick: onClose, disabled: busy },
+            primary: {
+              label: busy ? 'Minting' : 'Mint Chips',
+              onClick: mint,
+              disabled: !canMintHere || !valid || busy,
+              ink: 'blue',
+            },
+          }}
+        >
+          <div className="cmm-title">CHIP MINT</div>
+          <div className="cmm-rate">100 Diamonds = 10,000 Chips</div>
 
-        <div className="cmm-balance">
-          <span>Your Diamonds</span>
-          <strong>{balance === null ? '...' : fmt(balance)}</strong>
-        </div>
-
-        {/* Where the chips land — resolved before anything is spent. */}
-        {target.state === 'loading' && <div className="cmm-dest">Checking Mint Rights...</div>}
-        {target.state === 'club' && (
-          <div className="cmm-dest">
-            Minting Into <strong>{target.label}</strong>
+          <div className="cmm-balance">
+            <span>Your Diamonds</span>
+            <strong>{balance === null ? '...' : fmt(balance)}</strong>
           </div>
-        )}
-        {target.state === 'union' && (
-          <div className="cmm-dest cmm-dest--union">
-            Minting Into <strong>{target.label}</strong>
-          </div>
-        )}
-        {target.state === 'revoked' && (
-          <div className="cmm-dest cmm-dest--blocked">
-            Chip Mint Is Revoked For Clubs Inside {target.label}. Chips Flow From The Union - Mint
-            From The Union Instead.
-          </div>
-        )}
-        {target.state === 'denied' && (
-          <div className="cmm-dest cmm-dest--blocked">{target.label}</div>
-        )}
 
-        {canMintHere && (
-          <>
-            <input
-              type="number"
-              inputMode="numeric"
-              min={1}
-              step={100}
-              value={diamonds}
-              onChange={(e) => setDiamondsAndResetKey(e.target.value)}
-              placeholder="Diamonds To Convert"
-              aria-label="Diamonds To Convert"
-              autoFocus
-            />
-
-            <div className="cmm-quick">
-              {[100, 500, 1000, 10000].map((q) => (
-                <button
-                  key={q}
-                  disabled={balance !== null && q > balance}
-                  onClick={() => setDiamondsAndResetKey(String(q))}
-                >
-                  {fmt(q)}
-                </button>
-              ))}
-              <button
-                className="cmm-max"
-                disabled={!balance}
-                onClick={() => setDiamondsAndResetKey(String(balance ?? 0))}
-              >
-                MAX
-              </button>
+          {/* Where the chips land — resolved before anything is spent. */}
+          {target.state === 'loading' && <div className="cmm-dest">Checking Mint Rights...</div>}
+          {target.state === 'club' && (
+            <div className="cmm-dest">
+              Minting Into <strong>{target.label}</strong>
             </div>
-
-            <div className={`cmm-preview ${valid ? '' : 'cmm-preview--dim'}`}>
-              <span>You Receive</span>
-              <strong>{fmt(chips)} Chips</strong>
-            </div>
-
-            {overBalance && (
-              <div className="cmm-warn">You Only Hold {fmt(balance ?? 0)} Diamonds.</div>
-            )}
-          </>
-        )}
-
-        <div className="cmm-actions">
-          <button disabled={busy} onClick={onClose}>
-            Cancel
-          </button>
-          {canMintHere && (
-            <button className="cmm-confirm" disabled={!valid || busy} onClick={mint}>
-              {busy ? 'Minting...' : 'Mint Chips'}
-            </button>
           )}
-        </div>
+          {target.state === 'union' && (
+            <div className="cmm-dest cmm-dest--union">
+              Minting Into <strong>{target.label}</strong>
+            </div>
+          )}
+          {target.state === 'revoked' && (
+            <div className="cmm-dest cmm-dest--blocked">
+              Chip Mint Is Revoked For Clubs Inside {target.label}. Chips Flow From The Union - Mint
+              From The Union Instead.
+            </div>
+          )}
+          {target.state === 'denied' && (
+            <div className="cmm-dest cmm-dest--blocked">{target.label}</div>
+          )}
+
+          {canMintHere && (
+            <>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                step={100}
+                value={diamonds}
+                onChange={(e) => setDiamondsAndResetKey(e.target.value)}
+                placeholder="Diamonds To Convert"
+                aria-label="Diamonds To Convert"
+                autoFocus
+              />
+
+              <div className="cmm-quick">
+                {[100, 500, 1000, 10000].map((q) => (
+                  <button
+                    key={q}
+                    disabled={balance !== null && q > balance}
+                    onClick={() => setDiamondsAndResetKey(String(q))}
+                  >
+                    {fmt(q)}
+                  </button>
+                ))}
+                <button
+                  className="cmm-max"
+                  disabled={!balance}
+                  onClick={() => setDiamondsAndResetKey(String(balance ?? 0))}
+                >
+                  MAX
+                </button>
+              </div>
+
+              <div className={`cmm-preview ${valid ? '' : 'cmm-preview--dim'}`}>
+                <span>You Receive</span>
+                <strong>{fmt(chips)} Chips</strong>
+              </div>
+
+              {overBalance && (
+                <div className="cmm-warn">You Only Hold {fmt(balance ?? 0)} Diamonds.</div>
+              )}
+            </>
+          )}
+        </CashierConsoleSurface>
       </div>
     </div>
   );

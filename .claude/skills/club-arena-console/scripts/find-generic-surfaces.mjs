@@ -114,7 +114,7 @@ for (const tsx of files) {
        to a different standard, which is how two pages were nominated at 193
        and 200 despite being finished work. */
     master: count(both, /club-buttons\/|images\/challenges\/|images\/stats\/|--realism-|data-arena-surface|RewardsSurfaceHeader|CasinoSurfaceHeader/g),
-    console: count(src, /SpadeConsole|PlateButton|ZoneText|sc-ink--/g),
+    console: count(src, /SpadeConsole|CashierConsoleSurface|PlateButton|ZoneText|sc-ink--/g),
     hover: count(style, /:hover/g),
     px: count(style, /font-size:\s*\d+(\.\d+)?px/g),
   };

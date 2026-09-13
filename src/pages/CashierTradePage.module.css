@@ -192,6 +192,12 @@
   border-radius: 3px;
 }
 
+/* A missing club logo is represented by the club name already printed beside
+   it; do not invent a flat square icon holder. */
+.entityInitial {
+  display: none;
+}
+
 .entityLogo {
   object-fit: cover;
 }
@@ -1831,5 +1837,436 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   #CLUBARENACONSOLE CASHIER OVERRIDE
+
+   The approved console master is now the only chassis. Everything below is
+   live copy or a native control printed on its black glass. These selectors
+   deliberately neutralise the previous CSS-built vault frames, gradients,
+   rounded tiles, shadows and flat icon holders without changing any handler,
+   state branch, focus contract or financial wiring in the page component.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.page {
+  width: 100%;
+  max-width: 1000px;
+  min-height: 100dvh;
+  padding: 12px 0 calc(190px + env(safe-area-inset-bottom, 0px));
+  color: #e6e9ee;
+  background: #000;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+}
+
+/* Dialog positioning only. CashierConsoleSurface paints the complete visible
+   chassis; this wrapper must never become a second frame. */
+.consoleDialog {
+  width: min(94vw, 760px);
+  max-height: 94dvh;
+  overflow: auto;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.consoleDialog:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 2px;
+}
+
+.consoleDialog input,
+.consoleDialog textarea,
+.consoleDialog select {
+  width: 100%;
+  min-height: 44px;
+  padding: 12px 0;
+  border: 0;
+  border-block-end: 1px solid #526071;
+  border-radius: 0;
+  outline: 0;
+  color: #f4f7fb;
+  background: transparent;
+  box-shadow: none;
+  font-size: max(16px, 3.5cqw);
+}
+
+.consoleDialog input:focus-visible,
+.consoleDialog textarea:focus-visible,
+.consoleDialog select:focus-visible {
+  border-block-end-color: #45adff;
+  outline: 0;
+  box-shadow: 0 0.8cqw 0.9cqw -0.9cqw #45adff;
+}
+
+.page::before,
+.console :where(section, nav, div, button, input, select)::before,
+.console :where(section, nav, div, button, input, select)::after {
+  content: none;
+}
+
+.console
+  :where(section, nav, div, button, input, select):not(:global(.sc__head)):not(
+    :global(.sc__body)
+  ):not(:global(.sc__foot)) {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+.console :where(button, input, select) {
+  min-height: 44px;
+  color: #d7dee7;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+}
+
+.console :where(button) {
+  border: 0;
+  color: #45adff;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-shadow: 0 0 0.8cqw rgb(49 168 255 / 55%);
+}
+
+.console :where(button:active) {
+  transform: none;
+  filter: brightness(1.25);
+}
+
+.console :where(button:disabled) {
+  opacity: 0.45;
+}
+
+.console input,
+.console select {
+  width: 100%;
+  min-width: 0;
+  padding: 1.6cqw 0;
+  border: 0;
+  border-block-end: 1px solid #526071 !important;
+  outline: 0 !important;
+  color: #f4f7fb;
+  font-size: max(16px, 3.5cqw);
+}
+
+.console input:focus-visible,
+.console select:focus-visible {
+  border-block-end-color: #45adff;
+  outline: 0;
+  box-shadow: 0 0.8cqw 0.9cqw -0.9cqw #45adff;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+  padding: 0;
+  overflow: visible;
+}
+
+.heroImage,
+.heroHardware,
+.heroTitle,
+.eyebrow {
+  display: none;
+}
+
+.header {
+  order: 2;
+  min-height: 44px;
+  padding: 0;
+}
+
+.title {
+  color: #9aa5b3;
+}
+
+.heroContent {
+  order: 1;
+  position: static;
+  max-width: none;
+  padding: 0;
+}
+
+.heroCopy,
+.securityLine {
+  max-width: none;
+  margin: 0;
+  color: #d7dee7;
+  font-size: 3.4cqw;
+  line-height: 1.5;
+}
+
+.securityLine {
+  margin-block-start: 1.5cqw;
+  color: #c8ffd2;
+}
+
+.securityDot {
+  display: none;
+}
+
+.heroMetrics,
+.strip,
+.recoveryGrid,
+.summaryGrid,
+.receiptFacts {
+  position: static;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2cqw;
+  padding: 2cqw 0;
+}
+
+.heroMetric,
+.stripCell,
+.recoveryMetric,
+.summaryCell,
+.receiptFacts > div {
+  min-width: 0;
+  padding: 0;
+}
+
+.heroMetricLabel,
+.stripLabel,
+.recoveryMetric > span,
+.summaryLabel,
+.receiptFacts dt,
+.sectionEyebrow,
+.sectionMeta,
+.pickerLabel {
+  color: #45adff;
+  font-size: 2.5cqw;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.heroMetricValue,
+.heroRole,
+.stripValue,
+.recoveryMetric strong,
+.summaryValue,
+.receiptFacts dd {
+  color: #f4f7fb;
+  font-size: 4cqw;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.entityBtn {
+  width: auto;
+  max-width: 100%;
+  padding: 0;
+}
+
+.entityLogo,
+.entityInitial {
+  width: 8cqw;
+  height: 8cqw;
+  border: 0;
+  object-fit: cover;
+}
+
+.entityCaret,
+.memberCount,
+.tabBadge,
+.receiptCue {
+  color: #ffd700;
+}
+
+.memberCount {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.picker,
+.tabs,
+.recoveryConsole,
+.sectionShell {
+  position: static;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.picker {
+  max-height: 46cqw;
+  overflow-y: auto;
+}
+
+.tabs,
+.filterRow,
+.footerActions,
+.modalActions,
+.receiptToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1.5cqw;
+}
+
+.tab {
+  flex: 1 1 28%;
+  padding: 1.5cqw 0.5cqw;
+  color: #9aa5b3;
+  font-size: 3cqw;
+}
+
+.tabActive {
+  color: #45adff;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 75%),
+    0 0 2cqw rgb(49 168 255 / 30%);
+}
+
+.recoveryHeading,
+.sectionHeading,
+.row,
+.pickerRow,
+.receiptHeader,
+.receiptAmount {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2cqw;
+  min-width: 0;
+  padding: 2cqw 0;
+}
+
+.sectionTitle,
+.recoveryTitle,
+.modalTitle {
+  margin: 0;
+  color: #e4e7ec;
+  font-size: 4.8cqw;
+  line-height: 1.1;
+  text-transform: uppercase;
+  text-shadow:
+    0 -0.18cqw 0 rgb(255 255 255 / 55%),
+    0 0.25cqw 0 #6d747c,
+    0 0.45cqw 0 #050607;
+}
+
+.list,
+.claimList,
+.modalTargets,
+.modalFailures {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5cqw;
+  min-width: 0;
+}
+
+.rowInfo,
+.pickerName {
+  min-width: 0;
+  flex: 1;
+}
+
+.rowName,
+.pickerName,
+.modalTargetRow > span:first-child {
+  color: #f4f7fb;
+  font-size: 3.5cqw;
+  font-weight: 700;
+}
+
+.rowSub,
+.pickerBalance,
+.modalHint,
+.empty,
+.pickerStatus {
+  color: #9aa5b3;
+  font-size: 2.9cqw;
+  line-height: 1.45;
+}
+
+.rowBalance,
+.pickerBalance,
+.receiptAmount strong {
+  color: #ffd700;
+  font-size: 3.5cqw;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.integrityGood,
+.amtIn {
+  color: #c8ffd2;
+}
+
+.integrityBad,
+.amtOut,
+.recoveryAlert,
+.modalFailures {
+  color: #ff5b6e;
+}
+
+.searchRow,
+.transferControls,
+.amountRow {
+  display: flex;
+  align-items: center;
+  gap: 2cqw;
+}
+
+.footer {
+  position: static;
+  padding: 2cqw 0 0;
+}
+
+@media (max-width: 560px) {
+  .heroMetrics,
+  .strip,
+  .recoveryGrid,
+  .summaryGrid,
+  .receiptFacts {
+    grid-template-columns: 1fr;
+  }
+
+  .recoveryHeading,
+  .sectionHeading,
+  .row,
+  .pickerRow,
+  .receiptHeader,
+  .receiptAmount {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
+@media (min-width: 1000px) {
+  .heroCopy,
+  .securityLine {
+    font-size: 34px;
+  }
+
+  .heroMetricLabel,
+  .stripLabel,
+  .recoveryMetric > span,
+  .summaryLabel,
+  .receiptFacts dt,
+  .sectionEyebrow,
+  .sectionMeta,
+  .pickerLabel {
+    font-size: 25px;
+  }
+
+  .heroMetricValue,
+  .heroRole,
+  .stripValue,
+  .recoveryMetric strong,
+  .summaryValue,
+  .receiptFacts dd {
+    font-size: 40px;
   }
 }

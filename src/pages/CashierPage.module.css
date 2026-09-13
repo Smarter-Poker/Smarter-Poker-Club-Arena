@@ -1244,3 +1244,282 @@
     transition: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   #CLUBARENACONSOLE CLASSIC CASHIER
+
+   The diamond console is the page's one master. The legacy CSS material layer
+   is neutralised inside it so cards, tabs, inputs and action words no longer
+   manufacture rounded frames, gradients, shadows or generic icon holders.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.page {
+  width: 100%;
+  max-width: 1000px;
+  margin-inline: auto;
+  color: #e6e9ee;
+  background: #000;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+}
+
+/* Position the approved painted confirmation master without drawing a second
+   modal frame around it. */
+.consoleDialog {
+  width: min(94vw, 560px);
+  max-height: 94dvh;
+  overflow: auto;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.console :where(section, nav, div, button, input, select)::before,
+.console :where(section, nav, div, button, input, select)::after {
+  content: none;
+}
+
+.console
+  :where(section, nav, div, button, input, select, textarea):not(:global(.sc__head)):not(
+    :global(.sc__body)
+  ):not(:global(.sc__foot)) {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+.console :where(button) {
+  min-height: 44px;
+  padding: 1.2cqw 1.8cqw;
+  border: 0;
+  color: #45adff;
+  background: transparent;
+  box-shadow: none;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-shadow: 0 0 0.8cqw rgb(49 168 255 / 55%);
+}
+
+.console :where(button:active) {
+  transform: none;
+  filter: brightness(1.25);
+}
+
+.console :where(button:disabled) {
+  opacity: 0.45;
+}
+
+.console input,
+.console select,
+.console textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 1.6cqw 0;
+  border: 0;
+  border-block-end: 1px solid #526071 !important;
+  border-radius: 0;
+  outline: 0 !important;
+  color: #f4f7fb;
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
+  font-size: max(16px, 3.5cqw);
+}
+
+.console input:focus-visible,
+.console select:focus-visible,
+.console textarea:focus-visible {
+  border-block-end-color: #45adff;
+  outline: 0;
+  box-shadow: 0 0.8cqw 0.9cqw -0.9cqw #45adff;
+}
+
+.walletHeader,
+.tabNav,
+.quickLinks,
+.card,
+.cardBody,
+.txContainer,
+.pendingBox,
+.message,
+.connectionBanner {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.walletHeader :global(.dw) {
+  width: 100%;
+  max-width: none;
+}
+
+.walletHeader :global(.dw__error-badge) {
+  min-height: 44px;
+  border: 0 !important;
+  border-radius: 0 !important;
+  color: #ff5b6e;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+.walletHeader :global(.dw__error-badge)::before {
+  content: none !important;
+}
+
+.tabNav,
+.quickLinks,
+.txFilters,
+.confirmButtons,
+.buttonGroup,
+.presetGrid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1.5cqw;
+}
+
+.tab,
+.quickLink,
+.txFilterBtn,
+.txExportBtn,
+.presetBtn {
+  flex: 1 1 26%;
+  min-width: 0;
+  color: #9aa5b3;
+  font-size: 3cqw;
+}
+
+.tabActive,
+.txFilterActive,
+.presetBtnActive {
+  color: #45adff;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 75%),
+    0 0 2cqw rgb(49 168 255 / 30%);
+}
+
+.cardTitle {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: #e4e7ec;
+  font-size: 4.8cqw;
+  line-height: 1.1;
+  text-transform: uppercase;
+  text-shadow:
+    0 -0.18cqw 0 rgb(255 255 255 / 55%),
+    0 0.25cqw 0 #6d747c,
+    0 0.45cqw 0 #050607;
+}
+
+.cardTitleIcon,
+.txIcon,
+.txEmptyIcon,
+.connectionDot {
+  display: none;
+}
+
+.cardBody,
+.txContainer,
+.txList,
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2cqw;
+  min-width: 0;
+}
+
+.formLabel,
+.balanceLabel,
+.txWallet,
+.txTime {
+  color: #45adff;
+  font-size: 2.5cqw;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.balanceValue,
+.txAmount,
+.pendingAmount {
+  color: #ffd700;
+  font-size: 4cqw;
+  font-weight: 800;
+}
+
+.txRow,
+.pendingItem,
+.recipientItem,
+.previewRow {
+  display: flex;
+  align-items: center;
+  gap: 2cqw;
+  min-width: 0;
+  padding: 2cqw 0;
+}
+
+.txDetails,
+.recipientInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.txCategory,
+.recipientName,
+.txEmptyTitle {
+  color: #f4f7fb;
+  font-size: 3.5cqw;
+  font-weight: 700;
+}
+
+.txDesc,
+.txEmptyDesc,
+.message,
+.pendingNote {
+  color: #9aa5b3;
+  font-size: 2.9cqw;
+  line-height: 1.45;
+}
+
+.txPositive,
+.messageSuccess {
+  color: #c8ffd2;
+}
+
+.txNegative,
+.messageError,
+.quickLinkDanger {
+  color: #ff5b6e;
+}
+
+@media (max-width: 560px) {
+  .txRow,
+  .pendingItem,
+  .recipientItem,
+  .previewRow {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
+@media (min-width: 1000px) {
+  .tab,
+  .quickLink,
+  .txFilterBtn,
+  .txExportBtn,
+  .presetBtn {
+    font-size: 30px;
+  }
+
+  .cardTitle {
+    font-size: 48px;
+  }
+}

@@ -17,6 +17,7 @@ import { masterBus } from '../../core/MasterBus';
 import { checkSettlementLock } from '../../utils/settlementLock';
 import { formatRelativeShort as formatTime } from '@/lib/date';
 import './CashoutRequestModal.css';
+import CashierConsoleSurface from '../cashier/CashierConsoleSurface';
 import { reportError } from '../../utils/errorReporter';
 import { fireVibration } from '../../utils/vibrationGate';
 
@@ -469,152 +470,158 @@ export default function CashoutRequestModal({
       aria-labelledby="cashout-modal-title"
     >
       <div className="cashout-modal" ref={modalRef} onClick={(e) => e.stopPropagation()}>
-        {/* Bottom-sheet drag handle */}
-        <div className="cashout-drag-handle" />
-        <div className="modal-header">
-          {/* id added: aria-labelledby="cashout-modal-title" pointed at nothing */}
-          <h2 id="cashout-modal-title">Request Cashout</h2>
-          <button className="close-btn" onClick={closeIfIdle} disabled={isBusy}>
-            ×
-          </button>
-        </div>
+        <CashierConsoleSurface
+          eyebrow="Player Cashier"
+          title="Request Cashout"
+          titleId="cashout-modal-title"
+          subtitle="Agent Approval Required"
+          pill={success ? 'Submitted' : 'Secure'}
+          pillInk={success ? 'green' : 'gold'}
+          crest="diamond"
+          className="cashout-console"
+          actions={{
+            secondary: {
+              label: 'Close',
+              onClick: closeIfIdle,
+              disabled: isBusy,
+            },
+            primary: success
+              ? { label: 'Done', onClick: closeIfIdle, ink: 'green' }
+              : {
+                  label: isSubmitting ? 'Submitting' : 'Request Cashout',
+                  onClick: handleSubmit,
+                  disabled: isSubmitting || !amount,
+                  ink: 'blue',
+                },
+          }}
+        >
+          <div className="modal-body">
+            {/* Current Balance */}
+            <div className="balance-display">
+              <span className="label">Available Balance</span>
+              <span className="value">{currentBalance.toLocaleString()} Chips</span>
+            </div>
 
-        <div className="modal-body">
-          {/* Current Balance */}
-          <div className="balance-display">
-            <span className="label">Available Balance</span>
-            <span className="value">{currentBalance.toLocaleString()} Chips</span>
-          </div>
-
-          {/* LOADING STATE. `loadingPending` was declared, set true, set false,
+            {/* LOADING STATE. `loadingPending` was declared, set true, set false,
               and never read once - so on a slow connection the sheet showed a
               form with no sign that a request might already be pending, and the
               row appeared underneath the player's finger a second later. */}
-          {loadingPending && pendingCashouts.length === 0 && (
-            <div className="pending-section" aria-busy="true">
-              <h3>Pending Requests</h3>
-              <div className="pending-loading">Checking For Pending Requests...</div>
-            </div>
-          )}
+            {loadingPending && pendingCashouts.length === 0 && (
+              <div className="pending-section" aria-busy="true">
+                <h3>Pending Requests</h3>
+                <div className="pending-loading">Checking For Pending Requests...</div>
+              </div>
+            )}
 
-          {/* Pending Cashouts */}
-          {pendingCashouts.length > 0 && (
-            <div className="pending-section">
-              <h3>Pending Requests</h3>
-              <div className="pending-list">
-                {pendingCashouts.map((cashout) => (
-                  <div key={cashout.id} className="pending-item">
-                    <div className="pending-info">
-                      <span className="pending-amount">
-                        {cashout.amount.toLocaleString()} Chips
-                      </span>
-                      <span className="pending-time">{formatTime(cashout.createdAt)}</span>
+            {/* Pending Cashouts */}
+            {pendingCashouts.length > 0 && (
+              <div className="pending-section">
+                <h3>Pending Requests</h3>
+                <div className="pending-list">
+                  {pendingCashouts.map((cashout) => (
+                    <div key={cashout.id} className="pending-item">
+                      <div className="pending-info">
+                        <span className="pending-amount">
+                          {cashout.amount.toLocaleString()} Chips
+                        </span>
+                        <span className="pending-time">{formatTime(cashout.createdAt)}</span>
+                      </div>
+                      <CashoutStepTracker status={cashout.status} />
+                      <button
+                        type="button"
+                        className="cancel-btn"
+                        disabled={cancellingId === cashout.id}
+                        onClick={() => handleCancel(cashout.id)}
+                      >
+                        {cancellingId === cashout.id ? 'Cancelling...' : 'Cancel'}
+                      </button>
                     </div>
-                    <CashoutStepTracker status={cashout.status} />
+                  ))}
+                </div>
+                <div className="pending-note">
+                  These Chips Are Locked Until Your Agent Processes The Request Or You Cancel.
+                </div>
+              </div>
+            )}
+
+            {/* New Request Form */}
+            {success ? (
+              <div className="success-message">
+                Cashout Request Submitted! Your Agent Has Been Notified.
+              </div>
+            ) : (
+              <div className="cashout-form">
+                <div className="form-group">
+                  <label htmlFor="cashout-amount">Amount</label>
+                  <div className="amount-input-wrapper">
+                    <input
+                      id="cashout-amount"
+                      type="number"
+                      placeholder="0"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      max={Math.min(currentBalance, CASHOUT_AMOUNT_LIMIT)}
+                      min={0.01}
+                      step={0.01}
+                      inputMode="decimal"
+                    />
+                    <span className="chip-label">Chips</span>
+                  </div>
+                  <div className="quick-amounts">
+                    {([25, 50, 100] as const).map((pct) => {
+                      const selected = cashoutPercentage(currentBalance, pct);
+                      return (
+                        <button
+                          key={pct}
+                          type="button"
+                          className="quick-btn"
+                          disabled={selected === null}
+                          onClick={() => {
+                            if (selected !== null) setAmount(selected);
+                          }}
+                        >
+                          {pct}%{selected !== null ? ` · ${selected}` : ''}
+                        </button>
+                      );
+                    })}
                     <button
                       type="button"
-                      className="cancel-btn"
-                      disabled={cancellingId === cashout.id}
-                      onClick={() => handleCancel(cashout.id)}
+                      className="quick-btn"
+                      disabled={cashoutPercentage(currentBalance, 100) === null}
+                      onClick={() => {
+                        const selected = cashoutPercentage(currentBalance, 100);
+                        if (selected !== null) setAmount(selected);
+                      }}
                     >
-                      {cancellingId === cashout.id ? 'Cancelling...' : 'Cancel'}
+                      Max
+                      {cashoutPercentage(currentBalance, 100) !== null
+                        ? ` · ${cashoutPercentage(currentBalance, 100)}`
+                        : ''}
                     </button>
                   </div>
-                ))}
-              </div>
-              <div className="pending-note">
-                These Chips Are Locked Until Your Agent Processes The Request Or You Cancel.
-              </div>
-            </div>
-          )}
+                </div>
 
-          {/* New Request Form */}
-          {success ? (
-            <div className="success-message">
-              Cashout Request Submitted! Your Agent Has Been Notified.
-            </div>
-          ) : (
-            <div className="cashout-form">
-              <div className="form-group">
-                <label htmlFor="cashout-amount">Amount</label>
-                <div className="amount-input-wrapper">
-                  <input
-                    id="cashout-amount"
-                    type="number"
-                    placeholder="0"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    max={Math.min(currentBalance, CASHOUT_AMOUNT_LIMIT)}
-                    min={0.01}
-                    step={0.01}
-                    inputMode="decimal"
+                <div className="form-group">
+                  <label htmlFor="cashout-note">Note (Optional)</label>
+                  <textarea
+                    id="cashout-note"
+                    placeholder="Any Message For Your Agent..."
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    rows={2}
                   />
-                  <span className="chip-label">Chips</span>
                 </div>
-                <div className="quick-amounts">
-                  {([25, 50, 100] as const).map((pct) => {
-                    const selected = cashoutPercentage(currentBalance, pct);
-                    return (
-                      <button
-                        key={pct}
-                        type="button"
-                        className="quick-btn"
-                        disabled={selected === null}
-                        onClick={() => {
-                          if (selected !== null) setAmount(selected);
-                        }}
-                      >
-                        {pct}%{selected !== null ? ` · ${selected}` : ''}
-                      </button>
-                    );
-                  })}
-                  <button
-                    type="button"
-                    className="quick-btn"
-                    disabled={cashoutPercentage(currentBalance, 100) === null}
-                    onClick={() => {
-                      const selected = cashoutPercentage(currentBalance, 100);
-                      if (selected !== null) setAmount(selected);
-                    }}
-                  >
-                    Max
-                    {cashoutPercentage(currentBalance, 100) !== null
-                      ? ` · ${cashoutPercentage(currentBalance, 100)}`
-                      : ''}
-                  </button>
+
+                {error && <div className="error-message">{error}</div>}
+
+                <div className="info-note">
+                  Your Chips Will Be Locked Until Your Agent Approves The Cashout. You Can Cancel
+                  Anytime Before Approval.
                 </div>
               </div>
-
-              <div className="form-group">
-                <label htmlFor="cashout-note">Note (Optional)</label>
-                <textarea
-                  id="cashout-note"
-                  placeholder="Any Message For Your Agent..."
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  rows={2}
-                />
-              </div>
-
-              {error && <div className="error-message">{error}</div>}
-
-              <button
-                className="submit-btn"
-                onClick={handleSubmit}
-                disabled={isSubmitting || !amount}
-              >
-                {isSubmitting ? 'Submitting...' : 'Request Cashout'}
-              </button>
-
-              <div className="info-note">
-                Your Chips Will Be Locked Until Your Agent Approves The Cashout. You Can Cancel
-                Anytime Before Approval.
-              </div>
-            </div>
-          )}
-        </div>
-        {/* Bottom safe area spacer */}
-        <div className="cashout-bottom-spacer" />
+            )}
+          </div>
+        </CashierConsoleSurface>
       </div>
     </div>
   );

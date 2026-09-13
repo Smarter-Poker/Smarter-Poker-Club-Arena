@@ -92,12 +92,12 @@ describe('the reserve offers no way to move money out', () => {
     const guards = modal.match(/\{!readOnly && \(/g) || [];
     expect(guards.length).toBeGreaterThanOrEqual(2);
 
-    // The send button must sit AFTER the first guard - i.e. inside a guarded
-    // region - and never before one.
-    const firstGuard = modal.indexOf('{!readOnly && (');
-    const sendButton = modal.indexOf('Pick A Member');
-    expect(firstGuard).toBeGreaterThan(-1);
-    expect(sendButton).toBeGreaterThan(firstGuard);
+    // The money action now lives in the painted console foot, so it is hoisted
+    // above the body in JSX. Pin the guard on that action authority directly:
+    // a reserve or ledger view receives no action plates at all.
+    expect(modal).toContain("!readOnly && mode !== 'ledger'");
+    expect(modal).toContain('disabled: sendDisabled');
+    expect(modal).toContain('onClick: () => void send()');
   });
 
   it('does not fetch the roster it would never show', () => {

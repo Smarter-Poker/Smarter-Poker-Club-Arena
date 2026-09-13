@@ -15,6 +15,7 @@ const source = (): CommittedObservationSnapshot => ({
   actorKey: 'a'.repeat(64),
   source: {
     coverage: 'retained_committed_roster_rows',
+    acceptance: 'atomic_hand_receipts',
     fromMs: now - 1000,
     throughMs: now,
     readAtMs: now,

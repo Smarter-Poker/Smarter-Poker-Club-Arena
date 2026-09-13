@@ -1,0 +1,50 @@
+rule_files:
+  - ../../infra/monitoring/slo-alerts.yml
+evaluation_interval: 1m
+tests:
+  - name: A stall keeps its strict 15 minute threshold and 5 minute pending period
+    interval: 1m
+    input_series:
+      - series: sp:table_stall:max_ms
+        values: '900000+0x6 960000+0x6'
+      - series: poker_maintenance_break_active
+        values: '0+0x13'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: SLOTableHasStalled
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: SLOTableHasStalled
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: SLOTableHasStalled
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: slo
+              objective: dealing
+            exp_annotations:
+              summary: A table has made no progress for 16m 0s
+              runbook: docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md
+  - name: The existing maintenance guard still suppresses a scheduled break
+    interval: 1m
+    input_series:
+      - series: sp:table_stall:max_ms
+        values: '960000+0x12'
+      - series: poker_maintenance_break_active
+        values: '1+0x12'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: SLOTableHasStalled
+        exp_alerts: []
+  - name: Progress clears the alert without waiting for another pending period
+    interval: 1m
+    input_series:
+      - series: sp:table_stall:max_ms
+        values: '960000+0x6 0+0x2'
+      - series: poker_maintenance_break_active
+        values: '0+0x9'
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: SLOTableHasStalled
+        exp_alerts: []

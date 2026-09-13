@@ -64,7 +64,8 @@ import {
   lastPlayableIndex,
 } from './blindEscalation.js';
 import { observedStepRatio } from './blindLadder.js';
-import { isSpinTournament } from './payoutStructure.js';
+import { isSpinTournament, parsePayoutStructure } from './payoutStructure.js';
+import { readTournamentPrizePool } from './tournamentPrizeContract.js';
 import { secureRandomInt } from '../engine/CryptoRandom.js';
 import {
   DEFAULT_TOP_BOUNTY_PERCENT,
@@ -2250,8 +2251,12 @@ export abstract class TournamentManagerBase {
       return false;
     }
 
-    const finalPool = Number(result.prize_pool);
-    if (!Number.isFinite(finalPool) || !Array.isArray(result.payout_structure)) {
+    const finalPool = readTournamentPrizePool(result.prize_pool);
+    if (
+      finalPool === null ||
+      !Array.isArray(result.payout_structure) ||
+      !parsePayoutStructure(result.payout_structure)
+    ) {
       reportError(
         new Error('entry-window authority returned an unreadable final pool or payout structure'),
         'Tournament.entry_window_close_result_unreadable'
@@ -7315,16 +7320,8 @@ export abstract class TournamentManagerBase {
         );
         return null;
       }
-      const rawPool = res.prize_pool;
-      const pool = Number(res.prize_pool);
-      if (
-        (typeof rawPool !== 'number' && typeof rawPool !== 'string') ||
-        (typeof rawPool === 'string' && !/^[0-9]+(?:[.][0-9]+)?$/.test(rawPool)) ||
-        !Number.isFinite(pool) ||
-        pool < 0 ||
-        !Number.isSafeInteger(Math.round(pool * 100)) ||
-        Math.round(pool * 100) / 100 !== pool
-      ) {
+      const pool = readTournamentPrizePool(res.prize_pool);
+      if (pool === null) {
         reportError(
           new Error(
             `[Tournament:${this.tournamentId.slice(0, 8)}] fn_apply_prize_guarantee returned no readable prize_pool (${JSON.stringify(data ?? null).slice(0, 160)})`
@@ -7397,8 +7394,8 @@ export abstract class TournamentManagerBase {
         return false;
       }
 
-      const finalPool = Number(result.prize_pool);
-      if (!Number.isFinite(finalPool)) {
+      const finalPool = readTournamentPrizePool(result.prize_pool);
+      if (finalPool === null) {
         this.prizePoolFinalized = false;
         reportError(
           new Error(

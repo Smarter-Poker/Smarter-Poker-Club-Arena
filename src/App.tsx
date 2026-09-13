@@ -52,6 +52,10 @@ import { useInTabLobbyActive, useInTabLobbyClubId } from './components/club/inTa
 
 // Auth Guards
 import { AuthGuard, GuestGuard } from './components/auth/AuthGuard';
+import {
+  DailyChallengesAuthLoading,
+  DailyChallengesCrashFallback,
+} from './components/challenges/DailyChallengesRouteFallback';
 import ClubMemberGuard from './components/auth/ClubMemberGuard';
 import GameCreationGuard from './components/auth/GameCreationGuard';
 import TOSGuard from './components/legal/TOSGuard';
@@ -1107,8 +1111,13 @@ function FullApp() {
                 <Route
                   path="challenges/:cycle?"
                   element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Daily Challenges">
+                    <AuthGuard loadingFallback={<DailyChallengesAuthLoading />}>
+                      <PageErrorBoundary
+                        pageName="Daily Challenges"
+                        fallback={({ error, retry }) => (
+                          <DailyChallengesCrashFallback error={error} onRetry={retry} />
+                        )}
+                      >
                         <DailyChallengesPage />
                       </PageErrorBoundary>
                     </AuthGuard>

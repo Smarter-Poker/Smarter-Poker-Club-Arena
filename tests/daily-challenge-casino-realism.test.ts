@@ -53,6 +53,8 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
     const mobile = css.slice(mobileStart, mobileEnd);
     expect(mobile).toContain('min-height: 548px');
     expect(mobile).not.toMatch(/min-height:\s*(?:6\d\d|[7-9]\d\d)px/);
+    expect(mobile).not.toContain('clip-path: none');
+    expect(mobile).not.toContain('border-inline: 0');
     expect(page).toContain('View Challenge Ledger');
     expect(page).toContain("document.getElementById('mission-board-title')?.scrollIntoView");
   });
@@ -108,6 +110,33 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
     expect(css).toContain('@keyframes missionScannerOrbit');
     expect(css).toContain(".iconAssembly[data-mission-icon='friends_added']");
     expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.iconOrbit/);
+  });
+
+  it('gives every cycle a distinct physical instrument and every loading card a closed chassis', () => {
+    expect(page).toContain("daily: 'cycle-daily'");
+    expect(page).toContain("weekly: 'cycle-weekly'");
+    expect(page).toContain("monthly: 'cycle-monthly'");
+    expect(page).toContain('variant={TIER_CONTROL_ICONS[tier]}');
+    expect(page).toContain('data-loading-mission-card=""');
+    expect(page).toContain('className={styles.loadingCardInstrument}');
+    expect(css).toContain('.loadingCard > .bevelFrame');
+    expect(css).toContain('.loadingCardAction');
+  });
+
+  it('uses only sanctioned danger and warm accents in the Daily Missions paint', () => {
+    for (const retiredColor of [
+      '#d3a855',
+      '#d9ac58',
+      '#ff765f',
+      '#ff9d8b',
+      '#ffb765',
+      '#f08b3b',
+      '#ff8f79',
+      'rgba(108, 43, 10',
+      'rgba(211, 168, 85',
+    ]) {
+      expect(`${page}${css}`).not.toContain(retiredColor);
+    }
   });
 
   it('renders both purchase and reward dialogs as complete casino settlement surfaces', () => {

@@ -64,6 +64,7 @@ try {
   for (const migration of [
     '20260912193321_horse_committed_observation_snapshot.sql',
     '20260913170729_horse_adaptive_observation_journal.sql',
+    '20260913175935_recoverable_horse_adaptive_journal_batches.sql',
   ])
     await c.query(readFileSync(root + '/supabase/migrations/' + migration, 'utf8'));
   const now = Number(
@@ -177,6 +178,9 @@ try {
               } else if (name === 'fn_append_horse_adaptive_observations') {
                 query = 'SELECT public.fn_append_horse_adaptive_observations($1) value';
                 params = [p.p_batch];
+              } else if (name === 'fn_horse_adaptive_journal_batch') {
+                query = 'SELECT public.fn_horse_adaptive_journal_batch($1) value';
+                params = [p.p_batch_key];
               } else if (name === 'fn_horse_adaptive_journal_snapshot') {
                 query = 'SELECT public.fn_horse_adaptive_journal_snapshot($1,$2,$3,$4,$5,$6) value';
                 params = [
@@ -225,6 +229,8 @@ try {
     prepareAdaptiveJournalBatch: prepare,
     persistAdaptiveJournalSnapshot: persist,
     readAdaptiveJournalSnapshot: read,
+    readAdaptiveJournalBatch: recover,
+    persistPreparedAdaptiveJournalBatch: retry,
   } = await bridge('HorseAdaptiveObservationJournal');
   await c.query('SET ROLE service_role');
   const source = await readSource({ actorId: actor, fromMs: from, throughMs: through });
@@ -235,6 +241,8 @@ try {
   const first = await persist(source);
   assert.equal(first.status, 'recorded');
   assert.deepEqual(await persist(source), first);
+  assert.deepEqual(await recover(batch.batchKey), batch);
+  assert.deepEqual(await retry(await recover(batch.batchKey)), first);
   await c.query('RESET ROLE');
   const count = async () =>
     Number((await c.query('SELECT count(*) n FROM horse_adaptive_observation_journal')).rows[0].n);
@@ -293,6 +301,11 @@ try {
         c.query('SELECT fn_append_horse_adaptive_observations($1)', [batch.payload]),
         (e) => e.code === '42501'
       );
+    if (role !== 'service_role')
+      await assert.rejects(
+        c.query('SELECT fn_horse_adaptive_journal_batch($1)', [batch.batchKey]),
+        (e) => e.code === '42501'
+      );
     await c.query('RESET ROLE');
   }
   results.push({
@@ -342,6 +355,11 @@ try {
   const held = (
     await c.query('SELECT fn_append_horse_adaptive_observations($1) value', [cb.payload])
   ).rows[0].value;
+  assert.equal(
+    (await otherConnection.query('SELECT fn_horse_adaptive_journal_batch($1) value', [cb.batchKey]))
+      .rows[0].value.reason,
+    'batch_not_found'
+  );
   let done = false;
   const competing = otherConnection
     .query('SELECT fn_append_horse_adaptive_observations($1) value', [cb.payload])
@@ -371,6 +389,54 @@ try {
   );
   assert.equal(reconnectEvidence.n, 13);
   results.push({ case: 'fresh Node process sees all immutable identities', observations: 13 });
+  // The next process receives only a durable batch key. Even the synthetic
+  // source history has gone; re-querying it cannot reproduce the submitted batch.
+  await c.query('DELETE FROM hand_history WHERE id=ANY($1::uuid[])', [[id(1), id(2), id(3)]]);
+  const recoveredAfterRestart = JSON.parse(
+    execFileSync(
+      process.execPath,
+      [
+        root + '/scripts/ci/probes/horse-adaptive-batch-restart-child.mjs',
+        JSON.stringify({ root, options, batchKey: batch.batchKey }),
+      ],
+      { encoding: 'utf8' }
+    )
+  );
+  assert.equal(recoveredAfterRestart.batchDigest, batch.batchDigest);
+  assert.equal(recoveredAfterRestart.observations, 12);
+  assert.equal(recoveredAfterRestart.status, 'recorded');
+  assert.deepEqual(recoveredAfterRestart.calls, [
+    'fn_horse_adaptive_journal_batch',
+    'fn_append_horse_adaptive_observations',
+  ]);
+  assert.equal(await count(), 13);
+  results.push({
+    case: 'new process recovers exact public batch after source history is removed and replays it',
+    sourceHistoryRows: 0,
+    originalBatchObservations: 12,
+    totalUniqueObservations: 13,
+  });
+  assert.equal((await recover('0'.repeat(64))).reason, 'batch_not_found');
+  await c.query(
+    'UPDATE horse_adaptive_observation_batches SET canonical_payload=NULL WHERE batch_key=$1',
+    [cb.batchKey]
+  );
+  assert.equal((await recover(cb.batchKey)).reason, 'legacy_batch_payload_unavailable');
+  assert.equal((await retry(cb)).status, 'recorded');
+  assert.equal((await recover(cb.batchKey)).reason, 'legacy_batch_payload_unavailable');
+  await c.query(
+    'UPDATE horse_adaptive_observation_batches SET canonical_payload=$2 WHERE batch_key=$1',
+    [cb.batchKey, '{}']
+  );
+  assert.equal((await recover(cb.batchKey)).reason, 'invalid_receipt');
+  await c.query(
+    'UPDATE horse_adaptive_observation_batches SET canonical_payload=$2 WHERE batch_key=$1',
+    [cb.batchKey, cb.payload]
+  );
+  results.push({
+    case: 'missing and legacy payloads stay unavailable; substituted stored bytes are refused',
+    passed: true,
+  });
   const append = async (payload) =>
     (await c.query('SELECT fn_append_horse_adaptive_observations($1) value', [payload])).rows[0]
       .value;
@@ -511,6 +577,10 @@ try {
   assert.equal(bulkRead.status, 'snapshot');
   assert.equal(bulkRead.observations.length, 2000);
   const readMs = performance.now() - readStart;
+  const recoveryStart = performance.now();
+  const recoveredBulk = await recover(bulkPrepared.batchKey);
+  assert.deepEqual(recoveredBulk, bulkPrepared);
+  const recoveryMs = performance.now() - recoveryStart;
   await c.query('RESET ROLE');
   for (const role of ['anon', 'authenticated', 'service_role']) {
     const rights = (
@@ -532,6 +602,7 @@ try {
     bytes: Buffer.byteLength(bulkPrepared.payload),
     writeMs,
     readMs,
+    recoveryMs,
     limitation: 'One isolated sample; not a production latency certification.',
   });
   proof = { results, sourceCalls: calls, productionPostgrestVerified: false };

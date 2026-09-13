@@ -10,6 +10,8 @@ import {
   prepareAdaptiveJournalBatch as prepare,
   persistAdaptiveJournalSnapshot as persist,
   readAdaptiveJournalSnapshot as read,
+  readAdaptiveJournalBatch as recover,
+  persistPreparedAdaptiveJournalBatch as retry,
 } from './HorseAdaptiveObservationJournal.js';
 
 const mocks = vi.hoisted(() => ({ rpc: vi.fn(), abort: vi.fn() }));
@@ -137,6 +139,142 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.clearAllMocks();
+});
+
+describe('adaptive journal batch recovery', () => {
+  const receipt = (batch = prepared()) => ({
+    version: 1,
+    status: 'recorded',
+    batchKey: batch.batchKey,
+    batchDigest: batch.batchDigest,
+    observations: batch.observations,
+    payload: batch.payload,
+  });
+  it('recovers a zero-observation batch without inventing evidence', async () => {
+    const batch = prepared({ ...fixture(), observations: [] });
+    mocks.abort.mockResolvedValue({ data: receipt(batch), error: null });
+    expect(await recover(batch.batchKey)).toEqual(batch);
+    expect(batch.observations).toBe(0);
+  });
+  it('preserves historical receipt bytes after the original observation horizon expires', async () => {
+    const batch = prepared();
+    vi.setSystemTime(NOW + 90 * 86_400_000);
+    mocks.abort.mockResolvedValue({ data: receipt(batch), error: null });
+    expect(await recover(batch.batchKey)).toEqual(batch);
+    expect(await retry(batch)).toMatchObject({ status: 'recorded' });
+  });
+  it('recovers immutable canonical bytes and retries them without acquiring newer history', async () => {
+    const batch = prepared();
+    mocks.abort.mockResolvedValueOnce({ data: receipt(batch), error: null });
+    const recovered = await recover(batch.batchKey);
+    expect(recovered).toEqual(batch);
+    expect(Object.isFrozen(recovered)).toBe(true);
+    if (recovered.status !== 'prepared') throw Error('missing batch');
+    mocks.abort.mockResolvedValueOnce({ data: receipt(batch), error: null });
+    expect(await retry(recovered)).toMatchObject({ status: 'recorded', batchKey: batch.batchKey });
+    expect(mocks.rpc.mock.calls.map(([name]) => name)).toEqual([
+      'fn_horse_adaptive_journal_batch',
+      'fn_append_horse_adaptive_observations',
+    ]);
+    expect(mocks.rpc.mock.calls[1][1]).toEqual({ p_batch: batch.payload });
+  });
+  it.each(['batch_not_found', 'legacy_batch_payload_unavailable'])(
+    'keeps %s unavailable without inferring rollback or querying another source',
+    async (reason) => {
+      mocks.abort.mockResolvedValue({
+        data: { version: 1, status: 'unavailable', reason },
+        error: null,
+      });
+      expect(await recover('a'.repeat(64))).toEqual({ status: 'unavailable', reason });
+      expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    }
+  );
+  it('refuses invalid keys before requesting data', async () => {
+    expect(await recover('invalid')).toEqual({ status: 'unavailable', reason: 'invalid_request' });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it.each([
+    'version',
+    'status',
+    'key',
+    'digest',
+    'count',
+    'payload',
+    'private',
+    'duplicate',
+    'order',
+    'rejections',
+    'large',
+    'noncanonical',
+  ])('refuses a substituted %s in a recovered receipt', async (kind) => {
+    const batch = prepared(),
+      data = receipt(batch),
+      payload = JSON.parse(batch.payload);
+    if (kind === 'version') data.version = 2;
+    if (kind === 'status') data.status = 'snapshot';
+    if (kind === 'key') data.batchKey = '0'.repeat(64);
+    if (kind === 'digest') data.batchDigest = '0'.repeat(64);
+    if (kind === 'count') data.observations++;
+    if (kind === 'payload') data.payload = '{}';
+    if (kind === 'private') {
+      const row = JSON.parse(payload[7][0]);
+      row[8] = '{"cards":["As"]}';
+      row[7] = hash(row[8]);
+      payload[7][0] = JSON.stringify(row);
+      data.payload = JSON.stringify(payload);
+    }
+    if (kind === 'duplicate') {
+      payload[7].push(payload[7][0]);
+      data.payload = JSON.stringify(payload);
+    }
+    if (kind === 'order') {
+      const row = JSON.parse(payload[7][0]);
+      row[1] = row[2] + ':4095';
+      payload[7].unshift(JSON.stringify(row));
+      data.payload = JSON.stringify(payload);
+    }
+    if (kind === 'rejections') {
+      payload[6] = [
+        ['gap', 1],
+        ['gap', 2],
+      ];
+      data.payload = JSON.stringify(payload);
+    }
+    if (kind === 'large') data.payload = ' '.repeat(16_777_217);
+    if (kind === 'noncanonical') data.payload = ' ' + data.payload;
+    // Even an internally matching new hash cannot make invalid public bytes valid.
+    if (!['digest', 'key', 'version', 'status', 'count'].includes(kind))
+      data.batchDigest = hash(data.payload);
+    mocks.abort.mockResolvedValue({ data, error: null });
+    expect(await recover(batch.batchKey)).toEqual({
+      status: 'unavailable',
+      reason: 'invalid_receipt',
+    });
+  });
+  it('refuses a forged prepared envelope before writing', async () => {
+    const batch = prepared();
+    expect(await retry({ ...batch, batchDigest: '0'.repeat(64) })).toEqual({
+      status: 'unavailable',
+      reason: 'invalid_batch',
+    });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('keeps a retry bound to its original bytes while the caller mutates the envelope', async () => {
+    const batch = prepared(),
+      mutable = { ...batch };
+    let done!: (value: unknown) => void;
+    mocks.abort.mockReturnValueOnce(new Promise((resolve) => (done = resolve)));
+    const pending = retry(mutable);
+    mutable.payload = '{}';
+    mutable.batchKey = '0'.repeat(64);
+    done({ data: receipt(batch), error: null });
+    expect(await pending).toMatchObject({ status: 'recorded', batchKey: batch.batchKey });
+    expect(mocks.rpc.mock.calls[0][1]).toEqual({ p_batch: batch.payload });
+  });
+  it('keeps a lost replay reply unknown', async () => {
+    mocks.abort.mockRejectedValue(Error('connection lost'));
+    expect(await retry(prepared())).toMatchObject({ status: 'unknown' });
+  });
 });
 
 describe('immutable adaptive observation journal boundary', () => {

@@ -364,6 +364,8 @@ export abstract class TournamentManagerBase {
    * resumeFromBreak (this one is over).
    */
   protected breakCountdownStarted: boolean = false;
+  private breakResumePersisting = false;
+  private breakResumeRetryTimer: ReturnType<typeof setTimeout> | null = null;
   // Hand-for-hand sync
   protected handForHandRePauseTimer: NodeJS.Timeout | null = null;
   // Late reg finalization
@@ -1158,6 +1160,7 @@ export abstract class TournamentManagerBase {
     for (const timer of this.lifecycleIntervals) clearInterval(timer);
     this.lifecycleTimeouts.clear();
     this.lifecycleIntervals.clear();
+    this.breakResumeRetryTimer = null;
   }
 
   /**
@@ -1790,24 +1793,19 @@ export abstract class TournamentManagerBase {
    * not resume anything.
    */
   protected async clearPersistedBreak(): Promise<void> {
-    try {
-      await supabase
-        .from('tournaments')
-        .update({ on_break: false, break_ends_at: null })
-        .eq('id', this.tournamentId);
-    } catch (err) {
-      reportError(err, 'TournamentManagerBase.resumeFromBreak_persist');
-    }
+    const { error } = await supabase
+      .from('tournaments')
+      .update({ on_break: false, break_ends_at: null })
+      .eq('id', this.tournamentId);
+    // PostgREST reports rejected writes as a result, not a thrown exception.
+    // The caller must retain its pause (or fail adoption) until acknowledged.
+    if (error) throw error;
   }
 
   /**
    * How often resumeFromBreak looks at the maintenance freeze again while it
-   * waits for the thaw, and the longest it waits before resuming anyway.
-   *
-   * The ceiling is for a freeze that never lifts, not for a slow thaw.
-   * Measured over the 177 breaks in engine_maintenance_break_log from
-   * 2026-09-02 to 2026-09-10, the thaw finished p50 3.2s, p99 13.0s and at
-   * worst 26.6s after the break's end; 90s is well clear of all of them.
+   * waits for the thaw, and when a slow thaw becomes reportable. Elapsed
+   * time cannot authorize releasing the break before the thaw commits.
    */
   static readonly MAINTENANCE_THAW_POLL_MS = 250;
   static readonly MAINTENANCE_THAW_WAIT_CEILING_MS = 90_000;
@@ -1817,24 +1815,25 @@ export abstract class TournamentManagerBase {
    * does only once the thaw has finished. Returns early when this lifecycle
    * ends (stop() drains this very job, so a shutdown or a lost lease must not
    * sit here until the ceiling) or when another caller has already taken this
-   * tournament off its break. Past the ceiling it reports, naming the event,
-   * and returns so the caller resumes.
+   * tournament off its break. Past the ceiling it reports once and retains
+   * the paused clock until the freeze actually lifts.
    */
   protected async waitForMaintenanceThaw(lifecycle: TournamentLifecycleToken): Promise<void> {
     const startedAt = Date.now();
+    let reportedSlowThaw = false;
     while (isMaintenanceFrozen() && this.onBreak && this.lifecycleIsCurrent(lifecycle)) {
       const waitedMs = Date.now() - startedAt;
-      if (waitedMs >= TournamentManagerBase.MAINTENANCE_THAW_WAIT_CEILING_MS) {
+      if (!reportedSlowThaw && waitedMs >= TournamentManagerBase.MAINTENANCE_THAW_WAIT_CEILING_MS) {
+        reportedSlowThaw = true;
         reportError(
           new Error(
             `[Tournament:${this.tournamentId}] its break ended but the maintenance freeze was ` +
-              `still on ${Math.round(waitedMs / 1000)}s later; resuming without the thaw, so ` +
-              'its level_started_at may be credited for the break twice'
+              `still on ${Math.round(waitedMs / 1000)}s later; retaining the paused clock ` +
+              'until the maintenance thaw commits'
           ),
           'TournamentManagerBase.resumeFromBreak_thaw_wait_ceiling',
           { tournamentId: this.tournamentId }
         );
-        return;
       }
       await new Promise<void>((resolve) => {
         const poll = setTimeout(resolve, TournamentManagerBase.MAINTENANCE_THAW_POLL_MS);
@@ -1846,6 +1845,8 @@ export abstract class TournamentManagerBase {
   /** Resume from synchronized break: restart blind timer with remaining time */
   async resumeFromBreak(): Promise<void> {
     if (!this.onBreak) return;
+    const lifecycle = this.running ? this.captureLifecycleToken() : null;
+    if (this.running && !lifecycle) return;
     /**
      * A RUNNING TOURNAMENT COMES OFF ITS BREAK AFTER THE THAW (2026-09-10).
      *
@@ -1876,14 +1877,10 @@ export abstract class TournamentManagerBase {
      * does not wait at all: it only has flags to clear, exactly as before.
      */
     if (this.running && isMaintenanceFrozen()) {
-      const lifecycle = this.captureLifecycleToken();
       if (lifecycle) await this.waitForMaintenanceThaw(lifecycle);
       // Everything the wait may have changed is read again.
       if (!this.onBreak || !lifecycle || !this.lifecycleIsCurrent(lifecycle)) return;
     }
-    this.onBreak = false;
-    this.breakCountdownStarted = false;
-
     /**
      * A TOURNAMENT THAT ENDS ON A BREAK STILL HAS TO COME OFF IT (2026-08-25).
      *
@@ -1899,12 +1896,37 @@ export abstract class TournamentManagerBase {
      * broadcasting, un-pausing engines, re-arming the level clock — is skipped
      * when the tournament is no longer running.
      */
-    await this.clearPersistedBreak();
+    // Keep the hold throughout persistence. Concurrent deadline/adoption calls
+    // must not release twice while the durable clear is still in flight.
+    if (this.breakResumePersisting) return;
+    this.breakResumePersisting = true;
+    try {
+      await this.clearPersistedBreak();
+    } catch (error) {
+      reportError(error, 'TournamentManagerBase.resumeFromBreak_persist');
+      if (lifecycle && this.lifecycleIsCurrent(lifecycle) && !this.breakResumeRetryTimer) {
+        this.breakResumeRetryTimer = this.setLifecycleTimeout(() => {
+          this.breakResumeRetryTimer = null;
+          return this.resumeFromBreak();
+        }, 1_000);
+      }
+      return;
+    } finally {
+      this.breakResumePersisting = false;
+    }
+    if (lifecycle && !this.lifecycleIsCurrent(lifecycle)) return;
+    if (this.breakResumeRetryTimer) {
+      this.clearLifecycleTimeout(this.breakResumeRetryTimer);
+      this.breakResumeRetryTimer = null;
+    }
+    this.onBreak = false;
+    this.breakCountdownStarted = false;
     if (!this.running) return;
 
     console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] BREAK ENDED - resuming play`);
 
     await this.broadcast('break_ended', { level: this.currentLevel });
+    if (!lifecycle || !this.lifecycleIsCurrent(lifecycle)) return;
 
     /* Undo the pause taken in pauseForBreak only when no durable add-on break
        is still holding it. This is the exact Free Buy boundary: the :55
@@ -1965,10 +1987,15 @@ export abstract class TournamentManagerBase {
     if (this.pendingAddOnPeriod && !this.addOnPeriodTriggered) {
       this.pendingAddOnPeriod = false;
       await this.triggerAddOnPeriod();
+      if (!this.lifecycleIsCurrent(lifecycle)) return;
     }
     // Tables may all have parked during the break. Recheck after any deferred
     // add-on has acquired its own hold; no new table completion edge is due.
     this.advanceHandForHandBarrier();
+    // Consolidation or elimination may have yielded while every table was
+    // parked. A field split into single-player tables cannot deal the next
+    // hand that would otherwise wake this work; the break end is that edge.
+    this.requestEliminationSweep('break_ended');
   }
 
   /**
@@ -3753,7 +3780,9 @@ export abstract class TournamentManagerBase {
         // RUNNING because the blinds, payout display and reveal anchor are
         // required by every engine/client copy.
         const spinPresentationPatch = {
-          is_premium_spin: spinMultiplier >= 100,
+          // is_premium_spin belongs to the funded entry contract, not the
+          // drawn multiplier. Changing it after a 100x draw is rejected by
+          // the immutable economic-contract guard and prevents RUNNING.
           blind_structure: spinBlinds,
           payout_structure: fundedSpin.payouts,
           /* THE ONE NUMBER DAN ASKS ABOUT, WRITTEN DOWN (2026-08-31 audit).

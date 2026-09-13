@@ -15,10 +15,10 @@ BUILD_CONTRACT='clean-server-archive-v1'
 # The default Docker builder shares the daemon's unbounded memory budget. On
 # 2026-09-12 a concurrent TypeScript build outlived a global OOM kill of the
 # production engine. Every uncached build now runs inside this owned cgroup.
-BUILDER='club-arena-engine-bounded-v1'
+BUILDER='club-arena-engine-bounded-v2'
 BUILDER_CONTAINER="buildx_buildkit_${BUILDER}0"
 BUILDKIT_IMAGE='moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8'
-BUILD_MEMORY_BYTES=1073741824
+BUILD_MEMORY_BYTES=939524096
 BUILD_RESERVE_KIB=262144
 
 die() {
@@ -144,7 +144,7 @@ done
 AVAILABLE_KIB="$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)"
 [[ "$AVAILABLE_KIB" =~ ^[0-9]+$ ]] || die 'host memory availability is unreadable'
 [ "$AVAILABLE_KIB" -ge "$((BUILD_MEMORY_BYTES / 1024 + BUILD_RESERVE_KIB))" ] \
-  || die 'insufficient memory headroom for the bounded engine build'
+  || die "insufficient memory headroom for the bounded engine build (available=${AVAILABLE_KIB}KiB, required=$((BUILD_MEMORY_BYTES / 1024 + BUILD_RESERVE_KIB))KiB)"
 command -v setsid >/dev/null || die 'owned build process sessions are unavailable'
 
 if ! docker buildx inspect "$BUILDER" >/dev/null 2>&1; then

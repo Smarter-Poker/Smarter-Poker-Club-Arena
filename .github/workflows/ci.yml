@@ -494,6 +494,8 @@ jobs:
             exit 1
           fi
           echo "All $TOTAL invariant guards passed." >> "$GITHUB_STEP_SUMMARY"
+      - name: Evaluate real SLO alert durations, thresholds and recovery
+        run: bash scripts/ci/test-slo-stall-duration.sh
       - name: Report Typecheck Time
         if: always()
         run: |
@@ -1120,6 +1122,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-bbj-bank-replay.py
+      - name: Horse identity trigger semantics, rollback and concurrent stamp writes
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-horse-identity-triggers.py
       - name: Atomic departures, ownership, rollback and concurrency
         env:
           PGBIN: /usr/lib/postgresql/17/bin
@@ -1983,6 +1989,7 @@ jobs:
           exit 1
 
       - name: Run the beats against this commit's CSS
+        id: css-beats
         env:
           ARENA_BASE_URL: http://127.0.0.1:${{ steps.preview-port.outputs.port }}/hub/club-arena
           BASE_URL: http://127.0.0.1:${{ steps.preview-port.outputs.port }}/hub/club-arena/
@@ -2063,6 +2070,17 @@ jobs:
         # it. See the note on "Serve one build to every suite".
         run: |
           npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line --retries=1
+
+      # Capture the failed fixture before a later suite can clear its output.
+      # These tests use the local build and synthetic data, without a login.
+      - name: Preserve failed CSS beat browser evidence
+        if: ${{ failure() && steps.css-beats.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: css-beats-failure-${{ github.sha }}-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 3
+          if-no-files-found: warn
 
       # Unlike the CSS fixtures above, this mounts the production Studio and
       # drives its real Supabase client through a deterministic browser mock.

@@ -1376,6 +1376,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         if (!isMaintenanceFrozen()) {
           await this.checkTableBalance();
           if (sweepStopped()) return;
+          // Balancing can yield after an admitted move/read consumes the
+          // budget. Its void helper has not proved the stage complete; keep
+          // this cursor so the next admission finishes consolidating tables.
+          if (this.eliminationWorkBudgetExpired()) return;
 
           // The old five-second manager interval also happened to poll final
           // table deal votes. Preserve the feature's intended ten-second
@@ -1615,6 +1619,18 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
       }
     } finally {
+      // Helpers may yield inside a stage after a slow RPC consumes the work
+      // budget. They have not reached completedStage(), so the cursor and its
+      // causal wake still belong to this manager. Preserve that continuation
+      // without rearming a stopped or replaced lifecycle.
+      if (
+        !completedWholeSweep &&
+        !budgetRequeued &&
+        !sweepStopped() &&
+        this.eliminationWorkBudgetExpired()
+      ) {
+        this.requestEliminationSweep();
+      }
       if (completedWholeSweep && this.running && !signal.aborted) {
         try {
           await acknowledgeCapturedWakes();
@@ -4986,7 +5002,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           reportError(alertErr, 'Tournament.atomic_satellite_finish_alert_failed');
         }
         if (provenRefusal) releaseFinishGuard();
-        if (!provenRefusal) await this.stopAndWait();
+        if (!provenRefusal) {
+          this.fenceUnknownTerminalOutcome(
+            'Tournament.atomic_satellite_finish_manager_stop_failed'
+          );
+        }
         return;
       }
 

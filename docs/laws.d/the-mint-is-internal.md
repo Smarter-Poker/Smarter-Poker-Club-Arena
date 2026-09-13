@@ -1,0 +1,3 @@
+# tests/the-mint-is-internal.law.test.ts
+
+The diamond Mint is an internal system and a player never sees it: no file under src/ may name the register or its readers (ca_mint_ledger, ca_mint_policy, ca_diamond_house, fn_ca_mint_overview, fn_ca_diamond_register_vs_supply), the wallet reads only the player's own diamond_transactions journal, and the migration's admin-only RLS policy plus the anon revoke stay in place - Dan, 2026-09-05: "THEY SHOULD NEVER SEE OF HAVE ACCESS TO THE MINT, THATS INTERNAL SYSTEMS", answering my own proposal to show players per-row diamond provenance, which is the idea the next auditor will reach for.

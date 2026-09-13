@@ -6175,27 +6175,29 @@ export abstract class TournamentManagerBase {
             );
           }
 
-          // Phase X5 (2026-04-28): emit level_up discrete event so clients
-          // can trigger the level-up popup + sound + haptic per Bible V8 §5
-          // (UI/Popup/Animation/Sound/Haptic Doctrine). Without this, clients
-          // must infer level escalation from a state-snapshot diff, which
-          // violates Law 1.16 Real-Time Delivery.
-          try {
-            tableStateHub.emitEvent(tableId, {
-              type: 'level_up',
-              table_id: tableId,
-              tournament_id: this.tournamentId,
-              new_level: this.currentLevel,
-              previous_level: prevLevel,
-              small_blind: level.smallBlind,
-              big_blind: level.bigBlind,
-              ante: level.ante || 0,
-              duration_minutes: level.durationMinutes,
-              timestamp: Date.now(),
-            });
-          } catch {
-            /* hub broadcast failure is non-fatal */
-          }
+          /* A SECOND `level_up`, ON A TRANSPORT NOBODY LISTENS TO, DELETED
+             2026-09-09.
+
+             A `tableStateHub.emitEvent(tableId, { type: 'level_up', new_level,
+             previous_level, small_blind, ... })` stood here, and its comment
+             said clients depend on it "to trigger the level-up popup + sound +
+             haptic per Bible V8 section 5". They do not, and never did: every
+             one of the four client handlers (TablePage, TournamentPage,
+             TournamentLobbyPage, RealtimeChannelService) reads the
+             TOURNAMENT-TOPIC broadcast a few lines below, which carries
+             `level` / `blinds` / `smallBlind` / `bigBlind` / `ante`. Nothing in
+             this repo reads `new_level` at all - the only other matches are two
+             unrelated XP migrations - so the popup, the sound and the haptic
+             this comment claimed to be responsible for were already being
+             driven entirely by the broadcast at :6276.
+
+             It also fired BEFORE `tournaments.current_level` was persisted just
+             below, so anything that HAD adopted it would have been racing the
+             row it describes.
+
+             Deleted rather than repaired: the announcement already reaches every
+             client, and a second producer of the same popup on a different
+             transport is a duplicate cue waiting to happen, not coverage. */
         }
 
         const { error: levelErr } = await supabase
@@ -6220,8 +6222,18 @@ export abstract class TournamentManagerBase {
         // mints/destroys chips each level; and (b) wrote the raced stack back
         // scoped ONLY by user_id (not table_id), overwriting the SAME user's
         // stack at any other cash/tournament table — cross-table chip corruption.
-        // Re-enable only behind a real denomination-removal schedule + a
-        // table-scoped write-back + a chips-in-play conservation assertion.
+        //
+        // (b) IS FIXED HERE AND NOW, 2026-09-09, EVEN THOUGH THE BLOCK IS DEAD.
+        // Leaving the unscoped UPDATE inside a `const X = false` branch is a
+        // loaded trap: whoever flips the flag gets the cross-table corruption
+        // back in the same commit, and the comment that warned them is the same
+        // comment that told them re-enabling was possible. The write-back is
+        // table-scoped now (see `seatTableByUser` below), so the flag no longer
+        // guards a defect - it guards an unfinished feature.
+        //
+        // Still outstanding before this may be re-enabled, and (a) is the real
+        // one: a genuine denomination-removal schedule (the small blind is NOT
+        // a denomination) and a chips-in-play conservation assertion.
         const CHIP_RACE_ENABLED = false;
         const prevLevelData =
           this.resolveBlindLevel(blindStructure, prevLevel) || blindStructure[0];
@@ -6230,6 +6242,12 @@ export abstract class TournamentManagerBase {
           try {
             // Gather all tournament player stacks across all tables
             const playerStacks = new Map<string, number>();
+            /* WHICH TABLE each stack was read from. `playerStacks` is keyed by
+               user_id because that is what ChipRaceEngine.executeChipRace takes,
+               and the table it came from is exactly the thing the old write-back
+               below had thrown away. Kept alongside so the UPDATE can be scoped
+               to the seat that was actually raced and to no other. */
+            const seatTableByUser = new Map<string, string>();
             for (const tableId of this.tableEngines.keys()) {
               const { data: seats } = await supabase
                 .from('table_seats')
@@ -6238,7 +6256,10 @@ export abstract class TournamentManagerBase {
                 .is('left_at', null);
               if (!this.lifecycleIsCurrent(lifecycle)) return;
               for (const seat of seats || []) {
-                if (seat.stack > 0) playerStacks.set(seat.user_id, seat.stack);
+                if (seat.stack > 0) {
+                  playerStacks.set(seat.user_id, seat.stack);
+                  seatTableByUser.set(seat.user_id, tableId);
+                }
               }
             }
             if (playerStacks.size >= 2) {
@@ -6251,11 +6272,28 @@ export abstract class TournamentManagerBase {
               console.log(
                 `[Tournament:${this.tournamentId.slice(0, 8)}] Chip race: removed ${prevSmallBlind} denomination, ${result.totalNewChipsDistributed} chips redistributed to ${result.players.filter((p) => p.chipsAwarded > 0).length} players`
               );
-              // Update table_seats with new stacks after chip race
+              // Update table_seats with new stacks after chip race.
+              // SCOPED BY TABLE. Without `.eq('table_id', ...)` this matched
+              // every live seat that user holds - their cash game, another
+              // tournament - and wrote this tournament's raced stack over all
+              // of them. A seat we cannot attribute to a table is SKIPPED and
+              // reported rather than written unscoped: an unraced stack is a
+              // discrepancy, an overwritten one somewhere else is theft.
               for (const [userId, newStack] of playerStacks) {
+                const seatTableId = seatTableByUser.get(userId);
+                if (!seatTableId) {
+                  reportError(
+                    new Error(
+                      `[Tournament:${this.tournamentId.slice(0, 8)}] chip race produced a stack for ${userId.slice(0, 8)} with no table to write it to; skipped rather than written across every seat they hold`
+                    ),
+                    'TournamentManagerBase.chip_race_seat_table_unknown'
+                  );
+                  continue;
+                }
                 await supabase
                   .from('table_seats')
                   .update({ stack: newStack })
+                  .eq('table_id', seatTableId)
                   .eq('user_id', userId)
                   .is('left_at', null);
                 if (!this.lifecycleIsCurrent(lifecycle)) return;

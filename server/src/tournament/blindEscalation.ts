@@ -201,9 +201,30 @@ export function escalatedBlindLevel(
   autoEscalated: true;
 } {
   const factor = escalationFactor(index, persistedLength, ratio);
+  /**
+   * ROUND. `Math.min` IS NOT A ROUND (2026-09-09).
+   *
+   * The ratio is 1.4 by default and is whatever cadence the ladder observed
+   * otherwise, so `n * factor` is a fraction for almost every level: a small
+   * blind of 1000 one level past the structure is 1316.0740129524924. Neither
+   * clamp here rounds it, and neither one bites on a healthy ladder — the
+   * MAX_BLIND_VALUE ceiling below and `capLevelToChipsInPlay` above both
+   * return the value UNCHANGED when they do not fire (blindEscalation.ts:160,
+   * :165; TournamentManagerBase.ts:5902), which is the ordinary case.
+   *
+   * That fraction is written to `tables.small_blind` / `big_blind` / `ante`,
+   * DECIMAL(10,2), so the felt posts fractional-chip blinds and antes into
+   * integer stacks; and into `tables.stakes` as the raw JS float string that
+   * the table masthead, the lobby rows and every BB-depth badge render.
+   *
+   * Both sibling ladder generators already round: blindLadder.ts:92-95 says
+   * why (`15 * 10^3` is 15000.000000000002 in IEEE754 and fails the column),
+   * and config/spinSpec.ts:360 rounds its own 1.4x continuation to the nearest
+   * ten. This was the one generator that did not.
+   */
   const scale = (v: unknown) => {
     const n = Number(v);
-    return Math.min((Number.isFinite(n) ? n : 0) * factor, MAX_BLIND_VALUE);
+    return Math.min(Math.round((Number.isFinite(n) ? n : 0) * factor), MAX_BLIND_VALUE);
   };
   return {
     level: index + 1,

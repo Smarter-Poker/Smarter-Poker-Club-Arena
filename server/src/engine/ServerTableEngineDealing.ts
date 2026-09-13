@@ -1127,19 +1127,42 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                  * `.lte('stack', 0)` is the race guard: a rebuy that landed
                  * on this seat between the bust and this write raised the
                  * stack, and that seat stays exactly where it is.
+                 *
+                 * THE GUARD ONLY EVER PROTECTED ONE OF THE THREE WRITES
+                 * (2026-09-09). The vacate carried `.lte('stack', 0)`; the
+                 * `tournament_players` zero below and the `seat_left` broadcast
+                 * were both driven off `bustedIds`, the list this engine
+                 * assembled BEFORE the awaits. A PostgREST update that matches
+                 * zero rows returns `error: null`, so a rebuy landing in the
+                 * window between the bust and this block took the success
+                 * branch and then had its freshly-purchased chips overwritten
+                 * with 0 - and the elimination sweep detects a bust from
+                 * exactly that column, as the comment below says in its own
+                 * words. The seat_left emit removed a seat that was occupied
+                 * again. Both were the SAME race the vacate guard exists for,
+                 * on the two writes that never got it.
+                 *
+                 * So the vacate now RETURNS the rows it actually moved, and
+                 * everything downstream is driven off that answer instead of
+                 * the pre-await intention. A seat the guard refused is absent
+                 * from `vacated`, so it is not zeroed and not announced.
                  */
                 try {
                   const bustedIds = justBustedPlayers
                     .map((p) => p.user_id)
                     .filter(Boolean) as string[];
                   if (bustedIds.length > 0) {
-                    const { error: vacateErr } = await supabase
+                    const { data: vacatedRows, error: vacateErr } = await supabase
                       .from('table_seats')
                       .update({ left_at: new Date().toISOString() })
                       .eq('table_id', this.tableId)
                       .in('user_id', bustedIds)
                       .is('left_at', null)
-                      .lte('stack', 0);
+                      .lte('stack', 0)
+                      .select('user_id');
+                    const vacatedIds = (vacatedRows ?? [])
+                      .map((row: { user_id: string | null }) => row.user_id)
+                      .filter(Boolean) as string[];
                     if (vacateErr) {
                       reportError(
                         new Error(
@@ -1170,22 +1193,32 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                        * did, and the sweep's rebuy decision window still
                        * holds their entry open before eliminating them.
                        */
-                      const { error: zeroErr } = await supabase
-                        .from('tournament_players')
-                        .update({ chips: 0 })
-                        .eq('tournament_id', this.tableInfo!.tournament_id!)
-                        .in('user_id', bustedIds)
-                        .eq('status', 'playing');
-                      if (zeroErr) {
-                        reportError(
-                          new Error(
-                            `[ServerTableEngine:${this.tableId}] busted-player chips-zero failed: ${zeroErr.message} - the seatless-phantom sweep guard will catch them`
-                          ),
-                          'ServerTableEngine.busted_chip_zero_failed'
-                        );
+                      if (vacatedIds.length > 0) {
+                        const { error: zeroErr } = await supabase
+                          .from('tournament_players')
+                          .update({ chips: 0 })
+                          .eq('tournament_id', this.tableInfo!.tournament_id!)
+                          .in('user_id', vacatedIds)
+                          .eq('status', 'playing');
+                        // NOT also `.lte('chips', 0)`: this write exists
+                        // precisely because `chips` is still the last stale
+                        // POSITIVE value at this instant (the vacate removed
+                        // the open seat the chip sync reads), so that filter
+                        // would match nothing and re-open the hung-MTT
+                        // regression the comment above describes. The vacate's
+                        // own returned rows are the race guard.
+                        if (zeroErr) {
+                          reportError(
+                            new Error(
+                              `[ServerTableEngine:${this.tableId}] busted-player chips-zero failed: ${zeroErr.message} - the seatless-phantom sweep guard will catch them`
+                            ),
+                            'ServerTableEngine.busted_chip_zero_failed'
+                          );
+                        }
                       }
                       for (const p of justBustedPlayers) {
                         if (!p.user_id) continue;
+                        if (!vacatedIds.includes(p.user_id)) continue;
                         this.hub?.emitEvent(this.tableId, {
                           type: 'seat_left',
                           table_id: this.tableId,
@@ -1604,6 +1637,69 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   protected async dealHand(players: SeatedPlayer[]): Promise<void> {
     if (!this.tableInfo) return;
 
+    // ── DECK CAPACITY GUARD (2026-08-15) ─────────────────────────────────
+    // Deck.deal throws 'Not enough cards in deck' when hole cards exhaust the
+    // deck. HAND_START is emitted BEFORE dealHoleCards, and HAND_START marks
+    // watchdog progress — so a table that cannot physically be dealt looped
+    // "deal -> throw -> sleep 2s -> deal" forever with a perfectly green
+    // watchdog. Refuse the deal instead, loudly and slowly.
+    // 2026-08-23: this was a local map, unexported and invisible to the only
+    // other copy of the same fact in HandController.getCardsPerPlayer(). Both
+    // fell back to 2, so `flo8` would have passed a capacity check computed for
+    // a two-card game and then been dealt four. One table now: VariantRules.
+    //
+    // MOVED ABOVE THE HAND-NUMBER ALLOCATION (2026-09-09). It used to sit
+    // below it and undo the allocation with `this.handCount--; // this hand
+    // never happened`. That line was written when handCount was a per-table
+    // counter; it is not one any more. Since 2026-08-18 the number comes from
+    // `fn_next_hand_number`, a sequence SHARED BY EVERY TABLE, and a sequence
+    // value cannot be un-allocated - the decrement simply pointed this table at
+    // a number another table had already written hand_history against. It was
+    // then read during the 30-second sleep below, by recoverBustedSeatedHorses
+    // -> autoRebuyHorse(..., this.handCount). A hand that never happened must
+    // not take a number at all, so the refusal now comes first and no number is
+    // taken. handsDealtThisSession follows the same rule for the same reason.
+    const variantKey = (this.tableInfo?.game_variant || 'nlh').toLowerCase();
+    const cardsPerPlayer = holeCardCount(variantKey);
+    const deckSize = deckSizeFor(variantKey);
+    const maxSeatable = maxSeatsFor(variantKey);
+
+    if (players.length > maxSeatable) {
+      reportError(
+        new Error(
+          `Deck cannot serve ${players.length} seats of ${variantKey} ` +
+            `(${cardsPerPlayer}/player, ${deckSize}-card deck, max ${maxSeatable})`
+        ),
+        'ServerTableEngine.' + this.tableId + '.deck_capacity_exceeded'
+      );
+
+      /**
+       * MARK PROGRESS, BECAUSE THE LOOP IS ALIVE (2026-08-25).
+       *
+       * This refusal is correct - the deck genuinely cannot serve the table -
+       * but returning without marking progress made the engine lie about
+       * itself. `lastProgressAtMs` froze while the loop kept ticking, so the
+       * watchdog read a table that is refusing on purpose as a WEDGED one and
+       * called killForRestart. That restarts the WHOLE ENGINE - every table on
+       * the instance, ~2 minutes of 4404 rehydration, every seated human
+       * dropped - to cure one table that will refuse identically the moment
+       * the engine comes back. It is the mass-disconnect workstream's own
+       * failure mode, triggered by a guard.
+       *
+       * The loop is not stuck. It is running, and the answer it keeps
+       * producing is "no". Say so honestly and let the alarm above be the
+       * signal, rather than a restart nobody asked for.
+       *
+       * The real cure is upstream: tournament tables are now built through
+       * clampSeatsForVariant, so this branch should be unreachable for
+       * anything created after 2026-08-25. It stays as a backstop, and a
+       * backstop must not be able to take the fleet down.
+       */
+      this.markProgress();
+      await this.sleep(30000); // do NOT hot-loop
+      return;
+    }
+
     // GLOBAL HAND NUMBER (2026-08-18). Allocated from the database sequence at
     // the moment the hand is dealt, so numbers ascend in true deal order across
     // every table, club, union, cash game and tournament, and can never repeat.
@@ -1671,58 +1767,6 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     );
 
     // Convert to SeatPlayer format
-    // ── DECK CAPACITY GUARD (2026-08-15) ─────────────────────────────────
-    // Deck.deal throws 'Not enough cards in deck' when hole cards exhaust the
-    // deck. HAND_START is emitted BEFORE dealHoleCards, and HAND_START marks
-    // watchdog progress — so a table that cannot physically be dealt looped
-    // "deal -> throw -> sleep 2s -> deal" forever with a perfectly green
-    // watchdog. Refuse the deal instead, loudly and slowly.
-    // 2026-08-23: this was a local map, unexported and invisible to the only
-    // other copy of the same fact in HandController.getCardsPerPlayer(). Both
-    // fell back to 2, so `flo8` would have passed a capacity check computed for
-    // a two-card game and then been dealt four. One table now: VariantRules.
-    const variantKey = (this.tableInfo?.game_variant || 'nlh').toLowerCase();
-    const cardsPerPlayer = holeCardCount(variantKey);
-    const deckSize = deckSizeFor(variantKey);
-    const maxSeatable = maxSeatsFor(variantKey);
-
-    if (players.length > maxSeatable) {
-      reportError(
-        new Error(
-          `Deck cannot serve ${players.length} seats of ${variantKey} ` +
-            `(${cardsPerPlayer}/player, ${deckSize}-card deck, max ${maxSeatable})`
-        ),
-        'ServerTableEngine.' + this.tableId + '.deck_capacity_exceeded'
-      );
-      this.handCount--; // this hand never happened
-
-      /**
-       * MARK PROGRESS, BECAUSE THE LOOP IS ALIVE (2026-08-25).
-       *
-       * This refusal is correct - the deck genuinely cannot serve the table -
-       * but returning without marking progress made the engine lie about
-       * itself. `lastProgressAtMs` froze while the loop kept ticking, so the
-       * watchdog read a table that is refusing on purpose as a WEDGED one and
-       * called killForRestart. That restarts the WHOLE ENGINE - every table on
-       * the instance, ~2 minutes of 4404 rehydration, every seated human
-       * dropped - to cure one table that will refuse identically the moment
-       * the engine comes back. It is the mass-disconnect workstream's own
-       * failure mode, triggered by a guard.
-       *
-       * The loop is not stuck. It is running, and the answer it keeps
-       * producing is "no". Say so honestly and let the alarm above be the
-       * signal, rather than a restart nobody asked for.
-       *
-       * The real cure is upstream: tournament tables are now built through
-       * clampSeatsForVariant, so this branch should be unreachable for
-       * anything created after 2026-08-25. It stays as a backstop, and a
-       * backstop must not be able to take the fleet down.
-       */
-      this.markProgress();
-      await this.sleep(30000); // do NOT hot-loop
-      return;
-    }
-
     const hcPlayers: SeatPlayer[] = players.map((p) => ({
       seat: p.seat_number,
       user_id: p.user_id,
@@ -3207,8 +3251,18 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     const seated = this.seatedPlayers.filter((p) => p.user_id && !p.is_horse);
     const broke = seated.filter((p) => Number(p.stack ?? 0) <= 0);
 
-    // Anyone who is funded again stops being watched.
-    const brokeIds = new Set(broke.map((p) => p.user_id));
+    /* Anyone who is funded again stops being watched.
+       2026-09-09: this used to prune against the NON-HORSE broke list, which is
+       correct for what this sweep releases and wrong for what the map means.
+       `bustedSince` is "when was this seat first seen at zero", and since the
+       horse recovery pass now measures the same grace from the same map (10.5 -
+       both seats must clear on identical clocks), pruning on the non-horse list
+       deleted every horse's entry on every tick and the grace could never
+       elapse. The map is pruned against every seat that is no longer at zero,
+       horse or human; the ACTION below is still non-horses only. */
+    const brokeIds = new Set(
+      this.seatedPlayers.filter((p) => p.user_id && Number(p.stack ?? 0) <= 0).map((p) => p.user_id)
+    );
     for (const [id] of this.bustedSince) {
       if (!brokeIds.has(id)) this.bustedSince.delete(id);
     }
@@ -3288,6 +3342,30 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     const now = Date.now();
     for (const horse of bustHorses) {
       if (isMaintenanceFrozen()) return;
+
+      /* THE SEAT CLEARS ON THE SAME CLOCK A HUMAN'S DOES (10.5, 2026-09-09).
+
+         A busted human's seat cannot be released until it has been seen at zero
+         for BUSTED_GRACE_MS, and longer while a rebuy prompt is open. A busted
+         horse's was released on the FIRST idle tick: `bustRecoveryLastAttempt
+         .get(...) || 0` makes `now - 0 >= 30000` true immediately. The two
+         sweeps run on the same tick at the same table, so the difference was
+         visible on the felt - one seat vanishes the instant it busts, the next
+         sits there for ten seconds - and that is the rhythm tell Dan named:
+         "IF YOU DIDN'T GIVE THEM THE SAME EXACT FEATURES AND FUNCTIONALITY,
+         PEOPLE WOULD NOTICE". The comment at the stop-loss release below
+         already CLAIMED this parity. It is true now.
+
+         The clock starts here, from the SAME map the human sweep uses, so the
+         two cannot drift apart. It does NOT gate the rebuy: a human can rebuy
+         the instant the prompt appears, and `autoRebuyHorse` is the horse's
+         equivalent input device (10.5's second sanctioned branch), so making it
+         wait would be a different treatment, not the same one. Only the two
+         RELEASE decisions below are held. */
+      const firstSeenBusted = this.bustedSince.get(horse.user_id) ?? now;
+      this.bustedSince.set(horse.user_id, firstSeenBusted);
+      const releaseAllowed = now - firstSeenBusted >= ServerTableEngineDealing.BUSTED_GRACE_MS;
+
       const lastAttempt = this.bustRecoveryLastAttempt.get(horse.user_id) || 0;
       if (now - lastAttempt < 30000) continue;
       this.bustRecoveryLastAttempt.set(horse.user_id, now);
@@ -3303,10 +3381,17 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
            leaves through - money path, then `seat_left`, then the trackers -
            so a busted horse's seat clears on every client at the same moment
            a human's does. Timing is part of the treatment (Dan 2026-08-27). */
+        if (!releaseAllowed) {
+          // Inside the grace, not a failed attempt: give the throttle back so
+          // the release lands ON the grace boundary rather than 30s later.
+          this.bustRecoveryLastAttempt.delete(horse.user_id);
+          continue;
+        }
         const released = await this.releaseBustedSeat(horse, 'busted_stop_loss');
         if (!released) continue;
         this.horseRebuys.delete(horse.user_id);
         this.bustRecoveryLastAttempt.delete(horse.user_id);
+        this.bustedSince.delete(horse.user_id);
         console.log(
           `[ServerTableEngine:${this.tableId}] Dead-table recovery: Horse ${horse.username} at stop-loss - removed.`
         );
@@ -3341,14 +3426,27 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         horse.stack = funding.stack;
         this.horseRebuys.set(horse.user_id, currentRebuys + 1);
         this.bustRecoveryLastAttempt.delete(horse.user_id);
+        // Funded again: the seat is no longer at zero, so it stops being watched
+        // - the same line the human sweep runs when a rebuy lands.
+        this.bustedSince.delete(horse.user_id);
         console.log(
           `[ServerTableEngine:${this.tableId}] Dead-table recovery: rebought ${horse.username} -> ${rebuyAmount} chips (Rebuy #${currentRebuys + 1})`
         );
       } else {
+        /* Same grace as the human, for the same reason. The rebuy above was
+           already attempted and declined, so the throttle is given back too:
+           the seat is released on the grace boundary, and if the club treasury
+           is topped up inside that window the horse gets the second chance a
+           human at the cashier would get. Bounded by BUSTED_GRACE_MS. */
+        if (!releaseAllowed) {
+          this.bustRecoveryLastAttempt.delete(horse.user_id);
+          continue;
+        }
         const released = await this.releaseBustedSeat(horse, 'busted_unfunded');
         if (!released) continue;
         this.horseRebuys.delete(horse.user_id);
         this.bustRecoveryLastAttempt.delete(horse.user_id);
+        this.bustedSince.delete(horse.user_id);
         console.log(
           `[ServerTableEngine:${this.tableId}] Dead-table recovery: Horse ${horse.username} left - insufficient treasury funds`
         );
@@ -3401,6 +3499,15 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   private static readonly GHOST_SEAT_ESCALATE_MS = 120_000;
 
   protected async releaseDeadTournamentSeats(): Promise<void> {
+    /* CLAUDE.md 13 rule 5, and this sweep did not have it (2026-09-09). "HORSES
+       SHOULD NOT STAND UP OR ROTATE, EVERYTHING JUST FREEZES, THEN PICKS BACK
+       UP EXACTLY AS IT WAS." This runs on the idle branch of the dealing loop
+       for every tournament table on every tick and its whole job is
+       markSeatAsLeft - a seat move, during a total platform freeze. Both
+       siblings in this file (the busted-seat recovery and the eviction sweep)
+       already open with this exact line; this one was missed. The seats are
+       still dead when the break ends, so nothing is lost by waiting. */
+    if (isMaintenanceFrozen()) return;
     const tournamentId = this.tableInfo?.tournament_id;
     if (!tournamentId || this.seatedPlayers.length === 0) return;
 

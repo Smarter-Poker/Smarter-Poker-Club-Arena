@@ -13,7 +13,6 @@ import './TournamentPage.css';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
-import EliminationOverlay from '../components/tournament/EliminationOverlay';
 import { tableService } from '../services/TableService';
 // Tournament registration/refunds handled via TournamentService → Player Wallet RPCs
 import { useToast } from '../components/common/Toast';
@@ -37,6 +36,14 @@ import { TournamentClock } from '../components/tournament/TournamentClock';
    come with it. */
 import RankingTab from '../components/tournament/details/RankingTab';
 import type { NormalisedBlindLevel, TournamentTable } from '../components/tournament/details/types';
+/* ONE PAYOUT RULE, ONE PARSER (2026-09-09). The two payout surfaces on this page
+   priced places themselves; see the note above the Payouts list below. */
+import {
+  chips,
+  effectivePrizePool,
+  parsePayoutStructure,
+  placePrize,
+} from '../components/tournament/details/types';
 import { useTournamentEntries } from '../hooks/useTournamentEntries';
 import { blindLevelMinutes } from '../components/lobby/tournamentFigures';
 import { reportError } from '../utils/errorReporter';
@@ -1546,39 +1553,58 @@ export default function TournamentPage() {
                 />
               )}
 
-              {/* Payout Structure */}
+              {/* ═══════════════════════════════════════════════════════════════
+                  PAYOUTS — priced by the engine's rule, not by this file
+                  ═══════════════════════════════════════════════════════════════
+
+                  Until 2026-09-09 this list parsed `payout_structure` inline (a
+                  third copy of `parsePayoutStructure`) and priced each place as
+                  `Math.trunc(((prize_pool * pct) / 100) * 100) / 100` — the exact
+                  expression src/lib/payoutMath.ts was written to delete, and the
+                  last surviving copy of it. Three defects in one line:
+
+                    * it TRUNCATED a binary float where the engine rounds. Pool
+                      513.00, place 8 at 3.5%: (513 * 3.5 / 100) * 100 is
+                      1795.4999999999998, so this printed 17.95 while the wallet
+                      was credited 17.96 (payoutMath.ts:101-113);
+                    * it had no residual rule, so the places shown did not sum to
+                      the pool — 13 of 78 production (pool, structure) pairs
+                      showed a different number from the one that was paid
+                      (payoutMath.ts:16-25);
+                    * it read the raw `prize_pool`, so a guaranteed event's
+                      overlay was missing from every figure.
+
+                  `placePrize` prices the WHOLE ladder in integer cents and reads
+                  one place out of it, which is the only way the residual can be
+                  expressed; `effectivePrizePool` is the pool floored by the
+                  guarantee. Both are what Rewards and Detail already use. */}
               <div className="payout-structure">
                 <h3>Payouts</h3>
                 <div className="payout-list">
-                  {(Array.isArray(selectedTournament.payout_structure)
-                    ? selectedTournament.payout_structure
-                    : (() => {
-                        try {
-                          return typeof selectedTournament.payout_structure === 'string'
-                            ? JSON.parse(selectedTournament.payout_structure)
-                            : [];
-                        } catch {
-                          return [];
-                        }
-                      })()
-                  )
-                    .slice(0, 5)
-                    .map((payout: any, i: number) => {
-                      const pos = payout.place || payout.position || i + 1;
-                      return (
-                        <div key={i} className="payout-item">
-                          <span className="payout-place">
-                            {pos === 1 ? '' : pos === 2 ? '' : pos === 3 ? '' : `${pos}th`}
-                          </span>
-                          <span className="payout-percent">{payout.percentage}%</span>
-                          <span className="payout-amount">
-                            {Math.trunc(
-                              ((selectedTournament.prize_pool * payout.percentage) / 100) * 100
-                            ) / 100}
-                          </span>
-                        </div>
-                      );
-                    })}
+                  {(() => {
+                    const places = parsePayoutStructure(selectedTournament.payout_structure) ?? [];
+                    const pool = effectivePrizePool(
+                      selectedTournament.prize_pool,
+                      selectedTournament.guaranteed_prize
+                    );
+                    return places.slice(0, 5).map((payout) => (
+                      <div key={payout.place} className="payout-item">
+                        <span className="payout-place">
+                          {payout.place === 1
+                            ? ''
+                            : payout.place === 2
+                              ? ''
+                              : payout.place === 3
+                                ? ''
+                                : `${payout.place}th`}
+                        </span>
+                        <span className="payout-percent">{payout.percentage}%</span>
+                        <span className="payout-amount">
+                          {chips(placePrize(pool, places, payout.place))}
+                        </span>
+                      </div>
+                    ));
+                  })()}
                 </div>
               </div>
 
@@ -1674,30 +1700,27 @@ export default function TournamentPage() {
               {selectedTournament.status === 'COMPLETED' && (
                 <div className="tourn-results-overlay">
                   <div className="results-header">Final Standings</div>
+                  {/* The same one rule as the live Payouts list above, for the
+                      same reason: this podium truncated a float off the raw
+                      pool and could print a different number from the one the
+                      winner was actually paid. */}
                   <div className="results-podium">
-                    {(Array.isArray(selectedTournament.payout_structure)
-                      ? selectedTournament.payout_structure
-                      : (() => {
-                          try {
-                            return typeof selectedTournament.payout_structure === 'string'
-                              ? JSON.parse(selectedTournament.payout_structure)
-                              : [];
-                          } catch {
-                            return [];
-                          }
-                        })()
-                    )
-                      .slice(0, 3)
-                      .map((p: any, i: number) => (
-                        <div key={i} className={`podium-place podium-${i + 1}`}>
+                    {(() => {
+                      const places =
+                        parsePayoutStructure(selectedTournament.payout_structure) ?? [];
+                      const pool = effectivePrizePool(
+                        selectedTournament.prize_pool,
+                        selectedTournament.guaranteed_prize
+                      );
+                      return places.slice(0, 3).map((p, i) => (
+                        <div key={p.place} className={`podium-place podium-${i + 1}`}>
                           <div className="podium-icon">{i === 0 ? '★' : i === 1 ? '☆' : '✧'}</div>
                           <div className="podium-payout">
-                            {Math.trunc(
-                              ((selectedTournament.prize_pool * (p.percentage || 0)) / 100) * 100
-                            ) / 100}
+                            {chips(placePrize(pool, places, p.place))}
                           </div>
                         </div>
-                      ))}
+                      ));
+                    })()}
                   </div>
                 </div>
               )}

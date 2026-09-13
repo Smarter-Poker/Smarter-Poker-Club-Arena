@@ -537,6 +537,16 @@ export class TableStateHub {
    * D3: hand one subscriber every still-live retained event for its table, in
    * emission order, marked `replayed` so the client can distinguish a catch-up
    * from a live beat. Never sends an event that same subscriber already got.
+   *
+   * DELIVERED MEANS DELIVERED (2026-09-09). This used to add the subscriber to
+   * `entry.delivered` BEFORE calling safeSend, so a send that failed - a socket
+   * that closed between the resync and this line, a throw inside `send` - still
+   * recorded the event as received. The subscriber object is reused for every
+   * later RESYNC on that connection, so the event was skipped for ever: the one
+   * replay a reconnecting client had was lost by the failure it was there to
+   * survive. `broadcast()` states the opposite rule two methods down ("a
+   * subscriber whose send threw is deliberately NOT recorded, so its resync
+   * replays the event") and follows it; this path did not.
    */
   private replayRetained(tableId: string, sub: HubSubscriber): void {
     if (this.retained.size === 0) return;
@@ -546,7 +556,6 @@ export class TableStateHub {
 
     for (const entry of list) {
       if (entry.delivered.has(sub)) continue;
-      entry.delivered.add(sub);
       const message: EventMessage = {
         type: 'EVENT',
         tableId,
@@ -555,7 +564,10 @@ export class TableStateHub {
         ts: Date.now(),
         payload: { ...entry.payload, replayed: true },
       };
-      if (this.safeSend(sub, JSON.stringify(message))) this.replayedEvents++;
+      if (this.safeSend(sub, JSON.stringify(message))) {
+        entry.delivered.add(sub);
+        this.replayedEvents++;
+      }
     }
   }
 

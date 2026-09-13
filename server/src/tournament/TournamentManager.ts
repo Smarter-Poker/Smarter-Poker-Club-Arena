@@ -48,6 +48,35 @@ interface TournamentTableCloseResult {
 
 export class TournamentManager extends TournamentManagerEliminations {
   /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  A PLAYER IS TOLD BEFORE THEIR TABLE BREAKS (2026-09-09)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * `TableBreakEngine` was written to do this - a 30-second TABLE_BREAK_WARNING,
+   * then TABLE_BREAK_STARTED, then a PLAYER_MOVED per player. It is constructed
+   * on every table engine (ServerTableEngineBase.ts:1968) and NO METHOD ON IT IS
+   * EVER CALLED, so none of those events has ever fired. The live break path is
+   * the one below, and its only announcement was `broadcast('table_rebalance')`
+   * AFTER every seat had already moved: a player finished a hand and found
+   * themselves at a different table with no notice at all.
+   *
+   * The warning is now part of the live path. The countdown does NOT sleep here
+   * - a 30-second await inside checkTableBalance would hold a scheduler sweep
+   * slot for 30 seconds, which is the fan-out `waitForHandComplete` was
+   * rewritten to stop. Instead the first pass ANNOUNCES and arms a wake, and the
+   * pass that arrives after the window does the moving. A restart loses the map
+   * and re-announces, which is the safe direction: a slightly longer warning,
+   * never a silent move.
+   *
+   * 30 seconds because that is `TableBreakEngine`'s own `warningSeconds`, so the
+   * two agree if that class is ever revived or retired.
+   */
+  private static readonly TABLE_BREAK_WARNING_MS = 30_000;
+
+  /** tableId -> when its break was announced. Pruned against the live table list. */
+  private readonly breakWarnedAt = new Map<string, number>();
+
+  /**
    * Read a complete balancer picture in bounded ID-list chunks. The former
    * implementation issued two sequential requests per table, twice per pass;
    * a four-slot scheduler therefore still let four 1,000-table tournaments
@@ -341,6 +370,20 @@ export class TournamentManager extends TournamentManagerEliminations {
     if (!balancerTables) return;
 
     // ── STEP 1: Check if any table should be broken (merged into others) ──
+    /* Forget any standing break announcement for a table that is no longer
+       breaking - it filled up again, the field moved, or the table is gone from
+       this tournament entirely. Without this the map grows across a long event,
+       and a table that was announced, stopped qualifying, then qualified again
+       would execute its break INSTANTLY off the stale timestamp instead of
+       warning anybody. `shouldBreakTable` is a pure read of the snapshot. */
+    const breakingNow = new Set(
+      balancerTables
+        .filter((t) => this.tableBalancer.shouldBreakTable(t, balancerTables))
+        .map((t) => t.tableId)
+    );
+    for (const announced of [...this.breakWarnedAt.keys()]) {
+      if (!breakingNow.has(announced)) this.breakWarnedAt.delete(announced);
+    }
     for (const bt of balancerTables) {
       if (this.tableBalancer.shouldBreakTable(bt, balancerTables)) {
         const otherTables = balancerTables.filter((t) => t.tableId !== bt.tableId);
@@ -358,6 +401,33 @@ export class TournamentManager extends TournamentManagerEliminations {
         }
 
         if (breakMoves.length === bt.playerCount) {
+          /* ── THE WARNING, BEFORE ANYBODY IS MOVED ──────────────────────────
+             See TABLE_BREAK_WARNING_MS at the top of this class. An empty table
+             has nobody to warn, so it closes straight away as it always did. */
+          if (bt.playerCount > 0) {
+            const announcedAt = this.breakWarnedAt.get(bt.tableId);
+            if (announcedAt === undefined) {
+              this.breakWarnedAt.set(bt.tableId, Date.now());
+              await this.broadcast('table_break_warning', {
+                tableId: bt.tableId,
+                secondsRemaining: Math.round(TournamentManager.TABLE_BREAK_WARNING_MS / 1000),
+                playerCount: bt.playerCount,
+                // Who is moving, so a client can tell THIS player it is them.
+                playerIds: breakMoves.map((m) => m.playerId),
+              });
+              if (!this.eliminationMutationAllowed()) return;
+              this.requestUrgentEliminationSweepAfter(TournamentManager.TABLE_BREAK_WARNING_MS);
+              continue;
+            }
+            const waited = Date.now() - announcedAt;
+            if (waited < TournamentManager.TABLE_BREAK_WARNING_MS) {
+              this.requestUrgentEliminationSweepAfter(
+                TournamentManager.TABLE_BREAK_WARNING_MS - waited
+              );
+              continue;
+            }
+          }
+
           console.log(
             `[Tournament:${this.tournamentId.slice(0, 8)}] Breaking table ${bt.tableId.slice(0, 8)} - moving ${breakMoves.length} players`
           );
@@ -423,6 +493,9 @@ export class TournamentManager extends TournamentManagerEliminations {
             this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
             break;
           }
+
+          // The break is done; this table can never be announced again.
+          this.breakWarnedAt.delete(bt.tableId);
 
           await this.broadcast('table_rebalance', {
             closedTableId: bt.tableId,
@@ -579,14 +652,76 @@ export class TournamentManager extends TournamentManagerEliminations {
     return this.executePlayerMoves(moves);
   }
 
+  /**
+   * Re-derive `tables.current_players` from the live seat rows, for tables this
+   * manager has just changed the occupancy of.
+   *
+   * NEVER THROWS AND NEVER UNDOES A MOVE. The seat rows are the truth and they
+   * are already written by the time this runs; `current_players` is a
+   * denormalised mirror of them. A failed count write is worth reporting and
+   * nothing more - the alternative, failing a completed move because a
+   * bookkeeping column would not update, is strictly worse. (The sibling
+   * recount in TournamentManagerBase.ts:5717-5738 DOES throw, because there it
+   * sits inside the seating path itself and a wrong count there means a table
+   * that will be over-seated.)
+   */
+  private async syncTableSeatCounts(tableIds: Iterable<string>): Promise<void> {
+    for (const tableId of tableIds) {
+      if (!this.eliminationMutationAllowed()) return;
+      const { count, error: countErr } = await supabase
+        .from('table_seats')
+        .select('*', { count: 'exact', head: true })
+        .eq('table_id', tableId)
+        .is('left_at', null);
+      if (countErr || count == null) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] could not count live seats at table ${tableId.slice(0, 8)} after a move (${countErr?.message ?? 'count unavailable'}); tables.current_players is left as it was rather than guessed`
+          ),
+          'Tournament.Move_seat_count_read_failed'
+        );
+        continue;
+      }
+      if (!this.eliminationMutationAllowed()) return;
+      const { error: writeErr } = await supabase
+        .from('tables')
+        .update({ current_players: count })
+        .eq('id', tableId);
+      if (writeErr) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] could not write current_players=${count} for table ${tableId.slice(0, 8)} after a move: ${writeErr.message}`
+          ),
+          'Tournament.Move_seat_count_write_failed'
+        );
+      }
+    }
+  }
+
   protected async executePlayerMoves(moves: MoveInstruction[]): Promise<number> {
     let moved = 0;
+    /**
+     * EVERY BREAK AND REBALANCE USED TO LEAVE THE OPERATOR COUNTS WRONG.
+     *
+     * Nothing here touched `tables.current_players`, so after a table break the
+     * source table still advertised the roster it no longer had and every
+     * destination under-reported by however many arrived. It is permanent - no
+     * later pass recomputes it - and it is what the club operator reads
+     * (src/components/club/TableOperationsPanel.tsx:604) and what the admin heat
+     * map colours its tiles by (src/components/admin/AdminTableHeatmap.tsx:280,
+     * :299). The balancer itself was never fooled: it counts live `table_seats`
+     * rows (loadBalancerTables above), which is exactly why nothing caught this.
+     */
+    const touchedTables = new Set<string>();
     const batch = moves.slice(0, TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
     if (moves.length > batch.length) {
       this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
     }
     for (const move of batch) {
-      if (!this.eliminationMutationAllowed()) return moved;
+      // `break`, not `return`: the counts for the moves that DID land still have
+      // to be written, and syncTableSeatCounts re-checks the same fence before
+      // every statement, so a closed fence stops it too.
+      if (!this.eliminationMutationAllowed()) break;
       try {
         // SWEEP #4 P1-4 FIX (2026-07-23): read the source stack BEFORE marking the
         // old seat left. The old order marked left first, then read the (now-left)
@@ -603,7 +738,7 @@ export class TournamentManager extends TournamentManagerEliminations {
           .is('left_at', null)
           .maybeSingle();
 
-        if (!this.eliminationMutationAllowed()) return moved;
+        if (!this.eliminationMutationAllowed()) break;
 
         if (readErr || oldSeat == null || oldSeat.stack == null) {
           reportError(
@@ -635,7 +770,7 @@ export class TournamentManager extends TournamentManagerEliminations {
           move.playerId,
           move.fromTableId
         );
-        if (!this.eliminationMutationAllowed()) return moved;
+        if (!this.eliminationMutationAllowed()) break;
         if (!moveClaim.allowed) {
           reportError(
             new Error(
@@ -770,12 +905,39 @@ export class TournamentManager extends TournamentManagerEliminations {
           continue;
         }
 
-        // Update tournament_players table_id
-        await supabase
+        /**
+         * BOTH COLUMNS, OR THE ROSTER POINTS AT A SEAT NOBODY IS SITTING IN.
+         *
+         * This wrote `table_id` alone and left `seat_number` holding the SOURCE
+         * table's seat, so a moved player's roster row read (destination table,
+         * source seat) - a pair that describes nothing. It is not merely a stale
+         * display value: the ghost-seat cleanup a few lines above (:693-699)
+         * matches on exactly `(table_id, seat_number)` and nulls the roster
+         * pointer of whoever it finds, so a later move into that seat number at
+         * the destination un-seats, on the roster, a player who is genuinely at
+         * the table and being dealt cards.
+         *
+         * `ensureLateRegSeated` has always written both (:1137-1146). This was
+         * the one seating path that did not.
+         */
+        const { error: rosterErr } = await supabase
           .from('tournament_players')
-          .update({ table_id: move.toTableId })
+          .update({ table_id: move.toTableId, seat_number: move.toSeat })
           .eq('tournament_id', this.tournamentId)
           .eq('user_id', move.playerId);
+        if (rosterErr) {
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Moved ${move.playerId.slice(0, 8)} to table ${move.toTableId.slice(0, 8)} seat ${move.toSeat} but could not update their roster row: ${rosterErr.message}. The seat is correct; the roster still points at the old table.`
+            ),
+            'Tournament.Move_roster_write_failed'
+          );
+        }
+
+        // Both tables changed occupancy. Recounted once at the end of the
+        // batch rather than twice per move.
+        touchedTables.add(move.fromTableId);
+        touchedTables.add(move.toTableId);
 
         moved++;
         console.log(
@@ -785,6 +947,7 @@ export class TournamentManager extends TournamentManagerEliminations {
         reportError(moveErr, 'TournamentthistournamentIdslic.Move_failed_for_moveplayerIdsl');
       }
     }
+    if (touchedTables.size > 0) await this.syncTableSeatCounts(touchedTables);
     return moved;
   }
 

@@ -87,10 +87,48 @@ describe('escalation is anchored to the PERSISTED length', () => {
 
     // At the ratio that actually ships, the same run is far gentler — which is
     // the entire point of the change.
+    //
+    // UPDATED 2026-09-09, because the level is now ROUNDED. This asserted
+    // `r3 / r1` to seven decimal places, which can only hold while the blinds
+    // are raw floats: 750 * 1.4^5 is 4033.68, and a blind of 4033.68 is written
+    // to a DECIMAL(10,2) column and posted at a felt where every stack is an
+    // integer. The pin moves to the new mechanism rather than being weakened -
+    // it now names the exact whole numbers the ratio produces, and requires
+    // them to BE whole numbers, which is the stronger statement.
     const r1 = escalatedBlindLevel(LAST, 14, LEN, 10).bigBlind;
     const r3 = escalatedBlindLevel(LAST, 16, LEN, 10).bigBlind;
-    expect(r3 / r1).toBeCloseTo(Math.pow(1.4, 2), 6);
+    expect(r1).toBe(Math.round(750 * Math.pow(1.4, 5)));
+    expect(r3).toBe(Math.round(750 * Math.pow(1.4, 7)));
+    expect(Number.isInteger(r1)).toBe(true);
+    expect(Number.isInteger(r3)).toBe(true);
+    // Still two steps apart at the ladder ratio, to whatever precision rounding
+    // two integers permits.
+    expect(r3 / r1).toBeCloseTo(Math.pow(1.4, 2), 2);
     expect(r3).toBeLessThan(l3);
+  });
+
+  /**
+   * `Math.min` IS NOT A ROUND (2026-09-09).
+   *
+   * `escalatedBlindLevel` scaled by `Math.pow(ratio, exponent)` and clamped the
+   * result with `Math.min(..., MAX_BLIND_VALUE)`, and nothing rounded. Neither
+   * that ceiling nor `capLevelToChipsInPlay` bites on a healthy ladder - both
+   * return the level unchanged when they do not fire - so the ordinary case was
+   * a fractional blind: a small blind of 1000 one level past the structure came
+   * out as 1316.0740129524924. That is written to `tables.small_blind` /
+   * `big_blind` / `ante` (DECIMAL(10,2)) and into `tables.stakes` as the raw JS
+   * float string the masthead, the lobby rows and every BB-depth badge render.
+   */
+  it('never emits a fractional blind or ante', () => {
+    for (let index = LEN; index < LEN + 12; index++) {
+      const lvl = escalatedBlindLevel(LAST, index, LEN, 10);
+      expect(Number.isInteger(lvl.smallBlind)).toBe(true);
+      expect(Number.isInteger(lvl.bigBlind)).toBe(true);
+      expect(Number.isInteger(lvl.ante)).toBe(true);
+    }
+    // A structure with no ante keeps no ante - rounding must not invent one.
+    const noAnte = escalatedBlindLevel({ ...LAST, ante: 0 }, LEN + 3, LEN, 10);
+    expect(noAnte.ante).toBe(0);
   });
 });
 

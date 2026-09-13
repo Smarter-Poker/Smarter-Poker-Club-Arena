@@ -776,18 +776,35 @@ export class EngineWebSocketServer {
   private async isBannedFromTable(tableId: string, userId: string): Promise<boolean> {
     let scope = this.tableScopeCache.get(tableId);
     if (!scope) {
-      const { data: tableRow } = await supabase
+      /* A FAILED READ IS NEVER CACHED (2026-09-09).
+
+         The scope cache is deliberately TTL-free, and that is right about the
+         VALUE - a table's club and union do not change - but it was applied to
+         a FAILURE to read the value as well. `maybeSingle()` resolves with
+         `{ data: null, error }`, so one transient error on the very first
+         connect to a table stored `unionId: null` for the LIFE OF THE PROCESS,
+         and the union clause was then dropped from every blacklist query for
+         that table. A union-blacklisted player sat down and played there all
+         hour, and nothing said anything, because the cache reads exactly like
+         a table that genuinely has no union.
+
+         Returning without caching means the next connection asks again. The
+         only cost of an unreadable answer is that this one connection is not
+         screened, which is this file's documented open failure. */
+      const { data: tableRow, error: tableErr } = await supabase
         .from('tables')
         .select('club_id')
         .eq('id', tableId)
         .maybeSingle();
+      if (tableErr) return false;
       if (!tableRow?.club_id) return false;
 
-      const { data: clubRow } = await supabase
+      const { data: clubRow, error: clubErr } = await supabase
         .from('clubs')
         .select('union_id')
         .eq('id', tableRow.club_id)
         .maybeSingle();
+      if (clubErr) return false;
 
       scope = {
         clubId: tableRow.club_id as string,
@@ -815,7 +832,13 @@ export class EngineWebSocketServer {
     if (clubRow?.union_id) orParts.push(`union_id.eq.${clubRow.union_id}`);
     q = q.or(orParts.join(','));
 
-    const { data: bans } = await q.limit(1);
+    const { data: bans, error: bansErr } = await q.limit(1);
+    /* Same rule as the scope read above: an unreadable blacklist is not an
+       empty one. This used to store `banned: false` for the full 30s TTL from a
+       query that never ran, so a banned player who happened to arrive during a
+       database blip was admitted AND the wrong answer was then served to every
+       later attempt in that window. Fail open for this connection only. */
+    if (bansErr) return false;
     const banned = !!(bans && bans.length > 0);
     if (this.banCache.size >= BAN_CACHE_MAX) {
       const oldest = this.banCache.keys().next().value;
@@ -846,6 +869,21 @@ export class EngineWebSocketServer {
    *
    * Fails OPEN on error, like every other gate in this file: a database blip
    * must never refuse a legitimate connection.
+   *
+   * IT DID NOT, UNTIL 2026-09-09, AND THE SENTENCE ABOVE IS WHY NOBODY LOOKED.
+   * Both reads discarded their `error` and `maybeSingle()` RESOLVES with
+   * `{ data: null, error }` rather than throwing - so the `catch` below never
+   * saw a failed read, and `!seat` on a failed SEAT read is `true`: a seated
+   * player whose seat query hiccupped was refused their own table with
+   * OBSERVERS_RESTRICTED. The settings read was worse still, because it wrote
+   * `restricted: false` into the cache from an unreadable answer... which is
+   * the open direction, so the gate silently stopped enforcing for a full TTL.
+   * One unreadable row, two opposite wrong answers, and a doc-comment
+   * describing neither (10.86: never fold "could not tell" into a value).
+   *
+   * Both errors are checked now. Either one returns false - the documented open
+   * failure - and NEITHER writes the cache, so the next connection asks again
+   * instead of inheriting a guess. `isIpRestricted` below is the pattern.
    */
   private async isRestrictedObserver(tableId: string, userId: string): Promise<boolean> {
     try {
@@ -854,23 +892,26 @@ export class EngineWebSocketServer {
       if (cached && Date.now() - cached.readAt < IP_RESTRICTION_TTL_MS) {
         restricted = cached.restricted;
       } else {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('tables')
           .select('restrict_observers')
           .eq('id', tableId)
           .maybeSingle();
+        if (error) return false;
         restricted = data?.restrict_observers === true;
         this.observerRestrictionCache.set(tableId, { restricted, readAt: Date.now() });
       }
       if (!restricted) return false;
 
-      const { data: seat } = await supabase
+      const { data: seat, error: seatErr } = await supabase
         .from('table_seats')
         .select('seat_number')
         .eq('table_id', tableId)
         .eq('user_id', userId)
         .is('left_at', null)
         .maybeSingle();
+      // "I could not read the seat" is not "there is no seat".
+      if (seatErr) return false;
       return !seat;
     } catch {
       return false;

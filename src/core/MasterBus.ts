@@ -785,6 +785,14 @@ export interface BusPayloadMap {
     tournamentId: string;
     secondsRemaining: number;
     playerCount: number;
+    /**
+     * The seats actually being moved. The HUD shows the countdown only to the
+     * hero named here, so a player at a breaking table who is NOT moving is
+     * not told they are. Declared 2026-09-09 with the first producer: this
+     * event had a payload and no emitter for months, and the bridge had to
+     * cast through `never` to send the field the banner reads.
+     */
+    playerIds: string[];
   };
   TABLE_BREAK_STARTED: {
     tableId: string;

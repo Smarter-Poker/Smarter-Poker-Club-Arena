@@ -283,6 +283,45 @@ export function TournamentHUD({
     // Recompute occasionally as the level ticks over (cheap, and keeps it fresh).
   }, [tournamentId, playersRemaining, averageStack, tournament?.current_level, user?.id]);
 
+  /**
+   * ── YOUR TABLE IS BREAKING ────────────────────────────────────────────────
+   *
+   * Until 2026-09-09 a tournament player finished a hand and was simply at a
+   * different table: the only announcement the live break path made was
+   * `table_rebalance`, sent AFTER every seat had moved. `TableBreakEngine` was
+   * written to give a 30-second warning and is never called at all.
+   *
+   * TournamentManager.checkTableBalance announces the break 30 seconds ahead
+   * now, tournamentEventBridge turns that into the long-declared, never-emitted
+   * `TABLE_BREAK_WARNING` bus event, and this is the surface that shows it.
+   *
+   * ONLY WHEN IT IS THIS PLAYER. The warning carries the ids being moved, so a
+   * break at some other table in the same event says nothing here - the bar
+   * belongs to the felt the hero is sitting at.
+   */
+  const [breakMoveAtMs, setBreakMoveAtMs] = useState<number | null>(null);
+  useEffect(() => {
+    const heroId = user?.id;
+    if (!tournamentId || !heroId) return;
+    return masterBus.subscribe('TABLE_BREAK_WARNING', (event) => {
+      /* `playerIds` is not in MasterBus's declared payload for this event and
+         MasterBus.ts is owned elsewhere; the field is additive and the cast is
+         narrow. Treat a warning with no ids as "not about me" rather than
+         showing it to the whole field. */
+      const p = event.payload as unknown as {
+        tournamentId?: string;
+        secondsRemaining?: number;
+        playerIds?: string[];
+      };
+      if (p?.tournamentId !== tournamentId) return;
+      if (!Array.isArray(p.playerIds) || !p.playerIds.includes(heroId)) return;
+      const seconds = Number(p.secondsRemaining);
+      setBreakMoveAtMs(
+        Date.now() + (Number.isFinite(seconds) && seconds > 0 ? seconds : 30) * 1000
+      );
+    });
+  }, [tournamentId, user?.id]);
+
   if (hidden || !tournament) return null;
 
   // Reference `tick` so the memo re-evaluates every second (countdown display).
@@ -325,6 +364,17 @@ export function TournamentHUD({
         : sellsAddon && displayLevel > rebuyCap && displayLevel <= rebuyCap + addonWindow
           ? 'Add-On Period'
           : null
+      : null;
+
+  /* The break warning outranks the rebuy/add-on strip: one says a window is
+     open, the other says this player is about to be picked up and put at
+     another table. Recomputed on the same one-second `tick` as the level
+     countdown. */
+  const breakMoveSeconds =
+    breakMoveAtMs === null ? null : Math.max(0, Math.round((breakMoveAtMs - Date.now()) / 1000));
+  const breakBanner =
+    breakMoveSeconds !== null && breakMoveSeconds > 0
+      ? `Table Breaking In ${fmtClock(breakMoveSeconds)}`
       : null;
 
   return (
@@ -373,8 +423,8 @@ export function TournamentHUD({
           : undefined
       }
     >
-      {/* Rebuy / add-on window strip - full width, above the segments */}
-      {windowBanner && (
+      {/* Break warning / rebuy / add-on strip - full width, above the segments */}
+      {(breakBanner || windowBanner) && (
         <div
           style={{
             flexBasis: '100%',
@@ -384,12 +434,14 @@ export function TournamentHUD({
             fontWeight: 800,
             letterSpacing: 0.8,
             textTransform: 'uppercase',
-            color: '#ffd54f',
-            background: 'rgba(255,183,77,0.14)',
-            borderBottom: '1px solid rgba(255,183,77,0.25)',
+            color: breakBanner ? '#ff8a80' : '#ffd54f',
+            background: breakBanner ? 'rgba(255,82,82,0.16)' : 'rgba(255,183,77,0.14)',
+            borderBottom: breakBanner
+              ? '1px solid rgba(255,82,82,0.3)'
+              : '1px solid rgba(255,183,77,0.25)',
           }}
         >
-          {windowBanner}
+          {breakBanner || windowBanner}
         </div>
       )}
 

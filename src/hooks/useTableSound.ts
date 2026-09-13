@@ -15,8 +15,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { soundService } from '../services/SoundService';
 import { isSoundAllowed } from '../utils/soundGate';
-import { setVibrationAllowed, isVibrationPreferred } from '../utils/vibrationGate';
-import { setTableSetting } from './useTableSettings';
+import { setVibrationAllowed } from '../utils/vibrationGate';
+import { setTableSetting, useTableSettings } from './useTableSettings';
 
 export interface UseTableSoundReturn {
   /** Whether sound effects are active. Read this for UI toggle state. */
@@ -41,10 +41,11 @@ export interface UseTableSoundReturn {
   playTurnAlert: () => void;
 }
 
-const STORAGE_SOUND = 'ca_sound_enabled';
-/* `STORAGE_VIBRATION` is gone with the last hand-rolled read of it: the haptic
-   switch both reads and writes through `utils/vibrationGate`, which owns that
-   key and its sibling. */
+/* `STORAGE_SOUND` and `STORAGE_VIBRATION` are both gone with the last
+   hand-rolled read or write of them. The haptic switch reads and writes through
+   `utils/vibrationGate`, which owns those keys; the sound switch reads the
+   shared settings store and writes through `soundService.setEnabled`, which
+   persists both gate keys itself. */
 const STORAGE_AUTO_REBUY = 'ca_auto_rebuy';
 
 /* `readBool` and `SETTINGS_VIBRATION` lived here until 2026-08-29. Both were
@@ -79,20 +80,37 @@ export function useTableSound(): UseTableSoundReturn {
    *
    * Both halves now read the same gate, which fails closed on either key.
    * Vibration gets the same treatment for the same reason.
+   *
+   * ═════════════════════════════════════════════════════════════════════════
+   *  ...AND THEN THEY READ IT ONCE AND NEVER AGAIN (fixed 2026-09-09)
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * Both were private `useState`s SEEDED at mount with no subscription to
+   * anything. PersistentTableLayer keeps every TablePage mounted for the life
+   * of the session, so "at mount" means "the first time this table was ever
+   * opened". Mute from the global hamburger menu or the Settings panel and
+   * these two never heard about it:
+   *
+   *   - the in-table badge read ON while the app was silent - the very symptom
+   *     the note above says it fixed, arriving by the other door;
+   *   - all three toggle call sites compute `!isSoundEnabled` from the stale
+   *     value, so the first press re-sent the state the app was already in and
+   *     the player had to press TWICE;
+   *   - the ambient layer keys off this flag and stayed audible after a mute.
+   *
+   * `useTableSettings()` is a `useSyncExternalStore` over the shared settings
+   * store - the same store `setTableSetting` writes below, the same one the
+   * SETTINGS_CHANGED bus and the cross-device row feed, and it is already
+   * reconciled against both gates when it loads. Reading it means there is one
+   * value, and every writer moves it.
    */
-  const [isSoundEnabled, setIsSoundEnabledRaw] = useState<boolean>(() => isSoundAllowed());
-  /* `isVibrationPreferred()`, not `isVibrationAllowed()`: the latter also
-     returns false when the DEVICE cannot vibrate, which is not a preference —
-     a desktop player must not see their haptics switch stuck off.
-
-     This was two hand-rolled `readBool` calls here, which made it a THIRD copy
-     of the gate's own two-key rule. It lives in the gate now, next to the rule
-     it implements, so a change to that rule cannot leave this switch behind
-     — which is exactly how the haptic side got left behind by the 2026-08-27
-     sound fix in the first place. */
-  const [isVibrationEnabled, setIsVibrationEnabledRaw] = useState<boolean>(() =>
-    isVibrationPreferred()
-  );
+  const { settings } = useTableSettings();
+  const isSoundEnabled = settings.isSoundEnabled;
+  /* The store's `isHapticEnabled` is a PREFERENCE, like `isVibrationPreferred()`
+     was - never `isVibrationAllowed()`, which also returns false when the
+     DEVICE cannot vibrate. A desktop player must not see their haptics switch
+     stuck off. */
+  const isVibrationEnabled = settings.isHapticEnabled;
   const [isAutoRebuyEnabled, setIsAutoRebuyEnabledRaw] = useState<boolean>(() => {
     try {
       return localStorage.getItem(STORAGE_AUTO_REBUY) === 'true';
@@ -101,25 +119,14 @@ export function useTableSound(): UseTableSoundReturn {
     }
   });
 
-  // Persist to localStorage whenever values change
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_SOUND, String(isSoundEnabled));
-    } catch {
-      /* unavailable */
-    }
-  }, [isSoundEnabled]);
-
-  /* Persist through the GATE, which writes both of its keys.
-     Writing only `ca_vibration_enabled` here was the haptic twin of the sound
-     bug above, and it survived the 2026-08-27 sweep that fixed the sound side:
-     a player who muted haptics in Settings ('vibrationsEnabled'='false') and
-     then turned them ON at the table stayed silent, because the gate fails
-     closed on EITHER key and nothing here ever cleared the other one. The
-     switch read ON and the phone never buzzed. */
-  useEffect(() => {
-    setVibrationAllowed(isVibrationEnabled);
-  }, [isVibrationEnabled]);
+  /* The two persist effects that lived here are gone with the local state they
+     mirrored (2026-09-09). Both keys are still written on every change, by the
+     writers the store already owns: `soundService.setEnabled` persists both
+     sound-gate keys, `setVibrationAllowed` persists both vibration-gate keys,
+     and the settings store calls each of them itself whenever its value moves
+     (applySideEffects) - including a change that arrived from another tab or
+     from the account's row. Mirroring them here as well is what let this file's
+     copy drift from the store's in the first place. */
 
   useEffect(() => {
     try {
@@ -164,14 +171,13 @@ export function useTableSound(): UseTableSoundReturn {
    * for other tabs, and pushes the column.
    */
   const setIsSoundEnabled = (v: boolean) => {
-    setIsSoundEnabledRaw(v);
     soundService.setEnabled(v); // both gate keys + the live engine flag
+    // The store is the state: every reader of this hook re-renders from it.
     setTableSetting('isSoundEnabled', v);
   };
 
   const setIsVibrationEnabled = (v: boolean) => {
-    setIsVibrationEnabledRaw(v);
-    // The persist effect ABOVE writes the gate; this is the store half.
+    setVibrationAllowed(v); // both gate keys
     setTableSetting('isHapticEnabled', v);
   };
 

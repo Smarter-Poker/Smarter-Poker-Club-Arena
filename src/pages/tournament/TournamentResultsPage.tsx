@@ -616,17 +616,22 @@ export default function TournamentResultsPage() {
     return `${pos}th`;
   };
 
-  const formatAmount = (n: number) => {
-    const truncated = Math.trunc(n * 100) / 100;
-    // Show decimals only if there are sub-unit fractions
-    if (truncated === Math.trunc(truncated)) {
-      return Math.trunc(truncated).toLocaleString('en-US');
-    }
-    return truncated.toLocaleString('en-US', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-  };
+  /* ═══════════════════════════════════════════════════════════════════════
+     `formatAmount` LIVED HERE AND IS GONE (2026-09-09)
+     ═══════════════════════════════════════════════════════════════════════
+
+     It was `Math.trunc(n * 100) / 100` — a second money formatter, TRUNCATING,
+     sitting in the same standings row as the exact `formatCents` this page
+     already imports. Because `bounty_winnings` INCLUDES the mystery chest
+     money, one row printed both: the Mystery sub-line read 22.05 from
+     `formatCents(mysteryCents)` while the Bounty column beside it read 22.04
+     from the truncation of the same money. The Total column stacked a second
+     deficit on top, since `totalPayout` adds two binary floats and this then
+     truncated the sum.
+
+     Every figure on this page now formats the way MysteryBountyPanel.tsx:478
+     already did: convert to INTEGER CENTS first, then `formatCents`. There is
+     one money formatter on this page, and it is the exact one. */
 
   const getVariantLabel = (t: CompletedTournament) => {
     if (t.is_xmtt) return 'XMTT';
@@ -1008,7 +1013,7 @@ export default function TournamentResultsPage() {
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ color: '#10b981', fontSize: '14px', fontWeight: 600 }}>
-                    {formatAmount(t.prize_pool)} Prize Pool
+                    {formatCents(Math.round(t.prize_pool * 100))} Prize Pool
                   </div>
                   <div style={{ color: '#64748b', fontSize: '11px' }}>
                     {t.current_players} Entries · {formatDuration(t.started_at, t.ended_at)}
@@ -1017,8 +1022,9 @@ export default function TournamentResultsPage() {
               </div>
 
               <div style={{ color: '#475569', fontSize: '11px' }}>
-                Buy-In: {formatAmount(t.buy_in_amount)} + {formatAmount(t.buy_in_fee)} · Entries:{' '}
-                {t.current_players} · Duration: {formatDuration(t.started_at, t.ended_at)} · Ended:{' '}
+                Buy-In: {formatCents(Math.round(t.buy_in_amount * 100))} +{' '}
+                {formatCents(Math.round(t.buy_in_fee * 100))} · Entries: {t.current_players} ·
+                Duration: {formatDuration(t.started_at, t.ended_at)} · Ended:{' '}
                 {t.ended_at ? new Date(t.ended_at).toLocaleDateString() : '-'}
               </div>
 
@@ -1123,7 +1129,11 @@ export default function TournamentResultsPage() {
                       >
                         Biggest Total Payout: {topEarner.username} (
                         {getOrdinalPosition(topEarner.position)}) With{' '}
-                        {formatAmount(totalPayout(topEarner))}, More Than The Champion
+                        {formatCents(
+                          Math.round(topEarner.prize * 100) +
+                            Math.round(topEarner.bounty_winnings * 100)
+                        )}
+                        , More Than The Champion
                       </div>
                     )}
                     {/* Column key. Kept above the rows because every row is a
@@ -1162,6 +1172,15 @@ export default function TournamentResultsPage() {
                                   ? '#d97706'
                                   : '#475569';
                           const total = totalPayout(r);
+                          /* The four money columns of this row are summed and
+                             printed in INTEGER CENTS. `totalPayout` adds two
+                             binary floats, which is fine for the "did anyone
+                             out-earn the champion" comparisons it feeds, and
+                             not fine for a number a player reads beside
+                             `formatCents(mysteryCents)`. */
+                          const prizeCents = Math.round(r.prize * 100);
+                          const bountyCents = Math.round(r.bounty_winnings * 100);
+                          const totalCents = prizeCents + bountyCents;
                           /* The server's own aggregate first (section 69);
                                the award-derived totals supply the one thing it
                                cannot know, the LARGEST single chest. */
@@ -1267,7 +1286,7 @@ export default function TournamentResultsPage() {
                                   textAlign: 'right',
                                 }}
                               >
-                                {r.prize > 0 ? formatAmount(r.prize) : '-'}
+                                {r.prize > 0 ? formatCents(prizeCents) : '-'}
                               </span>
                               <span
                                 style={{
@@ -1288,7 +1307,7 @@ export default function TournamentResultsPage() {
                                   textAlign: 'right',
                                 }}
                               >
-                                {r.bounty_winnings > 0 ? formatAmount(r.bounty_winnings) : '-'}
+                                {r.bounty_winnings > 0 ? formatCents(bountyCents) : '-'}
                               </span>
                               <span
                                 style={{
@@ -1298,7 +1317,7 @@ export default function TournamentResultsPage() {
                                   textAlign: 'right',
                                 }}
                               >
-                                {total > 0 ? formatAmount(total) : '-'}
+                                {total > 0 ? formatCents(totalCents) : '-'}
                               </span>
                             </div>
                           );
@@ -1356,7 +1375,7 @@ export default function TournamentResultsPage() {
                               </div>
                               <div style={{ color: '#94a3b8', fontSize: '10px' }}>
                                 {hand.game_variant} · {hand.small_blind}/{hand.big_blind} · Pot:{' '}
-                                {formatAmount(hand.pot_size)}
+                                {formatCents(Math.round(hand.pot_size * 100))}
                               </div>
                               {hand.winners.length > 0 && (
                                 <div

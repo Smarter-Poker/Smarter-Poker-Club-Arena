@@ -450,7 +450,25 @@ export class TableBalancer {
    */
   breakTable(table: BalancerTable, otherTables: BalancerTable[]): MoveInstruction[] {
     const moves: MoveInstruction[] = [];
-    const targets = [...otherTables].sort((a, b) => a.playerCount - b.playerCount);
+    // 2026-09-09: `[...otherTables]` is a SHALLOW copy — it clones the array and
+    // shares every element — so the `target.playerCount++` and
+    // `target.players.push(...)` further down wrote straight through into the
+    // caller's own table objects. `calculateMoves` fixed exactly this on
+    // 2026-08-27 (see the note at :256, "a planning routine silently editing its
+    // input") and `TableBreakEngine.planRedistribution` clones for the same
+    // reason; this method was the one that did not.
+    //
+    // It is NOT harmless here. Three paths in TournamentManager.checkTableBalance
+    // `continue` rather than `break` after calling this — the move plan could not
+    // place the full roster (:355-358), the source table was still in-hand
+    // (:374-381), and the engine generation was missing (:404-413) — and the
+    // in-hand case is the ordinary one. The loop then re-enters `shouldBreakTable`
+    // and `findOpenSeat` against a `balancerTables` carrying PHANTOM players that
+    // nobody has moved, which suppresses a second legitimate break in the same
+    // pass and mis-sizes the seats offered by every remaining target.
+    const targets = otherTables
+      .map((t) => ({ ...t, players: [...t.players] }))
+      .sort((a, b) => a.playerCount - b.playerCount);
 
     // B2 2026-08-27: leave in blind order — the player who is big blind due
     // next goes first and so gets the soonest big blind at the destination,

@@ -20,6 +20,7 @@ import {
   compareHands,
   compareLowHands,
 } from './PokerEngine.js';
+import type { EligibilityFallback } from './PokerEngine.js';
 import {
   isFixedLimitVariant,
   isPotLimitVariant,
@@ -1134,6 +1135,47 @@ export class HandController {
       return false;
     }
 
+    /* AN ALL-IN SEAT CANNOT BE FOLDED (2026-09-09).
+
+       Dan's rule above is about a player who still has chips behind and did
+       not act: they are out of the pot, exactly like missing a turn. A seat
+       that is ALL-IN has no fold available in poker - every chip it owns is
+       already in the middle and its hand is live to showdown. Folding it here
+       destroyed the whole stack.
+
+       It was reachable, and not rarely: the runout park in advanceStage only
+       fires when fewer than two seats can still act, so one player all-in with
+       two others still holding chips deals the flop AND opens the discard round
+       for the all-in seat. `getActivePlayers()` (!is_folded && !is_sitting_out)
+       includes all-in players, so the seat entered the round, and calculatePots
+       filters a folded player out of every pot - a shove-and-walk-away lost the
+       lot to a fifteen-second clock.
+
+       The seat still owes a card, so it cannot simply be dropped from the round
+       either: the flop's betting round opens the moment the set empties, and a
+       seat left holding three cards reaches showdown scoring best-5-of-8, which
+       is the illegal extra card that AUDIT V2 (2026-07-23) and the
+       runOutCommunityCards comment were written about. So the round DOES open
+       for it - identical window, identical clock, identical dialog, and a horse
+       gets its worker-chosen card inside the same window a human gets (10.5) -
+       and only the EXPIRY differs, because only the expiry is illegal.
+
+       On expiry the card defaults to the last one, which is the same house
+       fallback the shared discard chooser returns for any input it cannot
+       price. (Named deliberately vaguely: the Monte Carlo has exactly one
+       owner, the live worker, and `PineappleDiscardWorkerOwnership.guard`
+       refuses even a MENTION of the chooser in this file so that no future
+       edit can quietly grow a main-thread strategy here.) performDiscard
+       announces it, records it in the action
+       history, and calls checkPineappleDiscardsComplete, so the round settles
+       and the flop opens exactly as if the seat had chosen. Returns false: no
+       fold happened. */
+    if (player.is_all_in) {
+      this.performDiscard(seat, 2);
+      this.pineappleDiscardsRemaining.delete(seat);
+      return false;
+    }
+
     player.is_folded = true;
     this.pineappleDiscardsRemaining.delete(seat);
 
@@ -1172,7 +1214,13 @@ export class HandController {
    *   - a HORSE discards by calling performDiscard directly (HorseLogic picks
    *     the card, ServerTableEngineRunout submits it);
    *   - an all-in seat is resolved by resolvePendingPineappleDiscards when the
-   *     flop lands, because the round never opens for it;
+   *     flop lands ON A RUNOUT - and ONLY on a runout. CORRECTED 2026-09-09:
+   *     this used to say "because the round never opens for it", which is false
+   *     whenever fewer than two other seats are all-in too. One player all-in
+   *     against two who can still act is an ordinary hand, not a runout: the
+   *     flop is dealt by advanceStage and the discard round opens for every
+   *     active seat, the all-in one included. See foldForMissedDiscard, which
+   *     is why that is now safe;
    *   - a seat folded for missing the round is already gone from here.
    *
    * So the deadline map is reconciled against THIS on every sweep and before
@@ -2109,9 +2157,15 @@ export class HandController {
    * 10-minute safety timeout and the table stopped dealing.
    *
    * A hand that cannot be settled must still END. Emitting HAND_COMPLETE
-   * releases the dealing loop; the error is reported for manual reconciliation
-   * and players keep the chips they had going in (table_seats.stack is only
-   * written at settlement, so an aborted settlement is a no-op on balances).
+   * releases the dealing loop; players keep the chips they had going in
+   * (table_seats.stack is only written at settlement, so an aborted settlement
+   * is a no-op on balances).
+   *
+   * "The error is reported for manual reconciliation" was the rest of this
+   * sentence, and until 2026-09-09 it was not true - the catch was a bare
+   * console.error. It reports through reportError (Sentry) AND raises a
+   * critical `financial_alerts` row now, because the fallback below awards
+   * nobody the pot and states rake 0 / bbjFee 0 on the wire.
    */
   /**
    * DOUBLE-BOARD BOMB POT 2026-08-20: BOMB_POT_COMPLETED finally has an
@@ -2129,7 +2183,44 @@ export class HandController {
     try {
       this.completeHandInner();
     } catch (err) {
-      console.error('[HandController] completeHand threw - force-ending hand:', err);
+      /* REPORTED MEANS REPORTED (2026-09-09). The doc block above says "the
+         error is reported for manual reconciliation". It was a bare
+         console.error, which reaches neither Sentry nor `financial_alerts`:
+         `reportError` is console.error PLUS Sentry.captureException, and
+         nothing here wrote the durable money alarm at all. So a settlement that
+         threw produced one line in a log nobody joins to a hand id, and the
+         only visible trace on the felt was a hand that ended strangely.
+
+         By the time this can throw, returnUncalledBet() has moved chips and
+         SHOWDOWN has been emitted: the fallback below then broadcasts
+         `WINNERS []` and `HAND_COMPLETE { rake: 0, bbjFee: 0 }`, so the pot is
+         never awarded and the hand records no rake and no jackpot fee. That is
+         a money incident, every time, and it now says so where the money alarms
+         are read. This is a REPORT of a settlement that already failed - it
+         repairs nothing and schedules nothing (10.12). Fire-and-forget:
+         raiseFinancialAlert never throws and never rejects. */
+      reportError(err, 'HandController.complete_hand_threw');
+      void raiseFinancialAlert(
+        'critical',
+        'HandController.complete_hand_threw',
+        `Hand ${this.config.handNumber} threw during settlement - pot not awarded, WINNERS [] and rake 0 broadcast`,
+        {
+          tableId: this.config.tableId,
+          handNumber: this.config.handNumber,
+          stage: this.state.stage,
+          pot: this.state.pot,
+          seats: this.state.players.length,
+          gameVariant: this.config.gameVariant,
+          bombPot: Boolean(this.config.bombPot),
+          error: err instanceof Error ? err.message : String(err),
+          recentActions: this.state.actionHistory.slice(-6).map((a) => ({
+            seat: a.seat,
+            action: a.action,
+            amount: a.amount,
+            stage: a.stage,
+          })),
+        }
+      );
       try {
         this.emit({ type: 'WINNERS', winners: [] } as never);
       } catch {
@@ -2143,6 +2234,30 @@ export class HandController {
       } as never);
       this.emitBombPotCompleted();
     }
+  }
+
+  /**
+   * A pot whose eligibility snapshot matched nobody is still awarded - to the
+   * contenders - but we want to know it happened, because a bad snapshot means
+   * a side pot was built from state that has since moved.
+   *
+   * One definition, used by every determineWinners call that settles money
+   * (2026-09-09). It used to be an inline arrow at the single-board call site
+   * only, so the multi-board branch three lines away passed `undefined` and a
+   * stale snapshot on a bomb pot was reported nowhere at all. `board` names
+   * which board it happened on when there is more than one.
+   */
+  private reportStaleEligibility(board?: number): EligibilityFallback {
+    return (info) =>
+      reportError(
+        new Error(
+          `[HandController] pot ${info.potIndex}${board === undefined ? '' : ` (board ${board})`} ` +
+            `eligibility snapshot matched no contender ` +
+            `(${info.snapshotEligible} listed, ${info.contenders} in the hand, ${info.potAmount} chips) - ` +
+            `awarded to the contenders instead`
+        ),
+        'HandController.pot_eligibility_snapshot_stale'
+      );
   }
 
   private completeHandInner(): void {
@@ -2255,7 +2370,13 @@ export class HandController {
           this.config.gameVariant,
           this.state.dealerSeat,
           perPot,
-          undefined,
+          // 2026-09-09: this argument was `undefined` here while the
+          // single-board branch below passed a reporter. A stale eligibility
+          // snapshot is not a single-board phenomenon - it is a side pot built
+          // from state that has since moved - and a multi-board bomb pot is
+          // where the money is largest and the layers most numerous. The
+          // fallback fired into nothing on every one of them.
+          this.reportStaleEligibility(b + 1),
           // A tournament chip does not divide (2026-09-08).
           this.config.isTournament ? 1 : 0.01
         );
@@ -2305,18 +2426,7 @@ export class HandController {
         this.config.gameVariant,
         this.state.dealerSeat,
         perPot,
-        // A pot whose eligibility snapshot matched nobody is still awarded -
-        // to the contenders - but we want to know it happened, because a bad
-        // snapshot means a side pot was built from state that has since moved.
-        (info) =>
-          reportError(
-            new Error(
-              `[HandController] pot ${info.potIndex} eligibility snapshot matched no contender ` +
-                `(${info.snapshotEligible} listed, ${info.contenders} in the hand, ${info.potAmount} chips) - ` +
-                `awarded to the contenders instead`
-            ),
-            'HandController.pot_eligibility_snapshot_stale'
-          ),
+        this.reportStaleEligibility(),
         // A tournament chip does not divide (2026-09-08).
         this.config.isTournament ? 1 : 0.01
       );

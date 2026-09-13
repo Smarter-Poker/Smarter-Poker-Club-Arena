@@ -43,17 +43,29 @@ describe('a Run It Twice offer that ends in one board says so', () => {
   });
 
   it('announces the offer lapsing with no agreement', () => {
-    expect(RUNOUT).toContain("emitRitSingleRun('no_agreement')");
+    // The call carries the hand it is about since 2026-09-09 (see below), so
+    // this pins the announcement rather than the exact argument list.
+    expect(RUNOUT).toContain("emitRitSingleRun('no_agreement'");
   });
 
-  it('emits at most one notice per hand', () => {
+  it('emits at most one notice per hand, and only for the hand it is about', () => {
     // A decline followed by the timeout branch must not toast twice.
     expect(RUNOUT).toContain('ritSingleRunNotifiedHand');
     const fn = RUNOUT.slice(
       RUNOUT.indexOf('protected emitRitSingleRun('),
-      RUNOUT.indexOf('protected emitRitSingleRun(') + 700
+      RUNOUT.indexOf('protected emitRitSingleRun(') + 1600
     );
-    expect(fn).toMatch(/if \(this\.ritSingleRunNotifiedHand === this\.handCount\) return;/);
+    /* MOVED 2026-09-09, and STRENGTHENED. The dedupe used to compare against
+       `this.handCount` read at emit time. That is right for every synchronous
+       caller and wrong for the RIT auto-decline forwarder, which fires from a
+       DeadlineScheduler timer: a timeout surfacing after the hand turned over
+       stamped the NEXT hand as already-notified and suppressed its own
+       legitimate notice. The method takes the hand it is about (defaulting to
+       the live one, so nothing else changes) and dedupes on that - plus it now
+       refuses outright to announce a hand that is over. */
+    expect(fn).toMatch(/handNumber: number = this\.handCount/);
+    expect(fn).toMatch(/if \(handNumber !== this\.handCount\) return;/);
+    expect(fn).toMatch(/if \(this\.ritSingleRunNotifiedHand === handNumber\) return;/);
   });
 
   it('the client turns each reason into its own message', () => {

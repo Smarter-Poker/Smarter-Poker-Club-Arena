@@ -33,7 +33,9 @@ async function callUnionApi<T = Record<string, unknown>>(
     data: { session },
   } = await supabase.auth.getSession();
   const token = session?.access_token;
-  if (!token) throw new Error('Not authenticated');
+  // Nothing has been sent, so the outcome is known: definitive, and callers
+  // may retire the idempotency key they were holding for this attempt.
+  if (!token) throw Object.assign(new Error('Not authenticated'), { definitive: true });
 
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
@@ -73,6 +75,51 @@ async function callUnionApi<T = Record<string, unknown>>(
   }
   return data;
 }
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * A RETRY IS THE SAME KEY. A SECOND DELIBERATE PRESS IS A NEW ONE.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * `callUnionApi` mints a key when the caller does not pass one, which is right
+ * for a one-shot command and wrong for anything a person can press twice: a
+ * commit whose response was lost, followed by the operator pressing again,
+ * arrives at the endpoint as a SECOND movement of union money under a second
+ * key. `sendToClub` and `promoSend` already take a key for exactly this.
+ *
+ * This is the caller's half. The key is held in a ref-shaped box against a
+ * SIGNATURE of what the press means (amount, destination, source wallet):
+ *
+ *   same signature   -> same key. A retry of one intent replays as one.
+ *   changed          -> a new key. A different amount is a different intent.
+ *   released         -> a new key. The caller releases after a success, so
+ *                       funding 500 twice on purpose is two funds; and after a
+ *                       DEFINITIVE refusal, where nothing moved and holding
+ *                       the key would only confuse the next attempt.
+ *
+ * An outcome we could not read (5xx, 408, 429, a dropped connection - the
+ * cases `callUnionApi` marks `definitive: false`) is NOT released. That is the
+ * case the key exists for.
+ *
+ * The box is `{ current }` so a React `useRef` satisfies it, without this
+ * module knowing anything about React.
+ */
+export interface IdempotencyKeySlot {
+  current: { signature: string; key: string } | null;
+}
+
+export function stickyIdempotencyKey(slot: IdempotencyKeySlot, signature: string): string {
+  if (slot.current?.signature !== signature) slot.current = { signature, key: uuid() };
+  return slot.current.key;
+}
+
+export function releaseIdempotencyKey(slot: IdempotencyKeySlot): void {
+  slot.current = null;
+}
+
+/** True only when the server (or this browser) told us nothing moved. */
+export const isDefinitiveUnionFailure = (err: unknown): boolean =>
+  (err as { definitive?: boolean } | null)?.definitive === true;
 
 export const unionApi = {
   // ── manage-union ──────────────────────────────────────────────────────────

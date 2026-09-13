@@ -412,14 +412,24 @@ describe('the engine host re-reads the config and announces every single run', (
     expect(block).not.toContain('continueRunout');
   });
 
-  it('the auto-decline is forwarded to the wire, and only that', () => {
+  it('the auto-decline is forwarded to the wire, for the hand it belongs to, and only that', () => {
+    /* WIDENED AND EXTENDED 2026-09-09, not weakened. The forwarder gained the
+       hand-identity check below and the window it is read through had to grow
+       with it. It also no longer calls `emitRitSingleRun('no_agreement')` bare:
+       the DeadlineScheduler fires on its own clock, so a timeout surfacing
+       after the hand turned over used to toast "Running It Once" on the NEXT
+       hand AND consume that hand's own single-run notice. The event carries its
+       own handId; the forwarder reads it and drops a stale one. */
     const fn = RUNOUT.slice(
       RUNOUT.indexOf('protected wireRunItTwiceEvents()'),
-      RUNOUT.indexOf('protected wireRunItTwiceEvents()') + 500
+      RUNOUT.indexOf('protected wireRunItTwiceEvents()') + 2200
     );
     expect(fn).toContain("event.type !== 'RIT_DECLINED'");
     expect(fn).toContain("!== 'timeout'");
-    expect(fn).toContain("emitRitSingleRun('no_agreement')");
+    expect(fn).toContain("emitRitSingleRun('no_agreement'");
+    // The stale-timeout guard: the hand comes from the EVENT, not the clock.
+    expect(fn).toMatch(/handId/);
+    expect(fn).toMatch(/declinedHand !== this\.handCount\) return;/);
   });
 
   it('a chooser who accepts without a run count gets an actionable error', () => {

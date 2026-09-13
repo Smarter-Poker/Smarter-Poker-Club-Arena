@@ -3790,15 +3790,23 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   BACKGROUND TAB — Freeze animations when tab is hidden (battery savings)
-   ═══════════════════════════════════════════════════════════════════════════════ */
+   BACKGROUND TAB — DELETED 2026-09-09 (CLAUDE.md 10.6)
 
-.table-page--backgrounded *,
-.table-page--backgrounded *::before,
-.table-page--backgrounded *::after {
-  animation-play-state: paused !important;
-  transition: none !important;
-}
+   `.table-page--backgrounded` set `animation-play-state: paused !important` and
+   `transition: none !important` on every descendant and pseudo-element of a
+   hidden tab, for "battery savings".
+
+   The game does not stop when the tab is hidden - useTabKeepAlive exists so it
+   keeps running - so a whole hand played out under a frozen felt, and any cue
+   that mounted and unmounted while hidden (a deal, a pot push, a celebration)
+   never animated AT ALL. It did not run faster or shorter; it never ran. That
+   is a dropped cue, and Dan's animation law says every animation plays every
+   time it is owed, for its full duration, at the player's chosen Animation
+   Speed. The only sanctioned control is `--animation-speed` scaling; battery
+   is not one of the sanctioned reasons, and a pause is not a speed.
+
+   Nothing replaced it: the rule and the class that applied it are both gone.
+   ═══════════════════════════════════════════════════════════════════════════════ */
 
 /* ══════════════════════════════════════════════════════════════
    PHASE 2: TOP & BOTTOM UI BUTTONS 

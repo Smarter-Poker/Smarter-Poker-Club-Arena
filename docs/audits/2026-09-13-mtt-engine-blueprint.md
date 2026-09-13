@@ -6,7 +6,7 @@ As of September 13, 2026. This is a working audit with implementation evidence, 
 
 The live database had 24 overdue registering MTTs and 84 running MTTs with no new recorded hand during the observed 30-minute window. Running MTT clocks continued to advance (levels 114–3,881), while 4,366 playing registrations had zero or negative chips. Some fields were split into single-player tables. Cash hands continued, so overall fleet health concealed the MTT failure.
 
-The engine at observation served de406ca925f0b83c02a6c46c4dedc61b1010dd27. Engine releases failed their host memory-headroom check on the 4 GB host. Free memory fluctuates, so one later successful headroom measurement does not establish safe capacity under load. A passing test or merged change is not proof of live recovery.
+The engine at observation served de406ca925f0b83c02a6c46c4dedc61b1010dd27. Initial engine releases failed their host memory-headroom check on the 4 GB host. After PR #4508, a later host build succeeded, but successive release requests were superseded while waiting for the maintenance gate. The pipeline owner is recovering existing PR #4388 to address that publication starvation; this audit is not running a competing deployment. A passing test or merged change is not proof of live recovery.
 
 ## Public reference baseline
 
@@ -78,6 +78,16 @@ Required engine normalization: explicit speed and depth metadata, one canonical 
 | R10 | Overall hand activity permits healthy status while every MTT is inactive.                                            | Per-format progress health with reasoned idle states and overdue-start tracking.                                                                                                                           | Live cash activity with zero MTT progress; implementation pending.                                                                              |
 
 ## Feature-by-feature engine acceptance matrix
+
+R12: blind-level transition writes reported errors but still advanced and
+announced success; concurrent calls could also skip a level. The engine now
+retains one intended level and its clock anchor through retries, waits for
+acknowledgments before publishing, preserves that pending work over a break,
+and rearms after notification failure. Seven runtime cases cover these paths.
+All 1,865 tournament checks across 152 files and the server typecheck pass on
+the follow-up candidate. Atomic publication of the tournament level and every
+table in one database transaction remains open; this engine repair does not
+claim to make the existing individual table writes atomic.
 
 R11: the scheduled engine writer rounded explicit fractional bounty amounts to
 whole chips. A runtime regression showed 6.75 becoming 7.00 on a 13.50 entry
@@ -156,4 +166,76 @@ The associated machine-readable inventory preserves the sampled configuration, i
 - All 2,203 recorded recent bounty obligations were settled: 896 PKO, 838 regular, 22 mystery chest and 447 mystery pre-activation. This does not prove that every unprocessed knockout created an obligation.
 - For 2,012 tournaments completed within the past day, cash prize receipts and prize-liability-to-player-wallet ledger postings matched in every one of 2,095 tournament/recipient groups: 110,531.60 on each side, zero mismatches. This excludes noncash satellite tickets/direct entries and does not certify every bounty, fee or historical tournament.
 - The separate integration file tests/integration/tournament-flows.test.ts uses mocked database calls. Its end-to-end title must not be treated as proof of native money movement or served engine execution.
+- A fresh private PostgreSQL 17 rehearsal passed all 15 cash-ladder derivation groups, including cent residuals, shortened fields, bubble reserves and malformed-input refusal. It exercises the captured amount authority on synthetic input tables; it does not execute payments or terminal completion.
+- The retained full_stage1 bounty rehearsal refused its first fixture insert because that older local schema lacks tables.seat_game_scope. Its before/after fingerprints confirmed complete rollback. That failed fixture is not production payout evidence and does not satisfy the native bounty acceptance gate.
 - The trusted money-trigger reporter configuration is absent, but the repository ruleset does not currently require that reporter for this branch. Required normal CI and deployment checks still apply.
+
+## September 13 follow-up: actual payout authority and receipt validation
+
+PR #4503 merged as 829cc9a83b401d3481b7ed7750fbc8bb6c63ee3f, PR #4512 as
+91a7483609f336294585c40fc694f8dfc48e3a29, and PR #4520 as
+7d67d8c5d6d737eea259e6ea6746159c8bad70d6. These source changes have not yet
+been certified as served production behavior. G8 owns the incremental retained
+scheduler responsibility/fairness fix and the pipeline task owns publication.
+
+**R13: final prize responses were only converted with Number and checked for
+finiteness.** Null or empty text became a zero pool; negative, hexadecimal and
+fractional-cent amounts could also be accepted. Entry closure accepted empty
+or malformed ladder arrays. The engine now shares the guarantee path's strict
+whole-cent decoder across guarantee, entry-close and add-on-close responses.
+Unreadable responses retain the existing retry and do not reprice finishers or
+release the add-on tail. The entry consumer checks a usable stored ladder
+before adopting finalization. Fifteen entry-close regressions and nine add-on
+regressions failed before repair; the focused set now passes 123 checks across
+six files. Full regression/typechecking results are recorded with the commit.
+
+**R14: obsolete engine payout generation and its tests described the wrong
+runtime contract.** The unused payoutStructureForField calculated 15% with a
+three-place minimum and allocated percentage rounding residue to the final
+place. A stored historical event, f5d68238-6c24-4317-9ca5-61426eeba2a5,
+paid 24th 84.65 (0.57%) and 25th 86.06 (0.58%). The stored ladder itself is
+inverted. One nonmonotone stored ladder was found among the queried recent
+non-Spin events; two apparent cash inversions disappeared when winner
+reconciliation payments were included. This is not evidence that the current
+percentage generator still produces that historical shape.
+
+The current runtime calls fn_close_tournament_entry_window; its locked
+finalizer uses fn_ca_payout_structure(integer,integer), body MD5
+869a4e87108481934c4cdb985d489051. That installed function uses a selectable
+10/15/20% paid depth (default 10%), rounds depth upward, and distributes
+percentage fractions by largest remainder. A 334-player event defaults to 34
+paid places, not the obsolete TypeScript function's 50. The obsolete generator
+and its misleading coverage are removed. A native engine-repository probe
+executes the unchanged captured installed definition: 22 groups cover every
+paid depth 1–2,000, exact 100%, positive whole basis points, nonincreasing
+shares, consecutive ranks, replay and depth/fallback boundaries. All passed
+on PostgreSQL 17. This proves percentage generation only, not money payouts.
+The probe is scripts/dev/probe-tournament-payout-structure-pg17.py.
+
+**Separate monetary-allocation limitation remains open.** Current
+fn_ca_prize_ladder(400, 34/33/33 basis-point weights, unit=100) returns 100,
+100 and 200 cents. This helper assigns monetary rounding residue to the last
+place. Altering it globally can change existing owed amounts; a contract
+version and partial-payment compatibility decision is needed before repair.
+No funded ladder or historical balance has been rewritten here.
+
+The current amount authority fn_ca_tournament_place_amounts now has body MD5
+552b5a93163b625b5b69ff1503a3f3ee, whereas the prior fifteen-case repository
+fixture captured 8f6cde5f5b799949506259f3064568b9. A scratch rehearsal using
+the current definition passed eight groups and then identified changed
+zero-pool behavior (no amount rows instead of explicit zero rows). The older
+fixture's passing result is not current amount-authority certification.
+
+A separate private PostgreSQL 17 rehearsal passed the funded PKO entry/add-on
+case: 200 entry cost = 175 prize + 5 bounty + 20 fee; the 15 add-on goes to
+prize funding; duplicate requests grant nothing extra and preserve the head.
+The broader native registration/purchase/refund/heads-up suite is still being
+completed. A local psql pipe stall was isolated to the test transport; its two
+private clusters were shut down cleanly, and the existing Node adapter let the
+same tests advance. No production data was used by those fixtures.
+
+Observed seven-day tournament-hand duration baseline: 2,101,203 completed
+hands; p99 80.146 seconds, p99.9 123.504 seconds, maximum 214.389 seconds.
+Per-event monitoring must still account for active hands, legitimate pauses,
+manager ownership and overdue breaks, rather than treating global cash activity
+as proof of MTT health.

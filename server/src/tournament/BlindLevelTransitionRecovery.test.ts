@@ -47,6 +47,7 @@ function manager(row: Record<string, any>, tableIds: string[]) {
     startEliminationChecker: vi.fn(),
     unregisterEliminationScheduler: vi.fn(),
     reconcileTournamentEntryWindow: vi.fn().mockResolvedValue(undefined),
+    requestUrgentEliminationSweepAfter: vi.fn(),
     broadcast: vi.fn().mockResolvedValue(undefined),
     trackLifecycleJob: (promise: Promise<unknown>) => promise,
     setLifecycleTimeout: (callback: () => unknown, delay: number) => ({ callback, delay }),
@@ -56,6 +57,203 @@ function manager(row: Record<string, any>, tableIds: string[]) {
 }
 
 describe('durable blind-level transition', () => {
+  it('keeps a failed transition due through a break without consuming the break as play', async () => {
+    const structure = [
+      { smallBlind: 25, bigBlind: 50, durationMinutes: 10 },
+      { smallBlind: 50, bigBlind: 100, durationMinutes: 10 },
+    ];
+    const row = {
+      current_level: 0,
+      level_started_at: '2026-09-10T12:00:00.000Z',
+      blind_structure: structure,
+      prize_pool_finalized: true,
+    };
+    const state = manager(row, ['table-one']);
+    let fail = true;
+    vi.spyOn(supabase, 'from').mockImplementation(
+      (relation: string) =>
+        ({
+          update: (patch: Record<string, unknown>) => ({
+            eq: async () => {
+              if (relation === 'tournaments') {
+                Object.assign(row, patch); // The write committed; only its reply was lost.
+                if (fail) return { error: { message: 'reply lost' } };
+              }
+              return { error: null };
+            },
+          }),
+        }) as never
+    );
+    await state.advanceBlindLevel(structure);
+    vi.setSystemTime(new Date('2026-09-10T12:10:02.000Z'));
+    state.onBreak = true;
+    state.suspendLevelClock();
+    expect(state.blindTimer).toBeNull();
+    expect(state.savedBlindTimerRemaining).toBe(1000);
+    await state.advanceBlindLevel(structure);
+    expect(state.blindTimer).toBeNull();
+    vi.setSystemTime(new Date('2026-09-10T12:15:02.000Z'));
+    fail = false;
+    state.onBreak = false;
+    state.startBlindTimer(structure, state.savedBlindTimerRemaining);
+    expect(state.blindTimer.delay).toBe(1000);
+    await state.blindTimer.callback();
+    expect(state.currentLevel).toBe(1);
+    expect(state.blindTimer.delay).toBe(598000);
+    expect(row.level_started_at).toBe('2026-09-10T12:15:00.000Z');
+  });
+
+  it('retains the next-level clock when notification throws after durable publication', async () => {
+    const structure = [
+      { smallBlind: 25, bigBlind: 50, durationMinutes: 10 },
+      { smallBlind: 50, bigBlind: 100, durationMinutes: 10 },
+    ];
+    const row = {
+      current_level: 0,
+      level_started_at: '2026-09-10T12:00:00.000Z',
+      blind_structure: structure,
+      prize_pool_finalized: true,
+    };
+    const state = manager(row, ['table-one']);
+    vi.spyOn(supabase, 'from').mockReturnValue({
+      update: (patch: Record<string, unknown>) => ({
+        eq: async () => {
+          Object.assign(row, patch);
+          return { error: null };
+        },
+      }),
+    } as never);
+    state.broadcast.mockRejectedValueOnce(new Error('notification unavailable'));
+    await state.advanceBlindLevel(structure);
+    expect(state.currentLevel).toBe(1);
+    expect(state.blindTimer.delay).toBe(600000);
+    expect(state.pendingBlindTransition).toBeNull();
+    expect(state.requestUrgentEliminationSweepAfter).toHaveBeenCalledWith(1000);
+  });
+
+  it('does not retry or publish a write that returns to a fenced manager', async () => {
+    const structure = [
+      { smallBlind: 25, bigBlind: 50, durationMinutes: 10 },
+      { smallBlind: 50, bigBlind: 100, durationMinutes: 10 },
+    ];
+    const row = {
+      current_level: 0,
+      level_started_at: '2026-09-10T12:00:00.000Z',
+      blind_structure: structure,
+      prize_pool_finalized: true,
+    };
+    const state = manager(row, ['table-one']);
+    vi.spyOn(supabase, 'from').mockReturnValue({
+      update: () => ({
+        eq: async () => {
+          state.running = false;
+          return { error: { message: 'stale owner' } };
+        },
+      }),
+    } as never);
+    await state.advanceBlindLevel(structure);
+    expect(state.currentLevel).toBe(0);
+    expect(state.blindTimer).toBeNull();
+    expect(tableStateHub.emitEvent).not.toHaveBeenCalled();
+    expect(state.broadcast).not.toHaveBeenCalled();
+  });
+
+  it.each(['table', 'level', 'lost-acknowledgment'])(
+    'retries the same level without announcing success after a %s failure',
+    async (failure) => {
+      const structure = [
+        { smallBlind: 25, bigBlind: 50, durationMinutes: 10 },
+        { smallBlind: 50, bigBlind: 100, durationMinutes: 10 },
+        { smallBlind: 100, bigBlind: 200, durationMinutes: 10 },
+      ];
+      const row: Record<string, any> = {
+        current_level: 0,
+        level_started_at: '2026-09-10T12:00:00.000Z',
+        blind_structure: structure,
+        prize_pool_finalized: true,
+      };
+      const state = manager(row, ['table-one', 'table-two']);
+      let fail = true;
+      const levelWrites: Record<string, unknown>[] = [];
+      vi.spyOn(supabase, 'from').mockImplementation(
+        (relation: string) =>
+          ({
+            update: (patch: Record<string, unknown>) => ({
+              eq: async (_column: string, id: string) => {
+                if (relation === 'tables') {
+                  if (fail && failure === 'table' && id === 'table-two') {
+                    return { error: { message: 'table unavailable' } };
+                  }
+                } else if (relation === 'tournaments') {
+                  if ('current_level' in patch) {
+                    levelWrites.push(patch);
+                    if (fail && failure !== 'table') {
+                      if (failure === 'lost-acknowledgment') Object.assign(row, patch);
+                      return { error: { message: 'level acknowledgment unavailable' } };
+                    }
+                  }
+                  Object.assign(row, patch);
+                }
+                return { error: null };
+              },
+            }),
+          }) as never
+      );
+      await state.advanceBlindLevel(structure);
+      expect(state.currentLevel).toBe(0);
+      expect(row.current_level).toBe(failure === 'lost-acknowledgment' ? 1 : 0);
+      expect(tableStateHub.emitEvent).not.toHaveBeenCalled();
+      expect(state.broadcast).not.toHaveBeenCalled();
+      expect(state.blindTimer?.delay).toBe(1000);
+      fail = false;
+      vi.setSystemTime(new Date('2026-09-10T12:10:02.000Z'));
+      await state.blindTimer.callback();
+      expect(state.currentLevel).toBe(1);
+      expect(row.current_level).toBe(1);
+      expect(levelWrites.every((patch) => patch.current_level === 1)).toBe(true);
+      if (failure !== 'table') {
+        expect(levelWrites[1].level_started_at).toBe(levelWrites[0].level_started_at);
+        expect(state.blindTimer.delay).toBe(598_000);
+      }
+      expect(state.broadcast).toHaveBeenCalledTimes(1);
+      expect(tableStateHub.emitEvent).toHaveBeenCalledTimes(2);
+    }
+  );
+
+  it('admits only one transition while a write is pending', async () => {
+    const structure = [
+      { smallBlind: 25, bigBlind: 50, durationMinutes: 10 },
+      { smallBlind: 50, bigBlind: 100, durationMinutes: 10 },
+    ];
+    const row = {
+      current_level: 0,
+      level_started_at: '2026-09-10T12:00:00.000Z',
+      blind_structure: structure,
+      prize_pool_finalized: true,
+    };
+    const state = manager(row, ['table-one']);
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const update = vi.fn((patch: Record<string, unknown>) => ({
+      eq: async () => {
+        await pending;
+        if ('current_level' in patch) Object.assign(row, patch);
+        return { error: null };
+      },
+    }));
+    vi.spyOn(supabase, 'from').mockReturnValue({ update } as never);
+    const first = state.advanceBlindLevel(structure);
+    const second = state.advanceBlindLevel(structure);
+    expect(state.currentLevel).toBe(0);
+    expect(update).toHaveBeenCalledOnce();
+    release();
+    await Promise.all([first, second]);
+    expect(state.currentLevel).toBe(1);
+    expect(state.broadcast).toHaveBeenCalledOnce();
+  });
+
   it.each(['stopped', 'continued'])(
     'keeps one level deadline after publication with the manager %s',
     async (mode) => {
@@ -172,9 +370,10 @@ describe('blind rows at manager recovery', () => {
             }),
           }) as never
       );
-      await old.advanceBlindLevel(structure);
-      expect(row.current_level).toBe(1);
-      expect(tables.get('table-one')).toEqual(expected);
+      // Legacy partial publication from before acknowledgment gating: the new
+      // manager must still repair it before admitting a dealer after restart.
+      Object.assign(row, { current_level: 1, level_started_at: '2026-09-10T12:10:00.000Z' });
+      Object.assign(tables.get('table-one')!, expected);
       expect(tables.get('table-two')?.big_blind).toBe(50);
       old.running = false;
       recovering = true;

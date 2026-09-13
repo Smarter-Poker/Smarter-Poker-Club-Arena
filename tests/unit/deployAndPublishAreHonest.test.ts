@@ -112,6 +112,17 @@ describe('engine deployment reports what actually happened', () => {
     expect(doors).toMatch(/^ {4}needs: preflight$/m);
     expect(doors).toContain('DATABASE_URL: ${{ secrets.DATABASE_URL }}');
     expect(doors).toContain('node scripts/ci/check-engine-doors-exist.mjs');
+    expect(doors).toContain('CONTROL_SHA: ${{ github.sha }}');
+    expect(doors).toContain('TARGET_SHA: ${{ needs.preflight.outputs.target_sha }}');
+    expect(doors).toContain('ref: ${{ github.sha }}');
+    expect(doors).toContain('path: engine-target');
+    expect(doors).toContain('sparse-checkout: server/src');
+    expect(doors).toContain('ENGINE_DOORS_TARGET_ROOT: ${{ github.workspace }}/engine-target');
+    expect(doors).toContain('[ "$(git rev-parse --verify \'HEAD^{commit}\')" = "$CONTROL_SHA" ]');
+    expect(doors).toContain(
+      '[ "$(git -C engine-target rev-parse --verify \'HEAD^{commit}\')" = "$TARGET_SHA" ]'
+    );
+
     expect(doors).not.toMatch(/secrets\.HETZNER_|\bSSH_(?:USER|KEY|DIR)\b|\bHSSH\b/);
 
     expect(release).toMatch(/^ {2}deploy:/);
@@ -213,7 +224,9 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
 
   it('requires both the built artifact and the test verdict before publishing', () => {
     const origin = job(publish, 'publish-to-origin');
-    expect(origin).toContain('needs: [publish-needed, build-and-store, client-tests]');
+    expect(origin).toContain(
+      'needs: [publish-needed, frontend-identity, build-and-store, client-tests]'
+    );
     expect(origin).toContain("needs.build-and-store.result == 'success'");
     expect(origin).toContain("needs.client-tests.result == 'success'");
   });
@@ -413,7 +426,7 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     const jobTimeouts = [...publish.matchAll(/^ {4}timeout-minutes: (\d+)$/gm)].map((match) =>
       Number(match[1])
     );
-    expect(jobTimeouts).toHaveLength(5);
+    expect(jobTimeouts).toHaveLength(6);
     expect(jobTimeouts.every((minutes) => minutes > 0 && minutes <= 30)).toBe(true);
     const origin = job(publish, 'publish-to-origin');
     expect(origin).toContain('timeout 35s ssh');

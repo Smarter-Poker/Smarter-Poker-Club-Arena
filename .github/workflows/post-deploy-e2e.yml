@@ -115,6 +115,9 @@ jobs:
           if (verdicts.length !== 1 || publishes.length !== 1 || proofs.length !== 1) {
             throw new Error('The origin job is missing one of its release-verdict steps.');
           }
+          const retained = (origin.steps ?? []).filter(
+            (entry) => entry?.name === 'Recheck the unchanged immutable frontend artifact'
+          );
           const originSucceeded =
             origin.status === 'completed' &&
             origin.conclusion === 'success';
@@ -128,7 +131,16 @@ jobs:
             publishes[0].conclusion === 'skipped' &&
             proofs[0].status === 'completed' &&
             proofs[0].conclusion === 'skipped';
-          if (!originSucceeded || (!publishProved && !safeStanddown)) {
+          const retentionProved =
+            retained.length === 1 &&
+            retained[0].status === 'completed' &&
+            retained[0].conclusion === 'success' &&
+            verdicts[0].conclusion === 'skipped' &&
+            publishes[0].conclusion === 'skipped' &&
+            proofs[0].conclusion === 'skipped';
+          // Retaining bytes never suppresses browser coverage. This job still
+          // verifies the actual old frontend source with the required engine.
+          if (!originSucceeded || (!publishProved && !safeStanddown && !retentionProved)) {
             throw new Error(
               'The source run neither proved a Hetzner web publish nor completed a safe forward stand-down.'
             );

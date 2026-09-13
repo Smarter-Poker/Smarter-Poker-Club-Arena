@@ -15,8 +15,8 @@
  * rollback never block; and the workflow runs the check before the break gate
  * with production's credentials.
  */
-import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -28,6 +28,8 @@ const ALLOW = JSON.parse(
   readFileSync(resolve(root, 'scripts/ci/engine-doors.allowlist.json'), 'utf8')
 );
 
+const cleanGitEnv = () =>
+  Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
 type Doors = {
   doorsIn: (src: string) => Set<string>;
   engineDoors: (dir?: string) => Map<string, string[]>;
@@ -121,6 +123,109 @@ describe('the real script, end to end', () => {
     const res = runScript({});
     expect(res.status).toBe(0);
     expect(res.stdout).toMatch(/::warning title=DATABASE DOORS UNCHECKED::DATABASE_URL is not set/);
+  });
+});
+
+describe('the control policy scans a separate exact target', () => {
+  it('executes the control checker and allowlist while reading only target server/src', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'engine-door-control-'));
+    try {
+      const control = join(dir, 'control');
+      const target = join(control, 'engine-target');
+      for (const base of [control, target]) {
+        mkdirSync(join(base, 'scripts/ci'), { recursive: true });
+        mkdirSync(join(base, 'server/src'), { recursive: true });
+      }
+      const checker = join(control, 'scripts/ci/check-engine-doors-exist.mjs');
+      writeFileSync(checker, readFileSync(SCRIPT, 'utf8'));
+      writeFileSync(
+        join(control, 'scripts/ci/engine-doors.allowlist.json'),
+        JSON.stringify({ fn_allowed: 'approved by control' })
+      );
+      writeFileSync(join(control, 'server/src/control.ts'), "db.rpc('fn_control_only');");
+      writeFileSync(
+        join(target, 'scripts/ci/check-engine-doors-exist.mjs'),
+        "throw new Error('OLD_CONTROL_EXECUTED');"
+      );
+      writeFileSync(
+        join(target, 'scripts/ci/engine-doors.allowlist.json'),
+        JSON.stringify({ fn_missing: 'stale target policy' })
+      );
+      writeFileSync(
+        join(target, 'server/src/runtime.ts'),
+        "db.rpc('fn_allowed'); db.rpc('fn_missing');"
+      );
+      const fixture = join(dir, 'live.json');
+      writeFileSync(fixture, '[]');
+      const git = (cwd: string, ...args: string[]) =>
+        execFileSync('git', args, {
+          cwd,
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: { ...cleanGitEnv(), GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' },
+        }).trim();
+      for (const repository of [target, control]) {
+        git(repository, 'init', '-q');
+        git(repository, 'config', 'user.name', 'Control source fixture');
+        git(repository, 'config', 'user.email', 'fixture@example.invalid');
+        git(repository, 'add', '--', 'scripts', 'server');
+        git(repository, 'commit', '-qm', 'exact source snapshot');
+      }
+      const controlSha = git(control, 'rev-parse', 'HEAD');
+      const targetSha = git(target, 'rev-parse', 'HEAD');
+      expect(controlSha).not.toBe(targetSha);
+      const start = WF.indexOf('      - name: Prove the control and source identities');
+      const end = WF.indexOf('\n      - name:', start + 1);
+      const step = WF.slice(start, end);
+      const identityCode = step
+        .slice(step.indexOf('run: |\n') + 'run: |\n'.length)
+        .replace(/^ {10}/gm, '');
+      for (const [CONTROL_SHA, TARGET_SHA, expected] of [
+        [controlSha, targetSha, 0],
+        [targetSha, targetSha, 1],
+        [controlSha, controlSha, 1],
+      ] as const) {
+        const identity = spawnSync('bash', ['-c', identityCode], {
+          cwd: control,
+          encoding: 'utf8',
+          env: { ...cleanGitEnv(), CONTROL_SHA, TARGET_SHA },
+        });
+        expect(identity.status, identity.stderr).toBe(expected);
+      }
+      const controlAlias = join(dir, 'control-link');
+      symlinkSync(control, controlAlias, 'dir');
+      const result = spawnSync(
+        process.execPath,
+        [join(controlAlias, 'scripts/ci/check-engine-doors-exist.mjs')],
+        {
+          cwd: target,
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            ENGINE_DOORS_TARGET_ROOT: target,
+            ENGINE_DOORS_LIVE_FIXTURE: fixture,
+          },
+        }
+      );
+      expect(result.status, result.stdout + result.stderr).toBe(1);
+      expect(result.stdout).toContain('MISSING DATABASE DOOR::fn_missing()');
+      expect(result.stdout).not.toMatch(/fn_allowed\(\)|fn_control_only|OLD_CONTROL_EXECUTED/);
+      expect(result.stderr).toBe('');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('an unreadable target source cannot pass as an unreadable database', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'engine-door-no-source-'));
+    try {
+      const result = runScript({ ENGINE_DOORS_TARGET_ROOT: dir });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('ENGINE DOOR SOURCE INVALID');
+      expect(result.stdout).not.toContain('DATABASE DOORS UNCHECKED');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

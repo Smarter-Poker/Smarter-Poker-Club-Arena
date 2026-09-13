@@ -41,7 +41,11 @@ describe('no commit left behind means exact, fail-closed release events', () => 
       ...publisher.matchAll(/uses: actions\/checkout@v4\n((?:\s{8,}.*\n)*)/g),
     ].map((match) => match[1]);
     expect(checkoutBlocks.length).toBeGreaterThanOrEqual(2);
-    for (const block of checkoutBlocks) expect(block).toContain(`ref: ${target}`);
+    for (const block of checkoutBlocks) {
+      expect(block).toContain(
+        block.includes('path: control') ? 'ref: ${{ github.sha }}' : `ref: ${target}`
+      );
+    }
 
     expect(publisher).toContain(`"ca_sha": "${target}"`);
     expect(publisher).toContain(`VITE_APP_VERSION: ${target}`);

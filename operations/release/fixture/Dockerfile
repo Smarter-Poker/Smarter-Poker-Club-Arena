@@ -41,6 +41,11 @@ RUN test "$(dpkg --print-architecture)" = amd64 \
       'deb [check-valid-until=no] https://snapshot.debian.org/archive/debian/20260910T000000Z trixie main' \
       'deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/20260910T000000Z trixie-security main' \
       > /etc/apt/sources.list \
+    && printf '%s\n' \
+      'Acquire::Retries "3";' \
+      'Acquire::https::Timeout "30";' \
+      'Acquire::http::Timeout "30";' \
+      > /etc/apt/apt.conf.d/80fixture-transport \
     && printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d \
     && chmod 0755 /usr/sbin/policy-rc.d \
     && mkdir -p /etc/postgresql-common \

@@ -49,7 +49,10 @@ describe('an unresolved satellite commit stops process ownership', () => {
     expect(satellite).toContain('satErr instanceof SatelliteSettlementOutcomeUnknownError');
     expect(satellite).toContain('satErr instanceof SatelliteSettlementRefusedError');
     expect(satellite).toContain('if (provenRefusal) releaseFinishGuard()');
-    expect(satellite).toContain('if (!provenRefusal) await this.stopAndWait()');
+    expect(satellite).toMatch(
+      /this\.fenceUnknownTerminalOutcome\(\s*'Tournament\.atomic_satellite_finish_manager_stop_failed'\s*\)/
+    );
+    expect(satellite).not.toContain('await this.stopAndWait()');
     expect(satellite).not.toMatch(
       /readDurableTournamentStatus|settleTournamentRake|fn_finalize_bounty_pool|settleTournamentPlacesAtomically|status:\s*'COMPLETED'/
     );

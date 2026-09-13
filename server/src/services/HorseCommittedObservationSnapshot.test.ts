@@ -100,6 +100,30 @@ beforeEach(() => {
 });
 afterEach(() => vi.clearAllMocks());
 describe('committed observation snapshot reader', () => {
+  it('keeps the original actor and interval when the caller changes its request in flight', async () => {
+    const before = snapshot([hand()]);
+    respond(before);
+    const expected = await read(request);
+    let reply!: (value: unknown) => void;
+    mocks.abort.mockReturnValueOnce(new Promise((resolve) => (reply = resolve)));
+    const mutable = { ...request };
+    const pending = read(mutable);
+    Object.assign(mutable, { actorId: other, fromMs: 0, throughMs: NOW + 1 });
+    reply({ data: before, error: null });
+    expect(await pending).toEqual(expected);
+  });
+  it('rejects a response for a rewritten caller scope instead of adopting it after the await', async () => {
+    let reply!: (value: unknown) => void;
+    mocks.abort.mockReturnValueOnce(new Promise((resolve) => (reply = resolve)));
+    const mutable = { ...request };
+    const pending = read(mutable);
+    Object.assign(mutable, { actorId: other, fromMs: NOW - 2000, throughMs: NOW - 1 });
+    reply({
+      data: { ...snapshot(), actor: other, fromMs: mutable.fromMs, throughMs: mutable.throughMs },
+      error: null,
+    });
+    expect(await pending).toEqual({ status: 'unavailable', reason: 'invalid_source' });
+  });
   it('makes one scoped, timed request and preserves an empty snapshot without inventing evidence', async () => {
     const result = await read(request);
     expect(mocks.rpc).toHaveBeenCalledTimes(1);

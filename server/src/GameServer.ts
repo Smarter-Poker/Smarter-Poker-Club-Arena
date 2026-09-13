@@ -2095,6 +2095,16 @@ export class GameServer {
     raise: (a) => raiseEngineAlert(a),
     resolve: (name, component, note) => resolveEngineAlert(name, component, note),
     paused: () => this.maintenanceBreak.isActive(),
+    /**
+     * Since 2026-09-08 the stat row is written by the hand projector, not by
+     * the AFTER INSERT trigger, so "a recent hand has no stat row" is usually a
+     * question about the DRAIN. HandOutboxMetrics already samples that backlog
+     * once a minute on the leader; handing the monitor the same sample lets the
+     * alert say which writer is behind instead of naming a log line that cannot
+     * exist on the atomic path. A non-leader never samples, so this reads back
+     * as UNKNOWN there rather than as a clean bill of health.
+     */
+    liveWriterBacklog: () => this.handOutboxMetrics.get(),
   });
   /**
    * A5: drains `pending_fee_distributions` — rake / BBJ fees that left a pot but

@@ -93,6 +93,7 @@ import {
 } from './tickerMessages';
 import { dismissItem, readDismissed } from './tickerDismissals';
 import { useTopChromeOffset } from './useTopChromeOffset';
+import { useRailSilence } from './useRailSilence';
 import { TickerRail } from './TickerRail';
 
 /** How far ahead an event counts as "about to start". */
@@ -285,6 +286,11 @@ export function TournamentStartingTicker() {
   const itemsRef = useRef(items);
 
   const headerBottom = useTopChromeOffset(location.pathname);
+  /* The two states in which this bar must say nothing: a player who asked to be
+     stopped, and a house that is closed. See useRailSilence - both were
+     invisible to this component until 2026-09-13, and the first one needed a
+     database policy before it could even be asked honestly. */
+  const silence = useRailSilence();
   const tickerRef = useRef<HTMLDivElement | null>(null);
 
   /* ── WHOSE CLUBS, AND FOR HOW LONG ────────────────────────────────────────
@@ -806,7 +812,8 @@ export function TournamentStartingTicker() {
     lane.length > 0 &&
     onTickerRoute &&
     tickerSettings.showTicker !== false &&
-    managedTicker.enabled;
+    managedTicker.enabled &&
+    !silence.silent;
 
   /* The strip retracts rather than vanishing. `leaving` keeps it mounted for
      one animation, and nothing can be clicked while it plays. */

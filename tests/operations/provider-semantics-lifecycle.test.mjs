@@ -3,8 +3,13 @@ import test from 'node:test';
 import { EventEmitter } from 'node:events';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { mkdtemp, mkdir, readFile, writeFile, stat, rm, symlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 const source = process.env.PROVIDER_REVIEW_SUBJECT ?? new URL('../../operations/release/fixture/', import.meta.url).pathname;
-const { qualifyFixtureProviders } = await import(pathToFileURL(source + '/provider-semantics.mjs'));
+const { qualifyFixtureProviders, createProviderKeyFile, providerKeyLauncher, providerPostgresArguments } = await import(pathToFileURL(source + '/provider-semantics.mjs'));
 const { providerSql: sql, providerVersions } = await import(pathToFileURL(source + '/provider-semantic-sql.mjs'));
 const { createProviderProbePeer } = await import(pathToFileURL(source + '/provider-probe-peer.mjs'));
 const roleProof = { scope:'native-full-role-installer',status:'passed',catalog_outcome:'committed',graph_assertion:true,membership_assertion:true,all_driver_clients_closed:true };
@@ -12,6 +17,48 @@ const names=['http','commit','rollback','sentinel'];
 const symbols=[['http','http','$libdir/http'],['pg_net','wake','pg_net'],['supabase_vault','_crypto_aead_det_encrypt','$libdir/supabase_vault'],['supabase_vault','_crypto_aead_det_decrypt','$libdir/supabase_vault'],['plpgsql_check','plpgsql_check_function_tb','$libdir/plpgsql_check-2.7'],['postgis','st_makepoint','$libdir/postgis-3']];
 const rows = (rows, command='SELECT') => ({rows, command});
 const deferred = () => { let resolve; const promise=new Promise(r=>resolve=r); return {promise,resolve}; };
+
+test('Vault key execution uses the immutable image rather than writable tmpfs', async () => {
+  const setting = providerPostgresArguments.find(value => value.startsWith('vault.getkey_script='));
+  assert.equal(setting, 'vault.getkey_script=/usr/local/bin/fixture-provider-getkey');
+  const docker = await readFile(source + '/Dockerfile', 'utf8');
+  assert.ok(docker.includes("writeFileSync('/usr/local/bin/fixture-provider-getkey',providerKeyLauncher,{flag:'wx',mode:0o555})"));
+});
+
+test('fresh Vault key data is private, non-executable, and refuses reuse or a symlink', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'provider-key-data-'));
+  try {
+    const file = path.join(directory, 'key');
+    const value = await createProviderKeyFile(file);
+    assert.match(value, /^[0-9a-f]{64}\n$/);
+    assert.equal(await readFile(file, 'utf8'), value);
+    assert.equal((await stat(file)).mode & 0o777, 0o400);
+    await assert.rejects(createProviderKeyFile(file), { code: 'EEXIST' });
+    assert.equal(await readFile(file, 'utf8'), value);
+    const link = path.join(directory, 'link');
+    await symlink(file, link);
+    await assert.rejects(createProviderKeyFile(link), { code: 'EEXIST' });
+    assert.equal(await readFile(file, 'utf8'), value);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('the image launcher reads only fixed private data and fails when that data is absent', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'provider-key-launcher-'));
+  try {
+    const data = path.join(directory, 'private/key');
+    await mkdir(path.dirname(data), { mode: 0o700 });
+    const launcher = path.join(directory, 'launcher');
+    const fixed = '/run/club-arena-qualification/private/provider-key';
+    assert.equal(providerKeyLauncher.split(fixed).length, 2);
+    await writeFile(launcher, providerKeyLauncher.replace(fixed, data), { flag: 'wx', mode: 0o555 });
+    const expected = await createProviderKeyFile(data);
+    const result = await promisify(execFile)(launcher, ['ignored-argument'], { timeout: 3000 });
+    assert.equal(result.stdout, expected);
+    assert.equal(result.stderr, '');
+    await rm(data);
+    await assert.rejects(promisify(execFile)(launcher, [], { timeout: 3000 }));
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
 function fixture({ endHook, peerCloseHook }={}) {
   const clients=[]; const hits=Object.fromEntries(names.map(n=>[n,0])); let transaction=false,pending=[],sequence=0;
   const peer={ body:'{"fixture":"synthetic"}',closeCalls:0,
@@ -47,7 +94,7 @@ function fixture({ endHook, peerCloseHook }={}) {
       if(text===sql.vaultUpdate)return rows([{}]);
       if(text===sql.httpOptions)return rows([{timeout:true,connect_timeout:true,redirects:true}]);
       if(text===sql.http){hits.http++;return rows([{status:200,content_type:'application/json',content:peer.body}]);}
-      if(text===sql.preload)return rows([{libraries:'pg_stat_statements,pg_cron,pg_net,supabase_vault',database:'club_arena_qualification',username:'supabase_admin',key_script:'/run/club-arena-qualification/private/provider-getkey'}]);
+      if(text===sql.preload)return rows([{libraries:'pg_stat_statements,pg_cron,pg_net,supabase_vault',database:'club_arena_qualification',username:'supabase_admin',key_script:'/usr/local/bin/fixture-provider-getkey'}]);
       if(text==='SELECT net.wait_until_running()')return rows([{}]);
       if(text===sql.worker)return rows([{workers:1}]);
       if(text===sql.enqueue){const name=values[0].split('/').at(-1);if(transaction)pending.push(name);else hits[name]++;return rows([{id:String(++sequence)}]);}

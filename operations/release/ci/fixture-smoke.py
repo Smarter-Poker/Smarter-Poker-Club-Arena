@@ -54,7 +54,10 @@ NATIVE_STAGES = frozenset((
         'preimage-ack', 'preimage-shutdown', 'cleanup')),
     *( 'fixture-preimage-' + step for step in (
         'arguments', 'package', 'directories', 'cookie', 'postgres-socket', 'archives',
-        'postgresql', 'postgresql-native-cron-install', 'postgresql-safeupdate-configure',
+        'postgresql', 'postgresql-provider-key', 'postgresql-start', 'postgresql-ready',
+        'postgresql-bootstrap-connect', 'postgresql-bootstrap-configuration',
+        'postgresql-bootstrap-owner', 'postgresql-bootstrap-roles',
+        'postgresql-native-cron-install', 'postgresql-safeupdate-configure',
         'genuine-auth-migrations', 'genuine-realtime-migrations',
         'managed-postgres-event-trigger-boundary', 'post-service-catalog-preimage', 'full-role-alignment', 'native-role-fault-matrix', 'native-role-access-defaults', 'five-provider-semantics', 'cleanup'))))
 NATIVE_ERROR_NAMES = frozenset(('Error', 'AssertionError', 'TypeError', 'RangeError',

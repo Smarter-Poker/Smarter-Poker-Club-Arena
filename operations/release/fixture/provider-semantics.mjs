@@ -1,11 +1,18 @@
 import assert from 'node:assert/strict';
 import { randomBytes, createHash } from 'node:crypto';
-import { readFile, writeFile, chmod } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { performance } from 'node:perf_hooks';
 import { createProviderProbePeer } from './provider-probe-peer.mjs';
 import { providerSql as sql, providerVersions } from './provider-semantic-sql.mjs';
 
-const keyScript = '/run/club-arena-qualification/private/provider-getkey';
+const keyFile = '/run/club-arena-qualification/private/provider-key';
+const keyScript = '/usr/local/bin/fixture-provider-getkey';
+// Docker mounts /run with noexec. Only this immutable image launcher executes;
+// its key remains private data in disposable tmpfs, never executable content.
+export const providerKeyLauncher = '#!/bin/sh\nexec /bin/cat ' + keyFile + '\n';
+const exec = promisify(execFile);
 const database = 'club_arena_qualification';
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 export const providerPostgresArguments = Object.freeze([
@@ -14,12 +21,22 @@ export const providerPostgresArguments = Object.freeze([
   '-c', 'pg_net.username=supabase_admin',
   '-c', 'vault.getkey_script=' + keyScript,
 ]);
-export async function prepareProviderKey() {
+export async function createProviderKeyFile(file) {
   // Fresh synthetic key lives only in private disposable tmpfs. It never enters
   // logs, SQL, image layers, caller environment or the qualification receipt.
   const key = randomBytes(32).toString('hex');
-  await writeFile(keyScript, '#!/bin/sh\nprintf \'%s\\n\' \'' + key + '\'\n', { flag: 'wx', mode: 0o700 });
-  await chmod(keyScript, 0o700);
+  await writeFile(file, key + '\n', { flag: 'wx', mode: 0o400 });
+  return key + '\n';
+}
+export async function prepareProviderKey() {
+  assert.equal(await readFile(keyScript, 'utf8'), providerKeyLauncher,
+    'FIXTURE_PROVIDER_KEY_LAUNCHER_REQUIRED');
+  const expected = await createProviderKeyFile(keyFile);
+  // Exercise the actual immutable executable before starting PostgreSQL. Raw
+  // output is compared in memory and never included in a public diagnostic.
+  const { stdout, stderr } = await exec(keyScript, [], { timeout: 5000, maxBuffer: 1024 });
+  assert.equal(stdout, expected, 'FIXTURE_PROVIDER_KEY_READ_REQUIRED');
+  assert.equal(stderr, '', 'FIXTURE_PROVIDER_KEY_STDERR_REFUSED');
 }
 export function assertProviderPostgresVersion(version) {
   // The pinned Debian package adds its exact packaging suffix to pg_config.

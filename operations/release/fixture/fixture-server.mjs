@@ -485,6 +485,7 @@ async function checkPackage() {
     `${pgBin}/psql`,
     '/usr/local/bin/auth',
     '/usr/local/bin/postgrest',
+    '/usr/local/bin/fixture-provider-getkey',
     '/app/bin/server',
     '/app/bin/migrate',
     '/usr/bin/openssl',
@@ -678,7 +679,11 @@ async function start(args, preimageOnly = false, roleAlignment = false, roleNati
     );
     // Opt-in provider command only. pg_net retries its owned database until
     // bootstrap creates it; its worker identity is proven after extension install.
-    if (providerSemantics) await prepareProviderKey();
+    if (providerSemantics) {
+      stage = 'postgresql-provider-key';
+      await prepareProviderKey();
+    }
+    stage = 'postgresql-start';
     await supervisor.start('postgres', `${pgBin}/postgres`, [
       '-D',
       pgData,
@@ -699,6 +704,7 @@ async function start(args, preimageOnly = false, roleAlignment = false, roleNati
       ...cronPostgresArguments,
       ...managedPostgresArguments,
     ]);
+    stage = 'postgresql-ready';
     await supervisor.until(async () => {
       try {
         await supervisor.command(`${pgBin}/pg_isready`, [
@@ -723,8 +729,11 @@ async function start(args, preimageOnly = false, roleAlignment = false, roleNati
     db = supervisor.databaseOwner.own(
       new pg.Client({ ...connection, user: 'supabase_admin', database: 'postgres' })
     );
+    stage = 'postgresql-bootstrap-connect';
     await db.connect();
+    stage = 'postgresql-bootstrap-configuration';
     await assertBootstrapPostgresConfiguration(db);
+    stage = 'postgresql-bootstrap-owner';
     await createFixtureApplicationOwner(db);
     await db.query(`CREATE DATABASE ${database} OWNER postgres`);
     await db.query('REVOKE CONNECT ON DATABASE postgres, template1 FROM PUBLIC');
@@ -733,6 +742,7 @@ async function start(args, preimageOnly = false, roleAlignment = false, roleNati
       new pg.Client({ ...connection, user: 'supabase_admin', database })
     );
     await db.connect();
+    stage = 'postgresql-bootstrap-roles';
     await db.query(serviceRoleBootstrapSql(secrets.databasePassword));
     stage = 'postgresql-native-cron-install';
     await installFixtureCron(db);

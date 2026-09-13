@@ -79,6 +79,16 @@ Required engine normalization: explicit speed and depth metadata, one canonical 
 
 ## Feature-by-feature engine acceptance matrix
 
+R11: the scheduled engine writer rounded explicit fractional bounty amounts to
+whole chips. A runtime regression showed 6.75 becoming 7.00 on a 13.50 entry
+contribution plus 1.50 fee. The repaired writer preserves cents and caps the
+head at the contribution after the fee. The existing whole-chip buy-in ladder
+and fallback percentage policy remain intact. Two active Turbo Tuesday PKO
+schedules additionally advertise 50% while carrying a 16.50 input price and
+7.50 head; the published price ladder produces a 15.00 total, and the old
+writer produced an 8.00 head. Those future schedule terms need explicit
+normalization; already funded contracts must not be rewritten.
+
 “Present” means code was located; it does not mean every financial or production boundary has been certified. Tests must execute actual production paths with durable database receipts; static source guards alone are insufficient.
 
 | Area                       | Required behavior and failure cases                                                                                                           | Current evidence / remaining certification                                                                                                                                                             |
@@ -136,12 +146,13 @@ Test target event registering, late-registering, closed, cancelled, deleted and 
 
 ## Evidence files
 
-The associated machine-readable inventory preserves the sampled configuration, including full blind ladders. Investigation logs and native test output are retained in the task work directory. Source changes are in the Club Arena engine repository on fix/mtt-lifecycle-root-causes-sep13, initially proposed as PR #4503.
+The associated machine-readable inventory preserves the sampled configuration, including full blind ladders. Investigation logs and native test output are retained in the task work directory. Source changes are in the Club Arena engine repository: PR #4503 merged as 829cc9a83b401d3481b7ed7750fbc8bb6c63ee3f; break acknowledgment and structure follow-up is PR #4512 on fix/mtt-break-ack-structure-sep13. The first release was superseded by a newer protected-main engine request; deployed recovery remains to be verified.
 
 ## Additional financial evidence (September 13)
 
 - All 698 sampled satellite awards have their required delivery record: no missing issued ticket/direct registration, wrong ticket holder, wrong direct-entry user or wrong target registration.
 - Of 214 issued entry-only tickets, nine were redeemed and 205 remained issued at observation. Outstanding does not by itself mean overdue or broken.
+- All 214 had exactly one matching ticket-escrow issuance ledger posting. All nine redeemed tickets had exactly one matching redemption posting and one registration refund entitlement; no still-issued ticket had been consumed. These are read-only production reconciliation results, not injected native retry/concurrency tests.
 - All 2,203 recorded recent bounty obligations were settled: 896 PKO, 838 regular, 22 mystery chest and 447 mystery pre-activation. This does not prove that every unprocessed knockout created an obligation.
 - For 2,012 tournaments completed within the past day, cash prize receipts and prize-liability-to-player-wallet ledger postings matched in every one of 2,095 tournament/recipient groups: 110,531.60 on each side, zero mismatches. This excludes noncash satellite tickets/direct entries and does not certify every bounty, fee or historical tournament.
 - The separate integration file tests/integration/tournament-flows.test.ts uses mocked database calls. Its end-to-end title must not be treated as proof of native money movement or served engine execution.

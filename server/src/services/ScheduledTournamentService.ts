@@ -1104,12 +1104,14 @@ export class ScheduledTournamentService {
     const buyInFee = isSpin ? 0 : split.fee;
 
     // Bounty head: absolute bountyAmount wins; else the recurring service's
-    // percent-of-total convention (default 30), never exceeding the prize half.
+    // percent-of-total convention (default 30), never exceeding the entry's
+    // contribution after the fee. Whole-chip entry pricing does not make its
+    // bounty allocation whole-chip: e.g. half of a 13.50 contribution is 6.75.
     let bountyAmount = 0;
     if (isBountyType) {
-      const absolute = wholeChips(cfg.bountyAmount);
-      if (absolute > 0) {
-        bountyAmount = Math.min(split.prize, absolute);
+      const absolute = Number(cfg.bountyAmount);
+      if (Number.isFinite(absolute) && absolute > 0) {
+        bountyAmount = Math.round((Math.min(split.prize, absolute) + Number.EPSILON) * 100) / 100;
       } else {
         const pct = Number(cfg.bountyPercent) || 30;
         bountyAmount = Math.min(split.prize, Math.max(0, Math.round((split.total * pct) / 100)));

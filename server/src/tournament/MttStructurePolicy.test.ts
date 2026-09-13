@@ -13,6 +13,46 @@ import { supabase } from '../services/supabase.js';
 afterEach(() => vi.restoreAllMocks());
 
 describe('engine MTT structure policy', () => {
+  it('preserves an explicitly priced fractional bounty within the entry contribution', async () => {
+    const service = new ScheduledTournamentService();
+    const cfg = {
+      name: 'Exact Bounty',
+      type: 'progressive_bounty',
+      buyIn: 15,
+      startingStack: 10000,
+      maxPlayers: 100,
+      bountyAmount: 6.75,
+      blindPreset: 'TURBO',
+      payoutPreset: 'NINE',
+    };
+    const row = await (service as any).buildInsertRow(
+      { id: 'schedule-1', club_id: 'club-1', union_id: null, name: cfg.name },
+      cfg,
+      new Date()
+    );
+    expect(row).toMatchObject({ buy_in_amount: 13.5, buy_in_fee: 1.5, bounty_amount: 6.75 });
+    expect(row.bounty_amount / row.buy_in_amount).toBe(0.5);
+  });
+
+  it('caps a configured bounty at the entry contribution without absorbing its fee', async () => {
+    const service = new ScheduledTournamentService();
+    const cfg = {
+      name: 'Capped Bounty',
+      type: 'bounty',
+      buyIn: 15,
+      startingStack: 10000,
+      maxPlayers: 100,
+      bountyAmount: 50,
+      blindPreset: 'STANDARD',
+      payoutPreset: 'NINE',
+    };
+    const row = await (service as any).buildInsertRow(
+      { id: 'schedule-1', club_id: 'club-1', union_id: null, name: cfg.name },
+      cfg,
+      new Date()
+    );
+    expect(row).toMatchObject({ buy_in_amount: 13.5, buy_in_fee: 1.5, bounty_amount: 13.5 });
+  });
   it.each([
     [[{ durationMinutes: 10 }, { durationMinutes: 2 }], 'standard', false],
     [[{ durationMinutes: 4 }], 'turbo', true],

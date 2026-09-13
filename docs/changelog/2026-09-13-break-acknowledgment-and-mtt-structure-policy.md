@@ -15,7 +15,15 @@ deep stacks do not imply a slow clock. Existing ladders and funded events are
 preserved. This fixes newly created turbo events silently receiving the
 database's `is_turbo=false` default.
 
+The scheduled writer also preserves an explicit bounty amount to cents instead
+of rounding it to whole chips. The regression reproduced a configured 6.75
+head becoming 7.00 on a 13.50 contribution plus 1.50 fee. The cap remains the
+contribution after the fee; existing whole-chip entry pricing and percentage
+fallback policy remain intact. This changes future engine-created entries,
+not already funded contracts.
+
 Validation: 47 focused break/clock/ownership tests, 90 structure/service tests,
-65 creation-path tests and the server typecheck pass. The expanded full
-tournament suite and protected CI are tracked separately; deployment and
-native financial acceptance are not implied by these local results.
+65 creation-path tests and the server typecheck passed. The expanded suite
+passed 1,968 checks across 158 files before the additional bounty-precision
+regression, which was then reproduced and repaired separately. Protected CI,
+deployment and native financial acceptance remain separate evidence.

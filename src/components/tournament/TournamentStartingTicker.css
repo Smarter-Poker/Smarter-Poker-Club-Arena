@@ -519,6 +519,11 @@
   .mtt-ticker__msg + .mtt-ticker__msg {
     display: none;
   }
+  /* ...and with no second copy there is nothing for the copy-pip to separate,
+     so it would sit after the ellipsis as a mark with no meaning. */
+  .mtt-ticker__msg::after {
+    display: none;
+  }
   .mtt-ticker__msg {
     /* Ellipsis, not a hard cut: reduced motion collapses the MOVEMENT, and the
        reader still has to be able to tell that the line continues. The strip is

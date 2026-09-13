@@ -467,3 +467,44 @@ describe('what the harness showed, on a screen', () => {
     expect(CSS).toContain(".mtt-ticker[data-static='true'] .mtt-ticker__msg::after");
   });
 });
+
+describe('the Phase 1 audit', () => {
+  it('leaves no copy-pip under reduced motion, where there is no second copy', () => {
+    /* The pip separates two copies of a looping lane. Reduced motion hides the
+       second copy and truncates the first, so the pip would sit after an
+       ellipsis as a mark with nothing on the other side of it. */
+    const RM = CSS.slice(CSS.indexOf('@media (prefers-reduced-motion: reduce)'));
+    expect(RM).toContain('.mtt-ticker__msg::after');
+    expect(RM.slice(RM.indexOf('.mtt-ticker__msg::after'))).toMatch(/display: none/);
+  });
+
+  it('never abbreviates a POTENTIAL overlay into a claim of certainty', () => {
+    const potential = overlayItem({
+      id: 'o2',
+      name: 'Midweek Major',
+      tier: 'potential',
+      overlay: 3000,
+      guarantee: 10000,
+      prizePool: 4000,
+      entered: 20,
+      entriesToClose: 15,
+      startsAt: NOW + 600_000,
+    });
+    expect(potential.flag).toBe('POTENTIAL OVERLAY');
+    expect(potential.flagShort).not.toBe('OVERLAY');
+  });
+
+  it('gives every announcement a short flag, for the phone', () => {
+    const all = [
+      soon,
+      overlay,
+      tableOpeningItem('tbl1', 'Table 4', 'plo4', NOW),
+      operatorItem('maintenance', 0, 'Back At 3 AM'),
+      operatorItem('custom_messages', 0, 'Welcome'),
+    ];
+    for (const entry of all) {
+      expect(entry.flagShort, entry.flag).toBeTruthy();
+      expect(entry.flagShort.length, entry.flag).toBeLessThanOrEqual(entry.flag.length);
+    }
+  });
+});

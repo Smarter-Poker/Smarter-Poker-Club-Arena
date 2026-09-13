@@ -255,7 +255,13 @@ export function overlayItem(a: OverlayAnnouncement): TickerItem {
     lane: LANE.overlays,
     tone: TONE.overlays,
     flag: a.tier === 'live' ? 'OVERLAY' : 'POTENTIAL OVERLAY',
-    flagShort: 'OVERLAY',
+    /* A POTENTIAL overlay must not abbreviate into a claim of certainty. The
+       phone form of "POTENTIAL OVERLAY" is not "OVERLAY" - that is a different
+       and stronger statement about money. `overlayFor` has not produced the
+       potential tier since 2026-08-26, so this is unreachable today; it is
+       written correctly anyway, because the day it becomes reachable is not
+       the day to discover this. */
+    flagShort: a.tier === 'live' ? 'OVERLAY' : 'MAYBE',
     severity: a.tier === 'live' ? SEVERITY.overlays : SEVERITY.overlays - 10,
     parts: [copy(overlayMessage(a))],
     subject: a.name,

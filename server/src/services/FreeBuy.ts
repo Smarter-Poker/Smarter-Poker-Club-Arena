@@ -16,6 +16,7 @@
  */
 
 import { DSS_CLUB_ID, MIDWAY_UNION_ID, shHash } from './StableHand.js';
+import { mttSpeedColumns } from '../tournament/mttStructurePolicy.js';
 
 /* ------------------------------------------------------------------ */
 /* The two tiers                                                       */
@@ -512,6 +513,7 @@ export function freeBuyTournamentRow(opts: {
     current_players: 0,
     status: 'REGISTERING',
     blind_structure: opts.blindStructure,
+    ...mttSpeedColumns(opts.blindStructure),
     payout_structure: opts.payoutStructure,
     start_time: new Date(opts.due.startMs).toISOString(),
     late_reg_levels: opts.lateRegLevels,

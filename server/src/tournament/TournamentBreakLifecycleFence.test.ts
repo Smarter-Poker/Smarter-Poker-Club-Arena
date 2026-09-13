@@ -16,6 +16,7 @@ function deferred<T>() {
 
 class BreakHarness extends TournamentManagerBase {
   breakDecision: Promise<boolean> = Promise.resolve(true);
+  readonly clockCall = vi.fn();
   readonly broadcastCall = vi.fn<(eventType: string, payload: unknown) => Promise<boolean>>(
     async () => true
   );
@@ -41,7 +42,10 @@ class BreakHarness extends TournamentManagerBase {
     return this.onBreak;
   }
 
-  addTableEngine(engine: { pauseAfterHand: ReturnType<typeof vi.fn> }): void {
+  addTableEngine(engine: {
+    pauseAfterHand?: ReturnType<typeof vi.fn>;
+    resumeDealing?: ReturnType<typeof vi.fn>;
+  }): void {
     this.tableEngines.set('table-1', engine as never);
   }
 
@@ -54,6 +58,9 @@ class BreakHarness extends TournamentManagerBase {
   }
 
   protected override startEliminationChecker(): void {}
+  protected override startBlindTimer(): void {
+    this.clockCall();
+  }
 
   protected override async recalculateEliminatedPrizes(): Promise<boolean> {
     return true;
@@ -68,7 +75,84 @@ function stubBreakPersistence(result: Promise<unknown> = Promise.resolve({ error
 }
 
 afterEach(() => {
+  setMaintenanceFrozen(false);
+  vi.useRealTimers();
   vi.restoreAllMocks();
+});
+
+describe('break release requires persistence and current ownership', () => {
+  it('holds the break after a returned database error and retries once to release it', async () => {
+    vi.useFakeTimers();
+    const manager = new BreakHarness();
+    manager.activate();
+    manager.forceBreakState();
+    const persist = stubBreakPersistence();
+    persist.eq.mockResolvedValueOnce({ error: { message: 'temporary database failure' } });
+    const engine = { resumeDealing: vi.fn() };
+    manager.addTableEngine(engine);
+    await manager.resumeFromBreak();
+    expect(manager.breakIsActive()).toBe(true);
+    expect(engine.resumeDealing).not.toHaveBeenCalled();
+    expect(manager.clockCall).not.toHaveBeenCalled();
+    expect(manager.broadcastCall).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(manager.breakIsActive()).toBe(false);
+    expect(persist.update).toHaveBeenCalledTimes(2);
+    expect(engine.resumeDealing).toHaveBeenCalledOnce();
+    expect(manager.clockCall).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(persist.update).toHaveBeenCalledTimes(2);
+    manager.fence();
+  });
+
+  it('coalesces concurrent releases while the durable update is pending', async () => {
+    const persistence = deferred<unknown>();
+    const persist = stubBreakPersistence(persistence.promise);
+    const manager = new BreakHarness();
+    manager.activate();
+    manager.forceBreakState();
+    const first = manager.resumeFromBreak();
+    const second = manager.resumeFromBreak();
+    expect(manager.breakIsActive()).toBe(true);
+    expect(persist.eq).toHaveBeenCalledOnce();
+    persistence.resolve({ error: null });
+    await Promise.all([first, second]);
+    expect(manager.broadcastCall).toHaveBeenCalledOnce();
+    expect(manager.clockCall).toHaveBeenCalledOnce();
+    manager.fence();
+  });
+
+  it('does not release tables when notification returns after ownership is fenced', async () => {
+    const broadcast = deferred<boolean>();
+    stubBreakPersistence();
+    const manager = new BreakHarness();
+    manager.activate();
+    manager.forceBreakState();
+    manager.broadcastCall.mockImplementationOnce(() => broadcast.promise);
+    const engine = { resumeDealing: vi.fn() };
+    manager.addTableEngine(engine);
+    const resuming = manager.resumeFromBreak();
+    await vi.waitFor(() => expect(manager.broadcastCall).toHaveBeenCalledOnce());
+    manager.fence();
+    broadcast.resolve(true);
+    await resuming;
+    expect(engine.resumeDealing).not.toHaveBeenCalled();
+    expect(manager.clockCall).not.toHaveBeenCalled();
+  });
+
+  it('cancels a failed-clear retry when ownership ends', async () => {
+    vi.useFakeTimers();
+    const manager = new BreakHarness();
+    manager.activate();
+    manager.forceBreakState();
+    const persist = stubBreakPersistence(Promise.resolve({ error: { message: 'unavailable' } }));
+    await manager.resumeFromBreak();
+    manager.fence();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(manager.breakIsActive()).toBe(true);
+    expect(persist.update).toHaveBeenCalledOnce();
+    expect(manager.clockCall).not.toHaveBeenCalled();
+  });
 });
 
 describe('tournament break lifecycle fence', () => {

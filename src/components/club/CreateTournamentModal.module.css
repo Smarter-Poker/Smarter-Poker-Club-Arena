@@ -1,360 +1,178 @@
 .modalOverlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.85);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  /* The persistent Club footer historically sat above this modal and covered
-     its final controls. This full-screen work surface must own the top layer. */
+  inset: 0;
   z-index: 2147483000;
-  backdrop-filter: blur(4px) saturate(1.1);
-  -webkit-backdrop-filter: blur(4px) saturate(1.1);
-  animation: fadeIn 0.2s ease-out;
+  display: grid;
+  place-items: start center;
+  padding: 8px 0;
+  overflow-y: auto;
+  background: rgb(0 0 0 / 92%);
 }
 
 .modal {
-  background-color: #1a1a1a;
-  width: min(100%, 1180px);
-  max-width: 1180px;
-  height: 100vh;
-  height: 100dvh;
-  border-radius: 0;
-  padding: 0;
-  border: 1px solid #333;
-  box-shadow:
-    0 20px 50px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  animation: createTournamentModalSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  max-height: 100vh;
-  max-height: 100dvh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin: 0;
-  padding: 20px 24px;
-  flex: 0 0 auto;
-  border-bottom: 1px solid #333;
-  background: #151922;
+  width: min(100%, 1000px);
+  min-width: 0;
+  margin: auto;
+  padding: 0 !important;
+  border: 0 !important;
+  color: #e4e7ec;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 .form {
-  min-height: 0;
-  flex: 1 1 auto;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 24px 24px calc(env(safe-area-inset-bottom, 0px) + 120px);
-}
-
-.header h2 {
+  width: 100%;
+  min-width: 0;
   margin: 0;
-  color: #fff;
-  font-size: 1.5rem;
-}
-
-.closeParams {
-  background: none;
-  border: none;
-  color: #888;
-  font-size: 24px;
-  cursor: pointer;
-  padding: 0;
-  line-height: 1;
+  padding: 0 0 calc(env(safe-area-inset-bottom, 0px) + 120px);
 }
 
 .formGroup {
-  margin-bottom: 20px;
+  margin-bottom: 18px;
 }
-
-.formGroup label {
+.formGroup label,
+.sectionLabel {
   display: block;
-  color: #ccc;
-  margin-bottom: 8px;
-  font-size: 0.9rem;
+  margin-bottom: 7px;
+  color: #aeb9c3;
+  font:
+    700 11px/1.25 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
-
 .input,
-.select {
+.select,
+.formGroup input,
+.formGroup select {
   width: 100%;
-  padding: 12px;
-  background-color: #2a2a2a;
-  border: 1px solid #444;
-  border-radius: 8px;
-  color: #fff;
-  font-size: 1rem;
-  transition: border-color 0.2s;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid rgb(94 116 134 / 52%);
+  color: #f4f7fb;
+  background-color: #05080c;
+  font-size: 16px;
 }
-
 .input:focus,
-.select:focus {
-  outline: none;
-  border-color: #646cff;
+.select:focus,
+.formGroup input:focus {
+  outline: 3px solid #8fd4ff;
+  outline-offset: 2px;
 }
-
 .row {
   display: flex;
   gap: 16px;
 }
-
+.col {
+  flex: 1;
+  min-width: 0;
+}
 .formatAxes {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
-
 .calendarSelect {
   color-scheme: dark;
-  appearance: none;
-  padding-left: 42px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='5' width='18' height='16' rx='2'/%3E%3Cpath d='M16 3v4M8 3v4M3 11h18'/%3E%3C/svg%3E");
-  background-position: 14px 50%;
-  background-size: 20px 20px;
-  background-repeat: no-repeat;
 }
-
 .readOnlyRule,
 .lockedRule {
-  border: 1px solid #3c566e;
-  border-radius: 8px;
-  background: linear-gradient(180deg, #172433, #0e1722);
-  color: #f4f8fc;
-  padding: 12px;
-  min-height: 46px;
+  min-height: 44px;
+  padding: 11px 0;
+  border-block: 1px solid rgb(94 116 134 / 36%);
+  color: #e4e7ec;
 }
-
 .lockedRule {
   display: flex;
   justify-content: space-between;
   gap: 16px;
   margin: 4px 0 18px;
 }
-
 .lockedRule span {
-  color: #91a8bb;
+  color: #8795a2;
 }
-
-.col {
-  flex: 1;
-}
-
 .helperText {
   display: block;
   margin-top: 6px;
-  color: #666;
-  font-size: 0.8rem;
+  color: #73818e;
+  font-size: 12px;
+  line-height: 1.4;
 }
-
-.actions {
-  display: flex;
-  gap: 12px;
-  margin-top: 32px;
-  position: sticky;
-  z-index: 5;
-  bottom: 0;
-  padding: 16px 0 max(16px, env(safe-area-inset-bottom, 0px));
-  background: linear-gradient(180deg, rgba(21, 25, 34, 0.2), #151922 24%);
-  border-top: 1px solid #3a4657;
-  box-shadow: 0 -14px 30px rgba(0, 0, 0, 0.42);
-}
-
 .choiceGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: 0;
   margin: 10px 0;
+  border-block: 1px solid rgb(94 116 134 / 36%);
 }
-
 .choiceGrid button {
-  min-height: 42px;
-  border: 1px solid #40536b;
-  border-radius: 6px;
-  background: #111b29;
-  color: #cbd8e6;
+  appearance: none;
+  min-height: 44px;
+  border: 0;
+  border-inline-end: 1px solid rgb(94 116 134 / 30%);
+  color: #9eabb6;
+  background: transparent;
+  font:
+    800 11px/1 'Roboto Condensed',
+    sans-serif;
+  text-transform: uppercase;
   cursor: pointer;
-  font-weight: 800;
 }
-
 .choiceGrid button.selected {
-  border-color: #38bdf8;
-  background: linear-gradient(180deg, #0e496a, #09283d);
-  color: #fff;
-  box-shadow: 0 0 14px rgb(56 189 248 / 28%);
+  color: #45adff;
+  border-bottom: 2px solid #45adff;
+  text-shadow: 0 0 10px rgb(69 173 255 / 55%);
 }
-
-.cancelBtn {
-  flex: 1;
-  padding: 12px;
-  background-color: transparent;
-  border: 1px solid #444;
-  color: #fff;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.createBtn {
-  flex: 2;
-  padding: 12px;
-  background-color: #646cff;
-  /* Primary Brand Color */
-  border: none;
-  color: #fff;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.createBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .toggleLabel {
-  display: flex;
+  display: flex !important;
   align-items: center;
   gap: 10px;
-  color: #ccc;
-  font-size: 0.9rem;
+  min-height: 44px;
+  padding-block: 7px;
+  margin: 0 !important;
+  border-bottom: 1px solid rgb(94 116 134 / 26%);
+  color: #d3dbe2 !important;
   cursor: pointer;
-  padding: 12px;
-  background: #2a2a2a;
-  border: 1px solid #444;
-  border-radius: 8px;
-  transition: border-color 0.2s;
 }
-
 .checkbox {
-  width: 18px;
-  height: 18px;
-  accent-color: #646cff;
-  cursor: pointer;
+  width: 18px !important;
+  min-height: 18px !important;
+  accent-color: #45adff;
 }
-
 .sectionDivider {
-  margin: 16px 0;
-  padding: 16px;
-  background: rgba(100, 108, 255, 0.06);
-  border: 1px solid rgba(100, 108, 255, 0.15);
-  border-radius: 10px;
+  margin: 18px 0;
+  padding-block: 16px;
+  border-block: 1px solid rgb(94 116 134 / 32%);
 }
-
 .sectionLabel {
-  display: block;
-  color: #646cff;
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 12px;
+  color: #45adff;
 }
-
-.payoutPreview {
-  margin: 16px 0;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid #333;
-  border-radius: 8px;
-}
-
-.payoutList {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.payoutItem {
-  padding: 4px 10px;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 6px;
-  font-size: 0.75rem;
-  color: #aaa;
-  font-weight: 500;
-}
-
-/* ── Mobile ≤480px ── */
-@media (max-width: 480px) {
-  .modal {
-    border-radius: 0;
-  }
-  .header {
-    padding: 14px 16px;
-  }
-  .form {
-    padding: 16px 16px calc(env(safe-area-inset-bottom, 0px) + 8px);
-  }
-  .header h2 {
-    font-size: 1.2rem;
+@media (max-width: 600px) {
+  .modalOverlay {
+    padding: 0;
   }
   .row {
     flex-direction: column;
     gap: 0;
   }
-  .formatAxes {
+  .formatAxes,
+  .choiceGrid {
     grid-template-columns: 1fr;
-    gap: 0;
   }
+  .choiceGrid button {
+    border-inline-end: 0;
+    border-bottom: 1px solid rgb(94 116 134 / 25%);
+  }
+}
+@media (forced-colors: active) {
   .input,
-  .select {
-    padding: 10px;
-    font-size: 0.9rem;
-  }
-  .toggleLabel {
-    padding: 10px;
-    font-size: 0.85rem;
-  }
-  .actions {
-    margin-top: 20px;
-  }
-  .cancelBtn,
-  .createBtn {
-    padding: 10px;
-    font-size: 0.9rem;
-  }
-}
-
-@media (max-width: 380px) {
-  .form {
-    padding-right: 12px;
-    padding-left: 12px;
-  }
-  .header h2 {
-    font-size: 1.1rem;
-  }
-  .formGroup {
-    margin-bottom: 14px;
-  }
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes createTournamentModalSlideUp {
-  from {
-    transform: translateY(20px);
-    opacity: 0;
-  }
-
-  to {
-    transform: translateY(0);
-    opacity: 1;
+  .select,
+  .formGroup input,
+  .formGroup select,
+  .choiceGrid,
+  .toggleLabel,
+  .sectionDivider {
+    border-color: CanvasText;
   }
 }

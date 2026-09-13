@@ -383,7 +383,7 @@ ROLE_DEFAULT_GROUPS = (('postgres', 'public'), ('postgres', 'storage'), ('supaba
     ('supabase_admin', 'public'), ('supabase_admin', 'realtime'), ('supabase_auth_admin', 'auth'))
 ROLE_FAULT_STEPS = frozenset(('source', 'connect-application', 'native-preimage',
     'connect-installer', 'password-before', 'bind-application', 'render-installer', 'install-prefix',
-    'fault-injection', 'expected-refusal', 'rollback', 'close-case', 'rollback-prepared',
+    'fault-injection', 'expected-refusal', 'rollback', 'cancel-active', 'close-case', 'rollback-prepared',
     'backends-absent', 'catalog-restored', 'password-restored', 'close-observer', 'close-all', 'unobserved'))
 
 

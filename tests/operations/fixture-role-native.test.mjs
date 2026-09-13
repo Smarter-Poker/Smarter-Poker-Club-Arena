@@ -16,6 +16,7 @@ import {
   splitRoleFaultSource,
   roleFaultSteps,
   retainRoleFaultFailure,
+  cancelOwnedRoleFaultQuery,
 } from '../../operations/release/fixture/role-native-faults.mjs';
 import {
   roleNativeInputs,
@@ -32,6 +33,110 @@ const inputs = await roleNativeInputs(),
 const password = 'a'.repeat(64);
 const entry = (creator, schema, type) =>
   catalog.default_acl.find((r) => r.creator === creator && r.schema === schema && r.type === type);
+
+test('active fault cleanup cancels only its exact owned backend and observes query cancellation', async () => {
+  const calls = [],
+    installer = {},
+    identity = { pid: 321, backend_start: '2026-09-13 20:00:00.123456+00' };
+  const owner = {
+    query: async (client, text, values, cleanup) => {
+      assert.equal(client, installer);
+      assert.equal(cleanup, true);
+      calls.push({ text, values });
+      return text === 'ROLLBACK' ? { command: 'ROLLBACK' } : { rows: [{ cancelled: true }] };
+    },
+    bounded: async (action, cleanup) => {
+      assert.equal(cleanup, true);
+      return action();
+    },
+  };
+  await cancelOwnedRoleFaultQuery(owner, installer, identity, Promise.resolve({ code: '57014' }));
+  assert.equal(calls[0].text, 'ROLLBACK');
+  assert.match(calls[1].text, /pid=\$1::integer AND backend_start=\$2::timestamptz/);
+  assert.match(
+    calls[1].text,
+    /datname=current_database\(\) AND usename='postgres' AND backend_type='client backend'/
+  );
+  assert.deepEqual(calls[1].values, [identity.pid, identity.backend_start]);
+});
+test('active cleanup refuses unowned, unacknowledged or wrong-outcome cancellation', async () => {
+  const identity = { pid: 321, backend_start: '2026-09-13 20:00:00+00' };
+  for (const rows of [[], [{ cancelled: false }], [{ cancelled: true, unexpected: true }]]) {
+    const owner = {
+      query: async (_r, text) => (text === 'ROLLBACK' ? { command: 'ROLLBACK' } : { rows }),
+      bounded: async (fn) => fn(),
+    };
+    await assert.rejects(
+      cancelOwnedRoleFaultQuery(owner, {}, identity, Promise.resolve({ code: '57014' }))
+    );
+  }
+  const owner = {
+    query: async (_r, text) =>
+      text === 'ROLLBACK' ? { command: 'ROLLBACK' } : { rows: [{ cancelled: true }] },
+    bounded: async (fn) => fn(),
+  };
+  for (const code of ['completed', 'P0001', undefined])
+    await assert.rejects(cancelOwnedRoleFaultQuery(owner, {}, identity, Promise.resolve({ code })));
+  for (const value of [
+    { pid: 0, backend_start: 'x' },
+    { pid: 321 },
+    { pid: 321, backend_start: '' },
+  ])
+    await assert.rejects(
+      cancelOwnedRoleFaultQuery(
+        { query: () => assert.fail('unowned cancellation') },
+        {},
+        value,
+        Promise.resolve({ code: '57014' })
+      )
+    );
+});
+test('backend absence is observed after socket closure without assuming immediate retirement', async () => {
+  const rows = [[{ absent: false }], [{ absent: false }], [{ absent: true }]],
+    calls = [];
+  let closed = 0;
+  const owner = {
+    workDeadline: performance.now() + 5000,
+    connect: async () => ({}),
+    query: async (_r, text, values) => {
+      calls.push({ text, values });
+      return { rows: text.includes('clear_snapshot') ? [] : rows.shift() };
+    },
+    bounded: async (fn) => fn(),
+    close: async () => {
+      closed++;
+    },
+  };
+  await RoleNativeOwner.prototype.absent.call(owner, [321, 322]);
+  assert.equal(closed, 1);
+  assert.equal(rows.length, 0);
+  assert.equal(calls.filter((r) => r.text.includes('clear_snapshot')).length, 3);
+  assert.ok(
+    calls
+      .filter((r) => !r.text.includes('clear_snapshot'))
+      .every((r) => JSON.stringify(r.values) === '[[321,322]]')
+  );
+});
+test('backend absence refuses unknown rows and expired ownership while closing its observer', async () => {
+  for (const [rows, expired] of [
+    [[], false],
+    [[{ absent: true, unknown: true }], false],
+    [[{ absent: false }], true],
+  ]) {
+    let closed = 0;
+    const owner = {
+      workDeadline: performance.now() + (expired ? -1 : 5000),
+      connect: async () => ({}),
+      query: async (_r, text) => ({ rows: text.includes('clear_snapshot') ? [] : rows }),
+      bounded: async (fn) => fn(),
+      close: async () => {
+        closed++;
+      },
+    };
+    await assert.rejects(RoleNativeOwner.prototype.absent.call(owner, [321]));
+    assert.equal(closed, 1);
+  }
+});
 
 test('failed role diagnostics preserve the first safe step across cleanup failures', () => {
   const proof = { status: 'failed' };

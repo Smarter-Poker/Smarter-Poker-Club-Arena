@@ -82,6 +82,7 @@ export const roleFaultSteps = Object.freeze([
   'fault-injection',
   'expected-refusal',
   'rollback',
+  'cancel-active',
   'close-case',
   'rollback-prepared',
   'backends-absent',
@@ -107,6 +108,29 @@ export function retainRoleFaultFailure(proof, step, error) {
     : 'unknown';
   proof.sqlstate =
     typeof error?.code === 'string' && /^[0-9A-Z]{5}$/.test(error.code) ? error.code : null;
+}
+
+export async function cancelOwnedRoleFaultQuery(owner, installer, identity, active) {
+  assert.ok(Number.isSafeInteger(identity?.pid) && identity.pid > 0);
+  assert.ok(
+    typeof identity?.backend_start === 'string' &&
+      identity.backend_start.length > 0 &&
+      identity.backend_start.length <= 64
+  );
+  // An unexpected guard failure may have left the installer transaction
+  // aborted. Restore it before this exact, native-fixture-only cancellation.
+  lastCommand(await owner.query(installer, 'ROLLBACK', undefined, true), 'ROLLBACK');
+  const result = await owner.query(
+    installer,
+    `SELECT pg_cancel_backend(pid) AS cancelled
+    FROM pg_stat_activity WHERE pid=$1::integer AND backend_start=$2::timestamptz
+      AND datname=current_database() AND usename='postgres' AND backend_type='client backend'`,
+    [identity.pid, identity.backend_start],
+    true
+  );
+  assert.deepEqual(result.rows, [{ cancelled: true }], 'FIXTURE_ROLE_NATIVE_OWNED_CANCEL_REQUIRED');
+  const outcome = await owner.bounded(() => active, true);
+  assert.deepEqual(outcome, { code: '57014' }, 'FIXTURE_ROLE_NATIVE_QUERY_CANCEL_UNOBSERVED');
 }
 
 // Every expected fault remains a failed installation. Passing this matrix means
@@ -141,6 +165,7 @@ export async function qualifyRoleNativeFaults({ Client, password, signal, deadli
       );
       const extras = [];
       let active,
+        activeIdentity,
         prepared = false,
         refused = false;
       try {
@@ -178,7 +203,22 @@ export async function qualifyRoleNativeFaults({ Client, password, signal, deadli
               extras.push(await owner.connect('supabase_admin', { database: 'postgres' }));
             if (spec.fault === 'idle-transaction') await owner.query(app, 'BEGIN');
             if (spec.fault === 'active') {
-              active = app.client.query('SELECT pg_sleep(20)').catch(() => undefined);
+              const identities = (
+                await owner.query(
+                  installer,
+                  `SELECT pid, backend_start::text AS backend_start FROM pg_stat_activity
+                  WHERE pid=$1 AND datname=current_database() AND usename='postgres'
+                    AND backend_type='client backend'`,
+                  [app.client.processID]
+                )
+              ).rows;
+              assert.equal(identities.length, 1);
+              assert.equal(identities[0].pid, app.client.processID);
+              activeIdentity = identities[0];
+              active = app.client.query('SELECT pg_sleep(20)').then(
+                () => ({ code: 'completed' }),
+                (error) => ({ code: error.code })
+              );
               let observed = false;
               for (let n = 0; n < 20; n++) {
                 const row = (
@@ -240,11 +280,20 @@ export async function qualifyRoleNativeFaults({ Client, password, signal, deadli
           }
         }
       } finally {
-        step = 'close-case';
-        await owner.close(installer);
-        await owner.close(app);
-        for (const extra of extras) await owner.close(extra);
-        if (active) await owner.bounded(() => active, true);
+        try {
+          if (active) {
+            step = 'cancel-active';
+            await cancelOwnedRoleFaultQuery(owner, installer, activeIdentity, active);
+          }
+        } catch (error) {
+          retainRoleFaultFailure(proof, step, error);
+          throw error;
+        } finally {
+          step = 'close-case';
+          await owner.close(installer);
+          await owner.close(app);
+          for (const extra of extras) await owner.close(extra);
+        }
         if (prepared) {
           step = 'rollback-prepared';
           const cleanup = await owner.connect('supabase_admin');

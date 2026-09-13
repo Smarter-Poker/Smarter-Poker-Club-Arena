@@ -1,25 +1,39 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  CASHIER MODAL — Styles
- * ═══════════════════════════════════════════════════════════════════════════════
- */
+/* ═══════════════════════════════════════════════════════════════════════════
+   CASHIER - on the spade console (#ClubArenaConsole)
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   OVERLAY
-   ═══════════════════════════════════════════════════════════════════════════════ */
+   The chassis, its inks and its two painted plates come from SpadeConsole.css.
+   This sheet places the console on the backdrop, switches off the global popup
+   chassis (metallic-popups.css paints a rounded shell on `.cashier-modal` and
+   a recessed well on every input inside a dialog, both with !important), and
+   prints every figure as a ROW on the black glass between the rails.
+
+   WHAT WAS DELETED. A 20px rounded sheet with a gradient and a drop shadow; a
+   header bar with a 32px square close button; two boxed balance cards; a
+   filled, bordered input well; four rounded quick-amount pills; a boxed "New
+   Stack" preview with its own border; and a rounded green confirm lozenge with
+   two shadows. Every one of them drew a control the master already paints.
+
+   Rows are separated by an engraved rule - a black line with a light lip, the
+   same cut the master's own chrome rules are made of. The ONE thing still
+   drawn is the loading spinner, which is a status indicator the art paints
+   nowhere (the exception the standard makes for a slider). There is no
+   border-radius on a card, tile, pill or button, no gradient, no box-shadow on
+   a box and no :hover in this file.
+
+   EVERY ANIMATION STILL PLAYS (CLAUDE.md 10.6): `fadeIn` on the backdrop,
+   `tcmSlideUp` on the sheet, `spin` on the loader - which moved from inside the
+   confirm button (now a painted plate, which carries a label and nothing else)
+   onto its own line on the glass, at the same duration.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .cashier-overlay {
   position: fixed;
   inset: 0;
-  /* Cashier audit 2026-08-27 (P1-8): breathing room so the panel's own
-     max-height below never touches the screen edges. */
-  padding: 16px;
-  box-sizing: border-box;
-  background: rgba(0, 0, 0, 0.7);
+  z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 600;
+  padding: 12px;
   animation: fadeIn 0.2s ease;
 }
 
@@ -33,38 +47,24 @@
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   MODAL
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
 .cashier-modal {
-  width: 95%;
-  max-width: 400px;
-  background: linear-gradient(180deg, #1c2128 0%, #161b22 100%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
-  box-shadow:
-    0 20px 60px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  animation: slideUp 0.25s ease;
-  /* Cashier audit 2026-08-27 (P1-8): this panel had NO height ceiling and
-     `overflow: hidden` clipped whatever did not fit — and the table page is
-     landscape on phones (~390-430px tall), where the media queries below
-     (max-WIDTH keyed) never fire. The failure mode was vicious: a refused
-     top-up adds the error banner, the banner pushes Confirm below the clip
-     line, and both the error and the retry become invisible. Same shape
-     WalletCashierModal already uses: cap the panel, scroll inside it. */
-  max-height: min(85vh, calc(100dvh - 32px));
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  backdrop-filter: blur(12px) saturate(1.2);
-  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  width: min(100%, 420px);
+  max-height: 100%;
+  overflow: visible auto;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  animation: tcmSlideUp 0.25s ease;
 }
 
-@keyframes slideUp {
+@keyframes tcmSlideUp {
   from {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(24px);
   }
 
   to {
@@ -73,263 +73,240 @@
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   HEADER
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.cashier-modal__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 20px;
-  background: rgba(0, 0, 0, 0.3);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.cashier-modal__title {
-  font-size: 1.125rem;
-  font-weight: 700;
-  color: #e4e6eb;
-  margin: 0;
-}
-
-.cashier-modal__close {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.1);
-  border: none;
-  border-radius: 8px;
-  color: #8b949e;
-  font-size: 1.25rem;
-  cursor: pointer;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   SUMMARY
-   ═══════════════════════════════════════════════════════════════════════════════ */
+/* ── Figures: a label and its value on one engraved row ───────────────── */
 
 .cashier-modal__summary {
   display: flex;
-  gap: 20px;
-  padding: 16px 20px;
-  background: rgba(0, 0, 0, 0.2);
-}
-
-.cashier-modal__balance-item {
-  flex: 1;
-  display: flex;
   flex-direction: column;
-  gap: 4px;
 }
 
-.cashier-modal__balance-label {
-  font-size: 0.6875rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #6e7681;
+.cashier-modal__balance-item,
+.cashier-modal__limit,
+.cashier-modal__preview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3cqw;
+  align-items: baseline;
+  padding: 2.2cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
-.cashier-modal__balance-value {
-  font-size: 1.25rem;
+.cashier-modal__balance-label,
+.cashier-modal__limit-label,
+.cashier-modal__preview-label {
+  min-width: 0;
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  font-size: 2.7cqw;
   font-weight: 700;
-  font-family: 'JetBrains Mono', monospace;
-  color: #e4e6eb;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   TABS
-   ═══════════════════════════════════════════════════════════════════════════════ */
+.cashier-modal__balance-value,
+.cashier-modal__limit-value,
+.cashier-modal__preview-value {
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
+  font-size: 3.6cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: 0.01em;
+  text-align: right;
+  text-shadow:
+    0 -0.12cqw 0 rgb(255 255 255 / 45%),
+    0 0.2cqw 0 #6d747c,
+    0 0.35cqw 0 #050607,
+    0 0.6cqw 0.8cqw rgb(0 0 0 / 90%);
+  white-space: nowrap;
+}
+
+/* ── The one action this sheet has, named ─────────────────────────────── */
 
 .cashier-modal__tabs {
   display: flex;
-  padding: 0 20px;
-  background: rgba(0, 0, 0, 0.2);
+  padding: 2.4cqw 0.5cqw 0;
 }
 
 .cashier-modal__tab {
-  flex: 1;
-  padding: 12px;
-  font-size: 0.875rem;
-  font-weight: 600;
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: #6e7681;
-  cursor: pointer;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font-size: 2.7cqw;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
 .cashier-modal__tab--active {
-  color: #1877f2;
-  border-bottom-color: #1877f2;
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   INPUT SECTION
-   ═══════════════════════════════════════════════════════════════════════════════ */
+/* ── The amount: typed straight onto the glass ────────────────────────── */
 
 .cashier-modal__input-section {
-  padding: 20px;
+  display: flex;
+  flex-direction: column;
 }
 
 .cashier-modal__input-wrapper {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 2px solid rgba(255, 255, 255, 0.12);
-  border-radius: 12px;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.cashier-modal__input-wrapper:focus-within {
-  border-color: #1877f2;
-  box-shadow: 0 0 0 3px rgba(24, 119, 242, 0.2);
+  gap: 1.6cqw;
+  align-items: baseline;
+  justify-content: center;
+  padding: 1cqw 0.5cqw 2.4cqw;
 }
 
 .cashier-modal__currency {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: #6e7681;
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font-size: 4.4cqw;
+  font-weight: 800;
 }
 
+/* The input is the one control here the master does not paint, so it is drawn
+   as nothing at all: engraved silver numerals on the glass, no well, no rim,
+   no fill. The global dialog chassis wants a recessed box - every longhand it
+   sets is restated here. */
 .cashier-modal__input {
-  flex: 1;
-  font-size: 1.5rem;
-  font-weight: 700;
-  font-family: 'JetBrains Mono', monospace;
-  background: none;
-  border: none;
-  outline: none;
-  color: #e4e6eb;
-  text-align: right;
+  width: 55%;
+  min-width: 0;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: #e4e7ec !important;
+  -webkit-text-fill-color: #e4e7ec;
+  font-family: inherit;
+  font-size: 8.5cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: 0.01em;
+  text-align: center;
+  text-shadow:
+    0 -0.14cqw 0 rgb(255 255 255 / 45%),
+    0 0.25cqw 0 #6d747c,
+    0 0.45cqw 0 #050607,
+    0 0.7cqw 0.9cqw rgb(0 0 0 / 90%);
 }
 
 .cashier-modal__input::placeholder {
-  color: #6e7681;
+  color: #4a5462;
+  -webkit-text-fill-color: #4a5462;
 }
 
-/* Hide number input spinners */
+.cashier-modal__input:focus-visible {
+  outline: 0.6cqw solid #8fd4ff !important;
+  outline-offset: 0.6cqw;
+  box-shadow: none !important;
+}
+
+/* Chrome and Safari draw spinners on a number input; the console does not. */
 .cashier-modal__input::-webkit-outer-spin-button,
 .cashier-modal__input::-webkit-inner-spin-button {
-  -webkit-appearance: none;
+  appearance: none;
   margin: 0;
 }
 
-.cashier-modal__limit {
-  margin-top: 8px;
-  font-size: 0.75rem;
-  color: #6e7681;
-  text-align: center;
+.cashier-modal__input[type='number'] {
+  appearance: textfield;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   QUICK AMOUNTS
-   ═══════════════════════════════════════════════════════════════════════════════ */
+/* ── The four quick amounts: lit words, never four drawn pills ────────── */
 
 .cashier-modal__quick-amounts {
-  display: flex;
-  gap: 8px;
-  padding: 0 20px 20px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: stretch;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .cashier-modal__quick-btn {
-  flex: 1;
-  padding: 10px;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  color: #8b949e;
+  appearance: none;
+  /* A quick amount on a phone still has to be hittable. */
+  min-height: 44px;
+  margin: 0;
+  padding: 2cqw 0.4cqw;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font-family: inherit;
+  font-size: 3cqw;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
   cursor: pointer;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  touch-action: manipulation;
 }
 
 .cashier-modal__quick-btn--active {
-  background: rgba(24, 119, 242, 0.2);
-  border-color: #1877f2;
-  color: #1877f2;
+  color: #f4f7fb;
+  -webkit-text-fill-color: #f4f7fb;
+  text-shadow:
+    0 0 1cqw rgb(140 210 255 / 90%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
 
 .cashier-modal__quick-btn:disabled {
-  opacity: 0.4;
+  color: #3a424d;
+  -webkit-text-fill-color: #3a424d;
   cursor: not-allowed;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   PREVIEW
-   ═══════════════════════════════════════════════════════════════════════════════ */
+.cashier-modal__quick-btn:active:not(:disabled) {
+  filter: brightness(1.25);
+  transform: none;
+}
 
-.cashier-modal__preview {
+.cashier-modal__quick-btn:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -1cqw;
+}
+
+/* ── In flight, and what went wrong ───────────────────────────────────── */
+
+.cashier-modal__working {
   display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 8px;
-  padding: 12px;
-  background: rgba(0, 0, 0, 0.2);
-}
-
-.cashier-modal__preview-label {
-  font-size: 0.8125rem;
-  color: #6e7681;
-}
-
-.cashier-modal__preview-value {
-  font-size: 1.125rem;
-  font-weight: 700;
-  font-family: 'JetBrains Mono', monospace;
-}
-
-.cashier-modal__preview-value--add {
-  color: #3fb950;
-}
-
-.cashier-modal__preview-value--withdraw {
-  color: var(--sp-warn);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   ACTIONS
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.cashier-modal__actions {
-  padding: 16px 20px;
-}
-
-.cashier-modal__confirm-btn {
-  width: 100%;
-  display: flex;
+  gap: 2.4cqw;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 14px 24px;
-  font-size: 1rem;
-  font-weight: 700;
-  background: linear-gradient(135deg, #3fb950 0%, #2ea043 100%);
-  border: none;
-  border-radius: 12px;
-  color: #ffffff;
-  cursor: pointer;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  padding: 2.4cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  font-size: 2.9cqw;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
 }
 
-.cashier-modal__confirm-btn--disabled {
-  background: #6e7681;
-  cursor: not-allowed;
-}
-
+/* The only circle left in this file: a status indicator the master paints
+   nowhere. One hairline arc in the master's lit blue, no fill, no shadow. */
 .cashier-modal__spinner {
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: #ffffff;
+  width: 4cqw;
+  height: 4cqw;
+  border: 1px solid rgb(69 173 255 / 25%);
+  border-top-color: #45adff;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -340,163 +317,80 @@
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   TRANSACTIONS
-   ═══════════════════════════════════════════════════════════════════════════════ */
+.cashier-modal__error {
+  padding: 2.4cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  color: #ff5b6e;
+  -webkit-text-fill-color: #ff5b6e;
+  font:
+    600 3.1cqw/1.45 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow:
+    0 0 1cqw rgb(240 40 73 / 80%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+/* ── Recent movements ─────────────────────────────────────────────────── */
 
 .cashier-modal__transactions {
-  padding: 16px 20px;
-  background: rgba(0, 0, 0, 0.2);
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
 }
 
 .cashier-modal__transactions-title {
-  font-size: 0.6875rem;
-  font-weight: 600;
+  padding: 2.4cqw 0.5cqw 0.8cqw;
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  font-size: 2.7cqw;
+  font-weight: 700;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #6e7681;
-  display: block;
-  margin-bottom: 8px;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
 }
 
 .cashier-modal__transactions-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
 }
 
 .cashier-modal__transaction {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.cashier-modal__transaction:last-child {
-  border-bottom: none;
-}
-
-.cashier-modal__tx-type {
-  font-size: 0.875rem;
-  font-weight: 700;
-  font-family: 'JetBrains Mono', monospace;
-}
-
-.cashier-modal__tx-type--add {
-  color: #3fb950;
-}
-
-.cashier-modal__tx-type--withdraw {
-  color: var(--sp-warn);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3cqw;
+  align-items: baseline;
+  padding: 1.8cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .cashier-modal__tx-time {
-  font-size: 0.75rem;
-  color: #6e7681;
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font:
+    500 2.9cqw/1.3 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   RESPONSIVE — Mobile touch targets
-   ═══════════════════════════════════════════════════════════════════════════════ */
+/* The tone comes from the console's own inks (sc-ink--green / sc-ink--red) on
+   the element itself. A table stylesheet never restates a house colour as a
+   hex - the palette law reads these files and it is right to. */
+.cashier-modal__tx-type {
+  font-size: 3.2cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-align: right;
+  white-space: nowrap;
+}
 
-@media (max-width: 480px) {
+@media (prefers-reduced-motion: reduce) {
+  .cashier-overlay,
   .cashier-modal {
-    width: 96%;
-    border-radius: 14px;
+    animation: none;
   }
-
-  .cashier-modal__header {
-    padding: 12px 16px;
-  }
-
-  .cashier-modal__close {
-    width: 40px;
-    height: 40px;
-    min-width: 40px;
-    min-height: 40px;
-    font-size: 1.125rem;
-  }
-
-  .cashier-modal__title {
-    font-size: 1rem;
-  }
-
-  .cashier-modal__summary {
-    padding: 12px 16px;
-    gap: 12px;
-  }
-
-  .cashier-modal__balance-value {
-    font-size: 1.1rem;
-  }
-
-  .cashier-modal__tab {
-    min-height: 44px;
-    font-size: 0.8125rem;
-  }
-
-  .cashier-modal__input-section {
-    padding: 16px;
-  }
-
-  .cashier-modal__input {
-    font-size: 1.25rem;
-  }
-
-  .cashier-modal__quick-amounts {
-    padding: 0 16px 16px;
-    gap: 6px;
-  }
-
-  .cashier-modal__quick-btn {
-    min-height: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.75rem;
-  }
-
-  .cashier-modal__actions {
-    padding: 12px 16px;
-  }
-
-  .cashier-modal__confirm-btn {
-    min-height: 48px;
-    font-size: 0.9375rem;
-  }
-
-  .cashier-modal__transactions {
-    padding: 12px 16px;
-  }
-}
-
-@media (max-width: 380px) {
-  .cashier-modal__input {
-    font-size: 1.125rem;
-  }
-
-  .cashier-modal__quick-btn {
-    font-size: 0.6875rem;
-    padding: 6px 4px;
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   FAILURE NOTICE
-   Added 2026-08-20. Before this, a rejected add/withdraw closed the cashier
-   with no message at all, so the player had no way to tell a refused top-up
-   from a successful one except by watching their stack.
-   ═══════════════════════════════════════════════════════════════════════════ */
-.cashier-modal__error {
-  margin: 10px 0 0;
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(231, 76, 60, 0.55);
-  background: rgba(231, 76, 60, 0.12);
-  color: #ffb3aa;
-  font-size: 13px;
-  line-height: 1.4;
-  text-align: center;
 }

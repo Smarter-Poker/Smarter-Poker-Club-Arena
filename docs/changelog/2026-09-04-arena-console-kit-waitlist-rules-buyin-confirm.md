@@ -398,3 +398,46 @@ same name is the live one).
 Defects fixed: a search button whose label was the empty string, and a stack of
 generic global class names (`.panel-header`, `.count-badge`, `.player-name`,
 `.amount-value`, `.empty-state`) that leaked out of the agent cashout panel.
+
+## Round 11 (2026-09-13): the merge took main's generic versions of eleven approved surfaces. Restored.
+
+Merging 430 commits of `main` on 2026-09-13 resolved every conflicted
+file to main's side, on the rule that product logic beats paint. It was
+the right rule and the wrong outcome: eleven of the files were the
+approved console renders themselves (Buy-In, Rebuy, table Cashier,
+Table Rules, Cashout Request, Club Card, Welcome, Complete Profile,
+Tournament page, Tournament Info, Sign Up), and main's side of each was
+the OLD generic render plus a small logic delta (24, 7, 26, 92, 37, 122,
+38, 23, 3, 2 and 24 lines). Taking main threw away the render to keep
+the delta.
+
+The repair applied main's delta ONTO the console render
+(`git checkout d8d5bb296 -- <file>` then `git apply -3` of
+`git diff e658bea44 origin/main -- <file>`) and resolved the eleven
+conflicts by hand: every line of main's logic survives (verified by
+`git diff -w origin/main` showing only chassis differences), every
+pinned literal survives, and two label pins moved with the render
+(`( Available Diamonds:` -> `Diamonds`; `Entry Fee:` -> `Entry Fee`).
+
+Defects found in the approved renders while restoring them, fixed:
+Buy-In's long plate labels lost their last glyph to the rim (labels
+over twelve characters now wrap to two centred lines on an 80% well);
+the recovery state's amount block fell into the empty slider column;
+Sign Up's plates carried the global `btn` class, whose
+`justify-content: center` collapsed the well to 26px ("CANC"/"CONFII");
+`club-engine.css` turns every `<table>` under 768px into a
+shrink-wrapped scroll box, so Tournament Info's ranking rows were 40%
+wide; `metallic-popups.css` repainted its Close as a steel pill.
+
+Also in this round: stylesheets that had followed my render while the
+merge took main's TSX (`CompleteProfileModal.module.css`,
+`ClubArenaWelcomeModal.module.css`, `CreateTournamentModal.module.css`,
+`signUpDialog.css`, `TournamentPage.css`, `ClubMessageManagementPanel.module.css`)
+were re-paired; `InsuranceModal.css` dropped the `/hub/club-arena`
+asset prefix (`every-file-the-user-gets-goes-through-one-door` law);
+`TableConfigPage` and `TickerManagementPanel` took main's #4519 versions
+outright (board test contracts) and go back on the inventory.
+
+Lesson for the skill: a merge conflict between a console render and a
+main change is never resolved by taking a side. Rebase the delta onto
+the render.

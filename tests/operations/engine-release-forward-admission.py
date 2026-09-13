@@ -22,6 +22,7 @@ if len(sys.argv) > 2 and sys.argv[1] == '--source-root':
     del sys.argv[1:3]
 SOURCE = (ROOT / 'server/scripts/engine-release-transaction.sh').read_text()
 WORKFLOW = (ROOT / '.github/workflows/auto-deploy-hetzner.yml').read_text()
+CERTIFICATION_WORKFLOW = (ROOT / '.github/workflows/post-deploy-e2e.yml').read_text()
 HOST_GATE = SOURCE[SOURCE.index('source_target_is_current() {'):
                    SOURCE.index('parse_health_instance_for_sha()')]
 
@@ -46,6 +47,10 @@ HOST_STAGE = 'export GIT_NO_REPLACE_OBJECTS=1\n' + textwrap.dedent(
     stage[stage.index('          GIT_HTTP_LOW_SPEED_LIMIT=1024'):
           stage.index('          STAGE=')])
 REAL_GIT = shutil.which('git')
+certification = CERTIFICATION_WORKFLOW.split(
+    'name: Resolve the exact protected-main engine component', 1)[1].split(
+    '\n      - name: Setup Node 20', 1)[0]
+CERTIFICATION_GATE = textwrap.dedent(certification.split('        run: |\n', 1)[1])
 if not REAL_GIT:
     raise RuntimeError('git is required for actual ancestry tests')
 
@@ -100,12 +105,13 @@ class ForwardAdmissionTests(unittest.TestCase):
         return self.git('rev-parse', 'HEAD')
 
     def harness(self, code, *, target=None, control=None, requested=None,
-                checkout=None, now=600, inside_break=False, fault=None, tail=''):
+                checkout=None, now=600, inside_break=False, fault=None, tail='', trigger=''):
         target = self.b if target is None else target
         control = self.main if control is None else control
         self.git('checkout', '-q', '--detach', checkout or control)
         env = dict(self.env)
         env.update(REPO_DIR=str(self.repo), SHA=target, TARGET_SHA=target,
+                   ENGINE_TRIGGER_SHA=trigger,
                    REQUESTED_SHA=target if requested is None else requested,
                    CONTROL_SHA=control, RUN_KEY='123-1',
                    DEPLOY_NOT_AFTER_EPOCH='9000', DEADLINE='9000',
@@ -157,7 +163,7 @@ printf 'ADMITTED:%s\\n' "$SHA"
         return self.harness(HOST_GATE + '\nsource_target_is_current', **kwargs)
 
     def accepted(self, result):
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('ADMITTED:', result.stdout)
 
     def refused(self, result, message=None):
@@ -261,6 +267,26 @@ printf 'ADMITTED:%s\\n' "$SHA"
         self.refused(self.harness(QUEUED, control=self.side, checkout=self.side))
         self.refused(self.harness(QUEUED, control=self.main, checkout=self.b))
         self.refused(self.harness(HOST_STAGE, control=self.side, checkout=self.main))
+
+    def test_certification_preserves_exact_deployed_trigger_behind_main(self):
+        self.accepted(self.harness(CERTIFICATION_GATE, trigger=self.b))
+        self.assertEqual((self.directory / 'outputs').read_text(), 'sha=' + self.b + '\n')
+
+    def test_certification_without_engine_trigger_requires_latest_component(self):
+        self.accepted(self.harness(CERTIFICATION_GATE))
+        self.assertEqual((self.directory / 'outputs').read_text(), 'sha=' + self.c + '\n')
+
+    def test_certification_refuses_trigger_outside_protected_main(self):
+        self.refused(self.harness(CERTIFICATION_GATE, trigger=self.side))
+
+    def test_certification_refuses_malformed_or_unavailable_trigger(self):
+        for trigger in ['B' * 40, self.b[:12], 'HEAD', 'f' * 40]:
+            with self.subTest(trigger=trigger):
+                self.refused(self.harness(CERTIFICATION_GATE, trigger=trigger))
+
+    def test_certification_refuses_failed_fetch_or_component_lookup(self):
+        self.refused(self.harness(CERTIFICATION_GATE, trigger=self.b, fault='fetch'))
+        self.refused(self.harness(CERTIFICATION_GATE, fault='log'))
 
 
 if __name__ == '__main__':

@@ -184,6 +184,44 @@ def contained(child, parent):
     return child == parent or child.startswith(parent.rstrip("/") + "/")
 
 
+def assert_network_isolation(values):
+    for key in ('network_namespace', 'host_network_namespace'):
+        require(isinstance(values.get(key), str) and re.fullmatch(r'net:\[[1-9][0-9]*\]', values[key]),
+                'native importer network namespace unobserved')
+    require(values['network_namespace'] != values['host_network_namespace'],
+            'native importer shares host network namespace')
+
+
+def network_snapshot(owner, required_pids):
+    values = {'network_namespace': os.readlink(f'/proc/{owner}/ns/net'),
+              'host_network_namespace': os.readlink('/proc/1/ns/net')}
+    assert_network_isolation(values)
+    for pid in required_pids:
+        require(os.readlink(f'/proc/{pid}/ns/net') == values['network_namespace'],
+                'native import process escaped the private network namespace')
+    return values
+
+
+def host_network_identity():
+    # Read-only evidence around the entire matrix: even a recreated bridge is
+    # a different host object and cannot earn preservation credit.
+    rows = json.loads(run(['docker', 'network', 'inspect', 'bridge'], timeout=10).stdout)
+    require(isinstance(rows, list) and len(rows) == 1, 'one host bridge required')
+    network = rows[0]
+    require(network.get('Driver') == 'bridge' and network.get('Scope') == 'local'
+            and isinstance(network.get('Id'), str) and re.fullmatch('[a-f0-9]{64}', network['Id']),
+            'host bridge identity differs')
+    name = network.get('Options', {}).get('com.docker.network.bridge.name')
+    require(isinstance(name, str) and re.fullmatch('[A-Za-z0-9_.-]{1,15}', name),
+            'host bridge interface name unobserved')
+    links = json.loads(run(['ip', '-j', 'link', 'show', 'dev', name], timeout=10).stdout)
+    require(isinstance(links, list) and len(links) == 1 and links[0].get('ifname') == name
+            and type(links[0].get('ifindex')) is int and links[0]['ifindex'] > 0,
+            'host bridge interface unobserved')
+    return {'network_id': network['Id'], 'interface': name, 'ifindex': links[0]['ifindex'],
+            'network_namespace': os.readlink('/proc/self/ns/net')}
+
+
 def resource_snapshot(owner, required_pids):
     group = cgroup(owner)
     require(re.fullmatch(r"/system.slice/ca-engine-import-[0-9a-f]+\.service", group),
@@ -196,7 +234,8 @@ def resource_snapshot(owner, required_pids):
         require(contained(cgroup(pid), group), "import process escaped the bounded group")
     events = {key: int(value) for key, value in
               (row.split() for row in (base / "memory.events").read_text().splitlines())}
-    return {**values, "cgroup": group, "memory_peak": int((base / "memory.peak").read_text()),
+    return {**values, **network_snapshot(owner, required_pids),
+            "cgroup": group, "memory_peak": int((base / "memory.peak").read_text()),
             "memory_events": events, "verified_pids": required_pids}
 
 
@@ -619,6 +658,7 @@ def _prove_import(archive, normalization, runtime_hashes, output, *, fault=None)
                    "--unit", unit, "--setenv=GITHUB_ACTIONS=true",
                    "--property=MemoryMax=" + str(LIMIT), "--property=MemorySwapMax=0",
                    "--property=MemoryHigh=" + str(RECLAIM_LIMIT),
+                   "--property=PrivateNetwork=yes",
                    "--property=CPUQuota=100%", "--property=TasksMax=256",
                    "--property=RuntimeMaxSec=240", "--property=TimeoutStopSec=20",
                    "--property=KillMode=control-group", "--property=Restart=no",
@@ -650,6 +690,29 @@ def _prove_import(archive, normalization, runtime_hashes, output, *, fault=None)
 
 
 def prove_import_matrix(archive, normalization, runtime_hashes, output):
+    require(sys.platform == 'linux' and os.environ.get('GITHUB_ACTIONS') == 'true',
+            'native import matrix requires disposable Linux Actions')
+    before = host_network_identity()
+    observation = {'before': before, 'after': None, 'unchanged': False}
+    network_receipt = Path(output) / 'native-import-host-network.json'
+    network_receipt.write_text(json.dumps(observation, indent=2) + '\n')
+    try:
+        result = _prove_import_matrix(archive, normalization, runtime_hashes, output)
+    finally:
+        try:
+            after = host_network_identity()
+            observation.update(after=after, unchanged=before == after)
+        except Exception as error:
+            observation['observation_failure_type'] = type(error).__name__
+            raise
+        finally:
+            network_receipt.write_text(json.dumps(observation, indent=2) + '\n')
+        require(observation['unchanged'], 'native import matrix changed the host bridge or network namespace')
+    result['host_network_preservation'] = observation
+    return result
+
+
+def _prove_import_matrix(archive, normalization, runtime_hashes, output):
     """Reuse one engine archive; each case gets a fresh bounded daemon/store."""
     require(sys.platform == 'linux' and os.environ.get('GITHUB_ACTIONS') == 'true',
             'native import matrix requires disposable Linux Actions')
@@ -699,6 +762,7 @@ def prove_import_matrix(archive, normalization, runtime_hashes, output):
         require(stopped_snapshot is not None and not observed.get('resource_observation_after_stop_failure'),
                 'native fault final resource state was not observed')
         assert_limits(stopped_snapshot)
+        assert_network_isolation(stopped_snapshot)
         require(type(stopped_snapshot.get('memory_peak')) is int
                 and 0 < stopped_snapshot['memory_peak'] <= LIMIT,
                 'native fault final memory peak differs')
@@ -711,6 +775,7 @@ def prove_import_matrix(archive, normalization, runtime_hashes, output):
         require(type(observed.get('unit_exit_code')) is int
                 and observed['unit_exit_code'] != 0, 'native refusal exit was not observed')
         assert_limits(snapshot)
+        assert_network_isolation(snapshot)
         require(type(snapshot.get('memory_peak')) is int
                 and 0 < snapshot['memory_peak'] <= LIMIT, 'native fault memory peak differs')
         for key in ('private_containerd_ownership_verified', 'containerd_alive_before_requested_stop',

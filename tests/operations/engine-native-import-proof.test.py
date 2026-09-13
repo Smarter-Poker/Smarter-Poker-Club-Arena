@@ -144,13 +144,15 @@ class IdentityTests(unittest.TestCase):
 
     def test_bounded_unit_limits(self):
         self.assertTrue(proof.assert_limits({'memory.max':str(proof.LIMIT),'memory.high':str(proof.RECLAIM_LIMIT),
+                    'network_namespace':'net:[200]','host_network_namespace':'net:[100]',
             'memory.swap.max':'0', 'cpu.max':'100000 100000'}))
         for key,value in [('memory.max','max'),('memory.max','1073741824'),
                           ('memory.high','max'),('memory.high',str(proof.LIMIT)),
                           ('memory.swap.max','1'),('cpu.max','max 100000'),
                           ('cpu.max','200000 100000'),('cpu.max','0 0')]:
             with self.subTest(key=key,value=value):
-                limits={'memory.max':str(proof.LIMIT),'memory.high':str(proof.RECLAIM_LIMIT),'memory.swap.max':'0','cpu.max':'100000 100000'}
+                limits={'memory.max':str(proof.LIMIT),'memory.high':str(proof.RECLAIM_LIMIT),
+                    'network_namespace':'net:[200]','host_network_namespace':'net:[100]','memory.swap.max':'0','cpu.max':'100000 100000'}
                 limits[key]=value
                 with self.assertRaises(RuntimeError): proof.assert_limits(limits)
 
@@ -190,6 +192,7 @@ class IdentityTests(unittest.TestCase):
             properties={arg for arg in captured[0] if arg.startswith('--property=Memory')}
             self.assertEqual(properties,{'--property=MemoryMax=536870912',
                 '--property=MemoryHigh=469762048','--property=MemorySwapMax=0'})
+            self.assertIn('--property=PrivateNetwork=yes',captured[0])
 
     def test_signal_handlers_restore_even_on_cancellation(self):
         original = {s: object() for s in (signal.SIGTERM,signal.SIGHUP,signal.SIGINT)}
@@ -200,6 +203,72 @@ class IdentityTests(unittest.TestCase):
             with self.assertRaises(InterruptedError):
                 with proof.catch_termination(): handlers[signal.SIGTERM](signal.SIGTERM,None)
         self.assertEqual(handlers,original)
+
+
+class NetworkIsolationTests(unittest.TestCase):
+    def test_actual_namespace_reader_requires_private_owner_and_every_child(self):
+        values={'/proc/1/ns/net':'net:[100]','/proc/20/ns/net':'net:[200]',
+                '/proc/21/ns/net':'net:[200]'}
+        with patch.object(proof.os,'readlink',side_effect=values.__getitem__):
+            self.assertEqual(proof.network_snapshot(20,[20,21]),
+                {'network_namespace':'net:[200]','host_network_namespace':'net:[100]'})
+            values['/proc/21/ns/net']='net:[100]'
+            with self.assertRaisesRegex(RuntimeError,'escaped'):proof.network_snapshot(20,[20,21])
+            values['/proc/20/ns/net']='net:[100]'
+            with self.assertRaisesRegex(RuntimeError,'shares host'):proof.network_snapshot(20,[20])
+
+    def test_unobserved_network_identity_never_counts_as_isolation(self):
+        for row in ({}, {'network_namespace':'net:[200]'},
+                    {'network_namespace':'net:[200]','host_network_namespace':'net:[200]'},
+                    {'network_namespace':'unknown','host_network_namespace':'net:[100]'}):
+            with self.subTest(row=row),self.assertRaises(RuntimeError):proof.assert_network_isolation(row)
+
+    def test_host_network_observer_uses_readonly_object_and_interface_identity(self):
+        network={'Id':'a'*64,'Driver':'bridge','Scope':'local',
+                 'Options':{'com.docker.network.bridge.name':'docker0'}}
+        links=[{'ifname':'docker0','ifindex':3}]
+        calls=[]
+        def run(args,**kwargs):
+            calls.append(args)
+            return SimpleNamespace(stdout=json.dumps([network] if args[0]=='docker' else links))
+        with patch.object(proof,'run',side_effect=run), \
+                patch.object(proof.os,'readlink',return_value='net:[100]'):
+            self.assertEqual(proof.host_network_identity(),{'network_id':'a'*64,
+                'interface':'docker0','ifindex':3,'network_namespace':'net:[100]'})
+        self.assertEqual(calls,[['docker','network','inspect','bridge'],
+            ['ip','-j','link','show','dev','docker0']])
+
+    def test_host_network_observer_refuses_missing_or_wrong_bridge(self):
+        for rows in ([],[{'Id':'a'*64,'Driver':'host','Scope':'local'}],
+                     [{'Id':'a'*64,'Driver':'bridge','Scope':'local','Options':{'com.docker.network.bridge.name':'../bad'}}]):
+            with self.subTest(rows=rows),patch.object(proof,'run',return_value=SimpleNamespace(stdout=json.dumps(rows))),self.assertRaises(RuntimeError):
+                proof.host_network_identity()
+
+    def test_changed_or_missing_host_bridge_is_retained_and_refuses_matrix_pass(self):
+        before={'network_id':'a'*64,'interface':'docker0','ifindex':3,'network_namespace':'net:[100]'}
+        for after in ({**before,'ifindex':4},RuntimeError('controlled missing interface')):
+            with self.subTest(after=type(after).__name__),tempfile.TemporaryDirectory() as folder, \
+                    patch.object(proof.sys,'platform','linux'),patch.dict(proof.os.environ,{'GITHUB_ACTIONS':'true'}), \
+                    patch.object(proof,'host_network_identity',side_effect=[before,after]), \
+                    patch.object(proof,'_prove_import_matrix',return_value={'status':'passed'}) as matrix:
+                with self.assertRaises(RuntimeError):proof.prove_import_matrix(None,None,None,Path(folder))
+                matrix.assert_called_once()
+                receipt=json.loads((Path(folder)/'native-import-host-network.json').read_text())
+                self.assertEqual(receipt['before'],before)
+                self.assertIs(receipt['unchanged'],False)
+                if isinstance(after,Exception):self.assertEqual(receipt['observation_failure_type'],'RuntimeError')
+
+    def test_original_matrix_failure_still_checks_and_records_host_preservation(self):
+        before={'network_id':'a'*64,'interface':'docker0','ifindex':3,'network_namespace':'net:[100]'}
+        with tempfile.TemporaryDirectory() as folder,patch.object(proof.sys,'platform','linux'), \
+                patch.dict(proof.os.environ,{'GITHUB_ACTIONS':'true'}), \
+                patch.object(proof,'host_network_identity',return_value=before) as observation, \
+                patch.object(proof,'_prove_import_matrix',side_effect=RuntimeError('controlled matrix refusal')):
+            with self.assertRaisesRegex(RuntimeError,'controlled matrix refusal'):
+                proof.prove_import_matrix(None,None,None,Path(folder))
+            self.assertEqual(observation.call_count,2)
+            receipt=json.loads((Path(folder)/'native-import-host-network.json').read_text())
+            self.assertIs(receipt['unchanged'],True)
 
 
 class SourcePackageTests(unittest.TestCase):
@@ -334,10 +403,12 @@ class NativeMatrixProtocolTests(unittest.TestCase):
                     'runtime_bytes':'imported runtime bytes differ',
                     'external_cancellation':'native import proof interrupted'}[name],
                 'resource_observation_before_stop':{'memory.max':str(proof.LIMIT),'memory.high':str(proof.RECLAIM_LIMIT),
+                    'network_namespace':'net:[200]','host_network_namespace':'net:[100]',
                     'memory.swap.max':'0','cpu.max':'100000 100000', 'memory_peak':123456,
                     'memory_events':{'oom':0,'oom_kill':0}},
                 'before':{'memory_events':{'oom':0,'oom_kill':0}},
                 'resource_observation_after_stop':{'memory.max':str(proof.LIMIT),'memory.high':str(proof.RECLAIM_LIMIT),
+                    'network_namespace':'net:[200]','host_network_namespace':'net:[100]',
                     'memory.swap.max':'0','cpu.max':'100000 100000', 'memory_peak':123456,
                     'memory_events':{'oom':0,'oom_kill':0}},
                 'worker_external_cancellation_sent':bool(fault),'unit_exit_code':1,
@@ -355,6 +426,7 @@ class NativeMatrixProtocolTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d, \
                 patch.object(proof.sys,'platform','linux'), \
                 patch.dict(proof.os.environ,{'GITHUB_ACTIONS':'true'}), \
+                patch.object(proof,'host_network_identity',return_value={'network_id':'a'*64,'interface':'docker0','ifindex':3,'network_namespace':'net:[100]'}), \
                 patch.object(proof,'prove_import',side_effect=invoke):
             result=proof.prove_import_matrix(Path('/owned/archive'),request(),
                                             request()['runtime_hashes'],Path(d))
@@ -397,6 +469,13 @@ class NativeMatrixProtocolTests(unittest.TestCase):
             lambda r:r['resource_observation_after_stop'].update(memory_peak=proof.LIMIT+1)]
         for change in mutations:
             with self.subTest(change=change),self.assertRaises(RuntimeError):self.matrix(change)
+
+    def test_fault_receipts_require_actual_private_network_observations(self):
+        for key in ('resource_observation_before_stop','resource_observation_after_stop'):
+            with self.subTest(key=key),self.assertRaises(RuntimeError):
+                self.matrix(lambda r:r[key].pop('network_namespace'))
+            with self.subTest(key=key),self.assertRaises(RuntimeError):
+                self.matrix(lambda r:r[key].update(network_namespace=r[key]['host_network_namespace']))
 
     def test_native_fault_requires_successful_real_configuration_validation(self):
         for value in ({}, {'status':'failed','exit_code':0}, {'status':'passed','exit_code':1},
@@ -542,7 +621,8 @@ class WorkerStartupMemoryTests(unittest.TestCase):
                 threshold = 1 if oom_phase=='startup' else (4 if successful_import else 3)
                 events=int(count >= threshold) if oom_phase else 0
                 count += 1
-                return {'memory.max':str(proof.LIMIT),'memory.high':str(proof.RECLAIM_LIMIT),'memory.swap.max':'0',
+                return {'memory.max':str(proof.LIMIT),'memory.high':str(proof.RECLAIM_LIMIT),
+                    'network_namespace':'net:[200]','host_network_namespace':'net:[100]','memory.swap.max':'0',
                     'cpu.max':'100000 100000','memory_peak':final_peak if count >= 5 else 123456,
                     'memory_events':{'oom':events,'oom_kill':events}, 'verified_pids':pids}
             original_resolve=Path.resolve

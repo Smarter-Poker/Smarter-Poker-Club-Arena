@@ -865,9 +865,9 @@
   padding: 0.65rem 1.1rem;
   border: 1px solid color-mix(in srgb, var(--ca-gold) 72%, transparent);
   border-radius: 0.7rem;
-  background: linear-gradient(180deg, #ffe29b 0%, var(--ca-gold) 52%, #9b5f06 100%);
+  background: linear-gradient(180deg, #ffe29b 0%, var(--ca-gold) 52%, #ffa500 100%);
   box-shadow:
-    0 0.35rem 0 #6e4308,
+    0 0.35rem 0 var(--club-black, #050507),
     0 0.65rem 1.5rem color-mix(in srgb, var(--ca-gold) 18%, transparent);
   color: #211504;
   font: inherit;
@@ -881,7 +881,7 @@
 .mm-empty__retry:active {
   transform: translateY(0.2rem);
   box-shadow:
-    0 0.15rem 0 #6e4308,
+    0 0.15rem 0 var(--club-black, #050507),
     0 0.35rem 0.9rem color-mix(in srgb, var(--ca-gold) 14%, transparent);
 }
 

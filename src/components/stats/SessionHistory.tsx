@@ -242,14 +242,7 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ initialSessions, rangeL
                 </div>
 
                 <div className="session-expand">
-                  <span
-                    style={{
-                      transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                      transition: 'transform 0.2s',
-                    }}
-                  >
-                    ▼
-                  </span>
+                  <span>{isExpanded ? 'Hide Details' : 'Show Details'}</span>
                 </div>
               </div>
 
@@ -287,7 +280,7 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ initialSessions, rangeL
 
       {sessions.length === 0 && (
         <div className="session-empty">
-          <span className="empty-icon">--</span>
+          <span className="session-empty-label">Session Ledger Empty</span>
           <p>
             {rangeLabel && rangeLabel !== 'All'
               ? `No Cash Sessions In The Last ${rangeLabel}.`

@@ -288,12 +288,6 @@ export default function TrophyRoom({ overall, tournaments, lifetimeHands = 0 }: 
         <h3 className="trophy-title">Your Style</h3>
         {styleConfident && style ? (
           <div className="trophy-style">
-            <span
-              className="trophy-style-badge"
-              style={{ background: style.bgColor, color: style.color, borderColor: style.color }}
-            >
-              {style.icon}
-            </span>
             <div className="trophy-style-body">
               <span className="trophy-style-label" style={{ color: style.color }}>
                 {style.label}
@@ -303,7 +297,6 @@ export default function TrophyRoom({ overall, tournaments, lifetimeHands = 0 }: 
           </div>
         ) : (
           <div className="trophy-style">
-            <span className="trophy-style-badge is-forming">--</span>
             <div className="trophy-style-body">
               <span className="trophy-style-label is-forming">Style Forming</span>
               <p className="trophy-style-note">

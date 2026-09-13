@@ -1439,9 +1439,7 @@ export default function PlayerStatsPage() {
     return (
       <div className="stats-page">
         <div className="stats-empty-state" role="status">
-          <span className="empty-icon" aria-hidden="true">
-            {'!'}
-          </span>
+          <span className="empty-status">Private Data Boundary</span>
           <span className="empty-title">Player Stats Are Private</span>
           <span className="empty-description">
             Cross-Player Statistics Require An Authorized Shared-Club View. No All-Club Financial
@@ -1492,7 +1490,7 @@ export default function PlayerStatsPage() {
     return (
       <div className="stats-page">
         <div className="stats-empty-state">
-          <span className="empty-icon">{'!'}</span>
+          <span className="empty-status">Readout Unavailable</span>
           <span className="empty-title">Couldn't Load Your Stats</span>
           <span className="empty-description">
             Your Statistics Are Still There - We Just Could Not Reach Them Right Now.
@@ -1516,7 +1514,7 @@ export default function PlayerStatsPage() {
 
   const emptyState = (
     <div className="stats-empty-state">
-      <span className="empty-icon">{'♠'}</span>
+      <span className="empty-status">Awaiting Hand Ledger</span>
       <span className="empty-title">No Stats Yet</span>
       <span className="empty-description">
         Play Some Hands At The Tables And Your Statistics Will Appear Here Automatically.

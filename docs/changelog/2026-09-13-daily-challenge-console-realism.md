@@ -7,6 +7,11 @@ a closed machined chassis, mobile hero rails keep all four chamfers, and the
 route-specific authentication and crash states use the same artwork, frame, and
 instrument language as the live ledger.
 
+Those route fallbacks ship through a focused stylesheet rather than importing
+the full mission-page paint into the global application entry. The cinematic
+loading experience therefore remains immediate without charging unrelated Club
+Arena routes for the complete Daily Challenges stylesheet.
+
 The Club Arena Home entry now uses a native-ratio, text-free Challenge Vault
 scene with live DOM title and status copy. The previous static poster, stretched
 ratio, and baked-in sample objectives are no longer used. Daily Challenge links

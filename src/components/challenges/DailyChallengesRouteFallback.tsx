@@ -2,8 +2,8 @@ import { useParams } from 'react-router-dom';
 import type { Tier } from '../../services/DailyChallengeService';
 import { mediaUrl } from '../../utils/mediaBase';
 import StandardContentLayout from '../layouts/StandardContentLayout';
-import styles from '../../pages/DailyChallengesPage.module.css';
 import { CasinoControlIcon, type CasinoControlIconVariant } from './CasinoControlIcon';
+import styles from './DailyChallengesRouteFallback.module.css';
 
 const HERO_DESKTOP = 'images/challenges/daily-missions-casino-v2.webp';
 const HERO_MOBILE = 'images/challenges/daily-missions-casino-v2-mobile.webp';
@@ -33,7 +33,7 @@ function useFallbackTier(): Tier {
 
 function FallbackHero({ tier, message }: { tier: Tier; message: string }) {
   return (
-    <section className={`${styles.hero} ${styles.loadingHero}`}>
+    <section className={styles.hero}>
       <span className={styles.bevelFrame} aria-hidden="true" />
       <div className={styles.heroPicture} data-hero-cycle={tier} aria-hidden="true">
         <picture>
@@ -131,7 +131,7 @@ export function DailyChallengesCrashFallback({
           tier={tier}
           message="Your Challenge Progress Is Protected While This Display Recovers."
         />
-        <section className={`${styles.emptyState} ${styles.unavailableState}`} role="alert">
+        <section className={styles.emptyState} role="alert">
           <span className={styles.bevelFrame} aria-hidden="true" />
           <span className={styles.panelLabel}>Challenge Display Recovery</span>
           <h2>Challenge Display Could Not Render</h2>

@@ -4,6 +4,14 @@ import { describe, expect, it } from 'vitest';
 
 const page = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.tsx'), 'utf8');
 const css = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.module.css'), 'utf8');
+const routeFallback = readFileSync(
+  resolve(__dirname, '../src/components/challenges/DailyChallengesRouteFallback.tsx'),
+  'utf8'
+);
+const routeFallbackCss = readFileSync(
+  resolve(__dirname, '../src/components/challenges/DailyChallengesRouteFallback.module.css'),
+  'utf8'
+);
 const preloader = readFileSync(resolve(__dirname, '../src/utils/ChunkPreloader.ts'), 'utf8');
 
 describe('Daily Challenges Smarter Casino Realism surface', () => {
@@ -121,6 +129,18 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
     expect(page).toContain('className={styles.loadingCardInstrument}');
     expect(css).toContain('.loadingCard > .bevelFrame');
     expect(css).toContain('.loadingCardAction');
+  });
+
+  it('keeps route fallbacks cinematic without eagerly loading the full mission-page stylesheet', () => {
+    expect(routeFallback).toContain("from './DailyChallengesRouteFallback.module.css'");
+    expect(routeFallback).not.toContain('DailyChallengesPage.module.css');
+    expect(routeFallback).toContain('data-daily-missions-auth-loading=""');
+    expect(routeFallback).toContain('data-daily-missions-crash-fallback=""');
+    expect(routeFallbackCss.match(/linear-gradient\(/g)?.length).toBeGreaterThanOrEqual(12);
+    expect(routeFallbackCss).toContain('100% 100% / var(--frame-size) var(--frame-size) no-repeat');
+    expect(routeFallbackCss).toContain('@media (max-width: 680px)');
+    expect(routeFallbackCss).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(routeFallbackCss).not.toContain(':hover');
   });
 
   it('uses only sanctioned danger and warm accents in the Daily Missions paint', () => {

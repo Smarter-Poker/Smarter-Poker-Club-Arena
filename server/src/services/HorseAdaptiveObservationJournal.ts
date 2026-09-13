@@ -207,7 +207,9 @@ export type AdaptiveJournalWriteResult =
 
 /** Validate recovered canonical bytes without inventing a new source snapshot.
  * A historical receipt proves what was recorded, not current-window coverage. */
-function recoverPreparedBatch(payload: unknown): PreparedAdaptiveJournalBatch {
+export function validateAdaptiveJournalBatchPayload(
+  payload: unknown
+): PreparedAdaptiveJournalBatch {
   if (typeof payload !== 'string' || bytes(payload) > ADAPTIVE_JOURNAL_LIMITS.batchBytes)
     throw Error('invalid_batch');
   const b = JSON.parse(payload);
@@ -285,7 +287,7 @@ export async function readAdaptiveJournalBatch(
           : 'invalid_receipt'
       );
     if (data.status !== 'recorded') return refusal('invalid_receipt');
-    const batch = recoverPreparedBatch(data.payload);
+    const batch = validateAdaptiveJournalBatchPayload(data.payload);
     if (
       batch.batchKey !== batchKey ||
       data.batchKey !== batch.batchKey ||
@@ -306,7 +308,7 @@ export async function persistPreparedAdaptiveJournalBatch(
 ): Promise<AdaptiveJournalWriteResult> {
   let batch: PreparedAdaptiveJournalBatch;
   try {
-    batch = recoverPreparedBatch(input?.payload);
+    batch = validateAdaptiveJournalBatchPayload(input?.payload);
     if (
       input.status !== 'prepared' ||
       input.batchKey !== batch.batchKey ||

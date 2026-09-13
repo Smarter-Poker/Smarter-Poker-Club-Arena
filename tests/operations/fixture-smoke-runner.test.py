@@ -55,6 +55,14 @@ ROLE_FAULTS = dict(scope='native-role-fault-matrix', status='passed', stage='com
     cases=[dict(name=name, expected_refusal=True, rollback_acknowledged=True,
         original_catalog_sha256='c'*64, password_catalog_restored=True, backends_absent=True)
         for name in m.ROLE_FAULT_NAMES])
+
+
+def failed_role_faults():
+    row = json.loads(json.dumps(ROLE_FAULTS))
+    row.update(status='failed', stage=m.ROLE_FAULT_NAMES[2], cases=row['cases'][:2],
+        failure_step='fault-injection', failure_type='error', sqlstate='42501')
+    return row
+
 ROLE_ACCESS = dict(scope='native-role-access-defaults', status='passed', stage='complete',
     all_clients_closed=True, production_or_funded=False, set_role_pairs=250,
     administrative_denials=5, expired_cli_scram_denied=True, wrong_password_denied=True,
@@ -249,6 +257,8 @@ class RunnerTests(unittest.TestCase):
                         raise TimeoutError('PRIVATE TOKEN MUST NOT LEAK')
                     if fault == 'native-stage':
                         raise m.NativeSmokeFailure(json.dumps({'status': 'failed', 'stage': 'initialization', 'error': 'Error'}) + '\nPRIVATE TOKEN', 7)
+                    if fault == 'native-role-stage':
+                        raise m.NativeSmokeFailure(json.dumps(failed_role_faults()) + '\nPRIVATE TOKEN', 7)
                     raw, proof = preimage_material()
                     private = Path(env['FIXTURE_SERVICE_PREIMAGE_PATH'])
                     self.assertNotEqual(private.parent, root / 'evidence')
@@ -363,6 +373,37 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(receipt['native_failures'], [{'stage': 'initialization', 'category': 'Error'}])
         self.assertEqual(receipt['native_command_exit_code'], 7)
         self.assertTrue(all(receipt['cleanup'].values()))
+
+    def test_role_failure_reaches_final_receipt_without_raw_output_or_pass_credit(self):
+        code, receipt, _ = self.exercise('native-role-stage')
+        self.assertEqual(code,1)
+        self.assertEqual(receipt['role_native_fault_failure'],dict(
+            scope='native-role-fault-matrix-failure',status='failed',stage=m.ROLE_FAULT_NAMES[2],
+            failure_step='fault-injection',failure_type='error',sqlstate='42501',
+            completed_cases=2,all_clients_closed=True))
+        self.assertNotIn('role_native_faults',receipt)
+        self.assertTrue(all(receipt['cleanup'].values()))
+
+    def test_role_failure_parser_refuses_forged_or_unbounded_metadata(self):
+        mutations=[lambda r:r.update(status='passed'),lambda r:r.update(stage='PRIVATE TOKEN'),
+            lambda r:r.update(failure_step='PRIVATE SQL'),lambda r:r.update(failure_type='PRIVATE ERROR'),
+            lambda r:r.update(sqlstate='PRIVATE TOKEN'),lambda r:r.update(token='PRIVATE TOKEN'),
+            lambda r:r.update(all_clients_closed=1),lambda r:r.update(production_or_funded=True),
+            lambda r:r.update(cases=r['cases'][::-1]),lambda r:r['cases'][0].update(rollback_acknowledged=False),
+            lambda r:r['cases'][0].update(original_catalog_sha256='PRIVATE TOKEN'),
+            lambda r:r.update(cases=ROLE_FAULTS['cases']*2)]
+        for change in mutations:
+            with self.subTest(change=change):
+                row=failed_role_faults();change(row)
+                self.assertIsNone(m.role_fault_failure(json.dumps(row)))
+        raw=json.dumps(failed_role_faults())
+        self.assertIsNone(m.role_fault_failure(raw+'\n'+raw))
+        self.assertIsNone(m.role_fault_failure(raw.replace('"status": "failed"','"status": "failed", "status": "failed"')))
+        self.assertIsNone(m.role_fault_failure('{'+(' '*20001)+'}'))
+
+    def test_failed_role_diagnostic_can_never_satisfy_positive_fault_proof(self):
+        with self.assertRaises(RuntimeError):
+            m.role_native_record(json.dumps(failed_role_faults()),'faults')
 
     def test_timeout_cleans_exact_container_without_success(self):
         code, receipt, calls = self.exercise('timeout')

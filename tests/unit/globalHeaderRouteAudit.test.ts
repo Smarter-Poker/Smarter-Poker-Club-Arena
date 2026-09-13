@@ -48,14 +48,16 @@ describe('the complete route manifest inherits one global header', () => {
     // surfaces they buy with diamonds. It is a shell route on purpose: a page
     // that spends a club's money should carry the same header, and the same
     // way back, as every other operator page.
-    expect(allPaths).toHaveLength(134); // +2 management consoles, +1 financial decision harness
+    // +1 for advertise (2026-09-13): the outside sponsor's door, no club in
+    // the path, same page in sponsor mode. Same header, same way back.
+    expect(allPaths).toHaveLength(135); // +2 management consoles, +1 financial decision harness, +1 sponsor advertise
     expect(allPaths).toContain('clubs/:clubId/create-table/:gameType');
     expect(allPaths).toContain('messages/clubs/:conversationId');
     expect(allPaths).toContain('*');
   });
 
   it('puts every shell route under AppLayout', () => {
-    expect(shellPaths).toHaveLength(125); // +2: club and union table-management consoles, +1: union data, +1: hand review, +1: club advertise
+    expect(shellPaths).toHaveLength(126); // +2: club and union table-management consoles, +1: union data, +1: hand review, +1: club advertise, +1: sponsor advertise
     expect(APP_LAYOUT).toContain('{showGlobalHeader && <GlobalHeader />}');
   });
 
@@ -69,7 +71,7 @@ describe('the complete route manifest inherits one global header', () => {
       (path) => !applicable.has(path) && !intentionalExceptions.has(path)
     );
 
-    expect(applicable.size).toBe(126); // +2: club and union table-management consoles, +1: union data, +1: hand review, +1: club advertise
+    expect(applicable.size).toBe(127); // +2: club and union table-management consoles, +1: union data, +1: hand review, +1: club advertise, +1: sponsor advertise
     expect(unclassified).toEqual([]);
   });
 

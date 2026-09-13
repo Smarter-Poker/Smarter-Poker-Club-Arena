@@ -50,6 +50,7 @@ const EMPTY_SPONSOR = {
   headline: '',
   slot: 'lobby_strip' as AdSlot,
   imageUrl: '',
+  posterUrl: '',
   externalUrl: '',
   days: 7,
   contactEmail: '',
@@ -141,6 +142,7 @@ export default function CampaignQueue() {
       headline: sponsor.headline.trim(),
       slot: sponsor.slot,
       imageUrl: sponsor.imageUrl.trim(),
+      posterUrl: sponsor.posterUrl.trim() || null,
       externalUrl: sponsor.externalUrl.trim(),
       startsAt: new Date(),
       days: sponsor.days,
@@ -156,6 +158,7 @@ export default function CampaignQueue() {
         unknown_slot: 'That Surface Does Not Exist',
         bad_days: 'Choose Between 1 And 365 Days',
         creative_not_same_origin: 'The Creative Must Be A Path On This Site, Uploaded First',
+        poster_not_same_origin: 'The Poster Must Be A Path On This Site, Uploaded First',
         destination_must_be_https: 'The Destination Must Be A Full https Address',
         bad_pacing: 'Pacing Must Be Even Or Asap',
       };
@@ -174,6 +177,7 @@ export default function CampaignQueue() {
     sponsor.advertiserName.trim().length > 0 &&
     sponsor.headline.trim().length > 0 &&
     sponsor.imageUrl.trim().startsWith('/') &&
+    (sponsor.posterUrl.trim() === '' || sponsor.posterUrl.trim().startsWith('/')) &&
     /^https:\/\/[a-zA-Z0-9]/.test(sponsor.externalUrl.trim()) &&
     sponsor.days >= 1 &&
     !sponsorBusy;
@@ -268,6 +272,17 @@ export default function CampaignQueue() {
                   value={sponsor.imageUrl}
                   onChange={(e) => setSponsor((s) => ({ ...s, imageUrl: e.target.value }))}
                   placeholder="/ad-creatives/sponsor/acme/lobby-strip.webp"
+                  disabled={sponsorBusy}
+                />
+              </label>
+              <label className="campaign-queue__field">
+                <span className="admin-label">Poster Path (3 By 4, Optional)</span>
+                <input
+                  className="admin-input"
+                  maxLength={300}
+                  value={sponsor.posterUrl}
+                  onChange={(e) => setSponsor((s) => ({ ...s, posterUrl: e.target.value }))}
+                  placeholder="/ad-creatives/sponsor/acme/poster.webp"
                   disabled={sponsorBusy}
                 />
               </label>

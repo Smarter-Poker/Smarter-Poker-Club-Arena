@@ -1936,7 +1936,9 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
      */
     this.currentHandPots = pots.map((p, index) => ({
       index,
-      amount: Number(p?.amount) || 0,
+      // Cents, not floats - same rule as the WINNERS capture. This record is
+      // what hand_history.pots is written from.
+      amount: Math.round((Number(p?.amount) || 0) * 100) / 100,
       eligible: Array.isArray(p?.eligiblePlayers)
         ? p.eligiblePlayers.map((u) => String(u ?? '')).filter(Boolean)
         : [],

@@ -23,6 +23,10 @@ DOCKER_URL = "https://download.docker.com/linux/static/stable/x86_64/docker-29.7
 DOCKER_SHA256 = "803d433f226db4776e1768fd319fc6c6e4935a456acf84fcc0080818b854bc8f"
 DOCKER_BYTES = 85700518
 LIMIT = 512 * 1024 * 1024
+# Start reclaim before the hard ceiling. Native image extraction filled the
+# cgroup to memory.max, whose kernel accounting can temporarily overshoot.
+# Keep the measured peak requirement and hard limit unchanged.
+RECLAIM_LIMIT = 448 * 1024 * 1024
 BINARIES = {"docker", "dockerd", "docker-init", "docker-proxy", "containerd",
             "containerd-shim-runc-v2", "ctr", "runc"}
 
@@ -137,6 +141,7 @@ def run(args, *, timeout=30, check=True, env=None):
 
 def assert_limits(values):
     require(values["memory.max"] == str(LIMIT), "import memory limit absent or different")
+    require(values.get("memory.high") == str(RECLAIM_LIMIT), "import memory reclaim limit absent or different")
     require(values["memory.swap.max"] == "0", "import swap limit differs")
     quota, period = values["cpu.max"].split()
     require(quota.isdecimal() and period.isdecimal()
@@ -185,7 +190,7 @@ def resource_snapshot(owner, required_pids):
             "unexpected native importer cgroup")
     base = Path("/sys/fs/cgroup") / group.lstrip("/")
     values = {name: (base / name).read_text().strip()
-              for name in ("memory.max", "memory.swap.max", "cpu.max")}
+              for name in ("memory.max", "memory.high", "memory.swap.max", "cpu.max")}
     assert_limits(values)
     for pid in required_pids:
         require(contained(cgroup(pid), group), "import process escaped the bounded group")
@@ -492,6 +497,9 @@ def worker(request_path):
             # The worker still owns the unit here. A daemon dying from an OOM
             # during shutdown is not a clean stop, even when every PID is gone.
             result['resource_observation_after_stop'] = resource_snapshot(os.getpid(), [os.getpid()])
+            peak = result['resource_observation_after_stop'].get('memory_peak')
+            require(type(peak) is int and 0 < peak <= LIMIT,
+                    'native import final memory peak differs')
             for counter in ('oom', 'oom_kill'):
                 require(result['resource_observation_after_stop']['memory_events'][counter]
                         == result['before']['memory_events'][counter],
@@ -610,6 +618,7 @@ def _prove_import(archive, normalization, runtime_hashes, output, *, fault=None)
         command = ["sudo", "-n", "systemd-run", "--quiet", "--wait", "--pipe", "--collect",
                    "--unit", unit, "--setenv=GITHUB_ACTIONS=true",
                    "--property=MemoryMax=" + str(LIMIT), "--property=MemorySwapMax=0",
+                   "--property=MemoryHigh=" + str(RECLAIM_LIMIT),
                    "--property=CPUQuota=100%", "--property=TasksMax=256",
                    "--property=RuntimeMaxSec=240", "--property=TimeoutStopSec=20",
                    "--property=KillMode=control-group", "--property=Restart=no",

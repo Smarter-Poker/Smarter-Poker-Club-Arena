@@ -143,13 +143,14 @@ class IdentityTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError): proof.validate_request(r)
 
     def test_bounded_unit_limits(self):
-        self.assertTrue(proof.assert_limits({'memory.max':str(proof.LIMIT),
+        self.assertTrue(proof.assert_limits({'memory.max':str(proof.LIMIT),'memory.high':str(proof.RECLAIM_LIMIT),
             'memory.swap.max':'0', 'cpu.max':'100000 100000'}))
         for key,value in [('memory.max','max'),('memory.max','1073741824'),
+                          ('memory.high','max'),('memory.high',str(proof.LIMIT)),
                           ('memory.swap.max','1'),('cpu.max','max 100000'),
                           ('cpu.max','200000 100000'),('cpu.max','0 0')]:
             with self.subTest(key=key,value=value):
-                limits={'memory.max':str(proof.LIMIT),'memory.swap.max':'0','cpu.max':'100000 100000'}
+                limits={'memory.max':str(proof.LIMIT),'memory.high':str(proof.RECLAIM_LIMIT),'memory.swap.max':'0','cpu.max':'100000 100000'}
                 limits[key]=value
                 with self.assertRaises(RuntimeError): proof.assert_limits(limits)
 
@@ -157,6 +158,38 @@ class IdentityTests(unittest.TestCase):
         self.assertTrue(proof.contained('/a/service/child','/a/service'))
         self.assertTrue(proof.contained('/a/service','/a/service'))
         self.assertFalse(proof.contained('/a/service-other','/a/service'))
+
+    def test_missing_reclaim_boundary_is_refused(self):
+        with self.assertRaisesRegex(RuntimeError, 'memory reclaim limit'):
+            proof.assert_limits({'memory.max':str(proof.LIMIT),
+                'memory.swap.max':'0','cpu.max':'100000 100000'})
+
+    def test_parent_launches_owned_unit_with_early_reclaim_and_existing_ceiling(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)/'private';root.mkdir()
+            output=Path(folder)/'evidence';output.mkdir()
+            captured=[]
+            def execute(command, unit, actual_root, actual_output, data):
+                captured.append(command)
+                self.assertEqual(actual_root,root)
+                (root/'worker-receipt.json').write_text(json.dumps({'status':'passed'}))
+                return 0,False
+            cleanup={key:True for key in ('unit_stop_completed','unit_inactive',
+                'owned_cgroup_absent','owned_mounts_absent','owned_files_removed')}
+            cleanup['cleanup_errors']=[]
+            with patch.object(proof.sys,'platform','linux'), \
+                    patch.dict(proof.os.environ,{'GITHUB_ACTIONS':'true'}), \
+                    patch.object(proof.tempfile,'mkdtemp',return_value=str(root)), \
+                    patch.object(proof,'fetch_binaries'), \
+                    patch.object(proof,'run',return_value=SimpleNamespace(stdout='owned-main-daemon')), \
+                    patch.object(proof,'execute_unit',side_effect=execute), \
+                    patch.object(proof,'cleanup_import',return_value=cleanup), \
+                    patch.object(proof.signal,'signal'):
+                proof._prove_import(root/'image.tar',request(),request()['runtime_hashes'],output)
+            self.assertEqual(len(captured),1)
+            properties={arg for arg in captured[0] if arg.startswith('--property=Memory')}
+            self.assertEqual(properties,{'--property=MemoryMax=536870912',
+                '--property=MemoryHigh=469762048','--property=MemorySwapMax=0'})
 
     def test_signal_handlers_restore_even_on_cancellation(self):
         original = {s: object() for s in (signal.SIGTERM,signal.SIGHUP,signal.SIGINT)}
@@ -300,11 +333,11 @@ class NativeMatrixProtocolTests(unittest.TestCase):
                 'failure_code':{'image_identity':'imported immutable image identity differs',
                     'runtime_bytes':'imported runtime bytes differ',
                     'external_cancellation':'native import proof interrupted'}[name],
-                'resource_observation_before_stop':{'memory.max':str(proof.LIMIT),
+                'resource_observation_before_stop':{'memory.max':str(proof.LIMIT),'memory.high':str(proof.RECLAIM_LIMIT),
                     'memory.swap.max':'0','cpu.max':'100000 100000', 'memory_peak':123456,
                     'memory_events':{'oom':0,'oom_kill':0}},
                 'before':{'memory_events':{'oom':0,'oom_kill':0}},
-                'resource_observation_after_stop':{'memory.max':str(proof.LIMIT),
+                'resource_observation_after_stop':{'memory.max':str(proof.LIMIT),'memory.high':str(proof.RECLAIM_LIMIT),
                     'memory.swap.max':'0','cpu.max':'100000 100000', 'memory_peak':123456,
                     'memory_events':{'oom':0,'oom_kill':0}},
                 'worker_external_cancellation_sent':bool(fault),'unit_exit_code':1,
@@ -412,7 +445,7 @@ class NativeMatrixProtocolTests(unittest.TestCase):
 
 
 class WorkerStartupMemoryTests(unittest.TestCase):
-    def run_worker(self, *, oom_phase, successful_import=False, runtime_fault=None):
+    def run_worker(self, *, oom_phase, successful_import=False, runtime_fault=None, final_peak=123456):
         """Run the worker's real sequencing with controlled processes and commands."""
         with tempfile.TemporaryDirectory(prefix='engine-native-import-', dir='/tmp') as tmp:
             root = Path(tmp)
@@ -509,8 +542,8 @@ class WorkerStartupMemoryTests(unittest.TestCase):
                 threshold = 1 if oom_phase=='startup' else (4 if successful_import else 3)
                 events=int(count >= threshold) if oom_phase else 0
                 count += 1
-                return {'memory.max':str(proof.LIMIT),'memory.swap.max':'0',
-                    'cpu.max':'100000 100000','memory_peak':123456,
+                return {'memory.max':str(proof.LIMIT),'memory.high':str(proof.RECLAIM_LIMIT),'memory.swap.max':'0',
+                    'cpu.max':'100000 100000','memory_peak':final_peak if count >= 5 else 123456,
                     'memory_events':{'oom':events,'oom_kill':events}, 'verified_pids':pids}
             original_resolve=Path.resolve
             original_iterdir=Path.iterdir
@@ -630,6 +663,17 @@ class WorkerStartupMemoryTests(unittest.TestCase):
         self.assertEqual(observed['status'],'passed')
         self.assertEqual(observed['stage'],'complete')
         self.assertNotIn('resource_observation_after_stop_failure',observed)
+
+    def test_successful_load_cannot_hide_final_peak_above_the_budget(self):
+        for peak in (proof.LIMIT+4096, 0, True):
+            with self.subTest(peak=peak):
+                observed,error=self.run_worker(oom_phase=None,successful_import=True,final_peak=peak)
+                self.assertIsInstance(error,RuntimeError)
+                self.assertEqual(observed['status'],'failed')
+                self.assertEqual(observed['resource_observation_after_stop']['memory_peak'],peak)
+                self.assertEqual(observed['resource_observation_after_stop_failure'],'RuntimeError')
+                self.assertTrue(observed['daemon_stopped'])
+                self.assertTrue(observed['containerd_stopped'])
 
 
 class PrivateRuntimeOwnershipTests(unittest.TestCase):

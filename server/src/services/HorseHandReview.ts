@@ -516,6 +516,24 @@ export function detectLeaks(row: {
         flag('nonnut_flush_stackoff');
       } else if (st.category === 6 && st.higherFlushRanks === 1) {
         flag('second_nut_flush_stackoff');
+      } else if (st.category === 5 && st.flushPossible) {
+        // 2026-09-13: the Omaha branch asked only whether the straight was the
+        // nut straight, so a horse holding the NUT straight that stacked off
+        // into a three-flush board produced no tag at all - `straightIsNut`
+        // was true and nothing else tested the board. The NLH mirror below
+        // has always asked `flushPossible` FIRST, for the reason that matters
+        // more in Omaha than anywhere else: with four hole cards and three of
+        // a suit showing, somebody usually has the flush. Measured over the
+        // seven days to 2026-09-12: 17,190 Omaha showdown losses of 20bb+ on
+        // three-flush boards, 10,951 of them carrying none of the four
+        // nut-discipline tags.
+        //
+        // MEASUREMENT ONLY on purpose. The name is deliberately the existing
+        // NLH one, so the tag vocabulary does not grow, and it is deliberately
+        // NOT added to PLO_STACKOFF_TAGS: wiring it into the V20 pressure cap
+        // or the self-tuner's stackoff gate would change how horses play, and
+        // that is a strategy change which needs a league matchup behind it.
+        flag('straight_into_flush_stackoff');
       } else if (st.category === 5 && !st.straightIsNut) {
         flag('dominated_straight_stackoff');
       }

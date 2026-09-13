@@ -200,15 +200,24 @@ describe('who is speaking, and who paid (Dan 2026-09-03)', () => {
   });
 
   it('the wrong picture size is refused before it is uploaded', () => {
+    /* One upload path (uploadTo) since 2026-09-13, shared by the surface
+       creative, the poster, a club's folder and a sponsor's. The shape is
+       checked before a byte leaves the browser, whichever caller it is. */
     const upload = CAMPAIGNS.slice(
-      CAMPAIGNS.indexOf('async uploadCreative'),
-      CAMPAIGNS.indexOf('async submit')
+      CAMPAIGNS.indexOf('async uploadTo'),
+      CAMPAIGNS.indexOf('async uploadCreative')
     );
-    expect(
-      upload.indexOf('width !== rate.creativeWidth || height !== rate.creativeHeight')
-    ).toBeLessThan(upload.indexOf(".from('ad-creatives').upload("));
-    expect(upload.indexOf('file.size > rate.maxBytes')).toBeLessThan(
+    expect(upload.indexOf('width !== shape.width || height !== shape.height')).toBeLessThan(
       upload.indexOf(".from('ad-creatives').upload(")
+    );
+    expect(upload.indexOf('file.size > shape.maxBytes')).toBeLessThan(
+      upload.indexOf(".from('ad-creatives').upload(")
+    );
+    // Every caller goes through it; nobody uploads around the check.
+    expect(CAMPAIGNS.match(/\.from\('ad-creatives'\)\.upload\(/g)).toHaveLength(1);
+    expect(CAMPAIGNS).toMatch(/uploadTo\(`club\/\$\{clubId\}`, 'poster', file, POSTER_SHAPE\)/);
+    expect(CAMPAIGNS).toMatch(
+      /uploadTo\(`sponsor\/\$\{advertiserId\}`, 'poster', file, POSTER_SHAPE\)/
     );
   });
 

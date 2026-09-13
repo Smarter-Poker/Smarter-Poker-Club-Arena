@@ -75,9 +75,17 @@ def context(target, environment, platform):
 def verify_git_source(identity, run):
     require(run(["git", "rev-parse", "HEAD"]) == identity["workflow_control_sha"],
             "QUALIFICATION_CONTROL_CHECKOUT")
-    require(run(["git", "rev-list", "--parents", "-n", "1", identity["workflow_control_sha"]]).split() ==
-            [identity["workflow_control_sha"], identity["pr_base_sha"], identity["pr_head_sha"]],
+    parents = run(["git", "rev-list", "--parents", "-n", "1", identity["workflow_control_sha"]]).split()
+    require(len(parents) == 3 and parents[0] == identity["workflow_control_sha"] and
+            parents[2] == identity["pr_head_sha"] and hex_value(parents[1], 40),
             "QUALIFICATION_MERGE_PARENTS")
+    # The event/API PR base can precede the actual synthetic merge's main parent.
+    # Bind both identities and require forward ancestry inside fetched main.
+    main = run(["git", "rev-parse", "--verify", "refs/remotes/origin/main^{commit}"])
+    require(hex_value(main, 40), "QUALIFICATION_MAIN_IDENTITY")
+    run(["git", "merge-base", "--is-ancestor", identity["pr_base_sha"], parents[1]])
+    run(["git", "merge-base", "--is-ancestor", parents[1], main])
+    identity["merge_base_sha"] = parents[1]
     require(run(["git", "rev-parse", "--verify", identity["source_sha"] + "^{commit}"]) ==
             identity["source_sha"], "QUALIFICATION_EXACT_SOURCE")
     tree = run(["git", "rev-parse", identity["source_sha"] + ":server"])
@@ -87,12 +95,12 @@ def verify_git_source(identity, run):
 
 def check_identity(identity):
     exact_keys(identity, ("purpose", "repository", "workflow", "workflow_control_sha", "source_sha",
-                          "pr_head_sha", "pr_base_sha", "pr_number", "merge_ref", "server_tree",
+                          "pr_head_sha", "pr_base_sha", "merge_base_sha", "pr_number", "merge_ref", "server_tree",
                           "run_id", "run_attempt", "image_id"), "QUALIFICATION_IDENTITY_SHAPE")
     require(identity["purpose"] == "qualification-only" and identity["repository"] == REPOSITORY and
             identity["workflow"] == WORKFLOW, "QUALIFICATION_PROFILE")
     require(all(hex_value(identity[key], 40) for key in
-                ("workflow_control_sha", "source_sha", "pr_head_sha", "pr_base_sha", "server_tree")) and
+                ("workflow_control_sha", "source_sha", "pr_head_sha", "pr_base_sha", "merge_base_sha", "server_tree")) and
             identity["source_sha"] == identity["pr_head_sha"], "QUALIFICATION_SOURCE_IDENTITY")
     require(all(positive(identity[key]) for key in ("run_id", "run_attempt", "pr_number")) and
             identity["merge_ref"] == "refs/pull/" + identity["pr_number"] + "/merge", "QUALIFICATION_RUN_IDENTITY")
@@ -258,6 +266,24 @@ def validate_github_metadata(repository, run, artifact, jobs, expected, environm
     return producer["id"]
 
 
+
+def validate_merge_metadata(identity, commit, comparison):
+    require(isinstance(commit, dict) and commit.get("sha") == identity["workflow_control_sha"] and
+            isinstance(commit.get("parents"), list) and
+            [row.get("sha") for row in commit["parents"] if isinstance(row, dict)] ==
+            [identity["merge_base_sha"], identity["pr_head_sha"]] and len(commit["parents"]) == 2,
+            "QUALIFICATION_API_MERGE_PARENTS")
+    same = identity["pr_base_sha"] == identity["merge_base_sha"]
+    require(isinstance(comparison, dict) and
+            (comparison.get("base_commit") or {}).get("sha") == identity["pr_base_sha"] and
+            (comparison.get("merge_base_commit") or {}).get("sha") == identity["pr_base_sha"] and
+            comparison.get("status") == ("identical" if same else "ahead") and
+            type(comparison.get("ahead_by")) is int and
+            (comparison["ahead_by"] == 0 if same else comparison["ahead_by"] > 0) and
+            type(comparison.get("behind_by")) is int and comparison["behind_by"] == 0,
+            "QUALIFICATION_API_BASE_ANCESTRY")
+
+
 def admit(directory, expected, environment, api=github_api):
     assert_current_identity(expected, environment)
     validate_files(directory, expected)
@@ -268,6 +294,9 @@ def admit(directory, expected, environment, api=github_api):
     artifact = api(f"repos/{REPOSITORY}/actions/artifacts/{artifact_id}")
     jobs = api(f"repos/{REPOSITORY}/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100")
     job_id = validate_github_metadata(repository, run, artifact, jobs, expected, environment)
+    commit = api(f"repos/{REPOSITORY}/git/commits/{identity['workflow_control_sha']}")
+    comparison = api(f"repos/{REPOSITORY}/compare/{identity['pr_base_sha']}...{identity['merge_base_sha']}?per_page=1&page=1")
+    validate_merge_metadata(identity, commit, comparison)
     validate_files(directory, expected)
     return {"scope": "same-run-pr-image-qualification", "status": "passed", "purpose": "qualification-only",
             "identity": identity, "producer_job_id": job_id, "artifact_id": artifact_id,

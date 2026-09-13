@@ -1464,6 +1464,7 @@ jobs:
       - name: Build
         run: npm run build:ci
         env:
+          CA_BUILD_PURPOSE: ${{ github.event_name == 'pull_request' && 'ci-validation' || 'release-build' }}
           NODE_ENV: production
           # Public browser configuration. The previous PR build omitted these,
           # so it produced an artifact that threw before React mounted and no
@@ -1913,6 +1914,7 @@ jobs:
       # added to every push-to-live.
       - name: Build this commit
         env:
+          CA_BUILD_PURPOSE: ${{ github.event_name == 'pull_request' && 'ci-validation' || 'release-build' }}
           # The app fails closed before React mounts when these Vite values are
           # absent. Footer route probes do not call Supabase, so deterministic
           # non-secret placeholders are the correct isolated CI configuration.

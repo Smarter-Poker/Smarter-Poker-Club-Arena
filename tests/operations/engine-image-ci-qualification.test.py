@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -34,7 +35,7 @@ class QualificationTests(unittest.TestCase):
             'base':{'sha':'e'*40,'ref':'main','repo':{'full_name':qualification.REPOSITORY}}}}
         self.write_event()
         self.identity = {**qualification.context(self.fixture.target,self.env,'linux'),
-                         'server_tree':self.fixture.tree,'image_id':'sha256:'+'d'*64}
+                         'merge_base_sha':'e'*40,'server_tree':self.fixture.tree,'image_id':'sha256:'+'d'*64}
         self.bundle = self.root/'engine-image-qualification-123-2'
         self.evidence = self.root/'engine-image-qualification-evidence-123-2'
         self.api_calls=[]
@@ -69,6 +70,8 @@ class QualificationTests(unittest.TestCase):
     def api(self, endpoint):
         self.api_calls.append(endpoint)
         repo,run,artifact,jobs=self.metadata()
+        if '/git/commits/' in endpoint:return {'sha':self.identity['workflow_control_sha'],'parents':[{'sha':self.identity['merge_base_sha']},{'sha':self.identity['pr_head_sha']}]}
+        if '/compare/' in endpoint:return {'base_commit':{'sha':self.identity['pr_base_sha']},'merge_base_commit':{'sha':self.identity['pr_base_sha']},'status':'identical' if self.identity['pr_base_sha']==self.identity['merge_base_sha'] else 'ahead','ahead_by':0 if self.identity['pr_base_sha']==self.identity['merge_base_sha'] else 1,'behind_by':0}
         if endpoint.endswith('/jobs?per_page=100'):return jobs
         if '/artifacts/' in endpoint:return artifact
         if '/attempts/' in endpoint:return run
@@ -102,13 +105,47 @@ class QualificationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'DISPOSABLE_CI'):
             qualification.context(self.fixture.target,self.env,'darwin')
 
-    def test_merge_control_must_have_the_exact_event_base_and_head_parents(self):
+    def test_merge_control_must_have_two_ordered_parents_and_the_exact_event_head(self):
         self.assertEqual(qualification.verify_git_source(self.identity,self.command),self.fixture.tree)
         for wrong in ('bad',' '.join((self.fixture.control,self.fixture.target,'e'*40)),
                       ' '.join((self.fixture.control,'e'*40,self.fixture.target,'0'*40))):
             def run(args,**kwargs):return wrong if args[:2]==['git','rev-list'] else self.command(args,**kwargs)
             with self.subTest(wrong=wrong),self.assertRaisesRegex(ValueError,'MERGE_PARENTS'):
                 qualification.verify_git_source(self.identity,run)
+
+    def test_actual_git_accepts_forward_main_parent_and_refuses_rewind(self):
+        with tempfile.TemporaryDirectory(prefix='qualification-merge-') as temporary:
+            root=Path(temporary)
+            env={k:v for k,v in os.environ.items() if not k.startswith('GIT_')}
+            env.update(GIT_CONFIG_NOSYSTEM='1',GIT_CONFIG_GLOBAL=os.devnull,GIT_NO_REPLACE_OBJECTS='1')
+            def git(*args):
+                return subprocess.check_output(['git',*args],cwd=root,env=env,stderr=subprocess.PIPE,text=True).strip()
+            git('init','-q','-b','main');git('config','user.name','Fixture');git('config','user.email','fixture@example.invalid')
+            git('config','commit.gpgsign','false');git('config','core.hooksPath',str(root/'no-hooks'))
+            (root/'server').mkdir();(root/'server/a').write_text('base');git('add','.');git('commit','-qm','base');base=git('rev-parse','HEAD')
+            git('switch','-qc','feature');(root/'server/feature').write_text('feature');git('add','.');git('commit','-qm','head');head=git('rev-parse','HEAD')
+            git('switch','-q','main');(root/'server/main').write_text('later main');git('add','.');git('commit','-qm','main advances');actual_base=git('rev-parse','HEAD')
+            git('switch','-qc','qualification');git('merge','--no-ff','-m','synthetic merge','feature');control=git('rev-parse','HEAD')
+            git('update-ref','refs/remotes/origin/main',actual_base)
+            identity={**self.identity,'workflow_control_sha':control,'source_sha':head,'pr_head_sha':head,'pr_base_sha':base}
+            def run(args,**kwargs):return git(*args[1:])
+            self.assertEqual(qualification.verify_git_source(identity,run),git('rev-parse',head+':server'))
+            self.assertEqual(identity['merge_base_sha'],actual_base)
+            self.assertNotEqual(identity['pr_base_sha'],identity['merge_base_sha'])
+            git('update-ref','refs/remotes/origin/main',base)
+            with self.assertRaises(subprocess.CalledProcessError):qualification.verify_git_source(identity,run)
+            git('update-ref','refs/remotes/origin/main',actual_base)
+            with self.assertRaises(subprocess.CalledProcessError):qualification.verify_git_source({**identity,'pr_base_sha':head},run)
+
+    def test_consumer_authenticates_actual_merge_parents_and_forward_recorded_base(self):
+        identity={**self.identity,'merge_base_sha':'9'*40}
+        commit={'sha':identity['workflow_control_sha'],'parents':[{'sha':identity['merge_base_sha']},{'sha':identity['pr_head_sha']}]}
+        comparison={'base_commit':{'sha':identity['pr_base_sha']},'merge_base_commit':{'sha':identity['pr_base_sha']},'status':'ahead','ahead_by':3,'behind_by':0}
+        qualification.validate_merge_metadata(identity,commit,comparison)
+        for wrong in ({**commit,'sha':'8'*40},{**commit,'parents':list(reversed(commit['parents']))},{**commit,'parents':commit['parents']+[{'sha':'7'*40}]}):
+            with self.subTest(wrong=wrong),self.assertRaisesRegex(ValueError,'API_MERGE_PARENTS'):qualification.validate_merge_metadata(identity,wrong,comparison)
+        for wrong in ({**comparison,'status':'diverged'},{**comparison,'behind_by':1},{**comparison,'ahead_by':True},{**comparison,'merge_base_commit':{'sha':'8'*40}}):
+            with self.subTest(wrong=wrong),self.assertRaisesRegex(ValueError,'API_BASE_ANCESTRY'):qualification.validate_merge_metadata(identity,commit,wrong)
 
     def test_actual_producer_profile_runs_one_proof_then_promotes_separate_schema(self):
         calls=[]
@@ -154,7 +191,7 @@ class QualificationTests(unittest.TestCase):
         self.assertEqual(receipt['status'],'passed')
         self.assertEqual(set(receipt['refusals']),{'live_artifact_digest','stale_identity','production_profile',
                                                  'archive_bytes','descriptor_bytes'})
-        self.assertEqual(len(self.api_calls),12)
+        self.assertEqual(len(self.api_calls),16)
         self.assertEqual(self.env,before)
         self.assertTrue(receipt['owned_fault_files_removed'])
         self.assertFalse(receipt['production_admission'])

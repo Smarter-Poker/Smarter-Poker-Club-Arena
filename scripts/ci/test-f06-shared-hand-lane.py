@@ -105,6 +105,7 @@ try:
     run('acl-drift-refused', 'BEGIN; GRANT EXECUTE ON FUNCTION smarter_private.f06_source_guard() TO authenticated;\n' + installer, error='P0001')
     run('install', installer)
     run('installation-replay', installer)
+    run('both-reviewed-money-triggers-declared', "SELECT count(*) FROM ca_declared_money_triggers WHERE (table_name,trigger_name) IN (('table_seats','a00_f06_source_seat'),('tournament_players','a00_f06_source_roster'));", '2')
     require(run('installation-does-not-rewrite-state', snapshot) == before, 'Migration changed player state')
     with holder():
         probe('concurrent-seat-payload', share_hand + same_seat + 'SELECT stack FROM table_seats WHERE id=2;', '101')

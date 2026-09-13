@@ -19,7 +19,7 @@ The migration refuses unexpected predecessor definitions, helper definitions,
 trigger bindings, or execution grants. It preserves the security-definer owner,
 search path, trigger bindings, and closed browser execution permissions.
 
-Validation: 43 native PostgreSQL 17 checks cover the original three-retry
+Validation: 44 native PostgreSQL 17 checks cover the original three-retry
 failure, both actual column-filtered trigger bindings, NULL identity, exclusive
 global/tournament owners, structural writes, bound receipt denial, canonical
 receipted movement, rollback, installer drift, and installer replay. The same

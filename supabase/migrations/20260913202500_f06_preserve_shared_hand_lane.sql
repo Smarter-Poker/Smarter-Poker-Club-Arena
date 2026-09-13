@@ -76,4 +76,9 @@ BEGIN
   RAISE EXCEPTION 'F06 shared hand lane installation did not preserve exact definition and authority';
  END IF;
 END $postflight$;
+INSERT INTO public.ca_declared_money_triggers(table_name,trigger_name,note)
+VALUES
+ ('table_seats','a00_f06_source_seat','Reviewed September 13: exact occupant, table, seat and left_at preserving writes share the settlement lane. Structural writes retain exclusive custody and receipt guards; NULL occupant clearing is structural. Native concurrency, rollback and full financial-path probes passed.'),
+ ('tournament_players','a00_f06_source_roster','Reviewed September 13: unchanged table and seat mirrors in an accepted hand keep the shared tournament lane. Identity, status and custody changes retain exclusive lane and receipt checks. Native concurrency, rollback and full financial-path probes passed.')
+ON CONFLICT(table_name,trigger_name) DO UPDATE SET note=EXCLUDED.note;
 COMMIT;

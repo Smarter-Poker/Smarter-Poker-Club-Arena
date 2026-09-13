@@ -1,6 +1,7 @@
 -- Minimal dependency shape; function bodies and trigger bindings captured from production.
 CREATE SCHEMA smarter_private;
 CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
+CREATE TABLE public.ca_declared_money_triggers(table_name text,trigger_name text,note text,PRIMARY KEY(table_name,trigger_name));
 CREATE TABLE public.tables(id uuid primary key,tournament_id uuid);
 CREATE TABLE public.table_seats(id int primary key,table_id uuid,user_id uuid,seat_number int,stack numeric,left_at timestamptz);
 CREATE TABLE public.tournament_players(id int primary key,table_id uuid,user_id uuid,seat_number int,chips numeric,status text);

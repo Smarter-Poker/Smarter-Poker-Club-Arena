@@ -85,8 +85,8 @@
   width: 100%;
   aspect-ratio: 1000 / 348;
   border-bottom: 0 !important;
-  background: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/top.png') top
-    center / 100% auto no-repeat !important;
+  background: url('/assets/club-buttons/console/spade-console-v1/top.png') top center / 100% auto
+    no-repeat !important;
   box-shadow: none !important;
 }
 
@@ -101,8 +101,8 @@
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  background: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/mid.png') top
-    center / 100% auto repeat-y;
+  background: url('/assets/club-buttons/console/spade-console-v1/mid.png') top center / 100% auto
+    repeat-y;
 }
 
 /* SCROLL AFFORDANCE 2026-08-28: on short viewports the body scrolls - a
@@ -128,8 +128,8 @@
   flex: 0 0 auto;
   width: 100%;
   aspect-ratio: 1000 / 277;
-  background: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/bottom-plates.png')
-    bottom center / 100% auto no-repeat;
+  background: url('/assets/club-buttons/console/spade-console-v1/bottom-plates.png') bottom center /
+    100% auto no-repeat;
 }
 
 /* ── The street and the pot ───────────────────────────────────────────── */

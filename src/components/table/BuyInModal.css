@@ -1,358 +1,614 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   BUY-IN MODAL - on the spade master (2026-09-04, approved 2026-09-08)
-
-   The sheet is Dan's spade PLO master cut into three: the console's own head
-   (console/spade-console-v1/top.png: crest, header well, pill slot), a stage
-   on the repeated rails (mid.png), and the master's deck
-   (popups/buy-in-v1/deck.png: the four bays with their labels lifted, the
-   two plates, the chip). Every zone is measured on that master and printed
-   in its own ink (SpadeConsole.css). The one control the master does not
-   paint is the slider, on the stage, and it goes UP AND DOWN.
-   ═══════════════════════════════════════════════════════════════════════════ */
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  BUY-IN MODAL — Table Buy-In Interface
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
 
 .buy-in-modal__overlay {
   position: fixed;
-  inset: 0;
-  z-index: 10000;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.65);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 12px;
-  /* Black, not grey: the master floats on the same black as the page. */
-  background: rgb(0 0 0 / 90%);
+  z-index: 10000;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 16px;
   animation: buyInFadeIn 0.2s ease-out;
 }
 
 @keyframes buyInFadeIn {
   from {
     opacity: 0;
+    backdrop-filter: blur(0px);
   }
-
   to {
     opacity: 1;
+    backdrop-filter: blur(8px);
   }
 }
 
-.buy-in-modal.ac-popup {
-  width: min(100%, 420px);
-  max-height: 100%;
-  overflow: visible auto;
-  padding: 0 !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  outline: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-  animation: buyInSlideUp 0.28s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+.buy-in-modal {
+  width: 90%;
+  max-width: 360px;
+  background: linear-gradient(180deg, #1a1a2e 0%, #16162a 100%);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(111, 220, 255, 0.2);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 12px 32px rgba(0, 0, 0, 0.4),
+    0 0 20px rgba(111, 220, 255, 0.12);
+  animation: buyInSlideUp 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  position: relative;
+  overflow: hidden;
+}
+
+.buy-in-modal::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100px;
+  background: linear-gradient(180deg, rgba(111, 220, 255, 0.05) 0%, transparent 100%);
+  pointer-events: none;
 }
 
 @keyframes buyInSlideUp {
   from {
     opacity: 0;
-    transform: translateY(18px) scale(0.98);
+    transform: translateY(20px) scale(0.95);
   }
-
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
   }
 }
 
-/* ── The master: head on top, stage on the rails, deck at the foot ────── */
+/* ═══════════════════════════════════════════════════════════════════════════════
+   HEADER
+   ═══════════════════════════════════════════════════════════════════════════════ */
 
-.buy-in-modal__master {
-  position: relative;
-  container-type: inline-size;
+.buy-in-modal__header {
   display: flex;
-  flex-direction: column;
-  width: 100%;
-  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
-  font-variant-numeric: tabular-nums lining-nums;
-  /* No art on the master itself: each piece paints its own box, so nothing
-     is drawn above the crest or below the chip. See SpadeConsole.css. */
-  background: none;
-}
-
-.buy-in-modal__head {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 1000 / 348;
-  background: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/top.png') top
-    center / 100% auto no-repeat;
-}
-
-.buy-in-modal__title > span {
-  display: inline-block;
-}
-
-.buy-in-modal__deck {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 1000 / 627;
-  background: url('/hub/club-arena/assets/club-buttons/popups/buy-in-v1/deck.png') top center / 100%
-    auto no-repeat;
-}
-
-/* ── Stage: the slider beside the amount, inside the rails ───────────── */
-
-.buy-in-modal__stage {
-  position: relative;
-  background: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/mid.png') top
-    center / 100% auto repeat-y;
-  display: grid;
-  grid-template-columns: 22% minmax(0, 1fr);
   align-items: center;
-  gap: 3cqw;
-  padding: 1cqw 11% 2cqw;
+  justify-content: center;
+  margin-bottom: 24px;
+  position: relative;
 }
 
-.buy-in-modal__current-amount {
-  display: grid;
-  justify-items: center;
-  align-content: center;
-  gap: 1.6cqw;
-  min-width: 0;
+.buy-in-modal__countdown {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #ef4444;
+}
+
+.buy-in-modal__title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.buy-in-modal__close {
+  position: absolute;
+  right: -8px;
+  top: -8px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  color: #8b949e;
+  font-size: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.buy-in-modal__restriction-notice {
+  background: rgba(255, 165, 0, 0.15);
+  border: 1px solid rgba(255, 165, 0, 0.4);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin: 0 0 12px 0;
+  font-size: 12px;
+  color: var(--sp-warn);
   text-align: center;
 }
 
-.buy-in-modal__amount-value {
-  display: block;
-  max-width: 100%;
+/* ═══════════════════════════════════════════════════════════════════════════════
+   AMOUNT DISPLAY
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* THE AMOUNT AND THE TRACK ARE ONE ROW NOW (Dan 2026-09-05). The old
+   `.buy-in-modal__amount-display` row - min label, amount, max label - is
+   replaced by this: the amount takes the width it always had, and the
+   vertical track stands beside it wearing the min and max at its ends. Laying
+   a 200px-tall track UNDER the amount instead would have pushed the quick
+   buttons and BUY CHIPS off the bottom of a 375x812 screen, which is the one
+   screen this sheet has to fit. */
+.buy-in-modal__stage {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.buy-in-modal__current-amount {
+  flex: 1;
+  min-width: 0;
+  height: 64px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(111, 220, 255, 0.2);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
+  position: relative;
   overflow: hidden;
-  font-size: 13cqw;
-  font-weight: 800;
-  letter-spacing: 0.01em;
-  line-height: 1;
+}
+
+.buy-in-modal__current-amount::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(111, 220, 255, 0.08), transparent);
+  transform: translateX(-100%);
+  animation: buyInShimmer 2s infinite;
+  pointer-events: none;
+}
+
+@keyframes buyInShimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.buy-in-modal__amount-value {
+  font-size: clamp(1.25rem, 6vw, 1.75rem);
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
   white-space: nowrap;
 }
 
-.buy-in-modal__recovery,
-.buy-in-modal__error {
-  font-size: 3.2cqw;
-}
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SLIDER
+   ═══════════════════════════════════════════════════════════════════════════════ */
 
-/* A lit word on the glass, for the one retry the master has no plate for. */
-.buy-in-modal__balance-retry {
-  appearance: none;
-  margin: 0;
-  padding: 1cqw 2cqw;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-  font:
-    800 3.6cqw/1 'Roboto Condensed',
-    Inter,
-    sans-serif;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
-/* ── UP AND DOWN, NEVER SIDE TO SIDE (Dan 2026-09-05) ──────────────────
+/* ── UP AND DOWN, NEVER SIDE TO SIDE (Dan 2026-09-05) ────────────────────
    "THE SLIDER FOR ADJUSTING YOUR 'BUY IN' NEEDS TO GO UP AND DOWN, NOT SIDE
    TO SIDE. (SIDE TO SIDE SWIPES THE PAGE)". A horizontal drag at a table is
    the table-switch gesture, so the sit-down control and the navigation were
    fighting over the same touch. Vertical takes it out of that axis. */
 .buy-in-modal__slider-container {
-  display: grid;
-  place-items: center;
-  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  /* The thumb is 24px, and 40px on a touch device (the block at the foot of
+     this file). A 6px track would clip it against `.buy-in-modal`'s
+     `overflow: hidden`, so the column reserves the wider of the two. */
+  min-width: 44px;
+}
+
+/* Max at the top, min at the bottom - the numbers that used to sit either
+   side of the amount, now at the ends of the track that reaches them. */
+.buy-in-modal__slider-cap {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #8b949e;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .buy-in-modal__slider {
   -webkit-appearance: none;
   appearance: none;
   /* The standard way to stand a native range on end (Chrome 121+, Safari
-     17.5+, Firefox). `direction: rtl` puts the MAXIMUM at the top. The
-     pre-standard `-webkit-appearance: slider-vertical` is deliberately NOT
-     here: it wins over `appearance: none` and hands the track back to the
-     UA. */
+     17.5+, Firefox). `direction: rtl` puts the MAXIMUM at the top, which is
+     the only orientation a "buy in for more" gesture can have.
+
+     The pre-standard `-webkit-appearance: slider-vertical` is deliberately
+     NOT here. It is a second appearance declaration and it wins over the
+     `appearance: none` above, which hands the track back to the UA and undoes
+     every rule below it - a legacy fallback that breaks the modern path is
+     worse than no fallback. Both spellings of the standard pair have shipped
+     since Safari 17.5 / Chrome 121, which is the floor this app already
+     assumes elsewhere. */
   writing-mode: vertical-lr;
   direction: rtl;
-  width: 2.6cqw;
-  /* Shrinks before the plates do on a short landscape phone. */
+  width: 6px;
+  /* THE TRACK GIVES WAY BEFORE THE BUTTONS DO (2026-09-06). A fixed 168px was
+     fine on 375x812 - the screen the layout note below was measured on - and
+     overflowed a 375-tall landscape phone, where the sheet has no max-height
+     and the overlay does not scroll, so BUY CHIPS ended up off-screen and
+     unreachable. The track is the one element here that can shrink without
+     losing meaning, so it is the one that does. */
   height: clamp(96px, 26dvh, 168px);
-  margin: 0;
   padding: 0;
-  /* The global popup chassis paints every input in a dialog as a recessed
-     well with !important; the groove and knob below are the whole control. */
-  border: 0 !important;
-  border-radius: 999px;
-  box-shadow: none !important;
-  /* The lit run grows UPWARD from the bottom toward the maximum at the top;
-     the rest is the black groove with a steel lip. `--slider-percent` is set
-     inline by the component. */
+  /* The fill the horizontal track never had: `--slider-percent` is set inline
+     by the component and, until now, was read by nothing at all - the element
+     meant to paint it was in the stylesheet and never in the markup. It grows
+     UPWARD from the bottom, toward the maximum at the top. */
   background: linear-gradient(
     to top,
-    #7cc4ff 0%,
-    #3d9bff var(--slider-percent, 0%),
-    #05080c var(--slider-percent, 0%)
-  ) !important;
+    #6fdcff 0%,
+    #0a5dc2 var(--slider-percent, 0%),
+    rgba(255, 255, 255, 0.1) var(--slider-percent, 0%)
+  );
+  border-radius: 3px;
   outline: none;
-  /* The sheet must not take this drag away as a scroll. */
+  /* The other half of the fix: the sheet must not take this drag away as a
+     scroll. Removing this returns the control to the gesture race, just on
+     the other axis. */
   touch-action: none;
-  cursor: pointer;
+  position: relative;
+  z-index: 2;
 }
 
-.buy-in-modal__slider:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: 0.8cqw;
-}
-
-.buy-in-modal__slider::-webkit-slider-runnable-track {
-  width: 2.6cqw;
-  height: 100%;
-  border-radius: 999px;
-  background: transparent;
-  box-shadow:
-    0 0 0 0.3cqw #3a424c,
-    0 0 1.4cqw rgb(49 168 255 / 40%);
-}
-
-.buy-in-modal__slider::-moz-range-track {
-  width: 2.6cqw;
-  height: 100%;
-  border-radius: 999px;
-  background: transparent;
-  box-shadow: 0 0 0 0.3cqw #3a424c;
-}
-
-/* The knob: a chrome puck with a lit ring, the master's gem colour. */
+/* WebKit Thumb */
 .buy-in-modal__slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 8cqw;
-  height: 8cqw;
-  margin-left: calc((2.6cqw - 8cqw) / 2);
-  border: 0.8cqw solid #dfe4ea;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
-  background: #070b10;
-  box-shadow:
-    inset 0 0.5cqw 0.8cqw rgb(255 255 255 / 22%),
-    inset 0 -0.7cqw 0.9cqw rgb(0 0 0 / 85%),
-    0 0 0 0.3cqw #05080c,
-    0 0 0 0.65cqw #4fb0ff,
-    0 0 2.2cqw rgb(49 168 255 / 65%),
-    0 0.5cqw 1cqw rgb(0 0 0 / 85%);
-}
-
-.buy-in-modal__slider::-moz-range-thumb {
-  width: 8cqw;
-  height: 8cqw;
-  border: 0.8cqw solid #dfe4ea;
-  border-radius: 50%;
-  background: #070b10;
-  box-shadow:
-    inset 0 0.5cqw 0.8cqw rgb(255 255 255 / 22%),
-    inset 0 -0.7cqw 0.9cqw rgb(0 0 0 / 85%),
-    0 0 0 0.3cqw #05080c,
-    0 0 0 0.65cqw #4fb0ff,
-    0 0 2.2cqw rgb(49 168 255 / 65%),
-    0 0.5cqw 1cqw rgb(0 0 0 / 85%);
-}
-
-.buy-in-modal__slider:active::-webkit-slider-thumb {
-  filter: brightness(1.2);
-}
-
-/* ── Bays: labels in the master's slot, values in the wells ───────────── */
-
-.buy-in-modal__bay-label {
-  justify-items: center;
-  text-align: center;
-  font-size: 3.1cqw;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.buy-in-modal__bay-value {
-  justify-items: center;
-  text-align: center;
-  font-size: 6.4cqw;
-  font-weight: 800;
-  letter-spacing: 0.01em;
-}
-
-/* MIN and MAX are buttons over their wells; they paint nothing. */
-.buy-in-modal__bay-button {
-  appearance: none;
-  position: absolute;
-  display: grid;
-  place-items: center;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-  color: inherit;
-  font: inherit;
+  background: linear-gradient(135deg, #6fdcff 0%, #0a5dc2 100%);
   cursor: pointer;
-  touch-action: manipulation;
+  border: 2px solid #ffffff;
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.3),
+    0 0 12px rgba(111, 220, 255, 0.5);
+  transition:
+    transform 0.1s ease,
+    box-shadow 0.15s ease;
+}
+/* Firefox Thumb */
+.buy-in-modal__slider::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6fdcff 0%, #0a5dc2 100%);
+  cursor: pointer;
+  border: 2px solid #ffffff;
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.3),
+    0 0 12px rgba(111, 220, 255, 0.5);
+  transition:
+    transform 0.1s ease,
+    box-shadow 0.15s ease;
+}
+/* `.buy-in-modal__slider-labels` (the "Min" / "Max" words under a horizontal
+   track) was deleted 2026-09-05 with the horizontal track. The ends of the
+   vertical track carry the actual figures instead - see
+   `.buy-in-modal__slider-cap` above. */
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   QUICK BUTTONS
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.buy-in-modal__quick-amounts {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.buy-in-modal__quick-btn {
+  flex: 1;
+  padding: 10px 4px;
+  background: rgba(111, 220, 255, 0.1);
+  border: 1px solid rgba(111, 220, 255, 0.2);
+  border-radius: 8px;
+  color: #6fdcff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.buy-in-modal__quick-btn--active {
+  background: linear-gradient(135deg, #6fdcff, #0a5dc2);
+  border-color: rgba(111, 220, 255, 0.5);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(111, 220, 255, 0.25);
+}
+
+.buy-in-modal__quick-btn--max {
+  background: linear-gradient(135deg, #6fdcff, #0a5dc2);
+  border-color: rgba(111, 220, 255, 0.5);
+  color: #ffffff;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   BALANCE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.buy-in-modal__balance {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 16px;
+  font-size: 0.875rem;
+}
+
+.buy-in-modal__balance-label {
+  color: #6e7681;
+}
+
+.buy-in-modal__balance-value {
+  font-weight: 700;
+  color: #e4e6eb;
+}
+
+.buy-in-modal__balance-value--insufficient {
+  color: #f85149;
+}
+
+/* An unknown balance offers a way to find out (Dan 2026-09-04). */
+.buy-in-modal__balance-retry {
+  margin-left: 8px;
+  min-height: 28px;
+  padding: 2px 10px;
+  border: 1px solid #4a5f72;
+  border-radius: 4px;
+  background: #0b151c;
+  color: #cfe3f0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   AUTO REBUY
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.buy-in-modal__auto-rebuy {
+  margin-bottom: 20px;
+}
+
+.buy-in-modal__toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+
+.buy-in-modal__toggle input {
+  display: none;
+}
+
+.buy-in-modal__toggle-slider {
+  width: 44px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.buy-in-modal__toggle-slider::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  background: #ffffff;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.buy-in-modal__toggle input:checked + .buy-in-modal__toggle-slider {
+  background: #3fb950;
+}
+
+.buy-in-modal__toggle input:checked + .buy-in-modal__toggle-slider::after {
+  left: 22px;
+}
+
+.buy-in-modal__toggle-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #e4e6eb;
+}
+
+.buy-in-modal__auto-rebuy-info {
+  font-size: 0.75rem;
+  color: #6e7681;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.buy-in-modal__auto-rebuy-info strong {
+  color: #6fdcff;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   CONFIRM BUTTON
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.buy-in-modal__confirm {
+  width: 100%;
+  padding: 14px;
+  font-size: 1rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: linear-gradient(135deg, #6fdcff, #0a5dc2);
+  border: none;
+  border-radius: 12px;
+  color: #1a1a2e;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
   overflow: hidden;
 }
 
-.buy-in-modal__bay-button .buy-in-modal__bay-value {
-  position: static;
-  display: inline-block;
-  max-width: 100%;
-  font-size: calc(6.4cqw * var(--fit, 1));
-  white-space: nowrap;
+.buy-in-modal__confirm::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -120%;
+  width: 80%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  animation: buyInConfirmShimmer 2.5s ease-in-out infinite;
+  pointer-events: none;
 }
 
-.buy-in-modal__bay-button:active .buy-in-modal__bay-value {
-  filter: brightness(1.25);
-}
-
-.buy-in-modal__bay-button:disabled {
-  cursor: default;
-}
-
-.buy-in-modal__bay-button:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: -1.2cqw;
-}
-
-/* ── Confirm ───────────────────────────────────────────────────────────── */
-
-.buy-in-modal__confirm--pulse .sc-plate__text {
-  animation: buyInConfirmPulse 1s ease-in-out 2;
-}
-
-@keyframes buyInConfirmPulse {
+@keyframes buyInConfirmShimmer {
   0%,
   100% {
-    filter: brightness(1);
+    left: -120%;
   }
-
   50% {
-    filter: brightness(1.3);
+    left: 130%;
   }
 }
 
-.buy-in-modal__confirm--processing .sc-plate__text {
-  animation: buyInProcessing 1.2s ease-in-out infinite;
+.buy-in-modal__confirm--disabled {
+  background: #6e7681;
+  color: #e4e6eb;
+  cursor: not-allowed;
 }
 
-@keyframes buyInProcessing {
+.buy-in-modal__confirm--processing {
+  background: linear-gradient(135deg, #4a9eff, #1877f2);
+  color: #ffffff;
+  cursor: wait;
+  animation: processingPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes processingPulse {
   0%,
   100% {
+    opacity: 0.85;
+  }
+  50% {
     opacity: 1;
   }
+}
 
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TOP UP BUTTON
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.buy-in-modal__top-up {
+  width: 100%;
+  padding: 12px;
+  margin-top: 12px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  background: rgba(111, 220, 255, 0.2);
+  border: 1px solid rgba(111, 220, 255, 0.4);
+  border-radius: 10px;
+  color: #6fdcff;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   PULSE ANIMATION FOR CONFIRM BUTTON
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.buy-in-modal__confirm--pulse {
+  animation: confirmPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes confirmPulse {
+  0%,
+  100% {
+    box-shadow:
+      0 6px 24px rgba(111, 220, 255, 0.35),
+      0 0 40px rgba(111, 220, 255, 0.15);
+  }
   50% {
-    opacity: 0.55;
+    box-shadow:
+      0 6px 24px rgba(111, 220, 255, 0.5),
+      0 0 60px rgba(111, 220, 255, 0.3);
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .buy-in-modal__overlay,
-  .buy-in-modal.ac-popup,
-  .buy-in-modal__confirm--pulse .sc-plate__text,
-  .buy-in-modal__confirm--processing .sc-plate__text {
-    animation: none;
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 480px) {
+  .buy-in-modal {
+    width: 96%;
+  }
+
+  .buy-in-modal__close {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  .buy-in-modal__slider::-webkit-slider-thumb {
+    width: 40px;
+    height: 40px;
+  }
+
+  .buy-in-modal__slider::-moz-range-thumb {
+    width: 40px;
+    height: 40px;
+  }
+
+  .buy-in-modal__quick-btn {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .buy-in-modal__confirm {
+    min-height: 48px;
+  }
+
+  .buy-in-modal__top-up {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 400px) {
+  .buy-in-modal {
+    padding: 16px;
+  }
+
+  .buy-in-modal__quick-btn {
+    padding: 8px 4px;
+    font-size: 0.625rem;
   }
 }

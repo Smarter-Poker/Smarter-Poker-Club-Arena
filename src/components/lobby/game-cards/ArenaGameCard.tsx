@@ -135,9 +135,11 @@ function Actions({ actions }: { actions: ArenaGameCardActions }) {
           data-zone="secondaryAction"
           onClick={actions.onSecondary}
         >
-          <i className="agc-action__icon">
-            <ActionIcon label={actions.secondaryLabel} />
-          </i>
+          {actions.showIcons !== false && (
+            <i className="agc-action__icon">
+              <ActionIcon label={actions.secondaryLabel} />
+            </i>
+          )}
           <span>{actions.secondaryLabel}</span>
         </button>
       )}
@@ -148,9 +150,11 @@ function Actions({ actions }: { actions: ArenaGameCardActions }) {
         disabled={actions.primaryDisabled || actions.busy}
         onClick={actions.onPrimary}
       >
-        <i className="agc-action__icon">
-          <ActionIcon label={actions.primaryLabel} />
-        </i>
+        {actions.showIcons !== false && (
+          <i className="agc-action__icon">
+            <ActionIcon label={actions.primaryLabel} />
+          </i>
+        )}
         <span>{actions.busy ? 'Working...' : actions.primaryLabel}</span>
       </button>
     </div>

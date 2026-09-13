@@ -15,6 +15,12 @@ binds its exact canonical payload. Stable observation ordering makes reordered
 input equivalent. The source digest remains tied to the committed acquisition,
 including its rejected source entries; it is not a source-completeness watermark.
 
+The committed source reader captures the actor and interval before its first
+asynchronous call. Mutating the caller's object while that request is in flight
+cannot change which response is accepted or which scope enters the source
+digest. Both the valid original response and a substituted response are covered
+by regressions that failed before the request capture was added.
+
 `persistAdaptiveJournalSnapshot` sends one bounded transaction. The service-only
 database function inserts observation identities in a common order and refuses
 any changed payload for an existing identity. Any conflict rolls back the whole

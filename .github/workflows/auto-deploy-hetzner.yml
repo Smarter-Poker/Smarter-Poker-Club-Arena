@@ -42,6 +42,13 @@ jobs:
         with:
           ref: ${{ github.event.client_payload.ref_sha }}
           fetch-depth: 0
+          # blob:none keeps every one of the 7,223 commits and drops the blobs of old
+          # revisions. Measured 2026-09-13, three runs each: 33-35s / 531MB against
+          # 36-43s / 766MB, for identical ancestry. Nothing in this repo's workflows
+          # reads a historical file version - they ask merge-base, rev-list, log and
+          # cat-file -e, which are all commit-graph work - so those blobs were paid
+          # for on every run and never read.
+          filter: blob:none
 
       - name: Prove the request is current protected-main engine code
         id: target
@@ -174,6 +181,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
+          filter: blob:none
 
       - name: Recheck freshness after the FIFO wait
         run: |

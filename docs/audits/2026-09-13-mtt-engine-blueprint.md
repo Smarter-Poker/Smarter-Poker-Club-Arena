@@ -306,3 +306,9 @@ Both prerequisite/authority migrations are installed and hash/ACL verified; no h
 Source #4533 (paid-depth creation) merged asb19bbea185a581935a38d2fbdfb79ca01be7c74e with successful CI34778843030. Source merge is distinct from served UI/engine proof.
 
 Live20:03 break observation: all110 sampled multi-table events cleared their shared break; no sampled levels advanced during the paused interval. Engine81fe7fc95d64817866a7d6d9103d2421a72f3152 completed8/8waves and1,358table resumes by20:02:54.522. At20:06 only36of110 had new hands since20:02:40 (461hands). The old stalled-event backlog, M17 continuation, complete payout/bounty/ticket reconciliation and full native terminal acceptance remain OPEN. Passing this break cycle does not close those boundaries.
+
+## R19 — an already-played MTT reaches its launch completion authority
+
+At20:14UTC the remaining overdue MTT, September8 Breakfast Turbo, held two survivors of34dealt entrants after199hands but remained REGISTERING with no launch receipt. The database proof accepts its original microsecond first-hand anchor; the manager's fresh three-player gate prevented that proof from being reached. The existing proof also lacked service-role execution. New engine routing proves and records the existing game, then joins normal resume in the same lifecycle before any fresh setup. It preserves level21 and the finalized153.00pool rather than reconstructing a new field.
+
+The read-only grant is installed and verified (history20260913202413, unchanged body27037b1d61898aef22fd476a44667cc9). Native12groups, engine-focused48/3, full tournament1,926/154 and TypeScript pass. Native proof limits and scope are in the played-launch changelog. Engine publication and live recovery are OPEN; no direct live state repair or inferred winner was written. M17 scheduler continuation and remaining terminal/bounty/ticket acceptance remain distinct.

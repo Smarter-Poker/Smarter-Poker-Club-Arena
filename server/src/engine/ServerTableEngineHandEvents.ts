@@ -1276,6 +1276,12 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
               user_id: w.userId,
               amount: w.amount,
               hand_name: w.handName,
+              /* 2026-09-13: the half and the per-pot slices ride the wire
+                 too, so the felt and the record read the same row. */
+              ...(w.low ? { low: true } : {}),
+              ...(w.pots
+                ? { pots: w.pots.map((p) => ({ index: p.index, amount: p.amount })) }
+                : {}),
             })),
             // SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): the UNMERGED award
             // groups, one per (board, pot, hi/lo half), in award order — main

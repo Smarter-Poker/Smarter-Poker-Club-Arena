@@ -180,6 +180,15 @@ describe('LAW 4 - the routing is in this repo, and the canary reaches nobody', (
     expect(ALERTMANAGER, 'and the route that reaches it').toMatch(/page="sms"/);
   });
 
+  it('operational faults reach the durable inbox without truncating individual alerts', () => {
+    expect(ALERTMANAGER).toMatch(/name: codex-inbox/);
+    expect(ALERTMANAGER).toMatch(
+      /severity!="canary"[\s\S]*page!="sms"[\s\S]*receiver: codex-inbox/
+    );
+    expect(ALERTMANAGER.match(/max_alerts: 0/g)).toHaveLength(2);
+    expect(ALERTMANAGER).not.toMatch(/max_alerts: [1-9]/);
+  });
+
   it('the canary is routed to null-receiver, explicitly', () => {
     const route = sliceBetween(ALERTMANAGER, 'severity="canary"', '\n    - matchers:');
     expect(route).toMatch(/receiver:\s*null-receiver/);

@@ -33,6 +33,18 @@ route:
   group_interval: 5m
   repeat_interval: 1h
   routes:
+    # Every non-canary fault reaches the durable incident inbox. Legacy
+    # page=sms labels retain their priority route; that endpoint now records
+    # to Codex instead of texting a handset. Email routing remains secondary.
+    - matchers:
+        - severity!="canary"
+        - page!="sms"
+      receiver: codex-inbox
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 4h
+      continue: true
+
     # ── THE 3AM PAGER (2026-09-04; the horse fleet joined it 2026-09-11) ──
     # Six rules carried `page: sms` when this route was written, chosen by
     # Dan. On 2026-09-11 he added a seventh subject in his own words - "I
@@ -98,7 +110,17 @@ receivers:
     webhook_configs:
       - url: https://smarter.poker/api/internal/alertmanager-page
         send_resolved: true
-        max_alerts: 10
+        max_alerts: 0
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /etc/alertmanager/cron_secret
+
+  - name: codex-inbox
+    webhook_configs:
+      - url: https://smarter.poker/api/internal/alertmanager-page
+        send_resolved: true
+        max_alerts: 0
         http_config:
           authorization:
             type: Bearer

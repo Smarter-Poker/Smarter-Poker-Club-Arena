@@ -1,5 +1,6 @@
 .container {
   padding: 0;
+  font-family: 'Rajdhani', 'Roboto Condensed', 'Arial Narrow', system-ui, sans-serif;
 }
 
 .page {
@@ -187,7 +188,6 @@
 .heroCopy h1 {
   margin: 10px 0 12px;
   color: #f8fcfc;
-  font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
   font-size: clamp(2.65rem, 6vw, 5.4rem);
   font-weight: 600;
   letter-spacing: 0.015em;
@@ -311,7 +311,6 @@
 .emptyState h2 {
   margin: 0;
   color: #f7fbfc;
-  font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
   font-size: clamp(1.9rem, 5vw, 3.1rem);
   font-weight: 600;
   line-height: 1;

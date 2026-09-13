@@ -46,7 +46,7 @@ import DepositWithdrawModal from '../components/wallet/DepositWithdrawModal';
 import DisputeSubmitModal from '../components/wallet/DisputeSubmitModal';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import ChipStatement from '../components/wallet/ChipStatement';
-import { DiamondService } from '../services/DiamondService';
+import { DiamondService, type DiamondLifetimeStats } from '../services/DiamondService';
 import { storeFetch } from './marketplace/marketplaceShared';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { formatPopupText } from '../utils/popupStyle';
@@ -349,8 +349,14 @@ interface RewardsProgress {
   dailyCap: number;
   dailyRemaining: number;
   loginStreak: number;
+  /** `null` when the route could not read the ledger: unknown, not "no". */
+  loginClaimedToday: boolean | null;
+  /** What the next claim pays, from the catalog's streak rule. */
+  nextLoginReward: number;
   multiplier: number;
   isVip: boolean;
+  /** The route degraded somewhere; some figures above are floors, not facts. */
+  partial: boolean;
 }
 
 interface DailyClaimResponse {
@@ -472,10 +478,9 @@ export default function PlayerWalletPage() {
   const [progressError, setProgressError] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [claimedToday, setClaimedToday] = useState(false);
-  const [lifetime, setLifetime] = useState<{
-    lifetimeEarned: number;
-    lifetimeSpent: number;
-  } | null>(null);
+  /* Three outcomes, three shapes: `undefined` still reading, `null` the read
+     failed (10.86: never a zero that means "unknown"), an object the truth. */
+  const [lifetime, setLifetime] = useState<DiamondLifetimeStats | null | undefined>(undefined);
 
   // Auto-dismiss messages after 8s
   useEffect(() => {
@@ -604,10 +609,13 @@ export default function PlayerWalletPage() {
       });
       return;
     }
+    /* Before `setIsTransferring(true)`, not inside the try: a `return` there
+       skipped the reset at the bottom and left the button on "Transferring..."
+       for the life of the page. */
+    if (!user?.id) return;
     setIsTransferring(true);
     setMessage(null);
     try {
-      if (!user?.id) return;
       // 2026-08-27: internalTransfer NEVER throws - it returns false on the
       // store mutex skip, on insufficient balance, and on every RPC failure
       // (the store swallows those into reportError). This success message used
@@ -833,23 +841,50 @@ export default function PlayerWalletPage() {
           dailyCap: Number(data.dailyCap) || 0,
           dailyRemaining: Number(data.dailyRemaining) || 0,
           loginStreak: Number(data.loginStreak) || 0,
+          loginClaimedToday:
+            typeof data.loginClaimedToday === 'boolean' ? data.loginClaimedToday : null,
+          nextLoginReward: Number(data.nextLoginReward) || 0,
           multiplier: Number(data.multiplier) || 1,
           isVip: Boolean(data.isVip),
+          partial: Boolean(data.partial),
         });
+        /* The route knows whether today is claimed; the button should not
+           wait for a click to find out. `true` only - `null` (could not tell)
+           leaves the button live, because refusing a claim on a read failure
+           would cost a real player a real payout. */
+        if (data.loginClaimedToday === true) setClaimedToday(true);
         setProgressError(false);
       }
     } catch (err) {
       reportError(err, 'PlayerWalletPage.loadProgress');
       if (isMounted.current) setProgressError(true);
     }
-    DiamondService.getLifetimeStats(user.id).then((stats) => {
-      if (isMounted.current) setLifetime(stats);
-    });
+  }, [user?.id, isMounted]);
+
+  const loadLifetime = useCallback(async () => {
+    if (!user?.id) return;
+    setLifetime(undefined);
+    const stats = await DiamondService.getLifetimeStats(user.id);
+    if (isMounted.current) setLifetime(stats);
   }, [user?.id, isMounted]);
 
   useEffect(() => {
     if (activeTab === 'earn' && progress === null && !progressError) void loadProgress();
   }, [activeTab, progress, progressError, loadProgress]);
+
+  useEffect(() => {
+    if (activeTab === 'earn' && lifetime === undefined) void loadLifetime();
+    // `lifetime` is deliberately not a dependency: it is reset to undefined by
+    // loadLifetime itself, and re-running on every settle would loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, loadLifetime]);
+
+  /* A claim, a gift or a purchase changes the lifetime figures; re-sum them
+     while the pane is open rather than serving the number from before. */
+  useEffect(() => {
+    if (activeTab !== 'earn' || !user?.id) return;
+    return masterBus.subscribeDebounced('BALANCE_UPDATED', () => void loadLifetime(), 1500);
+  }, [activeTab, user?.id, loadLifetime]);
 
   const handleClaimDaily = async () => {
     if (!user?.id || claiming) return;
@@ -1109,6 +1144,7 @@ export default function PlayerWalletPage() {
                     type="number"
                     inputMode="numeric"
                     min={MIN_DIAMOND_SEND}
+                    max={Math.max(MIN_DIAMOND_SEND, diamonds)}
                     step={1}
                     placeholder={`${MIN_DIAMOND_SEND}`}
                     value={sendAmount}
@@ -1312,6 +1348,11 @@ export default function PlayerWalletPage() {
                   {sentLoadingMore ? 'Loading...' : 'Load Older Sends'}
                 </button>
               )}
+              {sent !== null && sent.length > DIAMOND_LEDGER_PAGE && !sentHasMore && !sentError && (
+                <p className="vault-panel__sub">
+                  That Is Every Diamond You Have Sent. {fmtNum(sent.length)} Entries.
+                </p>
+              )}
             </section>
           </div>
         )}
@@ -1471,7 +1512,19 @@ export default function PlayerWalletPage() {
               </h3>
               <p className="vault-panel__sub">
                 Claim Once A Day. The Payout Climbs With Your Streak, Up To 25 Diamonds.
+                {progress && progress.nextLoginReward > 0 && !claimedToday
+                  ? ` Your Next Claim Pays ${fmtNum(progress.nextLoginReward)}.`
+                  : ''}
+                {progress && claimedToday && progress.nextLoginReward > 0
+                  ? ` Tomorrow Pays ${fmtNum(progress.nextLoginReward)}.`
+                  : ''}
               </p>
+              {progress?.partial && (
+                <p className="vault-panel__sub" role="status">
+                  Some Of These Figures Could Not Be Read Just Now And May Be Low. The Claim Itself
+                  Is Unaffected.
+                </p>
+              )}
               <dl className="earn-stats">
                 <div className="earn-stat">
                   <dt>Streak</dt>
@@ -1567,18 +1620,36 @@ export default function PlayerWalletPage() {
                 <div className="earn-stat">
                   <dt>Earned</dt>
                   <dd className="positive">
-                    {lifetime ? fmtNum(lifetime.lifetimeEarned) : 'Checking'}
+                    {lifetime
+                      ? fmtNum(lifetime.lifetimeEarned)
+                      : lifetime === null
+                        ? 'Unavailable'
+                        : 'Checking'}
                   </dd>
                 </div>
                 <div className="earn-stat">
                   <dt>Spent</dt>
-                  <dd>{lifetime ? fmtNum(lifetime.lifetimeSpent) : 'Checking'}</dd>
+                  <dd>
+                    {lifetime
+                      ? fmtNum(lifetime.lifetimeSpent)
+                      : lifetime === null
+                        ? 'Unavailable'
+                        : 'Checking'}
+                  </dd>
                 </div>
                 <div className="earn-stat">
                   <dt>On Hand</dt>
                   <dd className="diamond">{fmtNum(diamonds)}</dd>
                 </div>
               </dl>
+              {lifetime === null && (
+                <p className="vault-form__hint" role="alert">
+                  Your Lifetime Totals Could Not Be Read.{' '}
+                  <button type="button" className="vault-link" onClick={() => void loadLifetime()}>
+                    Retry
+                  </button>
+                </p>
+              )}
             </section>
 
             <section className="vault-panel span2" aria-labelledby="earn-more-title">

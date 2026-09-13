@@ -27,11 +27,11 @@ contracts and balances are not rewritten.
 - Service and tournament suites plus the actual hand snapshot suite: **5,171
   tests in 340 files**. Final changed-method and hand-boundary set: **100 tests
   in four files**. Server TypeScript and migration-version checks pass.
-- Private PostgreSQL 17: **24 groups**, including MVCC visibility, write
+- Private PostgreSQL 17: **33 groups**, including MVCC visibility, write
   exceptions and silent suppression, lost responses, break clock shifts,
   concurrent table birth, heartbeat renewal, the actual generation-claim
   function, stale ownership and the maintenance barrier. Evidence is retained
-  at `/tmp/ca-ab-j14grjo7/results.json` for this run.
+  at `/tmp/ca-ab-hr0ntx2g/results.json` for this run.
 - These native fixtures use synthetic rows and direct trusted request context.
   Maintenance is an explicit boolean fixture. They do not certify PostgREST
   authentication, all production trigger combinations, financial settlement
@@ -44,10 +44,16 @@ contracts and balances are not rewritten.
   successfully at **20:10 UTC**, outside the protected DDL window.
 - Repository migration20260913195404 is history20260913201030. Authority
   migration20260913200859 is history20260913201037. Installed source MD5s:
-  publication `4d74d457a6883d4c7786caa0301a9028`, inheritance
+  initial publication `4d74d457a6883d4c7786caa0301a9028`, inheritance
   `41f697318d50d409770ca36e289406b4`. Both match the candidate; owner is postgres,
   search path public/pg_temp, browser execution denied, service execution
   allowed. No historical snapshot was backfilled.
+
+A final review found that add-on breaks use their own persisted window, not
+`on_break`. Source-guarded migration20260913201306 applied at20:14UTC as history 20260913201436. It blocks the final configured1..10minutes of an active add-on
+window while allowing the earlier purchase/play interval and expired or
+finalized windows. Nine native cases cover those boundaries. Current publication
+source MD5 is `ea893550ec280993c522bb8dfb78fcd3`; metadata and grants remain verified.
 
 The database is installed before the engine caller. Engine publication and
 live atomic-transition acceptance remain separate. Once snapshots are in use,

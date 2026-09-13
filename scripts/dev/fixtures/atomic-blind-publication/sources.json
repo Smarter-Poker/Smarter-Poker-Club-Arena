@@ -1,8 +1,8 @@
 {
-  "captured_at": "2026-09-13T20:05:30Z",
   "source": "Live read-only pg_get_functiondef; functions unchanged by this branch",
   "sha256": {
     "settlement-lock.sql": "57138a230570dbbddffd51bfb7d6afa1f6892c302c64d83ab09e8ec6e5feba3f",
     "claim-lease.sql": "ee41ec2bbea3696f141b9548bf7a139da52a1b707190e3e9dd64d95227ba24d8"
-  }
+  },
+  "captured_on": "2026-09-13"
 }

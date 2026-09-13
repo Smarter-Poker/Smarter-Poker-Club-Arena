@@ -5,7 +5,7 @@ from the repository root with PostgreSQL 17 installed. The probe creates a
 private local cluster, uses bounded WAL, retains its evidence, and removes
 only its own cluster in cleanup. It accepts no production database URL.
 
-The two new migrations, table-birth trigger, scoped settlement-lock helper and
+The additive schema, publication authority and source-guarded add-on refinement, table-birth trigger, scoped settlement-lock helper and
 current generation-claim function execute as real SQL. Minimal tournament,
 table and lease rows are synthetic. Maintenance is an explicit fixture
 boolean. Trusted PostgREST context is set directly; this is not an HTTP
@@ -16,7 +16,7 @@ were separately read; none changes the blind values after inheritance.
 The probe checks whole-field publication, unchanged unrelated/closed tables,
 replay and a shifted break anchor, stale table births, write exceptions,
 suppressed/altered writes, pause and terminal refusal, bad amounts, role and
-lease fencing, MVCC visibility, concurrent birth, heartbeat renewal, actual
+lease fencing, add-on final-segment and finalized/expired boundaries, MVCC visibility, concurrent birth, heartbeat renewal, actual
 generation takeover and the maintenance admission barrier. Successful clocks
 come from database time after the field writes, not an earlier retry request.
 Separate schema installation also reproduces a table writer that must read

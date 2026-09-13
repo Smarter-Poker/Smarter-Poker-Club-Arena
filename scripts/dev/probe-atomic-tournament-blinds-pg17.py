@@ -17,6 +17,8 @@ import time
 repo = Path(__file__).resolve().parents[2]
 foundation = next((repo / 'supabase/migrations').glob('*_tournament_blinds_publish_as_one_field.sql'))
 migration = next((repo / 'supabase/migrations').glob('*_tournament_blind_publication_authority.sql'))
+addon_guard = next((repo / 'supabase/migrations').glob('*_tournament_blind_publication_respects_addon_pause.sql'))
+publication_sql = migration.read_text()+addon_guard.read_text()
 configured = os.environ.get('POKER_AUDIT_PG_BIN') or os.environ.get('PGBIN')
 pg = Path(configured) if configured else Path(subprocess.check_output(
     ['brew', '--prefix', 'postgresql@17'], text=True).strip()) / 'bin'
@@ -98,7 +100,7 @@ with (root/'results.log').open('w') as log:
         command([str(pg/'initdb'),'-D',str(cluster),'-U','postgres','--auth=trust','--no-locale'])
         command([str(pg/'pg_ctl'),'-D',str(cluster),'-o',f'-k {sock} -p {port} -c listen_addresses= -c max_wal_size=64MB -c min_wal_size=32MB','-w','start']);started=True
         q("""CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
-          CREATE TABLE tournaments(id uuid PRIMARY KEY,status text DEFAULT 'RUNNING',current_level int DEFAULT 0,level_started_at timestamptz DEFAULT '2026-09-13T12:00:00Z',on_break boolean DEFAULT false);
+          CREATE TABLE tournaments(id uuid PRIMARY KEY,status text DEFAULT 'RUNNING',current_level int DEFAULT 0,level_started_at timestamptz DEFAULT '2026-09-13T12:00:00Z',on_break boolean DEFAULT false,add_on_available boolean DEFAULT false,addon_period_triggered boolean DEFAULT false,prize_pool_finalized boolean DEFAULT false,addon_period_ends_at timestamptz,addon_break_minutes integer);
           CREATE TABLE tables(id uuid PRIMARY KEY,tournament_id uuid REFERENCES tournaments(id),status text DEFAULT 'running',is_deleted boolean DEFAULT false,small_blind numeric DEFAULT 10,big_blind numeric DEFAULT 20,ante numeric DEFAULT 2,stakes text DEFAULT '10/20');
           CREATE TABLE engine_tournament_leases(tournament_id uuid PRIMARY KEY,lease_generation uuid,protocol_version int,heartbeat_at timestamptz,instance_id text,engine_version text,acquired_at timestamptz);
           CREATE TABLE fixture_maintenance(frozen boolean);INSERT INTO fixture_maintenance VALUES(false);
@@ -118,10 +120,10 @@ with (root/'results.log').open('w') as log:
         """)
         q((repo/'scripts/dev/fixtures/atomic-blind-publication/settlement-lock.sql').read_text())
         q((repo/'scripts/dev/fixtures/atomic-blind-publication/claim-lease.sql').read_text())
-        q(foundation.read_text());q(migration.read_text());q(foundation.read_text());q(migration.read_text());reset()
+        q(foundation.read_text());q(publication_sql);q(foundation.read_text());q(publication_sql);reset()
         holder=spawn('BEGIN;LOCK TABLE tables IN ROW EXCLUSIVE MODE;SELECT pg_sleep(2);SELECT count(*) FROM tournaments;COMMIT;','ddl-busy-fleet');wait_for('ddl-busy-fleet','Timeout')
         attempted=time.monotonic();q(foundation.read_text());assert time.monotonic()-attempted<1
-        installer=spawn(migration.read_text(),'ddl-authority');wait_for('ddl-authority','Lock')
+        installer=spawn(publication_sql,'ddl-authority');wait_for('ddl-authority','Lock')
         finish(holder);finish(installer)
         ok('separate schema phases let table writers read the parent without the combined DDL lock cycle')
         before_publish=time.time()
@@ -150,6 +152,16 @@ with (root/'results.log').open('w') as log:
         for flag in ['UPDATE fixture_maintenance SET frozen=true;',f"UPDATE tournaments SET on_break=true WHERE id='{event}';"]:
             reset();q(flag);before=q(fingerprint);assert json.loads(call())['reason']=='paused';assert q(fingerprint)==before
             ok('persisted pause authority refuses level publication: '+flag.split()[1])
+        for remaining,minutes,paused in [(30,None,True),(90,None,False),(540,10,True),(630,11,False),(30,0,True),(-1,10,False)]:
+            reset();q(f"UPDATE tournaments SET add_on_available=true,addon_period_triggered=true,addon_break_minutes={minutes if minutes is not None else 'NULL'},addon_period_ends_at=clock_timestamp()+interval '{remaining} seconds' WHERE id='{event}';")
+            before=q(fingerprint);receipt=json.loads(call())
+            if paused: assert receipt['reason']=='paused' and q(fingerprint)==before
+            else: assert receipt['ok']
+            ok(f'add-on final-segment gate remaining={remaining}s configured={minutes} paused={paused}')
+        for override in ['prize_pool_finalized=true','addon_period_triggered=false','add_on_available=false']:
+            reset();q(f"UPDATE tournaments SET add_on_available=true,addon_period_triggered=true,addon_period_ends_at=clock_timestamp()+interval '30 seconds' WHERE id='{event}';")
+            q(f"UPDATE tournaments SET {override} WHERE id='{event}';");assert json.loads(call())['ok']
+            ok('no add-on hold after '+override)
         reset();q(f"UPDATE tournaments SET status='COMPLETED' WHERE id='{event}';");before=q(fingerprint)
         assert json.loads(call())['reason']=='tournament_not_running';assert q(fingerprint)==before
         ok('terminal events cannot receive another level')

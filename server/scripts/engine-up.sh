@@ -47,6 +47,8 @@ ENV_FILE="${ENV_FILE:-/opt/club-arena/server/.env}"
 PORT="${PORT:-8080}"
 CONTROL_DIR="${ENGINE_CONTROL_DIR:-/usr/local/lib/club-arena/engine-control}"
 RELEASE_SEAL="${ENGINE_RELEASE_SEAL:-$CONTROL_DIR/engine-release-seal.py}"
+ALERT_JOURNAL_HOST_DIR="${ENGINE_ALERT_JOURNAL_HOST_DIR:-/var/lib/club-arena/engine-alerts}"
+ALERT_JOURNAL_CONTAINER_DIR=/var/lib/club-arena/engine-alerts
 
 # HEALTHCHECK is also an availability control: sp-autoheal restarts the whole
 # engine when Docker marks it unhealthy. Under a saturated event loop the
@@ -171,6 +173,29 @@ esac
 docker image inspect "$AUTHORIZED_IMAGE_ID" >/dev/null 2>&1 \
   || { log "FATAL: authorized image $AUTHORIZED_IMAGE_ID disappeared before cutover"; exit 1; }
 
+# The alert queue must survive docker rm and a candidate rollback. Establish
+# and test only its dedicated directory before touching the funded engine.
+[[ "$ALERT_JOURNAL_HOST_DIR" = /* && "$ALERT_JOURNAL_HOST_DIR" != *,* && ! -L "$ALERT_JOURNAL_HOST_DIR" ]] \
+  || { log 'FATAL: alert journal requires an absolute, non-symlink host directory'; exit 1; }
+mkdir -p "$ALERT_JOURNAL_HOST_DIR"
+chmod 0700 "$ALERT_JOURNAL_HOST_DIR"
+python3 - "$ALERT_JOURNAL_HOST_DIR" <<'JOURNAL_PREFLIGHT'
+import os, pathlib, sys, tempfile
+directory = pathlib.Path(sys.argv[1])
+fd, probe = tempfile.mkstemp(prefix='.write-proof-', dir=directory)
+try:
+    os.write(fd, b'engine alert journal write proof\n')
+    os.fsync(fd)
+finally:
+    os.close(fd)
+    os.unlink(probe)
+fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+try:
+    os.fsync(fd)
+finally:
+    os.close(fd)
+JOURNAL_PREFLIGHT
+
 log "replacing $CONTAINER with $AUTHORIZED_CLASS image $AUTHORIZED_IMAGE_ID ($AUTHORIZED_SHA; requested as $IMAGE)"
 # STOP, then remove. NOT `docker rm -f`, which is SIGKILL with no grace period.
 # The engine drains its table engines and flushes hand-state snapshots on
@@ -225,6 +250,8 @@ docker run -d \
   --log-opt max-file=5 \
   -p "${PORT}:8080" \
   --env-file "$ENV_FILE" \
+  --env "ENGINE_ALERT_JOURNAL_DIR=$ALERT_JOURNAL_CONTAINER_DIR" \
+  --mount "type=bind,source=$ALERT_JOURNAL_HOST_DIR,target=$ALERT_JOURNAL_CONTAINER_DIR" \
   "$AUTHORIZED_IMAGE_ID"
 
 log "started $(docker inspect -f '{{.Id}}' "$CONTAINER" | cut -c1-12) from $AUTHORIZED_IMAGE_ID (restart=$RESTART_POLICY)"

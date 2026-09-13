@@ -145,11 +145,12 @@ BEGIN
 END
 $function$;
 
-REVOKE ALL ON FUNCTION public.fn_queue_horse_adaptive_batch(text),
-  public.fn_claim_horse_adaptive_batch(uuid),public.fn_finish_horse_adaptive_batch(text,uuid,text)
-  FROM PUBLIC,anon,authenticated,service_role;
-GRANT EXECUTE ON FUNCTION public.fn_queue_horse_adaptive_batch(text),
-  public.fn_claim_horse_adaptive_batch(uuid),public.fn_finish_horse_adaptive_batch(text,uuid,text) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_queue_horse_adaptive_batch(text) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_queue_horse_adaptive_batch(text) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_claim_horse_adaptive_batch(uuid) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_claim_horse_adaptive_batch(uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_finish_horse_adaptive_batch(text,uuid,text) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_finish_horse_adaptive_batch(text,uuid,text) TO service_role;
 COMMENT ON TABLE public.horse_adaptive_journal_work IS
   'Service-only immutable-payload work. At most 256 unfinished items and64MiB via enqueue; leases fence acknowledgments, recorded completion requires the exact journal receipt. No source-discovery watermark or learner activation.';
 COMMIT;

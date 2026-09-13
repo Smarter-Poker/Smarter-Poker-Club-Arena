@@ -58,6 +58,7 @@ import {
 import { HorseSessionRotator } from './services/HorseSessionRotator.js';
 import { StableHandExecutor } from './services/StableHandExecutor.js';
 import { registerLeadershipShutdownHandler } from './services/leadership.js';
+import { persistEngineAlertsBeforeExit } from './services/engineAlerts.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -410,6 +411,7 @@ async function performShutdown(): Promise<void> {
         `${localFailures.length} local shutdown step(s) failed after ownership release`
       );
     }
+    await persistEngineAlertsBeforeExit();
     clearTimeout(hardDeadline);
     process.exit(shutdownMustFail ? 1 : 0);
   } catch (error) {

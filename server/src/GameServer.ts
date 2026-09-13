@@ -178,7 +178,11 @@ import {
   type TournamentManagerWakeReceipt,
 } from './tournament/TournamentManagerWakeProtocol.js';
 import { isMaintenanceFrozen } from './maintenance/freezeState.js';
-import { raiseEngineAlert, resolveEngineAlert } from './services/engineAlerts.js';
+import {
+  raiseEngineAlert,
+  resolveEngineAlert,
+  engineAlertDeliveryHealth,
+} from './services/engineAlerts.js';
 import { MaintenanceBreak } from './maintenance/MaintenanceBreak.js';
 import { createSupabaseMaintenanceBreakStore } from './maintenance/maintenanceBreakStore.js';
 import { StatsHealthMonitor } from './observability/StatsHealthMonitor.js';
@@ -3421,6 +3425,8 @@ export class GameServer {
       // The stats pipeline: index lag, trigger gaps, the money repair cursor
       // and the last witness audit. null until the first read completes.
       stats: this.statsHealth.publish(),
+      // Delivery failures remain inspectable even when the receiver or Sentry is unavailable.
+      alertDelivery: engineAlertDeliveryHealth(),
       // THE CLUSTER CONTROLLER'S LAST PASS (2026-09-05). On 2026-09-04 its
       // latch stalled for eleven minutes with no log line; the only witness
       // was cash_cluster_events read by hand. `lastPassAt` ageing while the

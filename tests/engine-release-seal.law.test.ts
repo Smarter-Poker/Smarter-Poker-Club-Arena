@@ -376,6 +376,7 @@ exit 1
       FAKE_DOCKER_RUN_LOG: runLog,
       LOCK_FILE: join(sandbox, 'engine-up.lock'),
       LOG_DIR: join(sandbox, 'logs'),
+      ENGINE_ALERT_JOURNAL_HOST_DIR: join(sandbox, 'engine-alerts'),
     };
 
     const candidate = spawnSync(
@@ -394,6 +395,9 @@ exit 1
     );
     expect(candidate.status, candidate.stderr).toBe(0);
     expect(readFileSync(runLog, 'utf8')).toContain('--restart no');
+    expect(readFileSync(runLog, 'utf8')).toContain(
+      `--mount type=bind,source=${join(sandbox, 'engine-alerts')},target=/var/lib/club-arena/engine-alerts`
+    );
 
     writeFileSync(runLog, '');
     const desired = spawnSync('bash', [engineUp], {
@@ -402,6 +406,34 @@ exit 1
     });
     expect(desired.status, desired.stderr).toBe(0);
     expect(readFileSync(runLog, 'utf8')).toContain('--restart always');
+    expect(readFileSync(runLog, 'utf8')).toContain(
+      'ENGINE_ALERT_JOURNAL_DIR=/var/lib/club-arena/engine-alerts'
+    );
+  });
+
+  it('requires journal-capable images to use durable storage without breaking legacy recovery', () => {
+    const proof = spawnSync(
+      'python3',
+      [resolve(ROOT, 'tests/engine-alert-journal-mount.test.py')],
+      { encoding: 'utf8' }
+    );
+    expect(proof.status, proof.stdout + proof.stderr).toBe(0);
+  });
+
+  it('keeps one journal writer by holding the canonical lock through old process exit and replacement', () => {
+    const source = readFileSync(resolve(ROOT, 'server/scripts/engine-up.sh'), 'utf8');
+    const lock = source.indexOf('flock -w 180 9');
+    const stop = source.indexOf('  docker stop -t 45 "$CONTAINER"');
+    const remove = source.indexOf('  docker rm "$CONTAINER"');
+    const start = source.indexOf('docker run -d');
+    expect(lock).toBeGreaterThan(-1);
+    expect(stop).toBeGreaterThan(lock);
+    expect(remove).toBeGreaterThan(stop);
+    expect(start).toBeGreaterThan(remove);
+    expect(source).toContain('--name "$CONTAINER"');
+    expect(source).not.toContain('flock -u');
+    // Docker itself refuses the replacement name if both stop/remove attempts
+    // fail; a second writer cannot be started over a still-existing process.
   });
 
   it('preserves the exact sealed pre-label container during causal desired recovery', () => {

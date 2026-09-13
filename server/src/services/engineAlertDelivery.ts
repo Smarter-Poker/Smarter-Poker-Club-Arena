@@ -149,6 +149,10 @@ export class EngineAlertDelivery {
       await this.options.store.save(this.state);
       this.dirty = false;
     }
+    // A healed store can contain no pending event (for example, only healthy
+    // observations with no active episode). Do not leave a phantom failure in
+    // /health forever merely because no HTTP acknowledgment will follow.
+    if (!this.state.pending.length) this.lastError = null;
   }
 
   private async observe(observation: Observation): Promise<string | undefined> {

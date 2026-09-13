@@ -162,6 +162,26 @@ describe('durable engine alert delivery', () => {
     expect(post.mock.calls.map(([alert]) => alert.status)).toEqual(['firing', 'resolved']);
   });
 
+  it('clears a recovered storage error even when healthy observations produced no event', async () => {
+    const { delivery, store } = setup();
+    let readable = false;
+    const load = store.load.bind(store);
+    store.load = async () => {
+      if (!readable) throw new Error('EIO');
+      return load();
+    };
+    await delivery.resolve(input.alertname, input.component, 'Already healthy');
+    expect(delivery.snapshot().error).toBe('EIO');
+    readable = true;
+    await delivery.sendOne();
+    expect(delivery.snapshot()).toMatchObject({
+      loaded: true,
+      pending: 0,
+      unpersistedObservations: 0,
+      error: null,
+    });
+  });
+
   it('preserves observation times across an unreadable checkpoint and reports queue freshness', async () => {
     const store = new MemoryAlertJournal(emptyAlertJournal());
     let readable = false;

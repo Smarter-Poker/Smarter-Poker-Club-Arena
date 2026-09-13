@@ -258,8 +258,8 @@ export const TAG_CONSUMERS: LedgerEntry[] = [
   ),
   tag(
     'straight_into_flush_stackoff',
-    'HorseLogic.nlhStackoffLoad',
-    'straight on a three-flush board',
+    'HorseLogic.nlhStackoffLoad (hold em only; measurement-only in Omaha)',
+    'straight on a three-flush board - since 2026-09-13 also flagged in Omaha, where it is recorded and reviewed but deliberately NOT in PLO_STACKOFF_TAGS',
     'V21'
   ),
   tag(

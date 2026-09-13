@@ -91,6 +91,10 @@ const INBOUND_RATE_LIMIT = 30; // messages per second per connection
 const INBOUND_RATE_WINDOW_MS = 1_000;
 const MAX_INBOUND_MESSAGE_BYTES = 8 * 1024;
 const HAND_REPLAY_DELAY_MS = 200;
+// Preserve concurrent hand-ID subscriptions without letting one connection or
+// a reconnect storm create an unbounded number of reads and replay timers.
+const MAX_HAND_REPLAYS_PER_CONNECTION = 4;
+const MAX_ACTIVE_HAND_REPLAYS = 64;
 
 // Close codes
 const CLOSE_BAD_REQUEST = 4400;
@@ -99,7 +103,13 @@ const CLOSE_RATE_LIMITED = 4429;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+interface PendingHandReplay {
+  abort: AbortController;
+  cancelWait?: () => void;
+}
+
 interface ConnectionState {
+  handReplays: Map<string, PendingHandReplay>;
   clubJoins: Map<string, PendingClubJoin>;
   userId: string;
   ws: WebSocket;
@@ -152,6 +162,10 @@ export class ChannelWebSocketServer {
   private wss: WebSocketServer;
   private connections: Map<WebSocket, ConnectionState> = new Map();
   private heartbeatTimer: NodeJS.Timeout | null = null;
+  private closing = false;
+  // Cancelled reads remain charged until their promise settles. Dropping the
+  // charge on disconnect would let reconnects multiply unresolved requests.
+  private activeHandReplays = new Set<PendingHandReplay>();
 
   constructor() {
     this.wss = new WebSocketServer({ noServer: true });
@@ -237,6 +251,8 @@ export class ChannelWebSocketServer {
    * Call on server shutdown. Closes every connection and stops the heartbeat.
    */
   async close(): Promise<void> {
+    this.closing = true;
+    for (const conn of this.connections.values()) this.cancelHandReplays(conn);
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
@@ -276,6 +292,7 @@ export class ChannelWebSocketServer {
       return;
     }
     const conn: ConnectionState = {
+      handReplays: new Map(),
       clubJoins: new Map(),
       userId,
       ws,
@@ -547,7 +564,7 @@ export class ChannelWebSocketServer {
 
       case 'REQUEST_HAND_REPLAY':
         if (typeof msg.handId === 'string' && msg.handId) {
-          void this.streamHandReplay(userId, msg.handId);
+          this.startHandReplay(conn, msg.handId);
         }
         return;
 
@@ -559,11 +576,75 @@ export class ChannelWebSocketServer {
 
   // ─── Hand replay ───────────────────────────────────────────────────────────
 
+  private startHandReplay(conn: ConnectionState, handId: string): void {
+    if (
+      this.closing ||
+      this.connections.get(conn.ws) !== conn ||
+      conn.ws.readyState !== WebSocket.OPEN
+    )
+      return;
+    if (conn.handReplays.has(handId)) return;
+    if (
+      conn.handReplays.size >= MAX_HAND_REPLAYS_PER_CONNECTION ||
+      this.activeHandReplays.size >= MAX_ACTIVE_HAND_REPLAYS
+    ) {
+      channelHub.sendWs(conn.ws, {
+        type: 'CHANNEL_ERROR',
+        code: 'REPLAY_LIMIT',
+        message: 'Too Many Active Hand Replays. Try Again When One Finishes.',
+      });
+      return;
+    }
+    const replay: PendingHandReplay = { abort: new AbortController() };
+    conn.handReplays.set(handId, replay);
+    this.activeHandReplays.add(replay);
+    void this.streamHandReplay(conn, handId, replay);
+  }
+
+  private handReplayIsCurrent(
+    conn: ConnectionState,
+    handId: string,
+    replay: PendingHandReplay
+  ): boolean {
+    return (
+      !this.closing &&
+      !replay.abort.signal.aborted &&
+      this.connections.get(conn.ws) === conn &&
+      conn.ws.readyState === WebSocket.OPEN &&
+      conn.handReplays.get(handId) === replay
+    );
+  }
+
+  private cancelHandReplays(conn: ConnectionState): void {
+    for (const replay of conn.handReplays.values()) {
+      replay.abort.abort();
+      replay.cancelWait?.();
+    }
+  }
+
+  private waitForHandReplayFrame(replay: PendingHandReplay): Promise<void> {
+    return new Promise((resolve) => {
+      const finish = () => {
+        clearTimeout(timer);
+        replay.cancelWait = undefined;
+        resolve();
+      };
+      const timer = setTimeout(finish, HAND_REPLAY_DELAY_MS);
+      replay.cancelWait = finish;
+      if (replay.abort.signal.aborted) finish();
+    });
+  }
+
   /**
    * Query hand_history for all events matching handId and stream them
-   * to the requesting user with HAND_REPLAY_DELAY_MS between each frame.
+   * to the requesting connection with HAND_REPLAY_DELAY_MS between each frame.
    */
-  private async streamHandReplay(userId: string, handId: string): Promise<void> {
+  private async streamHandReplay(
+    conn: ConnectionState,
+    handId: string,
+    replay: PendingHandReplay
+  ): Promise<void> {
+    const { userId } = conn;
     try {
       const { data: rows, error } = await supabase
         .from('hand_history')
@@ -572,10 +653,13 @@ export class ChannelWebSocketServer {
         )
         .eq('id', handId)
         .limit(1)
+        .abortSignal(replay.abort.signal)
         .maybeSingle();
 
+      if (!this.handReplayIsCurrent(conn, handId, replay)) return;
+
       if (error || !rows) {
-        channelHub.sendToUser(userId, {
+        channelHub.sendWs(conn.ws, {
           type: 'CHANNEL_ERROR',
           code: 'HAND_NOT_FOUND',
           message: `Hand ${handId} not found`,
@@ -599,7 +683,7 @@ export class ChannelWebSocketServer {
       const isParticipant = participantIds.includes(userId);
       const isCompleted = rows.ended_at != null;
       if (!isCompleted || !isParticipant) {
-        channelHub.sendToUser(userId, {
+        channelHub.sendWs(conn.ws, {
           type: 'CHANNEL_ERROR',
           code: 'NOT_AUTHORIZED',
           message: 'You can only replay completed hands you played in.',
@@ -624,7 +708,7 @@ export class ChannelWebSocketServer {
       };
 
       // First frame: hand meta
-      channelHub.sendToUser(userId, {
+      channelHub.sendWs(conn.ws, {
         type: 'HAND_REPLAY_EVENT',
         handId,
         event: { frame: 'META', ...meta },
@@ -632,35 +716,35 @@ export class ChannelWebSocketServer {
 
       // Subsequent frames: one per action, with delay
       for (let i = 0; i < actions.length; i++) {
-        await new Promise<void>((resolve) => setTimeout(resolve, HAND_REPLAY_DELAY_MS));
+        await this.waitForHandReplayFrame(replay);
+        if (!this.handReplayIsCurrent(conn, handId, replay)) return;
 
-        // Check connection is still alive before sending next frame.
-        // connections is Map<WebSocket, ConnectionState> — look up the ConnectionState by userId,
-        // then check ws.readyState directly (avoids the TS2339 error from accessing readyState
-        // on ConnectionState instead of WebSocket).
-        const connEntry = [...this.connections.values()].find((c) => c.userId === userId);
-        if (!connEntry || connEntry.ws.readyState !== WebSocket.OPEN) break;
-
-        channelHub.sendToUser(userId, {
+        channelHub.sendWs(conn.ws, {
           type: 'HAND_REPLAY_EVENT',
           handId,
           event: { frame: 'ACTION', index: i, total: actions.length, action: actions[i] },
         });
       }
 
-      // Final frame: END marker
-      channelHub.sendToUser(userId, {
+      // Final frame: END marker. Retired streams never announce completion.
+      if (!this.handReplayIsCurrent(conn, handId, replay)) return;
+      channelHub.sendWs(conn.ws, {
         type: 'HAND_REPLAY_EVENT',
         handId,
         event: { frame: 'END', handId },
       });
     } catch (err: unknown) {
+      if (!this.handReplayIsCurrent(conn, handId, replay)) return;
       const msg = err instanceof Error ? err.message : String(err);
-      channelHub.sendToUser(userId, {
+      channelHub.sendWs(conn.ws, {
         type: 'CHANNEL_ERROR',
         code: 'REPLAY_ERROR',
         message: `Hand replay failed: ${msg}`,
       });
+    } finally {
+      replay.cancelWait?.();
+      if (conn.handReplays.get(handId) === replay) conn.handReplays.delete(handId);
+      this.activeHandReplays.delete(replay);
     }
   }
 
@@ -669,6 +753,7 @@ export class ChannelWebSocketServer {
   private onClose(ws: WebSocket): void {
     const conn = this.connections.get(ws);
     if (!conn) return;
+    this.cancelHandReplays(conn);
     for (const clubId of conn.clubJoins.keys()) this.cancelClubJoin(conn, clubId);
     // Pass the closing socket so ChannelHub can ignore this teardown if the user
     // has already reconnected on a newer socket (reconnect race).

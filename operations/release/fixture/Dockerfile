@@ -221,14 +221,23 @@ RUN node --input-type=module -e ' \
       const sources=[{"name":"postgis","catalog_version":"3.3.7","source_commit":null,"archive_url":"https://download.osgeo.org/postgis/source/postgis-3.3.7.tar.gz","archive_sha256":"50724a0dde49adc253e59e024d8b18fef6be4e85341943c6d5e1e1b974e43fce"},{"name":"pg_net","catalog_version":"0.19.5","source_commit":"a7792bfd913c7859e14025d606624982706c2a7f","archive_url":"https://codeload.github.com/supabase/pg_net/tar.gz/a7792bfd913c7859e14025d606624982706c2a7f","archive_sha256":"b64ce29ac7e33790e9acef40a2fe3e9606b76743e468d9fae1c6125d5afb444f"},{"name":"http","catalog_version":"1.6","source_commit":"5e2bd270a9ce2b0e8e1fdf8e46b85396bd4125cd","archive_url":"https://codeload.github.com/pramsey/pgsql-http/tar.gz/5e2bd270a9ce2b0e8e1fdf8e46b85396bd4125cd","archive_sha256":"8745dfcf985801b23ca378caa038589aa7c1d7273109f28e41dc7567535c6fd2"},{"name":"supabase_vault","catalog_version":"0.3.1","source_commit":"6e0cd916242d922a646e4d611cc215e09dd429f4","archive_url":"https://codeload.github.com/supabase/vault/tar.gz/6e0cd916242d922a646e4d611cc215e09dd429f4","archive_sha256":"bb7b43726aa08a2ca8e4205cd3961d373cb4287a4469fa06929f00939a1b1fc4"},{"name":"plpgsql_check","catalog_version":"2.7","source_version":"2.7.11","source_commit":"7e23f9daa6b5408151aaec197c6cf6c948e23957","archive_url":"https://codeload.github.com/okbob/plpgsql_check/tar.gz/7e23f9daa6b5408151aaec197c6cf6c948e23957","archive_sha256":"ba1fedb89ad58eb1eb12dc57b02df6d06e3377fc3882562a0afe6a2f5d9c0ba3"}]; \
       const toolchain=execFileSync("dpkg-query",["-W","-f=\u0024{binary:Package}=\u0024{Version}\n"],{encoding:"utf8"}).trim().split("\n").sort(); \
       const result={scope:"genuine-provider-build",sources,toolchain,postgres:execFileSync("/usr/lib/postgresql/17/bin/pg_config",["--version"],{encoding:"utf8"}).trim(),providers:{},native_qualified:false,production_binary_parity:false}; \
+      function providerSqlFiles(name,version){ \
+        const paths=name==="supabase_vault" ? ["supabase_vault--0.3.0.sql","supabase_vault--0.3.0--0.3.1.sql"] : [name+"--"+version+".sql"]; \
+        const vaultPins={"supabase_vault--0.3.0.sql":"c3739f80d19e1fc18d114705a07ed9fc7c8e3750762abe51f8e9999716fdaff6","supabase_vault--0.3.0--0.3.1.sql":"c601f01c7d384054536fafd5ebd5d570542360bdcf2f14bfafd4876aaa5d174a"}; \
+        if(name==="supabase_vault")assert.equal(version,"0.3.1"); \
+        return paths.map(file=>{const bytes=fs.readFileSync(ext+file);assert.ok(bytes.length>0); \
+          const sha256=createHash("sha256").update(bytes).digest("hex"); \
+          if(name==="supabase_vault")assert.equal(sha256,vaultPins[file]); \
+          return {file,sha256};}); \
+      } \
       for(const [name,version] of Object.entries(versions)){ \
         const control=fs.readFileSync(ext+name+".control","utf8"); \
         const match=control.match(/^default_version\s*=\s*\x27([^\x27]+)\x27\s*$/m); \
         assert.equal(match?.[1],version); \
-        const sql=fs.readFileSync(ext+name+"--"+version+".sql"); \
+        const sql_install_path=providerSqlFiles(name,version); \
         const bytes=fs.readFileSync(lib+libraries[name]); \
-        assert.ok(sql.length>0&&bytes.length>0); \
-        result.providers[name]={version,library:libraries[name],control_sha256:createHash("sha256").update(control).digest("hex"),sql_sha256:createHash("sha256").update(sql).digest("hex"),library_sha256:createHash("sha256").update(bytes).digest("hex")}; \
+        assert.ok(bytes.length>0); \
+        result.providers[name]={version,library:libraries[name],control_sha256:createHash("sha256").update(control).digest("hex"),sql_install_path,library_sha256:createHash("sha256").update(bytes).digest("hex")}; \
       } \
       fs.mkdirSync("/tmp/provider-install/opt/qualification/provenance",{recursive:true}); \
       fs.writeFileSync("/tmp/provider-install/opt/qualification/provenance/genuine-providers.json",JSON.stringify(result)+"\n");'

@@ -112,7 +112,6 @@ import {
 import { useUserStore } from '../stores/useUserStore';
 import ClubLobbyCommandTop from '../components/lobby/ClubLobbyCommandTop';
 import MaintenanceBreakBanner from '../components/common/MaintenanceBreakBanner';
-import HouseAdCard from '../components/ads/HouseAdCard';
 import HouseAdRotator from '../components/ads/HouseAdRotator';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
 import { ClubIdentityCard } from '../components/club-buttons';
@@ -5451,10 +5450,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                         one where the club genuinely has nothing running and the
                         player has nothing to tap, which is the entire
                         justification for the slot: it fills space that is dead,
-                        rather than displacing something somebody came for. */}
-                      <HouseAdCard
+                        rather than displacing something somebody came for.
+
+                        A picture, since 2026-09-13 - the 3:4 poster, fluid and
+                        contained, the same standard as every other surface.
+                        The text card that stood here is gone from the codebase. */}
+                      <HouseAdRotator
                         slot="empty_state"
                         clubId={resolvedClubId}
+                        className="ad-rotator--poster"
                         onNavigate={(path) => {
                           haptic.selection();
                           navigate(path);

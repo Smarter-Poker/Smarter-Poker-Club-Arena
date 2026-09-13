@@ -25,7 +25,6 @@
  */
 
 import { useMemo, useState } from 'react';
-import { motion, useReducedMotion } from 'framer-motion';
 import './PositionalRadar.css';
 
 export interface PositionalRadarRow {
@@ -158,7 +157,6 @@ function toPath(values: number[]): string {
 const pct = (n: number, d: number): number => (d > 0 ? (n / d) * 100 : 0);
 
 export default function PositionalRadar({ positions, minHands = 30 }: Props) {
-  const reduceMotion = useReducedMotion();
   const [visible, setVisible] = useState<Record<MetricKey, boolean>>({
     vpip: true,
     pfr: true,

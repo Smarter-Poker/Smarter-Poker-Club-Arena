@@ -13,6 +13,15 @@ spec.loader.exec_module(m)
 
 
 class NativeDiagnosticsTests(unittest.TestCase):
+    def test_shell_and_preimage_steps_accept_only_fixed_categories(self):
+        for stage in ['smoke-shell-preimage-copy', 'fixture-preimage-package']:
+            row = dict(status='failed', stage=stage, error='Error', exit_code=7)
+            self.assertEqual(m.native_failures(json.dumps(row)), [dict(stage=stage, category='Error', exit_code=7)])
+            for edit in [dict(stage=stage + '-PRIVATE'), dict(exit_code=True), dict(exit_code=256),
+                         dict(exit_code=0), dict(exit_code='7'), dict(command='PRIVATE TOKEN'),
+                         dict(stderr='PRIVATE TOKEN')]:
+                self.assertEqual(m.native_failures(json.dumps({**row, **edit})), [])
+
     def test_realtime_database_error_categories_cannot_export_log_text(self):
         row = {'status': 'failed', 'stage': 'realtime-postgres-subscription', 'error': 'Error',
                'realtime_log_markers': 0, 'realtime_frames': [],
@@ -111,6 +120,7 @@ class NativeDiagnosticsTests(unittest.TestCase):
                 'stage': 'postgresql-bootstrap-roles', 'category': 'error', 'sqlstate': '42710', 'position': 194,
             }])
             self.assertNotIn('PRIVATE', repr(vars(caught.exception)))
+            self.assertEqual(caught.exception.exit_code, 1)
 
     def test_malformed_or_extra_error_data_is_refused(self):
         valid = {'status': 'failed', 'stage': 'postgresql-extension-vector', 'error': 'error', 'sqlstate': '58P01'}

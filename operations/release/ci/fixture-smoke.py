@@ -6,19 +6,21 @@ import os
 from pathlib import Path
 import re
 import signal
+import stat
 import subprocess
 import sys
 import uuid
 
 FILES = ('Dockerfile', 'package.json', 'package-lock.json', 'fixture-server.mjs',
          'runtime-files.mjs', 'gateway.mjs', 'auth-fixture.mjs', 'auth-bootstrap-proof.mjs',
-         'service-role-boundary.mjs', 'cron-provider.mjs', 'safeupdate-provider.mjs', 'actors.mjs', 'financial-route-phase.mjs',
+         'service-role-boundary.mjs', 'cron-provider.mjs', 'safeupdate-provider.mjs', 'service-preimage.mjs', 'actors.mjs', 'financial-route-phase.mjs',
          'seed-fixture.mjs', 'native-smoke.mjs', 'observation-bridge.mjs', 'build-image.sh', 'smoke-image.sh')
 PREFIX = 'operations/release/fixture/'
 CONTROL_FILES = tuple('operations/release/native/' + name for name in (
     'component-observation-protocol.mjs', 'component-observation-client.mjs',
     'component-semantic-observations.mjs'))
 NATIVE_STAGES = frozenset((
+    'fixture-service-preimage',
     'managed-postgres-event-trigger-boundary', 'postgresql-native-cron-install', 'postgresql-native-cron-metadata',
     'postgresql-safeupdate-configure', 'postgresql-safeupdate-fresh-session', 'postgrest-safeupdate-native-http',
     'gotrue-platform-helper-authority', 'gotrue-platform-helper-http',
@@ -44,7 +46,17 @@ NATIVE_STAGES = frozenset((
     'realtime-two-user-causal-isolation', 'postgrest-two-user-isolation',
     'native-observation-bridge-start', 'observer-and-browser-handoff',
     'realtime-loopback-and-gateway', 'candidate-peer-isolation',
-    'native-migrated-service-role-boundary'))
+    'native-migrated-service-role-boundary',
+    *( 'smoke-shell-' + step for step in (
+        'arguments', 'platform', 'source', 'image-identity', 'helpers', 'owned-names',
+        'helper-staging', 'network-create', 'services-start', 'services-ready', 'peer',
+        'oracle', 'services-shutdown', 'preimage-start', 'preimage-ready', 'preimage-copy',
+        'preimage-ack', 'preimage-shutdown', 'cleanup')),
+    *( 'fixture-preimage-' + step for step in (
+        'arguments', 'package', 'directories', 'cookie', 'postgres-socket', 'archives',
+        'postgresql', 'postgresql-native-cron-install', 'postgresql-safeupdate-configure',
+        'genuine-auth-migrations', 'genuine-realtime-migrations',
+        'managed-postgres-event-trigger-boundary', 'post-service-catalog-preimage', 'cleanup'))))
 NATIVE_ERROR_NAMES = frozenset(('Error', 'AssertionError', 'TypeError', 'RangeError',
                                 'SyntaxError', 'TimeoutError', 'AggregateError', 'error'))
 NATIVE_PG_ROUTINES = frozenset((
@@ -174,9 +186,10 @@ def native_failures(output):
 
 
 class NativeSmokeFailure(RuntimeError):
-    def __init__(self, output):
+    def __init__(self, output, exit_code=None):
         super().__init__('native_fixture_services_failed')
         self.diagnostics = native_failures(output)
+        self.exit_code = exit_code if type(exit_code) is int and 1 <= exit_code <= 255 else None
 
 
 def require(value):
@@ -213,7 +226,7 @@ def command(args, cwd, env, timeout=120):
                 log.write('Reviewed image build only; no native service output.\n')
                 log.write((stdout + '\n' + stderr)[-131072:])
     if process.returncode != 0 and args[:2] == ['bash', PREFIX + 'smoke-image.sh']:
-        raise NativeSmokeFailure(stdout + '\n' + stderr)
+        raise NativeSmokeFailure(stdout + '\n' + stderr, process.returncode)
     require(process.returncode == 0)
     return stdout
 
@@ -277,10 +290,132 @@ def smoke_records(output):
     return [observer, services, peer]
 
 
+def service_preimage(output, path):
+    """Validate private candidate bytes before exposing any catalog artifact."""
+    def unique_object(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result)
+            result[key] = value
+        return result
+    proofs = []
+    for line in output.splitlines():
+        if not line.startswith('{') or len(line) > 2048:
+            continue
+        try:
+            value = json.loads(line, object_pairs_hook=unique_object)
+        except ValueError:
+            continue
+        if isinstance(value, dict) and value.get('scope') == 'native-service-preimage':
+            proofs.append(value)
+    require(len(proofs) == 1)
+    proof = proofs[0]
+    counts = ('roles', 'memberships', 'schemas', 'extensions', 'role_settings', 'default_acl')
+    require(set(proof) == set(counts) | {'scope', 'status', 'catalog_sha256',
+                                       'production_parity', 'application_schema_restored'})
+    require(proof['status'] == 'captured' and proof['production_parity'] is False
+            and proof['application_schema_restored'] is False)
+    require(isinstance(proof['catalog_sha256'], str)
+            and re.fullmatch('[0-9a-f]{64}', proof['catalog_sha256']))
+    require(all(type(proof[k]) is int and 0 <= proof[k] <= 128 for k in counts))
+    require(all(proof[k] > 0 for k in ('roles', 'memberships', 'schemas', 'extensions')))
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        info = os.fstat(fd)
+        require(stat.S_ISREG(info.st_mode) and 0 < info.st_size <= 1024 * 1024)
+        with os.fdopen(fd, 'rb', closefd=False) as stream:
+            raw = stream.read(1024 * 1024 + 1)
+        require(len(raw) == info.st_size)
+    finally:
+        os.close(fd)
+    require(hashlib.sha256(raw).hexdigest() == proof['catalog_sha256'])
+    catalog = json.loads(raw, object_pairs_hook=unique_object)
+    require(isinstance(catalog, dict) and set(catalog) == set(counts) | {
+        'version', 'scope', 'observed_at', 'database', 'role_scope',
+        'production_parity', 'contains_passwords_or_user_rows'})
+    require(type(catalog['version']) is int and catalog['version'] == 1
+            and catalog['scope'] == 'owned-post-service-preimage'
+            and catalog['database'] == 'club_arena_qualification'
+            and catalog['role_scope'] == 'all roles including unconnected builtin and fixture roles'
+            and catalog['production_parity'] is False
+            and catalog['contains_passwords_or_user_rows'] is False)
+    require(isinstance(catalog['observed_at'], str)
+            and re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9:.]+\+[0-9:]+', catalog['observed_at']))
+    for key in counts:
+        require(isinstance(catalog[key], list) or (key in {'role_settings', 'default_acl'} and catalog[key] is None))
+        require(len(catalog[key] or []) == proof[key])
+    def name(value):
+        return isinstance(value, str) and re.fullmatch('[A-Za-z_][A-Za-z0-9_-]{0,62}', value)
+    def fields(row, keys):
+        require(isinstance(row, dict) and set(row) == set(keys.split()))
+    def text(value, limit=512):
+        return isinstance(value, str) and len(value) <= limit and all(32 <= ord(c) < 127 for c in value)
+    def configs(rows):
+        require(rows is None or isinstance(rows, list))
+        keys = []
+        visible = {'search_path', 'statement_timeout', 'lock_timeout',
+                   'idle_in_transaction_session_timeout', 'default_transaction_read_only',
+                   'log_statement', 'pgrst.db_pre_request', 'session_preload_libraries', 'app.settings.jwt_exp'}
+        for row in rows or []:
+            fields(row, 'key value value_md5')
+            require(text(row['key'], 128) and isinstance(row['value_md5'], str)
+                    and re.fullmatch('[0-9a-f]{32}', row['value_md5']))
+            require(text(row['value']) if row['key'] in visible else row['value'] is None)
+            if row['value'] is not None:
+                require(hashlib.md5(row['value'].encode()).hexdigest() == row['value_md5'])
+            keys.append(row['key'])
+        require(len(keys) == len(set(keys)))
+    roles = catalog['roles']
+    require(roles and all(isinstance(r, dict) and name(r.get('name')) for r in roles))
+    names = {r['name'] for r in roles}
+    require(len(names) == len(roles) and {'postgres', 'supabase_admin', 'authenticator'} <= names)
+    flags = ('superuser', 'inherit', 'create_role', 'create_db', 'login', 'replication', 'bypass_rls')
+    for role in roles:
+        fields(role, 'name connection_limit valid_until configuration ' + ' '.join(flags))
+        require(all(type(role[k]) is bool for k in flags))
+        require(type(role['connection_limit']) is int and -1 <= role['connection_limit'] <= 2147483647)
+        require(role['valid_until'] is None or text(role['valid_until'], 64))
+        configs(role['configuration'])
+    for row in catalog['memberships']:
+        fields(row, 'role member grantor admin inherit set')
+        require(all(row[k] in names for k in ('role', 'member', 'grantor')))
+        require(all(type(row[k]) is bool for k in ('admin', 'inherit', 'set')))
+    for row in catalog['role_settings'] or []:
+        fields(row, 'role database settings')
+        require(row['role'] == 'ALL' or row['role'] in names)
+        require(name(row['database']))
+        configs(row['settings'])
+    for row in catalog['schemas']:
+        fields(row, 'name owner acl')
+        require(name(row['name']) and row['owner'] in names)
+        require(row['acl'] is None or (isinstance(row['acl'], list) and all(text(a) for a in row['acl'])))
+    for row in catalog['extensions']:
+        fields(row, 'name version schema owner')
+        require(name(row['name']) and name(row['schema']) and row['owner'] in names)
+        require(isinstance(row['version'], str) and re.fullmatch('[0-9][0-9a-z.-]{0,31}', row['version']))
+    for row in catalog['default_acl'] or []:
+        fields(row, 'creator schema type acl')
+        require(row['creator'] in names and name(row['schema']) and row['type'] in {'r', 'S', 'f', 'T', 'n'})
+        require(isinstance(row['acl'], list))
+        for acl in row['acl']:
+            fields(acl, 'grantor grantee privilege grantable')
+            require(acl['grantor'] in names and (acl['grantee'] == 'PUBLIC' or acl['grantee'] in names))
+            require(acl['privilege'] in {'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES',
+                                        'TRIGGER', 'MAINTAIN', 'USAGE', 'EXECUTE', 'CREATE'})
+            require(type(acl['grantable']) is bool)
+    for key, columns in (('memberships', ('role', 'member', 'grantor')),
+                         ('role_settings', ('role', 'database')),
+                         ('schemas', ('name',)), ('extensions', ('name',)),
+                         ('default_acl', ('creator', 'schema', 'type'))):
+        identities = [tuple(row[k] for k in columns) for row in catalog[key] or []]
+        require(len(identities) == len(set(identities)))
+    return proof, raw
+
+
 def execute(repo, output, expected, run=command):
     receipt = {'version': 1, 'scope': 'pull-request-native-service-smoke',
                'product_certificate': False, 'status': 'failed',
-               'stage': 'source', 'cleanup': {'container_absent': False, 'peer_absent': False,
+               'stage': 'source', 'cleanup': {'container_absent': False, 'peer_absent': False, 'preimage_absent': False,
                                              'network_absent': False, 'image_removed': False}}
     output.mkdir(parents=True, exist_ok=True)
     env = {key: os.environ[key] for key in ('PATH', 'HOME') if key in os.environ}
@@ -288,9 +423,13 @@ def execute(repo, output, expected, run=command):
                 'GIT_CONFIG_SYSTEM': '/dev/null', 'GIT_NO_REPLACE_OBJECTS': '1'})
     name = 'ca-fixture-smoke-' + uuid.uuid4().hex
     peer, network = name + '-peer', name + '-network'
+    preimage = name + '-preimage'
+    private_preimage = output.parent / ('.' + name + '-preimage.json')
+    require(not private_preimage.exists() and not private_preimage.is_symlink())
     tag = 'club-arena-component-fixture:smoke-' + uuid.uuid4().hex
     env['FIXTURE_SMOKE_CONTAINER'] = name
     env['FIXTURE_SMOKE_BUILD_LOG'] = str(output / 'native-build.log')
+    env['FIXTURE_SERVICE_PREIMAGE_PATH'] = str(private_preimage)
     image_id = None
     build_started = False
     failed = False
@@ -306,7 +445,7 @@ def execute(repo, output, expected, run=command):
             run(['git', 'ls-files', '--error-unmatch', relative], repo, env)
             manifest[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
         receipt.update({'control_revision': revision, 'source_revision': revision,
-                        'source_sha256': manifest, 'container': name, 'peer': peer, 'network': network})
+                        'source_sha256': manifest, 'container': name, 'peer': peer, 'preimage': preimage, 'network': network})
         receipt['stage'] = 'build'
         build_started = True
         run(['bash', PREFIX + 'build-image.sh', tag], repo, env, timeout=2400)
@@ -319,16 +458,21 @@ def execute(repo, output, expected, run=command):
         receipt['stage'] = 'native-services-and-browser'
         result = run(['bash', PREFIX + 'smoke-image.sh', image_id], repo, env, timeout=420)
         receipt['observations'] = smoke_records(result)
+        proof, catalog_bytes = service_preimage(result, private_preimage)
+        receipt['service_preimage'] = proof
+        (output / 'native-service-preimage.json').write_bytes(catalog_bytes)
     except Exception as error:
         # Never serialize command output, environment, service logs, or tokens.
         if isinstance(error, NativeSmokeFailure):
             receipt['native_failures'] = error.diagnostics
+            if error.exit_code is not None:
+                receipt['native_command_exit_code'] = error.exit_code
         failed = True
     finally:
         try:
             # Exact caller-owned names, never a broad prune. Remove containers
             # before their network, including when the peer check fails early.
-            for owned, field in ((peer, 'peer_absent'), (name, 'container_absent')):
+            for owned, field in ((preimage, 'preimage_absent'), (peer, 'peer_absent'), (name, 'container_absent')):
                 ids = run(['docker', 'container', 'ls', '-aq', '--filter', 'name=^/' + owned + '$'], repo, env).split()
                 if ids:
                     run(['docker', 'container', 'rm', '--force', owned], repo, env)
@@ -350,6 +494,10 @@ def execute(repo, output, expected, run=command):
                 if image_id:
                     require(image_id not in run(['docker', 'image', 'ls', '-aq', '--no-trunc'], repo, env).split())
             receipt['cleanup']['image_removed'] = True
+        except Exception:
+            failed = True
+        try:
+            private_preimage.unlink(missing_ok=True)
         except Exception:
             failed = True
         if not failed:

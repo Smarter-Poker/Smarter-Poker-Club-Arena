@@ -252,6 +252,16 @@ test.describe('real Table Studio browser flows', () => {
     await expect(purchase).toBeVisible();
     await tapReadyControl(purchase.getByRole('button', { name: 'Buy For 350 ◆' }));
 
+    // Checkout applies and saves after the RPC response. The native CI trace
+    // received that response in18ms but saved the selection after the former
+    // five-second dialog deadline. Await the complete persisted outcome with
+    // the same bounded readiness budget used by the real Studio controls.
+    await expect
+      .poll(() => ({ purchases: [...server.purchases], tableId: server.saved.table_id }), {
+        timeout: 20_000,
+      })
+      .toEqual({ purchases: ['studio:table_id:neon_city'], tableId: 'neon_city' });
+
     await expect(purchase).toBeHidden();
     await expect(studio.locator('.studio-game-preview')).toHaveAttribute(
       'data-table-theme',

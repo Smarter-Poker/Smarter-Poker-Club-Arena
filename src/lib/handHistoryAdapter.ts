@@ -110,6 +110,7 @@ export function replayFromServiceRecord(h: ServiceHandRecord): ReplayModel {
       amount: w.amount,
       handName: w.hand_name,
       low: w.low === true,
+      ...(w.pots?.length ? { pots: w.pots } : {}),
     })),
     holeCards,
     privateHoleCards,

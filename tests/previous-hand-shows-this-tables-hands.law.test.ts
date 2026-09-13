@@ -132,12 +132,12 @@ describe('the correct data', () => {
     expect(modal).not.toMatch(
       /useHandReplayModel|hdm-degraded|acc \+= a\.action|netOf|summaryRows/
     );
-    // The replay hook (jackpot rundown) reads the row through the same mapper.
-    expect(read('src/hooks/useHandReplayModel.ts')).toContain(
-      'buildReplay(replayInputFromRow(data as unknown as HandHistoryRowLike))'
-    );
-    // No orphan normaliser beside it.
+    // No orphan normaliser beside it, and no orphan hook either: the
+    // "jackpot rundown" hook (useHandReplayModel) had no caller, ran the mapper
+    // without the viewer's private cards, and was kept alive only by this
+    // pin. Deleted 2026-09-13; every surface goes through the service.
     expect(() => read('src/utils/handHistoryShape.ts')).toThrow();
+    expect(() => read('src/hooks/useHandReplayModel.ts')).toThrow();
   });
 
   it('who won each board comes from the record, on every surface', () => {

@@ -116,3 +116,32 @@ describe('LAW: the seat names the hand it made on the run being shown', () => {
     );
   });
 });
+
+describe('LAW: the frozen pot rows are the GROSS rows the hand played for (2026-09-13)', () => {
+  it('rit_result records the live pots, gross, with their eligible players', () => {
+    /**
+     * `state.pots` is only assigned by the single-board settlement, so a
+     * multi-board hand's snapshot never carries a partition and the ship had
+     * to rebuild rows from the award groups - NET shares. A 6.76 pot raked to
+     * 6.05 read 6.76 all hand and 6.05 the instant the ship started, and a
+     * three-way all-in with a side pot froze as ONE merged row instead of the
+     * main row and the side row the reference holds up (20.32 / 1.95).
+     */
+    expect(TABLE_PAGE).toMatch(/const ritGrossPotsRef = useRef</);
+    expect(TABLE_PAGE, 'recorded from rit_result.pots').toMatch(
+      /ritGrossPotsRef\.current = rows\.length\s*\?\s*\{ handNumber: Number\(handState\.hand_number\) \|\| 0, pots: rows \}/
+    );
+  });
+
+  it('the sequenced ship freezes those rows ahead of the snapshot and the net fallback', () => {
+    expect(TABLE_PAGE).toMatch(/if \(ritRows && ritRows\.length > 0\) \{/);
+    expect(TABLE_PAGE, 'main row is the first gross pot').toMatch(/main = ritRows\[0\]\.amount;/);
+    expect(TABLE_PAGE, 'side rows keep their eligible players by name').toMatch(
+      /sides = ritRows\.slice\(1\)\.map<SidePot>/
+    );
+  });
+
+  it('the rows die with their hand', () => {
+    expect(TABLE_PAGE).toMatch(/ritGrossPotsRef\.current = null;/);
+  });
+});

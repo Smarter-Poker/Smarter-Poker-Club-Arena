@@ -321,6 +321,15 @@ function madeLabelFor(
 ): string | null {
   if (!hole || hole.length === 0) return null;
   if (frame.key === 'deal' || frame.streetKey === 'preflop') return preflopHoleLabel(hole);
+  /* EVERY BOARD ON THE SHOWDOWN FRAME (2026-09-13). The per-street evaluation
+     is against board one, which is every board until the all-in - the runs
+     share that prefix. On the frame that shows the runs side by side a seat
+     that reads one board's hand under three boards is a mislabel; there the
+     per-board record names each run. */
+  if (frame.isShowdown && model.boards.length > 1) {
+    const perRun = perRunHandLabel(model, userId);
+    if (perRun) return perRun;
+  }
   const street = model.streets.find((st) => st.key === frame.streetKey);
   const made = street?.madeHands.find((m) => m.userId === userId)?.name;
   if (made) return made;
@@ -329,6 +338,25 @@ function madeLabelFor(
     return row?.handName ?? null;
   }
   return null;
+}
+
+/**
+ * "Run 1 Two Pair · Run 2 Flush" for a seat on a multi-board hand, from the
+ * showdown rows (one per board and half). Null when the seat has no rows.
+ */
+function perRunHandLabel(model: ReplayModel, userId: string): string | null {
+  const rows = model.showdown
+    .filter((r) => r.userId === userId && !r.low && r.handName)
+    .sort((a, b) => a.boardIndex - b.boardIndex);
+  if (rows.length === 0) return null;
+  return rows
+    .map((r) => {
+      const low = model.showdown.find(
+        (x) => x.userId === userId && x.low && x.boardIndex === r.boardIndex && x.handName
+      );
+      return `Run ${r.boardIndex + 1} ${r.handName}${low ? ` · ${low.handName}` : ''}`;
+    })
+    .join(' · ');
 }
 
 function Felt({
@@ -1044,6 +1072,10 @@ export default function HandReplay({
               );
               const high = rows.find((r) => !r.low);
               const low = rows.find((r) => r.low);
+              /* A MULTI-BOARD HAND NAMES EVERY RUN (2026-09-13). This strip
+                 read board one only, so a player who took run 2 with a flush
+                 sat under "Two Pair" beside a felt drawing both runs. */
+              const perRun = model.boards.length > 1 ? perRunHandLabel(model, p.userId) : null;
               return (
                 <div
                   key={p.seat}
@@ -1055,7 +1087,7 @@ export default function HandReplay({
                   <span className="player-hand-ranking__name">{p.username}</span>
                   <span className="player-hand-ranking__hand">
                     {high?.hole
-                      ? `${high.handName}${low ? ` · ${low.handName}` : ''}`
+                      ? (perRun ?? `${high.handName}${low ? ` · ${low.handName}` : ''}`)
                       : mucked
                         ? 'Mucked'
                         : foldedIds.has(p.userId)

@@ -1,20 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const ROOT = resolve(__dirname, '..');
 const PAGE = readFileSync(resolve(ROOT, 'src/pages/CashierTradePage.tsx'), 'utf8');
 const CSS = readFileSync(resolve(ROOT, 'src/pages/CashierTradePage.module.css'), 'utf8');
-const HERO = resolve(ROOT, 'public/images/cashier/cashier-vault-hero-v1.webp');
+const SURFACE = readFileSync(
+  resolve(ROOT, 'src/components/cashier/CashierConsoleSurface.tsx'),
+  'utf8'
+);
 
 describe('the cashier is a rendered Club Arena room, not a generic dark dashboard', () => {
-  it('ships a purpose-built, web-sized vault render through the Vite base path', () => {
-    expect(existsSync(HERO)).toBe(true);
-    expect(statSync(HERO).size).toBeLessThan(150_000);
-    expect(PAGE).toContain(
-      '`${import.meta.env.BASE_URL}images/cashier/cashier-vault-hero-v1.webp`'
-    );
-    expect(PAGE).toContain('fetchPriority="high"');
+  it('uses the approved painted console master instead of the retired vault hero', () => {
+    expect(PAGE).toContain('<CashierConsoleSurface');
+    expect(PAGE).not.toContain('cashier-vault-hero');
+    expect(SURFACE).toContain('<SpadeConsole');
+    expect(SURFACE).not.toMatch(/<img|<svg|linear-gradient|radial-gradient/);
   });
 
   it('keeps all balances and access data live in HTML', () => {
@@ -25,6 +26,7 @@ describe('the cashier is a rendered Club Arena room, not a generic dark dashboar
 
   it('uses the cashier visual system and respects reduced motion', () => {
     expect(CSS).toContain('#SMARTERCASINOREALISM');
+    expect(CSS).toContain('#CLUBARENACONSOLE CASHIER OVERRIDE');
     expect(CSS).toContain('--cashier-blue: #36a9ff');
     expect(CSS).toContain('@media (prefers-reduced-motion: reduce)');
   });

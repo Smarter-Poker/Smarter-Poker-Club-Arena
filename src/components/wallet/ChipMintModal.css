@@ -225,3 +225,114 @@
   font-size: 0.78rem;
   color: #ffb4b4;
 }
+
+/* #ClubArenaConsole: the diamond master paints the mint and both actions. */
+.cmm-panel:has(> .cmm-console) {
+  width: min(100%, 1000px);
+  max-width: 1000px;
+  max-height: calc(100dvh - 12px);
+  padding: 0;
+  overflow-y: auto;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+.cmm-console :where(div, button, input)::before,
+.cmm-console :where(div, button, input)::after {
+  content: none;
+}
+
+.cmm-console :where(div, button, input) {
+  border-radius: 0;
+}
+
+.cmm-console :where(button:not(.sc-plate)) {
+  min-height: 44px;
+  padding: 1.2cqw 1.8cqw;
+  border: 0 !important;
+  border-radius: 0 !important;
+  color: #45adff;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-weight: 800;
+  text-transform: uppercase;
+  text-shadow: 0 0 0.8cqw rgb(49 168 255 / 55%);
+}
+
+.cmm-console input {
+  appearance: textfield;
+  width: 100%;
+  min-height: 44px;
+  padding: 1.6cqw 0;
+  border: 0 !important;
+  border-block-end: 1px solid #526071;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  color: #f4f7fb;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  font-size: max(16px, 3.5cqw);
+}
+
+.cmm-console input::-webkit-inner-spin-button,
+.cmm-console input::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+.cmm-console .cmm-title,
+.cmm-console .cmm-rate {
+  display: none;
+}
+
+.cmm-console .cmm-balance,
+.cmm-console .cmm-preview,
+.cmm-console .cmm-quick {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1.5cqw;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+.cmm-console .cmm-balance > span,
+.cmm-console .cmm-preview > span {
+  color: #45adff;
+  font-size: 2.5cqw;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.cmm-console .cmm-balance > strong,
+.cmm-console .cmm-preview > strong {
+  color: #ffd700;
+  font-size: 4cqw;
+  font-weight: 800;
+}
+
+.cmm-console .cmm-dest {
+  color: #9aa5b3;
+  font-size: 2.9cqw;
+  line-height: 1.45;
+}
+
+.cmm-console .cmm-dest--blocked,
+.cmm-console .cmm-warn {
+  color: #ff5b6e;
+}

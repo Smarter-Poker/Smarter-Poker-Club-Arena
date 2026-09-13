@@ -30,7 +30,6 @@ import WeeklyScheduleEditor, {
 } from '../tournament/WeeklyScheduleEditor';
 import { BlindStructureBuilder } from '../tournament/BlindStructureBuilder';
 import type { BlindLevel } from '../../config/blindStructures';
-import payoutEngine from '../../services/PayoutEngine';
 import { canRunAsSpin, type TournamentGameVariant } from '../../config/tournamentVariants';
 import { SpadeConsole } from '../console/SpadeConsole';
 
@@ -146,6 +145,7 @@ export default function CreateTournamentModal({
   const [buyIn, setBuyIn] = useState('10');
   const [startingChips, setStartingChips] = useState('1500');
   const [maxPlayers, setMaxPlayers] = useState('50');
+  const [payoutPercent, setPayoutPercent] = useState<10 | 15 | 20>(10);
   /* THE TWO NUMBERS THE DATABASE REFUSES ON live in src/lib/tournamentFieldRules
      so they can be tested without rendering this form. See that file's header:
      `maxPlayers: 0` ("unlimited") made every MTT-shaped format uncreatable, and
@@ -354,23 +354,18 @@ export default function CreateTournamentModal({
     [buyIn, quotedRakeRate]
   );
 
-  // ── Auto-select payout structure ──
-  // MTT-shaped events advertise the standard top 15% of their capacity here.
-  // The engine recalculates the same 15% against the FINAL field after entry
-  // closes, so this preview can never become a fixed ten-place payout table.
+  // MTT ladders are finalized against actual entries in the database. The
+  // technical capacity is not a field estimate (it can be one million).
+  // Keep creation provisional instead of building 150,000 mostly zero shares.
   const payoutStructure = useMemo(() => {
-    if (format === 'spin') return [{ place: 1, percentage: 100 }];
-    const mp = parseInt(maxPlayers) || 0;
     if (format === 'sng') {
-      if (mp <= 6) return PAYOUT_STRUCTURES.sng6;
-      return PAYOUT_STRUCTURES.sng9;
+      const mp = parseInt(maxPlayers) || 0;
+      return mp <= 6 ? PAYOUT_STRUCTURES.sng6 : PAYOUT_STRUCTURES.sng9;
     }
-    return payoutEngine.generatePayouts('top15', Math.max(2, mp));
+    return [{ place: 1, percentage: 100 }];
   }, [maxPlayers, format]);
 
-  /* What actually gets sent. A custom ladder or a custom payout table is only
-     consulted when its own control is on, so turning the control off restores
-     the preset rather than leaving a half-edited structure behind. */
+  // The selected custom blind ladder is used only while its control is on.
   const effectiveBlinds = useMemo(() => {
     if (blindSpeed === 'custom') return customBlinds;
     /* A SPIN GETS THE SPIN LADDER (2026-08-31). This read `BLIND_STRUCTURES[
@@ -777,6 +772,7 @@ export default function CreateTournamentModal({
         minPlayers: minPlayersFor(isSngOrSpin, fieldCap),
         blindStructure: effectiveBlinds,
         payoutStructure: effectivePayouts,
+        payoutPercent: !isSngOrSpin && !isSatellite ? payoutPercent : undefined,
         lateRegistrationLevels: parseInt(lateRegLevels) || 0,
         startTime,
         isRebuy,
@@ -1489,6 +1485,25 @@ export default function CreateTournamentModal({
                     </div>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {!isSngOrSpin && !isSatellite && (
+              <div className={styles.formGroup}>
+                <label htmlFor="mtt-paid-field">Field Paid</label>
+                <select
+                  id="mtt-paid-field"
+                  className={styles.select}
+                  value={payoutPercent}
+                  onChange={(e) => setPayoutPercent(Number(e.target.value) as 10 | 15 | 20)}
+                >
+                  <option value={10}>Top 10 Percent</option>
+                  <option value={15}>Top 15 Percent</option>
+                  <option value={20}>Top 20 Percent</option>
+                </select>
+                <span className={styles.helperText}>
+                  Paid Places Follow Actual Entries When Registration Closes, Rounded Up.
+                </span>
               </div>
             )}
 

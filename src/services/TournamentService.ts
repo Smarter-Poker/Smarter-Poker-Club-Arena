@@ -420,6 +420,8 @@ export interface TournamentConfig {
   minPlayers: number;
   blindStructure: BlindLevel[];
   payoutStructure: PayoutStructure[];
+  /** Share of actual entrants paid at entry close; the database owns the ladder. */
+  payoutPercent?: 10 | 15 | 20;
   lateRegistrationLevels: number;
   startTime?: Date;
 
@@ -896,6 +898,8 @@ class TournamentService {
       isXmtt: config.isXmtt || false,
       isPrivate: config.isPrivate || false,
     };
+
+    if (config.payoutPercent !== undefined) p.payoutPercent = config.payoutPercent;
 
     // ── Parity keys: only what the creator set ──
     const short = config.shortDescription?.trim();

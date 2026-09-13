@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mttSpeedColumns, MTT_BLIND_PRESETS } from './mttStructurePolicy.js';
+import { mttSpeedColumns, mttPayoutPercent, MTT_BLIND_PRESETS } from './mttStructurePolicy.js';
 import {
   ScheduledTournamentService,
   SCHEDULE_BLIND_PRESETS,
@@ -13,6 +13,35 @@ import { supabase } from '../services/supabase.js';
 afterEach(() => vi.restoreAllMocks());
 
 describe('engine MTT structure policy', () => {
+  it.each([10, 15, 20, '15', null, '', false, 'bad', '1.5e1', 25])(
+    'the scheduled row retains supported paid depth or the database default (%j)',
+    async (payoutPercent) => {
+      const service = new ScheduledTournamentService();
+      const cfg = {
+        name: 'Paid Field',
+        type: 'mtt',
+        buyIn: 10,
+        maxPlayers: 100,
+        blindPreset: 'STANDARD',
+        payoutPreset: 'NINE',
+        payoutPercent,
+      };
+      const row = await (service as any).buildInsertRow(
+        { id: 'schedule-1', club_id: 'club-1', union_id: null, name: cfg.name },
+        cfg,
+        new Date()
+      );
+      const expected =
+        payoutPercent === 15 || payoutPercent === '15' ? 15 : payoutPercent === 20 ? 20 : 10;
+      expect(row.payout_percent).toBe(expected);
+      expect(mttPayoutPercent(payoutPercent)).toBe(expected);
+    }
+  );
+
+  it('manual repeats copy paid depth with their advertised configuration', () => {
+    expect((ScheduledTournamentService as any).RESTART_COPY_COLUMNS).toContain('payout_percent');
+  });
+
   it('preserves an explicitly priced fractional bounty within the entry contribution', async () => {
     const service = new ScheduledTournamentService();
     const cfg = {
@@ -99,7 +128,7 @@ describe('engine MTT structure policy', () => {
   });
 
   it.each(['createTournament', 'createXMTT'])(
-    'persists speed in the real %s insert path',
+    'persists clock and paid depth in the real %s insert path',
     async (method) => {
       const inserts: Record<string, unknown>[] = [];
       const chain = {
@@ -117,6 +146,7 @@ describe('engine MTT structure policy', () => {
       vi.spyOn(service as any, 'registerHorses').mockResolvedValue(0);
       const config = {
         name: 'Clock Test',
+        payoutPercent: 20,
         gameVariant: 'nlh',
         type: 'mtt',
         buyIn: 10,
@@ -134,6 +164,7 @@ describe('engine MTT structure policy', () => {
         blind_speed: 'turbo',
         is_turbo: true,
         starting_chips: 10000,
+        payout_percent: 20,
       });
     }
   );

@@ -1,3 +1,9 @@
+## 2026-09-13: Creation retains the actual paid-depth selection
+
+The outer database creator read the wrong event-ID key and swallowed failed contract writes. Source-guarded migration20260913194154 now validates the delegated receipt and atomically persists selected paid depth;31 native wrapper groups pass, with explicit stand-ins and rollback evidence. Applied at19:42UTC as database history20260913194226; source fingerprint b6335e81d6629f8971d2fa378aebe6b1, unchanged authorization metadata and unauthenticated refusal verified. No historical funded events changed.
+
+The engine configuration writers and repeat copier retain paid depth. TournamentService transmits the setting and CreateTournamentModal exposes the supported10/15/20choices. Its previous one-million-capacity projection generated150,000places and4,688,898bytes; creation is now bounded and final prizes remain database-owned. Service/structure suites3,251/186, focused client116/4, rendered form4cases, both typechecks pass. See `docs/changelog/2026-09-13-mtt-creation-keeps-paid-depth.md` for files, before/after behavior and exact proof limits. Source publication remains separate.
+
 ## 2026-09-13: Observe progress for each MTT and acknowledge lifecycle changes
 
 Club Arena engine repairs merged in PR4503 (scheduler retirement), PR4512 (break acknowledgment and structure metadata), PR4520 (acknowledged blind transitions) and PR4522 (strict final prize receipts). The final prize suite passes 1,890 tests / 153 files with server typechecking. See `docs/audits/2026-09-13-mtt-engine-blueprint.md` for root causes, exact limits and native evidence. No funded historical contract was changed.

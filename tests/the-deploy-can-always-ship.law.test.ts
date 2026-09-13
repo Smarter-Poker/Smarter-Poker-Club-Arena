@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -37,9 +38,9 @@ describe('the engine deploy has one fail-closed Hetzner authority', () => {
     expect(engineCode).toContain('client_payload.ref_sha must be one full lowercase commit SHA');
     expect(engineCode).toContain('ref: ${{ github.event.client_payload.ref_sha }}');
     expect(engineCode).toContain('git log "$MAIN_SHA" -1 --format=%H');
-    expect(engineCode).toContain('[ "$RESOLVED_SHA" = "$LATEST_REQUIRED" ]');
-    expect(transactionCode).toContain('[ "$latest" = "$SHA" ]');
-    expect(transactionCode).toContain('target $SHA is stale; protected main requires $latest');
+    expect(engineCode).toContain('[[ "$LATEST_REQUIRED" =~ ^[0-9a-f]{40}$ ]]');
+    expect(transactionCode).toContain('"$RELEASE_SEAL" get high-water-sha');
+    expect(transactionCode).toContain('target $SHA does not contain the sealed high-water release');
   });
 
   it('immediately sends every protected-main server SHA into the owning release lane', () => {
@@ -80,7 +81,9 @@ describe('the engine deploy has one fail-closed Hetzner authority', () => {
     );
     expect(engineCode).toContain('git merge-base --is-ancestor "$RESOLVED_SHA" "$MAIN_SHA"');
     const hostTouch = engineCode.indexOf('name: Establish pinned ephemeral SSH transport');
-    expect(hostTouch).toBeGreaterThan(engineCode.indexOf('[ "$LATEST_REQUIRED" = "$SHA" ]'));
+    expect(hostTouch).toBeGreaterThan(
+      engineCode.indexOf('git merge-base --is-ancestor "$CONTROL_SHA" "$MAIN_SHA"')
+    );
   });
 
   it('has no force path around the maintenance certificate', () => {
@@ -132,84 +135,46 @@ describe('the static publisher is event-driven and independent', () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
-// A PROOF THAT ONLY SUCCEEDS WHEN NOTHING IS MERGING IS NOT A GATE (2026-09-12)
-//
-// `source_target_is_current` required the release target to be the TIP of
-// server/** on protected main, and re-required it after the image build and
-// every sixty seconds of the wait for the break. Any engine merge inside that
-// window killed the release. Releases take 10-60 minutes (they wait for the
-// hourly break); engine merges arrived every 13-22 minutes. So each release
-// was killed by its own successor and the successor by ITS successor:
-// 14 consecutive releases shipped nothing between 00:21Z and 04:46Z on
-// 2026-09-12, every one recorded as "release ended without complete production
-// proof" while the engine was healthy throughout. Run 34673869399 is the whole
-// mechanism in one line - it finished its image build and died on
-// "target 240b3394b... is stale; protected main requires 96c00643d...", a
-// commit that had merged thirteen minutes after it started.
-//
-// Standing down is still right while the newer commit can actually reach the
-// break. It cannot from inside the break window, so standing down there gives
-// the break to nobody. These pins are the difference between those two cases.
-// ───────────────────────────────────────────────────────────────────────────
-describe('supersession defers a release, it does not starve one', () => {
+// A protected-main merge is distinct from a sealed forward release. Execute
+// the real shell gates against disposable Git histories, including an advance
+// of high-water between admission checks. No host or Docker process is used.
+describe('forward releases remain valid when protected main advances', () => {
   const gate = transactionCode.slice(
     transactionCode.indexOf('source_target_is_current() {'),
     transactionCode.indexOf('parse_health_instance_for_sha()')
   );
 
-  it('still stands a superseded target down outside the break window', () => {
-    // Unchanged behaviour and unchanged words for the common case. The design
-    // notes this serves - an obsolete candidate must not wait for or consume
-    // the next table break, and must free its workflow and host resources
-    // promptly - are still satisfied whenever a successor can get there.
-    expect(gate).toContain('die "target $SHA is stale; protected main requires $latest"');
-    expect(gate).toMatch(/BREAK_END_EPOCH:-0\} +" *-le 0|BREAK_END_EPOCH:-0\}" -le 0/);
-    expect(gate).toContain('"$(seconds_to_next_break)" -gt "$SUPERSESSION_YIELD_SECONDS"');
-  });
+  it('executes source, control, ancestry and stale-high-water cases', () => {
+    const result = spawnSync(
+      'python3',
+      [resolve(__dirname, 'operations/engine-release-forward-admission.py')],
+      { encoding: 'utf8', timeout: 120000, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } }
+    );
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+  }, 125000);
 
-  it('the yield window is shorter than one break period and longer than a build', () => {
-    const yieldS = Number(transaction.match(/^SUPERSESSION_YIELD_SECONDS=(\d+)$/m)![1]);
-    // Measured 2026-09-12 on run 34673869399: 800s from run creation to
-    // cutover-ready, plus 60-180s for stage-engine-release to detect the push
-    // and dispatch it. Below that arrival time, a commit merging now provably
-    // cannot reach this break.
-    expect(yieldS).toBeGreaterThanOrEqual(600);
-    // Above one break period it would span two breaks and never stand anything
-    // down, which is the opposite bug.
-    expect(yieldS).toBeLessThan(3600);
-  });
-
-  it('refuses the escape unless forward-only ordering is proved, not assumed', () => {
-    // The tip check was carrying this property incidentally. Now that the tip
-    // check is not absolute, the property is stated and proved in its own
-    // right, and the escape FAILS CLOSED when it cannot be proved.
+  it('requires high-water ancestry for every normal target before admission', () => {
     expect(gate).toContain('"$RELEASE_SEAL" get high-water-sha');
+    expect(gate).not.toContain('get desired-sha');
     expect(gate).toContain('git -C "$REPO_DIR" merge-base --is-ancestor "$high_water" "$SHA"');
+    expect(gate).toContain('die "target $SHA cannot prove the sealed high-water release"');
     expect(gate).toContain(
-      'die "target $SHA is superseded by $latest and the sealed high-water release is unreadable"'
+      'die "target $SHA does not contain the sealed high-water release $high_water"'
     );
-    expect(gate).toContain(
-      'die "target $SHA is superseded by $latest and does not contain the sealed high-water release $high_water"'
-    );
+    expect(gate).not.toContain('SUPERSESSION_YIELD_SECONDS');
   });
 
-  it('leaves every other release proof exactly where it was', () => {
-    // The escape must never become "ship it anyway". Protected-main
-    // containment, the maintenance certificate and the cutover proofs are
-    // untouched, and there is still no force input anywhere.
+  it('retains containment, maintenance, image and rollback proofs', () => {
     expect(gate).toContain('die "target $SHA is no longer contained in protected main"');
     expect(transactionCode).toContain('prove_rollback_readiness');
     expect(transactionCode).toContain('validate_candidate_image');
     expect(engineCode).not.toMatch(/force=true|inputs\.force/);
   });
 
-  it('records every override where it can be counted afterwards', () => {
-    // An override nobody can count becomes the normal path without anyone
-    // deciding that it should.
+  it('records the newer unshipped engine without claiming it was released', () => {
     expect(gate).toContain('echo "ENGINE_RELEASE_SUPERSEDED_BY=$latest"');
     expect(transactionCode).toContain(
-      'SEAL_REASON="$SEAL_REASON; shipped inside the break window while superseded by $SUPERSEDED_BY"'
+      'SEAL_REASON="$SEAL_REASON; forward release behind protected-main engine $SUPERSEDED_BY"'
     );
     expect(transactionCode).toContain('--reason "$SEAL_REASON"');
   });

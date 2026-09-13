@@ -52,10 +52,6 @@ import { useInTabLobbyActive, useInTabLobbyClubId } from './components/club/inTa
 
 // Auth Guards
 import { AuthGuard, GuestGuard } from './components/auth/AuthGuard';
-import {
-  DailyChallengesAuthLoading,
-  DailyChallengesCrashFallback,
-} from './components/challenges/DailyChallengesRouteFallback';
 import ClubMemberGuard from './components/auth/ClubMemberGuard';
 import GameCreationGuard from './components/auth/GameCreationGuard';
 import TOSGuard from './components/legal/TOSGuard';
@@ -108,7 +104,12 @@ const TournamentResultsPage = lazyWithRetry(
 );
 const TablePage = lazyWithRetry(() => import('./pages/TablePage'));
 const ProfilePage = lazyWithRetry(() => import('./pages/ProfilePage'));
-const DailyChallengesPage = lazyWithRetry(() => import('./pages/DailyChallengesPage'));
+// Keep the complete Daily Challenges presentation graph behind its route.
+// Auth/loading/crash paint is deliberately owned by the lazy route module so
+// players who never open Challenges do not pay for its artwork or instruments.
+const DailyChallengesRoute = lazyWithRetry(
+  () => import('./components/challenges/DailyChallengesRoute')
+);
 const SettingsPage = lazyWithRetry(() => import('./pages/SettingsPage'));
 const UnionsPage = lazyWithRetry(() => import('./pages/UnionsPage'));
 const UnionDetailPage = lazyWithRetry(() => import('./pages/UnionDetailPage'));
@@ -1108,21 +1109,7 @@ function FullApp() {
                 />
 
                 {/* User */}
-                <Route
-                  path="challenges/:cycle?"
-                  element={
-                    <AuthGuard loadingFallback={<DailyChallengesAuthLoading />}>
-                      <PageErrorBoundary
-                        pageName="Daily Challenges"
-                        fallback={({ error, retry }) => (
-                          <DailyChallengesCrashFallback error={error} onRetry={retry} />
-                        )}
-                      >
-                        <DailyChallengesPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
-                  }
-                />
+                <Route path="challenges/:cycle?" element={<DailyChallengesRoute />} />
                 <Route
                   path="profile"
                   element={

@@ -9,6 +9,10 @@ const routeFallback = readFileSync(
   resolve(__dirname, '../src/components/challenges/DailyChallengesRouteFallback.tsx'),
   'utf8'
 );
+const challengeRoute = readFileSync(
+  resolve(__dirname, '../src/components/challenges/DailyChallengesRoute.tsx'),
+  'utf8'
+);
 
 describe('Daily Challenge cycle deep links', () => {
   it('routes Daily, Weekly, and Monthly as bookmarkable subpages', () => {
@@ -34,8 +38,16 @@ describe('Daily Challenge cycle deep links', () => {
   });
 
   it('uses the cinematic Daily Missions master during auth checks and render recovery', () => {
-    expect(app).toContain('loadingFallback={<DailyChallengesAuthLoading />}');
-    expect(app).toContain('<DailyChallengesCrashFallback error={error} onRetry={retry} />');
+    expect(app).toContain("import('./components/challenges/DailyChallengesRoute')");
+    expect(app).not.toContain("from './components/challenges/DailyChallengesRouteFallback'");
+    expect(challengeRoute).toContain('loadingFallback={<DailyChallengesAuthLoading />}');
+    expect(challengeRoute).toContain(
+      '<DailyChallengesCrashFallback error={error} onRetry={retry} />'
+    );
+    expect(challengeRoute).toContain('<Suspense fallback={<DailyChallengesAuthLoading />}>');
+    expect(challengeRoute).toContain(
+      "lazyWithRetry(() => import('../../pages/DailyChallengesPage'))"
+    );
     expect(authGuard).toContain('if (loadingFallback) return <>{loadingFallback}</>;');
     expect(routeFallback).toContain('data-daily-missions-auth-loading=""');
     expect(routeFallback).toContain('data-daily-missions-crash-fallback=""');

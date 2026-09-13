@@ -62,10 +62,16 @@ const serverReasons = new Set([
  * No aggregate is persisted or incremented here, so retry cannot double-update.
  */
 export async function readCommittedObservationSnapshot(
-  request: CommittedObservationRequest
+  input: CommittedObservationRequest
 ): Promise<CommittedObservationSnapshot> {
+  // TypeScript readonly does not stop a caller from reusing a mutable object.
+  // Bind the outgoing RPC, response checks and digest to one pre-await scope.
+  const request = {
+    actorId: input?.actorId,
+    fromMs: input?.fromMs,
+    throughMs: input?.throughMs,
+  };
   if (
-    !request ||
     typeof request.actorId !== 'string' ||
     !UUID.test(request.actorId) ||
     !integer(request.fromMs) ||

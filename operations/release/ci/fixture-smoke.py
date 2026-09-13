@@ -13,7 +13,7 @@ import uuid
 
 FILES = ('Dockerfile', 'package.json', 'package-lock.json', 'fixture-server.mjs',
          'runtime-files.mjs', 'gateway.mjs', 'auth-fixture.mjs', 'auth-bootstrap-proof.mjs',
-         'service-role-boundary.mjs', 'cron-provider.mjs', 'safeupdate-provider.mjs', 'service-preimage.mjs', 'actors.mjs', 'financial-route-phase.mjs',
+         'service-role-boundary.mjs', 'cron-provider.mjs', 'safeupdate-provider.mjs', 'service-preimage.mjs', 'role-alignment.mjs', 'role-alignment-render.mjs', 'role-alignment-installer.sql', 'role-alignment-native.json', 'role-alignment-aligned.json', 'role-alignment-graph.sql', 'role-alignment-membership.sql', 'actors.mjs', 'financial-route-phase.mjs',
          'seed-fixture.mjs', 'native-smoke.mjs', 'observation-bridge.mjs', 'build-image.sh', 'smoke-image.sh')
 PREFIX = 'operations/release/fixture/'
 CONTROL_FILES = tuple('operations/release/native/' + name for name in (
@@ -56,7 +56,7 @@ NATIVE_STAGES = frozenset((
         'arguments', 'package', 'directories', 'cookie', 'postgres-socket', 'archives',
         'postgresql', 'postgresql-native-cron-install', 'postgresql-safeupdate-configure',
         'genuine-auth-migrations', 'genuine-realtime-migrations',
-        'managed-postgres-event-trigger-boundary', 'post-service-catalog-preimage', 'cleanup'))))
+        'managed-postgres-event-trigger-boundary', 'post-service-catalog-preimage', 'full-role-alignment', 'cleanup'))))
 NATIVE_ERROR_NAMES = frozenset(('Error', 'AssertionError', 'TypeError', 'RangeError',
                                 'SyntaxError', 'TimeoutError', 'AggregateError', 'error'))
 NATIVE_PG_ROUTINES = frozenset((
@@ -290,6 +290,44 @@ def smoke_records(output):
     return [observer, services, peer]
 
 
+def role_alignment_record(output):
+    records = []
+    def unique_object(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result)
+            result[key] = value
+        return result
+    for line in output.splitlines():
+        if not line.startswith('{') or len(line) > 4096:
+            continue
+        try:
+            item = json.loads(line, object_pairs_hook=unique_object)
+        except ValueError:
+            continue
+        if isinstance(item, dict) and item.get('scope') == 'native-full-role-installer':
+            records.append(item)
+    require(len(records) == 1)
+    result = records[0]
+    expected = {
+        'scope': 'native-full-role-installer', 'status': 'passed', 'stage': 'complete',
+        'template_sha256': '75de4863de9a9276e701526389a6fbe0a033589d60844b71dd42eb44fbdf31db',
+        'install_submitted': True, 'commit_acknowledged': True, 'catalog_outcome': 'committed',
+        'rollback_acknowledged': False, 'separate_read_only_observers': 4,
+        'graph_assertion': True, 'membership_assertion': True,
+        'actual_login_and_default_acl_tests': False, 'post_alignment_services': False,
+        'full_schema_ready': False, 'funded_or_production_complete': False,
+        'installer_backend_absent': True, 'all_driver_clients_closed': True,
+    }
+    hashes = {'original_catalog_sha256', 'aligned_catalog_sha256'}
+    require(set(result) == set(expected) | hashes)
+    for key, value in expected.items():
+        require(type(result[key]) is type(value) and result[key] == value)
+    for key in hashes:
+        require(isinstance(result[key], str) and re.fullmatch('[0-9a-f]{64}', result[key]))
+    return result
+
+
 def service_preimage(output, path):
     """Validate private candidate bytes before exposing any catalog artifact."""
     def unique_object(pairs):
@@ -458,6 +496,7 @@ def execute(repo, output, expected, run=command):
         receipt['stage'] = 'native-services-and-browser'
         result = run(['bash', PREFIX + 'smoke-image.sh', image_id], repo, env, timeout=420)
         receipt['observations'] = smoke_records(result)
+        receipt['role_alignment'] = role_alignment_record(result)
         proof, catalog_bytes = service_preimage(result, private_preimage)
         receipt['service_preimage'] = proof
         (output / 'native-service-preimage.json').write_bytes(catalog_bytes)

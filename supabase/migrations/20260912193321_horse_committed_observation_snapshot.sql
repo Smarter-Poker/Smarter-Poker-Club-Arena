@@ -1,5 +1,11 @@
 -- One statement snapshot of retained, committed source rows. No data writes,
 -- trigger, index, scheduler or adaptive activation is added.
+-- Reserved by scripts/reserve-migration-version.sh on 2026-09-12 19:33:21 UTC.
+-- Native PostgreSQL verifies snapshot isolation, service-only grants and
+-- complete refusal at the hand, action and byte limits.
+BEGIN;
+SET LOCAL lock_timeout = '2s';
+
 CREATE OR REPLACE FUNCTION public.fn_horse_committed_observation_snapshot(
   p_actor uuid, p_from_ms bigint, p_through_ms bigint
 ) RETURNS jsonb
@@ -101,3 +107,5 @@ BEGIN
   END IF;
 END
 $check$;
+
+COMMIT;

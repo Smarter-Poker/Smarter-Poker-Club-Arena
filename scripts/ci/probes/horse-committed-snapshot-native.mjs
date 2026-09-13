@@ -10,7 +10,7 @@ const require = createRequire(root + '/server/package.json'),
 const pg = process.env.HORSE_PROOF_PG_BIN;
 if (!pg || !process.argv[2])
   throw Error('Set HORSE_PROOF_PG_BIN to an existing PostgreSQL bin and pass a new output path');
-const migration = 'supabase/migrations/20260912190100_horse_committed_observation_snapshot.sql';
+const migration = 'supabase/migrations/20260912193321_horse_committed_observation_snapshot.sql';
 const dir = mkdtempSync('/tmp/horse-snapshot-native-'),
   data = dir + '/data',
   socket = dir + '/socket';

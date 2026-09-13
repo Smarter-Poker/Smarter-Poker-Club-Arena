@@ -1,0 +1,100 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mttSpeedColumns, MTT_BLIND_PRESETS } from './mttStructurePolicy.js';
+import {
+  ScheduledTournamentService,
+  SCHEDULE_BLIND_PRESETS,
+} from '../services/ScheduledTournamentService.js';
+import {
+  BLIND_STRUCTURES,
+  TournamentRecurringService,
+} from '../services/TournamentRecurringService.js';
+import { supabase } from '../services/supabase.js';
+
+afterEach(() => vi.restoreAllMocks());
+
+describe('engine MTT structure policy', () => {
+  it.each([
+    [[{ durationMinutes: 10 }, { durationMinutes: 2 }], 'standard', false],
+    [[{ durationMinutes: 4 }], 'turbo', true],
+    [[{ duration_minutes: 5 }], 'turbo', true],
+    [[{ duration: 120 }], 'hyper_turbo', true],
+    [[{ durationMinutes: 15 }], 'slow', false],
+    [[{ isBreak: true, durationMinutes: 5 }, { durationMinutes: 12 }], 'slow', false],
+    [[{ durationMinutes: 0, duration: 180 }], 'turbo', true],
+  ])('classifies the actual opening clock including legacy units (%j)', (levels, speed, turbo) => {
+    expect(mttSpeedColumns(levels as unknown[])).toEqual({ blind_speed: speed, is_turbo: turbo });
+  });
+
+  it('keeps recurring and scheduled ladders on the same engine definition', () => {
+    for (const name of ['STANDARD', 'TURBO', 'HYPER_TURBO'] as const) {
+      expect(BLIND_STRUCTURES[name]).toBe(MTT_BLIND_PRESETS[name]);
+      expect(SCHEDULE_BLIND_PRESETS[name]).toBe(MTT_BLIND_PRESETS[name]);
+    }
+    expect(SCHEDULE_BLIND_PRESETS.DEEPSTACK).toBe(MTT_BLIND_PRESETS.SLOW);
+  });
+
+  it('writes a scheduled custom turbo correctly despite its name, depth and overridden preset', async () => {
+    const service = new ScheduledTournamentService();
+    const cfg = {
+      name: 'Deep Field',
+      type: 'mtt',
+      buyIn: 10,
+      startingStack: 30000,
+      maxPlayers: 100,
+      blindPreset: 'STANDARD',
+      payoutPreset: 'NINE',
+      blindStructure: [{ level: 1, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 4 }],
+    };
+    const row = await (service as any).buildInsertRow(
+      { id: 'schedule-1', club_id: 'club-1', union_id: null, name: cfg.name },
+      cfg,
+      new Date()
+    );
+    expect(row).toMatchObject({
+      is_turbo: true,
+      blind_speed: 'turbo',
+      starting_chips: 30000,
+      blind_structure: cfg.blindStructure,
+    });
+  });
+
+  it.each(['createTournament', 'createXMTT'])(
+    'persists speed in the real %s insert path',
+    async (method) => {
+      const inserts: Record<string, unknown>[] = [];
+      const chain = {
+        insert: vi.fn((row: Record<string, unknown>) => {
+          inserts.push(row);
+          return chain;
+        }),
+        select: vi.fn(() => chain),
+        maybeSingle: vi.fn(async () => ({ data: { id: 'event-1' }, error: null })),
+        update: vi.fn(() => chain),
+        eq: vi.fn(async () => ({ error: null })),
+      };
+      vi.spyOn(supabase, 'from').mockReturnValue(chain as never);
+      const service = new TournamentRecurringService();
+      vi.spyOn(service as any, 'registerHorses').mockResolvedValue(0);
+      const config = {
+        name: 'Clock Test',
+        gameVariant: 'nlh',
+        type: 'mtt',
+        buyIn: 10,
+        guarantee: 0,
+        startingStack: 10000,
+        maxPlayers: 100,
+        horsesToRegister: 0,
+        blindStructure: MTT_BLIND_PRESETS.TURBO,
+        payoutStructure: [{ place: 1, percentage: 100 }],
+      };
+      const result = await (service as any)[method](config, 'union-1', 'club-1');
+      expect(result.tournamentId).toBe('event-1');
+      expect(inserts).toHaveLength(1);
+      expect(inserts[0]).toMatchObject({
+        blind_speed: 'turbo',
+        is_turbo: true,
+        starting_chips: 10000,
+      });
+    }
+  );
+});

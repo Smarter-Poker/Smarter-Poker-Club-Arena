@@ -494,6 +494,8 @@ jobs:
             exit 1
           fi
           echo "All $TOTAL invariant guards passed." >> "$GITHUB_STEP_SUMMARY"
+      - name: Evaluate real SLO alert durations, thresholds and recovery
+        run: bash scripts/ci/test-slo-stall-duration.sh
       - name: Report Typecheck Time
         if: always()
         run: |
@@ -1120,6 +1122,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-bbj-bank-replay.py
+      - name: Horse identity trigger semantics, rollback and concurrent stamp writes
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-horse-identity-triggers.py
       - name: Atomic departures, ownership, rollback and concurrency
         env:
           PGBIN: /usr/lib/postgresql/17/bin

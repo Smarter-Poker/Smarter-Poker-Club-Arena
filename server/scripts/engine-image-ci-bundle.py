@@ -294,7 +294,9 @@ def validate_files(directory, expected):
 def github_api(endpoint):
     allowed = (r"repos/" + re.escape(REPOSITORY) +
                r"(?:/actions/(?:runs/[1-9][0-9]{0,19}/attempts/[1-9][0-9]{0,19}"
-               r"(?:/jobs\?per_page=100)?|artifacts/[1-9][0-9]{0,19}))?")
+               r"(?:/jobs\?per_page=100)?|artifacts/[1-9][0-9]{0,19})"
+               r"|/git/commits/[0-9a-f]{40}"
+               r"|/compare/[0-9a-f]{40}\.\.\.[0-9a-f]{40}\?per_page=1&page=1)?")
     require(re.fullmatch(allowed, endpoint) is not None, "GITHUB_ENDPOINT")
     environment = dict(os.environ)
     # Force the authenticated public API host, never an injected GH_HOST.

@@ -318,6 +318,33 @@ class BundleTest(unittest.TestCase):
         with patch.object(m.subprocess, "run", return_value=response), self.assertRaisesRegex(ValueError, "GITHUB_OBJECT"):
             m.github_api("repos/" + m.REPOSITORY)
 
+    def test_api_exact_commit_and_ancestry_routes_reach_readonly_transport(self):
+        prefix='repos/'+m.REPOSITORY
+        endpoints=[prefix+'/git/commits/'+'a'*40,
+                   prefix+'/compare/'+'a'*40+'...'+'b'*40+'?per_page=1&page=1']
+        response=type('Result',(),{'returncode':0,'stdout':b'{"ok":true}'})()
+        for endpoint in endpoints:
+            with self.subTest(endpoint=endpoint),patch.object(m.subprocess,'run',return_value=response) as run:
+                self.assertEqual(m.github_api(endpoint),{'ok':True})
+                self.assertEqual(run.call_args.args[0],['gh','api','--hostname','github.com','--method','GET',endpoint])
+                self.assertEqual(run.call_args.kwargs['timeout'],30)
+
+    def test_api_ancestry_routes_refuse_foreign_partial_or_extra_queries(self):
+        prefix='repos/'+m.REPOSITORY
+        endpoints=[prefix+'/git/commits/'+'a'*39,prefix+'/git/commits/'+'A'*40,
+            prefix+'/git/commits/'+'a'*40+'?extra=1',
+            prefix+'/compare/'+'a'*40+'...'+'b'*40,
+            prefix+'/compare/'+'a'*40+'...'+'b'*40+'?per_page=100&page=1',
+            prefix+'/compare/'+'a'*40+'...'+'b'*40+'?per_page=1&page=1&extra=1',
+            prefix+'/compare/main...HEAD?per_page=1&page=1',
+            'repos/Other/Repository/git/commits/'+'a'*40,
+            'https://api.github.com/'+prefix+'/git/commits/'+'a'*40]
+        with patch.object(m.subprocess,'run') as run:
+            for endpoint in endpoints:
+                with self.subTest(endpoint=endpoint),self.assertRaisesRegex(ValueError,'GITHUB_ENDPOINT'):
+                    m.github_api(endpoint)
+            run.assert_not_called()
+
     def test_api_errors_and_foreign_endpoint_refuse(self):
         with patch.object(m.subprocess, "run", return_value=type("Result", (), {"returncode": 1, "stdout": b''})()):
             with self.assertRaisesRegex(ValueError, "GITHUB_READ"):

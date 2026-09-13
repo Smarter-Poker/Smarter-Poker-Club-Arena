@@ -1111,6 +1111,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             if (winner) {
               await this.finishTournament(winner.user_id);
               if (sweepStopped()) return;
+              this.rearmIfTheFinishWasRefused();
             } else if ((remainingCount || 0) === 0) {
               // All players busted simultaneously — pick the last eliminated as winner
               const { data: lastEliminated, error: lastEliminatedErr } = await supabase
@@ -1137,6 +1138,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                 );
                 await this.finishTournament(lastEliminated.user_id);
                 if (sweepStopped()) return;
+                this.rearmIfTheFinishWasRefused();
               }
             }
           } catch (finishErr) {
@@ -1706,6 +1708,43 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         .select('result, completed_at')
         .eq('table_id', tableId)
         .eq('status', 'succeeded')
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  STOP READING AT THE SEAT THIS BUST BELONGS TO (2026-09-09)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * This bound is not a new rule. Twenty lines below, a settlement older
+         * than `seatJoinedAt` is REFUSED - "accepted zero-stack settlement
+         * predates this seat generation" - because a rebuy starts a new seat
+         * generation and an older zero must never authorise it. So every row
+         * before `seatJoinedAt` was being read off disk and then thrown away.
+         *
+         * On a long-running table that is the whole history. Measured on
+         * production 2026-09-09, table bd52ccec with 5,617 settlements:
+         *
+         *     Index Scan using settlement_idempotency_keys_pkey
+         *       Index Cond: (table_id = ...)
+         *       Filter: (result @> ...) AND (status = 'succeeded')
+         *       Rows Removed by Filter: 5613
+         *       Buffers: shared hit=2599 read=3156
+         *     Execution Time: 8523.518 ms
+         *
+         * `service_role`'s statement timeout is 8s (CLAUDE.md section 2), so
+         * that read does not return slowly - it ERRORS. `defer()` then re-arms,
+         * the next sweep runs the same query, and it errors again. Every bust
+         * in a bounty event on an old table was stuck in that loop: 10 of the 16
+         * tournaments stalled over an hour at 06:58 were bounty events, each
+         * carrying between 2 and 13 players sitting at zero chips who could not
+         * be eliminated, so no table could reach two live players and no hand
+         * could be dealt.
+         *
+         * Paired with the partial index on (table_id, completed_at DESC) WHERE
+         * status = 'succeeded' (migration of the same date), this becomes an
+         * ordered range scan over one seat's own lifetime instead of a full
+         * scan plus a sort. It cannot change which row is chosen: the rows it
+         * no longer reads are exactly the rows the guard below already refused.
+         */
+        .gte('completed_at', seatJoinedAt)
         .contains('result', { written: { [userId]: 0 } })
         .order('completed_at', { ascending: false })
         .limit(1)
@@ -3543,6 +3582,41 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
   protected tournamentFinished = false;
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  A REFUSED FINISH ASKS FOR ANOTHER PASS. SOMEBODY HAS TO HEAR IT.
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * `finishTournament` has about thirty-five fail-closed exits and every one of
+   * them ends `this.tournamentFinished = false`, under a comment that says the
+   * flag is released "so the next elimination sweep can resume the durable
+   * COMPLETING claim and prepared obligations."
+   *
+   * THERE IS NO NEXT SWEEP. A sweep is woken by an elimination, and this method
+   * is only ever reached once the field is down to its last player - so there
+   * is no hand left to deal, nobody left to bust, and nothing left to wake it.
+   * The release was a request that nothing was listening for, and the refusal
+   * was therefore terminal: whatever the reason (the maintenance freeze, a
+   * refused claim, an unreadable row, a transport blip) the event simply stopped
+   * where it stood, with its winner unpaid and its status still RUNNING.
+   *
+   * This was found by reading the control flow, and no production incident is
+   * attributed to it: a first pass DID read ten tournaments sitting at one
+   * player and called them wedged, and a re-read seven minutes later found nine
+   * of the ten already finished. That sample is retracted in the changelog. The
+   * defect is the missing listener, which is visible without it.
+   *
+   * So the flag is read where the call was made. It is not a repair job (10.12)
+   * and nothing here back-fills or compensates anything: the finish has not
+   * happened yet, and this is the same work being asked for again the moment it
+   * can succeed. The scheduler keeps one pending wake per tournament, so an
+   * exit that already re-armed (the freeze branch does) coalesces with this.
+   */
+  private rearmIfTheFinishWasRefused(): void {
+    if (this.tournamentFinished) return;
+    this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+  }
+
   // ── FINAL TABLE DEAL (2026-08-22 parity) ─────────────────────────────────
   protected finalTableDealHandled = false;
   /**
@@ -4456,7 +4530,26 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // This manager holds service_role, which the database maintenance trigger
     // intentionally exempts. Do not claim a finish or enter any settlement
     // preparation while the platform freeze is active.
-    if (isMaintenanceFrozen()) return;
+    //
+    // BUT COME BACK FOR IT (2026-09-09). This was a bare `return`: no log, no
+    // retry re-armed, nothing. The break holds the platform for five minutes of
+    // every hour, so roughly one finish in twelve arrived inside one and was
+    // simply dropped - the tournament then waited for whatever sweep happened
+    // to call this again, which for a DECIDED event can be a long time, because
+    // with one player left there are no more hands and no more eliminations to
+    // trigger one. CLAUDE.md 13 rule 4: a deadline is thawed, not burned.
+    //
+    // Re-arming costs one timer and makes the deferral visible. It is not a
+    // repair job (10.12): nothing is being back-filled or compensated - the
+    // finish simply has not happened yet, and this is the same work resuming
+    // the moment it is allowed to.
+    if (isMaintenanceFrozen()) {
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] finish deferred: the platform is frozen for the maintenance break; resuming after the thaw`
+      );
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+      return;
+    }
     // One in-process finalizer at a time. On every fail-closed exit below the
     // flag is released so the next elimination sweep can resume the durable
     // COMPLETING claim and prepared obligations.

@@ -33,6 +33,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { SpadeConsole } from '../console/SpadeConsole';
 import './TournamentWinnerOverlay.css';
+import { formatTableChips } from '../../utils/format';
 
 interface TournamentWinnerOverlayProps {
   isWinner: boolean;
@@ -160,7 +161,9 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
       >
         {prize > 0 && (
           <div className="winnerPrize prize-counter">
-            Prize: {Math.round(displayPrize).toLocaleString()}
+            {/* To the cent (2026-09-09): this is the banner shown at the
+                moment a player cashes, and a prize of 98.72 read "99". */}
+            Prize: {formatTableChips(displayPrize)}
           </div>
         )}
         {/* ONE ACTION, SO THE FOOT CLOSES (standard §5). The master paints BOTH

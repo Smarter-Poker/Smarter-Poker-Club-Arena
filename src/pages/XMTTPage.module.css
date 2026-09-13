@@ -171,3 +171,14 @@
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
+
+/* The one refusal line on this page. It was borrowing the console's ink class
+   from a module sheet, where that name is hashed and resolves to nothing. */
+.actionError {
+  color: #ff5b6e;
+  font:
+    600 3.2cqw/1.4 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0 1cqw rgb(240 40 73 / 45%);
+}

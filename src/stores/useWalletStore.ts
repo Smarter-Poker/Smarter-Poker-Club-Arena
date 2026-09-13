@@ -211,6 +211,15 @@ const BALANCE_FRESH_MS = 30_000;
  * inherit it — the wallet would then stay broken for the whole session
  * instead of retrying on the next mount.
  */
+// Balance invalidations need a trailing snapshot if an older read is already
+// running. The record also owns publication, so reset or another account can
+// retire it without letting a late response repopulate the store.
+let _balanceLoad: {
+  userId: string;
+  refreshAgain: boolean;
+  promise: Promise<void>;
+} | null = null;
+
 const _inFlight = new Map<string, Promise<void>>();
 
 function coalesce(key: string, run: () => Promise<void>): Promise<void> {
@@ -234,54 +243,69 @@ export const useWalletStore = create<WalletState>()(
 
       loadBalances: async (userId: string, opts?: { force?: boolean }) => {
         const st = get();
-        // Serve what we already have. See BALANCE_FRESH_MS above.
+        if (_balanceLoad?.userId === userId) {
+          if (opts?.force) _balanceLoad.refreshAgain = true;
+          return _balanceLoad.promise;
+        }
+        // This store displays one account. Any other account's pending read
+        // loses ownership even when this account can be served from cache.
+        _balanceLoad = null;
         if (
           !opts?.force &&
           st._balancesUserId === userId &&
           Date.now() - st._balancesAt < BALANCE_FRESH_MS
         ) {
+          if (st.isLoadingWallet) set({ isLoadingWallet: false });
           return;
         }
 
-        return coalesce(`balances:${userId}`, async () => {
-          // Only show the loading state when there is NOTHING to show. Flipping
-          // this on while a good balance is already on screen is what made the
-          // wallet flash a skeleton on every navigation.
-          const haveBalancesForThisUser = st._balancesUserId === userId && st._balancesAt > 0;
-          if (!haveBalancesForThisUser) set({ isLoadingWallet: true });
+        const load = { userId, refreshAgain: false, promise: Promise.resolve() };
+        _balanceLoad = load;
+        const haveBalancesForThisUser = st._balancesUserId === userId && st._balancesAt > 0;
+        if (!haveBalancesForThisUser) set({ isLoadingWallet: true });
+        load.promise = (async () => {
           try {
-            const walletBalances = await WalletService.getBalances(userId);
-            const balances = {
-              BUSINESS: createEmptyBalance('BUSINESS'),
-              PLAYER: createEmptyBalance('PLAYER'),
-              PROMO: createEmptyBalance('PROMO'),
-            };
-
-            for (const wallet of walletBalances) {
-              const type = wallet.walletType as WalletType;
-              if (type in balances) {
-                balances[type] = {
-                  type,
-                  available: wallet.availableBalance,
-                  locked: wallet.lockedBalance,
-                  pending: 0,
-                  total: wallet.balance,
+            do {
+              load.refreshAgain = false;
+              try {
+                const walletBalances = await WalletService.getBalances(userId);
+                if (_balanceLoad !== load) return;
+                if (load.refreshAgain) continue;
+                const balances = {
+                  BUSINESS: createEmptyBalance('BUSINESS'),
+                  PLAYER: createEmptyBalance('PLAYER'),
+                  PROMO: createEmptyBalance('PROMO'),
                 };
-              }
-            }
 
-            set({ balances, _balancesUserId: userId, _balancesAt: Date.now() });
-          } catch (error) {
-            if (!_balanceBreaker.isOpen()) {
-              _balanceBreaker.trip();
-              reportError(error, 'useWalletStore.Load_balances_failed');
-            }
-            // Deliberately NOT clearing `balances` here. A transient network
-            // failure must not replace a good number with zeros on screen.
+                for (const wallet of walletBalances) {
+                  const type = wallet.walletType as WalletType;
+                  if (type in balances) {
+                    balances[type] = {
+                      type,
+                      available: wallet.availableBalance,
+                      locked: wallet.lockedBalance,
+                      pending: 0,
+                      total: wallet.balance,
+                    };
+                  }
+                }
+                set({ balances, _balancesUserId: userId, _balancesAt: Date.now() });
+              } catch (error) {
+                if (!_balanceBreaker.isOpen()) {
+                  _balanceBreaker.trip();
+                  reportError(error, 'useWalletStore.Load_balances_failed');
+                }
+                // An unreadable snapshot leaves the last known balance intact.
+              }
+            } while (_balanceLoad === load && load.refreshAgain);
           } finally {
-            set({ isLoadingWallet: false });
+            if (_balanceLoad === load) {
+              _balanceLoad = null;
+              set({ isLoadingWallet: false });
+            }
           }
-        });
+        })();
+        return load.promise;
       },
 
       loadDiamonds: async (userId: string, opts?: { force?: boolean }) => {
@@ -488,6 +512,7 @@ export const useWalletStore = create<WalletState>()(
       },
 
       reset: () => {
+        _balanceLoad = null;
         set(initialState);
       },
     }),

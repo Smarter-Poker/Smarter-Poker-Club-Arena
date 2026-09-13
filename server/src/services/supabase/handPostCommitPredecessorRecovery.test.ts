@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn() }));
 vi.mock('./client.js', () => ({ supabase: mocks }));
-vi.mock('../errorReporter.js', () => ({ reportError: vi.fn() }));
+vi.mock('../errorReporter.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../errorReporter.js')>()),
+  reportError: vi.fn(),
+}));
 import { processHandPostCommitObligations } from './handProjection.js';
 
 function prepare(earlier = [{ hand_id: 'older-1' }, { hand_id: 'older-2' }]) {

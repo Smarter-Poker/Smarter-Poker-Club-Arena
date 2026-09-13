@@ -273,7 +273,6 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
       >
         <SpadeConsole
           as="div"
-          className="tip__console"
           eyebrow={t?.name || 'Tournament'}
           title="Tournament"
           pill={known ? `Lv ${level}` : undefined}

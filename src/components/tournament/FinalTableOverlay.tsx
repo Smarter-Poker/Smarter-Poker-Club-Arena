@@ -159,7 +159,6 @@ export const FinalTableOverlay: React.FC<FinalTableOverlayProps> = ({
       <div className="ft-overlay__content">
         <SpadeConsole
           as="div"
-          className="ft-overlay__console"
           eyebrow={tournamentName}
           title="Final Table"
           subtitle="The Last Table Standing"

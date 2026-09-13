@@ -497,7 +497,7 @@ export default function XMTTPage() {
 
         {actionError && (
           <div className={styles.error} role="alert">
-            <span className="sc-ink--red">{actionError}</span>
+            <span className={styles.actionError}>{actionError}</span>
             <button
               type="button"
               onClick={() => setActionError(null)}

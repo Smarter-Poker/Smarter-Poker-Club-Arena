@@ -1615,6 +1615,18 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
       }
     } finally {
+      // Helpers may yield inside a stage after a slow RPC consumes the work
+      // budget. They have not reached completedStage(), so the cursor and its
+      // causal wake still belong to this manager. Preserve that continuation
+      // without rearming a stopped or replaced lifecycle.
+      if (
+        !completedWholeSweep &&
+        !budgetRequeued &&
+        !sweepStopped() &&
+        this.eliminationWorkBudgetExpired()
+      ) {
+        this.requestEliminationSweep();
+      }
       if (completedWholeSweep && this.running && !signal.aborted) {
         try {
           await acknowledgeCapturedWakes();
@@ -4986,7 +4998,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           reportError(alertErr, 'Tournament.atomic_satellite_finish_alert_failed');
         }
         if (provenRefusal) releaseFinishGuard();
-        if (!provenRefusal) await this.stopAndWait();
+        if (!provenRefusal) {
+          this.fenceUnknownTerminalOutcome(
+            'Tournament.atomic_satellite_finish_manager_stop_failed'
+          );
+        }
         return;
       }
 

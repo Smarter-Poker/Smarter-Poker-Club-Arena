@@ -111,7 +111,27 @@ interface Scope {
   userId: string | null;
 }
 
-export function TournamentStartingTicker() {
+/**
+ * ── THE HOST: EVERYTHING THAT COSTS SOMETHING ─────────────────────────────
+ *
+ * Mounted only by the gate at the foot of this file, and only on a route where
+ * the bar can actually appear. That sentence was not true until 2026-09-13.
+ *
+ * THE POLL HAD NO ROUTE GUARD. `onTickerRoute` gated the settings read and the
+ * render; the FEED effect - four to five Supabase queries every thirty seconds
+ * - was never gated by it at all. A player sitting on the cashier, the
+ * leaderboard, their profile or the club list had a browser fetching
+ * tournaments, registrations, overlay candidates and table openings twice a
+ * minute, for a strip that cannot render on any of those routes. It predates
+ * this programme and it survived the load pass, because that pass gated each
+ * query on its SOURCE and never asked whether the component should be running
+ * at all.
+ *
+ * A hook cannot be called conditionally, so the only way to not pay for one is
+ * to not mount the thing that calls it. That is why this file has two
+ * components now.
+ */
+function TickerHost() {
   const navigate = useNavigate();
   const location = useLocation();
   /* Dan 2026-08-28: "add a toggle in the table settings, and in the Club
@@ -120,7 +140,6 @@ export function TournamentStartingTicker() {
      SETTINGS_CHANGED bus), so flipping the toggle anywhere kills or revives
      this bar live, no reload. Hook called unconditionally, above every
      early return - hook order must stay stable. */
-  const { settings: tickerSettings } = useTableSettings();
   const [managedTicker, setManagedTicker] =
     useState<ManagedTickerSettings>(DEFAULT_TICKER_SETTINGS);
   const [tickerScopeRevision, setTickerScopeRevision] = useState(0);
@@ -371,6 +390,9 @@ export function TournamentStartingTicker() {
 
   // ── Poll for everything the enabled sources need ──
   useEffect(() => {
+    /* A player the rail must not speak to does not need their browser fetching
+       what it would have said. Silence stops the work, not only the paint. */
+    if (silence.silent) return undefined;
     let cancelled = false;
     let inFlight = false;
     let pending = false;
@@ -682,6 +704,7 @@ export function TournamentStartingTicker() {
   }, [
     loadScope,
     viewerRevision,
+    silence.silent,
     sources.starting_soon,
     sources.overlays,
     sources.registration_closing,
@@ -808,12 +831,7 @@ export function TournamentStartingTicker() {
      One boolean, computed above every early return, because two things need
      the same answer: the render, and the effect that publishes this strip's
      height for the table tab bar to start under. */
-  const barVisible =
-    lane.length > 0 &&
-    onTickerRoute &&
-    tickerSettings.showTicker !== false &&
-    managedTicker.enabled &&
-    !silence.silent;
+  const barVisible = lane.length > 0 && onTickerRoute && managedTicker.enabled && !silence.silent;
 
   /* The strip retracts rather than vanishing. `leaving` keeps it mounted for
      one animation, and nothing can be clicked while it plays. */
@@ -911,3 +929,38 @@ export function TournamentStartingTicker() {
 }
 
 export default TournamentStartingTicker;
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE GATE - the only part of this that runs on every route
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Two cheap questions, both answered from memory: is this a route the bar can
+ * appear on, and has the player switched it off? Neither touches the network.
+ *
+ * Everything else - the membership scope, the feed poll, the managed settings,
+ * the responsible-gaming read, the maintenance-break state, the one-second tick
+ * and the chrome measurement - lives in the host above and is not mounted until
+ * both answers are yes.
+ *
+ * Dan 2026-08-28: "add a toggle in the table settings, and in the Club Arena
+ * settings, to turn the ticker on or off." useTableSettings is the shared store
+ * both surfaces write (localStorage + SETTINGS_CHANGED bus), so flipping the
+ * toggle anywhere unmounts or remounts the whole host live, with no reload -
+ * and it stops the polling now, which it never used to.
+ */
+export function TournamentStartingTicker() {
+  const location = useLocation();
+  const { settings: tickerSettings } = useTableSettings();
+
+  /* The live ticker belongs on active tables and inside a club's live lobby.
+     The club route matters: its desktop reference reserves this exact strip
+     below the global header, and suppressing it there left no ticker band at
+     all. Other Club Arena pages remain quiet. */
+  const atLiveTable = location.pathname.startsWith('/table');
+  const atClubLobby = /^\/clubs\/[^/]+(?:\/lobby)?\/?$/.test(location.pathname);
+  if (!(atLiveTable || atClubLobby)) return null;
+  if (tickerSettings.showTicker === false) return null;
+
+  return <TickerHost />;
+}

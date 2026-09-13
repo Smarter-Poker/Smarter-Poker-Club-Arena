@@ -12,20 +12,15 @@
  */
 
 import { useParams, useNavigate } from 'react-router-dom';
+import ArenaGameCard from '../components/lobby/game-cards/ArenaGameCard';
+import type { ArenaGameFamily } from '../components/lobby/game-cards/arenaGameCardTypes';
+import { SpadeConsole } from '../components/console/SpadeConsole';
 import './CreateTablePage.css';
-
-const gameTypeCardAnimationStyle = (index: number) => ({
-  opacity: 0,
-  transform: 'translateY(10px)',
-  animation: `animationsFadeInUp 0.5s ease-out ${index * 70}ms forwards`,
-});
 
 interface GameType {
   id: string;
   name: string;
   subtitle: string;
-  gradient: string;
-  icon: string;
   unlockLevel: number;
 }
 
@@ -35,56 +30,42 @@ const GAME_TYPES: GameType[] = [
     id: 'nlh',
     name: 'NLH',
     subtitle: "NO LIMIT HOLD'EM",
-    gradient: 'linear-gradient(135deg, #1877F2 0%, #166FE5 50%, #0d5bbd 100%)',
-    icon: '♠',
     unlockLevel: 1,
   },
   {
     id: 'plo4',
     name: 'PLO4',
     subtitle: 'POT LIMIT OMAHA 4',
-    gradient: 'linear-gradient(135deg, #2374E1 0%, #1963c6 50%, #1252a8 100%)',
-    icon: '♥',
     unlockLevel: 1,
   },
   {
     id: 'plo5',
     name: 'PLO5',
     subtitle: 'POT LIMIT OMAHA 5',
-    gradient: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%)',
-    icon: '♦',
     unlockLevel: 1,
   },
   {
     id: 'plo6',
     name: 'PLO6',
     subtitle: 'POT LIMIT OMAHA 6',
-    gradient: 'linear-gradient(135deg, #4299e1 0%, #3182ce 50%, #2b6cb0 100%)',
-    icon: '♣',
     unlockLevel: 1,
   },
   {
     id: 'plo8',
     name: 'PLO8',
     subtitle: 'OMAHA HI-LO',
-    gradient: 'linear-gradient(135deg, #1a73e8 0%, #1557b0 50%, #0d3d7a 100%)',
-    icon: '♠',
     unlockLevel: 1,
   },
   {
     id: 'pineapple',
     name: 'PINE',
     subtitle: 'PINEAPPLE',
-    gradient: 'linear-gradient(135deg, #f59e0b 0%, #d97706 50%, #b45309 100%)',
-    icon: '♥',
     unlockLevel: 1,
   },
   {
     id: 'short_deck',
     name: '6+',
     subtitle: "SHORT DECK HOLD'EM",
-    gradient: 'linear-gradient(135deg, #0866FF 0%, #0557d6 50%, #0449b0 100%)',
-    icon: '♦',
     unlockLevel: 1,
   },
   // ── LIMIT (2026-08-23, Dan) ───────────────────────────────────────────────
@@ -104,16 +85,12 @@ const GAME_TYPES: GameType[] = [
     id: 'flh',
     name: 'FLH',
     subtitle: "FIXED LIMIT HOLD'EM",
-    gradient: 'linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%)',
-    icon: '♠',
     unlockLevel: 1,
   },
   {
     id: 'flo8',
     name: 'FLO8',
     subtitle: 'FIXED LIMIT OMAHA HI-LO',
-    gradient: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 50%, #0f766e 100%)',
-    icon: '♣',
     unlockLevel: 1,
   },
 ];
@@ -123,6 +100,10 @@ export const CREATE_TABLE_GAME_TYPE_IDS: readonly string[] = GAME_TYPES.map((g) 
 
 export function isCreateTableGameType(value: string | null | undefined): value is string {
   return !!value && CREATE_TABLE_GAME_TYPE_IDS.includes(value);
+}
+
+function familyForGameType(id: string): ArenaGameFamily {
+  return id.startsWith('plo') || id === 'flo8' ? 'plo' : 'nlh';
 }
 
 export default function CreateTablePage({
@@ -169,7 +150,7 @@ export default function CreateTablePage({
     else navigate(`/clubs/${clubId}`);
   };
 
-  return (
+  const selector = (
     <div className="create-table-page">
       {/* Back Button */}
       <button className="create-table-page__back" onClick={handleBack}>
@@ -178,26 +159,30 @@ export default function CreateTablePage({
 
       {/* Game Type List */}
       <div className="create-table-page__list">
-        {GAME_TYPES.map((gameType, index) => (
-          <button
+        {GAME_TYPES.map((gameType) => (
+          <ArenaGameCard
             key={gameType.id}
-            className={`game-type-card ${userLevel < gameType.unlockLevel ? 'locked' : ''}`}
-            style={{
-              background: gameType.gradient,
-              ...gameTypeCardAnimationStyle(index),
+            className="create-table-page__game-card"
+            data={{
+              id: gameType.id,
+              family: familyForGameType(gameType.id),
+              title: gameType.name,
+              subtitle: gameType.subtitle,
+              gameType: gameType.name,
+              stakes: 'Configure',
+              players: '0',
+              buyIn: 'Set Limits',
+              status: userLevel < gameType.unlockLevel ? 'closed' : 'open',
+              statusLabel: userLevel < gameType.unlockLevel ? 'Locked' : 'Ready',
+              rules: [],
             }}
-            onClick={() => handleSelectGameType(gameType)}
-            disabled={userLevel < gameType.unlockLevel}
-          >
-            <div className="game-type-card__create-badge">CREATE»</div>
-            <div className="game-type-card__content">
-              <h2 className="game-type-card__name">{gameType.name}</h2>
-              <p className="game-type-card__subtitle">{gameType.subtitle}</p>
-            </div>
-            <div className="game-type-card__icon">
-              {/* Decorative icon area - would use actual game graphics */}
-            </div>
-          </button>
+            actions={{
+              primaryLabel: userLevel < gameType.unlockLevel ? 'Locked' : 'Configure',
+              primaryDisabled: userLevel < gameType.unlockLevel,
+              onPrimary: () => handleSelectGameType(gameType),
+              showIcons: false,
+            }}
+          />
         ))}
       </div>
 
@@ -209,5 +194,21 @@ export default function CreateTablePage({
       {/* Background */}
       <div className="create-table-page__background"></div>
     </div>
+  );
+
+  if (onSelectGameType) return selector;
+
+  return (
+    <main className="create-table-page__standalone">
+      <SpadeConsole
+        eyebrow="Table Management"
+        title="Choose Game Type"
+        subtitle="Select A Variant To Configure"
+        pill={`${GAME_TYPES.length} Games`}
+        crest="club"
+      >
+        {selector}
+      </SpadeConsole>
+    </main>
   );
 }

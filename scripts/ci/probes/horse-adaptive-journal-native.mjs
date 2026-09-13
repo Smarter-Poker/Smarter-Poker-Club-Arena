@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { exerciseJournalWork } from './horse-adaptive-work-native.mjs';
 import { exerciseRetention, oldEmptyBatch } from './horse-adaptive-retention-native.mjs';
+import { exerciseIsolatedWorker } from './horse-adaptive-worker-native.mjs';
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const { Client } = createRequire(root + '/server/package.json')('pg');
 const pg = process.env.HORSE_PROOF_PG_BIN,
@@ -682,6 +683,19 @@ try {
     recoveryMs,
     limitation: 'One isolated sample; not a production latency certification.',
   });
+  results.push(
+    await exerciseIsolatedWorker({
+      root,
+      Client,
+      options,
+      c,
+      work: await bridge('HorseAdaptiveJournalWork'),
+      snapshot: {
+        ...source,
+        source: { ...source.source, sourceDigest: hash('real isolated worker') },
+      },
+    })
+  );
   results.push(
     ...(await exerciseRetention({
       c,

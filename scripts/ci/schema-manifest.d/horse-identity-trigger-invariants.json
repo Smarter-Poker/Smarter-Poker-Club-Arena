@@ -1,0 +1,8 @@
+{
+  "_owner": "fix/horse-identity-trigger-invariants; three individually reviewed identity triggers",
+  "functions": [
+    "fn_reject_horse_name_on_human",
+    "fn_club_members_bot_follows_horse",
+    "fn_stamp_seat_horse_id"
+  ]
+}

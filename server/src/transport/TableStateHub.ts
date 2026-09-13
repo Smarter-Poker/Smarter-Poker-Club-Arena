@@ -37,6 +37,7 @@
 // fast-json-patch ships as CommonJS; Node-ESM can only import it as a
 // default import, so destructure `compare` from the default export.
 import jsonPatch from 'fast-json-patch';
+import { WEBSOCKET_HARD_BACKPRESSURE_BYTES as HUB_HARD_BACKPRESSURE_BYTES } from './webSocketBackpressure.js';
 import type { Operation as JsonPatchOperation } from 'fast-json-patch';
 import { captureAllInEquity, captureRitEvent } from '../services/supabase/handFacts.js';
 const { compare } = jsonPatch;
@@ -149,7 +150,6 @@ export interface HubSubscriber {
  * from a clean snapshot, which is cheaper than holding megabytes for it.
  */
 const HUB_SOFT_BACKPRESSURE_BYTES = 256 * 1024;
-const HUB_HARD_BACKPRESSURE_BYTES = 4 * 1024 * 1024;
 
 /**
  * D3 (2026-08-25) — REVEAL RETENTION. A tiny, self-expiring hold for the
@@ -253,6 +253,8 @@ export class TableStateHub {
   private softDropped = 0;
   /** B12: subscribers evicted because a socket blew past the hard limit. */
   private hardDropped = 0;
+  /** An evicted adapter stays retired until the transport creates a fresh one. */
+  private hardEvicted = new WeakSet<HubSubscriber>();
   /** D3: reveal-class events still inside their own replay window, per table. */
   private retained: Map<string, RetainedEvent[]> = new Map();
   /** D3: how many retained events have been handed to a late/reconnecting sub. */
@@ -302,6 +304,7 @@ export class TableStateHub {
    * published, the subscriber is held and receives the next publish.
    */
   subscribe(tableId: string, sub: HubSubscriber): void {
+    if (this.hardEvicted.has(sub)) return;
     const room = this.getOrCreateRoom(tableId);
     room.subscribers.add(sub);
     if (room.lastSnapshot) {
@@ -311,7 +314,7 @@ export class TableStateHub {
         seq: room.lastSeq,
         state: room.lastSnapshot,
       };
-      this.safeSend(sub, JSON.stringify(snap));
+      this.safeSend(tableId, sub, JSON.stringify(snap));
     }
     // D3: a client that connects DURING the reveal window still gets the
     // reveal. The snapshot above cannot carry it (Law 1.16 — a snapshot must
@@ -397,13 +400,9 @@ export class TableStateHub {
     let delivered = 0;
     for (const sub of room.subscribers) {
       if (sub.userId !== userId) continue;
-      if (sub.readyState !== 1 /* ws.OPEN */) continue;
-      try {
-        sub.send(data);
-        delivered++;
-      } catch {
-        /* the dead-subscriber sweep in broadcast() collects it */
-      }
+      // Private cards are recovery data, like snapshots: exempt from SOFT,
+      // but never allowed to keep growing a socket that has crossed HARD.
+      if (this.safeSend(tableId, sub, data)) delivered++;
     }
     return delivered;
   }
@@ -422,7 +421,7 @@ export class TableStateHub {
         seq: room?.lastSeq ?? 0,
         state: snapshot,
       };
-      this.safeSend(sub, JSON.stringify(snap));
+      this.safeSend(tableId, sub, JSON.stringify(snap));
     }
     // D3: a RESYNC is the recovery path for a client that MISSED messages, and
     // until now it recovered only state. The snapshot carries no multiplier, so
@@ -568,7 +567,7 @@ export class TableStateHub {
         ts: Date.now(),
         payload: { ...entry.payload, replayed: true },
       };
-      if (this.safeSend(sub, JSON.stringify(message))) {
+      if (this.safeSend(tableId, sub, JSON.stringify(message))) {
         entry.delivered.add(sub);
         this.replayedEvents++;
       }
@@ -627,42 +626,49 @@ export class TableStateHub {
     // messages, so it is never dropped. DELTA and EVENT are catch-up-able.
     const droppable = message.type !== 'SNAPSHOT';
 
-    const dead: HubSubscriber[] = [];
     for (const sub of room.subscribers) {
-      if (sub.readyState !== 1 /* ws.OPEN */) {
-        dead.push(sub);
-        continue;
-      }
-      const buffered = sub.bufferedAmount ?? 0;
-      if (buffered > HUB_HARD_BACKPRESSURE_BYTES) {
-        // Beyond saving — evict rather than keep buffering for it, and TELL
-        // the transport so the client reconnects now instead of sitting on an
-        // open-but-silent socket until its watchdog gives up (2026-08-24).
-        this.hardDropped++;
-        dead.push(sub);
-        try {
-          sub.evict?.();
-        } catch {
-          /* eviction is best-effort; removal from the room is the point */
-        }
-        continue;
-      }
-      if (droppable && buffered > HUB_SOFT_BACKPRESSURE_BYTES) {
-        this.softDropped++;
-        continue;
-      }
-      if (this.safeSend(sub, payload)) delivered?.add(sub);
+      if (this.safeSend(room.tableId, sub, payload, droppable)) delivered?.add(sub);
     }
-    for (const d of dead) room.subscribers.delete(d);
   }
 
-  /** Returns whether the payload actually reached the socket (D3 uses this). */
-  private safeSend(sub: HubSubscriber, payload: string): boolean {
+  /**
+   * Every delivery path shares the hard guard. Direct snapshots, replay and
+   * private cards used to bypass broadcast(), so a quiet table's repeated
+   * RESYNCs could grow its socket indefinitely without triggering eviction.
+   * Recovery frames remain exempt from SOFT. HARD still permits one frame to
+   * cross the threshold, then retires the adapter before its next send.
+   */
+  private safeSend(
+    tableId: string,
+    sub: HubSubscriber,
+    payload: string,
+    droppable = false
+  ): boolean {
+    if (this.hardEvicted.has(sub) || sub.readyState !== 1 /* ws.OPEN */) {
+      this.rooms.get(tableId)?.subscribers.delete(sub);
+      return false;
+    }
+    const buffered = sub.bufferedAmount ?? 0;
+    if (buffered > HUB_HARD_BACKPRESSURE_BYTES) {
+      this.hardDropped++;
+      this.hardEvicted.add(sub);
+      this.rooms.get(tableId)?.subscribers.delete(sub);
+      try {
+        sub.evict?.();
+      } catch {
+        /* The adapter is retired even if transport cleanup throws. */
+      }
+      return false;
+    }
+    if (droppable && buffered > HUB_SOFT_BACKPRESSURE_BYTES) {
+      this.softDropped++;
+      return false;
+    }
     try {
       sub.send(payload);
       return true;
     } catch {
-      // Swallow — next publish will evict this sub if still closed.
+      // A failed replay remains undelivered and can retry if the socket lives.
       return false;
     }
   }

@@ -1,5 +1,6 @@
 import { configureFixtureSafeupdate } from './safeupdate-provider.mjs';
 import { captureFixtureServicePreimage } from './service-preimage.mjs';
+import { alignFixtureRoles } from './role-alignment.mjs';
 import {
   cronPostgresArguments,
   installFixtureCron,
@@ -491,6 +492,13 @@ async function checkPackage() {
   for (const name of [
     'fixture-server.mjs',
     'service-preimage.mjs',
+    'role-alignment.mjs',
+    'role-alignment-render.mjs',
+    'role-alignment-installer.sql',
+    'role-alignment-native.json',
+    'role-alignment-aligned.json',
+    'role-alignment-graph.sql',
+    'role-alignment-membership.sql',
     'runtime-files.mjs',
     'gateway.mjs',
     'auth-fixture.mjs',
@@ -565,7 +573,7 @@ function serviceEnvironments(secrets) {
   };
 }
 
-async function start(args, preimageOnly = false) {
+async function start(args, preimageOnly = false, roleAlignment = false) {
   let inputs;
   let setupStage = 'arguments';
   try {
@@ -744,6 +752,22 @@ async function start(args, preimageOnly = false) {
     } finally {
       await supervisor.databaseOwner.end(realtimeBootstrap);
     }
+    const applyRoleAlignment = async () => {
+      stage = 'full-role-alignment';
+      try {
+        const roleProof = await alignFixtureRoles({
+          applicationClient: db,
+          Client: pg.Client,
+          password: secrets.databasePassword,
+          signal: supervisor.abort.signal,
+        });
+        supervisor.assertHealthy();
+        process.stdout.write(JSON.stringify(roleProof) + '\n');
+      } catch (error) {
+        if (error?.proof) process.stdout.write(JSON.stringify(error.proof) + '\n');
+        throw error;
+      }
+    };
     const serviceRoles = await assertNativeServiceRoleBoundary(db);
     stage = 'managed-postgres-event-trigger-boundary';
     const managedPostgres = await assertManagedPostgresBoundary(db);
@@ -763,6 +787,7 @@ async function start(args, preimageOnly = false) {
       } finally {
         await supervisor.databaseOwner.end(preimageBootstrap);
       }
+      if (roleAlignment) await applyRoleAlignment();
       // Docker tmpfs disappears on container stop. Keep this exact bootstrap
       // alive until the outer owner copies the catalog, then shut down normally.
       await writeFile(root + '/service-preimage.ready', '', { flag: 'wx', mode: 0o400 });
@@ -777,6 +802,12 @@ async function start(args, preimageOnly = false) {
       });
       return;
     }
+    await applyRoleAlignment();
+    // The held connection remains untouched throughout alignment and its
+    // observers. Reconnect only afterward to activate the new role settings.
+    await supervisor.databaseOwner.end(db);
+    db = supervisor.databaseOwner.own(new pg.Client({ ...connection, database }));
+    await db.connect();
     // Application DDL is restored verbatim. The reviewed schema composer
     // must reconcile service-managed objects with the pinned real migrations.
     // Missing/duplicate objects fail here; no migration history is fabricated.
@@ -1001,6 +1032,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const [command, ...args] = process.argv.slice(2);
     if (command === 'start') await start(args);
     else if (command === 'preimage') await start(args, true);
+    else if (command === 'align-roles') await start(args, true, true);
     else {
       assert.equal(args.length, 0);
       if (command === 'capabilities') {

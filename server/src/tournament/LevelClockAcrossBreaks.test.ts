@@ -131,7 +131,7 @@ describe('levels advance past structure break rows without stalling', () => {
     // then never opened for the life of the tournament. Idempotency is already
     // guaranteed by addOnPeriodTriggered.
     expect(advance).not.toMatch(/prevLevel\s*<\s*rebuyLevelCap\s*&&/);
-    const persisted = advance.search(/\.update\(\{\s*current_level: this\.currentLevel\b/);
+    const persisted = advance.search(/\.update\(\{\s*current_level: nextLevel\b/);
     const reconciled = advance.indexOf("reconcileTournamentEntryWindow('engine.level_change')");
     expect(persisted).toBeGreaterThan(-1);
     expect(reconciled).toBeGreaterThan(persisted);

@@ -342,7 +342,7 @@ test.describe('real Table Studio browser flows', () => {
               preview.querySelectorAll<HTMLImageElement>(
                 '.studio-game-preview__background-ambient, .studio-game-preview__background, .studio-game-preview__table'
               )
-            ).map((image) => image.decode?.().catch(() => undefined))
+            ).map((image) => image.decode())
           );
         });
       };

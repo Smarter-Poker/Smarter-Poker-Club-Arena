@@ -9,9 +9,10 @@
  *   38.1% finished with all chips in play worth under 3 big blinds
  *   12.4% finished with a big blind larger than every chip in the event
  *    7.1% pinned the big blind at the DECIMAL(10,2) ceiling of 10,000,000
- *   a 334-runner field paid 8.9 places — 2.7% of the field
  *
- * If a change turns one of these red, it is re-shipping one of those.
+ * Payout depth is now owned by the installed database function and covered by
+ * scripts/dev/probe-tournament-payout-structure-pg17.py, not a second generator.
+ * These tests cover the blind structure and escalation policies.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -28,7 +29,6 @@ import {
   capLevelToChipsInPlay,
   escalationFactor,
 } from './blindEscalation.js';
-import { MIN_PAID_PLACES, paidPlacesForField, payoutStructureForField } from './payoutStructure.js';
 import { SCHEDULE_BLIND_PRESETS } from '../services/ScheduledTournamentService.js';
 import { BLIND_STRUCTURES as RECURRING_BLIND_STRUCTURES } from '../services/TournamentRecurringService.js';
 
@@ -230,65 +230,5 @@ describe('a big blind may never exceed the chips that exist', () => {
     const capped = capLevelToChipsInPlay({ smallBlind: 50, bigBlind: 100, ante: 10 }, 20);
     expect(capped.bigBlind).toBeGreaterThanOrEqual(2);
     expect(capped.smallBlind).toBeGreaterThanOrEqual(1);
-  });
-});
-
-describe('payout depth scales with the field', () => {
-  it('a 334-runner field pays far more than the 8.9 places it used to', () => {
-    expect(paidPlacesForField(334)).toBeGreaterThanOrEqual(45);
-  });
-
-  it('roughly 15% of the field, across the measured buckets', () => {
-    expect(paidPlacesForField(20)).toBe(3);
-    expect(paidPlacesForField(40)).toBe(6);
-    expect(paidPlacesForField(100)).toBe(15);
-    expect(paidPlacesForField(500)).toBe(75);
-    expect(paidPlacesForField(1000)).toBe(150);
-  });
-
-  it('never pays fewer than the minimum, nor every player in the field', () => {
-    for (const field of [1, 2, 3, 4, 5, 6, 9, 10, 11, 50, 333, 1000]) {
-      const places = paidPlacesForField(field);
-      expect(places, `field ${field} min`).toBeGreaterThanOrEqual(Math.min(MIN_PAID_PLACES, field));
-      expect(places, `field ${field} never every player`).toBeLessThanOrEqual(field);
-    }
-  });
-
-  it('percentages always sum to exactly 100, at every depth', () => {
-    for (const field of [6, 20, 47, 100, 334, 500, 1000]) {
-      const s = payoutStructureForField(field);
-      const total = s.reduce((acc, p) => acc + p.percentage, 0);
-      expect(Math.round(total * 100) / 100, `field ${field} sums to 100`).toBe(100);
-    }
-  });
-
-  it('is monotonically decreasing - a later place never out-earns an earlier one', () => {
-    const s = payoutStructureForField(334);
-    for (let i = 1; i < s.length; i++) {
-      expect(s[i].percentage, `place ${i + 1} <= place ${i}`).toBeLessThanOrEqual(
-        s[i - 1].percentage
-      );
-    }
-  });
-
-  it('places are 1..n with no gap and no duplicate', () => {
-    const s = payoutStructureForField(334);
-    expect(s.map((p) => p.place)).toEqual(s.map((_, i) => i + 1));
-  });
-
-  it('every place pays something - a 0% paid place is not a paid place', () => {
-    for (const field of [20, 100, 500, 1000]) {
-      for (const p of payoutStructureForField(field)) {
-        expect(p.percentage, `field ${field} place ${p.place}`).toBeGreaterThan(0);
-      }
-    }
-  });
-
-  it('keeps the familiar shape at nine places (close to the old NINE preset)', () => {
-    const s = payoutStructureForField(60); // 15% of 60 = 9
-    expect(s.length).toBe(9);
-    // First place near 30%, as the long-standing preset had it.
-    expect(s[0].percentage).toBeGreaterThan(25);
-    expect(s[0].percentage).toBeLessThan(36);
   });
 });

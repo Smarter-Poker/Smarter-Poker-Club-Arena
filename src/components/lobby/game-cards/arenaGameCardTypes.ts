@@ -107,6 +107,9 @@ export interface ArenaGameCardActions {
   busy?: boolean;
   onPrimary?: () => void;
   onSecondary?: () => void;
+  /** Management surfaces print labels into the painted action wells without
+   * adding a generic line icon that is not part of the approved master. */
+  showIcons?: boolean;
 }
 
 export interface ArenaGameCardZoneDefinition {

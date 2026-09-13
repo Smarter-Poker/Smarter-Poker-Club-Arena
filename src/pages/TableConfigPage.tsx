@@ -12,32 +12,6 @@
  * The cash fields still present in TableConfig / DEFAULT_CONFIG exist so a
  * saved table_templates row from before Slice 1 still restores without a
  * type error; nothing on this page writes them anywhere.
- *
- * ── #ClubArenaConsole (2026-09-09) ────────────────────────────────────────
- * The page's own chrome - a bordered header bar, three segmented mode tabs
- * with a blue fill and a glow, a rounded template dropdown, a gold "SPINS"
- * capsule and a three-button footer - is printed on Dan's approved spade
- * master now: the game's name engraved in the header well, the mode as three
- * lit words cut into the glass, and Save / Start on the two painted plates
- * with Save As Template as a lit word beside them.
- *
- * WHAT IS DELIBERATELY LEFT ALONE. Every control inside the options list -
- * Toggle, Slider, NumberField, HelpPopover - is drawn by
- * `src/components/table-config/controls.tsx`, which IMPORTS THIS PAGE'S
- * STYLESHEET, and the same classes dress `CashGameCreateFlow`. Those are
- * other components' surfaces; restyling them from here would repaint two
- * files nobody asked for and turn `createTableHelpAndSwitches` red. The
- * shared vocabulary (.config-toggle, .toggle-label, .config-slider,
- * .slider-*, .table-config-switch*, .config-help*, .config-name,
- * .config-options, .config-radio-*, .config-footer, .btn-save, .btn-start,
- * .config-preset-chip) is untouched.
- *
- * WHAT DID NOT CHANGE, AND MUST NOT: handleSave, handleStart,
- * handleStartTournament, handleSaveAsTemplate, loadTemplate, the permission
- * gate (`canBuildHere` / `gameCreationDeniedMessage`), the seat clamps, the
- * schedule validation, and every label, min and max on every control. This
- * page creates real tournaments that charge real buy-ins; not one of those
- * paths was touched.
  */
 
 import { useState, useEffect, useMemo, useRef } from 'react';
@@ -46,8 +20,6 @@ import { supabase, getAuthUser } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
 import { resolveClubUUID } from '../utils/clubIdResolver';
-import StandardContentLayout from '../components/layouts/StandardContentLayout';
-import { SpadeConsole } from '../components/console/SpadeConsole';
 import './TableConfigPage.css';
 import { reportError } from '../utils/errorReporter';
 import { RAKE_INHERIT } from '../config/RakeConfig';
@@ -73,6 +45,7 @@ import WeeklyScheduleEditor, {
 import { HelpPopover } from '../components/common/HelpPopover';
 import { Toggle, Slider, NumberField } from '../components/table-config/controls';
 import CashGameCreateFlow from '../components/cash/CashGameCreateFlow';
+import { SpadeConsole } from '../components/console/SpadeConsole';
 import {
   FREE_BUY_ADDON_COST,
   FREE_BUY_HELPER,
@@ -470,12 +443,15 @@ export interface TableConfigPageProps {
   gameTypeOverride?: string;
   /** Embedded hosts receive every exit instead of a club navigation. */
   onExit?: (exit: TableConfigExit) => void;
+  /** The parent Table Management console already owns the painted chassis. */
+  embedded?: boolean;
 }
 
 export default function TableConfigPage({
   clubIdOverride,
   gameTypeOverride,
   onExit,
+  embedded = false,
 }: TableConfigPageProps = {}) {
   const params = useParams<{ clubId: string; gameType: string }>();
   const clubId = clubIdOverride || params.clubId;
@@ -1056,172 +1032,113 @@ export default function TableConfigPage({
     }
   };
 
-  return (
-    <StandardContentLayout className="table-config-page">
-      {/* ── The head: the game's name engraved in the header well ────── */}
-      <SpadeConsole
-        className="tc-console"
-        eyebrow="Club Arena"
-        title={gameInfo.name}
-        pill={config.gameMode === 'regular' ? 'Cash' : config.gameMode === 'sng' ? 'SNG' : 'MTT'}
-        pillInk="blue"
-        foot="foot"
-      >
-        {/* Game Mode.
-            The SNG and MTT words only appear for game types the tournament
-            engine can actually deal. HandController maps an unknown variant to
-            2 cards and a full deck, so offering a Limit Hold'em or Mixed
-            tournament would silently run No Limit Hold'em instead.
-            The master paints no tab, so nothing here draws one: the three
-            modes are lit words cut into the glass. */}
-        <div className="tc-rail" role="tablist" aria-label="Game Mode">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={config.gameMode === 'regular'}
-            className={`tc-rail__word ${
-              config.gameMode === 'regular' ? 'sc-ink--silver' : 'sc-ink--muted'
-            }`}
-            onClick={() => updateConfig('gameMode', 'regular')}
-          >
-            Regular
-          </button>
-          {canRunAsTournament && (
-            <>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={config.gameMode === 'sng'}
-                className={`tc-rail__word ${
-                  config.gameMode === 'sng' ? 'sc-ink--silver' : 'sc-ink--muted'
-                }`}
-                onClick={() => updateConfig('gameMode', 'sng')}
-              >
-                SNG
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={config.gameMode === 'mtt'}
-                className={`tc-rail__word ${
-                  config.gameMode === 'mtt' ? 'sc-ink--silver' : 'sc-ink--muted'
-                }`}
-                onClick={() => updateConfig('gameMode', 'mtt')}
-              >
-                MTT
-              </button>
-            </>
-          )}
-        </div>
+  const content = (
+    <div className="table-config-page">
+      {/* Header */}
+      <div className="config-header">
+        <h1 className="config-title">{gameInfo.name}</h1>
+      </div>
 
-        {/* Template Selector - At TOP for easy duplication (tournaments; cash
-            games have the three house templates inside the flow). A groove cut
-            in the glass, not a rounded dropdown drawn on top of it. */}
-        {config.gameMode !== 'regular' && templatesForThisGame.length > 0 && (
-          <label className="tc-field">
-            <span className="tc-field__label sc-label sc-ink--blue">Load Template</span>
-            <select
-              className="tc-field__groove sc-ink--silver"
-              value={selectedTemplateId}
-              onChange={(e) => loadTemplate(e.target.value)}
+      {/* Game Mode Tabs.
+          The SNG and MTT tabs only appear for game types the tournament engine
+          can actually deal. HandController maps an unknown variant to 2 cards
+          and a full deck, so offering a Limit Hold'em or Mixed tournament would
+          silently run No Limit Hold'em instead. */}
+      <div className="mode-tabs">
+        <button
+          className={`mode-tab ${config.gameMode === 'regular' ? 'active' : ''}`}
+          onClick={() => updateConfig('gameMode', 'regular')}
+        >
+          Regular
+        </button>
+        {canRunAsTournament && (
+          <>
+            <button
+              className={`mode-tab ${config.gameMode === 'sng' ? 'active' : ''}`}
+              onClick={() => updateConfig('gameMode', 'sng')}
             >
-              <option value="">Start Fresh</option>
-              {templatesForThisGame.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </label>
+              SNG
+            </button>
+            <button
+              className={`mode-tab ${config.gameMode === 'mtt' ? 'active' : ''}`}
+              onClick={() => updateConfig('gameMode', 'mtt')}
+            >
+              MTT
+            </button>
+          </>
         )}
+      </div>
 
-        {/* Spins Mode Indicator - lit type, never a gold capsule. */}
-        {config.isSpins && config.gameMode === 'sng' && (
-          <p className="tc-note">
-            <span className="sc-label sc-ink--gold">Spins</span>
-            <span className="sc-copy">3-Player Spins Mode Active</span>
-          </p>
-        )}
-
-        {/* Table Name (tournaments; the cash flow names the game itself) */}
-        {config.gameMode !== 'regular' && (
-          <label className="tc-field">
-            <span className="tc-field__label sc-label sc-ink--blue">Table Name</span>
-            <input
-              type="text"
-              className="tc-field__groove sc-ink--silver"
-              placeholder="Enter Table Name Here..."
-              value={config.name}
-              maxLength={30}
-              onChange={(e) => updateConfig('name', e.target.value.slice(0, 30))}
-            />
-          </label>
-        )}
-      </SpadeConsole>
-
-      {/* 2026-08-19: everything below is CASH-TABLE or TOURNAMENT
-          configuration. It writes `tables` columns, and a tournament does not
-          use a `tables` row of its own — TournamentManager creates its tables
-          with a fixed settings payload when the tournament starts. Leaving
-          those on the SNG/MTT tabs meant an owner could set blinds, buy-in
-          caps, bomb pots and straddle rules for a tournament and have every
-          one of them silently ignored. */}
-      {/* OPERATION TABLE STAKES, Slice 1 (2026-09-04): a host creates a
-          GAME, not a table. The cash configuration that lived here - every
-          section from Basic Settings to Security, and the two
-          `tables` inserts behind Save / Start - is replaced by the New
-          Cash Game flow, which persists a `cash_games` row and its
-          resolved ruleset snapshot through fn_cash_game_create. Nothing
-          on this page writes `tables` for a cash game any more.
-          The flow is its own component with its own frame, so it is given
-          room here rather than a second frame around it. */}
-      {config.gameMode === 'regular' && (
-        <CashGameCreateFlow
-          clubId={clubId || ''}
-          initialVariant={gameType}
-          canBuildHere={canBuildHere}
-          deniedMessage={access ? gameCreationDeniedMessage(access) : null}
-          onSaved={onExit ? () => onExit('saved') : undefined}
-        />
+      {/* Template Selector - At TOP for easy duplication (tournaments; cash
+          games have the three house templates inside the flow) */}
+      {config.gameMode !== 'regular' && templatesForThisGame.length > 0 && (
+        <div className="template-selector">
+          <label className="template-label">Load Template:</label>
+          <select
+            className="template-dropdown"
+            value={selectedTemplateId}
+            onChange={(e) => loadTemplate(e.target.value)}
+          >
+            <option value="">-- Start Fresh --</option>
+            {templatesForThisGame.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </div>
       )}
 
-      {/* SNG/MTT SPECIFIC OPTIONS.
-          Save and Start are the two painted plates in the foot; Save As
-          Template is the third action, so it is a lit word on the glass -
-          the foot paints a PAIR of plates and a third would have nowhere to
-          go. Same three handlers, same disabled states, same labels. */}
-      {(config.gameMode === 'sng' || config.gameMode === 'mtt') && (
-        <SpadeConsole
-          className="tc-console"
-          eyebrow={gameInfo.name}
-          title="Tournament Setup"
-          pill={config.gameMode === 'sng' ? 'SNG' : 'MTT'}
-          pillInk="blue"
-          foot="plates"
-          plates={{
-            secondary: {
-              label: saving ? 'Saving' : 'Save',
-              onClick: handleSave,
-              disabled: saving,
-            },
-            primary: {
-              label: starting ? 'Starting' : 'Start',
-              ink: 'white',
-              onClick: handleStart,
-              disabled: starting,
-            },
-          }}
-        >
-          <button
-            type="button"
-            className="tc-word sc-ink--blue"
-            onClick={handleSaveAsTemplate}
-            disabled={savingTemplate}
-          >
-            {savingTemplate ? 'Saving...' : 'Save As Template'}
-          </button>
+      {/* Spins Mode Indicator */}
+      {config.isSpins && config.gameMode === 'sng' && (
+        <div className="spins-indicator">
+          <span className="spins-badge">SPINS</span>
+          <span className="spins-text">3-Player Spins Mode Active</span>
+        </div>
+      )}
 
-          <div className="config-options">
+      {/* Table Name (tournaments; the cash flow names the game itself) */}
+      {config.gameMode !== 'regular' && (
+        <div className="config-name">
+          <input
+            type="text"
+            placeholder="Enter Table Name Here..."
+            value={config.name}
+            maxLength={30}
+            onChange={(e) => updateConfig('name', e.target.value.slice(0, 30))}
+          />
+        </div>
+      )}
+
+      {/* Scrollable Options */}
+      <div className="config-options">
+        {/* 2026-08-19: everything from here to the tournament options is
+            CASH-TABLE configuration. It writes `tables` columns, and a
+            tournament does not use a `tables` row of its own — TournamentManager
+            creates its tables with a fixed settings payload when the tournament
+            starts. Leaving these on the SNG/MTT tabs meant an owner could set
+            blinds, buy-in caps, bomb pots and straddle rules for a tournament
+            and have every one of them silently ignored. */}
+        {/* OPERATION TABLE STAKES, Slice 1 (2026-09-04): a host creates a
+            GAME, not a table. The cash configuration that lived here - every
+            section from Basic Settings to Security, and the two
+            `tables` inserts behind Save / Start - is replaced by the New
+            Cash Game flow, which persists a `cash_games` row and its
+            resolved ruleset snapshot through fn_cash_game_create. Nothing
+            on this page writes `tables` for a cash game any more. */}
+        {config.gameMode === 'regular' && (
+          <CashGameCreateFlow
+            clubId={clubId || ''}
+            initialVariant={gameType}
+            canBuildHere={canBuildHere}
+            deniedMessage={access ? gameCreationDeniedMessage(access) : null}
+            onSaved={onExit ? () => onExit('saved') : undefined}
+          />
+        )}
+
+        {/* SNG/MTT SPECIFIC OPTIONS */}
+        {(config.gameMode === 'sng' || config.gameMode === 'mtt') && (
+          <>
             {/* SNG Player Count Dropdown - Only for SNG */}
             {config.gameMode === 'sng' && (
               <div className="config-toggle">
@@ -1468,39 +1385,107 @@ export default function TableConfigPage({
               onChange={(v) => updateConfig('synchronizedBreaks', v)}
               tooltip="All Tables Break At The Same Time"
             />
+          </>
+        )}
 
-            {/* MTT-ONLY OPTIONS */}
-            {config.gameMode === 'mtt' && (
-              <>
-                <Toggle
-                  label="Accelerated MTT"
-                  value={config.acceleratedMtt}
-                  onChange={(v) => updateConfig('acceleratedMtt', v)}
-                  tooltip="Faster Level Progression Once The Field Shrinks"
-                />
+        {/* MTT-ONLY OPTIONS */}
+        {config.gameMode === 'mtt' && (
+          <>
+            <Toggle
+              label="Accelerated MTT"
+              value={config.acceleratedMtt}
+              onChange={(v) => updateConfig('acceleratedMtt', v)}
+              tooltip="Faster Level Progression Once The Field Shrinks"
+            />
 
-                {/* FREEROLLS ARE FREE BUY (Dan 2026-09-02). A 0 buy-in MTT is a
+            {/* FREEROLLS ARE FREE BUY (Dan 2026-09-02). A 0 buy-in MTT is a
                 freeroll: rebuys and add-ons are ON at 1 chip each and the
                 controls are locked, not hidden, so the owner can read what the
                 rule set. buildTournamentConfig applies the same values on the
                 write whatever these sliders held. */}
-                {isFreeBuy ? (
-                  <div className="config-free-buy-lock" data-testid="free-buy-lock">
-                    <Toggle label="Rebuys" value={true} onChange={() => {}} disabled />
-                    <NumberField
-                      label="Rebuy Cost"
-                      value={FREE_BUY_REBUY_COST}
-                      onChange={() => {}}
-                      disabled
+            {isFreeBuy ? (
+              <div className="config-free-buy-lock" data-testid="free-buy-lock">
+                <Toggle label="Rebuys" value={true} onChange={() => {}} disabled />
+                <NumberField
+                  label="Rebuy Cost"
+                  value={FREE_BUY_REBUY_COST}
+                  onChange={() => {}}
+                  disabled
+                />
+                <Toggle label="Add-On" value={true} onChange={() => {}} disabled />
+                <NumberField
+                  label="Add-On Cost"
+                  value={FREE_BUY_ADDON_COST}
+                  onChange={() => {}}
+                  disabled
+                />
+                <p className="config-free-buy__text">{FREE_BUY_HELPER}</p>
+                <Slider
+                  label="Add-On Break Length"
+                  value={config.addOnBreakLengthMinutes}
+                  onChange={(v) => updateConfig('addOnBreakLengthMinutes', v)}
+                  min={1}
+                  max={10}
+                  suffix=" min"
+                />
+              </div>
+            ) : (
+              <>
+                <Slider
+                  label="Number Of Rebuys/Re-Entries"
+                  value={config.numberOfRebuysReentries}
+                  onChange={(v) => updateConfig('numberOfRebuysReentries', v)}
+                  min={0}
+                  max={10}
+                />
+                {config.numberOfRebuysReentries > 0 && (
+                  <>
+                    <Toggle
+                      label="Custom Rebuy/Re-Entry Cost"
+                      value={config.customRebuyReentryCost}
+                      onChange={(v) => updateConfig('customRebuyReentryCost', v)}
+                      tooltip="Charge A Different Price Than The Buy-In"
                     />
-                    <Toggle label="Add-On" value={true} onChange={() => {}} disabled />
-                    <NumberField
-                      label="Add-On Cost"
-                      value={FREE_BUY_ADDON_COST}
-                      onChange={() => {}}
-                      disabled
+                    {config.customRebuyReentryCost && (
+                      <NumberField
+                        label="Rebuy/Re-Entry Cost"
+                        value={config.rebuyReentryCost}
+                        onChange={(v) => updateConfig('rebuyReentryCost', v)}
+                        min={0}
+                        tooltip="Whole Chips Only. 0 = Same As The Buy-In."
+                      />
+                    )}
+                  </>
+                )}
+
+                {/* Add-on Options */}
+                <Slider
+                  label="Add-On"
+                  value={config.addOnMultiplier}
+                  onChange={(v) => updateConfig('addOnMultiplier', v)}
+                  min={0}
+                  max={3}
+                  step={0.5}
+                  suffix="x"
+                  tooltip="Add-On Chips As A Multiple Of The Starting Stack. 0 = No Add-On."
+                />
+                {config.addOnMultiplier > 0 && (
+                  <>
+                    <Toggle
+                      label="Custom Add-On"
+                      value={config.customAddOn}
+                      onChange={(v) => updateConfig('customAddOn', v)}
+                      tooltip="Charge A Different Add-On Price Than The Buy-In"
                     />
-                    <p className="config-free-buy__text">{FREE_BUY_HELPER}</p>
+                    {config.customAddOn && (
+                      <NumberField
+                        label="Add-On Cost"
+                        value={config.customAddOnCost}
+                        onChange={(v) => updateConfig('customAddOnCost', v)}
+                        min={0}
+                        tooltip="Whole Chips Only. 0 = Same As The Buy-In."
+                      />
+                    )}
                     <Slider
                       label="Add-On Break Length"
                       value={config.addOnBreakLengthMinutes}
@@ -1509,168 +1494,102 @@ export default function TableConfigPage({
                       max={10}
                       suffix=" min"
                     />
-                  </div>
-                ) : (
-                  <>
-                    <Slider
-                      label="Number Of Rebuys/Re-Entries"
-                      value={config.numberOfRebuysReentries}
-                      onChange={(v) => updateConfig('numberOfRebuysReentries', v)}
-                      min={0}
-                      max={10}
-                    />
-                    {config.numberOfRebuysReentries > 0 && (
-                      <>
-                        <Toggle
-                          label="Custom Rebuy/Re-Entry Cost"
-                          value={config.customRebuyReentryCost}
-                          onChange={(v) => updateConfig('customRebuyReentryCost', v)}
-                          tooltip="Charge A Different Price Than The Buy-In"
-                        />
-                        {config.customRebuyReentryCost && (
-                          <NumberField
-                            label="Rebuy/Re-Entry Cost"
-                            value={config.rebuyReentryCost}
-                            onChange={(v) => updateConfig('rebuyReentryCost', v)}
-                            min={0}
-                            tooltip="Whole Chips Only. 0 = Same As The Buy-In."
-                          />
-                        )}
-                      </>
-                    )}
-
-                    {/* Add-on Options */}
-                    <Slider
-                      label="Add-On"
-                      value={config.addOnMultiplier}
-                      onChange={(v) => updateConfig('addOnMultiplier', v)}
-                      min={0}
-                      max={3}
-                      step={0.5}
-                      suffix="x"
-                      tooltip="Add-On Chips As A Multiple Of The Starting Stack. 0 = No Add-On."
-                    />
-                    {config.addOnMultiplier > 0 && (
-                      <>
-                        <Toggle
-                          label="Custom Add-On"
-                          value={config.customAddOn}
-                          onChange={(v) => updateConfig('customAddOn', v)}
-                          tooltip="Charge A Different Add-On Price Than The Buy-In"
-                        />
-                        {config.customAddOn && (
-                          <NumberField
-                            label="Add-On Cost"
-                            value={config.customAddOnCost}
-                            onChange={(v) => updateConfig('customAddOnCost', v)}
-                            min={0}
-                            tooltip="Whole Chips Only. 0 = Same As The Buy-In."
-                          />
-                        )}
-                        <Slider
-                          label="Add-On Break Length"
-                          value={config.addOnBreakLengthMinutes}
-                          onChange={(v) => updateConfig('addOnBreakLengthMinutes', v)}
-                          min={1}
-                          max={10}
-                          suffix=" min"
-                        />
-                      </>
-                    )}
                   </>
                 )}
+              </>
+            )}
 
-                {/* Tournament Features */}
-                <Toggle
-                  label="KO Bounty"
-                  value={config.koBounty}
-                  onChange={(v) => updateConfig('koBounty', v)}
-                />
-                <Toggle
-                  label="GTD Prize Pool"
-                  value={config.gtdPrizePool}
-                  onChange={(v) => updateConfig('gtdPrizePool', v)}
-                  tooltip="Guarantee A Minimum Prize Pool. The Club Covers Any Overlay."
-                />
-                {config.gtdPrizePool && (
-                  <NumberField
-                    label="Guaranteed Prize"
-                    value={config.gtdPrizeAmount}
-                    onChange={(v) => updateConfig('gtdPrizeAmount', v)}
-                    min={0}
-                    tooltip="Whole Chips Only"
-                  />
-                )}
-                <Toggle
-                  label="Final Table Deal"
-                  value={config.finalTableDeal}
-                  onChange={(v) => updateConfig('finalTableDeal', v)}
-                  tooltip="Final Table Players May Vote To Split The Remaining Prizes"
-                />
-                <Toggle
-                  label="Bubble Protection"
-                  value={config.bubbleProtection}
-                  onChange={(v) => updateConfig('bubbleProtection', v)}
-                  tooltip="The Bubble Finisher Gets Their Buy-In Back"
-                />
+            {/* Tournament Features */}
+            <Toggle
+              label="KO Bounty"
+              value={config.koBounty}
+              onChange={(v) => updateConfig('koBounty', v)}
+            />
+            <Toggle
+              label="GTD Prize Pool"
+              value={config.gtdPrizePool}
+              onChange={(v) => updateConfig('gtdPrizePool', v)}
+              tooltip="Guarantee A Minimum Prize Pool. The Club Covers Any Overlay."
+            />
+            {config.gtdPrizePool && (
+              <NumberField
+                label="Guaranteed Prize"
+                value={config.gtdPrizeAmount}
+                onChange={(v) => updateConfig('gtdPrizeAmount', v)}
+                min={0}
+                tooltip="Whole Chips Only"
+              />
+            )}
+            <Toggle
+              label="Final Table Deal"
+              value={config.finalTableDeal}
+              onChange={(v) => updateConfig('finalTableDeal', v)}
+              tooltip="Final Table Players May Vote To Split The Remaining Prizes"
+            />
+            <Toggle
+              label="Bubble Protection"
+              value={config.bubbleProtection}
+              onChange={(v) => updateConfig('bubbleProtection', v)}
+              tooltip="The Bubble Finisher Gets Their Buy-In Back"
+            />
 
-                {/* Registration & Players */}
-                <Slider
-                  label="Late Registration"
-                  value={config.lateRegistrationLevel}
-                  onChange={(v) => updateConfig('lateRegistrationLevel', v)}
-                  min={0}
-                  max={20}
-                  suffix=" level"
+            {/* Registration & Players */}
+            <Slider
+              label="Late Registration"
+              value={config.lateRegistrationLevel}
+              onChange={(v) => updateConfig('lateRegistrationLevel', v)}
+              min={0}
+              max={20}
+              suffix=" level"
+            />
+            <Toggle
+              label="Early Bird Registration"
+              value={config.earlyBirdRegistration}
+              onChange={(v) => updateConfig('earlyBirdRegistration', v)}
+              tooltip="Players Who Register Before The Start Get Bonus Chips"
+            />
+            {config.earlyBirdRegistration && (
+              <NumberField
+                label="Early Bird Chips"
+                value={config.earlyBirdChips}
+                onChange={(v) => updateConfig('earlyBirdChips', v)}
+                min={0}
+                tooltip="Extra Starting Chips For Registering Before The Start"
+              />
+            )}
+            <Toggle
+              label="Next Step (Satellite)"
+              value={config.nextStepSatellite}
+              onChange={(v) => updateConfig('nextStepSatellite', v)}
+              tooltip="Winners Earn Seats Into A Bigger Tournament Instead Of Cash"
+            />
+            {config.nextStepSatellite && (
+              <>
+                <div className="config-toggle">
+                  <span className="toggle-label">Awards Seats Into</span>
+                  <select
+                    className="config-select"
+                    value={config.satelliteTargetId}
+                    onChange={(e) => updateConfig('satelliteTargetId', e.target.value)}
+                  >
+                    <option value="">Select Target Tournament...</option>
+                    {satelliteTargets.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <NumberField
+                  label="Seats Awarded"
+                  value={config.satelliteSeats}
+                  onChange={(v) => updateConfig('satelliteSeats', v)}
+                  min={1}
+                  tooltip="Top N Finishers Win A Seat"
                 />
-                <Toggle
-                  label="Early Bird Registration"
-                  value={config.earlyBirdRegistration}
-                  onChange={(v) => updateConfig('earlyBirdRegistration', v)}
-                  tooltip="Players Who Register Before The Start Get Bonus Chips"
-                />
-                {config.earlyBirdRegistration && (
-                  <NumberField
-                    label="Early Bird Chips"
-                    value={config.earlyBirdChips}
-                    onChange={(v) => updateConfig('earlyBirdChips', v)}
-                    min={0}
-                    tooltip="Extra Starting Chips For Registering Before The Start"
-                  />
-                )}
-                <Toggle
-                  label="Next Step (Satellite)"
-                  value={config.nextStepSatellite}
-                  onChange={(v) => updateConfig('nextStepSatellite', v)}
-                  tooltip="Winners Earn Seats Into A Bigger Tournament Instead Of Cash"
-                />
-                {config.nextStepSatellite && (
-                  <>
-                    <div className="config-toggle">
-                      <span className="toggle-label">Awards Seats Into</span>
-                      <select
-                        className="config-select"
-                        value={config.satelliteTargetId}
-                        onChange={(e) => updateConfig('satelliteTargetId', e.target.value)}
-                      >
-                        <option value="">Select Target Tournament...</option>
-                        {satelliteTargets.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <NumberField
-                      label="Seats Awarded"
-                      value={config.satelliteSeats}
-                      onChange={(v) => updateConfig('satelliteSeats', v)}
-                      min={1}
-                      tooltip="Top N Finishers Win A Seat"
-                    />
-                  </>
-                )}
-                {/* MULTI-DAY MTT: A TOGGLE THAT LIED, REPLACED BY THE TRUTH.
+              </>
+            )}
+            {/* MULTI-DAY MTT: A TOGGLE THAT LIED, REPLACED BY THE TRUTH.
                 2026-08-26. This was a working switch over a feature that does
                 not exist. Ticking it set `is_multi_day` and `total_days`,
                 painted a "Multi-Day" tag on the lobby card and a badge in the
@@ -1683,123 +1602,147 @@ export default function TableConfigPage({
                 at the database for every caller, so a control here could only
                 produce an error. Restore the Toggle and the Total Days field
                 in the commit that implements Day 2. */}
-                <div className="config-toggle">
-                  <span className="toggle-label">
-                    Multi-Day MTT
-                    <HelpPopover label="Multi-Day MTT">
-                      Day 2 Resume And Flight Merging Are Not Built. Setting This Would Badge The
-                      Event Multi-Day While It Played Down To One Winner In A Single Session, So It
-                      Is Refused Rather Than Promised.
-                    </HelpPopover>
-                  </span>
-                  {/* `toggle-status off` named no rule in any stylesheet, so
-                      this refusal rendered as unstyled body text. It is lit
-                      red type on the glass now; the words are pinned by
-                      tests/unit/tablePrivacyControls.test.ts and are
-                      unchanged. */}
-                  <span className="sc-label sc-ink--red">NOT AVAILABLE YET</span>
-                </div>
-                {/* Player Number Range */}
-                <div className="config-slider">
-                  <div className="slider-header">
-                    <span className="slider-label">
-                      Player Number: {config.minPlayers} - {config.maxPlayersRange}
-                    </span>
-                  </div>
-                  <div className="buyin-sliders">
-                    <input
-                      type="range"
-                      min={2}
-                      max={config.maxPlayersRange}
-                      value={config.minPlayers}
-                      onChange={(e) => updateConfig('minPlayers', Number(e.target.value))}
-                      className="slider-input"
-                    />
-                    <input
-                      type="range"
-                      min={config.minPlayers}
-                      max={1000}
-                      value={config.maxPlayersRange}
-                      onChange={(e) => updateConfig('maxPlayersRange', Number(e.target.value))}
-                      className="slider-input"
-                    />
-                  </div>
-                </div>
+            <div className="config-toggle">
+              <span className="toggle-label">
+                Multi-Day MTT
+                <HelpPopover label="Multi-Day MTT">
+                  Day 2 Resume And Flight Merging Are Not Built. Setting This Would Badge The Event
+                  Multi-Day While It Played Down To One Winner In A Single Session, So It Is Refused
+                  Rather Than Promised.
+                </HelpPopover>
+              </span>
+              <span className="toggle-status off">NOT AVAILABLE YET</span>
+            </div>
+            {/* Player Number Range */}
+            <div className="config-slider">
+              <div className="slider-header">
+                <span className="slider-label">
+                  Player Number: {config.minPlayers} - {config.maxPlayersRange}
+                </span>
+              </div>
+              <div className="buyin-sliders">
+                <input
+                  type="range"
+                  min={2}
+                  max={config.maxPlayersRange}
+                  value={config.minPlayers}
+                  onChange={(e) => updateConfig('minPlayers', Number(e.target.value))}
+                  className="slider-input"
+                />
+                <input
+                  type="range"
+                  min={config.minPlayers}
+                  max={1000}
+                  value={config.maxPlayersRange}
+                  onChange={(e) => updateConfig('maxPlayersRange', Number(e.target.value))}
+                  className="slider-input"
+                />
+              </div>
+            </div>
 
-                {/* Start Time */}
-                <div className="config-toggle">
-                  <span className="toggle-label">Start Time</span>
-                  <input
-                    type="datetime-local"
-                    className="config-datetime"
-                    value={config.startTime}
-                    onChange={(e) => updateConfig('startTime', e.target.value)}
-                  />
-                </div>
-                {/* "Save the Start Time" (2026-08-22): table_templates snapshots
+            {/* Start Time */}
+            <div className="config-toggle">
+              <span className="toggle-label">Start Time</span>
+              <input
+                type="datetime-local"
+                className="config-datetime"
+                value={config.startTime}
+                onChange={(e) => updateConfig('startTime', e.target.value)}
+              />
+            </div>
+            {/* "Save the Start Time" (2026-08-22): table_templates snapshots
                 the whole config including startTime, but a saved datetime goes
                 stale the moment it passes. This toggle instead remembers the
                 picked start time in localStorage per club and prefills it on
                 the next visit — simple and honest about what it does. */}
-                <Toggle
-                  label="Save The Start Time"
-                  value={config.saveStartTime}
-                  onChange={(v) => updateConfig('saveStartTime', v)}
-                  tooltip="Remember This Start Time On This Device And Prefill It Next Time"
-                />
+            <Toggle
+              label="Save The Start Time"
+              value={config.saveStartTime}
+              onChange={(v) => updateConfig('saveStartTime', v)}
+              tooltip="Remember This Start Time On This Device And Prefill It Next Time"
+            />
 
-                <Toggle
-                  label="Restart The Tournament"
-                  value={config.restartTournamentEvery}
-                  onChange={(v) => updateConfig('restartTournamentEvery', v)}
-                  tooltip="Automatically Respawn This Tournament On A Fixed Interval"
-                />
-                {config.restartTournamentEvery && (
-                  <Slider
-                    label="Restart Every"
-                    value={config.restartEveryMinutes}
-                    onChange={(v) => updateConfig('restartEveryMinutes', v)}
-                    min={5}
-                    max={1440}
-                    step={5}
-                    suffix=" min"
-                  />
-                )}
+            <Toggle
+              label="Restart The Tournament"
+              value={config.restartTournamentEvery}
+              onChange={(v) => updateConfig('restartTournamentEvery', v)}
+              tooltip="Automatically Respawn This Tournament On A Fixed Interval"
+            />
+            {config.restartTournamentEvery && (
+              <Slider
+                label="Restart Every"
+                value={config.restartEveryMinutes}
+                onChange={(v) => updateConfig('restartEveryMinutes', v)}
+                min={5}
+                max={1440}
+                step={5}
+                suffix=" min"
+              />
+            )}
 
-                {/* Tournament Schedule: weekly recurrence. Saving with this ON
+            {/* Tournament Schedule: weekly recurrence. Saving with this ON
                 writes a tournament_schedules row via
                 fn_upsert_tournament_schedule; the engine's spawner creates the
                 tournaments from it. */}
-                <Toggle
-                  label="Tournament Schedule"
-                  value={config.tournamentSchedule}
-                  onChange={(v) => updateConfig('tournamentSchedule', v)}
-                  tooltip="Repeat This Tournament Weekly. With No Start Time Picked, Only The Schedule Is Created."
-                />
-                {config.tournamentSchedule && (
-                  <WeeklyScheduleEditor
-                    value={{
-                      daysOfWeek: config.scheduleDays,
-                      startTimesUtc: config.scheduleTimes,
-                      mode: config.scheduleMode,
-                      intervalMinutes: config.scheduleIntervalMinutes,
-                    }}
-                    onChange={(next) =>
-                      setConfig((prev) => ({
-                        ...prev,
-                        scheduleDays: next.daysOfWeek,
-                        scheduleTimes: next.startTimesUtc,
-                        scheduleMode: next.mode,
-                        scheduleIntervalMinutes: next.intervalMinutes,
-                      }))
-                    }
-                  />
-                )}
-              </>
+            <Toggle
+              label="Tournament Schedule"
+              value={config.tournamentSchedule}
+              onChange={(v) => updateConfig('tournamentSchedule', v)}
+              tooltip="Repeat This Tournament Weekly. With No Start Time Picked, Only The Schedule Is Created."
+            />
+            {config.tournamentSchedule && (
+              <WeeklyScheduleEditor
+                value={{
+                  daysOfWeek: config.scheduleDays,
+                  startTimesUtc: config.scheduleTimes,
+                  mode: config.scheduleMode,
+                  intervalMinutes: config.scheduleIntervalMinutes,
+                }}
+                onChange={(next) =>
+                  setConfig((prev) => ({
+                    ...prev,
+                    scheduleDays: next.daysOfWeek,
+                    scheduleTimes: next.startTimesUtc,
+                    scheduleMode: next.mode,
+                    scheduleIntervalMinutes: next.intervalMinutes,
+                  }))
+                }
+              />
             )}
-          </div>
-        </SpadeConsole>
+          </>
+        )}
+      </div>
+
+      {/* Footer Buttons (tournaments; the cash flow carries its own) */}
+      {config.gameMode !== 'regular' && (
+        <footer className="config-footer">
+          <button className="btn-template" onClick={handleSaveAsTemplate} disabled={savingTemplate}>
+            {savingTemplate ? 'Saving...' : 'Save As Template'}
+          </button>
+          <button className="btn-save" onClick={handleSave} disabled={saving}>
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+          <button className="btn-start" onClick={handleStart} disabled={starting}>
+            {starting ? 'Starting...' : 'Start'}
+          </button>
+        </footer>
       )}
-    </StandardContentLayout>
+    </div>
+  );
+
+  if (embedded) return content;
+
+  return (
+    <main className="table-config-page__standalone">
+      <SpadeConsole
+        eyebrow="Table Management"
+        title={`${gameInfo.name} Setup`}
+        subtitle="Configure, Validate, Then Publish"
+        pill="Creator"
+        crest="club"
+      >
+        {content}
+      </SpadeConsole>
+    </main>
   );
 }

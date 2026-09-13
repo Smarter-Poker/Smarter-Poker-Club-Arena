@@ -1,4 +1,8 @@
 import { Worker } from 'node:worker_threads';
+import {
+  parseJournalQueueHealth,
+  type JournalQueueHealth,
+} from './horseAdaptiveJournal/queueHealth.js';
 
 interface Child {
   on(event: string, listener: (value: unknown) => void): unknown;
@@ -27,6 +31,8 @@ export type JournalWorkerStatus = Readonly<{
   lastRetention: string | null;
   activeSince: number | null;
   lastMessageAt: number | null;
+  queueHealth: JournalQueueHealth;
+  queueHealthReceivedAt: number | null;
 }>;
 const workStates = new Set([
   'unavailable',
@@ -60,6 +66,8 @@ export class HorseAdaptiveJournalWorker {
     lastRetention: null,
     activeSince: null,
     lastMessageAt: null,
+    queueHealth: Object.freeze({ status: 'unknown' }),
+    queueHealthReceivedAt: null,
   };
   constructor(
     private readonly factory: () => Child = () =>
@@ -70,7 +78,15 @@ export class HorseAdaptiveJournalWorker {
   ) {}
 
   status(): JournalWorkerStatus {
-    return Object.freeze({ ...this.summary });
+    const h = this.summary.queueHealth;
+    const health =
+      this.summary.phase === 'ready' &&
+      this.summary.queueHealthReceivedAt !== null &&
+      Math.abs(Date.now() - this.summary.queueHealthReceivedAt) <= 75000 &&
+      (h.status !== 'snapshot' || Math.abs(Date.now() - h.sampledAtMs) <= 75000)
+        ? h
+        : Object.freeze({ status: 'unknown' as const });
+    return Object.freeze({ ...this.summary, queueHealth: health });
   }
   start(): boolean {
     if (this.stopping || this.owner?.reaping) return false;
@@ -84,7 +100,12 @@ export class HorseAdaptiveJournalWorker {
   }
   private spawn(): void {
     if (!this.desired || this.owner) return;
-    this.update({ phase: 'starting', activeSince: null });
+    this.update({
+      phase: 'starting',
+      activeSince: null,
+      queueHealth: Object.freeze({ status: 'unknown' }),
+      queueHealthReceivedAt: null,
+    });
     let child: Child;
     try {
       child = this.factory();
@@ -145,6 +166,15 @@ export class HorseAdaptiveJournalWorker {
       return;
     }
     if (r.type === 'HEARTBEAT') {
+      owner.lastMessageAt = Date.now();
+      this.update({ lastMessageAt: owner.lastMessageAt });
+      return;
+    }
+    if (r.type === 'QUEUE_HEALTH' && owner.ready && owner.activeAt !== null) {
+      this.update({
+        queueHealth: parseJournalQueueHealth(r.value),
+        queueHealthReceivedAt: Date.now(),
+      });
       owner.lastMessageAt = Date.now();
       this.update({ lastMessageAt: owner.lastMessageAt });
       return;

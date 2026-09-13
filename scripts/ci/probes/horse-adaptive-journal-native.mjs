@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
+import { exerciseJournalWork } from './horse-adaptive-work-native.mjs';
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const { Client } = createRequire(root + '/server/package.json')('pg');
 const pg = process.env.HORSE_PROOF_PG_BIN,
@@ -65,6 +66,7 @@ try {
     '20260912193321_horse_committed_observation_snapshot.sql',
     '20260913170729_horse_adaptive_observation_journal.sql',
     '20260913175935_recoverable_horse_adaptive_journal_batches.sql',
+    '20260913181841_durable_horse_adaptive_journal_work.sql',
   ])
     await c.query(readFileSync(root + '/supabase/migrations/' + migration, 'utf8'));
   const now = Number(
@@ -181,6 +183,15 @@ try {
               } else if (name === 'fn_horse_adaptive_journal_batch') {
                 query = 'SELECT public.fn_horse_adaptive_journal_batch($1) value';
                 params = [p.p_batch_key];
+              } else if (name === 'fn_queue_horse_adaptive_batch') {
+                query = 'SELECT fn_queue_horse_adaptive_batch($1) value';
+                params = [p.p_payload];
+              } else if (name === 'fn_claim_horse_adaptive_batch') {
+                query = 'SELECT fn_claim_horse_adaptive_batch($1) value';
+                params = [p.p_lease_token];
+              } else if (name === 'fn_finish_horse_adaptive_batch') {
+                query = 'SELECT fn_finish_horse_adaptive_batch($1,$2,$3) value';
+                params = [p.p_batch_key, p.p_lease_token, p.p_outcome];
               } else if (name === 'fn_horse_adaptive_journal_snapshot') {
                 query = 'SELECT public.fn_horse_adaptive_journal_snapshot($1,$2,$3,$4,$5,$6) value';
                 params = [
@@ -193,6 +204,13 @@ try {
                 ];
               } else throw Error('Unexpected RPC');
               const result = await c.query(query, params);
+              if (
+                globalThis.horseJournalNative.loseFinishReply &&
+                name === 'fn_finish_horse_adaptive_batch'
+              ) {
+                globalThis.horseJournalNative.loseFinishReply = false;
+                throw Error('simulated lost committed acknowledgment');
+              }
               if (loseReply && name === 'fn_append_horse_adaptive_observations') {
                 loseReply = false;
                 throw Error('simulated lost committed reply');
@@ -213,6 +231,10 @@ try {
         /import \{ supabase \} from '\.\/supabase\.js';/,
         'const {supabase}=globalThis.horseJournalNative;'
       )
+      .replace(
+        /import\s*\{([^}]+)\}\s*from\s*'\.\/HorseAdaptiveObservationJournal\.js';/,
+        'const {$1}=globalThis.horseJournalNative.journal;'
+      )
       .replace(/from '([^']+)'/g, (whole, path) =>
         path.startsWith('.')
           ? "from '" +
@@ -225,13 +247,15 @@ try {
   const { readCommittedObservationSnapshot: readSource } = await bridge(
     'HorseCommittedObservationSnapshot'
   );
+  const journal = await bridge('HorseAdaptiveObservationJournal');
+  globalThis.horseJournalNative.journal = journal;
   const {
     prepareAdaptiveJournalBatch: prepare,
     persistAdaptiveJournalSnapshot: persist,
     readAdaptiveJournalSnapshot: read,
     readAdaptiveJournalBatch: recover,
     persistPreparedAdaptiveJournalBatch: retry,
-  } = await bridge('HorseAdaptiveObservationJournal');
+  } = journal;
   await c.query('SET ROLE service_role');
   const source = await readSource({ actorId: actor, fromMs: from, throughMs: through });
   assert.equal(source.status, 'snapshot');
@@ -389,6 +413,25 @@ try {
   );
   assert.equal(reconnectEvidence.n, 13);
   results.push({ case: 'fresh Node process sees all immutable identities', observations: 13 });
+  results.push(
+    ...(await exerciseJournalWork({
+      root,
+      options,
+      c,
+      otherConnection,
+      source,
+      readSource,
+      actor,
+      journal,
+      work: await bridge('HorseAdaptiveJournalWork'),
+      loseAppendReply: () => {
+        loseReply = true;
+      },
+      loseFinishReply: () => {
+        globalThis.horseJournalNative.loseFinishReply = true;
+      },
+    }))
+  );
   // The next process receives only a durable batch key. Even the synthetic
   // source history has gone; re-querying it cannot reproduce the submitted batch.
   await c.query('DELETE FROM hand_history WHERE id=ANY($1::uuid[])', [[id(1), id(2), id(3)]]);

@@ -186,6 +186,7 @@ describe('DealRateVerifier - the horse fleet seeding loop', () => {
     quiet();
     for (let i = 0; i < 5; i++) await v.check();
     expect(raised).toEqual([]);
+    expect(resolved).not.toContain('ClubArenaHorseFleetLoopStopped');
   });
 
   it('pages ONCE after two consecutive stale checks, never on one slow cycle', async () => {
@@ -207,6 +208,17 @@ describe('DealRateVerifier - the horse fleet seeding loop', () => {
     expect(pages).toHaveLength(1);
     expect(pages[0].severity).toBe('critical');
     expect(pages[0].page).toBe(true);
+  });
+
+  it('submits a healthy recovery after restart even without local stalled-check history', async () => {
+    const v = new DealRateVerifier(
+      () => tables(40),
+      () => 30
+    );
+    quiet();
+    await v.check();
+    expect(raised).toEqual([]);
+    expect(resolved).toContain('ClubArenaHorseFleetLoopStopped');
   });
 
   it('resolves itself when the loop comes back', async () => {

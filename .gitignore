@@ -216,3 +216,6 @@ supabase/migrations/*_a_second_agent_wants_the_same_second.sql
 infra/monitoring/.deployed-from
 .throwable-sources/
 .throwable-darkroom/
+
+# Visual-harness screenshots are build output, not source.
+tests/visual/__shots__/

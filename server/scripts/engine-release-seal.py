@@ -117,7 +117,32 @@ def image_identity(reference: str, *, require_label: bool) -> tuple[str, str, bo
 def container_identity(name: str) -> tuple[str, str]:
     value = docker_json("container", name)
     state = value.get("State") if isinstance(value.get("State"), dict) else {}
-    return str(state.get("Status", "")), valid_image_id(str(value.get("Image", "")), "container image id")
+    image_id = valid_image_id(str(value.get("Image", "")), "container image id")
+    require_alert_journal_mount(value, docker_json("image", image_id))
+    return str(state.get("Status", "")), image_id
+
+
+def require_alert_journal_mount(container: dict[str, Any], image: dict[str, Any]) -> None:
+    """New images cannot be sealed on ephemeral alert storage. Old sealed
+    images remain recoverable; the schema capability comes from immutable
+    image metadata rather than an overridable container label."""
+    image_config = image.get("Config") or {}
+    schema = (image_config.get("Labels") or {}).get("sp.alert-journal.schema")
+    if schema is None:
+        return
+    if schema != "1":
+        die("unsupported engine alert journal schema")
+    destination = "/var/lib/club-arena/engine-alerts"
+    expected_source = str(Path(os.environ.get("ENGINE_ALERT_JOURNAL_HOST_DIR", destination)).resolve())
+    mounts = [m for m in container.get("Mounts", []) if m.get("Destination") == destination]
+    if len(mounts) != 1 or mounts[0].get("Type") != "bind" or mounts[0].get("RW") is not True \
+            or mounts[0].get("Source") != expected_source:
+        die("engine alert journal is not on its durable writable host mount")
+    environment = (container.get("Config") or {}).get("Env") or []
+    configured = [entry for entry in environment if isinstance(entry, str)
+                  and entry.startswith("ENGINE_ALERT_JOURNAL_DIR=")]
+    if configured != [f"ENGINE_ALERT_JOURNAL_DIR={destination}"]:
+        die("engine alert journal environment does not match its persistent mount")
 
 
 def ensure_dirs() -> None:

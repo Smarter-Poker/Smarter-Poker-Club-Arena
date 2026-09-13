@@ -77,6 +77,12 @@ export class TournamentManager extends TournamentManagerEliminations {
   >();
   /** One manager generation has exactly one seat-move authority at a time. */
   private tournamentSeatMoveSerialTail: Promise<void> = Promise.resolve();
+  /** One break per pass; retain its exact generation across ambiguous closes. */
+  private pendingTableBreakRetirement: {
+    tableId: string;
+    engine: ServerTableEngine;
+    movedPlayers: number;
+  } | null = null;
 
   private runWithTournamentSeatMoveAuthority<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.tournamentSeatMoveSerialTail.then(operation);
@@ -218,15 +224,24 @@ export class TournamentManager extends TournamentManagerEliminations {
    * this manager, the hub, and hand-for-hand.
    *
    * Any refusal leaves both registries pointing at the stopped/quarantined
-   * engine.  The already-empty table is a deterministic break candidate on
-   * the next shared scheduler pass, so the exact operation is retried without
-   * a fleet sweep or a timer owned by this manager.
+   * engine. The occupied-table reader deliberately excludes empty tables,
+   * including a table whose close committed but whose response was lost.
+   * Retain the retirement explicitly for the next shared scheduler pass.
    */
   protected async closeBrokenTableAndReleaseEngine(
     tableId: string,
-    engine: ServerTableEngine
+    engine: ServerTableEngine,
+    movedPlayers = 0
   ): Promise<boolean> {
-    if (this.tableEngines.get(tableId) !== engine) return false;
+    if (!this.eliminationMutationAllowed() || this.tableEngines.get(tableId) !== engine) {
+      return false;
+    }
+    const pending = this.pendingTableBreakRetirement;
+    if (pending && (pending.tableId !== tableId || pending.engine !== engine)) return false;
+    this.pendingTableBreakRetirement ??= { tableId, engine, movedPlayers };
+    // Arm before awaiting stop/RPC: a thrown transport error or an expired
+    // sweep budget must retain both the operation and its coalesced wake.
+    this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
 
     try {
       await engine.stop();
@@ -304,6 +319,7 @@ export class TournamentManager extends TournamentManagerEliminations {
 
     if (this.tableEngines.get(tableId) === engine) this.tableEngines.delete(tableId);
     this.retireManagedTableFromHandForHand(tableId);
+    this.pendingTableBreakRetirement = null;
     return true;
   }
 
@@ -571,6 +587,24 @@ export class TournamentManager extends TournamentManagerEliminations {
   protected async checkTableBalance(): Promise<void> {
     if (!this.eliminationMutationAllowed()) return;
     if (!(await this.redrivePendingTournamentSeatMoveOutcomes())) return;
+    const pendingRetirement = this.pendingTableBreakRetirement;
+    if (pendingRetirement) {
+      // Finish the exact prior break even with zero/one occupied tables, or
+      // with a now-closed source absent from the database's live-table list.
+      // One attempt per scheduler pass; no new move plan while it is unknown.
+      this.breakOccurredThisCycle = true;
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      const { tableId, engine, movedPlayers } = pendingRetirement;
+      const retired = await this.closeBrokenTableAndReleaseEngine(tableId, engine, movedPlayers);
+      if (retired && this.eliminationMutationAllowed()) {
+        await this.broadcast('table_rebalance', {
+          closedTableId: tableId,
+          movedPlayers,
+          reason: 'table_break',
+        });
+      }
+      return;
+    }
     // Check for final table (table_size or fewer players remaining, 2026-08-22
     // parity: was hardcoded 9) — only announce once
     if (!this.isFinalTable) {
@@ -774,12 +808,16 @@ export class TournamentManager extends TournamentManagerEliminations {
             continue;
           }
 
-          const retired = await this.closeBrokenTableAndReleaseEngine(bt.tableId, engine);
+          const retired = await this.closeBrokenTableAndReleaseEngine(
+            bt.tableId,
+            engine,
+            breakMoves.length
+          );
           if (!this.eliminationMutationAllowed()) return;
           if (!retired) {
             // The stopped generation remains in both registries and in the
-            // hand-for-hand roster. The next scheduler pass sees the empty
-            // table and retries this exact durable close; no successor may
+            // hand-for-hand roster. The next scheduler pass replays the retained
+            // retirement and retries this exact durable close; no successor may
             // overlap an unproved retirement.
             this.breakOccurredThisCycle = true;
             this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);

@@ -37,6 +37,7 @@ import { BOOKING_COUNTS_WITHIN_MS } from './HorseGameLoad.js';
 import { bankrollPolicyFor, canEnterTournament } from './HorseBankroll.js';
 import { bankrollEvent } from './HorseBankrollTelemetry.js';
 import { buildLadder } from '../tournament/blindLadder.js';
+import { MTT_BLIND_PRESETS, mttSpeedColumns } from '../tournament/mttStructurePolicy.js';
 import { clampSeatsForVariant } from '../config/tableSeating.js';
 import {
   FREE_BUY_HOSTS,
@@ -233,14 +234,7 @@ export const BLIND_STRUCTURES = {
   // A turbo reaches its own conclusion well inside 24 levels; deeper than that
   // and the ladder's own 1.58x cadence walks past MAX_BLIND_VALUE, which is how
   // the first draft of this generated a 25,000,000 big blind at level 30.
-  TURBO: buildLadder({
-    startBigBlind: 50,
-    speed: 'TURBO',
-    levels: 24,
-    openingMinutes: 4,
-    floorMinutes: 2,
-    anteFromLevel: 1,
-  }),
+  TURBO: MTT_BLIND_PRESETS.TURBO,
   /**
    * ═══════════════════════════════════════════════════════════════════════
    *  THE FREE BUY LADDER, and why it is not TURBO
@@ -277,22 +271,8 @@ export const BLIND_STRUCTURES = {
     anteFromLevel: 1,
   }),
   // 40 levels at ~1.33x — the reference MTT ladder.
-  STANDARD: buildLadder({
-    startBigBlind: 50,
-    speed: 'STANDARD',
-    levels: 40,
-    openingMinutes: 10,
-    floorMinutes: 5,
-    anteFromLevel: 2,
-  }),
-  HYPER_TURBO: buildLadder({
-    startBigBlind: 100,
-    speed: 'HYPER_TURBO',
-    levels: 16,
-    openingMinutes: 2,
-    floorMinutes: 1,
-    anteFromLevel: 1,
-  }),
+  STANDARD: MTT_BLIND_PRESETS.STANDARD,
+  HYPER_TURBO: MTT_BLIND_PRESETS.HYPER_TURBO,
   SNG_6MAX: buildLadder({
     startBigBlind: 20,
     speed: 'TURBO',
@@ -3878,6 +3858,7 @@ export class TournamentRecurringService {
             current_players: 0,
             status: 'REGISTERING',
             blind_structure: config.blindStructure,
+            ...mttSpeedColumns(config.blindStructure),
             payout_structure: config.payoutStructure || [],
             start_time: startTime.toISOString(),
             late_reg_levels: 10, // Level-based late reg for XMTT
@@ -4121,6 +4102,7 @@ export class TournamentRecurringService {
             current_players: 0,
             status: 'REGISTERING',
             blind_structure: config.blindStructure,
+            ...mttSpeedColumns(config.blindStructure),
             payout_structure: config.payoutStructure || [],
             start_time: startTime.toISOString(),
             late_reg_levels: 8, // Level-based late reg

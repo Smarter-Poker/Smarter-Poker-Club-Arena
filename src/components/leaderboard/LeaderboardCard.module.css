@@ -116,6 +116,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .row {
-    transition: none;
+    transform: none !important;
+    transition: opacity 0.2s ease-out;
   }
 }

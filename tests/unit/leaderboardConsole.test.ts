@@ -14,6 +14,7 @@ describe('Leaderboard Painted Console Contract', () => {
     expect(css).not.toMatch(
       /(?:linear|radial)-gradient|:hover|championship-machine|backdrop-filter/
     );
+    expect(css).not.toMatch(/(?:animation|transition):\s*none/);
   });
   it('keeps the settlement unframed and the wizard on a single painted two-action foot', () => {
     expect(
@@ -43,5 +44,10 @@ describe('Leaderboard Painted Console Contract', () => {
   it('uses the approved off-felt console ink for positive table leaderboard values', () => {
     const css = readFileSync('src/components/table/LeaderboardPanel.css', 'utf8');
     expect(css).toMatch(/\.leaderboard-row__amount--positive\s*\{\s*color:\s*#c8ffd2;/);
+  });
+  it('keeps promotion row feedback when reduced motion is requested', () => {
+    const css = readFileSync('src/components/leaderboard/LeaderboardCard.module.css', 'utf8');
+    expect(css).not.toMatch(/(?:animation|transition):\s*none/);
+    expect(css).toContain('transition: opacity 0.2s ease-out');
   });
 });

@@ -183,6 +183,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .leaderboard-panel .leaderboard-row {
-    transition: none !important;
+    transform: none !important;
+    transition: opacity 0.2s ease-out !important;
   }
 }

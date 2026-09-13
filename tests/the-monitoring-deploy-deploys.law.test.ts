@@ -26,6 +26,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 const ROOT = join(__dirname, '..');
 const WF = readFileSync(join(ROOT, '.github/workflows/deploy-monitoring.yml'), 'utf8');
@@ -35,6 +36,33 @@ const COMPOSE = readFileSync(join(ROOT, 'infra/monitoring/docker-compose.yml'), 
 const AM = readFileSync(join(ROOT, 'infra/monitoring/alertmanager.yml'), 'utf8');
 
 const stripComments = (s: string) => s.replace(/^\s*#[^\n]*$/gm, '');
+
+describe('a reload of an old mounted inode cannot acknowledge a new release', () => {
+  it('checks the real process fingerprint, including failed and unavailable reloads', () => {
+    const result = spawnSync('python3', [join(ROOT, 'tests/alertmanager_loaded_config_test.py')], {
+      encoding: 'utf8',
+      timeout: 20000,
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+  }, 25000);
+
+  it('validates fresh mounts and repairs only a confirmed mismatch before the release receipt', () => {
+    expect(DEPLOY).toContain(
+      'docker compose run --rm --no-deps --entrypoint /bin/amtool alertmanager'
+    );
+    const start = DEPLOY.indexOf('AM_VERIFY_STATUS=0');
+    const end = DEPLOY.indexOf('\nFAIL=0', start);
+    const verification = DEPLOY.slice(start, end);
+    expect(verification).toContain('python3 "$AM_VERIFIER" "$AM_CONFIG" || AM_VERIFY_STATUS=$?');
+    expect(verification).toContain('if [[ "$AM_VERIFY_STATUS" == "2" ]]');
+    expect(verification).toContain('docker compose up -d --no-deps --force-recreate alertmanager');
+    expect(verification).toContain('exit "$AM_VERIFY_STATUS"');
+    expect(verification.match(/python3 "\$AM_VERIFIER" "\$AM_CONFIG"/g)).toHaveLength(2);
+    expect(end).toBeLessThan(DEPLOY.indexOf('mv -T "$RECEIPT_TMP" "$RELEASE_RECEIPT"'));
+    expect(COMPOSE).toContain('alertmanager-data:/alertmanager');
+  });
+});
 
 describe('the deploy step ships the checkout it has, never a URL it cannot read', () => {
   it('never curls raw.githubusercontent.com for a private repo', () => {

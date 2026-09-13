@@ -65,7 +65,8 @@ button, and Close.
 - **The tap logs nothing.** `activate` only opens the popup.
 - **The button is the click.** `proceed` logs the click for an internal
   destination and hands the path to the router; for an external destination
-  it opens `/c/<code>` in a new tab with `noopener,noreferrer` and does NOT
+  it opens `/c/<code>` in a new tab through `openInBrowser` (the one seam the
+  web bundle leaves by; the in-app browser on native) with `noopener` and does NOT
   log - the redirect counts it, exactly as before.
 - **Closing is a dismiss** (`logDismiss`), never a click.
 - The rotation holds while the popup is open (`openRef`), so the poster on

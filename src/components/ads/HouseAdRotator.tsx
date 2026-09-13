@@ -44,6 +44,7 @@ import {
   isSafeAdTarget,
 } from '../../services/AdService';
 import type { AdSlot, HouseAd } from '../../services/AdService';
+import { openInBrowser } from '../../lib/openExternal';
 import './HouseAdRotator.css';
 
 /* The full-screen popup is fetched on the first tap, not before first paint.
@@ -254,8 +255,10 @@ export default function HouseAdRotator({
          Logging in both places would show a sponsor twice the clicks they
          were given. A NEW TAB, not this one: the player keeps their lobby or
          table, and a sponsor's site is not this app's to navigate into.
-         noopener so the new page cannot reach back into this one. */
-      window.open(target, '_blank', 'noopener,noreferrer');
+         noopener so the new page cannot reach back into this one. Through
+         the one seam (openInBrowser): window.open on the web, the in-app
+         browser inside the native app, where window.open goes nowhere. */
+      openInBrowser(target, 'noopener,noreferrer');
       return;
     }
     AdService.logClick({ adId: ad.adId }, slot, clubId);

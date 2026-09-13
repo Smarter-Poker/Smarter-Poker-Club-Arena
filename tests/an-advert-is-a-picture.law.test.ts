@@ -168,8 +168,9 @@ describe('LAW 2: a tap opens the advert full screen, and the button does the goi
       proceed.indexOf('onNavigate?.(target)')
     );
     // External: a new tab, noopener, and NOT logged here - the redirect counts it.
-    expect(proceed).toMatch(/window\.open\(target, '_blank', 'noopener,noreferrer'\)/);
-    expect(proceed.indexOf('window.open(target')).toBeLessThan(
+    // Through the one seam - the web bundle never calls window.open itself.
+    expect(proceed).toMatch(/openInBrowser\(target, 'noopener,noreferrer'\)/);
+    expect(proceed.indexOf('openInBrowser(target')).toBeLessThan(
       proceed.indexOf('AdService.logClick')
     );
     expect(proceed).toMatch(/if \(external\) \{[\s\S]*?return;\s*\}\s*AdService\.logClick/);

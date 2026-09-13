@@ -300,7 +300,7 @@ describe('a sponsor sends traffic to its own site (Dan 2026-09-09)', () => {
     // The external branch leaves without logging, and returns before the
     // internal branch's logClick can run.
     expect(activate).toMatch(/if \(external\) \{/);
-    expect(activate.indexOf("window.open(target, '_blank', 'noopener,noreferrer')")).toBeLessThan(
+    expect(activate.indexOf("openInBrowser(target, 'noopener,noreferrer')")).toBeLessThan(
       activate.indexOf('AdService.logClick')
     );
     expect(activate).toMatch(/return;\s*\}\s*AdService\.logClick/);
@@ -312,8 +312,12 @@ describe('a sponsor sends traffic to its own site (Dan 2026-09-09)', () => {
     expect(SERVICE).toMatch(/export function isExternalAdClick/);
     expect(ROTATOR).toMatch(/const external = isExternalAdClick\(target\);/);
     // A NEW TAB since 2026-09-13: the player keeps their lobby or table, and
-    // noopener so a sponsor's page cannot reach back into this one.
-    expect(ROTATOR).toMatch(/window\.open\(target, '_blank', 'noopener,noreferrer'\)/);
+    // noopener so a sponsor's page cannot reach back into this one. Through
+    // openInBrowser, the one seam the web bundle leaves by (window.open on
+    // the web, the in-app browser on native) - never a bare window.open.
+    expect(ROTATOR).toMatch(/import \{ openInBrowser \} from '\.\.\/\.\.\/lib\/openExternal';/);
+    expect(ROTATOR).toMatch(/openInBrowser\(target, 'noopener,noreferrer'\)/);
+    expect(ROTATOR).not.toMatch(/window\.open\(/);
     expect(ROTATOR).not.toMatch(/window\.location\.assign/);
     // Leaving does not need the router, so it is activatable without one.
     expect(ROTATOR).toMatch(

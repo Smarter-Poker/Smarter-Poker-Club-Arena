@@ -126,6 +126,7 @@ export function prepareAdaptiveJournalBatch(
       !digest(snapshot.actorKey) ||
       !snapshot.source ||
       snapshot.source.coverage !== 'retained_committed_roster_rows' ||
+      snapshot.source.acceptance !== 'atomic_hand_receipts' ||
       !digest(snapshot.source.sourceDigest) ||
       !integer(snapshot.source.fromMs) ||
       !integer(snapshot.source.throughMs) ||

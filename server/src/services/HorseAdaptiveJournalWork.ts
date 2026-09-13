@@ -39,6 +39,7 @@ export async function enqueueAdaptiveJournalWork(snapshot: CommittedObservationS
           'queue_full',
           'batch_conflict',
           'legacy_batch_payload_unavailable',
+          'source_expired',
         ].includes(data.reason)
           ? data.reason
           : 'invalid_receipt'

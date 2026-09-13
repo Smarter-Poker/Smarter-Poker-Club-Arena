@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { exerciseJournalWork } from './horse-adaptive-work-native.mjs';
+import { exerciseRetention, oldEmptyBatch } from './horse-adaptive-retention-native.mjs';
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const { Client } = createRequire(root + '/server/package.json')('pg');
 const pg = process.env.HORSE_PROOF_PG_BIN,
@@ -72,6 +73,29 @@ try {
   const now = Number(
     (await c.query('SELECT floor(extract(epoch FROM clock_timestamp())*1000)::bigint n')).rows[0].n
   );
+  const expiredAdmission = oldEmptyBatch(now, 'pre-retention-regression');
+  await c.query('BEGIN');
+  assert.equal(
+    (await c.query('SELECT fn_queue_horse_adaptive_batch($1) value', [expiredAdmission.payload]))
+      .rows[0].value.status,
+    'durable'
+  );
+  await c.query('ROLLBACK');
+  await c.query(
+    readFileSync(
+      root + '/supabase/migrations/20260913193221_bounded_horse_adaptive_retention.sql',
+      'utf8'
+    )
+  );
+  assert.equal(
+    (await c.query('SELECT fn_queue_horse_adaptive_batch($1) value', [expiredAdmission.payload]))
+      .rows[0].value.reason,
+    'source_expired'
+  );
+  results.push({
+    case: 'pre-change source-expired admission reproduced; forward migration refuses it without affecting accepted durable work',
+    passed: true,
+  });
   const from = now - 3_600_000,
     through = now - 1000;
   const { HandController } = await runtime('engine/HandController');
@@ -192,6 +216,9 @@ try {
               } else if (name === 'fn_finish_horse_adaptive_batch') {
                 query = 'SELECT fn_finish_horse_adaptive_batch($1,$2,$3) value';
                 params = [p.p_batch_key, p.p_lease_token, p.p_outcome];
+              } else if (name === 'fn_prune_horse_adaptive_journal') {
+                query = 'SELECT fn_prune_horse_adaptive_journal() value';
+                params = [];
               } else if (name === 'fn_horse_adaptive_journal_snapshot') {
                 query = 'SELECT public.fn_horse_adaptive_journal_snapshot($1,$2,$3,$4,$5,$6) value';
                 params = [
@@ -204,6 +231,13 @@ try {
                 ];
               } else throw Error('Unexpected RPC');
               const result = await c.query(query, params);
+              if (
+                globalThis.horseJournalNative.losePruneReply &&
+                name === 'fn_prune_horse_adaptive_journal'
+              ) {
+                globalThis.horseJournalNative.losePruneReply = false;
+                throw Error('simulated lost committed prune reply');
+              }
               if (
                 globalThis.horseJournalNative.loseFinishReply &&
                 name === 'fn_finish_horse_adaptive_batch'
@@ -648,6 +682,16 @@ try {
     recoveryMs,
     limitation: 'One isolated sample; not a production latency certification.',
   });
+  results.push(
+    ...(await exerciseRetention({
+      c,
+      otherConnection,
+      retention: await bridge('HorseAdaptiveJournalRetention'),
+      losePruneReply: () => {
+        globalThis.horseJournalNative.losePruneReply = true;
+      },
+    }))
+  );
   proof = { results, sourceCalls: calls, productionPostgrestVerified: false };
 } finally {
   Date.now = oldNow;

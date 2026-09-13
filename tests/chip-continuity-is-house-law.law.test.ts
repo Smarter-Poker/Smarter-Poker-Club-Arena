@@ -114,15 +114,14 @@ describe('A0.1 - chips cannot leave a seat without the player', () => {
     expect(code).toContain('Add Chips');
   });
 
-  it('the no-engine cash-out path shows a stay-clock refusal instead of navigating away', () => {
-    const TS = read('src/services/TableService.ts');
-    expect(TS).toContain('/LEAVE_LOCKED:(\\d+)/.exec(String(cashoutError.message');
-    expect(TS).toContain('error: leaveAvailableLabel(Number(locked[1]))');
-    // The retired per-table floor is no longer written on leave.
-    expect(stripComments(TS)).not.toContain('record_table_cashout');
-    // A lawful refusal is not reported as an error.
-    expect(TS).toContain("if (serverLeave?.code !== 'LEAVE_LOCKED') {");
-    expect(read('src/services/GameServerAPI.ts')).toContain('code: body?.code,');
+  it('the occupancy protocol preserves stay-clock refusals without a browser cashout fallback', () => {
+    const TS = stripComments(read('src/services/TableService.ts'));
+    const intent = stripComments(read('src/services/SeatLeaveIntent.ts'));
+    expect(TS).toContain('leaveSeatWithIntent(tableId, userId)');
+    expect(intent).toContain("result.code === 'LEAVE_LOCKED'");
+    expect(intent).toMatch(/typeof result\.error === 'string'\s*\?\s*result\.error/);
+    expect(TS).not.toContain('record_table_cashout');
+    expect(intent).not.toMatch(/supabase\.rpc/);
   });
 
   it('the lobby has no rule chip and the host has no toggle for the floor', () => {
@@ -206,7 +205,8 @@ describe('6.1 / 6.3 - the leave control renders the engine clock and nothing els
     // The floor is read from the server at mount AND every time the buy-in
     // sheet opens (whitespace-tolerant: Prettier owns the layout).
     expect((TABLE_PAGE.match(/supabase\.rpc\(\s*'fn_cash_effective_buyin'/g) ?? []).length).toBe(2);
-    expect(TABLE_PAGE).toContain('}, [showBuyInModal, tableId, userId]);');
+    expect(TABLE_PAGE).toContain('}, [showBuyInModal, tableId, userId, tableState.arenaAsset]);');
+    expect(TABLE_PAGE).toContain("if (tableState.arenaAsset !== 'chips')");
     const BUYIN = read('src/components/table/BuyInModal.tsx');
     expect(stripComments(BUYIN)).not.toContain('For 2 Hours');
     expect(stripComments(BUYIN)).not.toContain('You Cashed Out');

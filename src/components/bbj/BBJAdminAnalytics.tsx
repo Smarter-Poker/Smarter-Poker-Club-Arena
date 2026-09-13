@@ -22,10 +22,79 @@ export interface BBJAdminAnalyticsProps {
   poolId: string | null;
 }
 
+/**
+ * HANDS THE RULES TURNED AWAY — the reader for `bbj_near_misses` (2026-09-11).
+ *
+ * This block was titled "WHY IT HAS NOT PAID" until 2026-09-12, which is also
+ * what the section heading said, and the heading was changed because it
+ * asserts something the panel cannot know - see the comment above the markup.
+ * The title is kept in step so nobody reads it here and renames the heading
+ * back to match.
+ *
+ * `days_since_last_hit` has been on this panel since 2026-08-18 posing a
+ * question with nothing beside it to answer: a jackpot that has not paid in
+ * twenty days is either strict rules working exactly as written, or something
+ * refusing hands that should have paid, and those two look identical from
+ * here. The engine has been writing down which gate refused each near miss
+ * since 2026-09-07 — and for four days nothing in either repo selected those
+ * rows. This is that reader (CLAUDE.md 10.86 rule 3).
+ *
+ * The labels are keyed on the reason strings the ENGINE emits, in
+ * `server/src/config/RakeConfig.ts`. They are not keyed on the vocabulary in
+ * the log's creating migration, which names five gates no writer has ever
+ * emitted. `tests/the-near-miss-log-has-a-reader.law.test.ts` holds the two
+ * lists against each other, so a gate added to the engine without a label here
+ * fails CI rather than rendering as a bare snake_case string to an operator.
+ */
+const NEAR_MISS_LABELS: Record<string, string> = {
+  not_enough_players: 'Not Enough Players Dealt In',
+  pot_too_small: 'Pot Did Not Reach The Minimum',
+  winner_not_quads: 'Winning Hand Was Not Quads Or Better',
+  both_cards_must_play: 'Both Hole Cards Did Not Play',
+  mini_not_enough_players: 'Mini: Not Enough Players Dealt In',
+  mini_pot_too_small: 'Mini: Pot Did Not Reach The Minimum',
+  mini_winner_not_quads: 'Mini: Winning Hand Was Not Quads Or Better',
+  mini_loser_below_bar: 'Mini: Losing Hand Below The Qualifying Bar',
+  mini_double_board: 'Mini: Double Board Hand',
+  unspecified: 'Reason Not Recorded',
+};
+
+function nearMissLabel(reason: string | null | undefined): string {
+  /* `bbj_near_misses.reason` IS NULLABLE and nothing enforces otherwise. The
+     engine's writer defaults to 'unspecified', but any other path into the
+     table can leave a null, and `null.startsWith(...)` throws during render -
+     one malformed row would blank the whole Jackpot Health panel. The reader
+     COALESCEs it in SQL; this is the second belt, because a UI that throws on
+     data it did not expect is its own defect. */
+  if (!reason) return NEAR_MISS_LABELS.unspecified;
+
+  /* A mini the PAYOUT turned away carries the refusal after a colon. It is not
+     a near miss and never reads as one: a player made the hand. */
+  if (reason.startsWith('mini_refused:')) {
+    const why = reason.slice('mini_refused:'.length);
+    return `Mini Qualified But Was Turned Away (${NEAR_MISS_LABELS[why] ?? why})`;
+  }
+  return NEAR_MISS_LABELS[reason] ?? reason;
+}
+
+interface NearMiss {
+  kind: string;
+  reason: string;
+  refusals: number;
+  last_at: string | null;
+  biggest_pot: number;
+  example: string | null;
+}
+
+/* THREE OUTCOMES, NOT TWO (CLAUDE.md 10.86 rule 1). "No hand was refused" and
+   "the refusal log could not be read" are opposite findings that would render
+   identically as an empty list, and the emptier one is the one that reads like
+   good news. They are named separately here and printed differently. */
+type NearMissState = 'loading' | 'ok' | 'unavailable';
+
 interface Analytics {
   main_balance: number;
   backup_balance: number;
-  promo_balance: number;
   contributions_24h: number;
   contributions_7d: number;
   contributions_30d: number;
@@ -39,39 +108,113 @@ interface Analytics {
   avg_days_between_hits: number | null;
   days_since_last_hit: number | null;
   net_pool_position: number;
+  /* The mini's own numbers (2026-09-11). The columns above count every hit of
+     either kind; these say how much of that was the mini, and what the reserve
+     can still pay. Optional so a cached older row still renders. */
+  mini_enabled?: boolean | null;
+  mini_hit_count?: number | null;
+  mini_paid_all_time?: number | null;
+  mini_hits_30d?: number | null;
+  mini_paid_30d?: number | null;
+  mini_last_hit_at?: string | null;
+  mini_reserve_floor?: number | null;
+  mini_parked?: number | null;
+  mini_available?: number | null;
+  /* THE MAIN JACKPOT'S OWN CADENCE (2026-09-12). `hit_count`,
+     `avg_days_between_hits` and `days_since_last_hit` count BOTH jackpots, and
+     since the mini fires several times a day they describe neither: this panel
+     told a club owner his jackpot hits every 0.2 days when the main jackpot's
+     own interval was 1.15. The blended figures are kept so no other reader
+     moves; these are what the panel prints. Optional so a cached older row
+     still renders. */
+  hands_30d?: number | null;
+  main_hit_count?: number | null;
+  main_paid_all_time?: number | null;
+  main_avg_days_between_hits?: number | null;
+  main_last_hit_at?: string | null;
+  main_days_since_last_hit?: number | null;
 }
 
 export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
   const [data, setData] = useState<Analytics | null>(null);
   const [denied, setDenied] = useState(false);
+  const [settledPool, setSettledPool] = useState<string | null>(null);
+  const [nearMisses, setNearMisses] = useState<NearMiss[]>([]);
+  const [nearMissState, setNearMissState] = useState<NearMissState>('loading');
+  const [nearMissPool, setNearMissPool] = useState<string | null>(null);
 
   useEffect(() => {
     if (!poolId) return;
     let alive = true;
+    setSettledPool(null);
+    setData(null);
+    setDenied(false);
     (async () => {
-      const { data: rows, error } = await supabase.rpc('fn_bbj_analytics', { p_pool_id: poolId });
-      if (!alive) return;
-      if (error) {
-        // Not an admin (or the pool vanished) — render nothing, no noise.
-        setDenied(true);
-        return;
+      try {
+        const { data: rows, error } = await supabase.rpc('fn_bbj_analytics', { p_pool_id: poolId });
+        if (!alive) return;
+        if (error) {
+          // The server owns the admin boundary; a refusal remains no content.
+          setDenied(true);
+          return;
+        }
+        const row = Array.isArray(rows) ? rows[0] : rows;
+        if (row) setData(row as Analytics);
+      } catch {
+        if (alive) setDenied(true);
+      } finally {
+        if (alive) setSettledPool(poolId);
       }
-      const row = Array.isArray(rows) ? rows[0] : rows;
-      if (row) setData(row as Analytics);
     })();
     return () => {
       alive = false;
     };
   }, [poolId]);
 
-  if (!poolId || denied || !data) return null;
+  /* Its OWN effect, so the refusal log and the balances cannot take each other
+     down. Each RPC enforces its own server-side authorisation. */
+  useEffect(() => {
+    if (!poolId) return;
+    let alive = true;
+    setNearMissPool(null);
+    setNearMisses([]);
+    setNearMissState('loading');
+    (async () => {
+      try {
+        const { data: rows, error } = await supabase.rpc('fn_bbj_near_miss_summary', {
+          p_pool_id: poolId,
+          p_days: 30,
+        });
+        if (!alive) return;
+        if (error) {
+          setNearMissState('unavailable');
+          return;
+        }
+        setNearMisses((Array.isArray(rows) ? rows : []) as NearMiss[]);
+        setNearMissState('ok');
+      } catch {
+        if (alive) setNearMissState('unavailable');
+      } finally {
+        if (alive) setNearMissPool(poolId);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [poolId]);
+
+  if (poolId && settledPool !== poolId) return <div data-initial-layout="pending" />;
+  if (!poolId || denied || !data) return <div data-initial-layout="settled" hidden />;
 
   // Funding rate vs. payout rate — the number an operator actually needs.
   const dailyFunding = Number(data.contributions_7d) / 7;
   const netPositive = Number(data.net_pool_position) >= 0;
 
   return (
-    <div className="bbj-admin">
+    <div
+      className="bbj-admin"
+      data-initial-layout={nearMissPool === poolId ? 'settled' : 'pending'}
+    >
       <div className="bbj-admin__header">
         <h3 className="bbj-admin__title">Jackpot Health</h3>
         <span className="bbj-admin__subtitle">Admin Only &middot; From The Payout Ledger</span>
@@ -92,12 +235,21 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
           <span className="bbj-admin__stat-sub">&asymp; ${money(dailyFunding)}/Day</span>
         </div>
 
+        {/* THE MAIN JACKPOT ON ITS OWN, falling back to the blended figure only
+            when the reader is an older cached row without the new columns. A
+            mini fires several times a day and the main every week or two, so
+            the average of the two is a number describing no jackpot anybody
+            plays for. */}
         <div className="bbj-admin__stat">
-          <span className="bbj-admin__stat-label">Hits (All Time)</span>
-          <span className="bbj-admin__stat-value">{Number(data.hit_count).toLocaleString()}</span>
+          <span className="bbj-admin__stat-label">Main Hits (All Time)</span>
+          <span className="bbj-admin__stat-value">
+            {Number(data.main_hit_count ?? data.hit_count).toLocaleString()}
+          </span>
           <span className="bbj-admin__stat-sub">
-            {data.avg_days_between_hits != null
-              ? `Every ~${Number(data.avg_days_between_hits).toFixed(1)} Days`
+            {(data.main_avg_days_between_hits ?? data.avg_days_between_hits) != null
+              ? `Every ~${Number(
+                  data.main_avg_days_between_hits ?? data.avg_days_between_hits
+                ).toFixed(1)} Days`
               : 'Not Enough History'}
           </span>
         </div>
@@ -109,14 +261,16 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
         </div>
 
         <div className="bbj-admin__stat">
-          <span className="bbj-admin__stat-label">Last Hit</span>
+          <span className="bbj-admin__stat-label">Last Main Hit</span>
           <span className="bbj-admin__stat-value">
-            {data.days_since_last_hit != null
-              ? `${Number(data.days_since_last_hit).toFixed(1)}d`
+            {(data.main_days_since_last_hit ?? data.days_since_last_hit) != null
+              ? `${Number(data.main_days_since_last_hit ?? data.days_since_last_hit).toFixed(1)}d`
               : '-'}
           </span>
           <span className="bbj-admin__stat-sub">
-            {data.last_hit_at ? new Date(data.last_hit_at).toLocaleDateString() : 'Never Hit'}
+            {(data.main_last_hit_at ?? data.last_hit_at)
+              ? new Date(data.main_last_hit_at ?? data.last_hit_at!).toLocaleDateString()
+              : 'Never Hit'}
           </span>
         </div>
 
@@ -127,17 +281,72 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
           </span>
           <span className="bbj-admin__stat-sub">Collected Minus Paid, All Time</span>
         </div>
+
+        {/* THE MINI (2026-09-11). Its hits are inside "Hits (All Time)" and
+            its chips inside "Paid Out"; these three say how much of each was
+            the mini, and how far the backup reserve is from the floor at
+            which the mini stops paying. */}
+        {data.mini_hit_count != null && (
+          <>
+            <div className="bbj-admin__stat">
+              <span className="bbj-admin__stat-label">Mini Hits</span>
+              <span className="bbj-admin__stat-value">
+                {Number(data.mini_hit_count).toLocaleString()}
+              </span>
+              <span className="bbj-admin__stat-sub">
+                {Number(data.mini_hits_30d ?? 0).toLocaleString()} In 30 Days
+                {data.mini_enabled === false ? ' - Switched Off' : ''}
+              </span>
+            </div>
+
+            <div className="bbj-admin__stat">
+              <span className="bbj-admin__stat-label">Mini Paid</span>
+              <span className="bbj-admin__stat-value">
+                ${money(Number(data.mini_paid_all_time ?? 0))}
+              </span>
+              <span className="bbj-admin__stat-sub">
+                ${money(Number(data.mini_paid_30d ?? 0))} In 30 Days, From The Backup Pool
+              </span>
+            </div>
+
+            <div
+              className={`bbj-admin__stat ${Number(data.mini_available ?? 0) > 0 ? 'is-positive' : 'is-negative'}`}
+            >
+              <span className="bbj-admin__stat-label">Mini Headroom</span>
+              <span className="bbj-admin__stat-value">
+                ${money(Number(data.mini_available ?? 0), 0)}
+              </span>
+              <span className="bbj-admin__stat-sub">
+                Backup Above Its ${money(Number(data.mini_reserve_floor ?? 0), 0)} Floor
+                {Number(data.mini_parked ?? 0) > 0
+                  ? ` (${money(Number(data.mini_parked), 0)} Parked)`
+                  : ''}
+              </span>
+            </div>
+          </>
+        )}
       </div>
 
+      {/* THE BANKS THE JACKPOT HOLDS - TWO, NOT THREE (phase 5, 2026-09-11).
+          This bar used to read "Pool Split - Main / Backup / Promo" and size a
+          promo segment from `promo_balance`. That is a STAGING SLOT which
+          `fn_sweep_bbj_promo` empties continuously: measured that day it held
+          14.61 against a union promo wallet of 56,291.01, so the promo segment
+          rendered at 0.007% of the bar and told every operator that promo gets
+          essentially nothing. It gets 26.1% of every raked chip - 134,595 so
+          far - and it is not here because it has already been swept to the
+          purse. A flow drawn as a slice of two balances is a false statement
+          about where a club's rake goes, so the bar now shows only the two
+          banks the jackpot actually holds, and the promo slice is reported as
+          a flow on the jackpot page (fn_bbj_promo_facts). */}
       <div className="bbj-admin__bar">
         <div className="bbj-admin__bar-label">
-          Pool Split - Main ${money(data.main_balance, 0)} / Backup ${money(data.backup_balance, 0)}{' '}
-          / Promo ${money(data.promo_balance, 0)}
+          Jackpot Banks - Main ${money(data.main_balance, 0)} / Backup $
+          {money(data.backup_balance, 0)}
         </div>
         <div className="bbj-admin__bar-track">
           {(() => {
-            const total =
-              Number(data.main_balance) + Number(data.backup_balance) + Number(data.promo_balance);
+            const total = Number(data.main_balance) + Number(data.backup_balance);
             const pct = (v: number) => (total > 0 ? (Number(v) / total) * 100 : 0);
             return (
               <>
@@ -149,14 +358,82 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
                   className="bbj-admin__bar-seg bbj-admin__bar-backup"
                   style={{ width: `${pct(data.backup_balance)}%` }}
                 />
-                <div
-                  className="bbj-admin__bar-seg bbj-admin__bar-promo"
-                  style={{ width: `${pct(data.promo_balance)}%` }}
-                />
               </>
             );
           })()}
         </div>
+        <div className="bbj-admin__bar-label" style={{ marginTop: 6, opacity: 0.75 }}>
+          Promo Is Not A Bank Here - It Is Swept To The Club Or Union Promo Wallet As It Arrives.
+        </div>
+      </div>
+
+      {/* WHICH GATE REFUSED, for the hands that reached the jackpot decision
+          and did not clear it.
+
+          THE HEADING USED TO READ "Why It Has Not Paid" AND THAT WAS A CLAIM,
+          NOT A LABEL. Looked at on a real screen for the first time on
+          2026-09-12, it sat four rows under the LAST HIT tile, which read
+          `0.3d` on both live pools - the section announced that the jackpot
+          had not paid, directly below the number saying it had paid that
+          morning. The rows underneath were all correct; the heading asserted a
+          premise nobody had checked against the tile above it.
+
+          This one is true whichever way the pool is running, which is what a
+          heading on an operator panel has to be: the list is worth reading
+          when the jackpot is cold AND when it is paying, and it says the same
+          thing in both cases. */}
+      <div className="bbj-admin__misses">
+        <div className="bbj-admin__misses-head">
+          <span className="bbj-admin__misses-title">Hands The Rules Turned Away</span>
+          <span className="bbj-admin__misses-sub">Last 30 Days</span>
+        </div>
+
+        {nearMissState === 'loading' && (
+          <div className="bbj-admin__misses-empty">Reading The Refusal Log...</div>
+        )}
+
+        {/* NOT AN EMPTY LIST. The log could not be read, which is a different
+            finding from "nothing was refused" and must not be able to pass for
+            it. */}
+        {nearMissState === 'unavailable' && (
+          <div className="bbj-admin__misses-empty is-unknown">
+            The Refusal Log Could Not Be Read, So This Is Not An Answer Either Way.
+          </div>
+        )}
+
+        {nearMissState === 'ok' && nearMisses.length === 0 && (
+          <div className="bbj-admin__misses-empty">
+            No Hand Was Refused In 30 Days. Across{' '}
+            {Number(data.hands_30d ?? data.hands_7d).toLocaleString()} Qualifying Hands In The Same{' '}
+            {data.hands_30d != null ? '30' : '7'} Days, Nothing Reached The Losing Hand Bar. The
+            Rules Are Not Turning Hands Away, They Are Simply Not Being Met.
+          </div>
+        )}
+
+        {nearMissState === 'ok' &&
+          nearMisses.map((m) => (
+            <div
+              key={`${m.kind}:${m.reason}`}
+              className={`bbj-admin__miss ${m.kind === 'mini_refused' ? 'is-turned-away' : ''}`}
+            >
+              <span className="bbj-admin__miss-count">{Number(m.refusals).toLocaleString()}</span>
+              <span className="bbj-admin__miss-body">
+                <span className="bbj-admin__miss-label">{nearMissLabel(m.reason)}</span>
+                <span className="bbj-admin__miss-sub">
+                  {m.last_at ? `Last ${new Date(m.last_at).toLocaleDateString()}` : ''}
+                  {Number(m.biggest_pot) > 0
+                    ? ` - Biggest Pot $${money(Number(m.biggest_pot), 0)}`
+                    : ''}
+                </span>
+                {/* The sentence the ENGINE already wrote for the player at the
+                    table, from the most recent hand in this group. It is why
+                    the reader returns `example` at all: without it this field
+                    was selected, justified in the migration header, and shown
+                    to nobody. */}
+                {m.example ? <span className="bbj-admin__miss-eg">{m.example}</span> : null}
+              </span>
+            </div>
+          ))}
       </div>
     </div>
   );

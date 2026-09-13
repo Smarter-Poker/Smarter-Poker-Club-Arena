@@ -258,8 +258,8 @@ export const TAG_CONSUMERS: LedgerEntry[] = [
   ),
   tag(
     'straight_into_flush_stackoff',
-    'HorseLogic.nlhStackoffLoad',
-    'straight on a three-flush board',
+    'HorseLogic.nlhStackoffLoad (hold em only; measurement-only in Omaha)',
+    'straight on a three-flush board - since 2026-09-13 also flagged in Omaha, where it is recorded and reviewed but deliberately NOT in PLO_STACKOFF_TAGS',
     'V21'
   ),
   tag(
@@ -524,6 +524,56 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V46'
   ),
   flag(
+    'phase7Utility',
+    'final action-specific tournament utility across payout, bounty and recovery components; defaults on and runs after every global strategy layer',
+    'Phase7'
+  ),
+  flag(
+    'phase8Postflop',
+    'tournament postflop counterfactual; shadow by default; candidate mode is offline promotion only',
+    'Phase8'
+  ),
+  flag(
+    'phase10Plo4',
+    'bounded PLO4 policy for every street; shadow by default; candidate mode is offline promotion only',
+    'Phase10'
+  ),
+  flag(
+    'phase10EvidenceMode',
+    'offline fixed-work PLO4 evidence clock; rejected by the live decision worker',
+    'Phase10'
+  ),
+  flag(
+    'phase11Omaha',
+    'separate PLO5/PLO6/PLO8 policy; shadow by default; candidate selection is offline only',
+    'Phase11'
+  ),
+  flag(
+    'phase11EvidenceMode',
+    'offline fixed-work variant evidence clock; rejected by the live decision worker',
+    'Phase11'
+  ),
+  flag(
+    'phase12Remaining',
+    'separate Short Deck/Pineapple/FLH/FLO8 policies; shadow by default; candidate selection is offline only',
+    'Phase12'
+  ),
+  flag(
+    'phase12EvidenceMode',
+    'offline fixed-work remaining-variant clock; rejected by the live decision worker',
+    'Phase12'
+  ),
+  flag(
+    'phase13Joint',
+    'joint multiway and bomb policy; live shadow with offline-only candidate selection',
+    'Phase13'
+  ),
+  flag(
+    'phase13EvidenceMode',
+    'offline fixed-work joint evaluation; rejected by the live worker',
+    'Phase13'
+  ),
+  flag(
     'v43Tempo',
     'tempo reads: a river big bet priced by how fast it was made against what this player shows down at that tempo',
     'V43'
@@ -688,12 +738,40 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   // ─────────────────────────────────────────────────────────────────────────
   state(
     'players',
-    'every seat: stack, bet, cards (hero), folded/all-in/sitting-out, totalInvested'
+    'every public seat: stack, bet, folded/all-in/sitting-out, totalInvested; private cards are always empty here and hero cards travel separately'
   ),
+  state('stateSchemaVersion', 'canonical live decision schema; production requires version 1'),
+  state('heroSeat', 'seat whose private cards and action are being decided'),
+  state('currentPlayerSeat', 'authoritative HandController turn owner'),
+  state('legalActions', 'authoritative action menu including reopen and structure rules'),
+  state('toCall', 'authoritative amount owed by hero'),
+  state('minRaiseTo', 'minimum absolute legal wager or raise-to'),
+  state('maxRaiseTo', 'maximum absolute legal wager after structure and table caps'),
+  state('bettingStructure', 'no-limit, pot-limit or fixed-limit rule selected by the live hand'),
+  state('fixedBetSize', 'fixed-limit street bet; null in other structures'),
+  state('wagersCapped', 'fixed-limit wager cap reached on this street'),
+  state(
+    'commitmentCapRemaining',
+    'table per-hand commitment ceiling remaining; null when disabled'
+  ),
+  state('pots', 'live side-pot layers and exact eligible player ids'),
+  state('rakeConfig', 'exact active per-hand rake percent and player-count cap schedule'),
+  state('bbjConfig', 'active hand jackpot fee configuration; null explicitly disables deductions'),
+  state(
+    'chipUnit',
+    'controller settlement unit: whole tournament or Diamond chips, cent-unit cash chips'
+  ),
+  state('asset', 'controller chip or Diamond asset, governing fee and precision rules'),
+  state('dealtSeatIds', 'public original dealt-seat census; folded deals still occupy the deck'),
+  state('variantRules', 'explicit hole-card, board-use, deck and hi-lo rules'),
   state('communityCards', 'board 1'),
   state('communityCards2', 'board 2 (bomb pots)'),
   state('communityCards3', 'board 3 (bomb pots)'),
   state('pot', 'pot including the bet faced'),
+  state(
+    'contestablePot',
+    "pot hero can actually win after the effective call, excluding hero's uncommitted call"
+  ),
   state('currentBet', 'the street bet to match'),
   state('minRaise', 'legal raise increment'),
   state('lastRaise', 'last raise size (legalize)'),
@@ -706,7 +784,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'this hand, every action with stage and amount (range reads, barrels, plans)'
   ),
   state('gameMode', 'cash / tournament'),
-  state('format', 'cash / mtt / spin / hu_sng'),
+  state('format', 'cash / mtt / sng / spin / hu_sng'),
   state('ante', 'ante per hand'),
   state('bigBlindAnte', 'BB-ante structure'),
   state('allInOrFold', 'all-in-or-fold table'),
@@ -728,8 +806,8 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   state(
     'tournament',
-    'ICM inputs: stacks, payouts, bubble, bounties, chests, satellite, blind clock',
-    'HorseLogic.icmRisk / endgameAdjust / satelliteRead'
+    'Phase 6 schema-v1 context: tournament type, seats, stacks, payouts/tickets, funded prize/bounty pools, buy-in/start-stack recovery terms, bounty inventory, registration/re-entry/rebuy/add-on state, exact level clock, hand-for-hand, M and atlas coordinates',
+    'HorseDecisionWorkerRuntime.assertPhase6TournamentSnapshot; HorseLogic.icmRisk / decidePreflopV7 / endgameAdjust / satelliteRead / evaluateTournamentUtility'
   ),
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -827,7 +905,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'horse_solver_agreement',
     'nightly',
     'fn_audit_solver_agreement (the daily audit); written by HorseLeague after the matchups via fn_horse_solver_agreement_add',
-    'V47: the absolute score - mean solver frequency of the action the horse chose, hold em push/fold spots only',
+    'reference-specific absolute scores: V47 hold em push/fold chart agreement and Phase 4 certified V31 postflop execution agreement; neither is exploitability',
     'V47',
     { dayColumn: 'run_date', freshnessDays: 2 }
   ),
@@ -836,6 +914,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'nightly',
     'fn_audit_solver_agreement; ca_horse_solver_agreement_decisions',
     'reconciled per-decision evidence behind the nightly chart-agreement summary, including the final action, reference mix, regret availability, and source seal',
+    'Phase4',
+    { dayColumn: 'run_date', freshnessDays: 2 }
+  ),
+  table(
+    'horse_solver_agreement_v31_decisions',
+    'nightly',
+    'fn_audit_solver_agreement; ca_horse_solver_agreement_decisions; ca_horse_solver_agreement_v31_decisions',
+    'database-bound per-decision evidence for the promoted V31 runtime corpus: exact state, sampled and final action, execution match, reference mix, recomputed regret, and complete dataset/cell source seal',
     'Phase4',
     { dayColumn: 'run_date', freshnessDays: 2 }
   ),
@@ -971,6 +1057,15 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   // so a healthy day never trips them and a dead layer always does.
   // ─────────────────────────────────────────────────────────────────────────
   receipt('decide', 'HorseLogic.decide', 'every live decision', 'V15'),
+  receipt('decide_tournament', 'HorseLogic.decide', 'every live tournament decision', 'Phase6'),
+  receipt(
+    'decide_tournament_preflop',
+    'HorseLogic.decide',
+    'every live tournament preflop decision',
+    'Phase6',
+    'decide_tournament',
+    0.05
+  ),
   receipt(
     'decide_omaha',
     'HorseLogic.decide',
@@ -1445,6 +1540,594 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic (V41)',
     'a horse tagged for river raise wars gave a river raise more respect; needs tuner-written leaks',
     'V41'
+  ),
+  receipt(
+    'phase5_canonical_state',
+    'HorseDecisionWorkerRuntime.executeFast',
+    'a schema-v1 state passed the worker privacy, legality, side-pot, rake and variant-rule boundary',
+    'Phase5',
+    'decide',
+    0.99
+  ),
+  receipt(
+    'phase6_tournament_context',
+    'HorseLogic (Phase6)',
+    'a live tournament decision received the schema-v1 tournament context',
+    'Phase6',
+    'decide_tournament',
+    0.99
+  ),
+  receipt(
+    'phase6_tournament_context_*',
+    'HorseLogic (Phase6)',
+    'complete and explicit-incomplete outcomes partition every Phase 6 context read',
+    'Phase6',
+    'phase6_tournament_context',
+    0.99
+  ),
+  receipt(
+    'phase6_tournament_context_complete',
+    'HorseLogic (Phase6)',
+    'the schema-v1 tournament context passed the complete-context contract',
+    'Phase6',
+    'phase6_tournament_context'
+  ),
+  receipt(
+    'phase6_m_engine',
+    'HorseLogic (Phase6)',
+    'real, effective, projected, velocity and covering-opponent M were present',
+    'Phase6',
+    'phase6_tournament_context',
+    0.99
+  ),
+  receipt(
+    'phase6_tournament_preflop',
+    'HorseLogic (Phase6)',
+    'a live tournament preflop decision resolved an atlas coordinate',
+    'Phase6',
+    'decide_tournament_preflop',
+    0.99
+  ),
+  receipt(
+    'phase6_route_*',
+    'HorseLogic (Phase6)',
+    'solver, atlas, and solverless-variant routes partition actual tournament preflop returns',
+    'Phase6',
+    'phase6_tournament_preflop',
+    0.99
+  ),
+  receipt(
+    'phase6_branch_*',
+    'HorseLogic (Phase6)',
+    'the branch attached to the actual tournament preflop return',
+    'Phase6',
+    'phase6_tournament_preflop',
+    0.99
+  ),
+  receipt(
+    'phase6_route_atlas',
+    'HorseLogic (Phase6)',
+    'an actual tournament preflop return used the Phase 6 atlas path',
+    'Phase6'
+  ),
+  receipt(
+    'phase6_atlas_*',
+    'HorseLogic (Phase6)',
+    'baseline and labeled-fallback outcomes partition actual atlas returns',
+    'Phase6',
+    'phase6_route_atlas',
+    0.99
+  ),
+  receipt(
+    'phase7_tournament_utility',
+    'HorseLogic -> HorseTournamentUtility',
+    'a complete-context tournament decision compared its legal action families by resulting stack-vector utility and attached the component ledger',
+    'Phase7',
+    'phase6_tournament_context_complete',
+    0.99
+  ),
+  receipt(
+    'phase10_seen',
+    'HorseLogic -> evaluatePlo4LivePolicy',
+    'natural PLO4 decisions entering the versioned policy',
+    'Phase10'
+  ),
+  receipt(
+    'phase10_eligible',
+    'evaluatePlo4LivePolicy',
+    'complete supported single-board PLO4 nodes',
+    'Phase10'
+  ),
+  receipt(
+    'phase10_fired',
+    'evaluatePlo4LivePolicy',
+    'completed bounded PLO4 policy evaluation',
+    'Phase10'
+  ),
+  receipt(
+    'phase10_shadow_changed',
+    'evaluatePlo4LivePolicy',
+    'proposal differs from baseline; not a live action claim',
+    'Phase10'
+  ),
+  receipt(
+    'phase10_applied',
+    'HorseLogic',
+    'approved policy proposal accepted before final utility and enforcement',
+    'Phase10'
+  ),
+  receipt(
+    'phase10_baseline_retained',
+    'HorseLogic',
+    'shadow or unavailable policy retained the existing action',
+    'Phase10'
+  ),
+  receipt(
+    'phase10_reason_*',
+    'evaluatePlo4LivePolicy',
+    'exact selection or unavailable reason',
+    'Phase10',
+    'phase10_seen',
+    0.99
+  ),
+  receipt(
+    'phase10_street_*',
+    'evaluatePlo4LivePolicy',
+    'street coverage for completed policy evaluations',
+    'Phase10',
+    'phase10_fired',
+    0.99
+  ),
+  receipt(
+    'phase10_unavailable_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'exact reason the existing tournament utility owner refused evaluation',
+    'Phase10'
+  ),
+  receipt(
+    'phase10_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'cash or existing tournament utility ownership',
+    'Phase10',
+    'phase10_seen',
+    0.99
+  ),
+  receipt(
+    'phase10_execution_*',
+    'ServerTableEngineTurns',
+    'authoritative action or retired decision accounting',
+    'Phase10'
+  ),
+  receipt(
+    'phase11_seen',
+    'HorseLogic -> evaluateOmahaVariantPolicy',
+    'natural PLO5/PLO6/PLO8 decisions entering the versioned policy',
+    'Phase11'
+  ),
+  receipt(
+    'phase11_eligible',
+    'evaluateOmahaVariantPolicy',
+    'complete supported single-board PLO5/PLO6/PLO8 nodes',
+    'Phase11'
+  ),
+  receipt(
+    'phase11_fired',
+    'evaluateOmahaVariantPolicy',
+    'completed bounded PLO5/PLO6/PLO8 policy evaluation',
+    'Phase11'
+  ),
+  receipt(
+    'phase11_shadow_changed',
+    'evaluateOmahaVariantPolicy',
+    'proposal differs from baseline; not a live action claim',
+    'Phase11'
+  ),
+  receipt(
+    'phase11_applied',
+    'HorseLogic',
+    'approved policy proposal accepted before final utility and enforcement',
+    'Phase11'
+  ),
+  receipt(
+    'phase11_baseline_retained',
+    'HorseLogic',
+    'shadow or unavailable policy retained the existing action',
+    'Phase11'
+  ),
+  receipt(
+    'phase11_reason_*',
+    'evaluateOmahaVariantPolicy',
+    'exact selection or unavailable reason',
+    'Phase11',
+    'phase11_seen',
+    0.99
+  ),
+  receipt(
+    'phase11_street_*',
+    'evaluateOmahaVariantPolicy',
+    'street coverage for completed policy evaluations',
+    'Phase11',
+    'phase11_fired',
+    0.99
+  ),
+  receipt(
+    'phase11_unavailable_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'exact reason the existing tournament utility owner refused evaluation',
+    'Phase11'
+  ),
+  receipt(
+    'phase11_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'cash or existing tournament utility ownership',
+    'Phase11',
+    'phase11_seen',
+    0.99
+  ),
+  receipt(
+    'phase11_execution_*',
+    'ServerTableEngineTurns',
+    'authoritative action or retired decision accounting',
+    'Phase11'
+  ),
+  receipt(
+    'phase11_variant_*',
+    'HorseLogic',
+    'partition entering decisions by exact variant',
+    'Phase11',
+    'phase11_seen',
+    0.99
+  ),
+  ...(['plo5', 'plo6', 'plo8'] as const).map((variant) =>
+    receipt(
+      `phase11_${variant}_*`,
+      'HorseLogic; ServerTableEngineTurns',
+      'per-variant eligibility, completion, reason and final execution; depends on table mix',
+      'Phase11'
+    )
+  ),
+  receipt(
+    'phase12_seen',
+    'HorseLogic -> evaluateRemainingVariantPolicy',
+    'natural Short Deck/Pineapple/FLH/FLO8 decisions entering the versioned policy',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_eligible',
+    'evaluateRemainingVariantPolicy',
+    'complete supported single-board Short Deck/Pineapple/FLH/FLO8 nodes',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_fired',
+    'evaluateRemainingVariantPolicy',
+    'completed bounded Short Deck/Pineapple/FLH/FLO8 policy evaluation',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_shadow_changed',
+    'evaluateRemainingVariantPolicy',
+    'proposal differs from baseline; not a live action claim',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_applied',
+    'HorseLogic',
+    'approved policy proposal accepted before final utility and enforcement',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_baseline_retained',
+    'HorseLogic',
+    'shadow or unavailable policy retained the existing action',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_reason_*',
+    'evaluateRemainingVariantPolicy',
+    'exact selection or unavailable reason',
+    'Phase12',
+    'phase12_seen',
+    0.99
+  ),
+  receipt(
+    'phase12_street_*',
+    'evaluateRemainingVariantPolicy',
+    'street coverage for completed policy evaluations',
+    'Phase12',
+    'phase12_fired',
+    0.99
+  ),
+  receipt(
+    'phase12_unavailable_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'exact reason the existing tournament utility owner refused evaluation',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'cash or existing tournament utility ownership',
+    'Phase12',
+    'phase12_seen',
+    0.99
+  ),
+  receipt(
+    'phase12_execution_*',
+    'ServerTableEngineTurns',
+    'authoritative action or retired decision accounting',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_variant_*',
+    'HorseLogic',
+    'partition entering decisions by exact variant',
+    'Phase12',
+    'phase12_seen',
+    0.99
+  ),
+  ...(['short_deck', 'pineapple', 'flh', 'flo8'] as const).map((variant) =>
+    receipt(
+      `phase12_${variant}_*`,
+      'HorseLogic; ServerTableEngineTurns',
+      'per-variant eligibility, completion, reason and final execution; depends on table mix',
+      'Phase12'
+    )
+  ),
+  receipt(
+    'phase13_seen',
+    'HorseLogic -> evaluateJointLivePolicy',
+    'natural multiway and bomb-pot decisions entering the versioned policy',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_eligible',
+    'evaluateJointLivePolicy',
+    'complete supported multiway and bomb-pot nodes',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_fired',
+    'evaluateJointLivePolicy',
+    'completed bounded multiway and bomb-pot policy evaluation',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_shadow_changed',
+    'evaluateJointLivePolicy',
+    'proposal differs from baseline; not a live action claim',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_applied',
+    'HorseLogic',
+    'approved policy proposal accepted before final utility and enforcement',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_baseline_retained',
+    'HorseLogic',
+    'shadow or unavailable policy retained the existing action',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_reason_*',
+    'evaluateJointLivePolicy',
+    'exact selection or unavailable reason',
+    'Phase13',
+    'phase13_seen',
+    0.99
+  ),
+  receipt(
+    'phase13_street_*',
+    'evaluateJointLivePolicy',
+    'street coverage for completed policy evaluations',
+    'Phase13',
+    'phase13_fired',
+    0.99
+  ),
+  receipt(
+    'phase13_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'cash or existing tournament utility ownership',
+    'Phase13',
+    'phase13_seen',
+    0.99
+  ),
+  receipt(
+    'phase13_execution_*',
+    'ServerTableEngineTurns',
+    'authoritative action or retired decision accounting',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_unavailable_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'explicit utility refusal, budget, context or legalization failure',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_variant_*',
+    'HorseLogic',
+    'partition entering decisions by exact variant',
+    'Phase13',
+    'phase13_seen',
+    0.99
+  ),
+  ...(
+    ['nlh', 'plo4', 'plo5', 'plo6', 'plo8', 'short_deck', 'pineapple', 'flh', 'flo8'] as const
+  ).map((variant) =>
+    receipt(
+      `phase13_${variant}_*`,
+      'HorseLogic; ServerTableEngineTurns',
+      'per-variant eligibility, completion, reason and final execution; depends on table mix',
+      'Phase13'
+    )
+  ),
+  receipt(
+    'phase13_board_*',
+    'HorseLogic',
+    'actual controller board-count coverage',
+    'Phase13',
+    'phase13_seen',
+    0.99
+  ),
+  receipt(
+    'phase8_seen',
+    'HorseLogic -> HorseTournamentPostflop',
+    'natural tournament postflop decisions entering the Phase 8 gate',
+    'Phase8'
+  ),
+  receipt(
+    'phase8_eligible',
+    'HorseTournamentPostflop',
+    'canonical NLH single-board decisions with action-specific utility',
+    'Phase8'
+  ),
+  receipt(
+    'phase8_fired',
+    'HorseTournamentPostflop',
+    'completed bounded continuation evaluations',
+    'Phase8'
+  ),
+  receipt(
+    'phase8_shadow_changed',
+    'HorseTournamentPostflop',
+    'counterfactual differs from accepted baseline; not proof of changed play',
+    'Phase8'
+  ),
+  receipt(
+    'phase8_applied',
+    'HorseTournamentPostflop',
+    'promoted candidate accepted before authoritative enforcement',
+    'Phase8'
+  ),
+  receipt(
+    'phase8_baseline_retained',
+    'HorseTournamentPostflop',
+    'shadow or unavailable candidate preserves baseline',
+    'Phase8'
+  ),
+  receipt(
+    'phase8_reason_*',
+    'HorseTournamentPostflop',
+    'one explicit selection or fallback reason per observed decision',
+    'Phase8',
+    'phase8_seen',
+    0.99
+  ),
+  receipt(
+    'phase8_objective_*',
+    'HorseTournamentPostflop',
+    'objective partitions completed candidate evaluations',
+    'Phase8',
+    'phase8_fired',
+    0.99
+  ),
+  receipt(
+    'phase8_feature_*',
+    'HorseTournamentPostflop',
+    'specific geometry and objective evidence, not independent overwrites',
+    'Phase8'
+  ),
+  receipt(
+    'phase8_format_*',
+    'HorseLogic',
+    'format partitions every observed tournament postflop gate',
+    'Phase8',
+    'phase8_seen',
+    0.99
+  ),
+  receipt(
+    'phase8_execution_*',
+    'ServerTableEngineTurns',
+    'authoritative action acceptance, coercion, fallback or retired request',
+    'Phase8'
+  ),
+  receipt(
+    'phase7_objective_*',
+    'HorseTournamentUtility.objectiveOf',
+    'dedicated MTT, satellite, PKO, mystery, SNG and Spin objectives partition Phase 7 decisions',
+    'Phase7',
+    'phase7_tournament_utility',
+    0.99
+  ),
+  receipt(
+    'phase7_icm_*',
+    'IcmModel.createIcmEquityEstimator',
+    'exact final-table MH or direct bounded Plackett-Luce Monte Carlo method used by the selected utility ledger',
+    'Phase7',
+    'phase7_tournament_utility',
+    0.99
+  ),
+  receipt(
+    'phase7_utility_override',
+    'HorseTournamentUtility.evaluateTournamentUtility',
+    'action-specific utility overrode the legacy heuristic or solver proposal',
+    'Phase7'
+  ),
+  receipt(
+    'phase7_utility_skip_incomplete',
+    'HorseLogic',
+    'Phase 7 failed closed because the Phase 6 context was explicitly incomplete',
+    'Phase7'
+  ),
+  receipt(
+    'phase7_utility_unavailable',
+    'HorseLogic',
+    'a nominally complete betting decision could not produce a Phase 7 ledger; any live fire requires investigation',
+    'Phase7'
+  ),
+  receipt(
+    'phase7_unavailable_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'the bounded fail-closed reason partitions every Phase 7 utility-unavailable receipt for production diagnosis',
+    'Phase7',
+    'phase7_utility_unavailable',
+    0.99
+  ),
+  receipt(
+    'phase7_utility_committed',
+    'ServerTableEngineTurns.scheduleHorseAction',
+    'the exact action selected by the Phase 7 ledger was accepted by the authoritative hand controller',
+    'Phase7',
+    'phase7_tournament_utility'
+  ),
+  receipt(
+    'phase7_utility_coerced',
+    'ServerTableEngineTurns.scheduleHorseAction',
+    'a final legality belt changed the Phase 7-selected action before acceptance; every fire requires investigation',
+    'Phase7'
+  ),
+  receipt(
+    'phase7_utility_fallback',
+    'ServerTableEngineTurns.scheduleHorseAction',
+    'the Phase 7-selected action was rejected and the controller accepted the check/fold fallback; every fire requires investigation',
+    'Phase7'
+  ),
+  receipt(
+    'phase7_utility_not_executed',
+    'ServerTableEngineTurns.scheduleHorseAction',
+    'a Phase 7 evaluation did not reach an accepted action under its authority fence',
+    'Phase7'
+  ),
+  receipt(
+    'phase7_side_pot',
+    'HorseTournamentUtility',
+    'at least one evaluated action produced multiple canonical pot layers',
+    'Phase7'
+  ),
+  receipt(
+    'phase7_players_behind',
+    'HorseLogic.phase7PlayersBehind',
+    'the utility receipt included live actionable players behind hero',
+    'Phase7'
+  ),
+  receipt(
+    'phase7_bounty_utility',
+    'HorseTournamentUtility',
+    'PKO or bounty ownership and denial entered action utility',
+    'Phase7'
   ),
   receipt(
     'v44_second_look',

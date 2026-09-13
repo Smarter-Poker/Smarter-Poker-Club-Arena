@@ -7,12 +7,22 @@
  * process that declared it". Those three are what is pinned.
  */
 
+import type { MaintenanceThawRequest } from './maintenanceThawV3.js';
+function releaseFor(request: Readonly<MaintenanceThawRequest>) {
+  return {
+    ...request,
+    creditedThroughAt: Date.now(),
+    effectiveFrozenSeconds: (Date.now() - request.freezeStartedAt) / 1000,
+  };
+}
+
 import { describe, it, expect, beforeEach, beforeAll, vi, afterEach } from 'vitest';
 import {
   MaintenanceBreak,
   type MaintenanceBreakStore,
   type PersistedMaintenanceBreak,
   type MaintenanceBreakOutcome,
+  type MaintenanceBreakFault,
 } from './MaintenanceBreak.js';
 
 /**
@@ -88,6 +98,9 @@ class FakeEngine {
 }
 
 class FakeStore implements MaintenanceBreakStore {
+  async loadReleaseBoundary(): Promise<number | null> {
+    return null;
+  }
   row: PersistedMaintenanceBreak | null = null;
   saves = 0;
   clears = 0;
@@ -129,6 +142,7 @@ function build(engineCount = 3) {
   const store = new FakeStore();
   const emitted: Array<{ tableId: string; payload: Record<string, unknown> }> = [];
   const outcomes: MaintenanceBreakOutcome[] = [];
+  const faults: MaintenanceBreakFault[] = [];
   const mb = new MaintenanceBreak({
     engines: () => engines.entries() as any,
     isRunning: () => true,
@@ -137,13 +151,29 @@ function build(engineCount = 3) {
     recordOutcome: async (o) => {
       outcomes.push(o);
     },
+    recordFault: async (f) => {
+      faults.push(f);
+    },
   });
-  return { mb, engines, store, emitted, outcomes };
+  return { mb, engines, store, emitted, outcomes, faults };
 }
 
 const parkAll = (engines: Map<string, FakeEngine>) => engines.forEach((e) => e.park());
 
-beforeEach(() => vi.useFakeTimers());
+/*
+ * A FIXED CLOCK, OUTSIDE THE BREAK WINDOW (2026-09-10).
+ *
+ * Since #3813 an engine that boots inside [:53, :00) with nothing to adopt
+ * holds the fleet from the schedule alone. These tests used the fake clock's
+ * default - the REAL time at install - so every run that happened to start
+ * between :53 and :00 UTC entered a clock-derived break: measured, four tests
+ * here fail (one hangs for 90 s) when the clock reads 12:56. Tests that care
+ * about the time set their own; everything else runs at a quiet :20.
+ */
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-09-10T12:20:00.000Z'));
+});
 afterEach(() => vi.useRealTimers());
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -219,6 +249,141 @@ describe('the announcement', () => {
     expect(mb.isActive()).toBe(false);
     expect(emitted).toHaveLength(0);
     for (const engine of engines.values()) expect(engine.paused).toBe(false);
+  });
+
+  it('retries a save that timed out behind an entry, and keeps the announced :55', async () => {
+    vi.setSystemTime(new Date('2026-09-10T06:53:00.000Z'));
+    const announcedAt = Date.now();
+    const { mb, engines, store, emitted } = build(2);
+    let attempts = 0;
+    const realSave = store.save.bind(store);
+    store.save = async (state) => {
+      attempts++;
+      if (attempts <= 2) throw new Error('canceling statement due to lock timeout');
+      await realSave(state);
+    };
+
+    const announcing = mb.announceLastHand();
+    await vi.advanceTimersByTimeAsync(MaintenanceBreak.ANNOUNCE_PERSIST_RETRY_MS * 2);
+    await announcing;
+
+    expect(attempts).toBe(3);
+    expect(mb.isActive()).toBe(true);
+    expect(store.row).toMatchObject({ phase: 'last_hand', announcedAt });
+    // Nothing was promised to a player until the row was durable, and every
+    // table stayed held across the retries.
+    expect(emitted).toHaveLength(engines.size);
+    expect(new Set(emitted.map((frame) => frame.payload.phase))).toEqual(new Set(['last_hand']));
+    for (const engine of engines.values()) expect(engine.paused).toBe(true);
+
+    // The countdown still lands on the boundary that was announced, not ten
+    // seconds later.
+    await vi.advanceTimersByTimeAsync(
+      announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS - Date.now() - 1
+    );
+    expect(store.row?.phase).toBe('last_hand');
+    await vi.advanceTimersByTimeAsync(1);
+    expect(store.row).toMatchObject({
+      phase: 'counting_down',
+      breakStartedAt: announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS,
+    });
+  });
+
+  it('stops retrying inside the lead and cancels when the boundary would otherwise be missed', async () => {
+    vi.setSystemTime(new Date('2026-09-10T06:53:00.000Z'));
+    const { mb, engines, store, emitted } = build(2);
+    let attempts = 0;
+    store.save = async () => {
+      attempts++;
+      throw new Error('canceling statement due to lock timeout');
+    };
+
+    const announcing = mb.announceLastHand();
+    const failed = announcing.catch((error: Error) => error);
+    await vi.advanceTimersByTimeAsync(MaintenanceBreak.ANNOUNCE_PERSIST_BUDGET_MS);
+    const error = await failed;
+
+    expect((error as Error).message).toMatch(/lock timeout/);
+    expect(attempts).toBeGreaterThan(1);
+    expect(attempts).toBeLessThanOrEqual(
+      MaintenanceBreak.ANNOUNCE_PERSIST_BUDGET_MS / MaintenanceBreak.ANNOUNCE_PERSIST_RETRY_MS + 1
+    );
+    expect(mb.isActive()).toBe(false);
+    expect(emitted).toHaveLength(0);
+    for (const engine of engines.values()) expect(engine.paused).toBe(false);
+  });
+
+  it('retries a save the transport dropped, not only one that waited behind an entry', async () => {
+    vi.setSystemTime(new Date('2026-09-10T06:53:00.000Z'));
+    const { mb, store } = build(1);
+    let attempts = 0;
+    const realSave = store.save.bind(store);
+    store.save = async (state) => {
+      attempts++;
+      if (attempts === 1) throw new Error('TypeError: fetch failed');
+      await realSave(state);
+    };
+
+    const announcing = mb.announceLastHand();
+    await vi.advanceTimersByTimeAsync(MaintenanceBreak.ANNOUNCE_PERSIST_RETRY_MS);
+    await announcing;
+    expect(attempts).toBe(2);
+    expect(store.row?.phase).toBe('last_hand');
+  });
+
+  it('records why a break was cancelled, so the scorecard can name the cause', async () => {
+    vi.setSystemTime(new Date('2026-09-10T06:53:00.000Z'));
+    const announcedAt = Date.now();
+    const { mb, store, faults } = build(1);
+    store.save = async () => {
+      throw new Error('MAINTENANCE_LAST_HAND_BOUNDARY_EXPIRED');
+    };
+    await expect(mb.announceLastHand()).rejects.toThrow('BOUNDARY_EXPIRED');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(faults).toEqual([
+      {
+        announcedAtMs: announcedAt,
+        stage: 'announcement',
+        outcome: 'cancelled',
+        error: 'MAINTENANCE_LAST_HAND_BOUNDARY_EXPIRED',
+      },
+    ]);
+  });
+
+  it('treats a deliberate refusal as a decision and a dropped transport as a blip', () => {
+    for (const text of [
+      'canceling statement due to lock timeout',
+      'canceling statement due to statement timeout',
+      'TypeError: fetch failed',
+      'Error: supabase_timeout',
+      'read ECONNRESET',
+      '<html><title>502 Bad Gateway</title></html>',
+      'PGRST003: Timed out acquiring connection from connection pool.',
+    ]) {
+      expect(MaintenanceBreak.isRetryablePersistenceError(new Error(text)), text).toBe(true);
+    }
+    for (const text of [
+      'MAINTENANCE_OWNERSHIP_LOST: save refused',
+      'MAINTENANCE_LAST_HAND_BOUNDARY_EXPIRED',
+      'MAINTENANCE_COUNTDOWN_BOUNDARY_EXPIRED',
+      'MAINTENANCE_OWNERSHIP_TOKEN_REQUIRED',
+      'database unavailable',
+      'permission denied for function fn_save_engine_maintenance_break',
+    ]) {
+      expect(MaintenanceBreak.isRetryablePersistenceError(new Error(text)), text).toBe(false);
+    }
+  });
+
+  it('does not retry an ownership loss or an expired boundary', async () => {
+    const { mb, store } = build(1);
+    let attempts = 0;
+    store.save = async () => {
+      attempts++;
+      throw new Error('MAINTENANCE_LAST_HAND_BOUNDARY_EXPIRED');
+    };
+    await expect(mb.announceLastHand()).rejects.toThrow('BOUNDARY_EXPIRED');
+    expect(attempts).toBe(1);
+    expect(mb.isActive()).toBe(false);
   });
 
   it('accepts a lost save response only after exact durable read-back', async () => {
@@ -324,21 +489,112 @@ describe('the countdown', () => {
     });
   });
 
-  it('ends the visible break and resumes play when countdown persistence fails', async () => {
-    const { mb, engines, store, emitted } = build(1);
+  it('holds the break on the durable announcement when the countdown cannot be saved', async () => {
+    // 2026-09-10: one failed countdown save used to cancel a break players had
+    // watched for two minutes and resume every table at :55, while the
+    // last-hand row went on freezing the database. The announcement IS the
+    // database half by then, so the break runs to the hour; only the restart
+    // certificate is lost.
+    const { mb, engines, store, emitted, outcomes, faults } = build(1);
     await mb.announceLastHand();
     parkAll(engines);
+    const announcedRow = { ...store.row! };
     store.save = async () => {
       throw new Error('countdown write failed');
     };
 
-    await expect(mb.beginCountdown()).rejects.toThrow('countdown write failed');
+    await mb.beginCountdown();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(mb.isActive()).toBe(true);
+    expect([...engines.values()][0].paused).toBe(true);
+    expect(mb.snapshot()).toMatchObject({
+      phase: 'counting_down',
+      durableConfirmed: false,
+      readyForRestart: false,
+    });
+    expect(emitted.map((frame) => frame.payload.phase)).toEqual(['last_hand', 'counting_down']);
+    expect(store.row).toEqual(announcedRow);
+    expect(faults).toEqual([
+      expect.objectContaining({
+        stage: 'countdown',
+        outcome: 'held_without_restart',
+        error: 'countdown write failed',
+        announcedAtMs: announcedRow.announcedAt,
+      }),
+    ]);
+
+    // It ends on the hour like any other break, and clears the row the
+    // database actually holds - the last-hand row, which would otherwise keep
+    // every entry door frozen.
+    await vi.advanceTimersByTimeAsync(MaintenanceBreak.BREAK_DURATION_MS);
     expect(mb.isActive()).toBe(false);
     expect([...engines.values()][0].paused).toBe(false);
-    expect(emitted.map((frame) => frame.payload.type)).toEqual([
-      'maintenance_break',
-      'maintenance_break_ended',
-    ]);
+    expect(outcomes).toHaveLength(1);
+    expect(store.row).toBeNull();
+  });
+
+  it('retries a countdown save that waited behind an entry, and certifies the restart once it lands', async () => {
+    vi.setSystemTime(new Date('2026-09-10T06:53:00.000Z'));
+    const { mb, engines, store, faults } = build(1);
+    await mb.announceLastHand();
+    parkAll(engines);
+    let attempts = 0;
+    const realSave = store.save.bind(store);
+    store.save = async (state) => {
+      attempts++;
+      if (attempts <= 2) throw new Error('canceling statement due to lock timeout');
+      await realSave(state);
+    };
+
+    await vi.advanceTimersByTimeAsync(MaintenanceBreak.LAST_HAND_LEAD_MS);
+    // The countdown is on screen at :55 while the write is still queued...
+    expect(mb.snapshot()).toMatchObject({
+      phase: 'counting_down',
+      durableConfirmed: false,
+      readyForRestart: false,
+    });
+
+    await vi.advanceTimersByTimeAsync(MaintenanceBreak.ANNOUNCE_PERSIST_RETRY_MS * 2);
+    // ...and the restart gate opens only once it is durable.
+    expect(attempts).toBe(3);
+    expect(store.row?.phase).toBe('counting_down');
+    expect(mb.snapshot()).toMatchObject({ durableConfirmed: true, readyForRestart: true });
+    expect(faults).toEqual([]);
+  });
+
+  it('gives up on the countdown once no restart could fit, and still holds to the hour', async () => {
+    vi.setSystemTime(new Date('2026-09-10T06:53:00.000Z'));
+    const { mb, engines, store } = build(2);
+    await mb.announceLastHand();
+    parkAll(engines);
+    let attempts = 0;
+    store.save = async () => {
+      attempts++;
+      throw new Error('canceling statement due to lock timeout');
+    };
+
+    await vi.advanceTimersByTimeAsync(MaintenanceBreak.LAST_HAND_LEAD_MS);
+    await vi.advanceTimersByTimeAsync(
+      MaintenanceBreak.BREAK_DURATION_MS - MaintenanceBreak.MIN_REMAINING_FOR_RESTART_MS
+    );
+    const settled = attempts;
+    expect(settled).toBeGreaterThan(1);
+    expect(settled).toBeLessThanOrEqual(
+      (MaintenanceBreak.BREAK_DURATION_MS - MaintenanceBreak.MIN_REMAINING_FOR_RESTART_MS) /
+        MaintenanceBreak.ANNOUNCE_PERSIST_RETRY_MS +
+        1
+    );
+    expect(mb.isActive()).toBe(true);
+    expect(mb.snapshot().readyForRestart).toBe(false);
+    for (const engine of engines.values()) expect(engine.paused).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(attempts).toBe(settled);
+
+    await vi.advanceTimersByTimeAsync(MaintenanceBreak.MIN_REMAINING_FOR_RESTART_MS);
+    expect(mb.isActive()).toBe(false);
+    for (const engine of engines.values()) expect(engine.paused).toBe(false);
     expect(store.row).toBeNull();
   });
 
@@ -560,9 +816,10 @@ describe('the end of the break', () => {
       isRunning: () => true,
       emit: () => {},
       store,
-      thaw: async (startedAt, seconds) => {
+      thaw: async (request) => {
         events.push('thaw');
-        thawArgs = { startedAt, seconds };
+        thawArgs = { startedAt: request.freezeStartedAt, seconds: request.frozenSeconds };
+        return releaseFor(request);
       },
     });
     engines.get('t0')!.resumeFromMaintenance = function (this: FakeEngine) {
@@ -574,7 +831,7 @@ describe('the end of the break', () => {
     parkAll(engines);
     await mb.beginCountdown();
     const started = Date.now();
-    vi.advanceTimersByTime(MaintenanceBreak.BREAK_DURATION_MS);
+    await vi.advanceTimersByTimeAsync(MaintenanceBreak.BREAK_DURATION_MS);
     await mb.end();
 
     expect(events).toEqual(['thaw', 'resume']);
@@ -583,9 +840,8 @@ describe('the end of the break', () => {
     expect(thawArgs!.startedAt).toBeLessThanOrEqual(started);
   });
 
-  it('a thaw failure never leaves the platform frozen', async () => {
-    // Five minutes of clock drift is a wrong that heals; a platform that
-    // stays frozen is not.
+  it('a thaw failure retains the freeze until recovery is proved', async () => {
+    // A failed transport is not a durable release certificate.
     const { mb, engines } = build(2);
     (mb as any).deps.thaw = async () => {
       throw new Error('PGRST002');
@@ -595,9 +851,9 @@ describe('the end of the break', () => {
     await mb.beginCountdown();
     await mb.end();
     for (const [id, e] of engines) {
-      expect(e.paused, `${id} stayed frozen after a thaw failure`).toBe(false);
+      expect(e.paused, `${id} resumed without a release receipt`).toBe(true);
     }
-    expect(mb.isActive()).toBe(false);
+    expect(mb.isActive()).toBe(true);
   });
 
   it('measures the WHOLE freeze across a restart, not this process`s slice', async () => {
@@ -620,8 +876,9 @@ describe('the end of the break', () => {
       isRunning: () => true,
       emit: () => {},
       store,
-      thaw: async (_startedAt, seconds) => {
-        thawSeconds = seconds;
+      thaw: async (request) => {
+        thawSeconds = request.frozenSeconds;
+        return releaseFor(request);
       },
     });
     await mb.start();
@@ -1011,6 +1268,51 @@ describe('surviving the restart', () => {
     expect(mb.remainingMs()).toBeLessThanOrEqual(2 * 60 * 1000);
   });
 
+  it('holds an adopted last-hand break to its end when the upgrade cannot be saved', async () => {
+    // The claimed last-hand row is already the database half of the freeze.
+    // Cancelling on a failed upgrade resumed the fleet under a countdown while
+    // the database kept refusing entries; it now holds to the same end and
+    // clears the adopted row when it is over.
+    vi.setSystemTime(new Date('2026-09-10T06:56:00.000Z'));
+    const announcedAt = new Date('2026-09-10T06:53:00.000Z').getTime();
+    const { mb, engines, store, faults } = build(2);
+    store.row = {
+      phase: 'last_hand',
+      announcedAt,
+      breakStartedAt: null,
+      breakEndsAt: null,
+      reason: 'Scheduled Engine Maintenance',
+      ownershipToken: 'owner-before-restart',
+    };
+    const realSave = store.save.bind(store);
+    store.save = async () => {
+      throw new Error('upgrade write failed');
+    };
+
+    await mb.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mb.isActive()).toBe(true);
+    for (const engine of engines.values()) expect(engine.paused).toBe(true);
+    expect(mb.snapshot().readyForRestart).toBe(false);
+    expect(store.row?.phase).toBe('last_hand');
+    expect(store.row?.ownershipToken).not.toBe('owner-before-restart');
+    expect(faults).toEqual([
+      expect.objectContaining({ stage: 'adoption', outcome: 'held_without_restart' }),
+    ]);
+
+    store.save = realSave;
+    await vi.advanceTimersByTimeAsync(
+      announcedAt +
+        MaintenanceBreak.LAST_HAND_LEAD_MS +
+        MaintenanceBreak.BREAK_DURATION_MS -
+        Date.now() +
+        1
+    );
+    expect(mb.isActive()).toBe(false);
+    for (const engine of engines.values()) expect(engine.paused).toBe(false);
+    expect(store.row).toBeNull();
+  });
+
   it('resumes on time after adopting a break, without being told', async () => {
     const { mb, engines, store } = build(2);
     store.row = {
@@ -1031,7 +1333,7 @@ describe('surviving the restart', () => {
     expect(store.row).toBeNull();
   });
 
-  it('ignores an expired row rather than blacking out the platform', async () => {
+  it('adopts an expired row and schedules its recovery', async () => {
     const { mb, engines, store } = build(2);
     store.row = {
       phase: 'counting_down',
@@ -1043,9 +1345,11 @@ describe('surviving the restart', () => {
     };
     await mb.start();
 
+    expect(mb.isActive()).toBe(true);
+    expect([...engines.values()][0].paused).toBe(true);
+    expect(store.clears).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
     expect(mb.isActive()).toBe(false);
-    expect([...engines.values()][0].paused).toBe(false);
-    expect(store.clears).toBe(1);
   });
 
   it('owns a foreign expired row before cleanup so a failed clear cannot poison the next hour', async () => {
@@ -1071,6 +1375,7 @@ describe('surviving the restart', () => {
     await mb.start();
     const adoptedToken = store.row!.ownershipToken;
     expect(adoptedToken).not.toBe('retired-process-token');
+    await vi.advanceTimersByTimeAsync(1);
     expect(mb.isActive()).toBe(false);
 
     await mb.announceLastHand();
@@ -1126,10 +1431,8 @@ describe('surviving the restart', () => {
     expect([...engines.values()][0].paused).toBe(false);
   });
 
-  it('deals normally when the break row cannot be read at all', async () => {
-    // Fails OPEN on purpose. A database blip must not become a platform
-    // outage - the worst case is a visible restart, which is where we were
-    // before this existed.
+  it('holds and retries when the break row cannot be read', async () => {
+    // Unknown durable state cannot authorize a release.
     const { mb, engines, store } = build(2);
     let loads = 0;
     store.load = async () => {
@@ -1143,8 +1446,8 @@ describe('surviving the restart', () => {
     );
     await starting;
     expect(loads).toBe(MaintenanceBreak.RESTORE_ATTEMPTS);
-    expect(mb.isActive()).toBe(false);
-    expect([...engines.values()][0].paused).toBe(false);
+    expect(mb.isActive()).toBe(true);
+    expect([...engines.values()][0].paused).toBe(true);
   });
 
   it('retries a boot-time read that fails once, and honours the break it then finds', async () => {
@@ -1202,6 +1505,27 @@ describe('surviving the restart', () => {
 });
 
 describe('the schedule', () => {
+  it.each([
+    ['America/Chicago', '2026-11-01T07:54:00.000Z', '2026-11-01T08:53:00.000Z'],
+    ['America/Chicago', '2026-11-01T07:52:00.000Z', '2026-11-01T07:53:00.000Z'],
+    ['Europe/Berlin', '2026-10-25T01:54:00.000Z', '2026-10-25T02:53:00.000Z'],
+    ['Asia/Kathmandu', '2026-09-10T00:52:00.000Z', '2026-09-10T00:53:00.000Z'],
+    ['UTC', '2026-09-10T00:53:00.000Z', '2026-09-10T01:53:00.000Z'],
+    ['UTC', '2026-12-31T23:54:00.000Z', '2027-01-01T00:53:00.000Z'],
+  ])('targets the next UTC :53 in %s at %s', (zone, now, expected) => {
+    vi.stubEnv('TZ', zone);
+    try {
+      vi.setSystemTime(new Date(now));
+      const { mb } = build(0);
+      // @ts-expect-error - verify the actual private scheduler.
+      const ms = mb.msUntilNextAnnouncement();
+      expect(ms).toBe(Date.parse(expected) - Date.parse(now));
+      expect(ms).toBeGreaterThan(0);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('announces at :53 so the countdown starts at :55 with the tournament break', () => {
     // The two must coincide: an MTT may not be stopped twice in one hour, and
     // at :55 its blind clock is already suspended.
@@ -1251,6 +1575,7 @@ describe('the schedule', () => {
       isRunning: () => true,
       emit: () => {},
       store: {
+        loadReleaseBoundary: async () => null,
         load: async () => null,
         save: async () => {
           throw new Error('database refused the announcement');
@@ -1315,7 +1640,7 @@ describe('the dealing loop parks for the break, not only the wait loop', () => {
    * Source-level, like the other pause laws: every park gate in the dealing
    * loop must consult maintenancePaused.
    */
-  it('every awaitPauseGate call in the dealing loop is guarded by maintenancePaused', async () => {
+  it('every awaitPauseGate call is owned by a pause authority and both maintenance gates stay wired', async () => {
     const { readFileSync } = await import('node:fs');
     const { fileURLToPath } = await import('node:url');
     const { dirname, join } = await import('node:path');
@@ -1325,14 +1650,32 @@ describe('the dealing loop parks for the break, not only the wait loop', () => {
       .replace(/^\s*\/\/.*$/gm, '');
     const sites = [...src.matchAll(/await this\.awaitPauseGate\(\)/g)];
     expect(sites.length, 'the dealing loop has two park gates').toBeGreaterThanOrEqual(2);
+    let maintenanceSites = 0;
+    let terminalOnlySites = 0;
     for (const m of sites) {
-      const guard = src.slice(Math.max(0, m.index! - 220), m.index!);
+      // Pause ownership gained an exact tournament-move owner in front of the
+      // existing maintenance condition. Inspect the complete local guard, not
+      // a formatting-sized fragment that can silently stop at a longer list
+      // of authorities while the runtime condition remains correctly wired.
+      const guard = src.slice(Math.max(0, m.index! - 500), m.index!);
+      const hasMaintenance = /maintenancePaused/.test(guard);
+      const hasTerminalCloseout = /terminalCloseoutPaused/.test(guard);
       expect(
         guard,
-        'a park gate that ignores maintenancePaused deals through the break: ' +
+        'an awaitPauseGate call without a named pause authority can park or release the wrong hand: ' +
           guard.trim().slice(-120)
-      ).toMatch(/maintenancePaused/);
+      ).toMatch(/maintenancePaused|terminalCloseoutPaused/);
+      if (hasMaintenance) maintenanceSites++;
+      if (hasTerminalCloseout && !hasMaintenance) terminalOnlySites++;
     }
+    expect(
+      maintenanceSites,
+      'both between-hand maintenance gates remain wired'
+    ).toBeGreaterThanOrEqual(2);
+    expect(
+      terminalOnlySites,
+      'the final-table closeout rechecks may be terminal-only and must remain explicit'
+    ).toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -1354,6 +1697,7 @@ describe('the maintenance owner cannot outlive shutdown', () => {
       isRunning: () => true,
       emit: () => {},
       store: {
+        loadReleaseBoundary: async () => null,
         load: () => loading.promise,
         save: async () => {},
         claim: async () => null,
@@ -1394,6 +1738,7 @@ describe('the maintenance owner cannot outlive shutdown', () => {
       isRunning: () => true,
       emit: () => {},
       store: {
+        loadReleaseBoundary: async () => null,
         load: async () => null,
         save: () => {
           saveStarted = true;
@@ -1439,9 +1784,10 @@ describe('the maintenance owner cannot outlive shutdown', () => {
       isRunning: () => true,
       emit: () => {},
       store: new FakeStore(),
-      thaw: () => {
+      thaw: async (request) => {
         thawStarted = true;
-        return thawing.promise;
+        await thawing.promise;
+        return releaseFor(request);
       },
       setTimer: ((fn: () => void, ms: number) => {
         timers.push({ fn, ms });
@@ -1592,4 +1938,34 @@ describe('the real engine treats a maintenance pause as paused', () => {
     },
     SLOW_RUNNER_MS
   );
+});
+
+/*
+ * 2026-09-10: GameServer ends the synchronized tournament break when this break
+ * ends, instead of counting its own five minutes from whenever its pause loop
+ * finished. So the instant has to be readable from outside, in both halves of
+ * the break, and it has to be the one the players were shown.
+ */
+describe('endsAt: the instant the platform comes off the break', () => {
+  it('is the announced hour through the last hand and the countdown, and 0 when no break is on', async () => {
+    vi.setSystemTime(new Date('2026-09-10T15:53:00.000Z'));
+    const onTheHour = Date.parse('2026-09-10T16:00:00.000Z');
+    const { mb, engines, emitted } = build(2);
+    expect(mb.endsAt()).toBe(0);
+
+    await mb.announceLastHand();
+    expect(mb.snapshot().phase).toBe('last_hand');
+    expect(mb.endsAt()).toBe(onTheHour);
+    expect(emitted.at(-1)?.payload.resume_expected_at).toBe(onTheHour);
+
+    parkAll(engines);
+    await vi.advanceTimersByTimeAsync(MaintenanceBreak.LAST_HAND_LEAD_MS);
+    expect(mb.snapshot().phase).toBe('counting_down');
+    expect(mb.endsAt()).toBe(onTheHour);
+    expect(emitted.at(-1)?.payload.break_ends_at).toBe(onTheHour);
+
+    await vi.advanceTimersByTimeAsync(MaintenanceBreak.BREAK_DURATION_MS);
+    expect(mb.isActive()).toBe(false);
+    expect(mb.endsAt()).toBe(0);
+  });
 });

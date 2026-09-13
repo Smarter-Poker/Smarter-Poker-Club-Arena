@@ -222,9 +222,15 @@ describe('5. the buyer census ages out instead of being repeated to the controll
 });
 
 describe('6. a tag whose every stake names a closed game falls through to the merit band', () => {
-  it('the exact-blind set is built beside the band set, from the same tables', () => {
-    expect(SEED).toContain('const stakesWithAGame = new Set<string>();');
-    expect(SEED).toContain('stakesWithAGame.add(Number(t.big_blind).toFixed(2));');
+  it('the exact-blind set is built beside the band set, from the same tables, PER HOST', () => {
+    // 2026-09-11: one platform-wide set read a rung another host deals as
+    // "the game is running", so a Midway tag naming a Deep Stack micro never
+    // fell through and was refused at every Midway table for ever. Keyed by
+    // the table's club now; the band set stays platform-wide (a band is a
+    // merit record, and `projectStakeBandOnto` only ever steps DOWN).
+    expect(SEED).toContain('const stakesWithAGame = new Map<string, Set<string>>();');
+    expect(SEED).toContain('hostStakes.add(Number(t.big_blind).toFixed(2));');
+    expect(SEED).toContain('stakesWithAGame.set(hostId, hostStakes);');
   });
 
   it('the fallthrough happens only when NO tagged stake has a game, and only to undefined', () => {
@@ -232,8 +238,8 @@ describe('6. a tag whose every stake names a closed game falls through to the me
       SEED.indexOf('let stakeOk = tagAllowsStake('),
       SEED.indexOf('if (stakeOk === undefined && !stakeBandAllows(')
     );
-    expect(gate).toContain(
-      '!tag.preferredStakes.some((s) => stakesWithAGame.has(Number(s).toFixed(2)))'
+    expect(gate).toMatch(
+      /!tag\.preferredStakes\.some\(\(s\) =>\s*stakesWithAGame\s*\.get\(String\(\(table as \{ club_id\?: string \| null \}\)\.club_id \?\? ''\)\)\s*\?\.has\(Number\(s\)\.toFixed\(2\)\)\s*\)/
     );
     expect(gate).toContain('stakeOk = undefined;');
     expect(gate).toContain('strandedTagFallthrough++;');

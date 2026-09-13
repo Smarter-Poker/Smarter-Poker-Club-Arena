@@ -27,10 +27,11 @@
  * Usage:  node scripts/ci/gen-schema-manifest.mjs
  */
 
-import { writeFileSync, readFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
-import process from 'node:process';
-import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
+import { writeFileSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
+import process from "node:process";
+import { supabaseServerHeaders } from "./supabase-auth-headers.mjs";
+import { mergeSchemaResponses } from "./scoped-schema-manifest.mjs";
 
 /**
  * Write a manifest, and refuse to do it unless the file is exempt from Prettier.
@@ -53,73 +54,87 @@ import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
  */
 function writeManifest(path, value) {
   const rel = relative(process.cwd(), path);
-  const ignore = readFileSync(join(process.cwd(), '.prettierignore'), 'utf8')
-    .split('\n')
+  const ignore = readFileSync(join(process.cwd(), ".prettierignore"), "utf8")
+    .split("\n")
     .map((l) => l.trim())
-    .filter((l) => l && !l.startsWith('#'));
+    .filter((l) => l && !l.startsWith("#"));
   if (!ignore.includes(rel)) {
     console.error(
       `ERROR: ${rel} is not listed in .prettierignore.\n` +
-        'Prettier and JSON.stringify format JSON arrays differently, so this file\n' +
-        'would oscillate between two byte states on every commit and trip\n' +
-        'scripts/ci/detect-silent-revert.mjs. Add this line to .prettierignore:\n\n' +
-        `  ${rel}\n`
+        "Prettier and JSON.stringify format JSON arrays differently, so this file\n" +
+        "would oscillate between two byte states on every commit and trip\n" +
+        "scripts/ci/detect-silent-revert.mjs. Add this line to .prettierignore:\n\n" +
+        `  ${rel}\n`,
     );
     process.exit(1);
   }
-  writeFileSync(path, JSON.stringify(value, null, 2) + '\n');
+  writeFileSync(path, JSON.stringify(value, null, 2) + "\n");
 }
 
 const URL = process.env.SUPABASE_URL;
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const OUT = join(process.cwd(), 'scripts/ci/supabase-schema-manifest.json');
+const OUT = join(process.cwd(), "scripts/ci/supabase-schema-manifest.json");
 
 if (!URL || !KEY) {
   console.error(
-    'ERROR: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY. ' +
-      'Or regenerate the manifest via the Supabase MCP query in this file header.'
+    "ERROR: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY. " +
+      "Or regenerate the manifest via the Supabase MCP query in this file header.",
   );
   process.exit(2);
 }
 
 async function callRpc(fn) {
   const res = await fetch(`${URL}/rest/v1/rpc/${fn}`, {
-    method: 'POST',
-    headers: supabaseServerHeaders(KEY, { 'Content-Type': 'application/json' }),
-    body: '{}',
+    method: "POST",
+    headers: supabaseServerHeaders(KEY, { "Content-Type": "application/json" }),
+    body: "{}",
   });
   if (!res.ok) {
-    console.error(`ERROR: ${fn} RPC failed (${res.status}): ${await res.text()}`);
-    console.error('Create the helper RPC once, or regenerate via the MCP query in the header.');
+    console.error(
+      `ERROR: ${fn} RPC failed (${res.status}): ${await res.text()}`,
+    );
+    console.error(
+      "Create the helper RPC once, or regenerate via the MCP query in the header.",
+    );
     process.exit(2);
   }
   return res.json();
 }
 
 // 1) tables + functions manifest (phantom-table / phantom-rpc gate)
-const data = await callRpc('fn_schema_manifest');
+// Collect and validate every response before writing any snapshot. A missing
+// private helper or incomplete coverage must never publish public-only truth.
+const [data, colsData, privateData, reqData] = await Promise.all([
+  callRpc("fn_schema_manifest"),
+  callRpc("fn_columns_manifest"),
+  callRpc("fn_ci_smarter_private_manifest"),
+  callRpc("fn_required_columns_manifest"),
+]);
+const combined = mergeSchemaResponses(data, colsData, privateData, reqData);
 const manifest = {
   _comment:
-    'Live public schema snapshot (tables/views + functions). Source of truth for the phantom-ref CI gate; regenerate with scripts/ci/gen-schema-manifest.mjs. Do NOT hand-edit.',
-  tables: [...new Set(data.tables || [])].sort(),
-  functions: [...new Set(data.functions || [])].sort(),
+    "Live public and complete smarter_private schema snapshot (tables/views + functions). Source of truth for the phantom-ref CI gate; regenerate with scripts/ci/gen-schema-manifest.mjs. Do NOT hand-edit.",
+  tables: combined.tables,
+  functions: combined.functions,
 };
 writeManifest(OUT, manifest);
 console.log(
-  `Wrote ${OUT}: ${manifest.tables.length} tables, ${manifest.functions.length} functions`
+  `Wrote ${OUT}: ${manifest.tables.length} tables, ${manifest.functions.length} functions`,
 );
 
 // 2) column manifest (phantom-column gate)
-const COLS_OUT = join(process.cwd(), 'scripts/ci/supabase-columns-manifest.json');
-const colsData = await callRpc('fn_columns_manifest');
+const COLS_OUT = join(
+  process.cwd(),
+  "scripts/ci/supabase-columns-manifest.json",
+);
 const sortedCols = Object.fromEntries(
-  Object.keys(colsData)
+  Object.keys(combined.columns)
     .sort()
-    .map((k) => [k, colsData[k]])
+    .map((k) => [k, combined.columns[k]]),
 );
 const colsManifest = {
   _comment:
-    'Live public schema COLUMN snapshot {table: [columns]}. Source of truth for the phantom-column CI gate. Do NOT hand-edit.',
+    "Live public and complete smarter_private COLUMN snapshot {table: [columns]}. Source of truth for the phantom-column CI gate. Do NOT hand-edit.",
   columns: sortedCols,
 };
 // 2-space, matching the schema manifest above and Prettier's JSON output.
@@ -131,7 +146,9 @@ const colsManifest = {
 // 9,791 column keys were identical every time. Keep this at 2 so the generator is
 // idempotent under Prettier.
 writeManifest(COLS_OUT, colsManifest);
-console.log(`Wrote ${COLS_OUT}: ${Object.keys(sortedCols).length} tables' columns`);
+console.log(
+  `Wrote ${COLS_OUT}: ${Object.keys(sortedCols).length} tables' columns`,
+);
 
 // 3) REQUIRED-column manifest (required-column write gate)
 //
@@ -146,22 +163,26 @@ console.log(`Wrote ${COLS_OUT}: ${Object.keys(sortedCols).length} tables' column
 // REQUIRED means NOT NULL, no DEFAULT, not identity, not generated. A column
 // with a default or filled by a trigger is not the caller's problem, and
 // including it would produce noise that teaches people to ignore the gate.
-const REQ_OUT = join(process.cwd(), 'scripts/ci/supabase-required-columns-manifest.json');
-const reqData = await callRpc('fn_required_columns_manifest');
+const REQ_OUT = join(
+  process.cwd(),
+  "scripts/ci/supabase-required-columns-manifest.json",
+);
 const sortedReq = Object.fromEntries(
   Object.keys(reqData)
     .sort()
-    .map((k) => [k, reqData[k]])
+    .map((k) => [k, reqData[k]]),
 );
 const reqManifest = {
   _comment:
-    'Live public schema REQUIRED-COLUMN snapshot {table: [columns an INSERT must supply]}. ' +
-    'NOT NULL, no default, not identity, not generated. Source of truth for the ' +
-    'required-column CI gate. Do NOT hand-edit.',
+    "Live public schema REQUIRED-COLUMN snapshot {table: [columns an INSERT must supply]}. " +
+    "NOT NULL, no default, not identity, not generated. Source of truth for the " +
+    "required-column CI gate. Do NOT hand-edit.",
   required: sortedReq,
 };
 // 2-space for the same reason as the columns manifest above: lint-staged runs
 // prettier on *.json, and a compact write here would oscillate the file between
 // two forms and trip detect-silent-revert.
 writeManifest(REQ_OUT, reqManifest);
-console.log(`Wrote ${REQ_OUT}: ${Object.keys(sortedReq).length} tables with required columns`);
+console.log(
+  `Wrote ${REQ_OUT}: ${Object.keys(sortedReq).length} tables with required columns`,
+);

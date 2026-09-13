@@ -16,6 +16,7 @@ import { recordHorseHandReviews } from '../HorseHandReview.js';
 import { readScopeOf } from '../../engine/HorseMind.js';
 import { getLiveHorseDecisionWorker } from '../../engine/horseDecision/index.js';
 import { wakeHandProjection } from './handProjection.js';
+import { bindHorseObservationIdentity } from '../../engine/HorseObservationIdentity.js';
 
 export interface AtomicHandCommitInput {
   stacks: Array<{
@@ -73,6 +74,84 @@ export interface AtomicHandCommitInput {
   assertLeaseAuthority?: () => void;
 }
 
+export interface TournamentStackProof {
+  written?: unknown;
+  tournament_id?: unknown;
+  tournament_players_synced?: unknown;
+  tournament_player_count?: unknown;
+  tournament_player_user_ids?: unknown;
+  tournament_player_chips?: unknown;
+}
+
+/**
+ * One immutable atomic-hand promise owns the complete schema-reload window.
+ * The 41-second sleep budget outlives the measured 28-second PostgREST reload;
+ * thirteen 15-second request deadlines plus this budget still fit inside the
+ * five-minute terminal-settlement barrier. No timer or successor engine ever
+ * receives the accepted hand payload.
+ */
+export const HAND_COMMIT_RETRY_DELAYS_MS: readonly number[] = Object.freeze([
+  200, 400, 800, 1_600, 3_000, 5_000, 5_000, 5_000, 5_000, 5_000, 5_000, 5_000,
+]);
+
+/**
+ * A tournament hand is not committed until the same transaction proves that
+ * every live seat target is mirrored into tournament_players.  Keep this
+ * verifier in the active atomic-hand path (not the retired standalone stack helper)
+ * so a rolling deploy cannot accept an older, partial database receipt.
+ */
+export function tournamentStackProofIsExact(
+  proof: TournamentStackProof,
+  expectedTournamentId: string,
+  expectedPlayerIds: readonly string[]
+): boolean {
+  const expectedUsers = expectedPlayerIds.map((userId) => userId.toLowerCase()).sort();
+  if (new Set(expectedUsers).size !== expectedPlayerIds.length) return false;
+
+  const returnedUsers = Array.isArray(proof.tournament_player_user_ids)
+    ? proof.tournament_player_user_ids.map((userId) =>
+        typeof userId === 'string' ? userId.toLowerCase() : null
+      )
+    : [];
+  const returnedChips = Array.isArray(proof.tournament_player_chips)
+    ? proof.tournament_player_chips
+    : [];
+  const written =
+    proof.written && typeof proof.written === 'object' && !Array.isArray(proof.written)
+      ? (proof.written as Record<string, unknown>)
+      : null;
+  if (!written) return false;
+
+  const writtenByUser = new Map(
+    Object.entries(written).map(([userId, chips]) => [userId.toLowerCase(), Number(chips)])
+  );
+  const writtenUsers = [...writtenByUser.keys()].sort();
+  const chipRows = returnedChips.map((row) => {
+    if (!row || typeof row !== 'object') return null;
+    const userId = (row as { user_id?: unknown }).user_id;
+    const chips = Number((row as { chips?: unknown }).chips);
+    if (typeof userId !== 'string' || !Number.isSafeInteger(chips) || chips < 0) return null;
+    return { userId: userId.toLowerCase(), chips };
+  });
+
+  return (
+    String(proof.tournament_id).toLowerCase() === expectedTournamentId.toLowerCase() &&
+    proof.tournament_players_synced === true &&
+    Number(proof.tournament_player_count) === expectedUsers.length &&
+    returnedUsers.length === expectedUsers.length &&
+    returnedUsers.every((userId, index) => userId === expectedUsers[index]) &&
+    writtenUsers.length === expectedUsers.length &&
+    writtenUsers.every((userId, index) => userId === expectedUsers[index]) &&
+    chipRows.length === expectedUsers.length &&
+    chipRows.every(
+      (row, index) =>
+        row !== null &&
+        row.userId === expectedUsers[index] &&
+        row.chips === writtenByUser.get(row.userId)
+    )
+  );
+}
+
 /**
  * Log hand history — every hand documented for audit and replay.
  */
@@ -84,11 +163,9 @@ export interface AtomicHandCommitInput {
  * Tier 3: player_summaries — Per-player view (what they can see in their history)
  * Tier 4: dispute_review  — Full data package for dispute resolution
  *
- * CORRECTION 2026-08-20: the four tiers are DERIVED, not stored. See the long
- * note above insertHandHistoryRow() for the measurement that forced this — in
- * short, the columns never existed, every hand paid for a guaranteed-failing
- * write to attempt them, and all four are pure functions of columns this row
- * already stores. buildHandHistoryTiers() below materialises them on demand.
+ * The four tiers are derived rather than stored: all four are pure functions
+ * of the canonical columns, and buildHandHistoryTiers() materialises them on
+ * demand without adding a second persistence path.
  */
 export async function logHandHistory(params: {
   tableId: string;
@@ -176,6 +253,15 @@ export async function logHandHistory(params: {
    * fold-around hand look the same to a reader.
    */
   pots?: { index: number; amount: number; eligible: string[] }[];
+  /** Exact tournament pot/half awards; merged winner totals lose later pots. */
+  perPotAwards?: {
+    userId: string;
+    amount: number;
+    potIndex: number;
+    low: boolean;
+    board?: number;
+  }[];
+
   /**
    * THE BOMB POT'S OWN BREAKDOWN, WRITTEN WITH THE HAND AND NOT AFTER IT.
    *
@@ -187,10 +273,9 @@ export async function logHandHistory(params: {
    * hour: 3 of 125 bomb pots had no award units at all - the pot paid, the rake
    * taken, and no record of which board or which player got which share.
    *
-   * Passed here, they go through fn_ca_insert_hand_with_awards in ONE round
-   * trip and ONE transaction, so the hot path still costs exactly one request
-   * (which the retry-queue design below deliberately bought) and the breakdown
-   * can no longer be the half that goes missing.
+   * Passed here, they go through fn_ca_commit_hand_settlement in the same
+   * transaction as the history row, stacks and projection outbox, so the
+   * breakdown can no longer be the half that goes missing.
    */
   bombAwardUnits?: {
     pot_index: number;
@@ -204,11 +289,10 @@ export async function logHandHistory(params: {
    * THE HAND'S OWN ID, MINTED BY THE ENGINE BEFORE ANYTHING IS WRITTEN.
    *
    * `hand_history.id` defaults to `gen_random_uuid()`, so for its whole life
-   * this row's identity was decided by the INSERT - and settlement needs that
-   * identity BEFORE the insert, because `atomic_distribute_rake` takes it as
-   * `p_hand_id` and everything downstream keys on it. When the insert failed
-   * or was slow and the hand went to the retry queue, the rake was banked with
-   * `p_hand_id => NULL`, and a null there is not a small gap:
+   * this row's identity was decided by the INSERT. Settlement needs that
+   * identity before its authoritative transaction because every downstream
+   * record keys on it. The accepted hand now carries one UUID into the atomic
+   * settlement call, so no history-only writer can mint a competing identity.
    *
    *   - `rake_attributions` keys on hand_id, so NOBODY at that table earned
    *     anything from the hand - no VIP points, no agent or super-agent
@@ -224,12 +308,14 @@ export async function logHandHistory(params: {
    *     719.49 chips of rake and 93.14 of BBJ drop that no pot ever paid.
    *
    * Passing the id in removes the null rather than compensating for it
-   * (CLAUDE.md 10.12): the hand carries one identity from settlement onward,
-   * whether its row lands in line, from the queue five minutes later, or not
-   * at all. The unique index then does its job, the attribution is written
-   * once, and no repair can see the hand as unbanked.
+   * (CLAUDE.md 10.12): the hand carries one identity from settlement onward.
    */
   handId?: string;
+  /** The dealt hand's frozen generations, copied before settlement's first await. */
+  seatGenerations?: ReadonlyMap<
+    string,
+    import('../../engine/handSeatGeneration.js').HandSeatGeneration
+  >;
   players: { userId: string; username: string; seat: number; stack: number; cards: string[] }[];
   actions: {
     seat: number;
@@ -238,6 +324,9 @@ export async function logHandHistory(params: {
     amount?: number;
     timestamp?: number;
     stage: string;
+    publicNode?: import('../../engine/HorsePublicActionNode.js').HorsePublicActionNode;
+    origin?: import('../../types.js').AcceptedActionOrigin;
+    observationIdentity?: import('../../engine/HorseObservationIdentity.js').HorseObservationIdentity;
   }[];
   showdownResults?: {
     userId: string;
@@ -247,9 +336,8 @@ export async function logHandHistory(params: {
     holeCards: { rank: string; suit: string }[];
   }[];
   /**
-   * Server-authored Daily Missions facts for this hand. Persisting the facts
-   * on the same retryable hand-history row makes mission projection survive a
-   * transient database outage without delaying money settlement.
+   * Server-authored Daily Missions facts for this hand. The authoritative
+   * transaction persists them with the hand before projection is dispatched.
    */
   dailyMissionEvents?: Array<{
     user_id: string;
@@ -308,15 +396,14 @@ export async function logHandHistory(params: {
     hand_description?: string;
   }>;
   /**
-   * The authoritative hand commit.  When supplied, the hand row is not an
-   * independent best-effort insert: stacks, the row, tournament chip mirror,
-   * bomb units, immutable bust generation and projection outbox all go through
+   * The authoritative hand commit. The hand row is never an independent
+   * best-effort insert: stacks, the row, tournament chip mirror, bomb units,
+   * immutable bust generation and projection outbox all go through
    * fn_ca_commit_hand_settlement in one PostgreSQL transaction.
    */
-  atomicCommit?: AtomicHandCommitInput;
+  atomicCommit: AtomicHandCommitInput;
 }): Promise<{
-  handId: string | null;
-  wroteAwardUnits: boolean;
+  handId: string;
   settlementCommitted: boolean;
   stackResult?: Record<string, unknown>;
 }> {
@@ -348,6 +435,24 @@ export async function logHandHistory(params: {
   }
   const holeCardsPayload = Object.keys(holeCardsByUser).length > 0 ? holeCardsByUser : null;
   const boardPayload = params.communityCards?.length ? params.communityCards : null;
+
+  // Recompute at the sole accepted producer. Supplied identity is never trusted.
+  // Preserve ordinals in the full list, including forced/discard/pseudo-actions.
+  // Older actions stay unannotated; a later receipt UUID cannot retroactively
+  // supply lineage that was absent from the durable transaction's payload.
+  const acceptedActions = params.actions.map((action, actionOrdinal) => {
+    const { observationIdentity: _suppliedIdentity, ...record } = action;
+    return action.publicNode
+      ? {
+          ...record,
+          observationIdentity: bindHorseObservationIdentity(action, actionOrdinal, {
+            handId: params.handId,
+            tableId: params.tableId,
+            seatGenerations: params.seatGenerations,
+          }),
+        }
+      : record;
+  });
 
   const row = {
     // See `handId` on the params above. Omitted entirely when the caller did
@@ -389,9 +494,26 @@ export async function logHandHistory(params: {
     // Dan section 29. NULL rather than [] on a hand with no recorded
     // breakdown, so "this hand predates the column" and "this hand had one
     // uncontested pot" are not the same value to attributeKnockout().
-    pots: params.pots?.length ? params.pots : null,
+    pots: params.pots?.length
+      ? params.pots.map((pot) => ({
+          ...pot,
+          ...(params.perPotAwards?.length
+            ? {
+                awards: params.perPotAwards
+                  .filter((award) => award.potIndex === pot.index)
+                  .map((award) => ({
+                    userId: award.userId,
+                    amount: award.amount,
+                    potIndex: award.potIndex,
+                    low: award.low,
+                    ...(award.board == null ? {} : { board: award.board }),
+                  })),
+              }
+            : {}),
+        }))
+      : null,
     players: params.players,
-    actions: params.actions,
+    actions: acceptedActions,
     hole_cards: holeCardsPayload,
     board: boardPayload,
     button_seat: params.buttonSeat ?? null,
@@ -420,17 +542,11 @@ export async function logHandHistory(params: {
     amount: u.amount,
     hand_name: u.hand_name ?? null,
   }));
-  const inserted = await insertHandHistoryRow(row, 'settlement', bombUnits, params.atomicCommit);
+  const inserted = await insertHandHistoryRow(row, bombUnits, params.atomicCommit);
   const handId = inserted.id;
-  const wroteUnitsAtomically = inserted.wroteUnits;
-  if (handId === null && !params.atomicCommit) {
-    // Every in-line attempt failed. Hand it to the background queue rather
-    // than losing the hand — see enqueueHandHistory().
-    enqueueHandHistory(row, bombUnits);
-  }
 
-  // V28 AUDIT FIX (2026-08-29): observe regardless of whether the history row
-  // landed. ROOT-CAUSE CAPACITY FIX (2026-09-08): HorseMind now lives beside
+  // Observe only after the authoritative transaction accepts the hand above.
+  // ROOT-CAUSE CAPACITY FIX (2026-09-08): HorseMind now lives beside
   // HorseLogic in the sole worker FIFO. Enqueueing establishes the ordering:
   // this observation is ahead of every decision the table can request next.
   // Waiting for its ACK here would instead hold this table's settlement behind
@@ -444,11 +560,12 @@ export async function logHandHistory(params: {
       fence: [
         params.tableId,
         params.handNumber,
-        params.atomicCommit?.leaseGeneration ?? 'legacy',
+        params.atomicCommit.leaseGeneration ?? 'unleased',
         'observe',
       ].join(':'),
       handKey,
-      actions: params.actions,
+      committedHandId: handId,
+      actions: acceptedActions,
       bigBlind: params.bigBlind,
       showdown: params.showdownReveal ?? null,
       // V45: the hand's scope - card family and how many were dealt in.
@@ -528,702 +645,163 @@ export async function logHandHistory(params: {
     });
   }
 
-  /* wroteAwardUnits says the breakdown went in with the row, in one
-     transaction. False means the hand took the plain insert (no units to
-     carry, or the atomic call failed and the row is queued) - and the caller's
-     fallback upsert is then the only thing that will write them. */
-  /* Only the atomic insert's own success counts. The duplicate-recovery path
-     inside insertHandHistoryRow returns an EXISTING hand id after its RPC
-     rolled back, so the units in this call were never written - reporting true
-     there would skip the caller's fallback and lose them. */
   return {
     handId,
-    wroteAwardUnits: wroteUnitsAtomically,
     settlementCommitted: inserted.settlementCommitted,
     stackResult: inserted.stackResult,
   };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// THE WRITE ITSELF — retry, idempotency, and a durable-ish background queue
+// THE WRITE ITSELF — one idempotent atomic authority
 // ═══════════════════════════════════════════════════════════════════════════════
-//
-// 2026-08-20. Two defects, found by tracing the only open financial_alerts
-// signal (rake_records rows with a null hand_id) back through the edge logs.
-//
-// DEFECT 1 — every hand made a guaranteed-failing write first.
-//   This function used to insert with four extra JSONB columns (raw_events,
-//   audit_log, player_summaries, dispute_review — "Bible V8 §2.18 4-tier hand
-//   history") and fall back to an insert without them "if the columns don't
-//   exist yet". The columns have NEVER existed: supabase/migrations/
-//   20260417_hand_history_4tier.sql was written on 2026-04-17 and never
-//   applied. So for four months EVERY hand did two PostgREST round-trips — a
-//   400 followed by a 201. Measured in edge_logs: 138 x 400 + 138 x 201 in the
-//   same minute, every minute, ~238,000 wasted failing requests a day. The
-//   "graceful fallback" is exactly what kept it invisible.
-//
-//   The migration is deliberately NOT being applied. All four tiers are pure
-//   functions of columns this row already stores: raw_events is `actions`
-//   re-keyed, audit_log is the row's own scalars re-packed, player_summaries is
-//   derived from players + winners + actions, and dispute_review is literally
-//   the other three concatenated with showdown_results and community_cards.
-//   hand_history is already 10 GB over 2.45M rows and takes 238,583 rows a day;
-//   storing three redundant copies of the same payload would roughly quadruple
-//   that growth for zero new information. buildHandHistoryTiers() below
-//   materialises the same four tiers on demand from a stored row, so §2.18 is
-//   satisfied by derivation instead of by triplication.
-//
-// DEFECT 2 — a transient failure lost the hand permanently.
-//   The insert had no retry. Measured over 3 days: 320 rake rows written with a
-//   null hand_id, and for 315 of them NO hand_history row exists at all — those
-//   hands are unauditable, absent from player history, and missing from the
-//   leaderboard's hand_history trigger. The failures are not spread out: all
-//   320 land in 32 distinct minutes, 291 of them inside 14 minutes that had 5+
-//   failures, peaking at 57 in one minute across 44 different tables. During
-//   those windows hand_history writes drop to literally zero platform-wide
-//   (199/min -> 52 -> 0 -> 61 -> 217 on 2026-08-19 01:06-01:08) while the much
-//   smaller atomic_distribute_rake RPC still gets through. That is a load /
-//   availability window, not a bad payload — which is precisely the profile
-//   worth retrying.
-//
-// So: retry in line for the short blips, and queue for the long ones. Both are
-// idempotent through uq_hand_history_global_hand_number, the existing partial
-// unique index on hand_number WHERE hand_number >= 1000000 — every globally
-// allocated hand number is covered by it, so "did my write actually land?" is a
-// single indexed lookup. Below 1000000 the number is only per-table unique, so
-// those hands are never retried (a retry there could duplicate).
 
 type HandHistoryRow = Record<string, unknown> & { hand_number: number; table_id: string };
 
-/** Only globally allocated hand numbers are unique platform-wide. */
-const GLOBAL_HAND_NUMBER_FLOOR = 1_000_000;
-
-/** Did this hand already land? Cheap: one indexed lookup on a unique index. */
-async function findExistingHandId(row: HandHistoryRow): Promise<string | null> {
-  if (row.hand_number < GLOBAL_HAND_NUMBER_FLOOR) return null;
-  const { data, error } = await supabase
-    .from('hand_history')
-    .select('id')
-    .eq('hand_number', row.hand_number)
-    .limit(1)
-    .maybeSingle();
-  if (error) return null;
-  return data?.id ?? null;
-}
-
 /**
- * Insert one hand_history row.
- *
- * ONE attempt. This is deliberate, and it is a correction of this module's own
- * first version — see the note below.
- *
- * REVIEW FIX 2026-08-20: the first version retried three times in line, with
- * 250ms/900ms backoff and an existence pre-check before each retry. On paper
- * that was "~1.15s worst case". In production it was far worse, because the
- * backoff is not what dominates:
- *
- *   * a fully failing hand issued FIVE PostgREST requests, not one
- *     (3 inserts + 2 pre-checks), and
- *   * the shared client aborts at DB_TIMEOUT_MS = 15s (services/supabase/
- *     client.ts), not instantly.
- *
- * The outage mode this retry exists for is a hung socket, not a fast 5xx. So
- * the real worst case was 5 x 15s + 1.15s = ~76s per hand — awaited inside
- * postHandTasks, which ServerTableEngineDealing awaits at the top of every
- * dealing-loop iteration. That table deals nothing for the duration, and
- * postHandTasks never calls markProgress(), so the 90s watchdog
- * (ServerTableEngineBase.WATCHDOG_IDLE_MS) runs the whole time. One failing
- * hand could therefore trip the watchdog and kill the engine for a restart —
- * turning a transient write outage into a fleet-wide restart cascade, on all
- * 44 tables at once, since the failures are correlated by construction.
- *
- * It was also a 5x request amplification with zero jitter, aimed at a PostgREST
- * that had just gone to zero. That makes an outage longer, not shorter.
- *
- * So the hot path is back to exactly one request — the same cost as before any
- * of this work — and ALL retrying happens in the background queue below, where
- * it costs no table any dealing time. The queue does the existence pre-check,
- * so the lost-response case is still handled; it just is not handled while a
- * table sits idle waiting for it.
+ * Commit one accepted hand. Every retry reuses an identical, deeply captured
+ * request against the database's idempotent transaction. There is no
+ * history-only writer and no process-local recovery owner.
  */
 async function insertHandHistoryRow(
   row: HandHistoryRow,
-  origin: 'settlement' | 'retry-queue',
-  bombAwardUnits: Record<string, unknown>[] = [],
-  atomicCommit?: AtomicHandCommitInput
+  bombAwardUnits: Record<string, unknown>[],
+  atomicCommit: AtomicHandCommitInput
 ): Promise<{
-  id: string | null;
-  wroteUnits: boolean;
+  id: string;
   settlementCommitted: boolean;
   stackResult?: Record<string, unknown>;
 }> {
-  if (atomicCommit) {
-    type AtomicCommitResult = Record<string, unknown> & {
+  type AtomicCommitResult = TournamentStackProof &
+    Record<string, unknown> & {
       success?: boolean;
       atomic_hand_commit?: boolean;
       history_id?: string;
       reason?: string;
       error?: unknown;
     };
-    const hasLeaseInstance = typeof atomicCommit.leaseInstanceId === 'string';
-    const hasLeaseGeneration = typeof atomicCommit.leaseGeneration === 'string';
-    const hasPostCommitObligations = atomicCommit.postCommitObligations !== undefined;
-    if (hasLeaseInstance !== hasLeaseGeneration) {
-      throw new Error('atomic hand commit refused (incomplete_lease_authority)');
-    }
-    if (
-      hasLeaseInstance &&
-      (atomicCommit.leaseInstanceId!.trim().length === 0 ||
-        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-          atomicCommit.leaseGeneration!
-        ))
-    ) {
-      throw new Error('atomic hand commit refused (invalid_lease_authority)');
-    }
-    if (hasPostCommitObligations && !hasLeaseInstance) {
-      throw new Error('atomic hand commit refused (post_commit_requires_exact_lease)');
-    }
-    if (hasPostCommitObligations && !atomicCommit.acceptedPostCommitFacts) {
-      throw new Error('atomic hand commit refused (post_commit_facts_missing)');
-    }
-    // Capture the complete accepted request before yielding. Engine-owned arrays
-    // may change while a response is lost; a retry must retain the original facts.
-    const payload = structuredClone({
-      p_table_id: row.table_id,
-      p_hand_number: row.hand_number,
-      p_stacks: atomicCommit.stacks,
-      p_rake: atomicCommit.rake,
-      p_bbj: atomicCommit.bbj,
-      p_ref: atomicCommit.ref ?? null,
-      p_inflow: atomicCommit.inflow ?? null,
-      p_hand_row: atomicCommit.acceptedPostCommitFacts
-        ? {
-            ...row,
-            _accepted_post_commit_facts: atomicCommit.acceptedPostCommitFacts,
-          }
-        : row,
-      p_units: bombAwardUnits,
-      ...(hasLeaseInstance
-        ? {
-            p_instance_id: atomicCommit.leaseInstanceId!,
-            p_lease_generation: atomicCommit.leaseGeneration!,
-          }
-        : {}),
-      ...(hasPostCommitObligations
-        ? { p_post_commit_obligations: atomicCommit.postCommitObligations! }
-        : {}),
-    });
-    let lastError = 'no response';
-
-    // Every retry is the same idempotent transaction.  This loop exists only
-    // for the ambiguous transport case: a lost HTTP response may follow a
-    // committed hand.  There is no alternate writer and no per-seat fallback.
-    for (let attempt = 1; attempt <= 5; attempt++) {
-      try {
-        atomicCommit.assertLeaseAuthority?.();
-        const { data, error } = await supabase.rpc('fn_ca_commit_hand_settlement', payload);
-        const result = (data ?? {}) as AtomicCommitResult;
-        if (!error && result.success === true && result.atomic_hand_commit === true) {
-          if (hasPostCommitObligations && result.post_commit_obligations !== true) {
-            throw new Error('atomic hand commit refused (missing_post_commit_receipt)');
-          }
-          const historyId = typeof result.history_id === 'string' ? result.history_id : '';
-          if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(historyId)) {
-            throw new Error(
-              `atomic hand commit refused (invalid_receipt): ${JSON.stringify(result)}`
-            );
-          }
-          const requestedHistoryId = payload.p_hand_row.id;
-          if (
-            typeof requestedHistoryId === 'string' &&
-            historyId.toLowerCase() !== requestedHistoryId.toLowerCase()
-          ) {
-            throw new Error('atomic hand commit refused (receipt_identity_mismatch)');
-          }
-          // The authoritative transaction is already committed. Projection
-          // is work-triggered and deliberately outside the dealing barrier;
-          // its outbox row remains the crash/lost-notification authority.
-          void wakeHandProjection().catch((err) =>
-            reportError(err, 'HandProjection.commit_wake_failed', {
-              handId: historyId,
-              handNumber: row.hand_number,
-            })
-          );
-          return {
-            id: historyId,
-            wroteUnits: bombAwardUnits.length > 0,
-            settlementCommitted: true,
-            stackResult: result,
-          };
-        }
-        if (!error && result.success === false && result.reason !== 'in_flight') {
-          throw new Error(
-            `atomic hand commit refused (${result.reason ?? 'unknown'}): ${String(result.error ?? JSON.stringify(result))}`
-          );
-        }
-        lastError = error?.message ?? String(result.reason ?? result.error ?? 'in_flight');
-      } catch (err) {
-        lastError = err instanceof Error ? err.message : String(err);
-        // A semantic refusal is deterministic. Retrying it would only hide a
-        // broken invariant behind delay.
-        if (/atomic hand commit refused/.test(lastError)) throw err;
-      }
-
-      if (attempt < 5) {
-        await new Promise((resolve) => setTimeout(resolve, 200 * 2 ** (attempt - 1)));
-      }
-    }
-
-    throw new Error(
-      `[DB] authoritative hand commit failed for table ${row.table_id} hand #${row.hand_number} after 5 identical attempts: ${lastError}`
-    );
+  const hasLeaseInstance = typeof atomicCommit.leaseInstanceId === 'string';
+  const hasLeaseGeneration = typeof atomicCommit.leaseGeneration === 'string';
+  const hasPostCommitObligations = atomicCommit.postCommitObligations !== undefined;
+  if (hasLeaseInstance !== hasLeaseGeneration) {
+    throw new Error('atomic hand commit refused (incomplete_lease_authority)');
   }
-
-  /* ONE TRANSACTION WHEN THERE IS A BREAKDOWN TO KEEP (2026-09-06).
-     fn_ca_insert_hand_with_awards writes the hand row and its bomb award units
-     together or writes neither. Still exactly ONE request, so the amplification
-     this function's header warns about is unchanged. Non-bomb hands - which is
-     nearly all of them - take the plain insert and are untouched. */
-  /* THE ID WE ASKED FOR, WHEN WE ASKED FOR ONE (2026-09-07). Settlement now
-     mints the hand's uuid before any write (see `handId` on logHandHistory's
-     params), so a successful insert whose RESPONSE we could not read is still
-     a hand whose identity we know. Without this the id came only from the
-     response body, and "the write landed but the answer did not" was
-     indistinguishable from "the write failed" - which is how a hand ended up
-     banking its rake against a null id. Null for every caller that mints
-     nothing, exactly as before. */
-  const minted = typeof row.id === 'string' ? row.id : null;
-
-  if (bombAwardUnits.length > 0) {
-    const { data, error } = await supabase.rpc('fn_ca_insert_hand_with_awards', {
-      p_row: row,
-      p_units: bombAwardUnits,
-    });
-    if (!error)
-      return {
-        id: (data as string | null) ?? minted,
-        wroteUnits: true,
-        settlementCommitted: true,
-      };
-    if (error.code === '23505') {
-      /* An earlier attempt landed and its response was lost. Its units went in
-         with it - but THIS call's did not, because the RPC rolled back whole,
-         so wroteUnits stays false and the caller's fallback still runs. */
-      const existing = await findExistingHandId(row);
-      if (existing || minted)
-        return { id: existing ?? minted, wroteUnits: false, settlementCommitted: true };
-    }
-    if (origin === 'settlement') {
-      reportError(
-        new Error(
-          `[DB] atomic hand+award-unit insert failed for table ${row.table_id} ` +
-            `hand #${row.hand_number}: ${error.message ?? String(error)}. ` +
-            'Queued for background retry.'
-        ),
-        'logHandHistory.insert_with_awards_failed'
-      );
-    }
-    return { id: null, wroteUnits: false, settlementCommitted: false };
-  }
-
-  const { data, error } = await supabase
-    .from('hand_history')
-    .insert(row)
-    .select('id')
-    .maybeSingle();
-
-  if (!error) return { id: data?.id ?? minted, wroteUnits: false, settlementCommitted: true };
-
-  // A duplicate means an earlier attempt landed after all (its response was
-  // lost). PostgREST returns the Postgres SQLSTATE verbatim in the body.
-  // With a minted id it can also be OUR OWN row's primary key, which is the
-  // same good news said a different way.
-  if (error.code === '23505') {
-    const existing = await findExistingHandId(row);
-    if (existing || minted)
-      return { id: existing ?? minted, wroteUnits: false, settlementCommitted: true };
-  }
-
-  if (origin === 'settlement') {
-    reportError(
-      new Error(
-        `[DB] hand_history insert failed for table ${row.table_id} ` +
-          `hand #${row.hand_number}: ${error.message ?? String(error)}. ` +
-          `Queued for background retry.`
-      ),
-      'logHandHistory.insert_failed'
-    );
-  }
-  return { id: null, wroteUnits: false, settlementCommitted: false };
-}
-
-// ── Background retry queue ────────────────────────────────────────────────────
-//
-// The hot path gets ONE attempt (see insertHandHistoryRow). Everything else
-// happens here, where it costs no table any dealing time. That matters: the
-// outages this exists for are 30-120 second windows in which platform-wide
-// hand_history writes go to zero, and a hand's payload only exists in memory at
-// settlement — it cannot be reconstructed from anything later. So the choice is
-// hold it or lose it, and holding it must not stall the room.
-//
-// This is in-process: a crash during an outage still loses the hand. It
-// converts "one timeout loses a hand forever" into "only a crash during an
-// outage does".
-
-interface QueuedHand {
-  row: HandHistoryRow;
-  /**
-   * THE BREAKDOWN RIDES WITH THE ROW (2026-09-06).
-   *
-   * Without this the queue was a second way to lose exactly what the atomic
-   * insert exists to protect: a bomb hand that missed its first attempt was
-   * replayed here with no award units, written with no award units, and the
-   * settlement-side fallback that would have caught it had returned long
-   * before. The hand came back; the record of which board and which player won
-   * which share did not.
-   */
-  units: Record<string, unknown>[];
-  attempts: number;
-  queuedAt: number;
-  bytes: number;
-}
-
-/**
- * REVIEW FIX 2026-08-20: bounded by BYTES as well as by count.
- *
- * The original bound was "2,000 payloads x ~4 KB = ~8 MB". 4 KB is the MEDIAN
- * hand. Measured against the real row shape, a 9-max PLO hand with a capped
- * raise war is ~16 KB retained, so a full queue of those is ~31 MB, not 8 —
- * and the count cap gave no warning of that. Whichever limit binds first wins.
- */
-const MAX_QUEUE = 2_000;
-const MAX_QUEUE_BYTES = 24 * 1024 * 1024;
-const MAX_QUEUE_ATTEMPTS = 20;
-/**
- * REVIEW FIX 2026-08-20: 50 every 20s is a ceiling of 150 hands/min. The
- * platform averages 166/min and peaks at 217/min — the drain could not outrun
- * its own inflow, so a long outage would grow the queue faster than it drained
- * it even after service returned. 200 every 5s with 8-way concurrency is
- * ~2,400/min, an order of magnitude of headroom.
- */
-const DRAIN_INTERVAL_MS = 5_000;
-const DRAIN_BATCH = 200;
-const DRAIN_CONCURRENCY = 8;
-/** After a fully failed pass, wait longer before hammering a service that is down. */
-const MAX_BACKOFF_SKIPS = 12; // 12 x 5s = 60s ceiling
-
-const pendingHands: QueuedHand[] = [];
-let pendingBytes = 0;
-let inFlight = 0;
-let droppedForCapacity = 0;
-let drainTimer: NodeJS.Timeout | null = null;
-let drainPromise: Promise<DrainSummary> | null = null;
-let consecutiveFailedPasses = 0;
-let skipsRemaining = 0;
-
-export interface DrainSummary {
-  scanned: number;
-  written: number;
-  stillPending: number;
-  exhausted: number;
-  /** Recovered hands whose rake row could not be linked (it did not exist yet). */
-  unlinked: number;
-  /** True when another drain was already running and this call joined it. */
-  joined: boolean;
-}
-
-const emptySummary = (): DrainSummary => ({
-  scanned: 0,
-  written: 0,
-  stillPending: pendingHands.length + inFlight,
-  exhausted: 0,
-  unlinked: 0,
-  joined: false,
-});
-
-/** Cheap size estimate. Exact enough to bound memory; not worth JSON.stringify. */
-function estimateBytes(row: HandHistoryRow): number {
-  let n = 512; // scalars + object overhead
-  for (const key of ['actions', 'players', 'winners', 'hole_cards', 'board'] as const) {
-    const v = row[key];
-    if (Array.isArray(v)) n += v.length * 180;
-    else if (v && typeof v === 'object') n += Object.keys(v).length * 180;
-  }
-  return n;
-}
-
-function enqueueHandHistory(row: HandHistoryRow, units: Record<string, unknown>[] = []): void {
-  if (row.hand_number < GLOBAL_HAND_NUMBER_FLOOR) {
-    // Not reachable today — allocateGlobalHandNumber refuses to deal rather than
-    // return a number below the floor — but a silent `return` here would be a
-    // per-hand data loss with no signal if that ever regresses.
-    reportError(
-      new Error(
-        `[DB] hand_history for table ${row.table_id} hand #${row.hand_number} cannot be ` +
-          `queued: hand numbers below ${GLOBAL_HAND_NUMBER_FLOOR} are not globally unique, ` +
-          `so a retry could duplicate the hand. The hand has no history row.`
-      ),
-      'logHandHistory.below_global_floor'
-    );
-    return;
-  }
-
-  // REVIEW FIX 2026-08-20: deep-copy before holding it. `row.actions` and
-  // `row.winners` alias the engine's live currentHandActions/currentHandWinners
-  // arrays. Today dealHand REASSIGNS those rather than clearing in place, so
-  // this is safe — but one `.length = 0` anywhere in the engine would silently
-  // empty every queued hand, and the failure would be invisible. Only runs on
-  // the failure path, so it costs nothing in normal operation.
-  const held: HandHistoryRow = structuredClone(row);
-  const bytes = estimateBytes(held);
-
-  while (
-    pendingHands.length > 0 &&
-    (pendingHands.length >= MAX_QUEUE || pendingBytes + bytes > MAX_QUEUE_BYTES)
+  if (
+    hasLeaseInstance &&
+    (atomicCommit.leaseInstanceId!.trim().length === 0 ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        atomicCommit.leaseGeneration!
+      ))
   ) {
-    const dropped = pendingHands.shift()!;
-    pendingBytes -= dropped.bytes;
-    droppedForCapacity++;
-    if (droppedForCapacity % 100 === 1) {
-      reportError(
-        new Error(
-          `[DB] hand_history retry queue is full (${pendingHands.length} rows, ` +
-            `${Math.round(pendingBytes / 1024)} KB); ${droppedForCapacity} hand(s) dropped. ` +
-            `hand_history has been unwritable for a sustained period.`
-        ),
-        'logHandHistory.queue_overflow'
-      );
-    }
+    throw new Error('atomic hand commit refused (invalid_lease_authority)');
   }
-
-  pendingHands.push({
-    row: held,
-    units: structuredClone(units),
-    attempts: 0,
-    queuedAt: Date.now(),
-    bytes,
-  });
-  pendingBytes += bytes;
-}
-
-/**
- * A hand written late still has to be linked to the rake row that was banked
- * for it at settlement time, or the money stays unattributable — which is the
- * financial_alerts signal that started this investigation.
- * atomic_distribute_rake stamps metadata->>'hand_number', so the link is exact.
- *
- * Returns the number of rake rows linked (0 or 1). Zero is NOT an error: a
- * tournament hand or a zero-rake hand has no rake row, and during an outage the
- * rake write can fail too — FeeReconciler creates that row later, and it
- * resolves the hand id itself at that point precisely because this call
- * cannot (see FeeReconciler.resolveHandId).
- */
-async function relinkRakeRecord(row: HandHistoryRow, handId: string): Promise<number> {
-  const { data, error } = await supabase.rpc('fn_relink_rake_record_to_hand', {
+  if (hasPostCommitObligations && !hasLeaseInstance) {
+    throw new Error('atomic hand commit refused (post_commit_requires_exact_lease)');
+  }
+  if (hasPostCommitObligations && !atomicCommit.acceptedPostCommitFacts) {
+    throw new Error('atomic hand commit refused (post_commit_facts_missing)');
+  }
+  // Capture the complete accepted request before yielding. Engine-owned arrays
+  // may change while a response is lost; a retry must retain the original facts.
+  const payload = structuredClone({
     p_table_id: row.table_id,
     p_hand_number: row.hand_number,
-    p_hand_id: handId,
-  });
-  if (error) {
-    reportError(error, 'logHandHistory.relink_rake_failed');
-    return 0;
-  }
-  return typeof data === 'number' ? data : 0;
-}
-
-/**
- * Notified when a hand the queue was holding finally lands.
- *
- * REVIEW FIX 2026-08-20: `hand_history_saved` was emitted only on the in-line
- * path. A hand recovered by this queue never got one, so the client fell back
- * to its "my most recent hand" lookup — and for a recovered hand that lookup is
- * GUARANTEED to return the wrong hand, because later hands have landed since.
- * The event exists precisely to remove that race; it has to fire here too.
- *
- * A module-level hook rather than a per-entry closure: the queue can hold a
- * payload for minutes, and capturing an engine callback per hand would keep
- * dead tables alive and fire into torn-down state.
- */
-let recoveredHandler:
-  | ((info: { tableId: string; handNumber: number; handId: string }) => void)
-  | null = null;
-
-export function onHandHistoryRecovered(
-  fn: ((info: { tableId: string; handNumber: number; handId: string }) => void) | null
-): void {
-  recoveredHandler = fn;
-}
-
-async function processQueuedHand(entry: QueuedHand, summary: DrainSummary): Promise<void> {
-  entry.attempts++;
-  let handId = await findExistingHandId(entry.row);
-  if (!handId)
-    handId = (await insertHandHistoryRow(entry.row, 'retry-queue', entry.units ?? [])).id;
-
-  if (handId) {
-    summary.written++;
-    if (recoveredHandler) {
-      try {
-        recoveredHandler({
-          tableId: entry.row.table_id,
-          handNumber: entry.row.hand_number,
-          handId,
-        });
-      } catch (err) {
-        reportError(err, 'logHandHistory.recovered_handler_failed');
-      }
-    }
-    // Only cash hands that actually took rake can have a row to link.
-    const rake = Number(entry.row.rake_amount ?? 0);
-    const bbj = Number(entry.row.bbj_amount ?? 0);
-    if (!entry.row.tournament_id && (rake > 0 || bbj > 0)) {
-      if ((await relinkRakeRecord(entry.row, handId)) === 0) summary.unlinked++;
-    }
-    return;
-  }
-
-  if (entry.attempts >= MAX_QUEUE_ATTEMPTS) {
-    summary.exhausted++;
-    reportError(
-      new Error(
-        `[DB] hand_history for table ${entry.row.table_id} hand #${entry.row.hand_number} ` +
-          `gave up after ${entry.attempts} attempts over ` +
-          `${Math.round((Date.now() - entry.queuedAt) / 1000)}s. The hand has no history row.`
-      ),
-      'logHandHistory.retry_exhausted'
-    );
-    return;
-  }
-
-  requeue(entry);
-}
-
-function requeue(entry: QueuedHand): void {
-  pendingHands.push(entry);
-  pendingBytes += entry.bytes;
-}
-
-/**
- * Drain the queue.
- *
- * @param deadlineMs absolute wall clock after which no NEW entry is started.
- *        Entries not started are left queued, untouched.
- *
- * REVIEW FIX 2026-08-20, three defects in the first version:
- *   1. it returned a no-op summary when a drain was already running, so
- *      GameServer.stop()'s flush loop saw "no progress" and gave up
- *      immediately — the 6s budget was never used. Concurrent callers now JOIN
- *      the in-flight drain instead.
- *   2. it spliced a batch off the queue and had no try/catch, so a single throw
- *      from any await discarded every remaining entry in that batch. Each entry
- *      is now individually guarded and re-queued on throw.
- *   3. its deadline was only checked BETWEEN whole passes, so "never block a
- *      shutdown for more than ~6s" was not true of a pass that itself took
- *      minutes. It is checked per entry now.
- */
-export function drainHandHistoryQueue(deadlineMs?: number): Promise<DrainSummary> {
-  if (drainPromise) {
-    return drainPromise.then((s) => ({ ...s, joined: true }));
-  }
-  if (pendingHands.length === 0) return Promise.resolve(emptySummary());
-
-  drainPromise = (async (): Promise<DrainSummary> => {
-    const summary = emptySummary();
-    const batch = pendingHands.splice(0, DRAIN_BATCH);
-    for (const e of batch) pendingBytes -= e.bytes;
-    inFlight = batch.length;
-    summary.scanned = batch.length;
-
-    let next = 0;
-    const worker = async (): Promise<void> => {
-      for (;;) {
-        if (deadlineMs !== undefined && Date.now() >= deadlineMs) return;
-        const i = next++;
-        if (i >= batch.length) return;
-        const entry = batch[i];
-        try {
-          await processQueuedHand(entry, summary);
-        } catch (err) {
-          // Never lose the payload to an unexpected throw.
-          reportError(err, 'logHandHistory.drain_entry_failed');
-          requeue(entry);
-        } finally {
-          inFlight--;
+    p_stacks: atomicCommit.stacks,
+    p_rake: atomicCommit.rake,
+    p_bbj: atomicCommit.bbj,
+    p_ref: atomicCommit.ref ?? null,
+    p_inflow: atomicCommit.inflow ?? null,
+    p_hand_row: atomicCommit.acceptedPostCommitFacts
+      ? {
+          ...row,
+          _accepted_post_commit_facts: atomicCommit.acceptedPostCommitFacts,
         }
-      }
-    };
-
-    try {
-      await Promise.all(
-        Array.from({ length: Math.min(DRAIN_CONCURRENCY, batch.length) }, () => worker())
-      );
-    } finally {
-      // Anything the deadline stopped us from starting goes back untouched.
-      for (let i = next; i < batch.length; i++) {
-        requeue(batch[i]);
-        inFlight--;
-      }
-      if (inFlight < 0) inFlight = 0;
-      summary.stillPending = pendingHands.length + inFlight;
-    }
-
-    // Back off when a whole pass achieved nothing — the service is down, and
-    // hammering it is how an outage gets extended rather than ridden out.
-    if (summary.scanned > 0 && summary.written === 0) {
-      consecutiveFailedPasses++;
-      skipsRemaining = Math.min(consecutiveFailedPasses, MAX_BACKOFF_SKIPS);
-    } else if (summary.written > 0) {
-      consecutiveFailedPasses = 0;
-      skipsRemaining = 0;
-    }
-    return summary;
-  })();
-
-  return drainPromise.finally(() => {
-    drainPromise = null;
+      : row,
+    p_units: bombAwardUnits,
+    ...(hasLeaseInstance
+      ? {
+          p_instance_id: atomicCommit.leaseInstanceId!,
+          p_lease_generation: atomicCommit.leaseGeneration!,
+        }
+      : {}),
+    ...(hasPostCommitObligations
+      ? { p_post_commit_obligations: atomicCommit.postCommitObligations! }
+      : {}),
   });
-}
+  let lastError = 'no response';
 
-export function startHandHistoryRetry(): void {
-  if (drainTimer) return;
-  drainTimer = setInterval(() => {
-    if (skipsRemaining > 0) {
-      skipsRemaining--;
-      return;
-    }
-    void drainHandHistoryQueue()
-      .then((s) => {
-        if (s.written > 0 || s.exhausted > 0 || s.unlinked > 0) {
-          console.log(
-            `[HandHistoryRetry] wrote ${s.written}, exhausted ${s.exhausted}, ` +
-              `${s.unlinked} awaiting a rake row, ${s.stillPending} still queued`
+  // Every retry is the same idempotent transaction.  This loop exists only
+  // for the ambiguous transport case: a lost HTTP response may follow a
+  // committed hand.  There is no alternate writer and no per-seat fallback.
+  for (let attempt = 0; attempt <= HAND_COMMIT_RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      atomicCommit.assertLeaseAuthority?.();
+      const { data, error } = await supabase.rpc('fn_ca_commit_hand_settlement', payload);
+      const result = (data ?? {}) as AtomicCommitResult;
+      if (!error && result.success === true && result.atomic_hand_commit === true) {
+        if (hasPostCommitObligations && result.post_commit_obligations !== true) {
+          throw new Error('atomic hand commit refused (missing_post_commit_receipt)');
+        }
+        const historyId = typeof result.history_id === 'string' ? result.history_id : '';
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(historyId)) {
+          throw new Error(
+            `atomic hand commit refused (invalid_receipt): ${JSON.stringify(result)}`
           );
         }
-      })
-      .catch((err) => reportError(err, 'logHandHistory.drain_failed'));
-  }, DRAIN_INTERVAL_MS);
-  drainTimer.unref?.();
-}
+        const requestedHistoryId = payload.p_hand_row.id;
+        if (
+          typeof requestedHistoryId === 'string' &&
+          historyId.toLowerCase() !== requestedHistoryId.toLowerCase()
+        ) {
+          throw new Error('atomic hand commit refused (receipt_identity_mismatch)');
+        }
+        if (
+          typeof row.tournament_id === 'string' &&
+          !tournamentStackProofIsExact(
+            result,
+            row.tournament_id,
+            atomicCommit.stacks.map((stack) => stack.user_id)
+          )
+        ) {
+          throw new Error('atomic hand commit refused (tournament_stack_proof_invalid)');
+        }
+        // The authoritative transaction is already committed. Projection
+        // is work-triggered and deliberately outside the dealing barrier;
+        // its outbox row remains the crash/lost-notification authority.
+        void wakeHandProjection().catch((err) =>
+          reportError(err, 'HandProjection.commit_wake_failed', {
+            handId: historyId,
+            handNumber: row.hand_number,
+          })
+        );
+        return {
+          id: historyId,
+          settlementCommitted: true,
+          stackResult: result,
+        };
+      }
+      if (!error && result.success === false && result.reason !== 'in_flight') {
+        throw new Error(
+          `atomic hand commit refused (${result.reason ?? 'unknown'}): ${String(result.error ?? JSON.stringify(result))}`
+        );
+      }
+      lastError = error?.message ?? String(result.reason ?? result.error ?? 'in_flight');
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+      // A semantic refusal is deterministic. Retrying it would only hide a
+      // broken invariant behind delay.
+      if (/atomic hand commit refused/.test(lastError)) throw err;
+    }
 
-export function stopHandHistoryRetry(): void {
-  if (drainTimer) clearInterval(drainTimer);
-  drainTimer = null;
-}
+    const delayMs = HAND_COMMIT_RETRY_DELAYS_MS[attempt];
+    if (delayMs !== undefined) {
+      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
 
-/**
- * Queue depth INCLUDING the batch currently in flight.
- *
- * REVIEW FIX 2026-08-20: this used to return only pendingHands.length, so while
- * a drain held up to a full batch in memory the depth read as 0 — which made
- * GameServer.stop() skip its flush entirely and under-report the loss alarm.
- */
-export function handHistoryQueueDepth(): number {
-  return pendingHands.length + inFlight;
-}
-
-/** Test/observability hook: bytes currently held. */
-export function handHistoryQueueBytes(): number {
-  return pendingBytes;
+  throw new Error(
+    `[DB] authoritative hand commit failed for table ${row.table_id} hand #${row.hand_number} after ${HAND_COMMIT_RETRY_DELAYS_MS.length + 1} identical attempts: ${lastError}`
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

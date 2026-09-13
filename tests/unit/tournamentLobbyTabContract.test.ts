@@ -83,30 +83,24 @@ describe('parsePayoutStructure', () => {
   });
 
   it('reads the column when it arrives as a JSON string, which it does', () => {
-    const places = parsePayoutStructure('[{"position":1,"percentage":65},{"rank":2,"pct":35}]');
+    const places = parsePayoutStructure(
+      '[{"place":1,"percentage":65},{"place":2,"percentage":35}]'
+    );
     expect(places).toEqual([
       { place: 1, percentage: 65 },
       { place: 2, percentage: 35 },
     ]);
   });
 
-  it('EXPANDS a range row into one entry per place', () => {
-    // THE BUG. Detail's local parser returned the stored rows verbatim, so this
-    // structure - which pays nine places - counted as TWO. That number went to
-    // HandForHandBanner as `paidPositions`, putting the money bubble seven
-    // places early, and the podium's `place === position` lookup found nothing
-    // for 2nd or 3rd and drew a dash over a real prize.
-    const raw = [
-      { place: 1, percentage: 50 },
-      { from: 2, to: 9, percentage: 6.25 },
-    ];
-    expect(paidPlaceCount(raw)).toBe(9);
-    const places = parsePayoutStructure(raw);
-    expect(places?.[8]).toEqual({ place: 9, percentage: 6.25 });
-  });
-
-  it('expands the other range spelling, a hyphenated place string', () => {
-    expect(paidPlaceCount([{ place: '4-6', percentage: 5 }])).toBe(3);
+  it('rejects retired aliases and range rows that the database will not settle', () => {
+    expect(parsePayoutStructure([{ position: 1, percentage: 100 }])).toBeNull();
+    expect(
+      parsePayoutStructure([
+        { place: 1, percentage: 50 },
+        { from: 2, to: 9, percentage: 6.25 },
+      ])
+    ).toBeNull();
+    expect(parsePayoutStructure([{ place: '1-3', percentage: 33.33 }])).toBeNull();
   });
 
   it('returns null for a column that cannot be used, never an empty array', () => {
@@ -117,17 +111,24 @@ describe('parsePayoutStructure', () => {
     expect(parsePayoutStructure('not json at all')).toBeNull();
     expect(parsePayoutStructure([])).toBeNull();
     expect(parsePayoutStructure([{ place: 1, percentage: 0 }])).toBeNull();
+    expect(
+      parsePayoutStructure([
+        { place: 1, percentage: 100 },
+        { place: 2, percentage: 0 },
+      ])
+    ).toBeNull();
+    expect(parsePayoutStructure([{ place: 1.5, percentage: 100 }])).toBeNull();
     expect(paidPlaceCount(undefined)).toBe(0);
   });
 
-  it('keeps the last write for a place named twice, and orders the field', () => {
+  it('keeps the first write for a place named twice, and orders the field', () => {
     const places = parsePayoutStructure([
       { place: 3, percentage: 20 },
       { place: 1, percentage: 40 },
       { place: 1, percentage: 50 },
     ]);
     expect(places).toEqual([
-      { place: 1, percentage: 50 },
+      { place: 1, percentage: 40 },
       { place: 3, percentage: 20 },
     ]);
   });

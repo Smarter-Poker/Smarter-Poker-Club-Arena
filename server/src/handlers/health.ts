@@ -10,6 +10,10 @@
 
 import type { ServerResponse } from 'http';
 import { sendJSON } from '../http/respond.js';
+import {
+  parsePublicTableLivenessQuery,
+  type PublicTableLivenessQuery,
+} from '../observability/PublicTableLiveness.js';
 // ── ADDITIVE (#5): shared engine metrics registry — appended to /metrics ONLY when
 // ENGINE_METRICS === 'on'. With the flag unset the response is byte-identical to before.
 import { metricsRegistry, ENGINE_METRICS_ENABLED } from '../observability/engineInstruments.js';
@@ -19,7 +23,10 @@ import { metricsRegistry, ENGINE_METRICS_ENABLED } from '../observability/engine
 // exposes the right methods satisfies the shape.
 
 export interface HealthDeps {
-  gameServer: { getStatus(): unknown; getPrometheusMetrics(): string };
+  gameServer: {
+    getStatus(query?: PublicTableLivenessQuery): unknown;
+    getPrometheusMetrics(): string;
+  };
 }
 
 export interface WsMetricsDeps {
@@ -31,6 +38,14 @@ export interface WsMetricsDeps {
   };
   engineWs: {
     connectionCount(): number;
+    connectionAccessStats?(): {
+      completed: number;
+      failed: number;
+      pending: number;
+      oldestPendingMs: number;
+      maxDurationMs: number;
+      over1200Ms: number;
+    };
     /** Optional so the structural typing above stays minimal, per this file's
      *  design note — a transport without it simply reports zeroes. */
     muxStats?(): {
@@ -57,8 +72,19 @@ export interface WsMetricsDeps {
 }
 
 /** `GET /health` and `GET /` — Hetzner VPS health probe + SHA/status report. */
-export function handleHealth(res: ServerResponse, deps: HealthDeps): void {
-  const status = deps.gameServer.getStatus() as {
+export function handleHealth(
+  res: ServerResponse,
+  deps: HealthDeps,
+  params = new URLSearchParams()
+): void {
+  const parsed = parsePublicTableLivenessQuery(params);
+  if (!parsed.ok) {
+    sendJSON(res, 400, { error: 'invalid_liveness_scope' });
+    return;
+  }
+  const status = (
+    parsed.query ? deps.gameServer.getStatus(parsed.query) : deps.gameServer.getStatus()
+  ) as {
     liveness?: string;
     status?: string;
     dealerPrerequisitesReady?: boolean;
@@ -113,6 +139,7 @@ export function handleWsMetrics(res: ServerResponse, deps: WsMetricsDeps): void 
   sendJSON(res, 200, {
     totalSubscribers: deps.tableStateHub.totalSubscribers(),
     activeConnections: deps.engineWs.connectionCount(),
+    connectionAccess: deps.engineWs.connectionAccessStats?.() ?? null,
     ...mux,
     ...backpressure,
     // 2026-08-24: channel transport visibility — see WsMetricsDeps.channelHub.

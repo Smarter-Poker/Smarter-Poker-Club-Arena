@@ -135,3 +135,41 @@
     height: 7px;
   }
 }
+
+/* Touch targets sit entirely inside the creative's existing bounds. Enlarging
+   a pseudo-element around the old 6px buttons would be clipped at the bottom
+   and would overlap neighbouring dots. Each control owns a separate 44px box;
+   only its painted dot stays small. */
+@media (pointer: coarse) {
+  .ad-rotator__dots {
+    bottom: 0;
+    gap: 0;
+  }
+
+  .ad-rotator__dot {
+    display: grid;
+    place-items: center;
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+    box-sizing: border-box;
+    border-radius: 4px;
+    background: transparent;
+  }
+
+  .ad-rotator__dot::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(226, 232, 240, 0.38);
+  }
+
+  .ad-rotator__dot--on::before {
+    background: #65c4ff;
+  }
+
+  .ad-rotator__dot:focus-visible {
+    outline-offset: -2px;
+  }
+}

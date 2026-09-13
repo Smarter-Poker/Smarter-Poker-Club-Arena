@@ -13,6 +13,7 @@ import haptic from '../../services/HapticService';
 import { playPremiumSfx } from '../../utils/playPremiumSfx';
 import { STORAGE_KEYS } from '../../lib/storage';
 import { SHARK_CLUB_ID } from '../../lib/constants';
+import { initialArenaIndex, orderArenaCards } from './arenaSelection';
 import styles from '../../pages/HomePage.module.css';
 import { PageErrorBoundary } from '../common/PageErrorBoundary';
 import { Carousel } from '../carousel';
@@ -24,6 +25,7 @@ import { lazyWithRetry } from '../../utils/lazyWithRetry';
 // Lazy-load heavy component
 
 const ClubCardPanel = lazyWithRetry(() => import('../club/ClubCardPanel'));
+const DiamondArenaCard = lazyWithRetry(() => import('../club/DiamondArenaCard'));
 
 // ── Types ─────────────────────────────────────────
 export interface UserClub {
@@ -46,7 +48,12 @@ export interface UserClub {
 export interface ClubStats {
   totalMembers: number | null;
   clubLevel: number | null;
+  /** Distinct players holding a live seat anywhere on the club's floor. */
   activePlayers: number | null;
+  /** Of those, distinct players at cash tables. */
+  activeCash?: number | null;
+  /** Of those, distinct players in tournaments, Spins and SNGs. */
+  activeEvents?: number | null;
 }
 
 export interface CarouselSectionProps {
@@ -93,7 +100,18 @@ export default function CarouselSection({
      two "is this card being dragged" classes below were permanently false:
      state that can only ever hold one value is worse than no state, because it
      reads as a live feature. */
-  const [orderedClubs, setOrderedClubs] = useState<UserClub[]>(displayClubs);
+  const orderedClubs = useMemo(() => {
+    try {
+      return orderArenaCards(
+        displayClubs,
+        pinnedClubIds,
+        JSON.parse(localStorage.getItem(STORAGE_KEYS.CLUB_ORDER) || '[]')
+      );
+    } catch (error) {
+      reportError(error, 'CarouselSection.sort');
+      return orderArenaCards(displayClubs, pinnedClubIds, []);
+    }
+  }, [displayClubs, pinnedClubIds]);
 
   /* PHONE CARD WIDTH (Dan 2026-08-23: "THE MAIN CARD IS TOO BIG, CAN'T SEE THE
      CARDS TO THE LEFT OR RIGHT").
@@ -126,32 +144,6 @@ export default function CarouselSection({
       window.removeEventListener('orientationchange', recompute);
     };
   }, []);
-
-  // Keep orderedClubs in sync with displayClubs (respecting saved order)
-  useEffect(() => {
-    try {
-      const savedOrder: string[] = JSON.parse(
-        localStorage.getItem(STORAGE_KEYS.CLUB_ORDER) || '[]'
-      );
-      if (savedOrder.length > 0) {
-        const orderMap = new Map(savedOrder.map((id, idx) => [id, idx]));
-        const sorted = [...displayClubs].sort((a, b) => {
-          const aPinned = pinnedClubIds.includes(a.id) ? 1 : 0;
-          const bPinned = pinnedClubIds.includes(b.id) ? 1 : 0;
-          if (bPinned !== aPinned) return bPinned - aPinned;
-          const aOrder = orderMap.get(a.id) ?? 999;
-          const bOrder = orderMap.get(b.id) ?? 999;
-          return aOrder - bOrder;
-        });
-        setOrderedClubs(sorted);
-      } else {
-        setOrderedClubs(displayClubs);
-      }
-    } catch (e) {
-      reportError(e, 'CarouselSection.sort');
-      setOrderedClubs(displayClubs);
-    }
-  }, [displayClubs, pinnedClubIds]);
 
   /**
    * Snap feedback, from the carousel rather than from a scroll event.
@@ -190,16 +182,11 @@ export default function CarouselSection({
    */
   const initialIndex = useMemo(() => {
     try {
-      const lastId = localStorage.getItem(STORAGE_KEYS.LAST_CLUB);
-      if (!lastId) return 0;
-      const idx = orderedClubs.findIndex((c) => c.id === lastId);
-      return idx >= 0 ? idx : 0;
+      return initialArenaIndex(orderedClubs, localStorage.getItem(STORAGE_KEYS.LAST_CLUB));
     } catch {
-      return 0; // private mode / quota. Opening on the first club is fine.
+      return initialArenaIndex(orderedClubs, null);
     }
-    // Deliberately keyed on the LIST, not on every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orderedClubs.length]);
+  }, [orderedClubs]);
 
   // Enhancement #8: Drag handlers
 
@@ -251,11 +238,7 @@ export default function CarouselSection({
              the feeder was left running, so this was pure cost - a reflow per
              pointer move, per card - buying a value no stylesheet consumes. */
           role="button"
-          aria-label={
-            club.automatic_entry
-              ? `${club.name || 'Arena'} - Automatic Entry`
-              : `${club.name || 'Club'} - Click To Enter Lobby`
-          }
+          aria-label={`${club.name || 'Club'} - Click To Enter Lobby`}
           tabIndex={0}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
@@ -274,20 +257,29 @@ export default function CarouselSection({
           <div className={styles.carouselFeaturedPedestal}></div>
           <Suspense fallback={<div className={styles.cardSkeleton} />}>
             <PageErrorBoundary pageName={club.name || 'Club Card'}>
-              <ClubCardPanel
-                clubName={club.name?.toUpperCase() || 'MY CLUB'}
-                totalMembers={stats?.totalMembers ?? null}
-                clubLevel={stats?.clubLevel ?? null}
-                activePlayers={stats?.activePlayers ?? null}
-                clubId={club.club_id}
-                cardImageUrl={
-                  Number(club.club_id) === SHARK_CLUB_ID
-                    ? `${MEDIA_BASE}images/shark-club-card.jpg`
-                    : club.card_image_url
-                }
-                logoUrl={Number(club.club_id) === SHARK_CLUB_ID ? undefined : club.logo_url}
-                entityType={club.entity_type || 'club'}
-              />
+              {club.automatic_entry ? (
+                /* Dan 2026-09-09: the Diamond Arena rides the same card chassis
+                   as every club, not a poster - active players and the next
+                   freeroll countdown on the bottom rail. */
+                <DiamondArenaCard activePlayers={stats?.activePlayers ?? null} />
+              ) : (
+                <ClubCardPanel
+                  clubName={club.name?.toUpperCase() || 'MY CLUB'}
+                  totalMembers={stats?.totalMembers ?? null}
+                  clubLevel={stats?.clubLevel ?? null}
+                  activePlayers={stats?.activePlayers ?? null}
+                  activeCash={stats?.activeCash ?? null}
+                  activeEvents={stats?.activeEvents ?? null}
+                  clubId={club.club_id}
+                  cardImageUrl={
+                    Number(club.club_id) === SHARK_CLUB_ID
+                      ? `${MEDIA_BASE}images/shark-club-card.jpg`
+                      : club.card_image_url
+                  }
+                  logoUrl={Number(club.club_id) === SHARK_CLUB_ID ? undefined : club.logo_url}
+                  entityType={club.entity_type || 'club'}
+                />
+              )}
             </PageErrorBoundary>
           </Suspense>
         </div>
@@ -361,7 +353,7 @@ export default function CarouselSection({
              mid-gesture and the swipe is lost. */
           onDragStart={handleLongPressEnd}
           onIndexChange={handleIndexChange}
-          ariaLabel="Your Clubs"
+          ariaLabel="Poker Arena Selection"
           itemNoun="Club"
           /* Dan 2026-08-21: "IT NEEDS TO DISPLAY 3 CARDS AT ONCE, AND SNAP TO
              CENTER ONE CARD AT A TIME. NOT ONLY DISPLAY ONE AT A TIME."

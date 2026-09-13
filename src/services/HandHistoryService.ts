@@ -12,6 +12,7 @@ import { derivePositions } from '../utils/pokerPositions';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { buildReplay, replayInputFromRow, type ReplayModel } from '../utils/handReplay';
 import { reportError } from '../utils/errorReporter';
+import { readLocalSession } from '../lib/authUtils';
 
 /**
  * ONE SELECT LIST (2026-09-04). `getHand` and `getPlayerHands` each carried
@@ -193,6 +194,7 @@ export interface HandRecord {
   serial_number: string;
   table_id: string;
   table_name: string;
+  arenaAsset?: 'chips' | 'diamonds';
   /** Seats at the table, when the table row still exists. */
   table_max_seats?: number | null;
   played_at: string;
@@ -234,10 +236,11 @@ export interface HandRecord {
   winners: HandWinner[];
   /**
    * WHO WON EACH RUN (2026-09-04, column hand_history.winners_by_board). One
-   * entry per (board, winner): the board index (1-based), the pre-rake share
-   * and the hand name ON THAT BOARD. Empty on single-board hands and on rows
-   * that predate the column, in which case the surfaces fall back to the
-   * aggregate `winners` and say so.
+   * entry per (board, winner, half): the board index (1-based), the POST-RAKE
+   * share the pot paid (written post-rake since 2026-09-04) and the hand name
+   * ON THAT BOARD. Empty on single-board hands and on rows that predate the
+   * column, in which case the surfaces fall back to the aggregate `winners`
+   * and say so.
    */
   winners_by_board: {
     board: number;
@@ -246,6 +249,8 @@ export interface HandRecord {
     hand_name?: string;
     /** HI-LO: the entry for the low half of a split pot (PLO8 / FLO8). */
     low?: boolean;
+    /** 2026-09-13: which pot(s) this share came out of, main pot first, summing to amount. */
+    pots?: Array<{ index: number; amount: number }>;
   }[];
   /** Rake taken from the pot, and the jackpot drop. Shown, not hidden. */
   rake: number;
@@ -394,7 +399,13 @@ class HandHistoryServiceClass {
    * other question - "what did I have?" - and it is read here the same way
    * `fetchOwnDiscards` reads `hand_discards`: NO USER ID IN THE QUERY. The
    * table's RLS policy (`ca_hand_facts_own_read`, user_id = auth.uid()) is what
-   * narrows the result to the caller, so a bug here cannot widen it.
+   * narrows the result to the caller, so a bug here cannot widen it
+   * (`tests/previous-hand-shows-this-tables-hands.law.test.ts` pins that the
+   * query never names a user). Since 2026-09-10 the MAPPER is the second lock:
+   * it reads the viewer from the local session and drops any row that is not
+   * theirs, so a policy regression handing back an opponent's row for the
+   * same hand cannot end as their hole cards drawn on the rundown. A viewer
+   * whose id cannot be read gets no private cards at all.
    *
    * Keyed by hand_history id (`ca_hand_facts.hand_id` IS that id). Absent for
    * hands before the facts table existed (2026-08-21, no backfill) and for
@@ -406,6 +417,8 @@ class HandHistoryServiceClass {
     const out = new Map<string, { user_id: string; cards: Card[]; facts: HeroHandFacts }>();
     const ids = [...new Set(rows.map((r) => r?.id).filter(Boolean))] as string[];
     if (ids.length === 0) return out;
+    const viewerId = readLocalSession()?.userId;
+    if (!viewerId) return out;
     try {
       /* Phase 2: the same row carries the all-in equity and EV facts, so the
          rundown's "All-In" block costs no extra query. */
@@ -426,6 +439,8 @@ class HandHistoryServiceClass {
       for (const d of data || []) {
         const row = d as any;
         if (!row?.hand_id || !row?.user_id) continue;
+        // Never map a row that is not the viewer's, whatever the policy said.
+        if (String(row.user_id) !== viewerId) continue;
         /* A row with cards nulled (folded for free) still carries the facts. */
         const cards = Array.isArray(row.hole_cards)
           ? ((row.hole_cards as any[]).filter((c) => c && c.rank && c.suit) as Card[])
@@ -470,14 +485,17 @@ class HandHistoryServiceClass {
    */
   private async fetchTableNames(
     rows: Array<{ table_id?: string | null }>
-  ): Promise<Map<string, { name?: string; maxSeats?: number }>> {
-    const out = new Map<string, { name?: string; maxSeats?: number }>();
+  ): Promise<Map<string, { name?: string; maxSeats?: number; arenaAsset?: 'chips' | 'diamonds' }>> {
+    const out = new Map<
+      string,
+      { name?: string; maxSeats?: number; arenaAsset?: 'chips' | 'diamonds' }
+    >();
     const ids = [...new Set(rows.map((r) => r?.table_id).filter(Boolean))] as string[];
     if (ids.length === 0) return out;
     try {
       const { data, error } = await supabase
         .from('tables')
-        .select('id, name, max_players')
+        .select('id, name, max_players, arena:clubs!fk_tables_club_id(asset)')
         .in('id', ids);
       if (error) {
         reportError(error, 'HandHistoryService.fetchTableNames');
@@ -486,11 +504,13 @@ class HandHistoryServiceClass {
       for (const t of data || []) {
         const row = t as any;
         if (!row?.id) continue;
-        const entry: { name?: string; maxSeats?: number } = {};
+        const entry: { name?: string; maxSeats?: number; arenaAsset?: 'chips' | 'diamonds' } = {};
         if (typeof row.name === 'string' && row.name.trim()) entry.name = row.name.trim();
+        const arena = Array.isArray(row.arena) ? row.arena[0] : row.arena;
+        if (arena?.asset === 'chips' || arena?.asset === 'diamonds') entry.arenaAsset = arena.asset;
         const seats = Number(row.max_players);
         if (Number.isFinite(seats) && seats > 0) entry.maxSeats = seats;
-        if (entry.name || entry.maxSeats) out.set(String(row.id), entry);
+        if (entry.name || entry.maxSeats || entry.arenaAsset) out.set(String(row.id), entry);
       }
     } catch (e) {
       reportError(e, 'HandHistoryService.fetchTableNames_threw');
@@ -584,7 +604,10 @@ class HandHistoryServiceClass {
     profileMap: Map<string, { username: string; avatar_url: string | null }>,
     discardsByHand?: Map<string, { seat: number; card: { rank: string; suit: string } }>,
     privateByHand?: Map<string, { user_id: string; cards: Card[]; facts: HeroHandFacts }>,
-    tableNames?: Map<string, { name?: string; maxSeats?: number }>
+    tableNames?: Map<
+      string,
+      { name?: string; maxSeats?: number; arenaAsset?: 'chips' | 'diamonds' }
+    >
   ): HandRecord | null {
     if (!row?.id) return null;
     const jsonbPlayers: any[] = Array.isArray(row.players) ? row.players : [];
@@ -832,6 +855,7 @@ class HandHistoryServiceClass {
       serial_number: String(Number(row.hand_number) || row.id),
       table_id: row.table_id,
       table_name: tableNames?.get(String(row.table_id))?.name || 'Table',
+      arenaAsset: tableNames?.get(String(row.table_id))?.arenaAsset,
       /* The table's real seat count, for the tracker export's `N-max`. Absent
          when the table row has been recycled; the writer then derives a floor
          from the occupied seats rather than assuming one. */
@@ -863,13 +887,21 @@ class HandHistoryServiceClass {
       winners_by_board: Array.isArray((row as any).winners_by_board)
         ? ((row as any).winners_by_board as any[])
             .filter((w) => w && typeof w === 'object' && w.userId)
-            .map((w) => ({
-              board: Number(w.board) || 1,
-              user_id: String(w.userId),
-              amount: Number(w.amount) || 0,
-              hand_name: typeof w.handName === 'string' ? w.handName : undefined,
-              low: w.low === true,
-            }))
+            .map((w) => {
+              const pots = Array.isArray(w.pots)
+                ? (w.pots as any[])
+                    .filter((p) => p && typeof p === 'object')
+                    .map((p) => ({ index: Number(p.index) || 0, amount: Number(p.amount) || 0 }))
+                : [];
+              return {
+                board: Number(w.board) || 1,
+                user_id: String(w.userId),
+                amount: Number(w.amount) || 0,
+                hand_name: typeof w.handName === 'string' ? w.handName : undefined,
+                low: w.low === true,
+                ...(pots.length ? { pots } : {}),
+              };
+            })
         : [],
       rake: Number(row.rake_amount) || 0,
       bbj_fee: Number((row as any).bbj_amount) || 0,

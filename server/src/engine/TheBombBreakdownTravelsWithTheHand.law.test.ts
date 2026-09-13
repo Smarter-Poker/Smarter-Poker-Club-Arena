@@ -49,18 +49,15 @@ function statementAt(src: string, anchor: string): string {
 
 describe('the bomb breakdown travels with the hand', () => {
   it('the award units are written by the same call that writes the row', () => {
-    expect(hist).toContain("supabase.rpc('fn_ca_insert_hand_with_awards'");
+    expect(hist).toContain("supabase.rpc('fn_ca_commit_hand_settlement'");
     const fn = hist.slice(
       hist.indexOf('async function insertHandHistoryRow'),
-      hist.indexOf('// ── Background retry queue')
+      hist.indexOf('// Bible V8 §2.18')
     );
-    // the atomic path is taken whenever there is a breakdown to keep, and it
-    // is chosen BEFORE the plain insert, or the plain insert wins and the
-    // units are orphaned again
-    expect(fn.indexOf('fn_ca_insert_hand_with_awards')).toBeLessThan(
-      fn.indexOf(".from('hand_history')")
-    );
-    expect(fn).toContain('if (bombAwardUnits.length > 0)');
+    expect(fn).toContain('p_hand_row:');
+    expect(fn).toContain('p_units: bombAwardUnits');
+    expect(fn).not.toContain(".from('hand_history')");
+    expect(fn).not.toContain('fn_ca_insert_hand_with_awards');
   });
 
   it('settlement hands the units to logHandHistory rather than writing them after', () => {
@@ -76,8 +73,8 @@ describe('the bomb breakdown travels with the hand', () => {
   it('a bomb hand with winners but no per-pot awards still carries a breakdown the guard accepts', () => {
     // 20260906143315 attached a DEFERRED constraint trigger: a bomb hand that
     // distributed chips cannot commit without award units summing to the pot.
-    // An empty per-pot award array would therefore be refused twenty times by
-    // the retry queue and the hand lost outright. The winners list is the same
+    // An empty per-pot award array would therefore refuse the authoritative
+    // transaction. The winners list is the same
     // money (966 of 966 bomb hands over six hours: sum(winners) == distributable
     // to the cent), so it is the fallback source of units.
     // Bounded by the statement, never by a byte count: the ternary chain
@@ -92,92 +89,15 @@ describe('the bomb breakdown travels with the hand', () => {
     expect(settle).toContain("'ServerTableEngine.bomb_award_units_empty'");
   });
 
-  it('the old fire-and-forget upsert only runs when the atomic write did not', () => {
-    expect(settle).toContain('if (!result.wroteAwardUnits) {');
-    const guard = settle.slice(
-      settle.indexOf('if (!result.wroteAwardUnits) {'),
-      settle.indexOf('if (!result.wroteAwardUnits) {') + 400
-    );
-    expect(guard).toContain('void writeAwardUnits()');
+  it('settlement has no second award-unit writer after the atomic commit', () => {
+    expect(settle).not.toContain('writeAwardUnits');
+    expect(settle).not.toContain("from('bomb_pot_award_units').upsert");
   });
 
-  it('logHandHistory reports whether the breakdown went in with the row', () => {
-    expect(hist).toContain('wroteAwardUnits: boolean');
-    // narrowed 2026-09-06: the old form (handId !== null && bombUnits.length)
-    // was TRUE on the duplicate-recovery path, where the RPC had rolled back
-    // and this call wrote nothing - which skipped the fallback and lost them.
-    expect(hist).toContain('wroteAwardUnits: wroteUnitsAtomically');
-  });
-
-  /* WHY THIS FILE GREW A BEHAVIOURAL TEST (2026-09-06).
-     Every assertion above passed while fn_ca_insert_hand_with_awards was
-     INCAPABLE OF INSERTING A ROW: it used jsonb_populate_record over a NULL
-     base, which supplies an explicit NULL for every column the caller did not
-     name, and an explicit NULL overrides a DEFAULT - so hand_history.id came
-     out NULL against a NOT NULL column and the function failed 23502 on every
-     call. Reading the code told me the wiring was right. It was. The thing on
-     the other end of the wire did not work.
-
-     So the migration that defines a money-path function now CALLS it against
-     the real table inside the migration, checks what it wrote, and rolls that
-     back - and aborts the migration if it cannot. This test pins that habit,
-     because the next author will be as sure as I was. */
-  it('the migration that defines the atomic insert proves it against the real table', () => {
-    const mig = readFileSync(
-      join(
-        __dirname,
-        '..',
-        '..',
-        '..',
-        'supabase',
-        'migrations',
-        '20260906113554_the_atomic_hand_insert_lets_the_defaults_apply_and_proves_it.sql'
-      ),
-      'utf8'
+  it('there is no process-local retry owner that can split the breakdown from the hand', () => {
+    expect(hist).not.toMatch(
+      /enqueueHandHistory|pendingHands|drainHandHistoryQueue|startHandHistoryRetry|retry-queue/
     );
-    // it calls the function for real
-    expect(mig).toContain('public.fn_ca_insert_hand_with_awards(');
-    // it checks a DEFAULT actually applied, which is the bug it exists for
-    expect(mig).toContain('created_at is NULL - the defaults are still being overridden');
-    // it checks the units landed with the row
-    expect(mig).toContain('expected 1 award unit written with the row');
-    // and it undoes itself
-    expect(mig).toContain('ca_verify_rollback');
-    expect(mig).toContain('the probe row survived its rollback');
-    // the insert names only the supplied columns, so defaults survive
-    expect(mig).toContain('p_row ? c.column_name');
-    expect(mig).not.toMatch(
-      /INSERT INTO public\.hand_history\s*\n\s*SELECT \* FROM jsonb_populate_record/
-    );
-  });
-
-  /* THE RETRY QUEUE WAS A SECOND WAY TO LOSE THE SAME THING (2026-09-06).
-     The hot path got the atomic insert and the queue did not: a bomb hand that
-     missed its first attempt was replayed with no units, written with no units,
-     and the settlement-side fallback had returned long before. Found in the
-     deep dive, by following the paths rather than the happy one. */
-  it('the retry queue carries the breakdown with the row it holds', () => {
-    expect(hist).toContain('units: Record<string, unknown>[];');
-    expect(hist).toContain('enqueueHandHistory(row, bombUnits);');
-    expect(hist).toMatch(/pendingHands\.push\(\{[^}]*units: structuredClone\(units\)/);
-    expect(hist).toContain("insertHandHistoryRow(entry.row, 'retry-queue', entry.units ?? [])");
-  });
-
-  it('wroteAwardUnits means WE wrote them, not that a row exists', () => {
-    // the duplicate-recovery path returns an existing hand id after its RPC
-    // rolled back; reporting true there skips the fallback and loses the units
-    //
-    // 2026-09-07: the id expression gained `?? minted` when settlement started
-    // minting the hand's uuid before any write (see
-    // aHandNamesItselfBeforeItBanksItsRake.law.test.ts - a null hand id cost
-    // 173 cash hands a day their entire per-player attribution). What THIS law
-    // pins is untouched and is the second half of the line: `wroteUnits: false`
-    // on the recovery path, so the caller's award-unit fallback still runs.
-    expect(hist).toContain(
-      'return { id: existing ?? minted, wroteUnits: false, settlementCommitted: true };'
-    );
-    expect(hist).toContain('wroteAwardUnits: wroteUnitsAtomically');
-    expect(hist).toContain('wroteUnits: true');
   });
 
   it('no repair cron is the answer here', () => {

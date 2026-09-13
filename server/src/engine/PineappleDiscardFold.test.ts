@@ -69,14 +69,66 @@ const chips = (st: () => any) =>
   st().players.reduce((s: number, p: SeatPlayer) => s + p.stack, 0) + st().pot;
 
 describe('pineapple discard round', () => {
+  it.each([-1, 3, 0.5, NaN, Infinity, null, undefined])(
+    'rejects malformed discard index %s without changing cards or private knowledge',
+    (index) => {
+      const { hc, st, events } = toDiscardRound();
+      const player = st().players[0] as SeatPlayer;
+      const before = structuredClone(player.cards),
+        eventCount = events.length;
+      expect(hc.performDiscard(player.seat, index as number)).toBe(false);
+      expect(player.cards).toEqual(before);
+      expect(hc.getPineappleKnownDeadCards(player.seat)).toEqual([]);
+      expect(hc.owesPineappleDiscard(player.seat)).toBe(true);
+      expect(events).toHaveLength(eventCount);
+    }
+  );
+
+  it('retains the voluntary discard privately and rejects a second discard without changing it', () => {
+    const { hc, st } = toDiscardRound();
+    const player = st().players[0] as SeatPlayer;
+    const expected = { ...player.cards[0] };
+    expect(hc.performDiscard(player.seat, 0)).toBe(true);
+    expect(hc.getPineappleKnownDeadCards(player.seat)).toEqual([expected]);
+    expect(hc.performDiscard(player.seat, 1)).toBe(false);
+    expect(hc.getPineappleKnownDeadCards(player.seat)).toEqual([expected]);
+    expect(hc.getPineappleKnownDeadCards(st().players[1].seat)).toEqual([]);
+    expect(st().players.every((p: SeatPlayer) => p.knownDeadCards === undefined)).toBe(true);
+  });
+
   it('is a REAL round: every active seat is dealt 3 and owes a discard', () => {
     const { hc, st } = toDiscardRound();
     expect(st().stage).toBe('pineapple_discard');
+    expect(st().currentPlayerSeat, 'a simultaneous discard round has no ordinary actor').toBe(-1);
     const remaining = (hc as unknown as { pineappleDiscardsRemaining: Set<number> })
       .pineappleDiscardsRemaining;
     const active = st().players.filter((p: SeatPlayer) => !p.is_folded);
     expect(remaining.size).toBe(active.length);
     for (const p of active) expect(p.cards.length).toBe(3);
+  });
+
+  it('rejects stale ordinary actions without advancing or inventing a discard', () => {
+    const { hc, st, events } = toDiscardRound();
+    const remaining = (hc as unknown as { pineappleDiscardsRemaining: Set<number> })
+      .pineappleDiscardsRemaining;
+    const seats = [...remaining];
+    const historyBefore = st().actionHistory.length;
+    events.length = 0;
+
+    // Recreate the old stale-timer shape even if a future refactor accidentally
+    // leaves a seat pointer populated. The controller boundary must still refuse
+    // a betting action during the simultaneous discard round.
+    st().currentPlayerSeat = seats[0];
+    expect(hc.performAction(seats[0], 'check')).toBe(false);
+    expect(hc.performAction(seats[0], 'fold')).toBe(false);
+
+    expect(st().stage).toBe('pineapple_discard');
+    expect(st().actionHistory).toHaveLength(historyBefore);
+    expect([...remaining]).toEqual(seats);
+    expect(events.some((event) => event.type === 'PLAYER_ACTION')).toBe(false);
+    for (const player of st().players.filter((candidate: SeatPlayer) => !candidate.is_folded)) {
+      expect(player.cards).toHaveLength(3);
+    }
   });
 
   it('a missed discard FOLDS that player and nobody else', () => {

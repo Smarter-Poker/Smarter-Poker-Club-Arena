@@ -1,11 +1,54 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
    THE MUST MOVE BOX (Dan 2026-09-05) - the cash counterpart of the tournament
-   level bar in the upper-right corner. Same shell as TournamentHUD (its
-   colours are inline there; repeated here as a class so the HUD layer's
-   scale rules in TableHUD.css can address it by name). Facebook palette only.
+   level bar in the upper-right corner. The HUD layer's rules in TableHUD.css
+   address the column by name (.cch-column); its children take the input.
+
+   #SMARTERCASINOREALISM (audit 2026-09-09, lane H). This was a flat Facebook-
+   blue rectangle with a 10px radius - a wireframe of a control, on a felt
+   whose every other fitting is machined. It draws from the material
+   vocabulary club-engine.css defines once on :root (the --realism-* tokens,
+   each read with its literal fallback so the corner survives a harness that
+   never loads that sheet):
+
+     - the notice is a bevelled gunmetal plate, lit blue from inside, with
+       chrome-lettered condensed type engraved into it;
+     - the actions are illuminated pill buttons: a blue glass face, a specular
+       line along the top edge, a glow that says it is powered, and a real
+       press in :active (no :hover, ever - tests/no-hover-effects.law.test.ts);
+     - the listed / waitlist state is the same pill unlit: a steel plate with
+       the sentence engraved, so "on the list" reads as a state and "Seat
+       Change" reads as a control.
+
+   WHAT THIS IS NOT. #ClubArenaConsole's painted chassis (SpadeConsole and the
+   spade-console-v1 slices) is not on origin/main as of 2026-09-09 - it lives
+   on the agent/cw-console branch - so this corner cannot be printed onto that
+   art yet. When the kit lands, these two shapes are what its painted pill and
+   plate replace; the markup and the test ids stay.
+
+   Sizes are unchanged: the notice is capped at 240px, 200px at the phone
+   breakpoint, and it takes no input (pointer-events: none). Brand colours
+   only: house blue, chrome. No gold, no amber.
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .cch-column {
+  --cch-panel: var(--realism-panel, #0b1017);
+  --cch-panel-raised: var(--realism-panel-raised, #111925);
+  --cch-gunmetal: var(--realism-gunmetal, #27313c);
+  --cch-gunmetal-lit: var(--realism-gunmetal-lit, #3a4756);
+  --cch-chrome-hot: var(--realism-chrome-hot, #e6edf3);
+  --cch-blue: #1877f2;
+  --cch-blue-deep: #1250b0;
+  --cch-bevel: var(--realism-bevel, inset 0 1px 0 rgba(255, 255, 255, 0.07));
+  --cch-cavity: var(--realism-cavity, inset 0 -1px 0 rgba(0, 0, 0, 0.6));
+  --cch-font-label: var(
+    --realism-font-label,
+    'Roboto Condensed',
+    'Rajdhani',
+    Inter,
+    system-ui,
+    sans-serif
+  );
+  --cch-engrave: 0 1px 0 rgba(0, 0, 0, 0.85);
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -20,64 +63,128 @@
    `.mtp-lobby-btn` in MultiTablePage.css - so nothing on the felt needs it.
    Do not restore a readout bar here. */
 
+/* The illuminated pill. */
 .cch-seat-change {
   appearance: none;
-  border: 1px solid rgba(24, 119, 242, 0.7);
-  border-radius: 10px;
-  background: #1877f2;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #2b8cff 0%, var(--cch-blue) 45%, var(--cch-blue-deep) 100%);
   color: #fff;
-  font-weight: 800;
+  font-family: var(--cch-font-label);
+  font-weight: 700;
   font-size: 12px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
+  text-shadow: var(--cch-engrave);
   min-height: 44px;
-  padding: 0 14px;
+  padding: 0 16px;
   cursor: pointer;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.35),
+    0 0 14px rgba(24, 119, 242, 0.45),
+    0 4px 10px rgba(0, 0, 0, 0.5);
 }
 
+/* The specular line across the top edge - what makes the face read as glass. */
+.cch-seat-change::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 1px;
+  right: 1px;
+  height: 1px;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+}
+
+/* The press. On a phone this is the only confirmation the tap took. */
+.cch-seat-change:active:not(:disabled) {
+  box-shadow:
+    inset 0 3px 6px rgba(0, 0, 0, 0.6),
+    0 0 6px rgba(24, 119, 242, 0.3);
+  filter: brightness(0.92);
+  transform: translateY(1px);
+}
+
+.cch-seat-change:active:not(:disabled)::after {
+  opacity: 0;
+}
+
+.cch-seat-change:disabled {
+  cursor: default;
+  opacity: 0.6;
+  filter: saturate(0.4);
+  box-shadow: none;
+}
+
+/* The same pill, unlit: a steel plate carrying a state. */
 .cch-seat-change--listed {
-  background: rgba(24, 119, 242, 0.22);
+  background: linear-gradient(180deg, var(--cch-gunmetal-lit) 0%, var(--cch-gunmetal) 100%);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: var(--cch-chrome-hot);
   text-transform: none;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.03em;
   font-weight: 700;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.45),
+    0 4px 10px rgba(0, 0, 0, 0.5);
 }
 
 /* THE FELT SAYS A MOVE IS COMING (Dan 2026-09-05): the pending-move sentence
-   in the corner, on the felt until the move executes. Solid blue, white,
-   bold - the one thing in the corner that is a message rather than a
-   control. It wraps to two lines and is capped well inside a 375px screen. */
+   in the corner, on the felt until the move executes. A gunmetal plate lit
+   blue from inside, the sentence engraved in chrome: the one thing in the
+   corner that is a message rather than a control. It wraps to two lines and
+   is capped well inside a 375px screen. */
 .cch-move-notice {
   max-width: 240px;
-  padding: 7px 10px;
-  border-radius: 10px;
-  background: #1877f2;
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  color: #fff;
-  font-family:
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
-    sans-serif;
+  padding: 7px 11px;
+  border-radius: 6px;
+  background:
+    linear-gradient(180deg, rgba(24, 119, 242, 0.42) 0%, rgba(18, 80, 176, 0.3) 100%),
+    linear-gradient(180deg, var(--cch-panel-raised) 0%, var(--cch-panel) 100%);
+  border: 1px solid rgba(24, 119, 242, 0.6);
+  color: var(--cch-chrome-hot);
+  font-family: var(--cch-font-label);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.25;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.03em;
   text-align: right;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  text-shadow: var(--cch-engrave);
+  box-shadow:
+    var(--cch-bevel),
+    var(--cch-cavity),
+    0 0 12px rgba(24, 119, 242, 0.3),
+    0 4px 10px rgba(0, 0, 0, 0.5);
   pointer-events: none;
 }
 
 @media (max-width: 600px) {
+  /* Tighter tracking on a phone: the longest state ("Chair Open In This Game:
+     Take A Seat") is one pill over the seats, and 0.1em on 36 characters is
+     14px of width the felt does not have at 375px. */
   .cch-seat-change {
     font-size: 11px;
-    padding: 0 10px;
+    padding: 0 12px;
+    letter-spacing: 0.06em;
   }
 
   .cch-move-notice {
     max-width: 200px;
-    padding: 5px 8px;
+    padding: 5px 9px;
     font-size: 10.5px;
+  }
+}
+
+/* The movement stops; the object does not flatten (10.6). */
+@media (prefers-reduced-motion: reduce) {
+  .cch-seat-change:active:not(:disabled) {
+    filter: none;
+    transform: none;
   }
 }

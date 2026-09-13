@@ -170,8 +170,8 @@ RULE 12 satisfied (no new infra).
 
 **Why:** the hook rejects any commit touching `public/hub/club-arena/` unless
 `ARENA_BUILD=1` is set. That correctly stops hand-edited build output, but it
-also blocks **merge-conflict resolutions** in that directory — and
-`sync-club-arena.sh` cannot perform a merge. Today this forced a manual
+also blocks **merge-conflict resolutions** in that directory. The retired
+World Hub bundle-copy path could not perform a merge. Today this forced a manual
 `ARENA_BUILD=1 git commit` to land a merge of 308 generated files.
 
 **Do:** exempt the merge case — if `.git/MERGE_HEAD` exists, allow the commit.
@@ -215,10 +215,10 @@ casts through `as any`.
 - **Both repos are high-churn.** Multiple agents commit concurrently. `git log
 --oneline -5` and file mtimes before editing `TablePage.tsx` (7,100 lines) or
   anything in `public/hub/club-arena/`.
-- **The CA→WH sync loop runs itself.** Push CA source and the loop syncs to
-  World Hub within ~a minute. Running `sync-club-arena.sh` manually in parallel
-  produced 34 merge conflicts in generated bundles today. Push source, then
-  verify prod.
+- **The old CA-to-World-Hub sync loop is retired.** This historical note once
+  described an automatic bundle-copy path that also produced 34 merge conflicts
+  when invoked manually. Club Arena now publishes only through its reviewed,
+  immutable Hetzner release workflow.
 - **Verify deploys behaviourally.** `engine.smarter.poker/health` is
   cache-frozen. For engine changes, look for the restart signature in Supabase:
   a cluster of `tables.updated_at` in one minute (22 tables in a minute today).

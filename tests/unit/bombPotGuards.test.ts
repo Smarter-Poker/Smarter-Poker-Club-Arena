@@ -14,7 +14,6 @@ import { resolve } from 'path';
 import {
   sliceMethod,
   sliceEnclosingBlock,
-  sliceBlockAfter,
   sliceCssRule,
   blankNonCode,
 } from '../helpers/sourceWindow';
@@ -51,6 +50,7 @@ describe('the LIVE hand variant is the one seam (spec §10.1)', () => {
   const BASE = read('server/src/engine/ServerTableEngineBase.ts');
   const ENGINE = read('server/src/engine/ServerTableEngine.ts');
   const TURNS = read('server/src/engine/ServerTableEngineTurns.ts');
+  const HAND = read('server/src/engine/HandController.ts');
   const SETTLEMENT = read('server/src/engine/ServerTableEngineSettlement.ts');
   const DEALING = read('server/src/engine/ServerTableEngineDealing.ts');
 
@@ -67,12 +67,22 @@ describe('the LIVE hand variant is the one seam (spec §10.1)', () => {
   });
 
   it('the legal-action pot-limit clamp reads the HAND variant', () => {
-    const window = sliceEnclosingBlock(TURNS, 'const structure = bettingStructureFor(variant)');
-    expect(window).toMatch(/this\.activeHandVariant\(\)/);
+    // Phase 5 removed the parallel action-menu reconstruction from Turns. Both
+    // the client and the horse now consume HandController's rule contract,
+    // whose betting state is built from the variant captured for THIS hand.
+    const clientMenu = sliceMethod(TURNS, 'getPlayerActions(userId: string)');
+    const authority = sliceMethod(HAND, 'public getAuthoritativeActionState');
+    const bettingState = sliceMethod(HAND, 'private buildBettingState');
+    expect(clientMenu).toMatch(/getAuthoritativeActionState\(userId\)/);
+    expect(authority).toMatch(/this\.buildBettingState\(player\)/);
+    expect(bettingState).toMatch(/const variant = this\.config\.gameVariant/);
+    expect(bettingState).toMatch(/isPotLimitVariant\(variant\)/);
   });
 
   it('horses evaluate the HAND variant', () => {
-    expect(TURNS).toMatch(/gameVariant: \(this\.activeHandVariant\(\) \|\| 'nlh'\)/);
+    const schedule = sliceMethod(TURNS, 'protected scheduleHorseAction(');
+    expect(schedule).toMatch(/const activeVariant = this\.activeHandVariant\(\) \|\| 'nlh'/);
+    expect(schedule).toMatch(/gameVariant: activeVariant/);
   });
 
   it('hand history records the variant the hand was DEALT as', () => {
@@ -92,6 +102,7 @@ describe('BOMB POT MAX (2026-08-28) — the round-4 seams', () => {
   const DEALING = read('server/src/engine/ServerTableEngineDealing.ts');
   const RUNOUT = read('server/src/engine/ServerTableEngineRunout.ts');
   const SETTLEMENT = read('server/src/engine/ServerTableEngineSettlement.ts');
+  const HAND_HISTORY = read('server/src/services/supabase/handHistory.ts');
   const HORSE = read('server/src/engine/HorseLogic.ts');
   const TURNS = read('server/src/engine/ServerTableEngineTurns.ts');
 
@@ -147,57 +158,34 @@ describe('BOMB POT MAX (2026-08-28) — the round-4 seams', () => {
   it('horses average per-board equity on multi-board hands', () => {
     expect(HORSE).toMatch(/gs\.communityCards2/);
     expect(HORSE).toMatch(/equity = sum \/ boards\.length/);
-    expect(TURNS).toMatch(/communityCards2: fullState\?\.communityCards2 \?\? \[\]/);
+    const schedule = sliceMethod(TURNS, 'protected scheduleHorseAction(');
+    expect(schedule).toMatch(/communityCards2: \[\.\.\.\(state\.communityCards2 \?\? \[\]\)\]/);
   });
 
   it('the award-unit ledger covers EVERY bomb hand, idempotently', () => {
-    // The gate and the write are siblings in one `if` block, so that block is
-    // the window — bounded by structure, never a byte count.
-    //
-    // 2026-08-29: anchored on the `if` itself rather than climbing N levels
-    // out from the upsert. The retry loop added a nesting level between the
-    // two, which silently moved a `levels: 2` window off the gate it was
-    // written to guard — the exact failure mode sourceWindow.ts exists to
-    // stop. An anchor on the condition cannot drift no matter what is nested
-    // inside it.
-    const window = sliceBlockAfter(SETTLEMENT, 'if (v_handHistoryId && snap.bombPot');
-    // Gated on the hand being a BOMB, and on there being awards to record —
-    // never on the board count (2026-08-28: a single-board bomb with side
-    // pots is exactly as hard to rebuild, and a partial ledger cannot tell a
-    // single-board bomb from a hand that never happened).
-    expect(window).toMatch(/snap\.bombPot/);
-    expect(window).toMatch(/snap\.perPotAwards\.length > 0/);
-    expect(window).not.toMatch(/board_count \?\? 1\) >= 2/);
-    expect(window).toMatch(/onConflict: 'hand_history_id,pot_index,board,side,user_id'/);
-    expect(window).toMatch(/ignoreDuplicates: true/);
+    // Units now travel inside the same immutable request that commits the
+    // hand, stacks, rake link, and projection outbox. There is no second
+    // PostgREST upsert whose success can diverge from the hand receipt.
+    expect(SETTLEMENT).toContain('const bombAwardUnits =');
+    expect(SETTLEMENT).toContain('snap.bombPot && snap.perPotAwards.length > 0');
+    expect(SETTLEMENT).toContain('snap.perPotAwards.map((a) => ({');
+    expect(SETTLEMENT).toContain('bombAwardUnits,');
+    const writer = sliceMethod(HAND_HISTORY, 'async function insertHandHistoryRow(');
+    expect(writer).toContain('p_units: bombAwardUnits');
+    expect(writer).toContain("supabase.rpc('fn_ca_commit_hand_settlement', payload)");
+    expect(writer).not.toContain("from('bomb_pot_award_units').upsert");
   });
 
-  it('a failed ledger write is retried, and the last failure is REPORTED', () => {
-    // 2026-08-29. The write is fire-and-forget on purpose — logHandHistory has
-    // already recorded the money, and a ledger that only narrates a settlement
-    // must never be able to fail the hand it narrates. But "cannot fail the
-    // hand" had been built as "one attempt, then console.warn on the engine
-    // host", so one transient error lost a hand's award units permanently AND
-    // silently. Hand 3364829 (2026-08-29 02:35:08Z) is the proof: a clean
-    // two-board showdown paid out correctly to the cent, bracketed by hands at
-    // 02:31 and 02:37 that both wrote their rows, and zero rows of its own.
-    const window = sliceBlockAfter(SETTLEMENT, 'if (v_handHistoryId && snap.bombPot');
-    expect(window).toMatch(/attempt <= BOMB_LEDGER_WRITE_ATTEMPTS/);
-    // 2026-08-29: the backoff is EXPONENTIAL and capped. It was linear
-    // (250/500), which fitted all three attempts inside the first second and
-    // therefore inside the same blip — production measured 2 losses in 457
-    // hands, both having survived all three. A capped doubling covers ~4.75s
-    // and cannot leave retry timers open across a table's later hands.
-    expect(window).toMatch(/BOMB_LEDGER_RETRY_BASE_MS \* \(2 \*\* attempt - 1\)/);
-    expect(window).toMatch(/BOMB_LEDGER_RETRY_MAX_MS/);
-    // reportError, never console.warn — a log line on a host nobody reads is
-    // how this went unnoticed in the first place.
-    expect(window).toMatch(/ServerTableEngine\.bomb_award_ledger_write_failed/);
-    expect(window).not.toMatch(/console\.warn/);
-    // Still fire-and-forget: `void`, and a catch so the retry loop can never
-    // surface as an unhandled rejection (noUnhandledRejections.test.ts).
-    expect(window).toMatch(/void writeAwardUnits\(\)\.catch\(/);
-    expect(SETTLEMENT).toMatch(/const BOMB_LEDGER_WRITE_ATTEMPTS = 4;/);
+  it('a transient write failure retries the complete hand and cannot split its ledger', () => {
+    const writer = sliceMethod(HAND_HISTORY, 'async function insertHandHistoryRow(');
+    expect(writer).toMatch(
+      /for \(let attempt = 0; attempt <= HAND_COMMIT_RETRY_DELAYS_MS\.length; attempt\+\+\)/
+    );
+    expect(writer.match(/const payload =/g)).toHaveLength(1);
+    expect(writer).toContain("supabase.rpc('fn_ca_commit_hand_settlement', payload)");
+    expect(writer).toContain('after ${HAND_COMMIT_RETRY_DELAYS_MS.length + 1} identical attempts');
+    expect(SETTLEMENT).not.toContain('writeAwardUnits');
+    expect(SETTLEMENT).not.toContain('BOMB_LEDGER_WRITE_ATTEMPTS');
   });
 
   it('a gap that still slips through is reported by reconciliation, not lost', () => {
@@ -438,15 +426,31 @@ describe('ROUND 7 (2026-08-29) — the audit sweep', () => {
     expect(SCHED).toMatch(/n: this\.lastDealtInCount/);
   });
 
-  it('the bomb ante is rounded to the cent BEFORE anybody is charged', () => {
+  it('the bomb ante is rounded to the table UNIT before anybody is charged', () => {
     // The only forced-money path in the engine that did not round. The ante
     // multiplier steps by 0.5, so at micro stakes the product is a fraction of
     // a cent; snapChips then rounds each stack independently of state.pot and
     // the table stops conserving chips. Even at legal multiples the raw float
     // (0.1 * 3 = 0.30000000000000004) escaped into the actions log and into
     // hand_history.bomb_pot.ante_amount.
+    //
+    // 2026-09-12: and a cent is the whole unit of a CHIP and half of a
+    // DIAMOND, so rounding to it is only half the rule. A Diamond bomb ante of
+    // 1.5x a one Diamond blind is one and a half Diamonds, which the hand guard
+    // refuses - from a table that has already dealt. The rounding is now to
+    // whichever unit the table plays in, and the pin is on that property rather
+    // than on the one spelling it had while chips were the only asset.
     const fn = sliceMethod(HC, 'private postBombPotAntes');
-    expect(fn).toMatch(/Math\.round\(\s*\(bombPot\.anteFixed/);
+    expect(fn, 'the ante is derived from one value').toMatch(/bombPot\.anteFixed/);
+    expect(fn, 'and that value is rounded before anybody is charged').toMatch(
+      /const anteAmount =\s*\(?Math\.round\(/
+    );
+    expect(fn, 'to the unit the table plays in').toMatch(
+      /anteUnitCents\s*=\s*this\.config\.isTournament \|\| this\.config\.asset === 'diamonds' \? 100 : 1/
+    );
+    expect(fn, 'which is a cent for chips, so the chip ante is unchanged').toMatch(
+      /\/\s*anteUnitCents/
+    );
     expect(fn).toMatch(/const actualAnte = Math\.round\(Math\.min\(anteAmount, player\.stack\)/);
     // And the deck size comes from VariantRules, not a sixth local literal.
     expect(fn).toMatch(/deckSizeFor\(this\.config\.gameVariant\)/);
@@ -702,7 +706,10 @@ describe('ROUND 8 (2026-08-29) — the last of the open items', () => {
     // The poll is DEMOTED, not deleted — a broadcast is best-effort and an
     // engine that restarted between the click and the hand never hears it, so
     // the throttled refresh (already happening) latches the column.
-    expect(BASE).toMatch(/bomb_pot_announce_seconds, bomb_pot_manual_pending'/);
+    // (2026-09-09 must-move audit: the refresh select grew past this column, so
+    // the pin accepts the column followed by either the closing quote or the
+    // next column - it is the COLUMN being read that matters, not the list's end.)
+    expect(BASE).toMatch(/bomb_pot_announce_seconds, bomb_pot_manual_pending['|,]/);
     // And the per-hand claim only runs when something is actually armed.
     expect(DEALING).toMatch(/this\.manualBombPushed &&/);
     // Closed with the engine that opened it.
@@ -793,12 +800,23 @@ describe('ROUND 8 (2026-08-29) — the last of the open items', () => {
     // The fractional case is not lost - bomb_pot_ante_fixed is `numeric` and
     // prices the ante in chips, which is the honest way to say "two and a half
     // big blinds" anyway.
-    // 2026-09-04 (Operation Table Stakes, Slice 1): the cash form is
-    // CashGameCreateFlow, whose "Bomb Ante" slider steps by whole big blinds.
+    // 2026-09-04 (Operation Table Stakes, Slice 1): the cash form became
+    // CashGameCreateFlow, whose "Bomb Ante" slider stepped by whole big blinds.
+    // 2026-09-09 (must-move audit, lane I): that slider is GONE. The bomb ante
+    // is the template's promise (docs/changelog/2026-09-09-a-classic-game-has-
+    // no-antes-and-no-bombs.md) - fn_cash_game_create takes it from
+    // fn_cash_template_defaults (2 bb Action, 3 bb Madness, none on Classic)
+    // and reads nothing the caller sends. So the pin moves with the mechanism:
+    // the flow offers no bomb ante control at all, and the SQL that decides the
+    // ante holds it to a whole number of big blinds between 1 and 20.
     const FLOW = read('src/components/cash/CashGameCreateFlow.tsx');
-    const anteSlider = sliceEnclosingBlock(FLOW, 'label="Bomb Ante"');
-    expect(anteSlider).toMatch(/step=\{1\}/);
-    expect(blankNonCode(anteSlider)).not.toMatch(/step=\{0\.5\}/);
+    expect(FLOW).not.toContain('label="Bomb Ante"');
+    expect(blankNonCode(FLOW)).not.toMatch(/bombs\.ante_bb/);
+    const CREATE_SQL = read('supabase/migrations/20260904230000_cash_games_slice_1_hardening.sql');
+    expect(CREATE_SQL).toMatch(
+      /v_bomb_ante := public\.fn_cash_override_int\(v_bombs, 'ante_bb', NULL\)/
+    );
+    expect(CREATE_SQL).toMatch(/v_bomb_ante < 1 OR v_bomb_ante > 20/);
 
     const SETTINGS = read('src/pages/club/TableBombSettingsPage.tsx');
     // The editor rounds on the way in rather than letting Postgres do it.

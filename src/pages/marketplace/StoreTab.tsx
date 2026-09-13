@@ -45,6 +45,8 @@ interface StoreTabProps {
   /** server catalog categories (drives the filter chips + grant wording) */
   categories: ShopCategoryInfo[];
   onGoManage: () => void;
+  /** Refresh the authoritative catalog after a server-detected stale price. */
+  onCatalogStale: () => void;
   onPurchased: (newBalance: number | null) => void;
 }
 
@@ -60,6 +62,7 @@ export default function StoreTab({
   error = null,
   categories,
   onGoManage,
+  onCatalogStale,
   onPurchased,
 }: StoreTabProps) {
   const toast = useToast();
@@ -228,7 +231,15 @@ export default function StoreTab({
     try {
       const data = await callClubArenaApi<{ newBalance: number }>(
         'marketplace-purchase',
-        { clubId, itemId: buyTarget.id },
+        {
+          clubId,
+          itemId: buyTarget.id,
+          // The confirmation and the debit are one price contract. PostgreSQL
+          // locks the item and rejects this exact value when an admin changes
+          // the price after the sheet opened, so a player can never confirm
+          // one amount and be charged another.
+          expectedPrice: effectivePrice(buyTarget),
+        },
         { idempotencyKey: purchaseKeyRef.current ?? undefined }
       );
       toast.success(`Purchased ${buyTarget.name}`);
@@ -257,6 +268,27 @@ export default function StoreTab({
       onPurchased(typeof data.newBalance === 'number' ? data.newBalance : null);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Purchase failed');
+      const apiError = err as {
+        definitive?: boolean;
+        status?: number;
+        data?: {
+          reason?: string;
+          soldOut?: boolean;
+          alreadyOwned?: boolean;
+          limitReached?: boolean;
+        };
+      };
+
+      // price_changed is a special, explicitly pre-commit 409. The database
+      // refused the debit because the locked server price no longer equals
+      // expectedPrice. Retire this intent, dismiss its stale confirmation,
+      // and reload server truth before the player can confirm again. Every
+      // other 409 remains ambiguous and keeps its key for replay safety.
+      if (apiError.status === 409 && apiError.data?.reason === 'price_changed') {
+        closeBuy();
+        onCatalogStale();
+        return;
+      }
       /*
        * ONE KEY PER ATTEMPT, NOT ONE KEY PER MODAL. The server's durable
        * idempotency cache (durableIdempotency.js) stores whatever status the
@@ -275,14 +307,12 @@ export default function StoreTab({
        * 404/405/422 list UnionApiService uses; anything else keeps the key so
        * the server replays its own answer.
        */
-      if ((err as { definitive?: boolean })?.definitive) {
+      if (apiError.definitive) {
         purchaseKeyRef.current = mintPurchaseKey();
       }
       // A stale card (sold out, or already owned in another tab) must not leave
       // the confirm modal sitting open over data we now know is wrong.
-      const flags = (
-        err as { data?: { soldOut?: boolean; alreadyOwned?: boolean; limitReached?: boolean } }
-      )?.data;
+      const flags = apiError.data;
       if (flags?.soldOut || flags?.alreadyOwned || flags?.limitReached) {
         closeBuy();
         onPurchased(null);

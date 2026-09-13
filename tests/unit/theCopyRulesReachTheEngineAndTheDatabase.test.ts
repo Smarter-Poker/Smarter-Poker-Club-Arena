@@ -35,6 +35,7 @@
  * Both blind spots are the same mistake as the Phase 3 insurance finding: a
  * green gate is evidence about the gate, not about the product.
  */
+import { parse as parseWorkflow } from 'yaml';
 import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -182,6 +183,7 @@ describe('the live source still obeys both rules after the widening', () => {
 describe('the two gaps in how work reaches production', () => {
   const CI = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8');
   const DEPLOY = readFileSync(join(ROOT, '.github/workflows/auto-deploy-hetzner.yml'), 'utf8');
+  const STAGE = readFileSync(join(ROOT, '.github/workflows/stage-engine-release.yml'), 'utf8');
 
   it('a run that verified nothing says so out loud', () => {
     // A skipped job and a passing job are identical in `gh run list`, in the
@@ -193,7 +195,9 @@ describe('the two gaps in how work reaches production', () => {
     expect(CI).toContain('::warning title=NO TESTS RAN::');
     // It must not be able to hide behind a skipped dependency.
     expect(CI).toMatch(/verdict:[\s\S]{0,400}if: always\(\)/);
-    expect(CI).toContain('needs: [changes, stub_gate, typecheck, unit, server]');
+    expect(CI).toContain(
+      'needs: [changes, stub_gate, typecheck, typecheck_compile, fixture_native, unit, server]'
+    );
   });
 
   it('and something actually verifies main on a schedule', () => {
@@ -201,32 +205,50 @@ describe('the two gaps in how work reaches production', () => {
     expect(CI).toContain("- cron: '35 6 * * *'");
     // Both suites must run unconditionally on that schedule - change
     // detection is meaningless when the question is about the whole branch.
-    expect(CI).toContain("github.event_name == 'schedule' ||");
-    const scheduleGates = CI.split("github.event_name == 'schedule' ||").length - 1;
-    expect(scheduleGates, 'both the unit and server jobs need it').toBe(2);
+    const jobs = parseWorkflow(CI).jobs;
+    for (const name of ['unit_shards', 'server_shards', 'accounting_postgres']) {
+      expect(jobs[name].if, name + ' must verify the scheduled branch').toContain(
+        "github.event_name == 'schedule' ||"
+      );
+    }
   });
 
-  it('the deploy window cannot be closed by one dropped cron tick', () => {
-    // One tick per hour (2026-09-02; it was three). GitHub delivers ~10% of
-    // this repo's scheduled runs, so extra ticks only deepened the throttle.
-    // A dropped tick is now caught by publish-watchdog's schedule-liveness
-    // check, which dispatches the deploy directly off workflow_run.
-    expect(DEPLOY).toContain("- cron: '35 * * * *'"); // :35 since #3070; see deployAndPublishAreHonest
+  it('the required server check cannot pass without real accounting transaction tests', () => {
+    const jobs = parseWorkflow(CI).jobs;
+    expect(jobs.server.needs).toContain('server_shards');
+    expect(jobs.server.if).toBe('always()');
+    expect(jobs.server_shards.needs).toContain('accounting_postgres');
+    expect(jobs.accounting_postgres.if).toBe(jobs.server_shards.if);
+    expect(jobs.server_shards.steps).toContainEqual(
+      expect.objectContaining({
+        if: "needs.accounting_postgres.result != 'success'",
+        run: expect.stringContaining('exit 1'),
+      })
+    );
+    expect(jobs.accounting_postgres.steps).toContainEqual(
+      expect.objectContaining({
+        run: 'bash scripts/dev/probe-departure-postgres.sh',
+        env: { PGBIN: '/usr/lib/postgresql/17/bin' },
+      })
+    );
   });
 
-  it('a deploy that shipped nothing is a warning, not a notice', () => {
-    // A notice does not surface in the run header. This run finishes GREEN
-    // having deployed nothing, which is the whole reason the annotation exists.
-    // Was OUTSIDE THE RESTART WINDOW, which no longer exists: every hour is a
-    // window now. The run that ships nothing is the one whose break never
-    // opened, and it must still annotate rather than finish quietly green.
-    expect(DEPLOY).toContain('::warning title=BREAK NEVER OPENED::');
-    // Asserted on the annotation, not the step name. Workflow step names are
-    // developer-facing and this file uses em dashes in dozens of them; the
-    // copy rules are about pages and sub pages, and pretending otherwise here
-    // would make this test fail for a reason that is not a defect.
-    expect(DEPLOY).toContain('::warning title=DID NOT DEPLOY::');
-    expect(DEPLOY).toMatch(/DID NOT DEPLOY .{0,3} this run shipped nothing/);
+  it('the deploy is entered by an exact-SHA event, never a dropped cron tick', () => {
+    const triggers = DEPLOY.slice(DEPLOY.indexOf('\non:'), DEPLOY.indexOf('\nconcurrency:'));
+    expect(triggers).toContain('types: [deploy-club-arena-engine]');
+    expect(triggers).not.toMatch(/^\s{2}schedule:/m);
+    expect(STAGE).toContain('-f event_type=deploy-club-arena-engine');
+    expect(STAGE).toContain('-F "client_payload[ref_sha]=$REF_SHA"');
+    expect(STAGE).toContain(
+      'actions/workflows/auto-deploy-hetzner.yml/runs?event=repository_dispatch'
+    );
+  });
+
+  it('a durable deploy cannot report green without an exact release receipt', () => {
+    expect(DEPLOY).toContain('could not reattach to the durable Hetzner release transaction');
+    expect(DEPLOY).toContain('case "$RESULT" in sealed|already-released)');
+    expect(DEPLOY).toContain('echo \'completed=true\' >> "$GITHUB_OUTPUT"');
+    expect(DEPLOY).not.toContain('::warning title=DID NOT DEPLOY::');
   });
 });
 

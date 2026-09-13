@@ -17,6 +17,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { reportError } from '../errorReporter.js';
 import { dataActorHeaders } from './dataActorContext.js';
 import { bindRealtimeCallbacksToRegistration } from './realtimeCallbackContext.js';
+import { observeFenceInResponse } from './tournamentManagerFence.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -65,6 +66,29 @@ const DB_TIMEOUT_MS = Number(process.env.SUPABASE_TIMEOUT_MS ?? 15_000);
  * deadline is longer than the database function's 45-second hard ceiling;
  * widening the ordinary game-data client would let a hung hand stall longer. */
 const MAINTENANCE_DB_TIMEOUT_MS = Number(process.env.MAINTENANCE_SUPABASE_TIMEOUT_MS ?? 50_000);
+/* The horse fleet's SEEDING calls get their own, much shorter deadline.
+ *
+ * The 15-second default above is right for a hand in progress, where giving up
+ * on a write is worse than waiting. Seeding is the opposite: a horse that
+ * cannot take a seat in a few seconds simply takes one on the next cycle, and
+ * nothing is lost by saying so early.
+ *
+ * Measured 2026-09-11. An uncontended atomic_table_buyin, timed in a
+ * self-aborting probe against production, is 132 ms. Its recorded mean across
+ * 9,767 calls in 44 hours is 1,336 ms with a 27.3-second maximum, so the
+ * middle is fast and the tail is very long. The seeding loop is sequential by
+ * construction - each seat updates the exposure and per-host body counts the
+ * NEXT decision reads - so one call in that tail stalls every table behind it.
+ * A single cycle on 2026-09-11 spent 33 of its 109 seconds on five buy-ins
+ * that timed out 5.8 to 11.7 seconds apart, one after another.
+ *
+ * 5 seconds is 38x the uncontended cost. A call slower than that is abandoned,
+ * the chair is freed, and the loop moves on - which is the path the code
+ * already takes for a refused buy-in. Nothing is at risk that was not already:
+ * the 15-second deadline abandoned the same way, less often, and a seat that
+ * committed after the client gave up is read back as taken on the next cycle.
+ */
+const SEEDING_DB_TIMEOUT_MS = Number(process.env.SEEDING_SUPABASE_TIMEOUT_MS ?? 5_000);
 
 function createBoundedServiceClient(timeoutMs: number): SupabaseClient {
   const client = createClient(SUPABASE_URL, EFFECTIVE_SERVICE_ROLE_KEY, {
@@ -145,6 +169,10 @@ function createBoundedServiceClient(timeoutMs: number): SupabaseClient {
         let attempt = 0;
         for (;;) {
           const resp = await attemptOnce();
+          // A fenced manager generation stands down at the boundary that saw
+          // the fence (tournamentManagerFence.ts). The response itself is
+          // still returned so the caller's own error handling runs once.
+          if (resp.status === 403) await observeFenceInResponse(resp);
           if (resp.status !== 503 || attempt >= DELAYS_MS.length) return resp;
           let code: unknown;
           try {
@@ -167,6 +195,10 @@ export const supabase: SupabaseClient = createBoundedServiceClient(DB_TIMEOUT_MS
 /** Only the serialized maintenance save/clear RPCs use this longer deadline. */
 export const maintenanceSupabase: SupabaseClient =
   createBoundedServiceClient(MAINTENANCE_DB_TIMEOUT_MS);
+
+/* The horse fleet's seat-purchase client. See SEEDING_DB_TIMEOUT_MS. */
+export const seedingSupabase: SupabaseClient = createBoundedServiceClient(SEEDING_DB_TIMEOUT_MS);
+export { SEEDING_DB_TIMEOUT_MS };
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // REALTIME BROADCASTING — Push hand state to all connected clients

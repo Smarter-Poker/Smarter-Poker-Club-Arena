@@ -31,7 +31,7 @@ During active development, you MAY use localhost for:
 When verifying that a feature works correctly, you MUST:
 
 1. **Push the code to GitHub** (see `auto-push` skill)
-2. **Wait for Vercel deployment** to complete
+2. **Follow the Club Arena Hetzner publisher** to terminal success
 3. **Test on `https://smarter.poker/hub/club-arena/`** directly
 
 ### What to test on smarter.poker:

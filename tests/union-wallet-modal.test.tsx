@@ -487,7 +487,7 @@ describe('UnionWalletModal', () => {
         expect.objectContaining({ p_club_id: 'c-2', p_amount: 10, p_op_id: expect.any(String) })
       )
     );
-    expect(screen.getByText('70,000.00')).toBeTruthy();
+    expect(await screen.findByText('70,000.00')).toBeTruthy();
   });
 
   it('reuses the clawback operation id after an ambiguous transport failure', async () => {

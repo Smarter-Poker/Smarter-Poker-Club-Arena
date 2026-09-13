@@ -20,6 +20,7 @@
  */
 
 import { BBJ_QUALIFYING_HANDS, BBJ_RULES } from '../../config/RakeConfig';
+import { getBBJMiniQualifyingInfo } from '../../config/bbjMini';
 import CardImage from '../table/CardImage';
 import type { Card as DeckCard } from '../table/CardImage';
 import './BBJQualifyingHands.css';
@@ -61,6 +62,20 @@ const BLOCKS: VariantBlock[] = [
     note: 'An 8-High Straight Flush Or Better Must Lose. Exactly Two Cards From The Hand Must Play, For Both Players.',
   },
   {
+    /* PINEAPPLE IS A LIVE VARIANT AND HAD NO ROW HERE (2026-09-11).
+       Before the rule was unified, `normalizeVariantKey('pineapple')` fell
+       through to 'nlh' and this strip highlighted the HOLD'EM row - the wrong
+       bar, but a row. Giving the client its real `pineapple` entry made the bar
+       correct everywhere else and left this strip with nothing to highlight:
+       `blockKeyFor` returned 'pineapple' and no block had that key. It cannot
+       collapse onto PLO4 either - same Quad Kings bar, but PLO4's note states
+       Omaha's exactly-two-cards rule, which Pineapple does not have. */
+    key: 'pineapple',
+    games: 'Pineapple',
+    cards: [c('K', 's'), c('K', 'h'), c('K', 'c'), c('K', 'd'), c('2', 's')],
+    note: 'Quad Kings Or Better Must Lose. Both Of The Player\u2019s Hole Cards Must Play.',
+  },
+  {
     key: 'plo6',
     games: 'PLO6',
     cards: [],
@@ -77,7 +92,41 @@ const BLOCKS: VariantBlock[] = [
 export interface BBJQualifyingHandsProps {
   /** Variant key or display name of the table in play — its block is marked. */
   highlightVariantKey?: string | null;
+  /**
+   * WHICH JACKPOT (Dan 2026-09-11: the Qualifying Hands page "NEEDS TO BE
+   * UPDATED WITH NEW MINI BBJ INFO AND DATA"). `mini` draws the mini's bar per
+   * variant from config/bbjMini - aces full or better in hold'em, any quads in
+   * Omaha - with the same card strip, so both tiers are read the same way.
+   */
+  kind?: 'main' | 'mini';
 }
+
+/** The mini's blocks: same games, same order, the mini's own bar and cards. */
+const MINI_BLOCKS: VariantBlock[] = BLOCKS.map((b) => {
+  const info = getBBJMiniQualifyingInfo(b.key);
+  if (!info.eligible) return { ...b, cards: [], note: '' };
+  const holdem = info.rule === 'holdem_aces_full';
+  const hiLo = b.key === 'plo8';
+  /* A RANKED BAR STATES ITS OWN RANK (Dan, 2026-09-12). PLO5/FLO5 is Quad Tens
+     and Pineapple is Quad Deuces, so neither can take the generic "any four of
+     a kind" note below - one of them would be wrong. The sentence is built
+     from the variant's own label so it cannot drift from the bar. */
+  if (info.rule === 'ranked_quads') {
+    return { ...b, cards: info.minLosingHandCards, note: info.shortLabel + '. ' + info.subLabel };
+  }
+  /* Pineapple's MAIN bar is Quad Kings, so `info.rule` is plo_quads and it
+     takes the "not only Quad Kings" note below - which is exactly right for
+     it. Nothing here assumes an Omaha table. */
+  return {
+    ...b,
+    cards: info.minLosingHandCards,
+    note: holdem
+      ? 'Aces Full Or Better Must Lose To Quads Or Better. No Ace-In-The-Hole Rule And No Both-Cards-Must-Play Rule: The Mini Catches The Beats The Main Rule Refuses On A Technicality.'
+      : hiLo
+        ? 'Any Four Of A Kind Or Better Must Lose To Bigger Quads Or Better, Judged On The High Hand Only. The Low Hand Never Qualifies.'
+        : 'Any Four Of A Kind Or Better Must Lose To Bigger Quads Or Better. Not Only Quad Kings: Every Quad Below The Main Bar Pays The Mini.',
+  };
+});
 
 /** Collapse aliases onto the block that actually renders. */
 function blockKeyFor(variantKey: string | null | undefined): string | null {
@@ -86,25 +135,55 @@ function blockKeyFor(variantKey: string | null | undefined): string | null {
   if (raw === 'flh') return 'nlh';
   if (raw === 'plo') return 'plo4';
   if (raw === 'plo_hilo') return 'plo8';
+  /* FLO8 is the same GAME as PLO8 - four cards, exactly-two, 8-or-better low;
+     only the betting differs, and betting has nothing to do with which hand
+     qualifies. It had no block and no alias, so an FLO8 table highlighted
+     nothing. (`pineapple` is NOT aliased: it has its own block above, because
+     its note is not PLO4's.) */
+  if (raw === 'flo8') return 'plo8';
+  /* Same reasoning for the other two fixed-limit Omaha names, added with their
+     BBJ_QUALIFYING_HANDS keys on 2026-09-12. */
+  if (raw === 'flo4') return 'plo4';
+  if (raw === 'flo5') return 'plo5';
   return raw;
 }
 
-export function BBJQualifyingHands({ highlightVariantKey = null }: BBJQualifyingHandsProps) {
+export function BBJQualifyingHands({
+  highlightVariantKey = null,
+  kind = 'main',
+}: BBJQualifyingHandsProps) {
   const hl = blockKeyFor(highlightVariantKey);
+  const blocks = kind === 'mini' ? MINI_BLOCKS : BLOCKS;
 
   return (
     <div className="bbj-qh">
-      <p className="bbj-qh__intro">
-        The Losing Player Must Hold At Least The Hand Below.
-        {BBJ_RULES.requireBothHoleCards
-          ? ' Both Players Must Use Two Cards From Their Own Hand.'
-          : ''}
-        {BBJ_RULES.splitIfMultipleQualify
-          ? ' If More Than One Player Loses With A Qualifying Hand, The Prize Is Divided Between Them.'
-          : ''}
-      </p>
+      {kind === 'mini' ? (
+        <p className="bbj-qh__intro">
+          The Mini Jackpot Pays A Flat Amount For The Beats The Main Rule Turns Away. The Losing
+          Player Must Hold At Least The Hand Below And The Winner Must Still Hold Quads Or Better.
+          The Same Pot, Player And Board Conditions Apply As For The Main Jackpot; The
+          Ace-In-The-Hole And Both-Cards-Must-Play Rules Do Not.
+        </p>
+      ) : (
+        <p className="bbj-qh__intro">
+          The Losing Player Must Hold At Least The Hand Below.
+          {BBJ_RULES.requireBothHoleCards
+            ? ' Both Players Must Use Two Cards From Their Own Hand.'
+            : ''}
+          {/* THE RULE, NOT THE ASPIRATION (2026-09-11). This branch printed
+              "The Prize Is Divided Between Them" whenever the flag was true,
+              and the flag was true while the engine paid a single holder. The
+              engine evaluates every loser and pays the strongest qualifying
+              hand, which is the one that took the worse beat; a player has to
+              be able to read that and predict it. If the flag is ever turned
+              on, the sentence follows it back. */}
+          {BBJ_RULES.splitIfMultipleQualify
+            ? ' If More Than One Player Loses With A Qualifying Hand, The Prize Is Divided Between Them.'
+            : ' If More Than One Player Loses With A Qualifying Hand, The Strongest Losing Hand Takes It.'}
+        </p>
+      )}
 
-      {BLOCKS.map((b) => {
+      {blocks.map((b) => {
         const config = BBJ_QUALIFYING_HANDS[b.key];
         /**
          * ELIGIBILITY IS A RULE, NOT A RENDERING DETAIL.
@@ -143,7 +222,8 @@ export function BBJQualifyingHands({ highlightVariantKey = null }: BBJQualifying
               </>
             ) : (
               <p className="bbj-qh__note bbj-qh__note--off">
-                The Bad Beat Jackpot Is Not Available For {config?.label || b.games}.
+                The {kind === 'mini' ? 'Mini ' : ''}Bad Beat Jackpot Is Not Available For{' '}
+                {config?.label || b.games}.
               </p>
             )}
           </section>

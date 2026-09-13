@@ -181,7 +181,12 @@ export interface ShareableHand {
  */
 export interface ShareableWinner {
   seat: number;
-  /** GROSS chips out of the pot, before rake. */
+  /**
+   * Chips out of the pot. On v4 per-board rows this is the record's own
+   * per-board share, which the engine has written POST-rake since 2026-09-04
+   * (an earlier note here said "before rake"; the payment lives on
+   * `ShareablePlayer.won` either way). On v1-v3 it was the payment itself.
+   */
   amount: number;
   /** v4: 1-based board this share was won on. Absent on a single-board hand. */
   board?: number;
@@ -189,6 +194,11 @@ export interface ShareableWinner {
   low?: boolean;
   /** v4: the hand it was won with, on that board. */
   hand?: string;
+  /**
+   * 2026-09-13: which pot(s) this share came out of, main pot first, summing
+   * to `amount`. Carried only when it says more than "the main pot".
+   */
+  pots?: Array<{ index: number; amount: number }>;
 }
 
 export interface ShareHandProps {
@@ -469,7 +479,10 @@ export function encodeHand(hand: ShareableHand): string {
   }
 
   // Pot and winners. v4 adds the board a share was won on, the low-half mark
-  // and the hand it was won with: `seat:amount:board:low:hand`.
+  // and the hand it was won with: `seat:amount:board:low:hand`. A sixth field
+  // (2026-09-13) carries which pot(s) the share came out of as
+  // `index=amount,index=amount`; absent on every earlier payload, and on a
+  // main-pot-only share, so those links are byte-identical.
   parts.push(encodeMoney(hand.potTotal));
   parts.push(
     (hand.winners || [])
@@ -480,6 +493,9 @@ export function encodeHand(hand: ShareableHand): string {
           w.board ?? '',
           w.low ? '1' : '',
           w.hand ? b64utf8(clip(w.hand, CAP_HAND)) : '',
+          ...(w.pots?.length
+            ? [w.pots.map((p) => `${p.index}=${encodeMoney(p.amount)}`).join(',')]
+            : []),
         ].join(':')
       )
       .join(';')
@@ -599,7 +615,7 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
       .split(';')
       .filter(Boolean)
       .map((w) => {
-        const [seat, amt, board, low, handB64] = w.split(':');
+        const [seat, amt, board, low, handB64, potsField] = w.split(':');
         const row: ShareableWinner = {
           seat: parseInt(seat, 10) || 0,
           amount: decodeMoney(amt, version),
@@ -609,6 +625,17 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
         if (low === '1') row.low = true;
         const handName = unb64utf8(handB64);
         if (handName) row.hand = handName;
+        /* 2026-09-13: the pot axis, `index=amount,...`. Absent on every
+           payload older than the field and on a main-pot-only share. */
+        const pots = (potsField || '')
+          .split(',')
+          .filter(Boolean)
+          .map((s) => {
+            const [idx, a] = s.split('=');
+            return { index: parseInt(idx, 10), amount: decodeMoney(a, version) };
+          })
+          .filter((p) => Number.isFinite(p.index) && p.index >= 0);
+        if (pots.length) row.pots = pots;
         return row;
       });
 

@@ -54,7 +54,10 @@ function newestDefining(fn: string, required = ''): string {
     .filter((f) => f.endsWith('.sql'))
     .sort()
     .map((f) => strip(fs.readFileSync(path.join(MIGRATIONS, f), 'utf8')))
-    .filter((b) => b.includes(`FUNCTION public.${fn}`))
+    // ACL/search-path hardening migrations legitimately contain
+    // `ALTER FUNCTION public.<name>`. They are not a function definition and
+    // must never outrank the newest CREATE body merely because they sort later.
+    .filter((b) => b.includes(`CREATE OR REPLACE FUNCTION public.${fn}`))
     .map((body) => {
       const start = body.indexOf(`CREATE OR REPLACE FUNCTION public.${fn}`);
       const next = body.indexOf('CREATE OR REPLACE FUNCTION', start + 1);
@@ -102,9 +105,24 @@ describe('fn_mystery_bounty_pay', () => {
     expect(def).toContain('chest_settled_to_champion');
   });
 
-  it('the recoverability wrapper delegates only to the private guarded implementation', () => {
-    const wrapper = newestDefining('fn_mystery_bounty_pay');
-    expect(wrapper).toContain('fn_mystery_bounty_pay_unguarded_20260907');
-    expect(wrapper).toMatch(/public\.fn_mystery_bounty_pay_unguarded_20260907\(p_award_id\)/);
+  it("is a self-contained root under its tournament's settlement lane and the exact obligation payer", () => {
+    const root = newestDefining('fn_mystery_bounty_pay');
+    expect(root).not.toContain('fn_mystery_bounty_pay_unguarded_20260907');
+    // 2026-09-10 (20260910173147): the award's tournament lane - G shared,
+    // T(id) exclusive - not the whole platform's. The tournament is read, the
+    // lane taken, and the tournament read again under the lane, so a not-found
+    // answer still comes only after any in-flight writer committed.
+    expect(root).not.toContain('fn_ca_lock_settlement_lane_global');
+    const lane = root.indexOf('public.fn_ca_lock_settlement_lane_for_tournament(v_tournament_id)');
+    expect(lane).toBeGreaterThan(0);
+    const reads = [...root.matchAll(/SELECT a\.tournament_id INTO v_tournament_id/g)].map(
+      (m) => m.index ?? -1
+    );
+    expect(reads.length).toBe(2);
+    expect(reads[0]).toBeLessThan(lane);
+    expect(reads[1]).toBeGreaterThan(lane);
+    expect(root).toContain('public.fn_settle_tournament_obligation(');
+    expect(root).toContain('completed_award_marker_incomplete');
+    expect(root).toContain('public.fn_bounty_obligation_has_complete_marker');
   });
 });

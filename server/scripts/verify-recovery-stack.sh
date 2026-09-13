@@ -1,16 +1,12 @@
 #!/usr/bin/env bash
 #
-# verify-recovery-stack.sh — proves the never-down machinery is still wired up.
+# verify-recovery-stack.sh - proves deterministic recovery is still wired up.
 #
-# The whole recovery stack is passive. Every piece of it sits idle until
-# something breaks, which means every piece of it can rot silently for months
-# and you find out during the incident it was supposed to prevent. That is not
-# hypothetical here: the Docker HEALTHCHECK was believed to be self-healing for
-# a full release cycle before anyone checked that plain Docker never restarts an
-# unhealthy container.
-#
-# So this asserts, from the outside, that each layer is present and correctly
-# configured. Run it on a schedule. Non-destructive: it changes nothing.
+# This read-only audit distinguishes deterministic lifecycle ownership from
+# periodic mutation. Docker owns process/daemon/host restarts, autoheal still
+# owns unhealthy-process recovery, and the release transaction plus
+# ExecStopPost own exact desired restoration. The retired 60-second supervisor
+# must stay absent so no timer can fight an intentional stop or a release.
 #
 # Usage:  verify-recovery-stack.sh          # assert wiring, exit 1 on any failure
 #
@@ -19,7 +15,12 @@ set -uo pipefail
 CONTAINER="${CONTAINER:-club-arena-engine}"
 IMAGE_REPO="${IMAGE_REPO:-club-arena-engine}"
 PORT="${PORT:-8080}"
-METRIC_FILE="${METRIC_FILE:-/var/lib/node-exporter-textfile/club_arena_supervisor.prom}"
+CONTROL_DIR="${ENGINE_CONTROL_DIR:-/usr/local/lib/club-arena/engine-control}"
+RELEASE_SEAL="${ENGINE_RELEASE_SEAL:-$CONTROL_DIR/engine-release-seal.py}"
+UP_SCRIPT="${UP_SCRIPT:-$CONTROL_DIR/engine-up.sh}"
+ONE_SHOT_RECOVERY="${ONE_SHOT_RECOVERY:-$CONTROL_DIR/engine-supervisor.sh}"
+RELEASE_TRANSACTION="${RELEASE_TRANSACTION:-$CONTROL_DIR/engine-release-transaction.sh}"
+RELEASE_RECOVER="${RELEASE_RECOVER:-$CONTROL_DIR/engine-release-recover.sh}"
 HEALTH_TIMEOUT_SEC="${HEALTH_TIMEOUT_SEC:-15}"
 # Docker reports health timing fields as integer nanoseconds. These floors are
 # the production safety contract, not cosmetic preferences: a shorter timeout
@@ -30,6 +31,7 @@ MIN_HEALTH_START_PERIOD_NS="${MIN_HEALTH_START_PERIOD_NS:-300000000000}"
 PASS=0; FAIL=0
 ok()   { printf '  PASS  %s\n' "$1"; PASS=$((PASS+1)); }
 bad()  { printf '  FAIL  %s\n' "$1"; FAIL=$((FAIL+1)); }
+note() { printf '  INFO  %s\n' "$1"; }
 head_() { printf '\n%s\n' "$1"; }
 
 echo "Club Arena recovery-stack verification — $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
@@ -39,8 +41,9 @@ STATE=$(docker container inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null
 [ "$STATE" = "running" ] && ok "container is running" || bad "container state is '$STATE'"
 
 POLICY=$(docker container inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$CONTAINER" 2>/dev/null || echo none)
-[ "$POLICY" = "always" ] && ok "restart policy is 'always' (covers crash, daemon restart, reboot)" \
-  || bad "restart policy is '$POLICY' — a crash would not be recovered"
+# The correct value depends on release authority and is checked below after the
+# seal classifies this exact container. A proof candidate must be `no`; the
+# durable desired release must be `always`.
 
 HC=$(docker container inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$CONTAINER" 2>/dev/null || echo none)
 [ "$HC" != "none" ] && ok "HEALTHCHECK is defined (status: $HC)" \
@@ -81,46 +84,104 @@ LABEL=$(docker container inspect -f '{{index .Config.Labels "autoheal"}}' "$CONT
   || bad "engine is MISSING autoheal=true — HEALTHCHECK is wired to nothing"
 
 AH=$(docker container inspect -f '{{.State.Status}}' sp-autoheal 2>/dev/null || echo absent)
-[ "$AH" = "running" ] && ok "sp-autoheal sidecar is running" || bad "sp-autoheal is '$AH'"
+# A pending candidate is deliberately excluded from autoheal until the seal is
+# committed. The authority-aware verdict is emitted below after classification.
 
-head_ "Layer 3 — host supervisor (independent of GitHub and of autoheal)"
-if systemctl is-active --quiet club-arena-supervisor.timer; then
-  ok "club-arena-supervisor.timer is active"
+head_ "Layer 3 - causal recovery authority, with no periodic mutator"
+SUPERVISOR_RETIRED=1
+for retired_path in \
+  /etc/systemd/system/club-arena-supervisor.timer \
+  /etc/systemd/system/club-arena-supervisor.service \
+  /etc/systemd/system/timers.target.wants/club-arena-supervisor.timer; do
+  [ ! -e "$retired_path" ] || SUPERVISOR_RETIRED=0
+done
+systemctl is-active --quiet club-arena-supervisor.timer 2>/dev/null \
+  && SUPERVISOR_RETIRED=0
+systemctl is-enabled --quiet club-arena-supervisor.timer 2>/dev/null \
+  && SUPERVISOR_RETIRED=0
+[ "$SUPERVISOR_RETIRED" = 1 ] \
+  && ok "periodic engine supervisor service, timer, and enablement are absent" \
+  || bad "periodic engine supervisor is installed, enabled, or active"
+
+if [ -x "$ONE_SHOT_RECOVERY" ] \
+  && grep -Fq 'ENGINE_SUPERVISOR_FORCE_DESIRED' "$ONE_SHOT_RECOVERY" \
+  && grep -Fq 'ENGINE_SUPERVISOR_REQUIRE_EXACT_HEALTH' "$ONE_SHOT_RECOVERY" \
+  && grep -Fq 'ENGINE_SUPERVISOR_LOCK_HELD' "$ONE_SHOT_RECOVERY"; then
+  ok "exact desired restoration exists and requires explicit causal authority"
 else
-  bad "club-arena-supervisor.timer is NOT active — the last-resort recovery path is off"
+  bad "one-shot exact desired restoration is missing or accepts autonomous invocation"
 fi
 
-if [ -f "$METRIC_FILE" ]; then
-  TS=$(grep -m1 '^club_arena_supervisor_last_run_timestamp_seconds ' "$METRIC_FILE" 2>/dev/null | awk '{print $2}')
-  AGE=$(( $(date +%s) - ${TS:-0} ))
-  if [ "${TS:-0}" -gt 0 ] && [ "$AGE" -lt 300 ]; then
-    ok "supervisor heartbeat is ${AGE}s old"
-  else
-    bad "supervisor heartbeat is ${AGE}s old — it is installed but not running"
-  fi
-else
-  bad "no supervisor heartbeat file — the supervisor is unobservable"
-fi
+CAUSAL_CALLERS_WIRED=1
+for caller in "$RELEASE_TRANSACTION" "$RELEASE_RECOVER"; do
+  [ -r "$caller" ] \
+    && grep -Fq 'ENGINE_SUPERVISOR_FORCE_DESIRED=1' "$caller" \
+    && grep -Fq 'ENGINE_SUPERVISOR_REQUIRE_EXACT_HEALTH=1' "$caller" \
+    && grep -Fq 'ENGINE_SUPERVISOR_LOCK_HELD=1' "$caller" \
+    || CAUSAL_CALLERS_WIRED=0
+done
+[ "$CAUSAL_CALLERS_WIRED" = 1 ] \
+  && ok "release transaction and ExecStopPost recovery own exact restoration" \
+  || bad "release recovery callers do not pass the complete causal authority"
 
-head_ "Layer 3b — the supervisor cannot fight a deploy"
-if grep -q 'flock' "${UP_SCRIPT:-/opt/club-arena/server/scripts/engine-up.sh}" 2>/dev/null; then
+head_ "Layer 3b - concurrent engine mutations serialize"
+if grep -q 'flock' "$UP_SCRIPT" 2>/dev/null; then
   ok "engine-up.sh takes the mutual-exclusion lock"
 else
-  bad "engine-up.sh has no flock — a supervisor tick can recreate the container a deploy just made, failing that deploy's verification"
+  bad "engine-up.sh has no flock - concurrent release mutations can overlap"
 fi
 
-head_ "Layer 4 — rollback is actually possible"
-# A deploy pipeline with no rollback target is one bad build away from an
-# outage it cannot exit.
-if docker image inspect "$IMAGE_REPO:previous" >/dev/null 2>&1; then
-  ok ":previous image exists ($(docker image inspect -f '{{.Id}}' "$IMAGE_REPO:previous" | cut -c8-19))"
+head_ "Layer 4 — release identity is sealed outside mutable tags and checkout"
+if [ -x "$RELEASE_SEAL" ]; then
+  DESIRED_SHA=$("$RELEASE_SEAL" get desired-sha 2>/dev/null || echo "")
+  DESIRED_IMAGE_ID=$("$RELEASE_SEAL" get desired-image-id 2>/dev/null || echo "")
+  RELEASE_CLASS=$("$RELEASE_SEAL" classify-running --container "$CONTAINER" 2>/dev/null || echo "invalid")
 else
-  bad "no $IMAGE_REPO:previous image — a bad deploy could NOT be rolled back"
+  DESIRED_SHA=""; DESIRED_IMAGE_ID=""; RELEASE_CLASS="invalid"
 fi
-if docker image inspect "$IMAGE_REPO:current" >/dev/null 2>&1; then
-  ok ":current image exists"
+RUNNING_IMAGE_ID=$(docker container inspect -f '{{.Image}}' "$CONTAINER" 2>/dev/null || echo "")
+CURRENT_IMAGE_ID=$(docker image inspect -f '{{.Id}}' "$IMAGE_REPO:current" 2>/dev/null || echo "")
+if [ -n "$DESIRED_SHA" ] && [ -n "$DESIRED_IMAGE_ID" ]; then
+  ok "durable release seal names $DESIRED_SHA / $DESIRED_IMAGE_ID"
 else
-  bad "no $IMAGE_REPO:current image — the supervisor cannot recreate the container"
+  bad "durable release seal is missing or corrupt — recovery has no release authority"
+fi
+if [ "$RELEASE_CLASS" = "desired" ]; then
+  ok "running container image ID matches the durable release seal"
+  [ "$POLICY" = "always" ] \
+    && ok "desired release restart policy is 'always' (covers crash, daemon restart, reboot)" \
+    || bad "desired release restart policy is '$POLICY' instead of 'always'"
+  [ "$AH" = "running" ] && ok "sp-autoheal sidecar protects the desired release" \
+    || bad "sp-autoheal is '$AH' while the desired release is serving"
+elif [ "$RELEASE_CLASS" = "pending" ]; then
+  ok "running container is the one-use audited candidate inside its proof window"
+  [ "$POLICY" = "no" ] \
+    && ok "pending candidate is non-persistent until its compatibility proof commits" \
+    || bad "pending candidate restart policy is '$POLICY' — unsealed bytes could survive a reboot"
+  [ "$AH" != "running" ] && ok "sp-autoheal is fenced from the pending candidate" \
+    || bad "sp-autoheal is running during candidate proof and can restart unsealed bytes"
+else
+  bad "running container image $RUNNING_IMAGE_ID disagrees with sealed $DESIRED_IMAGE_ID"
+fi
+if [ "$CURRENT_IMAGE_ID" = "$DESIRED_IMAGE_ID" ] \
+   || { [ "$RELEASE_CLASS" = "pending" ] && [ "$CURRENT_IMAGE_ID" = "$RUNNING_IMAGE_ID" ]; }; then
+  ok ":current agrees with sealed desired or the active audited candidate"
+else
+  note ":current is a repairable cache (currently '${CURRENT_IMAGE_ID:-absent}'); the sealed image ID remains recovery authority"
+fi
+
+head_ "Layer 4b — the sealed recovery image exists locally"
+if docker image inspect "$DESIRED_IMAGE_ID" >/dev/null 2>&1; then
+  ok "sealed desired image exists locally and can be recovered by immutable ID"
+else
+  bad "sealed desired image $DESIRED_IMAGE_ID is missing locally — recovery cannot start it"
+fi
+# :previous is retained only as an operator breadcrumb. It is never trusted by
+# the supervisor or rollback; both resolve the durable desired image ID.
+if docker image inspect "$IMAGE_REPO:previous" >/dev/null 2>&1; then
+  note "optional :previous cache exists ($(docker image inspect -f '{{.Id}}' "$IMAGE_REPO:previous" | cut -c8-19))"
+else
+  note "optional :previous cache is absent; rollback still uses the sealed desired image ID"
 fi
 
 head_ "Layer 5 — the engine is genuinely serving, and can say what it is"
@@ -136,37 +197,33 @@ else
   bad "liveness is NOT ok — one or more tables are stalled"
 fi
 VER=$(echo "$BODY" | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
-if [ -n "$VER" ] && [ "$VER" != "local" ] && [ "$VER" != "unknown" ]; then
-  ok "engine reports its build ($VER) — a stale-image deploy would be detectable"
+if [ -n "$DESIRED_SHA" ] && [ "$VER" = "${DESIRED_SHA:0:8}" ]; then
+  ok "engine reports the exact sealed desired build ($VER)"
 else
-  bad "engine reports version='$VER' — it cannot tell you what code it is running"
+  bad "engine reports version='$VER' but the sealed desired build is '${DESIRED_SHA:0:8}'"
 fi
 
-head_ "Layer 6 — someone is watching, and alerts reach a human"
-# sp-node-exporter is included deliberately. Everything the supervisor
-# publishes reaches Prometheus ONLY through its textfile collector. If it dies,
-# the supervisor heartbeat goes stale in Prometheus while this script — which
-# reads the metric file straight off disk — keeps reporting Layer 3 green. The
-# supervisor becomes unobservable and the verifier says "intact".
+head_ "Layer 6 - recovery verification reaches a human"
+# sp-node-exporter carries this verifier's result into Prometheus through its
+# textfile collector. If it dies, an on-disk result would never page anyone.
 for c in sp-prometheus sp-alertmanager sp-node-exporter; do
   S=$(docker container inspect -f '{{.State.Status}}' "$c" 2>/dev/null || echo absent)
   [ "$S" = "running" ] && ok "$c is running" || bad "$c is '$S'"
 done
 if docker inspect sp-node-exporter -f '{{.Config.Cmd}}' 2>/dev/null | grep -q 'collector.textfile.directory'; then
-  ok "node-exporter has the textfile collector enabled (supervisor metrics are readable)"
+  ok "node-exporter has the textfile collector enabled (recovery audit metrics are readable)"
 else
-  bad "node-exporter is missing --collector.textfile.directory — supervisor metrics never reach Prometheus"
+  bad "node-exporter is missing --collector.textfile.directory - recovery audit metrics never reach Prometheus"
 fi
 
 # Every Prometheus scrape target must be healthy. On 2026-08-16 the rebuilt box
 # had node-exporter running, with the textfile collector flag set, writing a
-# fresh heartbeat to disk — and Prometheus was not scraping it at all. UFW
+# fresh audit result to disk - and Prometheus was not scraping it at all. UFW
 # defaults to DROP on INPUT, and node-exporter uses host networking, so traffic
 # from the docker bridge to :9100 was dropped. (Port 8080 worked because Docker
 # publishes it through FORWARD, bypassing INPUT.) Every check below passed while
-# the supervisor was completely unobservable, which is the exact failure this
-# whole script exists to prevent. Checking the plumbing is not the same as
-# checking the metric arrived.
+# the recovery audit was completely unobservable. Checking the plumbing is not
+# the same as checking the metric arrived.
 TARGETS=$(curl -sf --max-time 5 localhost:9090/api/v1/targets 2>/dev/null || echo "")
 if [ -z "$TARGETS" ]; then
   bad "cannot read Prometheus targets — scrape health unknown"
@@ -178,19 +235,6 @@ else
     bad "$DOWN Prometheus scrape target(s) are DOWN — some metrics never arrive"
   fi
 fi
-
-# The supervisor heartbeat must exist IN PROMETHEUS, not merely on disk.
-HB=$(curl -sf --max-time 5 \
-  'localhost:9090/api/v1/query?query=time()-club_arena_supervisor_last_run_timestamp_seconds' 2>/dev/null \
-  | grep -o '"value":\[[^]]*\]' | sed 's/.*,"//;s/".*//' | head -1)
-case "$HB" in
-  ''|*[!0-9.-]*) bad "supervisor heartbeat is ABSENT from Prometheus (on-disk file is not enough)" ;;
-  *) if [ "${HB%%.*}" -lt 300 ] 2>/dev/null; then
-       ok "supervisor heartbeat reached Prometheus (${HB%%.*}s old)"
-     else
-       bad "supervisor heartbeat in Prometheus is stale (${HB%%.*}s old)"
-     fi ;;
-esac
 
 # Grafana ships with admin/admin and GF_SECURITY_ADMIN_PASSWORD only applies on
 # FIRST initialisation — setting it later does nothing, because the password is
@@ -222,10 +266,10 @@ if [ -z "$RULES" ]; then
   bad "Prometheus API unreachable — cannot verify that any alert rule is loaded"
   bad "rule health unknown (Prometheus unreachable)"
 else
-  if echo "$RULES" | grep -q 'club-arena-supervisor'; then
-    ok "supervisor alert rules are loaded in Prometheus"
+  if echo "$RULES" | grep -q 'club-arena-recovery'; then
+    ok "recovery audit alert rules are loaded in Prometheus"
   else
-    bad "supervisor alert rules are NOT loaded — supervisor failure would be silent"
+    bad "recovery audit alert rules are NOT loaded - verification failures would be silent"
   fi
   if echo "$RULES" | grep -q '"health":"err"'; then
     bad "at least one Prometheus rule is in an error state"
@@ -236,7 +280,7 @@ fi
 
 # Publish the result so the verification itself cannot rot unnoticed. A check
 # that runs on a timer and is never looked at is the same as no check —
-# RecoveryStackDegraded in supervisor-rules.yml is what turns this into a page.
+# RecoveryStackDegraded in recovery-rules.yml is what turns this into a page.
 TEXTFILE_DIR="${TEXTFILE_DIR:-/var/lib/node-exporter-textfile}"
 OUT="$TEXTFILE_DIR/club_arena_recovery_stack.prom"
 if mkdir -p "$TEXTFILE_DIR" 2>/dev/null; then

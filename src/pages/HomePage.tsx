@@ -138,7 +138,7 @@ class HomePageErrorBoundary extends Component<{ children: ReactNode }, ErrorBoun
 
 function HomePageInner() {
   useEffect(() => {
-    document.title = 'Home | Smarter Poker';
+    document.title = 'Poker Arena | Smarter Poker';
   }, []);
 
   const navigate = useAppNavigate();
@@ -161,6 +161,9 @@ function HomePageInner() {
   /** True when the membership fetch threw. Distinguishes "you have no clubs"
    *  from "we could not find out", which the lobby previously conflated. */
   const [loadFailed, setLoadFailed] = useState(false);
+  // Directory readiness follows the request, not the six-second spinner or
+  // a partial cache. Only a settled read can confirm an empty wallet list.
+  const [directoryPending, setDirectoryPending] = useState(true);
 
   // The cache is account-scoped and may only be hydrated after getAuthUser has
   // established which account is active. Starting from a bare cached array
@@ -284,6 +287,7 @@ function HomePageInner() {
       const isCurrentRequest = () =>
         directoryRequestGenerationRef.current === requestGeneration &&
         (!getIsMounted || getIsMounted());
+      setDirectoryPending(true);
       if (!skipLoading) setIsLoading(true);
 
       // Safety timeout: never show loading spinner for more than 6 seconds.
@@ -433,6 +437,7 @@ function HomePageInner() {
       } finally {
         clearTimeout(loadingTimeout);
         if (isCurrentRequest()) {
+          setDirectoryPending(false);
           setIsLoading(false);
           hasFetchedOnceRef.current = true;
         }
@@ -558,6 +563,7 @@ function HomePageInner() {
         // replacement fetch in this branch to advance the generation for us.
         directoryRequestGenerationRef.current += 1;
         directoryOwnerRef.current = null;
+        setDirectoryPending(false);
         setUserClubs([]);
         setOwnedUnionWallets([]);
         // Clear SWR cache to prevent stale club data leaking across logins
@@ -583,7 +589,7 @@ function HomePageInner() {
     } catch {
       /* quota */
     }
-    toast.info('Welcome to Club Arena - Create or join a club to get started!');
+    toast.info('Welcome To Poker Arena - Choose An Arena Or Join A Club To Get Started!');
   }, [isLoading, userClubs.length, toast]);
 
   // Enhancement #6: Real-time stats refresh for ALL club cards
@@ -676,6 +682,8 @@ function HomePageInner() {
                 ? `/unions/${target.slug || unionRouteRef(String(target.union_id || target.id))}/operations?tab=wallet`
                 : `/clubs/${target.slug || target.id}/cashier`
             );
+          } else if (directoryPending) {
+            toast.info('Loading Cashier Directory');
           } else if (loadFailed) {
             toast.info('Retrying Cashier Directory');
             void fetchUserData(false, () => isMountedRef.current);
@@ -723,6 +731,7 @@ function HomePageInner() {
     ownedUnionWallets,
     quickLinkClubId,
     loadFailed,
+    directoryPending,
     fetchUserData,
     showJoinModal,
     showCreateClubModal,
@@ -884,10 +893,21 @@ function HomePageInner() {
         // Batch ALL clubs' active-player counts into ONE RPC instead of one per
         // club (was a fan-out on the hottest page).
         const activeCountMap = new Map<string, number>();
+        /* Dan 2026-09-09: "each club shows 300-549 active players, but only
+           showing a handful of cash games open and players sitting". One
+           number mixed cash seats with tournament seats. The RPC now splits
+           it - cash_count / event_count, both distinct players - and the card
+           prints the split under the total. */
+        const activeSplitMap = new Map<string, { cash: number; events: number }>();
         try {
           const { data: batchCounts } = await activeCountsPromise;
-          for (const r of batchCounts || [])
+          for (const r of batchCounts || []) {
             activeCountMap.set(r.club_id, Number(r.active_count) || 0);
+            activeSplitMap.set(r.club_id, {
+              cash: Number((r as any).cash_count) || 0,
+              events: Number((r as any).event_count) || 0,
+            });
+          }
         } catch (e) {
           reportError(e, 'HomePage.batchActiveCounts');
         }
@@ -915,6 +935,7 @@ function HomePageInner() {
             if (memberCount == null) return;
 
             const activePlayers = activeCountMap.get(club.id) ?? null;
+            const activeSplit = activeSplitMap.get(club.id) ?? null;
 
             /* Dan 2026-08-20: "a true 'club level' level 1-55 that is
                determined based on how many players are inside a club."
@@ -942,6 +963,8 @@ function HomePageInner() {
                     : memberCount > 0
                       ? Math.min(activePlayers, memberCount)
                       : activePlayers,
+                activeCash: activeSplit?.cash ?? null,
+                activeEvents: activeSplit?.events ?? null,
               };
             }
           })
@@ -1000,10 +1023,16 @@ function HomePageInner() {
                  clubs, in one query. */
               const unionMemberMap: Record<string, number> = {};
               const unionActiveMap: Record<string, number> = {};
+              const unionSplitMap: Record<string, { cash: number; events: number }> = {};
               for (const r of unionMembersResult.data || [])
                 unionMemberMap[(r as any).union_id] = Number((r as any).member_count) || 0;
-              for (const r of unionActiveResult.data || [])
+              for (const r of unionActiveResult.data || []) {
                 unionActiveMap[(r as any).union_id] = Number((r as any).active_count) || 0;
+                unionSplitMap[(r as any).union_id] = {
+                  cash: Number((r as any).cash_count) || 0,
+                  events: Number((r as any).event_count) || 0,
+                };
+              }
 
               for (const u of unionRows) {
                 const clubId = unionIdToClubId[u.id]; // Map back to clubs.id for statsMap
@@ -1026,6 +1055,8 @@ function HomePageInner() {
                       : totalMembers > 0
                         ? Math.min(unionActive, totalMembers)
                         : unionActive,
+                  activeCash: unionSplitMap[u.id]?.cash ?? null,
+                  activeEvents: unionSplitMap[u.id]?.events ?? null,
                 };
               }
             }
@@ -1132,6 +1163,10 @@ function HomePageInner() {
 
   const cashierEmpty = useCallback(() => {
     haptic.light();
+    if (directoryPending) {
+      toast.info('Loading Cashier Directory');
+      return;
+    }
     if (loadFailed) {
       toast.info('Retrying Cashier Directory');
       void fetchUserData(false, () => isMountedRef.current);
@@ -1139,7 +1174,7 @@ function HomePageInner() {
     }
     toast.info('Join a club to access the cashier');
     setShowJoinModal(true);
-  }, [fetchUserData, loadFailed, toast]);
+  }, [directoryPending, fetchUserData, loadFailed, toast]);
 
   const marketplaceEmpty = useCallback(() => {
     haptic.light();
@@ -1156,7 +1191,7 @@ function HomePageInner() {
           : undefined
       }
       role="main"
-      aria-label="Club Arena Home"
+      aria-label="Poker Arena Home"
     >
       {/* ═══════════════════════════════════════════════════════════════════════
                 CINEMATIC BACKGROUND LAYERS — World Hub Aesthetic
@@ -1209,6 +1244,7 @@ function HomePageInner() {
                 MAIN CONTENT — Scrollable card layout
             ═══════════════════════════════════════════════════════════════════════ */}
       <div className={styles.mainContent}>
+        <h1 className={styles.arenaTitle}>Poker Arena</h1>
         {/* ═══════════════════════════════════════════════════════════════════════
                     HORIZONTAL ACTION BAR
                 ═══════════════════════════════════════════════════════════════════════ */}
@@ -1290,7 +1326,7 @@ function HomePageInner() {
         {!isLoading && !loadFailed && hasFetchedOnceRef.current && displayClubs.length === 0 && (
           <div className={styles.emptyStateCard}>
             <div className={styles.emptyStateIcon}>♠</div>
-            <h3 className={styles.emptyStateTitle}>Welcome To Club Arena</h3>
+            <h3 className={styles.emptyStateTitle}>Welcome To Poker Arena</h3>
             <p className={styles.emptyStateDesc}>
               Join A Club To Play Poker With Friends, Compete On Leaderboards, And Earn Rewards.
             </p>

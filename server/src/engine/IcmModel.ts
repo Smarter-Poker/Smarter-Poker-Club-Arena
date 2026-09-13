@@ -1,222 +1,421 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════
- * V16 ICM — Malmuth-Harville equity + bubble factor (2026-08-26)
- * ═══════════════════════════════════════════════════════════════════════════
- * The V7-V12 tournament pressure was a flat additive premium (0.02-0.12)
- * keyed on distance to the bubble. Real ICM pressure is a function of the
- * STACK DISTRIBUTION and the PAYOUT CURVE: a short stack on the stone bubble
- * facing a covering stack has a bubble factor near 2-3 (chips lost hurt 2-3x
- * more than chips won help), while the table captain's factor is near 1.
+ * Tournament payout equity.
  *
- * Malmuth-Harville: P(player i finishes 1st) = stack_i / total; P(i finishes
- * 2nd | j first) = stack_i / (total - stack_j); recursively down the payout
- * places. Exact MH is exponential in payout depth, so this implementation:
- *   - buckets a large field into at most MAX_MODELED stacks (hero kept
- *     exact; the rest merged pairwise smallest-first, which preserves total
- *     chips and approximately preserves finish distributions);
- *   - truncates recursion at depth 4 and distributes the remaining payout
- *     mass proportionally to remaining stacks (the standard truncation —
- *     places past 4th contribute little curvature).
+ * Phase 7 evaluates resulting stack vectors rather than applying one global
+ * bubble multiplier. Final tables of up to ten live players use exact
+ * Malmuth-Harville recursion. Larger fields use direct deterministic Monte
+ * Carlo of the same Plackett-Luce finishing-order distribution: independent
+ * exponential clocks with stack-sized rates. No player or paid place is
+ * bucketed, merged, or discarded.
  *
- * Pure functions, no engine imports — unit-tested against closed-form
- * 2-player and symmetric cases.
+ * All functions are pure. No database, clock, network, or action-clock I/O.
  */
 
-const MAX_MODELED = 8;
-const MAX_DEPTH = 4;
+const EXACT_MAX_PLAYERS = 10;
+const MC_MAX_TRIALS = 1_200;
+const MC_MIN_TRIALS = 96;
+const MC_TARGET_CLOCK_DRAWS = 240_000;
+/** Two-sided Hoeffding confidence outside the reported Monte Carlo radius. */
+const MC_ERROR_ALPHA = 0.001;
 
-/** MH probability-weighted prize for ONE hero index. stacks: chips, payouts:
- *  prize per place (any monetary unit), descending. Returns hero's equity in
- *  the same unit as payouts. */
-/**
- * ═══ V37 FLAT PAYOUTS ARE A DIFFERENT OBJECT (Dan 2026-09-02) ═══════════════
- *
- * The recursion below truncates at MAX_DEPTH = 4 places and spreads the rest
- * of the prize mass in proportion to chips. For a top-heavy MTT ladder that
- * is the standard approximation. For a SATELLITE — K identical seats — it is
- * exactly wrong: with K = 10 the first four places carry 40% of the mass and
- * the other 60% is handed out CHIP-PROPORTIONALLY, which says a big stack's
- * extra chips are worth something. They are worth nothing: the tenth seat
- * pays the same as the first, and a stack that can fold its way into the
- * top K has no use for another chip.
- *
- * With flat prizes hero's equity is P(hero is not among the P - K players
- * eliminated) x one prize. That is estimated by simulating eliminations in
- * order, each bust drawn with probability proportional to 1/stack^2, over a
- * bucketed field and a fixed trial count, with a fixed-seed generator so the
- * same spot prices the same way twice. The square is deliberate: the plain
- * 1/stack hazard (the textbook reverse-Harville) gives a 50,000 stack a 5%
- * chance of busting BEFORE a 4,000 stack, which no satellite has ever seen -
- * a big stack has to lose several all-ins to go, a short one loses one.
- * Squaring the hazard makes the big stack's survival move very little with
- * chips won or lost, which is precisely the property a locked seat has. The result behaves the way a satellite does: a covering stack's
- * survival is ~1 and does not move with chips won, so its bubble factor
- * saturates; a short stack's survival moves with every chip.
- */
-export function isFlatPayoutCurve(payouts: number[]): boolean {
-  const pos = payouts.filter((p) => isFinite(p) && p > 0);
-  if (pos.length < 2) return false;
-  const first = pos[0];
-  // a trailing cash remainder (below a seat) does not break flatness
-  const seats = pos.filter((p) => p >= first * 0.9);
-  if (seats.length < 2) return false;
-  return seats.every((p) => Math.abs(p - first) <= first * 0.05) && seats.length >= pos.length - 1;
+export type IcmMethod = 'exact_mh' | 'plackett_luce_mc';
+
+export interface IcmEstimate {
+  /** Expected prize in the same unit as the supplied payout curve. */
+  equity: number;
+  /** 99.9% confidence half-width in payout units; zero for exact recursion. */
+  errorBound: number;
+  method: IcmMethod;
+  modeledPlayers: number;
+  trials?: number;
+  standardError?: number;
 }
 
-const SURVIVAL_TRIALS = 600;
-const SURVIVAL_MAX_FIELD = 24;
+/**
+ * One action-wide ICM workspace. Large-field random clocks are generated once
+ * and reused across every candidate stack vector. `mutableIndices` names the
+ * table-local stacks that may change; every other stack is checked immutable.
+ */
+export interface IcmEquityEstimator {
+  /** Optional bounded prefix of the same clocks; never regenerates or extends them. */
+  estimate(stacks: number[], maximumTrials?: number): IcmEstimate;
+  method: IcmMethod;
+  trials: number;
+  randomClockDraws: number;
+}
 
-export function flatPayoutSurvival(stacks: number[], seats: number, heroIdx: number): number {
-  const clean = stacks.map((s) => (isFinite(s) && s > 0 ? s : 0));
-  if (heroIdx < 0 || heroIdx >= clean.length || clean[heroIdx] <= 0) return 0;
-  const live = clean.filter((s) => s > 0).length;
-  if (seats <= 0) return 0;
-  if (live <= seats) return 1;
+const cleanStacks = (stacks: number[]): number[] =>
+  stacks.map((stack) => (Number.isFinite(stack) && stack > 0 ? stack : 0));
 
-  // Bucket the field: hero exact, the rest merged pairwise smallest-first
-  // until at most SURVIVAL_MAX_FIELD stacks remain. Merging preserves total
-  // chips and the order of magnitude of each elimination hazard.
-  let field: number[] = [];
-  for (let i = 0; i < clean.length; i++) if (i !== heroIdx && clean[i] > 0) field.push(clean[i]);
-  field.sort((a, b) => a - b);
-  const bustsNeeded = live - seats;
-  let mergedAway = 0;
-  while (field.length + 1 > SURVIVAL_MAX_FIELD && field.length >= 2) {
-    const a = field.shift()!;
-    const b = field.shift()!;
-    const merged = a + b;
-    let lo = 0;
-    let hi = field.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (field[mid] < merged) lo = mid + 1;
-      else hi = mid;
-    }
-    field.splice(lo, 0, merged);
-    mergedAway++;
+const cleanPayouts = (payouts: number[]): number[] =>
+  payouts.map((payout) => (Number.isFinite(payout) && payout > 0 ? payout : 0));
+
+const payoutMass = (payouts: number[]): number =>
+  payouts.reduce((sum, payout) => sum + (Number.isFinite(payout) && payout > 0 ? payout : 0), 0);
+
+/**
+ * True for equal-seat curves, including a final sub-seat cash remainder.
+ * Classification is retained for legacy strategy reads; the ICM calculator
+ * itself always prices every place value and never flattens the remainder.
+ */
+export function isFlatPayoutCurve(payouts: number[]): boolean {
+  const positive = payouts.filter((payout) => Number.isFinite(payout) && payout > 0);
+  if (positive.length < 2) return false;
+  const first = positive[0];
+  const core =
+    positive.length >= 3 && positive.at(-1)! < first * 0.5 ? positive.slice(0, -1) : positive;
+  return core.length >= 2 && core.every((payout) => Math.abs(payout - first) <= first * 0.05);
+}
+
+/**
+ * Exact Malmuth-Harville equity for one player.
+ *
+ * A bit-mask dynamic program visits at most 2^10 states. Zero-stack entries
+ * are compacted first, so ten live finalists remain exact even when the input
+ * vector retains already-busted identities.
+ */
+export function exactIcmEquity(stacks: number[], payouts: number[], heroIdx: number): number {
+  const original = cleanStacks(stacks);
+  const prizes = cleanPayouts(payouts);
+  if (
+    original.length === 0 ||
+    heroIdx < 0 ||
+    heroIdx >= original.length ||
+    original[heroIdx] <= 0 ||
+    payoutMass(prizes) <= 0
+  ) {
+    return 0;
   }
-  // Each merge removed one seat-holder from the field, so the number of
-  // busts the model must play out shrinks by the same count.
-  const bustsModeled = Math.max(1, Math.min(field.length, bustsNeeded - mergedAway));
 
-  let seed = 0x9e3779b9 ^ (Math.round(clean[heroIdx]) & 0xffff);
+  const live = original
+    .map((stack, index) => ({ stack, index }))
+    .filter((entry) => entry.stack > 0);
+  if (live.length > EXACT_MAX_PLAYERS) return 0;
+  const clean = live.map((entry) => entry.stack);
+  const compactHero = live.findIndex((entry) => entry.index === heroIdx);
+  if (compactHero < 0) return 0;
+
+  const n = clean.length;
+  const fullMask = (1 << n) - 1;
+  const paidDepth = Math.min(n, prizes.length);
+  // At most 1,024 masks: indexed storage avoids hashing and per-entry allocation
+  // on every candidate vector while retaining the exact recursion and sum order.
+  const memo = new Float64Array(1 << n);
+  memo.fill(Number.NaN);
+
+  const recurse = (mask: number): number => {
+    const cached = memo[mask];
+    if (!Number.isNaN(cached)) return cached;
+    if ((mask & (1 << compactHero)) === 0) return 0;
+
+    let remaining = 0;
+    let total = 0;
+    for (let index = 0; index < n; index++) {
+      if ((mask & (1 << index)) === 0) continue;
+      remaining++;
+      total += clean[index];
+    }
+    const place = n - remaining;
+    if (place >= paidDepth || total <= 0) return 0;
+
+    let equity = 0;
+    for (let winner = 0; winner < n; winner++) {
+      if ((mask & (1 << winner)) === 0 || clean[winner] <= 0) continue;
+      const probability = clean[winner] / total;
+      equity +=
+        winner === compactHero
+          ? probability * prizes[place]
+          : probability * recurse(mask & ~(1 << winner));
+    }
+    memo[mask] = equity;
+    return equity;
+  };
+
+  return recurse(fullMask);
+}
+
+/** Exact all-player vector for golden/differential checks and final tables. */
+export function exactIcmVector(stacks: number[], payouts: number[]): number[] {
+  return stacks.map((_, heroIdx) => exactIcmEquity(stacks, payouts, heroIdx));
+}
+
+function mcTrials(players: number): number {
+  return Math.max(
+    MC_MIN_TRIALS,
+    Math.min(MC_MAX_TRIALS, Math.floor(MC_TARGET_CLOCK_DRAWS / Math.max(1, players)))
+  );
+}
+
+/** First index whose clock is not strictly less than `target`. */
+function lowerBound(sorted: Float64Array, target: number, maximumRank = sorted.length): number {
+  let low = 0;
+  let high = Math.min(sorted.length, maximumRank);
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    if (sorted[mid] < target) low = mid + 1;
+    else high = mid;
+  }
+  return low;
+}
+
+/**
+ * Build a direct Plackett-Luce estimator with common random numbers.
+ *
+ * Independent exponential clocks are still the exact MH ranking model. For
+ * an action, remote stacks never change, so their clocks are sorted once per
+ * trial. Each candidate then needs one binary search plus at most the local
+ * table size, rather than another full-field pass with another Math.log for
+ * every resulting vector.
+ */
+export function createIcmEquityEstimator(
+  stacks: number[],
+  payouts: number[],
+  heroIdx: number,
+  mutableIndices: number[] = stacks.map((_, index) => index),
+  maximumTrials: number = MC_MAX_TRIALS
+): IcmEquityEstimator {
+  const reference = cleanStacks(stacks);
+  const prizes = cleanPayouts(payouts);
+  const live = reference.filter((stack) => stack > 0).length;
+  const mutable = [...new Set([...mutableIndices, heroIdx])]
+    .filter((index) => Number.isSafeInteger(index) && index >= 0 && index < reference.length)
+    .sort((left, right) => left - right);
+  const mutableSet = new Set(mutable);
+  if (live <= EXACT_MAX_PLAYERS) {
+    return {
+      method: 'exact_mh',
+      trials: 0,
+      randomClockDraws: 0,
+      estimate(vector: number[]): IcmEstimate {
+        if (vector.length !== reference.length) {
+          throw new Error('ICM candidate vector length changed inside one action');
+        }
+        const clean = cleanStacks(vector);
+        for (let index = 0; index < reference.length; index++) {
+          if (!mutableSet.has(index) && Math.abs(clean[index] - reference[index]) > 0.005) {
+            throw new Error('ICM remote stack changed inside one action');
+          }
+        }
+        const modeledPlayers = clean.filter((stack) => stack > 0).length;
+        return {
+          equity: exactIcmEquity(clean, prizes, heroIdx),
+          errorBound: 0,
+          method: 'exact_mh',
+          modeledPlayers,
+        };
+      },
+    };
+  }
+
+  const mutableSlot = new Map(mutable.map((index, slot) => [index, slot]));
+  const immutable = reference
+    .map((stack, index) => ({ stack, index }))
+    .filter((entry) => !mutableSet.has(entry.index));
+  const fixed = reference
+    .map((stack, index) => ({ stack, index }))
+    .filter((entry) => entry.stack > 0 && !mutableSet.has(entry.index));
+  const trials = Math.min(
+    mcTrials(live),
+    Math.max(
+      MC_MIN_TRIALS,
+      Math.min(
+        MC_MAX_TRIALS,
+        Number.isFinite(maximumTrials) ? Math.floor(maximumTrials) : MC_MAX_TRIALS
+      )
+    )
+  );
+  const mutableDraws = mutable.map(() => new Float64Array(trials));
+  const remoteClocks: Float64Array[] = new Array(trials);
+
+  let seed =
+    0x9e3779b9 ^
+    ((heroIdx + 1) * 0x85ebca6b) ^
+    (reference.length * 0xc2b2ae35) ^
+    (prizes.length << 16);
   const rand = (): number => {
     seed ^= seed << 13;
     seed >>>= 0;
     seed ^= seed >>> 17;
     seed ^= seed << 5;
     seed >>>= 0;
-    return seed / 0x1_0000_0000;
+    return Math.max(Number.EPSILON, seed / 0x1_0000_0000);
   };
 
-  let survived = 0;
-  const hazard = new Float64Array(field.length + 1);
-  for (let t = 0; t < SURVIVAL_TRIALS; t++) {
-    // index 0 is hero
-    const alive = new Uint8Array(field.length + 1).fill(1);
-    let heroOut = false;
-    for (let k = 0; k < bustsModeled && !heroOut; k++) {
-      let total = 0;
-      for (let i = 0; i <= field.length; i++) {
-        const st = i === 0 ? clean[heroIdx] : field[i - 1];
-        hazard[i] = alive[i] ? 1 / (st * st) : 0;
-        total += hazard[i];
-      }
-      let r = rand() * total;
-      let bust = -1;
-      for (let i = 0; i <= field.length; i++) {
-        r -= hazard[i];
-        if (hazard[i] > 0 && r <= 0) {
-          bust = i;
-          break;
-        }
-      }
-      if (bust < 0) bust = field.length;
-      alive[bust] = 0;
-      if (bust === 0) heroOut = true;
+  for (let trial = 0; trial < trials; trial++) {
+    // Native Float64Array sorting is numeric and avoids constructing, sorting,
+    // then copying a boxed-number Array for every trial. At 200-1,000 live
+    // players this is the dominant Phase 7 action-clock cost. The RNG draw
+    // order and every clock value remain identical; only the container used
+    // for the same ascending sort changes.
+    const clocks = new Float64Array(fixed.length);
+    let clockIndex = 0;
+    for (let index = 0; index < reference.length; index++) {
+      const stack = reference[index];
+      if (stack <= 0 && !mutableSet.has(index)) continue;
+      const exponential = -Math.log(rand());
+      const slot = mutableSlot.get(index);
+      if (slot !== undefined) mutableDraws[slot][trial] = exponential;
+      else clocks[clockIndex++] = exponential / stack;
     }
-    if (!heroOut) survived++;
+    if (clockIndex !== clocks.length) {
+      throw new Error('ICM fixed-clock workspace did not match its live remote field');
+    }
+    clocks.sort();
+    remoteClocks[trial] = clocks;
   }
-  return survived / SURVIVAL_TRIALS;
+
+  const heroSlot = mutableSlot.get(heroIdx);
+  if (heroSlot === undefined) throw new Error('ICM estimator requires a mutable hero index');
+  const maximum = prizes.reduce((largest, payout) => Math.max(largest, payout), 0);
+  const errorBound = maximum * Math.sqrt(Math.log(2 / MC_ERROR_ALPHA) / (2 * trials));
+
+  return {
+    method: 'plackett_luce_mc',
+    trials,
+    randomClockDraws: trials * (fixed.length + mutable.length),
+    estimate(vector: number[], trialLimit: number = trials): IcmEstimate {
+      if (vector.length !== reference.length) {
+        throw new Error('ICM candidate vector length changed inside one action');
+      }
+      // Only table-local rates enter the trial loop. Preserve the exact
+      // sanitization and immutable-field check without allocating a cleaned
+      // copy of a thousand-player field for each candidate/future vector.
+      const localStacks = mutable.map((index) => {
+        const stack = vector[index];
+        return Number.isFinite(stack) && stack > 0 ? stack : 0;
+      });
+      let modeledPlayers = localStacks.filter((stack) => stack > 0).length + fixed.length;
+      for (const entry of immutable) {
+        const raw = vector[entry.index];
+        // Equal reference values already have their validated live count.
+        // The slow path retains sanitization and the numeric drift boundary.
+        if (raw === entry.stack) continue;
+        const stack = Number.isFinite(raw) && raw > 0 ? raw : 0;
+        if (Math.abs(stack - entry.stack) > 0.005) {
+          throw new Error('ICM remote stack changed inside one action');
+        }
+        if (stack > 0 && entry.stack <= 0) modeledPlayers++;
+        else if (stack <= 0 && entry.stack > 0) modeledPlayers--;
+      }
+      const heroStack = localStacks[heroSlot];
+      const sampleTrials = Math.min(
+        trials,
+        Math.max(MC_MIN_TRIALS, Number.isFinite(trialLimit) ? Math.floor(trialLimit) : trials)
+      );
+      if (heroStack <= 0 || payoutMass(prizes) <= 0) {
+        return {
+          equity: 0,
+          errorBound: 0,
+          method: 'plackett_luce_mc',
+          modeledPlayers,
+          trials: sampleTrials,
+          standardError: 0,
+        };
+      }
+
+      let mean = 0;
+      let m2 = 0;
+      for (let trial = 0; trial < sampleTrials; trial++) {
+        const heroClock = mutableDraws[heroSlot][trial] / heroStack;
+        // A rank beyond the complete payout curve contributes exactly zero.
+        // Keep every remote clock and every paid place, but stop searching
+        // after this trial is already proven unpaid. Trial order is unchanged.
+        let playersAhead = lowerBound(remoteClocks[trial], heroClock, prizes.length);
+        for (let slot = 0; slot < mutable.length && playersAhead < prizes.length; slot++) {
+          if (slot === heroSlot || localStacks[slot] <= 0) continue;
+          if (mutableDraws[slot][trial] / localStacks[slot] < heroClock) playersAhead++;
+        }
+        const value = prizes[playersAhead] ?? 0;
+        const sample = trial + 1;
+        const delta = value - mean;
+        mean += delta / sample;
+        m2 += delta * (value - mean);
+      }
+
+      const variance = sampleTrials > 1 ? m2 / (sampleTrials - 1) : 0;
+      return {
+        equity: mean,
+        errorBound:
+          sampleTrials === trials
+            ? errorBound
+            : maximum * Math.sqrt(Math.log(2 / MC_ERROR_ALPHA) / (2 * sampleTrials)),
+        method: 'plackett_luce_mc',
+        modeledPlayers,
+        trials: sampleTrials,
+        standardError: Math.sqrt(Math.max(0, variance) / sampleTrials),
+      };
+    },
+  };
 }
 
+/** Direct Monte Carlo of a hero's place in a stack-weighted MH ranking. */
+function plackettLuceEstimate(stacks: number[], payouts: number[], heroIdx: number): IcmEstimate {
+  const clean = cleanStacks(stacks);
+  const live = clean.map((stack, index) => ({ stack, index })).filter((entry) => entry.stack > 0);
+  const hero = live.find((entry) => entry.index === heroIdx);
+  if (!hero || payoutMass(payouts) <= 0) {
+    return {
+      equity: 0,
+      errorBound: 0,
+      method: 'plackett_luce_mc',
+      modeledPlayers: live.length,
+      trials: 0,
+      standardError: 0,
+    };
+  }
+  return createIcmEquityEstimator(clean, payouts, heroIdx).estimate(clean);
+}
+
+/** Backward-compatible probability-only satellite helper. */
+export function flatPayoutSurvival(stacks: number[], seats: number, heroIdx: number): number {
+  const clean = cleanStacks(stacks);
+  const live = clean.filter((stack) => stack > 0).length;
+  if (heroIdx < 0 || heroIdx >= clean.length || clean[heroIdx] <= 0 || seats <= 0) return 0;
+  if (live <= seats) return 1;
+  const prizes = Array.from({ length: Math.max(0, Math.floor(seats)) }, () => 1);
+  return live <= EXACT_MAX_PLAYERS
+    ? exactIcmEquity(clean, prizes, heroIdx)
+    : plackettLuceEstimate(clean, prizes, heroIdx).equity;
+}
+
+/** Equity plus the method/error receipt consumed by the Phase 7 ledger. */
+export function icmEquityEstimate(
+  stacks: number[],
+  payouts: number[],
+  heroIdx: number
+): IcmEstimate {
+  const clean = cleanStacks(stacks);
+  const live = clean.filter((stack) => stack > 0).length;
+  if (
+    clean.length === 0 ||
+    heroIdx < 0 ||
+    heroIdx >= clean.length ||
+    clean[heroIdx] <= 0 ||
+    payoutMass(payouts) <= 0
+  ) {
+    return { equity: 0, errorBound: 0, method: 'exact_mh', modeledPlayers: live };
+  }
+
+  if (live <= EXACT_MAX_PLAYERS) {
+    return {
+      equity: exactIcmEquity(clean, payouts, heroIdx),
+      errorBound: 0,
+      method: 'exact_mh',
+      modeledPlayers: live,
+    };
+  }
+  return plackettLuceEstimate(clean, payouts, heroIdx);
+}
+
+/** Prize equity only, retained for all existing callers. */
 export function icmEquity(stacks: number[], payouts: number[], heroIdx: number): number {
-  if (stacks.length === 0 || heroIdx < 0 || heroIdx >= stacks.length) return 0;
-  const clean = stacks.map((s) => (isFinite(s) && s > 0 ? s : 0));
-  if (clean[heroIdx] <= 0) return 0;
-
-  // V37: identical prizes are a survival problem, not a ladder.
-  if (isFlatPayoutCurve(payouts)) {
-    const pos = payouts.filter((p) => isFinite(p) && p > 0);
-    const seatPrize = pos[0];
-    const seats = pos.filter((p) => p >= seatPrize * 0.9).length;
-    return flatPayoutSurvival(clean, seats, heroIdx) * seatPrize;
-  }
-
-  // Bucket the field (hero exact, others merged smallest-first) so the
-  // recursion below stays bounded for any field size.
-  let field: number[] = [];
-  let hero = clean[heroIdx];
-  for (let i = 0; i < clean.length; i++) {
-    if (i !== heroIdx && clean[i] > 0) field.push(clean[i]);
-  }
-  field.sort((a, b) => a - b);
-  while (field.length + 1 > MAX_MODELED) {
-    const a = field.shift()!;
-    const b = field.shift()!;
-    // merge two shortest into one stack; total chips preserved
-    const merged = a + b;
-    let lo = 0;
-    let hi = field.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (field[mid] < merged) lo = mid + 1;
-      else hi = mid;
-    }
-    field.splice(lo, 0, merged);
-  }
-  const all = [hero, ...field];
-  const heroI = 0;
-
-  const pays = payouts.slice(0, Math.min(payouts.length, MAX_DEPTH));
-  const tailMass = payouts.slice(pays.length).reduce((s, p) => s + p, 0);
-
-  // Recursive MH over the truncated depth.
-  const n = all.length;
-  const memo = new Map<string, number>();
-  const heroPrize = (remaining: number[], heroPos: number, depth: number): number => {
-    const total = remaining.reduce((s, x) => s + x, 0);
-    if (total <= 0) return 0;
-    if (depth >= pays.length) {
-      // Remaining payout mass split proportionally to remaining stacks.
-      return tailMass > 0 ? (tailMass * remaining[heroPos]) / total : 0;
-    }
-    const key = depth + '|' + heroPos + '|' + remaining.join(',');
-    const hit = memo.get(key);
-    if (hit !== undefined) return hit;
-    let eq = 0;
-    for (let w = 0; w < remaining.length; w++) {
-      const pWin = remaining[w] / total;
-      if (pWin <= 0) continue;
-      if (w === heroPos) {
-        eq += pWin * pays[depth];
-      } else {
-        const rest = remaining.slice(0, w).concat(remaining.slice(w + 1));
-        const newHero = heroPos > w ? heroPos - 1 : heroPos;
-        eq += pWin * heroPrize(rest, newHero, depth + 1);
-      }
-    }
-    memo.set(key, eq);
-    return eq;
-  };
-
-  return heroPrize(all, heroI, 0);
+  return icmEquityEstimate(stacks, payouts, heroIdx).equity;
 }
 
 /**
- * Bubble factor: how much more chips LOST hurt than chips WON help, for a
- * risk of `riskChips` against the current stakes. 1 = pure chip EV;
- * 2 = losses hurt twice as much. Clamped to [1, 5].
+ * Bubble factor retained for legacy layers. Phase 7's final action arbiter no
+ * longer uses this single global multiplier; it evaluates each action's stack
+ * vectors directly.
  */
 export function bubbleFactor(
   stacks: number[],
@@ -228,40 +427,28 @@ export function bubbleFactor(
   const hero = stacks[heroIdx] ?? 0;
   if (hero <= 0) return 1;
 
-  // CHIP CONSERVATION: the risked chips move between hero and the largest
-  // covering-capable opponent — they are never created or destroyed. The
-  // first cut added/removed hero's chips in isolation, and the tell was that
-  // a winner-take-all payout produced BF 2 when true WTA ICM is exactly
-  // chip-proportional (BF must be 1). Conservation also makes the covering
-  // asymmetry exact: the opponent who can actually take hero's stack is the
-  // one who absorbs it in the loss branch.
-  let oppIdx = -1;
-  for (let i = 0; i < stacks.length; i++) {
-    if (i === heroIdx) continue;
-    if (oppIdx === -1 || stacks[i] > stacks[oppIdx]) oppIdx = i;
+  let opponentIdx = -1;
+  for (let index = 0; index < stacks.length; index++) {
+    if (index === heroIdx) continue;
+    if (opponentIdx === -1 || stacks[index] > stacks[opponentIdx]) opponentIdx = index;
   }
-  if (oppIdx === -1) return 1;
-  const risk = Math.min(riskChips, hero, stacks[oppIdx]);
+  if (opponentIdx === -1) return 1;
+  const risk = Math.min(riskChips, hero, stacks[opponentIdx]);
   if (risk <= 0) return 1;
 
   const now = icmEquity(stacks, payouts, heroIdx);
   const up = stacks.slice();
   up[heroIdx] = hero + risk;
-  up[oppIdx] = stacks[oppIdx] - risk;
-  const dn = stacks.slice();
-  dn[heroIdx] = hero - risk;
-  dn[oppIdx] = stacks[oppIdx] + risk;
+  up[opponentIdx] = stacks[opponentIdx] - risk;
+  const down = stacks.slice();
+  down[heroIdx] = hero - risk;
+  down[opponentIdx] = stacks[opponentIdx] + risk;
   const gain = icmEquity(up, payouts, heroIdx) - now;
-  const loss = now - icmEquity(dn, payouts, heroIdx);
+  const loss = now - icmEquity(down, payouts, heroIdx);
   if (gain <= 1e-12) return 5;
   return Math.max(1, Math.min(5, loss / gain));
 }
 
-/**
- * Convert a bubble factor into the brain's additive equity premium (the same
- * scale icmRisk has always spoken). BF 1 = 0; BF 1.5 = 0.02; BF 2 = 0.04;
- * capped at 0.14.
- */
-export function premiumFromBubbleFactor(bf: number): number {
-  return Math.max(0, Math.min(0.14, (bf - 1) * 0.04));
+export function premiumFromBubbleFactor(factor: number): number {
+  return Math.max(0, Math.min(0.14, (factor - 1) * 0.04));
 }

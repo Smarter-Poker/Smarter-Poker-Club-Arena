@@ -22,10 +22,15 @@ import { createRequire } from 'node:module';
 import { readFileSync, existsSync } from 'node:fs';
 
 let fail = 0;
+const requireLive = process.env.REQUIRE_LIVE === '1';
 const ok = (m) => console.log(`  ok    ${m}`);
 const bad = (m) => {
   console.error(`  FAIL  ${m}`);
   fail = 1;
+};
+const unavailable = (m) => {
+  if (requireLive) bad(`live invariants unavailable: ${m}`);
+  else console.log(`  SKIP  live invariants: ${m}`);
 };
 
 // ── 1. largest-remainder split: exact conservation for any claimant set ────
@@ -58,7 +63,9 @@ for (let c = 0; c < 500; c++) {
   const shares = splitByWeight(totalCents, weights);
   const sum = shares.reduce((a, b) => a + b, 0);
   if (sum !== totalCents) {
-    bad(`split conservation broken: total=${totalCents} weights=${weights} shares=${shares} sum=${sum}`);
+    bad(
+      `split conservation broken: total=${totalCents} weights=${weights} shares=${shares} sum=${sum}`
+    );
     break;
   }
   if (shares.some((s) => s < 0)) {
@@ -90,7 +97,7 @@ async function liveChecks() {
     try {
       ({ Client } = createRequire(import.meta.url)('pg'));
     } catch {
-      console.log('  SKIP  live invariants: pg module not installed');
+      unavailable('pg module not installed');
       return;
     }
   }
@@ -109,7 +116,7 @@ async function liveChecks() {
         }
       : null;
   if (!conn) {
-    console.log('  SKIP  live invariants: no DATABASE_URL or SUPABASE_DB_PASSWORD in the environment');
+    unavailable('no DATABASE_URL or SUPABASE_DB_PASSWORD in the environment');
     return;
   }
   const c = new Client(conn);
@@ -149,9 +156,7 @@ async function liveChecks() {
       'failed',
     ].sort();
     const stateRow = stateConstraint.rows[0];
-    const constrainedStates = [
-      ...String(stateRow?.definition ?? '').matchAll(/'([^']+)'::text/g),
-    ]
+    const constrainedStates = [...String(stateRow?.definition ?? '').matchAll(/'([^']+)'::text/g)]
       .map((match) => match[1])
       .sort();
     const exactStateSet =
@@ -167,7 +172,8 @@ async function liveChecks() {
       `SELECT count(*) AS n FROM public.ca_op_claims
         WHERE finalized_at IS NULL AND claimed_at < now() - interval '1 hour'`
     );
-    if (Number(claims.rows[0].n) > 0) bad(`${claims.rows[0].n} op-id claim(s) stranded unfinalized over an hour`);
+    if (Number(claims.rows[0].n) > 0)
+      bad(`${claims.rows[0].n} op-id claim(s) stranded unfinalized over an hour`);
     else ok('no stranded op-id claims');
 
     const diamonds = await c.query(
@@ -175,7 +181,8 @@ async function liveChecks() {
          FROM public.ca_diamond_snapshots
         WHERE taken_at > now() - interval '4 hours' AND unexplained IS NOT NULL`
     );
-    if (Math.abs(Number(diamonds.rows[0].s)) > 500) bad(`trailing 4h unexplained diamond supply is ${diamonds.rows[0].s}`);
+    if (Math.abs(Number(diamonds.rows[0].s)) > 500)
+      bad(`trailing 4h unexplained diamond supply is ${diamonds.rows[0].s}`);
     else ok(`trailing 4h unexplained diamond supply ${diamonds.rows[0].s}`);
   } finally {
     await c.end();
@@ -183,7 +190,7 @@ async function liveChecks() {
 }
 
 await liveChecks().catch((e) => {
-  console.log(`  SKIP  live invariants: connection failed (${e.message})`);
+  unavailable(`database check failed (${e.message})`);
 });
 
 if (fail) {

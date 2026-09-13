@@ -73,6 +73,8 @@ export interface TournamentEliminationSchedulerOptions {
 interface Entry extends TournamentEliminationRegistration {
   registered: boolean;
   queuedAs: QueueKind | null;
+  /** Queue generation. A place in a lane is live only while it carries this. */
+  queueTicket: number;
   dirtyAs: QueueKind | null;
   running: boolean;
   warned: boolean;
@@ -81,6 +83,43 @@ interface Entry extends TournamentEliminationRegistration {
   pendingWakeAs: QueueKind | null;
   pendingWakeOrder: number | null;
   abortController: AbortController | null;
+}
+
+/**
+ * ONE PLACE IN ONE LANE (2026-09-11).
+ *
+ * The lanes used to hold bare entries and judged a reference live by asking
+ * whether the entry was still queued as that lane's kind. Two orderings
+ * followed from that, and the backlog after the 06:57 boot of c58dfafd ran
+ * into both: queue depth 553 of 597 registered at 07:19, about 350 events
+ * each re-arming an urgent pass five seconds after every sweep because they
+ * still held a zero-stack 'playing' player, and 120 distinct events reaching
+ * their finish attempt in the first 27 minutes, once each.
+ *
+ * An urgent wake for a tournament already waiting in the routine lane
+ * "upgraded" it by pushing it onto the TAIL of the urgent lane and orphaning
+ * its routine place. With the urgent lane that long, the upgrade was a
+ * demotion. The entries most likely to receive a wake are the ones that have
+ * waited longest, so they went to the back of the longer line with their
+ * original enqueue time still counting, while routine entries queued after
+ * them were served - poker_tournament_elimination_scheduler_oldest_wait_ms
+ * read 49 s at 07:01 and 1,470 s at 07:42.
+ *
+ * And an orphaned routine reference came back to life the next time the same
+ * tournament was queued as routine, because the kind matched again, so a busy
+ * tournament could be served from a place it had taken minutes earlier, ahead
+ * of peers that had been waiting ever since.
+ *
+ * A place now carries the queue generation (ticket) it was taken under. An
+ * upgrade adds an urgent place under the SAME ticket and leaves the routine
+ * place live, so the tournament is served at whichever of its two places the
+ * scheduler reaches first, and dispatch ends the generation, which retires
+ * both. Queue depth is still one per tournament, urgent work is still
+ * preferred, and the routine turn after every urgent burst is unchanged.
+ */
+interface QueuedPlace {
+  entry: Entry;
+  ticket: number;
 }
 
 export interface TournamentEliminationSchedulerSnapshot {
@@ -108,8 +147,8 @@ export class TournamentEliminationScheduler {
   /** Physical promises, including unregistered/replaced entries, by tournament. */
   private readonly activeTournamentIds = new Set<string>();
   private readonly activeEntries = new Set<Entry>();
-  private readonly urgentQueue: Entry[] = [];
-  private readonly routineQueue: Entry[] = [];
+  private readonly urgentQueue: QueuedPlace[] = [];
+  private readonly routineQueue: QueuedPlace[] = [];
   private runningCount = 0;
   private urgentRunStreak = 0;
   private wakeOrder = 0;
@@ -153,6 +192,7 @@ export class TournamentEliminationScheduler {
         : undefined,
       registered: true,
       queuedAs: null,
+      queueTicket: 0,
       dirtyAs: null,
       running: false,
       warned: false,
@@ -289,16 +329,21 @@ export class TournamentEliminationScheduler {
     }
     if (entry.queuedAs) {
       if (entry.queuedAs === 'routine' && kind === 'urgent') {
-        // Upgrade in place. The old routine-array reference becomes a harmless
-        // stale item; logical queue depth remains one.
+        // Upgrade without giving anything up: an urgent place under the same
+        // ticket, and the routine place stays live. Whichever the scheduler
+        // reaches first serves it; logical queue depth remains one.
         entry.queuedAs = 'urgent';
-        this.urgentQueue.push(entry);
+        this.urgentQueue.push({ entry, ticket: entry.queueTicket });
       }
       return;
     }
     entry.queuedAs = kind;
+    entry.queueTicket++;
     entry.enqueuedAt = this.now();
-    (kind === 'urgent' ? this.urgentQueue : this.routineQueue).push(entry);
+    (kind === 'urgent' ? this.urgentQueue : this.routineQueue).push({
+      entry,
+      ticket: entry.queueTicket,
+    });
     this.refreshMetrics();
     if (pumpNow) this.pump();
   }
@@ -342,9 +387,22 @@ export class TournamentEliminationScheduler {
         // let Map registration order or an eager pump invert them: enqueue the
         // whole due batch by deadline and stable scheduling order, then pump
         // once. Queue-kind priority is applied later by next().
-        due
-          .sort((a, b) => a.dueAt - b.dueAt || a.order - b.order)
-          .forEach(({ entry, kind }) => this.enqueue(entry, kind, false));
+        //
+        // The batch counts as a pump pass (2026-09-11). enqueue() asks each
+        // entry isActive(), and a manager whose lease proof has lapsed answers
+        // by unregistering, whose closure pumps. Outside a pass that pump ran
+        // right there, mid-batch, and dispatched whatever was queued so far: a
+        // routine sweep took the last slot before an urgent bust sweep later
+        // in the same batch had even been enqueued. Such a pump is now folded
+        // into the one below, exactly as it is inside pump() itself.
+        this.pumping = true;
+        try {
+          due
+            .sort((a, b) => a.dueAt - b.dueAt || a.order - b.order)
+            .forEach(({ entry, kind }) => this.enqueue(entry, kind, false));
+        } finally {
+          this.pumping = false;
+        }
         this.pump();
         this.armWakeTimer();
         this.refreshMetrics();
@@ -354,21 +412,23 @@ export class TournamentEliminationScheduler {
     this.wakeTimer.unref?.();
   }
 
-  private shiftValid(queue: Entry[], kind: QueueKind): Entry | null {
+  private shiftValid(queue: QueuedPlace[]): Entry | null {
     // A stopped/replaced manager's old promise can still be unwinding. Scan
-    // each queued reference at most once and rotate a replacement behind it;
+    // each queued place at most once and rotate a replacement behind it;
     // this prevents two generations of one tournament from colliding while
     // still allowing unrelated tournaments to use the other slots.
     const candidates = queue.length;
     for (let scanned = 0; scanned < candidates; scanned++) {
-      const entry = queue.shift()!;
+      const place = queue.shift()!;
+      const entry = place.entry;
       if (
         entry.registered &&
         this.entries.get(entry.tournamentId) === entry &&
-        entry.queuedAs === kind
+        entry.queuedAs !== null &&
+        place.ticket === entry.queueTicket
       ) {
         if (this.activeTournamentIds.has(entry.tournamentId)) {
-          queue.push(entry);
+          queue.push(place);
           continue;
         }
         return entry;
@@ -382,18 +442,18 @@ export class TournamentEliminationScheduler {
       this.urgentQueue.length > 0 &&
       (this.urgentRunStreak < this.urgentBurst || this.routineQueue.length === 0);
     if (preferUrgent) {
-      const urgent = this.shiftValid(this.urgentQueue, 'urgent');
+      const urgent = this.shiftValid(this.urgentQueue);
       if (urgent) {
         this.urgentRunStreak++;
         return urgent;
       }
     }
-    const routine = this.shiftValid(this.routineQueue, 'routine');
+    const routine = this.shiftValid(this.routineQueue);
     if (routine) {
       this.urgentRunStreak = 0;
       return routine;
     }
-    const urgent = this.shiftValid(this.urgentQueue, 'urgent');
+    const urgent = this.shiftValid(this.urgentQueue);
     if (urgent) {
       this.urgentRunStreak++;
       return urgent;
@@ -401,14 +461,42 @@ export class TournamentEliminationScheduler {
     return null;
   }
 
+  /**
+   * pump() is never re-entered (2026-09-10). Everything it calls back into may
+   * ask for another pump while this one is still on the stack: isActive() is a
+   * manager's lifecycleIsCurrent(), which, once the manager's lease proof has
+   * expired, fences its tables, applies the stop fence and unregisters - and
+   * the unregister closure pumps. Recursing there nested one pump per dead
+   * manager. In a lease storm hundreds of queued managers expire together, and
+   * at 20:13 and 20:57 that day ~350 of them ran the stack out: RangeError from
+   * inside a promise reaction, an unhandled rejection, a fatal restart. A pump
+   * requested while one is running is folded into the running one, which
+   * re-reads capacity and both queues on every turn anyway, so the walk over
+   * any number of dead managers is flat.
+   */
+  private pumping = false;
+  private pumpRequestedWhilePumping = false;
+
   private pump(): void {
-    while (this.runningCount < this.maxConcurrent) {
-      const entry = this.next();
-      if (!entry) break;
-      entry.queuedAs = null;
-      entry.enqueuedAt = null;
-      if (entry.isActive?.() === false) continue;
-      this.dispatch(entry);
+    if (this.pumping) {
+      this.pumpRequestedWhilePumping = true;
+      return;
+    }
+    this.pumping = true;
+    try {
+      do {
+        this.pumpRequestedWhilePumping = false;
+        while (this.runningCount < this.maxConcurrent) {
+          const entry = this.next();
+          if (!entry) break;
+          entry.queuedAs = null;
+          entry.enqueuedAt = null;
+          if (entry.isActive?.() === false) continue;
+          this.dispatch(entry);
+        }
+      } while (this.pumpRequestedWhilePumping);
+    } finally {
+      this.pumping = false;
     }
     this.refreshMetrics();
   }

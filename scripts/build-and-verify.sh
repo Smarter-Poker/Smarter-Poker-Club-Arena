@@ -3,7 +3,7 @@
 #  Club Arena — Build & Verify Script
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Builds Club Arena, runs safety checks, and verifies no iframe code leaked
-#  back into the codebase. Run this before every push to main.
+#  back into the codebase. Run this before pushing a Club Arena branch.
 #
 #  Usage: bash scripts/build-and-verify.sh
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -78,9 +78,10 @@ echo "════════════════════════�
 echo "  BUILD SUCCESSFUL — All checks passed"
 echo "═══════════════════════════════════════════════════════════════════"
 echo ""
-echo "  Push to main to deploy:"
-echo "    git push origin main"
+echo "  Push the current branch to start the Club Arena-owned release:"
+echo "    git push origin HEAD"
 echo ""
-echo "  Changes will appear on smarter.poker automatically"
-echo "  (World Hub proxies to club-arena.vercel.app at runtime)"
+echo "  Required checks and autopilot merge first. publish-club-arena.yml then"
+echo "  publishes to the Hetzner Club Arena origin; World Hub is rewrite-only."
+echo "  Verify both build-info endpoints report the exact merged SHA."
 echo ""

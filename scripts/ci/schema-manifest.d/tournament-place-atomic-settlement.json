@@ -10,8 +10,6 @@
     "fn_settle_tournament_obligation_before_atomic_batch_gate",
     "fn_apply_prize_guarantee_before_atomic_proof",
     "fn_register_for_tournament_before_atomic_lifecycle_gate",
-    "process_tournament_rebuy_before_atomic_live_seat_lock",
-    "process_tournament_rebuy_before_atomic_pool_gate",
     "trg_freeze_batched_tournament_place",
     "trg_lock_atomic_place_tournament_status",
     "trg_tournament_atomic_place_completion_guard",

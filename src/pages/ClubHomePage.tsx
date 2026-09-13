@@ -28,6 +28,7 @@ import { supabase, getAuthUser } from '../lib/supabase';
 import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { masterBus } from '../core/MasterBus';
 import { watchBbjPool } from '../lib/bbjPoolFeed';
+import { watchBbjMini, type BbjMiniSnapshot } from '../lib/bbjMiniFeed';
 import { watchBbjHits } from '../lib/bbjHitFeed';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { useCoalescedRefresh } from '../hooks/useCoalescedRefresh';
@@ -52,6 +53,8 @@ import GameLobbyPanel from '../components/lobby/GameLobbyPanel';
 import {
   cashEntry,
   countStylesOnBoard,
+  isCensusTable,
+  isClusterFront,
   isHiddenClusterMember,
   tournamentEntry,
   classifyTournament,
@@ -59,8 +62,9 @@ import {
   type LobbyTableRow,
   type LobbyTournamentRow,
   withClubLabel,
+  withClusterFigures,
 } from '../components/lobby/lobbyEntries';
-import { tournamentService } from '../services/TournamentService';
+import { tournamentService, tournamentUnregisterSuccessText } from '../services/TournamentService';
 import { tableService } from '../services/TableService';
 import { getClubLevelInfoFromMembers, ClubLevelInfo } from '../utils/clubLevels';
 import { useToast } from '../components/common/Toast';
@@ -211,7 +215,11 @@ const VARIANT_GROUP_ORDER: Record<string, number> = {
    The unversioned sessionStorage read below is deliberately left alone: it
    serves the v2 transition from 2026-08-22, it is tab-scoped rather than
    persistent, and it dies when the tab closes. */
-const CLUB_HOME_CACHE_VER = 'v3';
+/* v4 (2026-09-09, must-move audit): a cached table list written before the
+   chain selected the cluster identity columns (2026-09-05) paints one row per
+   FEEDER table for the ~300 ms until the chain answers - the exact leak R10
+   forbids. The key change orphans those entries once, for everyone. */
+export const CLUB_HOME_CACHE_VER = 'v4';
 const CLUB_HOME_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 function getClubHomeCache(clubId: string) {
@@ -287,6 +295,9 @@ interface ClubData {
 
 interface TableData {
   id: string;
+  club_id?: string | null;
+  union_id?: string | null;
+  is_private?: boolean | null;
   name: string;
   game_variant: string;
   stakes: string;
@@ -303,6 +314,14 @@ interface TableData {
   /** The must-move game this table belongs to (Operation Table Stakes), or null. */
   cluster_id?: string | null;
   cluster_must_move?: boolean | null;
+  cluster_state?: string | null;
+  /** `cash_games.enabled`, embedded by the chain read; a disabled game is Closed on the board. */
+  cluster_enabled?: boolean | null;
+  role?: 'main' | 'feeder' | null;
+  main_index?: number | null;
+  lifecycle?: string | null;
+  cluster_players?: number | null;
+  cluster_tables?: number | null;
 }
 
 interface TournamentData {
@@ -614,6 +633,8 @@ function tournamentOpenFirst(
  */
 import PageErrorBoundary from '../components/common/PageErrorBoundary';
 import ArenaAccessBoundary from '../components/arena/ArenaAccessBoundary';
+import { useArenaAccess } from '../components/arena/arenaAccess';
+import { useDiamondFreerollCountdown } from '../hooks/useNextDiamondFreeroll';
 import { publicOrigin } from '../lib/appBase';
 
 export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: string } = {}) {
@@ -622,7 +643,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   return (
     <PageErrorBoundary pageName="ClubHomePage">
       {clubIdOverride ? (
-        <ArenaAccessBoundary clubKey={clubIdOverride}>
+        <ArenaAccessBoundary clubKey={clubIdOverride} cashLobby>
           <ClubHomePageContent clubIdOverride={clubIdOverride} />
         </ArenaAccessBoundary>
       ) : (
@@ -637,6 +658,25 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
   const { clubId: routeClubId } = useParams<{ clubId: string }>();
   const clubId = clubIdOverride || routeClubId;
+  /* The server-verified arena entitlement, published by ArenaAccessBoundary.
+     Diamond Arena is one open club: membership is a platform entitlement with
+     no `club_members` row and no chip ledger, so the two membership checks in
+     loadClubData below would evict every Diamond player, and the chip club's
+     Bad Beat Jackpot has no Diamond counterpart to show. Null on every chip
+     route, which leaves those paths exactly as they were. */
+  const arenaAccess = useArenaAccess();
+  const isAutomaticArena = arenaAccess?.automaticMembership === true;
+  const automaticMembershipRef = useRef(isAutomaticArena);
+  automaticMembershipRef.current = isAutomaticArena;
+  /* Dan 2026-09-11: "HAVE IT SAY JUST 'ACTIVE' AND THE NUMBER UNDER IT. AND
+     THE FREE ROLL STARTS CLOCK." The arena has no membership to count and no
+     level to climb, so its identity rail carries those two figures instead.
+     The countdown reads nothing at all on a chip club: `null` is the "already
+     know the time" seam, so the hook issues no query there. */
+  const arenaFreeroll = useDiamondFreerollCountdown(isAutomaticArena ? undefined : null);
+  /* Undefined for every chip club, so their cards are untouched. */
+  const arenaSeatsClosedLabel =
+    isAutomaticArena && arenaAccess?.cashGamesEnabled !== true ? 'Not Open Yet' : undefined;
   useVisibilityRefresh(() => loadClubData());
   const navigate = useAppNavigate();
   const isMountedRef = useIsMounted();
@@ -707,6 +747,21 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   // Tapping the lobby jackpot opens the SAME view as tapping it at a table:
   // last 5 hits, qualifying hands per game, payout % per stakes (Dan 2026-08-18).
   const [bbjPoolId, setBbjPoolId] = useState<string | null>(null);
+  /* THE MINI ON THE LOBBY TILE (Dan 2026-09-09: "seen and discoverable like
+     the BBJ currently is"). The range the mini pays across this club's
+     stakes, from the one feed per club (lib/bbjMiniFeed). */
+  const [lobbyMini, setLobbyMini] = useState<BbjMiniSnapshot | null>(null);
+  /* "Mini 250 - 1,500": the range across the tiers that can pay right now.
+     Nothing when the mini is off or every tier is paused at the reserve floor
+     - a line that promised a paused mini would be a lie about money. */
+  const lobbyMiniLine = useMemo(() => {
+    if (!lobbyMini || !lobbyMini.enabled) return null;
+    const payable = lobbyMini.tiers.filter((t) => t.enabled && t.payable).map((t) => t.amount);
+    if (payable.length === 0) return null;
+    const lo = Math.trunc(Math.min(...payable)).toLocaleString('en-US');
+    const hi = Math.trunc(Math.max(...payable)).toLocaleString('en-US');
+    return lo === hi ? `Mini ${lo}` : `Mini ${lo} - ${hi}`;
+  }, [lobbyMini]);
   const [showBBJInfo, setShowBBJInfo] = useState(false);
   // Dan 2026-08-23: the Club Bank row opens the Club Bank Cashier - send outs
   // to agent wallets, the full chip ledger, and (standalone clubs only) the
@@ -910,8 +965,11 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
    * reset effect below.
    */
   const listsPaintedRef = useRef(false);
+  // A newer joinable row contradicts an in-flight query's empty snapshot.
+  const tournamentRevisionRef = useRef(0);
   const loadingRef = useRef(false);
-  const [wsConnected, setWsConnected] = useState(true);
+  const reloadPendingRef = useRef(false);
+  const [wsConnected, setWsConnected] = useState(false);
 
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   // React Router reuses the component when only the clubId param changes.
@@ -963,6 +1021,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     setTournaments([]);
     setLoading(true);
     loadingRef.current = false;
+    reloadPendingRef.current = false;
     hasDataRef.current = false;
     listsPaintedRef.current = false;
   }, [clubId]);
@@ -1037,16 +1096,44 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   useEffect(() => {
     if (!clubId) return;
     let isMounted = true;
+    let realtimeEpoch = 0;
+    let firstSubscribe = true;
     let playingRefreshTimer: ReturnType<typeof setTimeout> | null = null;
     let occupancyTimer: ReturnType<typeof setInterval> | null = null;
     /* The jackpot feeds are ref-counted per club and per pool, so a table open
        in another tab-panel shares these rather than opening a second of each. */
     let stopBbjPool: (() => void) | null = null;
+    let stopBbjMini: (() => void) | null = null;
+    /* Same rule as every other mini subscriber: never carry the previous
+       club's payable range onto this club's tile. */
+    setLobbyMini(null);
     let stopBbjHits: (() => void) | null = null;
     let watchedBbjPoolId: string | null = null;
 
+    const stopRealtimeFeeds = () => {
+      if (playingRefreshTimer) clearTimeout(playingRefreshTimer);
+      if (occupancyTimer) clearInterval(occupancyTimer);
+      playingRefreshTimer = null;
+      occupancyTimer = null;
+      stopBbjPool?.();
+      stopBbjMini?.();
+      stopBbjHits?.();
+      stopBbjPool = null;
+      stopBbjMini = null;
+      stopBbjHits = null;
+      watchedBbjPoolId = null;
+    };
+
     const setupRealtime = async () => {
+      if (!isMounted) return;
+      const epoch = ++realtimeEpoch;
+      const isCurrent = () => isMounted && epoch === realtimeEpoch;
+      // A factory rebuild replaces every feed it created, including timers.
+      // Async work from the replaced setup loses authority immediately.
+      stopRealtimeFeeds();
+      setWsConnected(false);
       const resolvedId = await resolveClubUUID(clubId);
+      if (!isCurrent()) return;
       // UNION LAW (Dan 2026-08-20): remember the club the player entered
       // through. Buy-ins draw chips from THIS club and rake is earned for it,
       // so the club context must survive the hop into a union table.
@@ -1055,7 +1142,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       } catch {
         /* non-fatal */
       }
-      if (!isMounted) return;
+      if (!isCurrent()) return;
 
       // Check if this club is in a union — if so, listen on union_id in addition to club_id
       let unionId: string | null = null;
@@ -1093,7 +1180,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         }
       }
 
-      if (!isMounted) return;
+      if (!isCurrent()) return;
 
       const channelKey = `club-tables-${clubId}`;
       /**
@@ -1109,10 +1196,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
        * connected. The only recovery was the 90s poll, which is itself
        * visibility-gated.
        *
-       * setupRealtime is idempotent (getOrCreateChannel returns the existing
-       * channel, and the cleanup below removes it), so it is safe as the
-       * factory. Registered BEFORE the handlers so a reap that lands mid-setup
-       * still has something to call.
+       * Each setup has an epoch and replaces the feeds from its predecessor.
+       * Registered BEFORE the handlers so a reap that lands mid-setup still
+       * has something to call; only the latest setup may attach callbacks.
        */
       masterBus.registerChannelFactory(channelKey, () => {
         setupRealtime().catch((e) =>
@@ -1170,7 +1256,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           const { data, error } = await supabase.rpc('get_club_players_playing', {
             p_club_key: resolvedId,
           });
-          if (!isMounted) return;
+          if (!isCurrent()) return;
           if (error) {
             reportError(error, 'ClubHomePage.players_playing_realtime_refresh_failed');
             return;
@@ -1181,17 +1267,23 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       };
 
       const handleTableChange = (payload: any) => {
-        if (!isMounted) return;
+        if (!isCurrent()) return;
         if (payload.eventType === 'UPDATE' && payload.new) {
           const updated = payload.new as any;
           // P2-2: closeTable/deleteTable flip status='closed'/'deleted' or
           // is_deleted=true and arrive here as UPDATE events. Merging kept the
           // row as a clickable card (filteredTables doesn't exclude by status),
           // so drop it from the list instead of merging when it goes dead.
+          /* A cluster table the controller closes flips `lifecycle` to
+             'closed' and may leave `status` at 'waiting' (read on production
+             2026-09-09: two such rows). It is out of the game's census and out
+             of get_club_home; it leaves the list here too, or the row lingers
+             until the next reload. */
           if (
             updated.is_deleted === true ||
             updated.status === 'closed' ||
-            updated.status === 'deleted'
+            updated.status === 'deleted' ||
+            updated.lifecycle === 'closed'
           ) {
             setTables((prev) => prev.filter((t) => t.id !== updated.id));
           } else {
@@ -1216,7 +1308,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       };
 
       const handleTournamentChange = (payload: any) => {
-        if (!isMounted) return;
+        if (!isCurrent()) return;
         if (payload.eventType === 'UPDATE' && payload.new) {
           const updated = payload.new as any;
           // A tournament leaving a joinable state (CANCELLED/COMPLETED) used to
@@ -1226,12 +1318,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           if (!belongsInTournamentList(updated)) {
             setTournaments((prev) => prev.filter((t) => t.id !== updated.id));
           } else {
+            tournamentRevisionRef.current += 1;
             setTournaments((prev) =>
               prev.map((t) => (t.id === updated.id ? { ...t, ...updated } : t))
             );
           }
         } else if (payload.eventType === 'INSERT' && payload.new) {
           if (!belongsInTournamentList(payload.new)) return;
+          tournamentRevisionRef.current += 1;
           setTournaments((prev) => {
             if (prev.some((t) => t.id === payload.new.id)) return prev;
             return [payload.new as any, ...prev];
@@ -1288,15 +1382,26 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          about a jackpot by watching a counter, or not at all. One
          `bbj_winners` INSERT per hit, straight to BBJ_HIT_GLOBAL, which
          BBJHitAnnouncer already owns (lib/bbjHitFeed). */
-      stopBbjPool = watchBbjPool(resolvedId, (snap) => {
-        if (!isMounted) return;
-        setJackpotAmount(snap.mainBalance);
-        if (snap.poolId && snap.poolId !== watchedBbjPoolId) {
-          watchedBbjPoolId = snap.poolId;
-          if (stopBbjHits) stopBbjHits();
-          stopBbjHits = watchBbjHits(snap.poolId);
-        }
-      });
+      /* The jackpot is a chip pool banked by chip rake, and a Diamond hand
+         pays neither: the arena has no pool to watch, its strip does not
+         render, and these two feeds were only asking the database a question
+         with no answer. One of them came back as a statement timeout and a
+         500 on the live arena lobby. Both are chip club feeds now. */
+      if (!automaticMembershipRef.current) {
+        stopBbjPool = watchBbjPool(resolvedId, (snap) => {
+          if (!isCurrent()) return;
+          setJackpotAmount(snap.mainBalance);
+          if (snap.poolId && snap.poolId !== watchedBbjPoolId) {
+            watchedBbjPoolId = snap.poolId;
+            if (stopBbjHits) stopBbjHits();
+            stopBbjHits = watchBbjHits(snap.poolId);
+          }
+        });
+        stopBbjMini = watchBbjMini(resolvedId, (snap) => {
+          if (!isCurrent()) return;
+          setLobbyMini(snap);
+        });
+      }
 
       /**
        * A DROPPED SOCKET USED TO MEAN A STALE LOBBY UNTIL THE NEXT RELOAD.
@@ -1312,8 +1417,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
        *
        * Realtime gives no backlog on resubscribe: the events fired during the
        * gap are simply gone. The only way to close it is to re-read once the
-       * channel is live again. `firstSubscribe` keeps the initial SUBSCRIBED
-       * from firing a second fetch on top of the one already in flight.
+       * channel is live again. `firstSubscribe` belongs to this club visit,
+       * not each replacement channel, so a factory rebuild still refreshes.
        */
       /* THE LOBBY DOES NOT DEPEND ON REALTIME TO BE RIGHT (Dan 2026-09-02:
          "FIX THE REAL TIME CONNECTION FOR THE MIDWAY UNION, CLUB JAQK AND
@@ -1336,70 +1441,81 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          healthy; this is the floor under it, and it is wired into every club
          by construction because it is the lobby's own behaviour, not a
          per-club setting. */
+      let occupancyInFlight = false;
       const pollOccupancy = async () => {
-        if (!isMounted) return;
+        if (!isCurrent() || occupancyInFlight) return;
         if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-        const q = supabase
-          .from('tables')
-          .select('id, current_players, status, max_players, club_id, union_id, is_private');
-        applyClubScope(q, rtScope);
-        const { data, error } = await q
-          .eq('is_deleted', false)
-          .not('status', 'in', '("closed","deleted")')
-          .is('tournament_id', null)
-          .order('current_players', { ascending: false })
-          .order('created_at', { ascending: false })
-          .limit(QUERY_LIMITS.LIST);
-        if (!isMounted) return;
-        if (error) {
-          reportError(error, 'ClubHomePage.occupancy_poll_failed');
-          return;
-        }
-        const rows = (data ?? []) as Array<{
-          id: string;
-          current_players: number | null;
-          status: string | null;
-          max_players: number | null;
-        }>;
-        const fresh = new Map(rows.map((r) => [String(r.id), r]));
-        let needsReload = false;
-        setTables((prev) => {
-          const known = new Set(prev.map((t) => String(t.id)));
-          for (const r of rows) {
-            if (!known.has(String(r.id)) && Number(r.current_players ?? 0) > 0) needsReload = true;
+        occupancyInFlight = true;
+        try {
+          const q = supabase
+            .from('tables')
+            .select('id, current_players, status, max_players, club_id, union_id, is_private');
+          applyClubScope(q, rtScope);
+          const { data, error } = await q
+            .eq('is_deleted', false)
+            .not('status', 'in', '("closed","deleted")')
+            .is('tournament_id', null)
+            .order('current_players', { ascending: false })
+            .order('created_at', { ascending: false })
+            .limit(QUERY_LIMITS.LIST);
+          if (!isCurrent()) return;
+          if (error) {
+            reportError(error, 'ClubHomePage.occupancy_poll_failed');
+            return;
           }
-          let changed = false;
-          const next = prev.map((t) => {
-            const r = fresh.get(String(t.id));
-            if (!r) return t;
-            const cp = Number(r.current_players ?? 0);
-            if (
-              Number((t as any).current_players ?? 0) === cp &&
-              (t as any).status === r.status &&
-              Number((t as any).max_players ?? 0) === Number(r.max_players ?? 0)
-            ) {
-              return t;
-            }
-            changed = true;
-            return { ...t, current_players: cp, status: r.status, max_players: r.max_players };
+          const rows = (data ?? []) as Array<{
+            id: string;
+            current_players: number | null;
+            status: string | null;
+            max_players: number | null;
+          }>;
+          const fresh = new Map(rows.map((r) => [String(r.id), r]));
+          // Decide recovery outside the state updater: React may defer or replay it.
+          const visibleTables = tablesRef.current;
+          const known = new Set(visibleTables.map((t) => String(t.id)));
+          const needsReload =
+            rows.some((r) => !known.has(String(r.id)) && Number(r.current_players ?? 0) > 0) ||
+            (rows.length < QUERY_LIMITS.LIST &&
+              visibleTables.some((t) => inClubScope(t, rtScope) && !fresh.has(String(t.id))));
+          // An omitted row is only a reason to refresh, never proof of deletion.
+          // A capped or narrower-scope snapshot cannot prove a game disappeared.
+          setTables((prev) => {
+            let changed = false;
+            const next = prev.map((t) => {
+              const r = fresh.get(String(t.id));
+              if (!r) return t;
+              const cp = Number(r.current_players ?? 0);
+              if (
+                Number((t as any).current_players ?? 0) === cp &&
+                (t as any).status === r.status &&
+                Number((t as any).max_players ?? 0) === Number(r.max_players ?? 0)
+              ) {
+                return t;
+              }
+              changed = true;
+              return { ...t, current_players: cp, status: r.status, max_players: r.max_players };
+            });
+            return changed ? (next as typeof prev) : prev;
           });
-          return changed ? (next as typeof prev) : prev;
-        });
-        if (needsReload) void loadClubData(() => isMounted);
-        refreshScopedPlaying();
+          if (needsReload) void loadClubData(() => isMounted);
+          refreshScopedPlaying();
+        } catch (error) {
+          if (isCurrent()) reportError(error, 'ClubHomePage.occupancy_poll_failed');
+        } finally {
+          occupancyInFlight = false;
+        }
       };
       occupancyTimer = setInterval(() => {
         void pollOccupancy();
       }, 20_000);
 
-      let firstSubscribe = true;
+      let subscribed = false;
       channel.subscribe((status: string, err?: Error) => {
-        /* Every other handler in this effect checks isMounted; this one did
-           not, so a late CHANNEL_ERROR or TIMED_OUT arriving after the page
-           unmounted set state on a torn-down component. */
-        if (!isMounted) return;
+        if (!isCurrent()) return;
         setWsConnected(status === 'SUBSCRIBED');
         if (status === 'SUBSCRIBED') {
+          if (subscribed) return;
+          subscribed = true;
           if (firstSubscribe) {
             firstSubscribe = false;
           } else {
@@ -1408,6 +1524,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           }
           return;
         }
+        subscribed = false;
         if (status === 'CHANNEL_ERROR') {
           if (err) reportError(err?.message || err, 'ClubHomePage._Tables_RT_channel_error');
         } else if (status === 'TIMED_OUT') {
@@ -1420,13 +1537,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
     return () => {
       isMounted = false;
-      if (playingRefreshTimer) clearTimeout(playingRefreshTimer);
-      if (occupancyTimer) clearInterval(occupancyTimer);
+      stopRealtimeFeeds();
       // Drop the factory FIRST. Removing the channel while its factory is
       // still registered is an invitation for the health monitor to rebuild
       // the one we are deliberately tearing down.
-      if (stopBbjPool) stopBbjPool();
-      if (stopBbjHits) stopBbjHits();
       masterBus.removeChannelFactory(`club-tables-${clubId}`);
       masterBus.removeRegisteredChannel(`club-tables-${clubId}`);
     };
@@ -1441,9 +1555,21 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     clubId ? resolveClubUUIDSync(clubId) : null
   );
 
+  /* Collapse the wallet list when the club changes. The count under MY WALLETS
+     is NOT reset here, and must not be: DynamicWallet publishes it from a
+     layout effect in the same commit this effect belongs to, and a child's
+     effects run before its parent's, so a reset here landed AFTER the publish
+     and wiped it. Measured 2026-09-10 against production, signed in, on an
+     iPhone profile: the bay printed nothing at 15 seconds on a cold load, a
+     warm reload and a client-side re-entry alike, and before that it printed
+     the placeholder Dan photographed on 2026-09-09 - for the same reason, from
+     the day the count shipped (#2050). The wallet re-publishes whenever its
+     row set changes, which is the only time this number can change, so there
+     is nothing for a reset to do except blank the plate until the next club
+     switch. Pinned by tests/the-mobile-lobby-chrome-stays-fixed.law.test.ts and
+     tests/unit/theWalletsCountSurvivesTheClubReset.test.tsx. */
   useEffect(() => {
     setWalletsExpanded(false);
-    setVisibleWalletCount(0);
   }, [resolvedClubId]);
   useEffect(() => {
     resolvedClubIdRef.current = resolvedClubId;
@@ -1831,13 +1957,18 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     [memberRefresh]
   );
 
+  /* An arena whose membership the server grants automatically has no
+     `club_members` rows to watch, and subscribing to them there opened a
+     realtime channel that failed on every arena load: CHANNEL_ERROR on
+     club-members-diamond-arena. Nothing was listening for an answer; the rail
+     shows who is playing, not who is a member. */
   useMasterBusChannel({
     channelName: clubId ? `club-members-${clubId}` : null,
     table: 'club_members',
     filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
     event: '*',
     onPayload: handleMemberUpdate,
-    enabled: !!resolvedClubId,
+    enabled: !!resolvedClubId && !isAutomaticArena,
   });
 
   useMasterBusChannel({
@@ -1928,10 +2059,21 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   });
 
   const loadClubData = async (getIsMounted?: () => boolean) => {
-    if (!clubId) return;
-    // Request deduplication — skip if already loading
-    if (loadingRef.current) return;
+    if (!clubId || !isMountedRef.current || (getIsMounted && !getIsMounted())) return;
+    // One read plus one retained invalidation. Dropping the busy request
+    // discarded reconnects and mutations that the in-flight snapshot missed.
+    if (loadingRef.current) {
+      reloadPendingRef.current = true;
+      return;
+    }
     loadingRef.current = true;
+    reloadPendingRef.current = false;
+    const loadToken = ++loadTokenRef.current;
+    const callerIsMounted = getIsMounted;
+    getIsMounted = () =>
+      isMountedRef.current &&
+      loadToken === loadTokenRef.current &&
+      (!callerIsMounted || callerIsMounted());
     // Only show loading spinner on initial load (no cached data), not background refreshes
     if (!hasDataRef.current && (!getIsMounted || getIsMounted())) setLoading(true);
 
@@ -1953,6 +2095,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         { maxRetries: 4, baseDelayMs: 500, isMountedRef }
       );
 
+      if (!getIsMounted()) return;
       if (clubError || !clubData) {
         /* reportError only for an ACTUAL error - "no row matched" arrives as
            `clubError === null` and was being reported as a fault every time.
@@ -2026,7 +2169,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          landing after the user has moved to club B still painted A's tables,
          A's role and A's jackpot over B. The token is bumped by every new
          load and by unmount, so a late answer knows it is stale. */
-      const loadToken = ++loadTokenRef.current;
       const stale = () => loadToken !== loadTokenRef.current;
       Promise.resolve(supabase.rpc('get_club_home', { p_club_key: clubId }))
         .then(async ({ data: home, error: homeErr }) => {
@@ -2100,7 +2242,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 localSession = { userId: authRes.data.user.id } as any;
               }
             }
-            if (localSession?.userId) {
+            if (automaticMembershipRef.current) {
+              /* An arena whose membership the server grants automatically has
+                 no `club_members` row to read and no invite page to be sent
+                 to, and ArenaAccessBoundary verified the entitlement before
+                 this page mounted. Guarding only the eviction was not enough:
+                 the read itself dereferenced `home.club.id`, and the fast-path
+                 payload carries no club row for the arena, so every arena load
+                 threw here and lost the fast path with it. */
+            } else if (localSession?.userId) {
               const { data: memStat, error: memErr } = await supabase
                 .from('club_members')
                 .select('status')
@@ -2272,12 +2422,19 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
            state that nothing in this file ever read - DynamicWallet fetches
            its own - so every club load paid for a DiamondService round trip
            whose answer went straight into the bin. */
-        const memberResult = await supabase
-          .from('club_members')
-          .select('role, status')
-          .eq('club_id', resolvedId)
-          .eq('user_id', authUser.id)
-          .maybeSingle();
+        /* Skipped outright for an automatic-membership arena: there is no
+           `club_members` row to find, the entitlement is already verified, and
+           this read re-runs on every refocus, every realtime resubscribe and a
+           90 second interval. A resolved empty answer keeps the branches below
+           on their existing paths without a round trip. */
+        const memberResult = automaticMembershipRef.current
+          ? { data: null, error: null }
+          : await supabase
+              .from('club_members')
+              .select('role, status')
+              .eq('club_id', resolvedId)
+              .eq('user_id', authUser.id)
+              .maybeSingle();
 
         /* Same rule as the fast path above: eviction requires PROOF, never a
            failed read. `memberResult.error` was discarded here, so any
@@ -2295,8 +2452,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             clubId: resolvedId,
           });
         } else if (
-          !memberResult.data ||
-          !['active', 'approved'].includes((memberResult.data as any).status)
+          !automaticMembershipRef.current &&
+          (!memberResult.data ||
+            !['active', 'approved'].includes((memberResult.data as any).status))
         ) {
           if (getIsMounted && !getIsMounted()) return;
           bounceToInvite();
@@ -2342,10 +2500,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
        * often than showing it an empty room.
        */
       const unionCacheKey = `ca_union_of_${resolvedId}`;
+      let unionCacheReadable = true;
       const readCachedUnion = (): string | null => {
         try {
           return sessionStorage.getItem(unionCacheKey) || null;
         } catch {
+          unionCacheReadable = false;
           return null;
         }
       };
@@ -2361,6 +2521,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       // Check if this club is inside a union
       let unionId: string | null = null;
       let unionClubIds: string[] = [resolvedId];
+      let tournamentScopeConfirmed = false;
       try {
         const { data: ucRow, error: ucErr } = await unionRowPromise;
         if (ucErr) {
@@ -2370,6 +2531,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             (clubData as { union_id?: string | null } | null)?.union_id || readCachedUnion();
           if (fallback) {
             unionId = fallback;
+            tournamentScopeConfirmed = fallback === clubData.union_id;
             if (getIsMounted && !getIsMounted()) return;
             setIsInUnion(true);
             setUnionIdForCreate(fallback);
@@ -2402,11 +2564,17 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             (clubData as { union_id?: string | null } | null)?.union_id || readCachedUnion();
           if (fromClubRow) {
             unionId = fromClubRow;
+            tournamentScopeConfirmed = fromClubRow === clubData.union_id;
             if (getIsMounted && !getIsMounted()) return;
             setIsInUnion(true);
             setUnionIdForCreate(fromClubRow);
             // Same reasoning as the error branch above: no inline read here.
           } else {
+            tournamentScopeConfirmed =
+              ucRow === null &&
+              clubData.union_id === null &&
+              clubData.is_union !== true &&
+              unionCacheReadable;
             cacheUnion(null); // genuinely standalone, on positive evidence
             setUnionIdForCreate(null);
           }
@@ -2415,6 +2583,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           if (getIsMounted && !getIsMounted()) return;
           setIsInUnion(true);
           unionId = ucRow.union_id;
+          tournamentScopeConfirmed = Boolean(unionId);
           setUnionIdForCreate(ucRow.union_id);
           // Remember it: the next load survives a timeout without emptying.
           cacheUnion(ucRow.union_id);
@@ -2571,7 +2740,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       const tableQuery = supabase
         .from('tables')
         .select(
-          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands, cluster_id, role, main_index, lifecycle'
+          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, union_id, is_private, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands, cluster_id, role, main_index, lifecycle, cluster:cash_games!tables_cluster_id_fkey(template_name, must_move, state, enabled)'
         );
       // ONE rule, applied. Union clubs see the UNION's tables plus their OWN
       // private games; another club's private game is never visible.
@@ -2660,11 +2829,18 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         siblingClubIds: unionClubIds,
       });
 
+      const tournamentRevisionAtRead = tournamentRevisionRef.current;
       const [tableResult, clubTournamentResult, bbjResult] = await Promise.all([
         tableQuery,
         clubTournamentQuery,
         (async () => {
           try {
+            /* The third jackpot read. An arena pays no rake and banks no
+               pool, so this one asks for a row that cannot exist there;
+               the other two were closed on 2026-09-11 and this one was
+               missed because it is inlined in a Promise.all rather than
+               named like the feeds. */
+            if (automaticMembershipRef.current) return { data: null, error: null };
             // BUGFIX: resolve the CORRECT BBJ pool. Union clubs contribute to the
             // UNION pool (that's the one that grows); a club-level pool row may exist
             // but is stale. Fetch by union_id when in a union, else club_id.
@@ -2698,6 +2874,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       lobbyPainted = true;
 
       const tableData = tableResult.data;
+      /* The chain's rows with the game embed flattened (below); what the
+         board and the boot cache both receive. */
+      let flattenedTables: TableData[] = [];
       /* Keep the last good list when the query fails rather than blanking the
          lobby -- but SAY SO. The malformed filter above 400'd on every load
          for hours and nothing anywhere reported it, because a swallowed error
@@ -2717,17 +2896,44 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
            on screen, leaving the game-wide figures the fast path put there.
            Rows the chain does not return are removed: it is the authority on
            which tables exist. */
+        /* THE CHAIN CARRIES THE GAME ROW ITSELF (2026-09-09, must-move audit).
+           `cluster:cash_games(...)` is the FK embed, so the style, the mode
+           and - new - `enabled` come from the authority on every load, not
+           only from a fast path that does not run on a warm reload. The
+           game-wide figures are not read from anywhere any more: the board
+           derives them from its own rows (withClusterFigures, one definition
+           with fn_cash_cluster_census). An embed the RLS withheld is left
+           undefined so mergeFastRows keeps what is already on screen. */
+        const flattened = (tableData as Array<Record<string, unknown>>).map((r) => {
+          const { cluster: game, ...rest } = r as {
+            cluster?: {
+              template_name?: string | null;
+              must_move?: boolean | null;
+              state?: string | null;
+              enabled?: boolean | null;
+            } | null;
+          } & Record<string, unknown>;
+          if (!game || typeof game !== 'object') return rest;
+          return {
+            ...rest,
+            cluster_template: game.template_name ?? null,
+            cluster_must_move: game.must_move ?? null,
+            cluster_state: game.state ?? null,
+            cluster_enabled: game.enabled ?? null,
+          };
+        });
+        flattenedTables = flattened as unknown as TableData[];
         setTables((prev) => {
-          const incoming = new Set((tableData as Array<{ id: string }>).map((r) => String(r.id)));
+          const incoming = new Set(flattened.map((r) => String(r.id)));
           const kept = prev.filter((r) => incoming.has(String(r.id)));
-          return mergeFastRows(kept, tableData as typeof prev);
+          return mergeFastRows(kept, flattenedTables);
         });
       }
       const tableCapped = (tableData?.length ?? 0) >= QUERY_LIMITS.LIST;
 
       // SWR: cache club + tables for instant display on revisit
       if (clubId && clubData) {
-        setClubHomeCache(clubId, { club: clubData, tables: tableData || [] });
+        setClubHomeCache(clubId, { club: clubData, tables: flattenedTables });
       }
       hasDataRef.current = true;
 
@@ -2735,57 +2941,39 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       if (clubTournamentResult.error)
         reportError(clubTournamentResult.error, 'ClubHomePage.Club_tournaments_failed');
 
-      if (!clubTournamentResult.error) {
-        const allTournaments: TournamentData[] = clubTournamentResult.data
-          ? [...clubTournamentResult.data]
-          : [];
+      if (!clubTournamentResult.error && Array.isArray(clubTournamentResult.data)) {
+        const allTournaments: TournamentData[] = [...clubTournamentResult.data];
 
-        /**
-         * AN EMPTY ANSWER NEVER ERASES A FULL ONE.
-         *
-         * Two writers fill this list: the get_club_home fast path, which is
-         * union-scoped in SQL and cannot get the scope wrong, and this chain,
-         * whose scope depends on `unionId` resolving from a separate read.
-         * When that read comes back empty the chain narrows to the club's own
-         * PRIVATE tournaments -- of which a union club has none -- and then
-         * overwrites a good list with zero.
-         *
-         * Measured live 2026-08-24: get_club_home returned 161 tournaments and
-         * the lobby showed none, with "44 Games Are Open In This Club"
-         * underneath, 44 being the table count on its own.
-         *
-         * So the chain may replace this list with anything it actually found,
-         * and may not replace it with nothing. A genuinely empty club paints
-         * empty from the fast path, which had the same answer; the only case
-         * this changes is where the two disagree and one is a degraded read.
-         */
-        /* The chain has answered with real rows. From here the fast path has
-           nothing to add and could only narrow them (see listsPaintedRef). */
+        // The warm fast path cannot remove old rows. A confirmed empty read
+        // may do so, but a failed or cache-only scope cannot prove absence.
         listsPaintedRef.current = true;
         if (allTournaments.length > 0) {
           setTournaments(allTournaments);
+        } else if (!tournamentScopeConfirmed) {
+          reportError(
+            new Error(
+              `[ClubHomePage] cannot confirm empty tournaments with unresolved scope (unionId=${unionId ?? 'null'})`
+            ),
+            'ClubHomePage.emptyTournamentOverwrite'
+          );
+        } else if (tournamentRevisionAtRead !== tournamentRevisionRef.current) {
+          // A realtime change can be newer than this query's empty snapshot.
+          // Keep it and let the existing coalesced owner read again.
+          reloadPendingRef.current = true;
         } else {
-          setTournaments((prev) => {
-            if (prev.length > 0) {
-              reportError(
-                new Error(
-                  `[ClubHomePage] chain found 0 tournaments while ${prev.length} were painted - keeping them (unionId=${unionId ?? 'null'})`
-                ),
-                'ClubHomePage.emptyTournamentOverwrite'
-              );
-              return prev;
-            }
-            return allTournaments;
-          });
+          setTournaments(allTournaments);
         }
       }
       setCountsCapped(tableCapped || (clubTournamentResult.data?.length ?? 0) >= QUERY_LIMITS.LIST);
 
       // BBJ jackpot. Number() is load-bearing, not cosmetic: main_balance is
       // numeric(14,2) and arrives as the STRING "10500.67". Assigning it raw
-      // put a string into a number-typed state, which then failed BBJTicker's
-      // `typeof poolAmount === 'number'` ownership check and left the ticker
-      // and the page disagreeing about who owns the value.
+      // put a string into a number-typed state, which failed a `typeof
+      // poolAmount === 'number'` ownership check downstream and left two
+      // surfaces disagreeing about who owned the value. The component that
+      // check lived in (BBJTicker) was deleted on 2026-09-12 for being mounted
+      // nowhere; the coercion stays, because every reader of this state still
+      // expects a number and the string is what the database actually sends.
       if (bbjResult?.data && !(bbjResult as any).error) {
         if (Array.isArray(bbjResult.data)) {
           let sum = 0;
@@ -2830,6 +3018,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       }
       setClubLevel(levelInfo);
     } catch (error: any) {
+      if (!getIsMounted()) return;
       reportError(error, 'ClubHomePage.Error_loading_club_data');
       /* error.message on a PostgREST failure is text like "JSON object
          requested, multiple (or no) rows returned" - Title-Cased by the toast
@@ -2837,8 +3026,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          which is where it is useful. */
       toast.error('Failed to load club data');
     } finally {
-      loadingRef.current = false;
-      if (!getIsMounted || getIsMounted()) setLoading(false);
+      // A previous club's finally must not unlock the current club's request.
+      if (loadToken === loadTokenRef.current) {
+        loadingRef.current = false;
+        if (getIsMounted()) {
+          setLoading(false);
+          if (reloadPendingRef.current) loadClubDataRef.current();
+        }
+      }
     }
   };
 
@@ -2852,18 +3047,41 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
      tab, from the rows already loaded and BEFORE the style filter - so a
      player who has narrowed the board to Action still reads how many Classic
      and Madness games they are not looking at. One game counts once. */
+  /* ONE DEFINITION OF A GAME'S PLAYERS AND TABLES (2026-09-09, must-move
+     audit). Every cluster row is stamped with its game's figures derived from
+     the rows on this board under fn_cash_cluster_census's own predicate
+     (lobbyEntries.withClusterFigures). Nothing else paints those two numbers:
+     not the fast path (which does not run on a warm reload), not the chain
+     (which keeps the old aggregate), not realtime (which carries one table at
+     a time) - so a seat change on the feeder moves the game's row the moment
+     its `tables` UPDATE arrives. */
+  const boardTables = useMemo(() => {
+    /* Count exactly what is rendered. A cluster row that is not a census
+       table is not part of its game (the controller has stopped counting it),
+       so it leaves the board here rather than being rendered as a game while
+       being excluded from that game's figures - the two-answers shape 5.2 is
+       about. A table with no cluster is untouched: it is its own game. */
+    const rows = (tables as unknown as LobbyTableRow[]).filter(
+      (t) => !t.cluster_id || isCensusTable(t)
+    );
+    return withClusterFigures(rows) as unknown as TableData[];
+  }, [tables]);
+
   const styleCounts = useMemo(
     () =>
       countStylesOnBoard(
-        (tables as unknown as LobbyTableRow[]).filter(
+        (boardTables as unknown as LobbyTableRow[]).filter(
           (t) => gameType === 'ALL' || cashKind(t) === gameType
         )
       ),
-    [tables, gameType]
+    [boardTables, gameType]
   );
 
   const filteredTables = useMemo(() => {
     if (!showsCash) return [];
+    /* Deliberate shadow: every reference below reads the STAMPED rows, so a
+       later edit cannot accidentally filter the unstamped state. */
+    const tables = boardTables;
 
     /* Advanced Filters apply to the tab they were saved on. On ALL there is no
        single tab to read, so they do not apply - ALL means "show me
@@ -2901,7 +3119,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             variant: table.game_variant,
             price: Number(table.big_blind) || 0,
             seats: Number(table.max_players) || 0,
-            seatsTaken: Number(table.current_players) || 0,
+            /* The game's count on its one row (R10); the status chips judge a
+               game, never its Main 1. */
+            seatsTaken: isClusterFront(table as unknown as LobbyTableRow)
+              ? Number(table.cluster_players) || 0
+              : Number(table.current_players) || 0,
+            game: isClusterFront(table as unknown as LobbyTableRow),
             name: table.name,
             style: table.cluster_template ?? null,
             row: table as unknown as Record<string, unknown>,
@@ -2960,7 +3183,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           (a, b) => cmpVariant(a, b) || cmpStakes(a, b) || cmpPlayers(a, b) || cmpName(a, b)
         );
     }
-  }, [tables, gameType, showsCash, sortKey, advFilters, allStatusFilter]);
+  }, [boardTables, gameType, showsCash, sortKey, advFilters, allStatusFilter]);
 
   /**
    * Is the lobby showing less than everything, and why.
@@ -3358,7 +3581,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
              the set makes the seated branch reachable for seat-first games
              and changes nothing for cash rows, which still key on table_id. */
           .from('table_seats')
-          .select('table_id, tables(tournament_id)')
+          .select('table_id, tables!table_seats_table_id_fkey(tournament_id)')
           .eq('user_id', currentUserId)
           .is('left_at', null)
           .limit(QUERY_LIMITS.LIST),
@@ -3685,13 +3908,13 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       if (!currentUserId || actionBusy) return;
       setActionBusy(true);
       try {
-        await tournamentService.unregisterPlayer(t.id, currentUserId);
+        const result = await tournamentService.unregisterPlayer(t.id, currentUserId);
         setRegisteredTournamentIds((prev) => {
           const s = new Set(prev);
           s.delete(t.id);
           return s;
         });
-        toast.success('You Are No Longer Registered');
+        toast.success(tournamentUnregisterSuccessText(result));
       } catch (e) {
         reportError(e, 'ClubHomePage.handleUnregister', { tournamentId: t.id });
         toast.error(e instanceof Error ? e.message : 'Could Not Unregister, Please Try Again');
@@ -3958,6 +4181,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         );
       },
       onJoinTable: (e) => handleJoinTable(e.id),
+      /* Diamond Arena's ladder is listed while funded play is closed, and the
+         buy-in door refuses every seat until it opens. Say so on the card
+         rather than offering a Join that the server will reject. */
+      seatsClosedLabel: arenaSeatsClosedLabel,
       /* A full table's primary action is the waitlist, not a join that cannot
          succeed. The page already owns this flow for the panel; the card runs
          the same one rather than inventing a second. */
@@ -4448,6 +4675,16 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             playerId={currentUser?.player_number}
             level={clubLevel?.level}
             playersPlaying={playersPlaying}
+            arenaStats={
+              isAutomaticArena
+                ? {
+                    activeCount: playersPlaying,
+                    freerollText: arenaFreeroll.text,
+                    freerollTitle: arenaFreeroll.title,
+                    freerollImminent: arenaFreeroll.imminent,
+                  }
+                : null
+            }
             onCopyClubId={() => {
               navigator.clipboard.writeText(club.club_id.toString());
               toast.success('Club ID Copied');
@@ -4516,35 +4753,41 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               }
             }}
           />
-
-          <button
-            type="button"
-            className="lobby-bbj"
-            onClick={() => {
-              haptic.medium();
-              setShowBBJInfo(true);
-            }}
-            aria-label={`Bad Beat Jackpot: ${
-              jackpotAmount > 0
-                ? jackpotAmount.toLocaleString('en-US', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })
-                : 'No Pool'
-            }`}
-          >
-            <ClubBBJShell className="lobby-bbj__shell" />
-            <span className="lobby-bbj__label">Bad Beat Jackpot</span>
-            <strong className="lobby-bbj__amount">
-              {jackpotAmount > 0
-                ? jackpotAmount.toLocaleString('en-US', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })
-                : '-'}
-            </strong>
-          </button>
-
+          {/* The Bad Beat Jackpot is a chip pool banked by chip rake. Diamond
+              hands carry neither, both being refused at admission and at
+              settlement, so this strip has nothing to read in the arena and
+              painted a bare dash there. Phase 9 decides Diamond fee
+              destinations; until it does, the honest surface is no strip. */}
+          {!isAutomaticArena && (
+            <button
+              type="button"
+              className="lobby-bbj"
+              onClick={() => {
+                haptic.medium();
+                setShowBBJInfo(true);
+              }}
+              aria-label={`Bad Beat Jackpot: ${
+                jackpotAmount > 0
+                  ? jackpotAmount.toLocaleString('en-US', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })
+                  : 'No Pool'
+              }`}
+            >
+              <ClubBBJShell className="lobby-bbj__shell" />
+              <span className="lobby-bbj__label">Bad Beat Jackpot</span>
+              <strong className="lobby-bbj__amount">
+                {jackpotAmount > 0
+                  ? jackpotAmount.toLocaleString('en-US', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })
+                  : '-'}
+              </strong>
+              {lobbyMiniLine && <span className="lobby-bbj__mini">{lobbyMiniLine}</span>}
+            </button>
+          )}
           {/* ── Wallet ──
               WALLET SEPARATION LAW (Dan 2026-08-20): this is a CLUB screen, so
               it renders CLUB money. The variant used to become 'union' whenever
@@ -4572,10 +4815,21 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 <span className="lobby-wallets-trigger__icon" aria-hidden="true" />
                 <span className="lobby-wallets-trigger__copy">
                   <strong>My Wallets</strong>
+                  {/* THE COUNT, OR NOTHING AT ALL (Dan 2026-09-09): it
+                      "shouldn't say LOADING BALANC. It should just have 5
+                      BALANCES or how ever many wallets that user has only."
+
+                      DynamicWallet knows how many rows this viewer gets before
+                      a single balance has loaded - the row set comes from the
+                      role, not from the money - and it now publishes that count
+                      in a layout effect, so the real number is here for the
+                      first painted frame. The empty string is only the frame
+                      before that: an empty bay, never a word that has to be
+                      taken back a moment later. */}
                   <small>
                     {visibleWalletCount > 0
                       ? `${visibleWalletCount} ${visibleWalletCount === 1 ? 'Balance' : 'Balances'}`
-                      : 'Loading Balances'}
+                      : ''}
                   </small>
                 </span>
                 <span
@@ -5321,6 +5575,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           busy={actionBusy || waitlistActionBusy || isRegisteringMtt || deletingTableId !== null}
           onClose={() => setPanelOpen(false)}
           onJoinTable={handleJoinTable}
+          seatsClosedLabel={arenaSeatsClosedLabel}
           onWaitlistToggle={handleWaitlistToggle}
           onRegister={handleRegister}
           onUnregister={handleUnregister}

@@ -336,14 +336,39 @@ export const STAKE_BAND_LADDER: readonly HorseStakeBand[] = ['micro', 'low', 'mi
  */
 let bandSupply: ReadonlySet<HorseStakeBand> | null = null;
 
+/**
+ * The same question, asked of ONE HOST (2026-09-11).
+ *
+ * `bandSupply` above is the union of every open table on the platform, and a
+ * horse can only sit where it holds a membership. Deep Stack Society deals
+ * micro, low, mid and high; Midway Union deals micro, low and mid. One Deep
+ * Stack 25/50 game therefore made 'high' read as supplied to every Midway
+ * horse, whose band would never step down and whose every Midway table would
+ * refuse it - the 2026-09-05 shape (100 horses with no game), one host at a
+ * time. The assignment stopped minting such a band the same day
+ * (fn_assign_horse_stake_bands now projects per host); this is the belt to
+ * that braces, for the window between an operator switching a host's game off
+ * and the next assignment run.
+ *
+ * Empty means nobody has published per-host supply yet, and the platform-wide
+ * answer is used - an unknown floor must never narrow anybody.
+ */
+let hostBandSupply: ReadonlyMap<string, ReadonlySet<HorseStakeBand>> = new Map();
+
 /** Test/ops hook: the supply set the last cycle published, or null. */
 export function stakeBandSupply(): ReadonlySet<HorseStakeBand> | null {
   return bandSupply;
 }
 
+/** Test/ops hook: the per-host supply the last cycle published. */
+export function stakeBandSupplyForHost(hostId: string): ReadonlySet<HorseStakeBand> | null {
+  return hostBandSupply.get(hostId) ?? null;
+}
+
 /** Test hook: forget the supply, so the gate is the assigned band alone. */
 export function clearStakeBandSupply(): void {
   bandSupply = null;
+  hostBandSupply = new Map();
 }
 
 /**
@@ -390,8 +415,13 @@ export function projectStakeBandOnto(
   return band;
 }
 
-export function effectiveStakeBandFor(horseId: string): HorseStakeBand {
-  return projectStakeBandOnto(stakeBandFor(horseId), bandSupply);
+export function effectiveStakeBandFor(horseId: string, hostId?: string): HorseStakeBand {
+  /* A HORSE IS PROJECTED ONTO ITS OWN HOST'S FLOOR when we know which host is
+     asking; onto the platform's otherwise, which is what every caller got
+     before. An unknown host, or a host nobody published supply for, falls back
+     rather than narrowing: see hostBandSupply. */
+  const supply = (hostId && hostBandSupply.get(hostId)) || bandSupply;
+  return projectStakeBandOnto(stakeBandFor(horseId), supply);
 }
 
 /**
@@ -399,13 +429,27 @@ export function effectiveStakeBandFor(horseId: string): HorseStakeBand {
  * and report what that costs: which bands with horses in them have no game,
  * and how many horses are therefore seating below their record.
  */
-export function applyStakeBandSupply(bands: Iterable<HorseStakeBand>): {
+export function applyStakeBandSupply(
+  bands: Iterable<HorseStakeBand>,
+  perHost?: Iterable<readonly [string, Iterable<HorseStakeBand>]>
+): {
   missing: HorseStakeBand[];
   fallbacks: number;
 } {
   const next = new Set<HorseStakeBand>();
   for (const b of bands) if (isStakeBand(b)) next.add(b);
   bandSupply = next.size > 0 ? next : null;
+  /* Per host, same rule: a host that published nothing this cycle is left out
+     of the map entirely rather than recorded as empty, so it falls back to the
+     platform answer instead of refusing every band. */
+  const hosts = new Map<string, ReadonlySet<HorseStakeBand>>();
+  for (const [hostId, hostBands] of perHost ?? []) {
+    if (!hostId) continue;
+    const set = new Set<HorseStakeBand>();
+    for (const b of hostBands) if (isStakeBand(b)) set.add(b);
+    if (set.size > 0) hosts.set(hostId, set);
+  }
+  hostBandSupply = hosts;
   if (!bandSupply) return { missing: [], fallbacks: 0 };
 
   const missing = new Set<HorseStakeBand>();
@@ -437,8 +481,35 @@ export function applyStakeBandSupply(bands: Iterable<HorseStakeBand>): {
  * playing mid because the high games are switched off is an ordinary thing to
  * see; a hundred names that vanish from the floor entirely is not.
  */
-export function stakeBandAllows(horseId: string, bigBlind: number): boolean {
-  return effectiveStakeBandFor(horseId) === stakeBandForBigBlind(bigBlind);
+let unhydratedRefusalReported = false;
+
+/** Has the assignment been loaded at all? False from boot until the first
+ *  successful HorseLaneLoader pass, and in a test that cleared the map. */
+export function stakeBandsHydrated(): boolean {
+  return assignedStakeBands.size > 0;
+}
+
+export function stakeBandAllows(horseId: string, bigBlind: number, hostId?: string): boolean {
+  /* NOTHING LOADED IS NOT "EVERYONE IS MICRO" (2026-09-09). `stakeBandFor`
+     answers 'micro' for a horse with no record, which is right for one new
+     horse and wrong for a whole fleet whose records have not been read yet:
+     for the fleet's first cycle after a restart that made every horse a
+     micro name, so the pass that refills the floor could seat the 25/50
+     regulars at 0.05/0.10 and nobody anywhere else. An unread assignment
+     refuses, once per process out loud, and HorseLaneLoader loads at boot
+     and retries a failed first load within a minute. This is the
+     fail-closed half of the doctrine: an incomplete horse pool skips the
+     decision; it never guesses it. */
+  if (assignedStakeBands.size === 0) {
+    if (!unhydratedRefusalReported) {
+      unhydratedRefusalReported = true;
+      console.warn(
+        '[HorseBehavior] stake bands not loaded yet - the band gate refuses every seat it decides until HorseLaneLoader lands'
+      );
+    }
+    return false;
+  }
+  return effectiveStakeBandFor(horseId, hostId) === stakeBandForBigBlind(bigBlind);
 }
 
 /**
@@ -644,6 +715,43 @@ export function seatChangeVerdict(s: SeatChangeSituation): SeatChangeVerdict {
 /** The boolean form, for a caller that does not care why not. */
 export function wantsSeatChange(s: SeatChangeSituation): boolean {
   return seatChangeVerdict(s) === 'ask';
+}
+
+/**
+ * THE MEMO DIES WITH THE STAY (2026-09-09).
+ *
+ * The rotator remembers every (game, horse) pair it has asked the door about
+ * so a refused horse is not re-asked every ninety seconds, and it holds a
+ * final refusal (SEAT_CHANGE_USED, NOT_FROM_MAIN, ...) for twelve hours. But
+ * the budget the door spends is PER STAY: `cash_game_roster` opens a fresh row
+ * with a fresh `seat_change_used_at` when a player leaves a game and comes
+ * back, so a person who cashes out at lunch and sits again at dinner has a
+ * seat change again. A memo keyed on the game alone outlived the stay - a
+ * horse that left and rejoined inside the twelve hours was never asked
+ * again, which is a horse denied a button a human has (CLAUDE.md 10.5).
+ *
+ * So the memo is pruned against the room every pass: an entry is kept only
+ * while it has not expired AND the horse still holds a seat in that game.
+ * `seated` is the set of `${gameId}:${horseId}` pairs seated right now.
+ * Returns how many entries were dropped because the stay had ended.
+ */
+export function pruneSeatChangeMemo(
+  memo: Map<string, number>,
+  seated: ReadonlySet<string>,
+  nowMs: number
+): number {
+  let ended = 0;
+  for (const [key, until] of [...memo]) {
+    if (until <= nowMs) {
+      memo.delete(key);
+      continue;
+    }
+    if (!seated.has(key)) {
+      memo.delete(key);
+      ended++;
+    }
+  }
+  return ended;
 }
 
 /**

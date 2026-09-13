@@ -17,7 +17,6 @@ import {
 import { maxSeatsTheDeckAllows } from '../../config/tableSeating';
 import { capPaidPlaces, fieldCapFor, minPlayersFor } from '../../lib/tournamentFieldRules';
 import styles from './CreateTournamentModal.module.css';
-import { SpadeConsole } from '../console/SpadeConsole';
 import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
 import { supabase } from '../../lib/supabase';
@@ -258,10 +257,6 @@ export default function CreateTournamentModal({
   // ── Spin Config ──
   const [spinType, setSpinType] = useState<'standard' | 'hyper'>('standard');
 
-  // ── Multi-Day Config ──
-  const [isMultiDay, setIsMultiDay] = useState(false);
-  const [totalDays, setTotalDays] = useState('2');
-
   // ── Advanced options (PokerBros parity, 2026-08-22). Collapsed by default
   // so the modal stays usable; every field maps to an fn_create_tournament
   // p_config key. ──
@@ -424,13 +419,27 @@ export default function CreateTournamentModal({
         const resolved = await resolveClubUUID(clubId);
         const { data } = await supabase
           .from('tournaments')
-          .select('id, name, tournament_type, status, start_time')
+          .select(
+            'id, name, tournament_type, status, start_time, variant, is_bounty, is_pko, is_mystery_bounty, is_premium_spin'
+          )
           .eq('club_id', resolved)
           .neq('tournament_type', 'satellite')
           .in('status', ['registering', 'scheduled', 'upcoming', 'announced', 'pending', 'open'])
           .order('start_time', { ascending: true })
           .limit(50);
-        if (alive) setSatelliteTargets((data || []).map((t: any) => ({ id: t.id, name: t.name })));
+        // A satellite can only award a seat the settlement authority can
+        // deliver: never into a bounty, PKO, mystery-bounty or Spin event
+        // (the database refuses that insert too, 20260911110907).
+        const deliverable = (data || []).filter(
+          (t: any) =>
+            t.is_bounty === false &&
+            t.is_pko === false &&
+            t.is_mystery_bounty === false &&
+            t.is_premium_spin === false &&
+            String(t.variant ?? '').toLowerCase() !== 'spin' &&
+            String(t.tournament_type ?? '').toUpperCase() !== 'SPIN'
+        );
+        if (alive) setSatelliteTargets(deliverable.map((t: any) => ({ id: t.id, name: t.name })));
       } catch (e) {
         reportError(e, 'CreateTournamentModal.loadSatelliteTargets');
       }
@@ -440,27 +449,15 @@ export default function CreateTournamentModal({
     };
   }, [isSatellite, clubId]);
 
-  /**
-   * ── Auto-set defaults when format changes ──
-   *
-   * MULTI-DAY IS RESET FOR EVERY FORMAT, NOT JUST TWO OF THEM (2026-08-31).
-   * The checkbox only renders for the three `mtt_*` formats, so a value set on
-   * a freezeout and then carried into Bounty or Satellite was invisible AND
-   * fatal: `trg_tournaments_refuse_unbuilt_multi_day` RAISEs 0A000 on insert,
-   * so the operator got an unexplained failure with no control on screen to
-   * undo it. Resetting before the switch means the flag can only ever be true
-   * on a format that shows it.
-   */
+  // Apply the selected format's defaults.
   const handleFormatChange = (f: TournamentFormat) => {
     setFormat(f);
-    setIsMultiDay(false);
     switch (f) {
       case 'sng':
         setMttEntryRules('freezeout');
         setMaxPlayers('6');
         setLateRegLevels('0');
         setStartTimeMode('now');
-        setIsMultiDay(false);
         setAddOnAvailable(false);
         break;
       case 'spin':
@@ -468,7 +465,6 @@ export default function CreateTournamentModal({
         setMaxPlayers('3');
         setLateRegLevels('0');
         setStartTimeMode('now');
-        setIsMultiDay(false);
         setAddOnAvailable(false);
         /* The catalogue narrows on the way IN as well as in the list. Picking
            Short Deck and then switching the format to Spin would otherwise
@@ -522,10 +518,6 @@ export default function CreateTournamentModal({
         setMaxPlayers(DEFAULT_MTT_FIELD);
         setLateRegLevels('8');
         setAddOnAvailable(false);
-        /* `setIsMultiDay(true)` lived here — "XMTTs are typically multi-day".
-           Multi-day is NOT BUILT (no day end, no Day 2 resume, no flight
-           merge) and the database refuses the flag outright, so this line
-           made the XMTT format uncreatable. The reset above covers it. */
         break;
       case 'mtt_freezeout':
       default:
@@ -811,8 +803,9 @@ export default function CreateTournamentModal({
                 seatsAwarded: Math.max(1, parseInt(satelliteSeats) || 1),
               }
             : undefined,
-        isMultiDay,
-        totalDays: isMultiDay ? parseInt(totalDays) || 2 : undefined,
+        // Day 2 resume and flight merging are unavailable; the database refuses them.
+        isMultiDay: false,
+        totalDays: undefined,
         isXmtt: !!unionId,
         unionId: unionId || undefined,
         bountyConfig:
@@ -937,7 +930,14 @@ export default function CreateTournamentModal({
         const mainTournament = await tournamentService.createTournament(clubId, tournamentConfig);
 
         // Auto Satellite Generation
-        if (!isSatellite && generateSatellites) {
+        // Satellites can only feed an event whose seat they can deliver, so a
+        // bounty, PKO, mystery-bounty or Spin main event gets none.
+        const mainTakesSatellites =
+          format !== 'bounty' &&
+          format !== 'progressive_bounty' &&
+          format !== 'mystery_bounty' &&
+          format !== 'spin';
+        if (!isSatellite && mainTakesSatellites && generateSatellites) {
           const satCount = Math.max(1, parseInt(genSatCount) || 1);
           const satBuyIn = parseInt(genSatBuyIn) || Math.max(1, Math.round(parsedBuyIn * 0.1));
           const satSeats = Math.max(1, parseInt(genSatSeats) || 1);
@@ -1065,128 +1065,115 @@ export default function CreateTournamentModal({
       }}
     >
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <SpadeConsole
-          as="div"
-          className={styles.console}
-          eyebrow={unionId ? 'Union' : 'Club'}
-          title={unionId ? 'Create Union Tournament (XMTT)' : 'Create Tournament'}
-          titleId="create-tournament-title"
-          plates={{
-            secondary: { label: 'Cancel', onClick: onClose, 'aria-label': 'Cancel Create Game' },
-            /* The blue glass carries the one thing this sheet exists to do. It
-               submits the form by id, so the button can live on the painted
-               foot while the form stays where it is. */
-            primary: {
-              label: isSubmitting ? 'Creating...' : 'Create Tournament',
-              ink: 'white' as const,
-              type: 'submit' as const,
-              form: 'create-tournament-form',
-              disabled: !canSubmit,
-            },
-          }}
-        >
-          <form id="create-tournament-form" className={styles.form} onSubmit={handleSubmit}>
-            <div className={styles.formGroup}>
-              <label>
-                Tournament Name <span className={styles.required}>*</span>
-              </label>
-              <input
-                className={styles.input}
-                value={name}
-                maxLength={44}
-                onChange={(e) => setName(e.target.value.slice(0, 44))}
-                placeholder="E.G. Saturday Night Turbo"
-                required
-                aria-invalid={!name.trim()}
-              />
-            </div>
+        <div className={styles.header}>
+          <h2>{unionId ? 'Create Union Tournament (XMTT)' : 'Create Tournament'}</h2>
+          <button className={styles.closeParams} onClick={onClose}>
+            &times;
+          </button>
+        </div>
 
-            {/* Entry rules and prize style are independent tournament axes. */}
-            {format === 'sng' || format === 'spin' || format === 'satellite' ? (
+        <form className={styles.form} onSubmit={handleSubmit}>
+          <div className={styles.formGroup}>
+            <label>
+              Tournament Name <span style={{ color: '#ef4444' }}>*</span>
+            </label>
+            <input
+              className={styles.input}
+              value={name}
+              maxLength={44}
+              onChange={(e) => setName(e.target.value.slice(0, 44))}
+              placeholder="E.G. Saturday Night Turbo"
+              required
+              style={!name.trim() ? { borderColor: '#ef4444' } : undefined}
+            />
+          </div>
+
+          {/* Entry rules and prize style are independent tournament axes. */}
+          {format === 'sng' || format === 'spin' || format === 'satellite' ? (
+            <div className={styles.formGroup}>
+              <label>Tournament Category</label>
+              <select
+                className={styles.select}
+                value={format}
+                onChange={(e) => handleFormatChange(e.target.value as TournamentFormat)}
+              >
+                <option value="sng">Heads Up</option>
+                <option value="spin">Spin & Go</option>
+                <option value="satellite">Satellite</option>
+                <option value="mtt_freezeout">Multi-Table Tournament</option>
+              </select>
+            </div>
+          ) : (
+            <div className={styles.formatAxes}>
               <div className={styles.formGroup}>
-                <label>Tournament Category</label>
+                <label>Entry Rules</label>
                 <select
                   className={styles.select}
-                  value={format}
-                  onChange={(e) => handleFormatChange(e.target.value as TournamentFormat)}
+                  value={mttEntryRules}
+                  onChange={(e) => applyMttEntryRules(e.target.value as MttEntryRules)}
                 >
-                  <option value="sng">Heads Up</option>
-                  <option value="spin">Spin & Go</option>
-                  <option value="satellite">Satellite</option>
-                  <option value="mtt_freezeout">Multi-Table Tournament</option>
+                  <option value="freezeout">Freezeout</option>
+                  <option value="free_buy">Free Buy (First Entry Free)</option>
+                  <option value="rebuy">Rebuy (Same Seat)</option>
+                  <option value="reentry">Re-Entry (New Seat)</option>
                 </select>
               </div>
-            ) : (
-              <div className={styles.formatAxes}>
+              <div className={styles.formGroup}>
+                <label>Prize Style</label>
+                <select
+                  className={styles.select}
+                  value={mttPrizeStyle}
+                  onChange={(e) => applyMttPrizeStyle(e.target.value as MttPrizeStyle)}
+                >
+                  <option value="regular">Regular Tournament</option>
+                  <option value="bounty">Knockout Bounty</option>
+                  <option value="progressive_bounty">Progressive Knockout (PKO)</option>
+                  <option value="mystery_bounty">Mystery Bounty</option>
+                </select>
+              </div>
+            </div>
+          )}
+
+          {/* Game Variant Selection */}
+          <div className={styles.formGroup}>
+            <label>
+              Game <span style={{ color: '#ef4444' }}>*</span>
+            </label>
+            <select
+              className={styles.select}
+              value={gameVariant}
+              onChange={(e) => setGameVariant(e.target.value as TournamentGameVariant)}
+            >
+              {variantOptions.map((v) => (
+                <option key={v.value} value={v.value}>
+                  {v.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className={styles.row}>
+            {/* Fixed-seat formats expose their exact seat count. MTT fields do
+                not have an operator-set maximum. */}
+            {format === 'spin' && (
+              <div className={styles.col}>
                 <div className={styles.formGroup}>
-                  <label>Entry Rules</label>
-                  <select
-                    className={styles.select}
-                    value={mttEntryRules}
-                    onChange={(e) => applyMttEntryRules(e.target.value as MttEntryRules)}
-                  >
-                    <option value="freezeout">Freezeout</option>
-                    <option value="free_buy">Free Buy (First Entry Free)</option>
-                    <option value="rebuy">Rebuy (Same Seat)</option>
-                    <option value="reentry">Re-Entry (New Seat)</option>
-                  </select>
-                </div>
-                <div className={styles.formGroup}>
-                  <label>Prize Style</label>
-                  <select
-                    className={styles.select}
-                    value={mttPrizeStyle}
-                    onChange={(e) => applyMttPrizeStyle(e.target.value as MttPrizeStyle)}
-                  >
-                    <option value="regular">Regular Tournament</option>
-                    <option value="bounty">Knockout Bounty</option>
-                    <option value="progressive_bounty">Progressive Knockout (PKO)</option>
-                    <option value="mystery_bounty">Mystery Bounty</option>
-                  </select>
+                  <label>Players</label>
+                  <input
+                    type="text"
+                    className={styles.input}
+                    value="3 Players (Fixed)"
+                    disabled
+                    style={{ opacity: 0.7 }}
+                  />
+                  <span className={styles.helperText}>Spins Always Start With 3 Players</span>
                 </div>
               </div>
             )}
-
-            {/* Game Variant Selection */}
-            <div className={styles.formGroup}>
-              <label>
-                Game <span className={styles.required}>*</span>
-              </label>
-              <select
-                className={styles.select}
-                value={gameVariant}
-                onChange={(e) => setGameVariant(e.target.value as TournamentGameVariant)}
-              >
-                {variantOptions.map((v) => (
-                  <option key={v.value} value={v.value}>
-                    {v.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className={styles.row}>
-              {/* Fixed-seat formats expose their exact seat count. MTT fields do
-                not have an operator-set maximum. */}
-              {format === 'spin' && (
-                <div className={styles.col}>
-                  <div className={styles.formGroup}>
-                    <label>Players</label>
-                    <input
-                      type="text"
-                      className={styles.input}
-                      value="3 Players (Fixed)"
-                      disabled
-                      style={{ opacity: 0.7 }}
-                    />
-                    <span className={styles.helperText}>Spins Always Start With 3 Players</span>
-                  </div>
-                </div>
-              )}
-              {format === 'spin' && (
-                <div className={styles.col}>
-                  <div className={styles.formGroup}>
-                    {/*
+            {format === 'spin' && (
+              <div className={styles.col}>
+                <div className={styles.formGroup}>
+                  {/*
                     THIS WAS A CHOICE BETWEEN TWO IDENTICAL THINGS, PRICED WRONG
                     (removed 2026-09-02).
 
@@ -1205,98 +1192,98 @@ export default function CreateTournamentModal({
                     tier table rather than typed, so it cannot drift again the
                     next time a tier changes.
                   */}
-                    <label>Spin Payout Table</label>
-                    <span className={styles.helperText}>
-                      {`One Table, ${SPIN_TIERS.length} Multipliers. Expected Return ${expectedMultiplier().toFixed(2)}X Per Buy In Across ${SPIN_SEATS} Seats, A House Edge Of ${(impliedHouseEdge() * 100).toFixed(1)}%.`}
-                    </span>
-                  </div>
+                  <label>Spin Payout Table</label>
+                  <span className={styles.helperText}>
+                    {`One Table, ${SPIN_TIERS.length} Multipliers. Expected Return ${expectedMultiplier().toFixed(2)}X Per Buy In Across ${SPIN_SEATS} Seats, A House Edge Of ${(impliedHouseEdge() * 100).toFixed(1)}%.`}
+                  </span>
                 </div>
-              )}
-              {format === 'sng' && (
-                <div className={styles.col}>
-                  <div className={styles.formGroup}>
-                    <label>
-                      Max Players <span className={styles.required}>*</span>
-                    </label>
-                    <select
-                      className={styles.select}
-                      value={maxPlayers}
-                      onChange={(e) => setMaxPlayers(e.target.value)}
-                    >
-                      <option value="2">Heads Up (2)</option>
-                      <option value="3">3 Players</option>
-                      <option value="6">6-Max</option>
-                      <option value="9">Full Ring (9)</option>
-                    </select>
-                  </div>
+              </div>
+            )}
+            {format === 'sng' && (
+              <div className={styles.col}>
+                <div className={styles.formGroup}>
+                  <label>
+                    Max Players <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <select
+                    className={styles.select}
+                    value={maxPlayers}
+                    onChange={(e) => setMaxPlayers(e.target.value)}
+                  >
+                    <option value="2">Heads Up (2)</option>
+                    <option value="3">3 Players</option>
+                    <option value="6">6-Max</option>
+                    <option value="9">Full Ring (9)</option>
+                  </select>
                 </div>
-              )}
-              {/* THE MTT FAMILY HAD NO FIELD CONTROL AT ALL (2026-08-31), and
+              </div>
+            )}
+            {/* THE MTT FAMILY HAD NO FIELD CONTROL AT ALL (2026-08-31), and
                 sent 0 for "unlimited" — which the database refuses outright, so
                 every MTT, bounty, satellite and XMTT built here failed before a
                 row was written. There is no unlimited field: registration stops
                 at the cap, so the cap has to be a number the operator chooses. */}
-              <div className={styles.col}>
-                <div className={styles.formGroup}>
-                  <label>
-                    Speed <span className={styles.required}>*</span>
-                  </label>
-                  <select
-                    className={styles.select}
-                    value={blindSpeed}
-                    onChange={(e) =>
-                      setBlindSpeed(e.target.value as 'turbo' | 'regular' | 'deepStack' | 'custom')
-                    }
-                  >
-                    <option value="turbo">Turbo (3M)</option>
-                    <option value="regular">Regular (8M)</option>
-                    <option value="deepStack">Deep Stack (15M)</option>
-                    <option value="custom">Custom Structure</option>
-                  </select>
-                </div>
+            <div className={styles.col}>
+              <div className={styles.formGroup}>
+                <label>
+                  Speed <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <select
+                  className={styles.select}
+                  value={blindSpeed}
+                  onChange={(e) =>
+                    setBlindSpeed(e.target.value as 'turbo' | 'regular' | 'deepStack' | 'custom')
+                  }
+                >
+                  <option value="turbo">Turbo (3M)</option>
+                  <option value="regular">Regular (8M)</option>
+                  <option value="deepStack">Deep Stack (15M)</option>
+                  <option value="custom">Custom Structure</option>
+                </select>
               </div>
             </div>
+          </div>
 
-            {blindSpeed === 'custom' && (
+          {blindSpeed === 'custom' && (
+            <div className={styles.formGroup}>
+              <span className={styles.sectionLabel}>Blind Structure</span>
+              <span className={styles.helperText}>
+                Levels Are Sent Exactly As Shown, Breaks Included.
+              </span>
+              <BlindStructureBuilder
+                onChange={setCustomBlinds}
+                startingChips={parseInt(startingChips) || 10000}
+              />
+            </div>
+          )}
+
+          <div className={styles.row}>
+            <div className={styles.col}>
               <div className={styles.formGroup}>
-                <span className={styles.sectionLabel}>Blind Structure</span>
-                <span className={styles.helperText}>
-                  Levels Are Sent Exactly As Shown, Breaks Included.
-                </span>
-                <BlindStructureBuilder
-                  onChange={setCustomBlinds}
-                  startingChips={parseInt(startingChips) || 10000}
-                />
-              </div>
-            )}
-
-            <div className={styles.row}>
-              <div className={styles.col}>
-                <div className={styles.formGroup}>
-                  <label>
-                    Buy-In <span className={styles.required}>*</span>
-                  </label>
-                  {/* WHOLE NUMBERS ONLY (Dan 2026-08-20). step/min/inputMode set
+                <label>
+                  Buy-In <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                {/* WHOLE NUMBERS ONLY (Dan 2026-08-20). step/min/inputMode set
                     the browser and the mobile keypad, and digitsOnly stops a
                     decimal point being typed or pasted at all. */}
-                  <input
-                    type="number"
-                    className={styles.input}
-                    value={buyIn}
-                    onChange={(e) => setBuyIn(digitsOnly(e.target.value))}
-                    min={1}
-                    step={1}
-                    inputMode="numeric"
-                    aria-invalid={!isWholeBuyIn(buyIn)}
-                  />
-                  <span className={styles.helperText}>
-                    Whole Chips Only. This Is The Total The Player Pays.
-                  </span>
-                </div>
+                <input
+                  type="number"
+                  className={styles.input}
+                  value={buyIn}
+                  onChange={(e) => setBuyIn(digitsOnly(e.target.value))}
+                  min={1}
+                  step={1}
+                  inputMode="numeric"
+                  style={!isWholeBuyIn(buyIn) ? { borderColor: '#ef4444' } : undefined}
+                />
+                <span className={styles.helperText}>
+                  Whole Chips Only. This Is The Total The Player Pays.
+                </span>
               </div>
-              <div className={styles.col}>
-                <div className={styles.formGroup}>
-                  {/* RAKE-AUDIT 2026-07-24: fee is the HOUSE RULE 10% of buy-in,
+            </div>
+            <div className={styles.col}>
+              <div className={styles.formGroup}>
+                {/* RAKE-AUDIT 2026-07-24: fee is the HOUSE RULE 10% of buy-in,
                     auto-computed and read-only. It was a free-form field (any
                     value incl. 0), so the platform-wide 10% rule was only a
                     coincidence of defaults. fn_create_tournament recomputes the
@@ -1304,528 +1291,488 @@ export default function CreateTournamentModal({
                     2026-08-20: the fee is a CUT OUT OF the buy-in, rounded to a
                     whole number, so the player pays exactly the figure typed on
                     the left and never a decimal. */}
-                  <label>
-                    {quotedRakeRate === 0
-                      ? 'Fee (Spins Carry None)'
-                      : `Fee (${Math.round(quotedRakeRate * 100)}% Of Buy-In)`}
-                  </label>
-                  <input
-                    type="number"
-                    className={styles.input}
-                    value={split.fee}
-                    readOnly
-                    disabled
-                    min={0}
-                    step={1}
-                  />
-                  <span className={styles.helperText}>
-                    {split.total > 0
-                      ? `${money(split.total)} Entry = ${money(split.prize)} To The Prize Pool + ${money(split.fee)} Fee`
-                      : 'Taken Out Of The Buy-In, Not Added On Top'}
-                  </span>
-                </div>
+                <label>
+                  {quotedRakeRate === 0
+                    ? 'Fee (Spins Carry None)'
+                    : `Fee (${Math.round(quotedRakeRate * 100)}% Of Buy-In)`}
+                </label>
+                <input
+                  type="number"
+                  className={styles.input}
+                  value={split.fee}
+                  readOnly
+                  disabled
+                  min={0}
+                  step={1}
+                />
+                <span className={styles.helperText}>
+                  {split.total > 0
+                    ? `${money(split.total)} Entry = ${money(split.prize)} To The Prize Pool + ${money(split.fee)} Fee`
+                    : 'Taken Out Of The Buy-In, Not Added On Top'}
+                </span>
               </div>
             </div>
+          </div>
 
+          <div className={styles.row}>
+            <div className={styles.col}>
+              <div className={styles.formGroup}>
+                <label>
+                  Starting Chips <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <input
+                  type="number"
+                  className={styles.input}
+                  value={startingChips}
+                  onChange={(e) => setStartingChips(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className={styles.col}>
+              <div className={styles.formGroup}>
+                <label>Guaranteed Prize</label>
+                <input
+                  type="number"
+                  className={styles.input}
+                  value={guaranteedPrize}
+                  onChange={(e) => setGuaranteedPrize(digitsOnly(e.target.value))}
+                  min={0}
+                  step={1}
+                  inputMode="numeric"
+                />
+                <span className={styles.helperText}>0 = No Guarantee</span>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Satellite Target ── */}
+          {isSatellite && (
             <div className={styles.row}>
               <div className={styles.col}>
                 <div className={styles.formGroup}>
-                  <label>
-                    Starting Chips <span className={styles.required}>*</span>
-                  </label>
-                  <input
-                    type="number"
-                    className={styles.input}
-                    value={startingChips}
-                    onChange={(e) => setStartingChips(e.target.value)}
-                  />
+                  <label>Awards Seats Into</label>
+                  <select
+                    className={styles.select}
+                    value={satelliteTargetId}
+                    onChange={(e) => setSatelliteTargetId(e.target.value)}
+                  >
+                    <option value="">Select Target Tournament…</option>
+                    {satelliteTargets.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className={styles.helperText}>
+                    {satelliteTargets.length === 0
+                      ? 'No Upcoming Tournaments To Feed Into - Create One First.'
+                      : 'Winners Earn A Seat Into This Tournament.'}
+                  </span>
                 </div>
               </div>
               <div className={styles.col}>
                 <div className={styles.formGroup}>
-                  <label>Guaranteed Prize</label>
+                  <label>Seats Awarded</label>
                   <input
                     type="number"
                     className={styles.input}
-                    value={guaranteedPrize}
-                    onChange={(e) => setGuaranteedPrize(digitsOnly(e.target.value))}
-                    min={0}
-                    step={1}
-                    inputMode="numeric"
+                    value={satelliteSeats}
+                    onChange={(e) => setSatelliteSeats(e.target.value)}
+                    min="1"
+                    step="1"
                   />
-                  <span className={styles.helperText}>0 = No Guarantee</span>
+                  <span className={styles.helperText}>Top N Finishers Win A Seat</span>
                 </div>
               </div>
             </div>
+          )}
 
-            {/* ── Satellite Target ── */}
-            {isSatellite && (
+          {/* ── Start Time ── */}
+          {format !== 'sng' && format !== 'spin' && !isSatellite && (
+            <div className={styles.formGroup}>
+              <label>Start Time</label>
+              <div className={styles.row}>
+                <div className={styles.col}>
+                  <select
+                    className={styles.select}
+                    value={startTimeMode}
+                    onChange={(e) =>
+                      setStartTimeMode(e.target.value as 'now' | 'scheduled' | 'schedule_only')
+                    }
+                  >
+                    <option value="now">Start In 1 Min</option>
+                    <option value="scheduled">Schedule</option>
+                    {scheduleEnabled && (
+                      <option value="schedule_only">Recurring Schedule Only</option>
+                    )}
+                  </select>
+                </div>
+                {startTimeMode === 'scheduled' && (
+                  <>
+                    <div className={styles.col}>
+                      <select
+                        className={`${styles.select} ${styles.calendarSelect}`}
+                        value={scheduledDate}
+                        onChange={(e) => setScheduledDate(e.target.value)}
+                        aria-label="Tournament Start Date"
+                      >
+                        <option value="">Select Date</option>
+                        {scheduledDateOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className={styles.col}>
+                      <select
+                        className={styles.select}
+                        value={scheduledTime}
+                        onChange={(e) => setScheduledTime(e.target.value)}
+                        aria-label="Tournament Start Time"
+                      >
+                        <option value="">Select Time</option>
+                        {scheduledTimeOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Late Registration & Rebuy/Re-Entry Period (level-based) ── */}
+          {format !== 'spin' && (
+            <div className={styles.sectionDivider}>
+              <span className={styles.sectionLabel}>Late Registration / Rebuy Period</span>
               <div className={styles.row}>
                 <div className={styles.col}>
                   <div className={styles.formGroup}>
-                    <label>Awards Seats Into</label>
+                    <label>Late Reg Cutoff (Levels)</label>
                     <select
                       className={styles.select}
-                      value={satelliteTargetId}
-                      onChange={(e) => setSatelliteTargetId(e.target.value)}
+                      value={lateRegLevels}
+                      onChange={(e) => setLateRegLevels(e.target.value)}
                     >
-                      <option value="">Select Target Tournament…</option>
-                      {satelliteTargets.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
+                      <option value="0">No Late Registration</option>
+                      {[...Array(20)].map((_, i) => (
+                        <option key={i + 1} value={String(i + 1)}>
+                          Through Level {i + 1}
+                          {i + 1 >= 8 && i + 1 <= 12 ? ' (Recommended)' : ''}
                         </option>
                       ))}
                     </select>
                     <span className={styles.helperText}>
-                      {satelliteTargets.length === 0
-                        ? 'No Upcoming Tournaments To Feed Into - Create One First.'
-                        : 'Winners Earn A Seat Into This Tournament.'}
+                      {parseInt(lateRegLevels) > 0
+                        ? `Late Reg, Rebuys, And Re-Entries Close After Level ${lateRegLevels}`
+                        : 'No Late Registration - Registration Closes When Tournament Starts'}
                     </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Bounty Config ── */}
+          {isBountyFormat && (
+            <div className={styles.sectionDivider}>
+              <span className={styles.sectionLabel}>
+                {format === 'bounty'
+                  ? 'Bounty'
+                  : format === 'progressive_bounty'
+                    ? 'PKO'
+                    : 'Mystery Bounty'}{' '}
+                Settings
+                <span style={{ color: '#ef4444', marginLeft: 4 }}>*</span>
+              </span>
+              <div className={styles.row}>
+                <div className={styles.col}>
+                  <div className={styles.formGroup}>
+                    <label>
+                      {format === 'mystery_bounty'
+                        ? 'Base Bounty (Chips)'
+                        : 'Bounty Per KO (Chips)'}{' '}
+                      <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input
+                      type="number"
+                      className={styles.input}
+                      value={bountyAmount}
+                      onChange={(e) => setBountyAmount(digitsOnly(e.target.value))}
+                      min={1}
+                      step={1}
+                      inputMode="numeric"
+                      required
+                      style={!isWholeBuyIn(bountyAmount) ? { borderColor: '#ef4444' } : undefined}
+                    />
+                    <span className={styles.helperText}>Amount Awarded For Each Knockout</span>
+                  </div>
+                </div>
+                {format === 'mystery_bounty' && (
+                  <>
+                    <div className={styles.col}>
+                      <div className={styles.formGroup}>
+                        <label>
+                          Min Multiplier <span style={{ color: '#ef4444' }}>*</span>
+                        </label>
+                        <input
+                          type="number"
+                          className={styles.input}
+                          value={mysteryBountyMin}
+                          onChange={(e) => setMysteryBountyMin(digitsOnly(e.target.value))}
+                          min={1}
+                          step={1}
+                          inputMode="numeric"
+                          required
+                          style={
+                            !isWholeBuyIn(mysteryBountyMin) ? { borderColor: '#ef4444' } : undefined
+                          }
+                        />
+                        <span className={styles.helperText}>Lowest Multiplier (E.G. 1X)</span>
+                      </div>
+                    </div>
+                    <div className={styles.col}>
+                      <div className={styles.formGroup}>
+                        <label>
+                          Max Multiplier <span style={{ color: '#ef4444' }}>*</span>
+                        </label>
+                        <input
+                          type="number"
+                          className={styles.input}
+                          value={mysteryBountyMax}
+                          onChange={(e) => setMysteryBountyMax(digitsOnly(e.target.value))}
+                          min={2}
+                          step={1}
+                          inputMode="numeric"
+                          required
+                          style={
+                            Number(mysteryBountyMax) <= Number(mysteryBountyMin)
+                              ? { borderColor: '#ef4444' }
+                              : undefined
+                          }
+                        />
+                        <span className={styles.helperText}>Highest Multiplier (E.G. 100X)</span>
+                      </div>
+                    </div>
+                    {/* MYSTERY BOUNTY OPTIONS (Dan section 72). Four settings,
+                        all with a working default, so an owner who ignores this
+                        block still gets the ladder Dan specified. */}
+                    <div className={styles.col}>
+                      <div className={styles.formGroup}>
+                        <label>Prize Ladder</label>
+                        <select
+                          className={styles.input}
+                          value={mysteryProfile}
+                          onChange={(e) =>
+                            setMysteryProfile(e.target.value as typeof mysteryProfile)
+                          }
+                        >
+                          <option value="balanced">Balanced (Flatter Payouts)</option>
+                          <option value="classic">Classic (Recommended)</option>
+                          <option value="jackpot">Jackpot (Top Heavy)</option>
+                        </select>
+                        <span className={styles.helperText}>
+                          How Much Of The Pool Sits On The Biggest Chest
+                        </span>
+                      </div>
+                    </div>
+                    <div className={styles.col}>
+                      <div className={styles.formGroup}>
+                        <label>Chests Open</label>
+                        <select
+                          className={styles.input}
+                          value={mysteryActivation}
+                          onChange={(e) =>
+                            setMysteryActivation(e.target.value as typeof mysteryActivation)
+                          }
+                        >
+                          <option value="at_the_money">At The Money</option>
+                          <option value="percent_field">At A Percent Of The Field</option>
+                          <option value="player_count">At A Player Count</option>
+                        </select>
+                        <span className={styles.helperText}>
+                          Never Before Late Registration Closes
+                        </span>
+                      </div>
+                    </div>
+                    {mysteryActivation !== 'at_the_money' && (
+                      <div className={styles.col}>
+                        <div className={styles.formGroup}>
+                          <label>
+                            {mysteryActivation === 'percent_field'
+                              ? 'Percent Of Field Left'
+                              : 'Players Left'}
+                          </label>
+                          <input
+                            type="number"
+                            className={styles.input}
+                            value={mysteryActivationValue}
+                            onChange={(e) => setMysteryActivationValue(digitsOnly(e.target.value))}
+                            min={mysteryActivation === 'percent_field' ? 1 : 2}
+                            step={1}
+                            inputMode="numeric"
+                          />
+                          <span className={styles.helperText}>
+                            {mysteryActivation === 'percent_field'
+                              ? 'E.G. 20 Opens Chests With The Last Fifth Left'
+                              : 'E.G. 27 Opens Chests With 27 Players Left'}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    <div className={styles.col}>
+                      <div className={styles.formGroup}>
+                        <label>Percent Of Bounties In Chests</label>
+                        <input
+                          type="number"
+                          className={styles.input}
+                          value={mysteryPoolPercent}
+                          onChange={(e) => setMysteryPoolPercent(digitsOnly(e.target.value))}
+                          min={1}
+                          max={100}
+                          step={1}
+                          inputMode="numeric"
+                        />
+                        <span className={styles.helperText}>
+                          The Rest Pays Ordinary Bounties Before The Chests Open
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+              {format === 'bounty' && (
+                <span className={styles.helperText}>
+                  Full Bounty Amount Is Awarded To The Knocker On Each Elimination
+                </span>
+              )}
+              {format === 'progressive_bounty' && (
+                <span className={styles.helperText}>
+                  50% Of Bounty Goes To Knocker, 50% Added To Knocker's Own Bounty
+                </span>
+              )}
+              {format === 'mystery_bounty' && (
+                <span className={styles.helperText}>
+                  Each Head Is Sealed At Registration From A Jackpot Ladder - 60% X0.5, 25% X1, 10%
+                  X2, 4% X3, 1% X13 Of The Bounty Amount - And Revealed On Knockout. The Ladder
+                  Averages Exactly 1X, So The Bounty Pool Always Funds The Heads.
+                </span>
+              )}
+              {bountySplit && (
+                <div
+                  style={{
+                    marginTop: 8,
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    background: 'rgba(255,255,255,0.04)',
+                    border: '1px solid rgba(255,255,255,0.10)',
+                    fontSize: '0.75rem',
+                    lineHeight: 1.6,
+                  }}
+                >
+                  <strong style={{ color: '#ffd700' }}>
+                    Each {money(bountySplit.buyIn)} Entry Splits:
+                  </strong>
+                  <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 2 }}>
+                    <span>
+                      Bounty Pool <strong>{money(bountySplit.bounty)}</strong>
+                    </span>
+                    <span>
+                      Rake <strong>{money(bountySplit.rake)}</strong>
+                    </span>
+                    <span style={{ color: bountySplit.prize < 0 ? '#ef4444' : undefined }}>
+                      Prize Pool <strong>{money(bountySplit.prize)}</strong>
+                    </span>
+                  </div>
+                  <span style={{ opacity: 0.65 }}>
+                    Bounty And Prize Pools Are Tracked Separately; Unclaimed Bounty Money Goes To
+                    The Champion.
+                  </span>
+                </div>
+              )}
+              {!bountyValid && (
+                <p style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: 6 }}>
+                  {!isWholeBuyIn(bountyAmount)
+                    ? 'Bounty Amount Is Required And Must Be A Whole Number Greater Than 0'
+                    : bountySplit && bountySplit.prize < 0
+                      ? `Bounty ${money(bountySplit.bounty)} + ${money(bountySplit.rake)} Rake Exceeds The ${money(bountySplit.buyIn)} Buy-In - Nothing Left For The Prize Pool`
+                      : 'Mystery Max Multiplier Must Be Greater Than Min Multiplier'}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* ── Rebuy / Re-Entry / Add-On ── */}
+          {format !== 'spin' && (
+            <div className={styles.sectionDivider}>
+              <span className={styles.sectionLabel}>Rebuy / Re-Entry / Add-On</span>
+              <div className={styles.row}>
+                <div className={styles.col}>
+                  <div className={styles.formGroup}>
+                    <label className={styles.toggleLabel}>
+                      <input
+                        type="checkbox"
+                        checked={isRebuy}
+                        disabled
+                        className={styles.checkbox}
+                      />
+                      Allow Rebuys (Same Seat)
+                    </label>
+                    {!isRebuy && (
+                      <span className={styles.helperText}>
+                        Select "MTT (Rebuy)" Format To Enable
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className={styles.col}>
                   <div className={styles.formGroup}>
-                    <label>Seats Awarded</label>
-                    <input
-                      type="number"
-                      className={styles.input}
-                      value={satelliteSeats}
-                      onChange={(e) => setSatelliteSeats(e.target.value)}
-                      min="1"
-                      step="1"
-                    />
-                    <span className={styles.helperText}>Top N Finishers Win A Seat</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ── Start Time ── */}
-            {format !== 'sng' && format !== 'spin' && !isSatellite && (
-              <div className={styles.formGroup}>
-                <label>Start Time</label>
-                <div className={styles.row}>
-                  <div className={styles.col}>
-                    <select
-                      className={styles.select}
-                      value={startTimeMode}
-                      onChange={(e) =>
-                        setStartTimeMode(e.target.value as 'now' | 'scheduled' | 'schedule_only')
-                      }
-                    >
-                      <option value="now">Start In 1 Min</option>
-                      <option value="scheduled">Schedule</option>
-                      {scheduleEnabled && (
-                        <option value="schedule_only">Recurring Schedule Only</option>
-                      )}
-                    </select>
-                  </div>
-                  {startTimeMode === 'scheduled' && (
-                    <>
-                      <div className={styles.col}>
-                        <select
-                          className={`${styles.select} ${styles.calendarSelect}`}
-                          value={scheduledDate}
-                          onChange={(e) => setScheduledDate(e.target.value)}
-                          aria-label="Tournament Start Date"
-                        >
-                          <option value="">Select Date</option>
-                          {scheduledDateOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className={styles.col}>
-                        <select
-                          className={styles.select}
-                          value={scheduledTime}
-                          onChange={(e) => setScheduledTime(e.target.value)}
-                          aria-label="Tournament Start Time"
-                        >
-                          <option value="">Select Time</option>
-                          {scheduledTimeOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* ── Late Registration & Rebuy/Re-Entry Period (level-based) ── */}
-            {format !== 'spin' && (
-              <div className={styles.sectionDivider}>
-                <span className={styles.sectionLabel}>Late Registration / Rebuy Period</span>
-                <div className={styles.row}>
-                  <div className={styles.col}>
-                    <div className={styles.formGroup}>
-                      <label>Late Reg Cutoff (Levels)</label>
-                      <select
-                        className={styles.select}
-                        value={lateRegLevels}
-                        onChange={(e) => setLateRegLevels(e.target.value)}
-                      >
-                        <option value="0">No Late Registration</option>
-                        {[...Array(20)].map((_, i) => (
-                          <option key={i + 1} value={String(i + 1)}>
-                            Through Level {i + 1}
-                            {i + 1 >= 8 && i + 1 <= 12 ? ' (Recommended)' : ''}
-                          </option>
-                        ))}
-                      </select>
-                      <span className={styles.helperText}>
-                        {parseInt(lateRegLevels) > 0
-                          ? `Late Reg, Rebuys, And Re-Entries Close After Level ${lateRegLevels}`
-                          : 'No Late Registration - Registration Closes When Tournament Starts'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ── Bounty Config ── */}
-            {isBountyFormat && (
-              <div className={styles.sectionDivider}>
-                <span className={styles.sectionLabel}>
-                  {format === 'bounty'
-                    ? 'Bounty'
-                    : format === 'progressive_bounty'
-                      ? 'PKO'
-                      : 'Mystery Bounty'}{' '}
-                  Settings
-                  <span className={styles.requiredSpaced}>*</span>
-                </span>
-                <div className={styles.row}>
-                  <div className={styles.col}>
-                    <div className={styles.formGroup}>
-                      <label>
-                        {format === 'mystery_bounty'
-                          ? 'Base Bounty (Chips)'
-                          : 'Bounty Per KO (Chips)'}{' '}
-                        <span className={styles.required}>*</span>
-                      </label>
+                    <label className={styles.toggleLabel}>
                       <input
-                        type="number"
-                        className={styles.input}
-                        value={bountyAmount}
-                        onChange={(e) => setBountyAmount(digitsOnly(e.target.value))}
-                        min={1}
-                        step={1}
-                        inputMode="numeric"
-                        required
-                        aria-invalid={!isWholeBuyIn(bountyAmount)}
+                        type="checkbox"
+                        checked={isReentry}
+                        disabled
+                        className={styles.checkbox}
                       />
-                      <span className={styles.helperText}>Amount Awarded For Each Knockout</span>
-                    </div>
+                      Allow Re-Entry (New Seat)
+                    </label>
+                    {!isReentry && (
+                      <span className={styles.helperText}>
+                        Select "MTT (Re-Entry)" Format To Enable
+                      </span>
+                    )}
                   </div>
-                  {format === 'mystery_bounty' && (
-                    <>
-                      <div className={styles.col}>
-                        <div className={styles.formGroup}>
-                          <label>
-                            Min Multiplier <span className={styles.required}>*</span>
-                          </label>
-                          <input
-                            type="number"
-                            className={styles.input}
-                            value={mysteryBountyMin}
-                            onChange={(e) => setMysteryBountyMin(digitsOnly(e.target.value))}
-                            min={1}
-                            step={1}
-                            inputMode="numeric"
-                            required
-                            aria-invalid={!isWholeBuyIn(mysteryBountyMin)}
-                          />
-                          <span className={styles.helperText}>Lowest Multiplier (E.G. 1X)</span>
-                        </div>
-                      </div>
-                      <div className={styles.col}>
-                        <div className={styles.formGroup}>
-                          <label>
-                            Max Multiplier <span className={styles.required}>*</span>
-                          </label>
-                          <input
-                            type="number"
-                            className={styles.input}
-                            value={mysteryBountyMax}
-                            onChange={(e) => setMysteryBountyMax(digitsOnly(e.target.value))}
-                            min={2}
-                            step={1}
-                            inputMode="numeric"
-                            required
-                            aria-invalid={Number(mysteryBountyMax) <= Number(mysteryBountyMin)}
-                          />
-                          <span className={styles.helperText}>Highest Multiplier (E.G. 100X)</span>
-                        </div>
-                      </div>
-                      {/* MYSTERY BOUNTY OPTIONS (Dan section 72). Four settings,
-                        all with a working default, so an owner who ignores this
-                        block still gets the ladder Dan specified. */}
-                      <div className={styles.col}>
-                        <div className={styles.formGroup}>
-                          <label>Prize Ladder</label>
-                          <select
-                            className={styles.input}
-                            value={mysteryProfile}
-                            onChange={(e) =>
-                              setMysteryProfile(e.target.value as typeof mysteryProfile)
-                            }
-                          >
-                            <option value="balanced">Balanced (Flatter Payouts)</option>
-                            <option value="classic">Classic (Recommended)</option>
-                            <option value="jackpot">Jackpot (Top Heavy)</option>
-                          </select>
-                          <span className={styles.helperText}>
-                            How Much Of The Pool Sits On The Biggest Chest
-                          </span>
-                        </div>
-                      </div>
-                      <div className={styles.col}>
-                        <div className={styles.formGroup}>
-                          <label>Chests Open</label>
-                          <select
-                            className={styles.input}
-                            value={mysteryActivation}
-                            onChange={(e) =>
-                              setMysteryActivation(e.target.value as typeof mysteryActivation)
-                            }
-                          >
-                            <option value="at_the_money">At The Money</option>
-                            <option value="percent_field">At A Percent Of The Field</option>
-                            <option value="player_count">At A Player Count</option>
-                          </select>
-                          <span className={styles.helperText}>
-                            Never Before Late Registration Closes
-                          </span>
-                        </div>
-                      </div>
-                      {mysteryActivation !== 'at_the_money' && (
-                        <div className={styles.col}>
-                          <div className={styles.formGroup}>
-                            <label>
-                              {mysteryActivation === 'percent_field'
-                                ? 'Percent Of Field Left'
-                                : 'Players Left'}
-                            </label>
-                            <input
-                              type="number"
-                              className={styles.input}
-                              value={mysteryActivationValue}
-                              onChange={(e) =>
-                                setMysteryActivationValue(digitsOnly(e.target.value))
-                              }
-                              min={mysteryActivation === 'percent_field' ? 1 : 2}
-                              step={1}
-                              inputMode="numeric"
-                            />
-                            <span className={styles.helperText}>
-                              {mysteryActivation === 'percent_field'
-                                ? 'E.G. 20 Opens Chests With The Last Fifth Left'
-                                : 'E.G. 27 Opens Chests With 27 Players Left'}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                      <div className={styles.col}>
-                        <div className={styles.formGroup}>
-                          <label>Percent Of Bounties In Chests</label>
-                          <input
-                            type="number"
-                            className={styles.input}
-                            value={mysteryPoolPercent}
-                            onChange={(e) => setMysteryPoolPercent(digitsOnly(e.target.value))}
-                            min={1}
-                            max={100}
-                            step={1}
-                            inputMode="numeric"
-                          />
-                          <span className={styles.helperText}>
-                            The Rest Pays Ordinary Bounties Before The Chests Open
-                          </span>
-                        </div>
-                      </div>
-                    </>
-                  )}
                 </div>
-                {format === 'bounty' && (
-                  <span className={styles.helperText}>
-                    Full Bounty Amount Is Awarded To The Knocker On Each Elimination
-                  </span>
-                )}
-                {format === 'progressive_bounty' && (
-                  <span className={styles.helperText}>
-                    50% Of Bounty Goes To Knocker, 50% Added To Knocker's Own Bounty
-                  </span>
-                )}
-                {format === 'mystery_bounty' && (
-                  <span className={styles.helperText}>
-                    Each Head Is Sealed At Registration From A Jackpot Ladder - 60% X0.5, 25% X1,
-                    10% X2, 4% X3, 1% X13 Of The Bounty Amount - And Revealed On Knockout. The
-                    Ladder Averages Exactly 1X, So The Bounty Pool Always Funds The Heads.
-                  </span>
-                )}
-                {bountySplit && (
-                  <div
-                    style={{
-                      marginTop: 8,
-                      padding: '8px 12px',
-                      borderRadius: 8,
-                      background: 'rgba(255,255,255,0.04)',
-                      border: '1px solid rgba(255,255,255,0.10)',
-                      fontSize: '0.75rem',
-                      lineHeight: 1.6,
-                    }}
-                  >
-                    <strong className={styles.goldFigure}>
-                      Each {money(bountySplit.buyIn)} Entry Splits:
-                    </strong>
-                    <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 2 }}>
-                      <span>
-                        Bounty Pool <strong>{money(bountySplit.bounty)}</strong>
-                      </span>
-                      <span>
-                        Rake <strong>{money(bountySplit.rake)}</strong>
-                      </span>
-                      <span className={bountySplit.prize < 0 ? styles.badFigure : undefined}>
-                        Prize Pool <strong>{money(bountySplit.prize)}</strong>
-                      </span>
-                    </div>
-                    <span style={{ opacity: 0.65 }}>
-                      Bounty And Prize Pools Are Tracked Separately; Unclaimed Bounty Money Goes To
-                      The Champion.
-                    </span>
+                <div className={styles.col}>
+                  <div className={styles.formGroup}>
+                    <label className={styles.toggleLabel}>
+                      <input
+                        type="checkbox"
+                        checked={addOnAvailable}
+                        onChange={(e) => setAddOnAvailable(e.target.checked)}
+                        className={styles.checkbox}
+                      />
+                      Allow Add-Ons
+                    </label>
                   </div>
-                )}
-                {!bountyValid && (
-                  <p className={styles.formError}>
-                    {!isWholeBuyIn(bountyAmount)
-                      ? 'Bounty Amount Is Required And Must Be A Whole Number Greater Than 0'
-                      : bountySplit && bountySplit.prize < 0
-                        ? `Bounty ${money(bountySplit.bounty)} + ${money(bountySplit.rake)} Rake Exceeds The ${money(bountySplit.buyIn)} Buy-In - Nothing Left For The Prize Pool`
-                        : 'Mystery Max Multiplier Must Be Greater Than Min Multiplier'}
-                  </p>
-                )}
+                </div>
               </div>
-            )}
 
-            {/* ── Rebuy / Re-Entry / Add-On ── */}
-            {format !== 'spin' && (
-              <div className={styles.sectionDivider}>
-                <span className={styles.sectionLabel}>Rebuy / Re-Entry / Add-On</span>
-                <div className={styles.row}>
-                  <div className={styles.col}>
-                    <div className={styles.formGroup}>
-                      <label className={styles.toggleLabel}>
-                        <input
-                          type="checkbox"
-                          checked={isRebuy}
-                          disabled
-                          className={styles.checkbox}
-                        />
-                        Allow Rebuys (Same Seat)
-                      </label>
-                      {!isRebuy && (
-                        <span className={styles.helperText}>
-                          Select "MTT (Rebuy)" Format To Enable
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className={styles.col}>
-                    <div className={styles.formGroup}>
-                      <label className={styles.toggleLabel}>
-                        <input
-                          type="checkbox"
-                          checked={isReentry}
-                          disabled
-                          className={styles.checkbox}
-                        />
-                        Allow Re-Entry (New Seat)
-                      </label>
-                      {!isReentry && (
-                        <span className={styles.helperText}>
-                          Select "MTT (Re-Entry)" Format To Enable
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className={styles.col}>
-                    <div className={styles.formGroup}>
-                      <label className={styles.toggleLabel}>
-                        <input
-                          type="checkbox"
-                          checked={addOnAvailable}
-                          onChange={(e) => setAddOnAvailable(e.target.checked)}
-                          className={styles.checkbox}
-                        />
-                        Allow Add-Ons
-                      </label>
-                    </div>
-                  </div>
-                </div>
-
-                {(isRebuy || isReentry) && (
-                  <>
-                    <div className={styles.row}>
-                      <div className={styles.col}>
-                        <div className={styles.formGroup}>
-                          <label>{isRebuy ? 'Rebuy' : 'Re-Entry'} Cost</label>
-                          <input
-                            type="number"
-                            className={styles.input}
-                            value={rebuyCost}
-                            onChange={(e) => setRebuyCost(digitsOnly(e.target.value))}
-                            placeholder={buyIn}
-                            min={1}
-                            step={1}
-                            inputMode="numeric"
-                          />
-                          <span className={styles.helperText}>Blank = Same As Buy-In</span>
-                        </div>
-                      </div>
-                      <div className={styles.col}>
-                        <div className={styles.formGroup}>
-                          <label>{isRebuy ? 'Rebuy' : 'Re-Entry'} Chips</label>
-                          <input
-                            type="number"
-                            className={styles.input}
-                            value={rebuyChips}
-                            /* digitsOnly, like every other chip field. A raw value let
-                             parseInt('-500') through into the config. */
-                            onChange={(e) => setRebuyChips(digitsOnly(e.target.value))}
-                            placeholder={startingChips}
-                          />
-                          <span className={styles.helperText}>Blank = Starting Stack</span>
-                        </div>
-                      </div>
-                    </div>
-                    <span className={styles.helperText} style={{ display: 'block', marginTop: 4 }}>
-                      {isRebuy && isReentry
-                        ? `Rebuy (Same Seat) And Re-Entry (New Seat) Both Close After Level ${lateRegLevels || 0}`
-                        : isRebuy
-                          ? `Rebuy Period Closes After Level ${lateRegLevels || 0} (Same As Late Registration)`
-                          : `Re-Entry Period Closes After Level ${lateRegLevels || 0} (Same As Late Registration)`}
-                    </span>
-                  </>
-                )}
-
-                {addOnAvailable && (
-                  <div className={styles.row} style={{ marginTop: 8 }}>
+              {(isRebuy || isReentry) && (
+                <>
+                  <div className={styles.row}>
                     <div className={styles.col}>
                       <div className={styles.formGroup}>
-                        <label>Add-On Cost</label>
+                        <label>{isRebuy ? 'Rebuy' : 'Re-Entry'} Cost</label>
                         <input
                           type="number"
                           className={styles.input}
-                          value={addOnCost}
-                          onChange={(e) => setAddOnCost(digitsOnly(e.target.value))}
+                          value={rebuyCost}
+                          onChange={(e) => setRebuyCost(digitsOnly(e.target.value))}
                           placeholder={buyIn}
                           min={1}
                           step={1}
@@ -1836,442 +1783,466 @@ export default function CreateTournamentModal({
                     </div>
                     <div className={styles.col}>
                       <div className={styles.formGroup}>
-                        <label>Add-On Chips</label>
+                        <label>{isRebuy ? 'Rebuy' : 'Re-Entry'} Chips</label>
                         <input
                           type="number"
                           className={styles.input}
-                          value={addOnChips}
-                          onChange={(e) => setAddOnChips(digitsOnly(e.target.value))}
+                          value={rebuyChips}
+                          /* digitsOnly, like every other chip field. A raw value let
+                             parseInt('-500') through into the config. */
+                          onChange={(e) => setRebuyChips(digitsOnly(e.target.value))}
                           placeholder={startingChips}
                         />
                         <span className={styles.helperText}>Blank = Starting Stack</span>
                       </div>
                     </div>
-                    <div className={styles.col}>
-                      <div className={styles.formGroup}>
-                        <label>Add-On Period</label>
-                        <div className={styles.readOnlyRule}>1 Minute After Rebuy Period</div>
-                        <span className={styles.helperText}>
-                          Play Pauses For 60 Seconds. The Full Add-On Cost Goes To The Prize Pool
-                          With No Rake.
-                        </span>
-                      </div>
-                    </div>
                   </div>
-                )}
-              </div>
-            )}
+                  <span className={styles.helperText} style={{ display: 'block', marginTop: 4 }}>
+                    {isRebuy && isReentry
+                      ? `Rebuy (Same Seat) And Re-Entry (New Seat) Both Close After Level ${lateRegLevels || 0}`
+                      : isRebuy
+                        ? `Rebuy Period Closes After Level ${lateRegLevels || 0} (Same As Late Registration)`
+                        : `Re-Entry Period Closes After Level ${lateRegLevels || 0} (Same As Late Registration)`}
+                  </span>
+                </>
+              )}
 
-            {/* ── Multi-Day Toggle ── */}
-            {(format === 'mtt_freezeout' || format === 'mtt_rebuy' || format === 'mtt_reentry') && (
-              <div className={styles.row}>
-                <div className={styles.col}>
-                  <div className={styles.formGroup}>
-                    <label className={styles.toggleLabel}>
-                      <input
-                        type="checkbox"
-                        checked={isMultiDay}
-                        onChange={(e) => setIsMultiDay(e.target.checked)}
-                        className={styles.checkbox}
-                      />
-                      Multi-Day Tournament
-                    </label>
-                  </div>
-                </div>
-                {isMultiDay && (
+              {addOnAvailable && (
+                <div className={styles.row} style={{ marginTop: 8 }}>
                   <div className={styles.col}>
                     <div className={styles.formGroup}>
-                      <label>Total Days</label>
+                      <label>Add-On Cost</label>
                       <input
                         type="number"
                         className={styles.input}
-                        value={totalDays}
-                        onChange={(e) => setTotalDays(e.target.value)}
-                        min="2"
-                        max="7"
+                        value={addOnCost}
+                        onChange={(e) => setAddOnCost(digitsOnly(e.target.value))}
+                        placeholder={buyIn}
+                        min={1}
+                        step={1}
+                        inputMode="numeric"
                       />
+                      <span className={styles.helperText}>Blank = Same As Buy-In</span>
                     </div>
                   </div>
-                )}
-              </div>
-            )}
-
-            {/* ── Auto Satellite Generation ── */}
-            {!isSatellite && (
-              <div className={styles.row}>
-                <div className={styles.col} style={{ flex: '1 1 100%' }}>
-                  <div className={`${styles.formGroup} ${styles.subSection}`}>
-                    <label className={styles.subLabel}>
+                  <div className={styles.col}>
+                    <div className={styles.formGroup}>
+                      <label>Add-On Chips</label>
                       <input
-                        type="checkbox"
-                        checked={generateSatellites}
-                        onChange={(e) => setGenerateSatellites(e.target.checked)}
-                        className={styles.checkbox}
+                        type="number"
+                        className={styles.input}
+                        value={addOnChips}
+                        onChange={(e) => setAddOnChips(digitsOnly(e.target.value))}
+                        placeholder={startingChips}
                       />
-                      Generate Satellites To This Event?
-                    </label>
-                    {generateSatellites && (
-                      <div
-                        style={{
-                          marginTop: '16px',
-                          display: 'flex',
-                          gap: '16px',
-                          flexWrap: 'wrap',
-                        }}
-                      >
-                        <div className={styles.formGroup} style={{ flex: 1, minWidth: '120px' }}>
-                          <label>Number Of Satellites</label>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            className={styles.input}
-                            value={genSatCount}
-                            onChange={(e) => setGenSatCount(digitsOnly(e.target.value))}
-                            min="1"
-                            max="10"
-                          />
-                        </div>
-                        <div className={styles.formGroup} style={{ flex: 1, minWidth: '120px' }}>
-                          <label>Satellite Buy-In</label>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            className={styles.input}
-                            value={genSatBuyIn}
-                            onChange={(e) => setGenSatBuyIn(digitsOnly(e.target.value))}
-                            min="1"
-                            placeholder={Math.round(parseInt(buyIn) * 0.1 || 10).toString()}
-                          />
-                        </div>
-                        <div className={styles.formGroup} style={{ flex: 1, minWidth: '120px' }}>
-                          <label>Seats Awarded</label>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            className={styles.input}
-                            value={genSatSeats}
-                            onChange={(e) => setGenSatSeats(digitsOnly(e.target.value))}
-                            min="1"
-                          />
-                        </div>
-                      </div>
-                    )}
-                    {generateSatellites && (
-                      <span
-                        className={styles.helperText}
-                        style={{ marginTop: 8, display: 'block' }}
-                      >
-                        Satellites Will Be Created Automatically Using The Same Format/Rules As This
-                        Event, But Linked As Feeders. You Can Edit Their Start Times In The Lobby
-                        Later.
+                      <span className={styles.helperText}>Blank = Starting Stack</span>
+                    </div>
+                  </div>
+                  <div className={styles.col}>
+                    <div className={styles.formGroup}>
+                      <label>Add-On Period</label>
+                      <div className={styles.readOnlyRule}>1 Minute After Rebuy Period</div>
+                      <span className={styles.helperText}>
+                        Play Pauses For 60 Seconds. The Full Add-On Cost Goes To The Prize Pool With
+                        No Rake.
                       </span>
-                    )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+          )}
 
-            {/* ── Advanced Options (PokerBros parity, 2026-08-22) ── */}
-            <div className={`${styles.sectionDivider} ${styles.subSection}`}>
-              <button
-                type="button"
-                className={styles.select}
-                style={{ width: '100%', textAlign: 'left', cursor: 'pointer', fontWeight: 700 }}
-                onClick={() => setShowAdvanced((v) => !v)}
-              >
-                {showAdvanced ? '- Hide Advanced Options' : '+ Advanced Options'}
-              </button>
+          {/* Multi-day creation is refused until Day 2 and flight merging exist. */}
+          {(format === 'mtt_freezeout' || format === 'mtt_rebuy' || format === 'mtt_reentry') && (
+            <div className={styles.formGroup}>
+              <span className={styles.toggleLabel}>Multi-Day Tournament</span>
+              <span className={styles.helperText}>
+                Not Available Yet. Day 2 Resume And Flight Merging Are Not Supported.
+              </span>
+            </div>
+          )}
 
-              {showAdvanced && (
-                <>
-                  <div className={styles.formGroup} style={{ marginTop: 8 }}>
-                    <label>Short Description</label>
+          {/* ── Auto Satellite Generation ── */}
+          {!isSatellite && !isBountyFormat && format !== 'spin' && (
+            <div className={styles.row}>
+              <div className={styles.col} style={{ flex: '1 1 100%' }}>
+                <div
+                  className={styles.formGroup}
+                  style={{ borderTop: '1px solid #334155', paddingTop: '16px', marginTop: '8px' }}
+                >
+                  <label style={{ fontWeight: 700, color: '#60a5fa' }}>
                     <input
-                      className={styles.input}
-                      value={shortDescription}
-                      maxLength={200}
-                      onChange={(e) => setShortDescription(e.target.value)}
-                      placeholder="Optional Line Shown On The Tournament Page"
+                      type="checkbox"
+                      checked={generateSatellites}
+                      onChange={(e) => setGenerateSatellites(e.target.checked)}
+                      className={styles.checkbox}
                     />
-                  </div>
-
-                  <div className={styles.row}>
-                    {(
-                      [
-                        ['VIP Only', isVipOnly, setIsVipOnly],
-                        ['All-In Or Fold', allInOrFold, setAllInOrFold],
-                        ['Label As NEW', labelAsNew, setLabelAsNew],
-                        ['Hide Club Name', hideClubName, setHideClubName],
-                        ['Featured (Pinned)', isFeatured, setIsFeatured],
-                        ['Accelerated MTT', acceleratedMtt, setAcceleratedMtt],
-                        ['Big Blind Ante', bigBlindAnte, setBigBlindAnte],
-                        ['Authorized To Register', authorizedToRegister, setAuthorizedToRegister],
-                        ['Synchronized Breaks', synchronizedBreaks, setSynchronizedBreaks],
-                        ['Bubble Protection', bubbleProtection, setBubbleProtection],
-                        ['Final Table Deal', finalTableDeal, setFinalTableDeal],
-                      ] as Array<[string, boolean, (v: boolean) => void]>
-                    ).map(([label, value, setter]) => (
-                      <div className={styles.col} key={label} style={{ minWidth: '45%' }}>
-                        <div className={styles.formGroup}>
-                          <label className={styles.toggleLabel}>
-                            <input
-                              type="checkbox"
-                              checked={value}
-                              onChange={(e) => setter(e.target.checked)}
-                              className={styles.checkbox}
-                            />
-                            {label}
-                          </label>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className={styles.lockedRule}>
-                    <strong>Chat: Off</strong>
-                    <span>Chat Is Always Disabled In Multi-Table Tournaments.</span>
-                  </div>
-
-                  <div className={styles.row}>
-                    <div className={styles.col}>
-                      <div className={styles.formGroup}>
-                        <label>Action Time (Seconds)</label>
+                    Generate Satellites To This Event?
+                  </label>
+                  {generateSatellites && (
+                    <div
+                      style={{ marginTop: '16px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}
+                    >
+                      <div className={styles.formGroup} style={{ flex: 1, minWidth: '120px' }}>
+                        <label>Number Of Satellites</label>
                         <input
-                          type="number"
-                          className={styles.input}
-                          value={actionTimeSeconds}
-                          onChange={(e) => setActionTimeSeconds(digitsOnly(e.target.value))}
-                          min={5}
-                          max={60}
-                          step={1}
+                          type="text"
                           inputMode="numeric"
+                          className={styles.input}
+                          value={genSatCount}
+                          onChange={(e) => setGenSatCount(digitsOnly(e.target.value))}
+                          min="1"
+                          max="10"
                         />
-                        <span className={styles.helperText}>5 To 60 Seconds Per Action</span>
+                      </div>
+                      <div className={styles.formGroup} style={{ flex: 1, minWidth: '120px' }}>
+                        <label>Satellite Buy-In</label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          className={styles.input}
+                          value={genSatBuyIn}
+                          onChange={(e) => setGenSatBuyIn(digitsOnly(e.target.value))}
+                          min="1"
+                          placeholder={Math.round(parseInt(buyIn) * 0.1 || 10).toString()}
+                        />
+                      </div>
+                      <div className={styles.formGroup} style={{ flex: 1, minWidth: '120px' }}>
+                        <label>Seats Awarded</label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          className={styles.input}
+                          value={genSatSeats}
+                          onChange={(e) => setGenSatSeats(digitsOnly(e.target.value))}
+                          min="1"
+                        />
                       </div>
                     </div>
-                    <div className={styles.col}>
-                      <div className={styles.formGroup}>
-                        <label>Table Size</label>
-                        <input
-                          type="number"
-                          className={styles.input}
-                          value={tableSize}
-                          onChange={(e) => setTableSize(digitsOnly(e.target.value))}
-                          min={2}
-                          max={10}
-                          step={1}
-                          inputMode="numeric"
-                        />
-                        <span className={styles.helperText}>2 To 10 Seats Per Table</span>
-                      </div>
-                    </div>
-                  </div>
+                  )}
+                  {generateSatellites && (
+                    <span className={styles.helperText} style={{ marginTop: 8, display: 'block' }}>
+                      Satellites Will Be Created Automatically Using The Same Format/Rules As This
+                      Event, But Linked As Feeders. You Can Edit Their Start Times In The Lobby
+                      Later.
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
-                  <div className={styles.row}>
-                    <div className={styles.col}>
+          {/* ── Advanced Options (PokerBros parity, 2026-08-22) ── */}
+          <div
+            className={styles.sectionDivider}
+            style={{ borderTop: '1px solid #334155', paddingTop: '16px', marginTop: '8px' }}
+          >
+            <button
+              type="button"
+              className={styles.select}
+              style={{ width: '100%', textAlign: 'left', cursor: 'pointer', fontWeight: 700 }}
+              onClick={() => setShowAdvanced((v) => !v)}
+            >
+              {showAdvanced ? '- Hide Advanced Options' : '+ Advanced Options'}
+            </button>
+
+            {showAdvanced && (
+              <>
+                <div className={styles.formGroup} style={{ marginTop: 8 }}>
+                  <label>Short Description</label>
+                  <input
+                    className={styles.input}
+                    value={shortDescription}
+                    maxLength={200}
+                    onChange={(e) => setShortDescription(e.target.value)}
+                    placeholder="Optional Line Shown On The Tournament Page"
+                  />
+                </div>
+
+                <div className={styles.row}>
+                  {(
+                    [
+                      ['VIP Only', isVipOnly, setIsVipOnly],
+                      ['All-In Or Fold', allInOrFold, setAllInOrFold],
+                      ['Label As NEW', labelAsNew, setLabelAsNew],
+                      ['Hide Club Name', hideClubName, setHideClubName],
+                      ['Featured (Pinned)', isFeatured, setIsFeatured],
+                      ['Accelerated MTT', acceleratedMtt, setAcceleratedMtt],
+                      ['Big Blind Ante', bigBlindAnte, setBigBlindAnte],
+                      ['Authorized To Register', authorizedToRegister, setAuthorizedToRegister],
+                      ['Synchronized Breaks', synchronizedBreaks, setSynchronizedBreaks],
+                      ['Bubble Protection', bubbleProtection, setBubbleProtection],
+                      ['Final Table Deal', finalTableDeal, setFinalTableDeal],
+                    ] as Array<[string, boolean, (v: boolean) => void]>
+                  ).map(([label, value, setter]) => (
+                    <div className={styles.col} key={label} style={{ minWidth: '45%' }}>
                       <div className={styles.formGroup}>
                         <label className={styles.toggleLabel}>
                           <input
                             type="checkbox"
-                            checked={earlyBirdEnabled}
-                            onChange={(e) => setEarlyBirdEnabled(e.target.checked)}
+                            checked={value}
+                            onChange={(e) => setter(e.target.checked)}
                             className={styles.checkbox}
                           />
-                          Early Bird Registration
+                          {label}
                         </label>
                       </div>
                     </div>
-                    {earlyBirdEnabled && (
-                      <div className={styles.col}>
-                        <div className={styles.formGroup}>
-                          <label>Early Bird Chips</label>
-                          <input
-                            type="number"
-                            className={styles.input}
-                            value={earlyBirdChips}
-                            onChange={(e) => setEarlyBirdChips(digitsOnly(e.target.value))}
-                            min={0}
-                            step={1}
-                            inputMode="numeric"
-                          />
-                          <span className={styles.helperText}>
-                            Bonus Chips For Registering Before The Start
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  ))}
+                </div>
 
-                  <div className={styles.row}>
+                <div className={styles.lockedRule}>
+                  <strong>Chat: Off</strong>
+                  <span>Chat Is Always Disabled In Multi-Table Tournaments.</span>
+                </div>
+
+                <div className={styles.row}>
+                  <div className={styles.col}>
+                    <div className={styles.formGroup}>
+                      <label>Action Time (Seconds)</label>
+                      <input
+                        type="number"
+                        className={styles.input}
+                        value={actionTimeSeconds}
+                        onChange={(e) => setActionTimeSeconds(digitsOnly(e.target.value))}
+                        min={5}
+                        max={60}
+                        step={1}
+                        inputMode="numeric"
+                      />
+                      <span className={styles.helperText}>5 To 60 Seconds Per Action</span>
+                    </div>
+                  </div>
+                  <div className={styles.col}>
+                    <div className={styles.formGroup}>
+                      <label>Table Size</label>
+                      <input
+                        type="number"
+                        className={styles.input}
+                        value={tableSize}
+                        onChange={(e) => setTableSize(digitsOnly(e.target.value))}
+                        min={2}
+                        max={10}
+                        step={1}
+                        inputMode="numeric"
+                      />
+                      <span className={styles.helperText}>2 To 10 Seats Per Table</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className={styles.row}>
+                  <div className={styles.col}>
+                    <div className={styles.formGroup}>
+                      <label className={styles.toggleLabel}>
+                        <input
+                          type="checkbox"
+                          checked={earlyBirdEnabled}
+                          onChange={(e) => setEarlyBirdEnabled(e.target.checked)}
+                          className={styles.checkbox}
+                        />
+                        Early Bird Registration
+                      </label>
+                    </div>
+                  </div>
+                  {earlyBirdEnabled && (
                     <div className={styles.col}>
                       <div className={styles.formGroup}>
-                        <label>Restart Every (Minutes)</label>
+                        <label>Early Bird Chips</label>
                         <input
                           type="number"
                           className={styles.input}
-                          value={restartEvery}
-                          onChange={(e) => setRestartEvery(digitsOnly(e.target.value))}
-                          placeholder="Off"
-                          min={5}
-                          max={RESTART_MAX_MINUTES}
-                          step={5}
+                          value={earlyBirdChips}
+                          onChange={(e) => setEarlyBirdChips(digitsOnly(e.target.value))}
+                          min={0}
+                          step={1}
                           inputMode="numeric"
                         />
                         <span className={styles.helperText}>
-                          Blank = Off. 5 To 10080: The Tournament Respawns On This Interval.
+                          Bonus Chips For Registering Before The Start
                         </span>
                       </div>
                     </div>
-                    {(isRebuy || isReentry) && (
-                      <div className={styles.col}>
-                        <div className={styles.formGroup}>
-                          <label>Max {isRebuy ? 'Rebuys' : 'Re-Entries'} Per Player</label>
-                          <input
-                            type="number"
-                            className={styles.input}
-                            value={maxRebuysStr}
-                            onChange={(e) => setMaxRebuysStr(digitsOnly(e.target.value))}
-                            placeholder="Unlimited"
-                            min={0}
-                            step={1}
-                            inputMode="numeric"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
+                  )}
+                </div>
 
-            {/* ── Recurring Schedule ── */}
-            {!isSngOrSpin && (
-              <div className={styles.sectionDivider}>
+                <div className={styles.row}>
+                  <div className={styles.col}>
+                    <div className={styles.formGroup}>
+                      <label>Restart Every (Minutes)</label>
+                      <input
+                        type="number"
+                        className={styles.input}
+                        value={restartEvery}
+                        onChange={(e) => setRestartEvery(digitsOnly(e.target.value))}
+                        placeholder="Off"
+                        min={5}
+                        max={RESTART_MAX_MINUTES}
+                        step={5}
+                        inputMode="numeric"
+                      />
+                      <span className={styles.helperText}>
+                        Blank = Off. 5 To 10080: The Tournament Respawns On This Interval.
+                      </span>
+                    </div>
+                  </div>
+                  {(isRebuy || isReentry) && (
+                    <div className={styles.col}>
+                      <div className={styles.formGroup}>
+                        <label>Max {isRebuy ? 'Rebuys' : 'Re-Entries'} Per Player</label>
+                        <input
+                          type="number"
+                          className={styles.input}
+                          value={maxRebuysStr}
+                          onChange={(e) => setMaxRebuysStr(digitsOnly(e.target.value))}
+                          placeholder="Unlimited"
+                          min={0}
+                          step={1}
+                          inputMode="numeric"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* ── Recurring Schedule ── */}
+          {!isSngOrSpin && (
+            <div className={styles.sectionDivider}>
+              <div className={styles.formGroup}>
+                <label className={styles.toggleLabel}>
+                  <input
+                    type="checkbox"
+                    checked={repeatsWeekly}
+                    onChange={(e) => {
+                      setRepeatsWeekly(e.target.checked);
+                      if (e.target.checked) {
+                        setScheduleEnabled(false);
+                        setScheduleCadence('weekly');
+                        setSchedule((current) => ({
+                          ...current,
+                          mode: 'times',
+                          ...weeklySlotFromStart(),
+                        }));
+                      }
+                    }}
+                    className={styles.checkbox}
+                  />
+                  Repeats Weekly
+                </label>
+                <span className={styles.helperText}>
+                  Same Day And Time Every Week, With This Configuration. Next Week's Event Is
+                  Published As Soon As This One Is Created.
+                </span>
+              </div>
+              {!repeatsWeekly && (
                 <div className={styles.formGroup}>
                   <label className={styles.toggleLabel}>
                     <input
                       type="checkbox"
-                      checked={repeatsWeekly}
+                      checked={scheduleEnabled}
                       onChange={(e) => {
-                        setRepeatsWeekly(e.target.checked);
-                        if (e.target.checked) {
-                          setScheduleEnabled(false);
-                          setScheduleCadence('weekly');
-                          setSchedule((current) => ({
-                            ...current,
-                            mode: 'times',
-                            ...weeklySlotFromStart(),
-                          }));
-                        }
+                        setScheduleEnabled(e.target.checked);
+                        if (e.target.checked) setStartTimeMode('schedule_only');
+                        else if (startTimeMode === 'schedule_only') setStartTimeMode('now');
                       }}
                       className={styles.checkbox}
                     />
-                    Repeats Weekly
+                    Recurring Tournament
                   </label>
                   <span className={styles.helperText}>
-                    Same Day And Time Every Week, With This Configuration. Next Week's Event Is
-                    Published As Soon As This One Is Created.
+                    Repeat This Tournament Daily, Weekly, Or Monthly With The Same Configuration.
                   </span>
                 </div>
-                {!repeatsWeekly && (
-                  <div className={styles.formGroup}>
-                    <label className={styles.toggleLabel}>
-                      <input
-                        type="checkbox"
-                        checked={scheduleEnabled}
-                        onChange={(e) => {
-                          setScheduleEnabled(e.target.checked);
-                          if (e.target.checked) setStartTimeMode('schedule_only');
-                          else if (startTimeMode === 'schedule_only') setStartTimeMode('now');
+              )}
+              {scheduleEnabled && !repeatsWeekly && (
+                <>
+                  <div className={styles.choiceGrid}>
+                    {(['daily', 'weekly', 'monthly'] as const).map((cadence) => (
+                      <button
+                        key={cadence}
+                        type="button"
+                        className={scheduleCadence === cadence ? styles.selected : ''}
+                        onClick={() => {
+                          setScheduleCadence(cadence);
+                          if (cadence !== 'weekly')
+                            setSchedule((current) => ({
+                              ...current,
+                              daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+                            }));
                         }}
-                        className={styles.checkbox}
-                      />
-                      Recurring Tournament
-                    </label>
-                    <span className={styles.helperText}>
-                      Repeat This Tournament Daily, Weekly, Or Monthly With The Same Configuration.
-                    </span>
+                      >
+                        {cadence === 'daily'
+                          ? 'Daily'
+                          : cadence === 'weekly'
+                            ? 'Weekly'
+                            : 'Monthly'}
+                      </button>
+                    ))}
                   </div>
-                )}
-                {scheduleEnabled && !repeatsWeekly && (
-                  <>
-                    <div className={styles.choiceGrid}>
-                      {(['daily', 'weekly', 'monthly'] as const).map((cadence) => (
-                        <button
-                          key={cadence}
-                          type="button"
-                          className={scheduleCadence === cadence ? styles.selected : ''}
-                          onClick={() => {
-                            setScheduleCadence(cadence);
-                            if (cadence !== 'weekly')
-                              setSchedule((current) => ({
-                                ...current,
-                                daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
-                              }));
-                          }}
-                        >
-                          {cadence === 'daily'
-                            ? 'Daily'
-                            : cadence === 'weekly'
-                              ? 'Weekly'
-                              : 'Monthly'}
-                        </button>
-                      ))}
-                    </div>
-                    {scheduleCadence === 'monthly' && (
-                      <label className={styles.formGroup}>
-                        Day Of Month
-                        <input
-                          type="number"
-                          min={1}
-                          max={31}
-                          value={scheduleDayOfMonth}
-                          onChange={(event) =>
-                            setScheduleDayOfMonth(
-                              Math.min(31, Math.max(1, Number(event.target.value) || 1))
-                            )
-                          }
-                        />
-                      </label>
-                    )}
-                    <WeeklyScheduleEditor
-                      value={schedule}
-                      onChange={setSchedule}
-                      hideDays={scheduleCadence !== 'weekly'}
-                    />
-                  </>
-                )}
-              </div>
-            )}
+                  {scheduleCadence === 'monthly' && (
+                    <label className={styles.formGroup}>
+                      Day Of Month
+                      <input
+                        type="number"
+                        min={1}
+                        max={31}
+                        value={scheduleDayOfMonth}
+                        onChange={(event) =>
+                          setScheduleDayOfMonth(
+                            Math.min(31, Math.max(1, Number(event.target.value) || 1))
+                          )
+                        }
+                      />
+                    </label>
+                  )}
+                  <WeeklyScheduleEditor
+                    value={schedule}
+                    onChange={setSchedule}
+                    hideDays={scheduleCadence !== 'weekly'}
+                  />
+                </>
+              )}
+            </div>
+          )}
 
-            {/* ── Validation Summary ── */}
-            {!canSubmit && !isSubmitting && (
-              <div className={styles.validationSummary}>
-                {!name.trim() && <p>Tournament Name Is Required</p>}
-                {!blindsValid && <p>Blind Structure Must Have At Least One Level</p>}
-                {!payoutsValid && (
-                  <p>
-                    Payouts Must Total 100 Percent. They Currently Total {payoutsTotal.toFixed(1)}
-                  </p>
-                )}
-                {!isWholeBuyIn(buyIn) && (
-                  <p>Buy-In Must Be A Whole Number Of Chips Greater Than 0</p>
-                )}
-                {/* `NaN <= 0` is FALSE, so clearing the field disabled Create with
+          {/* ── Validation Summary ── */}
+          {!canSubmit && !isSubmitting && (
+            <div style={{ color: '#ef4444', fontSize: '0.75rem', padding: '4px 0' }}>
+              {!name.trim() && <p>Tournament Name Is Required</p>}
+              {!blindsValid && <p>Blind Structure Must Have At Least One Level</p>}
+              {!payoutsValid && (
+                <p>
+                  Payouts Must Total 100 Percent. They Currently Total {payoutsTotal.toFixed(1)}
+                </p>
+              )}
+              {!isWholeBuyIn(buyIn) && <p>Buy-In Must Be A Whole Number Of Chips Greater Than 0</p>}
+              {/* `NaN <= 0` is FALSE, so clearing the field disabled Create with
                   no explanation at all - the one field most likely to be
                   blank. */}
-                {!(parseInt(startingChips) > 0) && <p>Starting Chips Must Be Greater Than 0</p>}
-                {startTimeMode === 'scheduled' && (!scheduledDate || !scheduledTime) && (
-                  <p>Scheduled Date And Time Are Required</p>
-                )}
-                {(isRebuy || isReentry) && parseInt(lateRegLevels) <= 0 && (
-                  <p>Late Reg Levels Must Be Set When Rebuys/Re-Entries Are Enabled</p>
-                )}
-                {!bountyValid && isBountyFormat && <p>Bounty Configuration Is Incomplete</p>}
-              </div>
-            )}
-          </form>
-        </SpadeConsole>
+              {!(parseInt(startingChips) > 0) && <p>Starting Chips Must Be Greater Than 0</p>}
+              {startTimeMode === 'scheduled' && (!scheduledDate || !scheduledTime) && (
+                <p>Scheduled Date And Time Are Required</p>
+              )}
+              {(isRebuy || isReentry) && parseInt(lateRegLevels) <= 0 && (
+                <p>Late Reg Levels Must Be Set When Rebuys/Re-Entries Are Enabled</p>
+              )}
+              {!bountyValid && isBountyFormat && <p>Bounty Configuration Is Incomplete</p>}
+            </div>
+          )}
+
+          <div className={styles.actions}>
+            <button type="button" className={styles.cancelBtn} onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" className={styles.createBtn} disabled={!canSubmit}>
+              {isSubmitting ? 'Creating...' : 'Create Tournament'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

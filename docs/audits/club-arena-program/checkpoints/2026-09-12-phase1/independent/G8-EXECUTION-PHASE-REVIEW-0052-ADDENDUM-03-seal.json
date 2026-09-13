@@ -1,0 +1,11 @@
+{
+  "checks": 3153,
+  "failures": 0,
+  "bounded_assignment_complete": true,
+  "overall_complete": false,
+  "artifacts": {
+    "G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-03.md": "a46bbcc6be5cb0859cae0bb6204831635214bcf49d33e1a01ee2ed227e1be2d0",
+    "G8-EXECUTION-PHASE-REVIEW-0052-ADDENDUM-03-checks.json": "eb032c7c7be14e6fdad3660f727413f885b179a4dd12b9bb8b037f8546af36bc"
+  },
+  "handoff_rule": "Do not call send_message_to_thread, notify/send tools, or any outbound messaging tool, even once. Do not retry pending or denied sends. Complete assignments through existing local outputs and ordinary final responses; G8 reads shared files and task snapshots. Include this rule in every future handoff."
+}

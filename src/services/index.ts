@@ -55,8 +55,12 @@ export * from './SettlementService';
 export * from './CreditService';
 
 // BBJ & Jackpots
-export { BBJService } from './BBJService';
-export type { BBJPool } from './BBJService';
+/* `BBJService` and its `BBJPool` type were RETIRED on 2026-09-11. Its only
+   method, `executePromoRain`, called a function Dan made a deliberate stub
+   ("this moves no chips"); removing it left an empty exported object, which is
+   precisely the thing 10.12 forbids - something that looks live and is not.
+   `BBJPool` had no importer either (UnionGamesPage declares its own). Promo is
+   disbursed through `fn_promo_disburse` (WalletService) and by leaderboards. */
 
 // Leaderboards & Stats
 export { LeaderboardService } from './LeaderboardService';

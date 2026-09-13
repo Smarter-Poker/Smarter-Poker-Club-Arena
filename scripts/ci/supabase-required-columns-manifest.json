@@ -125,17 +125,6 @@
       "action",
       "target_type"
     ],
-    "autofix_attempts": [
-      "repo"
-    ],
-    "autofix_budget": [
-      "source",
-      "daily_cap_usd"
-    ],
-    "autofix_projects": [
-      "id",
-      "source"
-    ],
     "avatar_shop_aliases": [
       "alias",
       "avatar_id"
@@ -369,6 +358,12 @@
       "break_ended_at",
       "break_started_at"
     ],
+    "ca_break_window_migration_overrides": [
+      "txid",
+      "reason",
+      "session_role",
+      "first_command"
+    ],
     "ca_bridge_rate": [
       "id",
       "diamonds_per_chip",
@@ -376,6 +371,11 @@
     ],
     "ca_bridge_rate_history": [
       "diamonds_per_chip"
+    ],
+    "ca_broke_seat_sightings": [
+      "tournament_id",
+      "user_id",
+      "seat_id"
     ],
     "ca_browser_definer_allowlist": [
       "proname",
@@ -487,16 +487,17 @@
       "cycle_day",
       "tiles"
     ],
+    "ca_daily_bonus_refusals": [
+      "user_id",
+      "bonus_date",
+      "reason"
+    ],
     "ca_ddl_events": [
       "command_tag"
     ],
     "ca_declared_money_triggers": [
       "table_name",
       "trigger_name"
-    ],
-    "ca_deploy_dispatch_log": [
-      "window_hour",
-      "action"
     ],
     "ca_detector_registry": [
       "source",
@@ -551,10 +552,6 @@
     "ca_engine_deploy_attempts": [
       "target_sha",
       "shipped"
-    ],
-    "ca_engine_deploy_runs_started": [
-      "run_id",
-      "target_sha"
     ],
     "ca_epoch_closing_positions": [
       "capture_ref",
@@ -1036,6 +1033,20 @@
       "game_id",
       "user_id",
       "from_table_id"
+    ],
+    "cash_seat_move_receipts": [
+      "move_id",
+      "player_id",
+      "game_id",
+      "club_id",
+      "from_table_id",
+      "from_seat_number",
+      "source_occupancy_id",
+      "to_table_id",
+      "to_seat_number",
+      "destination_occupancy_id",
+      "amount",
+      "receipt"
     ],
     "cash_seat_moves": [
       "game_id",
@@ -2030,6 +2041,14 @@
       "engine",
       "day"
     ],
+    "diamond_wallet_transfers": [
+      "sender_id",
+      "recipient_id",
+      "request_id",
+      "amount",
+      "sender_journal_id",
+      "recipient_journal_id"
+    ],
     "diamond_wallets": [
       "user_id"
     ],
@@ -2066,12 +2085,22 @@
       "phase",
       "ownership_token"
     ],
+    "engine_maintenance_break_faults": [
+      "announced_at",
+      "stage",
+      "outcome"
+    ],
     "engine_maintenance_break_log": [
       "break_started_at",
       "break_ended_at",
       "unparked_at_countdown",
       "peak_unparked",
       "tables_resumed"
+    ],
+    "engine_maintenance_thaw_targets": [
+      "freeze_started_at",
+      "step",
+      "target_id"
     ],
     "engine_maintenance_thaws": [
       "freeze_started_at",
@@ -2562,6 +2591,36 @@
       "stack_bb",
       "hand",
       "final_action",
+      "reference_distribution",
+      "chosen_probability",
+      "regret_eligible",
+      "pure_miss",
+      "source_seal"
+    ],
+    "horse_solver_agreement_v31_decisions": [
+      "run_date",
+      "reference",
+      "state_key",
+      "decision_state",
+      "stage",
+      "game_family",
+      "objective",
+      "utility_context",
+      "table_size",
+      "pot_type",
+      "hero_position",
+      "opponent_position",
+      "depth_bucket",
+      "texture_class",
+      "node_role",
+      "facing_kind",
+      "facing_size_bucket",
+      "cell",
+      "hand_key",
+      "sampled_action_id",
+      "sampled_action_family",
+      "final_action",
+      "executed_as_intended",
       "reference_distribution",
       "chosen_probability",
       "regret_eligible",
@@ -3162,6 +3221,12 @@
       "player_id",
       "club_id"
     ],
+    "player_boosts": [
+      "user_id",
+      "kind",
+      "factor",
+      "ends_at"
+    ],
     "player_notes": [
       "user_id"
     ],
@@ -3218,6 +3283,12 @@
       "target_id",
       "entry_key"
     ],
+    "poker_diamond_hand_receipts": [
+      "table_id",
+      "hand_number",
+      "request",
+      "receipt"
+    ],
     "poker_diamond_lot_reservations": [
       "custody_id",
       "lot_id",
@@ -3231,14 +3302,8 @@
       "amount",
       "source_account",
       "destination_account",
-      "wallet_journal_id",
       "request",
       "receipt"
-    ],
-    "poker_diamond_obligations": [
-      "custody_id",
-      "request_id",
-      "operation"
     ],
     "poker_events": [
       "event_uid",
@@ -3616,6 +3681,30 @@
     "scraper_watchdog_state": [
       "key"
     ],
+    "seat_admin_departure_authorizations": [
+      "occupancy_id",
+      "user_id",
+      "table_id",
+      "seat_number",
+      "actor_id",
+      "club_id",
+      "reason"
+    ],
+    "seat_cashout_receipts": [
+      "occupancy_id",
+      "user_id",
+      "table_id",
+      "seat_id",
+      "seat_number",
+      "receipt"
+    ],
+    "seat_departure_requests": [
+      "occupancy_id",
+      "user_id",
+      "table_id",
+      "seat_number",
+      "leave_mode"
+    ],
     "seed_reveals": [
       "hand_id",
       "table_id",
@@ -3891,6 +3980,15 @@
     ],
     "spin_bonus_pools": [
       "club_id"
+    ],
+    "spin_draw_receipts": [
+      "tournament_id",
+      "launch_id",
+      "lease_generation",
+      "rule_manifest",
+      "rule_sha256",
+      "entrants",
+      "receipt"
     ],
     "spin_payout_ladder": [
       "multiplier",
@@ -4200,6 +4298,35 @@
       "knocker_user_id",
       "claimants"
     ],
+    "tournament_cancellation_receipts": [
+      "tournament_id",
+      "actor_id",
+      "source_player_count",
+      "source_player_ids",
+      "refunded_count",
+      "refunded_registration_ids",
+      "refund_line_count",
+      "ticket_return_count",
+      "ticket_return_ids",
+      "total_ticket_returned",
+      "zero_refund_count",
+      "zero_refund_registration_ids",
+      "total_refunded",
+      "fees_reversed",
+      "total_rake_before",
+      "total_rake_after",
+      "closed_table_count",
+      "closed_table_ids",
+      "source_seat_count",
+      "source_seat_ids",
+      "released_seat_count",
+      "released_seat_ids",
+      "fee_reversal_ids",
+      "escrow_closed_at",
+      "escrow_close_note",
+      "receipt",
+      "settled_at"
+    ],
     "tournament_capacity_table_receipts": [
       "table_id",
       "tournament_id",
@@ -4209,6 +4336,27 @@
       "tournament_id",
       "amount",
       "reason"
+    ],
+    "tournament_deal_proposal_consents": [
+      "proposal_id",
+      "user_id"
+    ],
+    "tournament_deal_proposal_executions": [
+      "tournament_id",
+      "proposal_id",
+      "revision"
+    ],
+    "tournament_deal_proposals": [
+      "tournament_id",
+      "revision",
+      "snapshot"
+    ],
+    "tournament_deal_reviews": [
+      "tournament_id",
+      "requested_by",
+      "state",
+      "requested_hand_revision",
+      "expires_at"
     ],
     "tournament_deal_votes": [
       "tournament_id",
@@ -4295,6 +4443,20 @@
       "chest_count",
       "pool_cents"
     ],
+    "tournament_obligation_retirements": [
+      "obligation_id",
+      "tournament_id",
+      "user_id",
+      "kind",
+      "original_amount_owed",
+      "original_amount_paid",
+      "retired_unfunded_amount",
+      "locked_pool",
+      "payout_total_before",
+      "wallet_prize_total_before",
+      "user_payout_total_before",
+      "reason"
+    ],
     "tournament_obligations": [
       "tournament_id",
       "kind"
@@ -4303,9 +4465,24 @@
       "tournament_id",
       "top_up"
     ],
+    "tournament_payout_source_corrections": [
+      "payout_id",
+      "tournament_id",
+      "user_id",
+      "idempotency_key",
+      "amount",
+      "previous_source",
+      "corrected_source",
+      "old_position",
+      "corrected_position",
+      "place_worth",
+      "already_paid",
+      "correction_ref"
+    ],
     "tournament_payouts": [
       "tournament_id",
-      "user_id"
+      "user_id",
+      "source"
     ],
     "tournament_pko_settlement_watermarks": [
       "tournament_id",
@@ -4356,6 +4533,53 @@
     "tournament_rake_settlements": [
       "tournament_id"
     ],
+    "tournament_refund_authorizations": [
+      "token",
+      "idempotency_key",
+      "tournament_id",
+      "obligation_id",
+      "user_id",
+      "source_wallet_club_id",
+      "entitlement_id",
+      "amount_paid_before",
+      "amount_paid_now",
+      "refund_prize",
+      "refund_bounty",
+      "refund_fee",
+      "source",
+      "description"
+    ],
+    "tournament_refund_entitlements": [
+      "tournament_id",
+      "user_id",
+      "entitlement_kind",
+      "charge_category",
+      "refund_wallet_club_id",
+      "gross",
+      "refund_prize",
+      "refund_bounty",
+      "refund_fee",
+      "source_ledger_id",
+      "escrow_bucket",
+      "evidence_kind"
+    ],
+    "tournament_refund_tranches": [
+      "wallet_transaction_id",
+      "idempotency_key",
+      "tournament_id",
+      "obligation_id",
+      "user_id",
+      "source_wallet_club_id",
+      "entitlement_id",
+      "credit_ledger_id",
+      "amount_paid_before",
+      "amount_paid_now",
+      "refund_prize",
+      "refund_bounty",
+      "refund_fee",
+      "source",
+      "description"
+    ],
     "tournament_registration_approvals": [
       "tournament_id",
       "user_id"
@@ -4363,6 +4587,13 @@
     "tournament_registrations": [
       "tournament_id",
       "user_id"
+    ],
+    "tournament_reminder_receipts": [
+      "tournament_id",
+      "recipient_user_id",
+      "scheduled_start_at",
+      "stage",
+      "outcome"
     ],
     "tournament_reminders_sent": [
       "tournament_id",
@@ -4372,6 +4603,16 @@
     "tournament_results": [
       "event_name",
       "winner_name"
+    ],
+    "tournament_satellite_awards": [
+      "tournament_id",
+      "place",
+      "user_id",
+      "delivery_kind",
+      "amount",
+      "payout_id",
+      "payout_source",
+      "idempotency_key"
     ],
     "tournament_satellite_economic_snapshots": [
       "tournament_id",
@@ -4388,6 +4629,18 @@
       "source_pool",
       "entry_closed_at"
     ],
+    "tournament_satellite_remainders": [
+      "tournament_id",
+      "user_id",
+      "place",
+      "amount",
+      "payout_id",
+      "payout_source",
+      "idempotency_key",
+      "obligation_id",
+      "obligation_kind",
+      "evidence_kind"
+    ],
     "tournament_satellite_settlement_batches": [
       "tournament_id",
       "winner_user_id",
@@ -4396,6 +4649,38 @@
       "award_depth",
       "amount_owed",
       "source"
+    ],
+    "tournament_satellite_settlement_cutover": [
+      "authority",
+      "migration_version",
+      "installed_at",
+      "audited_tournament_ids",
+      "preexisting_completed_ids"
+    ],
+    "tournament_satellite_settlements": [
+      "tournament_id",
+      "target_id",
+      "winner_id",
+      "field_size",
+      "advertised_seats",
+      "pool",
+      "target_buy_in",
+      "target_fee",
+      "ticket_cost",
+      "ticket_award_count",
+      "seat_count",
+      "cash_ticket_count",
+      "entry_ticket_count",
+      "remainder",
+      "source_table_count",
+      "source_table_ids",
+      "source_seat_count",
+      "source_seat_ids",
+      "released_seat_count",
+      "released_seat_ids",
+      "source_closed_at",
+      "source_escrow_closed_at",
+      "source_escrow_close_note"
     ],
     "tournament_schedule_spawns": [
       "schedule_id",
@@ -4407,6 +4692,27 @@
       "days_of_week",
       "config"
     ],
+    "tournament_seat_exit_authorizations": [
+      "token",
+      "seat_id",
+      "tournament_id",
+      "user_id",
+      "operation"
+    ],
+    "tournament_seat_move_receipts": [
+      "request_id",
+      "tournament_id",
+      "user_id",
+      "source_table_id",
+      "destination_table_id",
+      "source_seat_id",
+      "destination_seat_id",
+      "source_seat_number",
+      "destination_seat_number",
+      "source_mode",
+      "stack",
+      "moved_at"
+    ],
     "tournament_series": [
       "name",
       "location",
@@ -4414,6 +4720,25 @@
       "data_quality",
       "scrape_html_hash",
       "scrape_timestamp"
+    ],
+    "tournament_spin_cancellation_unwinds": [
+      "tournament_id",
+      "pool_id",
+      "reserve_owner_id",
+      "original_contribution_id",
+      "original_entry_journal_id",
+      "contribution_reversal_id",
+      "contribution_reversal_journal_id",
+      "contribution_amount",
+      "draw_amount",
+      "pool_balance_before",
+      "pool_balance_after"
+    ],
+    "tournament_spin_settlement_cutover": [
+      "authority",
+      "migration_version",
+      "installed_at",
+      "audited_tournament_ids"
     ],
     "tournament_survivor_rank_backfill": [
       "tournament_id",
@@ -4426,11 +4751,71 @@
       "tournament_id",
       "origin_kind"
     ],
+    "tournament_terminal_settlement_cutover": [
+      "authority",
+      "migration_version",
+      "installed_at",
+      "preexisting_completed_ids"
+    ],
+    "tournament_terminal_settlements": [
+      "tournament_id",
+      "winner_id",
+      "settlement_mode",
+      "started_status",
+      "prize_pool",
+      "bounty_pool",
+      "cash_payout_count",
+      "cash_payout_total",
+      "bounty_payout_total",
+      "mystery_was_active",
+      "mystery_pool_cents",
+      "cash_receipt",
+      "mystery_receipt",
+      "bounty_receipt",
+      "closed_table_count",
+      "closed_table_ids",
+      "source_seat_count",
+      "source_seat_ids",
+      "released_seat_count",
+      "released_seat_ids",
+      "rake_amount",
+      "rake_destination",
+      "rake_settled_at",
+      "rake_attributed_at",
+      "rake_attributed_users",
+      "escrow_closed_at",
+      "escrow_close_note",
+      "completed_at"
+    ],
+    "tournament_ticket_admission_authorizations": [
+      "ticket_id",
+      "tournament_id",
+      "user_id",
+      "registration_id"
+    ],
     "tournament_tickets": [
       "club_id",
       "issued_by",
       "holder_id",
       "value"
+    ],
+    "tournament_unregistration_receipts": [
+      "registration_id",
+      "request_id",
+      "tournament_id",
+      "user_id",
+      "refunded_chips",
+      "returned_ticket_value",
+      "entitlement_ids",
+      "ticket_ids",
+      "source_wallet_club_ids",
+      "credit_ledger_ids",
+      "wallet_transaction_ids",
+      "fees_reversed",
+      "fee_reversal_ids",
+      "fee_source_rake_record_ids",
+      "scheduled_start_at",
+      "settled_at"
     ],
     "tournament_waitlists": [
       "tournament_id",
@@ -4625,6 +5010,31 @@
       "street",
       "hero_position"
     ],
+    "training_solver_bounded_canary_targets": [
+      "machine_id",
+      "solver_version",
+      "solver_binary_checksum",
+      "pipeline_commit",
+      "manifest_version",
+      "manifest_checksum",
+      "target_role",
+      "artifact_id",
+      "scenario_hash",
+      "street",
+      "node",
+      "hero_position",
+      "approved_by"
+    ],
+    "training_solver_ingest_scopes": [
+      "machine_id",
+      "solver_version",
+      "solver_binary_checksum",
+      "pipeline_commit",
+      "manifest_version",
+      "manifest_checksum",
+      "admission_mode",
+      "configured_by"
+    ],
     "training_solver_provenance_authority": [
       "machine_id",
       "solver_version",
@@ -4636,6 +5046,9 @@
       "training_game_contracts_sha256",
       "manifest_contracts",
       "approved_by"
+    ],
+    "training_solver_scope_migration_state": [
+      "migration_id"
     ],
     "training_solver_worker_receipts": [
       "machine_id",
@@ -5333,6 +5746,28 @@
       "host_id",
       "host_kind",
       "segment_version"
+    ],
+    "wheel_free_segments": [
+      "ord",
+      "label",
+      "amount",
+      "weight"
+    ],
+    "wheel_free_spins": [
+      "host_id",
+      "host_kind",
+      "club_id",
+      "user_id",
+      "day",
+      "commit_id",
+      "server_seed_hash",
+      "server_seed",
+      "client_seed",
+      "nonce",
+      "roll",
+      "weight_total",
+      "outcome_ord",
+      "outcome_amount"
     ],
     "wheel_pools": [
       "host_id"

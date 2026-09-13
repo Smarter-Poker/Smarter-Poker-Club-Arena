@@ -1,135 +1,182 @@
 ---
 name: deploy-hetzner
 description: >
-  Deploy the Club Arena poker engine server to Hetzner VPS via SSH + Docker.
-  Use when the user says "deploy", "push to server", "deploy to hetzner",
-  "deploy engine", "update VPS", "restart server", "ship it", "deploy to production",
-  "push server changes", or anything about getting code changes onto the live
-  engine.smarter.poker server. Also triggers on "hetzner", "VPS deploy", "docker deploy",
-  or "server deploy". Use this even if the user just says "deploy" with no qualifier —
-  Club Arena's server deployment always means Hetzner.
-version: 1.0.0
+  Dispatch and certify the Club Arena poker engine using the repository-owned,
+  exact-SHA sealed Hetzner workflow. Use for engine deploy, restart, ship, or
+  production-release requests. Never deploy through World Hub, raw docker, or
+  direct SSH.
+version: 3.0.0
 ---
 
-# Deploy to Hetzner VPS — Club Arena Engine
+# Club Arena Sealed Hetzner Engine Release
 
-This skill handles deploying the Club Arena poker engine to the production Hetzner VPS.
-The engine runs at `engine.smarter.poker` and serves all real-time poker game logic.
+## You almost certainly do not have to do anything
 
-## Infrastructure
+A merge to `main` that touches `server/**` deploys itself:
 
-| Component   | Detail                                       |
-| ----------- | -------------------------------------------- |
-| VPS IP      | `178.156.160.206`                            |
-| SSH User    | `root`                                       |
-| Repo on VPS | `/opt/club-arena`                            |
-| Container   | `club-arena-engine`                          |
-| Port        | `8080` (mapped through Docker)               |
-| Env file    | `/opt/club-arena/server/.env`                |
-| Health URL  | `https://engine.smarter.poker/health`        |
-| Docker      | Container auto-restarts (`--restart always`) |
-
-## Pre-Deploy Checklist
-
-Before deploying, the agent should verify these conditions are met. If any fail, stop and fix before deploying.
-
-1. **TypeScript compiles cleanly**: Run `npx tsc --noEmit` in the repo root. Zero errors required.
-2. **Changes are committed and pushed**: Run `git status` — working tree must be clean. Run `git log --oneline -3` to confirm latest commit is what we want to deploy.
-3. **Health check baseline**: Hit `https://engine.smarter.poker/health` to confirm the server is currently running and note the uptime/stats before deploy (so we can compare after).
-
-## Deploy Sequence
-
-The deploy uses SSH to execute commands on the VPS. Here's the exact sequence:
-
-### Step 1: Pull latest code
-
-```bash
-ssh root@178.156.160.206 "cd /opt/club-arena && git pull origin main"
+```
+push to main -> stage-engine-release.yml (detect + dispatch the exact SHA)
+             -> auto-deploy-hetzner.yml  (test, build, wait for the :55 break,
+                                          cut over, prove, seal)
 ```
 
-### Step 2: Rebuild Docker image
+If the change is merged, the release is already in flight or already done.
+**Read the state before you act.** Dispatching a second run for a SHA that is
+already moving does not make it faster.
+
+## The hosts, verified 2026-09-12 by SSH
+
+| What            | Address           | Hostname            |
+| --------------- | ----------------- | ------------------- |
+| **The engine**  | `5.161.252.33`    | `club-arena-engine` |
+| The TURN server | `178.156.160.206` | `club-arena-turn`   |
+
+`178.156.160.206` is **not** the engine. It runs no engine container and has no
+`/opt/club-arena`. Version 2.0 of this file and every version before it named it
+as the deploy target, and an agent following those instructions would have
+`ssh`ed into the voice relay and built nothing.
+
+The working key on Dan's Mac is at `~/.ssh/hetzner_ed25519`. Use it with
+`-o IdentitiesOnly=yes`; the other `hetzner_*` keys on that machine are all
+rejected. **Read-only inspection only.** Never put key material in this or any
+other file.
+
+## Credential boundary
+
+The workflow reads only these Club Arena repository secrets:
+
+- `HETZNER_SSH_PRIVATE_KEY`
+- `HETZNER_HOST`
+- `HETZNER_HOST_KEY`
+- `DATABASE_URL` (append-only deployment receipt only)
+
+Never read, copy, print, or store their values in a workstation `.env`,
+Markdown, another repository, or a command. There is no legacy key alias, World
+Hub fallback, password path, or local SSH-key fallback. CLAUDE.md 10.84: an
+agent may say which credential is wrong and where it lives. An agent never
+sets one.
+
+## There is exactly one way the container is started
+
+`server/scripts/engine-up.sh` is, in its own words, "THE single source of truth
+for how the Club Arena engine container is run". Everything that starts the
+engine goes through it: the release transaction, the supervisor, and recovery.
+
+A hand-rolled `docker run` is not a shortcut, it is a different engine. It
+silently drops:
+
+- `--label autoheal=true` - `sp-autoheal` restarts the engine when Docker marks
+  it unhealthy, and it finds the container by that label. Without it, an
+  unhealthy engine stays unhealthy.
+- `--label sp.role=engine` - the release transaction refuses to cut over when it
+  finds an engine container it does not manage ("an unmanaged engine container
+  is running on this host").
+- `--label sp.release.sha=<sha>` - this is what every proof reads to decide what
+  production is running. An unlabelled container cannot be verified at all.
+- `--log-opt max-size=50m --log-opt max-file=5` - unbounded `json-file` logs
+  fill the disk.
+- the health check timings (`20s`/`15s`/`300s`/3), tuned so a saturated event
+  loop is not mistaken for a dead engine.
+- the `flock` on `/var/lock/club-arena-engine-up.lock`, which is what stops two
+  concurrent starts racing on the container name.
+
+So: **never `docker build`, `docker run`, `docker stop`, `git pull` in
+`/opt/club-arena`, or `docker image prune` on that box.** Those five commands
+were the body of version 2.0 of this file.
+
+## Image tags
+
+| Tag                              | Meaning                                                        |
+| -------------------------------- | -------------------------------------------------------------- |
+| `club-arena-engine:<40-hex sha>` | **Immutable.** The tag IS the commit. Built once               |
+| `club-arena-engine:current`      | What the seal says production should be running                |
+| `club-arena-engine:previous`     | The rollback source the transaction proves before it cuts over |
+| `...:<sha>-candidate-<n>`        | Build scratch; `retain-engine-images.sh` removes these         |
+
+`retain-engine-images.sh` keeps the sealed, running and leased images plus five
+recent rollback tags. Do not prune by hand: you would be deleting the image the
+next rollback needs.
+
+## Verify before you act
 
 ```bash
-ssh root@178.156.160.206 "cd /opt/club-arena/server && docker build -t club-arena-engine ."
+# What does production actually serve? (cache-busted; the CDN lies)
+curl -s "https://engine.smarter.poker/health?nocache=$(date +%s%N)" |
+  python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("releaseSha"), d.get("instanceId"), d.get("liveness"))'
+
+# What does main require?
+git -C ~/Documents/club-arena fetch --no-tags origin main
+git -C ~/Documents/club-arena log origin/main -1 --format=%H -- \
+  'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**'
+
+# What did the pipeline itself say about every recent attempt?
+#   SELECT at, target_sha, shipped, reason FROM ca_engine_deploy_attempts
+#   ORDER BY at DESC LIMIT 20;   -- Supabase MCP, read-only
 ```
 
-This takes 30-90 seconds depending on cache hits.
+The ledger is the answer to "why is production behind", and it is almost always
+already written down. On 2026-09-12 fourteen consecutive rows said so while an
+investigation went looking at the engine.
 
-### Step 3: Stop and remove old container
+Read-only inspection on the box, when the ledger is not enough:
 
 ```bash
-ssh root@178.156.160.206 "docker stop club-arena-engine 2>/dev/null || true && docker rm club-arena-engine 2>/dev/null || true"
+SSH="ssh -i ~/.ssh/hetzner_ed25519 -o IdentitiesOnly=yes root@5.161.252.33"
+$SSH 'systemctl list-units "club-arena-engine-release*" --all --no-legend'
+$SSH 'journalctl -u "club-arena-engine-release-v1@<run-id>-1.service" --no-pager -o cat | tail -40'
+$SSH 'tail -c 4000 /var/lib/club-arena/engine-release-audit.jsonl'
+$SSH '/usr/local/lib/club-arena/engine-control/engine-release-seal.py get desired-sha'
 ```
 
-Brief downtime starts here (typically 2-5 seconds).
+## Dispatch, only when the automatic path did not run
 
-### Step 4: Start new container
+The signal is one repository dispatch carrying one full lowercase SHA. `gh` is
+**not installed on Dan's Mac** (AGENT-PLAYBOOK section 8b), so use `curl`:
 
 ```bash
-ssh root@178.156.160.206 "docker run -d --name club-arena-engine --restart always -p 8080:8080 --env-file /opt/club-arena/server/.env club-arena-engine"
+TARGET_SHA=<exact-merged-sha>
+curl -sS -X POST \
+  -H "Authorization: Bearer $GITHUB_TOKEN" \
+  -H 'Accept: application/vnd.github+json' \
+  https://api.github.com/repos/Smarter-Poker/Smarter-Poker-Club-Arena/dispatches \
+  -d "{\"event_type\":\"deploy-club-arena-engine\",\"client_payload\":{\"ref_sha\":\"$TARGET_SHA\"}}"
 ```
 
-### Step 5: Health check (wait 3 seconds for startup)
+The workflow exposes no force input and no maintenance bypass, deliberately.
+The target must be the newest engine-affecting commit on protected main, or
+preflight refuses it.
 
-```bash
-sleep 3
-curl -sf "https://engine.smarter.poker/health"
-```
+## What "deployed" means
 
-Expected response: `{"running":true,"uptime":N,"activeTables":N,...}`
+The run is complete only when all of the following are true:
 
-### Step 6: Cleanup old images
+1. `ca_engine_deploy_attempts` has a row for this SHA with `shipped = true`.
+2. A cache-busted `https://engine.smarter.poker/health` reports that exact
+   `releaseSha`, `running: true`, and `liveness: "ok"`.
+3. The sealed instance is stable, tables are dealable, and hands advance.
 
-```bash
-ssh root@178.156.160.206 "docker image prune -f"
-```
+A green workflow is not evidence and neither is a merged pull request.
+AGENT-PLAYBOOK section 7: a green tick answers "did it merge"; only production
+answers "did it ship".
 
-## One-Liner (for quick deploys)
+## When it does not ship
 
-If all pre-checks pass, the entire deploy can be run as a single SSH command:
+The run annotates **NOT DEPLOYED** with the reason, and the ledger records which
+half of the pipeline stopped:
 
-```bash
-ssh root@178.156.160.206 "cd /opt/club-arena && git pull origin main && cd server && docker build -t club-arena-engine . && docker stop club-arena-engine 2>/dev/null; docker rm club-arena-engine 2>/dev/null; docker run -d --name club-arena-engine --restart always -p 8080:8080 --env-file /opt/club-arena/server/.env club-arena-engine && sleep 3 && curl -sf http://localhost:8080/health"
-```
+| Reason in the ledger                                                           | What happened                                                                        |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| `stood down before cutover; protected main had moved to <sha>`                 | Superseded. The named successor owns the next break. Nothing is wrong with your code |
+| `the durable Hetzner release transaction did not complete; ...`                | The release tried and stopped. Read the unit journal                                 |
+| `the release sealed but production identity could not be independently proved` | It cut over and the proof failed. Look at the engine                                 |
+| `production already proved this exact release`                                 | Already live                                                                         |
 
-## Rollback
+**Fix forward.** The host transaction restores the previously sealed image by
+itself when a cutover cannot be proved; there is no operator rollback input and
+you must never improvise one by re-pointing `:current` by hand. Push the fix and
+let the same lane carry it.
 
-If the health check fails after deploy:
-
-1. Check container logs: `ssh root@178.156.160.206 "docker logs --tail 50 club-arena-engine"`
-2. If the new code is broken, revert to previous commit:
-   ```bash
-   ssh root@178.156.160.206 "cd /opt/club-arena && git log --oneline -5"
-   # Identify the last good commit, then:
-   ssh root@178.156.160.206 "cd /opt/club-arena && git checkout <good-commit-hash>"
-   ```
-3. Rebuild and restart using Steps 2-5 above.
-
-## SSH Access Notes
-
-The VPS uses SSH key authentication. The agent's environment needs:
-
-- An SSH private key in `~/.ssh/` that matches an authorized key on the VPS, OR
-- `sshpass` installed for password-based auth, OR
-- The user to run the commands from their local terminal (which has SSH keys configured)
-
-If SSH is not available from the current environment, generate the one-liner command and present it to the user to run from their Mac terminal where SSH keys are already set up.
-
-## Post-Deploy Verification
-
-After a successful deploy, always:
-
-1. Hit the health endpoint and confirm `"running": true`
-2. Compare uptime — it should be near zero (fresh container)
-3. Note active tables and tournaments — they should be restored from database state
-4. Update `MIGRATION-CHANGELOG.md` with the deploy timestamp and what was deployed
-
-## Environment Variables (on VPS)
-
-The container reads from `/root/.env.club-arena` which contains:
-
-- `SUPABASE_URL` — Supabase project URL
-- `SUPABASE_SERVICE_ROLE_KEY` — Service role key (bypasses RLS)
-- `PORT` — 8080
-
-These are already configured on the VPS. Do not modify them unless explicitly asked.
+If several consecutive attempts ship nothing, the hourly
+`production-integrity-audit.yml` raises **ENGINE DEPLOY STARVATION** and says
+whether the release lane or the code is at fault. Read that before re-pushing
+the same commit.

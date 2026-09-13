@@ -33,7 +33,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { sliceStatement, sliceEnclosingBlock } from '../helpers/sourceWindow';
+import { sliceEnclosingBlock, sliceMethod } from '../helpers/sourceWindow';
 
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
@@ -180,41 +180,17 @@ describe('the felt never gives an instruction it will refuse', () => {
   });
 });
 
-describe('nobody busts before the chips arrive', () => {
-  it('the post-credit bust slack is named once and no manager owns a sweep interval', () => {
-    expect(BASE).toMatch(/static readonly POST_CREDIT_BUST_SLACK_MS = 5000;/);
+describe('nobody busts from a fabricated zero-stack field', () => {
+  it('no manager owns a sweep interval or a delayed-credit bust gate', () => {
+    expect(BASE).not.toMatch(/POST_CREDIT_BUST_SLACK_MS/);
+    expect(BASE).not.toMatch(/bustingArmedAt/);
     expect(ELIM).not.toMatch(/setInterval\(/);
     expect(ELIM).toMatch(/registerEliminationScheduler/);
   });
 
-  it('a deferred Spin credit arms the bust sweep to the same instant, plus slack', () => {
-    /* UPDATED 2026-08-27, house rule 8. The rule this test is named for is
-       unchanged; the instant it measures from was corrected.
-
-       `Date.now() + spinRevealToDealMs()` assumed the reveal had not started
-       yet. It has: `stampSpinRevealAnchor` anchors the wheel to the THIRD
-       PAYMENT, several RPCs and a table build before this line runs, so by the
-       time the arming happens the hold is already partly spent. Adding a whole
-       fresh reveal to `Date.now()` therefore pushed the first bustable sweep
-       past the moment the chips actually land — the opposite of a safety
-       margin, and it grows with however slow the start path was.
-
-       Both branches are pinned: the hold when there is one, and the old
-       arithmetic as the fallback for a freeroll Spin whose paid gate never runs
-       and so never stamps an anchor. The "+ post-credit slack" this
-       test exists for applies to whichever was used. */
-    expect(BASE.indexOf('this.bustingArmedAt =')).toBeGreaterThan(-1);
-    const arm = sliceStatement(BASE, 'this.bustingArmedAt =');
-    // Measured from the hold, which is anchored to the third payment...
-    expect(arm).toMatch(/this\.spinHoldUntil > 0 \? this\.spinHoldUntil/);
-    // ...falling back to the pre-anchor arithmetic when nothing was stamped...
-    expect(arm).toMatch(/Date\.now\(\) \+ spinRevealToDealMs\(\)/);
-    // ...plus the explicit post-credit visibility slack either way.
-    expect(arm).toMatch(/\+\s*\n?\s*TournamentManagerBase\.POST_CREDIT_BUST_SLACK_MS;/);
-  });
-
-  it('a sweep inside that window busts nobody', () => {
-    expect(ELIM).toMatch(/Date\.now\(\) < this\.bustingArmedAt/);
+  it('the elimination path contains no delayed-credit repair branch', () => {
+    expect(ELIM).not.toMatch(/bustingArmedAt/);
+    expect(ELIM).not.toMatch(/stacks not credited yet/i);
   });
 
   it('a whole field reading zero chips is refused OUTRIGHT, timer or no timer', () => {
@@ -226,29 +202,31 @@ describe('nobody busts before the chips arrive', () => {
      * produce — it can only mean the stacks were never written. A restart
      * inside the reveal window rearms no timer, and a broken seat sync is not
      * on a timer at all, so this guard cannot be folded into the one above.
+     *
+     * (2026-09-11) The guard now reads the same `status='playing'` count the
+     * ladder seed uses - one round trip instead of two identical ones - so
+     * the count it compares against is `playingCount`.
      */
-    expect(ELIM).toMatch(/busted\.length >= liveCount/);
+    expect(ELIM).toMatch(/busted\.length >= playingCount/);
     expect(ELIM).toMatch(/zero_chip_field_refused/);
   });
 
   it('the old behaviour — spare one zero, bust the rest, pay first prize — is unreachable', () => {
     // The `playingCount === busted.length` branch may still slice the top
     // stack for a genuine all-in showdown, but it can no longer be reached
-    // with an all-zero field, because both guards return before it.
+    // with an all-zero field, because the invariant returns before it.
     const sweep = ELIM.slice(ELIM.indexOf('startEliminationChecker'));
-    const zeroGuard = sweep.indexOf('busted.length >= liveCount');
+    const zeroGuard = sweep.indexOf('busted.length >= playingCount');
     const spareTop = sweep.indexOf('bustedOrdered.slice(0, -1)');
     expect(zeroGuard).toBeGreaterThan(-1);
     expect(spareTop).toBeGreaterThan(-1);
     expect(zeroGuard).toBeLessThan(spareTop);
   });
 
-  it('a restart inside the reveal window still credits the stacks', () => {
-    // resume() used to skip creditSeatStacks entirely, so a redeploy in that
-    // ~18s window left both table_seats.stack and tournament_players.chips at
-    // zero with no code path left that would ever raise them.
-    const resume = BASE.slice(BASE.indexOf('async resume('));
-    expect(resume).toMatch(/await this\.creditSeatStacks\(tournament\);/);
+  it('resume has no authority to mint or repair stacks', () => {
+    const resume = sliceMethod(BASE, 'private async resumeLifecycle(');
+    expect(resume).not.toMatch(/creditSeatStacks/);
+    expect(resume).not.toMatch(/\.update\(\{\s*stack:/);
   });
 });
 

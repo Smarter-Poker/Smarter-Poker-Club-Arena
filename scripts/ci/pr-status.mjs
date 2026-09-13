@@ -67,6 +67,7 @@
 import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { pathToFileURL } from 'node:url';
 
 const args = process.argv.slice(2);
 const has = (f) => args.includes(f);
@@ -109,7 +110,7 @@ function repoFromGitRemote() {
 }
 
 const REPO = argOf('--repo', process.env.REPO || repoFromGitRemote());
-const TOKEN = process.env.GITHUB_TOKEN || process.env.GH_PAT || process.env.GH_TOKEN;
+const TOKEN = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
 
 // A conclusion that is not one of these is a failure. Listing the GOOD ones
 // rather than the bad ones means a conclusion GitHub adds later defaults to
@@ -124,21 +125,23 @@ function die(msg, code = EXIT.UNKNOWN) {
   process.exit(code);
 }
 
-if (!TOKEN) {
-  die(
-    'no GITHUB_TOKEN / GH_PAT / GH_TOKEN in the environment.\n' +
-      '  It lives in ~/Documents/club-arena/.env - load it with:\n' +
-      "    export GITHUB_TOKEN=$(grep -m1 '^GITHUB_TOKEN=' ~/Documents/club-arena/.env | cut -d= -f2-)"
-  );
-}
+function assertConfigured() {
+  if (!TOKEN) {
+    die(
+      'no GH_TOKEN / GITHUB_TOKEN in the environment.\n' +
+        '  Use the GitHub client or credential store configured for this environment.\n' +
+        '  Never scrape a token from a repository-adjacent .env file.'
+    );
+  }
 
-if (!REPO) {
-  die(
-    'could not tell which repository to ask about.\n' +
-      '  There is no `origin` remote here and neither --repo nor $REPO was given.\n' +
-      "  Guessing one would report, in a convincing format, on somebody else's\n" +
-      '  pull requests. Run this inside a checkout, or pass --repo owner/name.'
-  );
+  if (!REPO) {
+    die(
+      'could not tell which repository to ask about.\n' +
+        '  There is no `origin` remote here and neither --repo nor $REPO was given.\n' +
+        "  Guessing one would report, in a convincing format, on somebody else's\n" +
+        '  pull requests. Run this inside a checkout, or pass --repo owner/name.'
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -203,9 +206,9 @@ async function gh(path, { allow404 = false } = {}) {
           (rl.waitMin !== null
             ? `  The quota resets in ${rl.waitMin.toFixed(1)} minute(s)${rl.resetAt ? ` (${rl.resetAt})` : ''}.\n`
             : '') +
-          '  You almost certainly got here by POLLING. Do not: push, open the PR,\n' +
-          '  report the number, end the session (AGENT-PLAYBOOK 7b, CLAUDE.md\n' +
-          '  10.8.3). Autopilot merges and the watchdogs verify, server-side.\n' +
+          '  You almost certainly got here by POLLING. Do not poll again. Preserve\n' +
+          '  the PR URL and resume one read after the stated reset time. Protected\n' +
+          '  checks remain authoritative; there is no retry watchdog.\n' +
           '  To read a failing job once, cheaply: node scripts/ci/pr-status.mjs <pr> --log'
       );
     }
@@ -313,15 +316,58 @@ function mergeLabel(pr) {
 // ---------------------------------------------------------------------------
 // Which checks does the ruleset actually require? Read it rather than
 // hardcoding, so a check added to the ruleset is honoured here the same hour.
-// If the token cannot read rulesets we fall back to "every check must pass",
-// which is stricter, never looser.
+// If the token cannot read rulesets there is no honest green answer: the tool
+// cannot prove which contexts GitHub requires.
 // ---------------------------------------------------------------------------
 async function requiredChecks() {
   const rules = await ghSoft('/rules/branches/main');
   if (!Array.isArray(rules)) return null;
-  const rule = rules.find((r) => r.type === 'required_status_checks');
-  const list = rule?.parameters?.required_status_checks?.map((c) => c.context).filter(Boolean);
+  const list = rules
+    .filter((rule) => rule.type === 'required_status_checks')
+    .flatMap((rule) => rule.parameters?.required_status_checks ?? [])
+    .map((check) => check.context)
+    .filter(Boolean);
   return list?.length ? new Set(list) : null;
+}
+
+/**
+ * Name every required context for which this commit lacks a completed success.
+ * A workflow-level success is not enough: a required job can be absent because
+ * a path or job condition prevented it from being created, and GitHub will keep
+ * the pull request blocked in exactly that state.
+ */
+export function requiredContextProblems(required, jobs) {
+  if (!(required instanceof Set)) return null;
+
+  const problems = [];
+  for (const context of [...required].sort()) {
+    const observed = jobs.filter((job) => job?.name === context);
+    if (observed.some((job) => job.status === 'completed' && job.conclusion === 'success')) {
+      continue;
+    }
+
+    const running = observed.some((job) => job.status !== 'completed');
+    const conclusions = [
+      ...new Set(observed.map((job) => job.conclusion || job.status || 'unknown')),
+    ].sort();
+    problems.push({
+      context,
+      state: observed.length === 0 ? 'missing' : running ? 'running' : 'not_successful',
+      conclusions,
+    });
+  }
+  return problems;
+}
+
+/** A green verdict is possible only with readable rules and zero context gaps. */
+export function stateForChecks({ failures, activeRuns, requiredProblems }) {
+  if (failures.some((failure) => failure.required)) return 'RED';
+  if (requiredProblems?.some((problem) => problem.state === 'not_successful')) return 'RED';
+  if (activeRuns.length) return 'RUNNING';
+  if (requiredProblems === null) return 'UNKNOWN';
+  if (requiredProblems.length) return 'RED';
+  if (failures.length) return 'RED_NON_BLOCKING';
+  return 'GREEN';
 }
 
 // ---------------------------------------------------------------------------
@@ -358,12 +404,26 @@ async function commitState(sha, required) {
   const failedRuns = list.filter((r) => r.conclusion && !GOOD.has(r.conclusion));
   const activeRuns = list.filter((r) => r.status !== 'completed');
 
+  // Required status checks are JOB contexts, not workflow names. Read every
+  // newest run's jobs so absence is visible; reading jobs only for failed runs
+  // made a missing required check indistinguishable from a passing one.
+  const jobsByRun = new Map();
+  const allJobs = [];
+  for (const run of list) {
+    const answer = await gh(`/actions/runs/${run.id}/jobs?per_page=100`);
+    if (!Array.isArray(answer?.jobs)) {
+      die(`GitHub returned no readable job list for workflow run ${run.id}.`);
+    }
+    jobsByRun.set(run.id, answer.jobs);
+    allJobs.push(...answer.jobs);
+  }
+
   // Name the job and the step. This is the part an agent actually needs, and
   // the part /commits/:sha/status could never give even if it worked.
   const failures = [];
   for (const run of failedRuns) {
-    const jobs = await gh(`/actions/runs/${run.id}/jobs?per_page=100`);
-    const badJobs = (jobs.jobs || []).filter((j) => j.conclusion && !GOOD.has(j.conclusion));
+    const runJobs = jobsByRun.get(run.id);
+    const badJobs = runJobs.filter((j) => j.conclusion && !GOOD.has(j.conclusion));
     if (badJobs.length === 0) {
       failures.push({
         workflow: run.name,
@@ -389,19 +449,19 @@ async function commitState(sha, required) {
         // The ruleset names JOBS, not workflows - "TypeScript Check" is a job
         // inside "CI - Build & Type Safety". Getting that backwards is why
         // agents mis-read which reds actually block a merge.
-        required: required ? required.has(j.name) : true,
+        required: required instanceof Set ? required.has(j.name) : true,
       });
     }
   }
 
-  const blocking = failures.filter((f) => f.required);
-  let state;
-  if (blocking.length) state = 'RED';
-  else if (failures.length && activeRuns.length === 0) state = 'RED_NON_BLOCKING';
-  else if (activeRuns.length) state = 'RUNNING';
-  else state = 'GREEN';
+  const requiredProblems = requiredContextProblems(required, allJobs);
+  const state = stateForChecks({ failures, activeRuns, requiredProblems });
+  const reason =
+    state === 'UNKNOWN'
+      ? 'required status-check rules were unreadable or named no contexts; refusing to call this commit green.'
+      : null;
 
-  return { state, runs: list, failures, activeRuns, required };
+  return { state, runs: list, failures, activeRuns, required, requiredProblems, reason };
 }
 
 /**
@@ -421,7 +481,9 @@ function quotaWarning(line) {
   line(
     `  QUOTA LOW: ${lastQuota.remaining}/${lastQuota.limit} GitHub API calls left, resets in ${mins} min.`
   );
-  line('  Stop polling. Push, open the PR, report the number, end the session.');
+  line(
+    '  Stop polling. Push the branch; agent-open-pr.yml creates its pull request automatically.'
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -473,12 +535,24 @@ function render(pr, st) {
     }
   }
 
+  if (st.requiredProblems?.length) {
+    line('');
+    line('  REQUIRED CHECKS NOT PROVEN SUCCESSFUL:');
+    for (const problem of st.requiredProblems) {
+      const detail =
+        problem.state === 'missing'
+          ? 'not observed'
+          : problem.state === 'running'
+            ? 'still running'
+            : `completed as ${problem.conclusions.join(', ') || 'unknown'}`;
+      line(`    [BLOCKS MERGE] ${problem.context} - ${detail}`);
+    }
+  }
+
   quotaWarning(line);
   line('');
   if (st.state === 'RED') {
-    line(
-      `  RED - ${st.failures.filter((f) => f.required).length} required check(s) failed. This will not merge.`
-    );
+    line('  RED - one or more required checks are not proven successful. This will not merge.');
     line('');
     return EXIT.RED;
   }
@@ -491,8 +565,8 @@ function render(pr, st) {
   }
   if (st.state === 'RUNNING') {
     line(`  RUNNING - ${st.activeRuns.length} run(s) in progress, nothing has failed yet.`);
-    line('  Open the PR and stop. Autopilot merges it when they go green');
-    line('  (AGENT-PLAYBOOK 7b / CLAUDE.md 10.8.3 - never sit in a poll loop).');
+    line('  Stop here. agent-open-pr.yml and Autopilot own pull-request creation and merge');
+    line('  automatically (AGENT-PLAYBOOK 7b / CLAUDE.md 10.8.3).');
     line('');
     return EXIT.RUNNING;
   }
@@ -509,6 +583,7 @@ function render(pr, st) {
 
 // ---------------------------------------------------------------------------
 async function main() {
+  assertConfigured();
   const required = await requiredChecks();
 
   if (ALL) {
@@ -528,6 +603,16 @@ async function main() {
     const rank = { DIRTY: -1, RED: 0, RED_NON_BLOCKING: 1, UNKNOWN: 2, RUNNING: 3, GREEN: 4 };
     const stateOf = (r) => (r.merge === 'DIRTY' ? 'DIRTY' : r.st.state);
     rows.sort((a, b) => rank[stateOf(a)] - rank[stateOf(b)] || a.pr.number - b.pr.number);
+    const states = rows.map(stateOf);
+    const aggregateExit = states.some((state) =>
+      ['DIRTY', 'RED', 'RED_NON_BLOCKING'].includes(state)
+    )
+      ? EXIT.RED
+      : states.includes('UNKNOWN')
+        ? EXIT.UNKNOWN
+        : states.includes('RUNNING')
+          ? EXIT.RUNNING
+          : EXIT.GREEN;
     if (JSON_OUT) {
       console.log(
         JSON.stringify(
@@ -537,12 +622,13 @@ async function main() {
             state: stateOf({ st, merge }),
             mergeable_state: merge,
             failures: st.failures,
+            requiredProblems: st.requiredProblems,
           })),
           null,
           2
         )
       );
-      return 0;
+      return aggregateExit;
     }
     console.log('');
     for (const row of rows) {
@@ -556,6 +642,8 @@ async function main() {
       if (state === 'DIRTY') continue; // the conflict is the finding; CI is moot
       for (const f of st.failures)
         console.log(`       ${f.required ? 'X' : '-'} ${f.job}${f.step ? ` :: ${f.step}` : ''}`);
+      for (const problem of st.requiredProblems ?? [])
+        console.log(`       X ${problem.context} :: ${problem.state}`);
     }
     console.log('');
     const dirty = rows.filter((r) => stateOf(r) === 'DIRTY').length;
@@ -564,7 +652,7 @@ async function main() {
       `  ${rows.length} open, ${red} with a failing required check, ${dirty} conflicting with main.`
     );
     console.log('');
-    return red || dirty ? EXIT.RED : EXIT.GREEN;
+    return aggregateExit;
   }
 
   // Resolve what we were asked about.
@@ -598,8 +686,8 @@ async function main() {
       if (!b)
         die(
           `no open PR for "${ref}" and origin has no such branch.\n` +
-            '  If you have not pushed yet, that is the answer - push it, and\n' +
-            '  agent-open-pr.yml opens the PR within seconds.'
+            '  If you have not pushed yet, push the branch. agent-open-pr.yml then\n' +
+            '  creates its pull request automatically for protected checks.'
         );
       sha = b.commit.sha;
     }
@@ -630,6 +718,7 @@ async function main() {
           state: pr && mergeLabel(pr) === 'DIRTY' ? 'DIRTY' : st.state,
           mergeable_state: pr ? mergeLabel(pr) : null,
           failures: st.failures,
+          requiredProblems: st.requiredProblems,
           reason: st.reason ?? null,
         },
         null,
@@ -642,6 +731,8 @@ async function main() {
   return render(pr, st);
 }
 
-main()
-  .then((code) => process.exit(code))
-  .catch((err) => die(`unexpected: ${err?.stack || err}`));
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main()
+    .then((code) => process.exit(code))
+    .catch((err) => die(`unexpected: ${err?.stack || err}`));
+}

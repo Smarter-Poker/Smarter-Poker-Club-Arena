@@ -203,3 +203,106 @@ describe('LAW 5: Deep Stack Society is an estate', () => {
     );
   });
 });
+
+/**
+ * LAW 6 - THE SPLIT IS WRITTEN DOWN ONCE (2026-09-11).
+ *
+ * `ca_bbj_policy` is the authority: `fn_bbj_allocate` reads it on every raked
+ * hand. The same numbers were ALSO typed into both halves of `RakeConfig.ts`
+ * and twice more as bare literals inside the jackpot page's approach banner,
+ * with nothing checking that any of the four agreed.
+ *
+ * Nothing had gone wrong, because nothing had changed. It was about to matter:
+ * measured 2026-09-11, the largest pool (52,376.70, +3,614.80/day) reaches the
+ * banner's own trigger in about a week and the pivot itself in about two. And
+ * the policy is a TABLE - one UPDATE moves the real threshold with no
+ * migration and no failing test anywhere.
+ *
+ * An earlier audit had already caught two of those literals out of step: the
+ * alert fired at 50k while the progress bar measured against 100k. It was
+ * fixed by typing a third literal.
+ */
+describe('LAW 6: one split, and the page reads the allocator', () => {
+  const clientCfg = readFileSync(resolve(HERE, '../src/config/RakeConfig.ts'), 'utf8');
+  const serverCfg = readFileSync(resolve(HERE, '../server/src/config/RakeConfig.ts'), 'utf8');
+  const page = readFileSync(resolve(HERE, '../src/pages/BadBeatJackpotPage.tsx'), 'utf8');
+  const feed = readFileSync(resolve(HERE, '../src/lib/bbjPoolFeed.ts'), 'utf8');
+
+  /** The seeded policy row, read from the migration rather than restated. */
+  const seed = /VALUES \(1, (\d+), ([\d.]+), ([\d.]+), ([\d.]+), ([\d.]+),/.exec(a);
+
+  const numberOf = (src: string, name: string): number => {
+    const m = new RegExp(`${name}\\s*=\\s*([\\d_.]+)`).exec(src);
+    expect(m, `${name} must be declared`).toBeTruthy();
+    return Number(m![1].replace(/_/g, ''));
+  };
+  const rateOf = (src: string, konst: string, key: string): number => {
+    const block = src.slice(src.indexOf(`export const ${konst} = {`));
+    const m = new RegExp(`${key}:\\s*([\\d.]+)`).exec(block.slice(0, block.indexOf('}')));
+    expect(m, `${konst}.${key} must be declared`).toBeTruthy();
+    return Number(m![1]);
+  };
+
+  it('both configs carry the threshold the policy row was seeded with', () => {
+    expect(seed, 'the policy seed must be pinned in the migration').toBeTruthy();
+    const seeded = Number(seed![1]);
+    expect(numberOf(clientCfg, 'BBJ_PIVOT_THRESHOLD')).toBe(seeded);
+    expect(numberOf(serverCfg, 'BBJ_PIVOT_THRESHOLD')).toBe(seeded);
+  });
+
+  it('both configs carry the split the policy row was seeded with', () => {
+    const [, , stdMain, stdBackup, pivMain, pivBackup] = seed!;
+    for (const cfg of [clientCfg, serverCfg]) {
+      expect(rateOf(cfg, 'BBJ_POOL_ALLOCATION', 'mainBBJ')).toBe(Number(stdMain));
+      expect(rateOf(cfg, 'BBJ_POOL_ALLOCATION', 'backUpBBJ')).toBe(Number(stdBackup));
+      expect(rateOf(cfg, 'BBJ_POOL_ALLOCATION_PIVOT', 'mainBBJ')).toBe(Number(pivMain));
+      expect(rateOf(cfg, 'BBJ_POOL_ALLOCATION_PIVOT', 'backUpBBJ')).toBe(Number(pivBackup));
+      /* Promo is the REMAINDER in fn_bbj_allocate and is never stored as a
+         rate. A config that carries it as a third number must still re-sum,
+         or it describes a split that loses or invents chips. */
+      expect(
+        rateOf(cfg, 'BBJ_POOL_ALLOCATION', 'mainBBJ') +
+          rateOf(cfg, 'BBJ_POOL_ALLOCATION', 'backUpBBJ') +
+          rateOf(cfg, 'BBJ_POOL_ALLOCATION', 'promotional')
+      ).toBe(1);
+      expect(
+        rateOf(cfg, 'BBJ_POOL_ALLOCATION_PIVOT', 'mainBBJ') +
+          rateOf(cfg, 'BBJ_POOL_ALLOCATION_PIVOT', 'backUpBBJ') +
+          rateOf(cfg, 'BBJ_POOL_ALLOCATION_PIVOT', 'promotional')
+      ).toBe(1);
+    }
+  });
+
+  it('the player-facing banner reads the allocator, never a literal', () => {
+    /* On the CODE, not the prose: this page explains in a comment which
+       literals it used to carry, and asserting on raw text would make the
+       explanation illegal. */
+    const code = page.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
+    expect(code).toContain('allocationPolicy.pivotThreshold');
+    expect(code).toContain('BBJ_PIVOT_APPROACH_FRACTION');
+    expect(code, 'the trigger must not be a typed threshold').not.toMatch(/\b80000\b/);
+    expect(code, 'the bar must not divide by a typed threshold').not.toMatch(/\b100000\b/);
+  });
+
+  it('a rule that could not be read is not a rule of 100,000', () => {
+    /* Three outcomes, not two (CLAUDE.md 10.86). The banner counts toward a
+       real threshold or it does not render; it never invents one. */
+    expect(page).toMatch(/allocationPolicy !== null &&/);
+    expect(feed).toMatch(/export async function getBbjAllocationPolicy\(\)/);
+    // an unreadable or nonsensical rule comes back as null, never as numbers
+    expect(feed).toMatch(/Number\.isFinite/);
+    expect(feed).toMatch(/pivotThreshold <= 0/);
+  });
+
+  it('the read is a definer no signed-out visitor holds', () => {
+    const m = find(/^\d{14}_the_pivot_the_page_shows_is_the_pivot_the_bank_applies\.sql$/);
+    expect(m).toMatch(/FUNCTION public\.fn_bbj_allocation_policy\(\)/);
+    expect(m).toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_bbj_allocation_policy\(\) FROM PUBLIC, anon/
+    );
+    // promo is the REMAINDER wherever it appears, never a stored rate
+    expect(m).toMatch(/round\(1 - p\.standard_main - p\.standard_backup, 4\)/);
+    // and it proves itself against the allocator rather than against the table
+    expect(m).toMatch(/fn_bbj_allocate\(10000, 0\)/);
+  });
+});

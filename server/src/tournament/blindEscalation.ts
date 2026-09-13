@@ -132,6 +132,46 @@ export interface CappedLevel {
   capped: boolean;
 }
 
+interface PlayableBlindLevel {
+  smallBlind: number;
+  bigBlind: number;
+  ante: number;
+  adjusted: boolean;
+}
+
+/**
+ * Preserve the relationship between the three numbers after any independent
+ * ceiling or scale. A shared numeric ceiling can turn a valid 1:2 level into
+ * SB = BB; applying another common scale cannot repair that equality.
+ */
+export function enforcePlayableBlindLevel(level: {
+  smallBlind?: unknown;
+  bigBlind?: unknown;
+  ante?: unknown;
+}): PlayableBlindLevel {
+  const positive = (value: unknown, fallback: number) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, MAX_BLIND_VALUE) : fallback;
+  };
+  const rawSmallBlind = positive(level?.smallBlind, 1);
+  const rawBigBlind = positive(level?.bigBlind, 2);
+  const rawAnte = Number(level?.ante);
+  const bigBlind = Math.max(2, rawBigBlind);
+  const smallBlind =
+    rawSmallBlind < bigBlind ? rawSmallBlind : Math.max(1, Math.floor(bigBlind / 2));
+  const ante = Number.isFinite(rawAnte) && rawAnte >= 0 ? Math.min(rawAnte, MAX_BLIND_VALUE) : 0;
+
+  return {
+    smallBlind,
+    bigBlind,
+    ante,
+    adjusted:
+      smallBlind !== Number(level?.smallBlind) ||
+      bigBlind !== Number(level?.bigBlind) ||
+      ante !== Number(level?.ante),
+  };
+}
+
 /**
  * Scale a level down so the whole tournament still holds MIN_TOTAL_BB_IN_PLAY
  * big blinds. Ratios between small blind, big blind and ante are preserved — a
@@ -146,32 +186,32 @@ export function capLevelToChipsInPlay(
   totalChipsInPlay: number | null | undefined,
   minTotalBigBlinds: number = MIN_TOTAL_BB_IN_PLAY
 ): CappedLevel {
-  const num = (v: unknown) => {
-    const n = Number(v);
-    return Number.isFinite(n) && n > 0 ? n : 0;
-  };
-  const smallBlind = num(level?.smallBlind);
-  const bigBlind = num(level?.bigBlind);
-  const ante = num(level?.ante);
+  const playable = enforcePlayableBlindLevel(level);
+  const { smallBlind, bigBlind, ante } = playable;
 
   const total = Number(totalChipsInPlay);
   const minBB = Number(minTotalBigBlinds);
   if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(minBB) || minBB <= 0) {
-    return { smallBlind, bigBlind, ante, capped: false };
+    return { smallBlind, bigBlind, ante, capped: playable.adjusted };
   }
 
   const maxBigBlind = total / minBB;
   if (!(bigBlind > maxBigBlind) || maxBigBlind < 2) {
-    return { smallBlind, bigBlind, ante, capped: false };
+    return { smallBlind, bigBlind, ante, capped: playable.adjusted };
   }
 
   const scale = maxBigBlind / bigBlind;
-  return {
-    // Floor, never round up past the cap. Never below 2/1, or the table cannot
-    // post a blind at all.
+  const scaled = enforcePlayableBlindLevel({
     bigBlind: Math.max(2, Math.floor(bigBlind * scale)),
     smallBlind: Math.max(1, Math.floor(smallBlind * scale)),
     ante: ante > 0 ? Math.max(1, Math.floor(ante * scale)) : 0,
+  });
+  return {
+    // Floor, never round up past the cap. Never below 2/1, or the table cannot
+    // post a blind at all.
+    bigBlind: scaled.bigBlind,
+    smallBlind: scaled.smallBlind,
+    ante: scaled.ante,
     capped: true,
   };
 }
@@ -181,8 +221,8 @@ export function capLevelToChipsInPlay(
  *
  * `durationMinutes` is supplied by the caller rather than derived here, because
  * level length is format-normalized (`durationMinutes` / `duration_minutes` /
- * `duration` in seconds) and an accelerated MTT halves it once late
- * registration closes — engine state this module deliberately has no access to.
+ * `duration` in seconds). Preserve the supplied duration, including levels
+ * shorter than two minutes. The owner applies acceleration once.
  */
 export function escalatedBlindLevel(
   lastPlayable: BlindLevelLike | undefined,
@@ -201,16 +241,33 @@ export function escalatedBlindLevel(
   autoEscalated: true;
 } {
   const factor = escalationFactor(index, persistedLength, ratio);
+  /**
+   * WHOLE CHIPS (2026-09-11). ratio^k is fractional at every ratio but 2, and
+   * tournament chips are whole: `tournament_players.chips` is an INTEGER
+   * column. At the observed 1.278 cadence, 200/400 became 255.58/511.15 and
+   * dealt pots of fractional chips. The hand commit writes the integer column,
+   * compares it with the exact numeric stack it was asked to write, finds they
+   * differ, and rolls the WHOLE hand back ("did not durably sync every final
+   * seat stack"): 11, 9 and 2 refused hands on three heads-up SNGs between
+   * 00:00 and 00:02 UTC, and 12 more SNGs by 01:37. The persisted ladders are
+   * already whole (blindLadder.niceValuesFrom); this is the one place a level
+   * is invented, so this is where it becomes whole.
+   */
   const scale = (v: unknown) => {
     const n = Number(v);
-    return Math.min((Number.isFinite(n) ? n : 0) * factor, MAX_BLIND_VALUE);
+    return Math.round(Math.min((Number.isFinite(n) ? n : 0) * factor, MAX_BLIND_VALUE));
   };
-  return {
-    level: index + 1,
+  const playable = enforcePlayableBlindLevel({
     smallBlind: scale(lastPlayable?.smallBlind),
     bigBlind: scale(lastPlayable?.bigBlind),
     ante: scale(lastPlayable?.ante),
-    durationMinutes: Math.max(durationMinutes, 2),
+  });
+  return {
+    level: index + 1,
+    smallBlind: playable.smallBlind,
+    bigBlind: playable.bigBlind,
+    ante: playable.ante,
+    durationMinutes: Number.isFinite(durationMinutes) && durationMinutes > 0 ? durationMinutes : 2,
     autoEscalated: true,
   };
 }

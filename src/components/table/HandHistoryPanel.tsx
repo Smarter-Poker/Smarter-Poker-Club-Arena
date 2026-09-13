@@ -60,6 +60,7 @@ import { filterBySubjects, handSearchSubject } from '../../lib/handSearch';
 import { formatTableChips } from '../../utils/format';
 import { SpadeConsole } from '../console/SpadeConsole';
 import './HandHistoryPanel.css';
+import { downloadBlob } from '../../utils/downloadCsv';
 
 export interface HandHistoryAction {
   playerName: string;
@@ -100,6 +101,7 @@ export interface HandHistoryStreet {
  * legacy flat shape the share link is built from; `replay` is what is drawn.
  */
 export interface HandRecord {
+  arenaAsset?: 'chips' | 'diamonds';
   id: string;
   handNumber: number;
   timestamp: number;
@@ -225,6 +227,14 @@ function handToText(hand: HandRecord): string {
       (hand.tableName ? ` - ${hand.tableName}` : '')
   );
   lines.push(`Time: ${stamp(m.playedAt) || new Date(hand.timestamp).toLocaleString()}`);
+  lines.push(
+    'Asset: ' +
+      (hand.arenaAsset === 'diamonds'
+        ? 'Diamonds'
+        : hand.arenaAsset === 'chips'
+          ? 'Chips'
+          : 'Unclassified')
+  );
   lines.push('');
 
   for (const p of m.players) {
@@ -368,6 +378,7 @@ function HandEntry({
           )}
         </span>
         <span className="hh-entry__tags">
+          {hand.arenaAsset === 'diamonds' && <span className="hh-entry__tag">Diamonds</span>}
           {runs > 1 && (
             <span className="hh-entry__tag">
               {hand.bombPot ? 'Bomb' : runs >= 3 ? 'Run 3x' : 'Run 2x'}
@@ -553,18 +564,7 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
 
   const exportAll = useCallback(() => {
     const text = hands.map((h) => handToText(h)).join('\n\n' + '='.repeat(60) + '\n\n');
-    const blob = new Blob([text], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `club-arena-hands-${Date.now()}.txt`;
-    /* Attached, clicked, then detached; the URL is revoked on the next tick.
-       Revoking synchronously after click() cancels the download on Firefox
-       and some WebKit builds. */
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1_000);
+    downloadBlob(`club-arena-hands-${Date.now()}.txt`, new Blob([text], { type: 'text/plain' }));
   }, [hands]);
 
   /**

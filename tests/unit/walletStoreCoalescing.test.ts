@@ -212,7 +212,10 @@ it('Cashier BALANCE_UPDATED bypasses the fresh display cache', async () => {
     true,
     ts.ScriptKind.TSX
   );
-  let callback: ts.ArrowFunction | undefined;
+  const callbacks: ts.ArrowFunction[] = [];
+  const callsBalanceLoader = (node: ts.Node): boolean =>
+    (ts.isCallExpression(node) && node.expression.getText(source) === 'loadBalances') ||
+    Boolean(ts.forEachChild(node, callsBalanceLoader));
   const visit = (node: ts.Node) => {
     if (
       ts.isCallExpression(node) &&
@@ -226,14 +229,16 @@ it('Cashier BALANCE_UPDATED bypasses the fresh display cache', async () => {
           (event) => ts.isStringLiteral(event) && event.text === 'BALANCE_UPDATED'
         ) &&
         listener &&
-        ts.isArrowFunction(listener)
+        ts.isArrowFunction(listener) &&
+        callsBalanceLoader(listener)
       )
-        callback = listener;
+        callbacks.push(listener);
     }
     ts.forEachChild(node, visit);
   };
   visit(source);
-  expect(callback).toBeDefined();
+  expect(callbacks).toHaveLength(1);
+  const callback = callbacks[0];
   const row = (balance: number) => [
     { walletType: 'PLAYER', availableBalance: balance, lockedBalance: 0, balance },
   ];

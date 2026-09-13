@@ -45,11 +45,18 @@ describe('the web bundle does not know the native app exists', () => {
     expect(vite).toContain("const WEB_BASE = '/hub/club-arena/';");
     expect(vite).toContain("base: NATIVE ? '/' : WEB_BASE,");
     expect(vite).toContain("outDir: NATIVE ? 'dist-native' : 'dist',");
-    expect(vite).toContain('sourcemap: !NATIVE,');
+    expect(vite).toContain("sourcemap: NATIVE ? false : 'hidden',");
   });
 
-  it('both entry points derive the basename instead of hardcoding it', () => {
-    for (const entry of ['src/main.tsx', 'src/ClubArenaRoot.tsx']) {
+  it('the entry point derives the basename instead of hardcoding it', () => {
+    /* ONE entry point (2026-09-10, audit CL-60). src/ClubArenaRoot.tsx said it
+       was dynamically imported by the World Hub's pages/hub/club-arena/
+       [[...slug]].js; that file and its directory were deleted on 2026-09-02
+       when Club Arena moved to its own origin, and index.html:98 boots
+       src/main.tsx. The root was a second entry nothing loaded, and its stale
+       header made tooling treat it as live. Deleted; this pin now names the
+       only entry there is. */
+    for (const entry of ['src/main.tsx']) {
       const src = read(entry);
       expect(src, `${entry} must derive its basename`).toContain('basename={ROUTER_BASENAME}');
       expect(src, `${entry} must not hardcode a basename`).not.toMatch(/basename="[^"]*"/);

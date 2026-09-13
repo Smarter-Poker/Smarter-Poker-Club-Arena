@@ -1,0 +1,3617 @@
+{
+  "columns": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "agents",
+      "default": "gen_random_uuid()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "user_id",
+      "type": "uuid",
+      "table": "agents",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "club_id",
+      "type": "uuid",
+      "table": "agents",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "membership_id",
+      "type": "uuid",
+      "table": "agents",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "role",
+      "type": "text",
+      "table": "agents",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "status",
+      "type": "text",
+      "table": "agents",
+      "default": "'active'::text",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "parent_agent_id",
+      "type": "uuid",
+      "table": "agents",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "commission_rate",
+      "type": "numeric(5,4)",
+      "table": "agents",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "player_rakeback_rate",
+      "type": "numeric(5,4)",
+      "table": "agents",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "credit_limit",
+      "type": "numeric(15,2)",
+      "table": "agents",
+      "default": "0",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "credit_used",
+      "type": "numeric(15,2)",
+      "table": "agents",
+      "default": "0",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "is_prepaid",
+      "type": "boolean",
+      "table": "agents",
+      "default": "false",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "business_balance",
+      "type": "numeric(15,2)",
+      "table": "agents",
+      "default": "0",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "player_balance",
+      "type": "numeric(15,2)",
+      "table": "agents",
+      "default": "0",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "promo_balance",
+      "type": "numeric(15,2)",
+      "table": "agents",
+      "default": "0",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "total_players",
+      "type": "integer",
+      "table": "agents",
+      "default": "0",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "active_player_count",
+      "type": "integer",
+      "table": "agents",
+      "default": "0",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "sub_agent_count",
+      "type": "integer",
+      "table": "agents",
+      "default": "0",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "weekly_rake_generated",
+      "type": "numeric(15,2)",
+      "table": "agents",
+      "default": "0",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "lifetime_earnings",
+      "type": "numeric(15,2)",
+      "table": "agents",
+      "default": "0",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "joined_at",
+      "type": "timestamp with time zone",
+      "table": "agents",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "last_active_at",
+      "type": "timestamp with time zone",
+      "table": "agents",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "agents",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "agents",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "auto_rakeback_enabled",
+      "type": "boolean",
+      "table": "agents",
+      "default": "true",
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "rakeback_percentage",
+      "type": "numeric(5,4)",
+      "table": "agents",
+      "default": "0.0000",
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "agent_wallet_balance",
+      "type": "numeric(18,2)",
+      "table": "agents",
+      "default": "0",
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "player_wallet_balance",
+      "type": "numeric(18,4)",
+      "table": "agents",
+      "default": "0",
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "promo_wallet_balance",
+      "type": "numeric(18,2)",
+      "table": "agents",
+      "default": "0",
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "lifetime_rake_generated",
+      "type": "numeric(18,4)",
+      "table": "agents",
+      "default": "0",
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "smallint",
+      "table": "ca_arena_settings",
+      "default": "1",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "club_id",
+      "type": "uuid",
+      "table": "ca_arena_settings",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "settlement_window_days",
+      "type": "integer",
+      "table": "ca_arena_settings",
+      "default": "14",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "note",
+      "type": "text",
+      "table": "ca_arena_settings",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "ca_arena_settings",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "cash_games_enabled",
+      "type": "boolean",
+      "table": "ca_arena_settings",
+      "default": "false",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "source",
+      "type": "text",
+      "table": "ca_detector_registry",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "owner",
+      "type": "text",
+      "table": "ca_detector_registry",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "sla_hours",
+      "type": "integer",
+      "table": "ca_detector_registry",
+      "default": "24",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "status",
+      "type": "text",
+      "table": "ca_detector_registry",
+      "default": "'active'::text",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "auto_resolve_hours",
+      "type": "integer",
+      "table": "ca_detector_registry",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "retired_by",
+      "type": "text",
+      "table": "ca_detector_registry",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "note",
+      "type": "text",
+      "table": "ca_detector_registry",
+      "default": "''::text",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "ca_detector_registry",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "ca_diamond_journal_archive",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "user_id",
+      "type": "uuid",
+      "table": "ca_diamond_journal_archive",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "type",
+      "type": "text",
+      "table": "ca_diamond_journal_archive",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "amount",
+      "type": "integer",
+      "table": "ca_diamond_journal_archive",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "balance_after",
+      "type": "integer",
+      "table": "ca_diamond_journal_archive",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "description",
+      "type": "text",
+      "table": "ca_diamond_journal_archive",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "reference_id",
+      "type": "text",
+      "table": "ca_diamond_journal_archive",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "ca_diamond_journal_archive",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "transaction_type",
+      "type": "text",
+      "table": "ca_diamond_journal_archive",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "source",
+      "type": "text",
+      "table": "ca_diamond_journal_archive",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "metadata",
+      "type": "jsonb",
+      "table": "ca_diamond_journal_archive",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "counterparty",
+      "type": "text",
+      "table": "ca_diamond_journal_archive",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "issuance_class",
+      "type": "text",
+      "table": "ca_diamond_journal_archive",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "archived_at",
+      "type": "timestamp with time zone",
+      "table": "ca_diamond_journal_archive",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "deleted_profile_id",
+      "type": "uuid",
+      "table": "ca_diamond_journal_archive",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "deletion_reason",
+      "type": "text",
+      "table": "ca_diamond_journal_archive",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "archived_by_role",
+      "type": "text",
+      "table": "ca_diamond_journal_archive",
+      "default": "CURRENT_USER",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "archived_app",
+      "type": "text",
+      "table": "ca_diamond_journal_archive",
+      "default": "COALESCE(current_setting('application_name'::text, true), ''::text)",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "ca_drift_incidents",
+      "default": "gen_random_uuid()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "detected_at",
+      "type": "timestamp with time zone",
+      "table": "ca_drift_incidents",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "deadline_at",
+      "type": "timestamp with time zone",
+      "table": "ca_drift_incidents",
+      "default": "(now() + '00:20:00'::interval)",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "classification",
+      "type": "text",
+      "table": "ca_drift_incidents",
+      "default": "'unknown'::text",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "severity",
+      "type": "text",
+      "table": "ca_drift_incidents",
+      "default": "'critical'::text",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "layer",
+      "type": "text",
+      "table": "ca_drift_incidents",
+      "default": "'unknown'::text",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "status",
+      "type": "text",
+      "table": "ca_drift_incidents",
+      "default": "'open'::text",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "source",
+      "type": "text",
+      "table": "ca_drift_incidents",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "dedupe_key",
+      "type": "text",
+      "table": "ca_drift_incidents",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "union_id",
+      "type": "uuid",
+      "table": "ca_drift_incidents",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "club_id",
+      "type": "uuid",
+      "table": "ca_drift_incidents",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "entity_type",
+      "type": "text",
+      "table": "ca_drift_incidents",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "entity_id",
+      "type": "uuid",
+      "table": "ca_drift_incidents",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "table_id",
+      "type": "uuid",
+      "table": "ca_drift_incidents",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "tournament_id",
+      "type": "uuid",
+      "table": "ca_drift_incidents",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "hand_id",
+      "type": "uuid",
+      "table": "ca_drift_incidents",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "settlement_id",
+      "type": "text",
+      "table": "ca_drift_incidents",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "wallet_ids",
+      "type": "uuid[]",
+      "table": "ca_drift_incidents",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "transaction_ids",
+      "type": "uuid[]",
+      "table": "ca_drift_incidents",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "currency",
+      "type": "text",
+      "table": "ca_drift_incidents",
+      "default": "'club_chips'::text",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "expected_amount",
+      "type": "numeric",
+      "table": "ca_drift_incidents",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "actual_amount",
+      "type": "numeric",
+      "table": "ca_drift_incidents",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "discrepancy_amount",
+      "type": "numeric",
+      "table": "ca_drift_incidents",
+      "default": "0",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "ledger_balanced",
+      "type": "boolean",
+      "table": "ca_drift_incidents",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "suspected_cause",
+      "type": "text",
+      "table": "ca_drift_incidents",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "auto_repair_status",
+      "type": "text",
+      "table": "ca_drift_incidents",
+      "default": "'pending'::text",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "escalation_level",
+      "type": "integer",
+      "table": "ca_drift_incidents",
+      "default": "0",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "past_target",
+      "type": "boolean",
+      "table": "ca_drift_incidents",
+      "default": "false",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "occurrences",
+      "type": "integer",
+      "table": "ca_drift_incidents",
+      "default": "1",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "last_seen_at",
+      "type": "timestamp with time zone",
+      "table": "ca_drift_incidents",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "acknowledged_by",
+      "type": "uuid",
+      "table": "ca_drift_incidents",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "acknowledged_at",
+      "type": "timestamp with time zone",
+      "table": "ca_drift_incidents",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "assigned_to",
+      "type": "uuid",
+      "table": "ca_drift_incidents",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "root_cause",
+      "type": "text",
+      "table": "ca_drift_incidents",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "correction_ref",
+      "type": "text",
+      "table": "ca_drift_incidents",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "resolution",
+      "type": "text",
+      "table": "ca_drift_incidents",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "resolved_by",
+      "type": "uuid",
+      "table": "ca_drift_incidents",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "resolved_at",
+      "type": "timestamp with time zone",
+      "table": "ca_drift_incidents",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "metadata",
+      "type": "jsonb",
+      "table": "ca_drift_incidents",
+      "default": "'{}'::jsonb",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "ca_drift_incidents",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "bigint",
+      "table": "ca_incident_events",
+      "default": null,
+      "identity": "a",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "incident_id",
+      "type": "uuid",
+      "table": "ca_incident_events",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "at",
+      "type": "timestamp with time zone",
+      "table": "ca_incident_events",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "kind",
+      "type": "text",
+      "table": "ca_incident_events",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "actor",
+      "type": "uuid",
+      "table": "ca_incident_events",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "actor_label",
+      "type": "text",
+      "table": "ca_incident_events",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "detail",
+      "type": "jsonb",
+      "table": "ca_incident_events",
+      "default": "'{}'::jsonb",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "ca_incident_file_failures",
+      "default": "gen_random_uuid()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "occurred_at",
+      "type": "timestamp with time zone",
+      "table": "ca_incident_file_failures",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "source",
+      "type": "text",
+      "table": "ca_incident_file_failures",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "dedupe_key",
+      "type": "text",
+      "table": "ca_incident_file_failures",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "classification",
+      "type": "text",
+      "table": "ca_incident_file_failures",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "severity",
+      "type": "text",
+      "table": "ca_incident_file_failures",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "discrepancy",
+      "type": "numeric",
+      "table": "ca_incident_file_failures",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "sqlstate",
+      "type": "text",
+      "table": "ca_incident_file_failures",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "message",
+      "type": "text",
+      "table": "ca_incident_file_failures",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "db_role",
+      "type": "text",
+      "table": "ca_incident_file_failures",
+      "default": "CURRENT_USER",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "app_name",
+      "type": "text",
+      "table": "ca_incident_file_failures",
+      "default": "COALESCE(current_setting('application_name'::text, true), ''::text)",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "day",
+      "type": "date",
+      "table": "ca_ledger_day_manifests",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "row_count",
+      "type": "bigint",
+      "table": "ca_ledger_day_manifests",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "first_seq",
+      "type": "bigint",
+      "table": "ca_ledger_day_manifests",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "last_seq",
+      "type": "bigint",
+      "table": "ca_ledger_day_manifests",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "net_amount",
+      "type": "numeric",
+      "table": "ca_ledger_day_manifests",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "sha256",
+      "type": "text",
+      "table": "ca_ledger_day_manifests",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "ca_ledger_day_manifests",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "last_checked_at",
+      "type": "timestamp with time zone",
+      "table": "ca_ledger_day_manifests",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "restated_at",
+      "type": "timestamp with time zone",
+      "table": "ca_ledger_day_manifests",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "kind",
+      "type": "text",
+      "table": "ca_ledger_maintenance_kinds",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "severity",
+      "type": "text",
+      "table": "ca_ledger_maintenance_kinds",
+      "default": "'warning'::text",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "note",
+      "type": "text",
+      "table": "ca_ledger_maintenance_kinds",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "ca_ledger_maintenance_kinds",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "bigint",
+      "table": "ca_ledger_mutation_log",
+      "default": null,
+      "identity": "a",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "at",
+      "type": "timestamp with time zone",
+      "table": "ca_ledger_mutation_log",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "source_table",
+      "type": "text",
+      "table": "ca_ledger_mutation_log",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "operation",
+      "type": "text",
+      "table": "ca_ledger_mutation_log",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "db_role",
+      "type": "text",
+      "table": "ca_ledger_mutation_log",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "application",
+      "type": "text",
+      "table": "ca_ledger_mutation_log",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "reason",
+      "type": "text",
+      "table": "ca_ledger_mutation_log",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "old_row",
+      "type": "jsonb",
+      "table": "ca_ledger_mutation_log",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "new_row",
+      "type": "jsonb",
+      "table": "ca_ledger_mutation_log",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "ca_mint_ledger",
+      "default": "gen_random_uuid()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "op_id",
+      "type": "text",
+      "table": "ca_mint_ledger",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "action",
+      "type": "text",
+      "table": "ca_mint_ledger",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "asset",
+      "type": "text",
+      "table": "ca_mint_ledger",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "holder_type",
+      "type": "text",
+      "table": "ca_mint_ledger",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "holder_id",
+      "type": "uuid",
+      "table": "ca_mint_ledger",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "holder_label",
+      "type": "text",
+      "table": "ca_mint_ledger",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "amount",
+      "type": "numeric(20,2)",
+      "table": "ca_mint_ledger",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "balance_before",
+      "type": "numeric(20,2)",
+      "table": "ca_mint_ledger",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "balance_after",
+      "type": "numeric(20,2)",
+      "table": "ca_mint_ledger",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "supply_after",
+      "type": "numeric(20,2)",
+      "table": "ca_mint_ledger",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "reason",
+      "type": "text",
+      "table": "ca_mint_ledger",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "performed_by",
+      "type": "uuid",
+      "table": "ca_mint_ledger",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "performed_by_label",
+      "type": "text",
+      "table": "ca_mint_ledger",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "db_role",
+      "type": "text",
+      "table": "ca_mint_ledger",
+      "default": "CURRENT_USER",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "ca_mint_ledger",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "chip_ledger_id",
+      "type": "uuid",
+      "table": "ca_mint_ledger",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "diamond_tx_id",
+      "type": "uuid",
+      "table": "ca_mint_ledger",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "origin",
+      "type": "text",
+      "table": "ca_mint_ledger",
+      "default": "\nCASE\n    WHEN (op_id ~~ 'ledger:%'::text) THEN 'journal'::text\n    WHEN (op_id ~~ 'register-opening-baseline:%'::text) THEN 'baseline'::text\n    WHEN (op_id ~~ 'register-opening-baseline-correction:%'::text) THEN 'baseline'::text\n    WHEN (op_id ~~ 'baseline:%'::text) THEN 'baseline'::text\n    WHEN (op_id ~~ 'diamond-mint:%'::text) THEN 'diamond-mint'::text\n    WHEN (op_id ~~ 'club-opening-grant:%'::text) THEN 'opening-grant'::text\n    WHEN (op_id ~~ 'seat_credit_erased:%'::text) THEN 'restoration'::text\n    WHEN (op_id ~~ 'seed:%'::text) THEN 'seed'::text\n    WHEN (op_id ~~ 'deletion:%'::text) THEN 'deletion'::text\n    WHEN (op_id ~~ 'diamond-journal:purchase:%'::text) THEN 'purchase'::text\n    WHEN (op_id ~~ 'diamond-journal:reward:%'::text) THEN 'reward'::text\n    WHEN (op_id ~~ 'diamond-journal:promotion:%'::text) THEN 'promotion'::text\n    WHEN (op_id ~~ 'diamond-journal:refund:%'::text) THEN 'refund'::text\n    WHEN (op_id ~~ 'diamond-journal:spend:%'::text) THEN 'spend'::text\n    WHEN (op_id ~~ 'diamond-journal:bridge:%'::text) THEN 'bridge'::text\n    WHEN (op_id ~~ 'diamond-journal:adjustment:%'::text) THEN 'adjustment'::text\n    WHEN (op_id ~~ 'diamond-journal:arena:%'::text) THEN 'arena'::text\n    WHEN (op_id ~~ 'diamond-journal:%'::text) THEN 'unclassified'::text\n    ELSE 'operator'::text\nEND",
+      "identity": "",
+      "not_null": false,
+      "generated": "s"
+    },
+    {
+      "name": "id",
+      "type": "integer",
+      "table": "ca_mint_policy",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "per_operation_cap_chips",
+      "type": "numeric",
+      "table": "ca_mint_policy",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "rolling_24h_cap_chips",
+      "type": "numeric",
+      "table": "ca_mint_policy",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "per_operation_cap_diamonds",
+      "type": "numeric",
+      "table": "ca_mint_policy",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "rolling_24h_cap_diamonds",
+      "type": "numeric",
+      "table": "ca_mint_policy",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "note",
+      "type": "text",
+      "table": "ca_mint_policy",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "ca_mint_policy",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "updated_by",
+      "type": "uuid",
+      "table": "ca_mint_policy",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "only_row",
+      "type": "boolean",
+      "table": "ca_money_path_enforcement",
+      "default": "true",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "mode",
+      "type": "text",
+      "table": "ca_money_path_enforcement",
+      "default": "'log'::text",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "changed_at",
+      "type": "timestamp with time zone",
+      "table": "ca_money_path_enforcement",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "changed_by",
+      "type": "text",
+      "table": "ca_money_path_enforcement",
+      "default": "SESSION_USER",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "note",
+      "type": "text",
+      "table": "ca_money_path_enforcement",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "ca_money_path_violations",
+      "default": "gen_random_uuid()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "at",
+      "type": "timestamp with time zone",
+      "table": "ca_money_path_violations",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "table_name",
+      "type": "text",
+      "table": "ca_money_path_violations",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "user_id",
+      "type": "uuid",
+      "table": "ca_money_path_violations",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "amount",
+      "type": "numeric(15,2)",
+      "table": "ca_money_path_violations",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "category",
+      "type": "text",
+      "table": "ca_money_path_violations",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "description",
+      "type": "text",
+      "table": "ca_money_path_violations",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "related_entity_id",
+      "type": "uuid",
+      "table": "ca_money_path_violations",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "money_path",
+      "type": "text",
+      "table": "ca_money_path_violations",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "app_name",
+      "type": "text",
+      "table": "ca_money_path_violations",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "db_role",
+      "type": "text",
+      "table": "ca_money_path_violations",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "boolean",
+      "table": "ca_operator_policy",
+      "default": "true",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "approvals_enabled",
+      "type": "boolean",
+      "table": "ca_operator_policy",
+      "default": "false",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "allow_self_approve_when_alone",
+      "type": "boolean",
+      "table": "ca_operator_policy",
+      "default": "true",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "enforce_named_roles",
+      "type": "boolean",
+      "table": "ca_operator_policy",
+      "default": "false",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "mint_threshold",
+      "type": "numeric",
+      "table": "ca_operator_policy",
+      "default": "0",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "fund_threshold",
+      "type": "numeric",
+      "table": "ca_operator_policy",
+      "default": "0",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "cashout_threshold",
+      "type": "numeric",
+      "table": "ca_operator_policy",
+      "default": "0",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "approval_ttl_minutes",
+      "type": "integer",
+      "table": "ca_operator_policy",
+      "default": "1440",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "updated_by",
+      "type": "uuid",
+      "table": "ca_operator_policy",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "ca_operator_policy",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "restrictions_enforced",
+      "type": "boolean",
+      "table": "ca_operator_policy",
+      "default": "false",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "ca_player_restrictions",
+      "default": "gen_random_uuid()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "user_id",
+      "type": "uuid",
+      "table": "ca_player_restrictions",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "scope",
+      "type": "text",
+      "table": "ca_player_restrictions",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "reason_code",
+      "type": "text",
+      "table": "ca_player_restrictions",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "reason_note",
+      "type": "text",
+      "table": "ca_player_restrictions",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "status",
+      "type": "text",
+      "table": "ca_player_restrictions",
+      "default": "'active'::text",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "applied_by",
+      "type": "uuid",
+      "table": "ca_player_restrictions",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "applied_at",
+      "type": "timestamp with time zone",
+      "table": "ca_player_restrictions",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "expires_at",
+      "type": "timestamp with time zone",
+      "table": "ca_player_restrictions",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "approval_id",
+      "type": "uuid",
+      "table": "ca_player_restrictions",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "lifted_by",
+      "type": "uuid",
+      "table": "ca_player_restrictions",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "lifted_at",
+      "type": "timestamp with time zone",
+      "table": "ca_player_restrictions",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "lift_note",
+      "type": "text",
+      "table": "ca_player_restrictions",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "ca_player_restrictions",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "bigint",
+      "table": "ca_restriction_observations",
+      "default": null,
+      "identity": "a",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "user_id",
+      "type": "uuid",
+      "table": "ca_restriction_observations",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "scope",
+      "type": "text",
+      "table": "ca_restriction_observations",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "restriction_id",
+      "type": "uuid",
+      "table": "ca_restriction_observations",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "observed_at",
+      "type": "timestamp with time zone",
+      "table": "ca_restriction_observations",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "table_name",
+      "type": "text",
+      "table": "ca_restriction_observations",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "op",
+      "type": "text",
+      "table": "ca_restriction_observations",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "would_refuse",
+      "type": "boolean",
+      "table": "ca_restriction_observations",
+      "default": "true",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "detail",
+      "type": "jsonb",
+      "table": "ca_restriction_observations",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "bigint",
+      "table": "ca_seat_stack_exits",
+      "default": "nextval('ca_seat_stack_exits_id_seq'::regclass)",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "seat_id",
+      "type": "uuid",
+      "table": "ca_seat_stack_exits",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "table_id",
+      "type": "uuid",
+      "table": "ca_seat_stack_exits",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "user_id",
+      "type": "uuid",
+      "table": "ca_seat_stack_exits",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "club_id",
+      "type": "uuid",
+      "table": "ca_seat_stack_exits",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "seat_number",
+      "type": "integer",
+      "table": "ca_seat_stack_exits",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "stack",
+      "type": "numeric",
+      "table": "ca_seat_stack_exits",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "exit_kind",
+      "type": "text",
+      "table": "ca_seat_stack_exits",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "db_role",
+      "type": "text",
+      "table": "ca_seat_stack_exits",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "app_name",
+      "type": "text",
+      "table": "ca_seat_stack_exits",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "occurred_at",
+      "type": "timestamp with time zone",
+      "table": "ca_seat_stack_exits",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "cashout_requests",
+      "default": "gen_random_uuid()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "club_id",
+      "type": "uuid",
+      "table": "cashout_requests",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "player_id",
+      "type": "uuid",
+      "table": "cashout_requests",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "agent_id",
+      "type": "uuid",
+      "table": "cashout_requests",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "amount",
+      "type": "numeric(15,2)",
+      "table": "cashout_requests",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "status",
+      "type": "text",
+      "table": "cashout_requests",
+      "default": "'pending'::text",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "player_note",
+      "type": "text",
+      "table": "cashout_requests",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "agent_note",
+      "type": "text",
+      "table": "cashout_requests",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "cashout_requests",
+      "default": "now()",
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "cashout_requests",
+      "default": "now()",
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "acknowledged_at",
+      "type": "timestamp with time zone",
+      "table": "cashout_requests",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "completed_at",
+      "type": "timestamp with time zone",
+      "table": "cashout_requests",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "cancelled_at",
+      "type": "timestamp with time zone",
+      "table": "cashout_requests",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "boolean",
+      "table": "engine_maintenance_break",
+      "default": "true",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "phase",
+      "type": "text",
+      "table": "engine_maintenance_break",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "announced_at",
+      "type": "timestamp with time zone",
+      "table": "engine_maintenance_break",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "break_started_at",
+      "type": "timestamp with time zone",
+      "table": "engine_maintenance_break",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "break_ends_at",
+      "type": "timestamp with time zone",
+      "table": "engine_maintenance_break",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "reason",
+      "type": "text",
+      "table": "engine_maintenance_break",
+      "default": "'Scheduled Engine Maintenance'::text",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "declared_by",
+      "type": "text",
+      "table": "engine_maintenance_break",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "engine_maintenance_break",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "enforce_freeze",
+      "type": "boolean",
+      "table": "engine_maintenance_break",
+      "default": "false",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "ownership_token",
+      "type": "uuid",
+      "table": "engine_maintenance_break",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "tournament_id",
+      "type": "uuid",
+      "table": "engine_tournament_leases",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "instance_id",
+      "type": "text",
+      "table": "engine_tournament_leases",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "engine_version",
+      "type": "text",
+      "table": "engine_tournament_leases",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "acquired_at",
+      "type": "timestamp with time zone",
+      "table": "engine_tournament_leases",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "heartbeat_at",
+      "type": "timestamp with time zone",
+      "table": "engine_tournament_leases",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "lease_generation",
+      "type": "uuid",
+      "table": "engine_tournament_leases",
+      "default": "gen_random_uuid()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "protocol_version",
+      "type": "integer",
+      "table": "engine_tournament_leases",
+      "default": "1",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "financial_alerts",
+      "default": "gen_random_uuid()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "severity",
+      "type": "text",
+      "table": "financial_alerts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "source",
+      "type": "text",
+      "table": "financial_alerts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "message",
+      "type": "text",
+      "table": "financial_alerts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "context",
+      "type": "jsonb",
+      "table": "financial_alerts",
+      "default": "'{}'::jsonb",
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "resolved",
+      "type": "boolean",
+      "table": "financial_alerts",
+      "default": "false",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "resolved_at",
+      "type": "timestamp with time zone",
+      "table": "financial_alerts",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "financial_alerts",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "resolved_by",
+      "type": "uuid",
+      "table": "financial_alerts",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "resolution",
+      "type": "text",
+      "table": "financial_alerts",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "poker_diamond_custody",
+      "default": "gen_random_uuid()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "user_id",
+      "type": "uuid",
+      "table": "poker_diamond_custody",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "arena_id",
+      "type": "uuid",
+      "table": "poker_diamond_custody",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "purpose",
+      "type": "text",
+      "table": "poker_diamond_custody",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "target_id",
+      "type": "uuid",
+      "table": "poker_diamond_custody",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "entry_key",
+      "type": "text",
+      "table": "poker_diamond_custody",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "balance",
+      "type": "bigint",
+      "table": "poker_diamond_custody",
+      "default": "0",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "state",
+      "type": "text",
+      "table": "poker_diamond_custody",
+      "default": "'reserved'::text",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "poker_diamond_custody",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "released_at",
+      "type": "timestamp with time zone",
+      "table": "poker_diamond_custody",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "seat_id",
+      "type": "uuid",
+      "table": "poker_diamond_custody",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "seat_joined_at",
+      "type": "timestamp with time zone",
+      "table": "poker_diamond_custody",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "occupancy_id",
+      "type": "uuid",
+      "table": "poker_diamond_custody",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "tournament_id",
+      "type": "uuid",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "actor_id",
+      "type": "uuid",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "receipt_version",
+      "type": "integer",
+      "table": "tournament_cancellation_receipts",
+      "default": "2",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "source_player_count",
+      "type": "integer",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "source_player_ids",
+      "type": "uuid[]",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "refunded_count",
+      "type": "integer",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "refunded_registration_ids",
+      "type": "uuid[]",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "refund_line_count",
+      "type": "integer",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "ticket_return_count",
+      "type": "integer",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "ticket_return_ids",
+      "type": "uuid[]",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "total_ticket_returned",
+      "type": "numeric(15,2)",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "zero_refund_count",
+      "type": "integer",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "zero_refund_registration_ids",
+      "type": "uuid[]",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "total_refunded",
+      "type": "numeric(15,2)",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "fees_reversed",
+      "type": "numeric(15,2)",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "total_rake_before",
+      "type": "numeric(15,2)",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "total_rake_after",
+      "type": "numeric(15,2)",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "closed_table_count",
+      "type": "integer",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "closed_table_ids",
+      "type": "uuid[]",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "source_seat_count",
+      "type": "integer",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "source_seat_ids",
+      "type": "uuid[]",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "released_seat_count",
+      "type": "integer",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "released_seat_ids",
+      "type": "uuid[]",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "fee_reversal_ids",
+      "type": "uuid[]",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "escrow_closed_at",
+      "type": "timestamp with time zone",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "escrow_close_note",
+      "type": "text",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "spin_unwind_tournament_id",
+      "type": "uuid",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "receipt",
+      "type": "jsonb",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "settled_at",
+      "type": "timestamp with time zone",
+      "table": "tournament_cancellation_receipts",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "tournament_id",
+      "type": "uuid",
+      "table": "tournament_satellite_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "target_id",
+      "type": "uuid",
+      "table": "tournament_satellite_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "target_was_missing",
+      "type": "boolean",
+      "table": "tournament_satellite_settlements",
+      "default": "false",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "target_contract_version",
+      "type": "bigint",
+      "table": "tournament_satellite_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "winner_id",
+      "type": "uuid",
+      "table": "tournament_satellite_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "field_size",
+      "type": "integer",
+      "table": "tournament_satellite_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "advertised_seats",
+      "type": "integer",
+      "table": "tournament_satellite_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "pool",
+      "type": "numeric(15,2)",
+      "table": "tournament_satellite_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "target_buy_in",
+      "type": "numeric(15,2)",
+      "table": "tournament_satellite_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "target_fee",
+      "type": "numeric(15,2)",
+      "table": "tournament_satellite_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "ticket_cost",
+      "type": "numeric(15,2)",
+      "table": "tournament_satellite_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "ticket_award_count",
+      "type": "integer",
+      "table": "tournament_satellite_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "seat_count",
+      "type": "integer",
+      "table": "tournament_satellite_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "cash_ticket_count",
+      "type": "integer",
+      "table": "tournament_satellite_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "entry_ticket_count",
+      "type": "integer",
+      "table": "tournament_satellite_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "remainder",
+      "type": "numeric(15,2)",
+      "table": "tournament_satellite_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "bubble_user_id",
+      "type": "uuid",
+      "table": "tournament_satellite_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "bubble_position",
+      "type": "integer",
+      "table": "tournament_satellite_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "source_table_count",
+      "type": "integer",
+      "table": "tournament_satellite_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "source_table_ids",
+      "type": "uuid[]",
+      "table": "tournament_satellite_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "source_seat_count",
+      "type": "integer",
+      "table": "tournament_satellite_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "source_seat_ids",
+      "type": "uuid[]",
+      "table": "tournament_satellite_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "released_seat_count",
+      "type": "integer",
+      "table": "tournament_satellite_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "released_seat_ids",
+      "type": "uuid[]",
+      "table": "tournament_satellite_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "source_closed_at",
+      "type": "timestamp with time zone",
+      "table": "tournament_satellite_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "source_escrow_closed_at",
+      "type": "timestamp with time zone",
+      "table": "tournament_satellite_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "source_escrow_close_note",
+      "type": "text",
+      "table": "tournament_satellite_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "settled_at",
+      "type": "timestamp with time zone",
+      "table": "tournament_satellite_settlements",
+      "default": "now()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "receipt_version",
+      "type": "integer",
+      "table": "tournament_satellite_settlements",
+      "default": "2",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "table_id",
+      "type": "uuid",
+      "table": "tournament_table_origins",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "tournament_id",
+      "type": "uuid",
+      "table": "tournament_table_origins",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "origin_kind",
+      "type": "text",
+      "table": "tournament_table_origins",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "launch_id",
+      "type": "uuid",
+      "table": "tournament_table_origins",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "launch_lease_generation",
+      "type": "uuid",
+      "table": "tournament_table_origins",
+      "default": null,
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "recorded_at",
+      "type": "timestamp with time zone",
+      "table": "tournament_table_origins",
+      "default": "clock_timestamp()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "tournament_id",
+      "type": "uuid",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "winner_id",
+      "type": "uuid",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "settlement_mode",
+      "type": "text",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "started_status",
+      "type": "text",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "prize_pool",
+      "type": "numeric(15,2)",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "bounty_pool",
+      "type": "numeric(15,2)",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "cash_payout_count",
+      "type": "integer",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "cash_payout_total",
+      "type": "numeric(15,2)",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "bounty_payout_total",
+      "type": "numeric(15,2)",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "mystery_was_active",
+      "type": "boolean",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "mystery_pool_cents",
+      "type": "bigint",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "cash_receipt",
+      "type": "jsonb",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "mystery_receipt",
+      "type": "jsonb",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "bounty_receipt",
+      "type": "jsonb",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "closed_table_count",
+      "type": "integer",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "closed_table_ids",
+      "type": "uuid[]",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "source_seat_count",
+      "type": "integer",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "source_seat_ids",
+      "type": "uuid[]",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "released_seat_count",
+      "type": "integer",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "released_seat_ids",
+      "type": "uuid[]",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "rake_amount",
+      "type": "numeric(15,2)",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "rake_destination",
+      "type": "text",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "rake_settled_at",
+      "type": "timestamp with time zone",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "rake_attributed_at",
+      "type": "timestamp with time zone",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "rake_attributed_users",
+      "type": "integer",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "escrow_closed_at",
+      "type": "timestamp with time zone",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "escrow_close_note",
+      "type": "text",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "completed_at",
+      "type": "timestamp with time zone",
+      "table": "tournament_terminal_settlements",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "settled_at",
+      "type": "timestamp with time zone",
+      "table": "tournament_terminal_settlements",
+      "default": "transaction_timestamp()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "receipt_version",
+      "type": "integer",
+      "table": "tournament_terminal_settlements",
+      "default": "1",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "union_wallets",
+      "default": "gen_random_uuid()",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "union_id",
+      "type": "uuid",
+      "table": "union_wallets",
+      "default": null,
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "chip_balance",
+      "type": "numeric(20,2)",
+      "table": "union_wallets",
+      "default": "0",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "name": "rake_wallet",
+      "type": "numeric(20,2)",
+      "table": "union_wallets",
+      "default": "0",
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "bbj_wallet",
+      "type": "numeric(20,2)",
+      "table": "union_wallets",
+      "default": "0",
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "promo_wallet",
+      "type": "numeric(20,2)",
+      "table": "union_wallets",
+      "default": "0",
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "insurance_wallet",
+      "type": "numeric(20,2)",
+      "table": "union_wallets",
+      "default": "0",
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "total_rake_collected",
+      "type": "numeric(20,2)",
+      "table": "union_wallets",
+      "default": "0",
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "total_settlements",
+      "type": "numeric",
+      "table": "union_wallets",
+      "default": "0",
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "union_wallets",
+      "default": "now()",
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "union_wallets",
+      "default": "now()",
+      "identity": "",
+      "not_null": false,
+      "generated": ""
+    },
+    {
+      "name": "spin_reserve_wallet",
+      "type": "numeric(20,2)",
+      "table": "union_wallets",
+      "default": "0",
+      "identity": "",
+      "not_null": true,
+      "generated": ""
+    },
+    {
+      "table": "engine_maintenance_thaws",
+      "name": "freeze_started_at",
+      "type": "timestamp with time zone",
+      "not_null": true,
+      "default": null,
+      "generated": "",
+      "identity": ""
+    },
+    {
+      "table": "engine_maintenance_thaws",
+      "name": "thawed_at",
+      "type": "timestamp with time zone",
+      "not_null": true,
+      "default": "now()",
+      "generated": "",
+      "identity": ""
+    },
+    {
+      "table": "engine_maintenance_thaws",
+      "name": "frozen_seconds",
+      "type": "numeric",
+      "not_null": true,
+      "default": null,
+      "generated": "",
+      "identity": ""
+    },
+    {
+      "table": "engine_maintenance_thaws",
+      "name": "shifted",
+      "type": "jsonb",
+      "not_null": true,
+      "default": null,
+      "generated": "",
+      "identity": ""
+    },
+    {
+      "table": "engine_maintenance_thaws",
+      "name": "thawed_by",
+      "type": "text",
+      "not_null": false,
+      "default": null,
+      "generated": "",
+      "identity": ""
+    },
+    {
+      "table": "engine_maintenance_thaws",
+      "name": "announced_at",
+      "type": "timestamp with time zone",
+      "not_null": false,
+      "default": null,
+      "generated": "",
+      "identity": ""
+    },
+    {
+      "table": "engine_maintenance_thaws",
+      "name": "ownership_token",
+      "type": "uuid",
+      "not_null": false,
+      "default": null,
+      "generated": "",
+      "identity": ""
+    },
+    {
+      "table": "engine_maintenance_thaws",
+      "name": "contract_version",
+      "type": "integer",
+      "not_null": false,
+      "default": null,
+      "generated": "",
+      "identity": ""
+    },
+    {
+      "table": "engine_maintenance_thaws",
+      "name": "release_target_at",
+      "type": "timestamp with time zone",
+      "not_null": false,
+      "default": null,
+      "generated": "",
+      "identity": ""
+    },
+    {
+      "table": "engine_maintenance_thaws",
+      "name": "release_generation",
+      "type": "integer",
+      "not_null": true,
+      "default": "0",
+      "generated": "",
+      "identity": ""
+    }
+  ],
+  "functions": [
+    {
+      "body_md5": "66f0ca0e4ebf27a74dd4b7c211c4fd0f",
+      "signature": "fn_active_maintenance_release_boundary()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_active_maintenance_release_boundary()\n RETURNS timestamp with time zone\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'auth', 'pg_temp'\nAS $function$\nDECLARE\n  c_required_steps CONSTANT text[] := ARRAY[\n    'sit_out_at','hold_expires_at','addon_period_ends_at','reversible_until',\n    'reveal_deadline_at','rebuy_prompt_until','bomb_pot_next_due_at',\n    'cash_stay_last_tick_at','cash_rejoin_expires_at','level_started_at',\n    'cluster_break_eligible_since','cluster_move_expires_at',\n    'reconnect_presence','reconnect_snapshots'\n  ];\n  v_request_role text := NULLIF(btrim(COALESCE(auth.role(), '')), '');\n  v_trusted_database_actor boolean;\n  v_release_target timestamptz;\nBEGIN\n  -- supabase_auth_admin added 2026-09-10: it is GoTrue's own database role\n  -- (the signup triggers run as it), never a browser. Without it every signup\n  -- wallet trigger raised 42501 here (signup_errors id 9318).\n  SELECT session_user IN ('postgres', 'supabase_admin', 'service_role', 'supabase_auth_admin')\n         OR COALESCE(r.rolsuper, false)\n    INTO v_trusted_database_actor\n    FROM (SELECT session_user AS role_name) s\n    LEFT JOIN pg_catalog.pg_roles r ON r.rolname = s.role_name;\n\n  IF v_request_role IS NOT NULL\n     AND v_request_role NOT IN ('anon', 'authenticated', 'service_role') THEN\n    RAISE EXCEPTION 'MAINTENANCE_RELEASE_CERTIFICATE_CALLER_REFUSED'\n      USING ERRCODE = '42501';\n  END IF;\n  IF v_request_role IS NULL AND NOT COALESCE(v_trusted_database_actor, false) THEN\n    RAISE EXCEPTION 'MAINTENANCE_RELEASE_CERTIFICATE_CALLER_REQUIRED'\n      USING ERRCODE = '42501';\n  END IF;\n\n  -- PERF (2026-09-10, swarm A): OFFSET 0 is an optimisation fence. Without it\n  -- the planner evaluated `shifted ?& c_required_steps` first on every row of\n  -- engine_maintenance_thaws (167 rows, 0 of them contract_version 3) on every\n  -- money write that reaches fn_platform_frozen: 229 us -> 32 us per call.\n  -- Same four quals, same max(); the jsonb quals now only see rows that already\n  -- passed contract_version = 3 AND release_target_at > clock_timestamp().\n  SELECT max(t.release_target_at) INTO v_release_target\n    FROM (SELECT t.release_target_at, t.shifted\n            FROM public.engine_maintenance_thaws t\n           WHERE t.contract_version = 3\n             AND t.release_target_at > clock_timestamp()\n          OFFSET 0) t\n   WHERE COALESCE((t.shifted->>'complete')::boolean, false)\n     AND t.shifted ?& c_required_steps;\n  RETURN v_release_target;\nEND;\n$function$\n"
+    },
+    {
+      "body_md5": "02f32035383ba2a0d8e89b421f97bf04",
+      "signature": "fn_ca_incident_notify(uuid,text,text,boolean)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_incident_notify(p_incident_id uuid, p_kind text, p_headline text, p_senior_only boolean DEFAULT false)\n RETURNS integer\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  inc  public.ca_drift_incidents;\n  rec  uuid;\n  n    int := 0;\n  club_name  text;\n  union_name text;\n  body text;\n  age_min int;\n  v_finding text;\n  v_state   text;\n  v_kind    text;\n  v_fresh   boolean;\n  v_withheld text := NULL;\nBEGIN\n  SELECT * INTO inc FROM public.ca_drift_incidents WHERE id = p_incident_id;\n  IF NOT FOUND THEN RETURN 0; END IF;\n\n  v_kind := CASE\n              WHEN p_kind = 'escalated'    THEN 'escalated'\n              WHEN inc.status = 'resolved' THEN 'resolved'\n              ELSE 'raised'\n            END;\n\n  /* DAN'S RULE, 2026-09-06. Three gates, on the PUSH only. The incident is\n     still filed, the event row is still written, the board still shows\n     everything - what changes is whose night it interrupts.\n\n     Order matters: 'resolved' is checked first because a fix is the case he\n     named explicitly, and it would otherwise slip through on a critical. */\n  IF v_kind = 'resolved' THEN\n    v_withheld := 'a fix is not a page';\n  ELSIF lower(COALESCE(inc.severity,'')) <> 'critical' THEN\n    v_withheld := 'severity ' || COALESCE(inc.severity,'null') || ' is not critical';\n  ELSIF COALESCE(inc.discrepancy_amount, 0) = 0 THEN\n    v_withheld := 'nothing is unaccounted for (0.00)';\n  END IF;\n\n  IF v_withheld IS NOT NULL THEN\n    INSERT INTO public.ca_incident_events (incident_id, kind, detail)\n    VALUES (inc.id, 'notify_withheld',\n            jsonb_build_object('reason', v_withheld, 'kind', v_kind,\n                               'severity', inc.severity,\n                               'discrepancy', inc.discrepancy_amount,\n                               'headline', left(p_headline, 110),\n                               'rule', 'Dan 2026-09-06: only critical errors that need my attention'));\n    RETURN 0;\n  END IF;\n\n  SELECT name INTO club_name  FROM public.clubs  WHERE id = inc.club_id;\n  SELECT name INTO union_name FROM public.unions WHERE id = inc.union_id;\n  age_min := GREATEST(0, floor(extract(epoch FROM now() - inc.detected_at) / 60))::int;\n\n  body := format(\n    '%s | %s drift %s chips (%s layer). Expected %s, actual %s. %s%sAge %smin, reconcile target %s. Auto-repair: %s.',\n    upper(inc.severity), inc.classification,\n    to_char(COALESCE(inc.discrepancy_amount,0), 'FM999999999990.00'),\n    inc.layer,\n    COALESCE(to_char(inc.expected_amount,'FM999999999990.00'),'?'),\n    COALESCE(to_char(inc.actual_amount,'FM999999999990.00'),'?'),\n    COALESCE('Club ' || club_name || '. ', ''),\n    COALESCE('Union ' || union_name || '. ', ''),\n    age_min, to_char(inc.deadline_at, 'HH24:MI UTC'), inc.auto_repair_status);\n\n  v_finding := public.fn_ca_finding_key(inc.dedupe_key, inc.classification, inc.layer,\n                                        inc.club_id, inc.union_id);\n  v_state := md5(\n      v_kind\n      || '|' || COALESCE(inc.severity,'?')\n      || '|' || COALESCE(inc.classification,'?')\n      || '|' || COALESCE(inc.layer,'?')\n      || '|' || COALESCE(inc.club_id::text,'-')\n      || '|' || COALESCE(inc.union_id::text,'-')\n      || '|' || CASE WHEN v_kind = 'escalated'\n                     THEN COALESCE(inc.escalation_level, 0)::text ELSE '' END);\n\n  FOR rec IN SELECT unnest(public.fn_ca_incident_recipient_ids(inc, p_senior_only))\n  LOOP\n    BEGIN\n      v_fresh := NULL;\n      INSERT INTO public.ca_incident_notify_ledger AS l\n        (recipient_id, finding_key, state_hash, last_kind, last_incident_id)\n      VALUES (rec, v_finding, v_state, v_kind, inc.id)\n      ON CONFLICT (recipient_id, finding_key) DO UPDATE\n        SET state_hash = EXCLUDED.state_hash, last_kind = EXCLUDED.last_kind,\n            last_incident_id = EXCLUDED.last_incident_id, last_sent_at = now(),\n            send_count = l.send_count + 1\n        WHERE l.state_hash IS DISTINCT FROM EXCLUDED.state_hash\n      RETURNING true INTO v_fresh;\n\n      IF NOT COALESCE(v_fresh, false) THEN\n        INSERT INTO public.ca_incident_events (incident_id, kind, detail)\n        VALUES (inc.id, 'notified',\n                jsonb_build_object('already_reported', true, 'finding_key', v_finding,\n                                   'state', v_kind, 'recipient', rec));\n        CONTINUE;\n      END IF;\n\n      PERFORM public.fn_raise_notification(\n        rec, 'financial_incident', left(p_headline, 110), left(body, 480),\n        '/hub/club-arena/financial-incidents?id=' || inc.id::text,\n        jsonb_build_object('incident_id', inc.id, 'finding_key', v_finding,\n                           'classification', inc.classification, 'severity', inc.severity,\n                           'discrepancy', inc.discrepancy_amount, 'club_id', inc.club_id,\n                           'union_id', inc.union_id, 'deadline_at', inc.deadline_at));\n      n := n + 1;\n    EXCEPTION WHEN OTHERS THEN\n      INSERT INTO public.ca_incident_events (incident_id, kind, detail)\n      VALUES (inc.id, 'notify_failed',\n              jsonb_build_object('recipient', rec, 'error', SQLERRM));\n    END;\n  END LOOP;\n\n  INSERT INTO public.ca_incident_events (incident_id, kind, detail)\n  VALUES (inc.id, p_kind,\n          jsonb_build_object('headline', p_headline, 'recipients', n,\n                             'senior_only', p_senior_only, 'age_min', age_min,\n                             'finding_key', v_finding, 'state', v_kind));\n  RETURN n;\nEXCEPTION WHEN OTHERS THEN\n  RAISE WARNING 'fn_ca_incident_notify failed for %: %', p_incident_id, SQLERRM;\n  RETURN 0;\nEND $function$\n"
+    },
+    {
+      "body_md5": "2646dc4a6080f470d6646c3bb970298d",
+      "signature": "fn_ca_is_midway_scope(uuid,uuid,uuid,uuid,jsonb)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_is_midway_scope(p_union_id uuid DEFAULT NULL::uuid, p_club_id uuid DEFAULT NULL::uuid, p_table_id uuid DEFAULT NULL::uuid, p_tournament_id uuid DEFAULT NULL::uuid, p_metadata jsonb DEFAULT '{}'::jsonb)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT COALESCE((\n    -- THE FOUR ESTATES (Dan, 2026-09-03): Midway Union with Club JAQK and\n    -- SHARK CLUB inside it, and Deep Stack Society standing alone. Until\n    -- chip standard Phase 4.3 (2026-09-04) this scope was Midway only, so an\n    -- incident about Deep Stack Society's money - its jackpot reserve running\n    -- dry, a payout that could not reconcile - was dropped before it was\n    -- filed. Deep Stack is an estate; its incidents file.\n    -- platform-substrate incidents: no entity dimension anywhere = global\n    -- checks (supply, suspense, guards, crons, diamonds) that protect every\n    -- union including Midway. These always file.\n    (p_union_id IS NULL AND p_club_id IS NULL AND p_table_id IS NULL\n     AND p_tournament_id IS NULL\n     AND COALESCE(p_metadata->>'union_id','') = ''\n     AND COALESCE(p_metadata->>'club_id','') = '')\n    OR p_union_id = 'fade0000-0000-0000-0000-000000000001'::uuid\n    OR p_club_id IN ('fade0000-0000-0000-0000-000000000001'::uuid, '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3'::uuid)\n    OR EXISTS (\n      SELECT 1 FROM public.clubs c\n       WHERE c.id = p_club_id\n         AND c.union_id = 'fade0000-0000-0000-0000-000000000001'::uuid\n    )\n    OR EXISTS (\n      SELECT 1 FROM public.union_clubs uc\n       WHERE uc.club_id = p_club_id\n         AND uc.union_id = 'fade0000-0000-0000-0000-000000000001'::uuid\n    )\n    OR EXISTS (\n      SELECT 1 FROM public.tables t\n      JOIN public.clubs c ON c.id = t.club_id\n       WHERE t.id = p_table_id\n         AND (\n           c.id IN ('fade0000-0000-0000-0000-000000000001'::uuid, '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3'::uuid)\n           OR c.union_id = 'fade0000-0000-0000-0000-000000000001'::uuid\n           OR EXISTS (\n             SELECT 1 FROM public.union_clubs uc\n              WHERE uc.club_id = c.id\n                AND uc.union_id = 'fade0000-0000-0000-0000-000000000001'::uuid\n           )\n         )\n    )\n    OR EXISTS (\n      SELECT 1 FROM public.tournaments t\n      JOIN public.clubs c ON c.id = t.club_id\n       WHERE t.id = p_tournament_id\n         AND (\n           c.id IN ('fade0000-0000-0000-0000-000000000001'::uuid, '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3'::uuid)\n           OR c.union_id = 'fade0000-0000-0000-0000-000000000001'::uuid\n           OR EXISTS (\n             SELECT 1 FROM public.union_clubs uc\n              WHERE uc.club_id = c.id\n                AND uc.union_id = 'fade0000-0000-0000-0000-000000000001'::uuid\n           )\n         )\n    )\n    OR COALESCE(p_metadata->>'union_id', '') = 'fade0000-0000-0000-0000-000000000001'\n    OR EXISTS (\n      SELECT 1 FROM public.clubs c\n       WHERE c.id::text = COALESCE(p_metadata->>'club_id', '')\n         AND (\n           c.id IN ('fade0000-0000-0000-0000-000000000001'::uuid, '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3'::uuid)\n           OR c.union_id = 'fade0000-0000-0000-0000-000000000001'::uuid\n           OR EXISTS (\n             SELECT 1 FROM public.union_clubs uc\n              WHERE uc.club_id = c.id\n                AND uc.union_id = 'fade0000-0000-0000-0000-000000000001'::uuid\n           )\n         )\n    )), false);\n$function$\n"
+    },
+    {
+      "body_md5": "c95f4c17c68876cda3abe8504ec12bd8",
+      "signature": "fn_ca_stable_dedupe_key(text)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_stable_dedupe_key(p_key text)\n RETURNS text\n LANGUAGE sql\n IMMUTABLE\nAS $function$\n  /* Strips a trailing period label: :2026-09-06, :2026-09-06-18, :2026-36.\n     Used ONLY together with an equal discrepancy, so an hourly bucket that\n     reports a different number is never folded into another one. */\n  SELECT regexp_replace($1, ':([0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]{2})?|[0-9]{4}-[0-9]{1,2})$', '')\n$function$\n"
+    }
+  ]
+}

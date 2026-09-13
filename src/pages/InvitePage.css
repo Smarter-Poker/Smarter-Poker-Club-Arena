@@ -37,16 +37,10 @@
      Gold is three stops, not one: a flat gold reads as mustard, and the
      reference gets its metal from the light running across a bright edge into
      a dark one. Same for the steel of the frame. */
-  /* THE BRAND GOLD, NOT AN ANTIQUE ONE (2026-09-09). This was #d4af37 with a
-     #8a6d1f shade - a gilt ramp that reads brown at its dark end, and Dan's
-     rule has no browns in it. The page keeps its own dress (it is the front
-     door, the one surface a person who is not a member ever sees, and Dan art
-     directed it against reference cards on 2026-08-28); it does not keep a
-     colour the schema forbids. Same treatment, house gold. */
   --iv-gold: #ffd700;
   --iv-gold-hi: #f7e7a3;
-  --iv-gold-lo: #9a8200;
-  --iv-gold-dim: rgba(255, 215, 0, 0.5);
+  --iv-gold-lo: #ffa500;
+  --iv-gold-dim: rgba(255, 215, 0, 0.55);
 
   --iv-neon: #3b82f6;
   --iv-neon-soft: rgba(59, 130, 246, 0.45);

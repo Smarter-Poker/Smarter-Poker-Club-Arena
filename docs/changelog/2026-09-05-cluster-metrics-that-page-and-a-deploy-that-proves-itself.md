@@ -91,50 +91,21 @@ and `warning` reach `email-critical` / `email-warning`, which deliver. The
 law test checks that too. `scripts/ci/check-monitoring-drift.mjs` (the
 pre-push "7 rule file(s) loaded" check) is green.
 
-### Failure 2: the deploy proves itself (`scripts/ci/prove-engine-version-moved.mjs`)
+### Failure 2: the deploy proves itself
 
-Two steps in `auto-deploy-hetzner.yml`, one script, two modes so the halves
-cannot drift:
+The original September 5 repair used a two-mode CI witness to record the old
+version and poll for the new one after cutover. On September 10 that interim
+witness was retired. It had no remaining production caller and duplicated the
+stronger, fail-closed release transaction now owned by the Club Arena host.
 
-- **Record**, right after the job-start stamp and before the dedupe: read the
-  version production is running now and put `PRE_CUTOVER_VERSION` and
-  `PRE_CUTOVER_SOURCE` in `$GITHUB_ENV`. Best-effort, never fails the job.
-- **Prove**, right after `Promote :current` and before `ROLLBACK`: poll for
-  up to four minutes until the witness reports the target. **The job FAILS**
-  when the poll runs out and the version still equals the pre-cutover version
-  (the 2026-09-05 shape exactly) or names a third build. Failing there
-  triggers the existing rollback, the same treatment the verify step gives a
-  version mismatch: `:current` must never name a build the engine never
-  reported running. The database is told `shipped=false` with a reason that
-  names the proof, so `fn_ca_engine_deploy_truth_watch` sees it too.
-
-**The witness is the database first.** `public.engine_leader.engine_version`
-is written by the running leader itself every 10 s
-(`claim_engine_leadership`, `INSTANCE_VERSION = GIT_COMMIT_SHA[0:8]`). A
-proxy, a cache or an unmanaged twin answering the hostname cannot forge it,
-and a stale row (heartbeat older than 60 s) is not accepted as proof. It is
-read over `DATABASE_URL` (pg, the route `record-engine-deploy-attempt.mjs`
-already uses) or over Supabase REST with the service role; `/health.version`
-with a cache-buster is the fallback, and the log says which witness spoke.
-
-**Unreadable is not "behind."** If no witness can be read at all for the
-whole budget, the step warns and passes: the verify step before it has
-already read `/health` successfully, and the watchdog's rule holds here too -
-guessing from silence would roll back a build that is fine.
-
-When the proof fails it also raises the in-app notification
-`publish-watchdog.sh` raises (`fn_raise_notification` to every active
-`ca_incident_recipients` platform row, Title Case, no em dashes), when
-`SUPABASE_SERVICE_ROLE_KEY` is in the job; silent no-op otherwise.
-
-Two numbers moved with it: `timeout-minutes` 40 -> 45 and
-`CUTOVER_RESERVE_S` 300 -> 540, so the break-gate wait can never spend the
-four minutes a failing proof needs to be heard. Net wait budget is slightly
-LARGER than before (2160 s vs 2100 s after the reserve), so no observed build
-length loses a window it used to reach. `the-break-clocks-agree` and every
-deploy pin under `tests/unit/` stay green. No new workflow, no new
-`schedule:` trigger (CLAUDE.md 10.85; World Hub 11.4), `engine-watchdog.sh`
-untouched.
+The durable replacement binds one requested main SHA to its exact image and
+release run. The host transaction proves the candidate, local endpoint, public
+endpoint, and fresh elected-leader database identity before sealing the
+release. It then writes an fsynced per-run result. The observer accepts only
+that authenticated result and independently rechecks the sealed image and all
+three live witnesses. A missing or unreadable witness cannot become a success;
+the systemd wrapper preserves retryable state or completes bounded terminal
+recovery.
 
 ### /health
 
@@ -173,11 +144,11 @@ Prometheus.
   each break-guarded with `on()`, reading only metrics the engine emits;
   critical and warning route to a delivering receiver; /health wiring; the
   controller calls exactly the three hooks.
-- `tests/unit/theDeployProvesItself.test.ts`: the record step precedes the
-  dedupe, the prove step sits between promote and rollback with no
-  `continue-on-error`, `SHIPPED` requires the proof, the budget numbers agree;
-  and the script itself is run against a stub `/health`: fails on unchanged,
-  fails on a third build, passes on the target, warns (exit 0) on silence.
+- `tests/unit/theDeployProvesItself.test.ts`: duplicate releases require a
+  fresh exact source and runtime proof; candidate and final identity bracket
+  the seal commit; shipped receipts require both a sealed result and independent
+  verification; workflow, observer, unit, and transaction budgets remain
+  correctly nested.
 
 ## Deliberately not done
 

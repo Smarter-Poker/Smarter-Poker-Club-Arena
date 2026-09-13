@@ -1,357 +1,62 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   CASHOUT REQUEST - on the spade console (#ClubArenaConsole)
+/**
+ * CashoutRequestModal Styles
+ */
 
-   The console, its inks and its painted plates come from SpadeConsole.css.
-   This sheet places the console on the backdrop, switches off the global popup
-   chassis (metallic-popups.css paints a rounded shell on `.cashout-modal` with
-   !important), and types the balance, the queue and the form on the glass.
-   Sizes are cqw against the console; no :hover; nothing drawn. The only things
-   with a box are the two the master does not paint, the amount field and the
-   note, and they are engraved rules rather than filled cards.
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-.cro-overlay {
+.modal-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
-  padding: 12px;
-  /* Black, not grey, and no blur: the console floats on the same black as the
-     page behind it. */
-  background: rgb(0 0 0 / 90%);
-  animation: cashoutFadeIn 0.2s ease-out;
+  z-index: 1000;
+  padding: 0;
 }
 
-@keyframes cashoutFadeIn {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
-.cashout-modal.ac-popup {
-  width: min(100%, 420px);
-  max-height: 100%;
-  overflow: visible auto;
-  padding: 0 !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  outline: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-  animation: cashoutSheetUp 0.28s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+.cashout-modal {
+  background: linear-gradient(180deg, #1a1a2e 0%, #12122a 100%);
+  border-radius: 24px 24px 0 0;
+  width: 100%;
+  max-width: 480px;
+  max-height: 92vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  box-shadow:
+    0 -8px 40px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  animation: cashoutSheetUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 @keyframes cashoutSheetUp {
   from {
-    opacity: 0;
-    transform: translateY(16px) scale(0.98);
+    transform: translateY(100%);
+    opacity: 0.5;
   }
-
   to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-/* ── Rows on the glass ────────────────────────────────────────────────── */
-
-/* An engraved rule between rows: a black line with a light lip, the same cut
-   the master's own chrome rules are made of. Nothing filled. */
-.cro-row {
-  display: flex;
-  gap: 3cqw;
-  align-items: baseline;
-  justify-content: space-between;
-  padding: 2.6cqw 0.5cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
-}
-
-.cro-row--plain {
-  padding-top: 0.5cqw;
-  border-top: 0;
-  box-shadow: none;
-}
-
-.cro-value {
-  font-size: 4.4cqw;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  font-variant-numeric: tabular-nums lining-nums;
-  white-space: nowrap;
-}
-
-.cro-when {
-  flex-shrink: 0;
-  font-size: 2.9cqw;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.cro-block {
-  display: grid;
-  gap: 1.6cqw;
-}
-
-.cro-loading {
-  font-size: 3.3cqw;
-  animation: cashoutPendingPulse 1.4s ease-in-out infinite;
-}
-
-@keyframes cashoutPendingPulse {
-  0%,
-  100% {
+    transform: translateY(0);
     opacity: 1;
   }
-
-  50% {
-    opacity: 0.55;
-  }
 }
 
-.cro-pending {
-  display: grid;
-  gap: 1.4cqw;
-  padding: 1.6cqw 0 2.4cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
-}
-
-/* ── The lifecycle, printed ───────────────────────────────────────────── */
-
-.cashout-step-tracker {
-  display: grid;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.cashout-step {
-  display: grid;
-  grid-template-columns: 6cqw minmax(0, 1fr);
-  gap: 2.6cqw;
-  align-items: baseline;
-  padding: 1.2cqw 0.5cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
-}
-
-.cashout-step:first-child {
-  border-top: 0;
-  box-shadow: none;
-}
-
-.cro-step-num {
-  font-size: 3.2cqw;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  text-align: center;
-  font-variant-numeric: tabular-nums lining-nums;
-}
-
-.cro-step-label {
-  overflow: hidden;
-  font-size: 2.9cqw;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* The cancel is a lit word on the glass, not a bordered pill. Full width and
-   44px, because it is the only way out of an escrow. */
-.cro-cancel {
-  appearance: none;
-  width: 100%;
-  min-height: 44px;
-  margin: 0;
-  padding: 1cqw;
-  border: 0 !important;
-  border-top: 1px solid #000 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
-  font:
-    800 3.4cqw/1 'Roboto Condensed',
-    Inter,
-    sans-serif;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
-.cro-cancel:active {
-  filter: brightness(1.3);
-}
-
-.cro-cancel:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.cro-cancel:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: -0.8cqw;
-}
-
-/* ── Copy on the glass ────────────────────────────────────────────────── */
-
-.cro-note {
-  font-size: 3.1cqw;
-  line-height: 1.5;
-}
-
-.cro-error,
-.cro-success {
-  padding: 1cqw 0 0;
-  font-size: 3.4cqw;
-}
-
-/* ── The form: the two things the master does not paint ───────────────── */
-
-.cro-form,
-.cro-field {
-  display: grid;
-  gap: 2cqw;
-}
-
-.cro-amount {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 2.6cqw;
-  align-items: center;
-}
-
-.cro-input {
-  display: block;
-  width: 100%;
-  margin: 0;
-  padding: 2.6cqw 1cqw;
-  border: 0 !important;
-  border-top: 1px solid #000 !important;
-  border-bottom: 1px solid #000 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 9%),
-    0 1px 0 rgb(255 255 255 / 9%) !important;
-  color: #e6e9ee !important;
-  font:
-    500 3.6cqw/1.5 Inter,
-    system-ui,
-    sans-serif;
-  outline: none;
-  caret-color: #5bb8ff;
-}
-
-.cro-input--amount {
-  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
-  font-size: 5.2cqw;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  font-variant-numeric: tabular-nums lining-nums;
-}
-
-.cro-textarea {
-  min-height: 18cqw;
-  resize: vertical;
-}
-
-.cro-input::placeholder {
-  color: #6b7784;
-}
-
-.cro-input:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: -0.6cqw;
-}
-
-.cro-unit {
-  white-space: nowrap;
-}
-
-/* Lit numerals on the glass under an engraved rule, not four drawn pills. */
-.cro-quick {
+.cashout-drag-handle {
   display: flex;
-  gap: 5cqw;
   justify-content: center;
-  width: 100%;
-  padding-top: 2cqw;
-  border-top: 1px solid #000;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  padding: 12px 0 4px;
+  cursor: grab;
 }
 
-.cro-preset {
-  appearance: none;
-  min-height: 44px;
-  margin: 0;
-  padding: 0.5cqw 1cqw;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
-  font:
-    800 4.2cqw/1 'Roboto Condensed',
-    Inter,
-    sans-serif;
-  letter-spacing: 0.02em;
-  cursor: pointer;
+.cashout-drag-handle::after {
+  content: '';
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.25);
 }
-
-.cro-preset:active {
-  filter: brightness(1.3);
-}
-
-.cro-preset:focus-visible {
-  outline: 0.6cqw solid #8fd4ff;
-  outline-offset: 0.4cqw;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .cro-overlay,
-  .cashout-modal.ac-popup,
-  .cro-loading {
-    animation: none;
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   NOT THIS COMPONENT'S, AND DELIBERATELY LEFT ALONE
-
-   `.modal-header`, `.modal-body`, `.close-btn`, `.form-group` and
-   `.submit-btn` are GENERIC names, and this stylesheet was one of several in
-   the bundle defining them. This sheet no longer renders any of them, but five
-   components that do render them ship no definition of their own and pick one
-   up from whichever stylesheet happens to share their chunk:
-
-     components/social/PlayerBlockModal   .modal-header .modal-body
-     components/common/Modal              .modal-header
-     components/table/IdentityModal       .modal-header .modal-body
-     components/tools/PotOddsCalculator   .close-btn
-     components/club/SpinActivationPanel  .form-group
-     components/club/CashierModal         .submit-btn
-
-   DisputeSubmitModal.tsx already documents that lottery as a defect (it pins
-   its own overlay layout inline to escape it). Deleting these rules while
-   rebuilding THIS sheet would have restyled six unrelated components by side
-   effect, which is not a redesign, it is a regression with no picture attached.
-   They are kept byte-identical, and they belong to whoever owns those six
-   components. `.modal-overlay`, `.error-message`, `.cancel-btn`,
-   `.amount-input-wrapper` and `.step-label` went with the rest of the old
-   sheet: every other component that renders those defines them itself.
-   ═══════════════════════════════════════════════════════════════════════════ */
 
 .modal-header {
   display: flex;
@@ -386,6 +91,145 @@
   padding: 24px;
 }
 
+/* Balance Display */
+.balance-display {
+  background: linear-gradient(135deg, #1a73e8 0%, #7c3aed 100%);
+  border-radius: 14px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 24px;
+  box-shadow: 0 8px 24px rgba(124, 58, 237, 0.2);
+  position: relative;
+  overflow: hidden;
+}
+
+.balance-display::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle at 30% 50%, rgba(255, 255, 255, 0.08) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+/* Pending Section */
+.pending-section {
+  background: var(--surface-elevated, #2a2a4a);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 24px;
+}
+
+.pending-section h3 {
+  margin: 0 0 12px 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary, #8a8a9a);
+}
+
+.pending-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pending-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface, #1a1a2e);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.pending-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pending-amount {
+  font-weight: 600;
+  color: #ffa726;
+}
+
+.pending-time {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #8a8a9a);
+}
+
+/* The pending list's loading row. `loadingPending` existed in the component for
+   months without ever being rendered, so there was no style for this state
+   either. Deliberately quiet: it is a "hold on" line, not a headline. */
+.pending-loading {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #8a8a9a);
+  text-align: center;
+  padding: 10px 12px;
+  background: var(--surface, #1a1a2e);
+  border-radius: 8px;
+  animation: cashoutPendingPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes cashoutPendingPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cashout-modal {
+    animation: none;
+  }
+  .pending-loading {
+    animation: none;
+  }
+  .step-dot.active {
+    animation: none;
+  }
+}
+
+.pending-status {
+  font-size: 0.75rem;
+  color: #ffa726;
+}
+
+.pending-item .cancel-btn {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #ef5350;
+  background: transparent;
+  color: #ef5350;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.pending-note {
+  margin-top: 12px;
+  font-size: 0.75rem;
+  color: #ffa726;
+  text-align: center;
+  padding: 8px 12px;
+  background: rgba(255, 167, 38, 0.06);
+  border-radius: 8px;
+  border: 1px dashed rgba(255, 167, 38, 0.2);
+}
+
+/* Form */
+.cashout-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
 .form-group {
   display: flex;
   flex-direction: column;
@@ -395,6 +239,101 @@
 .form-group label {
   font-size: 0.875rem;
   color: var(--text-secondary, #8a8a9a);
+}
+
+.amount-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface-elevated, #2a2a4a);
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.amount-input-wrapper input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  padding: 12px;
+  font-size: 1.25rem;
+  color: #fff;
+  outline: none;
+}
+
+.chip-label {
+  padding: 8px 12px;
+  background: var(--surface, #1a1a2e);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  color: var(--text-secondary, #8a8a9a);
+}
+
+.quick-amounts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.quick-btn {
+  min-width: 0;
+  padding: 14px 8px;
+  min-height: 48px;
+  border-radius: 12px;
+  border: 1px solid var(--border, #2a2a4a);
+  background: transparent;
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.quick-btn:active {
+  background: var(--primary, #667eea);
+  border-color: var(--primary, #667eea);
+}
+
+.cashout-form textarea {
+  background: var(--surface-elevated, #2a2a4a);
+  border: none;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 16px; /* was 0.9rem; under 16px makes iOS zoom the page on focus */
+  color: #fff;
+  resize: none;
+  outline: none;
+}
+
+.error-message {
+  background: rgba(239, 83, 80, 0.1);
+  border: 1px solid #ef5350;
+  color: #ef5350;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 0.875rem;
+}
+
+.success-message {
+  background: rgba(0, 200, 83, 0.08);
+  border: 1px solid rgba(0, 200, 83, 0.3);
+  color: #00e676;
+  border-radius: 16px;
+  padding: 32px 24px;
+  font-size: 1rem;
+  text-align: center;
+  animation: successPop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes successPop {
+  0% {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .submit-btn {
@@ -420,4 +359,128 @@
 .submit-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Safe area spacing for bottom-sheet */
+.cashout-bottom-spacer {
+  height: env(safe-area-inset-bottom, 0);
+  flex-shrink: 0;
+}
+
+.info-note {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #8a8a9a);
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   CASHOUT STEP TRACKER — 5-step lifecycle visual
+   ═══════════════════════════════════════════════════════════════════ */
+
+.cashout-step-tracker {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 12px 0;
+  margin: 8px 0;
+  position: relative;
+}
+
+.cashout-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  flex: 1;
+}
+
+.step-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.4);
+  transition: all 0.3s ease;
+  position: relative;
+  z-index: 2;
+}
+
+.step-dot.complete {
+  background: #00c853;
+  border-color: #00c853;
+  color: #fff;
+  box-shadow: 0 0 8px rgba(0, 200, 83, 0.3);
+}
+
+.step-dot.active {
+  background: rgba(255, 167, 38, 0.15);
+  border-color: #ffa726;
+  color: #ffa726;
+  animation: stepPulse 2s ease-in-out infinite;
+  box-shadow: 0 0 12px rgba(255, 167, 38, 0.25);
+}
+
+.step-dot.rejected {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+@keyframes stepPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 8px rgba(255, 167, 38, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(255, 167, 38, 0.4);
+  }
+}
+
+.step-label {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.3);
+  margin-top: 6px;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  font-weight: 500;
+}
+
+.step-label.complete {
+  color: #00c853;
+}
+.step-label.active {
+  color: #ffa726;
+}
+
+.step-line {
+  position: absolute;
+  top: 12px;
+  left: calc(50% + 14px);
+  width: calc(100% - 28px);
+  height: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  z-index: 1;
+}
+
+.step-line.complete {
+  background: #00c853;
+}
+
+@media (max-width: 380px) {
+  .step-label {
+    font-size: 7px;
+  }
+  .step-dot {
+    width: 20px;
+    height: 20px;
+    font-size: 8px;
+  }
 }

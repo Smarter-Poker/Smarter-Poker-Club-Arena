@@ -54,7 +54,19 @@ export async function autoRebuyHorse(
         data.op_id === opId &&
         data.table_id === tableId &&
         data.user_id === userId &&
+        /* `club_id` IS THE TABLE'S CLUB, AND MUST STAY THAT WAY. The receipt
+           names the table's club here and the funding TREASURY separately in
+           `treasury_club_id`, because a union table's own club row holds no
+           wallets and no treasury worth drawing on: Midway's is 0.50 against
+           JAQK's 937k, which is why no Midway horse had reloaded in nine days.
+           The database resolves the treasury from `table_seats.club_id` - the
+           wallet the seat's buy-in actually left - and the two differ on every
+           union table. Do not "simplify" this comparison to the treasury club:
+           an engine that ships before the receipt carries the new field must
+           still recognise its own funding. */
         data.club_id === clubId &&
+        (data.treasury_club_id === undefined ||
+          (typeof data.treasury_club_id === 'string' && data.treasury_club_id.length > 0)) &&
         Number(data.amount) === rebuyAmount &&
         typeof data.new_stack === 'number' &&
         Number.isFinite(data.new_stack) &&
@@ -107,6 +119,35 @@ export async function autoRebuyHorse(
  * had the money all along. Callers treat unknown as CAN afford, and the worst
  * case is then a five-second pause nobody needed.
  */
+/**
+ * The club a live seat was bought from - `table_seats.club_id`, the wallet
+ * the buy-in actually left. A union table's `tables.club_id` is the union row,
+ * which holds no member wallet, so a roll read against it is always unknown.
+ * Returns null when the seat cannot be read; the caller falls back.
+ */
+export async function readSeatWalletClub(tableId: string, userId: string): Promise<string | null> {
+  if (!tableId || !userId) return null;
+  try {
+    const { data, error } = await supabase
+      .from('table_seats')
+      .select('club_id')
+      .eq('table_id', tableId)
+      .eq('user_id', userId)
+      .is('left_at', null)
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      reportError(error, 'DB.read_seat_wallet_club_failed');
+      return null;
+    }
+    const club = (data as { club_id?: string | null } | null)?.club_id;
+    return typeof club === 'string' && club.length > 0 ? club : null;
+  } catch (err) {
+    reportError(err, 'DB.read_seat_wallet_club_threw');
+    return null;
+  }
+}
+
 export async function readClubChipBalances(
   clubId: string,
   userIds: string[]

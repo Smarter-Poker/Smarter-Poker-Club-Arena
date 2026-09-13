@@ -1,0 +1,26 @@
+{
+  "assignment": "G8-REVIEW-0001",
+  "generation": 3,
+  "decision": "Accepted",
+  "scope": "Exact document candidate only",
+  "remaining_required_document_findings": 0,
+  "finalized_at_utc": "2026-09-11T21:00:56.155541+00:00",
+  "candidate_manifest_sha256": "6870d64bc57dfd9d3fcdc2b8fe33920b4ba67d90b0911de1043b6926d90e0b6a",
+  "deliverables": [
+    {
+      "file": "G8-REVIEW-0001-generation3-manifest.json",
+      "bytes": 13843,
+      "sha256": "72ab5d89abbbb8e48f0505b9a61dad654f3b4812e600a561cda3f2cb5fff3676"
+    },
+    {
+      "file": "G8-REVIEW-0001-generation3-review.md",
+      "bytes": 3430,
+      "sha256": "27597b7b52e852c6897e22918940afd85bf5ce333e03b7e23239ea6c740d5110"
+    },
+    {
+      "file": "G8-REVIEW-0001-generation3-sha256.txt",
+      "bytes": 4019,
+      "sha256": "6870d64bc57dfd9d3fcdc2b8fe33920b4ba67d90b0911de1043b6926d90e0b6a"
+    }
+  ]
+}

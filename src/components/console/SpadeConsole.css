@@ -14,15 +14,32 @@
    fills, no borders, no shadows on boxes. No :hover.
    ═══════════════════════════════════════════════════════════════════════════ */
 
+/* ── THE DESKTOP CEILING (Dan 2026-09-13) ─────────────────────────────
+   The chassis sizes everything in cqw against its own width, which is what
+   makes a 320px phone and a 430px one get the same picture. With no ceiling
+   that same rule hands a 1440px monitor the phone picture blown up 3.7x:
+   measured 2026-09-13, a plate label rendered at 46px and body copy at 53px,
+   and the 1000px master art was stretched to 1440px, so the chrome and the
+   crest went soft - against "EVERYTHING MUST BE CLEAN AND CRISP".
+
+   So the console stops growing at the master's own width and centres. The art
+   is never asked for more pixels than it has, and the picture is the same one
+   everywhere; a wide screen gets black margin, not a bigger phone. A surface
+   that wants to sit narrower than native sets --sc-max; nothing may raise it
+   past the width of the art. */
 .sc {
   --sc-art: '';
+  /* SPADE_CONSOLE_W - the master's own width. Never raise this. */
+  --sc-max: 1000px;
   position: relative;
   container-type: inline-size;
   display: flex;
   flex-direction: column;
   width: 100%;
+  max-width: var(--sc-max);
   min-width: 0;
-  margin: 0;
+  margin-block: 0;
+  margin-inline: auto;
   padding: 0;
   overflow: visible;
   color: #e6e9ee;
@@ -50,8 +67,28 @@
   position: relative;
   width: 100%;
   aspect-ratio: 1000 / 348;
-  background: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/top.png') top
-    center / 100% auto no-repeat;
+  background: url('/assets/club-buttons/console/spade-console-v1/top.png') top center / 100% auto
+    no-repeat;
+}
+
+/* THE DRESS VARIES, THE STRUCTURE DOES NOT. Each of these is its own painted
+   crest (see spade-console-v1/source/README.md), seated in the master head
+   with the rails re-mitred into it. No two share a housing. Same box, same
+   ratio, same zones; only the picture changes. */
+.sc--crest-flat .sc__head {
+  background-image: url('/assets/club-buttons/console/spade-console-v1/top-flat.png');
+}
+
+.sc--crest-diamond .sc__head {
+  background-image: url('/assets/club-buttons/console/spade-console-v1/top-diamond.png');
+}
+
+.sc--crest-club .sc__head {
+  background-image: url('/assets/club-buttons/console/spade-console-v1/top-club.png');
+}
+
+.sc--crest-vip .sc__head {
+  background-image: url('/assets/club-buttons/console/spade-console-v1/top-vip.png');
 }
 
 /* Between the rails: inside x 85-915 of the master, with a little air. */
@@ -61,8 +98,8 @@
   flex-direction: column;
   gap: 3cqw;
   padding: 0 10.5% 3cqw;
-  background: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/mid.png') top
-    center / 100% auto repeat-y;
+  background: url('/assets/club-buttons/console/spade-console-v1/mid.png') top center / 100% auto
+    repeat-y;
 }
 
 /* A FLAT BOTTOM, CARRYING NOTHING (Dan 2026-09-08). The closing cap is the
@@ -72,13 +109,13 @@
   position: relative;
   width: 100%;
   aspect-ratio: 1000 / 72;
-  background: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/bottom-foot.png')
-    bottom center / 100% auto no-repeat;
+  background: url('/assets/club-buttons/console/spade-console-v1/bottom-foot.png') bottom center /
+    100% auto no-repeat;
 }
 
 .sc--plates .sc__foot {
   aspect-ratio: 1000 / 277;
-  background-image: url('/hub/club-arena/assets/club-buttons/console/spade-console-v1/bottom-plates.png');
+  background-image: url('/assets/club-buttons/console/spade-console-v1/bottom-plates.png');
 }
 
 /* ── Zones: absolute, centred, one line, fitted ───────────────────────── */

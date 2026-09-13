@@ -1,24 +1,13 @@
+import {
+  CASHOUT_AMOUNT_LIMIT,
+  cashoutPercentage,
+  validateCashoutAmount,
+} from '../../utils/cashoutAmount';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  CASHOUT REQUEST MODAL - Player Chip Cashout UI
+ *  CASHOUT REQUEST MODAL — Player Chip Cashout UI
  * ═══════════════════════════════════════════════════════════════════════════════
- * Modal for players to request chip cashouts from their agent.
- *
- * ON THE MASTER (#ClubArenaConsole). This was a rounded navy bottom sheet with
- * a gradient balance card, a purple submit pill, a drag handle and a five-dot
- * progress tracker drawn in CSS. It is the spade console now: the same master
- * every Omaha card is drawn from. REQUEST CASHOUT is engraved in the header
- * well, the number of held requests sits in the well's painted pill slot, the
- * balance, the queue and the form print on the black glass between the rails,
- * and CLOSE / REQUEST CASHOUT are the plates painted into the foot. The step
- * tracker is PRINTED rather than drawn: five numbered lines whose ink says
- * where the request has reached.
- *
- * NOTHING ABOUT THE MONEY MOVED. Every guard, lock, op id, focus trap, timer
- * and realtime subscription below is the one that was here before, and every
- * chip figure is still the exact one the server will act on: a cashout is a
- * request for a precise number of chips out of a precise balance, so neither
- * figure is ever abbreviated.
+ * Modal for players to request chip cashouts from their agent
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -27,7 +16,6 @@ import { cashoutService, newOpId, CashoutRequest } from '../../services/CashoutS
 import { masterBus } from '../../core/MasterBus';
 import { checkSettlementLock } from '../../utils/settlementLock';
 import { formatRelativeShort as formatTime } from '@/lib/date';
-import { SpadeConsole } from '../console/SpadeConsole';
 import './CashoutRequestModal.css';
 import { reportError } from '../../utils/errorReporter';
 import { fireVibration } from '../../utils/vibrationGate';
@@ -61,7 +49,7 @@ const triggerHaptic = (pattern: number | number[] = 10) => {
  */
 
 // ═══════════════════════════════════════════════════════════════════
-// CASHOUT STEP PROGRESS TRACKER - Shows cashout lifecycle stage
+// CASHOUT STEP PROGRESS TRACKER — Shows cashout lifecycle stage
 // ═══════════════════════════════════════════════════════════════════
 
 /**
@@ -78,14 +66,6 @@ const CASHOUT_STEPS = [
   { key: 'complete', label: 'Complete' },
 ];
 
-/**
- * PRINTED, NOT DRAWN. This used to be five bordered discs joined by drawn
- * lines, with a pulsing box-shadow on the live one. The master paints no
- * discs, so the stage is printed instead: a numeral and its name per line,
- * and the INK carries the state - green behind you, gold where you are, red
- * when the request closed without paying, muted ahead of you. The stepMap and
- * its `-1` closed sentinel are unchanged; only what they render is.
- */
 function CashoutStepTracker({ status }: { status: string }) {
   // Map CashoutRequest.status -> step index. 'expired' is a status the database
   // really writes (fn_expire_stale_cashouts), and it ends the same way a decline
@@ -102,25 +82,29 @@ function CashoutStepTracker({ status }: { status: string }) {
   const isClosed = currentStep === -1;
 
   return (
-    <ol className="cashout-step-tracker">
+    <div className="cashout-step-tracker">
       {CASHOUT_STEPS.map((step, i) => {
         const isComplete = i < currentStep;
         const isCurrent = i === currentStep;
-        const ink = isClosed
-          ? 'sc-ink--red'
-          : isComplete
-            ? 'sc-ink--green'
-            : isCurrent
-              ? 'sc-ink--gold'
-              : 'sc-ink--muted';
         return (
-          <li key={step.key} className="cashout-step" aria-current={isCurrent ? 'step' : undefined}>
-            <span className={`cro-step-num ${ink}`}>{i + 1}</span>
-            <span className={`cro-step-label ${ink}`}>{step.label}</span>
-          </li>
+          <div key={step.key} className="cashout-step">
+            <div
+              className={`step-dot ${isComplete ? 'complete' : ''} ${isCurrent ? 'active' : ''} ${isClosed ? 'rejected' : ''}`}
+            >
+              {isComplete ? '✓' : i + 1}
+            </div>
+            <span
+              className={`step-label ${isComplete ? 'complete' : ''} ${isCurrent ? 'active' : ''}`}
+            >
+              {step.label}
+            </span>
+            {i < CASHOUT_STEPS.length - 1 && (
+              <div className={`step-line ${isComplete ? 'complete' : ''}`} />
+            )}
+          </div>
         );
       })}
-    </ol>
+    </div>
   );
 }
 
@@ -213,8 +197,8 @@ export default function CashoutRequestModal({
   const handleFocusTrap = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        // Same rule as the overlay and the Close plate: never leave while chips
-        // are in flight. Read from the refs so this callback stays stable.
+        // Same rule as the overlay and the X: never leave while chips are in
+        // flight. Read from the refs so this callback stays stable.
         if (submitLockRef.current || cancelLockRef.current) return;
         onClose();
         return;
@@ -269,8 +253,8 @@ export default function CashoutRequestModal({
   /**
    * `mounted` used to be set here on a 50ms timer and read by nothing at all -
    * a piece of state, a timer and a render per open, for an entrance animation
-   * that is done in CSS. Gone with its timer; what is left is the reset the
-   * effect actually performs.
+   * that is done in CSS by `@keyframes cashoutSheetUp` on .cashout-modal. Gone
+   * with its timer; what is left is the reset the effect actually performs.
    */
   useEffect(() => {
     if (!isOpen) {
@@ -355,20 +339,12 @@ export default function CashoutRequestModal({
     // isSubmitting === false and both reached the RPC.
     if (submitLockRef.current) return;
 
-    const cashoutAmount = Number(amount);
-
-    if (!Number.isFinite(cashoutAmount) || cashoutAmount <= 0) {
-      setError('Enter An Amount Greater Than Zero');
+    const validation = validateCashoutAmount(amount);
+    if (!validation.ok) {
+      setError(validation.error);
       return;
     }
-
-    // Chip balances are whole chips. A fractional request travelled all the way
-    // to Postgres to be refused there, which reads as the app being broken
-    // rather than as the number being wrong.
-    if (!Number.isInteger(cashoutAmount)) {
-      setError('Enter A Whole Number Of Chips');
-      return;
-    }
+    const cashoutAmount = validation.amount;
 
     if (cashoutAmount > currentBalance) {
       setError('That Is More Than Your Available Balance');
@@ -379,7 +355,7 @@ export default function CashoutRequestModal({
     setIsSubmitting(true);
     setError(null);
 
-    // SETTLEMENT FREEZE CHECK - block cashout requests during active settlements
+    // SETTLEMENT FREEZE CHECK — block cashout requests during active settlements
     try {
       const lockResult = await checkSettlementLock(clubId);
       if (lockResult.locked) {
@@ -484,152 +460,135 @@ export default function CashoutRequestModal({
 
   if (!isOpen) return null;
 
-  /* Held, not spent: chips inside a pending request are escrowed, which is
-     what the master's gold ink is for. */
-  const heldCount = pendingCashouts.length;
-
   return (
     <div
-      className="cro-overlay"
+      className="modal-overlay"
       onClick={closeIfIdle}
       role="dialog"
       aria-modal="true"
       aria-labelledby="cashout-modal-title"
     >
-      <div className="cashout-modal ac-popup" ref={modalRef} onClick={(e) => e.stopPropagation()}>
-        <SpadeConsole
-          as="div"
-          eyebrow="Chip Cashout"
-          title="Request Cashout"
-          titleId="cashout-modal-title"
-          pill={heldCount > 0 ? `${heldCount} Held` : undefined}
-          pillInk="gold"
-          plates={{
-            secondary: {
-              label: 'Close',
-              onClick: closeIfIdle,
-              disabled: isBusy,
-              'aria-label': 'Close Cashout Request',
-            },
-            primary: success
-              ? { label: 'Submitted', ink: 'green', disabled: true }
-              : {
-                  label: isSubmitting ? 'Submitting' : 'Request Cashout',
-                  ink: isSubmitting || !amount ? 'muted' : 'white',
-                  onClick: handleSubmit,
-                  disabled: isSubmitting || !amount,
-                },
-          }}
-        >
-          {/* The balance every check on this sheet is made against. Exact, and
-              never abbreviated: it is the ceiling the request is measured by. */}
-          <div className="cro-row">
-            <span className="sc-label sc-ink--blue">Available Balance</span>
-            <strong className="cro-value sc-ink--silver">
-              {currentBalance.toLocaleString()} Chips
-            </strong>
+      <div className="cashout-modal" ref={modalRef} onClick={(e) => e.stopPropagation()}>
+        {/* Bottom-sheet drag handle */}
+        <div className="cashout-drag-handle" />
+        <div className="modal-header">
+          {/* id added: aria-labelledby="cashout-modal-title" pointed at nothing */}
+          <h2 id="cashout-modal-title">Request Cashout</h2>
+          <button className="close-btn" onClick={closeIfIdle} disabled={isBusy}>
+            ×
+          </button>
+        </div>
+
+        <div className="modal-body">
+          {/* Current Balance */}
+          <div className="balance-display">
+            <span className="label">Available Balance</span>
+            <span className="value">{currentBalance.toLocaleString()} Chips</span>
           </div>
 
           {/* LOADING STATE. `loadingPending` was declared, set true, set false,
               and never read once - so on a slow connection the sheet showed a
               form with no sign that a request might already be pending, and the
               row appeared underneath the player's finger a second later. */}
-          {loadingPending && heldCount === 0 && (
-            <div className="cro-block" aria-busy="true">
-              <span className="sc-label sc-ink--blue">Pending Requests</span>
-              <p className="sc-copy sc-copy--center cro-loading">
-                Checking For Pending Requests...
-              </p>
+          {loadingPending && pendingCashouts.length === 0 && (
+            <div className="pending-section" aria-busy="true">
+              <h3>Pending Requests</h3>
+              <div className="pending-loading">Checking For Pending Requests...</div>
             </div>
           )}
 
-          {heldCount > 0 && (
-            <div className="cro-block">
-              <span className="sc-label sc-ink--blue">Pending Requests</span>
-              {pendingCashouts.map((cashout) => (
-                <div key={cashout.id} className="cro-pending">
-                  <div className="cro-row cro-row--plain">
-                    <strong className="cro-value sc-ink--gold">
-                      {cashout.amount.toLocaleString()} Chips
-                    </strong>
-                    <span className="cro-when sc-ink--muted">{formatTime(cashout.createdAt)}</span>
+          {/* Pending Cashouts */}
+          {pendingCashouts.length > 0 && (
+            <div className="pending-section">
+              <h3>Pending Requests</h3>
+              <div className="pending-list">
+                {pendingCashouts.map((cashout) => (
+                  <div key={cashout.id} className="pending-item">
+                    <div className="pending-info">
+                      <span className="pending-amount">
+                        {cashout.amount.toLocaleString()} Chips
+                      </span>
+                      <span className="pending-time">{formatTime(cashout.createdAt)}</span>
+                    </div>
+                    <CashoutStepTracker status={cashout.status} />
+                    <button
+                      type="button"
+                      className="cancel-btn"
+                      disabled={cancellingId === cashout.id}
+                      onClick={() => handleCancel(cashout.id)}
+                    >
+                      {cancellingId === cashout.id ? 'Cancelling...' : 'Cancel'}
+                    </button>
                   </div>
-                  <CashoutStepTracker status={cashout.status} />
-                  <button
-                    type="button"
-                    className="cro-cancel sc-ink--red"
-                    disabled={cancellingId === cashout.id}
-                    onClick={() => handleCancel(cashout.id)}
-                  >
-                    {cancellingId === cashout.id ? 'Cancelling...' : 'Cancel'}
-                  </button>
-                </div>
-              ))}
-              <p className="sc-copy sc-copy--center cro-note sc-ink--gold">
+                ))}
+              </div>
+              <div className="pending-note">
                 These Chips Are Locked Until Your Agent Processes The Request Or You Cancel.
-              </p>
+              </div>
             </div>
           )}
 
+          {/* New Request Form */}
           {success ? (
-            <p role="status" className="sc-copy sc-copy--center sc-ink--green cro-success">
+            <div className="success-message">
               Cashout Request Submitted! Your Agent Has Been Notified.
-            </p>
+            </div>
           ) : (
-            <div className="cro-form">
-              <div className="cro-field">
-                <label className="sc-label sc-ink--blue" htmlFor="cashout-amount">
-                  Amount
-                </label>
-                <div className="cro-amount">
+            <div className="cashout-form">
+              <div className="form-group">
+                <label htmlFor="cashout-amount">Amount</label>
+                <div className="amount-input-wrapper">
                   <input
                     id="cashout-amount"
-                    className="cro-input cro-input--amount"
                     type="number"
                     placeholder="0"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
-                    max={currentBalance}
-                    min={1}
-                    step={1}
-                    inputMode="numeric"
+                    max={Math.min(currentBalance, CASHOUT_AMOUNT_LIMIT)}
+                    min={0.01}
+                    step={0.01}
+                    inputMode="decimal"
                   />
-                  <span className="sc-label sc-ink--muted cro-unit">Chips</span>
+                  <span className="chip-label">Chips</span>
                 </div>
-                {/* Lit numerals on the glass, divided by an engraved rule, not
-                    four drawn pills. */}
-                <div className="cro-quick" role="group" aria-label="Quick Amounts">
-                  {[25, 50, 100].map((pct) => (
-                    <button
-                      key={pct}
-                      type="button"
-                      className="cro-preset sc-ink--blue"
-                      // Math.floor, not a 2-decimal truncation: chips are held
-                      // in an INTEGER column and the server rejects fractional
-                      // amounts outright, so "25%" of 1,234 used to produce
-                      // 308.5 and a guaranteed rejection.
-                      onClick={() => setAmount(String(Math.floor((currentBalance * pct) / 100)))}
-                    >
-                      {pct}%
-                    </button>
-                  ))}
+                <div className="quick-amounts">
+                  {([25, 50, 100] as const).map((pct) => {
+                    const selected = cashoutPercentage(currentBalance, pct);
+                    return (
+                      <button
+                        key={pct}
+                        type="button"
+                        className="quick-btn"
+                        disabled={selected === null}
+                        onClick={() => {
+                          if (selected !== null) setAmount(selected);
+                        }}
+                      >
+                        {pct}%{selected !== null ? ` · ${selected}` : ''}
+                      </button>
+                    );
+                  })}
                   <button
                     type="button"
-                    className="cro-preset sc-ink--blue"
-                    onClick={() => setAmount(String(Math.floor(currentBalance)))}
+                    className="quick-btn"
+                    disabled={cashoutPercentage(currentBalance, 100) === null}
+                    onClick={() => {
+                      const selected = cashoutPercentage(currentBalance, 100);
+                      if (selected !== null) setAmount(selected);
+                    }}
                   >
                     Max
+                    {cashoutPercentage(currentBalance, 100) !== null
+                      ? ` · ${cashoutPercentage(currentBalance, 100)}`
+                      : ''}
                   </button>
                 </div>
               </div>
 
-              <div className="cro-field">
-                <label className="sc-label sc-ink--blue" htmlFor="cashout-note">
-                  Note (Optional)
-                </label>
+              <div className="form-group">
+                <label htmlFor="cashout-note">Note (Optional)</label>
                 <textarea
                   id="cashout-note"
-                  className="cro-input cro-textarea"
                   placeholder="Any Message For Your Agent..."
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
@@ -637,19 +596,25 @@ export default function CashoutRequestModal({
                 />
               </div>
 
-              {error && (
-                <p role="alert" className="sc-copy sc-copy--center sc-ink--red cro-error">
-                  {error}
-                </p>
-              )}
+              {error && <div className="error-message">{error}</div>}
 
-              <p className="sc-copy sc-copy--center cro-note">
+              <button
+                className="submit-btn"
+                onClick={handleSubmit}
+                disabled={isSubmitting || !amount}
+              >
+                {isSubmitting ? 'Submitting...' : 'Request Cashout'}
+              </button>
+
+              <div className="info-note">
                 Your Chips Will Be Locked Until Your Agent Approves The Cashout. You Can Cancel
                 Anytime Before Approval.
-              </p>
+              </div>
             </div>
           )}
-        </SpadeConsole>
+        </div>
+        {/* Bottom safe area spacer */}
+        <div className="cashout-bottom-spacer" />
       </div>
     </div>
   );

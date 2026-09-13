@@ -58,6 +58,7 @@ import { confirmDialog } from '../components/common/confirmDialog';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { resolvePageClubId, pickPreferredClubId } from '../utils/resolvePageClubId';
+import { downloadCsv } from '../utils/downloadCsv';
 // ── Helpers ─────────────────────────────────────────────────
 const formatDate = (ts: string | null | undefined) => {
   if (!ts) return '';
@@ -1158,13 +1159,7 @@ function AuditLogTab({ clubId }: { clubId: string }) {
                     headers.map((h) => JSON.stringify(r[h] ?? '')).join(',')
                   ),
                 ].join('\n');
-                const blob = new Blob([csv], { type: 'text/csv' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `audit-log-${clubId.substring(0, 8)}.csv`;
-                a.click();
-                URL.revokeObjectURL(url);
+                downloadCsv(`audit-log-${clubId.substring(0, 8)}.csv`, csv);
               } catch (e: unknown) {
                 reportError(
                   e instanceof Error ? e.message : String(e),

@@ -5,7 +5,7 @@
  *
  * scripts/ci/check-migrations-applied.mjs asserts that every object a migration
  * DECLARES exists in the live schema. It finds those declarations with regexes
- * over the raw SQL, stripping `--` comments first.
+ * over the raw SQL, stripping comments first.
  *
  * It did not strip string literals, and on 2026-08-23 that turned a correct,
  * fully-applied migration into a permanently failing gate. The migration
@@ -27,24 +27,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-
-const gate = readFileSync(
-  resolve(__dirname, '../../scripts/ci/check-migrations-applied.mjs'),
-  'utf8'
-);
-
-/** The gate's cleaning step, mirrored. */
-const clean = (sql: string) => sql.replace(/--[^\n]*/g, '').replace(/'(?:[^']|'')*'/g, "''");
-
-/** The gate's CREATE TABLE matcher, mirrored. */
-const tables = (sql: string) =>
-  [
-    ...clean(sql).matchAll(
-      /create\s+table\s+(?:if\s+not\s+exists\s+)?(?:public\.)?"?([a-z0-9_]+)"?/gi
-    ),
-  ].map((m) => m[1]);
+import { declaredObjects, executableSql } from '../../scripts/ci/check-migrations-applied.mjs';
+const tables = (sql: string) => declaredObjects(sql).tables;
 
 describe('the gate still finds what it must find', () => {
   it('sees a real CREATE TABLE', () => {
@@ -66,6 +50,12 @@ describe('the gate still finds what it must find', () => {
       'still_seen',
     ]);
   });
+
+  it('is not confused by an apostrophe in a block comment before a real one', () => {
+    expect(
+      tables("/* the manager's canonical door */ CREATE TABLE public.still_seen (id int);")
+    ).toEqual(['still_seen']);
+  });
 });
 
 describe('the gate no longer invents tables out of quoted text', () => {
@@ -76,18 +66,21 @@ describe('the gate no longer invents tables out of quoted text', () => {
   it('ignores prose inside a COMMENT', () => {
     expect(tables("COMMENT ON FUNCTION f() IS 'CREATE TABLE here inherits grants';")).toEqual([]);
   });
+
+  it('ignores a declaration quoted inside a block comment', () => {
+    expect(tables('/* CREATE TABLE public.never_existed (id int); */')).toEqual([]);
+  });
 });
 
-describe('the fix is actually in the gate, not just in this test', () => {
-  it('strips string literals', () => {
-    expect(gate).toMatch(/replace\(\/'\(\?:\[\^'\]\|''\)\*'\/g/);
+describe('the exported gate cleaner preserves lexical boundaries', () => {
+  it('removes single-quoted prose', () => {
+    expect(executableSql("COMMENT ON TABLE x IS 'CREATE TABLE phantom';")).not.toContain('phantom');
   });
-
-  it('strips comments first, and says why', () => {
-    const idxComments = gate.indexOf('replace(/--[^\\n]*/g');
-    const idxStrings = gate.indexOf("replace(/'(?:[^']|'')*'/g");
-    expect(idxComments).toBeGreaterThan(-1);
-    expect(idxStrings).toBeGreaterThan(idxComments);
-    expect(gate).toMatch(/cannot unbalance the quote scan/);
+  it('handles comments before strings without unbalancing quotes', () => {
+    expect(
+      tables(
+        "/* somebody's note */ -- another's note\nCREATE TABLE public.real_one(id int); COMMENT ON TABLE real_one IS 'CREATE TABLE phantom';"
+      )
+    ).toEqual(['real_one']);
   });
 });

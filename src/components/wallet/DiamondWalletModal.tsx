@@ -9,11 +9,12 @@
  * Shows full-screen transaction history with filtering.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
-import { DiamondService } from '../../services/DiamondService';
+import DiamondCustodyBalance from '../arena/DiamondCustodyBalance';
+import DiamondWalletTransfer from './DiamondWalletTransfer';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import './DiamondWalletModal.css';
 import { reportError } from '../../utils/errorReporter';
@@ -237,23 +238,22 @@ export default function DiamondWalletModal({
 }: DiamondWalletModalProps) {
   const { user } = useAuthUser();
   const [transactions, setTransactions] = useState<DiamondTransaction[]>([]);
-  const [balance, setBalance] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [filter, setFilter] = useState('all');
+  const [balanceRevision, setBalanceRevision] = useState(0);
+  const [historyOwnerId, setHistoryOwnerId] = useState<string | null>(null);
+  const historyRequest = useRef(0);
   const isMounted = useIsMounted();
 
   const fetchTransactions = useCallback(async () => {
-    if (!user?.id) return;
+    if (!user?.id || !isOpen) return;
+    const request = ++historyRequest.current;
+    const isCurrent = () => isMounted.current && request === historyRequest.current;
     setLoading(true);
     setLoadError(false);
 
     try {
-      // Get balance from Triple-Wallet Architecture source-of-truth
-      const diamondWallet = await DiamondService.getBalance(user.id);
-
-      if (isMounted.current) setBalance(diamondWallet.balance || 0);
-
       /* ── THE `wallet_transactions` HALF OF THIS FETCH IS GONE ───────────────
          It filtered on `category IN (diamond_purchase, diamond_deduction,
          vip_purchase, mint, diamond_reward, diamond_refund)`. Five of those six
@@ -301,17 +301,30 @@ export default function DiamondWalletModal({
         created_at: t.created_at,
       }));
 
-      if (isMounted.current) setTransactions(combined);
+      if (isCurrent()) {
+        setTransactions(combined);
+        setHistoryOwnerId(user.id);
+      }
     } catch (err) {
-      reportError(err, 'DiamondWalletModal.Fetch_error');
-      if (isMounted.current) setLoadError(true);
+      if (isCurrent()) {
+        reportError(err, 'DiamondWalletModal.Fetch_error');
+        setHistoryOwnerId(user.id);
+        setLoadError(true);
+      }
     } finally {
-      if (isMounted.current) setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [user?.id, isMounted]);
+  }, [user?.id, isOpen, isMounted]);
 
   useEffect(() => {
-    if (isOpen) fetchTransactions();
+    setTransactions([]);
+    setHistoryOwnerId(null);
+    setLoadError(false);
+    setLoading(true);
+    if (isOpen) void fetchTransactions();
+    return () => {
+      ++historyRequest.current;
+    };
   }, [isOpen, fetchTransactions]);
 
   /* Escape closes and the page behind stops scrolling. This is a FULL-SCREEN
@@ -338,8 +351,12 @@ export default function DiamondWalletModal({
     if (isMounted.current && isOpen) fetchTransactions();
   });
 
+  useMasterBusSubscription('PROFILE_UPDATED', ({ userId }) => {
+    if (userId === user?.id && isMounted.current && isOpen) void fetchTransactions();
+  });
+
   // Client-side filter over the fetched page.
-  const filteredTx = transactions.filter((tx) => {
+  const filteredTx = (historyOwnerId === user?.id ? transactions : []).filter((tx) => {
     const txType = tx.transaction_type || tx.type || '';
     if (filter === 'all') return true;
     if (filter === 'refund') return isRefund(txType);
@@ -367,11 +384,8 @@ export default function DiamondWalletModal({
         {/* Header — Balance Display */}
         <div className="diamond-wallet-modal__header">
           <div className="diamond-wallet-modal__header-label">Diamond Wallet</div>
-          <div className="diamond-wallet-modal__balance-row">
-            <span className="diamond-wallet-modal__balance-icon">◆</span>
-            <span className="diamond-wallet-modal__balance-value">
-              {loading ? '...' : balance.toLocaleString()}
-            </span>
+          <div className="diamond-wallet-modal__custody-balances">
+            <DiamondCustodyBalance key={balanceRevision} />
           </div>
           <button
             className="diamond-wallet-modal__buy-btn"
@@ -383,6 +397,17 @@ export default function DiamondWalletModal({
             + Buy Diamonds
           </button>
         </div>
+
+        {user?.id && (
+          <DiamondWalletTransfer
+            key={user.id}
+            userId={user.id}
+            onComplete={() => {
+              setBalanceRevision((value) => value + 1);
+              void fetchTransactions();
+            }}
+          />
+        )}
 
         {/* Filter Bar */}
         <div className="diamond-wallet-modal__filters">
@@ -399,7 +424,7 @@ export default function DiamondWalletModal({
 
         {/* Transaction List */}
         <div className="diamond-wallet-modal__list">
-          {loading ? (
+          {loading || historyOwnerId !== user?.id ? (
             <div className="diamond-wallet-modal__status">Loading Transactions...</div>
           ) : loadError ? (
             /* "No Transactions Yet" is a claim about the player's money. It

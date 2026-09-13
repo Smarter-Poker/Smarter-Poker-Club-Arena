@@ -1,0 +1,28 @@
+{
+  "sourceSqlSha256": "43ea9061906f7b7a27da796ab2b3f4aa54a2443a838de7664176f3ce03ce2264",
+  "verified_at": "2026-09-11 20:04:03.403349+00",
+  "signature": "fn_ca_engine_table_connection_access(uuid,uuid)",
+  "owner": "postgres",
+  "security_definer": true,
+  "volatility": "s",
+  "settings": ["search_path=pg_catalog, public, pg_temp"],
+  "body_md5": "bb9bdd8430564e65eb535c5fca563d1a",
+  "acl": "{postgres=X/postgres,service_role=X/postgres}",
+  "anon_execute": false,
+  "authenticated_execute": false,
+  "service_execute": true,
+  "scope_body_md5": "9fc3bbf5ebbf941e06141b3a65584ef4",
+  "migration_ledger": [
+    {
+      "name": "engine_table_connection_one_snapshot_verdict",
+      "version": "20260911200323",
+      "statements": 1
+    }
+  ],
+  "readOnlyServiceProbe": {
+    "allowed": false,
+    "reason": "check_failed",
+    "input": "null identities"
+  },
+  "scope": "Additive read authority only. Engine and frontend repair deployment not yet performed."
+}

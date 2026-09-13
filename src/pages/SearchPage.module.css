@@ -374,7 +374,7 @@
 
 .errorBanner button {
   min-width: 78px;
-  border: 1px solid #8b6746;
+  border: 1px solid rgb(214 173 82 / 45%);
   color: #ffcc9b;
   background: #13100e;
 }
@@ -438,7 +438,7 @@
 }
 
 .historyHeading button {
-  border: 1px solid #50333a;
+  border: 1px solid rgb(255 71 87 / 55%);
   color: #ff8898;
   background: #10090b;
 }
@@ -723,7 +723,7 @@
 
 .kindPill[data-kind='announced'],
 .kindPill[data-kind='waiting'] {
-  border-color: #5c4a2a;
+  border-color: rgb(214 173 82 / 45%);
   color: #f0c47f;
 }
 
@@ -779,7 +779,7 @@
 }
 
 .statusPill[data-tone='pending'] {
-  border-color: #5c4a2a;
+  border-color: rgb(214 173 82 / 45%);
   color: #f0c47f;
 }
 

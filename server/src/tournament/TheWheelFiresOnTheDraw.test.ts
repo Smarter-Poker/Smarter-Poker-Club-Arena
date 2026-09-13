@@ -1,7 +1,5 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════
- *  THE WHEEL FIRES ON THE DRAW, NOT FOUR ROUND TRIPS LATER (round 18)
- * ═══════════════════════════════════════════════════════════════════════════
+ * The wheel announces the booked draw before table-building work.
  *
  * Dan, 2026-08-30: "AS SOON AS THE 3RD SEAT IS PAID FOR THE ANIMATION SHOULD
  * START AS SOON AS POSSIBLE."
@@ -12,15 +10,14 @@
  *
  * (Round 15 was p50 5.4s, so the one-second lane took ~2.4s out of it.) What
  * remained was the START WORK, and the broadcast sat at the END of it —
- * behind `fn_spin_settle_game`, the spin row write, a roster read plus a
+ * behind settlement, the spin row write, a roster read plus a
  * per-player update per seat, the stack credit and the table build.
  *
  * NONE of that is a precondition for showing three players a spinning wheel.
- * The draw is. Every number the packet carries — multiplier, buy-in, prize
- * pool — is known the instant the draw resolves, and the prize pool is
- * computed locally from the first two. The bookkeeping is a precondition for
- * DEALING, and dealing is already held for 16.6 seconds by the reveal hold,
- * which is far longer than the work takes.
+ * The immutable funded receipt is. Every number the packet carries —
+ * multiplier, buy-in, prize pool and locked tiers — is proven when that one
+ * transaction returns. The remaining projection is a precondition for
+ * DEALING, and dealing is already held by the reveal hold.
  *
  * So the reveal goes out on the draw, and the bookkeeping runs underneath it
  * inside a hold that was always there.
@@ -45,13 +42,22 @@ const BASE = readFileSync(join(here, 'TournamentManagerBase.ts'), 'utf8');
 /** Executable code only — a pin must never pass on the prose above it. */
 const CODE = BASE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
-describe('the reveal is emitted on the draw', () => {
-  it('emits before the settle RPC, not after it', () => {
+describe('the reveal is emitted from the immutable funded draw receipt', () => {
+  it('waits for the funded receipt, then emits before presentation writes', () => {
     const emit = CODE.indexOf('spin_reveal_early_emit');
-    const settle = CODE.indexOf("supabase.rpc('fn_spin_settle_game'");
+    const settle = CODE.indexOf("supabase.rpc('fn_spin_draw_and_settle_atomic'");
+    const presentation = CODE.indexOf(
+      ".from('tournaments')",
+      CODE.indexOf('const spinPresentationPatch')
+    );
     expect(emit, 'the early emit is missing').toBeGreaterThan(-1);
-    expect(settle, 'the settle call moved - re-check this pin').toBeGreaterThan(-1);
-    expect(emit, 'the wheel must not wait on the settle').toBeLessThan(settle);
+    expect(settle, 'the atomic settlement call moved - re-check this pin').toBeGreaterThan(-1);
+    const settledGate = CODE.indexOf('if (!proven.ok)', settle);
+    expect(settledGate, 'the parsed settlement receipt gate is missing').toBeGreaterThan(settle);
+    expect(settle, 'uncommitted money may never be revealed').toBeLessThan(emit);
+    expect(emit, 'the wheel must name a proven settlement receipt').toBeGreaterThan(settledGate);
+    expect(presentation, 'the presentation update moved').toBeGreaterThan(-1);
+    expect(emit, 'the wheel must not wait on presentation decoration').toBeLessThan(presentation);
   });
 
   it('emits before the table build, which is the slowest step it used to wait on', () => {
@@ -70,7 +76,7 @@ describe('the reveal is emitted on the draw', () => {
     expect(CODE).toMatch(/for \(const tableId of this\.seatFirstTableIds\)/);
   });
 
-  it('carries every field the wheel needs, all known at the draw', () => {
+  it('carries every field the wheel needs from the booked draw', () => {
     const emitBlock = CODE.slice(
       CODE.indexOf('if (this.seatFirstTableIds.length > 0 && spinMultiplier > 0)'),
       CODE.indexOf('spin_reveal_early_emit')
@@ -114,9 +120,9 @@ describe('a public moment does not move', () => {
     expect(freeze, 'a freeze after the re-anchor would not freeze anything').toBeLessThan(reanchor);
   });
 
-  it('the later pass does not re-announce a table the early pass already reached', () => {
+  it('the later pass skips only a successful early reveal whose hold did not extend', () => {
     expect(CODE).toContain(
-      'if (this.spinRevealEmitted && this.seatFirstTableIds.includes(tableId)) continue;'
+      'if (this.spinRevealEmittedTableIds.has(tableId) && effectiveHold === holdUntil)'
     );
   });
 });

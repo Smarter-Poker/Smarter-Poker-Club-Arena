@@ -28,10 +28,10 @@
  * attempt — writes neither. These tests pin that no prize, bounty or refund
  * path drifts back to the two-call shape.
  *
- * 2026-09-07: ordinary place prizes are prepared and committed by the same
- * atomic batch RPC from finish and recovery. Other tournament money kinds
- * still use `settleTournamentObligation`. The database remains the sole owner
- * of idempotency keys and ledger writes in both cases.
+ * 2026-09-08: finish and recovery now request one immutable terminal receipt.
+ * The database funds the guarantee and commits every cash, bounty, rake,
+ * lifecycle and receipt effect in that same transaction. No engine-side
+ * fragment payer remains.
  *
  * Source-level, like spinEngineWiring: exercising the real thing needs a live
  * Postgres, three seated players and a race.
@@ -54,7 +54,6 @@ const PAYOUT_SOURCES = [
   'server/src/tournament/TournamentManager.ts',
   'server/src/tournament/tournamentRecovery.ts',
 ] as const;
-const SINGLE_OBLIGATION_SOURCES = ['server/src/tournament/tournamentRecovery.ts'] as const;
 
 describe('prize ledger idempotency — the engine side', () => {
   for (const path of PAYOUT_SOURCES) {
@@ -68,47 +67,25 @@ describe('prize ledger idempotency — the engine side', () => {
     });
 
     it(`${path} pays through a database-owned settlement path, never a credit primitive`, () => {
-      // Normal place money is one atomic batch; remaining money kinds use the
-      // single-obligation helper. Both keep keys and ledger writes in Postgres.
+      // Every terminal outcome is one database-owned receipt transaction.
       // The three primitives are banned from the engine (server-side law:
       // server/src/tournament/OneSettlePathForTournamentMoney.law.test.ts).
       expect(code).not.toMatch(/rpc\(\s*'credit_player_wallet'/);
       expect(code).not.toMatch(/rpc\(\s*'fn_credit_and_log'/);
       expect(code).not.toMatch(/rpc\(\s*'fn_credit_player_wallet_once'/);
       if (path === 'server/src/tournament/TournamentManagerEliminations.ts') {
-        expect(code).toMatch(/settleTournamentPlacesAtomically\(/);
-        expect(code).not.toMatch(/settleTournamentObligation\(/);
+        expect(code).toMatch(/requestTournamentTerminalReceipt\(/);
       } else if (path === 'server/src/tournament/TournamentManager.ts') {
-        expect(code).toMatch(/fn_settle_satellite_finish_atomic/);
-        expect(code).not.toMatch(/settleTournamentObligation\(/);
+        expect(code).toMatch(/requestSatelliteSettlementReceipt\(/);
       } else {
-        expect(code).toMatch(/settleTournamentObligation\(/);
+        expect(code).toMatch(/requestTournamentTerminalReceipt\(/);
+        expect(code).toMatch(/requestSatelliteSettlementReceipt\(/);
       }
+      expect(code).not.toMatch(/settleTournamentObligation\(|settleTournamentPlacesAtomically\(/);
     });
   }
 
-  it('every settleTournamentObligation call supplies a kind, a source and a memo', () => {
-    for (const path of SINGLE_OBLIGATION_SOURCES) {
-      const code = tsCode(read(path));
-      // Each call site, from the opening brace of its input to the closing `}`.
-      const calls =
-        code.match(/settleTournamentObligation\(\s*supabase\s*,\s*\{[\s\S]*?\n\s*\}/g) ?? [];
-      expect(calls.length, `${path} should pay through settleTournamentObligation`).toBeGreaterThan(
-        0
-      );
-      for (const call of calls) {
-        expect(call, `${path}: missing kind`).toMatch(/\bkind:/);
-        expect(call, `${path}: missing source`).toMatch(/\bsource:/);
-        // `memo` is the wallet_transactions description (see settleObligation.ts
-        // for why it is not called `description`).
-        expect(call, `${path}: missing memo`).toMatch(/\bmemo:/);
-        expect(call, `${path}: missing userId`).toMatch(/\buserId\b/);
-        expect(call, `${path}: missing amount`).toMatch(/\bamount\b/);
-      }
-    }
-  });
-
-  it('the recovery watchdog and finish path invoke the SAME atomic place batch', () => {
+  it('the recovery watchdog and finish path invoke the SAME terminal receipt owner', () => {
     // If these two ever diverge the credit stops deduping and the double
     // PAYMENT of 2026-07-28 comes back — which is worse than the double entry.
     //
@@ -121,11 +98,17 @@ describe('prize ledger idempotency — the engine side', () => {
     const recovery = tsCode(read('server/src/tournament/tournamentRecovery.ts'));
     const eliminations = tsCode(read('server/src/tournament/TournamentManagerEliminations.ts'));
     for (const src of [recovery, eliminations]) {
-      expect(src).toMatch(/settleTournamentPlacesAtomically\(/);
+      expect(src).toMatch(/requestTournamentTerminalReceipt\(/);
+      expect(src).not.toMatch(/settleTournamentPlacesAtomically\(|settleTournamentObligation\(/);
     }
 
     for (const [name, src] of [
-      ['recovery', recovery],
+      [
+        'recovery',
+        recovery.slice(
+          recovery.indexOf('export async function recoverStuckCompletingTournaments(')
+        ),
+      ],
       ['eliminations', eliminations],
       ['manager', tsCode(read('server/src/tournament/TournamentManager.ts'))],
     ] as const) {

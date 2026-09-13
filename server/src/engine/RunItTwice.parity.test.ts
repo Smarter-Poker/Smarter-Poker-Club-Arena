@@ -322,6 +322,28 @@ describe('per-run pot awards - the split-pot ship sequence', () => {
     expect(potTotal).toBeGreaterThanOrEqual(credited - 0.01);
   });
 
+  /**
+   * THE RECORDED POT IS CENTS, NOT A FLOAT (2026-09-13).
+   *
+   * The live pot is a running sum of float bets, and the capture above
+   * stored it verbatim. On the production table, 30 of 307 RIT pot rows in
+   * one day read like 66.46000000000001 - every award beside them was
+   * cents-exact, so the record disagreed with the money it described and
+   * any equality check against pot_size failed for no reason.
+   */
+  it('records every pot amount in exact cents', () => {
+    // 12.1 three ways is 36.300000000000004 in float arithmetic.
+    const { e } = resolveRIT([12.1, 33.3, 55.5], 2);
+    const pots = e.currentHandPots as Array<{ amount: number }>;
+    expect(pots.length).toBeGreaterThan(0);
+    for (const p of pots) {
+      expect(p.amount, `pot amount ${p.amount} is not an exact cent value`).toBe(
+        Math.round(p.amount * 100) / 100
+      );
+      expect(String(p.amount)).toMatch(/^\d+(\.\d{1,2})?$/);
+    }
+  });
+
   it('every per-(run, pot) award names a pot that was actually recorded', () => {
     const { e } = resolveRIT([100, 300, 500], 3);
     const pots = e.currentHandPots as Array<{ index: number }>;

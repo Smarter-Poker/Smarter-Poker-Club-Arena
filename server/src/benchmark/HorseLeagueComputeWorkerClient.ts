@@ -13,8 +13,17 @@ import { constants as osConstants } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 import { liveHorseDecisionWorkerStatus } from '../engine/horseDecision/client.js';
+import { horseDecisionSolverStoresAreValid } from '../engine/horseDecision/protocol.js';
 import type { LeagueMatchup, LeagueResult } from './HorseLeague.js';
+import {
+  pairedConfidence99,
+  tournamentRunCanPromote,
+  tournamentLeagueEntrants,
+  type TournamentLeagueRequest,
+  type TournamentLeagueResult,
+} from './HorseTournamentLeague.js';
 import type { AgreementResult } from './HorseSolverAgreement.js';
+import type { GtoV31AgreementResult } from './HorseSolverAgreementV31.js';
 import type {
   HorseLeagueComputeRequest,
   HorseLeagueComputeResponse,
@@ -27,7 +36,7 @@ const CANCEL_POLL_MS = 250;
 
 interface WorkerLike {
   postMessage(message: HorseLeagueComputeRequest): void;
-  on(event: 'message', listener: (message: HorseLeagueComputeResponse) => void): this;
+  on(event: 'message', listener: (message: unknown) => void): this;
   on(event: 'error', listener: (error: Error) => void): this;
   on(event: 'exit', listener: (code: number) => void): this;
   terminate(): Promise<number>;
@@ -44,22 +53,15 @@ class LowPriorityComputeProcess implements WorkerLike {
     this.child.send(message);
   }
 
-  on(event: 'message', listener: (message: HorseLeagueComputeResponse) => void): this;
+  on(event: 'message', listener: (message: unknown) => void): this;
   on(event: 'error', listener: (error: Error) => void): this;
   on(event: 'exit', listener: (code: number) => void): this;
   on(
     event: 'message' | 'error' | 'exit',
-    listener:
-      | ((message: HorseLeagueComputeResponse) => void)
-      | ((error: Error) => void)
-      | ((code: number) => void)
+    listener: ((message: unknown) => void) | ((error: Error) => void) | ((code: number) => void)
   ): this {
     if (event === 'message') {
-      this.child.on('message', (message) =>
-        (listener as (value: HorseLeagueComputeResponse) => void)(
-          message as HorseLeagueComputeResponse
-        )
-      );
+      this.child.on('message', (message) => (listener as (value: unknown) => void)(message));
     } else if (event === 'error') {
       this.child.on('error', listener as (error: Error) => void);
     } else {
@@ -109,13 +111,23 @@ export interface HorseLeagueComputeWorkerClientOptions {
 interface PendingJob<T> {
   resolve: (result: T) => void;
   reject: (error: Error) => void;
+  resultType:
+    | 'MATCHUP_RESULT'
+    | 'AGREEMENT_RESULT'
+    | 'GTO_V31_AGREEMENT_RESULT'
+    | 'TOURNAMENT_RESULT';
   heartbeatTimer: ReturnType<typeof setTimeout>;
   cancelTimer: ReturnType<typeof setInterval> | null;
+  tournamentRequest?: TournamentLeagueRequest;
 }
 
 export interface HorseLeagueCompute {
   ready(): Promise<SolverStoreCounts>;
   scoreSolverAgreement(maxSpots?: number): Promise<AgreementResult>;
+  scoreGtoV31Agreement(
+    maxSpots?: number,
+    shouldContinue?: () => boolean
+  ): Promise<GtoV31AgreementResult>;
   runMatchup(
     matchup: LeagueMatchup,
     pairs: number,
@@ -150,6 +162,9 @@ function defaultWorkerFactory(hydrateSolverStores: boolean): () => WorkerLike {
         env: {
           ...process.env,
           HORSE_LEAGUE_HYDRATE_SOLVER_STORES: hydrateSolverStores ? '1' : '0',
+          // An offline paired experiment must not change its sample count
+          // because another process or the preceding policy used more CPU.
+          EQUITY_GOVERNOR: 'off',
         },
         serialization: 'advanced',
         stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
@@ -166,7 +181,417 @@ function currentSolverStores(): SolverStoreCounts {
       `horse league cannot establish the live solver corpus while the decision worker is ${live.phase}`
     );
   }
-  return { ...live.solverStores };
+  assertV31StoreIdentity(live.solverStores, 'live horse decision worker');
+  return structuredClone(live.solverStores);
+}
+
+function assertV31StoreIdentity(stores: SolverStoreCounts, owner: string): void {
+  if (!horseDecisionSolverStoresAreValid(stores)) {
+    throw new Error(`${owner} cannot prove a valid solver-store snapshot and V31 identity`);
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actual = Object.keys(value);
+  return actual.length === keys.length && keys.every((key) => actual.includes(key));
+}
+
+function isJobId(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) > 0;
+}
+
+function isNonnegativeSafeInteger(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
+function isFiniteNumber(value: unknown, minimum = -Infinity, maximum = Infinity): value is number {
+  return (
+    typeof value === 'number' && Number.isFinite(value) && value >= minimum && value <= maximum
+  );
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string' && item.length > 0);
+}
+
+function isLeagueBenchmarkComponent(value: unknown): boolean {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      'scenario',
+      'hands',
+      'bb100',
+      'stderr',
+      'durationMs',
+      'illegalActions',
+      'truncatedStreets',
+      'candidatePolicyHits',
+      'candidateExecutionMismatches',
+      'candidateNodeRoles',
+    ])
+  )
+    return false;
+  return (
+    typeof value.scenario === 'string' &&
+    value.scenario.length > 0 &&
+    isNonnegativeSafeInteger(value.hands) &&
+    isFiniteNumber(value.bb100) &&
+    isFiniteNumber(value.stderr, 0) &&
+    isFiniteNumber(value.durationMs, 0) &&
+    isNonnegativeSafeInteger(value.illegalActions) &&
+    isNonnegativeSafeInteger(value.truncatedStreets) &&
+    isNonnegativeSafeInteger(value.candidatePolicyHits) &&
+    isNonnegativeSafeInteger(value.candidateExecutionMismatches) &&
+    isStringArray(value.candidateNodeRoles)
+  );
+}
+
+function isLeagueResult(value: unknown): value is LeagueResult {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      'matchup',
+      'hands',
+      'bb100',
+      'stderr',
+      'durationMs',
+      'illegalActions',
+      'truncatedStreets',
+      'candidatePolicyHits',
+      'candidateExecutionMismatches',
+      'candidateNodeRoles',
+      'benchmarkComponents',
+    ])
+  )
+    return false;
+  return (
+    typeof value.matchup === 'string' &&
+    value.matchup.length > 0 &&
+    isNonnegativeSafeInteger(value.hands) &&
+    isFiniteNumber(value.bb100) &&
+    isFiniteNumber(value.stderr, 0) &&
+    isFiniteNumber(value.durationMs, 0) &&
+    isNonnegativeSafeInteger(value.illegalActions) &&
+    isNonnegativeSafeInteger(value.truncatedStreets) &&
+    isNonnegativeSafeInteger(value.candidatePolicyHits) &&
+    isNonnegativeSafeInteger(value.candidateExecutionMismatches) &&
+    isStringArray(value.candidateNodeRoles) &&
+    Array.isArray(value.benchmarkComponents) &&
+    value.benchmarkComponents.every(isLeagueBenchmarkComponent)
+  );
+}
+
+function hasAgreementDecisionShape(value: unknown, v31: boolean): boolean {
+  if (!isRecord(value) || !isRecord(value.decisionState) || !isRecord(value.sourceSeal)) {
+    return false;
+  }
+  const common = [
+    'stateKey',
+    'decisionState',
+    'finalAction',
+    'referenceDistribution',
+    'chosenProbability',
+    'actionRegretBb',
+    'regretEligible',
+    'pureMiss',
+    'sourceSeal',
+  ];
+  const expected = v31
+    ? [
+        ...common,
+        'stage',
+        'gameFamily',
+        'objective',
+        'utilityContext',
+        'tableSize',
+        'potType',
+        'heroPosition',
+        'opponentPosition',
+        'depthBucket',
+        'textureClass',
+        'nodeRole',
+        'facingKind',
+        'facingSizeBucket',
+        'cell',
+        'handKey',
+        'sampledActionId',
+        'sampledActionFamily',
+        'executedAsIntended',
+      ]
+    : [...common, 'kind', 'gameType', 'position', 'stackBb', 'hand'];
+  if (!hasExactKeys(value, expected)) return false;
+  const distribution = value.referenceDistribution;
+  if (!isRecord(distribution)) return false;
+  const probabilities = Object.values(distribution);
+  return (
+    typeof value.stateKey === 'string' &&
+    value.stateKey.length > 0 &&
+    typeof value.finalAction === 'string' &&
+    value.finalAction.length > 0 &&
+    probabilities.length >= 2 &&
+    probabilities.every((item) => isFiniteNumber(item, 0, 1)) &&
+    Math.abs(probabilities.reduce((sum, item) => sum + (item as number), 0) - 1) <= 0.002 &&
+    isFiniteNumber(value.chosenProbability, 0, 1) &&
+    (value.actionRegretBb === null || isFiniteNumber(value.actionRegretBb, 0)) &&
+    typeof value.regretEligible === 'boolean' &&
+    typeof value.pureMiss === 'boolean' &&
+    (!v31 || typeof value.executedAsIntended === 'boolean')
+  );
+}
+
+function isAgreementResult(
+  value: unknown,
+  reference: 'gto_charts' | 'gto_v31_certified'
+): value is AgreementResult | GtoV31AgreementResult {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      'spots',
+      'agreement',
+      'pureMisses',
+      'reference',
+      'eligibleSpots',
+      'reconciledSpots',
+      'actionRegretBb',
+      'regretEligibleSpots',
+      'decisionChecksum',
+      'decisions',
+    ])
+  )
+    return false;
+  if (
+    !isNonnegativeSafeInteger(value.spots) ||
+    !isFiniteNumber(value.agreement, 0, 1) ||
+    !isNonnegativeSafeInteger(value.pureMisses) ||
+    !isNonnegativeSafeInteger(value.eligibleSpots) ||
+    !isNonnegativeSafeInteger(value.reconciledSpots) ||
+    !isNonnegativeSafeInteger(value.regretEligibleSpots) ||
+    (value.actionRegretBb !== null && !isFiniteNumber(value.actionRegretBb, 0)) ||
+    !Array.isArray(value.decisions)
+  )
+    return false;
+  if (value.reference === null) {
+    return (
+      value.spots === 0 &&
+      value.agreement === 0 &&
+      value.pureMisses === 0 &&
+      value.eligibleSpots === 0 &&
+      value.reconciledSpots === 0 &&
+      value.regretEligibleSpots === 0 &&
+      value.actionRegretBb === null &&
+      value.decisionChecksum === null &&
+      value.decisions.length === 0
+    );
+  }
+  return (
+    value.reference === reference &&
+    value.spots > 0 &&
+    value.spots === value.eligibleSpots &&
+    value.spots === value.reconciledSpots &&
+    value.spots === value.decisions.length &&
+    value.pureMisses <= value.spots &&
+    value.regretEligibleSpots <= value.spots &&
+    value.regretEligibleSpots > 0 === (value.actionRegretBb !== null) &&
+    typeof value.decisionChecksum === 'string' &&
+    /^[0-9a-f]{64}$/.test(value.decisionChecksum) &&
+    value.decisionChecksum !== '0'.repeat(64) &&
+    value.decisions.every((decision) =>
+      hasAgreementDecisionShape(decision, reference === 'gto_v31_certified')
+    )
+  );
+}
+
+/** Runtime guard for the child-process structured-clone boundary. */
+export function horseLeagueComputeResponseIsValid(
+  value: unknown
+): value is HorseLeagueComputeResponse {
+  if (!isRecord(value) || typeof value.type !== 'string') return false;
+  switch (value.type) {
+    case 'TOURNAMENT_RESULT': {
+      if (
+        !hasExactKeys(value, ['type', 'jobId', 'result']) ||
+        !isJobId(value.jobId) ||
+        !isRecord(value.result)
+      )
+        return false;
+      const r = value.result;
+      const numeric = [
+        'entrants',
+        'seed',
+        'requestedPairs',
+        'pairs',
+        'meanDifference',
+        'standardError',
+        'candidateReturn',
+        'baselineReturn',
+        'chipDifference',
+        'bountyDifference',
+        'candidateBustRate',
+        'baselineBustRate',
+        'decisions',
+        'eligible',
+        'fired',
+        'changed',
+        'illegalActions',
+        'conservationErrors',
+        'truncatedHands',
+        'candidateDeepOnePairCommitments',
+        'baselineDeepOnePairCommitments',
+        'preventedCommitments',
+        'budgetExhaustions',
+        'referenceRegret',
+        'durationMs',
+      ];
+      if (
+        !hasExactKeys(r, [
+          ...numeric,
+          'version',
+          'candidateMode',
+          'evidenceMode',
+          'objective',
+          'complete',
+          'primaryMetric',
+          'confidence99',
+          'candidateFinish',
+          'baselineFinish',
+          'reference',
+          'latencyMs',
+          'promotionEligible',
+        ])
+      )
+        return false;
+      if (
+        !numeric.every((k) => isFiniteNumber(r[k])) ||
+        !isNonnegativeSafeInteger(r.pairs) ||
+        !isNonnegativeSafeInteger(r.requestedPairs) ||
+        (r.pairs as number) > (r.requestedPairs as number) ||
+        r.version !== 'horse-tournament-postflop-round1-v2' ||
+        !['mtt', 'sng', 'spin', 'satellite', 'pko', 'mystery'].includes(String(r.objective)) ||
+        typeof r.complete !== 'boolean' ||
+        typeof r.promotionEligible !== 'boolean' ||
+        !['funded_pool_return', 'seat_attainment'].includes(String(r.primaryMetric)) ||
+        r.reference !== 'phase7_action_utility_not_external_solver'
+      )
+        return false;
+      const integer = [
+        'seed',
+        'requestedPairs',
+        'pairs',
+        'decisions',
+        'eligible',
+        'fired',
+        'changed',
+        'illegalActions',
+        'conservationErrors',
+        'truncatedHands',
+        'candidateDeepOnePairCommitments',
+        'baselineDeepOnePairCommitments',
+        'preventedCommitments',
+        'budgetExhaustions',
+      ];
+      if (
+        !integer.every((k) => isNonnegativeSafeInteger(r[k])) ||
+        !(Number(r.seed) > 0) ||
+        !(Number(r.requestedPairs) > 0) ||
+        Number(r.requestedPairs) > 1024 ||
+        !['off', 'shadow', 'candidate'].includes(String(r.candidateMode)) ||
+        !['fixture', 'promotion'].includes(String(r.evidenceMode)) ||
+        r.complete !== (r.pairs === r.requestedPairs) ||
+        r.primaryMetric !==
+          (r.objective === 'satellite' ? 'seat_attainment' : 'funded_pool_return') ||
+        Number(r.fired) > Number(r.eligible) ||
+        Number(r.changed) > Number(r.fired) ||
+        Number(r.eligible) > Number(r.decisions) ||
+        Number(r.standardError) < 0 ||
+        Number(r.durationMs) < 0 ||
+        Number(r.referenceRegret) < 0
+      )
+        return false;
+      if (
+        !['candidateReturn', 'baselineReturn', 'candidateBustRate', 'baselineBustRate'].every(
+          (k) => Number(r[k]) >= 0 && Number(r[k]) <= 1
+        ) ||
+        Math.abs(
+          Number(r.meanDifference) - (Number(r.candidateReturn) - Number(r.baselineReturn))
+        ) > 1e-8
+      )
+        return false;
+      for (const key of ['confidence99', 'candidateFinish', 'baselineFinish']) {
+        if (!Array.isArray(r[key]) || !(r[key] as unknown[]).every((x) => isFiniteNumber(x)))
+          return false;
+      }
+      if (
+        (r.confidence99 as unknown[]).length !== 2 ||
+        !isRecord(r.latencyMs) ||
+        !hasExactKeys(r.latencyMs, ['p50', 'p95', 'p99', 'max']) ||
+        !['p50', 'p95', 'p99', 'max'].every((k) =>
+          isFiniteNumber((r.latencyMs as Record<string, unknown>)[k], 0)
+        )
+      )
+        return false;
+      for (const key of ['candidateFinish', 'baselineFinish']) {
+        const finish = r[key] as number[];
+        if (
+          finish.length !==
+            tournamentLeagueEntrants(r.objective as TournamentLeagueResult['objective']) ||
+          !finish.every(isNonnegativeSafeInteger) ||
+          finish.reduce((s, v) => s + v, 0) !== r.pairs
+        )
+          return false;
+      }
+      const lat = r.latencyMs as Record<string, number>;
+      if (lat.p50 > lat.p95 || lat.p95 > lat.p99 || lat.p99 > lat.max) return false;
+      const typed = r as unknown as TournamentLeagueResult;
+      if (typed.entrants !== tournamentLeagueEntrants(typed.objective)) return false;
+      const ci = typed.pairs
+        ? pairedConfidence99(typed.meanDifference, typed.standardError, typed.pairs)
+        : [0, 0];
+      return (
+        typed.confidence99.every((v, i) => Math.abs(v - ci[i]) < 1e-8) &&
+        typed.promotionEligible === tournamentRunCanPromote(typed)
+      );
+    }
+    case 'READY':
+      return (
+        (hasExactKeys(value, ['type', 'solverStores']) ||
+          hasExactKeys(value, ['type', 'solverStores', 'executionNice'])) &&
+        isRecord(value.solverStores) &&
+        (value.executionNice === undefined || Number.isSafeInteger(value.executionNice))
+      );
+    case 'HEARTBEAT':
+      return hasExactKeys(value, ['type', 'jobId']) && isJobId(value.jobId);
+    case 'MATCHUP_RESULT':
+      return (
+        hasExactKeys(value, ['type', 'jobId', 'result']) &&
+        isJobId(value.jobId) &&
+        isLeagueResult(value.result)
+      );
+    case 'AGREEMENT_RESULT':
+      return (
+        hasExactKeys(value, ['type', 'jobId', 'result']) &&
+        isJobId(value.jobId) &&
+        isAgreementResult(value.result, 'gto_charts')
+      );
+    case 'GTO_V31_AGREEMENT_RESULT':
+      return (
+        hasExactKeys(value, ['type', 'jobId', 'result']) &&
+        isJobId(value.jobId) &&
+        isAgreementResult(value.result, 'gto_v31_certified')
+      );
+    case 'ERROR':
+      return (
+        hasExactKeys(value, ['type', 'jobId', 'message']) &&
+        (value.jobId === null || isJobId(value.jobId)) &&
+        typeof value.message === 'string' &&
+        value.message.length > 0
+      );
+    default:
+      return false;
+  }
 }
 
 export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
@@ -181,11 +606,13 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
   private readyTimer: ReturnType<typeof setTimeout>;
   private nextJobId = 1;
   private pending: { jobId: number; job: PendingJob<unknown> } | null = null;
+  private readyReceived = false;
   private closed = false;
 
   constructor(options: HorseLeagueComputeWorkerClientOptions = {}) {
     const hydrateSolverStores = options.hydrateSolverStores !== false;
     this.expectedSolverStores = options.expectedSolverStores ?? currentSolverStores();
+    assertV31StoreIdentity(this.expectedSolverStores, 'expected live horse decision worker');
     this.heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? JOB_HEARTBEAT_TIMEOUT_MS;
     this.cancelPollMs = options.cancelPollMs ?? CANCEL_POLL_MS;
     this.requireLowPriorityProcess = options.workerFactory === undefined;
@@ -216,6 +643,16 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
     return this.dispatch<AgreementResult>({ type: 'SCORE_SOLVER_AGREEMENT', maxSpots });
   }
 
+  scoreGtoV31Agreement(
+    maxSpots?: number,
+    shouldContinue: () => boolean = () => true
+  ): Promise<GtoV31AgreementResult> {
+    return this.dispatch<GtoV31AgreementResult>(
+      { type: 'SCORE_GTO_V31_AGREEMENT', maxSpots },
+      shouldContinue
+    );
+  }
+
   runMatchup(
     matchup: LeagueMatchup,
     pairs: number,
@@ -228,10 +665,22 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
     );
   }
 
+  runTournamentLeague(
+    request: TournamentLeagueRequest,
+    shouldContinue: () => boolean = () => true
+  ): Promise<TournamentLeagueResult> {
+    return this.dispatch<TournamentLeagueResult>(
+      { type: 'RUN_TOURNAMENT', request },
+      shouldContinue
+    );
+  }
+
   private async dispatch<T>(
     command:
+      | Omit<Extract<HorseLeagueComputeRequest, { type: 'RUN_TOURNAMENT' }>, 'jobId'>
       | Omit<Extract<HorseLeagueComputeRequest, { type: 'RUN_MATCHUP' }>, 'jobId'>
-      | Omit<Extract<HorseLeagueComputeRequest, { type: 'SCORE_SOLVER_AGREEMENT' }>, 'jobId'>,
+      | Omit<Extract<HorseLeagueComputeRequest, { type: 'SCORE_SOLVER_AGREEMENT' }>, 'jobId'>
+      | Omit<Extract<HorseLeagueComputeRequest, { type: 'SCORE_GTO_V31_AGREEMENT' }>, 'jobId'>,
     shouldContinue?: () => boolean
   ): Promise<T> {
     await this.readyPromise;
@@ -240,6 +689,14 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
       throw new Error(`horse league compute worker already owns job ${this.pending.jobId}`);
     }
     const jobId = this.nextJobId++;
+    const resultType =
+      command.type === 'RUN_TOURNAMENT'
+        ? 'TOURNAMENT_RESULT'
+        : command.type === 'RUN_MATCHUP'
+          ? 'MATCHUP_RESULT'
+          : command.type === 'SCORE_SOLVER_AGREEMENT'
+            ? 'AGREEMENT_RESULT'
+            : 'GTO_V31_AGREEMENT_RESULT';
     return new Promise<T>((resolve, reject) => {
       const heartbeatTimer = setTimeout(
         () => this.fail(new Error(`horse league compute worker job ${jobId} stopped heartbeating`)),
@@ -248,7 +705,17 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
       heartbeatTimer.unref?.();
       const cancelTimer = shouldContinue
         ? setInterval(() => {
-            if (!shouldContinue()) this.worker.postMessage({ type: 'CANCEL', jobId });
+            if (!shouldContinue()) {
+              try {
+                this.worker.postMessage({ type: 'CANCEL', jobId });
+              } catch (error) {
+                this.fail(
+                  error instanceof Error
+                    ? error
+                    : new Error('horse league compute worker cancellation failed')
+                );
+              }
+            }
           }, this.cancelPollMs)
         : null;
       cancelTimer?.unref?.();
@@ -257,16 +724,33 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
         job: {
           resolve: resolve as (value: unknown) => void,
           reject,
+          resultType,
           heartbeatTimer,
           cancelTimer,
+          ...(command.type === 'RUN_TOURNAMENT' ? { tournamentRequest: command.request } : {}),
         },
       };
-      this.worker.postMessage({ ...command, jobId } as HorseLeagueComputeRequest);
+      try {
+        this.worker.postMessage({ ...command, jobId } as HorseLeagueComputeRequest);
+      } catch (error) {
+        this.fail(
+          error instanceof Error ? error : new Error('horse league compute worker dispatch failed')
+        );
+      }
     });
   }
 
-  private onMessage(message: HorseLeagueComputeResponse): void {
+  private onMessage(value: unknown): void {
+    if (!horseLeagueComputeResponseIsValid(value)) {
+      this.fail(new Error('horse league compute worker returned a malformed IPC response'));
+      return;
+    }
+    const message = value;
     if (message.type === 'READY') {
+      if (this.readyReceived) {
+        this.fail(new Error('horse league compute worker returned duplicate READY'));
+        return;
+      }
       clearTimeout(this.readyTimer);
       if (
         this.requireLowPriorityProcess &&
@@ -279,9 +763,16 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
         );
         return;
       }
-      const missing = (
-        Object.keys(this.expectedSolverStores) as Array<keyof SolverStoreCounts>
-      ).filter((key) => message.solverStores[key] < this.expectedSolverStores[key]);
+      try {
+        assertV31StoreIdentity(message.solverStores, 'horse league compute worker');
+      } catch (error) {
+        this.fail(error instanceof Error ? error : new Error(String(error)));
+        return;
+      }
+      const countKeys = ['charts', 'postflop'] as const;
+      const missing = countKeys.filter(
+        (key) => message.solverStores[key] < this.expectedSolverStores[key]
+      );
       if (missing.length > 0) {
         this.fail(
           new Error(
@@ -295,7 +786,22 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
         );
         return;
       }
-      this.resolveReady(message.solverStores);
+      const expectedDataset = this.expectedSolverStores.postflopV31Dataset;
+      const actualDataset = message.solverStores.postflopV31Dataset;
+      if (
+        message.solverStores.postflopV31 !== this.expectedSolverStores.postflopV31 ||
+        actualDataset?.id !== expectedDataset?.id ||
+        actualDataset?.checksum !== expectedDataset?.checksum
+      ) {
+        this.fail(
+          new Error(
+            'horse league compute worker V31 corpus does not exactly match the live decision worker'
+          )
+        );
+        return;
+      }
+      this.readyReceived = true;
+      this.resolveReady(structuredClone(message.solverStores));
       return;
     }
 
@@ -324,7 +830,29 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
       return;
     }
 
+    if (message.type !== pending.job.resultType) {
+      this.fail(
+        new Error(
+          `horse league compute worker returned ${message.type} for a ${pending.job.resultType} job`
+        )
+      );
+      return;
+    }
+
     if (pending.job.cancelTimer) clearInterval(pending.job.cancelTimer);
+    if (message.type === 'TOURNAMENT_RESULT' && pending.job.tournamentRequest) {
+      const request = pending.job.tournamentRequest;
+      if (
+        message.result.seed !== request.seed ||
+        message.result.objective !== request.objective ||
+        message.result.requestedPairs !== request.pairs ||
+        message.result.candidateMode !== (request.candidateMode ?? 'candidate') ||
+        message.result.evidenceMode !== (request.evidenceMode ?? 'fixture')
+      ) {
+        this.fail(new Error('Tournament result does not match the requested paired run'));
+        return;
+      }
+    }
     this.pending = null;
     pending.job.resolve(message.result);
   }

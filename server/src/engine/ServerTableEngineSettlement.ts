@@ -1,3 +1,4 @@
+import { assertDiamondAcceptedHand } from '../domain/DiamondCashBoundary.js';
 import { pendingSeatMoves, type PendingSeatMove } from '../services/supabase/seatMoves.js';
 /**
  * ServerTableEngine, layer 6/8 — the HAND_COMPLETE settlement pipeline and post-hand tasks.
@@ -23,6 +24,7 @@ import {
   detectBBJHit,
   detectBBJNearMiss,
   detectMiniBBJHit,
+  detectMiniBBJNearMiss,
   getTierIdForBB,
 } from '../config/RakeConfig.js';
 import type { BBJDetectionResult } from '../config/RakeConfig.js';
@@ -33,7 +35,6 @@ import {
   reconcileTableSeatCount,
   autoRebuyHorse,
   processLeavePending,
-  atomicCashoutVoluntary,
   logBBJCollection,
   logInsuranceSettlement,
   logHandHistory,
@@ -53,11 +54,14 @@ import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { queueUnbankedFee } from '../services/FeeReconciler.js';
 import { selectRevealedShowdownResults } from './revealedShowdown.js';
 import { ServerTableEngineDealing } from './ServerTableEngineDealing.js';
+import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { atRebuyStopLoss, horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
 import { buildDailyMissionHandEvents } from './dailyMissionEvents.js';
 import { checkTournamentChipConservation } from './tournamentChipConservation.js';
+import { checkTournamentWholeChips, describeFractionalSeats } from './tournamentWholeChips.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { INSTANCE_ID } from '../services/tableLease.js';
+import { requireHandSeatGeneration } from './handSeatGeneration.js';
 
 /**
  * A chip is two decimal places, everywhere it is stored (#3358).
@@ -69,7 +73,14 @@ import { INSTANCE_ID } from '../services/tableLease.js';
  * non-cent rows respectively. Every stack mutation in this file goes through
  * here.
  */
-const cents = (n: number): number => (Number.isFinite(n) ? Math.round(n * 100) / 100 : 0);
+const cents = (n: number): number => {
+  if (!Number.isFinite(n)) throw new Error('Stack money must be finite before cent rounding');
+  const rounded = Math.round(n * 100) / 100;
+  if (!Number.isFinite(rounded)) {
+    throw new Error('Stack money overflowed the finite cent boundary');
+  }
+  return rounded;
+};
 
 /**
  * How long a finished hand stays purchasable. A rabbit hunt is an impulse, and
@@ -81,51 +92,45 @@ const cents = (n: number): number => (Number.isFinite(n) ? Math.round(n * 100) /
 const RABBIT_HUNT_OFFER_TTL_MS = 90_000;
 
 /**
- * BOMB-POT AWARD LEDGER DURABILITY (2026-08-29).
+ * HOW LONG A PREDECESSOR KEEPS TRYING TO FINISH ITS OWN ENVELOPE (2026-09-12).
  *
- * The award-unit write is deliberately fire-and-forget — the money is already
- * recorded by logHandHistory, and a ledger that narrates a settlement must
- * never be able to fail the hand it is narrating. But "cannot fail the hand"
- * had been implemented as "one attempt, then a console.warn on the engine
- * host", which means a single transient error loses a hand's award units
- * PERMANENTLY and SILENTLY.
+ * The post-commit envelope is authorized by the durable hand receipt, not by a
+ * dealer lease - `processHandPostCommitObligations` says so in its own contract
+ * and the database enforces it with a per-table `pg_advisory_xact_lock`, a
+ * `SELECT ... FOR UPDATE` and an `already_completed` early return. So an engine
+ * whose 20-second proof lapsed mid-settlement is still entitled to finish the
+ * work it committed, and the ONLY reason to stop is that somebody else should
+ * take over.
  *
- * Hand 3364829 (2026-08-29 02:35:08Z, table c4874708) is the proof: a clean
- * two-board showdown, pot 88.00 paid out correctly to the cent, bracketed by
- * hands at 02:31 and 02:37 whose rows both landed — and zero rows of its own.
- * Nothing on the platform noticed; it was found by hand-written SQL.
+ * Somebody else always can: the outbox row is authoritative and the projection
+ * worker is its successor. This budget is therefore not a safety limit, it is a
+ * handover time. Five seconds is one projection-worker poll interval, so the
+ * successor is already awake by the time this gives up, and it is short enough
+ * that a drain cannot hold the dealing loop's next-hand barrier for long.
  *
- * Three attempts with a linear backoff, then reportError. What still slips
- * through is caught by fn_bomb_pot_ledger_gaps, which reconcile_ledger_nightly
- * files as critical — the same "make it LOUD rather than impossible" shape
- * CLAUDE.md section 11.5 settled on for seat-stack exits.
+ * It bounds ONLY the post-fence case. While the engine can still mutate, the
+ * barrier stays exactly as unbounded as it has always been - see the loop in
+ * postHandTasks - because capping a healthy retry would file the critical alert
+ * on hands that were about to succeed, which is the defect
+ * `aDetectorMayNotCryWolf` was written for.
  */
-/**
- * MEASURED, THEN WIDENED (2026-08-29, same day).
- *
- * The first cut was 3 attempts with a LINEAR 250ms backoff — 750ms of cover in
- * total. Production then reported the rate: of 457 bomb hands settled after the
- * ledger became complete, 455 wrote their award units and **2 did not**. Both
- * survived three attempts.
- *
- * Three independent transient failures in under a second is not what 0.44%
- * looks like. A short outage window is: one blip a couple of seconds long
- * swallows all three attempts, because they all land inside it.
- *
- * So the backoff is exponential now and the window is about 4.75 seconds
- * (250ms, 750ms, 1.75s, 2s cap) instead of 750ms — long enough to outlast the
- * kind of blip that produced both losses, at no cost to a hand that succeeds
- * first time, which is every hand but two in 457.
- *
- * The cap matters as much as the growth: this runs per settled bomb hand, and
- * an unbounded doubling would have a failing table holding retry timers open
- * across several of its own subsequent hands.
- */
-const BOMB_LEDGER_WRITE_ATTEMPTS = 4;
-const BOMB_LEDGER_RETRY_BASE_MS = 250;
-const BOMB_LEDGER_RETRY_MAX_MS = 2_000;
+const POST_COMMIT_DRAIN_BUDGET_MS = 5_000;
 
 export abstract class ServerTableEngineSettlement extends ServerTableEngineDealing {
+  /**
+   * Stack and payout values are money authority. JavaScript's NaN/Infinity
+   * arithmetic is contagious, while `value || 0` silently turns NaN into a
+   * different balance. Quarantine this engine generation before either can
+   * enter the next hand or overwrite a durable seat.
+   */
+  private requireFiniteStackMoney(value: number, operation: string, userId: string): number {
+    if (Number.isFinite(value)) return value;
+    this.killForRestart('non_finite_stack_money');
+    throw new Error(
+      `Non-finite stack money refused during ${operation} for ${userId} at table ${this.tableId}`
+    );
+  }
+
   /**
    * RABBIT HUNT — the paid reveal. Dan 2026-08-25.
    *
@@ -323,7 +328,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     dealtInPlayerIds: string[],
     variant: string,
     handNumber: number
-  ): Promise<BBJDetectionResult | null> {
+  ): Promise<{ kind: 'main' | 'mini'; result: BBJDetectionResult } | null> {
     /* Refuse before claiming, never after. An arm burned on a hand that cannot
        produce a payout is an operator arming again and wondering why. */
     if (this.currentHandShowdownResults.length < 2) return null;
@@ -353,32 +358,59 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         reportError(error, 'ServerTableEngine.bbj_drill_claim_failed', { tableId: this.tableId });
         return null;
       }
-      const claim = (Array.isArray(data) ? data[0] : data) as { claimed?: boolean } | null;
+      const claim = (Array.isArray(data) ? data[0] : data) as {
+        claimed?: boolean;
+        kind?: string;
+      } | null;
       if (!claim?.claimed) return null;
 
+      /* WHICH JACKPOT THIS ARM ASKED FOR (2026-09-11). The arm row carries it
+         and the claim hands it back, because the engine cannot read the row
+         and must not guess: a mini drill taking the main branch would pay a
+         SHARE OF THE POOL for an arm that asked for a flat tier out of the
+         reserve. An arm written before the column existed answers 'main',
+         which is what it was. Anything unrecognised is treated as 'main' too
+         - the conservative reading, and the one every historical row means. */
+      const kind: 'main' | 'mini' = claim.kind === 'mini' ? 'mini' : 'main';
+
       console.warn(
-        `[ServerTableEngine:${this.tableId}] *** BBJ DRILL FIRED *** hand #${handNumber}. ` +
-          `This is a drill, not a real bad beat. The chips are real.`
+        `[ServerTableEngine:${this.tableId}] *** BBJ ${kind.toUpperCase()} DRILL FIRED *** ` +
+          `hand #${handNumber}. This is a drill, not a real bad beat. The chips are real.`
       );
-      EngineMetrics.bbjDrillsFiredTotal.inc(1);
+      /* EACH FAMILY'S OWN DRILL COUNTER. `bbjDrillsFiredTotal` is documented -
+         in engineInstruments and in the runbook - as the subtrahend in
+         `detected - drills = genuine bad beats`. The first cut of the mini
+         drill incremented it while incrementing the MINI's detected counter,
+         which made `bbj_hits_detected - bbj_drills_fired` under-count genuine
+         main bad beats by one per mini drill and go negative in a window where
+         minis were drilled and no main hit. Two counters, two arithmetics,
+         neither borrowing from the other. */
+      if (kind === 'mini') {
+        EngineMetrics.bbjMiniDrillsFiredTotal.inc(1);
+      } else {
+        EngineMetrics.bbjDrillsFiredTotal.inc(1);
+      }
 
       return {
-        hit: true,
-        loserUserId: loser.userId,
-        loserHand: {
-          ranking: loser.handRanking,
-          name: loser.handName,
-          kickers: loser.kickers ?? [],
+        kind,
+        result: {
+          hit: true,
+          loserUserId: loser.userId,
+          loserHand: {
+            ranking: loser.handRanking,
+            name: loser.handName,
+            kickers: loser.kickers ?? [],
+          },
+          winnerUserId: winner.userId,
+          winnerHand: {
+            ranking: winner.handRanking,
+            name: winner.handName,
+            kickers: winner.kickers ?? [],
+          },
+          dealtInPlayerIds,
+          variant,
+          qualifyingHandLabel: 'Drill',
         },
-        winnerUserId: winner.userId,
-        winnerHand: {
-          ranking: winner.handRanking,
-          name: winner.handName,
-          kickers: winner.kickers ?? [],
-        },
-        dealtInPlayerIds,
-        variant,
-        qualifyingHandLabel: 'Drill',
       };
     } catch (e) {
       reportError(e, 'ServerTableEngine.bbj_drill_claim_threw', { tableId: this.tableId });
@@ -439,9 +471,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
    */
   protected async handleHandCompleteEvent(
     event: HandEvent,
-    players: SeatedPlayer[]
+    players: SeatedPlayer[],
+    persistenceGeneration: number
   ): Promise<void> {
-    const wholeSettlement = this.settleCompletedHand(event, players);
+    const wholeSettlement = this.settleCompletedHand(event, players, persistenceGeneration);
     /* CHAIN, NEVER OVERWRITE (chip standard 2026-09-04). settleCompletedHand
        runs synchronously to completion on the common path - its only awaits
        are the insurance-shortfall alerts - so by the time it returns it has
@@ -466,7 +499,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     return wholeSettlement;
   }
 
-  private async settleCompletedHand(event: HandEvent, players: SeatedPlayer[]): Promise<void> {
+  private async settleCompletedHand(
+    event: HandEvent,
+    players: SeatedPlayer[],
+    persistenceGeneration: number
+  ): Promise<void> {
     // ═══════════════════════════════════════════════════════════════════
     // Bible V8 §1.9: SETTLEMENT PIPELINE — 15-step mandatory order
     //
@@ -622,7 +659,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       if (!verifyResult.valid) {
         reportError(
           verifyResult.violations.map((v) => v.message).join('; '),
-          'ServerTableEnginethistableId.Hand_thishandCount_FAILED_inte'
+          `ServerTableEngine.${this.tableId}.hand_${this.handCount}_failed_integrity`
         );
       }
     }
@@ -636,7 +673,21 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       const settlements: StackSettlement[] = [];
       for (const p of finalState.players) {
         const initial = this.atomicStackService.getStackWithVersion(this.tableId, p.user_id);
-        const delta = p.stack - initial.stack;
+        const finalStack = this.requireFiniteStackMoney(
+          p.stack,
+          'hand_settlement_final_stack',
+          p.user_id
+        );
+        const initialStack = this.requireFiniteStackMoney(
+          initial.stack,
+          'hand_settlement_initial_stack',
+          p.user_id
+        );
+        const delta = this.requireFiniteStackMoney(
+          finalStack - initialStack,
+          'hand_settlement_delta',
+          p.user_id
+        );
         if (delta !== 0) {
           settlements.push({ userId: p.user_id, delta });
         }
@@ -644,10 +695,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       if (settlements.length > 0) {
         const settleResult = this.atomicStackService.atomicSettle(this.tableId, settlements);
         if (!settleResult.success) {
-          reportError(
-            settleResult.errors.join('; '),
-            'ServerTableEnginethistableId.AtomicSettle_failed'
-          );
+          const refusal = new Error(settleResult.errors.join('; '));
+          reportError(refusal, `ServerTableEngine.${this.tableId}.atomic_settle_failed`);
+          this.killForRestart('atomic_stack_settlement_refused');
+          throw refusal;
         }
       }
     }
@@ -691,7 +742,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       // getState() returns copies (players spread, cards cloned), so the old
       // `enginePlayer.stack += payout` mutated a throwaway and the engine state
       // never moved — the same defect PR #97 fixed for run-it-twice. The
-      // database was always correct because syncStacks() persists
+      // database was always correct because the accepted-hand transaction persists
       // seatedPlayers, but every broadcast between here and the next hand read
       // the engine copy and therefore showed pre-insurance stacks.
       //
@@ -850,7 +901,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // The bounty is a player-to-player table-stack transfer (zero-sum,
     // chip-conserving); each payer pays only up to their remaining stack so
     // no chips are ever minted. Both the seated + engine stack copies are
-    // mutated here so syncStacks() in postHandTasks persists the result.
+    // mutated here so the accepted-hand transaction in postHandTasks persists the result.
     // ═══════════════════════════════════════════════════════════════════════
     const sevenDeuceEnabled = (this.tableInfo as any)?.seven_deuce_enabled === true;
     const sevenDeuceSawFlop = this.currentHandCommunityCards.length >= 3;
@@ -1072,10 +1123,26 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
          leave on. `fn_bbj_arm_drill` refuses a union pool outright (that is
          where the production jackpot lives) and any pool over 1,000.00. */
       let drillResult: typeof bbjResult | null = null;
+      /* WHICH JACKPOT THE ARM ASKED FOR (2026-09-11). Until today a drill was
+         always a MAIN drill, and its verdict took the main branch below - so
+         on a drill table the mini was never even asked. The drill is tried
+         precisely when the main rule refused, which is exactly the case the
+         mini exists to catch, so a hand that genuinely qualified for the mini
+         had it silently displaced. "One hand pays one jackpot" makes that the
+         right outcome; nothing made it a decision anybody had taken, and
+         nothing let an operator drill the mini instead. */
+      let drillKind: 'main' | 'mini' = 'main';
       if (!bbjResult.hit) {
-        drillResult = await this.claimBBJDrill(dealtInPlayerIds, variant, this.handCount);
+        const claimed = await this.claimBBJDrill(dealtInPlayerIds, variant, this.handCount);
+        if (claimed) {
+          drillResult = claimed.result;
+          drillKind = claimed.kind;
+        }
       }
-      const effectiveBbjResult = drillResult ?? bbjResult;
+      /* A MINI drill must NOT become a main jackpot. It falls through to the
+         else branch below, where it stands in for the mini's own detection -
+         same synthetic verdict, the mini's payout path, the mini's money. */
+      const effectiveBbjResult = drillKind === 'main' ? (drillResult ?? bbjResult) : bbjResult;
 
       if (effectiveBbjResult.hit) {
         const bbjResult = effectiveBbjResult;
@@ -1163,16 +1230,28 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
            can produce one payout of either kind and never both. The money is a
            flat amount per stakes tier out of `backup_balance` - a reserve that
            until now nothing spent - never out of the jackpot itself. */
-        const miniResult = detectMiniBBJHit(
-          this.currentHandShowdownResults,
-          this.currentHandWinnerIds,
-          variant,
-          this.currentHandPotSize,
-          this.tableInfo.big_blind,
-          dealtInPlayerIds.length,
-          dealtInPlayerIds,
-          { doubleBoard: this.currentHandCommunityCards2.length > 0 }
-        );
+        /* A MINI DRILL STANDS IN FOR THE MINI'S DETECTION, AND FOR NOTHING
+           ELSE (2026-09-11). Same construction as the main drill one branch
+           up: the showdown is real - real players, real board, real pot, real
+           chips out of the real reserve - and only the VERDICT is injected.
+           `miniRule` says `drill` rather than borrowing a real rule's name,
+           because every downstream reader of that field (the near-miss table,
+           the settlement log, the notification) would otherwise record a
+           synthetic verdict as `aces_full_or_better` and make a drill
+           indistinguishable from the thing it is drilling. */
+        const miniResult =
+          drillKind === 'mini' && drillResult
+            ? { ...drillResult, miniRule: 'drill' as const }
+            : detectMiniBBJHit(
+                this.currentHandShowdownResults,
+                this.currentHandWinnerIds,
+                variant,
+                this.currentHandPotSize,
+                this.tableInfo.big_blind,
+                dealtInPlayerIds.length,
+                dealtInPlayerIds,
+                { doubleBoard: this.currentHandCommunityCards2.length > 0 }
+              );
 
         if (miniResult.hit) {
           const miniTierId = getTierIdForBB(this.tableInfo.big_blind);
@@ -1183,6 +1262,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           );
           this.currentHandMiniBBJHit = miniResult;
           this.currentHandMiniBBJTierId = miniTierId;
+          /* The mini's OWN detected counter (2026-09-11). It must not touch
+             the main's: `bbjHitsDetectedTotal` is documented as one half of
+             the difference `detected - paid`, and a mini landing in it would
+             be read as a main jackpot that never delivered. */
+          EngineMetrics.bbjMiniHitsDetectedTotal.inc(1);
 
           /* The same event the main jackpot emits, carrying `kind: 'mini'` so
              a client can show a smaller celebration - and so an older client,
@@ -1211,6 +1295,14 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // losing hand and miss on exactly one condition? Teaching the rules
         // in the moment beats a rules page nobody opens. Display only: this
         // branch moves no money and cannot gate a payout.
+        /* THE MAIN BAR IS INSIDE THE MINI BAR, so a hand that nearly won the
+           MAIN jackpot nearly won the mini too, for the same reason. Without
+           this flag settlement wrote TWO bbj_near_misses rows and emitted TWO
+           bbj_near_miss hub events for one hand - the player was toasted
+           twice, once "would have qualified" and once "would have taken the
+           Mini", and every per-hand near-miss count double-counted
+           not_enough_players, pot_too_small and winner_not_quads. */
+        let mainNearMissReported = false;
         try {
           const nearMiss = detectBBJNearMiss(
             this.currentHandShowdownResults,
@@ -1222,6 +1314,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             bbjBoard
           );
           if (nearMiss.nearMiss) {
+            mainNearMissReported = true;
             console.log(
               `[ServerTableEngine:${this.tableId}] BBJ near miss (${nearMiss.reason}): ` +
                 `${nearMiss.userId} held ${nearMiss.handName}`
@@ -1261,6 +1354,72 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           // A cosmetic banner must never break settlement.
           console.warn(`[ServerTableEngine:${this.tableId}] BBJ near-miss check failed:`, nmErr);
         }
+
+        /* THE MINI'S OWN NEAR MISS (phase 3, 2026-09-11). The check above only
+           ever judged the MAIN rule, and only for a loser who had already
+           cleared the MAIN hand bar - so the mini, which exists to catch the
+           beats the main turns away, had no near-miss record at all. Measured
+           that day: 50 near misses in seven days, ZERO about the mini, and 13
+           of them `both_cards_must_play`, a rule the mini DROPS. Its rate was
+           unmeasurable and its tuning guesswork.
+
+           Reasons are prefixed `mini_`, the same shape settlement already uses
+           for `mini_refused:<reason>`, so one table carries both jackpots and a
+           query can always tell them apart. Display and record only: like the
+           main's, this branch moves no money and cannot gate a payout. */
+        try {
+          /* Only when the main said nothing. A loser who cleared the MAIN bar
+             has necessarily cleared the MINI bar (hold'em AAAJJ+ with an ace
+             in hand is a subset of aces-full-or-better; Omaha KKKK is a subset
+             of any quads), and `miniMinPlayersDealt` ships equal to the main's,
+             so the two detectors agree on every shared gate. The mini's record
+             is the one that adds something exactly when the main is silent -
+             the beats the main rule turns away, which is what the mini is for. */
+          const miniNearMiss = mainNearMissReported
+            ? { nearMiss: false as const }
+            : detectMiniBBJNearMiss(
+                this.currentHandShowdownResults,
+                this.currentHandWinnerIds,
+                variant,
+                this.currentHandPotSize,
+                this.tableInfo.big_blind,
+                dealtInPlayerIds.length,
+                { doubleBoard: this.currentHandCommunityCards2.length > 0 }
+              );
+          if (miniNearMiss.nearMiss) {
+            console.log(
+              `[ServerTableEngine:${this.tableId}] MINI BBJ near miss (${miniNearMiss.reason}): ` +
+                `${miniNearMiss.userId} held ${miniNearMiss.handName}`
+            );
+            void recordBBJNearMiss({
+              tableId: this.tableId,
+              clubId: this.tableInfo?.club_id ?? null,
+              handNumber: this.handCount,
+              variant,
+              bigBlind: this.tableInfo?.big_blind ?? null,
+              potSize: this.currentHandPotSize,
+              playersDealt: dealtInPlayerIds.length,
+              userId: miniNearMiss.userId,
+              handName: miniNearMiss.handName,
+              reason: miniNearMiss.reason,
+              message: miniNearMiss.message,
+            }).catch(() => undefined);
+            this.hub?.emitEvent(this.tableId, {
+              type: 'bbj_near_miss',
+              table_id: this.tableId,
+              hand_number: this.handCount,
+              user_id: miniNearMiss.userId,
+              hand_name: miniNearMiss.handName,
+              reason: miniNearMiss.reason,
+              message: miniNearMiss.message,
+            });
+          }
+        } catch (nmErr) {
+          console.warn(
+            `[ServerTableEngine:${this.tableId}] MINI BBJ near-miss check failed:`,
+            nmErr
+          );
+        }
       }
     }
 
@@ -1290,8 +1449,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // this method and every post-hand task are done reading this hand's
     // capture fields.
     const priorBarrier = this.postHandTasksPromise;
-    const postTasks = this.postHandTasks(players).catch((err) => {
-      reportError(err, 'ServerTableEnginethistableId.Posthand_error');
+    const postTasks = this.postHandTasks(players, persistenceGeneration).catch((err) => {
+      this.finishTerminalBoundaryPersistence(persistenceGeneration, false);
+      reportError(err, `ServerTableEngine.${this.tableId}.posthand_error`);
       // A rejected settlement is not a completed hand. Publish the terminal
       // fence synchronously so the dealing loop cannot clear this barrier and
       // reload the pre-hand seats as if the write had succeeded.
@@ -1405,7 +1565,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
   // POST-HAND TASKS
   // ═════════════════════════════════════════════════════════════════════════════
 
-  protected async postHandTasks(players: SeatedPlayer[]): Promise<void> {
+  protected async postHandTasks(
+    players: SeatedPlayer[],
+    persistenceGeneration: number
+  ): Promise<void> {
     /* ═══ THIS HAND'S RECORD IS CAPTURED BEFORE THE FIRST AWAIT (2026-08-31)
        Everything below used to read the live `this.currentHand*` fields and
        `this.handCount` between awaited database calls. Those fields belong to
@@ -1450,6 +1613,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       miniBbjHit: this.currentHandMiniBBJHit,
       miniBbjTierId: this.currentHandMiniBBJTierId,
       dealtStacks: new Map(this.currentHandDealtStacks),
+      seatGenerations: new Map(this.currentHandSeatGenerations),
       // Capture bank values before settlement yields, just like the hand's
       // money and cards. A late continuation must not read the next hand's bank.
       timeBanks: new Map(
@@ -1538,6 +1702,45 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       leave_pending: 'seats',
       table_unlock: 'seats',
     };
+    /* ═══ A BOUNDARY IS NOT LOST TO ONE SLOW ROUND TRIP (2026-09-11) ══════
+       How many EXTRA attempts a step gets when it fails TRANSIENTLY. Absent
+       means none, which is every step's behaviour today and stays the default
+       - a retry is opt-in, per step, and only where re-running the step is
+       idempotent BY CONSTRUCTION rather than by inspection. Replaying an
+       executed money write is the hazard CLAUDE.md's production DDL policy
+       rule 6 names, and the shared Supabase client refuses to retry a timeout
+       for exactly that reason.
+
+       `leave_pending` qualifies: its first act is to re-read which seats still
+       carry `leave_pending = true`, and each cash-out is one transaction
+       behind `atomic_seat_cashout_locked`. A seat that already left is no
+       longer in the answer, so a second attempt cannot pay it twice - it
+       cashes out whoever is still waiting and nobody else.
+
+       Drift incident bf4ef6e0 is why: `[postHandTasks.step_failed.
+       leave_pending] Error: supabase_timeout`, six times, on the flat 15s
+       client deadline (services/supabase/client.ts). One stall discarded the
+       whole boundary - every departure AND the announced seat moves beside
+       them - for want of a second try 250ms later. */
+    const STEP_RETRY: Record<string, number> = {
+      leave_pending: 2,
+      /* THE RECORD OF THE HAND IS WORTH THE SAME TWO WAITS AS THE SEATS
+         (2026-09-12). `hand_history` had no budget at all, so `attempts > 0`
+         was true on the first throw and every refusal was terminal - including
+         the one the database raises specifically to ask for another attempt.
+         Production, the two hours to 11:00 on 2026-09-12: 240 then 172 hands
+         whose history was never written, every one of them
+         `atomic hand commit refused (atomic_hand_rolled_back):
+         F06_RETRY_CANONICAL_LANE`, which is a contended advisory lock during
+         tournament terminal settlement and nothing else. The hand had already
+         been played; only its record was lost. */
+      hand_history: 2,
+    };
+    /* Two short waits, inside one hand boundary. The felt already holds for
+       2.1-3.5s between hands, so 250ms + 1s costs nothing a player can see,
+       and a stall longer than that is not a blip. */
+    const STEP_RETRY_BACKOFF_MS = [250, 1_000];
+
     const lanesCanOverlap =
       !snap.bbjHit?.hit && !snap.miniBbjHit && snap.insuranceSettlements.length === 0;
     const lanes: Record<'record' | 'seats', Promise<void>> = {
@@ -1561,8 +1764,30 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         if (!this.lifecycleCanMutate()) return;
         const started = performance.now();
         let outcome = 'returned';
+        const budget = STEP_RETRY[stepName] ?? 0;
+        let attempts = 0;
         try {
-          await fn();
+          for (;;) {
+            attempts++;
+            try {
+              await fn();
+              if (attempts > 1) outcome = 'retried';
+              break;
+            } catch (err) {
+              /* Only a database that BLINKED is worth another try, and only
+                 while this generation still owns the table. Every refusal the
+                 database gives on purpose is a decision, not a queue, and it
+                 falls straight through to the report below exactly as before. */
+              if (
+                attempts > budget ||
+                !ServerTableEngineBase.isTransientDbError(err) ||
+                !this.lifecycleCanMutate()
+              ) {
+                throw err;
+              }
+              await this.sleep(STEP_RETRY_BACKOFF_MS[attempts - 1] ?? 1_000);
+            }
+          }
         } catch (err) {
           outcome = 'threw';
           reportError(err, `postHandTasks.step_failed.${stepName}`, {
@@ -1573,11 +1798,15 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             await raiseFinancialAlert(
               'critical',
               `postHandTasks.${stepName}_failed`,
-              `Post-hand step ${stepName} threw for hand #${snap.handNumber}; later steps continued`,
+              `Post-hand step ${stepName} threw for hand #${snap.handNumber}` +
+                (attempts > 1 ? ` after ${attempts} attempts` : '') +
+                '; later steps continued',
               {
                 table_id: this.tableId,
                 hand_number: snap.handNumber,
                 error: describeError(err),
+                attempts,
+                retry_budget: budget,
               }
             );
           }
@@ -1653,6 +1882,47 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       }
     }
 
+    /* ═══ A TOURNAMENT SEAT STACK IS A WHOLE CHIP (2026-09-11) ══════════════
+       `tournament_players.chips` is an INTEGER column and `table_seats.stack`
+       is numeric(15,2). The authoritative commit writes both from one target
+       and then asserts they agree, so a fractional target is refused whole -
+       `tournament % hand % did not durably sync every final seat stack` - and
+       this generation is killed with the hand behind it. 56 hands across 15
+       tables died that way between 00:00 and 01:37 UTC today (drift incident
+       07ebac1d), and 500 more on 2026-09-08/09 under the older sentence
+       `accepted tournament hand produced fractional stack ...`.
+
+       The inlet was the auto-escalated blind level and it is closed at source
+       (tournament/blindEscalation.ts). This says the invariant OUT LOUD at the
+       boundary where the payload is built, so the next inlet arrives named -
+       seat, field and value - instead of as a generic database sentence after
+       the hand is already gone. It does not repair: a tournament hand is held
+       to exact conservation, so rounding a seat here would only exchange this
+       refusal for a conservation refusal. See tournamentWholeChips.ts. */
+    if (this.isTournamentTable()) {
+      const whole = checkTournamentWholeChips(
+        players.map((p) => ({
+          user_id: p.user_id,
+          stack: cents(p.stack),
+          stack_before: cents(snap.dealtStacks.get(p.user_id) ?? p.stack),
+        }))
+      );
+      if (!whole.ok) {
+        const detail =
+          `tournament hand #${snap.handNumber} at table ${this.tableId} carries ` +
+          `${whole.offenders.length} fractional chip value(s) the roster column cannot store: ` +
+          `${describeFractionalSeats(whole.offenders)} - the database will refuse this hand whole`;
+        reportError(new Error(`[ServerTableEngine] ${detail}`), 'Tournament.fractional_seat_stack');
+        await raiseFinancialAlert('critical', 'Tournament.fractional_seat_stack', detail, {
+          table_id: this.tableId,
+          tournament_id: this.tableInfo?.tournament_id ?? null,
+          hand_number: snap.handNumber,
+          offenders: whole.offenders,
+          fraction_total: whole.fractionTotal,
+        });
+      }
+    }
+
     // A conservation refusal is an authoritative settlement fault.  Keep the
     // table connected but parked; no history, rake, BBJ, add-on, elimination
     // wake or unlock may run for a hand whose accepted stacks do not exist.
@@ -1662,16 +1932,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       return;
     }
 
-    // ─── ROUND 38 + 43 FIX: REORDERED — hand_history FIRST, then rake/BBJ ───
-    // Round 38: rake_records.hand_id needed the v_handHistoryId.
-    // Round 43: club_wallet_transactions.related_id (rake_in audit row) also
-    // needs the hand UUID to link the audit ledger to the source hand. So
-    // logHandHistory must precede logRakeCollection / logBBJCollection.
-    /* ─── THE HAND'S IDENTITY IS DECIDED HERE, NOT BY THE INSERT (2026-09-07) ──
-       `v_handHistoryId` below still means what it always meant: the row is IN
-       the database. It is null while the hand is only in the retry queue, and
-       the three things that need the row to exist - the `hand_history_saved`
-       broadcast, the award-unit ledger, the integrity feed - keep reading it.
+    // ─── THE HAND'S IDENTITY IS DECIDED HERE, NOT BY THE DATABASE ──────────
+    /* `v_handHistoryId` below is populated only from the authoritative commit
+       receipt. The three consumers that need a durable row - replay broadcast,
+       stats facts and the integrity feed - therefore never run ahead of it.
 
        `v_handId` is a different question: WHICH hand is this. The money path
        needs that answer before the row exists, and until today it did not have
@@ -1695,8 +1959,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
        Minting the uuid here removes the null instead of compensating for it
        (CLAUDE.md 10.12). `hand_history.id` has no incoming foreign key from
        `rake_records`, `rake_attributions` or `bbj_contributions`, so the
-       booking may name the hand before the row lands - and the row, whenever
-       it lands, lands under exactly this id. */
+       booking and history land together under exactly this id. */
     const v_handId = randomUUID();
     // A response-body timeout may replay the exact RPC. Time is part of the
     // accepted-hand payload hash, so freeze it once; recomputing Date.now()
@@ -1707,9 +1970,26 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     let authoritativeCommitSucceeded = false;
     const settlementLeaseAuthority = this.getEngineLeaseAuthority();
     const durablePostCommitObligations = settlementLeaseAuthority?.verified === true;
+    const isDiamondCash = this.tableInfo?.arena?.asset === 'diamonds';
     await runStep('hand_history', true, async () => {
       if (this.tableInfo) {
         const tableInfo = this.tableInfo;
+        assertDiamondAcceptedHand({
+          arena: tableInfo.arena,
+          verifiedLease: durablePostCommitObligations,
+          variant: snap.variant || tableInfo.game_variant || 'nlh',
+          rake: snap.rake,
+          bbj: snap.bbjFee,
+          inflow: snap.insuranceNet,
+          insuranceCount: snap.insuranceSettlements.length,
+          amounts: [
+            snap.potSize,
+            ...snap.contributions.values(),
+            ...snap.returnedUncalled.values(),
+            ...playersForRecord.map((player) => player.stack),
+            ...snap.dealtStacks.values(),
+          ],
+        });
         // ── SECURITY 2026-08-17: apply the auto-muck gate to the WRITE ──
         //
         // `currentHandShowdownResults` is built in ServerTableEngineHandEvents
@@ -1821,25 +2101,27 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               };
         });
 
-        const dailyMissionEvents = buildDailyMissionHandEvents({
-          dealtPlayerIds: snap.holeCards.keys(),
-          roster: players.map((player) => ({
-            userId: player.user_id,
-            isHorse: player.is_horse,
-          })),
-          winners: snap.winners,
-          showdownResults: snap.showdownResults,
-          pots: snap.pots,
-          perPotAwards: snap.perPotAwards,
-        });
+        const dailyMissionEvents = isDiamondCash
+          ? []
+          : buildDailyMissionHandEvents({
+              dealtPlayerIds: snap.holeCards.keys(),
+              roster: players.map((player) => ({
+                userId: player.user_id,
+                isHorse: player.is_horse,
+              })),
+              winners: snap.winners,
+              showdownResults: snap.showdownResults,
+              pots: snap.pots,
+              perPotAwards: snap.perPotAwards,
+            });
 
         /* THE BOMB BREAKDOWN TRAVELS WITH THE HAND (2026-09-06).
            These used to be written after the hand row, unawaited, so the
            breakdown could be the half that did not land - 3 of 125 bomb pots
            in one measured hour had no award units at all. Handed to
            logHandHistory they commit in the same transaction as the row they
-           describe, through fn_ca_insert_hand_with_awards, in the same single
-           request the hot path always cost. */
+           describe, through fn_ca_commit_hand_settlement, with stacks and the
+           projection outbox. */
         const bombAwardUnits =
           snap.bombPot && snap.perPotAwards.length > 0
             ? snap.perPotAwards.map((a) => ({
@@ -1856,9 +2138,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                    carries no award units. A bomb hand that produced winners
                    but an empty per-pot award array (the 'bomb_award_units_
                    empty' defect reported below) would therefore be refused
-                   twenty times by the retry queue and lost - hand, rake link,
-                   facts and all - which is worse than the missing breakdown
-                   the guard exists to prevent. The winners list IS the money
+                   by the authoritative transaction - hand, stacks, rake link,
+                   facts and all. The winners list IS the money
                    that left the pot: on 966 of 966 bomb hands measured over
                    six hours its amounts summed to the distributable pot to the
                    cent. So the breakdown is derived from it, one unit per
@@ -1877,7 +2158,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         const contributionRecord = Object.fromEntries(snap.contributions.entries());
         const returnedUncalledRecord = Object.fromEntries(snap.returnedUncalled.entries());
         const insuranceRecords =
-          !this.isTournamentTable() && tableInfo.club_id
+          !isDiamondCash && !this.isTournamentTable() && tableInfo.club_id
             ? snap.insuranceSettlements.map((settlement) => ({
                 club_id: tableInfo.club_id,
                 player_id: settlement.playerId,
@@ -1902,16 +2183,20 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         const postCommitObligations = durablePostCommitObligations
           ? {
               version: 1 as const,
-              time_banks: players.map((player) => ({
-                user_id: player.user_id,
-                uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, player.user_id),
-                seconds_remaining: this.timeBankEngine.getRemainingSeconds(
-                  this.tableId,
-                  player.user_id
-                ),
-              })),
+              time_banks: playersForRecord.map((player) => {
+                const timeBank = snap.timeBanks.get(player.user_id);
+                if (!timeBank) {
+                  throw new Error('atomic hand commit refused (missing_time_bank_snapshot)');
+                }
+                return {
+                  ...requireHandSeatGeneration(snap.seatGenerations, player.user_id),
+                  user_id: player.user_id,
+                  uses_remaining: timeBank.time_bank_uses_remaining,
+                  seconds_remaining: timeBank.time_bank_remaining,
+                };
+              }),
               rake:
-                !this.isTournamentTable() && snap.rake > 0 && tableInfo.club_id
+                !isDiamondCash && !this.isTournamentTable() && snap.rake > 0 && tableInfo.club_id
                   ? {
                       club_id: tableInfo.club_id,
                       amount: snap.rake,
@@ -1925,7 +2210,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                     }
                   : null,
               bbj_contribution:
-                !this.isTournamentTable() && snap.bbjFee > 0 && tableInfo.club_id
+                !isDiamondCash && !this.isTournamentTable() && snap.bbjFee > 0 && tableInfo.club_id
                   ? {
                       club_id: tableInfo.club_id,
                       amount: snap.bbjFee,
@@ -1933,7 +2218,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                     }
                   : null,
               promo_playthrough:
-                !this.isTournamentTable() && tableInfo.club_id
+                !isDiamondCash && !this.isTournamentTable() && tableInfo.club_id
                   ? [...snap.contributions.entries()]
                       .filter(([uid, amount]) => Boolean(uid) && amount > 0)
                       .map(([uid, amount]) => ({
@@ -1943,15 +2228,17 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                       }))
                   : [],
               insurance: insuranceRecords,
-              pending_addons: !this.isTournamentTable()
-                ? { enabled: true as const, max_buy_in: this.getMaxBuyIn() }
-                : null,
+              pending_addons:
+                !isDiamondCash && !this.isTournamentTable()
+                  ? { enabled: true as const, max_buy_in: this.getMaxBuyIn() }
+                  : null,
             }
           : undefined;
         const commitAuthoritativeHand = () =>
           logHandHistory({
             tableId: this.tableId,
             handId: v_handId,
+            seatGenerations: snap.seatGenerations,
             bombAwardUnits,
             nitGame: tableInfo.nit_game === true,
             // THE FLOOR TRAVELS WITH THE HAND (2026-09-06). A horse at a
@@ -1993,6 +2280,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             // elimination sweep credit a knockout to the winner(s) of the pot
             // that held the busted player's last chips.
             pots: snap.pots,
+            // Keep later-pot and hi/lo identities without changing paid totals.
+            // Written atomically with the same accepted hand, never rebuilt later.
+            perPotAwards: this.isTournamentTable() ? snap.perPotAwards : undefined,
             /* THE ROSTER IS THE RLS KEY (2026-09-04). hand_history is readable by
              `players @> [{userId}]`, so a hand whose roster is missing a
              participant is a hand that participant can never open, and one
@@ -2064,6 +2354,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                  two fields are the source of the non-cent rows in
                  club_member_table_state / club_member_daily_stats. */
               stacks: playersForRecord.map((p) => ({
+                ...requireHandSeatGeneration(snap.seatGenerations, p.user_id),
                 user_id: p.user_id,
                 stack: cents(p.stack),
                 stack_before: cents(snap.dealtStacks.get(p.user_id) ?? p.stack),
@@ -2097,6 +2388,38 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           }
         } catch (err) {
           const message = describeError(err);
+          /* ═══ THE KILL MUST NOT PRE-EMPT THE RETRY BUDGET (2026-09-12) ═════
+             `killForRestart` below sets `terminal = true; running = false`
+             SYNCHRONOUSLY, and it used to run for every refusal - including
+             the one the database raises specifically to ask for another
+             attempt. `runStep` decides whether to retry AFTER this body
+             returns, and its third condition is `!this.lifecycleCanMutate()`,
+             which is false the instant this generation is terminal. So the
+             budget `hand_history` was given could never be spent: the step
+             killed the engine on attempt 1 and the retry loop then refused to
+             run attempt 2 because the engine was dead. A retry that is
+             unreachable is not a retry.
+
+             So a refusal the database rolled back whole, for a reason Postgres
+             defines as "run it again", leaves here untouched: no kill, no
+             critical alert, no terminal loop phase. `runStep` re-runs this
+             step - the body above is pure, and every write it performs goes
+             through one idempotent RPC keyed on (table_id, hand_number). If
+             the budget runs out, the throw reaches `await lanes.record`,
+             `authoritativeCommitSucceeded` is still false, and the existing
+             `authoritative_hand_commit_not_proved` kill and the step's own
+             `postHandTasks.hand_history_failed` critical alert both stand.
+
+             Production, 2026-09-12 10:04:25Z onward: 1,021 of 1,023 semantic
+             refusals were this, and every one killed a live table. */
+          if (ServerTableEngineBase.isRolledBackSerializationRefusal(err)) {
+            this.setLoopPhase('settlement_lane_contended');
+            reportError(err, 'ServerTableEngine.authoritative_hand_lane_contended', {
+              tableId: this.tableId,
+              handNumber: snap.handNumber,
+            });
+            throw err;
+          }
           const semantic = message.includes('atomic hand commit refused');
           const alertCode = semantic
             ? 'ServerTableEngine.authoritative_hand_semantic_refusal'
@@ -2136,6 +2459,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         }
         v_handHistoryId = result.handId;
         authoritativeCommitSucceeded = true;
+        this.finishTerminalBoundaryPersistence(persistenceGeneration, true);
 
         // The accepted transaction and its durable obligation envelope remain
         // valid even if the response crossed our proof deadline. Everything
@@ -2156,31 +2480,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           if (!this.lifecycleCanMutate()) return;
         }
 
-        // ── AWARD-UNIT LEDGER (2026-08-28, spec §16.2/§17) ──────────────────
-        // One row per (pot layer, board, hi/lo side, winner) for every
-        // MULTI-BOARD bomb hand — the settlements that are genuinely hard to
-        // reconstruct from the merged winners list. Amounts are the same
-        // post-rake display shares perPotAwards broadcast. Idempotency is the
-        // table's UNIQUE key (hand + pot + board + side + winner): a retried
-        // insert conflicts and does nothing, exactly as spec §17.2 demands.
-        // Fire-and-forget: the ledger narrates money that logHandHistory has
-        // already recorded; it must never be able to fail a hand.
-        // SCOPE 2026-08-28: EVERY bomb hand, not only multi-board ones. The
-        // first cut gated on board_count >= 2 because that is where the
-        // reconstruction is hardest, but it made the ledger a partial record
-        // of a feature — `v_bomb_pot_outcomes` could not tell a single-board
-        // bomb from a hand that never happened, and a single-board bomb with
-        // three side pots is exactly as hard to rebuild from the merged
-        // winners list. `board` is 1 for those, which the UNIQUE key already
-        // accommodates.
-        // DEFENSIVE 2026-08-31: a bomb hand that produced WINNERS but no
-        // per-pot awards writes nothing here and looks, to
-        // `fn_bomb_pot_ledger_gaps` and to the hourly repair sweep, exactly
-        // like a transport loss — except no retry and no backfill can ever
-        // close it, because the units were never computed in the first place.
-        // The condition below is silent about that case by construction (it
-        // just does not run), so say it out loud instead of leaving a gap the
-        // sweep will chase forever.
+        // Award-unit evidence committed inside the authoritative transaction
+        // above. If the detailed per-pot array was unexpectedly absent, the
+        // winner-derived fallback preserved the money narrative; report that
+        // fidelity degradation without creating a second writer.
         if (
           v_handHistoryId &&
           snap.bombPot &&
@@ -2191,72 +2494,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             new Error(
               `[BombPot] hand ${snap.handNumber} settled with ` +
                 `${snap.winners?.length ?? 0} winner(s) but an EMPTY per-pot award ` +
-                'array - no award units can be written and none can be reconstructed'
+                'array - authoritative award units were reconstructed from aggregate winners'
             ),
             'ServerTableEngine.bomb_award_units_empty'
           );
         }
-        if (v_handHistoryId && snap.bombPot && snap.perPotAwards.length > 0) {
-          const ledgerRows = snap.perPotAwards.map((a) => ({
-            hand_history_id: v_handHistoryId,
-            table_id: this.tableId,
-            hand_number: snap.handNumber,
-            pot_index: a.potIndex,
-            board: a.board ?? 1,
-            side: a.low ? 'low' : 'high',
-            user_id: a.userId,
-            amount: a.amount,
-            hand_name: a.hand?.name ?? null,
-          }));
-          // DURABILITY 2026-08-29: see BOMB_LEDGER_WRITE_ATTEMPTS above. Still
-          // fire-and-forget — nothing here is awaited and nothing here can fail
-          // the hand — but a lost row now costs three attempts to lose, and the
-          // third failure is reported rather than logged to a host nobody reads.
-          const handNumberForLedger = snap.handNumber;
-          const writeAwardUnits = async (): Promise<void> => {
-            let lastMessage = 'unknown error';
-            for (let attempt = 1; attempt <= BOMB_LEDGER_WRITE_ATTEMPTS; attempt++) {
-              const { error } = await supabase.from('bomb_pot_award_units').upsert(ledgerRows, {
-                onConflict: 'hand_history_id,pot_index,board,side,user_id',
-                ignoreDuplicates: true,
-              });
-              if (!error) return;
-              lastMessage = error.message;
-              if (attempt < BOMB_LEDGER_WRITE_ATTEMPTS) {
-                // Exponential, capped: 250ms, 750ms, 1.75s. Was linear
-                // (250/500), which put all three attempts inside the first
-                // second and so inside the same blip. See the constants above
-                // for the production rate that motivated the change.
-                const backoff = Math.min(
-                  BOMB_LEDGER_RETRY_BASE_MS * (2 ** attempt - 1),
-                  BOMB_LEDGER_RETRY_MAX_MS
-                );
-                await new Promise((resolve) => setTimeout(resolve, backoff));
-              }
-            }
-            reportError(
-              new Error(
-                `[BombPot] award-unit ledger write failed after ${BOMB_LEDGER_WRITE_ATTEMPTS} ` +
-                  `attempts for hand ${handNumberForLedger} (${ledgerRows.length} units): ` +
-                  lastMessage
-              ),
-              'ServerTableEngine.bomb_award_ledger_write_failed'
-            );
-          };
-          /* LAST RESORT ONLY (2026-09-06). The units are now written inside
-             the hand's own transaction above, so by the time we get here they
-             already exist and this upsert conflicts and does nothing. It is
-             kept for exactly one case: a hand row that reached the database
-             through the background retry queue, which replays a stored row and
-             has no units to carry. Anything it actually writes is therefore a
-             signal that the atomic path did not run - not routine traffic. */
-          if (!result.wroteAwardUnits) {
-            void writeAwardUnits().catch((err: unknown) =>
-              reportError(err, 'ServerTableEngine.bomb_award_ledger_write_threw')
-            );
-          }
-        }
-
         // ── Dan 2026-08-15 (item 3): tell the clients the hand's row id ──
         //
         // The discrete `hand_complete` event fires earlier in this file, and
@@ -2343,7 +2585,34 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
          absent count as "read to find out". */
       let resolvedAddOnCount: number | undefined;
       this.setLoopPhase('settlement_post_commit_obligations');
-      while (!obligationsApplied && this.lifecycleCanMutate()) {
+      /* THE DRAIN DOES NOT NEED THE LEASE; THE REFLECTION BELOW STILL DOES
+       * (2026-09-12).
+       *
+       * This loop used to be gated on `lifecycleCanMutate()` - a DEALER-LEASE
+       * check - around a call whose contract explicitly disclaims the lease:
+       * "This call deliberately carries no dealer lease: once the exact
+       * settlement transaction commits, completing its frozen obligations is
+       * authorized by the durable hand receipt, not by whichever process
+       * happens to resume it."
+       *
+       * So the one case the barrier exists for - a hand committed by an engine
+       * whose proof expired while the settlement was in flight - was the exact
+       * case in which the loop body never ran. `attempt` stayed 0, and the
+       * give-up branch below filed a CRITICAL financial alert reading "after 0
+       * attempt(s)": an alarm about abandoning an envelope this process had
+       * never once tried to apply. 935 of 949 such alerts all-time carried
+       * `attempts: 0`, 414 of them in the eight hours of the 2026-09-12 lease
+       * outage, when every engine in the fleet was losing its proof every 20
+       * seconds.
+       *
+       * The lease term is replaced by a handover budget, and only for the
+       * post-fence case: while this engine can still mutate the barrier is
+       * unbounded exactly as before. `postCommitStateCanReflect` below is
+       * re-read from `lifecycleCanMutate()` and is UNCHANGED - the drain loses
+       * the lease term, the reflection never does. */
+      const drainDeadline = Date.now() + POST_COMMIT_DRAIN_BUDGET_MS;
+      const mayStillDrain = (): boolean => this.lifecycleCanMutate() || Date.now() < drainDeadline;
+      while (!obligationsApplied && mayStillDrain()) {
         attempt++;
         try {
           const outcome = await processHandPostCommitObligations(v_handHistoryId);
@@ -2387,10 +2656,20 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
              What moved is the FINANCIAL ALERT: it now fires only where the
              loop actually abandons the envelope - see `if (!obligationsApplied)`
              below - which is the condition its message has always described. */
-          if (this.lifecycleCanMutate()) {
-            this.markProgress();
-            await this.sleep(Math.min(150 * 2 ** Math.min(attempt - 1, 5), 5_000));
-          }
+          /* The backoff runs post-fence too, or the budget above buys exactly
+             one attempt: this was also gated on `lifecycleCanMutate()`, so an
+             engine past its proof slept zero and spun its whole handover
+             window into one tight retry. `markProgress` writes local watchdog
+             state only - no seat, no chip, no row - and on an engine that has
+             already been killed for restart it is a no-op the watchdog never
+             reads. The sleep is capped by what is left of the handover so the
+             ceiling really is the budget. */
+          this.markProgress();
+          const backoffMs = Math.min(150 * 2 ** Math.min(attempt - 1, 5), 5_000);
+          const handoverLeftMs = Math.max(0, drainDeadline - Date.now());
+          await this.sleep(
+            this.lifecycleCanMutate() ? backoffMs : Math.min(backoffMs, handoverLeftMs)
+          );
         }
       }
       postCommitStateCanReflect = this.lifecycleCanMutate();
@@ -2485,6 +2764,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     await runStep('rake_distribution', true, async () => {
       if (
         !durablePostCommitObligations &&
+        !isDiamondCash &&
         !this.isTournamentTable() &&
         snap.rake > 0 &&
         this.tableInfo?.club_id
@@ -2566,16 +2846,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // Round 44: pass the hand id so bbj_contributions.hand_id links to
     // hand_history (consistent with rake_records and club_wallet_transactions).
     //
-    // 2026-09-07: that id is now v_handId, minted at settlement, rather than
-    // v_handHistoryId, which is null until the row comes back. THIS IS THE
-    // ROOT OF `FeeReconciler.bbj_unlinkable`. A drop banked while the hand
-    // was still in the retry queue wrote `hand_id => NULL`, and the alert that
-    // then fired said a contribution could not be tied to a hand - which was
-    // true, and was never the contribution's fault. Same hand, same id,
-    // whenever its row arrives.
+    // `v_handId` is minted before the atomic commit. The BBJ record and
+    // hand_history therefore share one identity and cannot become unlinkable.
     await runStep('bbj_contribution', true, async () => {
       if (
         !durablePostCommitObligations &&
+        !isDiamondCash &&
         !this.isTournamentTable() &&
         snap.bbjFee > 0 &&
         this.tableInfo?.club_id
@@ -2638,7 +2914,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // but never surface to the table (the wager is durably in rake_records above,
     // and the next hand's accrual is additive so nothing is lost permanently).
     await runStep('promo_playthrough', false, async () => {
-      if (!durablePostCommitObligations && !this.isTournamentTable() && this.tableInfo?.club_id) {
+      if (
+        !durablePostCommitObligations &&
+        !isDiamondCash &&
+        !this.isTournamentTable() &&
+        this.tableInfo?.club_id
+      ) {
         const promoClubId = this.tableInfo.club_id;
         for (const [uid, amt] of snap.contributions.entries()) {
           if (!uid || amt <= 0) continue;
@@ -2668,6 +2949,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     await runStep('insurance_ledger', true, async () => {
       if (
         !durablePostCommitObligations &&
+        !isDiamondCash &&
         !this.isTournamentTable() &&
         this.tableInfo?.club_id &&
         snap.insuranceSettlements.length > 0
@@ -2709,6 +2991,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
        failure, and is logged rather than alarmed. */
     await runStep('bbj_mini_payout', true, async () => {
       if (
+        isDiamondCash ||
         this.isTournamentTable() ||
         !this.tableInfo?.club_id ||
         !snap.miniBbjHit?.hit ||
@@ -2737,7 +3020,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       if (!this.lifecycleCanMutate()) return;
 
       if (outcome.status === 'queued') {
-        EngineMetrics.bbjPayoutsQueuedTotal.inc(1);
+        /* THE MINI'S OWN QUEUED COUNTER (2026-09-11). This read
+           `bbjPayoutsQueuedTotal` - the MAIN's - so every queued mini inflated
+           the main jackpot's queue and skewed the one ratio those counters
+           exist to publish. */
+        EngineMetrics.bbjMiniPayoutsQueuedTotal.inc(1);
         this.hub?.emitEvent(this.tableId, {
           type: 'bbj_payout_pending',
           kind: 'mini',
@@ -2757,8 +3044,55 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         console.warn(
           `[ServerTableEngine:${this.tableId}] mini jackpot not paid for hand #${snap.handNumber}: ${outcome.reason}`
         );
+        /* A REFUSED MINI IS WRITTEN DOWN (2026-09-09). `queued` is not a
+           refusal - the write-ahead row above resolves it, 19 of 19 so far -
+           but `skipped` is: the reserve at its floor, a tier disabled, the
+           pool missing. Measured two days after launch: 12 of the first 14
+           minis came out of ONE club's reserve at 3,642 chips a day against
+           an 11,168 balance and a 5,000 floor. When that floor is reached
+           every mini at those tables is refused by design, and until this
+           line the only evidence would have been the absence of hits - the
+           same guard-with-no-reader shape that hid the main jackpot's
+           seventeen silent days (CLAUDE.md 10.86). Same instrument, same
+           table, so one query answers both "why did the main not pay" and
+           "why did the mini not pay". Fire-and-forget; never gates. */
+        /* A REPLAY IS NOT A REFUSAL (2026-09-11). `already_paid` came back
+           through this branch and was written down as `mini_refused:
+           already_paid`, which is the one instrument built to answer "why did
+           the mini not pay" reporting a mini that DID pay. The comment above
+           was careful to exclude `queued` for exactly this reason and did not
+           exclude the other not-a-refusal beside it. Settlement can run twice
+           for one hand - that is what the idempotency key is for - and the
+           second run finding the payout already there is the key working. */
+        const refused = outcome.status === 'skipped' && outcome.reason !== 'already_paid';
+        if (refused) {
+          /* A REFUSAL IS A NUMBER (CLAUDE.md 10.84). The row below is the
+             detail; this is the series an alert can watch, because a reserve
+             that has reached its floor refuses EVERY mini at those tables and
+             the only other evidence is an absence of hits. */
+          EngineMetrics.bbjMiniPayoutsRefusedTotal.inc(1);
+          void recordBBJNearMiss({
+            tableId: this.tableId,
+            clubId: this.tableInfo?.club_id ?? null,
+            handNumber: snap.handNumber,
+            variant: mini.variant ?? this.tableInfo?.game_variant ?? 'unknown',
+            bigBlind: this.tableInfo?.big_blind ?? null,
+            potSize: snap.potSize,
+            playersDealt: (mini.dealtInPlayerIds || []).length,
+            userId: mini.loserUserId ?? undefined,
+            handName: mini.loserHand?.name,
+            reason: `mini_refused:${outcome.reason || 'unspecified'}`,
+            message: `Mini jackpot qualified (${(mini as { miniRule?: string }).miniRule ?? 'rule'}) and was refused: ${outcome.reason || 'unspecified'}`,
+          }).catch(() => undefined);
+        }
         return;
       }
+
+      /* THE MINI'S OWN PAID COUNTER (2026-09-11). Nothing was incremented
+         here, so `poker_bbj_mini_hits_detected_total` had no counterpart and
+         the mini's health could not be read the way the main's is: detected
+         == paid. */
+      EngineMetrics.bbjMiniPayoutsPaidTotal.inc(1);
 
       console.log(
         `[ServerTableEngine:${this.tableId}] mini jackpot paid ${outcome.total} ` +
@@ -2770,12 +3104,18 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
          would overwrite a real credit with a stale stack. Same pattern the
          main payout uses. */
       const bump = (userId: string | undefined, amount: number): void => {
-        if (!userId || amount <= 0) return;
+        if (!userId) return;
+        const credit = this.requireFiniteStackMoney(amount, 'mini_bbj_credit', userId);
+        if (credit <= 0) return;
         const seat = players.find((pl) => pl.user_id === userId);
-        // A chip is two decimal places (#3358). The mini jackpot's table share
-        // is `reserve / players`, so `amount` is a division result, and this
-        // seat array is what persistStacks writes to table_seats.stack.
-        if (seat) seat.stack = cents(Number(seat.stack || 0) + amount);
+        if (seat) {
+          const stack = this.requireFiniteStackMoney(seat.stack, 'mini_bbj_existing_stack', userId);
+          seat.stack = this.requireFiniteStackMoney(
+            cents(stack + credit),
+            'mini_bbj_resulting_stack',
+            userId
+          );
+        }
       };
       bump(mini.loserUserId, outcome.loser);
       bump(mini.winnerUserId, outcome.winner);
@@ -2816,6 +3156,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // Chips credited directly to players' table balances from union/club BBJ pool
     await runStep('bbj_payout', true, async () => {
       if (
+        !isDiamondCash &&
         !this.isTournamentTable() &&
         this.tableInfo?.club_id &&
         snap.bbjHit?.hit &&
@@ -3053,7 +3394,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // final stack. Add-ons are capped so stack + add-on <= max buy-in.
     // Any excess is refunded to the player's club wallet.
     await runStep('pending_addons', true, async () => {
-      if (!durablePostCommitObligations && !this.isTournamentTable()) {
+      if (!durablePostCommitObligations && !isDiamondCash && !this.isTournamentTable()) {
         await this.processPendingAddOns(players);
         if (!this.lifecycleCanMutate()) return;
       }
@@ -3062,7 +3403,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
 
     // 5. Auto-rebuy busted horses (cash games only)
     await runStep('horse_rebuys', false, async () => {
-      if (!this.isTournamentTable() && !isMaintenanceFrozen()) {
+      if (!isDiamondCash && !this.isTournamentTable() && !isMaintenanceFrozen()) {
         const bustHorses = players.filter((p) => p.is_horse && p.stack === 0);
         for (const horse of bustHorses) {
           if (isMaintenanceFrozen() || !this.lifecycleCanMutate()) return;
@@ -3101,6 +3442,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
            */
           const rebuyAmount = await horseRebuyAmount({
             clubId: this.tableInfo?.club_id || '',
+            tableId: this.tableId,
             userId: horse.user_id,
             bigBlind: Number(this.tableInfo?.big_blind) || 0,
             minBuyIn: this.tableInfo?.min_buy_in as number | null | undefined,
@@ -3149,7 +3491,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // horse's profit-target exit and a leave_pending seat are judged against
     // the post-hand stack, never the pre-hand one.
     await runStep('chip_continuity', false, async () => {
-      if (!this.isTournamentTable()) {
+      if (!isDiamondCash && !this.isTournamentTable()) {
         await this.chipContinuity.evaluate(
           players.map((p) => ({
             user_id: p.user_id,
@@ -3165,7 +3507,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // 5.5 Auto-Cashout successful horses (bankroll management)
     // Always wait until right before they are the Big Blind to leave.
     await runStep('horse_cashouts', false, async () => {
-      if (!this.isTournamentTable() && players.length >= 2) {
+      if (!isDiamondCash && !this.isTournamentTable() && players.length >= 2) {
         const maxBuyIn = this.tableInfo?.max_buy_in
           ? Number(this.tableInfo.max_buy_in)
           : (this.tableInfo?.big_blind || 2) * 200;
@@ -3209,8 +3551,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           // orbit" - the target still stands and it tries again when the big
           // blind comes back around, exactly as a human would.
           if (!this.lifecycleCanMutate()) return;
-          const exit = await atomicCashoutVoluntary(horse.user_id, this.tableId, horse.seat_number);
+          const exit = await this.cashoutVoluntaryStay(horse);
           if (!this.lifecycleCanMutate()) return;
+          if (!exit) continue;
           if (!exit.ok) {
             if (exit.code === 'LEAVE_LOCKED') {
               this.chipContinuity.noteRefusal(horse.user_id, exit.stayRemainingMs);
@@ -3252,23 +3595,19 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // 6. Process leave-pending players (cash games only)
     await runStep('leave_pending', true, async () => {
       if (!this.isTournamentTable()) {
-        // Round 57: processLeavePending now returns the user_ids it cashed out;
+        // Round 57: processLeavePending reports the user_ids it cashed out;
         // we use that to unregister DisconnectEngine tracking so player states
         // don't leak. Without this every leaver leaves a ghost FSM entry that
         // persists in hand_state_snapshots.disconnect_states forever.
         // Round 64: extended to also call timeBankEngine.removePlayer so the
-        // playerBanks Map sheds its entry too — same architectural fix.
+        // playerBanks Map sheds its entry too - same architectural fix.
+        // 2026-09-11: that teardown now lives in tearDownDepartedSeats(), so
+        // it can also run for a departure an EARLIER attempt or boundary made
+        // and then lost when its sweep threw after the money had moved.
+        this.tearDownDepartedSeats();
         const { cashedOutIds, pendingMoves } = await this.readCashHandDepartures();
         if (!this.lifecycleCanMutate()) return;
-        for (const userId of cashedOutIds) {
-          this.disconnectEngine.unregisterPlayer(this.tableId, userId);
-          this.timeBankEngine.removePlayer(this.tableId, userId);
-          this.straddleEngine.removePlayer(this.tableId, userId);
-          this.preActionEngine.removePlayer(this.tableId, userId);
-          this.forcedLeaves.delete(userId);
-          this.leaveHeldByClock.delete(userId);
-          this.chipContinuity.forget(userId);
-        }
+        this.tearDownDepartedSeats(cashedOutIds);
         // MUST-MOVE (Slice 2): planned moves land here, at the hand boundary,
         // after the leavers. A move is not a leave: no cash-out, no clock.
         // ANNOUNCED ONLY (2026-09-05): the deal told the player "Moving After
@@ -3320,28 +3659,99 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
   }
 
   /**
+   * Seats that LEFT and whose engine-side teardown has not run yet.
+   *
+   * A departure is two facts: the database one (the seat is cashed out and
+   * gone, committed in its own transaction) and the engine one (its disconnect
+   * FSM, time bank, straddle, pre-action, stay clock and continuity entry go
+   * with it). The second was reachable only through the sweep's RETURN value,
+   * and this boundary drops that value in two live cases: the sibling
+   * seat-move read rejecting after the sweep resolved (readCashHandDepartures
+   * owns both rejections and rethrows - TheMoveIsNeverMidHand pins that), and
+   * lifecycle authority lost between the read and the teardown. Either way the
+   * next sweep cannot repeat the news, because those seats are no longer
+   * `leave_pending = true`, so the teardown was lost for good and left behind
+   * the ghost state in `hand_state_snapshots.disconnect_states` that Round 57
+   * and Round 64 exist to prevent.
+   *
+   * Recorded as it happens (processLeavePending's `onDeparted`), drained at
+   * the top of the next leave_pending attempt - which, with the step's retry
+   * budget, is usually the next attempt of the same boundary. Carries no
+   * money: the cash-out has committed before an entry can appear here.
+   */
+  protected departedSeatsAwaitingTeardown: Array<{ userId: string; occupancyId: string }> = [];
+
+  /**
+   * Note a seat whose cash-out has committed. Tolerates an engine built with
+   * `Object.create(ServerTableEngine.prototype)` - the harness several tests
+   * use - where no class field initialiser has ever run.
+   */
+  protected rememberDepartedSeat(userId: string, occupancyId: string): void {
+    if (!Array.isArray(this.departedSeatsAwaitingTeardown)) {
+      this.departedSeatsAwaitingTeardown = [];
+    }
+    this.departedSeatsAwaitingTeardown.push({ userId, occupancyId });
+  }
+
+  /**
+   * Release every engine-side registration a departed seat still holds, for
+   * the queue plus anything the caller has just been handed. Draining is what
+   * makes it safe to call twice: an entry is taken once and the underlying
+   * `unregisterPlayer` / `removePlayer` calls are themselves idempotent.
+   */
+  protected tearDownDepartedSeats(
+    also: ReadonlyArray<{ userId: string; occupancyId: string }> = []
+  ): void {
+    const owed = Array.isArray(this.departedSeatsAwaitingTeardown)
+      ? this.departedSeatsAwaitingTeardown
+      : [];
+    this.departedSeatsAwaitingTeardown = [];
+    const seen = new Set<string>();
+    for (const { userId, occupancyId } of [...owed, ...also]) {
+      const key = userId + ':' + occupancyId;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      // A seat re-taken by the SAME player since is a different occupancy and
+      // keeps its registrations - this is the check the original loop made.
+      const current = this.seatedPlayers.find((sp) => sp.user_id === userId);
+      if (current && current.occupancy_id !== occupancyId) continue;
+      this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+      this.timeBankEngine.removePlayer(this.tableId, userId);
+      this.straddleEngine.removePlayer(this.tableId, userId);
+      this.preActionEngine.removePlayer(this.tableId, userId);
+      this.leaveHeldByClock.delete(userId);
+      this.chipContinuity.forget(userId);
+    }
+  }
+
+  /**
    * Read move candidates while the leave sweep runs. Candidates carry no cash
    * amount and execute only AFTER every leave has completed. Their executor
    * still rechecks the live source seat, destination and expiry under its existing
    * database locks; the caller retains the announced-only filter. This list belongs to this boundary only.
    */
   protected async readCashHandDepartures(): Promise<{
-    cashedOutIds: string[];
-    pendingMoves: PendingSeatMove[];
+    cashedOutIds: Array<{ userId: string; occupancyId: string }>;
+    /** `null` is a read that FAILED - never an empty list (CLAUDE.md 10.86). */
+    pendingMoves: PendingSeatMove[] | null;
   }> {
-    if (!this.lifecycleCanMutate()) return { cashedOutIds: [], pendingMoves: [] };
+    if (!this.lifecycleCanMutate()) return { cashedOutIds: [], pendingMoves: null };
     const [leaves, moves] = await Promise.allSettled([
       processLeavePending(
         this.tableId,
         this.tableInfo?.club_id || '',
-        (lockedUserId, stayRemainingMs) => {
+        (lockedUserId, stayRemainingMs, occupancyId) => {
           if (this.lifecycleCanMutate()) {
-            this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs);
+            this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs, occupancyId);
           }
         },
-        this.forcedLeaves
+        // Owed the moment the cash-out commits, so a later seat's timeout or a
+        // rejected sibling read cannot take the teardown with it.
+        (departedUserId, occupancyId) => this.rememberDepartedSeat(departedUserId, occupancyId)
       ),
-      this.tableInfo?.cluster_id ? pendingSeatMoves(this.tableId) : Promise.resolve([]),
+      this.tableInfo?.cluster_id
+        ? pendingSeatMoves(this.tableId)
+        : Promise.resolve<PendingSeatMove[] | null>([]),
     ]);
     // Own both rejections immediately and let neither attempt outlive the
     // boundary on a retry. No move may run after a failed leave sweep.

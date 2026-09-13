@@ -19,7 +19,8 @@ Make `/stats` a secure, authoritative, club-aware poker analytics product. Every
 - No incompatible fallback may masquerade as the selected scope.
 - No mock, stub or fabricated analysis may produce a user-facing success claim.
 - Every phase is tested, committed, pushed, merged, published and production-verified before completion is reported.
-- Club Arena publishes only through the protected Club Arena PR and World Hub sync pipeline.
+- Club Arena publishes only through the protected Club Arena pull request and
+  the Club Arena-owned Hetzner publisher; World Hub is routing only.
 
 ## Success
 

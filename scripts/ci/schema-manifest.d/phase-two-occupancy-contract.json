@@ -1,0 +1,30 @@
+{
+  "_owner": "Phase 2 occupancy contract; additive deployment alone is not full caller coverage.",
+  "tables": ["seat_cashout_receipts", "seat_departure_requests"],
+  "functions": [
+    "fn_stamp_seat_occupancy",
+    "fn_cashout_seat_occupancy",
+    "fn_get_seat_cashout_receipt",
+    "fn_request_seat_departure"
+  ],
+  "columns": {
+    "table_seats": ["occupancy_id"],
+    "seat_cashout_receipts": [
+      "occupancy_id",
+      "user_id",
+      "table_id",
+      "seat_id",
+      "seat_number",
+      "receipt",
+      "created_at"
+    ],
+    "seat_departure_requests": [
+      "occupancy_id",
+      "user_id",
+      "table_id",
+      "seat_number",
+      "leave_mode",
+      "created_at"
+    ]
+  }
+}

@@ -295,8 +295,40 @@ describe('V21 deep-stack preflop discipline', () => {
     expect(r.a).toBe('jam');
   });
 
-  it('tournaments are untouched by deep discipline', () => {
+  // 2026-09-11: this used to pin 'tournaments are untouched by deep
+  // discipline' (jam). The early levels of the fleet's events are 500-600bb
+  // deep and the 100bb-calibrated bars were jamming AK, QQ, TT and AJs for
+  // the whole stack there - see HorsePreflop.ts, V21 DEEP-STACK DISCIPLINE.
+  it('a 0.955 hand at 250bb in a TOURNAMENT calls a 5-bet pot too', () => {
     const r = decidePreflopV7(deepCtx({ mode: 'tournament' }) as never);
+    expect(r.a).toBe('call');
+  });
+
+  it('600bb deep in a tournament (30,000 at 25/50): a 0.955 hand calls the 4-bet', () => {
+    const deep600 = { mode: 'tournament' as const, stackBB: 600, stack: 30000 };
+    expect(decidePreflopV7(deepCtx(deep600) as never).a).toBe('call');
+  });
+
+  it('600bb deep in a tournament, aces flat an ordinary 4-bet and jam one worth half the stack', () => {
+    // The same relief window cash stacks have had since V21: the first deepT
+    // of hands above the deep bar flat rather than jam, unless the call is
+    // already half the stack.
+    const deep600 = { mode: 'tournament' as const, stackBB: 600, stack: 30000, strength: 1 };
+    expect(decidePreflopV7(deepCtx(deep600) as never).a).toBe('call');
+    expect(
+      decidePreflopV7(deepCtx({ ...deep600, toCall: 16000, currentBet: 21000 }) as never).a
+    ).toBe('jam');
+  });
+
+  it('a 100bb tournament stack is below the depth term and still jams', () => {
+    const r = decidePreflopV7(deepCtx({ mode: 'tournament', stackBB: 100, stack: 5000 }) as never);
+    expect(r.a).toBe('jam');
+  });
+
+  it('with the layer off a 600bb tournament stack jams (the leak this closes)', () => {
+    const r = decidePreflopV7(
+      deepCtx({ mode: 'tournament', stackBB: 600, stack: 30000, deepDiscipline: false }) as never
+    );
     expect(r.a).toBe('jam');
   });
 });

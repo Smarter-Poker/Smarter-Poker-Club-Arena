@@ -120,6 +120,7 @@ import { cashierRecipientBlock } from '../../lib/cashierRoster';
 import { SpadeConsole } from '../console/SpadeConsole';
 import ChipMintModal from './ChipMintModal';
 import './WalletCashierModal.css';
+import { downloadBlob } from '../../utils/downloadCsv';
 
 type DestinationWallet = CashierDestination;
 type Tab = CashierTab;
@@ -1253,29 +1254,26 @@ export default function WalletCashierModal({
     }
   };
 
-  /** One download path for both ledgers, so the Safari/Firefox revoke timing
-      below is written once. */
-  const downloadCsv = (name: string, header: string[], body: string[]) => {
-    const blob = new Blob([[header.map(csvCell).join(','), ...body].join('\r\n')], {
-      type: 'text/csv;charset=utf-8',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${name}-${clubName.replace(/\W+/g, '-').toLowerCase()}-${new Date()
-      .toISOString()
-      .slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  /** One download path for both ledgers. The shared helper carries the
+      Safari/Firefox revoke timing AND the app's share-sheet branch; this
+      used to be a local copy with the same name, which is why a grep for
+      the helper looked clean while the app silently downloaded nothing. */
+  const downloadLedgerCsv = (name: string, header: string[], body: string[]) => {
+    downloadBlob(
+      `${name}-${clubName.replace(/\W+/g, '-').toLowerCase()}-${new Date()
+        .toISOString()
+        .slice(0, 10)}.csv`,
+      new Blob([[header.map(csvCell).join(','), ...body].join('\r\n')], {
+        type: 'text/csv;charset=utf-8',
+      })
+    );
   };
 
   /** The promo ledger rows on screen, as a spreadsheet. */
   const exportPromoCsv = () => {
     const rows = promoLedger.slice(0, EXPORT_MAX);
     if (rows.length === 0) return;
-    downloadCsv(
+    downloadLedgerCsv(
       promoSource === 'club_pot' ? 'club-promo-wallet-ledger' : 'promo-float-ledger',
       ['When', 'Direction', 'Category', 'Amount', 'Counterparty', 'By', 'Wallet After', 'Note'],
       rows.map((r) =>
@@ -1331,7 +1329,7 @@ export default function WalletCashierModal({
        synchronous revoke cancelled the save and the Export button did nothing
        at all on those browsers. One second is long enough for the fetch to be
        issued and short enough that the blob is not held. (downloadCsv above.) */
-    downloadCsv('club-bank-ledger', header, body);
+    downloadLedgerCsv('club-bank-ledger', header, body);
     toast?.success?.(`Exported ${rows.length.toLocaleString('en-US')} Ledger Entries`);
   };
 

@@ -81,7 +81,6 @@ const ALL_PAGES: PageTest[] = [
   { route: '/players', importPath: '../src/pages/ClubMembersPage' },
   { route: '/data', importPath: '../src/pages/club/ClubDashboard' },
   { route: '/admin', importPath: '../src/pages/AdminDashboardPage' },
-  { route: '/player-sessions', importPath: '../src/pages/PlayerSessionsPage' },
   { route: '/agent-dashboard', importPath: '../src/pages/AgentDashboardPage' },
   { route: '/clubs/:clubId/agent-dashboard', importPath: '../src/pages/AgentDashboardPage' },
   { route: '/clubs/:clubId/members', importPath: '../src/pages/ClubMembersPage' },
@@ -115,7 +114,6 @@ const ALL_PAGES: PageTest[] = [
   { route: '/settlement-dashboard', importPath: '../src/pages/SettlementDashboardPage' },
   { route: '/settlement-history', importPath: '../src/pages/SettlementHistoryPage' },
   { route: '/agent-portal', importPath: '../src/pages/AgentPortalPage' },
-  { route: '/rakeback-dashboard', importPath: '../src/pages/RakebackDashboard' },
   { route: '/credit-admin', importPath: '../src/pages/CreditAdminPanel' },
   { route: '/super-agent', importPath: '../src/pages/SuperAgentDashboard' },
 
@@ -130,7 +128,6 @@ const ALL_PAGES: PageTest[] = [
   { route: '/anti-cheat', importPath: '../src/pages/AntiCheatPage' },
   { route: '/xmtt', importPath: '../src/pages/XMTTPage' },
   { route: '/marketplace', importPath: '../src/pages/MarketplacePage' },
-  { route: '/waitlist', importPath: '../src/pages/WaitlistPage' },
   { route: '/agent-management', importPath: '../src/pages/AgentManagementPage' },
 
   // Dev / Legal / Admin

@@ -1,0 +1,79 @@
+name: Trusted Money Trigger Recovery
+run-name: Money trigger proof ${{ inputs.request_id || github.event.pull_request.head.sha }}
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_bundle:
+        description: Bounded deflate/base64 committed migration data
+        required: true
+        type: string
+      request_id:
+        description: Unique local request identifier for bounded await
+        required: true
+        type: string
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+permissions:
+  contents: read
+  pull-requests: read
+concurrency:
+  group: money-trigger-recovery-${{ github.event.pull_request.head.sha || github.run_id }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    name: Trusted verifier execution
+    if: github.event.pull_request.base.ref == 'main' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    # MUST be configured for main-only deployment branches before activation.
+    # Reporter app key is environment-scoped, never a repository/PR secret.
+    environment: money-trigger-recovery-trusted
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Mint check-only reporter
+        if: github.event_name == 'pull_request_target'
+        id: reporter
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.MONEY_TRIGGER_REPORTER_APP_ID }}
+          private-key: ${{ secrets.MONEY_TRIGGER_REPORTER_PRIVATE_KEY }}
+          permission-checks: write
+      - name: Start explicit captured-head check
+        if: github.event_name == 'pull_request_target'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPORTER_APP_ID: ${{ vars.MONEY_TRIGGER_REPORTER_APP_ID }}
+          REPORTER_TOKEN: ${{ steps.reporter.outputs.token }}
+        run: node scripts/ci/money-trigger-check-report.mjs begin
+      - name: Verify exact live recovery with trusted code
+        id: proof
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CANDIDATE_BUNDLE: ${{ inputs.candidate_bundle }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/produce-money-trigger-recovery.mjs
+      - name: Finish explicit captured-head check
+        if: always() && github.event_name == 'pull_request_target'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPORTER_APP_ID: ${{ vars.MONEY_TRIGGER_REPORTER_APP_ID }}
+          REPORTER_TOKEN: ${{ steps.reporter.outputs.token }}
+          VERIFY_OUTCOME: ${{ steps.proof.outcome }}
+        run: node scripts/ci/money-trigger-check-report.mjs finish
+      - uses: actions/upload-artifact@v4
+        if: success() && github.event_name == 'workflow_dispatch'
+        with:
+          name: money-trigger-recovery-${{ steps.proof.outputs.head }}
+          path: money-trigger-recovery.json
+          if-no-files-found: error
+          retention-days: 1

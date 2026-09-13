@@ -12,24 +12,6 @@
  * tab is gone. Chips on a cash table stay on the table until the player leaves
  * (OPORD 1.3 invariant I1). There is no partial cash-out anywhere in the
  * client, the engine or the database, and this modal must not grow one back.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * THE CONSOLE (#ClubArenaConsole). This was a rounded navy sheet with a header
- * bar, a square close button, two boxed balance cards, a filled input well,
- * four rounded quick-amount pills, a boxed "New Stack" preview and a rounded
- * green confirm lozenge - eight drawn controls on a money surface.
- *
- * It is now Dan's approved spade master: CASHIER is engraved in the header
- * well, every figure prints as a ROW on the black glass (label in the master's
- * lit blue on the left, the number in engraved silver on the right, an
- * engraved rule between), the four quick amounts are lit words, and the two
- * actions - CLOSE and ADD n - are the plates painted into the foot.
- *
- * NOT ONE MONEY PATH MOVED. The per-attempt idempotency id, the busyRef
- * double-tap guard, the boolean contract with onAddChips, the failure banner's
- * deliberate refusal to claim the wallet was not charged, the focus trap that
- * will not dismiss mid-request, the cent-accurate clamp and the fresh-state
- * reset on open are all exactly as they were.
  */
 
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
@@ -37,7 +19,6 @@ import { haptic } from '../../services/SoundService';
 import './CashierModal.css';
 import { reportError } from '../../utils/errorReporter';
 import { uuid } from '../../utils/uuid';
-import { SpadeConsole } from '../console/SpadeConsole';
 
 import { safeErrorMessage } from '../../utils/safeErrorMessage';
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -77,6 +58,9 @@ export interface CashierModalProps {
   transactions?: CashierTransaction[];
   currency?: string;
   isProcessing?: boolean;
+  /** Diamonds are whole units: every amount this modal offers or accepts is an
+   *  integer, because the custody door refuses a fraction. */
+  wholeUnits?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -96,10 +80,14 @@ function formatAmount(amount: number, currency: string = ''): string {
  * allowed range. Returns 0 for anything unparseable so the confirm button stays
  * disabled rather than submitting NaN.
  */
-function clampToCents(raw: string | number, max: number): number {
+function clampToCents(raw: string | number, max: number, wholeUnits = false): number {
   const n = typeof raw === 'number' ? raw : parseFloat(raw);
   if (!Number.isFinite(n) || n <= 0) return 0;
   const ceiling = Number.isFinite(max) && max > 0 ? max : n;
+  /* A Diamond does not divide. Rounding a typed 10.6 UP to 11 would ask the
+     custody door for a unit the player did not choose, and it refuses a
+     fraction outright, so the only honest direction here is down. */
+  if (wholeUnits) return Math.floor(Math.min(n, ceiling));
   return Math.round(Math.min(n, ceiling) * 100) / 100;
 }
 
@@ -126,6 +114,7 @@ export function CashierModal({
   transactions = [],
   currency = '',
   isProcessing = false,
+  wholeUnits = false,
 }: CashierModalProps) {
   const [amount, setAmount] = useState(0);
   // The quick-amount buttons animate in. They used to start as [] — which
@@ -173,6 +162,14 @@ export function CashierModal({
   // Quick amount options
   const quickAmounts = useMemo(() => {
     const max = canAddAmount;
+    if (wholeUnits) {
+      return [
+        { label: '25%', value: Math.floor(max * 0.25) },
+        { label: '50%', value: Math.floor(max * 0.5) },
+        { label: '75%', value: Math.floor(max * 0.75) },
+        { label: 'MAX', value: Math.floor(max) },
+      ];
+    }
     return [
       { label: '25%', value: Math.trunc(max * 0.25 * 100) / 100 },
       { label: '50%', value: Math.trunc(max * 0.5 * 100) / 100 },
@@ -183,7 +180,7 @@ export function CashierModal({
       // reached `atomic_table_addon` without passing through `clampToCents`.
       { label: 'MAX', value: Math.trunc(max * 100) / 100 },
     ];
-  }, [canAddAmount]);
+  }, [canAddAmount, wholeUnits]);
 
   // A changed amount is a DIFFERENT attempt — it gets its own idempotency
   // id. (After a failed attempt it is unchanged, so the held id survives for
@@ -301,8 +298,6 @@ export function CashierModal({
 
   if (!isOpen) return null;
 
-  const working = isProcessing || busy;
-
   return (
     <div
       className="cashier-overlay"
@@ -314,159 +309,154 @@ export function CashierModal({
       aria-labelledby="table-cashier-title"
     >
       <div className="cashier-modal" ref={modalRef} onClick={(e) => e.stopPropagation()}>
-        <SpadeConsole
-          as="div"
-          eyebrow="This Table"
-          title="Cashier"
-          titleId="table-cashier-title"
-          plates={{
-            secondary: {
-              label: 'Close',
-              onClick: onClose,
-              disabled: busy,
-              'aria-label': 'Close Cashier',
-            },
-            /* The blue glass carries the one thing this sheet exists to do.
-               Its label is the amount, so the plate says what will move. */
-            primary: {
-              label: `Add ${formatAmount(amount, currency)}`,
-              ink: 'white' as const,
-              onClick: handleConfirm,
-              disabled: !isValidAmount || working,
-            },
-          }}
-        >
-          {/* Balance Summary */}
-          <div className="cashier-modal__summary">
-            <div className="cashier-modal__balance-item">
-              <span className="cashier-modal__balance-label">At Table</span>
-              <span className="cashier-modal__balance-value">
-                {formatAmount(currentStack, currency)}
-              </span>
-            </div>
-            <div className="cashier-modal__balance-item">
-              <span className="cashier-modal__balance-label">Account</span>
-              <span className="cashier-modal__balance-value">
-                {balanceKnown ? formatAmount(accountBalance, currency) : 'Unavailable'}
-              </span>
-            </div>
-          </div>
+        {/* Header */}
+        <div className="cashier-modal__header">
+          <h2 id="table-cashier-title" className="cashier-modal__title">
+            Cashier
+          </h2>
+          <button
+            className="cashier-modal__close"
+            onClick={onClose}
+            disabled={busy}
+            aria-label="Close Cashier"
+          >
+            ×
+          </button>
+        </div>
 
-          {/* One action: Add Chips. */}
-          <div className="cashier-modal__tabs" aria-hidden="true">
-            <span
-              id="table-cashier-tab-add"
-              className="cashier-modal__tab cashier-modal__tab--active"
-            >
-              Add Chips
+        {/* Balance Summary */}
+        <div className="cashier-modal__summary">
+          <div className="cashier-modal__balance-item">
+            <span className="cashier-modal__balance-label">At Table</span>
+            <span className="cashier-modal__balance-value">
+              {formatAmount(currentStack, currency)}
             </span>
           </div>
+          <div className="cashier-modal__balance-item">
+            <span className="cashier-modal__balance-label">Account</span>
+            <span className="cashier-modal__balance-value">
+              {balanceKnown ? formatAmount(accountBalance, currency) : 'Unavailable'}
+            </span>
+          </div>
+        </div>
 
-          {/* Amount Input */}
-          <div
-            className="cashier-modal__input-section"
-            id="table-cashier-panel-add"
-            role="group"
-            aria-labelledby="table-cashier-tab-add"
+        {/* One action: Add Chips. */}
+        <div className="cashier-modal__tabs" aria-hidden="true">
+          <span
+            id="table-cashier-tab-add"
+            className="cashier-modal__tab cashier-modal__tab--active"
           >
-            <div className="cashier-modal__input-wrapper">
-              <span className="cashier-modal__currency">{currency}</span>
-              {/* parseInt threw away the cents on every 25/50/75/MAX value (they are
+            Add Chips
+          </span>
+        </div>
+
+        {/* Amount Input */}
+        <div
+          className="cashier-modal__input-section"
+          id="table-cashier-panel-add"
+          role="group"
+          aria-labelledby="table-cashier-tab-add"
+        >
+          <div className="cashier-modal__input-wrapper">
+            <span className="cashier-modal__currency">{currency}</span>
+            {/* parseInt threw away the cents on every 25/50/75/MAX value (they are
                 truncated to 2dp), so editing after a quick tap silently changed the
                 amount. parseFloat + snap-to-cent keeps them. */}
-              <input
-                type="number"
-                className="cashier-modal__input"
-                value={amount || ''}
-                onChange={(e) => setAmount(clampToCents(e.target.value, activeMax))}
-                onBlur={() => setAmount((prev) => clampToCents(prev, activeMax))}
-                placeholder="0"
-                min={0}
-                step={0.01}
-                max={activeMax}
-                disabled={busy}
-                aria-label="Amount To Add"
-                aria-invalid={amount > 0 && !isValidAmount}
-              />
-            </div>
-            <div className="cashier-modal__limit">
-              <span className="cashier-modal__limit-label">Available To Add</span>
-              <span className="cashier-modal__limit-value">
-                {formatAmount(canAddAmount, currency)}
-              </span>
+            <input
+              type="number"
+              className="cashier-modal__input"
+              value={amount || ''}
+              onChange={(e) => setAmount(clampToCents(e.target.value, activeMax, wholeUnits))}
+              onBlur={() => setAmount((prev) => clampToCents(prev, activeMax, wholeUnits))}
+              placeholder="0"
+              min={0}
+              step={wholeUnits ? 1 : 0.01}
+              max={activeMax}
+              disabled={busy}
+              aria-label="Amount To Add"
+              aria-invalid={amount > 0 && !isValidAmount}
+            />
+          </div>
+          <div className="cashier-modal__limit">
+            <span>Available To Add: {formatAmount(canAddAmount, currency)}</span>
+          </div>
+        </div>
+
+        {/* Quick Amounts */}
+        <div className="cashier-modal__quick-amounts">
+          {quickAmounts.map(({ label, value }, idx) => (
+            <button
+              key={label}
+              className={`cashier-modal__quick-btn ${amount === value ? 'cashier-modal__quick-btn--active' : ''}`}
+              type="button"
+              onClick={() => {
+                setSubmitError(null);
+                setAmount(value);
+              }}
+              disabled={value <= 0 || busy}
+              aria-pressed={amount === value}
+              style={{
+                opacity: visibleQuick[idx] ? 1 : 0,
+                transform: visibleQuick[idx] ? 'scale(1)' : 'scale(0.85)',
+                transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* New Stack Preview */}
+        <div className="cashier-modal__preview">
+          <span className="cashier-modal__preview-label">New Stack:</span>
+          <span className="cashier-modal__preview-value cashier-modal__preview-value--add">
+            {formatAmount(currentStack + amount, currency)}
+          </span>
+        </div>
+
+        {/* Failure notice — the modal used to close as if it had worked */}
+        {submitError && (
+          <div className="cashier-modal__error" role="alert" aria-live="assertive">
+            {submitError}
+          </div>
+        )}
+
+        {/* Confirm Button */}
+        <div className="cashier-modal__actions">
+          <button
+            type="button"
+            className={`cashier-modal__confirm-btn ${!isValidAmount || isProcessing || busy ? 'cashier-modal__confirm-btn--disabled' : ''}`}
+            onClick={handleConfirm}
+            disabled={!isValidAmount || isProcessing || busy}
+          >
+            {isProcessing || busy ? (
+              <>
+                <span className="cashier-modal__spinner" />
+                Processing...
+              </>
+            ) : (
+              `Add ${formatAmount(amount, currency)}`
+            )}
+          </button>
+        </div>
+
+        {/* Recent Transactions */}
+        {transactions.length > 0 && (
+          <div className="cashier-modal__transactions">
+            <span className="cashier-modal__transactions-title">Recent</span>
+            <div className="cashier-modal__transactions-list">
+              {transactions.slice(0, 5).map((tx) => (
+                <div key={tx.id} className="cashier-modal__transaction">
+                  <span className={`cashier-modal__tx-type cashier-modal__tx-type--${tx.type}`}>
+                    {tx.type === 'add' ? '+' : '-'}
+                    {formatAmount(tx.amount, currency)}
+                  </span>
+                  <span className="cashier-modal__tx-time">{formatTime(tx.timestamp)}</span>
+                </div>
+              ))}
             </div>
           </div>
-
-          {/* Quick Amounts — lit words on the glass, never four drawn pills. */}
-          <div className="cashier-modal__quick-amounts">
-            {quickAmounts.map(({ label, value }, idx) => (
-              <button
-                key={label}
-                className={`cashier-modal__quick-btn ${amount === value ? 'cashier-modal__quick-btn--active' : ''}`}
-                type="button"
-                onClick={() => {
-                  setSubmitError(null);
-                  setAmount(value);
-                }}
-                disabled={value <= 0 || busy}
-                aria-pressed={amount === value}
-                style={{
-                  opacity: visibleQuick[idx] ? 1 : 0,
-                  transform: visibleQuick[idx] ? 'scale(1)' : 'scale(0.85)',
-                  transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {/* New Stack Preview */}
-          <div className="cashier-modal__preview">
-            <span className="cashier-modal__preview-label">New Stack</span>
-            <span className="cashier-modal__preview-value">
-              {formatAmount(currentStack + amount, currency)}
-            </span>
-          </div>
-
-          {/* IN FLIGHT. The spinner used to live inside the confirm button; the
-              action is a painted plate now, which carries a label and nothing
-              else, so the cue moved onto the glass where it is bigger and its
-              `spin` keyframe still runs at its full duration (CLAUDE.md 10.6). */}
-          {working && (
-            <div className="cashier-modal__working" role="status" aria-live="polite">
-              <span className="cashier-modal__spinner" aria-hidden="true" />
-              Processing...
-            </div>
-          )}
-
-          {/* Failure notice — the modal used to close as if it had worked */}
-          {submitError && (
-            <div className="cashier-modal__error" role="alert" aria-live="assertive">
-              {submitError}
-            </div>
-          )}
-
-          {/* Recent Transactions */}
-          {transactions.length > 0 && (
-            <div className="cashier-modal__transactions">
-              <span className="cashier-modal__transactions-title">Recent</span>
-              <div className="cashier-modal__transactions-list">
-                {transactions.slice(0, 5).map((tx) => (
-                  <div key={tx.id} className="cashier-modal__transaction">
-                    <span className="cashier-modal__tx-time">{formatTime(tx.timestamp)}</span>
-                    <span
-                      className={`cashier-modal__tx-type ${tx.type === 'add' ? 'sc-ink--green' : 'sc-ink--red'}`}
-                    >
-                      {tx.type === 'add' ? '+' : '-'}
-                      {formatAmount(tx.amount, currency)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </SpadeConsole>
+        )}
       </div>
     </div>
   );

@@ -9,6 +9,11 @@ const navigation = read('src/config/clubArenaNavigation.ts');
 const hamburger = read('src/components/navigation/HamburgerMenu.tsx');
 const tickerPanel = read('src/components/club/TickerManagementPanel.tsx');
 const ticker = read('src/components/tournament/TournamentStartingTicker.tsx');
+/* The rail and its message composer were split out of the ticker in the audit
+   pass of 2026-09-05. The operator's saved controls reach the screen through
+   all three, so all three are read here. */
+const rail = read('src/components/tournament/TickerRail.tsx');
+const messages = read('src/components/tournament/tickerMessages.ts');
 const unionGames = read('src/pages/UnionGamesPage.tsx');
 const messagePanel = read('src/components/club/ClubMessageManagementPanel.tsx');
 const messageService = read('src/services/ClubMessageManagementService.ts');
@@ -140,15 +145,35 @@ describe('ticker management', () => {
   });
 
   it('wires saved controls into the live ticker', () => {
-    expect(ticker).toContain('managedTicker.sources.starting_soon');
-    expect(ticker).toContain('managedTicker.sources.overlays');
-    expect(ticker).toContain('managedTicker.sources.registration_closing');
-    expect(ticker).toContain('managedTicker.sources.table_openings');
-    expect(ticker).toContain('managedTicker.sources.maintenance');
-    expect(ticker).toContain('SERVICE NOTICE');
-    expect(ticker).toContain("'--ticker-speed'");
+    /* RE-ANCHORED 2026-09-05. The rail was split out of the 951-line component
+       in the audit pass, so the three things this test guards now live in
+       three files. The guarantee is unchanged and is still stated whole: every
+       source an operator can switch is consulted, every flag an operator can
+       cause is written, and the colour, font and pace they saved all reach the
+       strip. */
+    const SOURCE_KEYS = [
+      'starting_soon',
+      'overlays',
+      'registration_closing',
+      'guarantees',
+      'table_openings',
+      'winner_results',
+      'maintenance',
+      'custom_messages',
+    ];
+    for (const key of SOURCE_KEYS) {
+      expect(`${ticker}${messages}`, key).toContain(key);
+    }
+    // The flags an operator's own two sources put on the chip.
+    expect(messages).toContain('SERVICE NOTICE');
+    expect(messages).toContain('CLUB UPDATE');
+    // Pace, colours and font, from the saved settings to the rendered rail.
     expect(ticker).toContain('managedTicker.backgroundColor');
     expect(ticker).toContain('managedTicker.fontFamily');
+    expect(ticker).toContain('managedTicker.speedSeconds');
+    expect(rail).toContain("'--ticker-duration'");
+    expect(rail).toContain('appearance.speedSeconds');
+    expect(rail).toContain('railBackground(appearance.backgroundColor)');
   });
 });
 

@@ -22,11 +22,10 @@
 name: Runner Maintenance
 
 on:
-  schedule:
-    # 09:37 UTC = deep night in Chicago, the platform's quietest hour, and
-    # far from the :40-:55 deploy machinery.
-    - cron: '37 9 * * *'
-  workflow_dispatch:
+  # Deliberate, reviewed operator action only. This workflow never runs as a
+  # periodic reconciler and is not part of either Club Arena release path.
+  repository_dispatch:
+    types: [run-runner-maintenance]
 
 permissions:
   contents: read
@@ -62,19 +61,24 @@ jobs:
       - name: Docker GC (dangling only, tagged images untouchable)
         if: steps.guard.outputs.engine == 'no'
         run: |
-          docker system prune -f 2>/dev/null || true
-          docker builder prune -f --filter 'until=72h' 2>/dev/null || true
+          set -euo pipefail
+          docker system prune -f
+          docker builder prune -f --filter 'until=72h'
 
       - name: Workspace GC (checkouts idle over 48h, never this job's own)
         run: |
+          set -euo pipefail
           ROOT="$(dirname "$RUNNER_WORKSPACE")"
+          [ -d "$ROOT" ] && [ "$ROOT" != "/" ] \
+            || { echo '::error::Unsafe runner workspace root; refusing cleanup.'; exit 1; }
           echo "workspace root: $ROOT"
           find "$ROOT" -mindepth 1 -maxdepth 1 -type d -mmin +2880 \
-            ! -path "$RUNNER_WORKSPACE" -print -exec rm -rf {} + 2>/dev/null || true
+            ! -path "$RUNNER_WORKSPACE" -print -exec rm -rf {} +
 
       - name: Tmp GC (this user's files idle over 48h)
         run: |
-          find /tmp -mindepth 1 -maxdepth 1 -user "$(id -un)" -mmin +2880 -print -exec rm -rf {} + 2>/dev/null || true
+          set -euo pipefail
+          find /tmp -mindepth 1 -maxdepth 1 -user "$(id -un)" -mmin +2880 -print -exec rm -rf {} +
 
       - name: Disk after
         run: |

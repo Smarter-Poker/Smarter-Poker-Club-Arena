@@ -531,7 +531,11 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
     Math.round(
       players.reduce((s, p) => s + (p.deadInvested ?? 0) - (p.individualAnteInvested ?? 0), 0) * 100
     ) / 100;
-  const allContributors = players.filter((p) => getInvestment(p) > 0);
+  // Investment is immutable throughout this partition. Round it once per
+  // seat, rather than again for every eligibility level and contributor.
+  const allContributors = players
+    .map((player) => ({ player, investment: getInvestment(player) }))
+    .filter((entry) => entry.investment > 0);
 
   // No live money at all (e.g. everyone folded to dead antes): the dead money
   // forms a single pot contested by the remaining non-folded players.
@@ -540,7 +544,7 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
     return [{ amount: deadTotal, eligiblePlayers: activePlayers.map((p) => p.user_id) }];
   }
 
-  const sortedInvestments = [...new Set(allContributors.map((p) => getInvestment(p)))].sort(
+  const sortedInvestments = [...new Set(allContributors.map((entry) => entry.investment))].sort(
     (a, b) => a - b
   );
   const pots: Pot[] = [];
@@ -571,13 +575,15 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
   for (const level of sortedInvestments) {
     if (level === 0) continue;
     const contribution = level - previousLevel;
-    const totalContributors = allContributors.filter((p) => getInvestment(p) >= level).length;
-    const eligiblePlayers = activePlayers.filter((p) => getInvestment(p) >= level);
+    const totalContributors = allContributors.filter((entry) => entry.investment >= level).length;
+    const eligiblePlayers = allContributors.filter(
+      (entry) => !entry.player.is_folded && entry.investment >= level
+    );
 
     if (totalContributors > 0 && eligiblePlayers.length > 0) {
       pots.push({
         amount: contribution * totalContributors,
-        eligiblePlayers: eligiblePlayers.map((p) => p.user_id),
+        eligiblePlayers: eligiblePlayers.map((entry) => entry.player.user_id),
       });
     } else if (totalContributors > 0) {
       orphaned = Math.round((orphaned + contribution * totalContributors) * 100) / 100;
@@ -640,6 +646,48 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
     }
   }
   return merged;
+}
+
+/**
+ * Chips already in the middle that `userId` can win after taking its largest
+ * legal call. A player's own not-yet-committed call is removed from the
+ * result, so callers can use `call / (contestablePot + call)` directly.
+ *
+ * Computing from a hypothetical contribution is essential: current pot
+ * layers do not yet list a caller as eligible for the higher layers it will
+ * match, while summing the table pot lets a short stack price side pots it can
+ * never win. The canonical pot partition remains the sole eligibility oracle.
+ */
+export function calculateContestablePot(
+  players: SeatPlayer[],
+  userId: string,
+  toCall: number
+): number {
+  const player = players.find((candidate) => candidate.user_id === userId);
+  if (!player) return 0;
+
+  const cents = (value: number): number => Math.round(value * 100) / 100;
+  const effectiveCall = cents(
+    Math.min(Math.max(0, Number(toCall) || 0), Math.max(0, player.stack))
+  );
+  const hypothetical = players.map((candidate) => {
+    // calculatePots only reads contribution/eligibility fields. Preserve the
+    // other immutable seats instead of copying every seat and private card
+    // array for each hypothetical call in a continuation.
+    if (candidate.user_id !== userId) return candidate;
+    const stack = cents(Math.max(0, candidate.stack - effectiveCall));
+    return {
+      ...candidate,
+      stack,
+      bet: cents(candidate.bet + effectiveCall),
+      totalInvested: cents(candidate.totalInvested + effectiveCall),
+      is_all_in: stack <= 0.005,
+    };
+  });
+  const eligibleAfterCall = calculatePots(hypothetical)
+    .filter((pot) => pot.eligiblePlayers.includes(userId))
+    .reduce((sum, pot) => sum + pot.amount, 0);
+  return cents(Math.max(0, eligibleAfterCall - effectiveCall));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

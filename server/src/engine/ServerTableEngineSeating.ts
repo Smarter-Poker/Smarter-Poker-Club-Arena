@@ -1,3 +1,4 @@
+import { requestSeatDeparture, type AdminDepartureAuthority } from '../services/supabase/seats.js';
 /**
  * ServerTableEngine, layer 2/8 — buy-ins, cash-outs, sit-out/leave, admin locks, BB entry.
  *
@@ -13,6 +14,7 @@ import type { SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { pushFinancialUpdate } from '../services/financialPush.js';
 import { randomUUID } from 'node:crypto';
+import { v5 as uuidv5 } from 'uuid';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { leaveLabel } from './ChipContinuity.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
@@ -80,6 +82,10 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     const maxBuyIn = this.getMaxBuyIn();
     const midHand = !!this.handController;
 
+    if (this.tableInfo?.arena?.asset === 'diamonds') {
+      return this.addDiamonds(userId, amount, maxBuyIn, midHand, player, opId);
+    }
+
     // Effective current chips for the cap: include already-queued (already-
     // debited) pending add-ons so we never exceed the ceiling.
     //
@@ -122,9 +128,9 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
      * The between-hands branch applies the chips to table_seats inside the RPC,
      * and the engine only mirrors that into `player.stack` on success. So a
      * transaction that COMMITTED but whose response never arrived left the
-     * player charged, the seat credited, and the engine unaware — and the next
-     * syncStacks, which writes `stack` ABSOLUTELY from engine memory, erased
-     * the chips while the wallet stayed debited. The mid-hand branch has been
+     * player charged, the seat credited, and the engine unaware — and the old
+     * absolute hand writer erased the chips while the wallet stayed debited.
+     * The mid-hand branch has been
      * covered by the table_pending_addons ledger since the A2 fix; this branch
      * had nothing.
      *
@@ -202,6 +208,181 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     return { success: true, applied };
   }
 
+  /**
+   * A Diamond seat tops up from the custody row it sat with.
+   *
+   * There is no chip wallet on this side of the arena and no pending add-on
+   * ledger. A Diamond seat's stack and its custody balance are held equal by a
+   * deferred constraint, so the two only ever move together, inside
+   * `fn_poker_diamond_top_up`. That makes this a BETWEEN-HANDS operation: mid
+   * hand the engine owns the live stack and the row on disk is the hand's
+   * opening stack, which the accepted-hand settler checks before it pays
+   * anyone. Raising that row under a dealt hand would stop the hand, so the
+   * door refuses instead, and refuses again on its own side if the stack it was
+   * handed is not the stack it finds.
+   *
+   * Whole units only. The request id is derived from the caller's attempt id,
+   * so a lost response retries the same reservation rather than buying a second
+   * one.
+   */
+  protected async addDiamonds(
+    userId: string,
+    amount: number,
+    maxBuyIn: number,
+    midHand: boolean,
+    player: SeatedPlayer,
+    opId?: string
+  ): Promise<{ success: boolean; error?: string; queued?: boolean; applied?: number }> {
+    if (midHand) {
+      /* AN INTENT, NOT A DEBIT (2026-09-12). See `diamondTopUpIntents` on the
+         base for why this arena cannot take the money now and land it later:
+         the deferred seat-keeps-custody trigger requires a Diamond seat's
+         stack to EQUAL its custody balance at every commit, so the chip lane's
+         two steps have no ordering this arena permits. Nothing moves here. The
+         whole top-up happens between hands, in the one transaction that is
+         allowed, through the door that is already certified. */
+      const requested = Math.floor(amount);
+      if (!(requested >= 1)) {
+        return { success: false, error: 'Diamond Top Ups Are Whole Diamonds' };
+      }
+      const stack = Number(player.stack || 0);
+      if (!Number.isSafeInteger(stack) || stack < 0) {
+        return { success: false, error: 'Diamond Top Ups Require A Whole Stack' };
+      }
+      /* The headroom is measured against the stack AND everything already
+         intended for this seat, so three taps during one hand cannot promise
+         more than the table can hold. It is measured again at landing, because
+         the pot moves the stack in between. */
+      const intended = [...this.diamondTopUpIntents.values()]
+        .filter((intent) => intent.userId === userId)
+        .reduce((sum, intent) => sum + intent.amount, 0);
+      const headroom = Math.max(0, Math.floor(maxBuyIn) - stack - intended);
+      const applied = Math.min(requested, headroom);
+      if (applied < 1) {
+        return { success: false, error: 'Already at the maximum buy-in for this table' };
+      }
+      const requestId = uuidv5(
+        `diamond-top-up:${this.tableId}:${userId}:${opId || randomUUID()}`,
+        uuidv5.URL
+      );
+      /* Keyed by request id: the same tap retried overwrites itself, two
+         genuine taps both count, and the SQL door de-duplicates a replay of
+         the landing on the same id. */
+      this.diamondTopUpIntents.set(requestId, { userId, amount: applied });
+      this.pendingAddOnSweepNeeded = true;
+      return { success: true, queued: true, applied };
+    }
+    const stack = Number(player.stack || 0);
+    if (!Number.isSafeInteger(stack) || stack < 0) {
+      return { success: false, error: 'Diamond Top Ups Require A Whole Stack' };
+    }
+    const headroom = Math.max(0, Math.floor(maxBuyIn) - stack);
+    const applied = Math.min(Math.floor(amount), headroom);
+    if (applied < 1) {
+      return { success: false, error: 'Already at the maximum buy-in for this table' };
+    }
+    const requestId = uuidv5(
+      `diamond-top-up:${this.tableId}:${userId}:${opId || randomUUID()}`,
+      uuidv5.URL
+    );
+    let lastError: { message?: string } | null = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const { data, error } = await supabase.rpc('fn_poker_diamond_top_up', {
+        p_user_id: userId,
+        p_table_id: this.tableId,
+        p_amount: applied,
+        p_expected_stack: stack,
+        p_request_id: requestId,
+      });
+      if (!error) {
+        /* The seat row and its custody moved together in that transaction, so
+           the in-memory copy is the only one still behind. Take the number the
+           database wrote rather than the one we asked for. */
+        const written = Number((data as { stack?: number } | null)?.stack);
+        player.stack = Number.isSafeInteger(written) ? written : stack + applied;
+        this.broadcastCurrentState();
+        return { success: true, applied };
+      }
+      lastError = error;
+      const message = String(error.message || '');
+      /* A verdict is not a transport failure; asking twice only repeats it. */
+      if (/insufficient|stale_seat|exceeds_max_buy_in|not_open|required|mismatch/i.test(message)) {
+        break;
+      }
+      if (attempt === 1) await new Promise((r) => setTimeout(r, 250));
+    }
+    const message = String(lastError?.message || '');
+    reportError(lastError, `ServerTableEngine.${this.tableId}.diamond_top_up_failed`, {
+      userId,
+      amount: applied,
+      requestId,
+    });
+    if (/insufficient_settled_diamonds/i.test(message)) {
+      return { success: false, error: 'Not Enough Settled Diamonds' };
+    }
+    if (/diamond_top_up_exceeds_max_buy_in/i.test(message)) {
+      return { success: false, error: 'Already at the maximum buy-in for this table' };
+    }
+    if (/diamond_top_up_stale_seat/i.test(message)) {
+      return { success: false, error: 'The Seat Changed, Try Again' };
+    }
+    return { success: false, error: 'Diamond Top Up Failed' };
+  }
+
+  /**
+   * Land every mid-hand Diamond intent, now that the hand is over.
+   *
+   * Each one goes through `fn_poker_diamond_top_up` on its own request id, so
+   * the door's own idempotency covers a replay of this sweep, and each is
+   * re-measured against the stack AS IT IS NOW - the pot moved it while the
+   * intent waited, which is the whole reason the amount could not be fixed at
+   * request time.
+   *
+   * An intent that can no longer be honoured is DROPPED rather than retried
+   * forever: the seat is gone, the seat is full, or the player spent those
+   * Diamonds elsewhere. Nothing was taken, so dropping it costs nobody
+   * anything, and a queue that never empties is how a table stops dealing.
+   * This is the opposite of the chip rule one method below, and deliberately
+   * so: an unresolved chip row is money already taken and must be left open.
+   */
+  protected async applyDiamondTopUpIntents(players: SeatedPlayer[]): Promise<void> {
+    if (this.diamondTopUpIntents.size === 0) return;
+    if (this.handController) return;
+    const maxBuyIn = Math.floor(this.getMaxBuyIn());
+    for (const [requestId, intent] of [...this.diamondTopUpIntents]) {
+      const player = players.find((p) => p.user_id === intent.userId);
+      const stack = Number(player?.stack ?? 0);
+      if (!player || !Number.isSafeInteger(stack) || stack < 0) {
+        this.diamondTopUpIntents.delete(requestId);
+        continue;
+      }
+      const applied = Math.min(intent.amount, Math.max(0, maxBuyIn - stack));
+      if (applied < 1) {
+        this.diamondTopUpIntents.delete(requestId);
+        continue;
+      }
+      const { data, error } = await supabase.rpc('fn_poker_diamond_top_up', {
+        p_user_id: intent.userId,
+        p_table_id: this.tableId,
+        p_amount: applied,
+        p_expected_stack: stack,
+        p_request_id: requestId,
+      });
+      this.diamondTopUpIntents.delete(requestId);
+      if (error) {
+        reportError(error, `ServerTableEngine.${this.tableId}.diamond_intent_failed`, {
+          userId: intent.userId,
+          amount: applied,
+          requestId,
+        });
+        continue;
+      }
+      const written = Number((data as { stack?: number } | null)?.stack);
+      player.stack = Number.isSafeInteger(written) ? written : stack + applied;
+      this.broadcastCurrentState();
+    }
+  }
+
   /*
    * CHIP CONTINUITY (Operation Table Stakes, Slice 0, 2026-09-04): there is
    * no partial cash-out. `withdrawChips`, `POST /withdrawchips` and the SQL
@@ -232,6 +413,14 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    * next engine start) picks it up. Nothing is dropped on the floor.
    */
   protected async processPendingAddOns(players: SeatedPlayer[]): Promise<void> {
+    if (this.tableInfo?.arena?.asset === 'diamonds') {
+      /* This used to return here and nothing else, because a Diamond seat had
+         no mid-hand lane at all. It has one now, and it is an INTENT lane: no
+         `table_pending_addons` row was ever written, so there is nothing for
+         the chip resolver below to resolve and everything for this to do. */
+      await this.applyDiamondTopUpIntents(players);
+      return;
+    }
     if (!this.pendingAddOnSweepNeeded && this.pendingAddOns.size === 0) return;
 
     const authority = this.getEngineLeaseAuthority();
@@ -852,421 +1041,569 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
      * this method (POST /leave, the horse rotator) is the player's own choice
      * and is judged by the clock, mirror first, database second.
      */
-    opts: { forced?: boolean } = {}
+    opts: {
+      forced?: boolean;
+      occupancyId?: string;
+      seatNumber?: number;
+      admin?: AdminDepartureAuthority;
+    } = {}
   ): Promise<{
     success: boolean;
     error?: string;
     immediate: boolean;
-    /**
-     * CHIP STANDARD C1 (2026-09-02): set ONLY when this engine will not cash
-     * the seat out itself and the browser must (a reserved seat the engine
-     * never loaded). Absent on the between-hands path, where the engine cashes
-     * out after settlement persists the final stack; the browser used to race
-     * that with its own cash-out of the stale pre-hand stack.
-     */
-    clientCashout?: boolean;
+    tournament?: boolean;
     /**
      * CHIP CONTINUITY (2026-09-04): 'LEAVE_LOCKED' when the player is ahead
      * of their buy-in with stay clock remaining. `stay_remaining_ms` says how
      * long; `error` is the label the leave control shows. Nothing else.
      */
-    code?: 'LEAVE_LOCKED';
+    code?: 'LEAVE_LOCKED' | 'STALE_OCCUPANCY';
     stay_remaining_ms?: number;
   }> {
-    // ═══════════════════════════════════════════════════════════════════════
-    // NOBODY LEAVES WHILE THEY ARE ALL-IN. CASH OR TOURNAMENT.
-    //
-    // Dan 2026-08-26, binding: "in cash games or tournaments, a player can
-    // never leave the table while they are all in. they must wait for the hand
-    // to be finished."
-    //
-    // This is FIRST, before the roster lookup and before the cash/tournament
-    // split, because `leaveTable` is the single chokepoint every real departure
-    // goes through: HTTP /leave, the admin kick, and the horse rotator. One
-    // refusal here closes all three for both table types.
-    //
-    // What it used to do instead, on both branches:
-    //
-    //     if (enginePlayer && !enginePlayer.is_folded && !enginePlayer.is_all_in)
-    //
-    // -- it read is_all_in only to SKIP THE AUTO-FOLD, and then carried on
-    // leaving. So an all-in player was marked sitting_out in a live pot and the
-    // client navigated them away mid-runout, off the hand they still had every
-    // chip in.
-    //
-    // `is_all_in` is engine memory, not a table_seats column, so the check has
-    // to live here. It is set in HandController the moment a stack reaches zero
-    // and is only cleared when the next hand builds a fresh player array, which
-    // is exactly the window this rule is about.
-    //
-    // A folded player may leave the UI, but their contribution remains in
-    // this hand until settlement. Their cashout must wait for that boundary.
-    // ═══════════════════════════════════════════════════════════════════════
-    const liveHand = this.handController?.getState();
-    const liveSelf = liveHand?.players.find((p) => p.user_id === userId);
-    if (liveSelf?.is_all_in && !liveSelf.is_folded) {
-      console.log(
-        `[ServerTableEngine:${this.tableId}] refusing leave for ${userId} - all-in in a live hand`
-      );
-      return {
-        success: false,
-        error: 'You Are All In. You Cannot Leave Until The Hand Is Finished.',
-        immediate: false,
+    // Capture legacy internal callers' target before joining the boundary.
+    // A queued leave must not acquire the identity of a subsequent rejoin.
+    const requestedPlayer = this.seatedPlayers.find((p) => p.user_id === userId);
+    if (opts.occupancyId === undefined && requestedPlayer?.occupancy_id) {
+      opts = {
+        ...opts,
+        occupancyId: requestedPlayer.occupancy_id,
+        seatNumber: requestedPlayer.seat_number,
       };
     }
+    const releaseSeatBoundary = await this.acquireSeatBoundary();
+    try {
+      // ═══════════════════════════════════════════════════════════════════════
+      // NOBODY LEAVES WHILE THEY ARE ALL-IN. CASH OR TOURNAMENT.
+      //
+      // Dan 2026-08-26, binding: "in cash games or tournaments, a player can
+      // never leave the table while they are all in. they must wait for the hand
+      // to be finished."
+      //
+      // This is FIRST, before the roster lookup and before the cash/tournament
+      // split, because `leaveTable` is the single chokepoint every real departure
+      // goes through: HTTP /leave, the admin kick, and the horse rotator. One
+      // refusal here closes all three for both table types.
+      //
+      // What it used to do instead, on both branches:
+      //
+      //     if (enginePlayer && !enginePlayer.is_folded && !enginePlayer.is_all_in)
+      //
+      // -- it read is_all_in only to SKIP THE AUTO-FOLD, and then carried on
+      // leaving. So an all-in player was marked sitting_out in a live pot and the
+      // client navigated them away mid-runout, off the hand they still had every
+      // chip in.
+      //
+      // `is_all_in` is engine memory, not a table_seats column, so the check has
+      // to live here. It is set in HandController the moment a stack reaches zero
+      // and is only cleared when the next hand builds a fresh player array, which
+      // is exactly the window this rule is about.
+      //
+      // A folded player may leave the UI, but their contribution remains in
+      // this hand until settlement. Their cashout must wait for that boundary.
+      // ═══════════════════════════════════════════════════════════════════════
+      const originalPlayer = this.seatedPlayers.find((p) => p.user_id === userId);
+      const scoped = opts.occupancyId !== undefined || opts.seatNumber !== undefined;
+      const stale = () => ({
+        success: false,
+        immediate: false,
+        code: 'STALE_OCCUPANCY' as const,
+        error: 'This Request Belongs To A Previous Seat.',
+      });
+      if (
+        scoped &&
+        (typeof opts.occupancyId !== 'string' ||
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+            opts.occupancyId
+          ) ||
+          !Number.isInteger(opts.seatNumber) ||
+          (originalPlayer &&
+            (originalPlayer.occupancy_id !== opts.occupancyId ||
+              originalPlayer.seat_number !== opts.seatNumber)))
+      )
+        return stale();
 
-    const player = this.seatedPlayers.find((p) => p.user_id === userId);
-    if (!player) {
-      // Dan 2026-08-20 (leave-stuck fix): `seatedPlayers` is the HAND roster,
-      // reloaded from the DB at each hand start. A player who reserved a seat
-      // mid-hand ("Seat Reserved, you'll be dealt in next hand") is legally
-      // absent from it. The old response was a hard failure -> HTTP 400 ->
-      // TableService refused to cash out -> the player could NEVER leave while
-      // waiting to be dealt in; the seat stayed reserved forever. The engine
-      // holds no in-memory state for this player (no live stack, not in any
-      // hand), so the departure is trivially safe to acknowledge: return
-      // success + immediate so the client proceeds with atomic DB cashout,
-      // exactly like the engine-not-running branch of the /leave handler.
-      if (opts.forced && !this.isTournamentTable()) {
-        // CHIP CONTINUITY: an admin kick of a seat the engine never loaded is
-        // still a system exit the engine can complete itself - the target's
-        // browser is not the caller and would never do the "client cleanup".
-        await atomicCashout(userId, this.tableId, undefined, { leaveMode: 'forced' });
-        this.chipContinuity.forget(userId);
-        return { success: true, immediate: true };
+      const liveHand = this.handController?.getState();
+      const liveSelf = liveHand?.players.find((p) => p.user_id === userId);
+      if (liveSelf?.is_all_in && !liveSelf.is_folded) {
+        console.log(
+          `[ServerTableEngine:${this.tableId}] refusing leave for ${userId} - all-in in a live hand`
+        );
+        return {
+          success: false,
+          error: 'You Are All In. You Cannot Leave Until The Hand Is Finished.',
+          immediate: false,
+        };
       }
-      console.log(
-        `[ServerTableEngine:${this.tableId}] leave for ${userId}: not in hand roster (reserved/waiting) - acking, client handles DB cleanup`
-      );
-      return { success: true, immediate: true, clientCashout: true };
-    }
 
-    if (this.isTournamentTable()) {
-      // In tournaments, leaving the table NEVER cashes out or clears the seat.
-      // The player is auto-folded if mid-hand, marked sitting_out in table_seats
-      // and disconnectEngine, and continues to be dealt in / blinded out until
-      // they return and sit down or run out of chips.
-      if (this.handController !== null) {
-        const state = this.handController.getState();
-        const enginePlayer = state.players.find((p) => p.user_id === userId);
-        if (enginePlayer && !enginePlayer.is_folded && !enginePlayer.is_all_in) {
-          let folded = false;
-          try {
-            folded = this.handController.performAction(enginePlayer.seat, 'fold') === true;
-            if (folded) {
-              console.log(
-                `[ServerTableEngine:${this.tableId}] Tournament player ${userId} auto-folded on leave`
+      if (opts.admin) {
+        if (!opts.forced || !scoped) return stale();
+        try {
+          await requestSeatDeparture(
+            userId,
+            this.tableId,
+            opts.seatNumber!,
+            opts.occupancyId!,
+            'forced',
+            opts.admin
+          );
+        } catch {
+          return {
+            success: false,
+            immediate: false,
+            error: 'Could Not Confirm The Administrative Request. Please Try Again.',
+          };
+        }
+        if (
+          this.seatedPlayers.some(
+            (p) => p.user_id === userId && p.occupancy_id !== opts.occupancyId
+          )
+        )
+          return stale();
+      }
+
+      const player = this.seatedPlayers.find((p) => p.user_id === userId);
+      if (!player) {
+        if (scoped) {
+          if (liveSelf)
+            return {
+              success: false,
+              immediate: false,
+              error: 'Your Hand Must Finish Before Cashout.',
+            };
+          // A bound reserved-seat departure is completed by this engine.
+          // Never refresh its identity from a newly occupied seat.
+          while (this.postHandTasksPromise) {
+            const pending = this.postHandTasksPromise;
+            await pending;
+            if (this.postHandTasksPromise === pending) break;
+          }
+          if (this.isTournamentTable()) return stale();
+          const replacement = this.seatedPlayers.find((p) => p.user_id === userId);
+          if (
+            replacement &&
+            (replacement.occupancy_id !== opts.occupancyId ||
+              replacement.seat_number !== opts.seatNumber)
+          )
+            return stale();
+          const out: { locked: number | null; failed: string | null } = {
+            locked: null,
+            failed: null,
+          };
+          await atomicCashout(userId, this.tableId, opts.seatNumber!, {
+            occupancyId: opts.occupancyId,
+            leaveMode: opts.forced ? 'forced' : 'voluntary',
+            onLocked: (ms) => {
+              out.locked = ms;
+            },
+            onFailed: (message) => {
+              out.failed = message;
+            },
+          });
+          if (out.locked !== null)
+            return {
+              success: false,
+              immediate: false,
+              code: 'LEAVE_LOCKED',
+              stay_remaining_ms: out.locked,
+              error: leaveLabel(out.locked),
+            };
+          if (out.failed !== null)
+            return {
+              success: false,
+              immediate: false,
+              error: 'The Cashout Was Not Confirmed. Please Try Again.',
+            };
+          return { success: true, immediate: true };
+        }
+
+        // Without the original occupancy, a delayed internal request could
+        // target a replacement seat. Neither a fresh lookup nor a browser
+        // handoff can establish that the requested cashout committed.
+        return {
+          success: false,
+          immediate: false,
+          code: 'STALE_OCCUPANCY',
+          error: 'Original Seat Identity Is Required. Please Refresh The Table.',
+        };
+      }
+
+      if (this.isTournamentTable()) {
+        // In tournaments, leaving the table NEVER cashes out or clears the seat.
+        // The player is auto-folded if mid-hand, marked sitting_out in table_seats
+        // and disconnectEngine, and continues to be dealt in / blinded out until
+        // they return and sit down or run out of chips.
+        if (!player.occupancy_id)
+          return {
+            success: false,
+            immediate: false,
+            error: 'Your Seat Identity Could Not Be Verified.',
+          };
+        try {
+          if (!opts.admin)
+            await requestSeatDeparture(
+              userId,
+              this.tableId,
+              player.seat_number,
+              player.occupancy_id,
+              opts.forced ? 'forced' : 'voluntary'
+            );
+        } catch {
+          return {
+            success: false,
+            immediate: false,
+            error: 'Could Not Confirm Your Leave Request. Please Try Again.',
+          };
+        }
+        if (
+          this.seatedPlayers.some(
+            (p) => p.user_id === userId && p.occupancy_id !== player.occupancy_id
+          )
+        )
+          return stale();
+        if (this.handController !== null) {
+          const state = this.handController.getState();
+          const enginePlayer = state.players.find((p) => p.user_id === userId);
+          if (enginePlayer && !enginePlayer.is_folded && !enginePlayer.is_all_in) {
+            let folded = false;
+            try {
+              folded =
+                this.handController?.performAction(
+                  enginePlayer.seat,
+                  'fold',
+                  undefined,
+                  'forced'
+                ) === true;
+              if (folded) {
+                console.log(
+                  `[ServerTableEngine:${this.tableId}] Tournament player ${userId} auto-folded on leave`
+                );
+              }
+            } catch (err) {
+              console.warn(
+                `[ServerTableEngine:${this.tableId}] Auto-fold on tournament leave threw: ${err}`
               );
             }
-          } catch (err) {
-            console.warn(
-              `[ServerTableEngine:${this.tableId}] Auto-fold on tournament leave threw: ${err}`
-            );
-          }
-          if (!folded) {
-            this.preActionEngine.setPreAction(this.tableId, userId, 'auto_fold');
+            if (!folded) {
+              this.preActionEngine.setPreAction(this.tableId, userId, 'auto_fold');
+            }
           }
         }
-      }
 
-      // `is_sitting_out` alongside `status` (2026-09-05). These are two
-      // different columns and only the boolean is wired up: trg_stamp_sit_out_at
-      // stamps `sit_out_at` from it, restoreSitOutsFromSeats rebuilds the
-      // sit-out from it after a restart, and TablePage's ten-second seat poll
-      // READS it. Writing `status` alone left all three blind - the sit-out had
-      // no clock, did not survive an engine restart, and the player's other
-      // devices never saw it.
-      supabase
-        .from('table_seats')
-        .update({ status: 'sitting_out', is_sitting_out: true })
-        .eq('table_id', this.tableId)
-        .eq('user_id', userId)
-        .is('left_at', null)
-        .then(({ error }) => {
-          if (error)
-            console.warn(`[ServerTableEngine] tournament sit-out update failed:`, error.message);
-        });
-
-      this.disconnectEngine.sitOut(this.tableId, userId, 'voluntary');
-      /* The other devices have to be told here too (2026-09-05). The cash
+        this.disconnectEngine.sitOut(this.tableId, userId, 'voluntary');
+        /* The other devices have to be told here too (2026-09-05). The cash
          mid-hand branch below re-broadcasts and this one did not, so a
          tournament player who sat out from one device left every other client -
          including their own second screen - holding a snapshot in which they
          were still active. The seat legitimately stays theirs (a tournament
          sit-out is blinded off by design); what changes is that everyone can
          now see that it is sitting out. */
-      this.broadcastCurrentState();
-      return { success: true, immediate: true };
-    }
+        this.broadcastCurrentState();
+        return { success: true, immediate: true, tournament: true };
+      }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // CHIP CONTINUITY (Operation Table Stakes, Slice 0 - OPORD 1.3 s6.4, I5).
-    //
-    // A cash player ahead of the money they put in stays seated until the
-    // stay clock reaches zero. This is the synchronous answer from the
-    // engine's mirror of cash_player_session; the database asks the same
-    // question again under the seat lock inside atomic_seat_cashout_locked
-    // (p_leave_mode = 'voluntary'), so a stale mirror cannot let anyone out
-    // and a forged cash-out cannot get past the door either (A0.16).
-    //
-    // Mid-hand the mirror holds the state as of the last settlement - the
-    // roster stack is the pre-hand stack - which is the only honest number
-    // before the pot is awarded. The settlement re-check covers the rest.
-    //
-    // The label is the ONLY copy: "Leave Available In M:SS". No reason, no
-    // essay, no forbidden words (section 6.1).
-    // ═══════════════════════════════════════════════════════════════════════
-    if (!opts.forced) {
-      const lock = this.chipContinuity.leaveLock(userId, player.stack);
-      if (lock.locked) {
-        const label = leaveLabel(lock.remainingMs);
-        console.log(
-          `[ServerTableEngine:${this.tableId}] leave refused for ${userId} - stay clock ${lock.remainingMs}ms remaining`
-        );
+      // ═══════════════════════════════════════════════════════════════════════
+      // CHIP CONTINUITY (Operation Table Stakes, Slice 0 - OPORD 1.3 s6.4, I5).
+      //
+      // A cash player ahead of the money they put in stays seated until the
+      // stay clock reaches zero. This is the synchronous answer from the
+      // engine's mirror of cash_player_session; the database asks the same
+      // question again under the seat lock inside atomic_seat_cashout_locked
+      // (p_leave_mode = 'voluntary'), so a stale mirror cannot let anyone out
+      // and a forged cash-out cannot get past the door either (A0.16).
+      //
+      // Mid-hand the mirror holds the state as of the last settlement - the
+      // roster stack is the pre-hand stack - which is the only honest number
+      // before the pot is awarded. The settlement re-check covers the rest.
+      //
+      // The label is the ONLY copy: "Leave Available In M:SS". No reason, no
+      // essay, no forbidden words (section 6.1).
+      // ═══════════════════════════════════════════════════════════════════════
+      if (!opts.forced) {
+        const lock = this.chipContinuity.leaveLock(userId, player.stack);
+        if (lock.locked) {
+          const label = leaveLabel(lock.remainingMs);
+          console.log(
+            `[ServerTableEngine:${this.tableId}] leave refused for ${userId} - stay clock ${lock.remainingMs}ms remaining`
+          );
+          this.hub?.emitEvent(this.tableId, {
+            type: 'leave_blocked',
+            table_id: this.tableId,
+            user_id: userId,
+            stay_remaining_ms: lock.remainingMs,
+            timestamp: Date.now(),
+          });
+          return {
+            success: false,
+            error: label,
+            immediate: false,
+            code: 'LEAVE_LOCKED',
+            stay_remaining_ms: lock.remainingMs,
+          };
+        }
+      }
+
+      // Phase X5 (2026-04-29) — Bible V8 §1.16 seat_left discrete event so
+      // every connected client (including spectators) can re-render the
+      // empty seat without diffing the next state snapshot.
+      // CHIP CONTINUITY (2026-09-04): emitted only once the seat has actually
+      // left - immediately on the mid-hand path (the player is folded out and
+      // the seat is out of play), and AFTER the database has accepted the
+      // cash-out on the between-hands path. It used to go out before the
+      // cash-out, so a refusal at the door left every client showing an empty
+      // chair with a player still in it.
+      const emitSeatLeft = () =>
         this.hub?.emitEvent(this.tableId, {
-          type: 'leave_blocked',
+          type: 'seat_left',
           table_id: this.tableId,
+          seat: player.seat_number,
           user_id: userId,
-          stay_remaining_ms: lock.remainingMs,
+          mid_hand: this.handController !== null,
           timestamp: Date.now(),
         });
-        return {
-          success: false,
-          error: label,
-          immediate: false,
-          code: 'LEAVE_LOCKED',
-          stay_remaining_ms: lock.remainingMs,
-        };
-      }
-    }
 
-    // Phase X5 (2026-04-29) — Bible V8 §1.16 seat_left discrete event so
-    // every connected client (including spectators) can re-render the
-    // empty seat without diffing the next state snapshot.
-    // CHIP CONTINUITY (2026-09-04): emitted only once the seat has actually
-    // left - immediately on the mid-hand path (the player is folded out and
-    // the seat is out of play), and AFTER the database has accepted the
-    // cash-out on the between-hands path. It used to go out before the
-    // cash-out, so a refusal at the door left every client showing an empty
-    // chair with a player still in it.
-    const emitSeatLeft = () =>
-      this.hub?.emitEvent(this.tableId, {
-        type: 'seat_left',
-        table_id: this.tableId,
-        seat: player.seat_number,
-        user_id: userId,
-        mid_hand: this.handController !== null,
-        timestamp: Date.now(),
-      });
+      // Dan 2026-08-25, BINDING: "LEAVE TABLE SHOULD ALWAYS OVERRIDE ANYTHING
+      // ELSE... LEAVE TABLE IS LIKE THE RESET BUTTON, CLEARS EVERYTHING FROM THAT
+      // TABLE." And: "if you are SITTING OUT but click LEAVE TABLE, it doesn't
+      // leave the table, it silently fails."
+      //
+      // THE BUG WAS THIS BRANCH. It asked "is a hand running AT THIS TABLE", not
+      // "is THIS PLAYER in that hand". A sitting-out player is excluded from the
+      // deal, so they took the mid-hand path anyway: the auto-fold was skipped
+      // (there is no enginePlayer for them), and the seat was merely flagged
+      // leave_pending. That flag is only ever processed by processLeavePending at
+      // SETTLEMENT — so if no hand completed afterwards (the table dropped below
+      // the minimum to deal, or the hand died on the safety timeout, which skips
+      // settlement) the row was never touched again. The player was gone from the
+      // UI, still in the seat, chips still on the table. It could sit like that
+      // forever, and nothing swept it.
+      //
+      // Every participant in this live hand waits for settlement, including a
+      // folded player. Folding removes winning eligibility, not the committed
+      // contribution or the need to persist the final stack. A player who was
+      // not dealt into this hand can still leave immediately.
+      const handState = this.handController?.getState();
+      const playerInLiveHand = handState?.players.find((p) => p.user_id === userId);
 
-    // Dan 2026-08-25, BINDING: "LEAVE TABLE SHOULD ALWAYS OVERRIDE ANYTHING
-    // ELSE... LEAVE TABLE IS LIKE THE RESET BUTTON, CLEARS EVERYTHING FROM THAT
-    // TABLE." And: "if you are SITTING OUT but click LEAVE TABLE, it doesn't
-    // leave the table, it silently fails."
-    //
-    // THE BUG WAS THIS BRANCH. It asked "is a hand running AT THIS TABLE", not
-    // "is THIS PLAYER in that hand". A sitting-out player is excluded from the
-    // deal, so they took the mid-hand path anyway: the auto-fold was skipped
-    // (there is no enginePlayer for them), and the seat was merely flagged
-    // leave_pending. That flag is only ever processed by processLeavePending at
-    // SETTLEMENT — so if no hand completed afterwards (the table dropped below
-    // the minimum to deal, or the hand died on the safety timeout, which skips
-    // settlement) the row was never touched again. The player was gone from the
-    // UI, still in the seat, chips still on the table. It could sit like that
-    // forever, and nothing swept it.
-    //
-    // Every participant in this live hand waits for settlement, including a
-    // folded player. Folding removes winning eligibility, not the committed
-    // contribution or the need to persist the final stack. A player who was
-    // not dealt into this hand can still leave immediately.
-    const handState = this.handController?.getState();
-    const playerInLiveHand = handState?.players.find((p) => p.user_id === userId);
-
-    if (this.handController !== null && playerInLiveHand) {
-      // Mid-hand: fold the player immediately if it's their turn or they're still in
-      const state = handState!;
-      const enginePlayer = playerInLiveHand;
-
-      if (enginePlayer && !enginePlayer.is_folded && !enginePlayer.is_all_in) {
-        // FIX 2026-08-22: performAction RETURNS FALSE when it isn't the
-        // player's turn — it does not throw (FreezeRegression pins this), so
-        // the old catch-and-assume-"they'll be skipped" comment was wrong:
-        // the leaving player stayed live in the hand and the disconnect
-        // auto-action later CHECKED them down every street. If the immediate
-        // fold doesn't land, queue an auto_fold pre-action so they fold the
-        // moment action reaches them.
-        let folded = false;
+      if (this.handController !== null && playerInLiveHand) {
+        // A deferred acknowledgement requires a durable request for this exact
+        // occupancy. Database refusal must reach the caller before success events.
+        if (!player.occupancy_id)
+          return {
+            success: false,
+            immediate: false,
+            error: 'Your Seat Identity Could Not Be Verified.',
+          };
         try {
-          folded = this.handController.performAction(enginePlayer.seat, 'fold') === true;
-          if (folded) {
+          if (!opts.admin)
+            await requestSeatDeparture(
+              userId,
+              this.tableId,
+              player.seat_number,
+              player.occupancy_id,
+              opts.forced ? 'forced' : 'voluntary'
+            );
+        } catch {
+          return {
+            success: false,
+            immediate: false,
+            error: 'Could Not Confirm Your Leave Request. Please Try Again.',
+          };
+        }
+        if (
+          this.seatedPlayers.some(
+            (p) => p.user_id === userId && p.occupancy_id !== player.occupancy_id
+          )
+        )
+          return stale();
+        // The hand may finish while the database acknowledges the request.
+        // Never perform an action using the previous controller's player snapshot.
+        const enginePlayer = this.handController
+          ?.getState()
+          .players.find((p) => p.user_id === userId);
+        if (enginePlayer && !enginePlayer.is_folded && !enginePlayer.is_all_in) {
+          // FIX 2026-08-22: performAction RETURNS FALSE when it isn't the
+          // player's turn — it does not throw (FreezeRegression pins this), so
+          // the old catch-and-assume-"they'll be skipped" comment was wrong:
+          // the leaving player stayed live in the hand and the disconnect
+          // auto-action later CHECKED them down every street. If the immediate
+          // fold doesn't land, queue an auto_fold pre-action so they fold the
+          // moment action reaches them.
+          let folded = false;
+          try {
+            folded =
+              this.handController?.performAction(enginePlayer.seat, 'fold', undefined, 'forced') ===
+              true;
+            if (folded) {
+              console.log(
+                `[ServerTableEngine:${this.tableId}] Player ${userId} auto-folded on leave`
+              );
+            }
+          } catch (err) {
+            console.warn(`[ServerTableEngine:${this.tableId}] Auto-fold on leave threw: ${err}`);
+          }
+          if (!folded) {
+            this.preActionEngine.setPreAction(this.tableId, userId, 'auto_fold');
             console.log(
-              `[ServerTableEngine:${this.tableId}] Player ${userId} auto-folded on leave`
+              `[ServerTableEngine:${this.tableId}] Player ${userId} left out of turn - auto_fold queued`
             );
           }
-        } catch (err) {
-          console.warn(`[ServerTableEngine:${this.tableId}] Auto-fold on leave threw: ${err}`);
         }
-        if (!folded) {
-          this.preActionEngine.setPreAction(this.tableId, userId, 'auto_fold');
-          console.log(
-            `[ServerTableEngine:${this.tableId}] Player ${userId} left out of turn - auto_fold queued`
-          );
-        }
-      }
 
-      emitSeatLeft();
-      // CHIP CONTINUITY: a forced (kick) exit must not be judged by the clock
-      // when settlement processes the leave_pending seat.
-      if (opts.forced) this.forcedLeaves.add(userId);
-      else this.forcedLeaves.delete(userId);
+        emitSeatLeft();
+        // CHIP CONTINUITY: a forced (kick) exit must not be judged by the clock
+        // when settlement processes the leave_pending seat.
 
-      // Mark as leave_pending — processLeavePending will handle cashout at end of hand.
-      // `is_sitting_out` goes with it (2026-09-05): it is the boolean the
-      // sit_out_at trigger, the restart restore and TablePage's seat poll all
-      // read. Writing `status` alone left a departing seat looking live to every
-      // one of them.
-      supabase
-        .from('table_seats')
-        .update({ leave_pending: true, status: 'sitting_out', is_sitting_out: true })
-        .eq('table_id', this.tableId)
-        .eq('user_id', userId)
-        .is('left_at', null)
-        .then(({ error }) => {
-          if (error)
-            console.warn(`[ServerTableEngine] leave_pending update failed:`, error.message);
-        });
+        // Also mark in disconnect engine so they don't get dealt next hand
+        this.disconnectEngine.sitOut(this.tableId, userId, 'voluntary');
 
-      // Also mark in disconnect engine so they don't get dealt next hand
-      this.disconnectEngine.sitOut(this.tableId, userId, 'voluntary');
-
-      /* THE OTHER DEVICES HAVE TO BE TOLD (Dan 2026-09-05). This branch emitted
+        /* THE OTHER DEVICES HAVE TO BE TOLD (Dan 2026-09-05). This branch emitted
          `seat_left` and then stopped: no state re-broadcast, so every connected
          client kept the snapshot in which this player was still in the hand.
          Between-hands leaves have always re-broadcast (see both calls below);
          the deferred path is the one a player actually hits when they leave
          mid-hand, and it was the silent one. */
-      this.broadcastCurrentState();
+        this.broadcastCurrentState();
 
-      return { success: true, immediate: false };
-    } else {
-      // Between hands: remove immediately via atomic cashout.
-      // AUDIT FIX 2026-07-19: the hand controller is nulled at HAND_COMPLETE
-      // BEFORE postHandTasks (which runs syncStacks) finishes. A leave arriving
-      // in that window would take this branch and cash out the STALE pre-hand
-      // seat stack — the pot won vanishes (or a bust is refunded). Wait for any
-      // in-flight settlement to persist the final stack first.
-      // CHIP CONTINUITY (2026-09-04): the answer to POST /leave IS the
-      // database's answer. This used to reply `success: true` and cash out in
-      // the background; when the door refused (mirror empty after a restart,
-      // a settlement landing between the check and the cash-out) the client
-      // had already navigated away from a seat still holding its chips. Now
-      // the cash-out is awaited, a refusal is returned as a refusal, and the
-      // seat_left event follows the money, not the request.
-      //
-      // Voluntary leaves go through atomicCashoutVoluntary (the clock-guarded
-      // door). A forced exit (admin kick) goes through atomicCashout with
-      // leaveMode 'forced': a system exit the clock never blocks, which still
-      // closes the session and writes the rejoin floor.
-      //
-      // There is NO markSeatAsLeft fallback on either path any more - it is the
-      // same RPC and would fail for the same reason, and the old fallback then
-      // tore down the player's engine registrations while they were still in
-      // the chair.
-      while (this.postHandTasksPromise) {
-        // Settlement can append its stack/bank tasks while this leave is
-        // waiting. Re-read the barrier before spending the seat balance.
-        const pending = this.postHandTasksPromise;
-        await pending;
-        if (this.postHandTasksPromise === pending) break;
-      }
+        return { success: true, immediate: false };
+      } else {
+        // Between hands: remove immediately via atomic cashout.
+        // AUDIT FIX 2026-07-19: the hand controller is nulled at HAND_COMPLETE
+        // BEFORE postHandTasks (which commits the accepted hand) finishes. A leave arriving
+        // in that window would take this branch and cash out the STALE pre-hand
+        // seat stack — the pot won vanishes (or a bust is refunded). Wait for any
+        // in-flight settlement to persist the final stack first.
+        // CHIP CONTINUITY (2026-09-04): the answer to POST /leave IS the
+        // database's answer. This used to reply `success: true` and cash out in
+        // the background; when the door refused (mirror empty after a restart,
+        // a settlement landing between the check and the cash-out) the client
+        // had already navigated away from a seat still holding its chips. Now
+        // the cash-out is awaited, a refusal is returned as a refusal, and the
+        // seat_left event follows the money, not the request.
+        //
+        // Voluntary leaves go through atomicCashoutVoluntary (the clock-guarded
+        // door). A forced exit (admin kick) goes through atomicCashout with
+        // leaveMode 'forced': a system exit the clock never blocks, which still
+        // closes the session and writes the rejoin floor.
+        //
+        // There is NO markSeatAsLeft fallback on either path any more - it is the
+        // same RPC and would fail for the same reason, and the old fallback then
+        // tore down the player's engine registrations while they were still in
+        // the chair.
+        while (this.postHandTasksPromise) {
+          // Settlement can append its stack/bank tasks while this leave is
+          // waiting. Re-read the barrier before spending the seat balance.
+          const pending = this.postHandTasksPromise;
+          await pending;
+          if (this.postHandTasksPromise === pending) break;
+        }
 
-      const teardown = () => {
-        this.disconnectEngine.unregisterPlayer(this.tableId, userId);
-        this.timeBankEngine.removePlayer(this.tableId, userId);
-        this.straddleEngine.removePlayer(this.tableId, userId);
-        this.preActionEngine.removePlayer(this.tableId, userId);
-        this.leaveHeldByClock.delete(userId);
-        this.forcedLeaves.delete(userId);
-        this.chipContinuity.forget(userId);
-        this.lastAddOnAdjustedByUser.delete(userId);
-      };
-
-      if (opts.forced) {
-        const out: { failed: string | null } = { failed: null };
-        await atomicCashout(userId, this.tableId, player.seat_number, {
-          leaveMode: 'forced',
-          onFailed: (m) => {
-            out.failed = m;
-          },
-        });
-        if (out.failed !== null) {
-          console.warn(
-            `[ServerTableEngine:${this.tableId}] forced cash-out failed for ${userId} - seat preserved: ${out.failed}`
+        const teardown = () => {
+          if (
+            this.seatedPlayers.some(
+              (p) => p.user_id === userId && p.occupancy_id !== player.occupancy_id
+            )
+          )
+            return false;
+          this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+          this.timeBankEngine.removePlayer(this.tableId, userId);
+          this.straddleEngine.removePlayer(this.tableId, userId);
+          this.preActionEngine.removePlayer(this.tableId, userId);
+          this.leaveHeldByClock.delete(userId);
+          this.chipContinuity.forget(userId);
+          this.lastAddOnAdjustedByUser.delete(userId);
+          this.seatedPlayers = this.seatedPlayers.filter(
+            (p) => p.user_id !== userId || p.occupancy_id !== player.occupancy_id
           );
+          return true;
+        };
+
+        if (opts.forced) {
+          const out: { failed: string | null } = { failed: null };
+          await atomicCashout(userId, this.tableId, player.seat_number, {
+            occupancyId: player.occupancy_id,
+            leaveMode: 'forced',
+            onFailed: (m) => {
+              out.failed = m;
+            },
+          });
+          if (out.failed !== null) {
+            console.warn(
+              `[ServerTableEngine:${this.tableId}] forced cash-out failed for ${userId} - seat preserved: ${out.failed}`
+            );
+            return {
+              success: false,
+              error: 'Could Not Remove The Player Right Now. Their Chips Are Still In The Seat.',
+              immediate: false,
+            };
+          }
+          console.log(
+            `[ServerTableEngine:${this.tableId}] Player ${userId} removed (forced, between hands)`
+          );
+          if (teardown()) {
+            emitSeatLeft();
+            this.broadcastCurrentState();
+            this.wakeClusterGame('seat_left');
+          }
+          return { success: true, immediate: true };
+        }
+
+        const res = await atomicCashoutVoluntary(
+          userId,
+          this.tableId,
+          player.seat_number,
+          player.occupancy_id
+        );
+        if (res.ok) {
+          console.log(
+            `[ServerTableEngine:${this.tableId}] Player ${userId} left table immediately (between hands)`
+          );
+          if (teardown()) {
+            emitSeatLeft();
+            this.broadcastCurrentState();
+            this.wakeClusterGame('seat_left');
+          }
+          return { success: true, immediate: true };
+        }
+        if (res.code === 'LEAVE_LOCKED') {
+          // The mirror was behind the database (empty after a restart, or a
+          // settlement landed between the check above and the door). The player
+          // is still seated, still in, and is told the clock. The mirror adopts
+          // the database's remaining time.
+          console.log(
+            `[ServerTableEngine:${this.tableId}] leave refused at the door for ${userId} - stay clock ${res.stayRemainingMs}ms remaining`
+          );
+          this.chipContinuity.noteRefusal(userId, res.stayRemainingMs);
+          const label = leaveLabel(res.stayRemainingMs);
+          this.hub?.emitEvent(this.tableId, {
+            type: 'leave_blocked',
+            table_id: this.tableId,
+            user_id: userId,
+            stay_remaining_ms: res.stayRemainingMs,
+            timestamp: Date.now(),
+          });
+          this.broadcastCurrentState();
           return {
             success: false,
-            error: 'Could Not Remove The Player Right Now. Their Chips Are Still In The Seat.',
+            error: label,
             immediate: false,
+            code: 'LEAVE_LOCKED',
+            stay_remaining_ms: res.stayRemainingMs,
           };
         }
-        console.log(
-          `[ServerTableEngine:${this.tableId}] Player ${userId} removed (forced, between hands)`
+        // Transport or database failure: the seat is untouched (one transaction)
+        // and the player can try again. Nothing to tear down, because nothing left.
+        console.warn(
+          `[ServerTableEngine:${this.tableId}] voluntary cash-out failed for ${userId} - seat preserved: ${res.message}`
         );
-        teardown();
-        emitSeatLeft();
-        this.broadcastCurrentState();
-        this.wakeClusterGame('seat_left');
-        return { success: true, immediate: true };
-      }
-
-      const res = await atomicCashoutVoluntary(userId, this.tableId, player.seat_number);
-      if (res.ok) {
-        console.log(
-          `[ServerTableEngine:${this.tableId}] Player ${userId} left table immediately (between hands)`
-        );
-        teardown();
-        emitSeatLeft();
-        this.broadcastCurrentState();
-        this.wakeClusterGame('seat_left');
-        return { success: true, immediate: true };
-      }
-      if (res.code === 'LEAVE_LOCKED') {
-        // The mirror was behind the database (empty after a restart, or a
-        // settlement landed between the check above and the door). The player
-        // is still seated, still in, and is told the clock. The mirror adopts
-        // the database's remaining time.
-        console.log(
-          `[ServerTableEngine:${this.tableId}] leave refused at the door for ${userId} - stay clock ${res.stayRemainingMs}ms remaining`
-        );
-        this.chipContinuity.noteRefusal(userId, res.stayRemainingMs);
-        const label = leaveLabel(res.stayRemainingMs);
-        this.hub?.emitEvent(this.tableId, {
-          type: 'leave_blocked',
-          table_id: this.tableId,
-          user_id: userId,
-          stay_remaining_ms: res.stayRemainingMs,
-          timestamp: Date.now(),
-        });
-        this.broadcastCurrentState();
         return {
           success: false,
-          error: label,
+          error:
+            'Could Not Leave The Table Right Now. Your Chips Are Still In Your Seat. Please Try Again.',
           immediate: false,
-          code: 'LEAVE_LOCKED',
-          stay_remaining_ms: res.stayRemainingMs,
         };
       }
-      // Transport or database failure: the seat is untouched (one transaction)
-      // and the player can try again. Nothing to tear down, because nothing left.
-      console.warn(
-        `[ServerTableEngine:${this.tableId}] voluntary cash-out failed for ${userId} - seat preserved: ${res.message}`
-      );
-      return {
-        success: false,
-        error:
-          'Could Not Leave The Table Right Now. Your Chips Are Still In Your Seat. Please Try Again.',
-        immediate: false,
-      };
+    } finally {
+      releaseSeatBoundary();
     }
   }
 
@@ -1298,7 +1635,9 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    */
   public adminResume(): { success: boolean } {
     this.adminPauseLock = false;
-    this.maintenanceLock = false;
+    // Clearing the operator's request cannot announce or transition a resume
+    // while a different owner still holds this table.
+    if (this.isNextHandPaused() || this.handForHandPaused) return { success: true };
     if (this.tableFSM.state === 'paused') {
       this.tableFSM.transition('running');
     }
@@ -1319,6 +1658,13 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     this.maintenanceLock = locked;
     if (locked && this.tableFSM.state === 'running') {
       this.tableFSM.transition('paused');
+    } else if (
+      !locked &&
+      !this.isNextHandPaused() &&
+      !this.handForHandPaused &&
+      this.tableFSM.state === 'paused'
+    ) {
+      this.tableFSM.transition('running');
     }
     console.log(`[ServerTableEngine:${this.tableId}] Maintenance lock: ${locked}`);
     return { success: true };

@@ -1,0 +1,200 @@
+{
+  "observed_at_utc": "2026-09-11T20:53:01.055235+00:00",
+  "repository_references": {
+    "observed_at_utc": "2026-09-11T20:51:49.254229+00:00",
+    "references": [
+      {
+        "path": "docs/audits/2026-09-08-comprehensive-club-arena-backlog/feature-backlog.csv",
+        "revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+        "exit_code": 0,
+        "bytes": 33758,
+        "sha256": "2f3a24138895f73d9d9f8696d9e2f50085b7fc89fd90a1973cd04b3c82d66ae9",
+        "data_rows": 109,
+        "columns": [
+          "id",
+          "phase",
+          "phase_name",
+          "priority",
+          "status",
+          "title",
+          "required_work",
+          "source_or_register",
+          "acceptance"
+        ]
+      },
+      {
+        "path": "docs/audits/2026-09-08-platform-coverage/phase-requirements.json",
+        "revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+        "exit_code": 0,
+        "bytes": 90529,
+        "sha256": "55f4bc6f419d3cf04a84a88a7f3d737203fad58b7d887cb532433edd586060b9",
+        "top_keys": [
+          "source_document",
+          "source_version",
+          "source_sha256",
+          "requirements"
+        ],
+        "collections": {
+          "requirements": 216
+        }
+      },
+      {
+        "path": "docs/audits/2026-09-10-phase3-independent-release-review.json",
+        "revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+        "exit_code": 0,
+        "bytes": 4099,
+        "sha256": "f15ffa1fec039925cf0ae4be7c5afc6b30d4ad3996e3141c6fd151565252e673",
+        "top_keys": [
+          "date_utc",
+          "programme",
+          "phase",
+          "status",
+          "reviewed_source",
+          "verified_main_ancestor",
+          "virtual_ci_merge",
+          "provenance_review",
+          "production_witness_at",
+          "functions",
+          "shared_function_access",
+          "clock_design_review",
+          "whole_phase_complete",
+          "phase_4_started",
+          "production_mutations",
+          "engine_or_host_actions",
+          "hooks_bypassed"
+        ],
+        "collections": {
+          "functions": 4
+        }
+      },
+      {
+        "path": "docs/HANDOFF-CHIP-ACCOUNTING-CURRENT-STATE.md",
+        "revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+        "exit_code": 0,
+        "bytes": 100212,
+        "sha256": "723fa0a2b2887a6b4c02d9708787c7b594a38170e96f05fb73a61a2e87a6b205"
+      },
+      {
+        "path": "docs/CHIP-ACCOUNTING-ROADMAP.md",
+        "revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+        "exit_code": 0,
+        "bytes": 78113,
+        "sha256": "bd678b9a61901838952e5a871a0d6ad2fd9e7a0b29895f8f9c004534bcdadc74"
+      },
+      {
+        "path": ".github/workflows/publish-club-arena.yml",
+        "revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+        "exit_code": 0,
+        "bytes": 72481,
+        "sha256": "7513801015045e1aa86081763ba678d959f594ba0dec50eaa6bd824dcba33ecc"
+      }
+    ]
+  },
+  "owner_and_capability_evidence": {
+    "observed_at_utc": "2026-09-11T20:52:46.612Z",
+    "source_tools": "read_thread and bounded wait_threads(timeoutMs:0)",
+    "accounting_owner_acknowledgment": {
+      "observed_at": "2026-09-11T20:50:55.547Z",
+      "thread": {
+        "id": "01a0922e-72ca-7002-bda1-4c95f95f987c",
+        "title": "PS ENGINE ACCOUNTING*",
+        "status": {
+          "type": "active",
+          "activeFlags": []
+        }
+      },
+      "page": {
+        "order": "newest_first",
+        "limit": 2,
+        "nextCursor": null,
+        "hasMore": false
+      },
+      "selected": [
+        {
+          "turnId": "01a0922e-7618-70f3-807a-084d400f53a2",
+          "startedAt": 1789158913,
+          "type": "mcpToolCall",
+          "id": "exec-7349698c-e0dd-49ac-ab14-3235435ef3f9",
+          "server": "codex_app",
+          "tool": "send_message_to_thread",
+          "arguments": {
+            "threadId": "01a0908a-36f9-7042-b4a2-02fb14d5a53e",
+            "prompt": "Confirmed ownership; no production writes. Root isolated tree /Users/smarter.poker/Documents/.agent-trees/club-arena/codex-engine-accounting-integration, canonical common git /Users/smarter.poker/Documents/club-arena/.git, base11a3730678. Client rebuy/add-on parity committed locally bfa696cb54 (29 new dynamic cases, 299 focused passes, tsc/build pass, native window20cases+20replays); no PR/push yet. Root now composes actual D9/current Phase3 scopes/manager-target/strict triggers. D9 head7682f934 source fixtures repeated locally unchanged; original historical receipts do not prove current compatibility. Work resources: own PG17 socket /tmp/ca-e2-owned-06abwhdc/socket:55498, local DB d9_combined_current_legacy; /tmp/ca-d9-satellite-98z4vtmi generated receipts; do not mutate these. Separate root internal owners: codex-accounting-ruling-retirement (only additive non-satellite ruling refusal + native replay) and codex-accounting-deal-witness (new immutable accepted bust tail basis, preserving v2 replay; migration20260911204238 reserved). Current incompatibilities: D9 private core27ba lacks current seat scope open/close and manager-target publish; shared guards/current verifier need composed in-flight/deferred logic; strict cutover also reverts D9/modern accepted-bust place verifier to recording sequence and pins pre-current normal finish wrapper96a whereas current D12/fixture541 contains required atomic claim. No atomic-wallet backlog completed claim: parent checkpoint D8 house authority6e44ea40 remains prepared, funding/debt reconciliation unexecuted. No duplicate wallet repair needed yet; send concrete findings. Parent01a09108 remains sole production operator, urgent4346/controller/lease-maintenance are outside my mutations. All D9/Phase3 activation held."
+          },
+          "status": "completed",
+          "durationMs": 24
+        }
+      ]
+    },
+    "accounting_later_owner_statement": [
+      {
+        "id": "exec-7349698c-e0dd-49ac-ab14-3235435ef3f9",
+        "recipient": "01a0908a-36f9-7042-b4a2-02fb14d5a53e",
+        "prompt": "Confirmed ownership; no production writes. Root isolated tree /Users/smarter.poker/Documents/.agent-trees/club-arena/codex-engine-accounting-integration, canonical common git /Users/smarter.poker/Documents/club-arena/.git, base11a3730678. Client rebuy/add-on parity committed locally bfa696cb54 (29 new dynamic cases, 299 focused passes, tsc/build pass, native window20cases+20replays); no PR/push yet. Root now composes actual D9/current Phase3 scopes/manager-target/strict triggers. D9 head7682f934 source fixtures repeated locally unchanged; original historical receipts do not prove current compatibility. Work resources: own PG17 socket /tmp/ca-e2-owned-06abwhdc/socket:55498, local DB d9_combined_current_legacy; /tmp/ca-d9-satellite-98z4vtmi generated receipts; do not mutate these. Separate root internal owners: codex-accounting-ruling-retirement (only additive non-satellite ruling refusal + native replay) and codex-accounting-deal-witness (new immutable accepted bust tail basis, preserving v2 replay; migration20260911204238 reserved). Current incompatibilities: D9 private core27ba lacks current seat scope open/close and manager-target publish; shared guards/current verifier need composed in-flight/deferred logic; strict cutover also reverts D9/modern accepted-bust place verifier to recording sequence and pins pre-current normal finish wrapper96a whereas current D12/fixture541 contains required atomic claim. No atomic-wallet backlog completed claim: parent checkpoint D8 house authority6e44ea40 remains prepared, funding/debt reconciliation unexecuted. No duplicate wallet repair needed yet; send concrete findings. Parent01a09108 remains sole production operator, urgent4346/controller/lease-maintenance are outside my mutations. All D9/Phase3 activation held.",
+        "status": "completed"
+      },
+      {
+        "id": "exec-600d5d8a-c40c-4e19-a7bf-35e7b2a0010a",
+        "recipient": "01a09108-1dfb-7e70-9e85-498926b91043",
+        "prompt": "Client window slice now committed locally through normal hooks as e1ee0a1a47 (supersedes transient pre-attribution bfa696). Exact overlap paths/hunks: src/services/TournamentService.ts projection around823 adds addon_period_triggered; canRebuy around1913-1953 changes only window calculation; tests/unit/TournamentService.test.ts around653 adds29 cases. No hold/clock service consumer edits. 299 focused client tests, tsc/build, root independent119 TournamentService cases, native20window cases+20replays passed. Combined D9 prototype now preserves legacy ranking branch while adding current scope open/claim/close, manager publish, combined inflight verifier, restoring normal shared cert path, D12 atomic normal claim541b, and D9/modern place verifierc132. Native baseline currently being extended with exact missing Phase3 fixture functions/ACLs; no combined qualification claim yet. Read4327 drift: treasury-club cash funding, reused horse seat state, late registration and host-game stake band; no runtime source. Preserving those sources. Ruling retirement and immutable final-deal witness basis have successful native draft probes and are under independent final checks. No production mutations or PR pushes.",
+        "status": "completed"
+      }
+    ],
+    "support_states": [
+      {
+        "thread_id": "01a0923b-2fea-7a40-a872-fd98e90b8094",
+        "status": {
+          "type": "active",
+          "activeFlags": []
+        },
+        "turn_id": "01a0923b-33ec-7471-a6b1-5d1c8eec54a1",
+        "turn_status": "inProgress",
+        "started_at_unix": 1789159748
+      },
+      {
+        "thread_id": "01a0923b-44f8-7911-979c-6633cca1adc1",
+        "status": {
+          "type": "active",
+          "activeFlags": []
+        },
+        "turn_id": "01a0923b-4864-7bc3-96f7-03d80f3f9eaa",
+        "turn_status": "inProgress",
+        "started_at_unix": 1789159753
+      },
+      {
+        "thread_id": "01a0923b-542c-7433-9466-795e3a50f483",
+        "status": {
+          "type": "active",
+          "activeFlags": []
+        },
+        "turn_id": "01a0923b-57c8-7400-96c0-538f9ec84f20",
+        "turn_status": "inProgress",
+        "started_at_unix": 1789159757
+      }
+    ],
+    "limitations": [
+      "Main task and release owner's current in-progress turns were not exposed as readable items by read_thread.",
+      "Coordinator's four-internal-agent list_agents assertion is owner-reported; not independently reproduced from this separate task.",
+      "No production SQL, financial test or deployment executed by this reviewer."
+    ]
+  },
+  "spin_metadata_only": {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/EVIDENCE_APPLICABILITY.json",
+    "sha256": "e81f4934369ac4a466e27abcc052ef46a5b63ee5f26850f1eee60500552bdccd",
+    "revision": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+    "groups": 26,
+    "matching_inputs": 31,
+    "total_inputs": 39,
+    "limitations": [
+      "Opening member wallets, reserve capital and accepted dealt-hand scenes are synthetic; actual creator, take-seat purchase, lease, launch, draw and terminal authorities create all boards, paid seats, funds and receipts.",
+      "Current cancellation source623100 and reader0b6ab are locally composed; a played/committed Spin must refuse cancellation without any replacement ticket or refund.",
+      "The unused versioned-deal fixture supplies shared runtime prerequisites and does not fund this Spin.",
+      "All seven terminal guards are enabled; whole Stage B manager-envelope integration, production activation, engine adoption and browser acceptance remain separate gates."
+    ],
+    "meaning": "Read the evidence manifest, did not rerun tests or certify applicability."
+  },
+  "privacy_indicator_scan": {
+    "flags": [],
+    "limit": "Simple indicator scan plus human review of coordination prose; not a comprehensive DLP certificate."
+  }
+}

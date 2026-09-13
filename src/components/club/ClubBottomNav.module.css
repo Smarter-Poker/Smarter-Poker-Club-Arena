@@ -14,7 +14,36 @@
      its own aspect ratio; a min-height taller than that would reopen the gap
      this file spent 2026-09-04 closing. */
   min-height: var(--bottom-nav-height, 44px);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* THE FRAME SITS ON THE BOTTOM EDGE (Dan, 2026-09-09): "THE FOOTER NEEDS TO
+     BE LOCKED TO THE BOTTOM OF THE PAGE, THERE SHOULDN'T BE A GAP BELOW IT
+     WHERE YOU CAN SEE ANYTHING BELOW THE FOOTER."
+
+     Two transparent strips could open under the artwork, and because this
+     container is deliberately transparent (the clipping rule below) the lobby
+     scrolled straight through both of them:
+
+     1. THE SAFE AREA. `padding-bottom: env(safe-area-inset-bottom, 0px)` used
+        to sit here. It reserved the home-indicator strip INSIDE this box,
+        below the artwork, and left it see-through: the frame floated that far
+        off the bottom edge with game rows travelling under it. A desktop
+        browser reports 0 for that inset and looked correct, which is why this
+        survived; Dan's iPad reports about 20px, and that band under his footer
+        is what he photographed. The bar goes to the edge now. Its controls are
+        unaffected: each cell is the full height of a 48px frame, so their
+        centres stay a comfortable distance above the indicator.
+     2. THE TOUCH FLOOR. Below a 357px viewport the artwork's own aspect ratio
+        is shorter than the 44px `min-height` above, and that remainder sat
+        below the frame for the same reason. As a bottom-aligned column, any
+        such slack now falls ABOVE the frame, where the page is supposed to
+        show through.
+
+     Nothing is painted to achieve this - the strip is closed, not covered - so
+     the transparency law at the end of this rule still holds exactly as it
+     did. */
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
   overflow: hidden;
   color: #f4f4f4;
   /* CLIP THE BACKGROUND AROUND THE FRAME (Dan, 2026-09-04): "YOU NEED TO CLIP

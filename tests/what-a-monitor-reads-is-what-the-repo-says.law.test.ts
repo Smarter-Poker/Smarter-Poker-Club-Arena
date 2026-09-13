@@ -15,7 +15,7 @@
  *   3. `deploy.sh`'s symlink loop          - what a deploy actually UPDATES
  *
  * On 2026-09-06 list 3 named four of the seven files in list 1. So
- * `engine-freeze-rules.yml`, `supervisor-rules.yml`, `tournament-rules.yml` and
+ * `engine-freeze-rules.yml`, `recovery-rules.yml`, `tournament-rules.yml` and
  * `spin-rules.yml` were on the box only because somebody had put them there by
  * hand: a rule added to any of them in this repo could never reach production,
  * and a deploy would leave the hand-written copy in place for ever.
@@ -178,6 +178,15 @@ describe('LAW 4 - the routing is in this repo, and the canary reaches nobody', (
       'the pager-sms receiver must exist in this repo or a deploy deletes it'
     ).toMatch(/^\s*- name: pager-sms\s*$/m);
     expect(ALERTMANAGER, 'and the route that reaches it').toMatch(/page="sms"/);
+  });
+
+  it('operational faults reach the durable inbox without truncating individual alerts', () => {
+    expect(ALERTMANAGER).toMatch(/name: codex-inbox/);
+    expect(ALERTMANAGER).toMatch(
+      /severity!="canary"[\s\S]*page!="sms"[\s\S]*receiver: codex-inbox/
+    );
+    expect(ALERTMANAGER.match(/max_alerts: 0/g)).toHaveLength(2);
+    expect(ALERTMANAGER).not.toMatch(/max_alerts: [1-9]/);
   });
 
   it('the canary is routed to null-receiver, explicitly', () => {

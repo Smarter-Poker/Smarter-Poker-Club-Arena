@@ -66,6 +66,7 @@ import { reportError } from '../utils/errorReporter';
 import { isVibrationAllowed, fireVibration } from '../utils/vibrationGate';
 import { isSoundAllowed, persistSoundPreference } from '../utils/soundGate';
 import { spinCelebration } from '../config/spinSpec';
+import { trackAudioContext } from '../lib/audioContexts';
 export const haptic = {
   /** Check if vibrations are enabled (reads from localStorage) */
   // AUDIT 2026-08-19: the in-table vibration switch writes
@@ -303,6 +304,7 @@ class SoundService {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioCtx) {
         this.ctx = new AudioCtx();
+        trackAudioContext(this.ctx);
         this.masterGain = this.ctx.createGain();
         this.masterGain.gain.value = this.masterVolume * this.effectsVolume;
         this.masterGain.connect(this.ctx.destination);

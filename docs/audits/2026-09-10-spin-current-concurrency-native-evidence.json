@@ -1,0 +1,87 @@
+{
+  "verified_at": "2026-09-10T07:23:42Z",
+  "passed": [
+    {
+      "phase": "shared_reserve",
+      "observed_blocked_by_owner": true,
+      "owner_replay": false,
+      "rival_exit": 1,
+      "state_unchanged_after_rival": true,
+      "state_sha256": "21f690766b983c185f973aaeb4bdd9deed280b30582b07b2b5b0f81d73d2d208",
+      "rival_refusal": "no_eligible_tiers"
+    },
+    {
+      "phase": "changed_rules_replay",
+      "observed_blocked_by_owner": true,
+      "owner_replay": true,
+      "rival_exit": 0,
+      "state_unchanged_after_rival": true,
+      "state_sha256": "21f690766b983c185f973aaeb4bdd9deed280b30582b07b2b5b0f81d73d2d208",
+      "rival_refusal": null
+    },
+    {
+      "phase": "exact_replay",
+      "observed_blocked_by_owner": true,
+      "owner_replay": true,
+      "rival_exit": 0,
+      "state_unchanged_after_rival": true,
+      "state_sha256": "21f690766b983c185f973aaeb4bdd9deed280b30582b07b2b5b0f81d73d2d208",
+      "rival_refusal": null
+    }
+  ],
+  "final_counts": {
+    "balance": 1.28,
+    "deposited": 8.28,
+    "drawn": 7,
+    "receipts": 1,
+    "reserve_rows": 5,
+    "rake_rows": 3
+  },
+  "production_mutations": false,
+  "programme": "109-item comprehensive Club Arena accounting audit",
+  "control": "CA-03-08",
+  "status": "current_native_concurrent_draw_and_replay_passed_terminal_control_open",
+  "runner": "scripts/ci/rehearse-spin-current-concurrency.py",
+  "fixture": "scripts/ci/probes/spin-current-concurrency-fixture.sql",
+  "fixture_sha256": "b2c4e0a7af08e874f9919e9868824c147c5a74fb7bc96f0ce61daab6eef895bd",
+  "source_sha256": "0634d1da3856c1db483ea99fb9713838a5c7c5158e1d2f3ee6daf58f335dcf7f",
+  "tested_authority": {
+    "body_md5": "8b8cf19c75a21fb898f559ac5d73f422",
+    "definition_md5": "6d2328689637d1d28c9ce9256a0d6252"
+  },
+  "restored_authority": {
+    "body_md5": "b303d83aadd381950dfe658578767a4c",
+    "definition_md5": "1c911e3ada50ffe0493b9b375e3fa9ae"
+  },
+  "schema_effects": [
+    "fn_spin_draw_and_settle_atomic(uuid,uuid,uuid,jsonb) definition and ACL only"
+  ],
+  "catalog_before_sha256": "e6cdd01a8167c448ae71ec5a6d54a5f86152fa0015ed0c3ad188e70b910070c7",
+  "catalog_after_sha256": "e6cdd01a8167c448ae71ec5a6d54a5f86152fa0015ed0c3ad188e70b910070c7",
+  "complete_schema_restoration_verified": true,
+  "retained_owned_events": [
+    "96010000-0000-0000-0000-000000000001",
+    "96010000-0000-0000-0000-000000000002",
+    "96010000-0000-0000-0000-000000000003"
+  ],
+  "setup": {
+    "opening_pool": 0,
+    "actual_entry_contributions": 8.28,
+    "actual_prior_native_draw": 5,
+    "available_for_two_contenders": 3.28,
+    "minimum_combined_prizes": 4
+  },
+  "restoration_note": "The initial restore script lacked the SQL terminator after pg_get_functiondef output and failed transactionally. The saved restore journal was corrected, current6d232 precondition rechecked, restore committed successfully, and the full pre/post schema catalog matched exactly. The checked-in runner includes the terminator correction.",
+  "scope": [
+    "Complete exact34412 was temporarily committed only to the existing owned local database so both concurrent sessions resolved the same current function.",
+    "Migration review found exactly one function replacement and its ACL statements; no active default or other schema DDL. Full function metadata, defaults and triggers matched after restoration.",
+    "Each rival was observed waiting on its owner by pg_blocking_pids before the owner committed. No sleep duration substitutes for the lock assertion.",
+    "Three actual native entry bookings and one actual prior native five-chip draw created scarcity without a balance rewrite, money stub, RNG stub, or disabled money-call guards.",
+    "Opening paid-entry and seat structure are synthetic fixture inputs seeded under replica, with origin restored before every native money call.",
+    "All three additional960fixtures remain in the owned database, along with the previous8baselineevents; no cleanup or newdatabase."
+  ],
+  "remaining": [
+    "Current full terminal acceptance is blocked by the documented native seat-authority compatibility refusal.",
+    "Production adoption and full Phase3 programme acceptance remain open."
+  ]
+}

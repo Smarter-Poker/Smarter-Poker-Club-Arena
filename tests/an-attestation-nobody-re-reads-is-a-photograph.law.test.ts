@@ -219,8 +219,7 @@ describe('the attestation covers the journal, not the last eight days', () => {
   });
 
   it('the anchor alarm has a reader of its own, not a red job in a scheduled workflow', () => {
-    // CLAUDE.md 10.86 rule 3. The step must key off the anchor step itself, so
-    // a failure in the commit step afterwards cannot open a tampering issue.
+    // The alarm keys off the read-only comparison step itself.
     expect(wf).toMatch(/id: anchor/);
     expect(wf).toMatch(/Ledger attestation: an anchored day now hashes differently/);
     expect(wf).toMatch(/if: failure\(\) && steps\.anchor\.outcome == 'failure'/);
@@ -258,10 +257,10 @@ describe('the attestation covers the journal, not the last eight days', () => {
  *      budget, stamping last_checked_at, with `oldest_check_age_days` in the
  *      answer and a warning past 30 days.
  *   3. Every day boundary was evaluated in the caller's TimeZone. Pinned UTC.
- *   4. The anchor's append step pushed with GITHUB_TOKEN and called
- *      `gh pr create`; github-actions has opened zero pull requests in this
- *      repository, ever. It now mints the App token agent-open-pr.yml uses.
- *      And the script's REST reads had no pagination guard (1,000-row cap).
+ *   4. The old anchor append step tried to mutate source from a scheduled
+ *      workflow. The audit now compares disposable output and refuses drift;
+ *      reviewed source changes remain the only update path. The script's REST
+ *      reads also gained a pagination guard (1,000-row cap).
  */
 describe('the attestation restates itself, and never outgrows its budget', () => {
   const restate = readdirSync(MIGRATIONS)
@@ -372,18 +371,12 @@ describe('the attestation restates itself, and never outgrows its budget', () =>
     );
   });
 
-  it('the anchor line is pushed with a token that can reach main', () => {
-    const job = wf.slice(wf.indexOf('anchor-ledger-days:'), wf.indexOf('definer-exposure:'));
-    expect(job).toMatch(/uses: actions\/create-github-app-token@v1/);
-    expect(job).toMatch(/app-id: \$\{\{ vars\.AUTOPILOT_APP_ID \}\}/);
-    expect(job).toMatch(/private-key: \$\{\{ secrets\.AUTOPILOT_APP_PRIVATE_KEY \}\}/);
-    // the push itself carries the token; the checkout's credential is GITHUB_TOKEN
-    expect(job).toMatch(
-      /git push -f "https:\/\/x-access-token:\$\{GH_TOKEN\}@github\.com\/\$\{GITHUB_REPOSITORY\}\.git"/
-    );
-    // and a fall-through to GITHUB_TOKEN is a loud failure, not a green notice
-    expect(job).toMatch(/PUSH_TOKEN_KIND" = "github-token" \]; then\s+echo "::error::/);
-    expect(job).not.toMatch(/git push -f origin "\$BRANCH"/);
+  it('the anchor audit cannot write source or open a pull request', () => {
+    const job = wf.slice(wf.indexOf('anchor-ledger-days:'), wf.indexOf('second-writer:'));
+    expect(job).toMatch(/git diff --exit-code -- docs\/attestation\//);
+    expect(job).not.toMatch(/actions\/create-github-app-token/);
+    expect(job).not.toMatch(/\bgit\s+(?:add|commit|push)\b/);
+    expect(job).not.toMatch(/\bgh\s+pr\s+(?:create|merge)\b/);
   });
 
   it('the anchor refuses a truncated answer from PostgREST', () => {

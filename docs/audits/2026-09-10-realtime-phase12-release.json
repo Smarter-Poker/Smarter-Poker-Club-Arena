@@ -1,0 +1,311 @@
+{
+  "recordedAt": "2026-09-10T01:38:00.705Z",
+  "phase": 12,
+  "status": "Published; natural notification event, physical device, and wider fleet acceptance remain open",
+  "client": {
+    "checkedAt": "2026-09-10T01:19:38.385Z",
+    "stamps": [
+      {
+        "url": "https://smarter.poker/hub/club-arena/build-info.json",
+        "ca_sha": "3ed5b7d59f407fb0d9cb8d9324c6fdb03b3ff359",
+        "built_at": "2026-09-10T01:08:26Z",
+        "built_by": "publish-club-arena.yml",
+        "run_id": "34423638334"
+      },
+      {
+        "url": "https://ca-static.smarter.poker/build-info.json",
+        "ca_sha": "3ed5b7d59f407fb0d9cb8d9324c6fdb03b3ff359",
+        "built_at": "2026-09-10T01:08:26Z",
+        "built_by": "publish-club-arena.yml",
+        "run_id": "34423638334"
+      }
+    ],
+    "testedHead": "a52fa354468af2b092544e4e67bf157a3b04b43d",
+    "runtimeFile": "src/pages/NotificationsPage.tsx",
+    "testedBlob": "731a1f53d2eb0e883291c832ea73962f2dd45278",
+    "releasedBlob": "731a1f53d2eb0e883291c832ea73962f2dd45278",
+    "assets": [
+      {
+        "url": "https://smarter.poker/hub/club-arena/assets/index-B97_0ton-v6.js",
+        "sha256": "893daf40f981079a5045dfb379f3027210d966b06e284769adbdb1c2d776941a"
+      },
+      {
+        "url": "https://smarter.poker/hub/club-arena/assets/NotificationsPage-t9_zGnVT-v6.js",
+        "sha256": "83c4a6d267904f27c035ab77d503081aeff573f9be880a3a341778185d2bbd34"
+      }
+    ],
+    "markers": {
+      "ca-notif-cache:v1:": true,
+      "/api/notifications/feed?limit=50&bust=1": true,
+      "no-store": true,
+      "/api/poker/notifications": true,
+      "Notifications Could Not Be Refreshed. Showing The Last Confirmed Feed.": true,
+      "The Read Could Not Verify Your Sign In.": true,
+      "Live Feed": true,
+      "Reconnecting": true
+    }
+  },
+  "worldHub": {
+    "pr": 1715,
+    "merge": "55e21c8adc1fce02d02fe29eba56b191856606e2",
+    "observedAt": "2026-09-10T01:26:26.483Z",
+    "health": {
+      "version": "55e21c8adc1fce02d02fe29eba56b191856606e2",
+      "status": "ok",
+      "deploymentId": "dpl_Cp65D7Jnfd9Sp2FG7CqCZ27rLRnF"
+    },
+    "deploymentState": "READY",
+    "runtimeFiles": [
+      {
+        "path": "pages/api/notifications/feed.js",
+        "testedBlob": "76b0a96ab36cf62ea49dd48b09b8a0322bac4ccb",
+        "publishedBlob": "76b0a96ab36cf62ea49dd48b09b8a0322bac4ccb"
+      },
+      {
+        "path": "pages/api/poker/notifications.js",
+        "testedBlob": "1dac375d0ebd39e0ce7332774bddb3a6edecccfe",
+        "publishedBlob": "1dac375d0ebd39e0ce7332774bddb3a6edecccfe"
+      }
+    ]
+  },
+  "releaseGates": {
+    "clientPublisher": {
+      "id": "34423638334",
+      "sha": "3ed5b7d59f407fb0d9cb8d9324c6fdb03b3ff359",
+      "status": "completed",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "name": "publish-needed",
+          "conclusion": "success",
+          "steps": []
+        },
+        {
+          "name": "build-and-store",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Build Club Arena",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "name": "client-tests (1)",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Client tests must pass before the bundle ships (shard 1/4)",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "name": "client-tests (3)",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Client tests must pass before the bundle ships (shard 3/4)",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "name": "client-tests (2)",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Client tests must pass before the bundle ships (shard 2/4)",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "name": "client-tests (4)",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Client tests must pass before the bundle ships (shard 4/4)",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "name": "publish-to-origin",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Publish - rsync the release, swap the symlink, prune",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify the origin serves this bundle",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "name": "Publish the app bundle (Capgo OTA)",
+          "conclusion": "skipped",
+          "steps": []
+        }
+      ]
+    },
+    "apiSourceCI": {
+      "id": "34424698516",
+      "sha": "f26bf40aac439389265cb8f3c875491ee82a9cf8",
+      "status": "completed",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "name": "TypeScript Check",
+          "conclusion": "success",
+          "steps": []
+        },
+        {
+          "name": "Pre-Deploy Safety Checks",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "CHECK 8: Auth-critical files exist",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "name": "Vercel Deploy Retry (GitHub-500 guard)",
+          "conclusion": "skipped",
+          "steps": []
+        },
+        {
+          "name": "Failure Notification",
+          "conclusion": "skipped",
+          "steps": []
+        }
+      ]
+    },
+    "apiMergeCI": {
+      "id": "34425061651",
+      "sha": "55e21c8adc1fce02d02fe29eba56b191856606e2",
+      "status": "completed",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "name": "Vercel Deploy Retry (GitHub-500 guard)",
+          "conclusion": "success",
+          "steps": []
+        },
+        {
+          "name": "Pre-Deploy Safety Checks",
+          "conclusion": "skipped",
+          "steps": []
+        },
+        {
+          "name": "TypeScript Check",
+          "conclusion": "skipped",
+          "steps": []
+        },
+        {
+          "name": "Failure Notification",
+          "conclusion": "skipped",
+          "steps": []
+        }
+      ]
+    },
+    "unrelatedFooterCI": {
+      "id": "34424698515",
+      "sha": "f26bf40aac439389265cb8f3c875491ee82a9cf8",
+      "status": "completed",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "name": "Chromium and WebKit footer contract",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Verify footer routes and geometry",
+              "conclusion": "success"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "tests": {
+    "mountedNotificationCases": 20,
+    "apiWithCopyAndRoutingCases": 46,
+    "ciEntryPointCases": 1428,
+    "postgresMigrationTest": "passed",
+    "countsOverlap": true
+  },
+  "browser": {
+    "at": "2026-09-10T01:28:05.937Z",
+    "surface": "Supported controlled Chrome",
+    "heading": "Notifications",
+    "status": "Live Feed",
+    "rows": 50,
+    "errorAlerts": 0,
+    "pushPermission": "blocked",
+    "entry": "https://smarter.poker/hub/club-arena/assets/index-B97_0ton-v6.js",
+    "physicalDeviceVerified": false
+  },
+  "publication": {
+    "migration": "20260910003525",
+    "verifiedAt": "2026-09-10T00:35:55.266798Z",
+    "table": "public.notifications",
+    "ownerOnlySelectPolicy": true,
+    "replicaIdentity": "FULL",
+    "unrelatedPublicationEntriesUnchanged": true,
+    "advisorCountsUnchanged": true
+  },
+  "naturalDelivery": {
+    "observerStartedAt": "2026-09-10T00:41:48.494Z",
+    "observerFinishedAt": "2026-09-10T00:51:48.514Z",
+    "subscribed": true,
+    "events": 0,
+    "errors": 0,
+    "databaseCheckedAt": "2026-09-10T01:21:33.692783Z",
+    "insertsSinceRestoration": 0,
+    "accepted": false
+  },
+  "engine": {
+    "version": "b53ad9b212cf586ffdc6fed888ad6b738c348191",
+    "callbackFixAncestors": [
+      "89cabee97a80a707b251d29c95dfd1a59570c605",
+      "046f9e45701c303bd99d75e3c8cd3bc67a342346"
+    ],
+    "sample": {
+      "at": "2026-09-10T01:23:39.855Z",
+      "activeTables": 294,
+      "dealableTables": 266,
+      "stalledTables": 3,
+      "blockedSettlements": 0,
+      "gapSamples": 2000,
+      "p50Ms": 2001,
+      "p90Ms": 4585,
+      "maxMs": 17565,
+      "retainedWindowMs": 600000
+    },
+    "fatalSearch": {
+      "from": "2026-09-10T01:12:00.001757807Z",
+      "through": "2026-09-10T01:26:47.348094697Z",
+      "originalAuthorityFatalMatches": 0
+    },
+    "missingDependency": {
+      "verifiedAt": "2026-09-10T01:32:34.667144Z",
+      "functions": ["fn_move_tournament_player", "fn_resolve_committed_tournament_seat_move"],
+      "table": "tournament_seat_move_receipts",
+      "catalogFunctionsPresent": 0,
+      "catalogTablePresent": false,
+      "existingOwnerRecord": "docs/audits/2026-09-09-phase3-tournament-lifecycle.md"
+    },
+    "stagedOnlyRun": 34423465001,
+    "accepted": false
+  },
+  "remaining": [
+    "Natural notification change delivery",
+    "Physical iPad/PWA reconnect, background resume and delivery",
+    "Existing protected tournament seat-move database cutover and subsequent fleet acceptance",
+    "Supabase detailed SQL log and per-service egress access"
+  ]
+}

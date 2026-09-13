@@ -12,6 +12,7 @@ import {
   evaluateOmahaHand,
   evaluateOmahaLowHand,
   calculatePots,
+  calculateContestablePot,
   calculateBettingState,
   validateAction,
   calculateRake,
@@ -35,6 +36,7 @@ import {
   isOmahaVariant,
   isShortDeckVariant,
 } from './VariantRules.js';
+import { isDiamondCashVariant } from '../domain/DiamondCashBoundary.js';
 
 import type {
   Card,
@@ -53,6 +55,8 @@ import type {
   PerPotAward,
   RakeConfig,
   BettingState,
+  AuthoritativeActionState,
+  AcceptedActionOrigin,
 } from '../types.js';
 
 import { reportError } from '../services/errorReporter.js';
@@ -60,6 +64,10 @@ import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { createHandStateMachine, type HandFSMState } from './StateMachine.js';
 import { bigBlindAnteTotal } from './AnteMath.js';
 import { HAND_COMPLETION } from '../config/handCompletionSpec.js';
+import {
+  captureHorsePublicActionNode,
+  unavailablePublicActionNode,
+} from './HorsePublicActionNode.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HAND CONTROLLER
@@ -95,12 +103,20 @@ export function scaleWinnerCentsForRake(
   preRakeAmounts: readonly number[],
   totalWinnings: number
 ): number[] {
+  return scaleWinnerUnitsForRake(preRakeAmounts, totalWinnings, 100);
+}
+
+function scaleWinnerUnitsForRake(
+  preRakeAmounts: readonly number[],
+  totalWinnings: number,
+  unitsPerAmount: 1 | 100
+): number[] {
   // Round 40 audit Pass 3 fix: integer-cents arithmetic with Math.round (NOT
   // Math.trunc) for the float->cents conversion. IEEE 754 drift can make a pot
   // of "$140.30" actually be 140.29999..., and Math.trunc(140.299... * 100) is
   // 13479 rather than 13480 — exactly 1c lost per chop pot with any drift.
-  const totalCents = Math.round(totalWinnings * 100);
-  const entitlementCents = preRakeAmounts.map((a) => Math.round(a * 100));
+  const totalCents = Math.round(totalWinnings * unitsPerAmount);
+  const entitlementCents = preRakeAmounts.map((a) => Math.round(a * unitsPerAmount));
   const totalWinnerCents = entitlementCents.reduce((s, c) => s + c, 0) || 1;
 
   const adjusted = entitlementCents.map((c) => Math.round((c * totalCents) / totalWinnerCents));
@@ -141,6 +157,13 @@ export class HandController {
   private eventHandlers: ((event: HandEvent) => void)[] = [];
   /** FIX 120: Crazy Pineapple — tracks seats that still need to discard after flop */
   private pineappleDiscardsRemaining: Set<number> = new Set();
+  /** Private per-hand knowledge; deliberately absent from public GameState. */
+  private pineappleKnownDeadCards = new Map<number, Card>();
+
+  public getPineappleKnownDeadCards(seat: number): Card[] {
+    const card = this.pineappleKnownDeadCards.get(seat);
+    return card ? [{ ...card }] : [];
+  }
   /**
    * All-in Pineapple has no player-action discard round, but showdown is still
    * a two-card game. The table engine computes those choices on the live horse
@@ -185,7 +208,54 @@ export class HandController {
   /** FIX-225: Bible V8 §1.6/§3.2 — Formal Hand State Machine */
   private handFSM = createHandStateMachine('idle');
 
-  constructor(config: HandConfig, players: SeatPlayer[], dealerSeat: number) {
+  constructor(
+    config: HandConfig,
+    players: SeatPlayer[],
+    dealerSeat: number,
+    private readonly readPublicTournamentStage?: import('./HorsePublicTournamentStage.js').HorsePublicTournamentReader
+  ) {
+    if (config.asset === 'diamonds') {
+      const amounts = [
+        config.smallBlind,
+        config.bigBlind,
+        config.ante ?? 0,
+        ...players.map((player) => player.stack),
+        ...(config.straddles ?? []).map((straddle) => straddle.amount),
+      ];
+      if (amounts.some((amount) => !Number.isSafeInteger(amount) || amount < 0)) {
+        throw new Error('Diamond Hands Require Nonnegative Whole Units');
+      }
+      // Phase 6 certifies plain NLH cash. Later variants and paid deductions
+      // stay closed until their own accounting and release gates are approved.
+      //
+      // RUN IT TWICE LEFT THIS LIST ON 2026-09-12. It was here because the RIT
+      // runout cut every pot into integer CENTS, so a five Diamond pot over two
+      // runs paid two and a half Diamonds a board and this guard would then
+      // have refused the hand it had just dealt. The runout now cuts in the
+      // table's own unit and tells determineWinners what that unit is, so both
+      // the per-board slice and a tie chopped on one board are whole Diamonds.
+      // BOMB POTS LEFT IT LATER THE SAME DAY. Their award breakdown rides the
+      // p_units lane, which the accepted-hand commit refused outright for a
+      // Diamond hand; it now requires every unit amount to be whole, the same
+      // rule it already applied to every other amount on the hand. The ante is
+      // rounded to the table's own unit below and the boundary refuses a row
+      // whose ante could not be whole, so neither half can produce a fraction.
+      if (
+        config.isTournament ||
+        /* 2026-09-12: the nine games the chip cash screen offers, not the one
+           this arena opened with. Every place a pot is divided was already
+           made unit-aware while it was NLH only, the hi-lo split included, so
+           what this list changes is which deck is dealt rather than how the
+           money is cut. See DIAMOND_CASH_VARIANTS for the full argument. */
+        !isDiamondCashVariant(config.gameVariant) ||
+        config.insuranceEnabled ||
+        config.rakeConfig.percent !== 0 ||
+        config.rakeConfig.cap !== 0 ||
+        config.bbjConfig?.enabled
+      ) {
+        throw new Error('Diamond Cash Certification Requires A Supported Game With No Deductions');
+      }
+    }
     this.config = config;
 
     const deck = new Deck();
@@ -225,6 +295,8 @@ export class HandController {
   }
 
   private emit(event: HandEvent): void {
+    // Late runout callbacks must not distribute an already completed pot again.
+    if (event.type === 'HAND_COMPLETE') this.handCompleted = true;
     for (const handler of this.eventHandlers) {
       // 2026-08-22: per-listener guard. An unguarded throw here aborted the
       // remaining listeners AND unwound back into the middle of
@@ -708,12 +780,24 @@ export class HandController {
      * Rounding here fixes both, because this is the single value both the
      * charge and the announcement are derived from.
      */
+    /* AND TO THE UNIT, NOT ONLY TO THE CENT (2026-09-12). A cent is the
+       indivisible unit of a chip and half of a Diamond, and the multiplier
+       slider steps by 0.5, so 1.5x a one Diamond blind is one and a half
+       Diamonds - a forced bet the hand guard refuses, from a table that has
+       already dealt. The boundary refuses a row whose ante could not be whole;
+       this is the second half of the same rule, at the single value both the
+       charge and the announcement are derived from. */
+    const anteUnitCents = this.config.isTournament || this.config.asset === 'diamonds' ? 100 : 1;
     const anteAmount =
-      Math.round(
-        (bombPot.anteFixed && bombPot.anteFixed > 0
+      (Math.round(
+        ((bombPot.anteFixed && bombPot.anteFixed > 0
           ? bombPot.anteFixed
-          : bigBlind * bombPot.anteMultiplier) * 100
-      ) / 100;
+          : bigBlind * bombPot.anteMultiplier) *
+          100) /
+          anteUnitCents
+      ) *
+        anteUnitCents) /
+      100;
 
     const dealtIn = this.state.players.filter((p) => !p.is_sitting_out);
 
@@ -864,7 +948,21 @@ export class HandController {
     this.state.currentBet = r(this.state.currentBet);
   }
 
-  performAction(seat: number, action: ActionType, amount?: number): boolean {
+  performAction(
+    seat: number,
+    action: ActionType,
+    amount?: number,
+    origin: AcceptedActionOrigin = 'unknown'
+  ): boolean {
+    if (this.config.asset === 'diamonds' && amount !== undefined && !Number.isSafeInteger(amount)) {
+      return false;
+    }
+    // Crazy Pineapple's discard is a simultaneous, non-betting round. The
+    // ordinary turn pointer is deliberately parked while it is open, but this
+    // guard is the authoritative backstop: a late turn timer, delayed horse
+    // callback, or reconnect re-arm must never turn a check/fold into a discard
+    // or advance the hand with a live seat still holding three cards.
+    if (this.state.stage === 'pineapple_discard') return false;
     const player = this.state.players.find((p) => p.seat === seat);
     if (!player || seat !== this.state.currentPlayerSeat) return false;
     // 2026-08-15 BACKSTOP: a folded, all-in or sitting-out seat can never act,
@@ -911,6 +1009,20 @@ export class HandController {
     const raisesBet =
       action === 'raise' || (action === 'all_in' && player.stack > bettingState.toCall + 0.005);
     if (raisesBet && !this.canReopenBetting(player)) return false;
+
+    let publicNode;
+    try {
+      publicNode = captureHorsePublicActionNode(
+        this.config,
+        this.state,
+        this.getAuthoritativeActionState(player.user_id),
+        this.getActiveBoardCount(),
+        this.readPublicTournamentStage
+      );
+    } catch {
+      // Learning metadata cannot veto an already validated poker action.
+      publicNode = unavailablePublicActionNode('invalid_public_state');
+    }
 
     let actualAmount = 0;
     let isFullRaiseFlag: boolean | undefined;
@@ -980,7 +1092,7 @@ export class HandController {
     this.snapChips();
     actualAmount = Math.round(actualAmount * 100) / 100;
 
-    this.state.actionHistory.push({
+    const record: Readonly<ActionRecord> = Object.freeze({
       seat,
       userId: player.user_id,
       action,
@@ -989,6 +1101,7 @@ export class HandController {
       stage: this.state.stage,
       isFullRaise: isFullRaiseFlag,
     });
+    this.state.actionHistory.push(record);
 
     // The stage travels WITH the action. This is the same value just written
     // to actionHistory above, so the persisted hand history and the
@@ -999,6 +1112,11 @@ export class HandController {
       action,
       amount: actualAmount,
       stage: this.state.stage,
+      record,
+      publicNode,
+      origin: ['player', 'pre_action', 'horse_policy', 'horse_fallback', 'forced'].includes(origin)
+        ? origin
+        : 'unknown',
     });
     this.emit({ type: 'POT_UPDATE', pot: this.state.pot, pots: calculatePots(this.state.players) });
     this.advanceGame();
@@ -1030,7 +1148,7 @@ export class HandController {
     if (!player.cards || player.cards.length !== 3) {
       return false; // Invalid state — should have 3 cards
     }
-    if (cardIndex < 0 || cardIndex >= player.cards.length) {
+    if (!Number.isInteger(cardIndex) || cardIndex < 0 || cardIndex >= player.cards.length) {
       return false; // Invalid card index
     }
 
@@ -1045,6 +1163,7 @@ export class HandController {
        result has been unused since the variant shipped, which is why the
        replay could say "Discard" but never which card. */
     if (discarded[0]) {
+      this.pineappleKnownDeadCards.set(seat, { ...discarded[0] });
       this.emit({ type: 'PINEAPPLE_DISCARDED', seat, card: discarded[0] });
     }
 
@@ -1075,7 +1194,7 @@ export class HandController {
        isBettingRoundComplete), so a zero-amount 'discard' on a stage none of
        them bet in is inert to all of them - and it makes the in-memory history
        agree with the persisted one, which is what HorseMind hydrates from. */
-    this.state.actionHistory.push({
+    const record: Readonly<ActionRecord> = Object.freeze({
       seat,
       userId: player.user_id,
       action: 'discard',
@@ -1083,6 +1202,7 @@ export class HandController {
       timestamp: Date.now(),
       stage: this.state.stage,
     });
+    this.state.actionHistory.push(record);
 
     // Emit discard action for logging
     this.emit({
@@ -1091,6 +1211,8 @@ export class HandController {
       action: 'discard',
       amount: 0,
       stage: this.state.stage,
+      record,
+      publicNode: unavailablePublicActionNode('private_discard_choice'),
     });
     // Send updated cards to the player (secure per-player)
     this.emit({ type: 'CARDS_DEALT', seat, cards: [...player.cards] });
@@ -1137,6 +1259,16 @@ export class HandController {
     player.is_folded = true;
     this.pineappleDiscardsRemaining.delete(seat);
 
+    const record: Readonly<ActionRecord> = Object.freeze({
+      seat,
+      userId: player.user_id,
+      action: 'fold',
+      amount: 0,
+      timestamp: Date.now(),
+      stage: this.state.stage,
+    });
+    this.state.actionHistory.push(record);
+
     // Announce it the same way any fold is announced, so seats grey out and
     // the hand history records a fold rather than a phantom discard.
     this.emit({
@@ -1146,6 +1278,8 @@ export class HandController {
       action: 'fold',
       amount: 0,
       stage: this.state.stage,
+      record,
+      publicNode: unavailablePublicActionNode('timeout_discard_fold'),
     } as unknown as HandEvent);
 
     // Everyone else folding to one player ends the hand here - there is no
@@ -1457,6 +1591,13 @@ export class HandController {
 
         // FIX 120: Crazy Pineapple — after dealing flop, enter discard phase
         if (this.config.gameVariant === 'pineapple') {
+          // There is no actor during the simultaneous discard round. Leaving
+          // the final preflop seat here let an old ordinary action-clock expiry
+          // pass its seat-identity guard and auto-check during
+          // `pineapple_discard`, advancing to flop betting before that seat had
+          // discarded. The first subsequent Horse snapshot then carried three
+          // cards on the flop and terminal-failed the process-wide worker.
+          this.state.currentPlayerSeat = -1;
           this.transitionStage('pineapple_discard');
           const activePlayers = this.getActivePlayers();
           this.pineappleDiscardsRemaining = new Set(activePlayers.map((p) => p.seat));
@@ -1704,7 +1845,7 @@ export class HandController {
    * finalizeRunout(true) then emits WINNERS [], and that handler does
    * `localPlayer.stack = enginePlayer.stack` from a fresh (still uncredited)
    * getState(). So it overwrote the one real credit — the seated player's —
-   * with the pre-payout stack, and syncStacks persisted that. Both players in
+   * with the pre-payout stack, and the old hand writer persisted that. Both players in
    * an all-in RIT pot finished on their post-betting stack and the pot was
    * destroyed. 28,691 tables have run_it_twice_enabled.
    *
@@ -1728,6 +1869,7 @@ export class HandController {
   /** True once start() has run. A controller that has not started has no
    *  blinds, no hole cards and no hand - nothing about it may be run out. */
   private handStarted = false;
+  private handCompleted = false;
 
   /**
    * ═══ RUNOUT CALLS ARE ONLY LEGAL DURING A RUNOUT (2026-08-31) ═══════════
@@ -1750,6 +1892,7 @@ export class HandController {
    * call must be refused.
    */
   private refuseUnlessRunout(op: string): boolean {
+    if (this.handCompleted) return true;
     const live = this.state.players.filter((p) => !p.is_folded && !p.is_sitting_out);
     const canStillBet = live.filter((p) => !p.is_all_in);
     const inRunout = this.handStarted && (live.length <= 1 || canStillBet.length <= 1);
@@ -1798,6 +1941,19 @@ export class HandController {
    * the database move by the same number and cannot drift apart.
    */
   public applyStackDeltas(deltas: Map<string, number>): void {
+    if (this.config.asset === 'diamonds') {
+      for (const [userId, amount] of deltas) {
+        const player = this.state.players.find((p) => p.user_id === userId);
+        if (
+          !Number.isSafeInteger(amount) ||
+          !player ||
+          !Number.isSafeInteger(player.stack + amount) ||
+          player.stack + amount < 0
+        ) {
+          throw new Error('Diamond Stack Deltas Must Preserve Nonnegative Whole Units');
+        }
+      }
+    }
     for (const [userId, amount] of deltas) {
       if (!amount) continue;
       const player = this.state.players.find((p) => p.user_id === userId);
@@ -1986,6 +2142,7 @@ export class HandController {
          left their hand and it is still theirs to review. Same private event,
          same RLS-protected destination. */
       if (forced[0]) {
+        this.pineappleKnownDeadCards.set(player.seat, { ...forced[0] });
         this.emit({ type: 'PINEAPPLE_DISCARDED', seat: player.seat, card: forced[0] });
       }
 
@@ -2008,7 +2165,7 @@ export class HandController {
          CLAUDE.md 10.6 says an animation is owed every time it is owed, not
          on the paths that happen to be convenient. Announced identically here,
          BEFORE the cards go out, so ordering matches performDiscard. */
-      this.state.actionHistory.push({
+      const record: Readonly<ActionRecord> = Object.freeze({
         seat: player.seat,
         userId: player.user_id,
         action: 'discard',
@@ -2016,12 +2173,15 @@ export class HandController {
         timestamp: Date.now(),
         stage: discardStage,
       });
+      this.state.actionHistory.push(record);
       this.emit({
         type: 'PLAYER_ACTION',
         seat: player.seat,
         action: 'discard',
         amount: 0,
         stage: discardStage,
+        record,
+        publicNode: unavailablePublicActionNode('forced_discard'),
       });
 
       this.emit({ type: 'CARDS_DEALT', seat: player.seat, cards: [...player.cards] });
@@ -2209,7 +2369,7 @@ export class HandController {
     //
     // DOUBLE-BOARD BOMB POT 2026-08-20 / TRIPLE-BOARD 2026-08-27 (spec §8/§9):
     // with N full boards, EVERY pot layer (main and each side pot) is split in
-    // integer cents into N board shares — indivisible remainder cents go to
+    // configured chip units into N board shares — indivisible remainder units go to
     // the lowest board numbers first (Board 1, then Board 2, then Board 3;
     // spec's LOWEST_BOARD_NUMBER policy) — and each share is awarded
     // independently on its own board among that pot layer's eligible players.
@@ -2227,14 +2387,21 @@ export class HandController {
       const boardCount = settlementBoards.length;
       // Per-board pot arrays: potsByBoard[b][p] is pot layer p's share on
       // board b. splitAcrossBoards (spec §18.1): floor division, remainder
-      // cents to ascending board order.
+      // units to ascending board order. Tournament/diamond chips must stay
+      // whole before any high/low or tied-winner split, not only afterwards.
       const potsByBoard: Pot[][] = Array.from({ length: boardCount }, () => []);
       for (const pot of pots) {
         const cents = Math.round(pot.amount * 100);
-        const base = Math.floor(cents / boardCount);
-        const remainder = cents % boardCount;
+        const unitCents = this.config.isTournament || this.config.asset === 'diamonds' ? 100 : 1;
+        const units = Math.floor(cents / unitCents);
+        const subUnitCents = cents - units * unitCents;
+        const base = Math.floor(units / boardCount);
+        const remainder = units % boardCount;
         for (let b = 0; b < boardCount; b++) {
-          const shareCents = base + (b < remainder ? 1 : 0);
+          // Preserve legacy sub-unit residue once, on the first board, using
+          // the same conservation contract as determineWinners.
+          const shareCents =
+            (base + (b < remainder ? 1 : 0)) * unitCents + (b === 0 ? subUnitCents : 0);
           potsByBoard[b].push({
             amount: shareCents / 100,
             eligiblePlayers: [...pot.eligiblePlayers],
@@ -2257,7 +2424,7 @@ export class HandController {
           perPot,
           undefined,
           // A tournament chip does not divide (2026-09-08).
-          this.config.isTournament ? 1 : 0.01
+          this.config.isTournament || this.config.asset === 'diamonds' ? 1 : 0.01
         );
         winnersPerBoard.push(boardWinners);
         this.pendingPerPotAwards.push(
@@ -2318,7 +2485,7 @@ export class HandController {
             'HandController.pot_eligibility_snapshot_stale'
           ),
         // A tournament chip does not divide (2026-09-08).
-        this.config.isTournament ? 1 : 0.01
+        this.config.isTournament || this.config.asset === 'diamonds' ? 1 : 0.01
       );
       this.pendingPerPotAwards = perPot;
     }
@@ -2384,7 +2551,7 @@ export class HandController {
           recoveredPerPot,
           undefined,
           // A tournament chip does not divide (2026-09-08).
-          this.config.isTournament ? 1 : 0.01
+          this.config.isTournament || this.config.asset === 'diamonds' ? 1 : 0.01
         );
         if (winners.length > 0) this.pendingPerPotAwards = recoveredPerPot;
       }
@@ -2402,14 +2569,15 @@ export class HandController {
 
       // 3. Still nothing: split among the contenders. Never by list position.
       if (winners.length === 0 && contenders.length > 0) {
-        const cents = Math.round(totalPot * 100);
+        const unitsPerAmount = this.config.asset === 'diamonds' ? 1 : 100;
+        const cents = Math.round(totalPot * unitsPerAmount);
         const share = Math.floor(cents / contenders.length);
         const remainder = cents - share * contenders.length;
         winners = contenders.map((p, i) => ({
           userId: p.user_id,
           // The odd cents go to the earliest seats, the same rule the split-pot
           // path uses, so the total is exact and the choice is not arbitrary.
-          amount: (share + (i < remainder ? 1 : 0)) / 100,
+          amount: (share + (i < remainder ? 1 : 0)) / unitsPerAmount,
         }));
         reportError(
           new Error(
@@ -2470,11 +2638,14 @@ export class HandController {
     // After Math.round, adjustedCents.sum may be over OR under totalCents.
     // Two separate distribute loops handle both directions so the post
     // condition `sum(adjustedCents) === totalCents` always holds.
-    const adjustedCents = scaleWinnerCentsForRake(
+    const adjustedCents = scaleWinnerUnitsForRake(
       winners.map((w) => w.amount),
-      totalWinnings
+      totalWinnings,
+      this.config.asset === 'diamonds' ? 1 : 100
     );
-    const adjustedAmounts = adjustedCents.map((c) => c / 100);
+    const adjustedAmounts = adjustedCents.map(
+      (c) => c / (this.config.asset === 'diamonds' ? 1 : 100)
+    );
     const adjustedWinners = winners.map((w, i) => ({ ...w, amount: adjustedAmounts[i] }));
 
     for (const winner of adjustedWinners) {
@@ -3265,6 +3436,93 @@ export class HandController {
     };
   }
 
+  /**
+   * Phase 5 Round 1: one authoritative legality contract for clients and the
+   * live horse worker. This deliberately calls the same private rule functions
+   * as performAction(), rather than asking either consumer to infer reopening,
+   * fixed-limit or pot-limit rights from a reduced state object.
+   */
+  public getAuthoritativeActionState(userId: string): AuthoritativeActionState | null {
+    const player = this.state.players.find((p) => p.user_id === userId);
+    if (!player) return null;
+
+    const bettingState = this.buildBettingState(player);
+    const canAct =
+      this.state.currentPlayerSeat === player.seat &&
+      !player.is_folded &&
+      !player.is_all_in &&
+      !player.is_sitting_out &&
+      player.stack > 0;
+    let legalActions = canAct ? this.getAvailableActions(player) : [];
+    const hasBet = legalActions.includes('bet');
+    const hasRaise = legalActions.includes('raise');
+    const hasSizedWager = hasBet || hasRaise;
+    const cents = (value: number): number => Math.round(value * 100) / 100;
+
+    let minRaiseTo: number | null = null;
+    let maxRaiseTo: number | null = null;
+    if (hasSizedWager) {
+      minRaiseTo = cents(
+        hasRaise ? this.state.currentBet + bettingState.minRaise : bettingState.minRaise
+      );
+      const stackBound = hasRaise ? player.bet + player.stack : player.stack;
+      const structureBound =
+        bettingState.maxRaise === undefined
+          ? Infinity
+          : hasRaise
+            ? this.state.currentBet + bettingState.maxRaise
+            : bettingState.maxRaise;
+      maxRaiseTo = cents(Math.min(stackBound, structureBound));
+      // A stack below the ordinary minimum can still act through the explicit
+      // all_in action, but there is no legal sized bet/raise interval. Do not
+      // advertise an impossible range with min > max.
+      if (maxRaiseTo < minRaiseTo - 0.005) {
+        legalActions = legalActions.filter((action) => action !== (hasRaise ? 'raise' : 'bet'));
+        minRaiseTo = null;
+        maxRaiseTo = null;
+      }
+    }
+
+    return {
+      schemaVersion: 1,
+      heroSeat: player.seat,
+      currentPlayerSeat: this.state.currentPlayerSeat,
+      canAct,
+      legalActions,
+      toCall: cents(Math.max(0, bettingState.toCall)),
+      minRaiseTo,
+      maxRaiseTo,
+      structure: bettingState.structure ?? 'no_limit',
+      fixedBetSize: isFixedLimitVariant(this.config.gameVariant)
+        ? fixedLimitBetSize(this.config.bigBlind, this.state.stage)
+        : null,
+      wagersCapped: bettingState.wagersCapped === true,
+    };
+  }
+
+  /** Exact per-hand rake rules; cloned so a decision cannot mutate settlement. */
+  public getRakeConfigSnapshot(): RakeConfig {
+    return {
+      ...this.config.rakeConfig,
+      playerCountCaps: this.config.rakeConfig.playerCountCaps?.map((tier) => ({ ...tier })),
+      timedRake: this.config.rakeConfig.timedRake
+        ? { ...this.config.rakeConfig.timedRake }
+        : undefined,
+    };
+  }
+
+  public getChipRulesSnapshot(): {
+    asset: 'chips' | 'diamonds';
+    chipUnit: 0.01 | 1;
+    bbjConfig: HandConfig['bbjConfig'] | null;
+  } {
+    return {
+      asset: this.config.asset === 'diamonds' ? 'diamonds' : 'chips',
+      chipUnit: this.config.isTournament || this.config.asset === 'diamonds' ? 1 : 0.01,
+      bbjConfig: this.config.bbjConfig ? { ...this.config.bbjConfig } : null,
+    };
+  }
+
   getCurrentPlayer(): SeatPlayer | undefined {
     return this.state.players.find((p) => p.seat === this.state.currentPlayerSeat);
   }
@@ -3310,6 +3568,20 @@ export class HandController {
   /** Live side pots computed from current contributions (not the cached ones). */
   public computeLivePots(): import('../types.js').Pot[] {
     return calculatePots(this.state.players);
+  }
+
+  /**
+   * Pot already in the middle that this player can win after matching the
+   * current wager, excluding the player's own not-yet-committed call.
+   */
+  public getContestablePotForCall(userId: string): number | null {
+    const player = this.state.players.find((candidate) => candidate.user_id === userId);
+    if (!player) return null;
+    return calculateContestablePot(
+      this.state.players,
+      userId,
+      this.buildBettingState(player).toCall
+    );
   }
 
   /**

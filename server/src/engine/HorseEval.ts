@@ -23,6 +23,11 @@
  */
 
 import type { Card } from '../types.js';
+import {
+  CONTINUATION_POLICY,
+  continuationStrength,
+  type TournamentContinuationStreet,
+} from './HorseTournamentContinuation.js';
 import { scoreFiveCards } from './HorseFiveCardScore.js';
 import { SUITS, RANKS, RANK_VALUES } from './PokerEngine.js';
 import {
@@ -807,16 +812,35 @@ export interface OmahaNutStatus {
   higherFlushRanks: number;
   /** made straight only: no two hole cards make a bigger straight here */
   straightIsNut: boolean;
+  /** three or more of one suit on the board, so SOMEBODY can hold a flush.
+   *  Omaha plays exactly two hole cards, so three of a suit on the board is
+   *  the threshold - the same bar the NLH status uses. */
+  flushPossible: boolean;
 }
 
-const NO_NUT_STATUS: OmahaNutStatus = { category: 0, higherFlushRanks: 0, straightIsNut: true };
+const NO_NUT_STATUS: OmahaNutStatus = {
+  category: 0,
+  higherFlushRanks: 0,
+  straightIsNut: true,
+  flushPossible: false,
+};
 
 export function omahaNutStatus(hole: Card[], board: Card[]): OmahaNutStatus {
   if (!hole || hole.length < 2 || !board || board.length < 3) return NO_NUT_STATUS;
   try {
     const score = scoreOmahaHiPartial(hole, board);
     const cat = Math.floor(score / 0x100000);
-    const out: OmahaNutStatus = { category: cat, higherFlushRanks: 0, straightIsNut: true };
+    const out: OmahaNutStatus = {
+      category: cat,
+      higherFlushRanks: 0,
+      straightIsNut: true,
+      flushPossible: false,
+    };
+    // Computed for every category, not just the branch that reads it: a field
+    // named flushPossible that is only true sometimes is a field that lies.
+    const boardSuitCounts = new Map<string, number>();
+    for (const c of board) boardSuitCounts.set(c.suit, (boardSuitCounts.get(c.suit) ?? 0) + 1);
+    for (const n of boardSuitCounts.values()) if (n >= 3) out.flushPossible = true;
 
     if (cat === 6) {
       // The flush suit: >= 3 on the board (Omaha uses exactly 3 board cards)
@@ -2105,6 +2129,30 @@ export function equitySampleSizeOfLastCall(): number {
   return lastEquitySampleSize;
 }
 
+/** One range-conditioned showdown sampled inside the canonical equity pass. */
+export interface HorseEquityOutcomeSample {
+  continuationStreets?: TournamentContinuationStreet[];
+  heroHigh: number;
+  opponentHigh: number[];
+  /** Opponent strength at the decision point, before sampled future cards. */
+  opponentDecisionStrength: number[];
+  /** Lower is better; null means no qualifying low. */
+  heroLow: number | null;
+  opponentLow: Array<number | null>;
+}
+
+/**
+ * Optional Phase 7 out-parameter. Capturing scores in the loop avoids a
+ * second Monte Carlo pass and lets action utility settle each side pot, tie,
+ * board, and continuing-player subset rather than reverse-engineering all of
+ * that from one scalar equity.
+ */
+export interface HorseEquityOutcomeCollector {
+  captureContinuation?: boolean;
+  maxSamples: number;
+  samples: HorseEquityOutcomeSample[];
+}
+
 export function simulateEquity(
   holeCards: Card[],
   boardCards: Card[],
@@ -2124,7 +2172,12 @@ export function simulateEquity(
   // loop, so the scoop/quarter read costs nothing extra.
   splitOut?: HiLoSplit,
   // V12: board-contact conditioning per opponent (NLH family only).
-  oppReads?: Array<OppPostflopRead | null>
+  oppReads?: Array<OppPostflopRead | null>,
+  // Phase 7: bounded raw showdown outcomes from this same conditioned pass.
+  outcomeOut?: HorseEquityOutcomeCollector,
+  // A hero's known discard stays out of every future board and opponent hand.
+  // Callers may provide only cards already known to that decision's owner.
+  knownDeadCards: readonly Card[] = []
 ): number {
   // V3 perf: banded Omaha sampling adds rejection-scoring cost; trim the
   // iteration count to stay inside the per-decision millisecond budget.
@@ -2174,6 +2227,7 @@ export function simulateEquity(
   const known = new Set<string>();
   for (const c of holeCards) known.add(cardKey(c));
   for (const c of boardCards) known.add(cardKey(c));
+  for (const c of knownDeadCards) known.add(cardKey(c));
 
   const base = vi.isShortDeck ? SHORT_DECK_CARDS : FULL_DECK;
   const deck = base.filter((c) => !known.has(cardKey(c)));
@@ -2190,6 +2244,26 @@ export function simulateEquity(
   const board: Card[] = new Array(5);
   for (let i = 0; i < boardCards.length; i++) board[i] = boardCards[i];
   const oppCards: Card[] = new Array(oppHole);
+
+  // Strength used for a sampled opponent's fold/call response. It is derived
+  // only from cards visible at the decision point; sampled future board cards
+  // never leak into the response policy. The final showdown score remains a
+  // separate field for pot settlement.
+  const decisionStrength = (cards: Card[]): number => {
+    const preflop = vi.isOmaha
+      ? omahaPreflopScore(cards, vi.isHiLo)
+      : cards.length === 3
+        ? pineapplePreflopScore(cards, vi.isShortDeck)
+        : holdemPreflopScore(cards[0], cards[1], vi.isShortDeck);
+    if (boardCards.length < 3) return preflop;
+    if (vi.isOmaha) {
+      const made = omahaQuickCategory(cards, boardCards) / 8;
+      const draw = boardCards.length < 5 && omahaStrongDrawShape(cards, boardCards) ? 1 : 0;
+      return clamp01(preflop * 0.2 + made * 0.7 + draw * 0.1);
+    }
+    const made = connectsBoard(cards, boardCards, vi.isShortDeck) / 10;
+    return clamp01(preflop * 0.2 + made * 0.8);
+  };
 
   // V7 adaptive checkpoints: evaluate the running estimate at 40%/65%/85% of
   // the budget and stop when it is >3.5 standard errors from every threshold
@@ -2253,6 +2327,31 @@ export function simulateEquity(
     let heroBestLow = heroLow !== Infinity;
     let lowTies = 1;
     let anyLow = heroLow !== Infinity;
+    const opponentHigh: number[] = [];
+    const opponentDecisionStrength: number[] = [];
+    const opponentLow: Array<number | null> = [];
+    const continuationStreets: TournamentContinuationStreet[] = [];
+    if (
+      outcomeOut?.captureContinuation &&
+      !vi.isOmaha &&
+      !vi.isShortDeck &&
+      holeCards.length === 2 &&
+      boardCards.length >= 3 &&
+      outcomeOut.samples.length <
+        Math.min(outcomeOut.maxSamples, CONTINUATION_POLICY.maxOutcomeSamples)
+    ) {
+      for (let size = boardCards.length; size <= 5; size++) {
+        const publicBoard = board.slice(0, size);
+        continuationStreets.push({
+          street: size === 3 ? 'flop' : size === 4 ? 'turn' : 'river',
+          heroStrength: continuationStrength(
+            connectsBoard(holeCards, publicBoard, false),
+            holdemPreflopScore(holeCards[0], holeCards[1], false)
+          ),
+          opponentStrength: [],
+        });
+      }
+    }
 
     for (let o = 0; o < numOpponents; o++) {
       const windowStart = dealIdx;
@@ -2485,9 +2584,23 @@ export function simulateEquity(
       }
       if (oppHi > heroHi) heroBestHi = false;
       else if (oppHi === heroHi) hiTies++;
+      if (outcomeOut) {
+        opponentHigh.push(oppHi);
+        opponentDecisionStrength.push(decisionStrength(oppCards));
+        for (const next of continuationStreets) {
+          const size = next.street === 'flop' ? 3 : next.street === 'turn' ? 4 : 5;
+          next.opponentStrength.push(
+            continuationStrength(
+              connectsBoard(oppCards, board.slice(0, size), false),
+              holdemPreflopScore(oppCards[0], oppCards[1], false)
+            )
+          );
+        }
+      }
 
       if (vi.isHiLo) {
         const oppLow = scoreOmahaLow(oppCards, board);
+        if (outcomeOut) opponentLow.push(oppLow === Infinity ? null : oppLow);
         if (oppLow !== Infinity) {
           anyLow = true;
           if (oppLow < bestLow) {
@@ -2498,10 +2611,23 @@ export function simulateEquity(
             lowTies++;
           }
         }
-      } else if (!heroBestHi) {
+      } else if (!heroBestHi && !outcomeOut) {
         // Non-hilo: once beaten we can stop early.
         break;
+      } else if (outcomeOut) {
+        opponentLow.push(null);
       }
+    }
+
+    if (outcomeOut && outcomeOut.samples.length < Math.max(0, Math.floor(outcomeOut.maxSamples))) {
+      outcomeOut.samples.push({
+        heroHigh: heroHi,
+        opponentHigh,
+        opponentDecisionStrength,
+        heroLow: heroLow === Infinity ? null : heroLow,
+        opponentLow,
+        ...(continuationStreets.length > 0 ? { continuationStreets } : {}),
+      });
     }
 
     const hiShare = heroBestHi ? 1 / hiTies : 0;

@@ -17,7 +17,7 @@ import { supabase, atomicCashout } from './supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { reportError } from './errorReporter.js';
-import { IN_LIST_CHUNK, selectInChunks } from './supabase/chunkedIn.js';
+import { selectInChunks } from './supabase/chunkedIn.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -31,6 +31,8 @@ const STALE_SEAT_THRESHOLD_HOURS = 4; // Cleanup table_seats older than 4 hours
 // dead/abandoned; only then may a >4h seat be force-cashed. Guards against reaping
 // active cash players and against converting live tournament chips to wallet chips.
 const STALE_SEAT_TABLE_IDLE_MINUTES = 30;
+/** How far back the finished-tournament reset looks: a few cycles, overlapping. */
+const FINISHED_TOURNAMENT_WINDOW_MS = 15 * 60 * 1000;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HORSE LIFECYCLE MANAGER CLASS
@@ -167,10 +169,24 @@ export class HorseLifecycleManager {
 
   private async cleanupFinishedTournaments(): Promise<void> {
     try {
-      const { data: tournaments } = await supabase
+      /* ONLY WHAT JUST FINISHED (2026-09-09). This read every COMPLETED and
+         CANCELLED tournament the platform has ever run - 143,769 of them -
+         with no order and no limit, so PostgREST handed back the first
+         thousand it found (the oldest, from April) and this pass spent
+         roughly 4,600 queries every cycle re-checking horses from events that
+         ended five months ago, and never once reached one that ended today.
+         The job is to reset a horse whose event has just ended; a window of
+         a few cycles over `ended_at` is that job. Re-visiting an event is
+         harmless (the reset is idempotent), so the window overlaps. */
+      const endedSince = new Date(Date.now() - FINISHED_TOURNAMENT_WINDOW_MS).toISOString();
+      const { data: tournaments, error: tErr } = await supabase
         .from('tournaments')
         .select('id, name')
-        .in('status', ['FINISHED', 'CANCELLED']);
+        .in('status', ['COMPLETED', 'CANCELLED'])
+        .gte('ended_at', endedSince)
+        .order('ended_at', { ascending: false })
+        .limit(1000);
+      if (tErr) throw new Error(tErr.message);
 
       if (!tournaments || tournaments.length === 0) return;
 
@@ -215,26 +231,9 @@ export class HorseLifecycleManager {
             }
           }
 
-          // Clean up tournament_players for horses - chunked for the same
-          // reason as the read above, and this one had no error handling at
-          // all (not even a discarded destructure).
-          const horseIdsInField = profiles.map((p) => p.id);
-          for (let i = 0; i < horseIdsInField.length; i += IN_LIST_CHUNK) {
-            const { error: delErr } = await supabase
-              .from('tournament_players')
-              .delete()
-              .eq('tournament_id', tournament.id)
-              .in('user_id', horseIdsInField.slice(i, i + IN_LIST_CHUNK));
-            if (delErr) {
-              reportError(
-                new Error(
-                  `[HorseLifecycle] cleanup delete failed for ${String(tournament.id).slice(0, 8)} at chunk ${i}: ${delErr.message}`
-                ),
-                'HorseLifecycle.cleanup_delete_failed'
-              );
-              break;
-            }
-          }
+          // Tournament rows are settlement provenance. Availability changes
+          // on the horse profile; a lifecycle pass never deletes a finish,
+          // satellite source, payout place, ticket source or chip history.
         } catch (err) {
           reportError(err, 'Lifecycle.Error_processing_tournament_to');
         }
@@ -310,7 +309,7 @@ export class HorseLifecycleManager {
             .from('tournament_players')
             .select('tournament_id')
             .eq('user_id', horse.id)
-            .eq('status', 'in_progress')
+            .in('status', ['registered', 'playing'])
             .limit(1);
 
           if (activeTournaments && activeTournaments.length > 0) continue; // Still in tournament
@@ -387,7 +386,7 @@ export class HorseLifecycleManager {
         .from('tournament_players')
         .select('id')
         .eq('user_id', horseId)
-        .in('status', ['registered', 'in_progress'])
+        .in('status', ['registered', 'playing'])
         .limit(1);
 
       const hasActiveGames =
@@ -395,16 +394,22 @@ export class HorseLifecycleManager {
         (activeTournaments && activeTournaments.length > 0);
 
       if (!hasActiveGames) {
-        // Only reset if they have NO active games at all
-        const { error } = await supabase
+        // Only reset if they have NO active games at all - and only a row that
+        // is not already 'available' (2026-09-09): rewriting the same value
+        // touched `profiles.updated_at` for every horse in every finished
+        // field on every pass, and reported a reset that reset nothing.
+        const { data: changed, error } = await supabase
           .from('profiles')
           .update({ horse_status: 'available', updated_at: new Date().toISOString() })
-          .eq('id', horseId);
+          .eq('id', horseId)
+          .neq('horse_status', 'available')
+          .select('id');
 
         if (error) {
           reportError(error, 'Lifecycle.Failed_to_reset_horse_horseId');
           return false;
         }
+        if (!changed || changed.length === 0) return false; // already available
         await this.persistLifecycleLog(horseId, 'natural_reset', {
           reason: 'tournament_completed_no_active_games',
         });
@@ -422,14 +427,31 @@ export class HorseLifecycleManager {
       // Get all active seats for this horse WITH their stacks
       const { data: activeSeats } = await supabase
         .from('table_seats')
-        .select('table_id, seat_number, stack')
+        .select('table_id, seat_number, stack, occupancy_id')
         .eq('user_id', horseId)
         .is('left_at', null);
 
-      // FIX 208: Cash out each seat using direct queries (avoids PostgREST RPC cache issues)
+      // A force reset is a cash-session recovery only. A tournament manager
+      // owns tournament life, chips and seat exits; a race that seats this
+      // horse after the detector read must make this reset stand down.
       if (activeSeats && activeSeats.length > 0) {
+        const tableIds = Array.from(new Set(activeSeats.map((seat) => seat.table_id)));
+        const tableRead = await selectInChunks<{ id: string; tournament_id: string | null }>(
+          tableIds,
+          (batch) => supabase.from('tables').select('id, tournament_id').in('id', batch),
+          `HorseLifecycle.forceResetTables(${horseId.slice(0, 8)})`
+        );
+        if (
+          !tableRead.complete ||
+          tableRead.rows.length !== tableIds.length ||
+          tableRead.rows.some((table) => table.tournament_id !== null)
+        ) {
+          return false;
+        }
         for (const seat of activeSeats) {
-          await atomicCashout(horseId, seat.table_id, seat.seat_number);
+          await atomicCashout(horseId, seat.table_id, seat.seat_number, {
+            occupancyId: seat.occupancy_id,
+          });
         }
       }
 
@@ -521,6 +543,7 @@ export class HorseLifecycleManager {
       // exists to reap orphaned seats was capable of never seeing the orphans.
       const stalePage = await fetchAllRows<{
         id: string;
+        occupancy_id: string;
         table_id: string;
         user_id: string;
         seat_number: number;
@@ -530,7 +553,7 @@ export class HorseLifecycleManager {
         (cursor, want) => {
           let q = supabase
             .from('table_seats')
-            .select('id, table_id, user_id, seat_number, stack, joined_at')
+            .select('id, table_id, user_id, seat_number, stack, joined_at, occupancy_id')
             .is('left_at', null)
             .lt('joined_at', thresholdTime)
             .order('id', { ascending: true })
@@ -550,6 +573,28 @@ export class HorseLifecycleManager {
       const staleSeats = stalePage.rows;
       if (staleSeats.length === 0) return;
 
+      /* THE TABLES, ONCE (2026-09-09). This read `tables` one row at a time
+         inside the loop - 843 seats older than four hours today, every one of
+         them at a tournament or cluster table and skipped, at one query each,
+         every minute. Read the distinct tables in chunks first; a table this
+         cannot classify is not swept (a sweep that cashes seats out does not
+         act on a row it could not read). */
+      const staleTableIds = [...new Set(staleSeats.map((seat) => seat.table_id))];
+      const tableRead = await selectInChunks<{
+        id: string;
+        tournament_id: string | null;
+        cluster_id: string | null;
+      }>(
+        staleTableIds,
+        (batch) => supabase.from('tables').select('id, tournament_id, cluster_id').in('id', batch),
+        'HorseLifecycle.staleSeatTables'
+      );
+      if (!tableRead.complete) {
+        console.warn('[HorseLifecycle] stale-seat table read incomplete - retrying next pass');
+        return;
+      }
+      const tableById = new Map(tableRead.rows.map((t) => [t.id, t]));
+
       let cleaned = 0;
       // SWEEP #4 P0-1 FIX (2026-07-23): this loop previously force-cashed-out
       // EVERY seat older than 4h with no filter on table status, tournament, or
@@ -566,11 +611,8 @@ export class HorseLifecycleManager {
       for (const seat of staleSeats) {
         try {
           // Skip tournament seats entirely — never cash tournament chips to wallets here.
-          const { data: tableRow } = await supabase
-            .from('tables')
-            .select('tournament_id, cluster_id')
-            .eq('id', seat.table_id)
-            .maybeSingle();
+          const tableRow = tableById.get(seat.table_id);
+          if (!tableRow) continue; // a seat whose table this read could not see
           if (tableRow?.tournament_id) continue;
           // A CLUSTER TABLE'S SEATS ARE THE CONTROLLER'S (2026-09-05). A
           // must-move carries `joined_at` with the player (seniority travels,
@@ -600,6 +642,7 @@ export class HorseLifecycleManager {
              precisely this; every other caller passes one. */
           let cashedOut = true;
           await atomicCashout(seat.user_id, seat.table_id, seat.seat_number, {
+            occupancyId: seat.occupancy_id,
             onFailed: (message) => {
               cashedOut = false;
               reportError(

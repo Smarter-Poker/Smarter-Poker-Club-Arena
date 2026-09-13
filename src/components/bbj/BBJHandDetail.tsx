@@ -100,8 +100,12 @@ interface HandDetail {
     reveal_order?: number;
   }> | null;
   pots?: Array<{ index?: number; amount?: number }> | null;
+  /** Which jackpot paid this hand: main, or mini (2026-09-11). Absent on older payloads means main. */
+  kind?: 'main' | 'mini' | string | null;
   jackpot: {
     payoutId: string;
+    /** Same as the top-level `kind`, carried on the box the summary card reads. */
+    kind?: 'main' | 'mini' | string | null;
     total: number;
     badBeatUserId: string | null;
     handWinnerUserId: string | null;
@@ -230,7 +234,7 @@ export function BBJHandDetail({
   const payoutBox = (
     <section className="hdv__bbjp">
       <header className="hdv__bbjp-head">
-        BBJP Winners
+        {(detail.kind ?? detail.jackpot?.kind) === 'mini' ? 'Mini BBJP Winners' : 'BBJP Winners'}
         {/* The box lists shares and never showed what they are shares OF.
             `jackpot.total` has been in the payload the whole time. */}
         <span className="hdv__bbjp-total">{money(detail.jackpot?.total)}</span>

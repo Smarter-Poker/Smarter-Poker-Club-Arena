@@ -74,31 +74,70 @@ async function gapsFor(parent) {
     console.error(`ERROR: fn_ca_fk_index_gaps('${parent}') failed (${res.status}): ${body}`);
     console.error('');
     console.error('That RPC arrives with migration');
-    console.error('  supabase/migrations/20260904001715_the_repo_can_ask_production_whether_a_club_is_still_deletable.sql');
+    console.error(
+      '  supabase/migrations/20260904001715_the_repo_can_ask_production_whether_a_club_is_still_deletable.sql'
+    );
     console.error('If this branch predates it, rebase on main. If it is applied and this');
     console.error('still fails, the grant is wrong: it is service_role only, on purpose.');
     process.exit(2);
   }
-  return res.json();
+  const answer = await res.json();
+  const keys =
+    answer && typeof answer === 'object' && !Array.isArray(answer)
+      ? Object.keys(answer).sort()
+      : [];
+  const validShape =
+    keys.join(',') === 'checked_at,gaps,parent' &&
+    answer.parent === parent &&
+    typeof answer.checked_at === 'string' &&
+    !Number.isNaN(Date.parse(answer.checked_at)) &&
+    Array.isArray(answer.gaps) &&
+    answer.gaps.every(
+      (gap) =>
+        gap !== null &&
+        typeof gap === 'object' &&
+        !Array.isArray(gap) &&
+        typeof gap.child_table === 'string' &&
+        typeof gap.child_column === 'string' &&
+        typeof gap.constraint === 'string' &&
+        (gap.est_rows === null ||
+          (typeof gap.est_rows === 'number' && Number.isFinite(gap.est_rows)))
+    );
+
+  if (!validShape) {
+    console.error(
+      `ERROR: fn_ca_fk_index_gaps('${parent}') returned an invalid response; refusing to treat an unreadable catalogue answer as healthy.`
+    );
+    process.exit(2);
+  }
+
+  return answer;
 }
 
 let failed = false;
 
 for (const parent of PARENTS) {
   const answer = await gapsFor(parent);
-  const gaps = answer.gaps || [];
+  const gaps = answer.gaps;
 
   if (gaps.length === 0) {
-    console.log(`OK - every single-column foreign key into ${parent} has an index that can answer it.`);
+    console.log(
+      `OK - every single-column foreign key into ${parent} has an index that can answer it.`
+    );
     continue;
   }
 
   failed = true;
   console.log('');
-  console.log(`A CLUB CANNOT BE DELETED: ${gaps.length} foreign key(s) into ${parent} would force a sequential scan.`);
+  console.log(
+    `A CLUB CANNOT BE DELETED: ${gaps.length} foreign key(s) into ${parent} would force a sequential scan.`
+  );
   console.log('');
   for (const g of gaps) {
-    const rows = typeof g.est_rows === 'number' && g.est_rows >= 0 ? `${g.est_rows.toLocaleString()} rows` : 'size unknown';
+    const rows =
+      typeof g.est_rows === 'number' && g.est_rows >= 0
+        ? `${g.est_rows.toLocaleString()} rows`
+        : 'size unknown';
     console.log(`  ${g.child_table}.${g.child_column}   (${g.constraint}, ${rows})`);
   }
   console.log('');

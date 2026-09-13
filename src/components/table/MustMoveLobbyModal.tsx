@@ -8,9 +8,11 @@
  * "THEY SHOULD BE ABLE TO DO THIS BY OPENING THE 'MUST MOVE LOBBY' WHERE THEY
  * SHOULD BE ABLE TO SEE ALL GAMES PLAYING AND THEN 'REQUEST A SEAT CHANGE'".
  *
- * Everything shown comes from ONE read, fn_cash_game_lobby, polled every five
- * seconds while open - the same cadence as the controller's tick, so the lobby
- * is never more than one tick behind the board.
+ * Same 3/4 geometry as TournamentLobbyModal (its CSS is reused: a 75vw panel
+ * on the right on desktop, a 75dvh sheet on a phone). Everything shown comes
+ * from ONE read, fn_cash_game_lobby, polled every five seconds while open -
+ * the same cadence as the controller's tick, so the lobby is never more than
+ * one tick behind the board.
  *
  * What it shows, top to bottom:
  *   - the game (name, style, stakes) with PLAYERS and TABLES, the waitlist;
@@ -23,23 +25,14 @@
  *   - the must-move list: the order players joined the game, everyone not
  *     yet on Main 1. Position 1 takes the next Main 1 seat.
  *
- * ─────────────────────────────────────────────────────────────────────────────
- * THE CONSOLE (#ClubArenaConsole). This borrowed TournamentLobbyModal's 3/4
- * sheet and then drew its own furniture on top of it: a grey header bar with
- * two square buttons, a four-up grid of figure tiles, a rounded card per table
- * with a bordered seat list inside it, and three rounded button styles. That is
- * a frame on a frame carrying a grid of drawn tiles.
- *
- * The sheet's GEOMETRY is still TournamentLobbyModal's - a 75vw panel on the
- * right on desktop, a 75dvh sheet on a phone, which is Dan's ruling and is not
- * this file's to change - but it now paints nothing, and the spade master
- * stands inside it. The game is the eyebrow, MUST MOVE LOBBY is engraved in the
- * header well, your place sits in the well's painted pill slot, every figure
- * and every chair prints as a ROW on the black glass, and CLOSE / JOIN GAME are
- * the plates painted into the foot.
- *
- * Not one call, guard, poll, toast or sentence moved. The must-move rows keep
- * their exact three-cell shape, because a test reads their textContent.
+ * AUDIT 2026-09-09 (lane H): a failed read prints house copy, never the
+ * database's code (mustMoveLobbyCopy.ts), and a game that is gone drops its
+ * figures rather than showing a lobby for a ghost; the seat-change note
+ * yields to ANY pending move, whatever its reason, because the sentence
+ * above it already says where the player is going; JOIN GAME no longer
+ * borrows .tlm-close (metallic-popups.css painted it as steel close
+ * hardware); and the panel is on the #SmarterCasinoRealism chassis
+ * (MustMoveLobbyModal.css says what that is and what it is not yet).
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -62,7 +55,7 @@ import {
 import { formatChips } from '../../lib/utils';
 import { CASH_TEMPLATES } from '../../config/cashGames';
 import { useToast } from '../common/Toast';
-import { SpadeConsole } from '../console/SpadeConsole';
+import { isGameGone, lobbyReadErrorText } from './mustMoveLobbyCopy';
 import './TournamentLobbyModal.css';
 import './MustMoveLobbyModal.css';
 
@@ -120,7 +113,12 @@ export function MustMoveLobbyModal({
       setError(null);
     } catch (err) {
       if (!mountedRef.current) return;
-      setError(String((err as { message?: string })?.message ?? 'The Lobby Could Not Be Read.'));
+      setError(lobbyReadErrorText(err));
+      /* A game that no longer exists has no tables, no list and no seat to
+         show; figures from its last read would be a lobby for a ghost. Any
+         other failure keeps the last read on screen under the notice - the
+         poll is still running and the next tick may answer. */
+      if (isGameGone(err)) setLobby(null);
     }
   }, [gameId]);
 
@@ -238,16 +236,6 @@ export function MustMoveLobbyModal({
     (t.lifecycle === 'live' || t.lifecycle === 'opening');
   const otherTablesExist = (lobby?.tables ?? []).some((t) => canRequestTo(t));
 
-  /* YOUR PLACE, in the well's painted pill slot. */
-  const pill = !me?.seated
-    ? 'Watching'
-    : me.on_main_one
-      ? 'Main Game'
-      : me.must_move_position
-        ? `#${me.must_move_position}`
-        : 'Seated';
-  const pillInk = !me?.seated ? 'muted' : me.on_main_one ? 'green' : 'blue';
-
   return (
     <div className="tlm-overlay mml-overlay" onClick={onClose} role="presentation">
       <div
@@ -257,225 +245,230 @@ export function MustMoveLobbyModal({
         aria-label="Must Move Lobby"
         onClick={(e) => e.stopPropagation()}
       >
-        <SpadeConsole
-          as="div"
-          className="mml-console"
-          eyebrow={game?.name ?? 'Cash Game'}
-          title="Must Move Lobby"
-          pill={pill}
-          pillInk={pillInk}
-          plates={{
-            secondary: { label: 'Close', onClick: onClose, 'aria-label': 'Close' },
-            /* JOIN GAME sits beside Close for anybody looking at this game
-               without a chair in it - viewing a table, or opening the lobby
-               from the game list. A seated player sees the plate say so
-               rather than a plate painted and empty. */
-            primary:
-              lobby && !me?.seated
-                ? {
-                    label: 'Join Game',
-                    ink: 'white' as const,
-                    onClick: () => void join(),
-                    disabled: busy,
-                    'aria-label': 'Join Game',
-                  }
-                : { label: 'Seated', ink: 'muted' as const, disabled: true },
-          }}
-        >
-          <div className="mml-body">
-            {error && <div className="mml-error">{error}</div>}
-            {!lobby && !error && <div className="mml-loading">Reading The Game</div>}
+        <div className="tlm-grab" aria-hidden="true">
+          <span />
+        </div>
 
-            {lobby && game && (
-              <>
-                {/* ─── The game ─── */}
-                <section className="mml-game">
-                  <div className="mml-game-line">
-                    {styleLabel && <span className="mml-style">{styleLabel.toUpperCase()}</span>}
-                    <span className="mml-stakes">
-                      {formatChips(Number(game.sb))}/{formatChips(Number(game.bb))}
-                    </span>
-                    <span className="mml-hand">{game.handedness} Max</span>
+        <div className="tlm-header">
+          <span className="tlm-title">Must Move Lobby</span>
+          {/* JOIN GAME sits beside Close for anybody looking at this game
+              without a chair in it - viewing a table, or opening the lobby
+              from the game list. A seated player never sees it. */}
+          {/* NOT `tlm-close` (audit 2026-09-09, lane H). It borrowed that class
+              for the geometry, and metallic-popups.css paints every
+              `[class*='-close']` inside a dialog as steel close hardware with
+              !important - so the one action in the header wore the dismissal's
+              dress and its blue never rendered. .mml-join carries its own
+              geometry now and the illuminated pill face. */}
+          {lobby && !me?.seated && (
+            <button
+              type="button"
+              className="mml-join"
+              onClick={() => void join()}
+              disabled={busy}
+              aria-label="Join Game"
+            >
+              Join Game
+            </button>
+          )}
+          <button type="button" className="tlm-close" onClick={onClose} aria-label="Close">
+            Close
+          </button>
+        </div>
+
+        <div className="tlm-body mml-body">
+          {error && <div className="mml-error">{error}</div>}
+          {!lobby && !error && <div className="mml-loading">Reading The Game</div>}
+
+          {lobby && game && (
+            <>
+              {/* ─── The game ─── */}
+              <section className="mml-game">
+                <div className="mml-game-name">{game.name}</div>
+                <div className="mml-game-line">
+                  {styleLabel && <span className="mml-style">{styleLabel.toUpperCase()}</span>}
+                  <span className="mml-stakes">
+                    {formatChips(Number(game.sb))}/{formatChips(Number(game.bb))}
+                  </span>
+                  <span className="mml-hand">{game.handedness} Max</span>
+                </div>
+                <div className="mml-figures">
+                  <div className="mml-figure">
+                    <span className="mml-figure-value">{playersTotal}</span>
+                    <span className="mml-figure-label">Players</span>
                   </div>
-                  <div className="mml-figures">
-                    <div className="mml-figure">
-                      <span className="mml-figure-label">Players</span>
-                      <span className="mml-figure-value">{playersTotal}</span>
-                    </div>
-                    <div className="mml-figure">
-                      <span className="mml-figure-label">Tables</span>
-                      <span className="mml-figure-value">{tablesOpen}</span>
-                    </div>
-                    <div className="mml-figure">
-                      <span className="mml-figure-label">Waiting</span>
-                      <span className="mml-figure-value">{lobby.waitlist?.waiting ?? 0}</span>
-                    </div>
-                    <div className="mml-figure">
-                      <span className="mml-figure-label">Must Move</span>
-                      <span className="mml-figure-value">{lobby.must_move_list.length}</span>
-                    </div>
+                  <div className="mml-figure">
+                    <span className="mml-figure-value">{tablesOpen}</span>
+                    <span className="mml-figure-label">Tables</span>
                   </div>
-                </section>
+                  <div className="mml-figure">
+                    <span className="mml-figure-value">{lobby.waitlist?.waiting ?? 0}</span>
+                    <span className="mml-figure-label">Waiting</span>
+                  </div>
+                  <div className="mml-figure">
+                    <span className="mml-figure-value">{lobby.must_move_list.length}</span>
+                    <span className="mml-figure-label">Must Move</span>
+                  </div>
+                </div>
+              </section>
 
-                {/* ─── Your seat ─── */}
-                {me?.seated && (
-                  <section className="mml-me">
-                    <div className="mml-section-title">Your Seat</div>
-                    <div className="mml-me-line">
-                      {labelFor(me.table_id) ?? 'This Table'}
-                      {me.seat_number ? `, Seat ${me.seat_number}` : ''}
-                      {me.stack != null ? ` (${formatChips(Number(me.stack))})` : ''}
+              {/* ─── Your seat ─── */}
+              {me?.seated && (
+                <section className="mml-me">
+                  <div className="mml-section-title">Your Seat</div>
+                  <div className="mml-me-line">
+                    {labelFor(me.table_id) ?? 'This Table'}
+                    {me.seat_number ? `, Seat ${me.seat_number}` : ''}
+                    {me.stack != null ? ` (${formatChips(Number(me.stack))})` : ''}
+                  </div>
+                  {me.on_main_one ? (
+                    <div className="mml-me-note">You Are In The Main Game.</div>
+                  ) : me.must_move_position ? (
+                    <div className="mml-me-note">
+                      You Are Number {me.must_move_position} On The Must Move List.
                     </div>
-                    {me.on_main_one ? (
-                      <div className="mml-me-note">You Are In The Main Game.</div>
-                    ) : me.must_move_position ? (
-                      <div className="mml-me-note">
-                        You Are Number {me.must_move_position} On The Must Move List.
-                      </div>
-                    ) : null}
+                  ) : null}
 
-                    {/* The same sentence the felt shows (CashClusterHUD), from
-                        one helper, so the lobby and the table can never
-                        disagree about where the player is going. */}
-                    {me.pending_move && (
-                      <div className="mml-me-move">{pendingMoveNotice(me.pending_move)}</div>
-                    )}
+                  {/* The same sentence the felt shows (CashClusterHUD), from
+                      one helper, so the lobby and the table can never
+                      disagree about where the player is going. */}
+                  {me.pending_move && (
+                    <div className="mml-me-move">{pendingMoveNotice(me.pending_move)}</div>
+                  )}
 
-                    {/* The seat change: once per stay, never from or to Main 1. */}
-                    {!me.on_main_one && (
-                      <div className="mml-seat-change">
-                        <div className="mml-section-title">Seat Change</div>
-                        {me.seat_change.request ? (
-                          <div className="mml-listed">
-                            <span>
-                              You Are Number {me.seat_change.request.position ?? '-'} On The List
-                              For {labelFor(me.seat_change.request.to_table_id) ?? 'Any Table'}.
-                            </span>
-                            <button
-                              type="button"
-                              className="mml-btn mml-btn--ghost"
-                              disabled={busy}
-                              onClick={() => void cancel()}
-                            >
-                              Cancel Request
-                            </button>
-                          </div>
-                        ) : me.seat_change.available ? (
-                          <div className="mml-request-row">
-                            <button
-                              type="button"
-                              className="mml-btn"
-                              disabled={busy || !otherTablesExist}
-                              onClick={() => void request(null)}
-                            >
-                              Request Any Table
-                            </button>
-                            <span className="mml-hint">
-                              {otherTablesExist
-                                ? 'Or Pick A Table Below. You May Change Once.'
-                                : 'No Other Table To Change To Yet.'}
-                            </span>
-                          </div>
-                        ) : me.pending_move?.reason === 'seat_change' ? null : (
-                          <div className="mml-me-note">
-                            {me.seat_change.used_at
-                              ? 'Seat Change Used For This Game.'
-                              : me.lifecycle === 'breaking'
-                                ? 'This Table Is Closing.'
-                                : 'Seat Change Not Available Right Now.'}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </section>
-                )}
-
-                {/* ─── The tables ─── */}
-                <section className="mml-tables">
-                  <div className="mml-section-title">Tables</div>
-                  {lobby.tables.map((t) => (
-                    <div
-                      key={t.id}
-                      className={`mml-table${t.id === currentTableId ? ' mml-table--here' : ''}${t.lifecycle === 'breaking' ? ' mml-table--closing' : ''}`}
-                    >
-                      <div className="mml-table-head">
-                        <span className="mml-table-name">{lobbyTableLabel(t)}</span>
-                        <span className="mml-table-state">{lifecycleLabel(t)}</span>
-                        <span className="mml-table-count">
-                          {t.seated}/{t.max_players}
-                        </span>
-                        {t.seat_change_queue > 0 && (
-                          <span className="mml-table-queue">
-                            {t.seat_change_queue} Waiting To Change Here
+                  {/* The seat change: once per stay, never from or to Main 1. */}
+                  {!me.on_main_one && (
+                    <div className="mml-seat-change">
+                      <div className="mml-section-title">Seat Change</div>
+                      {me.seat_change.request ? (
+                        <div className="mml-listed">
+                          <span>
+                            You Are Number {me.seat_change.request.position ?? '-'} On The List For{' '}
+                            {labelFor(me.seat_change.request.to_table_id) ?? 'Any Table'}.
                           </span>
-                        )}
-                        {canRequestTo(t) && (
                           <button
                             type="button"
-                            className="mml-btn mml-btn--small"
+                            className="mml-btn mml-btn--ghost"
                             disabled={busy}
-                            onClick={() => void request(t.id)}
+                            onClick={() => void cancel()}
                           >
-                            Request
+                            Cancel Request
                           </button>
-                        )}
-                      </div>
-                      <ul className="mml-seats">
-                        {Array.from({ length: t.max_players }, (_, i) => i + 1).map((n) => {
-                          const s = t.seats.find((x) => x.seat_number === n);
-                          const mine = Boolean(s?.user_id && me?.user_id === s.user_id);
-                          return (
-                            <li
-                              key={n}
-                              className={`mml-seat${!s?.user_id ? ' mml-seat--open' : ''}${mine ? ' mml-seat--me' : ''}`}
-                            >
-                              <span className="mml-seat-n">{n}</span>
-                              <span className="mml-seat-name">
-                                {s?.user_id ? (s.alias ?? 'Player') : 'Open'}
-                              </span>
-                              <span className="mml-seat-stack">
-                                {s?.user_id ? formatChips(Number(s.stack ?? 0)) : ''}
-                              </span>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                  ))}
-                </section>
-
-                {/* ─── The must-move list ─── */}
-                <section className="mml-list">
-                  <div className="mml-section-title">Must Move List</div>
-                  <div className="mml-list-note">
-                    The Order Players Joined The Game. Number 1 Takes The Next Seat In The Main
-                    Game.
-                  </div>
-                  {lobby.must_move_list.length === 0 ? (
-                    <div className="mml-me-note">Everyone Is In The Main Game.</div>
-                  ) : (
-                    <ol className="mml-list-rows" aria-label="Must Move List, In Join Order">
-                      {mustMoveListRows(lobby.must_move_list, me?.user_id).map((row) => (
-                        <li
-                          key={row.key}
-                          className={`mml-list-row${row.me ? ' mml-list-row--me' : ''}`}
-                          aria-current={row.me ? 'true' : undefined}
-                        >
-                          <span className="mml-list-pos">{row.position}</span>
-                          <span className="mml-list-name">
-                            {row.name}
-                            {row.me && <span className="mml-list-you">You</span>}
+                        </div>
+                      ) : me.seat_change.available ? (
+                        <div className="mml-request-row">
+                          <button
+                            type="button"
+                            className="mml-btn"
+                            disabled={busy || !otherTablesExist}
+                            onClick={() => void request(null)}
+                          >
+                            Request Any Table
+                          </button>
+                          <span className="mml-hint">
+                            {otherTablesExist
+                              ? 'Or Pick A Table Below. You May Change Once.'
+                              : 'No Other Table To Change To Yet.'}
                           </span>
-                          <span className="mml-list-table">{row.tableLabel}</span>
-                        </li>
-                      ))}
-                    </ol>
+                        </div>
+                      ) : me.pending_move ? null : (
+                        <div className="mml-me-note">
+                          {me.seat_change.used_at
+                            ? 'Seat Change Used For This Game.'
+                            : me.lifecycle === 'breaking'
+                              ? 'This Table Is Closing.'
+                              : 'Seat Change Not Available Right Now.'}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </section>
-              </>
-            )}
-          </div>
-        </SpadeConsole>
+              )}
+
+              {/* ─── The tables ─── */}
+              <section className="mml-tables">
+                <div className="mml-section-title">Tables</div>
+                {lobby.tables.map((t) => (
+                  <div
+                    key={t.id}
+                    className={`mml-table${t.id === currentTableId ? ' mml-table--here' : ''}${t.lifecycle === 'breaking' ? ' mml-table--closing' : ''}`}
+                  >
+                    <div className="mml-table-head">
+                      <span className="mml-table-name">{lobbyTableLabel(t)}</span>
+                      <span className="mml-table-state">{lifecycleLabel(t)}</span>
+                      <span className="mml-table-count">
+                        {t.seated}/{t.max_players}
+                      </span>
+                      {t.seat_change_queue > 0 && (
+                        <span className="mml-table-queue">
+                          {t.seat_change_queue} Waiting To Change Here
+                        </span>
+                      )}
+                      {canRequestTo(t) && (
+                        <button
+                          type="button"
+                          className="mml-btn mml-btn--small"
+                          disabled={busy}
+                          onClick={() => void request(t.id)}
+                        >
+                          Request
+                        </button>
+                      )}
+                    </div>
+                    <ul className="mml-seats">
+                      {Array.from({ length: t.max_players }, (_, i) => i + 1).map((n) => {
+                        const s = t.seats.find((x) => x.seat_number === n);
+                        const mine = Boolean(s?.user_id && me?.user_id === s.user_id);
+                        return (
+                          <li
+                            key={n}
+                            className={`mml-seat${!s?.user_id ? ' mml-seat--open' : ''}${mine ? ' mml-seat--me' : ''}`}
+                          >
+                            <span className="mml-seat-n">{n}</span>
+                            <span className="mml-seat-name">
+                              {s?.user_id ? (s.alias ?? 'Player') : 'Open'}
+                            </span>
+                            <span className="mml-seat-stack">
+                              {s?.user_id ? formatChips(Number(s.stack ?? 0)) : ''}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ))}
+              </section>
+
+              {/* ─── The must-move list ─── */}
+              <section className="mml-list">
+                <div className="mml-section-title">Must Move List</div>
+                <div className="mml-list-note">
+                  The Order Players Joined The Game. Number 1 Takes The Next Seat In The Main Game.
+                </div>
+                {lobby.must_move_list.length === 0 ? (
+                  <div className="mml-me-note">Everyone Is In The Main Game.</div>
+                ) : (
+                  <ol className="mml-list-rows" aria-label="Must Move List, In Join Order">
+                    {mustMoveListRows(lobby.must_move_list, me?.user_id).map((row) => (
+                      <li
+                        key={row.key}
+                        className={`mml-list-row${row.me ? ' mml-list-row--me' : ''}`}
+                        aria-current={row.me ? 'true' : undefined}
+                      >
+                        <span className="mml-list-pos">{row.position}</span>
+                        <span className="mml-list-name">
+                          {row.name}
+                          {row.me && <span className="mml-list-you">You</span>}
+                        </span>
+                        <span className="mml-list-table">{row.tableLabel}</span>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </section>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

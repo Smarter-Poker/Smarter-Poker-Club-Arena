@@ -71,9 +71,22 @@ describe('LAW: the next hand deals two seconds after completion (Dan 2026-09-07)
     const deal = DEALING.indexOf("this.setLoopPhase('dealing');");
     expect(awaited).toBeGreaterThan(-1);
     expect(deal).toBeGreaterThan(awaited);
-    expect(DEALING.slice(awaited + 'await this.awaitNextHandRest();'.length, deal).trim()).toBe(
-      'if (!this.lifecycleCanMutate()) return;'
+    const betweenRestAndDeal = DEALING.slice(
+      awaited + 'await this.awaitNextHandRest();'.length,
+      deal
     );
+    // A requested pause can arrive under the rest. These exact owner gates
+    // have no unpaused-path wait; the lease re-proof remains the only other
+    // work before the deal, preserving the ordinary two-second rest.
+    const boundaryGate =
+      /if \(\s*this\.terminalCloseoutPaused\s*\|\|\s*this\.tournamentMovePauseOwners\.size > 0\s*\) \{\s*await this\.awaitPauseGate\(\);\s*if \(!this\.running\) break;\s*continue;\s*\}/g;
+    const requestedPauseGate =
+      /if \(this\.isNextHandPaused\(\)\) \{\s*if \(!this\.adminPauseLock && !this\.maintenanceLock\) await this\.awaitPauseGate\(\);\s*if \(!this\.running\) break;\s*continue;\s*\}/g;
+    expect(betweenRestAndDeal.match(boundaryGate)?.length ?? 0).toBeGreaterThanOrEqual(1);
+    expect(betweenRestAndDeal.match(requestedPauseGate)).toHaveLength(1);
+    expect(
+      betweenRestAndDeal.replace(boundaryGate, '').replace(requestedPauseGate, '').trim()
+    ).toBe('if (!this.lifecycleCanMutate()) return;');
   });
 
   it('the old separate sleeps are gone - the clear and the window live inside the rest', () => {

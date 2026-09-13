@@ -1,6 +1,7 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { MIGRATIONS_DIR, migrationCorpus, type MigrationFile } from './helpers/migrationCorpus';
 
 /**
  * THE SEAT GUARD IS ARMED (binding, 2026-09-06)
@@ -35,11 +36,12 @@ import { describe, expect, it } from 'vitest';
  *      genuinely missing path is the correct fix in almost every case - so
  *      nothing here counts the entries; it only refuses to let one vanish.
  *
- *   3. THE ENGINE IS ASKED FIRST. `fn_caller_is_engine()` is consulted before
- *      the allowlist, so the engine (which declares no `app.money_path` and
- *      carries no JWT) can never be refused. That is the case that would have
- *      been a live outage rather than a bug report, and it is case 2 of the
- *      four that were probed rolled back against production before arming.
+ *   3. DATA INVARIANTS PRECEDE IDENTITY BYPASSES. A tournament seat must be
+ *      born with a positive stack, and a canonical seat-first seat must equal
+ *      `tournaments.starting_chips`, before engine identity can authorize it.
+ *      The engine is still consulted before the money-path allowlist and the
+ *      unfunded-seat refusal; identity authorizes a valid funded write but can
+ *      never waive the row's game-state contract.
  *
  *   4. A TOP-UP IS UNTOUCHED. `v_creating` is scoped to a seat ARRIVING: an
  *      INSERT with `left_at` NULL, or the revival of a seat that had left.
@@ -71,7 +73,6 @@ import { describe, expect, it } from 'vitest';
  * silence is the guard working.
  */
 
-const MIGRATIONS = resolve(__dirname, '../supabase/migrations');
 const FUNCTION = 'fn_ca_guard_seat_creation';
 const TRIGGER = 'trg_ca_guard_seat_creation';
 const DECLARES = `CREATE OR REPLACE FUNCTION public.${FUNCTION}()`;
@@ -95,37 +96,76 @@ function stripComments(sql: string): string {
     .join('\n');
 }
 
-function migrationFiles(): string[] {
-  return readdirSync(MIGRATIONS)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-}
+/**
+ * READ THE TREE ONCE, NOT ONCE PER QUESTION.
+ *
+ * Five of the six `it` blocks below call `liveBody()`, and `liveBody` used to
+ * walk every file in `supabase/migrations` - 2,897 of them on 2026-09-11, and
+ * the one directory in this repo that only ever grows - stripping the comments
+ * out of all of it, every single time. On a 28-core box running the suite
+ * uncapped, `only a seat ARRIVING is guarded` crossed vitest's 5s default and
+ * this file went red; CI, which caps workers at cores/4, stayed green on the
+ * identical commit. A guard whose verdict depends on how busy the machine is
+ * is a coin flip, and it teaches everyone to re-run CI instead of reading it.
+ *
+ * Two changes, no change of meaning:
+ *   - the corpus comes from `migrationCorpus()`, which reads the directory
+ *     once per test file (see `tests/helpers/migrationCorpus.ts`);
+ *   - `stripComments` now runs on the FILES THAT COULD MATCH rather than on
+ *     all of them. `stripComments` deletes whole `--` lines and rejoins on
+ *     '\n', so it never merges two lines into one; a needle with no newline
+ *     in it therefore cannot appear after stripping unless it was already
+ *     there before. Pre-filtering on the raw text is a superset, and the
+ *     stripped check still decides - a header that QUOTES the old dry-run
+ *     body is still not a declaration.
+ *
+ * The shared corpus intentionally represents applied `.sql` migrations. This
+ * law must also see the six staged Stage-B `.sql.pending` declarations before
+ * production assigns their final versions, so it reads only those pending
+ * files once and merges them into this test-local, version-ordered view.
+ */
+const pendingMigrationCorpus: MigrationFile[] = readdirSync(MIGRATIONS_DIR)
+  .filter((name) => name.endsWith('.sql.pending'))
+  .sort()
+  .map((name) => ({
+    name,
+    sql: readFileSync(resolve(MIGRATIONS_DIR, name), 'utf8'),
+  }));
 
-/** The LAST migration that declares `what`, which is the one production has. */
+const seatGuardMigrationCorpus: MigrationFile[] = [
+  ...migrationCorpus(),
+  ...pendingMigrationCorpus,
+].sort((left, right) => left.name.localeCompare(right.name));
+
+/** The last declaration in applied history plus the staged Stage-B cutover. */
 function latestDeclaring(what: string): { file: string; sql: string } {
   let found = { file: '', sql: '' };
-  for (const f of migrationFiles()) {
-    const sql = stripComments(readFileSync(resolve(MIGRATIONS, f), 'utf8'));
-    if (sql.includes(what)) found = { file: f, sql };
+  for (const migration of seatGuardMigrationCorpus) {
+    if (!migration.sql.includes(what)) continue;
+    const sql = stripComments(migration.sql);
+    if (sql.includes(what)) found = { file: migration.name, sql };
   }
   return found;
 }
 
-/** The dollar-quoted body of the live declaration of the guard. */
+/** The dollar-quoted body of the live declaration of the guard, read once. */
+let liveBodyCache: { file: string; body: string } | null = null;
 function liveBody(): { file: string; body: string } {
+  if (liveBodyCache) return liveBodyCache;
   const { file, sql } = latestDeclaring(DECLARES);
   expect(file, `no migration declares ${FUNCTION}`).not.toBe('');
   const start = sql.lastIndexOf(DECLARES);
-  const close = sql.indexOf('$function$;', start + DECLARES.length);
-  expect(close, 'the function body must stay dollar-quoted as $function$').toBeGreaterThan(start);
-  return { file, body: sql.slice(start, close) };
+  const declaration = sql.slice(start);
+  const quoted = /\bAS\s+(\$[A-Za-z0-9_]*\$)([\s\S]*?)\1\s*;/i.exec(declaration);
+  expect(quoted, 'the function body must stay dollar-quoted').not.toBeNull();
+  return (liveBodyCache = { file, body: quoted?.[2] ?? '' });
 }
 
 /** The migration this law was written for. */
 function armedMigration(): { file: string; sql: string } {
-  const file = migrationFiles().find((f) => f.endsWith('_the_seat_guard_is_armed.sql'));
-  expect(file, 'the migration that armed the guard must stay in the tree').toBeDefined();
-  return { file: file as string, sql: readFileSync(resolve(MIGRATIONS, file as string), 'utf8') };
+  const hit = migrationCorpus().find((m) => m.name.endsWith('_the_seat_guard_is_armed.sql'));
+  expect(hit, 'the migration that armed the guard must stay in the tree').toBeDefined();
+  return { file: hit?.name ?? '', sql: hit?.sql ?? '' };
 }
 
 /** The statement beginning at `from`, up to and including its terminating `;`. */
@@ -175,6 +215,8 @@ describe('the seat guard is armed', () => {
     const SANCTIONED_REDECLARATIONS = [
       /_the_seat_guard_is_armed\.sql$/,
       /_the_seat_guard_says_what_it_actually_does\.sql$/,
+      /_spin_reserve_settlement_commits_its_journal_or_nothing\.sql$/,
+      /_stage_b_current_postimage_contraction\.sql(?:\.pending)?$/,
     ];
     expect(
       SANCTIONED_REDECLARATIONS.some((re) => re.test(file)),
@@ -199,7 +241,7 @@ describe('the seat guard is armed', () => {
     }
   });
 
-  it('the engine is asked before the allowlist, so it can never be refused', () => {
+  it('validates tournament stacks before identity, then asks the engine before the allowlist', () => {
     const { file, body } = liveBody();
 
     expect(body, 'the engine check must still exist').toMatch(
@@ -207,9 +249,16 @@ describe('the seat guard is armed', () => {
     );
 
     const engineAt = body.search(/public\.fn_caller_is_engine\(\)/i);
+    const positiveStackAt = body.indexOf('TOURNAMENT_SEAT_REQUIRES_POSITIVE_STACK');
+    const seatFirstStackAt = body.indexOf('SEAT_FIRST_STACK_MUST_EQUAL_STARTING_CHIPS');
     const allowlistAt = body.indexOf(`'${SANCTIONED_PATHS[0]}'`);
     const raiseAt = body.indexOf("RAISE EXCEPTION 'SEAT_NOT_FUNDED");
 
+    expect(positiveStackAt, `${file} must enforce a positive tournament stack`).toBeGreaterThan(-1);
+    expect(seatFirstStackAt, `${file} must enforce the exact seat-first stack`).toBeGreaterThan(
+      positiveStackAt
+    );
+    expect(engineAt).toBeGreaterThan(seatFirstStackAt);
     expect(
       engineAt,
       `${file} must consult fn_caller_is_engine() BEFORE the app.money_path ` +
@@ -232,11 +281,10 @@ describe('the seat guard is armed', () => {
     );
     expect(
       body,
-      `${file} must return early for anything that is not a seat arriving ` +
-        `with chips. Chips added to a seat already seated are a top-up and a ` +
-        `different control entirely (ca_seat_stack_exits guards the exit ` +
-        `side); guarding them here refuses every add-on on the platform.`
-    ).toMatch(/IF\s+NOT\s+v_creating\s+OR\s+COALESCE\(NEW\.stack,\s*0\)\s*<=\s*0\s+THEN/i);
+      `${file} must return early for anything that is not a seat arriving. ` +
+        `Chips added to a seat already seated are a top-up and a different ` +
+        `control entirely (ca_seat_stack_exits guards the exit side).`
+    ).toMatch(/IF\s+NOT\s+v_creating\s+THEN\s+RETURN\s+NEW;/i);
 
     // The trigger's own column list is the other half of the same promise.
     const trg = latestDeclaring(`CREATE TRIGGER ${TRIGGER}`);

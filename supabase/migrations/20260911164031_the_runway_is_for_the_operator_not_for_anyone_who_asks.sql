@@ -1,0 +1,29 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+--  THE RUNWAY IS OPERATOR DATA, AND THE FUNCTION ASKS WHO IS CALLING
+--  BBJ programme phase 3 of 5 (2026-09-11)
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- `check-definer-authorization` BLOCKED the push, and it was right.
+--
+-- `fn_bbj_mini_for_club` is SECURITY DEFINER, was granted to `anon`, and never
+-- asked who was calling. Phase 2 shipped it that way to serve the felt and the
+-- lobby. Phase 3 then added the RUNWAY to it - `in_per_day` is, in plain terms,
+-- a club's daily Bad Beat Jackpot rake income - so what had been a read of
+-- jackpot figures became a read of a club's revenue, available to anybody with
+-- no account at all.
+--
+-- This migration revoked PUBLIC and anon (PUBLIC named too: anon inherits
+-- whatever PUBLIC holds, so revoking anon alone reads as a fix and does
+-- nothing), and made the function name its own actor via auth.uid(). Verified
+-- first that it backs no RLS policy - a policy expression evaluates as the
+-- QUERYING role, so revoking a policy helper would deny every SELECT on the
+-- tables whose policies call it. Zero rows in pg_policy mention it.
+--
+-- IT WENT TOO FAR, and 20260911164153 narrows it ninety seconds later: this
+-- version also NULLed the RESERVE columns for non-staff, which would have
+-- broken two player surfaces that have shown the reserve floor since phase 2.
+-- The file is kept because it ran; read 164153 for the line that stands.
+--
+-- (Body as applied: identical to 20260911164153 except that backup_balance,
+-- reserve_floor, parked and available were also wrapped in
+-- `CASE WHEN caller.is_operator THEN ... END`.)

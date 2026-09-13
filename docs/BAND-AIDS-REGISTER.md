@@ -12,6 +12,43 @@ is the platform failing to do that and something else tidying up afterwards.
 > better instrumented. It closes when the live path cannot produce the wrong
 > outcome and the job is **deleted**.
 
+## 2026-09-10 control-plane retirement and fee boundary
+
+The 60-second `club-arena-supervisor.service` / `.timer` mutator is retired.
+The installer disables, stops, removes, reloads, and proves both units absent.
+Its historical `engine-supervisor.sh` filename remains only because release-v1
+freezes that generation entrypoint; the executable now refuses every call
+unless the release transaction or its ExecStopPost recovery supplies all three
+causal authorities (force desired, exact health, and caller-held engine lock)
+plus an absolute deadline. Sampling counters, cache-tag reconciliation,
+heartbeat metrics, and autonomous container mutation are gone. The monitoring
+rule file is consequently `recovery-rules.yml` and observes the daily read-only
+recovery audit rather than a mutating heartbeat.
+
+Two watcher-shaped surfaces are explicitly **not closed** by that change:
+
+- `sp-autoheal` still watches Docker health and restarts an unhealthy engine.
+  Plain Docker does not act on an unhealthy healthcheck, so deleting autoheal
+  before a separately audited, causal process-failure owner lands would remove
+  the only recovery for a live-but-wedged process. It remains a named blocker,
+  not a claimed retirement.
+- GameServer's `FeeReconciler` mixes a legitimate durable obligation drain with
+  historical scans, audits, and repair calls. In particular, a BBJ payout is
+  persisted to `pending_fee_distributions` before its first delivery attempt;
+  deleting the drain can strand a real jackpot obligation. The safe split is:
+  keep an atomic claim-and-deliver outbox worker, wake it from the write that
+  creates an obligation, retry only within that causal chain, and perform one
+  bounded startup drain for crash recovery; move read-only audits out of that
+  worker; then remove the five-minute interval and the hourly/30-minute repair
+  scans only after the accepted-hand post-commit envelope is proven universal
+  and the old backlog is zero. No fee/tournament runtime was changed in this
+  control-plane pass.
+
+`scripts/ci/band-aid.allowlist.json` has no supervisor exemption to delete. Its
+BBJ repair entries remain because those database repair functions and schedules
+were not safely retired in this pass; removing only their CI names would hide
+debt rather than remove it.
+
 ---
 
 ## What this costs today, measured
@@ -325,31 +362,71 @@ must be one transaction, asserted at commit.
 
 ---
 
-### 8. `credit-stalled-seat-first-stacks` — **runs every minute, 10,069 times in 7 days**
+### 8. `credit-stalled-seat-first-stacks` — **RETIRED 2026-09-08**
 
-**What it is.** A cron that credits a seat's first stack when the seat exists
-and the chips never arrived. Money, every minute, for ever.
+**What it was.** A cron that credited a seat's first stack when the seat existed
+and the chips never arrived. It moved game-deciding chips every minute forever.
 
-**Root cause.** Seating and funding the seat are separate writes.
+**Root cause fixed.** Migration
+`20260909014433_spin_reserve_settlement_commits_its_journal_or_nothing` makes a
+live tournament seat's positive stack a BEFORE-trigger invariant, before every
+engine or money-path bypass. A canonical seat-first seat must equal the board's
+positive `tournaments.starting_chips`. The paid-third-seat AFTER hook now
+propagates count or Spin-booking failure into the seat transaction rather than
+catching it and committing a half-built field.
 
-**The hard fix.** `atomic_table_buyin` already exists. A seat row must not be
-creatable without its stack in the same transaction — a `CHECK`/trigger, not a
-sweep.
+**Retirement proof.** The migration takes the cron job's advisory lock, holds
+the scheduler roster plus all five source tables against writers, proves the
+old function's exact candidate set is empty, proves every active pre-deal
+tournament seat is positive, and proves exact seat/roster stack parity for
+canonical seat-first games. It then unschedules every normalized name/command
+match and drops `fn_credit_stalled_seat_first_stacks()` with `RESTRICT`, all in
+that transaction. The scheduler lock prevents a concurrent reschedule between
+the final scan and commit.
 
-**Delete when:** the job reports zero credits for 30 days.
+The production snapshot at 2026-09-08 07:18 UTC found **0** old-job candidates,
+**114** active pre-deal canonical seat-first games, **194** live seats, **0**
+wrong seat stacks, **0** roster-status mismatches, **0** roster-chip mismatches,
+and **0** paid active roster entrants without a live seat. The earlier “zero
+credits for 30 days” gate was not measurable: `cron.job_run_details` retained
+about 15 days and every successful invocation recorded only `1 row`, not the
+function's returned credit count. The locked structural proof is stronger and
+is the actual deletion gate.
 
 ---
 
-### 9. `fn_spin_sweep_unbooked` (5-minutely) and `spin_repair_missing_multiplier` (15-minutely)
+### 9. Spin booking, multiplier and winner-backpay fleet — **ROOT FIX BUILT; RETIREMENT STAGED**
 
-**What it is.** Spins whose entry was never booked into the reserve, and spins
-whose multiplier was never written. **2,014 and 671 runs in 7 days.**
+**What it was.** `fn_spin_sweep_unbooked` repaired entries never booked into
+the reserve, `fn_spin_repair_missing_multiplier` reconstructed multiplier
+state, and `fn_backpay_spin_unpaid_winners` paid a winner after a split draw,
+journal or payout path. The first two schedules ran **2,014 and 671 times in 7
+days**; GameServer called winner-backpay every ten minutes.
 
-**Root cause.** `fn_spin_book_entry` runs when the last seat is paid, in a
-different transaction from the seat payment, and can be lost to a deadlock —
-the code comments record 1–3 deadlocks a day from exactly this.
+**Root cause fixed.** The paid-third-seat hook now propagates booking failure
+into the seat transaction, so the paid seat, roster, count and reserve entry
+cannot split. `fn_spin_draw_and_settle` then locks the tournament and reserve,
+books/replays that entry, selects only a funded tier, commits its draw, journal,
+escrow and tournament contract, and returns one exact receipt. The server calls
+only this authority and refuses to reveal or deal without validating the whole
+receipt. Its separate draw, settle and ledger-adoption paths are gone.
 
-**The hard fix.** Book the entry in the transaction that fills the last seat.
+The recurring GameServer winner-backpay timer/caller is removed. The two known
+historical incidents are handled by exact asserted migration blocks rather
+than by an open-ended payer.
+
+**Retirement gate.** The staged post-publish cleanup does not trust deployment
+order or elapsed time. In production it requires a complete atomic receipt for
+a new Spin outside the audited historical cohort, proves the full unpaid view
+has no positive shortfall, proves every relevant reserve/journal/escrow and
+tournament contract is exact, and checks that no repair invocation is running.
+It owns both reconstruction-job advisory locks, freezes the scheduler roster,
+and recreates plus verifies all three receipt/contract enforcement triggers.
+Only then does it unschedule every active or disabled spelling, drop the sweep,
+reconstruction, winner-backpay and old draw functions, and revoke service-role
+access to the raw settle/book primitives. Until that receipt exists, the
+database functions remain rolling-cutover compatibility doors, not live server
+callers.
 
 **Related and already fixed today:** the escrow could not see a Spin's reserve
 draw because the derived `chip_ledger` leg went missing (1 of 18,318). It now
@@ -360,51 +437,66 @@ stopped depending on a leg that could be absent.
 
 ---
 
-### 10. `unclassified` payouts — 32 rows, median 105 days late
+### 10. `unclassified` payouts - root fix implemented
 
 **What it is.** Payout rows whose `source` nobody set. A money row with no
-provenance is unauditable by definition.
+provenance is unauditable by definition. The 32-row, 161.30-chip cohort was
+traced to one exact cause: the 2026-09-01 vacant-place repair used keys shaped
+as `tourney:<id>:vacantplace:<user>:<place>`, but the shared payout classifier
+did not know that grammar and the credit funnel substituted `unclassified`.
 
-**The hard fix.** `tournament_payouts.source` becomes `NOT NULL` with a
-`CHECK` against the known list. A path that cannot name itself cannot pay.
+**The hard fix.**
+`every_tournament_payout_names_its_source` removes the legacy `payout` default,
+keeps `source NOT NULL`, adds a validated `CHECK` against the complete source
+vocabulary, and makes `fn_credit_and_log` reject an unresolved or unknown
+source before the wallet move. The shared classifier now maps the exact
+`vacantplace` grammar to `finish_position_correction` and its encoded place.
+
+The same migration corrects only the 32 exact historical rows. A digest pins
+every payout, recipient, event, amount, key, timestamp and repair fact; all 32
+must also match their wallet idempotency claim. Each metadata-only change gets
+an immutable receipt in `tournament_payout_source_corrections`. The cohort's
+32 wallet claims still total 161.30 before and after, so no chips move.
+
+**Closure proof.** Zero rows may remain as `unclassified`; an omitted source
+fails `NOT NULL`, an unknown source fails the closed `CHECK`, and the atomic
+credit door refuses both cases before crediting. There is no watcher,
+reconciler, fallback label or scheduled repair for this rule.
 
 ---
 
-### 11. Bubble protection is promised out of a pool already promised in full — **Dan's call**
+### 11. Bubble protection is reserved from the prize pool - root fix implemented
 
-**Not a band-aid. A promise the platform makes twice**, and the reason 360.00
-of the 432.17 currently owed is owed.
+Dan decided that Bubble Protection is funded by the tournament prize pool,
+never the house bank. The old path paid the Bubble one buy-in but still priced
+the normal ladder against 100% of the same pool. That double allocation then
+appeared as a false winner shortfall.
 
 Both _Sunday $200 Deep Stack_ events on 2026-09-06/07:
 
-| event      | prize pool |  paid out | of which bubble protection | winner still owed |
-| ---------- | ---------: | --------: | -------------------------: | ----------------: |
-| `a449e853` |  28,640.00 | 28,640.00 |                     180.00 |            180.00 |
-| `f7412940` |  52,920.00 | 52,920.00 |                     180.00 |            180.00 |
+| event      | prize pool |  paid out | of which Bubble Protection | stale obligation tail |
+| ---------- | ---------: | --------: | -------------------------: | --------------------: |
+| `a449e853` |  28,640.00 | 28,640.00 |                     180.00 |                180.00 |
+| `f7412940` |  52,920.00 | 52,920.00 |                     180.00 |                180.00 |
 
-The payout structure allocates **100% of the pool**. Bubble protection then pays
-the first player out of the money **one buy-in (180.00) from that same pool**.
-The arithmetic cannot close, and the shortfall always lands on the last place
-paid — which is always **first place**. Two winners, 180.00 each, twice in one
-weekend.
+**The hard fix.** The database now reserves exactly one base buy-in before it
+prices the percentage ladder. Bubble plus all paid places therefore equal the
+locked prize pool exactly. The Bubble payer can spend only that pool escrow;
+there is no club-wallet or house-bank fallback. Satellites remain separate:
+their complete tickets are paid first and every sub-ticket residual chip goes
+to exactly one next finisher.
 
-**This is not fixable by a job and no job should try.** It is a pricing
-decision, and 10.9 says pricing is Dan's:
+The two production events above had already paid every chip in their pools,
+including the Bubble buy-in. Their 180-chip rows were stale allocation
+metadata, not unpaid money. The six-event evidence migration records each
+exact full-pool proof and retires only those named obligation tails without a
+wallet, payout, escrow, ledger, rake, or bank write.
 
-- **(a) the house funds bubble protection.** It is a marketing promise; the
-  house pays for it. Players' 100% stays 100%. Cost: one buy-in per event that
-  reaches the bubble.
-- **(b) the structure is computed on `pool − bubble_protection`.** The pool pays
-  for it and every paid place is fractionally smaller. Costs the house nothing;
-  the advertised structure has to say so.
-
-Either is one line at the source. Until Dan picks one, the two winners stay
-180.00 short and the `fn_settle_tournament_obligation` alerts describing it stay
-open — deliberately, because they are the accurate description.
-
-**A law already anticipates this**: `docs/laws.d/a-bank-that-is-short-pays-what-it-holds.md`
-ends _"Who funds bubble protection — the 180.00 the pool promises twice — is
-Dan's decision under 10.9 and is deliberately not made here."_
+**Closure proof.** The atomic cash settlement writes the Bubble debt before
+the first credit, pays it and every ladder place in one transaction, and
+requires payout total = locked pool before terminal completion. A failure
+rolls the complete finish back. Tests pin the pool subtraction, exact one-buy-in
+amount, single stone-Bubble identity, no house funding, and exact replay.
 
 ---
 
@@ -433,6 +525,30 @@ still means a live write is wrong.
 | `ca-escalate-reconcile-criticals-hourly`            | `fn_ca_escalate_reconcile_criticals` | hourly    | criticals nobody actioned                       | Tier 3: a check that clears itself needs no escalator              |
 | `flag-garbage-tournaments`                          | `fn_flag_garbage_tournaments`        | nightly   | tournaments that should never have been created | refuse to create them                                              |
 | `ca-pgrst-reload-if-stale`, `pgrst-reload-watchdog` | —                                    | 5/15 min  | PostgREST schema cache not reloading            | the DDL policy in CLAUDE.md §2 — one transaction per change        |
+
+Retired 2026-09-10: `ca-eliminate-absent-players` and
+`ca-release-broke-seats`. Both wrote `tournament_players.status = 'eliminated'`
+with **no finishing place** in RUNNING events, ten minutes after an accepted
+hand had already busted the player and while the engine's knockout door was
+still holding that bust. `fn_complete_tournament_entry_reprice` counts a
+placeless eliminated row as an unfinished reprice, so the proof refused for
+ever and `runEliminationSweep` returned before its bust stage: twenty
+tournaments stopped recording eliminations entirely, and the sweep then took
+the next batch of stranded busts. All 1,270 rows it had taken carried a
+`pending` knockout candidate. Both jobs are now INACTIVE (the row is kept, not
+deleted - the unapplied retirement chain 20260910000850 captures exactly two
+and its CHECK demands two), both functions refuse any bust a hand took, and a
+DEFERRED constraint trigger refuses a placeless elimination in a live event
+whoever writes it. Root fix and measurements:
+`docs/changelog/2026-09-10-the-knockout-door-owns-every-bust.md`.
+
+**The lesson this cost:** eight hours earlier
+`docs/changelog/2026-09-10-the-felt-decides-who-busted.md` had fixed this same
+sweep to read the felt rather than a stale mirror. That fix was correct on its
+own terms and it is what made the loop possible - a broken band-aid was
+harmless, a working one raced the live path. When you find a repair job that
+is not repairing anything, do not fix the repair job; ask what the live path
+was doing with those rows.
 
 Retired 2026-09-07: `sweep-seatless-late-registrants`. The registration RPC
 now creates capacity, debits the entrant, writes the roster and claims the seat
@@ -491,3 +607,74 @@ leaderboard settlement on its published cadence.
 Each item is finished when the live path cannot produce the wrong outcome, a
 test pins the cause, the damage is settled through the platform's own idempotent
 path, **and the job is gone from `cron.job`**.
+
+## 2026-09-12 the BBJ promo sweep, and why it is listed here without being a band-aid
+
+The phase 2 BBJ sweep flagged that `fn_sweep_bbj_promo` "moves money
+continuously with no cron row in this repo and no entry in
+`docs/BAND-AIDS-REGISTER.md`". This is that entry, and it is deliberately a
+**NOT-A-BAND-AID** row: the point of writing it down is that the next agent
+stops re-discovering it and reaching the wrong conclusion.
+
+**What it does.** `bbj_record_contribution` accrues the 25% promo slice into
+`bbj_pools.promo_balance` on every contribution - 46,814 of them in 24 hours -
+and **`fn_sweep_bbj_promo_all()`** moves the accrued amount to
+`union_wallets.promo_wallet`, or to `clubs.promo_balance` for a club with no
+union. Measured 2026-09-12: 1,791 sweeps in seven days moving **24,965.28**,
+one per five-minute boundary, the `:00` run absent each hour because the
+platform is frozen for the maintenance break.
+
+> **CORRECTED 2026-09-12, ninety minutes after this row was written.** The
+> first version of this entry, and the production comments that went with it,
+> named the per-club `fn_sweep_bbj_promo(uuid)` as the driver. It is not.
+> `smarter-poker-workers/src/routes/bbj-detect.ts` step 6 calls
+> `fn_sweep_bbj_promo_all`, and nothing in that repo calls the per-club one.
+> I had measured that _something_ swept every five minutes and assigned the
+> role by inference. Worse, I recorded here that the workers repo "isn't
+> mounted in this session" - it is on this machine at
+> `~/Documents/smarter-poker-workers`, and one `grep` settles it. Migration
+> `20260912005352` corrects both comments.
+
+**Why it is not a band-aid.** It repairs nothing and compensates for nothing.
+It is the transfer itself, batched, and the batching is the design rather than
+a tidy-up: crediting one `union_wallets` row inline on 46,814 contributions a
+day is a lock-contention problem, not a correctness improvement. CLAUDE.md
+10.12's own carve-out is "a job whose schedule IS the product", and this is one.
+If a future change makes the inline credit cheap, the staging slot and the
+sweep both go - but that is an optimisation, not a debt being repaid.
+
+**What WAS wrong, and is fixed (migration `20260912003749`).** Nothing in this
+repo could see it. No `cron.job` row names it, no trigger fires it, and no
+TypeScript in Club Arena or the World Hub calls it. **The driver is a third
+repo**: Open Claw dispatches `/api/cron/bbj-detect` on `*/5`, and
+`scripts/openclaw-cron-dispatcher.py` line 1022 records that the route now
+lives in the workers repo as `src/routes/bbj-detect`. So an agent auditing
+Club Arena finds a `SECURITY DEFINER` function that moves real money, finds no
+caller anywhere it can see, and concludes it is dead. That happened during this
+very audit, from `promo_balance = 0.00` on every pool - the zero is the sweep
+working, not the slice being banked inline. The function now names its driver
+in its own `COMMENT`.
+
+**And the trap that came with it.** `fn_sweep_bbj_promo_all`'s original comment
+ended by telling the next agent to schedule it. That was wrong in the opposite
+direction from how I first read it: the function **is already driven**, from
+the workers repo, so the sentence invites a _second_ driver onto the same
+staging slot - `_all` looping every pool `FOR UPDATE` against the live run five
+minutes later, racing over the promo slice of every raked hand on the platform.
+It now states that it is the live driver, names the route, and says never to
+add a second one. The migration asserts that no `cron.job` has acquired either
+sweep, because the real driver is outside this database.
+
+**The one genuinely open item.** `fn_bbj_promo_bank_check` reads whether the
+swept slice arrived, and **nothing calls it** - not `cron.job`, not either repo
+here, and **not the workers repo, now actually checked** rather than asserted:
+it appears nowhere under `~/Documents/smarter-poker-workers`. It is a guard
+with no reader (CLAUDE.md 10.86 rule 3), so a stalled sweep raises nothing on
+its own; the visible symptom would be `bbj_pools.promo_balance` climbing
+instead of sitting near zero. It is NOT given a scheduler here, because 10.12
+forbids shipping a job as the answer and 10.85 puts scheduled work in Open Claw
+rather than wherever an agent finds convenient. **Root fix:** the workers
+repo's `bbj-detect` route, which already runs every five minutes and already
+calls `fn_sweep_bbj_promo_all` at step 6, reads the check in the same pass and
+raises on a non-zero answer. That is one edit in the repo that already owns the
+schedule, and it adds no new scheduled job anywhere.

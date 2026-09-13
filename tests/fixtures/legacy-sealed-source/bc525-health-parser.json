@@ -1,0 +1,6 @@
+{
+  "source_commit": "bc525463996c65be3a89a7fe0cb35cd601a0d5e3",
+  "source_sha256": "b2308acdd3e35d6a22914110b7f7533f49733324d49f52a03c571207eb072363",
+  "function_sha256": "8d8359c706b7f0e3ae53b8899d2d1ffcd29c27c99cff0b5eb6acb280e8de4ed9",
+  "function": "parse_health_instance_for_sha() {\n  local expected_sha=\"$1\"\n  EXPECTED_SHA=\"$expected_sha\" python3 -c '\nimport json, os, re, sys\nd=json.load(sys.stdin)\ninstance=d.get(\"instanceId\")\nok=(d.get(\"running\") is True and d.get(\"releaseSha\")==os.environ[\"EXPECTED_SHA\"] and d.get(\"liveness\")==\"ok\" and isinstance(instance,str) and re.fullmatch(r\"[1-9][0-9]*-[0-9a-f]{8}\",instance))\nif not ok: raise SystemExit(1)\nprint(instance)\n' 2>/dev/null\n}\n\n"
+}

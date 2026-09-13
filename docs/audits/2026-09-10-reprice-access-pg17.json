@@ -1,0 +1,33 @@
+{
+  "passed": [
+    "installed baseline falsely requires already-paid cash places",
+    "final unpaid cash facts complete without any wallet payment",
+    "cash proof writes only its own completion receipt",
+    "receipt replay is idempotent",
+    "bubble amounts agree with the canonical reserved ladder",
+    "old full-pool bubble amount cannot complete",
+    "fractional-cent result cannot complete",
+    "missing finishing position cannot disappear from proof",
+    "pool drift cannot complete",
+    "ladder drift cannot complete",
+    "missing closure receipt is reported",
+    "invalid canonical ladder leaves receipt pending",
+    "satellite acceptance contract is preserved",
+    "migration is repeatable without changing the result",
+    "unsafe public definer ACL cannot be silently accepted",
+    "a missing definer search path is refused",
+    "a concurrently changed implementation is not overwritten",
+    "missing target never creates a new public definer",
+    "missing canonical amount authority refuses before replacement",
+    "service-only ACL survives replacement exactly",
+    "forward ACL declaration is idempotent and changes no data",
+    "browser calls are denied by PostgreSQL after forward ACL declaration",
+    "forward ACL declaration retains service execution",
+    "ACL declaration refuses a changed body without replacing it"
+  ],
+  "baseline_body_md5": "51c598a2fdb9a805485dec239eb70169",
+  "corrected_body_md5": "784df9021f906ca9e42e43942b692e2f",
+  "amount_authority_body_md5": "8f6cde5f5b799949506259f3064568b9",
+  "production_database_used": false,
+  "scope": "Actual entry-close acceptance and amount functions with synthetic input tables; no wallet or terminal settlement certification."
+}

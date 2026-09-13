@@ -57,9 +57,12 @@ describe('EVERY TAG GATE FAILS OPEN', () => {
   });
 
   it('the stake gate falls back to the old stake band when there is no tag', () => {
-    expect(SRC).toContain(
-      'if (stakeOk === undefined && !stakeBandAllows(h.id, table.big_blind)) return false;'
-    );
+    // Still `stakeOk === undefined` - an explicit tag verdict always wins, and
+    // the band is only consulted when the tag book had nothing to say. The
+    // band gate gained the table's host on 2026-09-11; the fallback shape is
+    // what this pins.
+    expect(SRC).toMatch(/if \(\s*stakeOk === undefined &&\s*!stakeBandAllows\(/);
+    expect(SRC).toContain("String((table as { club_id?: string | null }).club_id ?? '')");
   });
 
   it('no gate refuses on `undefined` - only on an explicit false', () => {

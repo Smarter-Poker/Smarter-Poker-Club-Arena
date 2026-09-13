@@ -16,10 +16,9 @@ function setup(cluster = true) {
   const engine = Object.create(ServerTableEngine.prototype) as any;
   engine.tableId = 'aaaaaaaa-1111-4111-8111-111111111111';
   engine.tableInfo = { club_id: 'club', cluster_id: cluster ? 'game' : null };
-  engine.forcedLeaves = new Set(['forced']);
   engine.lifecycleCanMutate = vi.fn(() => true);
   engine.onLeaveRefusedAtSettlement = vi.fn();
-  const leaves = deferred<string[]>();
+  const leaves = deferred<Array<{ userId: string; occupancyId: string }>>();
   const pending = deferred<moves.PendingSeatMove[]>();
   const leaveCall = vi.spyOn(db, 'processLeavePending').mockReturnValue(leaves.promise);
   const moveRead = vi.spyOn(moves, 'pendingSeatMoves').mockReturnValue(pending.promise);
@@ -32,20 +31,32 @@ describe('cash boundary overlaps candidate reads without moving ahead of departu
     const h = setup();
     const completed = vi.fn();
     const boundary = h.engine.readCashHandDepartures().then(completed);
+    /* PIN MOVED 2026-09-11 (CLAUDE.md 5.8, drift incident bf4ef6e0): the sweep
+       now also takes a DEPARTURE REPORTER, so a cash-out that has already
+       committed is owed a teardown even when this boundary goes on to throw.
+       Same two calls starting together, one argument wider - the pin follows
+       the mechanism and gets stricter, rather than being relaxed to `any`. */
     expect(h.leaveCall).toHaveBeenCalledWith(
       h.engine.tableId,
       'club',
       expect.any(Function),
-      h.engine.forcedLeaves
+      expect.any(Function)
     );
+    h.leaveCall.mock.calls[0][3]?.('departed', 'occupancy-departed');
+    expect(h.engine.departedSeatsAwaitingTeardown).toEqual([
+      { userId: 'departed', occupancyId: 'occupancy-departed' },
+    ]);
     expect(h.moveRead).toHaveBeenCalledWith(h.engine.tableId);
     h.pending.resolve([]);
     await Promise.resolve();
     await Promise.resolve();
     expect(completed).not.toHaveBeenCalled();
-    h.leaves.resolve(['departed']);
+    h.leaves.resolve([{ userId: 'departed', occupancyId: 'original' }]);
     await boundary;
-    expect(completed).toHaveBeenCalledWith({ cashedOutIds: ['departed'], pendingMoves: [] });
+    expect(completed).toHaveBeenCalledWith({
+      cashedOutIds: [{ userId: 'departed', occupancyId: 'original' }],
+      pendingMoves: [],
+    });
   });
   it('observes a move-read rejection immediately but waits for the leave result', async () => {
     const h = setup();
@@ -90,7 +101,7 @@ describe('cash boundary overlaps candidate reads without moving ahead of departu
     h.engine.lifecycleCanMutate.mockReturnValue(true);
     const boundary = h.engine.readCashHandDepartures();
     h.engine.lifecycleCanMutate.mockReturnValue(false);
-    h.leaveCall.mock.calls[0][2]?.('forced', 4000);
+    h.leaveCall.mock.calls[0][2]?.('forced', 4000, 'original');
     expect(h.engine.onLeaveRefusedAtSettlement).not.toHaveBeenCalled();
     h.leaves.resolve([]);
     h.pending.resolve([]);
@@ -114,7 +125,34 @@ describe('a prefetched move still goes through the authoritative executor', () =
     ]);
     expect(rpc).toHaveBeenCalledTimes(1);
     expect(rpc).toHaveBeenCalledWith('fn_cash_seat_move_execute', { p_move_id: 'move' });
-    expect(result).toEqual({ done: [], held: [] });
+    /* PIN MOVED 2026-09-09 (must-move audit lane D, CLAUDE.md 5.8). The
+       behaviour this guards is unchanged - the candidate is executed once and
+       nothing lands - but the outcome now also REPORTS the refusal, because a
+       player who was promised "Moving After This Hand" and then was not moved
+       used to be told nothing at all. `player_not_seated` is terminal, so it
+       belongs in `refused`; the freeze and a retryable deadlock never do. */
+    expect(result).toEqual({
+      done: [],
+      held: [],
+      refused: [{ move_id: 'move', player_id: 'player', reason: 'player_not_seated' }],
+    });
+  });
+
+  it('a read that FAILED throws out of the boundary rather than reading as empty', async () => {
+    /* D1, through main's contract (merged 2026-09-10): an unreadable
+       enumeration must never be mistaken for "no moves pending", because the
+       announce path PRUNES from that answer and would release a swap hold -
+       the only thing keeping a player out of a hand the OTHER table's
+       transaction is about to move them out of. The service throws; the
+       engine translates that into "change nothing" at its two call sites, and
+       settlement's runStep owns it as a reported, alerted step failure. */
+    const rpc = vi
+      .spyOn(db.supabase, 'rpc')
+      .mockResolvedValue({ data: null, error: { message: 'read failed' } } as any);
+    await expect(moves.executePendingSeatMoves('table', { announcedOnly: true })).rejects.toThrow(
+      'read failed'
+    );
+    expect(rpc).toHaveBeenCalledWith('fn_cash_seat_moves_pending', { p_table_id: 'table' });
   });
   it('does not execute unannounced candidates or re-read a known empty boundary', async () => {
     const rpc = vi.spyOn(db.supabase, 'rpc');

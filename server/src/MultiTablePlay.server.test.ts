@@ -258,9 +258,16 @@ describe('horse decision interleaving across 4 tables', () => {
     expect(src).toContain('this.horseActionTimer = setTimeout(');
     // The asynchronous worker result and timer carry controller, hand and
     // lease identity, so a slow answer cannot fire into a successor hand.
+    //
+    // 2026-09-11: the lease comparison reads `!==` rather than `===` since the
+    // fence became fenceRefusal(), which returns WHICH identity was lost
+    // instead of a bare boolean - so each check is now written as the
+    // condition that refuses. The identities compared are the same three, and
+    // what this pin protects is that all three are still compared at all.
     expect(src).toContain('handControllerRef !== this.handController');
     expect(src).toContain('this.handCount !== handNumber');
-    expect(src).toContain('currentLease.generation === leaseGeneration');
+    expect(src).toContain('currentLease.generation !== leaseGeneration');
+    expect(src).toContain("return 'lease_lost'");
   });
 });
 
@@ -378,7 +385,8 @@ describe('satellite award current_players write', () => {
       ),
       'utf8'
     );
-    expect(src).toContain("supabase.rpc('fn_settle_satellite_finish_atomic'");
+    expect(src).toContain('requestSatelliteSettlementReceipt(this.tournamentId, winnerId)');
+    expect(src).not.toContain("supabase.rpc('fn_settle_satellite_finish_atomic'");
     expect(atomic).toMatch(
       /UPDATE public\.tournaments target SET current_players=\(\s*SELECT count\(\*\) FROM public\.tournament_players tp\s*WHERE tp\.tournament_id=target\.id\)/
     );

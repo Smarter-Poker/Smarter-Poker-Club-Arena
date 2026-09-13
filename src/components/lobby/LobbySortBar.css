@@ -293,10 +293,63 @@
   outline-offset: -2px;
 }
 
+/* THE FILTER ROW LOCKS UNDER FIND YOUR GAME. Keep this block last: it is the
+   one that wins for `.lobby-sortbar`'s position, which is why the lock is
+   written here and not beside the bar's chrome above.
+
+   Dan, 2026-09-09: the filter row "should lock under the FIND YOUR GAME row
+   when it scrolls up, it should not be able to scroll past that."
+
+   The selector deck above already pins itself under the global header
+   (ClubLobbyCommandTop.css, MOBILE FIND-YOUR-GAME LOCK). This row did not, so
+   travelling down the lobby slid the column controls up behind that deck and
+   off the page - the moment a player had enough games to need a sort, the sort
+   control was gone.
+
+   The offset is the deck's bottom edge, written the way the deck writes its
+   own top: the measured global header height, plus the measured height of the
+   controls block, which ClubLobbyCommandTop publishes as
+   `--ca-lobby-controls-h` (its rows change with the tab and the club, so this
+   can never be a constant). The header fallback chain is character-for-
+   character the deck's, so the two cannot disagree about where the header
+   ends; the 0px fallback for the controls applies only for the single frame
+   before that measurement lands.
+
+   `sticky` keeps everything `relative` gave this bar - it is still a
+   positioned ancestor, so the Variant and Stakes menus still anchor to it -
+   and z-index stays under the deck's 30, so if the two ever meet, this row
+   passes beneath the deck rather than over it. */
 @media (max-width: 900px) {
+  /* Native focus/scroll-into-view must use the space between the real chrome.
+     The header and selector deck already publish their measured heights;
+     LobbyTable measures this bar on its actual document or in-tab scrollport. */
+  [data-lobby-scrollport='true'] {
+    scroll-padding-top: calc(
+      var(
+          --ca-global-header-height,
+          var(--ca-in-tab-header-height, calc(env(safe-area-inset-top, 0px) + 10.2vw))
+        ) +
+        var(--ca-lobby-controls-h, 0px) + var(--ca-lobby-sortbar-h, 0px)
+    );
+    scroll-padding-bottom: var(--bottom-nav-clearance, 74px);
+  }
+
+  .arena-lobby-card-list button,
+  .arena-lobby-card-list [tabindex] {
+    scroll-margin-block: 8px;
+  }
+
   .lobby-sortbar {
-    /* The menu anchors to the bar. */
-    position: relative;
+    /* The menu anchors to the bar, and the bar anchors to the deck. */
+    position: sticky;
+    top: calc(
+      var(
+          --ca-global-header-height,
+          var(--ca-in-tab-header-height, calc(env(safe-area-inset-top, 0px) + 10.2vw))
+        ) +
+        var(--ca-lobby-controls-h, 0px)
+    );
+    z-index: 29;
   }
 }
 

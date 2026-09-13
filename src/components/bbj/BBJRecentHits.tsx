@@ -57,6 +57,13 @@ export interface BBJRecentHitsProps {
   onOpenHand?: (payoutId: string) => void;
   /** Live pool, only used to size the example figures when nothing has hit. */
   poolAmount?: number;
+  /**
+   * WHICH JACKPOT (Dan 2026-09-11: "SEPERATE BBJ WINERS, AND MINI BBJ WINNERS").
+   * `main` and `mini` ask fn_bbj_recent_hits for one list each; `all` is the
+   * mixed list the ticker and the hit feed still read. Defaults to `all` so an
+   * older caller sees exactly what it saw.
+   */
+  kind?: 'main' | 'mini' | 'all';
 }
 
 /** Card as stored in hand_history: full suit names, rank 2-9/T/J/Q/K/A. */
@@ -216,9 +223,13 @@ export function BBJRecentHits({
   currentUserId,
   onOpenHand,
   poolAmount = 0,
+  kind = 'all',
 }: BBJRecentHitsProps) {
+  const kindArg = kind === 'all' ? null : kind;
   const [hits, setHits] = useState<Hit[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [settledKey, setSettledKey] = useState<string | null>(null);
+  const layoutKey = `${poolId}:${kindArg}:${limit}`;
   /**
    * PAGING. The list ended at `limit` and said nothing about the rest.
    *
@@ -236,8 +247,8 @@ export function BBJRecentHits({
    * Bumped by a live `bbj_winners` INSERT.
    *
    * AUDIT 2026-08-27: every other BBJ surface was already live — the table's
-   * pool ticker, BBJTicker, BadBeatJackpotPage's toast — and this one, the list
-   * a player actually opens after a jackpot lands, was the only mount-only
+   * pool ticker, BadBeatJackpotPage's toast — and this one, the list a player
+   * actually opens after a jackpot lands, was the only mount-only
    * fetch on the feature. Its effect keyed on [poolId, limit], and neither
    * changes when a hit arrives, so the rows sat stale until the component
    * unmounted. The pool number above it would tick up while the list under it
@@ -251,8 +262,8 @@ export function BBJRecentHits({
       .channel(`bbj-recent-hits-${poolId}`)
       /* FILTERED. The channel NAME was scoped to the pool and the subscription
          was not, so every jackpot anywhere on the platform - any club, any
-         union - forced a full refetch of this pool's list. Both sibling
-         surfaces (BBJTicker, BadBeatJackpotPage) already filter on pool_id. */
+         union - forced a full refetch of this pool's list. The sibling surface
+         (BadBeatJackpotPage) already filters on pool_id. */
       .on(
         'postgres_changes',
         {
@@ -269,6 +280,12 @@ export function BBJRecentHits({
     };
   }, [poolId]);
 
+  // Scope changes need a new initial read, even when returning to a prior pool.
+  useEffect(() => {
+    setHits(null);
+    setSettledKey(null);
+  }, [poolId, limit, kindArg]);
+
   useEffect(() => {
     if (!poolId) return;
     let alive = true;
@@ -280,7 +297,8 @@ export function BBJRecentHits({
        nothing ever set it back to false, so one transient RPC error stuck the
        panel on its error message for the life of the component, including
        through the realtime refetch after a real jackpot landed. */
-    setHits(null);
+    // A live refresh keeps the rows on screen. Only a new scope needs its
+    // first-layout skeleton; replacing it on every hit moves the whole page.
     setTotal(null);
     setFailed(false);
     setMoreFailed(false);
@@ -289,6 +307,7 @@ export function BBJRecentHits({
         const { data, error } = await supabase.rpc('fn_bbj_recent_hits', {
           p_pool_id: poolId,
           p_limit: limit,
+          p_kind: kindArg,
         });
         if (!alive) return;
         if (error) {
@@ -307,12 +326,14 @@ export function BBJRecentHits({
           setFailed(true);
           reportError(e, 'BBJRecentHits.threw');
         }
+      } finally {
+        if (alive) setSettledKey(layoutKey);
       }
     })();
     return () => {
       alive = false;
     };
-  }, [poolId, limit, revision]);
+  }, [poolId, limit, revision, kindArg, layoutKey]);
 
   /**
    * The next page, appended.
@@ -338,6 +359,7 @@ export function BBJRecentHits({
         p_limit: Math.max(limit, 10),
         p_before: last.awarded_at,
         p_before_id: last.payout_id,
+        p_kind: kindArg,
       });
       if (error) {
         setMoreFailed(true);
@@ -400,7 +422,7 @@ export function BBJRecentHits({
    */
   if (!poolId) {
     return (
-      <div className="bbj-hits">
+      <div className="bbj-hits" data-initial-layout="settled">
         <div className="bbj-hits__empty">
           No Jackpot Pool For This Club Yet.
           <span className="bbj-hits__empty-sub">Winners Appear Here Once The Pool Is Running.</span>
@@ -409,18 +431,35 @@ export function BBJRecentHits({
     );
   }
 
-  if (failed) {
+  if (settledKey === layoutKey && failed) {
     return (
-      <div className="bbj-hits__empty">Couldn&rsquo;T Load Recent Jackpots. Try Again Shortly.</div>
+      <div className="bbj-hits__empty" data-initial-layout="settled">
+        Couldn&rsquo;T Load Recent Jackpots. Try Again Shortly.
+      </div>
     );
   }
 
-  if (hits === null) {
+  if (settledKey !== layoutKey || hits === null) {
     return (
-      <div className="bbj-hits">
+      <div className="bbj-hits" data-initial-layout="pending">
         {[0, 1, 2, 3, 4].map((i) => (
           <div key={i} className="bbj-hits__skeleton" />
         ))}
+      </div>
+    );
+  }
+
+  if (hits.length === 0 && kind === 'mini') {
+    /* The example rows below illustrate the MAIN rule (aces full of jacks,
+       quad kings); printing them under a "Mini" caption would teach the wrong
+       bar. The mini's empty state says so and stops. */
+    return (
+      <div className="bbj-hits" data-initial-layout="settled">
+        <div className="bbj-hits__caption">Mini Bad Beat Jackpot Winners</div>
+        <p className="bbj-hits__examplenote">
+          No Mini Jackpot Has Been Paid On This Pool Yet. Aces Full Or Better (Hold’em) Or Any Quads
+          (Omaha) Losing To Quads Or Better Pays The Mini.
+        </p>
       </div>
     );
   }
@@ -431,7 +470,7 @@ export function BBJRecentHits({
     // empty there is no honest figure, so the row names the share instead.
     const examplePool = poolAmount > 0 ? (poolAmount * 40) / 100 : 0;
     return (
-      <div className="bbj-hits">
+      <div className="bbj-hits" data-initial-layout="settled">
         {/* NOT "Last 3 Bad Beat Jackpot Winners". That is a factual claim that
             this club has paid three jackpots, printed above three invented
             players with plausible dates and a real chip figure. The rows are
@@ -486,13 +525,13 @@ export function BBJRecentHits({
   }
 
   return (
-    <div className="bbj-hits">
+    <div className="bbj-hits" data-initial-layout="settled">
       {/* The caption stated a count as though it were the whole history. It is
           a page, so it says which page of what. */}
       <div className="bbj-hits__caption">
         {total && total > hits.length
-          ? `Bad Beat Jackpot Winners (${hits.length} Of ${total})`
-          : `Last ${hits.length} Bad Beat Jackpot ${hits.length === 1 ? 'Winner' : 'Winners'}`}
+          ? `${kind === 'mini' ? 'Mini ' : ''}Bad Beat Jackpot Winners (${hits.length} Of ${total})`
+          : `Last ${hits.length} ${kind === 'mini' ? 'Mini ' : ''}Bad Beat Jackpot ${hits.length === 1 ? 'Winner' : 'Winners'}`}
       </div>
 
       {shown.map(({ hit, cards, label, beatBy, beatByLabel }) => {

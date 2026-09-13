@@ -1,0 +1,39 @@
+# Dormant independent legacy rakeback repair
+
+The reviewed release entrypoint is `00-apply-legacy-repair.sql`. It contains the exact 01 maturity/pointer and 02 single-payer/context bodies in one transaction. Do not apply 01 and 02 separately: the atomic entrypoint prevents an interval with only part of the protection installed. `entrypoint-manifest.json` records input and output hashes and the deterministic transaction-wrapper transformation. This package has no captured-source table, marker, helper, capability or V2 dependency.
+
+The exact original installed source gates are claim 930e4b70fa3580c010abe99e23181598, close 5f1b3b29c972620ca06143a2f58444c9 and Round3 5234e460b1ea1f666fbc6bac7a9a1b17. Existing legacy wallet, treasury, rate, rake allocation and receipt schema/uniqueness contracts remain required. Actual captured definitions and the 17-trigger subset are included, with explicit coverage limits. The fixture is not the full production schema. This package adds no new money authority, does not change ACLs of existing owners, and revokes direct execution of its new internal guards/admission helper.
+
+Claim selection and direct close use inclusive earning dates closed at following UTC midnight. Cold rake scans use the same UTC bounds. Already-paid and expired history stays unchanged. A status transition guard also refuses old positive, zero and existing-receipt open finalization. Calendar maturity is distinct from producer/bank finality.
+
+Direct claims keep club-treasury funding. Round3 keeps the assigned agent's club-wallet funding and the installed aggregate-per-player shortfall decision. Both use the same sorted club admission and unique per-period payout receipt; admitted club and period membership stays pinned. Exact wallet backpointers are written after their wallet inserts. The table-side wallet fence rejects the original aggregate Round3 receipt even if its old status UPDATE touches zero rows. Missing or invalid positive receipt basis and negative period offsets refuse atomically for explicit data repair; no invented rate, zero contribution or silently dropped negative offset is used. No live malformed-data census was performed.
+
+Atomic credit previously leaked its category into the next treasury debit in a multi-period claim. The new close saves/restores its caller's category. The original comparator is preserved in the native report. Direct treasury payments retain their two balance legs per period; Round3 retains one named agent-to-player leg. Proof reconciles every journal endpoint and exact receipt/wallet links rather than assuming category-filtered counts describe both funding paths.
+
+## Verification
+
+The earlier 8937 maturity/pointer checkpoint remains immutable history with ten native groups. Its unchanged probe and results are retained here; do not treat those old runtime hashes as the successor's installed owners.
+
+`duplicate-proof.json` has 19 passing groups against the complete atomic entrypoint: those maturity checks plus aggregate shortfall/retry, malformed-basis refusals, category context preservation, actual old Round3 partial/all-stale body replacement, and both old-claim/new-weekly deadlock victims. Exact source inputs and private socket-only PG17 identities are in `duplicate-runner-evidence.json`.
+
+`first-install-partial-proof.json` has two passing groups. One intentionally holds a conflicting wallet-table lock: the entrypoint refuses within its one-second lock timeout and rolls back every owner/helper/trigger change. The next starts the actual old public Round3 with the new guards absent, observes its agent-row wait, installs the exact atomic entrypoint, directly pays one selected period, resumes the original frame and proves receipt-fence rollback plus correctly funded retry.
+
+`first-install-all-proof.json` starts another fresh legacy-only cluster, installs the same bytes while an actual original frame waits, directly pays both periods, and proves the resumed all-stale old call rolls back with no second payout. All three first-install groups use the actual captured legacy bodies. This establishes first installation overlap; the older body-replacement groups separately disclose that their fences existed before their calls.
+
+Rolling original claims retain their old period-first lock order and can conflict with new club-first admission. Both selected deadlock victims were observed; PostgreSQL aborts one transaction with 40P01, the survivor pays once, and both retries return zero. Old callers must retry aborted transactions. A transparent error-free rolling transition is not claimed. Short DDL lock refusal is retryable after contention clears.
+
+## Adoption contract and limits
+
+Root owns any migration/PR/production action. This directory is dormant audit material, not an active migration. Required order is: preserve exact current owner/schema/ACL readback; apply the reviewed atomic entrypoint through the normal database release process; verify all replacement function, guard and ACL hashes against the native runtime evidence; then publish the coordinated readiness UI. UI9da supplies only p_club_id to fn_claim_rakeback, so publishing it alone cannot stop an old server from paying open periods in a mixed club. Response keys remain success, total_payout and periods_claimed. The UI author's final response-handling successor is a separate dependency.
+
+No production SQL, money RPC, browser or HTTP/API acceptance was performed. Native authentication uses actual authenticated PostgreSQL role and synthetic actor claims. No captured-source funding, common accounting finality, historical backpay or broader Union/source activation is claimed. The full captured-source payer successor c12f993244b1f6b01dd950a8e8fee2b0de07ffef is separately preserved with 33 groups and requires its broader reviewed schema dependencies.
+
+Applying this independent repair changes the installed claim, close and Round3 body hashes. The later full captured-source c12 candidate still gates its original legacy owners; its cutover must therefore be explicitly rebased and reproved against the adopted standalone owners. Do not bypass its hash gates or assume the two release packages can be applied unchanged in either order.
+
+## Read-only production admission, 2026-09-11
+
+The timestamped readback and assessment record exact current owners, ACLs, helper bodies, absent conflicting capture/guard state, receipt uniqueness, and bounded aggregate-only data checks on the established Club Arena project. Every query set a two-second statement timeout. At 06:31:21 UTC, all 1,767 closed pending periods fit the 5,001-row cap and none matched negative amount, invalid positive amount, invalid positive rate or invalid positive rake-basis predicates. The earlier eligible-player subset contained zero Round3 candidates. This does not assert cleanliness of open/paid history, future accrual or other accounting conditions.
+
+The current append-only guard differs from the native fixture: c19c4314bcb44b29f5d15e32e4dacccd instead of 398286e00164ff8224a29c6223349118. The preserved current body retains the rakeback receipt bookkeeping allowance and compensation-delete path; its changed maintenance-info handling is outside those early branches. No fresh native composition with all 96 current trigger catalogue entries is claimed. The platform-admin lookup is deliberately false in the synthetic auth fixture; its real installed helper is preserved in readback, not replaced or accepted through a live admin test. The three actual allocation helper bodies match the fixture.
+
+These permitted reads make the package reviewable before an activation decision. They do not apply it. Exact post-application owner/trigger/ACL readback, and subsequent coordinated UI publication, remain root-controlled release steps.

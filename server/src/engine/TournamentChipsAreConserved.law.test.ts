@@ -20,9 +20,8 @@
  *      not hold, after settlement, exactly what they were dealt. CRITICAL
  *      alert `Tournament.chip_conservation_broken`, and neither stack write
  *      runs.
- *   3. When the database refuses a hand write for a conservation violation,
- *      syncStacks does NOT fall back to the per-seat loop that would write the
- *      refused total anyway.
+ *   3. When the database refuses an accepted-hand write for a conservation
+ *      violation, no per-seat fallback writes the refused total anyway.
  *   4. The database asserts the same identity for tournament tables inside
  *      fn_ca_settle_hand_stacks_absolute, and the detector counts rebuy /
  *      add-on games instead of looking away from them.
@@ -35,7 +34,6 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { selectSeatsToFund } from '../tournament/seatStackCredit.js';
 import { blankNonCode, sliceEnclosingBlock, sliceMethod } from '../testHelpers/sourceWindow.js';
 import { checkTournamentChipConservation } from './tournamentChipConservation.js';
 
@@ -47,78 +45,12 @@ const code = (src: string) =>
     .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
     .join('\n');
 
-describe('LAW 1: a seat credit never touches a game in progress', () => {
-  it('the 0573b719 shape: a busted seat during play is not funded', () => {
-    const d = selectSeatsToFund({
-      seats: [
-        { id: 'busted', stack: 0 },
-        { id: 'b', stack: 1527 },
-        { id: 'c', stack: 1473 },
-      ],
-      target: 1000,
-      handRecorded: true,
-      // supply unknown: the in-play rule must refuse on its own, not the ceiling
-      chipSupply: null,
-    });
-    expect(d.playUnderWay).toBe(true);
-    expect(d.fund).toEqual([]);
-    expect(d.refused).toBeNull();
-  });
-
-  it('the 3a2fee36 shape: a seat above the target is play, whatever hand_history says', () => {
-    const d = selectSeatsToFund({
-      seats: [
-        { id: 'a', stack: 20 },
-        { id: 'b', stack: 620 },
-        { id: 'c', stack: 260 },
-      ],
-      target: 300,
-      handRecorded: false,
-      chipSupply: null,
-    });
-    expect(d.playUnderWay).toBe(true);
-    expect(d.fund).toEqual([]);
-    expect(d.refused).toBeNull();
-  });
-
-  it('and the supply ceiling is a second, independent refusal before the first deal', () => {
-    const d = selectSeatsToFund({
-      seats: [
-        { id: 'a', stack: 0 },
-        { id: 'b', stack: 300 },
-      ],
-      target: 300,
-      handRecorded: false,
-      chipSupply: 300,
-    });
-    expect(d.fund).toEqual([]);
-    expect(d.refused?.reason).toBe('exceeds_supply');
-  });
-
-  it('the stranded reservation is still funded (the case the path exists for)', () => {
-    const d = selectSeatsToFund({
-      seats: [
-        { id: 'a', stack: 0 },
-        { id: 'b', stack: 0 },
-      ],
-      target: 300,
-      handRecorded: false,
-      chipSupply: 600,
-    });
-    expect(d.fund).toEqual(['a', 'b']);
-  });
-
-  it('creditSeatStacks delegates to selectSeatsToFund and keeps no in-play funding branch', () => {
+describe('LAW 1: no runtime seat-credit authority exists', () => {
+  it('the tournament manager cannot fund, defer, or repair a seat stack', () => {
     const src = code(read('../tournament/TournamentManagerBase.ts'));
-    const fn = src.slice(src.indexOf('protected async creditSeatStacks('));
-    const body = fn.slice(0, fn.indexOf('\n  }\n'));
-    expect(body).toMatch(/selectSeatsToFund\(/);
-    expect(body).toMatch(/tournamentChipSupply\(/);
-    // The #2333 shape and its predecessor: a filter that funds by stack alone.
-    expect(body).not.toMatch(/stack\)\s*<=\s*0/);
-    expect(body).not.toMatch(/playUnderWay\s*\?/);
-    // The only write is the one the decision allowed.
-    expect(body).toMatch(/\.in\('id',\s*stale\)/);
+    expect(src).not.toMatch(/creditSeatStacks|selectSeatsToFund|tournamentChipSupply/);
+    expect(src).not.toMatch(/deferStacksForSpinReveal|stacksMayBeDeferred|seats_credited/);
+    expect(src).not.toMatch(/\.update\(\{\s*stack:\s*target\s*\}\)/);
   });
 });
 
@@ -184,23 +116,13 @@ describe('LAW 2: the engine refuses to persist a tournament hand that does not c
 });
 
 describe('LAW 3: a conservation refusal from the database is never written around', () => {
-  it('the rolling-compatibility stack RPC returns false on a refusal, with no per-seat fallback', () => {
-    // 2026-09-04 (chip standard, felt erasure): the per-seat fallback this
-    // pin used to bound is gone - it was the absolute write that erased
-    // credits. The refusal is still recognised and still returns; what
-    // follows it is the bounded retry of the SAME atomic call, never a loop
-    // of absolute seat writes.
-    const src = code(read('../services/supabase/tables.ts'));
-    const fn = src.slice(src.indexOf('export async function syncStacks('));
-    const refusal = fn.indexOf('/^conservation violation/i');
-    expect(refusal).toBeGreaterThan(-1);
-    const after = fn.slice(refusal);
-    expect(after).toMatch(/'DB\.settle_hand_stacks_conservation_refused'/);
-    expect(
-      after.slice(0, after.indexOf("'DB.settle_hand_stacks_conservation_refused'") + 900)
-    ).toMatch(/return false;/);
-    expect(fn).not.toMatch(/'DB\.settle_hand_stacks_fallback'/);
-    expect(fn).not.toMatch(/\.update\(\s*\{\s*stack/);
+  it('the runtime has no rolling stack-only door or per-seat fallback', () => {
+    const tables = code(read('../services/supabase/tables.ts'));
+    const history = code(read('../services/supabase/handHistory.ts'));
+    expect(tables).not.toMatch(/\bsyncStacks\b/);
+    expect(tables).not.toContain('fn_ca_settle_hand_stacks_absolute');
+    expect(tables).not.toMatch(/\.update\(\s*\{\s*stack/);
+    expect(history).toContain("supabase.rpc('fn_ca_commit_hand_settlement', payload)");
   });
 });
 

@@ -22,14 +22,28 @@ $body$;
 
 
 class FunctionHistoryScannerTest(unittest.TestCase):
- def closure(self,migrations,roots,fixture=""):
+ def closure(self,migrations,roots,fixture="",through=None):
   with TemporaryDirectory() as temporary:
    root=Path(temporary)
    directory=root/"supabase"/"migrations"
    directory.mkdir(parents=True)
    for index,sql in enumerate(migrations,1):
     (directory/f"{index:03d}.sql").write_text(sql)
-   return authoritative_function_closure(root,fixture,set(roots))
+   return authoritative_function_closure(root,fixture,set(roots),through=through)
+
+ def test_migration_ceiling_pins_the_complete_function_graph(self):
+  first=function("helper",body="BEGIN /* PINNED */ RETURN; END")+function(
+   "root",body="BEGIN PERFORM public.helper(); END"
+  )
+  later=function("helper",body="BEGIN /* LATER */ RETURN; END")
+  pinned=dict(self.closure([first,later],{"root"},through="001.sql"))
+  current=dict(self.closure([first,later],{"root"}))
+  self.assertIn("PINNED",pinned["helper"])
+  self.assertNotIn("LATER",pinned["helper"])
+  self.assertIn("LATER",current["helper"])
+
+  with self.assertRaisesRegex(RuntimeError,"ceiling does not exist"):
+   self.closure([first,later],{"root"},through="999.sql")
 
  def test_comments_and_quoted_text_cannot_declare_functions_or_fixture_stubs(self):
   migration="""

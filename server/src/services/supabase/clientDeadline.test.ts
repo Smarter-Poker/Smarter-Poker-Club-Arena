@@ -17,7 +17,15 @@ beforeEach(async () => {
   captured.fetches.length = 0;
   vi.stubEnv('SUPABASE_TIMEOUT_MS', '100');
   await import('./client.js');
-  expect(captured.fetches).toHaveLength(2);
+  /* Every bounded client this module builds, in construction order:
+       0 supabase          - the ordinary game-data client (SUPABASE_TIMEOUT_MS)
+       1 maintenanceSupabase - longer, for serialized maintenance writes
+       2 seedingSupabase     - SHORTER, so a slow seat purchase cannot stall a
+                               horse-fleet seeding cycle (added 2026-09-11)
+     The count is asserted because every one of them shares the fetch wrapper
+     under test: a new client added without a thought about its deadline shows
+     up here rather than in production. boundedFetch below is index 0. */
+  expect(captured.fetches).toHaveLength(3);
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -152,6 +160,8 @@ describe('database transport compatibility', () => {
        was cancelled before it left", which the test above this one covers. */
     vi.resetModules();
     vi.stubEnv('SUPABASE_TIMEOUT_MS', '2000');
+    // Select the newly configured wrapper, not beforeEach's 100ms capture.
+    captured.fetches.length = 0;
     await import('./client.js');
 
     vi.stubGlobal('fetch', nativeFetch);

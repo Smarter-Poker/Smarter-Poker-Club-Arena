@@ -1,0 +1,139 @@
+{
+  "captured_at": "2026-09-11T06:21:02.928Z",
+  "mode": "first-install-partial",
+  "outcomes": [
+    {
+      "name": "atomic first-install lock refusal preserves all original owners and creates no partial guard",
+      "pass": true
+    },
+    {
+      "evidence": "actual_first_install",
+      "baselineAuthority": [
+        {
+          "signature": "fn_claim_rakeback(uuid)",
+          "md5": "930e4b70fa3580c010abe99e23181598"
+        },
+        {
+          "signature": "fn_close_settlement_period(uuid)",
+          "md5": "5f1b3b29c972620ca06143a2f58444c9"
+        },
+        {
+          "signature": "fn_settle_round3_agents_to_players(uuid,timestamp with time zone,timestamp with time zone)",
+          "md5": "5234e460b1ea1f666fbc6bac7a9a1b17"
+        }
+      ],
+      "wait": {
+        "wait_event_type": "Lock",
+        "wait_event": "transactionid",
+        "blockers": [37853]
+      },
+      "guards": [
+        {
+          "tgname": "ca_legacy_period_maturity"
+        },
+        {
+          "tgname": "ca_legacy_round3_wallet_receipt"
+        }
+      ],
+      "installed_while_original_frame_waited": true,
+      "table_fence_absent_before_call": true,
+      "result": {
+        "error": {
+          "code": "23514",
+          "message": "Round3 requires the unique unpaid period receipt"
+        }
+      },
+      "retry": {
+        "name": "agents_to_players",
+        "round": 3,
+        "amount": 15,
+        "detail": [],
+        "payees": 1,
+        "shortfalls": 0
+      },
+      "state": {
+        "treasury": "85.00",
+        "agent": "85.00",
+        "player": "30.00",
+        "receipts": 2,
+        "linked_receipts": 2,
+        "legs": 2,
+        "wallet_rows": 2
+      },
+      "legs": [
+        {
+          "id": "fe9f348f-59bd-44e0-aced-9363ef3e134f",
+          "from_type": "club_treasury",
+          "from_entity_id": "00000000-0000-4000-8000-000000000900",
+          "to_type": "settlement_suspense",
+          "to_entity_id": null,
+          "amount": "15.00",
+          "category": "adjustment"
+        },
+        {
+          "id": "b0a549d7-0eb6-4b62-9f4d-b081dbc8e069",
+          "from_type": "settlement_suspense",
+          "from_entity_id": null,
+          "to_type": "player_wallet",
+          "to_entity_id": "00000000-0000-4000-8000-000000000201",
+          "amount": "15.00",
+          "category": "rakeback"
+        },
+        {
+          "id": "5b4916ed-ae2a-4b0f-ba1f-1a55640c9dd1",
+          "from_type": "player_wallet",
+          "from_entity_id": "00000000-0000-4000-8000-000000000101",
+          "to_type": "player_wallet",
+          "to_entity_id": "00000000-0000-4000-8000-000000000201",
+          "amount": "15.00",
+          "category": "rakeback"
+        }
+      ],
+      "treasury_debits": 15,
+      "agent_debits": 15,
+      "player_credits": 30,
+      "suspense_net": 0
+    },
+    {
+      "name": "exact atomic first installation overlaps actual old Round3 partially stale two-period caller",
+      "pass": true
+    }
+  ],
+  "authority": [
+    {
+      "signature": "fn_ca_legacy_period_maturity()",
+      "prosrc_md5": "8ae80ac89843cc1f19f8dfdf03812a0b",
+      "prosecdef": false,
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}"
+    },
+    {
+      "signature": "fn_ca_legacy_round3_wallet_receipt()",
+      "prosrc_md5": "db707f33692fd511fde2352a98780ebc",
+      "prosecdef": true,
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}"
+    },
+    {
+      "signature": "fn_claim_rakeback(uuid)",
+      "prosrc_md5": "b254af98fbc6dd155ac0012438f8edea",
+      "prosecdef": true,
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}"
+    },
+    {
+      "signature": "fn_close_settlement_period(uuid)",
+      "prosrc_md5": "c41f1ff29aee99e71ceecdc3fddc4e1a",
+      "prosecdef": true,
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "fn_settle_round3_agents_to_players(uuid,timestamp with time zone,timestamp with time zone)",
+      "prosrc_md5": "18c6571f37401e14116e59310235b7b2",
+      "prosecdef": true,
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    }
+  ]
+}

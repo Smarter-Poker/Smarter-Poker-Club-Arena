@@ -1,0 +1,37 @@
+{
+  "recorded_at": "2026-09-10T16:22:00.472750+00:00",
+  "scope": "Schema deparser postimage derivation only; no financial acceptance or production deployment",
+  "source_sha256": "c79f59a82d915e969c9478e555f132ca9789604287bd289772844056623e2178",
+  "snippet_sha256": "113d3469282941efa1f8c20867eba99235997ffc77b50e83bb391adb915f4c6a",
+  "exit_code": 0,
+  "exact_rollback": true,
+  "before": {
+    "pg_proc": "87e8e18ca72ae9436fd4e3ea0b419d3f",
+    "pg_trigger": "ca78c99683c6f915be978798c332e0af",
+    "pg_class": "acb0d53a17e5d8738427fdef43b1f35f",
+    "pg_attribute": "ba471572827a80efdca94ec814a55d05",
+    "pg_attrdef": "6c3bb43814d85300233d207f986fa9fa",
+    "pg_constraint": "3bb7c52ef36be5c40cd5e402f805f899",
+    "pg_index": "243a967e715d7df6274319c05f6b1522",
+    "pg_policy": "0c338205a4039731c82777a8cc9c200b",
+    "public.tournament_final_table_deal_batches": "{\"count\" : 0, \"md5\" : \"d41d8cd98f00b204e9800998ecf8427e\"}"
+  },
+  "after": {
+    "pg_proc": "87e8e18ca72ae9436fd4e3ea0b419d3f",
+    "pg_trigger": "ca78c99683c6f915be978798c332e0af",
+    "pg_class": "acb0d53a17e5d8738427fdef43b1f35f",
+    "pg_attribute": "ba471572827a80efdca94ec814a55d05",
+    "pg_attrdef": "6c3bb43814d85300233d207f986fa9fa",
+    "pg_constraint": "3bb7c52ef36be5c40cd5e402f805f899",
+    "pg_index": "243a967e715d7df6274319c05f6b1522",
+    "pg_policy": "0c338205a4039731c82777a8cc9c200b",
+    "public.tournament_final_table_deal_batches": "{\"count\" : 0, \"md5\" : \"d41d8cd98f00b204e9800998ecf8427e\"}"
+  },
+  "constraints": [
+    {
+      "md5": "e685ad4c6440decb7f57310d455c5bd0",
+      "name": "tournament_final_table_deal_bubble_shape",
+      "definition": "CHECK ((((contract_version = 1) AND ((bubble_contract_required AND (bubble_obligation_id IS NOT NULL) AND (bubble_user_id IS NOT NULL) AND (bubble_source = ANY (ARRAY['engine.eliminatePlayer'::text, 'engine.atomicFinalTableDeal'::text])) AND (bubble_amount_owed > (0)::numeric)) OR ((NOT bubble_contract_required) AND (bubble_obligation_id IS NULL) AND (bubble_user_id IS NULL) AND (bubble_source IS NULL) AND (bubble_amount_owed = (0)::numeric) AND (bubble_amount_paid_before = (0)::numeric)))) OR ((contract_version = 2) AND ((bubble_contract_required AND (bubble_obligation_id IS NOT NULL) AND (bubble_user_id IS NOT NULL) AND (bubble_source IS NOT NULL) AND (bubble_source = ANY (ARRAY['engine.eliminatePlayer'::text, 'engine.atomicPlaceSettlement'::text, 'engine.fn_settle_tournament_places'::text, 'engine.fn_settle_tournament_bubble_protection'::text])) AND (bubble_amount_owed > (0)::numeric)) OR ((NOT bubble_contract_required) AND (bubble_obligation_id IS NULL) AND (bubble_user_id IS NULL) AND (bubble_source IS NULL) AND (bubble_amount_owed = (0)::numeric) AND (bubble_amount_paid_before = (0)::numeric))))))"
+    }
+  ]
+}

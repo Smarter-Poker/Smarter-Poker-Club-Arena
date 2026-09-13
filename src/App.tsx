@@ -9,7 +9,6 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { SessionSummaryHost } from './components/session/SessionSummaryHost';
 import TournamentRankingHost from './components/tournament/TournamentRankingHost';
-import TournamentStartingTicker from './components/tournament/TournamentStartingTicker';
 import TournamentAutoSeat from './components/tournament/TournamentAutoSeat';
 import { MEDIA_BASE } from './utils/mediaBase';
 import { Suspense, useState, useEffect } from 'react';
@@ -19,8 +18,6 @@ import { OfflineQueueService } from './services/OfflineQueueService';
 import GlobalWaitlistListener from './components/common/GlobalWaitlistListener';
 import UnionSkinGuard from './components/common/UnionSkinGuard';
 import { ChallengeToastListener } from './components/notifications/ChallengeToastListener';
-import PushSubscriptionSync from './components/notifications/PushSubscriptionSync';
-import FirstRunPushPrompt from './components/notifications/FirstRunPushPrompt';
 import LastClubTracker from './components/common/LastClubTracker';
 import WaitlistBanner from './components/common/WaitlistBanner';
 import { addBreadcrumb } from './core/SentryInit';
@@ -50,7 +47,8 @@ import MilestoneToast from './components/common/MilestoneToast';
 import { GlobalBalanceSync } from './core/useGlobalBalanceSync';
 import ClubBottomNav from './components/club/ClubBottomNav';
 import { shouldShowClubFooterFor } from './components/club/clubFooterVisibility';
-import { useInTabLobbyActive } from './components/club/inTabLobbySurface';
+import { applyArenaScheme, arenaSchemeFor } from './lib/arenaScheme';
+import { useInTabLobbyActive, useInTabLobbyClubId } from './components/club/inTabLobbySurface';
 
 // Auth Guards
 import { AuthGuard, GuestGuard } from './components/auth/AuthGuard';
@@ -65,6 +63,25 @@ import TOSGuard from './components/legal/TOSGuard';
 const AgeGate = lazyWithRetry(() => import('./components/legal/AgeGate'));
 const ConsentPrompt = lazyWithRetry(() => import('./components/legal/ConsentPrompt'));
 import { lazyWithRetry } from './utils/lazyWithRetry';
+
+// Push maintenance is intentionally delayed inside these components (four
+// seconds for the silent subscription refresh, twenty seconds for the first
+// prompt). Keep that optional work out of first paint while preserving the
+// application-root mount that lets it operate on every route. The retry-safe
+// loader also gives an atomic publish the same stale-chunk recovery as routes.
+const PushSubscriptionSync = lazyWithRetry(
+  () => import('./components/notifications/PushSubscriptionSync')
+);
+const FirstRunPushPrompt = lazyWithRetry(
+  () => import('./components/notifications/FirstRunPushPrompt')
+);
+// The ticker is another application-root overlay, but it renders only on a
+// live table or club lobby and does not contribute to the first paint. Load it
+// after the shell so its polling, settings, and announcement graph is paid for
+// by the feature instead of every route.
+const TournamentStartingTicker = lazyWithRetry(
+  () => import('./components/tournament/TournamentStartingTicker')
+);
 
 // Pages (lazy loaded for performance)
 const AuthPage = lazyWithRetry(() => import('./pages/AuthPage'));
@@ -99,6 +116,14 @@ const UnionCreationGuard = lazyWithRetry(() => import('./components/auth/UnionCr
 // Dan 2026-09-05: the union directory is hidden to everyone except him. Lazy
 // like the page it wraps - it is only ever needed on the /unions routes.
 const UnionNetworkGuard = lazyWithRetry(() => import('./components/auth/UnionNetworkGuard'));
+/* Lazy for the same reason: each is needed on a handful of admin routes.
+   PlatformStaffGuard closes /engine and /financial-alerts to platform staff;
+   UnionOverseerGuard closes a union's money and operations routes to the
+   union's overseers (ca_can_oversee_union); FinancialAdminGate closes
+   /financial-incidents to finance roles. 2026-09-10. */
+const PlatformStaffGuard = lazyWithRetry(() => import('./components/auth/PlatformStaffGuard'));
+const UnionOverseerGuard = lazyWithRetry(() => import('./components/auth/UnionOverseerGuard'));
+const FinancialAdminGate = lazyWithRetry(() => import('./components/auth/FinancialAdminGate'));
 const SettlementPage = lazyWithRetry(() => import('./pages/SettlementPage'));
 
 // New Pages
@@ -239,7 +264,7 @@ const HouseAdsPage = lazyWithRetry(() => import('./pages/admin/HouseAdsPage'));
 
 // Loading fallback
 function LoadingSpinner() {
-  return <LoadingState message="Preparing Club Arena" />;
+  return <LoadingState message="Preparing Poker Arena" />;
 }
 
 /**
@@ -260,8 +285,8 @@ import SlugEnforcer from './components/common/SlugEnforcer';
 import RouterBridge from './components/common/RouterBridge';
 import { IS_NATIVE_BUILD } from './lib/appBase';
 
-function ClubFooterMount() {
-  return <ClubBottomNav />;
+function ClubFooterMount({ clubId }: { clubId?: string }) {
+  return <ClubBottomNav clubId={clubId} />;
 }
 
 /** The footer probe must stay outside auth, TOS, realtime, and data providers.
@@ -281,12 +306,24 @@ function ClubFooterProbe() {
 function FullApp() {
   const location = useLocation();
   const inTabLobbyActive = useInTabLobbyActive();
+  const inTabLobbyClubId = useInTabLobbyClubId();
   /* The listener the service worker has always been posting SHELL_UPDATED to
      and never had. Without it a cache-first shell — and the exact hashed
      chunks it names — is served for the life of the session, so a player can
      run a days-old bundle while production serves the fix. Applies the update
      only away from a table and only with the tab visible; see the hook. */
   useShellUpdateGate();
+  /* DIAMOND ARENA IS LIGHT, AND ONLY DIAMOND ARENA (Dan 2026-09-11). The
+     scheme is published on `<html>` from HERE because this is the one place
+     that already holds both inputs the answer needs, and it holds them for
+     exactly the same reason the club footer does: the in-table "+" opens a
+     club lobby as a TAB while the URL stays on /table/<id>, so a route gate
+     alone would put the chip estate's chrome around the Diamond lobby.
+     `data-arena-scheme` is its own attribute with one writer; it says where
+     you ARE and never touches `data-theme`, which is what you PREFER. */
+  useEffect(() => {
+    applyArenaScheme(arenaSchemeFor(location.pathname, inTabLobbyActive ? inTabLobbyClubId : null));
+  }, [location.pathname, inTabLobbyActive, inTabLobbyClubId]);
   /* And the reader for what that gate emits (2026-08-30). The gate has been
      publishing SHELL_STALENESS_CHECKED / SHELL_RELOADED since 2026-08-29 with
      nothing subscribed — the same shape as SHELL_UPDATED itself, which was
@@ -492,8 +529,10 @@ function FullApp() {
           to be able to appear wherever the player actually is. See
           src/lib/pushClient.ts for why enrolment targets the ROOT service
           worker and not Club Arena's own sw-bus.js. */}
-        <PushSubscriptionSync />
-        <FirstRunPushPrompt />
+        <Suspense fallback={null}>
+          <PushSubscriptionSync />
+          <FirstRunPushPrompt />
+        </Suspense>
         <GlobalBalanceSync />
         <LastClubTracker />
         {/* Dan 2026-08-23, binding: "players, agents, super agents, nobody
@@ -523,7 +562,9 @@ function FullApp() {
           left, there should be a scrolling announcement across all active
           club/union cash games and tournaments." It has to reach players where
           they already are, so it rides at the app root over every page. */}
-        <TournamentStartingTicker />
+        <Suspense fallback={null}>
+          <TournamentStartingTicker />
+        </Suspense>
         {/* Dan 2026-08-21: when an MTT starts, the player's seat opens itself. */}
         <TournamentAutoSeat />
         <MilestoneToast />
@@ -975,9 +1016,11 @@ function FullApp() {
                   path="unions/:unionId/operations"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Union Operations">
-                        <UnionDashboardPage />
-                      </PageErrorBoundary>
+                      <UnionOverseerGuard>
+                        <PageErrorBoundary pageName="Union Operations">
+                          <UnionDashboardPage />
+                        </PageErrorBoundary>
+                      </UnionOverseerGuard>
                     </AuthGuard>
                   }
                 />
@@ -985,9 +1028,11 @@ function FullApp() {
                   path="unions/:unionId/table-management"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Union Table Management">
-                        <GameManagementPage scope="union" />
-                      </PageErrorBoundary>
+                      <UnionOverseerGuard>
+                        <PageErrorBoundary pageName="Union Table Management">
+                          <GameManagementPage scope="union" />
+                        </PageErrorBoundary>
+                      </UnionOverseerGuard>
                     </AuthGuard>
                   }
                 />
@@ -1006,9 +1051,11 @@ function FullApp() {
                   path="unions/:unionId/data"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Union Data">
-                        <UnionDataPage />
-                      </PageErrorBoundary>
+                      <UnionOverseerGuard>
+                        <PageErrorBoundary pageName="Union Data">
+                          <UnionDataPage />
+                        </PageErrorBoundary>
+                      </UnionOverseerGuard>
                     </AuthGuard>
                   }
                 />
@@ -1023,9 +1070,11 @@ function FullApp() {
                   path="unions/:unionId/statements"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Union Statements">
-                        <UnionStatementsPage />
-                      </PageErrorBoundary>
+                      <UnionOverseerGuard>
+                        <PageErrorBoundary pageName="Union Statements">
+                          <UnionStatementsPage />
+                        </PageErrorBoundary>
+                      </UnionOverseerGuard>
                     </AuthGuard>
                   }
                 />
@@ -1033,9 +1082,11 @@ function FullApp() {
                   path="unions/:unionId/settlement"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Settlement">
-                        <SettlementPage />
-                      </PageErrorBoundary>
+                      <UnionOverseerGuard>
+                        <PageErrorBoundary pageName="Settlement">
+                          <SettlementPage />
+                        </PageErrorBoundary>
+                      </UnionOverseerGuard>
                     </AuthGuard>
                   }
                 />
@@ -1645,9 +1696,11 @@ function FullApp() {
                   path="financial-alerts"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Financial Alerts">
-                        <FinancialAlertsPage />
-                      </PageErrorBoundary>
+                      <PlatformStaffGuard>
+                        <PageErrorBoundary pageName="Financial Alerts">
+                          <FinancialAlertsPage />
+                        </PageErrorBoundary>
+                      </PlatformStaffGuard>
                     </AuthGuard>
                   }
                 />
@@ -1655,9 +1708,11 @@ function FullApp() {
                   path="financial-incidents"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Drift Incidents">
-                        <DriftIncidentsPage />
-                      </PageErrorBoundary>
+                      <FinancialAdminGate>
+                        <PageErrorBoundary pageName="Drift Incidents">
+                          <DriftIncidentsPage />
+                        </PageErrorBoundary>
+                      </FinancialAdminGate>
                     </AuthGuard>
                   }
                 />
@@ -1953,18 +2008,16 @@ function FullApp() {
                 />
                 <Route
                   path="dev/game-cards"
+                  /* Both branches of the old VITE_CLUB_BUTTONS_PREVIEW ternary
+                     rendered this same page; the only difference was that the
+                     preview branch DROPPED AuthGuard. An env flag must never
+                     remove authentication. 2026-09-10. */
                   element={
-                    clubButtonsPreviewEnabled ? (
-                      <PageErrorBoundary pageName="Arena Game Card Preview">
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Arena Game Card Laboratory">
                         <ArenaGameCardsShowcasePage />
                       </PageErrorBoundary>
-                    ) : (
-                      <AuthGuard>
-                        <PageErrorBoundary pageName="Arena Game Card Laboratory">
-                          <ArenaGameCardsShowcasePage />
-                        </PageErrorBoundary>
-                      </AuthGuard>
-                    )
+                    </AuthGuard>
                   }
                 />
 
@@ -2035,9 +2088,11 @@ function FullApp() {
                   path="engine"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Engine Dashboard">
-                        <EngineDashboard />
-                      </PageErrorBoundary>
+                      <PlatformStaffGuard>
+                        <PageErrorBoundary pageName="Engine Dashboard">
+                          <EngineDashboard />
+                        </PageErrorBoundary>
+                      </PlatformStaffGuard>
                     </AuthGuard>
                   }
                 />
@@ -2059,7 +2114,11 @@ function FullApp() {
           </Suspense>
           {/* Route OR in-tab lobby: the "+" lobby lives on /table/<id>, and the
               footer is owed to the lobby, not to the URL (inTabLobbySurface). */}
-          {shouldShowClubFooterFor(location.pathname, inTabLobbyActive) && <ClubFooterMount />}
+          {shouldShowClubFooterFor(location.pathname, inTabLobbyActive, inTabLobbyClubId) && (
+            <ClubFooterMount
+              clubId={inTabLobbyActive ? (inTabLobbyClubId ?? undefined) : undefined}
+            />
+          )}
           {/* Persistent multi-table layer — mounted BESIDE <Routes>, it never
               unmounts on navigation: engine sockets for seated tables survive
               every route. Off /table/* it collapses to display:none and

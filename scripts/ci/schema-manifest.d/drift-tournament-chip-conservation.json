@@ -1,0 +1,11 @@
+{
+  "_owner": "fix/tournament-chip-conservation",
+  "_comment": "A tournament chip grant cannot mint (20260911145935): one shared definition of a tournament's chip supply, the felt total, and the invariant the chip-purchase money core now asserts before it raises a seat stack.",
+  "tables": [],
+  "functions": [
+    "fn_ca_tournament_chip_supply",
+    "fn_ca_tournament_felt_total",
+    "fn_ca_assert_tournament_chip_grant"
+  ],
+  "columns": {}
+}

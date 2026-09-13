@@ -13,6 +13,7 @@ const leagueClient = readFileSync(
   new URL('../benchmark/HorseLeagueComputeWorkerClient.ts', import.meta.url),
   'utf8'
 );
+const decisionClient = readFileSync(new URL('./horseDecision/client.ts', import.meta.url), 'utf8');
 const alertRules = readFileSync(
   new URL('../../../infra/monitoring/alert-rules.yml', import.meta.url),
   'utf8'
@@ -20,7 +21,7 @@ const alertRules = readFileSync(
 
 describe('live horse compute health has one authority', () => {
   it('does not report the idle main-thread governor as live horse capacity', () => {
-    const health = sliceMethod(gameServer, 'getStatus()');
+    const health = sliceMethod(gameServer, '\n  getStatus(');
     expect(health).toContain('equityGovernor: liveHorseDecision.governor');
     expect(health).toContain('mainEventLoopGovernor: equityGovernor.snapshot()');
     expect(health).not.toContain('equityGovernor: equityGovernor.snapshot()');
@@ -30,6 +31,8 @@ describe('live horse compute health has one authority', () => {
     for (const metric of [
       'poker_horse_decision_worker_ready',
       'poker_horse_decision_worker_queue_depth',
+      'poker_horse_decision_worker_expired_jobs',
+      'poker_horse_decision_worker_recoverable_request_errors',
       'poker_horse_decision_worker_active_job_age_ms',
       'poker_horse_decision_worker_oldest_queued_age_ms',
       'poker_horse_decision_worker_last_completion_age_ms',
@@ -45,6 +48,10 @@ describe('live horse compute health has one authority', () => {
     const metrics = sliceMethod(gameServer, 'getPrometheusMetrics()');
     expect(metrics).toContain('const worker = liveHorseDecisionWorkerStatus()');
     expect(metrics).toContain('horseDecisionWorkerQueueDepth.set(worker.queueDepth)');
+    expect(metrics).toContain('horseDecisionWorkerExpiredJobs.set(worker.expiredJobs)');
+    expect(metrics).toContain(
+      'horseDecisionWorkerRecoverableRequestErrors.set(worker.recoverableRequestErrors)'
+    );
     expect(metrics).toContain('worker.activeJobAgeMs ?? 0');
     expect(metrics).toContain('worker.oldestQueuedAgeMs ?? 0');
     expect(metrics).toContain('Date.now() - worker.lastCompletedAt');
@@ -66,17 +73,22 @@ describe('live horse compute health has one authority', () => {
   });
 
   it('cannot publish status ok before dealer readiness or outside worker ready', () => {
-    const health = sliceMethod(gameServer, 'getStatus()');
+    const health = sliceMethod(gameServer, '\n  getStatus(');
     expect(health).toContain('this.dealerPrerequisitesReady &&');
     expect(health).toContain("liveHorseDecision.phase === 'ready'");
   });
 
-  it('pins nightly solver underfill to worker-owned live stores', () => {
+  it('pins nightly solver evidence to the exact worker-owned live V31 corpus', () => {
     expect(leagueClient).toContain('liveHorseDecisionWorkerStatus');
     expect(leagueClient).toContain("live.phase !== 'ready' || !live.solverStores");
-    expect(leagueClient).toContain('return { ...live.solverStores };');
+    expect(leagueClient).toContain('return structuredClone(live.solverStores);');
+    expect(leagueClient).toContain('postflopV31Dataset');
+    expect(leagueClient).toContain('does not exactly match the live decision worker');
     expect(leagueClient).not.toContain('gtoChartCount');
     expect(leagueClient).not.toContain('gtoPostflopCount');
     expect(leagueClient).not.toContain('gtoPostflopV31Count');
+    expect(decisionClient).toContain('horseDecisionSolverStoresAreValid(message.solverStores)');
+    expect(decisionClient).toContain('invalid solver-store identity');
+    expect(decisionClient).toContain('status lost solver-store identity');
   });
 });

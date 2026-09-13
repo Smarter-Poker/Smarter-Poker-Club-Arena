@@ -21,6 +21,20 @@ const builder = {
 const from = vi.fn((_table: string) => builder);
 vi.mock('./supabase.js', () => ({ supabase: { from: (table: string) => from(table) } }));
 
+/** Every alert the verifier raises or resolves, in order. */
+const raised: Array<{ alertname: string; severity: string; page?: boolean }> = [];
+const resolved: string[] = [];
+vi.mock('./engineAlerts.js', () => ({
+  raiseEngineAlert: async (input: { alertname: string; severity: string; page?: boolean }) => {
+    raised.push(input);
+    return true;
+  },
+  resolveEngineAlert: async (alertname: string) => {
+    resolved.push(alertname);
+    return true;
+  },
+}));
+
 const { DealRateVerifier } = await import('./DealRateVerifier.js');
 
 /** Make the query chain resolve to `result`. */
@@ -38,6 +52,8 @@ function answers(result: { count?: number | null; error?: unknown } | Error) {
 const tables = (n: number) => Array.from({ length: n }, (_, i) => `table-${i}`);
 
 beforeEach(() => {
+  raised.length = 0;
+  resolved.length = 0;
   from.mockClear();
   builder.select.mockReset();
   builder.in.mockReset();
@@ -135,5 +151,107 @@ describe('DealRateVerifier - when it must speak', () => {
     expect(s.silentChecks).toBe(1);
     expect(s.tablesExpectedDealing).toBe(12);
     expect(s.lastCheckedAt).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * THE HORSE FLEET'S OWN PULSE (Dan 2026-09-11: "I SHOULD GET PUSH
+ * NOTIFICATIONS OR TEXT IF ANYTHING INSIDE THE HORSES IS FAILING OR THEY
+ * CAN'T PLAY").
+ *
+ * The seeding loop can stop while the process lives and the already-seated
+ * tables keep dealing, so neither of this class's other two questions can
+ * see it. Measured 2026-09-11: one such stall of 2,461 s, during which no
+ * alarm fired anywhere.
+ */
+describe('DealRateVerifier - the horse fleet seeding loop', () => {
+  const quiet = () => answers({ count: 5, error: null });
+
+  it('says nothing while the fleet is beating normally', async () => {
+    const v = new DealRateVerifier(
+      () => tables(40),
+      () => 45
+    );
+    quiet();
+    for (let i = 0; i < 5; i++) await v.check();
+    expect(raised.map((r) => r.alertname)).not.toContain('ClubArenaHorseFleetLoopStopped');
+  });
+
+  it('says nothing before the first beat of a fresh process', async () => {
+    // -1 is "no cycle has completed yet", which a boot legitimately shows.
+    const v = new DealRateVerifier(
+      () => tables(40),
+      () => -1
+    );
+    quiet();
+    for (let i = 0; i < 5; i++) await v.check();
+    expect(raised).toEqual([]);
+    expect(resolved).not.toContain('ClubArenaHorseFleetLoopStopped');
+  });
+
+  it('pages ONCE after two consecutive stale checks, never on one slow cycle', async () => {
+    let age = 118; // the worst ordinary cycle this file's history records
+    const v = new DealRateVerifier(
+      () => tables(40),
+      () => age
+    );
+    quiet();
+    await v.check();
+    expect(raised).toEqual([]);
+    age = 1200;
+    await v.check();
+    expect(raised).toEqual([]); // one stale check is not a page
+    await v.check();
+    await v.check();
+    await v.check();
+    const pages = raised.filter((r) => r.alertname === 'ClubArenaHorseFleetLoopStopped');
+    expect(pages).toHaveLength(1);
+    expect(pages[0].severity).toBe('critical');
+    expect(pages[0].page).toBe(true);
+  });
+
+  it('submits a healthy recovery after restart even without local stalled-check history', async () => {
+    const v = new DealRateVerifier(
+      () => tables(40),
+      () => 30
+    );
+    quiet();
+    await v.check();
+    expect(raised).toEqual([]);
+    expect(resolved).toContain('ClubArenaHorseFleetLoopStopped');
+  });
+
+  it('resolves itself when the loop comes back', async () => {
+    let age = 1200;
+    const v = new DealRateVerifier(
+      () => tables(40),
+      () => age
+    );
+    quiet();
+    await v.check();
+    await v.check();
+    expect(raised.some((r) => r.alertname === 'ClubArenaHorseFleetLoopStopped')).toBe(true);
+    age = 30;
+    await v.check();
+    expect(resolved).toContain('ClubArenaHorseFleetLoopStopped');
+  });
+
+  it('a reader that throws is not evidence of a stopped fleet', async () => {
+    const v = new DealRateVerifier(
+      () => tables(40),
+      () => {
+        throw new Error('no fleet here');
+      }
+    );
+    quiet();
+    for (let i = 0; i < 5; i++) await v.check();
+    expect(raised).toEqual([]);
+  });
+
+  it('a verifier with no fleet reader behaves exactly as before', async () => {
+    const v = new DealRateVerifier(() => tables(40));
+    quiet();
+    for (let i = 0; i < 5; i++) await v.check();
+    expect(raised.map((r) => r.alertname)).not.toContain('ClubArenaHorseFleetLoopStopped');
   });
 });

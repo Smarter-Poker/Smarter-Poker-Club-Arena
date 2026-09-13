@@ -23,12 +23,19 @@ import {
 } from './HorseBehavior.js';
 
 const REFRESH_MS = 30 * 60_000;
-const BOOT_DELAY_MS = 20_000;
+/**
+ * UNTIL THE FIRST LOAD LANDS, A FAILURE IS RETRIED IN A MINUTE, NOT IN
+ * THIRTY (2026-09-09). `stakeBandAllows` refuses every seat while no band is
+ * loaded (HorseBehavior) - a fleet that has not read its bands would seat
+ * 10/25 names at 0.05/0.10 - so the fleet is only as unmanaged as this
+ * retry is slow.
+ */
+const FIRST_LOAD_RETRY_MS = 60_000;
 /** Re-assign when this many horses are missing a stored lane. */
 const REASSIGN_THRESHOLD = 25;
 
 let timer: NodeJS.Timeout | null = null;
-let bootTimer: NodeJS.Timeout | null = null;
+let retryTimer: NodeJS.Timeout | null = null;
 let lifecycleGeneration = 0;
 let lifecycleActive = false;
 let stopOperation: Promise<void> | null = null;
@@ -115,6 +122,15 @@ export async function loadHorseLanes(generation?: number): Promise<number> {
     console.warn(
       `[HorseLaneLoader] lane/band load FAILED - running on the hash fallback (${assignedLaneCount()} lanes, ${assignedStakeBandCount()} bands cached)`
     );
+    // Nothing loaded yet: the band gate is refusing every seat it decides
+    // (HorseBehavior.stakeBandAllows), so ask again soon, not in half an hour.
+    if (assignedStakeBandCount() === 0 && lifecycleIsCurrent(generation) && !retryTimer) {
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        launchLoad();
+      }, FIRST_LOAD_RETRY_MS);
+      retryTimer.unref?.();
+    }
     return 0;
   }
 }
@@ -133,16 +149,22 @@ async function drainLoads(): Promise<void> {
   while (inFlightLoads.size > 0) await Promise.allSettled([...inFlightLoads]);
 }
 
+/**
+ * THE FIRST LOAD IS IMMEDIATE (2026-09-09). This waited twenty seconds
+ * after boot, and HorseFleetManager.start() launches its initial seeding
+ * cycle at once - so on every restart outside the maintenance break the
+ * fleet's first pass, the one that refills a whole floor, ran with no band
+ * loaded. `stakeBandFor` answers 'micro' for a horse with no record, which
+ * for one cycle was every horse: the pass could seat the entire fleet at the
+ * 0.05/0.10 tables and nowhere else. The band gate now refuses while nothing
+ * is loaded, and this starts loading the moment it is asked to.
+ */
 export function startHorseLaneLoader(): void {
-  if (timer || bootTimer || lifecycleActive) return;
+  if (timer || lifecycleActive) return;
   lifecycleActive = true;
   lifecycleGeneration += 1;
   stopOperation = null;
-  bootTimer = setTimeout(() => {
-    bootTimer = null;
-    launchLoad();
-  }, BOOT_DELAY_MS);
-  bootTimer.unref?.();
+  launchLoad();
   timer = setInterval(launchLoad, REFRESH_MS);
   timer.unref?.();
 }
@@ -155,9 +177,9 @@ export function stopHorseLaneLoader(): Promise<void> {
     clearInterval(timer);
     timer = null;
   }
-  if (bootTimer) {
-    clearTimeout(bootTimer);
-    bootTimer = null;
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
   }
   stopOperation = drainLoads();
   return stopOperation;

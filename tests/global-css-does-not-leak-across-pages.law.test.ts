@@ -158,6 +158,12 @@ describe('a global class name has exactly one owner', () => {
       const union = new Set(declared.flatMap((s) => [...s]));
       if ([...union].some((p) => declared.some((s) => !s.has(p)))) leakable += 1;
     }
-    expect(leakable).toBeLessThanOrEqual(161);
+    // 2026-09-13: 89, MEASURED on current main plus the wallet's ledger work.
+    // The ceiling had been left at 161 since 2026-09-05 while eight days of
+    // dead-code removal and scoping took the real count down by 72, so the
+    // ratchet was catching nothing: a page could have leaked seventy new
+    // class names before anyone heard about it. A ratchet with slack is a
+    // number, not a guard. Set to what the tree holds, no arithmetic.
+    expect(leakable).toBeLessThanOrEqual(89);
   });
 });

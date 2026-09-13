@@ -390,3 +390,68 @@ describe('river aggression is recorded on both outcomes', () => {
     expect(tuner).not.toContain('river_raise_war_won');
   });
 });
+
+/*
+ * OMAHA STRAIGHTS ARE CHECKED AGAINST THE FLUSH BOARD (2026-09-13)
+ *
+ * The Omaha nut-discipline branch used to ask one question about a straight:
+ * was it the nut straight. So a horse holding the NUT straight that stacked
+ * off into a three-flush board produced NO tag at all - `straightIsNut` was
+ * true and nothing else looked at the board. The hold em mirror has always
+ * asked `flushPossible` first, and the question matters more in Omaha than
+ * anywhere else: four hole cards and three of a suit showing means somebody
+ * usually has the flush.
+ *
+ * The first case below is a real hand from 2026-09-12 that lost 385.2bb and
+ * carried an empty tag array.
+ */
+describe('Omaha straight into a flush board', () => {
+  const nutStraightHole = [c('3', h), c('6', h), c('4', s), c('8', h), c('9', d), c('6', s)];
+
+  it('tags the nut straight stacked off into a three-flush board', () => {
+    const tags = detectLeaks({
+      netBB: -385,
+      invested: 770,
+      bigBlind: 2,
+      variant: 'plo6',
+      holeCards: nutStraightHole,
+      // three diamonds: 3d, 4d, Jd
+      board: [c('5', s), c('3', d), c('7', cl), c('4', d), c('J', d)],
+      heroActions: [{ action: 'call', stage: 'river', amount: 300 }],
+      wentToShowdown: true,
+    });
+    expect(tags).toContain('straight_into_flush_stackoff');
+    // It is the nut straight, so the older branch must stay silent.
+    expect(tags).not.toContain('dominated_straight_stackoff');
+  });
+
+  it('leaves the same nut straight alone on a rainbow board', () => {
+    const tags = detectLeaks({
+      netBB: -385,
+      invested: 770,
+      bigBlind: 2,
+      variant: 'plo6',
+      holeCards: nutStraightHole,
+      board: [c('5', s), c('3', d), c('7', cl), c('4', h), c('J', cl)],
+      heroActions: [{ action: 'call', stage: 'river', amount: 300 }],
+      wentToShowdown: true,
+    });
+    expect(tags).not.toContain('straight_into_flush_stackoff');
+    expect(tags).not.toContain('dominated_straight_stackoff');
+  });
+
+  it('still tags a dominated straight on a board with no flush', () => {
+    const tags = detectLeaks({
+      netBB: -120,
+      invested: 240,
+      bigBlind: 2,
+      variant: 'plo6',
+      // 2h+6h plays the 6-high straight; 8-high is available to somebody else
+      holeCards: [c('2', h), c('6', h), c('9', cl), c('J', h), c('Q', s), c('K', d)],
+      board: [c('5', s), c('3', d), c('7', cl), c('4', h), c('J', cl)],
+      heroActions: [{ action: 'call', stage: 'river', amount: 100 }],
+      wentToShowdown: true,
+    });
+    expect(tags).toContain('dominated_straight_stackoff');
+  });
+});

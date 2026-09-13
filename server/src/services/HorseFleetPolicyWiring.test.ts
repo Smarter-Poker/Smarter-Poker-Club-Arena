@@ -25,6 +25,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceBlockAfter } from '../testHelpers/sourceWindow.js';
 import { cashTableFill, occupancyTargetFor } from './HorseBehavior.js';
 import {
   FLEET_POLICY_DEFAULTS,
@@ -339,7 +340,9 @@ describe('the policy is read once per cycle per club scope', () => {
 
 describe('every cycle beats, withheld or not', () => {
   it('publishes from `finally`, so no exit path can skip it', () => {
-    const FINALLY = CYCLE.slice(CYCLE.lastIndexOf('} finally {'));
+    const finalCatch = CYCLE.indexOf("reportError(err, 'HorseFleet.seedAllTables_error');");
+    expect(finalCatch).toBeGreaterThan(-1);
+    const FINALLY = sliceBlockAfter(CYCLE.slice(finalCatch), '} finally');
     expect(FINALLY).toContain('await this.publishFleetState(beat,');
     expect(CYCLE.match(/this\.publishFleetState\(/g)?.length ?? 0).toBe(1);
   });

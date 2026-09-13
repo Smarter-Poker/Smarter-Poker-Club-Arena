@@ -423,6 +423,7 @@ export default function UnionStatementsPage() {
   return (
     <div className={styles.page}>
       <CasinoSurfaceHeader
+        crest="club"
         eyebrow="Union Network / Finance"
         title="Union Statements"
         description="Audit Every Member Club For The Selected Period, Including Issued, Delivered, Paid, Outstanding, And Missing Statements."

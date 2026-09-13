@@ -1,5 +1,11 @@
 # 2026-08-31 — The Fast-Forward Sync Reset: A Real Gap, And Why No Hook Closes It
 
+> Historical incident record. The timer, snapshotter, post-checkout writer,
+> recovery janitor, and their installation paths were retired on 2026-09-10.
+> Current protection is structural: isolated agent worktrees, a shared-clone
+> refusal guard, prompt commits and pushes, and a read-only ref-transaction
+> hook that blocks genuinely unreachable commits.
+
 ## What was investigated
 
 A claim I made earlier in the session — that uncommitted work in the shared
@@ -11,8 +17,7 @@ because the wrong half is the intuitive one and will be re-derived otherwise.
 
 1. **Untracked files survive `git reset --hard`.** Verified empirically in a
    scratch repo: they are removed only by `git clean -fd`, and nothing in the
-   estate runs it (one comment in `agent-trees-snapshot.sh` acknowledges the
-   hazard; no script performs it). `src/lib/heroSeatReconcile.ts` — which
+   current estate runs it. `src/lib/heroSeatReconcile.ts` — which
    prompted the concern — was never at risk from the reset loop.
 
 2. **Tracked modifications ARE destroyed by `git reset --hard`,** and
@@ -55,30 +60,27 @@ The hook's original authors had reached the same conclusion and said so; this
 is the evidence behind that sentence. **The gap cannot be closed at the hook
 layer — there is no `pre-reset` hook and the tree is already overwritten.**
 
-## What actually protects the work (verified healthy)
+## What protects the work now
 
-The launchd snapshotter `poker.agent-wip-snapshot` (installed by
-`scripts/install-wip-snapshot-agent.sh`, `StartInterval` 600s) writes real
-pre-reset content to `refs/wip/`. Verified 2026-08-31: loaded in `launchctl`,
-last run took **77 snapshots across 25 repos**, and the newest `club-arena`
-snapshot (29 minutes old) contained **all 25 modified files**. Worst-case
-exposure is therefore ~10 minutes of edits, not a session.
+The temporary periodic snapshot layer described by this incident has been
+removed. Agents work only in isolated worktrees; the shared-clone guard refuses
+commits and pushes from the shared clone; the workspace tool refuses to move a
+dirty tree; and completed slices are committed and pushed promptly. The
+ref-transaction hook is preventive and read-only. It blocks a transaction that
+would make local commits unreachable and creates no recovery state.
 
 ## What shipped
 
-`tests/unit/resetGuardCannotSaveTheWorktree.test.ts` (5 tests) — a trap-guard,
-not a feature test. It fails if anyone adds `git stash create` to
-`reference-transaction`, asserts the two branches that DO work are still
-present, and pins that the snapshotter's installer and tree-walker still exist
-— because if that installer disappears, the only real protection for tracked
-modifications goes with it.
+`tests/unit/resetGuardCannotSaveTheWorktree.test.ts` is now a retirement law.
+It fails if periodic/post-checkout snapshot machinery returns, if the ref hook
+mutates repository state, or if the isolated-worktree controls disappear.
 
 Proven in both directions: seeding the exact reverted mistake turns the guard
 red; removing it turns it green.
 
 ## Not fixed, deliberately
 
-The silent fast-forward reset stays silent. Every available fix is worse than
-the gap, and the content is already protected by the snapshotter. If git ever
-gains a `pre-reset` hook, this becomes trivial — that is the condition to
-revisit under.
+The hook still cannot recover tracked edits after a hard reset because Git has
+no pre-reset hook. The root control is therefore to never perform destructive
+resets in a shared or dirty worktree; no background writer pretends to repair
+that mistake later.

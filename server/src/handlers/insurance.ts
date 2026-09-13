@@ -62,6 +62,14 @@ export async function handleInsurance(
       });
     }
 
+    if (
+      response === 'accept' &&
+      Object.prototype.hasOwnProperty.call(body, 'coveragePercent') &&
+      (typeof coveragePercent !== 'number' || !Number.isFinite(coveragePercent))
+    ) {
+      return sendJSON(res, 400, { success: false, error: 'Invalid coveragePercent' });
+    }
+
     const engine = deps.gameServer.getTableEngine(tableId);
     if (!engine) {
       return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
@@ -97,6 +105,10 @@ export async function handleInsurancePreview(
 
     if (!tableId) {
       return sendJSON(res, 400, { success: false, error: 'Missing tableId' });
+    }
+
+    if (!Number.isFinite(coveragePercent)) {
+      return sendJSON(res, 400, { success: false, error: 'Invalid coveragePercent' });
     }
 
     const engine = deps.gameServer.getTableEngine(tableId);

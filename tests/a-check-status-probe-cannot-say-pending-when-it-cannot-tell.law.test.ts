@@ -25,6 +25,8 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { requiredContextProblems, stateForChecks } from '../scripts/ci/pr-status.mjs';
+
 const ROOT = join(__dirname, '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 
@@ -94,6 +96,67 @@ describe('a check-status probe cannot say pending when it cannot tell', () => {
     ).toBe(true);
   });
 
+  it('does not call a commit green until every required context is observed successful', () => {
+    const src = read(TOOL);
+
+    expect(src).toContain('requiredContextProblems');
+    expect(src).toContain('stateForChecks');
+    expect(src).toMatch(/requiredProblems\s*=\s*requiredContextProblems\(required,\s*allJobs\)/);
+    expect(src).toMatch(/\.filter\(\(rule\) => rule\.type === 'required_status_checks'\)/);
+    expect(src).toMatch(/\.flatMap\(\(rule\) => rule\.parameters\?\.required_status_checks/);
+    expect(src).toMatch(/return aggregateExit/);
+    expect(src).not.toMatch(/if \(JSON_OUT\) \{[\s\S]*?return 0;/);
+  });
+
+  it('treats missing, skipped, and neutral required contexts as non-green', () => {
+    const required = new Set(['Build', 'Test', 'Audit', 'Deploy']);
+    const problems = requiredContextProblems(required, [
+      { name: 'Build', status: 'completed', conclusion: 'success' },
+      { name: 'Test', status: 'completed', conclusion: 'skipped' },
+      { name: 'Audit', status: 'completed', conclusion: 'neutral' },
+    ]);
+
+    expect(problems).toEqual([
+      { context: 'Audit', state: 'not_successful', conclusions: ['neutral'] },
+      { context: 'Deploy', state: 'missing', conclusions: [] },
+      { context: 'Test', state: 'not_successful', conclusions: ['skipped'] },
+    ]);
+    expect(stateForChecks({ failures: [], activeRuns: [], requiredProblems: problems })).toBe(
+      'RED'
+    );
+    expect(
+      stateForChecks({
+        failures: [],
+        activeRuns: [{ name: 'Optional suite' }],
+        requiredProblems: problems,
+      })
+    ).toBe('RED');
+    expect(stateForChecks({ failures: [], activeRuns: [], requiredProblems: null })).toBe(
+      'UNKNOWN'
+    );
+  });
+
+  it('returns green only for a complete set of successful required contexts', () => {
+    const required = new Set(['Build', 'Test']);
+    const problems = requiredContextProblems(required, [
+      { name: 'Build', status: 'completed', conclusion: 'success' },
+      { name: 'Test', status: 'completed', conclusion: 'success' },
+    ]);
+
+    expect(problems).toEqual([]);
+    expect(stateForChecks({ failures: [], activeRuns: [], requiredProblems: problems })).toBe(
+      'GREEN'
+    );
+  });
+
+  it('never instructs an agent to manually open the pull request', () => {
+    const src = read(TOOL);
+
+    expect(src).not.toMatch(/\bopen (?:the|its|a) (?:PR|pull request)\b/i);
+    expect(src).toContain('agent-open-pr.yml');
+    expect(src).toMatch(/automatically/i);
+  });
+
   it('no other agent-facing script treats /commits/:sha/status as a check oracle', () => {
     const dir = join(ROOT, 'scripts/ci');
     const offenders: string[] = [];
@@ -147,8 +210,18 @@ describe('a check-status probe cannot say pending when it cannot tell', () => {
     expect(pb, 'the playbook must warn that /commits/:sha/status reports pending').toMatch(
       /commits\/:sha\/status/
     );
-    expect(pb, 'the playbook must record that gh is not installed on the Mac').toMatch(
-      /gh` is not installed|not installed on this Mac/
+    // 2026-09-12: this required the playbook to say "`gh` is not installed".
+    // It IS installed - /opt/homebrew/bin/gh, v2.86.0, authenticated as
+    // Smarter-Poker - and THIS ASSERTION is why the falsehood survived six days
+    // of agents reading it and believing it: the claim was load-bearing in CI,
+    // so correcting the doc turned the suite red and every agent put it back.
+    //
+    // The constraint the playbook must still record is the real one, and it has
+    // a different fix: the binary is absent from a NON-INTERACTIVE PATH, which
+    // is also why scripts/guard-merged-branch.sh (fail-closed, needs `gh`)
+    // refused pushes that were fine. Pin the remedy, not the diagnosis.
+    expect(pb, 'the playbook must record how to make `gh` resolvable on the Mac').toMatch(
+      /\/opt\/homebrew\/bin/
     );
   });
 });

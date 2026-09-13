@@ -22,8 +22,8 @@
 #                    on 8 cores, load 69-75 measured) and every job starved.
 #                    A fixed cap of 4 starved them again at load 44 (see the
 #                    note above the derivation); the cap now follows the box.
-#   4. sweeper     - applies a changed drop-in to busy runners as they go idle,
-#                    never killing a job; removes itself when done.
+#   4. activation  - applies changed drop-ins once, during this explicit
+#                    provision run, and refuses to touch any busy runner.
 #   5. browsers    - chromium + webkit system libraries, installed once, so
 #                    Playwright jobs never apt-get on the box.
 #   6. tools       - node, gh, jq. gh is what the publisher's convergence chain
@@ -69,7 +69,11 @@ cron_del() {
   local key="$1" cur new
   cur=$(crontab -l 2>/dev/null || true)
   new=$(printf '%s\n' "$cur" | grep -v -- "$key" || true)
-  printf '%s\n' "$new" | sed '/^$/d' | crontab - 2>/dev/null || true
+  printf '%s\n' "$new" | sed '/^$/d' | crontab -
+  if crontab -l 2>/dev/null | grep -q -- "$key"; then
+    echo "   FATAL: crontab retirement for $key did not stick"
+    exit 1
+  fi
 }
 
 # ── 1. swap ──────────────────────────────────────────────────────────────────
@@ -170,36 +174,16 @@ done
 systemctl daemon-reload
 echo "   drop-ins written: $n"
 
-# ── 4. idle sweeper: apply the drop-in without killing a job ─────────────────
-say "idle-restart sweeper"
-cat > /usr/local/bin/ci-restart-idle-runners.sh <<'EOF'
-#!/bin/bash
-# A runner is mid-job iff a Runner.Worker lives under its directory. Restart
-# only the others, so a changed unit takes effect with zero jobs lost. Removes
-# itself from cron once every runner has restarted since the stamp.
-# ONE SWEEPER AT A TIME. The provisioner runs this directly AND installs it on
-# a */5 cron, so two copies raced on 2026-09-02 and the log shows the same
-# runner "restarted idle" twice in the same second.
-exec 9>/var/lock/ci-restart-idle.lock
-flock -n 9 || exit 0
+# ── 4. bounded activation: no cron, watcher, or later reconciler ─────────────
+say "bounded runner configuration activation"
 
-MARK=/var/lib/ci-runner-env.stamp; [ -f $MARK ] || touch $MARK
+# Retire the old five-minute sweeper every time this provisioner is run. A
+# configuration change must either take effect in this bounded invocation or
+# fail visibly; it must not leave a background process waiting to mutate the
+# machine later.
+cron_del ci-restart-idle-runners
+rm -f /usr/local/bin/ci-restart-idle-runners.sh
 
-# IS THIS RUNNER SAFE TO RESTART?
-#
-# The old test was `pgrep -f "$d/bin/Runner.Worker"` alone, and it had a race
-# that cost real jobs on 2026-09-02: between the Listener ACCEPTING a job and
-# the Worker process appearing there is a window in which the runner is
-# committed to work but shows no Worker. The sweeper looked in exactly that
-# window, called the runner idle and restarted it. Two CI jobs died with "The
-# runner has received a shutdown signal", which reads like an infrastructure
-# blip and is actually this script. A sweeper whose whole promise is "never
-# kills a job" must not have a window.
-#
-# The second test closes it: a runner that has ACCEPTED a job has already
-# written into its own _work tree, before any Worker exists. So anything
-# touched there in the last two minutes means hands off, Worker or not.
-# Cheap, no token, and it fails toward leaving the runner alone.
 runner_busy() {
   local d="$1"
   pgrep -f "$d/bin/Runner.Worker" >/dev/null && return 0
@@ -207,35 +191,36 @@ runner_busy() {
   return 1
 }
 
-left=0
-for d in /home/ci/actions-runner-*; do
-  name=$(basename "$d" | sed 's/actions-runner-//')
-  svc=$(systemctl list-units 'actions.runner.*' --no-legend | awk '{print $1}' | grep "\.${name}\.service$" | head -1)
-  [ -n "$svc" ] || continue
-  since=$(systemctl show -p ActiveEnterTimestamp --value "$svc" | xargs -I{} date -d {} +%s 2>/dev/null || echo 0)
-  [ "$since" -gt "$(stat -c %Y $MARK)" ] && continue
-  if runner_busy "$d"; then left=$((left+1)); continue; fi
-  # Look twice, a few seconds apart. A job accepted between the check and the
-  # restart is the only remaining way to lose one, and this shrinks that to
-  # the width of a single systemctl call.
-  sleep 3
-  if runner_busy "$d"; then left=$((left+1)); continue; fi
-  systemctl restart "$svc" && echo "$(date -u +%FT%TZ) restarted idle $name" >> /var/log/ci-runner-env.log
+assert_all_runners_idle() {
+  local d busy=""
+  for d in /home/ci/actions-runner-*; do
+    [ -d "$d" ] || continue
+    runner_busy "$d" && busy="$busy $(basename "$d")"
+  done
+  [ -z "$busy" ] || {
+    echo "   FATAL: runner configuration is written but not activated; busy:$busy"
+    echo "   Re-run this explicit provision command after those jobs finish."
+    return 1
+  }
+}
+
+# Check twice around a quiet interval. If a runner is working or has just
+# accepted work, abort the whole activation before restarting anything.
+assert_all_runners_idle
+sleep 3
+assert_all_runners_idle
+
+for svc in $UNITS; do
+  systemctl restart "$svc"
 done
-[ $left -eq 0 ] && { ( crontab -l 2>/dev/null | grep -v ci-restart-idle-runners || true ) | sed "/^$/d" | crontab -; echo "$(date -u +%FT%TZ) all runners on new env; sweeper removed" >> /var/log/ci-runner-env.log; }
-EOF
-chmod +x /usr/local/bin/ci-restart-idle-runners.sh
-touch /var/lib/ci-runner-env.stamp
-cron_set ci-restart-idle "*/5 * * * * /usr/local/bin/ci-restart-idle-runners.sh"
-/usr/local/bin/ci-restart-idle-runners.sh || true
-echo "   armed; restarted idle runners now, busy ones roll over within 5 min"
+echo "   activated once on $n idle runner service(s); no retry job was installed"
 
 # ── 5. tools ─────────────────────────────────────────────────────────────────
 say "tools"
 if ! command -v node >/dev/null; then
   curl -fsSL https://deb.nodesource.com/setup_20.x -o /tmp/ns.sh && bash /tmp/ns.sh >/dev/null && apt-get install -y -qq nodejs >/dev/null
 fi
-# jq for the watchdogs; psql because post-deploy-e2e certifies the cashier
+# jq for workflow evidence; psql because post-deploy-e2e certifies the cashier
 # database contract with it and a hosted runner ships it preinstalled - the
 # first routed run on this box failed with "psql: command not found" on a step
 # that had never failed on hosted. Everything a routed workflow shells out to

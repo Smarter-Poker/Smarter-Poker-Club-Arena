@@ -6,6 +6,8 @@ on:
       - server/tsconfig.json
       - server/tsconfig.runtime.json
       - server/scripts/build-engine-image.sh
+      - server/scripts/engine-image-archive.py
+      - tests/operations/engine-image-archive.test.py
       - tests/operations/engine-build-resource-proof.py
       - .github/workflows/engine-build-resource-proof.yml
 permissions:
@@ -27,6 +29,8 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: server/package-lock.json
+      - name: Verify archive identity, bounds and refusal cases
+        run: python3 tests/operations/engine-image-archive.test.py
       - name: Produce the reference runtime with the full TypeScript check
         working-directory: server
         run: |

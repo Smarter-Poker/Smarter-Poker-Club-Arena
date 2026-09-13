@@ -116,7 +116,7 @@ export function validateAlertJournal(value: unknown): asserts value is AlertJour
   }
 }
 
-const digest = (value: string) => createHash('sha256').update(value).digest('hex');
+const digest = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex');
 
 /** Atomic, fsynced checkpoints live on the host bind mount, outside images.
  * A corrupt checkpoint is copied byte-for-byte to a deterministic quarantine
@@ -139,15 +139,15 @@ export class FileAlertJournal implements AlertJournalStore {
 
   async load(): Promise<AlertJournalState> {
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
-    let raw: string;
+    let bytes: Buffer;
     try {
-      raw = await readFile(this.path, 'utf8');
+      bytes = await readFile(this.path);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return emptyAlertJournal();
       throw error;
     }
     try {
-      const envelope: unknown = JSON.parse(raw);
+      const envelope: unknown = JSON.parse(bytes.toString('utf8'));
       if (
         !record(envelope) ||
         typeof envelope.checksum !== 'string' ||
@@ -157,11 +157,11 @@ export class FileAlertJournal implements AlertJournalStore {
       validateAlertJournal(envelope.state);
       return envelope.state;
     } catch {
-      const quarantine = join(this.directory, `journal.corrupt.${digest(raw)}.json`);
+      const quarantine = join(this.directory, `journal.corrupt.${digest(bytes)}.json`);
       try {
         const file = await open(quarantine, 'wx', 0o600);
         try {
-          await file.writeFile(raw);
+          await file.writeFile(bytes);
           await file.sync();
         } finally {
           await file.close();

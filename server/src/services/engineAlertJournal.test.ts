@@ -52,6 +52,18 @@ describe('engine alert journal on persistent disk', () => {
     }
   );
 
+  it('retains malformed non-UTF8 checkpoint bytes exactly', async () => {
+    const journal = await store();
+    const bytes = Buffer.from([123, 255, 254, 0, 125]);
+    await writeFile(journal.path, bytes);
+    await expect(journal.load()).rejects.toThrow('corrupt');
+    const quarantine = (await readdir(journal.directory)).find((name) =>
+      name.startsWith('journal.corrupt.')
+    )!;
+    expect(await readFile(journal.path)).toEqual(bytes);
+    expect(await readFile(join(journal.directory, quarantine))).toEqual(bytes);
+  });
+
   it('survives an actual process exit and resumes with the original event ID', async () => {
     const journal = await store();
     const script = `

@@ -24,6 +24,12 @@ describe('Leaderboard Painted Console Contract', () => {
     expect(wizard).toContain('plates={{');
     expect(wizard).toContain('step="0.01"');
     expect(wizard).toContain('value={row.amount');
+    expect(readFileSync('src/components/leaderboard/LeaderboardPrizeWizard.css', 'utf8')).toContain(
+      'z-index: 10050'
+    );
+    expect(readFileSync('src/components/table/LeaderboardPanel.css', 'utf8')).toContain(
+      'z-index: 600'
+    );
   });
   it('keeps period-specific prizes out of the all-recorded tournament view', () => {
     const page = readFileSync('src/pages/LeaderboardPage.tsx', 'utf8');

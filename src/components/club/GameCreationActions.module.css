@@ -69,9 +69,20 @@
   width: min(100%, 560px);
 }
 
+.compact button {
+  min-height: 0;
+}
+
 @media (max-width: 900px) {
   .desktopOnly {
     display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .actions button,
+  .compact button {
+    min-height: 44px;
   }
 }
 
@@ -84,7 +95,6 @@
 
   .actions button {
     margin-inline: 1.5%;
-    min-height: 44px;
     padding-inline: 2%;
     font-size: clamp(8px, 2.8cqw, 11px);
     letter-spacing: 0.02em;

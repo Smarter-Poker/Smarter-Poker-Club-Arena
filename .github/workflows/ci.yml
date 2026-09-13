@@ -496,6 +496,8 @@ jobs:
           echo "All $TOTAL invariant guards passed." >> "$GITHUB_STEP_SUMMARY"
       - name: Evaluate real SLO alert durations, thresholds and recovery
         run: bash scripts/ci/test-slo-stall-duration.sh
+      - name: Evaluate fleet throughput against live dealing capacity
+        run: bash scripts/ci/test-fleet-throughput.sh
       - name: Report Typecheck Time
         if: always()
         run: |

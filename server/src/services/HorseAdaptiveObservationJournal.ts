@@ -205,12 +205,133 @@ export type AdaptiveJournalWriteResult =
       observations: number;
     }>;
 
+/** Validate recovered canonical bytes without inventing a new source snapshot.
+ * A historical receipt proves what was recorded, not current-window coverage. */
+function recoverPreparedBatch(payload: unknown): PreparedAdaptiveJournalBatch {
+  if (typeof payload !== 'string' || bytes(payload) > ADAPTIVE_JOURNAL_LIMITS.batchBytes)
+    throw Error('invalid_batch');
+  const b = JSON.parse(payload);
+  if (
+    !Array.isArray(b) ||
+    b.length !== 8 ||
+    b[0] !== 1 ||
+    !digest(b[1]) ||
+    !digest(b[2]) ||
+    !integer(b[3]) ||
+    !integer(b[4]) ||
+    b[3] < 0 ||
+    b[4] <= b[3] ||
+    b[4] - b[3] > 21_600_000 ||
+    !digest(b[5]) ||
+    !Array.isArray(b[6]) ||
+    b[6].length > 64 ||
+    !Array.isArray(b[7]) ||
+    b[7].length > ADAPTIVE_JOURNAL_LIMITS.observations ||
+    b[1] !== hash(['adaptive-journal-v1', b[2], b[5], b[3], b[4]].join('|'))
+  )
+    throw Error('invalid_batch');
+  let previousReason = '';
+  for (const r of b[6]) {
+    if (
+      !Array.isArray(r) ||
+      r.length !== 2 ||
+      typeof r[0] !== 'string' ||
+      !/^[a-z_]{1,64}$/.test(r[0]) ||
+      r[0] <= previousReason ||
+      !integer(r[1]) ||
+      r[1] < 0 ||
+      r[1] > 20_000
+    )
+      throw Error('invalid_batch');
+    previousReason = r[0];
+  }
+  let previousId = '';
+  for (const row of b[7]) {
+    const o = decode(row);
+    if (o.actorKey !== b[2] || o.observationId <= previousId) throw Error('invalid_batch');
+    previousId = o.observationId;
+  }
+  // Whitespace, duplicate keys/IDs, noncanonical numbers and substituted row
+  // encodings cannot acquire the receipt of the bytes originally submitted.
+  if (JSON.stringify(b) !== payload) throw Error('invalid_batch');
+  return Object.freeze({
+    status: 'prepared',
+    batchKey: b[1],
+    batchDigest: hash(payload),
+    observations: b[7].length,
+    payload,
+  });
+}
+
+/** Recover the exact submitted public batch by its previously computed key.
+ * Missing/legacy payloads remain unavailable; never reconstruct from a newer
+ * source query or claim that a missing receipt proves a write rolled back. */
+export async function readAdaptiveJournalBatch(
+  batchKey: string
+): Promise<PreparedAdaptiveJournalBatch | ReturnType<typeof refusal>> {
+  if (!digest(batchKey)) return refusal('invalid_request');
+  try {
+    const { data, error } = await supabase
+      .rpc('fn_horse_adaptive_journal_batch', {
+        p_batch_key: batchKey,
+      })
+      .abortSignal(AbortSignal.timeout(ADAPTIVE_JOURNAL_LIMITS.timeoutMs));
+    if (error) return refusal('source_unavailable');
+    if (data?.version !== 1) return refusal('invalid_receipt');
+    if (data.status === 'unavailable')
+      return refusal(
+        ['batch_not_found', 'legacy_batch_payload_unavailable'].includes(data.reason)
+          ? data.reason
+          : 'invalid_receipt'
+      );
+    if (data.status !== 'recorded') return refusal('invalid_receipt');
+    const batch = recoverPreparedBatch(data.payload);
+    if (
+      batch.batchKey !== batchKey ||
+      data.batchKey !== batch.batchKey ||
+      data.batchDigest !== batch.batchDigest ||
+      data.observations !== batch.observations
+    )
+      return refusal('invalid_receipt');
+    return batch;
+  } catch {
+    return refusal('invalid_receipt');
+  }
+}
+
+/** Retry recovered bytes after restart. Validation completes before any await,
+ * so a mutable caller cannot replace the batch being verified or submitted. */
+export async function persistPreparedAdaptiveJournalBatch(
+  input: PreparedAdaptiveJournalBatch
+): Promise<AdaptiveJournalWriteResult> {
+  let batch: PreparedAdaptiveJournalBatch;
+  try {
+    batch = recoverPreparedBatch(input?.payload);
+    if (
+      input.status !== 'prepared' ||
+      input.batchKey !== batch.batchKey ||
+      input.batchDigest !== batch.batchDigest ||
+      input.observations !== batch.observations
+    )
+      return refusal('invalid_batch');
+  } catch {
+    return refusal('invalid_batch');
+  }
+  return persistVerifiedBatch(batch);
+}
+
 /** A lost reply is UNKNOWN. Retry the same snapshot; never assume it rolled back. */
 export async function persistAdaptiveJournalSnapshot(
   snapshot: CommittedObservationSnapshot
 ): Promise<AdaptiveJournalWriteResult> {
   const batch = prepareAdaptiveJournalBatch(snapshot);
   if (batch.status !== 'prepared') return batch;
+  return persistVerifiedBatch(batch);
+}
+
+async function persistVerifiedBatch(
+  batch: PreparedAdaptiveJournalBatch
+): Promise<AdaptiveJournalWriteResult> {
   const result = (status: 'recorded' | 'unknown' | 'rejected'): AdaptiveJournalWriteResult =>
     Object.freeze({
       status,

@@ -85,3 +85,33 @@ describe('the wallet page honours the three outcomes', () => {
     expect(i).toBeGreaterThan(0);
   });
 });
+
+describe('storeFetch carries the idempotency key the money routes require', () => {
+  const shared = readFileSync(
+    resolve(process.cwd(), 'src/pages/marketplace/marketplaceShared.ts'),
+    'utf8'
+  );
+  it('sends X-Idempotency-Key when given one', () => {
+    expect(shared).toContain(
+      "if (opts.idempotencyKey) headers['X-Idempotency-Key'] = opts.idempotencyKey;"
+    );
+    expect(shared).toContain('idempotencyKey?: string;');
+  });
+});
+
+describe('the ledger rows name the other player', () => {
+  const hook = readFileSync(resolve(process.cwd(), 'src/hooks/useDiamondLedger.ts'), 'utf8');
+  const page = readFileSync(resolve(process.cwd(), 'src/pages/PlayerWalletPage.tsx'), 'utf8');
+  it('the hook reads metadata and surfaces counterpartyId by direction', () => {
+    expect(hook).toContain(
+      "'id, type, transaction_type, amount, description, created_at, metadata'"
+    );
+    expect(hook).toContain("direction === 'out' ? meta.recipient_id : meta.sender_id");
+    expect(hook).toContain('counterpartyId: string | null;');
+  });
+  it('the page resolves it through the friend list on both panes', () => {
+    expect(page).toContain("describeRow(row, 'Sent To')");
+    expect(page).toContain("describeRow(row, 'Received From')");
+    expect(page).toContain("(activeTab === 'send' || activeTab === 'receive') && friends === null");
+  });
+});

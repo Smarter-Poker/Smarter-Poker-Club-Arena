@@ -92,3 +92,37 @@ raw `SUM` for the longest ledger; RLS probe as above.
 server-written `reference_id` date rather than `created_at`, it is a money
 path, and the shared module's formula is pinned to the catalog string the
 claim route documents. Merging the two walks is a separate, probed change.
+
+## 5. (second commit) Every Send from this page was refused, and the floor was invented
+
+Found on the second pass, reading the route rather than this page's comments.
+
+**Every send failed.** `/api/store/diamond-transfer` has required an
+`X-Idempotency-Key` since #1696 (2026-09-09), refusing without one - 400
+"Invalid Transfer Request" - and `storeFetch` never sent one. So for four days
+a player pressing Send Diamonds here got that sentence every time, and nothing
+in this repo said why. `storeFetch` now takes `idempotencyKey` and sends the
+header; the page mints one key per send intent (`sendKeyRef`), reuses it on a
+retry (the route answers 503 "Retry With The Same Request ID" when a receipt is
+unconfirmed, and `send_wallet_diamond_transfer` replays its own answer for a
+repeated `request_id`), clears it on success, and rotates it only after a
+`definitive` refusal - the StoreTab pattern, for the same money reason.
+
+**The floor was 10, and the comment blamed the route.** The RPC refuses only
+`p_amount <= 0`; the anti-farming cap governs everything else. The page now
+allows 1, and the copy no longer promises a minimum that did not exist.
+
+**The route's shape was misread.** The page typed the response as
+`{ transferred, newBalance, recipientName }`; the route returns the transfer
+row (`amount`, `recipient_id`, `request_id`). Harmless by luck (every read had
+a fallback), now typed as what arrives.
+
+**Who the gift was with.** `send_wallet_diamond_transfer` writes a generic
+description and puts the other player's id in `metadata`. The hook now reads
+`metadata` and surfaces `counterpartyId` by direction; the page resolves it
+through the friend list it already loads (now for the Receive tab too), so a
+row reads "Sent To Alice (#123)" / "Received From Bob (#77)" instead of
+"Diamonds Sent To A Friend".
+
+Pins: `tests/wallet-casino-realism.test.ts` (floor = 1, key on the send, no
+key rotation on an ambiguous outcome), `tests/unit/theDiamondLedgerSumsItself.test.ts`.

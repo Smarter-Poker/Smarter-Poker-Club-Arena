@@ -67,8 +67,8 @@ describe('engine alert journal on persistent disk', () => {
   it('survives an actual process exit and resumes with the original event ID', async () => {
     const journal = await store();
     const script = `
-      import { FileAlertJournal } from './src/services/engineAlertJournal.ts';
-      import { EngineAlertDelivery } from './src/services/engineAlertDelivery.ts';
+      import { FileAlertJournal } from './src/services/engineAlertJournal.js';
+      import { EngineAlertDelivery } from './src/services/engineAlertDelivery.js';
       const journal = new FileAlertJournal(process.env.ENGINE_ALERT_TEST_DIR);
       const delivery = new EngineAlertDelivery({ store: journal, automatic: false,
         report: () => {}, post: async () => false });

@@ -24,7 +24,7 @@
   width: 100%;
   min-width: 0;
   margin: 0;
-  padding: 0;
+  padding: 0 0 calc(env(safe-area-inset-bottom, 0px) + 120px);
 }
 
 .formGroup {

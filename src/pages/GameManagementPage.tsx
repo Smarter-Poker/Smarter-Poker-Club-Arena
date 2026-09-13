@@ -1587,7 +1587,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                     ? 'Open Table'
                     : !closed && !tournamentLocked
                       ? 'Edit Game'
-                      : 'View Contract';
+                      : 'Contract';
                 return (
                   <article key={`${game.kind}-${game.id}`} className={styles.gameRow}>
                     <ArenaGameCard
@@ -1617,8 +1617,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                       }}
                       actions={{
                         primaryLabel: cardPrimaryLabel,
-                        secondaryLabel:
-                          cardPrimaryLabel === 'View Contract' ? undefined : 'Contract',
+                        secondaryLabel: cardPrimaryLabel === 'Contract' ? undefined : 'Contract',
                         showIcons: false,
                         busy: busyKeys.has(managedGameKey(game)),
                         onSecondary: () => void openContractHistory(game),
@@ -1638,16 +1637,6 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                       aria-hidden="true"
                     />
                     <div className={styles.gameIdentity}>
-                      <span aria-hidden="true">
-                        {game.kind === 'table' ? 'Cash Table' : 'Tournament'} · {game.hostName}
-                      </span>
-                      <h2 aria-hidden="true">{game.name}</h2>
-                      <p aria-hidden="true">
-                        {game.variant.toUpperCase()} ·{' '}
-                        {game.kind === 'table'
-                          ? `${game.smallBlind}/${game.bigBlind} · Buy-In ${game.minBuyIn}-${game.maxBuyIn}`
-                          : `${game.buyIn} Buy-In · ${formatTime(game.startTime)}`}
-                      </p>
                       {game.contract && (
                         <div className={styles.contractRail}>
                           <span>Contract V{game.contract.version}</span>
@@ -1729,13 +1718,6 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                         </div>
                       )}
                     </div>
-                    <div className={styles.gameNumbers}>
-                      <strong>
-                        {game.players}/{game.maxPlayers || '∞'}
-                      </strong>
-                      <span>Players</span>
-                    </div>
-                    <span className={styles.status}>{game.status.replace(/_/g, ' ')}</span>
                     <div className={styles.rowActions}>
                       {/*
                       Open, Pause, Schedule and Close are all gated on !closed

@@ -40,4 +40,8 @@ describe('Leaderboard Painted Console Contract', () => {
     expect(page).toContain('data-label="Total Prizes"');
     expect(page).toContain('data-label="Biggest Win"');
   });
+  it('uses the approved off-felt console ink for positive table leaderboard values', () => {
+    const css = readFileSync('src/components/table/LeaderboardPanel.css', 'utf8');
+    expect(css).toMatch(/\.leaderboard-row__amount--positive\s*\{\s*color:\s*#c8ffd2;/);
+  });
 });

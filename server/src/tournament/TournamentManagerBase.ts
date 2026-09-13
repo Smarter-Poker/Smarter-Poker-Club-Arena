@@ -66,6 +66,7 @@ import {
 import { observedStepRatio } from './blindLadder.js';
 import { isSpinTournament, parsePayoutStructure } from './payoutStructure.js';
 import { readTournamentPrizePool } from './tournamentPrizeContract.js';
+import { readPlayedMttLaunchProof } from './playedMttLaunchRecovery.js';
 import { secureRandomInt } from '../engine/CryptoRandom.js';
 import {
   DEFAULT_TOP_BOUNTY_PERCENT,
@@ -3228,6 +3229,64 @@ export abstract class TournamentManagerBase {
     }
   }
 
+  /** Resume a dealt MTT whose original launch did not finish recording. */
+  private async resumePlayedMttLaunch(
+    lifecycle: TournamentLifecycleToken,
+    tournament: any
+  ): Promise<boolean> {
+    if (
+      tournament.status !== 'REGISTERING' ||
+      tournament.prize_pool_finalized !== true ||
+      !['MTT', 'SATELLITE'].includes(String(tournament.tournament_type).toUpperCase()) ||
+      !(Number(tournament.max_players) > 2) ||
+      isSpinTournament(tournament)
+    )
+      return false;
+
+    // NULL asks the existing proof to report the precise first-hand anchor.
+    // It remains a refusal until the same authority accepts that exact value.
+    const { data: anchor, error: anchorError } = await supabase.rpc(
+      'fn_prove_played_launch_recovery',
+      { p_tournament_id: this.tournamentId, p_started_at: null }
+    );
+    this.assertLifecycleCurrent(lifecycle);
+    if (anchorError) throw new Error(`Played MTT proof unreadable: ${anchorError.message}`);
+    if (anchor?.ok === false && anchor.reason === 'no_hand_was_dealt') return false;
+    const firstHandAt = anchor?.first_hand_at;
+    if (
+      anchor?.ok !== false ||
+      anchor.reason !== 'the_receipt_is_not_the_deal_that_happened' ||
+      typeof firstHandAt !== 'string' ||
+      !Number.isFinite(Date.parse(firstHandAt))
+    ) {
+      throw new Error('Played MTT first-hand anchor was not proven');
+    }
+    const { data: proof, error: proofError } = await supabase.rpc(
+      'fn_prove_played_launch_recovery',
+      { p_tournament_id: this.tournamentId, p_started_at: firstHandAt }
+    );
+    this.assertLifecycleCurrent(lifecycle);
+    if (proofError) throw new Error(`Played MTT proof unreadable: ${proofError.message}`);
+    readPlayedMttLaunchProof(proof, firstHandAt);
+
+    // Preserve PostgreSQL microseconds: converting this anchor through a JS
+    // Date would make the receipt differ from the hand the SQL proof checks.
+    const claim = await this.beginTournamentLaunch(lifecycle, nodeCrypto.randomUUID(), firstHandAt);
+    this.assertLifecycleCurrent(lifecycle);
+    if (!claim) throw new Error('Played MTT launch claim was not confirmed');
+    if (
+      !claim.completed &&
+      !(await this.completeTournamentLaunch(lifecycle, claim.launchId, claim.startedAtIso))
+    ) {
+      throw new Error('Played MTT launch completion was not confirmed');
+    }
+    this.assertLifecycleCurrent(lifecycle);
+    // Join this lifecycle directly. Public resume() would join start()'s own
+    // pending operation, and fresh setup would reset a field that already played.
+    await this.resumeLifecycle(lifecycle);
+    return true;
+  }
+
   private async startLifecycle(lifecycle: TournamentLifecycleToken): Promise<void> {
     console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] Starting...`);
 
@@ -3258,6 +3317,8 @@ export abstract class TournamentManagerBase {
       this.tournamentEntryWindowClosed = this.prizePoolFinalized;
       this.tournamentEntryCloseAnnounced = false;
       this.tournamentEntryRepricePending = false;
+      if (await this.resumePlayedMttLaunch(lifecycle, tournament)) return;
+      this.assertLifecycleCurrent(lifecycle);
       // Adopt whatever the row says the mystery phase is. A redeploy
       // mid-tournament must not re-seed an inventory that already exists.
       this.mysteryBountyStage =

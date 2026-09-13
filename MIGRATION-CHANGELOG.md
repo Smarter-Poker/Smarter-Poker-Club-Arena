@@ -1,3 +1,9 @@
+## 2026-09-13: Reach the recorded launch proof for a played MTT
+
+The engine can now route a previously played, finalized MTT through the existing launch begin/complete authorities and normal resume before the fresh-field minimum gate. It preserves the precise first-hand timestamp, current levels, stacks and pool. A fresh short field still refuses; Spin retains its separate path. No live status or player state was manually changed.
+
+Migration20260913201839 grants the engine service read access to the unchanged proof body27037b1d61898aef22fd476a44667cc9. Applied at20:24UTC as history20260913202413; service access and browser denial verified. Native12groups, focused48/3, full tournament1,926/154 and TypeScript pass. Engine/live recovery acceptance remains open. See docs/changelog/2026-09-13-mtt-played-launch-recovery.md.
+
 ## 2026-09-13: Publish tournament blinds atomically
 
 The engine replaces per-table blind fan-out with one generation-fenced database transaction and a strict receipt. New table births inherit the committed parent snapshot; restart uses the same amounts. A fresh level starts on database time after successful field writes; replay keeps an intervening break shift. Financial contracts and historical rows are unchanged.

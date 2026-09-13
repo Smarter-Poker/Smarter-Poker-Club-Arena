@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/mtt-played-launch-recovery-sep13; service read grant applied as history20260913202413, existing authority source unchanged",
+  "functions": ["fn_prove_played_launch_recovery"]
+}

@@ -202,6 +202,30 @@ describe('durable atomic blind-level transition', () => {
     expect(state.currentLevel).toBe(1);
   });
 
+  it.each([
+    ['paused', 'paused'],
+    ['tournament_not_running', 'tournament_not_running'],
+    ['untrusted response body', 'unverified_receipt'],
+  ])(
+    'records the bounded refusal cause %s without accepting a blind level',
+    async (reason, expected) => {
+      const { state, rpc } = fixture();
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+      rpc.mockResolvedValueOnce({ data: { ok: false, reason }, error: null } as never);
+      await state.advanceBlindLevel(structure);
+      const record = errors.mock.calls.find(
+        ([context]) => context === '[Tournament.blind_transition_failed]'
+      );
+      expect((record?.[1] as Error).message).toContain(
+        `${expected}; tournament=level-restart; attemptedLevel=1`
+      );
+      expect((record?.[1] as Error).message).not.toContain('untrusted response body');
+      expect(state.currentLevel).toBe(0);
+      expect(state.blindTimer.delay).toBe(1000);
+      expect(tableStateHub.emitEvent).not.toHaveBeenCalled();
+    }
+  );
+
   it('holds a due clock locally during maintenance and restores the shifted remaining time', async () => {
     const { row, state, rpc, writes, read } = fixture();
     const originalAnchor = state.blindTimerStartedAt;

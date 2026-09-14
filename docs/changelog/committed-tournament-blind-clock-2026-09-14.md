@@ -15,5 +15,7 @@ finish latch does not retire a live clock.
 Validation covers all three terminal tails with cleanup still pending, queued
 wakes, attempts to rearm, late success and refusal responses, and the precommit
 latch. Existing maintenance/thaw, blind recovery and terminal cleanup cases remain
-required. This source repair does not establish that all observed live blind
+required. Refused receipts also retain the exact tournament, attempted level and
+allowlisted refusal reason in the host log, without copying arbitrary response
+content. This source repair does not establish that all observed live blind
 refusals or retained managers have the same cause.

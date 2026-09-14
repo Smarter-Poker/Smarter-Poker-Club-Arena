@@ -6471,8 +6471,19 @@ export abstract class TournamentManagerBase {
         state.big_blind !== bigBlind ||
         state.ante !== ante ||
         !Number.isFinite(levelStartedAt)
-      )
-        throw new Error('Blind publication did not return a matching committed level');
+      ) {
+        const reason =
+          receipt?.ok === false &&
+          (receipt.reason === 'paused' || receipt.reason === 'tournament_not_running')
+            ? receipt.reason
+            : 'unverified_receipt';
+        // Preserve a bounded cause and exact tournament in host logs. Arbitrary
+        // response bodies are not diagnostic text and must never be copied here.
+        throw new Error(
+          `Blind publication did not return a matching committed level: ${reason}; ` +
+            `tournament=${this.tournamentId}; attemptedLevel=${nextLevel}`
+        );
+      }
       this.currentLevel = nextLevel;
       this.blindTimerStartedAt = levelStartedAt;
       if (this.tournamentCache) {

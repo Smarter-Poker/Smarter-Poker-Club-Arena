@@ -1,6 +1,8 @@
 import type { AdaptiveJournalWorkResult } from '../HorseAdaptiveJournalWork.js';
 import type { pruneAdaptiveJournal } from '../HorseAdaptiveJournalRetention.js';
 import type { JournalQueueHealth } from './queueHealth.js';
+import { unknownDiscovery, type DiscoveryReceipt } from './discoveryReceipt.js';
+import type { pruneObservationDiscovery } from '../HorseObservationDiscovery.js';
 import type {
   ObservationCaptureResult,
   pruneObservationCaptures,
@@ -10,12 +12,15 @@ export type JournalCycle = Readonly<{
   work: AdaptiveJournalWorkResult['status'] | 'skipped';
   retention: 'skipped' | Awaited<ReturnType<typeof pruneAdaptiveJournal>>['status'];
   acquisition?: ObservationCaptureResult['status'];
+  discovery?: DiscoveryReceipt;
 }>;
 type Dependencies = {
   processWork: () => Promise<AdaptiveJournalWorkResult>;
   processCapture?: () => Promise<ObservationCaptureResult>;
+  discover?: () => Promise<DiscoveryReceipt>;
   prune: typeof pruneAdaptiveJournal;
   pruneCaptures?: typeof pruneObservationCaptures;
+  pruneDiscovery?: typeof pruneObservationDiscovery;
   now: () => number;
   wait: (ms: number, signal: AbortSignal) => Promise<void>;
   started: () => void;
@@ -23,6 +28,10 @@ type Dependencies = {
   readQueueHealth?: () => Promise<JournalQueueHealth>;
   queueHealth?: (health: JournalQueueHealth) => void;
 };
+
+/** Bound acquisition starvation in turns, not wall time: RPC timeouts and
+ * independent failure backoff still apply. Keep journal work the majority. */
+export const CAPTURE_FAIRNESS_JOURNAL_TURNS = 8;
 
 /** A single serial consumer. One claim and at most one bounded prune per
  * cycle; never imports this loop into the table's action or decision worker. */
@@ -32,13 +41,55 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
   let failures = 0;
   let captureFailures = 0;
   let captureNext = false;
-  let pruneCapturesNext = false;
+  let captureFromBacklog = false;
+  let journalTurns = 0;
+  let pruneIndex = 0;
+  let nextDiscoveryAt = 0;
+  let discoveryEligible = false;
+  let discoveryFailures = 0;
   while (!signal.aborted) {
     d.started();
+    if (d.discover && discoveryEligible && d.now() >= nextDiscoveryAt) {
+      discoveryEligible = false;
+      let discovery: DiscoveryReceipt;
+      try {
+        discovery = await d.discover();
+      } catch {
+        discovery = unknownDiscovery();
+      }
+      if (signal.aborted) return;
+      d.completed(Object.freeze({ work: 'skipped', retention: 'skipped', discovery }));
+      const progress = [
+        'source_recorded',
+        'admitted',
+        'advanced',
+        'discovered',
+        'refined',
+      ].includes(discovery.status);
+      discoveryFailures =
+        progress || discovery.status === 'idle' ? 0 : Math.min(6, discoveryFailures + 1);
+      nextDiscoveryAt =
+        d.now() +
+        (progress
+          ? 10000
+          : discovery.status === 'idle' || discovery.status === 'gap'
+            ? 60000
+            : Math.max(10000, Math.min(60000, 1000 * 2 ** discoveryFailures)));
+      // Backoff is a deadline for discovery alone. At least one ordinary
+      // work/capture cycle runs before discovery becomes eligible again.
+      try {
+        await d.wait(1000, signal);
+      } catch (error) {
+        if (!signal.aborted) throw error;
+      }
+      continue;
+    }
+    discoveryEligible = true;
     if (captureNext && d.processCapture) {
       // Acquisition has up to three bounded RPCs. Keep maintenance/health in
       // ordinary journal cycles so this cycle remains below the watchdog.
       captureNext = false;
+      journalTurns = 0;
       let capture: ObservationCaptureResult;
       try {
         capture = await d.processCapture();
@@ -54,7 +105,7 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
       );
       captureFailures = healthy ? 0 : Math.min(captureFailures + 1, 6);
       const delay = healthy
-        ? capture.status === 'idle'
+        ? capture.status === 'idle' && !captureFromBacklog
           ? 5000
           : 1000
         : Math.min(60000, 1000 * 2 ** captureFailures);
@@ -75,15 +126,22 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
     let retention: JournalCycle['retention'] = 'skipped';
     if (d.now() >= nextPruneAt) {
       try {
-        const pruneCaptures = pruneCapturesNext && d.pruneCaptures;
-        if (d.pruneCaptures) pruneCapturesNext = !pruneCapturesNext;
-        const r = pruneCaptures ? await pruneCaptures() : await d.prune();
+        const tasks = [
+          d.prune,
+          ...(d.pruneCaptures ? [d.pruneCaptures] : []),
+          ...(d.pruneDiscovery ? [d.pruneDiscovery] : []),
+        ];
+        const task = tasks[pruneIndex % tasks.length];
+        pruneIndex = (pruneIndex + 1) % tasks.length;
+        const r = await task();
         retention = r.status;
         const atLimit =
           r.status === 'pruned' &&
-          ('requests' in r
-            ? r.requests === 100 || r.sliceReceipts === 1000
-            : r.completedWork === 100 || r.batches === 100 || r.observations === 1000);
+          ('epochs' in r
+            ? r.members === 512 || r.segments === 128 || r.epochs === 1
+            : 'requests' in r
+              ? r.requests === 100 || r.sliceReceipts === 1000
+              : r.completedWork === 100 || r.batches === 100 || r.observations === 1000);
         nextPruneAt = d.now() + (atLimit ? 5000 : 60000);
       } catch {
         retention = 'unknown';
@@ -103,7 +161,11 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
       d.queueHealth?.(health);
     }
     d.completed(Object.freeze({ work: result.status, retention }));
-    captureNext = result.status === 'idle' && Boolean(d.processCapture);
+    if (d.processCapture) journalTurns = Math.min(journalTurns + 1, CAPTURE_FAIRNESS_JOURNAL_TURNS);
+    captureFromBacklog = result.status !== 'idle';
+    captureNext =
+      Boolean(d.processCapture) &&
+      (result.status === 'idle' || journalTurns >= CAPTURE_FAIRNESS_JOURNAL_TURNS);
     const healthy = result.status === 'completed' || result.status === 'idle';
     failures = healthy ? 0 : Math.min(failures + 1, 6);
     const delay = healthy

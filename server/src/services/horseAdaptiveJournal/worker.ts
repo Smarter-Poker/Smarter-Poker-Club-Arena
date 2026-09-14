@@ -17,13 +17,17 @@ try {
   const { readLearningQueueHealth } = await import('../HorseLearningQueueHealth.js');
   const { processObservationCapture, pruneObservationCaptures } =
     await import('../HorseObservationCapture.js');
+  const { discoverObservationRequests, pruneObservationDiscovery } =
+    await import('../HorseObservationDiscovery.js');
   if (!stop.signal.aborted) {
     port.postMessage({ type: 'READY' });
     await runJournalLoop(stop.signal, {
       processWork: processAdaptiveJournalWork,
       processCapture: processObservationCapture,
+      discover: discoverObservationRequests,
       prune: pruneAdaptiveJournal,
       pruneCaptures: pruneObservationCaptures,
+      pruneDiscovery: pruneObservationDiscovery,
       readQueueHealth: async () => {
         const health = await readLearningQueueHealth();
         port.postMessage({ type: 'CAPTURE_HEALTH', value: { version: 1, ...health.capture } });
@@ -36,7 +40,12 @@ try {
         await wait(ms, undefined, { signal });
       },
       started: () => port.postMessage({ type: 'CYCLE_STARTED' }),
-      completed: (cycle) => port.postMessage({ type: 'CYCLE_COMPLETED', ...cycle }),
+      completed: (cycle) =>
+        port.postMessage({
+          type: 'CYCLE_COMPLETED',
+          ...cycle,
+          ...(cycle.discovery ? { discovery: { version: 1, ...cycle.discovery } } : {}),
+        }),
     });
   }
   port.postMessage({ type: 'STOPPED' });

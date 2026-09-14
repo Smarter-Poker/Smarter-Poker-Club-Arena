@@ -193,6 +193,28 @@ const fastResult = (requestId: number, fence: string): FastHorseDecisionResult =
 });
 
 describe('LiveHorseDecisionWorkerClient', () => {
+  it('rejects internally consistent policy ownership for the wrong request variant', async () => {
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    const input = snapshot('wrong-owner');
+    input.gameState.gameVariant = 'plo4';
+    const pending = client.decideFast(input);
+    void pending.catch(() => undefined);
+    const reply = fastResult(1, 'wrong-owner');
+    reply.decision.policyOwnership = {
+      version: 'horse-policy-ownership-v1',
+      variant: 'nlh',
+      owner: 'reference',
+      packVersion: null,
+      mode: 'reference',
+      outcome: 'reference',
+      reason: null,
+    };
+    expect(() => worker.emitMessage(reply)).not.toThrow();
+    await expect(pending).rejects.toThrow('invalid policy receipt');
+    expect(client.status().phase).toBe('failed');
+  });
   it.each(['fast', 'deep'] as const)(
     'rejects malformed %s policy graphs inside the failure boundary',
     async (lane) => {

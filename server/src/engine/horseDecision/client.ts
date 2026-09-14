@@ -805,7 +805,7 @@ export class LiveHorseDecisionWorkerClient {
         this.fail(new Error('horse decision worker returned invalid fallback provenance'));
         return;
       }
-      if (!horseDecisionReceiptIsValid(message.decision)) {
+      if (!horseDecisionReceiptIsValid(message.decision, active.request.gameState.gameVariant)) {
         this.fail(new Error('horse decision worker returned invalid policy receipt'));
         return;
       }

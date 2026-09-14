@@ -8,7 +8,8 @@ import { restoreFastRandom, saveFastRandom } from '../HorseEval.js';
 import { equityGovernor } from '../EquityLoadGovernor.js';
 import { bettingStructureFor } from '../BettingStructure.js';
 import { calculateContestablePot } from '../PokerEngine.js';
-import { horseVariantRulesFor, isKnownVariant } from '../VariantRules.js';
+import { horseVariantRulesFor } from '../VariantRules.js';
+import { horsePolicyRegistration } from '../HorsePolicyRegistry.js';
 import { buildJointCardLayout, type JointCardLayoutInput } from '../multiway/JointCardLayout.js';
 import { validateDealtSeatCensus } from '../multiway/DealtSeatCensus.js';
 import { buildTournamentMState, TOURNAMENT_CONTEXT_INCOMPLETE } from '../HorseTournamentPreflop.js';
@@ -517,7 +518,8 @@ export class HorseDecisionWorkerRuntime {
     ) {
       throw new Error('horse state contains private seat cards');
     }
-    if (!isKnownVariant(gs.gameVariant)) throw new Error('horse state gameVariant is unknown');
+    if (!horsePolicyRegistration(gs.gameVariant))
+      throw new Error('horse state gameVariant has no canonical policy owner');
     const expectedRules = horseVariantRulesFor(gs.gameVariant);
     const rules = gs.variantRules;
     if (

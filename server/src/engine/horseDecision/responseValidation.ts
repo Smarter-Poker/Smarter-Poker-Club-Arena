@@ -1,5 +1,6 @@
 import type { HorseDecision } from '../../types.js';
 import { HORSE_POLICY_ORDER, type HorsePolicyAction } from '../HorsePolicyGraph.js';
+import { horsePolicyOwnershipMatches } from '../HorsePolicyRegistry.js';
 
 const ACTIONS = ['fold', 'check', 'call', 'bet', 'raise', 'all_in'] as const;
 type RecordValue = Record<string, unknown>;
@@ -31,7 +32,10 @@ function same(a: HorsePolicyAction, b: HorsePolicyAction): boolean {
  * may be absent on legacy or caught-failure decisions; absence is not proof
  * of graph execution. A supplied graph must be complete, continuous and
  * action-only, and its final action must match the returned decision. */
-export function horseDecisionReceiptIsValid(value: unknown): value is HorseDecision {
+export function horseDecisionReceiptIsValid(
+  value: unknown,
+  expectedVariant?: string
+): value is HorseDecision {
   if (
     !record(value) ||
     !ACTIONS.includes(value.action as (typeof ACTIONS)[number]) ||
@@ -44,7 +48,15 @@ export function horseDecisionReceiptIsValid(value: unknown): value is HorseDecis
     value.policyFallback === 'brain_exception' &&
     (!['check', 'fold'].includes(value.action as string) ||
       value.amount !== undefined ||
-      value.policyGraph !== undefined)
+      value.policyGraph !== undefined ||
+      value.policyOwnership !== undefined)
+  )
+    return false;
+  if (!horsePolicyOwnershipMatches(value as unknown as HorseDecision)) return false;
+  if (
+    value.policyOwnership !== undefined &&
+    expectedVariant !== undefined &&
+    (value.policyOwnership as HorseDecision['policyOwnership'])?.variant !== expectedVariant
   )
     return false;
   if (value.policyGraph === undefined) return true;

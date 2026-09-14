@@ -41,6 +41,7 @@ export interface HorseExecutionWitness {
   readonly selected: Readonly<{ action: ActionType; amount: number | null }>;
   readonly policyFallback: HorseDecision['policyFallback'] | null;
   readonly policyGraph: HorsePolicyGraphReceipt | null;
+  readonly policyOwnership: Readonly<NonNullable<HorseDecision['policyOwnership']>> | null;
   readonly computeMs: number;
   readonly governorScale: number;
   executionStatus: 'pending' | 'intended' | 'coerced' | 'fallback' | 'not_executed' | 'unverified';
@@ -80,6 +81,9 @@ export function createHorseExecutionWitness(
     }),
     selected: Object.freeze({ action: decision.action, amount: decision.amount ?? null }),
     policyFallback: decision.policyFallback ?? null,
+    policyOwnership: decision.policyOwnership
+      ? Object.freeze({ ...decision.policyOwnership })
+      : null,
     policyGraph: decision.policyGraph
       ? {
           version: decision.policyGraph.version,

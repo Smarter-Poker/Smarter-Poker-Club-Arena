@@ -908,6 +908,27 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     { dayColumn: 'day', freshnessDays: 1 }
   ),
   table(
+    'horse_brain_flush_receipts',
+    'nightly',
+    'fn_horse_brain_flush_receipt via BrainTelemetryFlush and HorseBrainTelemetryPublisher',
+    'private atomic batch deduplication with source identity; accepted batches only, not a complete decision ledger',
+    'Phase15'
+  ),
+  table(
+    'horse_journaled_model_sweep',
+    'nightly',
+    'fn_claim_horse_journaled_model and fn_finish_horse_journaled_model via HorseJournaledOpponentModels',
+    'private leased cursor for bounded journal-only diagnostic reconstruction; not a source watermark',
+    'Phase14'
+  ),
+  table(
+    'horse_journaled_opponent_models',
+    'nightly',
+    'fn_finish_horse_journaled_model via HorseJournaledOpponentModels',
+    'private latest scoped frequency and holdout reports; no causal EV, source completeness or activation authority',
+    'Phase14'
+  ),
+  table(
     'horse_decision_latency',
     'nightly',
     'the panel; fn_horse_brain_flush_receipt (BrainTelemetryFlush atomically writes counters and latency with source receipts)',
@@ -2171,6 +2192,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'phase15_brain_exception',
     'HorseLogic.decide',
     'a policy exception produced an explicit check/fold liveness fallback; the private error is not part of the action receipt',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_policy_*',
+    'HorseLogic.decide',
+    'finite registered variant outcomes: reference, disabled, computed, outside_domain or unavailable; unregistered input refuses before policy execution',
     'Phase15'
   ),
   receipt(

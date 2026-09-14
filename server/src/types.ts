@@ -958,6 +958,8 @@ export interface HorseDecision {
   executionWitness?: import('./engine/HorseExecutionWitness.js').HorseExecutionWitness;
   /** Bounded outer policy-order trace; contains actions only, never cards or seeds. */
   policyGraph?: import('./engine/HorsePolicyGraph.js').HorsePolicyGraphReceipt;
+  /** Actual registered variant owner and its evaluated/disabled/refused result. */
+  policyOwnership?: import('./engine/HorsePolicyRegistry.js').HorsePolicyOwnership;
   /** Existing catastrophe owner rejected this committed continuation. An
    * uncalibrated later joint proposal cannot reopen its rejected call-off. */
   continuationGuard?: 'multiway_commitment_floor' | 'dominated_commitment_floor';

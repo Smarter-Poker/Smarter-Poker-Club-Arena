@@ -185,6 +185,87 @@ function deferredRpc() {
   return { promise, resolve };
 }
 
+describe('a player can leave the game waiting list', () => {
+  const queued = () =>
+    lobby({ seated: false, table_id: null, waitlist: { on_list: true, position: 2, waiting: 3 } });
+  const show = () =>
+    render(<MustMoveLobbyModal isOpen gameId={GAME} currentTableId={FEEDER} onClose={vi.fn()} />);
+
+  it('shows the caller place and cancels through the game door, then refreshes it', async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ data: queued(), error: null })
+      .mockResolvedValueOnce({ data: { ok: true, cancelled: 1, released_offers: 1 }, error: null })
+      .mockResolvedValue({
+        data: lobby({ seated: false, waitlist: { on_list: false, position: null, waiting: 2 } }),
+        error: null,
+      });
+    show();
+    fireEvent.click(await screen.findByRole('button', { name: 'Leave Waiting List' }));
+    await waitFor(() =>
+      expect(mocks.rpc).toHaveBeenCalledWith('fn_cash_game_leave_waitlist', { p_game_id: GAME })
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Leave Waiting List' })).toBeNull()
+    );
+    expect(mocks.toast.info).toHaveBeenCalledWith('You Have Left The Waiting List.');
+  });
+
+  it.each([
+    { seated: true, waitlist: { on_list: true, position: 2, waiting: 3 } },
+    { seated: false, waitlist: { on_list: false, position: null, waiting: 3 } },
+    { seated: false, waitlist: null },
+  ])('does not offer cancellation to a seated or unlisted viewer (%j)', async (me) => {
+    mocks.rpc.mockResolvedValue({ data: lobby(me), error: null });
+    show();
+    await screen.findByText('NLH 1/2 Madness');
+    expect(screen.queryByRole('button', { name: 'Leave Waiting List' })).toBeNull();
+  });
+
+  it.each([
+    { data: null, error: { message: 'database secret 42501' } },
+    { data: { ok: false, cancelled: 0 }, error: null },
+    { data: { ok: true, cancelled: -1 }, error: null },
+    { data: { ok: true, cancelled: '1' }, error: null },
+  ])(
+    'keeps the caller queued and uses house copy for a failed or malformed reply (%j)',
+    async (reply) => {
+      mocks.rpc.mockResolvedValueOnce({ data: queued(), error: null }).mockResolvedValue(reply);
+      show();
+      fireEvent.click(await screen.findByRole('button', { name: 'Leave Waiting List' }));
+      await waitFor(() =>
+        expect(mocks.toast.warning).toHaveBeenCalledWith(
+          'Could Not Leave The Waiting List. Please Try Again.'
+        )
+      );
+      expect(mocks.toast.info).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Leave Waiting List' })).toBeEnabled();
+      expect(screen.getByText('You Are Number 2 On The Waiting List.')).toBeTruthy();
+    }
+  );
+
+  it('ignores a late cancellation after close and allows only one same-render request', async () => {
+    const reply = deferredRpc();
+    mocks.rpc.mockResolvedValueOnce({ data: queued(), error: null }).mockReturnValue(reply.promise);
+    const props = { gameId: GAME, currentTableId: FEEDER, onClose: vi.fn() };
+    const { rerender } = render(<MustMoveLobbyModal isOpen {...props} />);
+    const button = await screen.findByRole('button', { name: 'Leave Waiting List' });
+    act(() => {
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
+    expect(
+      mocks.rpc.mock.calls.filter(([name]) => name === 'fn_cash_game_leave_waitlist')
+    ).toHaveLength(1);
+    rerender(<MustMoveLobbyModal isOpen={false} {...props} />);
+    await act(async () =>
+      reply.resolve({ data: { ok: true, cancelled: 1, released_offers: 1 }, error: null })
+    );
+    expect(mocks.toast.info).not.toHaveBeenCalled();
+    expect(mocks.toast.warning).not.toHaveBeenCalled();
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('lobby replies belong to the current game and opening', () => {
   it('does not restore the previous game when its read finishes last', async () => {
     const oldRead = deferredRpc();

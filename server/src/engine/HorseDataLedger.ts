@@ -902,7 +902,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   table(
     'horse_brain_telemetry',
     'nightly',
-    'fn_audit_layer_silence_and_coverage, fn_audit_layer_drift, fn_audit_data_receipts (BrainTelemetryFlush writes through fn_brain_telemetry_add)',
+    'fn_audit_layer_silence_and_coverage, fn_audit_layer_drift, fn_audit_data_receipts (BrainTelemetryFlush writes through fn_horse_brain_flush_receipt)',
     'per-day fire counts per layer (BrainTelemetryFlush)',
     'V15',
     { dayColumn: 'day', freshnessDays: 1 }
@@ -910,7 +910,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   table(
     'horse_decision_latency',
     'nightly',
-    'the panel; fn_horse_decision_latency_add (BrainTelemetryFlush writes through the RPC)',
+    'the panel; fn_horse_brain_flush_receipt (BrainTelemetryFlush atomically writes counters and latency with source receipts)',
     'per-day decision latency histograms',
     'V28',
     { dayColumn: 'day', freshnessDays: 1 }
@@ -2160,6 +2160,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V44',
     'decide',
     0.001
+  ),
+  receipt(
+    'phase15_telemetry_batch_expired',
+    'BrainTelemetryFlush.flush',
+    'a retained pending telemetry batch exceeded the 32-day receipt window and was explicitly refused without aggregation; this is an evidence gap',
+    'Phase15'
   ),
   receipt(
     'phase15_brain_exception',

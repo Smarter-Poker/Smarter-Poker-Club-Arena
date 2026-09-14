@@ -11,7 +11,7 @@
     },
     "public/assets/club-buttons/console/riveted-console-v1/mid.png": {
       "pct": 1.5,
-      "reason": "Artwork, inspected as the shipped 729x8 tiling rail. The detector removes 88 pixels: 11 complete silver rail columns at x54-56,60-61,664-669, all eight rows, making transparent slits through the console sides. The removed pixels are opaque brushed grey (RGB125-144), matching the visible side rails. An in-memory second pass reads 0%, so convergence alone would wrongly approve the damaged rails. Source SHA2563a167b0f63161ba133e795184233c6c281609e96b70a5e1aa0b02adce1e73d50 is unchanged. The new family omitted this measured entry in PR4573; the real-asset test also adds a white strip in memory and requires the gate to refuse it."
+      "reason": "Artwork, inspected as the shipped 729x8 tiling rail. The detector removes 88 pixels: 11 complete silver rail columns at x54-56,60-61,664-669, all eight rows, making transparent slits through the console sides. The removed pixels are opaque brushed grey (RGB124-144), matching the visible side rails. An in-memory second pass reads 0%, so convergence alone would wrongly approve the damaged rails. Source SHA2563a167b0f63161ba133e795184233c6c281609e96b70a5e1aa0b02adce1e73d50 is unchanged. The new family omitted this measured entry in PR4573; the real-asset test also adds a white strip in memory and requires the gate to refuse it."
     },
     "public/assets/club-buttons/console/spade-console-v1/mid.png": {
       "pct": 4.2,

@@ -4074,6 +4074,7 @@ export class GameServer {
         handCount: engine.getHandCount(),
         msSinceProgress: engine.msSinceProgress(),
         settlementAgeMs: engine.settlementAgeMs(),
+        settlementAwaits: engine.settlementAwaits(),
         // 2026-08-22: where the dealing loop actually is, e.g. `load_seats+96s`.
         // /health could say a table had made no progress for 96 seconds but not
         // what it was doing for those 96 seconds, so a fleet-wide stall showed up

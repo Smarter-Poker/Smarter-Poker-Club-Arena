@@ -4870,7 +4870,11 @@ export class GameServer {
           .in('status', ['running']);
         console.log('[GameServer] Closed all running cash tables (horse fleet disabled)');
       } else {
-        // Normal mode: reset to waiting so HorseFleetManager can re-populate.
+        // Normal mode: reset to waiting so discovery resumes surviving seats.
+        // The seat transactions own current_players. Restart preserves those
+        // seats, so clearing their count makes occupied games look empty until
+        // a later seat transition or hand happens to recount them. Do not read
+        // and rewrite a count here either: a concurrent arrival owns its count.
         //
         // 2026-08-19: this used to include 'closed' in the status filter, so
         // every boot resurrected every closed cash table. Two things were
@@ -4886,14 +4890,21 @@ export class GameServer {
         // reopens the tables it owns: ensureAllTablesExist reactivates the
         // canonical row for each config when it finds it closed. What it will
         // not do any more is reopen 487 rows nobody asked for.
-        await supabase
+        const { error: cashResetError } = await supabase
           .from('tables')
-          .update({ current_players: 0, status: 'waiting' })
+          .update({ status: 'waiting' })
           .is('tournament_id', null)
           .in('status', ['waiting', 'running']);
-        console.log(
-          '[GameServer] Reset cash table player counts and statuses to waiting (closed tables left closed)'
-        );
+        if (cashResetError) {
+          reportError(
+            new Error(`Cash table restart status reset failed: ${cashResetError.message}`),
+            'GameServer.cash_table_restart_status_failed'
+          );
+        } else {
+          console.log(
+            '[GameServer] Reset cash table statuses to waiting; surviving player counts and closed tables preserved'
+          );
+        }
       }
 
       /**

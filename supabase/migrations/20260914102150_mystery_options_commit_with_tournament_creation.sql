@@ -9,7 +9,7 @@
 -- and verify the row after all triggers. A common row guard also refuses a
 -- settings write that loses a concurrent race to inventory activation.
 -- Preserves default 50/50 allocation, authority, entry funding and payout formulas.
--- Private PostgreSQL 17 reproduced the old failure and passed 11 groups for
+-- Private PostgreSQL 17 reproduced the old failure and passed 12 groups for
 -- exact terms, rollback, authorization, existing guards and real row-lock races.
 -- This fixture uses explicit auth/delegated-create stand-ins, not financial proof.
 BEGIN;

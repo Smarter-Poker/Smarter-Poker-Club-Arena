@@ -5,7 +5,7 @@ Uses captured creator/contract guard with explicit auth/delegated-creation
 stand-ins. This is not a funded ledger, HTTP, dealer or provider certificate.
 """
 from pathlib import Path
-import json, os, shutil, subprocess, tempfile, time
+import hashlib, json, os, shutil, subprocess, tempfile, time
 
 repo = Path(__file__).resolve().parents[2]
 fixtures = repo / 'scripts/dev/fixtures/mystery-creation'
@@ -77,6 +77,15 @@ with (owned/'results.log').open('w') as log:
         CREATE TRIGGER fixture_after AFTER UPDATE OF mystery_bounty_profile ON tournaments FOR EACH ROW EXECUTE FUNCTION fixture_after_write();
         """)
         q((fixtures/'managed-contract.sql').read_text())
+        # Keep the selected columns' actual nullability/defaults and enum checks.
+        contract=json.loads((fixtures/'column-contract.json').read_text())
+        for col in contract['columns']:
+            name=col['column_name']
+            if col['is_nullable']=='NO':q(f'ALTER TABLE tournaments ALTER COLUMN {name} SET NOT NULL;')
+            if col['column_default'] is not None:q(f"ALTER TABLE tournaments ALTER COLUMN {name} SET DEFAULT {col['column_default']};")
+        for constraint in contract['checks']:
+            if constraint['conname'] in ['tournaments_mystery_activation_chk','tournaments_mystery_profile_chk','tournaments_mystery_stage_chk']:
+                q(f"ALTER TABLE tournaments ADD CONSTRAINT {constraint['conname']} {constraint['definition']};")
         q((fixtures/'managed-lifecycle.sql').read_text())
         q('CREATE TRIGGER trg_tournaments_managed_lifecycle_guard BEFORE UPDATE ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_guard_managed_game_lifecycle();')
         for name in ['fn_guard_registered_tournament_contract()','fn_create_tournament(uuid,jsonb)','fn_apply_mystery_bounty_config(uuid,jsonb)']:
@@ -89,6 +98,7 @@ with (owned/'results.log').open('w') as log:
         q(migration.read_text());q(migration.read_text());assert q(metadata)==before
         actual=q("SELECT pg_get_functiondef('public.fn_create_tournament(uuid,jsonb)'::regprocedure);")
         assert actual.strip()==(fixtures/'candidate.sql').read_text().strip()
+        installed=json.loads(q("SELECT jsonb_agg(jsonb_build_object('name',oid::regprocedure::text,'body_md5',md5(prosrc),'proconfig',proconfig,'security_definer',prosecdef,'anon_execute',has_function_privilege('anon',oid,'EXECUTE'),'authenticated_execute',has_function_privilege('authenticated',oid,'EXECUTE'),'service_execute',has_function_privilege('service_role',oid,'EXECUTE')) ORDER BY proname) FROM pg_proc WHERE oid IN ('public.fn_create_tournament(uuid,jsonb)'::regprocedure,'public.fn_mystery_bounty_creation_document(jsonb)'::regprocedure,'public.fn_guard_tournament_mystery_creation_contract()'::regprocedure);"))
         ok('repeatable migration, exact creator postimage, preserved authority metadata')
         for cfg,document in [(custom,expected),({'type':'mystery_bounty'},dict(expected,mystery_bounty_profile='classic',mystery_bounty_activation='at_the_money',mystery_bounty_activation_value=None,mystery_bounty_pool_percent=50,mystery_bounty_regular_pool_percent=50,mystery_bounty_top_percent=20))]:
             reset();receipt=json.loads(call(cfg));assert receipt['mystery_config']==document
@@ -103,6 +113,10 @@ with (owned/'results.log').open('w') as log:
         for delta in invalid:
             reset();call(dict(custom,**delta),error='Invalid mystery bounty');no_effects()
         ok('nine malformed selected contracts refuse with no delegated effects')
+        reset();percentage=dict(custom,mysteryBountyProfile='balanced',mysteryBountyActivation='percent_field',mysteryBountyActivationValue=25.5,mysteryBountyPoolPercent=34.33,mysteryBountyTopPercent=15.5)
+        receipt=json.loads(call(percentage))['mystery_config']
+        assert receipt==dict(expected,mystery_bounty_profile='balanced',mystery_bounty_activation='percent_field',mystery_bounty_activation_value=25.5,mystery_bounty_pool_percent=34.33,mystery_bounty_regular_pool_percent=65.67,mystery_bounty_top_percent=15.5)
+        ok('percentage activation and decimal terms survive actual column constraints exactly')
         for mode,err in [('write_failure','fixture write failed'),('write_skipped','does not identify'),('write_replaced','not persisted'),('after_write','not persisted')]:
             reset();call(custom,mode=mode,error=err);no_effects()
         ok('failed, skipped, changed and AFTER-trigger writes roll back event and effects')
@@ -146,5 +160,5 @@ with (owned/'results.log').open('w') as log:
             if child.poll() is None:child.terminate();child.wait(timeout=10)
         if started:subprocess.run([str(pg/'pg_ctl'),'-D',str(cluster),'-m','fast','-w','stop'],stdout=log,stderr=log,check=True,timeout=30)
         shutil.rmtree(cluster,ignore_errors=True)
-(owned/'results.json').write_text(json.dumps({'passed':passed,'production_database_used':False,'cluster_removed':not cluster.exists(),'scope':'Captured wrapper/registered guard and actual migration; explicit auth and delegated-create stand-ins, no money/provider/dealer proof'},indent=2)+'\n')
+(owned/'results.json').write_text(json.dumps({'passed':passed,'installed_functions':installed,'production_database_used':False,'cluster_removed':not cluster.exists(),'sha256':{str(p.relative_to(repo)):hashlib.sha256(p.read_bytes()).hexdigest() for p in [Path(__file__).resolve(),migration,*sorted(fixtures.glob('*.sql')),*sorted(fixtures.glob('*.json'))]},'scope':'Captured wrapper/registered and lifecycle guards, selected column constraints and actual migration; explicit auth and delegated-create stand-ins, no money/provider/dealer proof'},indent=2)+'\n')
 print(f'{len(passed)} groups passed; evidence: {owned / "results.json"}',flush=True)

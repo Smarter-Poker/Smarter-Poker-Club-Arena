@@ -24,3 +24,13 @@ The initial actual-caller tests reproduced 23 failures. All **5,614 engine tests
 An intermediate receipt test incorrectly retained the shared setup mock's call history across cases. It now clears history before each test and still requires exactly one creator call and zero separate settings calls. The product behavior did not change to satisfy that harness correction.
 
 Local full application TypeScript is blocked by missing native mobile dependencies in the shared dependency installation. Required clean CI remains the build gate. Production schema installation must precede publication of the new client receipt contract, outside the prohibited hourly :50–:03 UTC DDL window. No production installation, merge, deployment or complete MTT acceptance is claimed by these local results.
+
+## Current-main composition
+
+Composed with origin/main a3279234df41e25ed77cf56d747cd4306e9e2d22, including the merged R23 blind contract and R26 maintenance clock repair. The combined engine suites pass **5,714 tests across 364 files**, the client suites **233 across nine files**, and server TypeScript passes. The strengthened native fixture passes **12 groups** with the installed selected-column types, nullability/defaults and enum checks, including decimal percentage activation. The in-memory application compiler comparison reports the exact same 26 diagnostics before and after R27 on its original base deacfccb6076debbae9b36bdfde1dedc2359f775; it does not substitute missing dependencies or claim a full application pass.
+
+## Database installation
+
+Applied once at 10:40 UTC, outside the prohibited break window, as history **20260914104027**. The 10:40:41 readback matches all three qualified function bodies: creator `876158c293c3fe31d6857ba00ee33938`, column guard `f49ec846a2e80f99e5abb39dfc7e31ea`, and decoder `a9e3c52dc79d1833c228bb15f009ac75`. Search paths, definer flags, anonymous/authenticated execution boundaries, enabled trigger and declaration match. The unauthenticated creator still refuses and the pure decimal projection matches exactly. The unchanged delegated creator, legacy setter and existing registered/lifecycle guard definitions also retain their captured fingerprints.
+
+Production default privileges grant the new trigger function service-role execution; the private fixture has no such default grant. Both deny anonymous/authenticated execution, and the function requires trigger context. The creator and pure helper have the intended service grants in both environments. No existing tournament row, entry booking, prize, bounty or ticket was changed by this migration. Required CI, source publication, actual created-event receipts and full gameplay acceptance remain open.

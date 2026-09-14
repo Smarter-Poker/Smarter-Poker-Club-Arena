@@ -1,9 +1,12 @@
 import { createHash } from 'node:crypto';
 import {
   buildScopedOpponentModel,
+  buildJournaledOpponentModel,
   SCOPED_MODEL_ACTIONS,
   SCOPED_MODEL_POLICY,
   type ScopedOpponentModelInput,
+  type JournaledOpponentModelInput,
+  type ScopedOpponentModelResult,
 } from './HorseScopedOpponentModel.js';
 
 export const SCOPED_HOLDOUT_POLICY = Object.freeze({
@@ -23,9 +26,32 @@ const refusal = (reason: string) => Object.freeze({ status: 'unavailable' as con
  * correction. Complete-window acquisition remains the caller's responsibility.
  */
 export function validateScopedOpponentHoldout(input: ScopedHoldoutInput) {
-  const training = buildScopedOpponentModel({ ...input, partition: 'training' });
+  return validateModels(input, (partition) => buildScopedOpponentModel({ ...input, partition }));
+}
+
+/** Predictive diagnostics of captured observations only. Selection/capture
+ * bias and repeated holdout use remain unresolved; no causal or live authority. */
+export function validateJournaledOpponentHoldout(
+  input: Omit<JournaledOpponentModelInput, 'partition'>
+) {
+  return Object.freeze({
+    population: 'journaled_qualified_observations' as const,
+    sourceCoverage: 'not_established' as const,
+    activationAuthorized: false as const,
+    validation: validateModels(
+      input,
+      (partition) => buildJournaledOpponentModel({ ...input, partition }).model
+    ),
+  });
+}
+
+function validateModels(
+  input: ScopedHoldoutInput | Omit<JournaledOpponentModelInput, 'partition'>,
+  build: (partition: 'training' | 'holdout') => ScopedOpponentModelResult
+) {
+  const training = build('training');
   if (training.status === 'unavailable') return refusal(training.reason);
-  const heldout = buildScopedOpponentModel({ ...input, partition: 'holdout' });
+  const heldout = build('holdout');
   if (heldout.status === 'unavailable') return refusal(heldout.reason);
 
   // A relabeled session cannot put one physical hand in both arms. Check the

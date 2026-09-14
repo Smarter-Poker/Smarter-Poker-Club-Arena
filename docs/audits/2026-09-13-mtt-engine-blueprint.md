@@ -347,6 +347,10 @@ R21 publication update00:43UTC: source b3790ff04e remains retained with no remot
 
 R23 installation01:03UTC: migration20260914005233 recorded as history20260914010322. New source hashes f1f0ec57f980e1df361abacfa9efa030 /79d841121011fb3fc55cb335ad8f3b21 /9b8471c860ac00afa814a6553135c95b match; trigger enabled and declared; existing creator source/owner/grants unchanged. Service access and browser denial verified. No historical tournament row was rewritten. Final native11groups/59vectors,111engine-focused/2files and112client/4files pass; full5421/350 and serverTypeScript retained. ClientTypeScript26diagnostics match the preexisting missing-native-package baseline byte for byte. Source/served acceptance remains open.
 
+## R30: running recovery must include the gateway tail
+
+Live11:14:57UTC reader proof: only1000of1283RUNNING rows were returned; Union Morning Classic, with an expired lease and overdue break, was excluded. The engine recovery lane now pages by id with the existing bounded reader, validates completeness, then offers events in oldest-start order through the same admission owner. Partial reads retain unknown state and cooldowns. Late generations cannot schedule work after a stagger. Ten actual-method old-code failures,5,747broader engine tests/369files andserverTypeScript establish source evidence. A read-only live paginated query included the event at11:17; deployed recovery and broader fleet/financial completion remain unverified.
+
 ## R24: due MTTs reach admission independently of unrelated funding
 
 The actual broad discovery method waits for horse top-ups before its next registering board read. A regression holds that real top-up pending and proves a different eligible MTT cannot reach admission through the old pass. The engine now supervises a separate five-second scheduled-start read, ordered by scheduled time, through the unchanged shared admission/lease/launch authority. It retains every pending operation and its capacity, all freeze/lifecycle checks, existing retries and one-minute pre-seat lead. Pagination includes the event beyond the gateway's first1,000rows before choosing the oldest due field.

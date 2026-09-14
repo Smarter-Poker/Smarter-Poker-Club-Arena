@@ -1,0 +1,7 @@
+# Running MTTs beyond the first page can reach recovery
+
+The running-tournament discovery GET returned HTTP206 with Content-Range0-999/1283 at11:14:57UTC on September14. Union Morning Classic was absent. It had lost its lease at10:58:09 during a break and still held five populated tables after its11:00 break deadline. Ordering an unpaginated response by oldest start permanently excluded this younger event; treating that response as complete also erased failure streaks for its omitted tail.
+
+GameServer.discoverRunningResumes now uses the existing bounded keyset reader, includes started_at, and sorts the complete board by oldest start with deterministic id ties and null starts last. Failed, malformed or capped reads cannot settle cooldowns or schedule admissions. A discovery generation that retires during reading or staggering cannot schedule another resume. Existing admission ownership, physical custody, retry capacity and financial authority remain intact.
+
+The real discovery method failed ten regression cases before the repair. The server tournament/service suite passed5,747tests across369files; server TypeScript passed. The final focused suite passed71tests/5files. Tests additionally cover the exact1000 boundary, bounded50000 ceiling and final-page generation retirement. Independent read-only production pagination returned1000+298events at11:17:42UTC and included Union Morning Classic. It did not adopt or mutate any tournament. RequiredCI, release ancestry and actual post-release recovery remain open.

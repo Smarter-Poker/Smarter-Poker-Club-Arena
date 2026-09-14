@@ -5,6 +5,13 @@
 **What changed:** the existing table admission key and actual open-seat reader protect capacity; a nonblocking player claim and fresh allowance check protect concurrent automatic offers. Original legacy hold expiry, configured caps, horse eligibility and notification transaction semantics are preserved. Busy claims keep queue entries for the existing callers and sweep.
 **Verified:** 46 native PostgreSQL17 checks pass, including both unchanged-live counterexamples, actual direct-join/sweep callers, rollback, notification failure, pending moves, stale cached counts, legacy holds, ACL and drift refusal. No production financial or notification test was performed. Installation, protected CI and natural production evidence remain separate.
 
+## 2026-09-14: Running MTT recovery reads every gateway page
+
+**Files/previous lines:** server/src/GameServer.ts:6716 and6779; actual discovery tests and its existing ordering/budget guards.
+**What existed:** the RUNNING recovery scan read a single gateway-limited response and used its missing tail to settle retry history. A lifecycle check preceded, but did not follow, the asynchronous stagger. Production11:14 returned only1000/1283 events, excluding Union Morning Classic after its lease expired during a break.
+**What changed:** bounded keyset enumeration with the existing fetchAllRows reader, complete/valid-board checks, oldest-first admission with deterministic ties and null starts last, lifecycle checks after reading and after staggering. Existing coalesced admission, retry capacity, owner/provider and financial contracts are unchanged.
+**Verified:** YES. Ten pre-fix actual-method counterexamples;5,747engine tests/369files andserverTypeScript pass. Final focused71tests/5files cover the bounded ceiling and final-page retirement. Read-only production pagination11:17 returned1000+298rows and included the excluded event. This is reader evidence, not deployment or tournament recovery certification. No production write/DDL.
+
 ## 2026-09-14: New MTT structures must describe playable levels
 
 **Files:** server/src/domain/tournamentBlindContract.ts; server/src/services/ScheduledTournamentService.ts:1166; server/src/services/TournamentRecurringService.ts:3783 and4019; src/services/TournamentService.ts:850 and1029; migration20260914005233.

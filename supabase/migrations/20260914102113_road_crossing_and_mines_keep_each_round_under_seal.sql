@@ -332,7 +332,6 @@ BEGIN
   END IF;
 
   SELECT * INTO o_cfg FROM public.diamond_game_configs c WHERE c.host_id = o_host AND c.game = p_game FOR UPDATE;
-  IF NOT public.fn_diamond_spins_owner_agreed(o_host,o_kind) THEN err:=jsonb_build_object('ok',false,'error','The Host Wallet Owner Must Accept Diamond Spins Before Play Opens'); RETURN; END IF;
   IF o_cfg.host_id IS NULL OR NOT o_cfg.enabled THEN
     err := jsonb_build_object('ok', false, 'error', v_label || ' Is Not Open Here'); RETURN;
   END IF;
@@ -351,6 +350,8 @@ BEGIN
   IF o_owner IS NULL THEN
     err := jsonb_build_object('ok', false, 'error', 'This Host Has No Owner Wallet To Pay'); RETURN;
   END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM public.diamond_spins_owner_consents consent WHERE consent.host_id=o_host AND consent.host_kind=o_kind AND consent.owner_id=o_owner AND consent.terms_version='diamond-spins-2026-09-14-v1') THEN err:=jsonb_build_object('ok',false,'error','The Host Wallet Owner Must Accept Diamond Spins Before Play Opens'); RETURN; END IF;
 
   IF NOT EXISTS (SELECT 1 FROM public.club_members m
                   WHERE m.club_id = p_club_id AND m.user_id = v_user

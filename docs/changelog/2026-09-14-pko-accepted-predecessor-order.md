@@ -48,3 +48,10 @@ PKO PLO8 event found 26 clear proofs and 12 waiting on unsettled incoming
 heads, with zero unknown proofs. This validates current accepted evidence and
 dependency classification; it does not establish that the engine has retried
 and paid those claims or that historical recipients have been reconciled.
+
+The follow-up privilege migration repeats the original private claim and
+service-only collector revocations under exact source/metadata guards. This
+lets the unchanged static authorization checks see privileges that PostgreSQL
+already preserved during replacement. The installed R37 migration bytes stay
+unchanged. Native replay and five direct caller-role refusals passed; no new
+caller receives execution and no financial row changes.

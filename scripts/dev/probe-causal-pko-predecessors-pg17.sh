@@ -6,6 +6,7 @@ BIN="${POKER_AUDIT_PG_BIN:-/opt/homebrew/opt/postgresql@17/bin}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 FIX="$ROOT/scripts/dev/fixtures/causal-pko-predecessors"
 MIG="$ROOT/supabase/migrations/20260914133503_pko_heads_follow_accepted_knockout_dependencies.sql"
+ACL_MIG="$ROOT/supabase/migrations/20260914135834_preserve_explicit_private_pko_claim_and_collector_grants.sql"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/ca-pko-causal.XXXXXX")"
 cleanup() { "$BIN/pg_ctl" -D "$TMP/data" -m fast -w stop >/dev/null 2>&1 || true; rm -rf "$TMP"; }
 trap cleanup EXIT
@@ -19,6 +20,7 @@ P -f "$FIX/counterexample.sql"
 P -f "$FIX/inverted-hand-counterexample.sql"
 P -f "$FIX/capture-preimage.sql"
 P -f "$MIG"
+P -f "$ACL_MIG"
 P -f "$FIX/helpers.sql"
 for scenario in qualification evidence-matrix pending-snapshot independent-pending multiple-predecessors scope-cost; do
   P -f "$FIX/$scenario.sql"
@@ -66,4 +68,18 @@ for role in anon authenticated service_role; do
 done
 P -f "$MIG"
 echo 'PASS: five body guards, metadata guard, migration replay and three private-role refusals'
+P -f "$ACL_MIG"
+for role in anon authenticated service_role; do
+  if P -c "SET ROLE $role" -c 'SELECT public.fn_claim_bounty_legacy_candidate_20260907(NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,false)' >"$TMP/claim-private-refusal.log" 2>&1; then
+    echo 'FAIL: private claim callable outside its original authority' >&2; exit 1
+  fi
+  grep -q 'permission denied' "$TMP/claim-private-refusal.log"
+done
+for role in anon authenticated; do
+  if P -c "SET ROLE $role" -c 'SELECT public.fn_collect_bounty(NULL,NULL,NULL,NULL)' >"$TMP/collector-private-refusal.log" 2>&1; then
+    echo 'FAIL: collector callable from a browser role' >&2; exit 1
+  fi
+  grep -q 'permission denied' "$TMP/collector-private-refusal.log"
+done
+echo 'PASS: explicit caller privileges replay and five original-authority refusals'
 echo 'PASS: causal PKO admission, immutable replay and bounded native concurrency'

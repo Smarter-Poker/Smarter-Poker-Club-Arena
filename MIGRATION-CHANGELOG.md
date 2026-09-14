@@ -1,5 +1,7 @@
 ## 2026-09-14: PKO heads follow accepted knockout dependencies
 
+**Explicit privilege contract:** migration20260914135834 repeats the already-verified private claim and service-only collector REVOKEs, guarded by exact installed body/ACL/owner/path/security preconditions and postconditions. The applied20260914133503 bytes remain unchanged. The unchanged four source authorization checks now recognize the same privileges across the two migrations; native qualification also proves all five original caller-role refusals. This follow-up has no financial writes and no new grant. Installation of the explicit contract is recorded separately.
+
 **Files:** migration20260914133503; private causal-PKO runner/fixtures; required accounting CI step.
 **What existed:** an accepted but unclaimed earlier knockout could be omitted from a later head; reserved hand numbers could also discard correctly ordered payments after a move.
 **What changed:** private accepted-evidence and causal-dependency proofs run before new head capture and pending collection, after immutable replay; complete markers discharge exact ancestors. Independent pending heads commute; shared larger-numbered heads require strictly earlier accepted chronology. No historical resnapshot or compensation.

@@ -952,6 +952,8 @@ export interface HorseTournamentUtilityLedger {
 }
 
 export interface HorseDecision {
+  /** Private request-to-executor witness, attached at the live response boundary. */
+  executionWitness?: import('./engine/HorseExecutionWitness.js').HorseExecutionWitness;
   /** Bounded outer policy-order trace; contains actions only, never cards or seeds. */
   policyGraph?: import('./engine/HorsePolicyGraph.js').HorsePolicyGraphReceipt;
   /** Existing catastrophe owner rejected this committed continuation. An

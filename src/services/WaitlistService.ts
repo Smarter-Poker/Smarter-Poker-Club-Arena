@@ -115,6 +115,25 @@ function mapRow(
   };
 }
 
+/** Only a verified active entry for this request can be reported as joined. */
+function validJoinedEntry(
+  row: unknown,
+  tableId: string,
+  userId: string
+): row is Parameters<typeof mapRow>[0] {
+  if (!row || typeof row !== 'object') return false;
+  const entry = row as Record<string, unknown>;
+  return (
+    typeof entry.id === 'string' &&
+    entry.id.length > 0 &&
+    entry.table_id === tableId &&
+    entry.user_id === userId &&
+    (entry.status === 'waiting' || entry.status === 'notified') &&
+    typeof entry.created_at === 'string' &&
+    Number.isFinite(Date.parse(entry.created_at))
+  );
+}
+
 /**
  * 2026-08-21: was `supabase_auth_getUser`, which the pre-push gate blocks
  * (Phase 6 Rule 4) — go through the canonical auth module instead.
@@ -123,7 +142,7 @@ function mapRow(
  * expiry, so this is the same identity the SDK would report, without the
  * network round-trip that getUser() makes on every join. Trusting a
  * client-read id is safe here because it is not what authorises anything:
- * every table_waitlist write is checked against auth.uid() by RLS, so a
+ * every waitlist door derives its caller from auth.uid(), so a
  * stale or tampered local id gets rejected by the database, not by this
  * function. Kept `async` so the call sites are unchanged.
  */
@@ -140,108 +159,37 @@ export const WaitlistService = {
    */
   async joinWaitlist(tableId: string): Promise<WaitlistEntry | null> {
     const userId = await currentUserId();
-    if (!userId) {
-      reportWarning(
-        'joinWaitlist called with no authenticated user',
-        'WaitlistService.joinWaitlist',
-        { tableId }
-      );
+    if (!userId || !tableId) return null;
+    try {
+      const { data, error } = await supabase.rpc('fn_table_waitlist_join', {
+        p_table_id: tableId,
+      });
+      if (error) {
+        // Two tabs may cross the door's idempotency read together. The unique
+        // index chooses one row; recover only that caller's active row.
+        if (error.code === '23505') {
+          const { data: raced, error: readError } = await supabase
+            .from('table_waitlist')
+            .select('id, table_id, user_id, status, created_at, notified_at, hold_expires_at')
+            .eq('table_id', tableId)
+            .eq('user_id', userId)
+            .in('status', ACTIVE_STATES)
+            .order('created_at', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+          if (!readError && validJoinedEntry(raced, tableId, userId)) return mapRow(raced);
+        }
+        throw error;
+      }
+      if (data?.ok === false) return null;
+      if (data?.ok !== true || !validJoinedEntry(data.entry, tableId, userId)) {
+        throw new Error('Waitlist join returned no valid entry');
+      }
+      return mapRow(data.entry);
+    } catch (error) {
+      reportError(error, 'WaitlistService.joinWaitlist', { tableId, userId });
       return null;
     }
-
-    // Guard: waitlists are cash-only. Never enqueue for a tournament table.
-    const { data: tableRow, error: tableErr } = await supabase
-      .from('tables')
-      .select('id, tournament_id')
-      .eq('id', tableId)
-      .maybeSingle();
-    if (tableErr) {
-      reportError(tableErr, 'WaitlistService.joinWaitlist.tableLookup', { tableId });
-      return null;
-    }
-    if (!tableRow) {
-      reportWarning('joinWaitlist for unknown table', 'WaitlistService.joinWaitlist', { tableId });
-      return null;
-    }
-    if ((tableRow as { tournament_id?: string | null }).tournament_id) {
-      reportWarning(
-        'Refusing to waitlist a tournament table (engine-seated)',
-        'WaitlistService.joinWaitlist',
-        { tableId }
-      );
-      return null;
-    }
-
-    // Return existing active row if present (idempotent join).
-    const { data: existing, error: existingErr } = await supabase
-      .from('table_waitlist')
-      .select('id, table_id, user_id, status, created_at, notified_at, hold_expires_at')
-      .eq('table_id', tableId)
-      .eq('user_id', userId)
-      .in('status', ACTIVE_STATES)
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    /**
-     * A FAILED IDEMPOTENCY CHECK IS NOT "NOT ON THE LIST" (2026-08-29).
-     *
-     * Only `data` was destructured. A Supabase builder RESOLVES with
-     * `{data: null, error}`, so a failure here read as "no active row" and fell
-     * straight through to the INSERT — which is the whole point of this lookup.
-     * Every one of the guards above it (`tableErr`, `!tableRow`,
-     * `tournament_id`) reports and returns; this one, the one immediately
-     * before the write, did not.
-     *
-     * The partial unique index added on 2026-08-29 refuses the duplicate row,
-     * so this cannot put a player in one queue twice any more — but the insert
-     * then fails with a 23505 that the recovery path below diagnoses as "a
-     * concurrent join won the race", which is a false explanation for what was
-     * really a read that never worked. Report the real cause and stop.
-     */
-    if (existingErr) {
-      reportError(existingErr, 'WaitlistService.joinWaitlist.existingLookup', { tableId, userId });
-      return null;
-    }
-    if (existing) return mapRow(existing as any);
-
-    const { data: inserted, error: insErr } = await supabase
-      .from('table_waitlist')
-      .insert({ table_id: tableId, user_id: userId, status: 'waiting' })
-      .select('id, table_id, user_id, status, created_at, notified_at, hold_expires_at')
-      .maybeSingle();
-    /**
-     * RULE 1 (2026-08-21): this was `.single()` — the last one left in the
-     * repo. On an insert that returns zero rows (RLS refusing the row is the
-     * common way that happens, not a lost race) `.single()` raises PGRST116,
-     * which landed in `insErr` and was then reported below as a unique-
-     * violation. The diagnosis in the error report was wrong every time.
-     *
-     * `.maybeSingle()` splits the two cases apart: a genuine failure still
-     * populates `insErr`, and "the insert came back empty" is now `!inserted`.
-     * Both still funnel into the same recovery lookup, so a real concurrent
-     * join is recovered exactly as before — but `inserted` can no longer be
-     * null on the success path, which is what `mapRow(inserted as any)` below
-     * has always quietly assumed.
-     */
-    if (insErr || !inserted) {
-      // Unique-violation → a concurrent join won the race; fetch and return it.
-      const { data: raced } = await supabase
-        .from('table_waitlist')
-        .select('id, table_id, user_id, status, created_at, notified_at, hold_expires_at')
-        .eq('table_id', tableId)
-        .eq('user_id', userId)
-        .in('status', ACTIVE_STATES)
-        .limit(1)
-        .maybeSingle();
-      if (raced) return mapRow(raced as any);
-      reportError(
-        insErr ?? new Error('waitlist insert returned no row (RLS or silent reject)'),
-        'WaitlistService.joinWaitlist.insert',
-        { tableId, userId }
-      );
-      return null;
-    }
-    return mapRow(inserted as any);
   },
 
   /**
@@ -263,18 +211,23 @@ export const WaitlistService = {
     if (!userId) {
       return { success: false, cancelled: 0, error: 'You are not signed in.' };
     }
-    const { data, error } = await supabase
-      .from('table_waitlist')
-      .update({ status: 'left' })
-      .eq('table_id', tableId)
-      .eq('user_id', userId)
-      .in('status', ACTIVE_STATES)
-      .select('id');
-    if (error) {
+    try {
+      const { data, error } = await supabase.rpc('fn_table_waitlist_leave', {
+        p_table_id: tableId,
+      });
+      if (error) throw error;
+      if (data?.ok !== true || !Number.isSafeInteger(data.cancelled) || data.cancelled < 0) {
+        throw new Error('Waitlist leave returned no valid outcome');
+      }
+      return { success: true, cancelled: data.cancelled };
+    } catch (error) {
       reportError(error, 'WaitlistService.leaveWaitlist', { tableId, userId });
-      return { success: false, cancelled: 0, error: error.message };
+      return {
+        success: false,
+        cancelled: 0,
+        error: 'Unable To Leave The Waiting List. Try Again.',
+      };
     }
-    return { success: true, cancelled: data?.length ?? 0 };
   },
 
   /**
@@ -512,26 +465,13 @@ export const WaitlistService = {
    * Leave a table's waitlist. Boolean-returning wrapper over leaveWaitlist for the
    * "My Waitlists" page, which only needs to know whether the row went away.
    * `userId` is accepted for call-site symmetry; cancellation is always scoped to
-   * the signed-in user by RLS, so a mismatched id simply cancels nothing.
+   * the signed-in user by the database door; a mismatched id is refused here.
    */
   async leave(tableId: string, userId?: string): Promise<boolean> {
     if (!tableId) return false;
-    const uid = userId ?? (await currentUserId());
-    if (!uid) return false;
-    const { error } = await supabase
-      .from('table_waitlist')
-      .update({ status: 'left' })
-      .eq('table_id', tableId)
-      .eq('user_id', uid)
-      .in('status', ACTIVE_STATES)
-      .select('id');
-    if (error) {
-      reportError(error, 'WaitlistService.leave', { tableId, userId: uid });
-      return false;
-    }
-    // If data is empty, they were already off the active waitlist (seated, deleted, or cancelled).
-    // The goal is achieved, so return true.
-    return true;
+    const current = await currentUserId();
+    if (!current || (userId && userId !== current)) return false;
+    return (await WaitlistService.leaveWaitlist(tableId)).success;
   },
 };
 

@@ -959,7 +959,8 @@ export class HandController {
     seat: number,
     action: ActionType,
     amount?: number,
-    origin: AcceptedActionOrigin = 'unknown'
+    origin: AcceptedActionOrigin = 'unknown',
+    onAccepted?: (record: Readonly<ActionRecord>) => void
   ): boolean {
     if (this.config.asset === 'diamonds' && amount !== undefined && !Number.isSafeInteger(amount)) {
       return false;
@@ -1109,6 +1110,15 @@ export class HandController {
       isFullRaise: isFullRaiseFlag,
     });
     this.state.actionHistory.push(record);
+
+    // Observe the exact clamped, validated and cent-snapped action before
+    // broadcasts/advanceGame can change the current street or turn. A receipt
+    // consumer cannot undo an action or interrupt the existing game lifecycle.
+    try {
+      onAccepted?.(record);
+    } catch {
+      /* Optional accounting must not change gameplay. */
+    }
 
     // The stage travels WITH the action. This is the same value just written
     // to actionHistory above, so the persisted hand history and the

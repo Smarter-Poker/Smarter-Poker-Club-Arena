@@ -1134,6 +1134,10 @@ jobs:
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
           sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17
+      - name: Spin prize audits require matching posted correction funding
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-spin-prize-overlay.py
       - name: BBJ bank replay identity and drift-safe installation
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
@@ -1146,6 +1150,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-horse-seat-touch-session.py
+      - name: Union integrity reports keep event and incident scope
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-union-integrity-scope.py
       - name: Tournament finish incidents retain their own event identity
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

@@ -1,3 +1,10 @@
+## 2026-09-14: Spin prize audits recognize matching posted correction funding
+
+**Files:** migration20260914120920; native spin-prize-overlay fixture/runner; required accounting CI step.
+**What existed:** a house-funded 1.40 correction above a 10-chip Spin draw was still reported as excess despite matching posted journal and escrow evidence.
+**What changed:** recognize only positive finite overlays whose escrow and posted house-funding sums agree for the exact tournament and prize destination; avoid counting an overlay twice when the displayed pool already includes it. No financial writes or historical alert edits.
+**Verified:** 40 native PostgreSQL17 checks cover the exact original counterexample, real excess, funding identity/mismatch, non-finite values, concurrent visibility, browser denial, read-only execution, replay and drift refusal. Required CI, merge, guarded installation and live caller readback remain separate. See docs/changelog/2026-09-14-spin-prize-funded-overlay.md.
+
 ## 2026-09-14: Concurrent waitlist offers share seat and player claims
 
 **Files:** migration20260914104113; scripts/ci/test-waitlist-offer-concurrency.py and captured native fixtures; required accounting CI step.
@@ -20,6 +27,14 @@
 ## 2026-09-14: Encode the same blind presets with less repeated data
 
 **File/lines:** src/config/blindStructures.ts original23–179; tests/unit/blindPresetEncoding.test.ts and immutable preimage fixture. **What existed:**135literal level objects repeated field names and computed big blinds. **What changed:**compact small-blind/ante tuples reconstruct identical objects, preserving the exported shape, allJSONbytes, duration/break and distinctrowidentity. **Why:** R23required build gate refused2601kBgz at2600; reduce repeated preset data without removing behavior. **Verified:**YES,303checks/10files; isolatedmoduleminified10855→3312bytes/gzip1397→867. **TypeScript:**26byte-identical existing client missing-native-package diagnostics, not a full pass. Full bundle/CI verification remains required; no gate ceiling changed.
+
+## 2026-09-14: Union ticket scope matches issued awards
+
+**Files/lines:** migration20260914114316; installed selector original65/87, hints63/64 and beneficiary admission212/216; captured native fixture and runner.
+**What existed:** ticket readers and admission required both host-club equality and union membership, excluding valid member clubs and the unlisted host itself.
+**What changed:** standalone host scope or union host/member scope, retaining actual membership, shared resolver, source/target/value evidence and every financial statement. One exact-source/authorization-guarded atomic migration; no row mutation.
+**Why:** redemption must accept the same valid club scope used to issue the funded award.
+**Verified:** YES, actual definitions reread; six original native failures;24PostgreSQL17groups pass. Fixture stops at the unchanged financial prelock and does not claim funded entry. **TypeScript:** no runtime TypeScript changes. Applied once at11:48UTC/history20260914114821; exact source/ACL readback and both original selector/hint counterexamples pass. Existing engine65/5 and ticket laws30/4 pass. Protected CI, historical entitlement resolution and full financial acceptance remain separate. See docs/changelog/2026-09-14-union-ticket-redemption-scope.md.
 
 ## 2026-09-14: Mystery settings commit with original creation
 
@@ -17423,3 +17438,10 @@ Hand-for-hand retains synchronized/add-on break pauses, preserves their budgets 
 ## 2026-09-14: Qualify scheduled discovery under full CI initialization
 
 **Files:** server/src/engine/DirectEngineRecovery.guard.test.ts original176; server/src/tournament/ScheduledStartDiscoveryIsolation.test.ts. **Before:**shutdown inventory countedfourjobs; discovery case included pre-test import diagnostics. **After:**assert five supervised loops and scheduled-loop lifecycle fence; clear import-time error history before each operation. **Why:**actualCI34795506067 failed these two cases. **Verified:**87/7PASS with servicekeyunset and originalwarningretained inlog; **TypeScript:**PASS. No runtimebehavior orauthority changed; fullCI remainsrequired.
+
+## 2026-09-14: Union integrity observations and incidents retain union scope
+
+**Files:** migration20260914110900; native PostgreSQL runner and captured fixtures; required accounting CI step.
+**What existed:** the integrity report returned foreign-union transfers to an authorized owner, attributed their warning to the wrong union and suppressed the correct union through global source-only deduplication.
+**What changed:** observations use actual table/tournament/club identity; host clubs and legitimate own-union signals remain included. Incident claims and the 20-hour window are scoped per union. Existing financial writers, caller authorization and response keys are preserved.
+**Verified:** 43 native PostgreSQL17 checks, three original counterexamples, real concurrency, rollback, insert-trigger refusal, positive and adversarial scope, ACL and drift refusal. Required CI, installation and live verification remain separate.

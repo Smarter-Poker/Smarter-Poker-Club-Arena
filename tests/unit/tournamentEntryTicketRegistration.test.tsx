@@ -93,7 +93,8 @@ describe('human tournament registration with entry-only tickets', () => {
     });
 
     expect(await screen.findByText('Tournament Ticket')).toBeInTheDocument();
-    expect(screen.queryByText('Your Balance:')).not.toBeInTheDocument();
+    // The console prints the row label without a colon: label left, value right.
+    expect(screen.queryByText('Your Balance')).not.toBeInTheDocument();
     expect(mocks.readBalance).not.toHaveBeenCalled();
     expect(
       screen.getByText('You Can Unregister Any Time Before The Tournament Starts')
@@ -140,7 +141,7 @@ describe('human tournament registration with entry-only tickets', () => {
       registration = hook.result.current.register(tournament);
     });
 
-    expect(await screen.findByText('Entry Fee:')).toBeInTheDocument();
+    expect(await screen.findByText('Entry Fee')).toBeInTheDocument();
     await waitFor(() =>
       expect(mocks.readBalance).toHaveBeenCalledWith('user-1', { clubId: 'club-1' })
     );

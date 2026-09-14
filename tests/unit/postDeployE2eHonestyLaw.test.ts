@@ -239,7 +239,7 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
     expect(sweep).toContain('daily missions accessibility exit=$daily_missions_accessibility_rc');
   });
 
-  it('runs live-table continuity as real mobile WebKit with exact engine provenance', () => {
+  it('runs live-table continuity as real mobile WebKit with exact engine provenance', async () => {
     const sweep = step(WORKFLOW, 'Run the specs that need a deployed page');
     const honesty = step(WORKFLOW, 'Did the suite actually verify production?');
     const engine = step(WORKFLOW, 'Resolve the exact protected-main engine component');
@@ -250,14 +250,17 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
     expect(sweep).toContain('EXPECTED_ENGINE_SHA: ${{ steps.engine.outputs.sha }}');
     expect(sweep).toContain('live table realtime exit=$live_table_realtime_rc');
     expect(honesty).toContain('e2e-report/live-table-realtime.json');
-    for (const pathspec of [
-      "'server/**'",
-      "':(exclude)server/**/*.test.ts'",
-      "':(exclude)server/sim/**'",
-    ]) {
-      expect(engine).toContain(pathspec);
-      expect(ENGINE_STAGE).toContain(pathspec);
+    const classifierPath = join(ROOT, 'scripts/ci/classify-engine-release.mjs');
+    const classifier = (await import(classifierPath)) as { runtimePathspecs: readonly string[] };
+    expect(classifier.runtimePathspecs).toEqual([
+      'server/**',
+      ':(exclude)server/**/*.test.ts',
+      ':(exclude)server/sim/**',
+    ]);
+    for (const pathspec of classifier.runtimePathspecs) {
+      expect(engine).toContain(`'${pathspec}'`);
     }
+    expect(ENGINE_STAGE).toContain('node scripts/ci/classify-engine-release.mjs');
     expect(engine).toContain('git log "$MAIN_SHA" -1 --format=%H');
     expect(engine).toContain('ENGINE_SHA="$ENGINE_TRIGGER_SHA"');
     expect(engine).toContain('git cat-file -e "$ENGINE_SHA^{commit}"');

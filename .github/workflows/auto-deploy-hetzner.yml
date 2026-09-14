@@ -101,11 +101,30 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+    env:
+      CONTROL_SHA: ${{ github.sha }}
+      TARGET_SHA: ${{ needs.preflight.outputs.target_sha }}
     steps:
-      - name: Checkout the requested immutable commit
+      - name: Checkout the exact workflow control
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Checkout the exact target source separately
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.preflight.outputs.target_sha }}
+          path: engine-target
+          sparse-checkout: server/src
+
+      - name: Prove the control and source identities
+        run: |
+          set -euo pipefail
+          [[ "$CONTROL_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [ "$(git rev-parse --verify 'HEAD^{commit}')" = "$CONTROL_SHA" ]
+          [ "$(git -C engine-target rev-parse --verify 'HEAD^{commit}')" = "$TARGET_SHA" ]
+          test -d engine-target/server/src
 
       - name: Use the production Node major
         uses: actions/setup-node@v4
@@ -113,17 +132,18 @@ jobs:
           node-version: 22
           cache: npm
 
-      # A schema manifest can describe a function before production actually
-      # has it. Ask pg_proc from the exact requested checkout in a credential
-      # boundary that owns neither test execution nor root SSH authority.
+      # The checker and its allowlist belong to CONTROL_SHA. Only the scanned
+      # server/src belongs to TARGET_SHA, which may predate a control repair.
+      # This runner owns neither target test execution nor root SSH authority.
       - name: Every database function this build calls exists in production
         id: doors
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           ROLLBACK_REQUESTED: 'false'
+          ENGINE_DOORS_TARGET_ROOT: ${{ github.workspace }}/engine-target
         run: |
           set -euo pipefail
-          npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
+          npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --ignore-scripts --no-audit --no-fund >/dev/null 2>&1 || true
           node scripts/ci/check-engine-doors-exist.mjs
 
   deploy:

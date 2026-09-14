@@ -326,7 +326,7 @@ export default function StoreTab({
   if (items.length === 0 && loading) {
     return (
       <div className={styles.emptyState}>
-        <span className={styles.emptyText}>Loading The Shop...</span>
+        <span className={styles.emptyText}>Loading The Shop</span>
       </div>
     );
   }
@@ -430,7 +430,7 @@ export default function StoreTab({
               </div>
               <div className={styles.priceItem}>
                 <span className={styles.priceLabel}>Your Diamonds</span>
-                <span className={styles.priceValueGreen}>{fmt(balance)}</span>
+                <span className={styles.priceValueBalance}>{fmt(balance)}</span>
               </div>
             </div>
             {balance < effectivePrice(buyTarget) && (
@@ -459,7 +459,7 @@ export default function StoreTab({
                 className={styles.btnPrimary}
                 disabled={processing || !!modalBlocked || balance < effectivePrice(buyTarget)}
               >
-                {processing ? 'Purchasing...' : 'Confirm Purchase'}
+                {processing ? 'Purchasing' : 'Confirm Purchase'}
               </button>
             </div>
           </div>
@@ -501,10 +501,9 @@ export default function StoreTab({
       {/* Search + sort */}
       <div className={styles.toolbar}>
         <div className={styles.searchWrap}>
-          <span className={styles.searchIcon} aria-hidden="true" />
           <input
             type="search"
-            placeholder="Search The Collection..."
+            placeholder="Search The Collection"
             aria-label="Search Shop Items"
             value={searchFilter}
             onChange={(e) => setSearchFilter(e.target.value)}
@@ -602,10 +601,10 @@ export default function StoreTab({
                   )}
                   <div className={styles.itemBadgesLeft}>
                     <span className={styles.categoryTag}>{item.category || 'Time Banks'}</span>
-                    {onSale && !soldOut && <span className={styles.saleTag}>SALE</span>}
+                    {onSale && !soldOut && <span className={styles.saleTag}>Sale</span>}
                   </div>
                   <div className={styles.itemBadgesRight}>
-                    {soldOut && <span className={styles.soldOutTag}>SOLD OUT</span>}
+                    {soldOut && <span className={styles.soldOutTag}>Sold Out</span>}
                     {/* Every number a member reads goes through fmt (house rule:
                       .toLocaleString, never a raw interpolation). A shop with
                       12000 units in stock printed "12000 Left". */}

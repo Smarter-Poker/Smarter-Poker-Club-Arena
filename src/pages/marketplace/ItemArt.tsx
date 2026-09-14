@@ -1,11 +1,10 @@
 /**
- * MARKETPLACE — Procedural HD Item Art
+ * MARKETPLACE - Item Art
  * ═══════════════════════════════════════════════════════════════════════════
- * Every marketplace visual is a CUSTOM, DYNAMIC, resolution-independent SVG
- * scene with real depth: a lit stage, a floor shadow, layered geometry,
- * specular highlights and rim light. No flat glyph placeholders, no external
- * image requests, no yellow/brown — smarter.poker palette only (deep navy,
- * cyan #00d4ff, blue #4599ff/#1877f2, violet #a78bfa, green #4ade80).
+ * Existing category scenes remain as a resilient fallback for catalog rows
+ * without approved product photography. Throwables use one transparent
+ * collection portrait assembled from the actual in-game assets, so a buyer is
+ * never shown a single tomato or egg as though it were a separate product.
  *
  * Art is DETERMINISTIC per item: the item id/name hashes to one of the
  * platform accent hues, so two items in the same category still look like
@@ -13,6 +12,8 @@
  */
 
 import { useId } from 'react';
+
+const THROWABLE_COLLECTION_ART = `${import.meta.env.BASE_URL}images/marketplace/throwables/all-throwables-access-v1.png`;
 
 /* ─── Deterministic hash -> accent selection ─── */
 
@@ -30,12 +31,12 @@ const ACCENTS = [
   { main: '#00d4ff', deep: '#0284c7', glow: 'rgba(0, 212, 255, 0.55)' },
   { main: '#4599ff', deep: '#1d4ed8', glow: 'rgba(69, 153, 255, 0.55)' },
   { main: '#a78bfa', deep: '#6d28d9', glow: 'rgba(167, 139, 250, 0.55)' },
-  { main: '#4ade80', deep: '#15803d', glow: 'rgba(74, 222, 128, 0.5)' },
+  { main: '#76c9f0', deep: '#215e7a', glow: 'rgba(118, 201, 240, 0.5)' },
   { main: '#38bdf8', deep: '#0369a1', glow: 'rgba(56, 189, 248, 0.55)' },
   { main: '#818cf8', deep: '#4338ca', glow: 'rgba(129, 140, 248, 0.55)' },
 ];
 
-export function accentFor(seed: string) {
+function accentFor(seed: string) {
   return ACCENTS[hashStr(seed || 'x') % ACCENTS.length];
 }
 
@@ -326,12 +327,33 @@ function sceneFor(category: string | null | undefined) {
 /** Card / modal artwork for a club shop item. */
 export default function ItemArt({ category, seed = '', size = 'fill', className }: ItemArtProps) {
   const ids = useId().replace(/[^a-zA-Z0-9]/g, '');
-  const accent = accentFor(`${category || ''}:${seed}`);
-  const Scene = sceneFor(category);
+  const normalizedCategory = String(category || '').toLowerCase();
   const style =
     size === 'fill'
       ? { width: '100%', height: '100%', display: 'block' as const }
       : { width: size, height: (size * 3) / 4, display: 'block' as const };
+
+  if (normalizedCategory.includes('throw')) {
+    return (
+      <img
+        src={THROWABLE_COLLECTION_ART}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+        decoding="async"
+        className={className}
+        style={{
+          ...style,
+          objectFit: 'contain',
+          padding: '3%',
+          filter: 'drop-shadow(0 14px 18px rgba(0, 0, 0, 0.58))',
+        }}
+      />
+    );
+  }
+
+  const accent = accentFor(`${category || ''}:${seed}`);
+  const Scene = sceneFor(category);
   return (
     <svg
       viewBox="0 0 200 150"
@@ -408,65 +430,6 @@ export function DiamondArt({
           <path d="M150 96 l1.8 4.6 4.6 1.8 -4.6 1.8 -1.8 4.6 -1.8 -4.6 -4.6 -1.8 4.6 -1.8 z" />
         </g>
       )}
-    </svg>
-  );
-}
-
-/* ─── VIP plan artwork (Membership tab) ─── */
-
-export function VipArt({
-  variant = 'monthly',
-  className,
-}: {
-  /* The three terms since 2026-09-05: was daily | monthly | annual. */
-  variant?: 'monthly' | 'yearly' | 'lifetime';
-  className?: string;
-}) {
-  const ids = useId().replace(/[^a-zA-Z0-9]/g, '');
-  /* Lifetime takes the brass the rest of the platform reserves for a
-     membership that is earned rather than rented (see VIPMembershipPlate);
-     yearly keeps the violet the annual plan had, monthly the blue. */
-  const accent =
-    variant === 'lifetime'
-      ? { main: '#d6ad52', deep: '#8a6614', glow: 'rgba(214, 173, 82, 0.5)' }
-      : variant === 'yearly'
-        ? { main: '#a78bfa', deep: '#6d28d9', glow: 'rgba(167, 139, 250, 0.55)' }
-        : { main: '#00d4ff', deep: '#0284c7', glow: 'rgba(0, 212, 255, 0.55)' };
-  return (
-    <svg
-      viewBox="0 0 200 150"
-      preserveAspectRatio="xMidYMid slice"
-      style={{ width: '100%', height: '100%', display: 'block' }}
-      className={className}
-      role="img"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <defs>
-        <Stage ids={ids} glow={accent.glow} />
-        <BodyDefs ids={ids} main={accent.main} deep={accent.deep} />
-      </defs>
-      <SceneBase ids={ids} />
-      <g>
-        {/* Shield with bevel */}
-        <path
-          d="M100 34 l40 12 v34 c0 22 -18 36 -40 44 c-22 -8 -40 -22 -40 -44 v-34 z"
-          fill={`url(#${ids}-body)`}
-        />
-        <path
-          d="M100 40 l33 10 v29 c0 18 -15 30 -33 37 c-18 -7 -33 -19 -33 -37 v-29 z"
-          fill="#0e1826"
-        />
-        <path d="M100 34 l40 12 v6 l-40 -12 -40 12 v-6 z" fill="rgba(255,255,255,0.28)" />
-        {/* Crown */}
-        <path d="M78 84 l6 -18 10 10 6 -16 6 16 10 -10 6 18 z" fill={`url(#${ids}-body)`} />
-        <rect x="78" y="84" width="44" height="7" rx="2.5" fill={accent.deep} />
-        <circle cx="84.5" cy="64" r="2.6" fill={accent.main} />
-        <circle cx="100" cy="58" r="2.6" fill={accent.main} />
-        <circle cx="115.5" cy="64" r="2.6" fill={accent.main} />
-        {/* Rim light */}
-        <path d="M100 34 l40 12" stroke="rgba(255,255,255,0.5)" strokeWidth="1.5" fill="none" />
-      </g>
     </svg>
   );
 }

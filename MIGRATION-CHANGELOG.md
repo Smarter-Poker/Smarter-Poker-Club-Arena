@@ -1,3 +1,11 @@
+## 2026-09-14: Scheduled MTT starts do not wait for unrelated funding
+
+**Files/lines:** server/src/GameServer.ts original2442/7626; server/src/tournament/ScheduledStartDiscoveryIsolation.test.ts; server/src/tournament/SpinStartsInOneSecondAndPlaysInFull.test.ts original99.
+**What existed:** broad discovery awaited pre-start top-ups and every past-start funding operation before its next board read, blocking otherwise eligible scheduled starts.
+**What changed:** supervised five-second due-event discovery uses the unchanged coalesced admission/lease/launch authority, keyset-complete reads, oldest-first ordering, maintenance/lifecycle fences and retained actual-operation capacity. It does not fund entrants or release pending work. The existing Spin cadence assertion includes the new five-second sleep.
+**Why:** a retained operation for one tournament must not prevent another funded field from reaching its own launch authority.
+**Verified:** YES, actual old-loop counterexample plus12new cases; affected engine suites5,409/359PASS, zero skips. **TypeScript:** PASS. No SQL or production event mutation. Source/served/real first-hand acceptance remains open. See docs/changelog/2026-09-14-mtt-scheduled-start-isolation.md.
+
 ## 2026-09-13: Reach the recorded launch proof for a played MTT
 
 The engine can now route a previously played, finalized MTT through the existing launch begin/complete authorities and normal resume before the fresh-field minimum gate. It preserves the precise first-hand timestamp, current levels, stacks and pool. A fresh short field still refuses; Spin retains its separate path. No live status or player state was manually changed.

@@ -2442,6 +2442,10 @@ export class GameServer {
         this.discoverTournaments(),
         'GameServer.Tournament_discovery_fatal_err'
       );
+      this.launchDiscoveryJob(
+        this.discoverScheduledMttStarts(),
+        'GameServer.scheduled_mtt_start_lane_fatal_err'
+      );
       /**
        * RUNNING re-adoption, on its own five-second lane (2026-09-11). The
        * big loop's pass takes minutes; see discoverRunningResumes.
@@ -7621,6 +7625,109 @@ export class GameServer {
       }
     }
     return paidSeatsByTournament;
+  }
+
+  /** Scheduled starts cannot await another event's registration funding.
+   * The broad discovery walk retains its pending top-ups and their ownership;
+   * this read-only lane offers due fields to the SAME coalesced start authority.
+   * No lease, seat, payment, launch receipt or physical request is bypassed. */
+  private async discoverScheduledMttStarts(): Promise<void> {
+    const generation = this.lifecycleGeneration;
+    while (this.directAdmissionIsCurrent(generation)) {
+      try {
+        if (!isMaintenanceFrozen()) {
+          const dueBefore = new Date(Date.now() + TOURNAMENT_PRESEAT_LEAD_MS).toISOString();
+          const board = await fetchAllRows<{
+            id: string;
+            name: string;
+            start_time: string | null;
+            variant: string | null;
+            tournament_type: string | null;
+            current_players: number | null;
+            min_players: number | null;
+            max_players: number | null;
+            prize_pool_finalized: boolean | null;
+          }>(
+            (cursor, want) => {
+              let query = supabase
+                .from('tournaments')
+                .select(
+                  'id, name, start_time, variant, tournament_type, current_players, min_players, max_players, prize_pool_finalized'
+                )
+                .eq('status', 'REGISTERING')
+                .eq('tournament_type', 'MTT')
+                .gt('max_players', 2)
+                .lte('start_time', dueBefore)
+                .order('id', { ascending: true })
+                .limit(want);
+              if (cursor) query = query.gt('id', cursor);
+              return query;
+            },
+            { label: 'GameServer.scheduledMttStarts', maxRows: 50_000 }
+          );
+          if (
+            !board.complete ||
+            board.rows.some((row) => typeof row?.id !== 'string' || !row.id.trim())
+          ) {
+            throw new Error('The scheduled MTT start board is incomplete');
+          }
+          const due = [...board.rows].sort(
+            (a, b) =>
+              Date.parse(String(a.start_time)) - Date.parse(String(b.start_time)) ||
+              a.id.localeCompare(b.id)
+          );
+          for (const tournament of due) {
+            if (!this.directAdmissionIsCurrent(generation) || isMaintenanceFrozen()) break;
+            if (
+              tournament.tournament_type !== 'MTT' ||
+              tournament.variant === 'spin' ||
+              tournament.variant === 'sng' ||
+              tournament.prize_pool_finalized === true
+            )
+              continue;
+            const startsAt = Date.parse(String(tournament.start_time));
+            const players = Number(tournament.current_players);
+            const maximum = Number(tournament.max_players);
+            const minimum = Number(tournament.min_players) || 3;
+            if (
+              !Number.isFinite(startsAt) ||
+              startsAt > Date.now() + TOURNAMENT_PRESEAT_LEAD_MS ||
+              !Number.isSafeInteger(players) ||
+              !Number.isSafeInteger(maximum) ||
+              !Number.isSafeInteger(minimum) ||
+              minimum < 2 ||
+              maximum <= 2 ||
+              players < minimum ||
+              minimum > maximum
+            )
+              continue;
+            const id = tournament.id;
+            if (
+              this.tournamentEngines.has(id) ||
+              this.tournamentManagerAdmissionOperations.has(id) ||
+              this.tournamentManagerAdmissionRetryTimers.has(id)
+            )
+              continue;
+            // Retained start/resume claims consume capacity until their actual
+            // operation settles. A hung claim never frees a fictitious slot.
+            if (this.tournamentManagerAdmissionOperations.size >= this.engineStartBudget) break;
+            this.launchDiscoveryJob(
+              this.ensureTournamentManagerAdmission(
+                id,
+                'start',
+                `Starting scheduled MTT: ${tournament.name} (${players} players)`,
+                generation
+              ),
+              'GameServer.scheduled_mtt_start_failed',
+              { tournamentId: id }
+            );
+          }
+        }
+      } catch (error) {
+        reportError(error, 'GameServer.scheduled_mtt_start_read_failed');
+      }
+      await this.sleep(TOURNAMENT_DISCOVERY_INTERVAL);
+    }
   }
 
   /**

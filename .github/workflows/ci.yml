@@ -1158,6 +1158,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-agent-accounting-statements.sh
+      - name: Accounting agreement changes preserve immutable observed history
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-accounting-agreement-history.sh
       - name: Horse identity trigger semantics, rollback and concurrent stamp writes
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

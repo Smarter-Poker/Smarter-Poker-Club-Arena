@@ -2,6 +2,9 @@
   "_owner": "codex-union-accounting",
   "functions": [
     "fn_accounting_agent_clubs",
+    "fn_accounting_agreement_capture",
+    "fn_accounting_agreement_history_immutable",
+    "fn_accounting_agreement_terms",
     "fn_accounting_conversation_audience_guard",
     "fn_accounting_credit_document_on_insert",
     "fn_accounting_document_immutable",
@@ -15,6 +18,7 @@
     "fn_union_accounting_run_at"
   ],
   "tables": [
+    "accounting_agreement_history",
     "accounting_conversations",
     "accounting_invoice_counters",
     "accounting_invoice_deliveries",
@@ -26,6 +30,10 @@
       "source_credit_invoice_id",
       "source_credit_payment_id"
     ],
-    "credit_payments": ["operation_id", "payer_user_id", "payment_reference"]
+    "credit_payments": [
+      "operation_id",
+      "payer_user_id",
+      "payment_reference"
+    ]
   }
 }

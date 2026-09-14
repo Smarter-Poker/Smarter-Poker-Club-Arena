@@ -50,6 +50,16 @@ Additional open findings: the credit payment helper confuses agents.id with user
 
 User clarification: every accounting transfer must carry an invoice through Messenger plus a notification, and every rakeback recipient must be notified. One accounting coordinator and one delivery path are required; partial parallel implementations do not meet acceptance.
 
+## Mandatory invoice delivery
+
+Installed migrations 20260914113214 and 20260914113315 consolidate accounting document delivery in the existing settlement_invoices table. Posted wallet, treasury and union-bank transfers create a numbered invoice linked uniquely to their ledger source. Drawn-credit invoices and recorded credit payments use the same delivery function. Each financial party receives a private Messenger message and an individual notification; an exception rolls back the transfer and document together. Delivered financial content and accounting-conversation membership are immutable. Read state, payment state and reminders may advance. The old weekly invoice writer delegates to this path even if an older caller passes notify=false.
+
+The first live self-aborting probe caught the pre-existing NOT NULL period_id requirement that the initial local fixture omitted. The second migration permits a non-weekly invoice only when it references exactly one source transaction. The fixture was corrected and 33 native checks passed. A subsequent live rollback probe executed the receipt path for all 86 already-posted union-close transfers, producing 168 matching recipient deliveries, then rolled back; a separate read confirmed zero surviving probe receipts.
+
+Receipt recovery then committed 86 source-linked invoices and 168 Messenger/notification deliveries for those existing transfers. It did not move money or certify their earning calculations. The two pre-existing weekly invoices were adopted with their original message and notification IDs, avoiding redelivery; their notification destinations now open the existing Messenger conversations. The first live private receipt resolved issuer and recipient to the same owner, so it correctly has one distinct recipient rather than duplicating that user's notification. Future delivery is enforced at the database transaction boundary. Browser/device push remains subject to the platform's existing delivery preferences and provider availability; durable in-app notifications are the audited records.
+
+The Hub feed honors the explicit /hub/messenger?conversation= URL. The Messenger renders the complete invoice text. Club Arena's notification service recognizes the new accounting type and keeps individual transaction notifications ungrouped. Focused service/component validation now totals 60 passing tests. Full protected CI and live visual verification remain outstanding.
+
 ## Public market comparison
 
 This is a comparison with documented capabilities, not an assertion that a universal poker-club accounting standard exists or that competitors promise perfect automation.

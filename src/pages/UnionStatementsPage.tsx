@@ -31,6 +31,7 @@ import { reportError } from '../utils/errorReporter';
 import { downloadCsv, csvEscape } from '../utils/downloadCsv';
 import { useToast } from '../components/common/Toast';
 import styles from './UnionStatementsPage.module.css';
+import UnionAccountingRunStatus from '../components/agent/UnionAccountingRunStatus';
 import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 
 interface BoardClub {
@@ -461,6 +462,14 @@ export default function UnionStatementsPage() {
         <div className={styles.periodLabel}>{periodLabel}</div>
         {board?.union_name && <div className={styles.unionName}>{board.union_name}</div>}
       </div>
+
+      {!loading && board?.union_id === unionId && board?.period_end && (
+        <UnionAccountingRunStatus
+          key={`${unionId}:${user.id}:${board.period_end}`}
+          unionId={unionId}
+          periodEnd={board.period_end}
+        />
+      )}
 
       {board && (board.history?.length ?? 0) > 1 && (
         <div className={styles.periodChips} role="tablist" aria-label="Statement Period">

@@ -4,8 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *  Lists the agent's credit_invoices (CreditService.getAgentInvoices) and lets them
  *  pay an outstanding balance from their agent wallet (CreditService.processPayment).
- *  Invoices are generated weekly by fn_generate_all_credit_invoices (triggered on the
- *  FinancialCronService suspension cadence). Mobile-first, no emoji.
+ *  Invoices are generated weekly by fn_generate_all_credit_invoices on the server weekly close. Mobile-first, no emoji.
  */
 
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
@@ -39,7 +38,7 @@ const STATUS_COLORS: Record<string, string> = {
 // cancelled invoice ends up suspending an agent.
 
 function fmt(n: number): string {
-  return Math.round(n).toLocaleString();
+  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function fmtDate(iso: string): string {

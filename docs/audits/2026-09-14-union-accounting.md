@@ -36,9 +36,19 @@ The union's explicit September 7 clean-data floor is preserved. Earlier excluded
 
 ## First repair
 
-The proposed migration converts downstream cascade refusals into exceptions, serializes a union/period attempt, rejects pending union-house player records, checks actual invoice delivery, and persists each scheduled result. The existing scheduler job gains a 4 AM America/Chicago gate, bounded chronological catch-up from the explicit floor, transaction-scoped locking, and deduplicated financial alerts. A failed union attempt rolls back while its failure record survives. No historical balance is changed by this migration.
+Installed migration 20260914110557 converts downstream cascade refusals into exceptions, serializes a union/period attempt, rejects pending union-house player records, checks actual invoice delivery, and persists each scheduled result. The existing scheduler job gains a 4 AM America/Chicago gate, bounded chronological catch-up from the explicit floor, transaction-scoped locking, and deduplicated financial alerts. A failed union attempt rolls back while its failure record survives. No historical balance is changed by this migration. Its first live run persisted a failed result and a critical alert. It detected 1,042 pending union-house date periods totaling 119,748.87 across overlapping UTC buckets; this is a scope defect measure, not a certified entitlement for the Pacific week.
 
 Validation: 17 PostgreSQL assertions execute the actual changed cascade and scheduler bodies against isolated fixtures. They cover failure after each stage, shortfalls, failed delivery, orphaned player records, durable failure reporting, duplicate retries, pre-4-AM refusal, Friday and multi-week recovery, daylight saving time and authorization. Financial round helpers are stubbed; this does not establish end-to-end payout correctness.
+
+## Credit invoicing and interface repair
+
+Installed migration 20260914111402 scopes individual invoice generation through the agent row's actual user and club, restricts bulk billing to the server, refuses invalid amounts/dates and prevents the same unpaid credit from being billed in a subsequent week. A failed bulk attempt rolls back its earlier invoices. Existing 224 historical invoices and zero total drawn credit were unchanged by installation. Native PostgreSQL: 22 checks passed.
+
+The interface now reads credit_used for debt and utilization, displays invoice cents, and removes the browser's competing bulk-billing call. The union statement board reads the recorded weekly outcome with exact union and period-date filters. Missing or contradictory evidence cannot display a successful close. Focused UI/service checks: 42 passed using existing shared dependencies; full protected CI and live interface deployment remain separate gates.
+
+Additional open findings: the credit payment helper confuses agents.id with user identity, the wallet wrapper deducts the requested amount before the helper caps the applied amount, and ordinary self-service retries have no supplied payment identity. These payment paths need a separately tested repair, including the actual payer wallet and recipient ledger, before certification.
+
+User clarification: every accounting transfer must carry an invoice through Messenger plus a notification, and every rakeback recipient must be notified. One accounting coordinator and one delivery path are required; partial parallel implementations do not meet acceptance.
 
 ## Public market comparison
 

@@ -11,8 +11,8 @@ import { getIdentityDNAStatus } from '../core/IdentityDNA';
  * - CREDIT LINE: Agent plays on credit, settles weekly
  *
  * DEBT FORMULA:
- * Debt = Credit Limit - Current Balance
- * Example: 10,000 Limit - 2,500 Balance = 7,500 Owed
+ * Debt = agents.credit_used, the credit actually drawn.
+ * Unused credit capacity and wallet balances are not debt.
  *
  * SETTLEMENT CYCLE:
  * - Sunday 11:59:59 PM PST → Generate invoices
@@ -39,6 +39,17 @@ const CREDIT_PAYMENT_REASON_TEXT: Record<string, string> = {
   not_your_wallet: 'You can only pay an invoice from your own wallet',
   insufficient_balance: 'Not enough chips in your wallet for this payment',
 };
+
+function drawnCredit(value: unknown): number {
+  const amount =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim()
+        ? Number(value)
+        : NaN;
+  if (!Number.isFinite(amount) || amount < 0) throw new Error('Drawn credit is unavailable');
+  return amount;
+}
 
 function creditPaymentReasonText(reason: string | undefined): string {
   return CREDIT_PAYMENT_REASON_TEXT[reason ?? ''] ?? `Payment refused (${reason ?? 'unknown'})`;
@@ -164,7 +175,9 @@ export const CreditService = {
       .from('agents')
       // club_id is selected because credit_requests.club_id is NOT NULL with no
       // default, and requestCreditIncrease had nowhere else to get it.
-      .select('id, user_id, club_id, credit_limit, agent_wallet_balance, is_prepaid, status')
+      .select(
+        'id, user_id, club_id, credit_limit, credit_used, agent_wallet_balance, is_prepaid, status'
+      )
       .eq('id', agentId)
       .maybeSingle();
 
@@ -187,9 +200,7 @@ export const CreditService = {
     }
 
     const utilization =
-      agent.credit_limit > 0
-        ? ((agent.credit_limit - agent.agent_wallet_balance) / agent.credit_limit) * 100
-        : 0;
+      agent.credit_limit > 0 ? (drawnCredit(agent.credit_used) / agent.credit_limit) * 100 : 0;
 
     return {
       agentId: agent.id,
@@ -405,7 +416,7 @@ export const CreditService = {
   async calculateDebt(agentId: string): Promise<DebtCalculation> {
     const { data: agent, error } = await supabase
       .from('agents')
-      .select('credit_limit, agent_wallet_balance, is_prepaid')
+      .select('credit_limit, credit_used, agent_wallet_balance, is_prepaid')
       .eq('id', agentId)
       .maybeSingle();
 
@@ -422,7 +433,7 @@ export const CreditService = {
       };
     }
 
-    const debt = agent.credit_limit - agent.agent_wallet_balance;
+    const debt = drawnCredit(agent.credit_used);
 
     return {
       agentId,
@@ -441,7 +452,7 @@ export const CreditService = {
     const resolvedId = await resolveClubUUID(clubId);
     const { data: agents, error } = await supabase
       .from('agents')
-      .select('id, credit_limit, agent_wallet_balance, is_prepaid')
+      .select('id, credit_limit, credit_used, agent_wallet_balance, is_prepaid')
       .eq('club_id', resolvedId)
       .eq('is_prepaid', false);
 
@@ -451,7 +462,7 @@ export const CreditService = {
       agentId: agent.id,
       creditLimit: agent.credit_limit || 0,
       currentBalance: agent.agent_wallet_balance || 0,
-      debtOwed: Math.max(0, (agent.credit_limit || 0) - (agent.agent_wallet_balance || 0)),
+      debtOwed: drawnCredit(agent.credit_used),
       isPrepaid: false,
       gracePeriodRemaining: this.getGracePeriodRemaining(),
     }));

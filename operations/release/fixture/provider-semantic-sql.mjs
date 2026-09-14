@@ -88,7 +88,7 @@ export const providerSql = Object.freeze({
   vaultDenied: `SELECT vault.create_secret('fixture-denied','fixture-denied','')`,
   httpOptions: `SELECT extensions.http_set_curlopt('CURLOPT_TIMEOUT_MS','2000') AS timeout,
     extensions.http_set_curlopt('CURLOPT_CONNECTTIMEOUT_MS','1000') AS connect_timeout,
-    extensions.http_set_curlopt('CURLOPT_FOLLOWLOCATION','0') AS redirects`,
+    extensions.http_set_curlopt('CURLOPT_PROXY','') AS proxy_disabled`,
   http: `SELECT status, content_type, content FROM extensions.http_get($1::varchar)`,
   enqueue: `SELECT net.http_get(url:=$1,timeout_milliseconds:=2000) AS id`,
   queueInvisible: `SELECT NOT EXISTS(SELECT FROM net.http_request_queue WHERE id=$1::bigint)

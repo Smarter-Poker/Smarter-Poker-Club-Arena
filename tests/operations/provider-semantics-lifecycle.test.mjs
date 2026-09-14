@@ -12,6 +12,7 @@ const source = process.env.PROVIDER_REVIEW_SUBJECT ?? new URL('../../operations/
 const { qualifyFixtureProviders, createProviderKeyFile, providerKeyLauncher, providerPostgresArguments } = await import(pathToFileURL(source + '/provider-semantics.mjs'));
 const { providerSql: sql, providerVersions } = await import(pathToFileURL(source + '/provider-semantic-sql.mjs'));
 const { createProviderProbePeer } = await import(pathToFileURL(source + '/provider-probe-peer.mjs'));
+const httpContract = JSON.parse(await readFile(new URL('./provider-http-curlopts.json', import.meta.url), 'utf8'));
 const roleProof = { scope:'native-full-role-installer',status:'passed',catalog_outcome:'committed',graph_assertion:true,membership_assertion:true,all_driver_clients_closed:true };
 const names=['http','commit','rollback','sentinel'];
 const symbols=[['http','http','$libdir/http'],['pg_net','wake','pg_net'],['supabase_vault','_crypto_aead_det_encrypt','$libdir/supabase_vault'],['supabase_vault','_crypto_aead_det_decrypt','$libdir/supabase_vault'],['plpgsql_check','plpgsql_check_function_tb','$libdir/plpgsql_check-2.7'],['postgis','st_makepoint','$libdir/postgis-3']];
@@ -93,7 +94,15 @@ function fixture({ endHook, peerCloseHook, queryHook }={}) {
       if(text===sql.vaultCreate)return rows([{id:'11111111-1111-4111-8111-111111111111'}]);
       if(text===sql.vaultRead)return rows([{encrypted:true,decrypted:true,authenticated_ciphertext:true}]);
       if(text===sql.vaultUpdate)return rows([{}]);
-      if(text===sql.httpOptions)return rows([{timeout:true,connect_timeout:true,redirects:true}]);
+      if(text===sql.httpOptions){
+        const result = {};
+        for (const [, option, alias] of text.matchAll(/http_set_curlopt\('([^']+)','[^']*'\) AS (\w+)/g)) {
+          if (!httpContract.runtime_options.includes(option))
+            throw Object.assign(new Error('pinned native runtime option refused'), { name: 'error', code: 'XX000' });
+          result[alias] = true;
+        }
+        return rows([result]);
+      }
       if(text===sql.http){hits.http++;return rows([{status:200,content_type:'application/json',content:peer.body}]);}
       if(text===sql.preload)return rows([{libraries:'pg_stat_statements,pg_cron,pg_net,supabase_vault',database:'club_arena_qualification',username:'supabase_admin',key_script:'/usr/local/bin/fixture-provider-getkey'}]);
       if(text==='SELECT net.wait_until_running()')return rows([{}]);
@@ -113,6 +122,15 @@ function fixture({ endHook, peerCloseHook, queryHook }={}) {
 
 test('controlled successful protocol remains explicitly portable, with no production claims',async()=>{
   const f=fixture();const proof=await f.run();assert.equal(proof.status,'passed');assert.equal(proof.funded_or_production_complete,false);assert.equal(proof.production_binary_parity,false);assert.equal(f.clients.length,4);assert.ok(f.clients.every(c=>c.closed));assert.equal(f.peer.closeCalls,1);
+});
+test('HTTP probe options use the pinned genuine extension runtime contract', async () => {
+  const docker = await readFile(source + '/Dockerfile', 'utf8');
+  assert.ok(docker.includes('5e2bd270a9ce2b0e8e1fdf8e46b85396bd4125cd'));
+  assert.equal(httpContract.source_sha256, 'c5eab6bdf52a66c40bab1f6ad265303ef2a815a527e4f76f768192d34249e2c1');
+  assert.equal(httpContract.runtime_options.includes('CURLOPT_FOLLOWLOCATION'), false);
+  const options = [...sql.httpOptions.matchAll(/http_set_curlopt\('([^']+)'/g)].map((match) => match[1]);
+  assert.ok(options.length >= 2);
+  for (const option of options) assert.ok(httpContract.runtime_options.includes(option), option);
 });
 test('provider failure retains only its safe stage and SQLSTATE through cleanup failure', async () => {
   const f = fixture({ queryHook(text) {
@@ -166,7 +184,8 @@ test('owned peer is loopback-only and rejects unexpected requests',async()=>{
   const peer=await createProviderProbePeer();
   try {
     const url=new URL(peer.url('http'));assert.equal(url.hostname,'127.0.0.1');
-    const response=await fetch(url);assert.equal(response.status,200);assert.equal(await response.text(),peer.body);
+    const response=await fetch(url,{redirect:'error'});assert.equal(response.status,200);assert.equal(await response.text(),peer.body);
+    assert.equal(response.redirected,false);assert.equal(response.headers.get('location'),null);
     peer.assertHits({http:1,commit:0,rollback:0,sentinel:0});
     assert.throws(()=>peer.url('external'));
     const invalid=await fetch(new URL('/wrong-path',url));assert.equal(invalid.status,400);

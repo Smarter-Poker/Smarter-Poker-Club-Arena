@@ -241,7 +241,10 @@ export async function qualifyFixtureProviders({ Client, signal, buildSha256, rol
     // Acquisition can reject after a stall leaves no time for bounded() to attach.
     peerTask.catch(() => undefined);
     peer = await bounded(() => peerTask);
-    assert.deepEqual((await query(installer, sql.httpOptions)).rows, [{ timeout: true, connect_timeout: true, redirects: true }]);
+    // The pinned extension rejects FOLLOWLOCATION as a runtime option. Its
+    // genuine GET behavior remains unchanged. The destination and response
+    // belong to our fixed loopback peer, which never supplies a redirect.
+    assert.deepEqual((await query(installer, sql.httpOptions)).rows, [{ timeout: true, connect_timeout: true, proxy_disabled: true }]);
     assert.deepEqual((await query(installer, sql.http, [peer.url('http')])).rows, [{ status: 200, content_type: 'application/json', content: peer.body }]);
     peer.assertHits({ http: 1, commit: 0, rollback: 0, sentinel: 0 });
     proof.http_private_response = true;

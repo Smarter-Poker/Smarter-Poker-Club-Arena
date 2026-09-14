@@ -4,8 +4,7 @@ import {
   decodeScopedAdaptiveJournalObservations,
   ADAPTIVE_JOURNAL_LIMITS,
 } from './HorseAdaptiveObservationJournal.js';
-import { buildJournaledOpponentModel } from '../engine/HorseScopedOpponentModel.js';
-import { validateJournaledOpponentHoldout } from '../engine/HorseScopedOpponentHoldout.js';
+import { buildJournaledOpponentStudy } from '../engine/HorseScopedOpponentHoldout.js';
 import { resolveReleaseIdentity } from '../releaseIdentity.js';
 
 const sha = (v: unknown): v is string => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v);
@@ -136,9 +135,7 @@ export function buildJournaledOpponentReport(
       };
       return {
         cohort,
-        training: buildJournaledOpponentModel({ ...input, partition: 'training' }),
-        holdout: buildJournaledOpponentModel({ ...input, partition: 'holdout' }),
-        predictiveDiagnostic: validateJournaledOpponentHoldout(input),
+        ...buildJournaledOpponentStudy(input),
       };
     });
     return {

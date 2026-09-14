@@ -29,19 +29,25 @@ export function validateScopedOpponentHoldout(input: ScopedHoldoutInput) {
   return validateModels(input, (partition) => buildScopedOpponentModel({ ...input, partition }));
 }
 
-/** Predictive diagnostics of captured observations only. Selection/capture
- * bias and repeated holdout use remain unresolved; no causal or live authority. */
-export function validateJournaledOpponentHoldout(
-  input: Omit<JournaledOpponentModelInput, 'partition'>
-) {
+/** Fit the two immutable models once, then score those exact fits. The report
+ * consumer needs both models even when evidence is insufficient. Rebuilding
+ * them again for validation duplicates the largest bounded allocations and
+ * obscures whether the diagnostic actually describes the reported models.
+ * Capture bias and repeated holdout use remain unresolved; no causal authority. */
+export function buildJournaledOpponentStudy(input: Omit<JournaledOpponentModelInput, 'partition'>) {
+  const training = buildJournaledOpponentModel({ ...input, partition: 'training' });
+  const holdout = buildJournaledOpponentModel({ ...input, partition: 'holdout' });
   return Object.freeze({
-    population: 'journaled_qualified_observations' as const,
-    sourceCoverage: 'not_established' as const,
-    activationAuthorized: false as const,
-    validation: validateModels(
-      input,
-      (partition) => buildJournaledOpponentModel({ ...input, partition }).model
-    ),
+    training,
+    holdout,
+    predictiveDiagnostic: Object.freeze({
+      population: 'journaled_qualified_observations' as const,
+      sourceCoverage: 'not_established' as const,
+      activationAuthorized: false as const,
+      validation: validateModels(input, (partition) =>
+        partition === 'training' ? training.model : holdout.model
+      ),
+    }),
   });
 }
 

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import * as scopedModels from '../engine/HorseScopedOpponentModel.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildJournaledOpponentReport,
@@ -74,6 +75,39 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllEnvs());
 describe('journal population model consumer', () => {
+  it('fits each cohort/partition once within the bounded report budget', () => {
+    const fit = vi.spyOn(scopedModels, 'buildJournaledOpponentModel');
+    try {
+      const r = report(
+        claim([
+          ...Array.from({ length: 160 }, (_, i) => row(i)),
+          ...Array.from({ length: 160 }, (_, i) => row(i + 1000, 'holdout', 'player', 'raise')),
+          ...Array.from({ length: 160 }, (_, i) =>
+            row(i + 2000, 'training', 'horse_policy', 'call')
+          ),
+          ...Array.from({ length: 160 }, (_, i) => row(i + 3000, 'holdout', 'horse_policy', 'bet')),
+        ])
+      );
+      expect(fit.mock.calls.map(([input]) => `${input.cohort}:${input.partition}`).sort()).toEqual([
+        'horse_policy:holdout',
+        'horse_policy:training',
+        'human:holdout',
+        'human:training',
+      ]);
+      for (const cohort of r.cohorts) {
+        const v = cohort.predictiveDiagnostic.validation;
+        if (v.status === 'unavailable') throw Error(v.reason);
+        expect(v.trainingModelId).toBe(
+          cohort.training.model.status !== 'unavailable' && cohort.training.model.modelId
+        );
+        expect(v.heldoutModelId).toBe(
+          cohort.holdout.model.status !== 'unavailable' && cohort.holdout.model.modelId
+        );
+      }
+    } finally {
+      fit.mockRestore();
+    }
+  });
   it('shares only the exact frozen scope while validating every subsequent row', () => {
     const c = claim(),
       observations = decodeScopedAdaptiveJournalObservations(c.rows, c.scopeKey);

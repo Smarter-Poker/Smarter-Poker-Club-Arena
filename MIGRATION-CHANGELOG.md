@@ -1,3 +1,10 @@
+## 2026-09-14: Recovery preserves committed MTT payout terms
+
+**Files:** 20260914143521_preserve_committed_tournament_payout_terms_on_recovery.sql, private PG17 fixtures/probe, native accounting CI step.
+**What existed:** overlay trigger payout block (captured lines 20-57) and entry finalizer (20260908042200, lines 441-462) independently regenerated a finalized paid event's ladder on recovery. Breakfast Turbo's five-place paid contract became four places; the paid-prize guard correctly refused later changes.
+**What changed:** both existing engine database authorities consult one private committed-terms predicate; preserve finalized/prepared terms, refuse inconsistent financial commitments, retain new-event generation and overlay rollback, preserve all Spin aliases. No historical row or payment correction.
+**Verified:** re-read source; 57 native PG17 groups, including both old defects, real launch trigger/current amount and acceptance authorities, concurrent lock handoff, receipt/wake replay, rollback and source/role guards. 82 related engine tests across five files and app TypeScript pass. Installed history 20260914144117, exact body/security readback 14:41:34 UTC. Full provider, CI, served journey and historical reconciliation remain open. Details: docs/changelog/2026-09-14-mtt-committed-payout-terms.md.
+
 ## 2026-09-14: Preview actual MTT rules before Save or Start
 
 **Files:** TableConfigPage, MttCreationStructurePreview and rendered preview tests.

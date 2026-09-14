@@ -9,6 +9,7 @@
  */
 
 import { HandController } from './HandController.js';
+import { SettlementAwait } from '../observability/SettlementAwait.js';
 import type { HandSeatGeneration } from './handSeatGeneration.js';
 import { playerActionContext } from './PlayerActionContext.js';
 import { PreciseActionTimer } from './PreciseActionTimer.js';
@@ -1599,6 +1600,7 @@ export abstract class ServerTableEngineBase {
   // rather than by the next hand. See trackSettlementInFlight().
   protected settlementInFlight: Set<Promise<void>> = new Set();
   private settlementStartedAtMs: number | null = null;
+  private settlementAwaitObserver?: SettlementAwait;
 
   /**
    * The one dealing-loop generation owned by this engine instance.
@@ -3972,6 +3974,20 @@ export abstract class ServerTableEngineBase {
    */
   hasSettlementInFlight(): boolean {
     return (this.settlementInFlight?.size ?? 0) > 0;
+  }
+
+  protected observeSettlementAwait<T>(
+    stage: string,
+    generation: number,
+    handNumber: number,
+    operation: (progress: (detail: string) => void) => Promise<T>
+  ): Promise<T> {
+    const observer = (this.settlementAwaitObserver ??= new SettlementAwait());
+    return observer.observe(stage, generation, handNumber, operation);
+  }
+
+  settlementAwaits() {
+    return this.settlementAwaitObserver?.snapshot() ?? [];
   }
 
   /** Continuous age of the owned settlement; null after completion. */

@@ -1,3 +1,10 @@
+## 2026-09-14: Settled bounty replay precedes pending payment order
+
+**Files:** migration20260914122903; captured native replay fixture and runner; bounty recipient/order audit.
+**What existed:** fn_collect_bounty checked the PKO watermark before the exact settled receipt, rejecting retries of 1,129 currently complete receipts once later hands paid.
+**What changed:** moved the original pending-order block after exact settled-marker replay. No new payment, head, generation, lane, denomination or privilege behavior; metadata and body guards protect the replacement.
+**Verified:** 103 native assertions including 20 original rejection witnesses and five concurrent repaired retries; 664 engine accounting cases/38 files; server TypeScript/build pass. Applied once as history20260914123347; exact postimage/metadata verified12:34:09UTC. Original funding/provider, historical missing heads and cross-table causal order remain open. See docs/changelog/2026-09-14-settled-bounty-replay.md.
+
 ## 2026-09-14: Concurrent waitlist offers share seat and player claims
 
 **Files:** migration20260914104113; scripts/ci/test-waitlist-offer-concurrency.py and captured native fixtures; required accounting CI step.

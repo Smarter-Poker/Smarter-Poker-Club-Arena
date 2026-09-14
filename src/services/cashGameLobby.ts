@@ -259,6 +259,23 @@ export async function cancelSeatChange(
   return data as { ok: boolean; cancelled: number };
 }
 
+/** Leaving a game queue also releases the table offers belonging to it. */
+export async function leaveCashGameWaitlist(
+  gameId: string
+): Promise<{ ok: true; cancelled: number; released_offers: number }> {
+  const { data, error } = await supabase.rpc('fn_cash_game_leave_waitlist', { p_game_id: gameId });
+  if (error) throw error;
+  if (
+    data?.ok !== true ||
+    !Number.isSafeInteger(data.cancelled) ||
+    data.cancelled < 0 ||
+    !Number.isSafeInteger(data.released_offers) ||
+    data.released_offers < 0
+  )
+    throw new Error('Waitlist cancellation was not confirmed');
+  return data;
+}
+
 /** The sentence for a seat-change outcome, matching the engine's notices. */
 export function seatChangeOutcomeText(r: SeatChangeResult, tableLabel: string | null): string {
   const where = tableLabel ?? 'Your New Table';

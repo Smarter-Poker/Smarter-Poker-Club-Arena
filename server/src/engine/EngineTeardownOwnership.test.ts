@@ -203,6 +203,57 @@ describe('table-engine lifecycle ownership', () => {
     await successor.stop();
   });
 
+  it('a closed cluster table does not await the dealing loop from inside that loop', async () => {
+    const tableId = '22212121-2121-4212-8212-212121212121';
+    const loop = deferred();
+    const flush = deferred();
+    const engine = new ServerTableEngine(tableId) as any;
+    expect(engine.claimProcessOwnership()).toBe(true);
+    engine.running = true;
+    engine.tableInfo = { cluster_id: 'cluster' };
+    engine.seatedPlayers = [];
+    engine.dealingLoopPromise = loop.promise;
+    engine.flushSnapshot = vi.fn(() => flush.promise);
+    const query: any = {
+      select: vi.fn(() => query),
+      eq: vi.fn(() => query),
+      maybeSingle: vi.fn(async () => ({
+        data: { lifecycle: 'closed', status: 'closed' },
+        error: null,
+      })),
+    };
+    const from = vi.spyOn(supabase, 'from').mockReturnValue(query);
+    const successor = new ServerTableEngine(tableId) as any;
+    let boundaryReturned = false;
+    const closing = engine.stopIfClusterTableClosed().then(() => {
+      boundaryReturned = true;
+    });
+    try {
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+      expect(engine.running).toBe(false);
+      expect(boundaryReturned).toBe(true);
+      expect(engine.flushSnapshot).not.toHaveBeenCalled();
+      expect(successor.claimProcessOwnership()).toBe(false);
+      // The caller can now return from the captured dealing loop. Physical
+      // teardown still owns both that loop and the later snapshot writer.
+      loop.resolve();
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+      expect(engine.flushSnapshot).toHaveBeenCalledOnce();
+      expect(successor.claimProcessOwnership()).toBe(false);
+      flush.resolve();
+      await engine.stop();
+      expect(successor.claimProcessOwnership()).toBe(true);
+    } finally {
+      // Also let the old-source counterexample dispose its exact owned work.
+      loop.resolve();
+      flush.resolve();
+      await closing;
+      await engine.stop();
+      from.mockRestore();
+      await successor.stop();
+    }
+  });
+
   it('retains ownership until an accepted seat cashout releases its boundary', async () => {
     const tableId = '23232323-2323-4232-8232-232323232323';
     const engine = new ServerTableEngine(tableId) as any;

@@ -125,18 +125,20 @@ function createBoundedServiceClient(timeoutMs: number): SupabaseClient {
           const ctl = new AbortController();
           const t = setTimeout(() => ctl.abort(new Error('supabase_timeout')), timeoutMs);
           const onAbort = () => ctl.abort(callerSignal?.reason);
-          callerSignal?.addEventListener('abort', onAbort, { once: true });
-          const headers = new Headers(
-            typeof Request !== 'undefined' && attemptInput instanceof Request
-              ? attemptInput.headers
-              : undefined
-          );
-          // Preserve explicit fetch-init overrides, then stamp the immutable
-          // actor last.  This is repeated for every retry so neither a mutable
-          // Headers object nor a consumed Request can change authority.
-          new Headers(init.headers).forEach((value, name) => headers.set(name, value));
-          const authoritativeHeaders = dataActorHeaders(headers);
           try {
+            // Setup can reject before fetch starts. Its timer and caller
+            // listener still belong to this attempt and must be released.
+            callerSignal?.addEventListener('abort', onAbort, { once: true });
+            const headers = new Headers(
+              typeof Request !== 'undefined' && attemptInput instanceof Request
+                ? attemptInput.headers
+                : undefined
+            );
+            // Preserve explicit fetch-init overrides, then stamp the immutable
+            // actor last.  This is repeated for every retry so neither a mutable
+            // Headers object nor a consumed Request can change authority.
+            new Headers(init.headers).forEach((value, name) => headers.set(name, value));
+            const authoritativeHeaders = dataActorHeaders(headers);
             const response = await fetch(attemptInput, {
               ...init,
               headers: authoritativeHeaders,

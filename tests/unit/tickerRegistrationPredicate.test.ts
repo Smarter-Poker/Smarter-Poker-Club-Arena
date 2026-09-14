@@ -23,6 +23,15 @@ import { resolve } from 'node:path';
 
 const TICKER = resolve(__dirname, '../../src/components/tournament/TournamentStartingTicker.tsx');
 const SERVICE = resolve(__dirname, '../../src/services/TournamentService.ts');
+/* THE PREDICATE MOVED INTO SQL (2026-09-14). `is_registered` is resolved by
+   fn_get_ticker_feed now - which is what removed a 200-row tournament_players
+   read from every poll - so the casing this file exists to pin lives in the
+   migration. A one-word casing slip is exactly as invisible there, and exactly
+   as silent: the query succeeds, it just answers "no". */
+const FEED_SQL = resolve(
+  __dirname,
+  '../../supabase/migrations/20260914102703_the_rail_asks_the_server_once.sql'
+);
 
 describe('TournamentStartingTicker registration predicate', () => {
   const src = readFileSync(TICKER, 'utf8');
@@ -48,7 +57,34 @@ describe('TournamentStartingTicker registration predicate', () => {
   });
 
   it('asks for the lower-case values the engine actually writes', () => {
-    expect(src).toMatch(/\.in\('status',\s*\['registered',\s*'playing'\]\)/);
+    const sql = readFileSync(FEED_SQL, 'utf8');
+    expect(sql).toMatch(/tp\.status IN \('registered', 'playing'\)/);
+  });
+
+  it('keeps that predicate on the VIEWER, so the badge cannot borrow a seat', () => {
+    /* `is_registered` says YOU are in this event. The subquery has to be bound
+       to auth.uid() - anything else renders "You Are In" over somebody else's
+       entry, which is worse than never rendering it at all. */
+    const sql = readFileSync(FEED_SQL, 'utf8');
+    const at = sql.indexOf('AS is_registered');
+    expect(at).toBeGreaterThan(-1);
+    const exists = sql.slice(sql.lastIndexOf('EXISTS (', at), at);
+    expect(exists).toContain('tp.user_id = v_uid');
+    expect(exists).toContain('tp.tournament_id = t.id');
+  });
+
+  it('never filters tournament_players on an upper-case status in the SQL either', () => {
+    const sql = readFileSync(FEED_SQL, 'utf8');
+    const predicates = sql.match(/tp\.status IN \([^)]*\)/g) ?? [];
+    expect(predicates.length).toBeGreaterThan(0);
+    for (const predicate of predicates) {
+      /* The VALUES, not the keyword. `IN` is upper case and has to be. */
+      const values = predicate.match(/'[^']*'/g) ?? [];
+      expect(values.length, predicate).toBeGreaterThan(0);
+      for (const value of values) {
+        expect(value, predicate).toBe(value.toLowerCase());
+      }
+    }
   });
 
   it('delegates entry to the authoritative RPC instead of writing another vocabulary', () => {

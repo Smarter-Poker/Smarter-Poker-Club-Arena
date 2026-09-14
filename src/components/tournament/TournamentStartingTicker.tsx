@@ -78,7 +78,7 @@ import { rankOverlayAnnouncements, type OverlayCandidate } from '../../utils/ove
    type-only import, so this root-mounted ticker does not pull the whole
    lobby view-model into the entry bundle every player downloads. */
 import { lateRegEndMs } from '../lobby/lateRegWindow';
-import { isInsideLastCall, MAX_LEAD_MS, UPCOMING_ROW_LIMIT } from './tickerLeadWindow';
+import { isInsideLastCall, MAX_LEAD_MS } from './tickerLeadWindow';
 import type { LobbyTournamentRow } from '../lobby/lobbyEntries';
 import {
   guaranteeItem,
@@ -94,6 +94,7 @@ import {
 } from './tickerMessages';
 import { dismissItem, onDismissedElsewhere, readDismissed } from './tickerDismissals';
 import { tickerTelemetry } from '../../services/TickerTelemetry';
+import { fetchTickerFeed } from '../../services/TickerFeed';
 import { announce as announceToChime } from './tickerChime';
 import { useTopChromeOffset } from './useTopChromeOffset';
 import { useRailSilence } from './useRailSilence';
@@ -128,7 +129,6 @@ interface Scope {
    * club other than the one whose rail is being painted, and the player has no
    * way to tell which. Names are what tells them.
    */
-  clubNames: Record<string, string>;
   fetchedAt: number;
   userId: string | null;
 }
@@ -393,7 +393,7 @@ function TickerHost() {
       return cached;
     }
     if (!uid) {
-      scopeRef.current = { clubIds: [], clubNames: {}, fetchedAt: Date.now(), userId: null };
+      scopeRef.current = { clubIds: [], fetchedAt: Date.now(), userId: null };
       return scopeRef.current;
     }
     try {
@@ -408,32 +408,14 @@ function TickerHost() {
       }
       const ids = (data || []).map((r: { club_id: string }) => r.club_id).filter(Boolean);
 
-      /* The names, once per scope rather than once per poll. The feed covers
-         every club this player belongs to, so an announcement can be about a
-         club other than the one whose rail is being painted - and without a
-         name the player cannot tell. A failed read is not fatal: the line
-         simply does not say where, which is what it did before. */
-      let clubNames: Record<string, string> = {};
-      if (ids.length > 0) {
-        const { data: named, error: nameError } = await supabase
-          .from('clubs')
-          .select('id,name')
-          .in('id', ids);
-        if (nameError) {
-          reportError(nameError, 'TournamentStartingTicker.loadScopeNames');
-        } else {
-          clubNames = Object.fromEntries(
-            (named || [])
-              .filter((row: { id?: string; name?: string }) => row?.id && row?.name)
-              .map((row: { id: string; name: string }) => [row.id, row.name])
-          );
-        }
-        if (epoch !== scopeEpochRef.current || (readLocalSession()?.userId || null) !== uid) {
-          return null;
-        }
-      }
-
-      scopeRef.current = { clubIds: ids, clubNames, fetchedAt: Date.now(), userId: uid };
+      /* THE NAMES CAME OFF THIS PATH (2026-09-14). The scope used to follow
+         its membership read with a second query against `clubs`, purely so a
+         cross-club announcement could say WHERE. fn_get_ticker_feed resolves
+         `foreign_club_name` itself, against the club whose rail is being
+         painted, so the name arrives with the row that needs it and this read
+         - and the map it filled, and the chance of the two disagreeing - is
+         gone. */
+      scopeRef.current = { clubIds: ids, fetchedAt: Date.now(), userId: uid };
       return scopeRef.current;
     } catch (e) {
       reportError(e, 'TournamentStartingTicker.loadScope');
@@ -471,133 +453,38 @@ function TickerHost() {
           setItems([]);
           return;
         }
-        const nowIso = new Date().toISOString();
-        const horizonIso = new Date(Date.now() + MAX_LEAD_MS).toISOString();
+        /* ── ONE CALL (2026-09-14) ─────────────────────────────────────────
+           This used to be five queries in parallel - registrations, upcoming,
+           overlays, an operational sweep of `tournaments` and new tables -
+           every thirty seconds, for every seated player, to render ONE line.
 
-        /* DB LOAD PASS 2026-08-24: the player's own registrations used to be
-           fetched AFTER the upcoming-events query, filtered by the ids it
-           returned - three round trips in strict series on every poll tick.
-           There is no real dependency between them, so both are in flight at
-           once and intersected here. */
-        const registrationsPromise = sources.starting_soon
-          ? (async () => {
-              if (!scope.userId) return new Set<string>();
-              const { data: regData, error } = await supabase
-                .from('tournament_players')
-                .select('tournament_id')
-                // The column is written by TournamentService in LOWER case
-                // ('registered' on entry, flipped to 'playing' at start). Both
-                // live values are kept: this list is only ever intersected with
-                // pre-start MTTs, so 'playing' cannot leak a running event onto
-                // the bar, and keeping it means a re-entry row mid-flip still
-                // reads as entered.
-                .eq('user_id', scope.userId)
-                .in('status', ['registered', 'playing'])
-                // ORDER BY is required, not cosmetic: a bare LIMIT in Postgres
-                // returns ARBITRARY rows.
-                .order('registered_at', { ascending: false })
-                .limit(200);
-              if (error) {
-                reportError(error, 'TournamentStartingTicker.fetchRegistrations');
-                return null;
-              }
-              return new Set(
-                (regData || []).map((r: { tournament_id: string }) => r.tournament_id)
-              );
-            })()
-          : Promise.resolve(new Set<string>());
+           The sweep was both the expensive part and the broken part. For a
+           real three-club member it MATCHED 1,322 rows and took the eighty
+           most recently `updated_at`, a column with no trigger maintaining it,
+           and the browser then filtered that slice down to the two or three
+           that could actually speak. Three sources sharing one budget of
+           eighty, ordered by a proxy for recency that is not reliably
+           recency - the same defect as #4601, where a major was crowded off
+           the rail by turbos, except silent, because a bar with nothing on it
+           looks exactly like a bar with nothing to say.
 
-        const upcomingPromise = sources.starting_soon
-          ? supabase
-              .from('tournaments')
-              .select(
-                'id, name, start_time, club_id, buy_in_amount, buy_in_fee, current_players, status, tournament_type'
-              )
-              .in('club_id', clubIds)
-              /* Dan 2026-08-21: "WE DON'T ANNOUNCE SPINS OR HEADS UP, ONLY MTT
-                 EVENTS." Spins and heads-up games fire the moment their seats
-                 fill, so a five-minute warning is meaningless for them and they
-                 would drown the bar: the platform holds 7,306 spins and 2,809
-                 heads-up games against 1,040 MTTs. */
-              .eq('tournament_type', 'MTT')
-              // Pre-start states only. A RUNNING event is not "about to start".
-              .in('status', ['ANNOUNCED', 'REGISTERING'])
-              .gte('start_time', nowIso)
-              .lte('start_time', horizonIso)
-              .order('start_time', { ascending: true })
-              /* NOT five. The horizon covers the longest rung of the lead
-                 ladder and the per-stake filter runs on the client, so asking
-                 for five soonest-first lets cheap events that will be filtered
-                 out take every slot from a major that would have survived.
-                 See UPCOMING_ROW_LIMIT. */
-              .limit(UPCOMING_ROW_LIMIT)
-          : Promise.resolve({ data: [], error: null } as const);
-
-        /* ── OVERLAY ANNOUNCEMENTS (Dan 2026-08-26) ──────────────────────────
-           A SEPARATE query, not a widening of the one above, because the two
-           announcements answer different questions on different clocks. The
-           starting-soon strip looks five MINUTES ahead at events that have not
-           started; an overlay speaks only about an event that is already
-           running with late registration still open. */
-        const overlayPromise = sources.overlays
-          ? supabase
-              .from('tournaments')
-              .select(
-                'id, name, status, start_time, guaranteed_prize, prize_pool, current_players, buy_in_amount, late_reg_levels, late_reg_mins, started_at, current_level, max_players'
-              )
-              .in('club_id', clubIds)
-              .eq('tournament_type', 'MTT')
-              .gt('guaranteed_prize', 0)
-              .in('status', ['RUNNING', 'IN_PROGRESS', 'LATE_REG', 'LATE_REGISTRATION'])
-              .order('guaranteed_prize', { ascending: false })
-              .limit(25)
-          : Promise.resolve({ data: [], error: null } as const);
-
-        /* ── THE OPERATIONAL SOURCES, EACH BEHIND ITS OWN SWITCH ─────────────
-           These two queries used to fire on every tick for every seated player
-           whatever the club had configured - a wide 80-row read of
-           `tournaments` and a 10-row read of `tables` - even though three of
-           the four sources they feed are OFF by default. A club that wants
-           none of them now pays for none of them. */
-        const wantsTournamentOps =
-          sources.registration_closing || sources.guarantees || sources.winner_results;
-        const opsTournamentPromise = wantsTournamentOps
-          ? supabase
-              .from('tournaments')
-              .select(
-                'id,name,status,start_time,started_at,ended_at,updated_at,guaranteed_prize,prize_pool,current_players,late_reg_levels,late_reg_mins,current_level,blind_structure,level_started_at,max_players'
-              )
-              .in('club_id', clubIds)
-              // Completed results only render for ten minutes. Exclude older
-              // history before it can consume the operational feed's row limit.
-              // Keep every existing live and upcoming status in the same scope.
-              .or(
-                `status.in.(ANNOUNCED,REGISTERING,RUNNING,LATE_REG,LATE_REGISTRATION),and(status.eq.COMPLETED,ended_at.gt.${new Date(Date.now() - 10 * 60_000).toISOString()})`
-              )
-              .order('updated_at', { ascending: false })
-              .limit(80)
-          : Promise.resolve({ data: [], error: null } as const);
-
-        const opsTablePromise = sources.table_openings
-          ? supabase
-              .from('tables')
-              .select('id,name,status,game_variant,created_at')
-              .in('club_id', clubIds)
-              .is('tournament_id', null)
-              .eq('is_deleted', false)
-              .in('status', ['waiting', 'running'])
-              .gte('created_at', new Date(Date.now() - 10 * 60_000).toISOString())
-              .order('created_at', { ascending: false })
-              .limit(10)
-          : Promise.resolve({ data: [], error: null } as const);
-
-        const [upcomingRes, myRegs, overlayRes, opsTournamentRes, opsTableRes] = await Promise.all([
-          upcomingPromise,
-          registrationsPromise,
-          overlayPromise,
-          opsTournamentPromise,
-          opsTablePromise,
-        ]);
+           fn_get_ticker_feed filters where the rows are, with a budget PER
+           source, and derives the club scope from auth.uid() inside itself, so
+           the club-id list no longer travels in either direction and
+           `is_registered` arrives already resolved. Registration closing went
+           from 1,028 candidates to 2. */
+        const feed = await fetchTickerFeed(
+          {
+            starting_soon: sources.starting_soon,
+            overlays: sources.overlays,
+            registration_closing: sources.registration_closing,
+            guarantees: sources.guarantees,
+            winner_results: sources.winner_results,
+            table_openings: sources.table_openings,
+          },
+          MAX_LEAD_MS,
+          railClubIdRef.current
+        );
 
         const auth = await import('../../lib/authUtils').then((m) => m.readLocalSession());
         if (cancelled || epoch !== scopeEpochRef.current || (auth?.userId || null) !== scope.userId)
@@ -607,115 +494,97 @@ function TickerHost() {
         const next: TickerItem[] = [];
         const failedKinds = new Set<TickerItem['kind']>();
 
-        if (upcomingRes.error || myRegs === null) {
-          if (upcomingRes.error)
-            reportError(upcomingRes.error, 'TournamentStartingTicker.fetchUpcoming');
-          failedKinds.add('starting_soon');
-        } else {
-          for (const t of (upcomingRes.data || []) as Record<string, unknown>[]) {
-            const eventClubId = (t.club_id as string) || null;
-            const upcoming: UpcomingTournament = {
-              id: String(t.id),
-              name: String(t.name || 'Tournament'),
-              startsAt: new Date(String(t.start_time)).getTime(),
-              clubId: eventClubId,
-              buyIn: Number(t.buy_in_amount) || 0,
-              buyInFee: Number(t.buy_in_fee) || 0,
-              registered: Number(t.current_players) || 0,
-              isRegistered: myRegs.has(String(t.id)),
-              /* Named only when it is somewhere else. Naming the club a player
-                 is already standing in would be noise on every line. */
-              foreignClubName:
-                eventClubId && railClubIdRef.current && eventClubId !== railClubIdRef.current
-                  ? scope.clubNames[eventClubId] || null
-                  : null,
-            };
-            if (!Number.isFinite(upcoming.startsAt)) continue;
-            /* The query horizon is the LONGEST rung on the ladder so one read
-               serves every stake; each event is then held to its own last
-               call, so a 2-chip turbo is still a five-minute event. */
-            if (!isInsideLastCall(upcoming.startsAt, upcoming.buyIn + upcoming.buyInFee, current))
-              continue;
-            next.push(startingSoonItem(upcoming));
+        /* One read, so one failure. Every source keeps whatever it last
+           confirmed until that announcement's own deadline retires it - which
+           is what the old per-query `failedKinds` bookkeeping bought, for five
+           queries that could fail independently. */
+        if (feed === null) {
+          for (const kind of [
+            'starting_soon',
+            'overlays',
+            'registration_closing',
+            'guarantees',
+            'winner_results',
+            'table_openings',
+          ] as const) {
+            failedKinds.add(kind);
           }
         }
 
-        if (overlayRes.error) {
-          reportError(overlayRes.error, 'TournamentStartingTicker.fetchOverlays');
-          failedKinds.add('overlays');
-        } else {
-          for (const announcement of rankOverlayAnnouncements(
-            (overlayRes.data ?? []) as OverlayCandidate[]
-          )) {
-            // An overlay has no fixed closing timestamp. Let a confirmed
-            // snapshot survive one failed poll, never an indefinite outage.
-            next.push({ ...overlayItem(announcement), expiresAt: current + 2 * POLL_MS });
-          }
+        for (const row of feed?.upcoming ?? []) {
+          const upcoming: UpcomingTournament = {
+            id: String(row.id),
+            name: String(row.name || 'Tournament'),
+            startsAt: new Date(String(row.start_time)).getTime(),
+            clubId: row.club_id ?? null,
+            buyIn: Number(row.buy_in_amount) || 0,
+            buyInFee: Number(row.buy_in_fee) || 0,
+            registered: Number(row.current_players) || 0,
+            isRegistered: row.is_registered === true,
+            /* Resolved by the feed, which knows which club's rail this is and
+               names an event only when it is somewhere else. Naming the room
+               the player is standing in would be noise on every line. */
+            foreignClubName: row.foreign_club_name ?? null,
+          };
+          if (!Number.isFinite(upcoming.startsAt)) continue;
+          /* The server horizon is the LONGEST rung on the ladder so one read
+             serves every stake; each event is then held to its own last call,
+             so a 2-chip turbo is still a five-minute event. */
+          if (!isInsideLastCall(upcoming.startsAt, upcoming.buyIn + upcoming.buyInFee, current))
+            continue;
+          next.push(startingSoonItem(upcoming));
         }
 
-        if (opsTournamentRes.error) {
-          reportError(
-            opsTournamentRes.error,
-            'TournamentStartingTicker.fetchOperationalTournaments'
-          );
-          failedKinds.add('registration_closing');
-          failedKinds.add('guarantees');
-          failedKinds.add('winner_results');
+        for (const announcement of rankOverlayAnnouncements(
+          (feed?.overlays ?? []) as OverlayCandidate[]
+        )) {
+          // An overlay has no fixed closing timestamp. Let a confirmed
+          // snapshot survive one failed poll, never an indefinite outage.
+          next.push({ ...overlayItem(announcement), expiresAt: current + 2 * POLL_MS });
         }
-        for (const row of (opsTournamentRes.error ? [] : opsTournamentRes.data || []) as Record<
-          string,
-          unknown
-        >[]) {
-          const status = String(row.status || '').toUpperCase();
-          const starts = new Date(String(row.start_time || 0)).getTime();
-          const id = String(row.id);
-          const name = String(row.name || 'Tournament');
-          if (
-            sources.registration_closing &&
-            ['RUNNING', 'LATE_REG', 'LATE_REGISTRATION'].includes(status)
-          ) {
-            const closes = lateRegEndMs(row as unknown as LobbyTournamentRow);
-            if (closes && closes > current && closes - current <= 5 * 60_000) {
-              next.push(registrationClosingItem(id, name, closes));
-            }
-          }
-          if (
-            sources.guarantees &&
-            ['ANNOUNCED', 'REGISTERING'].includes(status) &&
-            Number(row.guaranteed_prize || 0) > 0 &&
-            Number.isFinite(starts) &&
-            starts > current &&
-            starts - current <= 2 * 60 * 60_000
-          ) {
+
+        /* Each of these arrives already filtered to rows that can speak. The
+           arithmetic that the database cannot do without forking a second
+           implementation of it - lateRegEndMs parses the blind structure and
+           sums level durations - is still done here, on a handful of rows
+           rather than eighty. */
+        for (const row of feed?.reg_closing ?? []) {
+          const closes = lateRegEndMs(row as unknown as LobbyTournamentRow);
+          if (closes && closes > current && closes - current <= 5 * 60_000) {
             next.push(
-              guaranteeItem(
-                id,
-                name,
-                Number(row.guaranteed_prize) || 0,
-                Number(row.current_players) || 0,
-                starts
-              )
+              registrationClosingItem(String(row.id), String(row.name || 'Tournament'), closes)
             );
           }
-          const ended = new Date(String(row.ended_at || 0)).getTime();
-          if (
-            sources.winner_results &&
-            status === 'COMPLETED' &&
-            Number.isFinite(ended) &&
-            ended > current - 10 * 60_000
-          ) {
-            next.push(winnerResultsItem(id, name, Number(row.prize_pool) || 0, ended));
-          }
         }
 
-        if (opsTableRes.error) {
-          reportError(opsTableRes.error, 'TournamentStartingTicker.fetchTableOpenings');
-          failedKinds.add('table_openings');
+        for (const row of feed?.guarantees ?? []) {
+          const starts = new Date(String(row.start_time || 0)).getTime();
+          if (!Number.isFinite(starts) || starts <= current) continue;
+          next.push(
+            guaranteeItem(
+              String(row.id),
+              String(row.name || 'Tournament'),
+              Number(row.guaranteed_prize) || 0,
+              Number(row.current_players) || 0,
+              starts
+            )
+          );
         }
-        for (const row of (opsTableRes.error ? [] : opsTableRes.data || []) as Record<
-          string,
-          unknown
-        >[]) {
+
+        for (const row of feed?.results ?? []) {
+          const ended = new Date(String(row.ended_at || 0)).getTime();
+          if (!Number.isFinite(ended)) continue;
+          next.push(
+            winnerResultsItem(
+              String(row.id),
+              String(row.name || 'Tournament'),
+              Number(row.prize_pool) || 0,
+              ended
+            )
+          );
+        }
+
+        for (const row of feed?.table_openings ?? []) {
           const created = new Date(String(row.created_at || 0)).getTime();
           next.push(
             tableOpeningItem(

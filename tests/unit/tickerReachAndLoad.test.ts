@@ -43,6 +43,8 @@ import {
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 const TICKER = read('src/components/tournament/TournamentStartingTicker.tsx');
+/* The other half of the source gate lives in the feed function itself. */
+const FEED_SQL = read('supabase/migrations/20260914102703_the_rail_asks_the_server_once.sql');
 
 describe('an operator change reaches a player who is already seated', () => {
   it('refetches the managed settings on the same tick as the feed', () => {
@@ -67,31 +69,42 @@ describe('an operator change reaches a player who is already seated', () => {
 });
 
 describe('a club pays only for the sources it has switched on', () => {
-  it('gates every one of the queries on its own source flag', () => {
-    /* Each window is the ternary that guards the query, bounded by the next
-       declaration rather than by a byte count. */
-    for (const [from, to, flag] of [
-      ['const registrationsPromise =', 'const upcomingPromise =', 'sources.starting_soon'],
-      ['const upcomingPromise =', '/* ── OVERLAY ANNOUNCEMENTS', 'sources.starting_soon'],
-      ['const overlayPromise =', '/* ── THE OPERATIONAL SOURCES', 'sources.overlays'],
-      ['const opsTablePromise =', 'const [upcomingRes', 'sources.table_openings'],
-    ] as const) {
-      expect(sliceBetween(TICKER, from, to), from).toContain(flag);
+  it('hands every source switch to the feed, so the server can gate on it', () => {
+    /* THE GATE MOVED (2026-09-14). It used to be four ternaries around four
+       query builders in this file; the read is one RPC now and the switches
+       travel as its argument. The assertion follows the gate: the call has to
+       carry every source, or a switched-off source silently becomes a
+       switched-ON one at the database. */
+    const call = sliceCall(TICKER, 'await fetchTickerFeed(');
+    for (const flag of [
+      'starting_soon: sources.starting_soon',
+      'overlays: sources.overlays',
+      'registration_closing: sources.registration_closing',
+      'guarantees: sources.guarantees',
+      'winner_results: sources.winner_results',
+      'table_openings: sources.table_openings',
+    ]) {
+      expect(call, flag).toContain(flag);
     }
   });
 
-  it('is the regression: the operational read is no longer unconditional', () => {
+  it('is the regression: the operational read is still not unconditional', () => {
     /* Three of the four sources it feeds are off by default, and it was the
-       most expensive query on the tick: 80 rows, seventeen columns. */
-    const at = TICKER.indexOf('const wantsTournamentOps =');
-    expect(at).toBeGreaterThan(-1);
-    const DECL = sliceBetween(TICKER, 'const wantsTournamentOps =', 'const opsTournamentPromise =');
-    expect(DECL).toContain('sources.registration_closing');
-    expect(DECL).toContain('sources.guarantees');
-    expect(DECL).toContain('sources.winner_results');
-    expect(
-      sliceBetween(TICKER, 'const opsTournamentPromise =', 'const opsTablePromise =')
-    ).toContain('wantsTournamentOps');
+       most expensive query on the tick: 80 rows, seventeen columns. The other
+       half of the gate is now in SQL, so this reads the migration: each source
+       block must be guarded by its own `v_want_*`, or the function does the
+       work for a club that asked for none of it. */
+    for (const [marker, flag] of [
+      ['STARTING SOON', 'v_want_soon'],
+      ['OVERLAYS', 'v_want_overlays'],
+      ['REGISTRATION CLOSING', 'v_want_closing'],
+      ['GUARANTEES', 'v_want_guarantee'],
+      ['RESULTS', 'v_want_results'],
+      ['TABLE OPENINGS', 'v_want_tables'],
+    ] as const) {
+      const block = sliceBetween(FEED_SQL, `-- \u2500\u2500 ${marker} `, 'RETURN v_out');
+      expect(block, marker).toContain(flag);
+    }
   });
 
   it('still suspends the whole poll while the tab is hidden', () => {

@@ -489,3 +489,29 @@ it('keeps previously claimed bonus spins accessible on a later ordinary day', as
   await screen.findByRole('button', { name: 'Use Bonus Spin' });
   expect(screen.getByText(/Your Welcome Spin Stays Separate/)).toBeTruthy();
 });
+
+it('does not offer a consumed spin merely because its reward was claimed today', async () => {
+  mocks.getStatus.mockResolvedValue({
+    ...status,
+    streak: 10,
+    bonus_spins_held: 0,
+    tiles: [
+      tile({
+        slot: 7,
+        kind: 'free_spin',
+        label: '100 Diamond Bonus Spin',
+        claimed: true,
+        granted: {
+          kind: 'free_spin',
+          quantity: 1,
+          diamonds: 0,
+          balance_after: 0,
+          ticket_id: '10000000-0000-0000-0000-000000000001',
+        },
+      }),
+    ],
+  });
+  render(<DailyBonusSheet mode="inline" />);
+  await screen.findByText('100 Diamond Bonus Spin');
+  expect(screen.queryByRole('button', { name: 'Use Bonus Spin' })).toBeNull();
+});

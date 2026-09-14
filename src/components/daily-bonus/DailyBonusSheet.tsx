@@ -561,12 +561,9 @@ export default function DailyBonusSheet({
               Your Club. Your Welcome Spin Stays Separate.
             </dd>
           </div>
-          {((status.bonus_spins_held ?? 0) > 0 ||
-            status.tiles.some(
-              (t) => t.claimed && t.granted?.kind === 'free_spin' && t.granted.ticket_id
-            )) && (
+          {(status.bonus_spins_held ?? 0) > 0 && (
             <div className="dbs__note">
-              <dt className="sc-label sc-ink--gold">Claimed Spins</dt>
+              <dt className="sc-label sc-ink--gold">Spins</dt>
               <dd className="sc-copy">
                 <button
                   type="button"

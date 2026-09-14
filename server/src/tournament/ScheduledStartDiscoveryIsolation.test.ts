@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { GameServer } from '../GameServer.js';
 import { supabase } from '../services/supabase.js';
@@ -10,6 +10,9 @@ vi.mock('../maintenance/freezeState.js', async (original) => ({
   isMaintenanceFrozen: () => state.frozen,
 }));
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
+// Import-time configuration diagnostics are outside each discovery operation.
+// Retain error assertions for everything the operation actually executes.
+beforeEach(() => vi.mocked(reportError).mockClear());
 afterEach(() => {
   state.frozen = false;
   vi.restoreAllMocks();

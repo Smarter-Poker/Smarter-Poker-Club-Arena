@@ -1,5 +1,9 @@
 import { Worker } from 'node:worker_threads';
 
+import {
+  createHorseExecutionWitness,
+  retireHorseExecutionWitness,
+} from '../HorseExecutionWitness.js';
 import type {
   CommitDecisionEffectsRequest,
   CompletedHandObservation,
@@ -784,6 +788,22 @@ export class LiveHorseDecisionWorkerClient {
         );
         return;
       }
+    }
+
+    if (
+      (message.type === 'FAST_RESULT' && active.request.type === 'DECIDE_FAST') ||
+      (message.type === 'DEEP_RESULT' && active.request.type === 'DECIDE_DEEP')
+    ) {
+      const witness = createHorseExecutionWitness(active.request, message.decision, {
+        requestId: message.requestId,
+        lane: message.type === 'FAST_RESULT' ? 'fast' : 'deep',
+        computeMs: message.computeMs,
+        governorScale: message.governorScale,
+      });
+      message.decision.executionWitness = witness;
+      // A result received after abort/expiry is never delivered to the table.
+      // Retire it here; an executor callback cannot account for this response.
+      if (active.settled) retireHorseExecutionWitness(witness, 'caller_settled');
     }
 
     this.retireHead(active);

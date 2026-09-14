@@ -1,0 +1,20 @@
+name: Original launch database transport component
+on:
+  pull_request:
+    paths:
+      - server/scripts/engine_launch_database.py
+      - tests/operations/engine-launch-database.test.py
+      - .github/workflows/original-launch-database.yml
+permissions:
+  contents: read
+jobs:
+  transport:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Exercise bounded client processes and exact commit/readback protocol
+        run: PYTHONDONTWRITEBYTECODE=1 python3 tests/operations/engine-launch-database.test.py

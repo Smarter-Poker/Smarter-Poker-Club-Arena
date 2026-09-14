@@ -262,7 +262,10 @@ for (const name of [
       start = source.indexOf('- name: Admit only the current PR head');
     assert.ok(start > source.indexOf('uses: actions/checkout@'));
     assert.ok(start < source.indexOf('- name: Setup Node'));
-    assert.match(source, /runs-on: ubuntu-latest/);
+    assert.match(
+      source,
+      /runs-on: (?:ubuntu-latest|\$\{\{ vars\.CI_RUNNER \|\| 'ubuntu-latest' \}\})/
+    );
     assert.match(source, /permissions:\n      contents: read\n      pull-requests: read/);
     const gate = source.slice(start, source.indexOf('- name: Setup Node'));
     assert.match(gate, /working-directory: \./);

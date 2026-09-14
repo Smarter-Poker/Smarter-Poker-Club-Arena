@@ -166,9 +166,10 @@
   background-image: url('/assets/club-buttons/console/riveted-console-v1/top.png');
 }
 
-/* Between the riveted rails: glass runs x 70-660 of 729. */
+/* Between the riveted rails: glass runs x 70-660 of 729, and the head prints
+   its title from x 88 - the body lines up with it. */
 .sc--family-riveted .sc__body {
-  padding: 0 9.6% 3cqw;
+  padding: 0 12% 3cqw;
   background-image: url('/assets/club-buttons/console/riveted-console-v1/mid.png');
 }
 

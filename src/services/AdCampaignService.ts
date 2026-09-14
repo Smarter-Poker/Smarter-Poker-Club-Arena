@@ -71,6 +71,45 @@ export interface AdCampaign {
   viewers: number;
   /** The price a sponsor was shown when they booked, US cents. Null on a club flight. */
   quotedCents: number | null;
+  /** When staff recorded the sponsor invoice as sent / paid. Null on a club flight. */
+  invoicedAt: string | null;
+  paidAt: string | null;
+  /** Where the flight may run: ISO 3166-1 alpha-2, upper case. Null means everywhere. */
+  countries: string[] | null;
+}
+
+/**
+ * "us, CA, gb" -> ['CA', 'GB', 'US']; '' -> null (everywhere). Anything that is
+ * not two letters makes the whole list invalid (returns undefined), because a
+ * sponsor who typed "USA" meant something and serving everywhere is the
+ * opposite of it. The database applies the same rule (fn_ad_countries_clean).
+ */
+export function parseCountries(text: string): string[] | null | undefined {
+  const parts = text
+    .split(/[\s,;]+/)
+    .map((x) => x.trim())
+    .filter((x) => x.length > 0);
+  if (parts.length === 0) return null;
+  if (parts.some((x) => !/^[A-Za-z]{2}$/.test(x))) return undefined;
+  return Array.from(new Set(parts.map((x) => x.toUpperCase()))).sort();
+}
+
+/** The list as a sponsor or staff read it: "US, CA Only" or "Everywhere". */
+export function countriesLabel(countries: string[] | null | undefined): string {
+  return countries && countries.length > 0 ? `${countries.join(', ')} Only` : 'Everywhere';
+}
+
+/** A sponsor advertiser as platform staff see it: who owns it and what is owed. */
+export interface SponsorAdvertiserRow {
+  id: string;
+  name: string;
+  contactEmail: string | null;
+  status: string;
+  selfServe: boolean;
+  ownerEmail: string | null;
+  flights: number;
+  unpaidCents: number;
+  createdAt: string;
 }
 
 export interface SubmitCampaignInput {
@@ -97,6 +136,8 @@ export interface SponsorSelfSubmitInput {
   days: number;
   goalImpressions?: number | null;
   pacing?: 'even' | 'asap';
+  /** Null or omitted: everywhere. */
+  countries?: string[] | null;
 }
 
 export interface SponsorAdvertiser {
@@ -135,6 +176,8 @@ export interface SponsorCampaignInput {
   contactEmail?: string | null;
   goalImpressions?: number | null;
   pacing?: 'even' | 'asap';
+  /** Null or omitted: everywhere. */
+  countries?: string[] | null;
 }
 
 export type SponsorCreateResult =
@@ -199,7 +242,18 @@ function mapCampaign(r: Record<string, unknown>): AdCampaign {
     clicks: Number(r.clicks ?? 0),
     viewers: Number(r.viewers ?? 0),
     quotedCents: r.quoted_cents == null ? null : Number(r.quoted_cents),
+    invoicedAt: r.invoiced_at == null ? null : String(r.invoiced_at),
+    paidAt: r.paid_at == null ? null : String(r.paid_at),
+    countries: Array.isArray(r.countries) ? r.countries.map((x) => String(x)) : null,
   };
+}
+
+/** What a sponsor flight's money is doing, in words a sponsor and staff both read. */
+export function billingLabel(c: Pick<AdCampaign, 'status' | 'invoicedAt' | 'paidAt'>): string {
+  if (c.paidAt) return 'Paid';
+  if (c.invoicedAt) return 'Invoice Sent';
+  if (c.status === 'approved') return 'To Be Invoiced';
+  return 'Quoted';
 }
 
 /** Whole dollars for a forward-facing page: $10, never $10.00. */
@@ -408,6 +462,7 @@ export const AdCampaignService = {
       p_goal_impressions: input.goalImpressions ?? null,
       p_pacing: input.pacing ?? 'even',
       p_poster_url: input.posterUrl ?? null,
+      p_countries: input.countries ?? null,
     });
     if (error) {
       reportError(error, 'AdCampaignService.createSponsor');
@@ -491,6 +546,7 @@ export const AdCampaignService = {
       p_days: input.days,
       p_goal_impressions: input.goalImpressions ?? null,
       p_pacing: input.pacing ?? 'even',
+      p_countries: input.countries ?? null,
     });
     if (error) {
       reportError(error, 'AdCampaignService.sponsorSubmit');
@@ -515,6 +571,67 @@ export const AdCampaignService = {
       pacing: r.pacing === 'asap' ? 'asap' : 'even',
       goalImpressions: r.goal_impressions == null ? null : Number(r.goal_impressions),
     }));
+  },
+
+  /**
+   * Platform staff record an offline fact: the invoice went out, or it was
+   * paid. 'none' undoes a mistaken click. Moves no chips and no diamonds.
+   */
+  async bill(
+    campaignId: string,
+    mark: 'invoiced' | 'paid' | 'none'
+  ): Promise<{ ok: boolean; reason?: string }> {
+    const { data, error } = await supabase.rpc('fn_sponsor_campaign_bill', {
+      p_campaign_id: campaignId,
+      p_mark: mark,
+    });
+    if (error) {
+      reportError(error, 'AdCampaignService.bill');
+      return { ok: false, reason: error.message };
+    }
+    const r = (data ?? {}) as Record<string, unknown>;
+    return { ok: r.ok === true, reason: r.reason == null ? undefined : String(r.reason) };
+  },
+
+  /** Platform staff: every sponsor advertiser, who owns it, and what is owed. */
+  async sponsorAdvertisers(): Promise<SponsorAdvertiserRow[]> {
+    const { data, error } = await supabase.rpc('fn_sponsor_advertiser_list');
+    if (error) {
+      reportError(error, 'AdCampaignService.sponsorAdvertisers');
+      throw error;
+    }
+    return ((data || []) as Record<string, unknown>[]).map((r) => ({
+      id: String(r.id),
+      name: String(r.name ?? ''),
+      contactEmail: r.contact_email == null ? null : String(r.contact_email),
+      status: String(r.status ?? 'active'),
+      selfServe: r.self_serve === true,
+      ownerEmail: r.owner_email == null ? null : String(r.owner_email),
+      flights: Number(r.flights ?? 0),
+      unpaidCents: Number(r.unpaid_cents ?? 0),
+      createdAt: String(r.created_at ?? ''),
+    }));
+  },
+
+  /**
+   * Platform staff hand a sponsor opened over the phone to the account that
+   * will log in as it. The account must exist and must not already own a
+   * sponsor; from then on that person's own page lists every flight.
+   */
+  async advertiserHandoff(
+    advertiserId: string,
+    email: string
+  ): Promise<{ ok: boolean; reason?: string }> {
+    const { data, error } = await supabase.rpc('fn_sponsor_advertiser_handoff', {
+      p_advertiser_id: advertiserId,
+      p_email: email,
+    });
+    if (error) {
+      reportError(error, 'AdCampaignService.advertiserHandoff');
+      return { ok: false, reason: error.message };
+    }
+    const r = (data ?? {}) as Record<string, unknown>;
+    return { ok: r.ok === true, reason: r.reason == null ? undefined : String(r.reason) };
   },
 
   /**

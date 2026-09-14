@@ -499,9 +499,20 @@ node scripts/ci/pr-status.mjs            # the PR for your current branch
 node scripts/ci/pr-status.mjs 3163       # by number      --all for every open PR
 ```
 
-It names the failing **job** and **step**, says whether that check actually
-blocks the merge, and exits `0` green / `1` red / `2` running / `3` unknown /
-`4` conflicting. **Branch on the exit code; do not parse the prose.**
+It names the failing **job** and **step** and distinguishes required-check
+conclusions from successful execution. Exit `0` means `GREEN` (every required
+job context reported success) or `CHECKS_ACCEPTED` (GitHub accepts the observed
+conclusions, but some required jobs were skipped or neutral). Neither state
+authorizes a merge or deployment. Exit `1` is red, `2` is an observed active run,
+`3` is unknown, and `4` is conflicting. **Use the exit code and JSON `state`;
+do not parse the prose.**
+
+JSON `requiredCheckStatus` reports `SATISFIED`, `UNSATISFIED`, `RUNNING`, or
+`UNKNOWN` from Actions observations. `requiredExecutionStatus` separately
+reports `SUCCESSFUL`, `NOT_PROVEN`, or `UNKNOWN`; `requiredProblems` retains
+all contexts lacking a completed success, including accepted skips. An absent
+terminal context remains unknown. A real required-job failure is red even
+while sibling jobs run. Other GitHub merge requirements remain separate.
 
 **Do not reach past it for `gh` or for curl.** Three routes exist and two of
 them answer confidently and wrongly:

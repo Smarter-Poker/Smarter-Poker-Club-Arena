@@ -1,11 +1,20 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  CLUB ANNOUNCEMENT BANNER — Important Club Messages
+ *  CLUB ANNOUNCEMENT BANNER - Important Club Messages
  * Displays pinned announcements from club admins
  * ═══════════════════════════════════════════════════════════════════════════════
  * USAGE:
  * - With clubId prop:  <ClubAnnouncementBanner clubId="abc123" />
  * - Auto-detect from URL: <ClubAnnouncementBanner /> (uses :clubId from route)
+ *
+ * #ClubArenaConsole (2026-09-14): A BANNER IS NOT A CARD. It is inked onto
+ * the black glass - a lit word for its kind, the title in engraved silver,
+ * the copy in Inter, one engraved rule under it - and never framed: no
+ * border, no radius, no fill, no plate. The controls (previous / next /
+ * dismiss) are lit words, not boxes. Every word a player reads, including the
+ * announcement DATA a club typed, goes through titleCase() at the print site
+ * (Dan 2026-09-14: "THE FIRST LETTER OF EVERY WORD MUST ALWAYS BE
+ * CAPITALIZED").
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -16,7 +25,9 @@ import { supabase } from '../../lib/supabase';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { masterBus } from '../../core/MasterBus';
 import styles from './ClubAnnouncementBanner.module.css';
+import '../console/SpadeConsole.css';
 import { reportError } from '../../utils/errorReporter';
+import { titleCase } from '../../utils/titleCase';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
 
 interface Announcement {
@@ -73,7 +84,7 @@ export default function ClubAnnouncementBanner({
       }
     }
 
-    // 🔴 Bus Listener: refresh announcements when one is created/updated/deleted
+    // Bus listener: refresh announcements when one is created/updated/deleted
     const unsub = masterBus.subscribeDebounced(
       'ANNOUNCEMENT_CHANGED',
       () => {
@@ -113,6 +124,7 @@ export default function ClubAnnouncementBanner({
         .order('created_at', { ascending: false })
         .limit(5);
 
+      if (error) reportError(error, 'ClubAnnouncementBanner.loadAnnouncements');
       if (!error && data) {
         if (!isMounted.current) return;
         const mapped: Announcement[] = data.map((a: any) => ({
@@ -140,35 +152,37 @@ export default function ClubAnnouncementBanner({
     onDismiss?.(id);
   };
 
-  const getTypeIcon = (type: string): string => {
+  /* The kind is a lit word in the master's own ink, not an icon in a box:
+     blue for news, gold for a warning, green for good news, red for urgent. */
+  const getTypeWord = (type: string): string => {
     switch (type) {
-      case 'info':
-        return 'i';
       case 'warning':
-        return '!';
+        return 'Notice';
       case 'success':
-        return '✓';
+        return 'Good News';
       case 'urgent':
-        return '!!';
+        return 'Urgent';
+      case 'info':
       default:
-        return 'i';
+        return 'Announcement';
     }
   };
 
-  const getTypeClass = (type: string): string => {
+  const getTypeInk = (type: string): string => {
     switch (type) {
-      case 'info':
-        return styles.info;
       case 'warning':
-        return styles.warning;
+        return 'sc-ink--gold';
       case 'success':
-        return styles.success;
+        return 'sc-ink--green';
       case 'urgent':
-        return styles.urgent;
+        return 'sc-ink--red';
+      case 'info':
       default:
-        return '';
+        return 'sc-ink--blue';
     }
   };
+
+  const getTypeClass = (type: string): string => (type === 'urgent' ? styles.urgent : '');
 
   const formatDate = (dateStr: string): string => {
     const date = new Date(dateStr);
@@ -192,7 +206,8 @@ export default function ClubAnnouncementBanner({
 
   return (
     <div
-      className={`${styles.banner} ${getTypeClass(current.type)}`}
+      className={`${styles.banner} ${getTypeClass(current.type)}`.trim()}
+      role="status"
       style={{
         opacity: mounted ? 1 : 0,
         transform: mounted ? 'translateY(0)' : 'translateY(8px)',
@@ -200,17 +215,14 @@ export default function ClubAnnouncementBanner({
       }}
     >
       <div className={styles.content}>
-        <span className={styles.icon}>{getTypeIcon(current.type)}</span>
-        <div className={styles.text}>
-          <span className={styles.title}>{current.title}</span>
-          <span className={styles.message}>{current.message}</span>
-        </div>
-      </div>
-
-      <div className={styles.meta}>
+        <span className={`${styles.kind} sc-label ${getTypeInk(current.type)}`}>
+          {getTypeWord(current.type)}
+        </span>
+        <span className={`${styles.title} sc-ink--silver`}>{titleCase(current.title)}</span>
+        <span className={styles.message}>{titleCase(current.message)}</span>
         {current.createdByName && (
-          <span className={styles.author}>
-            - {current.createdByName}, {formatDate(current.createdAt)}
+          <span className={`${styles.author} sc-ink--muted`}>
+            {titleCase(current.createdByName)}, {formatDate(current.createdAt)}
           </span>
         )}
       </div>
@@ -219,28 +231,33 @@ export default function ClubAnnouncementBanner({
         {visibleAnnouncements.length > 1 && (
           <div className={styles.pagination}>
             <button
+              type="button"
+              className={`${styles.word} sc-ink--blue`}
               onClick={() => setCurrentIndex((prev) => prev - 1)}
               aria-label="Previous Announcement"
             >
-              ‹
+              Prev
             </button>
-            <span>
+            <span className={`${styles.count} sc-ink--muted`}>
               {safeIndex + 1}/{visibleAnnouncements.length}
             </span>
             <button
+              type="button"
+              className={`${styles.word} sc-ink--blue`}
               onClick={() => setCurrentIndex((prev) => prev + 1)}
               aria-label="Next Announcement"
             >
-              ›
+              Next
             </button>
           </div>
         )}
         <button
-          className={styles.dismissBtn}
+          type="button"
+          className={`${styles.word} ${styles.dismissBtn} sc-ink--muted`}
           onClick={() => dismiss(current.id)}
           aria-label="Dismiss Announcement"
         >
-          ✕
+          Dismiss
         </button>
       </div>
     </div>

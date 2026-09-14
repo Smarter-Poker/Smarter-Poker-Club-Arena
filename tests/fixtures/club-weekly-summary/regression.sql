@@ -59,3 +59,11 @@ SELECT set_config('test.engine','false',false),set_config('test.uid','10000000-0
 SELECT assert_true(refuses($$SELECT * FROM fn_messenger_message_page('10000000-0000-0000-0000-000000000001',(SELECT conversation_id FROM summary_thread))$$,'42501'),'an authenticated caller cannot substitute another actor');
 SELECT assert_true(refuses($$SELECT * FROM fn_messenger_message_page('10000000-0000-0000-0000-000000000004',(SELECT conversation_id FROM summary_thread))$$,'42501'),'a nonparticipant cannot read the club conversation');
 SELECT assert_true(NOT has_function_privilege('anon','fn_messenger_message_page(uuid,uuid,timestamptz,uuid,integer)','EXECUTE'),'anonymous callers cannot read the message function');
+SELECT assert_true(refuses($$SELECT * FROM fn_messenger_accounting_threads('10000000-0000-0000-0000-000000000001',ARRAY[(SELECT conversation_id FROM summary_thread)])$$,'42501'),'thread visibility cannot substitute another actor');
+SELECT assert_true((SELECT count(*)=0 FROM fn_messenger_accounting_threads('10000000-0000-0000-0000-000000000004',ARRAY[(SELECT conversation_id FROM summary_thread)])),'thread visibility never exposes a nonparticipant conversation');
+SELECT set_config('test.engine','true',false);
+SELECT assert_true((SELECT recipient_visible FROM fn_messenger_accounting_threads('10000000-0000-0000-0000-000000000001',ARRAY[(SELECT conversation_id FROM summary_thread)])),'a real weekly receipt makes the club invoice thread visible');
+UPDATE accounting_invoice_deliveries SET delivery_mode='weekly_detail' WHERE message_id IN(SELECT id FROM social_messages WHERE conversation_id=(SELECT conversation_id FROM summary_thread));
+SELECT assert_true((SELECT NOT recipient_visible AND last_message_preview='A forged invoice' FROM fn_messenger_accounting_threads('10000000-0000-0000-0000-000000000001',ARRAY[(SELECT conversation_id FROM summary_thread)])),'archived copies cannot make an invoice thread visible but its actual latest conversation text remains available');
+SELECT assert_true(refuses($$SELECT * FROM fn_messenger_accounting_threads('10000000-0000-0000-0000-000000000001',array_fill(u(1),ARRAY[201]))$$,'22023'),'thread visibility is bounded');
+SELECT assert_true(NOT has_function_privilege('anon','fn_messenger_accounting_threads(uuid,uuid[])','EXECUTE'),'anonymous callers cannot read invoice thread visibility');

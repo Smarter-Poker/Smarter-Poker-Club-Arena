@@ -17,7 +17,7 @@ started=1
  -f "$root/tests/fixtures/weekly-accounting-coordinator/bootstrap.sql" \
  -f "$root/tests/fixtures/weekly-accounting-coordinator/credit-writer.sql" \
  -f "$root/tests/fixtures/weekly-accounting-coordinator/preimage.sql" \
- -f "$root/supabase/migrations/20260914131000_weekly_accounting_uses_one_coordinator.sql" \
+ -f "$root/supabase/migrations/20260914130411_weekly_accounting_uses_one_coordinator.sql" \
  -f "$root/tests/fixtures/weekly-accounting-coordinator/regression.sql"
 python3 - "$pgbin/psql" "$fixture/socket" <<'PY'
 import subprocess,sys

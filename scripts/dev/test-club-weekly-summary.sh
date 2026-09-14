@@ -25,4 +25,5 @@ started=1
   -f "$root/tests/fixtures/club-weekly-summary/legacy.sql" \
   -f "$root/supabase/migrations/20260914124421_clubs_receive_one_weekly_accounting_statement.sql" \
   -f "$root/supabase/migrations/20260914124554_weekly_summary_respects_text_journal_settlement_identity.sql" \
+  -f "$root/supabase/migrations/20260914130611_invoice_inboxes_only_show_visible_documents_and_discussions.sql" \
   -f "$root/tests/fixtures/club-weekly-summary/regression.sql"

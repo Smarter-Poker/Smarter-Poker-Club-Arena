@@ -1741,7 +1741,8 @@ describe('every host mutation path obeys the durable release authority', () => {
     expect(workflow).toContain('cancel-in-progress: false');
     expect(workflow).not.toContain('queue: max');
     expect(queuedRecheck).toContain('git merge-base --is-ancestor "$CONTROL_SHA" "$MAIN_SHA"');
-    expect(queuedRecheck).toContain('[ "$LATEST_REQUIRED" = "$SHA" ]');
+    expect(queuedRecheck).toContain('[[ "$LATEST_REQUIRED" =~ ^[0-9a-f]{40}$ ]]');
+    expect(queuedRecheck).toContain('host forward-only admission is still required.');
     expect(hostStage).toContain(
       'git -C "$REPO_DIR" merge-base --is-ancestor "$commit" "$MAIN_SHA"'
     );

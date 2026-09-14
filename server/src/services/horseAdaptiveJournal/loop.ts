@@ -1,5 +1,6 @@
 import type { AdaptiveJournalWorkResult } from '../HorseAdaptiveJournalWork.js';
 import type { pruneAdaptiveJournal } from '../HorseAdaptiveJournalRetention.js';
+import type { JournalQueueHealth } from './queueHealth.js';
 
 export type JournalCycle = Readonly<{
   work: AdaptiveJournalWorkResult['status'];
@@ -12,12 +13,15 @@ type Dependencies = {
   wait: (ms: number, signal: AbortSignal) => Promise<void>;
   started: () => void;
   completed: (cycle: JournalCycle) => void;
+  readQueueHealth?: () => Promise<JournalQueueHealth>;
+  queueHealth?: (health: JournalQueueHealth) => void;
 };
 
 /** A single serial consumer. One claim and at most one bounded prune per
  * cycle; never imports this loop into the table's action or decision worker. */
 export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Promise<void> {
   let nextPruneAt = 0;
+  let nextHealthAt = 0;
   let failures = 0;
   while (!signal.aborted) {
     d.started();
@@ -43,6 +47,17 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
       }
     }
     if (signal.aborted) return;
+    if (d.readQueueHealth && d.now() >= nextHealthAt) {
+      let health: JournalQueueHealth;
+      try {
+        health = await d.readQueueHealth();
+      } catch {
+        health = { status: 'unknown' };
+      }
+      nextHealthAt = d.now() + 60000;
+      if (signal.aborted) return;
+      d.queueHealth?.(health);
+    }
     d.completed(Object.freeze({ work: result.status, retention }));
     const healthy = result.status === 'completed' || result.status === 'idle';
     failures = healthy ? 0 : Math.min(failures + 1, 6);

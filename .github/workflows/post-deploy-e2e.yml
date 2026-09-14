@@ -188,14 +188,20 @@ jobs:
           set -euo pipefail
           git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
           MAIN_SHA="$(git rev-parse --verify 'origin/main^{commit}')"
-          ENGINE_SHA="$(git log "$MAIN_SHA" -1 --format=%H -- \
-            'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**')"
+          if [ -n "$ENGINE_TRIGGER_SHA" ]; then
+            # Certify the immutable release that requested this run. A newer
+            # unshipped merge cannot substitute a different release identity.
+            ENGINE_SHA="$ENGINE_TRIGGER_SHA"
+          else
+            ENGINE_SHA="$(git log "$MAIN_SHA" -1 --format=%H -- \
+              'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**')"
+          fi
           [[ "$ENGINE_SHA" =~ ^[0-9a-f]{40}$ ]] \
             || { echo '::error::Could not resolve one exact engine-runtime commit from protected main.'; exit 1; }
-          if [ -n "$ENGINE_TRIGGER_SHA" ] && [ "$ENGINE_TRIGGER_SHA" != "$ENGINE_SHA" ]; then
-            echo "::error::Engine certificate trigger $ENGINE_TRIGGER_SHA is stale; protected main requires $ENGINE_SHA."
-            exit 1
-          fi
+          git cat-file -e "$ENGINE_SHA^{commit}" \
+            || { echo '::error::The requested engine commit is unavailable.'; exit 1; }
+          git merge-base --is-ancestor "$ENGINE_SHA" "$MAIN_SHA" \
+            || { echo '::error::The requested engine commit is outside protected main.'; exit 1; }
           echo "sha=$ENGINE_SHA" >> "$GITHUB_OUTPUT"
           echo "Exact protected-main engine component: \`$ENGINE_SHA\`" >> "$GITHUB_STEP_SUMMARY"
 

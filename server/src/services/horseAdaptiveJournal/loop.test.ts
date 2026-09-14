@@ -3,6 +3,32 @@ import { runJournalLoop } from './loop.js';
 import type { AdaptiveJournalWorkResult } from '../HorseAdaptiveJournalWork.js';
 const empty = () => ({ status: 'pruned' as const, completedWork: 0, batches: 0, observations: 0 });
 describe('isolated journal serial loop', () => {
+  it('samples queue health at most once a minute and stops before a later health read', async () => {
+    const ctl = new AbortController();
+    let now = 0,
+      cycles = 0;
+    const sampled: number[] = [];
+    const readQueueHealth = vi.fn(async () => {
+      sampled.push(now);
+      return { status: 'unknown' as const };
+    });
+    const queueHealth = vi.fn();
+    await runJournalLoop(ctl.signal, {
+      processWork: async () => ({ status: 'idle' }),
+      prune: async () => empty(),
+      now: () => now,
+      started: vi.fn(),
+      completed: vi.fn(),
+      readQueueHealth,
+      queueHealth,
+      wait: async (ms) => {
+        now += ms;
+        if (++cycles === 14) ctl.abort();
+      },
+    });
+    expect(sampled).toEqual([0, 60000]);
+    expect(queueHealth).toHaveBeenCalledTimes(2);
+  });
   it('does not claim again or prune while work is in flight; stopping starts no later operation', async () => {
     const ctl = new AbortController();
     let release!: (r: AdaptiveJournalWorkResult) => void;

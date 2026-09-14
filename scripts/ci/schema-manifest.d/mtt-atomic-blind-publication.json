@@ -1,0 +1,8 @@
+{
+  "_owner": "fix/mtt-atomic-blind-publication-sep13; both additive migrations applied 2026-09-13 20:10 UTC and definitions verified",
+  "functions": [
+    "fn_publish_tournament_blind_level",
+    "fn_tournament_table_inherits_committed_blinds"
+  ],
+  "columns": { "tournaments": ["blind_level_state"] }
+}

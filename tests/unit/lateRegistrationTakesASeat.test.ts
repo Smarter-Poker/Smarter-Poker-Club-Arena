@@ -243,8 +243,19 @@ describe('a tournament table reports the level and blinds it is actually playing
   });
 
   it('the engine keeps `stakes` in step on every level-up', () => {
-    const upd = sliceEnclosingBlock(BASE, 'const safeSmallBlind');
-    expect(upd).toMatch(/stakes: `\$\{safeSmallBlind\}\/\$\{safeBigBlind\}`/);
+    const advance = sliceMethod(BASE, 'protected async advanceBlindLevel(');
+    expect(advance).toContain("'fn_publish_tournament_blind_level'");
+    // The field now commits in one database transaction. Its displayed
+    // stakes must use the same values as its live blind columns.
+    const publication = read(
+      'supabase/migrations/20260913200859_tournament_blind_publication_authority.sql'
+    );
+    expect(publication).toMatch(
+      /UPDATE public\.tables SET small_blind=p_small_blind,big_blind=p_big_blind,\s*ante=p_ante,stakes=trim_scale\(p_small_blind\)::text\|\|'\/'\|\|trim_scale\(p_big_blind\)::text/
+    );
+    expect(publication).toContain(
+      "t.stakes IS DISTINCT FROM trim_scale(p_small_blind)::text||'/'||trim_scale(p_big_blind)::text"
+    );
   });
 
   it('blind_structure is PARSED, not cast — it is a text column of JSON', () => {

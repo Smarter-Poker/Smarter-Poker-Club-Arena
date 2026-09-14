@@ -1219,6 +1219,15 @@ jobs:
           PGBIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/dev/probe-agent-downline-rake-scope-pg17.py
 
+      - name: Conservation recognizes actual posted house corrections
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: >-
+          python3 scripts/ci/test-conservation-corrections.py
+          --fixture scripts/ci/fixtures/conservation-corrections/production-definition.json
+          --candidate supabase/migrations/20260914123403_conservation_observes_house_funded_corrections.sql
+          --output artifacts/conservation-corrections
+
       - name: Certified V31 PostgreSQL 17 behavior gate
         if: >-
           github.event_name == 'schedule' ||

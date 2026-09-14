@@ -40,6 +40,10 @@ import { bankrollEvent } from './HorseBankrollTelemetry.js';
 import { buildLadder } from '../tournament/blindLadder.js';
 import { mttBountyAmount } from '../tournament/mttBountyAllocation.js';
 import {
+  mysteryBountyCreationColumns,
+  type MysteryBountyCreationInput,
+} from '../domain/mysteryBountyCreation.js';
+import {
   MTT_BLIND_PRESETS,
   mttSpeedColumns,
   mttPayoutPercent,
@@ -101,7 +105,7 @@ function buyInColumns(
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-interface TournamentConfig {
+interface TournamentConfig extends MysteryBountyCreationInput {
   name: string;
   type: 'mtt' | 'bounty' | 'progressive_bounty' | 'mystery_bounty';
   gameVariant: string;
@@ -172,7 +176,7 @@ interface AtomicSeatFirstCreation {
   tableId: string;
 }
 
-interface XMTTConfig {
+interface XMTTConfig extends MysteryBountyCreationInput {
   name: string;
   type: 'mtt' | 'bounty' | 'progressive_bounty' | 'mystery_bounty';
   gameVariant: string;
@@ -3874,6 +3878,7 @@ export class TournamentRecurringService {
             is_bounty: isBountyType,
             is_pko: config.type === 'progressive_bounty',
             is_mystery_bounty: config.type === 'mystery_bounty',
+            ...(config.type === 'mystery_bounty' ? mysteryBountyCreationColumns(config) : {}),
             bounty_amount: bountyAmount,
             mystery_bounty_min: mysteryMin,
             mystery_bounty_max: mysteryMax,
@@ -4111,6 +4116,7 @@ export class TournamentRecurringService {
             is_bounty: isBountyType,
             is_pko: config.type === 'progressive_bounty',
             is_mystery_bounty: config.type === 'mystery_bounty',
+            ...(config.type === 'mystery_bounty' ? mysteryBountyCreationColumns(config) : {}),
             bounty_amount: bountyAmount,
             mystery_bounty_min: mysteryMin,
             mystery_bounty_max: mysteryMax,

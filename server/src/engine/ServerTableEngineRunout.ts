@@ -1646,16 +1646,34 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     this.runItTwiceEngine.addEventListener((event) => {
       if (event.type !== 'RIT_DECLINED') return;
       if ((event as Record<string, unknown>).reason !== 'timeout') return;
-      /* NAME THE SEAT THAT HELD THINGS UP (2026-09-13). The engine's expiry
-         now lists who had not answered when the clock ran out. When that is
-         exactly one player the felt can say so, the way it already names a
-         decliner; two or more silent seats keep the collective line. */
+      /* TWO RULES, BOTH TRUE, COMPOSED (2026-09-14 merge).
+
+         THE EVENT KNOWS WHICH HAND IT IS ABOUT. The DeadlineScheduler fires
+         the auto-decline on its own clock, and this listener used to read
+         `this.handCount` at FIRE time while the event carries its own
+         `handId` - `${tableId}:${handCount}`, stamped when the offer was made.
+         A timeout surfacing after the hand turned over toasted "Running It
+         Once" on the NEXT hand and, because emitRitSingleRun stamps
+         `ritSingleRunNotifiedHand`, SUPPRESSED that hand's own legitimate
+         notice. One late timer, two wrong answers. So a stale hand is dropped
+         here, before anything is announced.
+
+         AND THE SEAT THAT HELD THINGS UP IS NAMED (2026-09-13). The engine's
+         expiry lists who had not answered; exactly one silent seat can be
+         named the way a decliner already is, and two or more keep the
+         collective line. Both notices carry the hand they are about, so the
+         naming cannot land on the wrong hand either. */
+      const handId = (event as Record<string, unknown>).handId;
+      if (typeof handId !== 'string') return;
+      const declinedHand = Number(handId.slice(handId.lastIndexOf(':') + 1));
+      if (!Number.isFinite(declinedHand) || declinedHand !== this.handCount) return;
       const unanswered = (event as Record<string, unknown>).unanswered;
       const silent = Array.isArray(unanswered)
         ? unanswered.filter((id) => typeof id === 'string')
         : [];
-      if (silent.length === 1) this.emitRitSingleRun('no_answer', silent[0] as string);
-      else this.emitRitSingleRun('no_agreement');
+      if (silent.length === 1)
+        this.emitRitSingleRun('no_answer', silent[0] as string, declinedHand);
+      else this.emitRitSingleRun('no_agreement', undefined, declinedHand);
     });
   }
 
@@ -1691,15 +1709,25 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       | 'no_answer'
       | 'no_consent_recorded'
       | 'deck_too_short',
-    playerId?: string
+    playerId?: string,
+    /**
+     * The hand this notice is ABOUT. Defaults to the live hand, which is right
+     * for every synchronous caller. A caller driven by a timer (the RIT
+     * auto-decline forwarder) passes the hand captured when the offer was made,
+     * so a late timeout cannot claim - or silence - a hand it never saw.
+     */
+    handNumber: number = this.handCount
   ): void {
-    if (this.ritSingleRunNotifiedHand === this.handCount) return;
-    this.ritSingleRunNotifiedHand = this.handCount;
+    // A notice for a hand that is already over reaches players watching a
+    // different one.
+    if (handNumber !== this.handCount) return;
+    if (this.ritSingleRunNotifiedHand === handNumber) return;
+    this.ritSingleRunNotifiedHand = handNumber;
     try {
       this.hub?.emitEvent(this.tableId, {
         type: 'rit_single_run',
         table_id: this.tableId,
-        hand_number: this.handCount,
+        hand_number: handNumber,
         reason,
         player_id: playerId ?? null,
       });
@@ -2115,9 +2143,20 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     }
 
     // Deduct rake + BBJ once, scaling every winner proportionally (integer cents).
-    const totalPot = pots.reduce((sum, p) => sum + p.amount, 0);
+    /* SNAPPED TO CENTS AT THE SOURCE (2026-09-09). `totalPot` is a float
+       `reduce` over the pot layers, so it carries the ordinary += drift, and
+       both values below travel: `netPot` ships as `pot_distributed.net_pot`,
+       and `totalPot` is written to `currentHandPotSize`, which is snapshotted
+       into the rake record (ServerTableEngineSettlement) and broadcast as
+       `pot_distributed.total_pot` - the number the client stores as its
+       "Biggest Pot" tile. Every sibling money field in the same payload is
+       already repaired to cents; these two were the exceptions, so a table's
+       headline pot could read 34.050000000000004. Rounding here fixes both
+       fields and the rake record at once, and `rakeScale` below (netPot /
+       totalPot) is measured on the same repaired numbers. */
+    const totalPot = Math.round(pots.reduce((sum, p) => sum + p.amount, 0) * 100) / 100;
     const { rake, bbjFee } = controller.computeRakeAndBBJ();
-    const netPot = Math.max(0, totalPot - rake - bbjFee);
+    const netPot = Math.max(0, Math.round((totalPot - rake - bbjFee) * 100) / 100);
 
     // Scale every winner's pre-rake share down to the post-rake total.
     //
@@ -3341,12 +3380,47 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       // TREATMENT"): the old ~1s decline was a TELL. A human leader stops the
       // table for up to 25s while they read the dialog; a table that rolled on
       // after one second told every watching player which seat was a horse —
-      // the exact rhythm leak Dan rejected on the rebuy pause. A horse now
-      // "reads the offer" for a humanlike 5-12s before declining. Pace cost is
+      // the exact rhythm leak Dan rejected on the rebuy pause. Pace cost is
       // bounded: a decline is FINAL for the hand (2026-08-26), so a hand pays
       // this pause once per leader, not once per street.
-      5000 + Math.floor(Math.random() * 7000)
+      //
+      // 2026-09-09, TWO CORRECTIONS TO THAT FIX:
+      //
+      //   1. It sampled 5-12s out of the 25s a human gets. The law's test is
+      //      "is it IDENTICAL", not "is it closer than it was" - and a fleet
+      //      that never once takes longer than twelve seconds on a window that
+      //      is twenty-five seconds long is still a rhythm you can read off the
+      //      felt, just a slower one. The sample now spans the WHOLE human
+      //      window, from a beat that is plausibly instant to just inside the
+      //      timeout (a decline landing after it would be indistinguishable
+      //      from the timeout, and the offer resolves itself then anyway).
+      //   2. It used `Math.random()`, in the engine's own decision path, which
+      //      the note above horseRitVerdict states this file does not do: a
+      //      replay of a hand must answer the same way twice, and a random
+      //      answer is not testable. Same deterministic (playerId, handCount)
+      //      hash horseRitVerdict uses, so two horses at one table still differ
+      //      from each other and from themselves on the next hand.
+      this.horseInsuranceThinkMs(
+        leaderId,
+        this.insuranceEngine.offerTimeoutSeconds(this.tableId) * 1000
+      )
     );
+  }
+
+  /**
+   * How long a horse "reads" an insurance dialog before declining: uniform
+   * across the same window a human is given, derived deterministically from
+   * (playerId, handCount). `windowMs` is the human offer timeout; the sample
+   * stops a beat short of it so a decline never races the timeout it is meant
+   * to look like an alternative to.
+   */
+  protected horseInsuranceThinkMs(playerId: string, windowMs: number): number {
+    let h = 0;
+    for (let i = 0; i < playerId.length; i++) {
+      h = (h * 31 + playerId.charCodeAt(i)) % 1000003;
+    }
+    const spread = Math.max(1, windowMs - 1500);
+    return 400 + ((h + this.handCount * 8191) % spread);
   }
 
   protected waitForInsuranceResponses(onComplete: () => void): void {

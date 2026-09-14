@@ -84,9 +84,18 @@ export default function EngineDashboard() {
       },
       500
     );
-    // TABLE_BREAK_COMPLETED listener removed 2026-08-28: the server emits it
-    // only on the engine channel; it is never relayed onto the client bus, so
-    // this refresh never fired. Revive via a relay if wanted.
+    /* TABLE_BREAK_COMPLETED listener removed 2026-08-28. The note here said the
+       server "emits it only on the engine channel", which was wrong in a way
+       worth correcting (2026-09-09): THE SERVER DOES NOT EMIT IT AT ALL. The
+       only producer is TableBreakEngine.initiateBreak, and no method on that
+       class is ever called - it is constructed per table engine
+       (ServerTableEngineBase.ts:1968) and left there. So the event has no
+       channel to be relayed off, and "revive via a relay" would have sent the
+       next agent looking for a broadcast that has never existed.
+       TABLE_BREAK_WARNING is live now - the live break path in
+       TournamentManager.checkTableBalance announces it and
+       tournamentEventBridge relays it - but STARTED and COMPLETED still have no
+       producer. */
     // Phase 4: Refresh stats on bomb pot triggers (cash game activity)
     const unsubBombPot = masterBus.subscribeDebounced(
       'BOMB_POT_TRIGGERED',

@@ -1576,7 +1576,33 @@ export default function TournamentPage() {
                 />
               )}
 
-              {/* Payout Structure */}
+              {/* ═══════════════════════════════════════════════════════════════
+                  PAYOUTS — priced by the engine's rule, not by this file
+                  ═══════════════════════════════════════════════════════════════
+
+                  This list used to parse `payout_structure` inline and price
+                  each place as `Math.trunc(((prize_pool * pct) / 100) * 100) /
+                  100` - the exact expression src/lib/payoutMath.ts was written
+                  to delete, and the last surviving copy of it. Three defects in
+                  one line:
+
+                    * it TRUNCATED a binary float where the engine rounds. Pool
+                      513.00, place 8 at 3.5%: (513 * 3.5 / 100) * 100 is
+                      1795.4999999999998, so this printed 17.95 while the wallet
+                      was credited 17.96 (payoutMath.ts);
+                    * it had no residual rule, so the places shown did not sum
+                      to the pool - 13 of 78 production (pool, structure) pairs
+                      showed a different number from the one that was paid;
+                    * it read the raw `prize_pool`, so a guaranteed event's
+                      overlay was missing from every figure.
+
+                  `placePrize` prices the WHOLE ladder in integer cents and
+                  reads one place out of it, which is the only way the residual
+                  can be expressed. The ladder and its pool are resolved once
+                  into `selectedPayouts` / `selectedPlaceLadderPool` above.
+                  A pool this page cannot yet determine is `null` and renders
+                  as "-" rather than as a number nobody can stand behind
+                  (10.86: "could not tell" is its own outcome). */}
               <div className="payout-structure">
                 <h3>Payouts</h3>
                 <div className="payout-list">
@@ -1695,6 +1721,14 @@ export default function TournamentPage() {
               {selectedTournament.status === 'COMPLETED' && (
                 <div className="tourn-results-overlay">
                   <div className="results-header">Final Standings</div>
+                  {/* The same one rule as the live Payouts list above, for the
+                      same reason: this podium truncated a float off the raw
+                      pool and could print a different number from the one the
+                      winner was actually paid. Stronger here than a derivation
+                      can be - the RECORDED prize on the entry row is what the
+                      player was credited, so it wins outright, and the ladder
+                      is only the fallback when no prize was recorded. Prefer
+                      the witness that was there (10.9). */}
                   <div className="results-podium">
                     {selectedPayouts.slice(0, 3).map((p, i) => {
                       const recorded = liveEntries.find(

@@ -19,7 +19,19 @@
  *
  *   prize pool          tournaments.prize_pool          (numeric, server owns
  *                       it: recalculated on every registration / rebuy / add-on
- *                       with the fee stripped and horses excluded)
+ *                       with the fee stripped)
+ *
+ *                       This block is headed "checked against production, not
+ *                       assumed" and until 2026-09-09 it also said "and horses
+ *                       excluded". Nothing in this tree does that, and nothing
+ *                       may: `process_tournament_rebuy` adds to the pool
+ *                       unconditionally, no migration puts `is_horse` anywhere
+ *                       near `prize_pool`, and a horse pays the same buy-in out
+ *                       of the same club wallet as anybody else. Excluding them
+ *                       would be a violation of CLAUDE.md 10.5 written into a
+ *                       comment as though it were the design - which is exactly
+ *                       the shape of the invented `is_horse` filter that law was
+ *                       written about.
  *   guarantee           tournaments.guaranteed_prize    (numeric)
  *   settled or not      tournaments.prize_pool_finalized (boolean, 20,880 rows
  *                       set) - the ONLY honest way to know whether these

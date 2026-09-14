@@ -1491,12 +1491,22 @@ export class MaintenanceBreak {
             completeTableReconnectFreeze(tableId, reconnectFreezeStartedAt, this.now());
           }
           engine.resumeFromMaintenance();
+          /* COUNTED WHERE IT HAPPENED (2026-09-09). This increment sat OUTSIDE
+             the try, so a table that threw on the line above was still counted
+             as resumed - and `tablesResumed` is published on /health as the one
+             figure an operator reads at :00:05 to decide whether the fleet came
+             back. It could only ever equal `tables`, which made it a number
+             that agrees with itself and tells you nothing: a fleet where every
+             table threw reported a full recovery. The catch below still keeps
+             one bad table from stranding its wave; it just no longer claims
+             that table resumed. A shortfall between `tablesResumed` and
+             `tables` is now the signal, and the warning names which tables. */
+          progress.tablesResumed++;
         } catch (err) {
           // One table that refuses to resume must not strand the rest of its
           // wave, and never the waves behind it.
           console.warn(`[MaintenanceBreak] could not resume table ${tableId}`, err);
         }
-        progress.tablesResumed++;
       }
       progress.done = index + 1;
       if (progress.done === progress.total) progress.finishedAt = this.now();

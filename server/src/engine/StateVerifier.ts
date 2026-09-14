@@ -120,11 +120,13 @@ const CHIP_TOLERANCE = 0.02;
 export class StateVerifier {
   // Track expected chip totals per table
   private chipTotals: Map<string, number> = new Map();
-  /** Bible V8 §3.5: Per-table Recovery FSM tracking desync detection → resync → healthy */
+  /**
+   * Bible V8 §3.5: per-table Recovery FSM. It DETECTS and it RECOVERS ON ITS
+   * OWN when the violations clear; it does not resync anything, and nothing in
+   * the engine reads it to decide anything. See the note where the resync
+   * operations used to be, below.
+   */
   private recoveryFSMs: Map<string, StateMachine<RecoveryFSMState>> = new Map();
-  /** Track consecutive failed resync attempts per table (circuit breaker) */
-  private resyncRetries: Map<string, number> = new Map();
-  private static readonly MAX_RESYNC_RETRIES = 3;
   private onViolation?: (event: ViolationEvent) => void;
 
   constructor(onViolation?: (event: ViolationEvent) => void) {
@@ -213,10 +215,17 @@ export class StateVerifier {
       // FSM: desync_detected → resync_required (confirmed critical violation)
       recoveryFSM.transition('resync_required');
     } else if (violations.length === 0 && recoveryFSM.state !== 'healthy') {
-      // Violations cleared — if we were in desync_detected, resolve back to healthy
+      /* Violations cleared, so the table is healthy again. Until 2026-09-09 the
+         only `-> healthy` edges were from `desync_detected` and
+         `resync_complete`, and verify() above walks straight through
+         desync_detected to `resync_required` on the same tick - so this branch
+         could never fire for the state it always landed in. One chip-
+         conservation violation pinned a table at resync_required for the life
+         of the process, and because the entry transition requires
+         `state === 'healthy'`, every LATER critical violation on that table
+         went unrecorded. StateMachine.ts now carries the missing edge. */
       if (recoveryFSM.canTransition('healthy')) {
         recoveryFSM.transition('healthy');
-        this.resyncRetries.delete(context.tableId);
       }
     }
 
@@ -288,60 +297,31 @@ export class StateVerifier {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // RECOVERY FSM OPERATIONS (Bible V8 §3.5)
+  // RECOVERY FSM OPERATIONS (Bible V8 §3.5) — DELETED 2026-09-09
   // ═══════════════════════════════════════════════════════════════════════════
-
-  /**
-   * Initiate a resync for a table. Called by ServerTableEngine when
-   * the recovery FSM reaches 'resync_required'.
-   */
-  beginResync(tableId: string): boolean {
-    const fsm = this.getRecoveryFSM(tableId);
-    if (fsm.state !== 'resync_required') return false;
-    // FSM: resync_required → resyncing
-    return fsm.transition('resyncing');
-  }
-
-  /**
-   * Mark resync as complete. Called after server has sent fresh state to all clients.
-   */
-  completeResync(tableId: string): boolean {
-    const fsm = this.getRecoveryFSM(tableId);
-    if (fsm.state !== 'resyncing') return false;
-    // FSM: resyncing → resync_complete → healthy
-    fsm.transition('resync_complete');
-    fsm.transition('healthy');
-    this.resyncRetries.delete(tableId);
-    return true;
-  }
-
-  /**
-   * Mark resync as failed. Retry or escalate to manual intervention.
-   */
-  failResync(tableId: string): RecoveryFSMState {
-    const fsm = this.getRecoveryFSM(tableId);
-    if (fsm.state !== 'resyncing') return fsm.state;
-
-    const retries = (this.resyncRetries.get(tableId) ?? 0) + 1;
-    this.resyncRetries.set(tableId, retries);
-
-    // FSM: resyncing → recovery_failed
-    fsm.transition('recovery_failed');
-
-    if (retries >= StateVerifier.MAX_RESYNC_RETRIES) {
-      // FSM: recovery_failed → manual_intervention (circuit breaker)
-      fsm.transition('manual_intervention');
-      reportError(
-        `Table ${tableId} exceeded max resync retries (${retries}). Manual intervention required.`,
-        'StateVerifier.MaxResyncRetries'
-      );
-    } else {
-      // FSM: recovery_failed → resync_required (retry)
-      fsm.transition('resync_required');
-    }
-
-    return fsm.state;
-  }
+  //
+  // `beginResync()`, `completeResync()` and `failResync()` lived here, along
+  // with a `resyncRetries` map and `MAX_RESYNC_RETRIES = 3` described in
+  // GAP-ANALYSIS-v8.md as a working "circuit breaker (max 3 retries → manual
+  // intervention)".
+  //
+  // NOTHING EVER CALLED ANY OF THEM. Verified across server/src, src/ and
+  // tests/: the only references were their own bodies and two documents
+  // claiming they were wired. So the engine had no resync path, the retry
+  // counter never counted, and `manual_intervention` was unreachable - three
+  // methods and a constant that existed only to make an audit read green,
+  // which is exactly what 10.86 rule 3 is about (a guard must have a reader,
+  // and you must be able to name them).
+  //
+  // Deleted rather than wired, because building a real client resync is a
+  // design decision and not a defect fix, and because leaving them in place
+  // would have kept telling the next agent the breaker was armed. What
+  // survives is the honest half: verify() detects, reports through
+  // reportError/onViolation, and now returns the table to `healthy` when the
+  // violations clear (StateMachine.ts, the resync_required -> healthy edge).
+  // `getRecoveryState()` / `isHealthy()` remain as OBSERVATION only - no code
+  // gates on them. If a resync is ever built, add it here and give the states
+  // beyond resync_required a driver at the same time.
 
   // ═══════════════════════════════════════════════════════════════════════════
   // INDIVIDUAL CHECKS
@@ -616,12 +596,10 @@ export class StateVerifier {
   clearTable(tableId: string): void {
     this.chipTotals.delete(tableId);
     this.recoveryFSMs.delete(tableId);
-    this.resyncRetries.delete(tableId);
   }
 
   dispose(): void {
     this.chipTotals.clear();
     this.recoveryFSMs.clear();
-    this.resyncRetries.clear();
   }
 }

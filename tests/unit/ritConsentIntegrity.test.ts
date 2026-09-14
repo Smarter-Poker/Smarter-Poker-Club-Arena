@@ -460,16 +460,32 @@ describe('the engine host re-reads the config and announces every single run', (
     expect(block).not.toContain('continueRunout');
   });
 
-  it('the auto-decline is forwarded to the wire, and only that', () => {
-    const fn = RUNOUT.slice(
-      RUNOUT.indexOf('protected wireRunItTwiceEvents()'),
-      RUNOUT.indexOf('protected wireRunItTwiceEvents()') + 1200
-    );
+  it('the auto-decline is forwarded to the wire, for the hand it belongs to, and only that', () => {
+    /* WIDENED AND EXTENDED 2026-09-09, not weakened. The forwarder gained the
+       hand-identity check below and the window it is read through had to grow
+       with it. It also no longer calls `emitRitSingleRun('no_agreement')` bare:
+       the DeadlineScheduler fires on its own clock, so a timeout surfacing
+       after the hand turned over used to toast "Running It Once" on the NEXT
+       hand AND consume that hand's own single-run notice. The event carries its
+       own handId; the forwarder reads it and drops a stale one. */
+    /* BOUNDED BY THE METHOD, NOT BY A BYTE COUNT (2026-09-14). Both sides of
+       this merge had guessed a window - 1200 on one, 2200 on the other - and
+       that disagreement IS the conflict: each grew the number when its own
+       addition fell off the end. A magic window also fails silently in the
+       other direction, passing because the code it watched slid out of view.
+       `sliceMethod` takes the whole method and grows with it. */
+    const fn = sliceMethod(RUNOUT, 'protected wireRunItTwiceEvents()');
     expect(fn).toContain("event.type !== 'RIT_DECLINED'");
     expect(fn).toContain("!== 'timeout'");
-    expect(fn).toContain("emitRitSingleRun('no_agreement')");
-    // 2026-09-13: a single silent seat is named; the collective line otherwise.
-    expect(fn).toContain("emitRitSingleRun('no_answer', silent[0] as string)");
+    // The stale-timeout guard: the hand comes from the EVENT, not the clock.
+    expect(fn).toMatch(/handId/);
+    expect(fn).toMatch(/declinedHand !== this\.handCount\) return;/);
+    /* 2026-09-13: a single silent seat is named, the collective line otherwise.
+       Both pins moved on 2026-09-14 to carry `declinedHand`: the two rules
+       compose, so every notice this forwarder emits now states the hand it is
+       about, and neither can land on the hand after it. */
+    expect(fn).toContain("emitRitSingleRun('no_answer', silent[0] as string, declinedHand)");
+    expect(fn).toContain("emitRitSingleRun('no_agreement', undefined, declinedHand)");
   });
 
   it('a chooser who accepts without a run count gets an actionable error', () => {

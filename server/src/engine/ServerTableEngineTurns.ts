@@ -1178,6 +1178,17 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           this.forceArmTurnTimer(player.seat, this.tableInfo?.action_time_seconds || 15);
         }
 
+        /* THIS EXPIRY COUNTS TOO (2026-09-09). Both sibling expiry paths - the
+           ordinary turn clock and the AUTO time-bank - call this, for the
+           reason AUDIT FIX 2026-07-19 gives: a connected player who lets the
+           clock run out is AFK, and the consecutive-timeout ladder is the only
+           thing that eventually sits them out. This path recorded telemetry and
+           broadcast `time_bank_timeout` but never told the ladder, so a player
+           who pressed the time-bank button and walked away could never reach
+           the cap: every hand cost the table a full clock plus a full bank, and
+           the seat stayed in for ever. */
+        this.disconnectEngine.recordConnectedTimeout(this.tableId, userId);
+
         // FIX 149: Wire telemetry — manual time bank expiry
         this.engineTelemetry.recordTimerExpired(this.tableId);
 
@@ -3117,12 +3128,31 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         // bank has fewer seconds left than the planned burn. So: burn the bank
         // ONLY when a full activation is genuinely available; otherwise the tank
         // stays inside the ordinary clock.
+        //
+        // 2026-09-09: this gate used to be a HAND-WRITTEN copy of the engine's
+        // rules - table switch, `usesRemaining !== 0`, enough seconds - and it
+        // was missing the per-street cap (`streetActivations >= 2`), which is
+        // the refusal `tryActivate` gives on a THIRD bank-mode draw for one
+        // seat on one street. When that happened the horse scheduled past the
+        // turn clock exactly as this note says it must not, the auto-activation
+        // was refused, forceResolveSeat auto-folded the seat, and the real
+        // decision was discarded when it finally fired - the V28 failure again,
+        // through the one rule the copy did not carry. Ask the engine, so the
+        // gate cannot drift from the refusals a second time.
         const bank = this.timeBankEngine?.getPlayerBank?.(this.tableId, player.user_id);
         // 2026-09-11: mirror EVERY refusal tryActivate can return, not only
         // 'depleted'. A bank still counting down from this seat's previous
         // turn ('already_active') or a street that has spent both activations
         // ('street_limit') refuses the auto-activation at 17 s, and the seat
         // is auto-folded with its real answer still in the think timer.
+        //
+        // These three conditions are pinned BY SOURCE TEXT in
+        // aHorseActionReleasesItsClocks.test.ts ("the bank-burn plan mirrors
+        // every refusal tryActivate can return"), so the list stays spelled out
+        // here rather than delegated. `TimeBankEngine.activationRefusal()` is
+        // the same list expressed once and is what `tryActivate` itself now
+        // asks; if this gate is ever moved onto it, move that pin in the same
+        // commit.
         const bankUsable =
           this.tableInfo?.time_bank_enabled !== false &&
           bank != null &&

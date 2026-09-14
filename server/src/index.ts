@@ -60,6 +60,7 @@ import { HorseSessionRotator } from './services/HorseSessionRotator.js';
 import { StableHandExecutor } from './services/StableHandExecutor.js';
 import { registerLeadershipShutdownHandler } from './services/leadership.js';
 import { persistEngineAlertsBeforeExit } from './services/engineAlerts.js';
+import { assertOriginalLaunchRegistration } from './services/originalLaunchBroker.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -86,6 +87,14 @@ const PORT = parseInt(process.env.PORT || '8080', 10);
 // BOOTSTRAP
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// This process-level seam also runs on Docker automatic restart. The draft
+// broker remains inactive and cannot admit a launch without canonical commit.
+if (
+  process.env.F06_ORIGINAL_LAUNCH_REQUIRED !== undefined &&
+  process.env.F06_ORIGINAL_LAUNCH_REQUIRED !== '0'
+) {
+  await assertOriginalLaunchRegistration();
+}
 const gameServer = new GameServer();
 
 // Phase 1.1 PR-2: Attach native WebSocket server at /ws/table/:tableId.

@@ -137,6 +137,38 @@ function unregisterReasonText(reason: string | undefined): string {
   return UNREGISTER_REASON_TEXT[reason ?? ''] ?? `Could not unregister (${reason ?? 'unknown'})`;
 }
 
+/**
+ * The seat-first purchase (`fn_take_seat_and_buy_in`, heads-up and spins)
+ * answers the same refusals as the lobby register door plus its own seat
+ * reasons. Diamond Phase 8: a Diamond seat purchase answers with the Diamond
+ * reasons above, and `insufficient_diamonds` must be read before the bare
+ * chip `insufficient` so a Diamond player is not told they lack chips.
+ */
+export function seatFirstBuyInReasonIsKnown(reason: string | undefined): boolean {
+  return /seat_taken|insufficient|already_started|game_already_started|tournament_full|not_a_seat_first_game|table_limit_reached|FOUR TABLE LIMIT|diamond_tournaments_not_open|diamond_debt_requires_settlement/.test(
+    reason ?? ''
+  );
+}
+
+export function seatFirstBuyInRefusalText(reason: string | undefined): string {
+  const r = reason ?? '';
+  if (/seat_taken/.test(r)) return 'That Seat Was Just Taken';
+  if (/insufficient_diamonds/.test(r)) return REGISTER_REASON_TEXT.insufficient_diamonds;
+  if (/diamond_tournaments_not_open/.test(r))
+    return REGISTER_REASON_TEXT.diamond_tournaments_not_open;
+  if (/diamond_debt_requires_settlement/.test(r)) {
+    return REGISTER_REASON_TEXT.diamond_debt_requires_settlement;
+  }
+  if (/insufficient/.test(r)) return 'Not Enough Chips For This Buy In';
+  if (/already_started|game_already_started/.test(r)) return 'This Game Has Already Started';
+  if (/tournament_full/.test(r)) return 'This Game Is Full';
+  if (/not_a_seat_first_game/.test(r)) return 'Seats Are Not For Sale At This Table';
+  if (/table_limit_reached|FOUR TABLE LIMIT/.test(r)) {
+    return 'You Are Already In Four Games, Leave One To Join Another';
+  }
+  return 'Could Not Take That Seat, Please Try Again';
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════

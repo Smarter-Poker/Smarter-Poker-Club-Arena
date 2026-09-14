@@ -32,7 +32,8 @@ receipts are explicitly unsupported. No private cards or action payloads enter
 this response. The reader always reports source coverage as not established.
 
 Verification passed server compilation, 113 focused tests across four files and
-11,926 server tests across 802 files in 67.72 seconds. The existing 145 skipped
+11,943 server tests across 803 files in 66.68 seconds after integrating main
+99207838e0969150258a9dccde0b8e6c259bc9a4 and the source-witness branch. The existing 145 skipped
 tests and one skipped file remain declared. The PostgreSQL 17 proof passed all
 63 groups, retaining prior acquisition, restart, queue, privacy and retention
 checks. New checks recover two witnesses recorded by the actual compiled worker

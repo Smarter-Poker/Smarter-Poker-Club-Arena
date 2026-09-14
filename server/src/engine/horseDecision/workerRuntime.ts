@@ -58,7 +58,7 @@ import type {
   CommitDecisionEffectsRequest,
   HorseDecisionStatusRequest,
 } from './protocol.js';
-import { buildHorseDecisionKey } from './protocol.js';
+import { buildHorseDecisionKey, validatedHorsePolicySamplingKey } from './protocol.js';
 
 export interface HorseDecisionWorkerDependencies {
   startServices(): Promise<HorseDecisionWorkerReadiness>;
@@ -1033,7 +1033,10 @@ export class HorseDecisionWorkerRuntime {
 
   private executeFast(request: FastHorseDecisionRequest): void {
     const canonicalRng = this.deps.saveRng();
-    const rngBefore = this.requestRngSeed(request, 'fast');
+    const rngBefore = this.requestRngSeed(
+      { ...request, decisionKey: validatedHorsePolicySamplingKey(request) },
+      'fast'
+    );
     this.deps.restoreRng(rngBefore);
     const startedAt = this.deps.now();
     let captured: CapturedHorseMindDecision<ReturnType<typeof HorseLogic.decide>>;

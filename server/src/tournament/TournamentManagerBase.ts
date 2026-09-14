@@ -79,6 +79,7 @@ import {
   type MysteryBountyActivationMode,
   type MysteryBountyStage,
 } from './mysteryBountyActivation.js';
+import { UNIT_CENTS_ASSET_NOT_READ } from './tournamentUnit.js';
 import { applySpinDrawPatch } from './spinDrawSync.js';
 import { proveSpinDrawWithParking } from './spinLaunchParking.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
@@ -2396,7 +2397,12 @@ export abstract class TournamentManagerBase {
         // knockouts. fn_mystery_bounty_seed subtracts this before checking
         // the inventory sum; not subtracting it here is what refused every
         // seed this platform has ever attempted. See mysteryPoolCents.
-        poolCentsFromNumeric(fresh.bounty_pool_paid ?? 0)
+        poolCentsFromNumeric(fresh.bounty_pool_paid ?? 0),
+        // This manager has not read the tournament's club, so it cannot say
+        // whether the event pays in cents or in whole Diamonds. The named
+        // constant is that admission; it is a cent because every tournament
+        // that can currently exist is a chip tournament. See tournamentUnit.ts.
+        UNIT_CENTS_ASSET_NOT_READ
       );
     } catch (err) {
       // A bounty pool that is not a whole number of cents means something
@@ -2457,7 +2463,9 @@ export abstract class TournamentManagerBase {
           poolCentsFromNumeric(fresh.bounty_pool),
           fresh.mystery_bounty_pool_percent,
           fresh.mystery_bounty_regular_pool_percent,
-          poolCentsFromNumeric(fresh.bounty_pool_paid ?? 0) + unrecordedCents
+          poolCentsFromNumeric(fresh.bounty_pool_paid ?? 0) + unrecordedCents,
+          // Same admission as the seed above: the club was never read here.
+          UNIT_CENTS_ASSET_NOT_READ
         );
       } catch (err) {
         reportError(err, 'Tournament.mystery_bounty_pool_not_in_cents');

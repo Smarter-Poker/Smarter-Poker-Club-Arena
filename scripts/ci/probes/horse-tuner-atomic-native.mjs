@@ -294,6 +294,253 @@ try {
     case: 'app roles cannot call the writer and no client role can mutate receipts directly',
     passed: true,
   });
+  await c.query(
+    readFileSync(
+      root + '/supabase/migrations/20260914002716_complete_horse_tuner_studies.sql',
+      'utf8'
+    )
+  );
+  await reset();
+  const second = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  await c.query('INSERT INTO profiles VALUES($1,true,$2)', [second, initial]);
+  let loseCompletion = false;
+  let losePreparation = true;
+  globalThis.horseTunerCompletionNative = {
+    supabase: {
+      rpc(name, p) {
+        const query =
+          name === 'fn_horse_tuner_recorded_horses'
+            ? 'SELECT fn_horse_tuner_recorded_horses($1) value'
+            : name === 'fn_complete_horse_tuner_study'
+              ? 'SELECT fn_complete_horse_tuner_study($1) value'
+              : name === 'fn_prepare_horse_tuner_study'
+                ? 'SELECT fn_prepare_horse_tuner_study($1) value'
+                : null;
+        assert.ok(query);
+        return {
+          async abortSignal(signal) {
+            assert.ok(signal instanceof AbortSignal);
+            try {
+              const r = await c.query(query, [p.p_run_date ?? p.p_payload]);
+              if (name === 'fn_prepare_horse_tuner_study' && losePreparation) {
+                losePreparation = false;
+                throw Error('lost roster reply');
+              }
+              if (name === 'fn_complete_horse_tuner_study' && loseCompletion) {
+                loseCompletion = false;
+                throw Error('lost completion reply');
+              }
+              return { data: r.rows[0].value, error: null };
+            } catch (error) {
+              return { data: null, error };
+            }
+          },
+        };
+      },
+    },
+  };
+  const completionSource = readFileSync(
+    root + '/server/dist/services/HorseTunerStudyCompletion.js',
+    'utf8'
+  ).replace(
+    /import \{ supabase \} from '\.\/supabase\.js';/,
+    'const {supabase}=globalThis.horseTunerCompletionNative;'
+  );
+  const {
+    readRecordedHorseTunes: progress,
+    completeHorseTunerStudy: complete,
+    prepareHorseTunerStudy: prepare,
+  } = await import(
+    'data:text/javascript;base64,' + Buffer.from(completionSource).toString('base64')
+  );
+  await c.query('SET ROLE service_role');
+  assert.deepEqual(await progress(day), { status: 'snapshot', horseIds: [] });
+  assert.deepEqual(await prepare(day, 2, [actor, second]), { status: 'unknown' });
+  assert.deepEqual(await prepare(day, 2, [actor, second]), {
+    status: 'prepared',
+    studied: 2,
+    horseIds: [actor, second],
+  });
+  assert.equal((await record(request())).status, 'recorded');
+  assert.equal(await complete(day, 2, [actor, second]), false);
+  assert.equal(
+    (await c.query('SELECT count(*)::int n FROM horse_tuner_study_completions')).rows[0].n,
+    0
+  );
+  assert.deepEqual(await progress(day), { status: 'snapshot', horseIds: [actor] });
+  await c.query('RESET ROLE');
+  results.push({
+    case: 'one accepted horse cannot complete a two-horse study; no marker is written',
+    passed: true,
+  });
+
+  // A new database connection only reads the durable first horse; the second
+  // write resumes independently without rewriting the already accepted profile.
+  await c.end();
+  c = new Client(options);
+  await c.connect();
+  await c.query('SET ROLE service_role');
+  assert.deepEqual(await progress(day), { status: 'snapshot', horseIds: [actor] });
+  const secondRequest = { ...request(), horseId: second };
+  assert.deepEqual(await prepare(day, 1, [actor]), {
+    status: 'prepared',
+    studied: 2,
+    horseIds: [actor, second],
+  });
+  assert.equal(await complete(day, 1, [actor]), false);
+  assert.equal((await record(secondRequest)).status, 'recorded');
+  loseCompletion = true;
+  assert.equal(await complete(day, 2, [actor, second]), false);
+  assert.equal(
+    (await c.query('SELECT count(*)::int n FROM horse_tuner_study_completions')).rows[0].n,
+    1
+  );
+  assert.equal(await complete(day, 2, [actor, second]), true);
+  assert.equal(await complete(day, 1, [actor]), false);
+  await c.query('RESET ROLE');
+  assert.deepEqual(await state(), { profile: request().nextProfile, audits: 2, receipts: 2 });
+  results.push({
+    case: 'new connection resumes durable progress; lost completion reply replays one immutable marker',
+    passed: true,
+  });
+
+  await c.query('TRUNCATE horse_tuner_study_completions');
+  await c.query('DELETE FROM horse_self_tune_log WHERE horse_id=$1', [second]);
+  assert.equal(await complete(day, 2, [actor, second]), false);
+  results.push({
+    case: 'a receipt whose matching audit is missing cannot seal the study',
+    passed: true,
+  });
+  await c.query('TRUNCATE horse_tuner_study_completions');
+  await c.query('BEGIN');
+  await c.query("SELECT pg_advisory_xact_lock(hashtextextended('horse-tuner-study:'||$1,0))", [
+    day,
+  ]);
+  const busyComplete = (
+    await other.query('SELECT fn_complete_horse_tuner_study($1) value', [
+      JSON.stringify({ version: 1, runDate: day, studied: 1, horseIds: [actor] }),
+    ])
+  ).rows[0].value;
+  assert.equal(busyComplete.reason, 'study_busy');
+  await c.query('ROLLBACK');
+  for (const value of [
+    null,
+    '{',
+    'x'.repeat(100001),
+    JSON.stringify({ version: 1, runDate: day, studied: 2, horseIds: [actor, actor] }),
+    JSON.stringify({ version: 1, runDate: day, studied: 0, horseIds: [actor] }),
+    JSON.stringify({ version: 1, runDate: day, studied: 2, horseIds: [second, actor] }),
+    JSON.stringify({ version: 1, runDate: day, studied: 1, horseIds: [null] }),
+    JSON.stringify({ version: 1, runDate: day, studied: 1, horseIds: ['invalid'] }),
+    JSON.stringify({ version: 1, runDate: '2026-02-30', studied: 0, horseIds: [] }),
+    JSON.stringify({ version: 1, runDate: day, studied: 2049, horseIds: [] }),
+    JSON.stringify({ version: 1, runDate: day, studied: '1', horseIds: [actor] }),
+    JSON.stringify({ version: 1, runDate: day, studied: 1, horseIds: [actor], extra: true }),
+    JSON.stringify({ runDate: day, version: 1, studied: 1, horseIds: [actor] }),
+    JSON.stringify({ version: 1, runDate: day, studied: 1, horseIds: [actor] }, null, 2),
+  ]) {
+    for (const fn of ['fn_prepare_horse_tuner_study', 'fn_complete_horse_tuner_study']) {
+      const r = (await c.query('SELECT ' + fn + '($1) value', [value])).rows[0].value;
+      assert.equal(r.reason, 'invalid_request');
+    }
+  }
+  assert.equal(
+    (await c.query('SELECT count(*)::int n FROM horse_tuner_study_completions')).rows[0].n,
+    0
+  );
+  results.push({
+    case: 'contention and malformed/cohort/byte-budget requests refuse without a completion marker',
+    passed: true,
+  });
+  assert.deepEqual(await prepare('2026-09-15', 1, []), {
+    status: 'prepared',
+    studied: 1,
+    horseIds: [],
+  });
+  assert.equal(await complete('2026-09-15', 1, []), true);
+  results.push({
+    case: 'a successfully examined below-floor cohort can record explicit zero eligibility',
+    passed: true,
+  });
+  for (const role of ['anon', 'authenticated', 'service_role']) {
+    await c.query('SET ROLE ' + role);
+    await assert.rejects(
+      c.query('DELETE FROM horse_tuner_study_completions'),
+      (e) => e.code === '42501'
+    );
+    await assert.rejects(
+      c.query('DELETE FROM horse_tuner_study_rosters'),
+      (e) => e.code === '42501'
+    );
+    if (role !== 'service_role') {
+      await assert.rejects(
+        c.query('SELECT fn_prepare_horse_tuner_study($1)', ['{}']),
+        (e) => e.code === '42501'
+      );
+      await assert.rejects(
+        c.query('SELECT * FROM horse_tuner_study_completions'),
+        (e) => e.code === '42501'
+      );
+      await assert.rejects(
+        c.query('SELECT fn_horse_tuner_recorded_horses($1)', [day]),
+        (e) => e.code === '42501'
+      );
+      await assert.rejects(
+        c.query('SELECT fn_complete_horse_tuner_study($1)', ['{}']),
+        (e) => e.code === '42501'
+      );
+    }
+    await c.query('RESET ROLE');
+  }
+  results.push({
+    case: 'player roles cannot inspect or forge study proof; service cannot directly mutate completion rows',
+    passed: true,
+  });
+  await reset();
+  await c.query(
+    'CREATE TABLE horse_job_runs(job text,run_date date,claimed_at timestamptz,claimed_by text); CREATE TABLE horse_league_results(run_date date,matchup text,hands int,bb100 numeric,stderr numeric)'
+  );
+  const auditDay = '2026-09-14';
+  await c.query("INSERT INTO horse_job_runs VALUES('self_tuner',$1,now(),'fixture')", [auditDay]);
+  await c.query("INSERT INTO horse_league_results VALUES($1,'fixture',100,1,1)", [auditDay]);
+  await c.query('INSERT INTO horse_self_tune_log(horse_id,run_date,hands) VALUES($1,$2,500)', [
+    actor,
+    auditDay,
+  ]);
+  const findings = async () =>
+    (await c.query('SELECT fn_audit_nightly_job_health($1) value', [auditDay])).rows[0].value;
+  assert.ok(
+    (await findings()).some(
+      (f) => f.code === 'nightly_job_incomplete' && f.evidence.individual_audit_rows === 1
+    )
+  );
+  await c.query('DELETE FROM horse_self_tune_log WHERE run_date=$1', [auditDay]);
+  assert.equal((await record({ ...request(), runDate: auditDay })).status, 'recorded');
+  assert.ok((await findings()).some((f) => f.code === 'nightly_job_incomplete'));
+  assert.equal((await prepare(auditDay, 1, [actor])).status, 'prepared');
+  assert.equal(await complete(auditDay, 1, [actor]), true);
+  assert.ok(!(await findings()).some((f) => f.code === 'nightly_job_incomplete'));
+  results.push({
+    case: 'the real nightly SQL audit reports partial output and clears only with the cohort completion receipt',
+    passed: true,
+  });
+  await c.query('TRUNCATE horse_tuner_write_receipts');
+  await c.query(
+    "INSERT INTO horse_tuner_write_receipts(horse_id,run_date,request_hash,request_payload,profile_changed,audit_id) SELECT md5(i::text)::uuid,$1,repeat('a',64),'{}',false,i FROM generate_series(1,2049) i",
+    [day]
+  );
+  assert.deepEqual(await progress(day), { status: 'unknown' });
+  const overflow = (await c.query('SELECT fn_horse_tuner_recorded_horses($1) value', [day])).rows[0]
+    .value;
+  assert.equal(overflow.reason, 'horse_budget_exceeded');
+  await c.query("DELETE FROM horse_tuner_write_receipts WHERE horse_id=md5('2049')::uuid");
+  const bounded = await progress(day);
+  assert.equal(bounded.status, 'snapshot');
+  assert.equal(bounded.horseIds.length, 2048);
+  results.push({
+    case: 'bounded indexed progress accepts 2048 receipt identities and refuses the 2049th instead of truncating',
+    passed: true,
+  });
   proof = { results, calls, productionPostgrestVerified: false, productionDataWritten: false };
 } finally {
   if (c) await c.end();

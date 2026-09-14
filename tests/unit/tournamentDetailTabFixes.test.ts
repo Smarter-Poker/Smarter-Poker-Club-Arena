@@ -211,6 +211,30 @@ describe('the satellite mapper reads real columns', () => {
     expect(mapSatelliteRowToCard(row).late_reg_levels).toBe(6);
   });
 
+  it('preserves null fallback, explicit zero, level zero and finalized-pool closure', () => {
+    const mapped = mapSatelliteRowToCard({
+      ...row,
+      late_reg_levels: 0,
+      rebuy_levels: 6,
+      current_level: 0,
+      prize_pool_finalized: true,
+      started_at: '2026-09-14T10:00:00Z',
+    });
+    expect(mapped).toMatchObject({
+      late_reg_levels: 0,
+      rebuy_levels: 6,
+      current_level: 0,
+      prize_pool_finalized: true,
+      started_at: '2026-09-14T10:00:00Z',
+    });
+    expect(mapSatelliteRowToCard({ ...row, late_reg_levels: null, rebuy_levels: 6 })).toMatchObject(
+      { late_reg_levels: null, rebuy_levels: 6 }
+    );
+    for (const field of ['rebuy_levels', 'prize_pool_finalized', 'started_at', 'current_level']) {
+      expect(SATELLITE_COLUMNS.split(',').map((v) => v.trim())).toContain(field);
+    }
+  });
+
   it('selects named columns, not everything', () => {
     expect(SATELLITE_COLUMNS).not.toContain('*');
     expect(SATELLITE_COLUMNS).toContain('guaranteed_prize');

@@ -149,7 +149,15 @@ describe('a missing field cap is not a heads-up', () => {
 describe('the statuses the query fetches all have a branch', () => {
   it('LATE_REG is late reg, not "Registering"', () => {
     expect(
-      tournamentStatus(tRow({ status: 'LATE_REG', variant: 'mtt', max_players: 500 })).key
+      tournamentStatus(
+        tRow({
+          status: 'LATE_REG',
+          variant: 'mtt',
+          max_players: 500,
+          late_reg_levels: 3,
+          current_level: 1,
+        })
+      ).key
     ).toBe('late_reg');
   });
   it('a seat-first game in STARTING_SOON still reads its seats', () => {

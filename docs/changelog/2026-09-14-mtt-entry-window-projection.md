@@ -1,0 +1,11 @@
+# MTT lobby windows follow the engine's registration contract
+
+A tournament with late registration through level 3 and a longer minute setting could keep advertising late entry after the engine closed level 3. The lobby took the later of two windows, whereas the existing database authority gives levels precedence. It also ignored a finalized prize pool, admitted the exact minute cutoff, and substituted the scheduled start when actual start was absent. Another tournament-page adapter converted minutes into levels and dropped the real current-level/start fields before rendering its card.
+
+The shared display projection now matches the existing engine/database window: `late_reg_levels ?? rebuy_levels`, minutes only when no positive level cap applies, strict minute deadline, actual start required and finalized-pool closure. Invalid numeric projections cannot advertise entry. Entry, capacity, funding and the database clock remain owned by the existing registration RPC; the client projection grants no authority.
+
+Club home, tournament lists/details, satellite cards, the ticker and the table info panel carry the necessary fields. Null and explicit zero remain distinct. A missing level ladder/clock no longer produces an unrelated minutes deadline. The actual card reacts when finalization changes, while retaining its Watch action. Existing countdown-at-zero behavior remains unchanged.
+
+Validation: 12 original failures reproduced in 13 projection cases; 2,047 related client tests in 129 files and 46 existing engine entry-window tests in two files pass. The targeted rendered card and satellite-adapter cases pass. Full application typecheck retains exactly 26 identical native-dependency diagnostics before/after baseline 36cf2b142557eb0042790a5ff3a8f8c4403971bf. Local `npm run build` stops at that same typecheck; no clean local build or deployment is claimed. Required CI and serving acceptance remain separate. Current bounded live mismatch search returned no rows; the defect is proven by source and regression tests, not attributed to a rejected live human entry.
+
+No database migration or event mutation was performed. The installed entry-window authority and engine lifecycle remain unchanged.

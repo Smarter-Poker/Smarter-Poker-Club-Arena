@@ -113,7 +113,13 @@ describe('LATE REG', () => {
   });
 
   it('still honours an explicit LATE_REG status if one ever appears', () => {
-    expect(matchesTournamentSubFilter(mk({ status: 'LATE_REG' }), 'late_reg', NOW)).toBe(true);
+    expect(
+      matchesTournamentSubFilter(
+        mk({ status: 'LATE_REG', late_reg_levels: 3, current_level: 1 }),
+        'late_reg',
+        NOW
+      )
+    ).toBe(true);
   });
 
   it('excludes tournaments that have not started', () => {

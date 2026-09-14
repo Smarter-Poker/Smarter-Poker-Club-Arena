@@ -78,6 +78,8 @@ export const SATELLITE_COLUMNS = [
   'blind_structure',
   'current_level',
   'late_reg_levels',
+  'rebuy_levels',
+  'prize_pool_finalized',
   'late_reg_mins',
   'addon_levels',
   'is_rebuy',
@@ -190,9 +192,11 @@ export function mapSatelliteRowToCard(sat: Record<string, unknown>) {
     /* Late reg needs BOTH spellings: the card reads levels and minutes
        separately and treats either as enabling it. Passing neither is why no
        satellite card has ever shown a late-reg countdown. */
-    late_reg_levels: num(sat.late_reg_levels) || undefined,
+    late_reg_levels: sat.late_reg_levels == null ? null : Number(sat.late_reg_levels),
+    rebuy_levels: sat.rebuy_levels == null ? null : Number(sat.rebuy_levels),
+    prize_pool_finalized: sat.prize_pool_finalized === true,
     late_reg_mins: num(sat.late_reg_mins) || undefined,
-    current_level: num(sat.current_level) || undefined,
+    current_level: sat.current_level == null ? null : Number(sat.current_level),
     addon_levels: num(sat.addon_levels) || undefined,
     isRebuy: Boolean(sat.is_rebuy),
     is_reentry: Boolean(sat.is_reentry),

@@ -94,6 +94,8 @@ export interface LobbyTournamentRow {
   starting_chips: number;
   late_reg_mins?: number | null;
   late_reg_levels?: number | null;
+  rebuy_levels?: number | null;
+  prize_pool_finalized?: boolean | null;
   started_at?: string | null;
   current_level?: number | null;
   /**
@@ -871,7 +873,7 @@ export function tournamentMedallions(t: LobbyTournamentRow): RuleMedallion[] {
     });
 
   const lateMins = Number(t.late_reg_mins) || 0;
-  const lateLevels = Number(t.late_reg_levels) || 0;
+  const lateLevels = Number(t.late_reg_levels ?? t.rebuy_levels) || 0;
   if (lateMins > 0 || lateLevels > 0)
     rules.push({
       key: 'latereg',
@@ -932,6 +934,8 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
           max_players: t.max_players,
           late_reg_mins: t.late_reg_mins,
           late_reg_levels: t.late_reg_levels,
+          rebuy_levels: t.rebuy_levels,
+          prize_pool_finalized: t.prize_pool_finalized,
           started_at: t.started_at,
           current_level: t.current_level,
         },
@@ -953,7 +957,11 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
    * one — it falls through to the seat logic, which is the right answer for it.
    */
   if (status === 'LATE_REG' || status === 'LATE_REGISTRATION') {
-    if (classifyTournament(t) === 'mtt') return { key: 'late_reg', label: 'Late Reg' };
+    if (classifyTournament(t) === 'mtt') {
+      return isInLateRegistration(t, Date.now())
+        ? { key: 'late_reg', label: 'Late Reg' }
+        : { key: 'running', label: 'Running' };
+    }
   }
   if (
     status === 'REGISTERING' ||

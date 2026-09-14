@@ -322,12 +322,12 @@ export default function DetailOverviewTab({
   }, [tournament, field.entries, payoutStructure, isSatellite]);
 
   const lateRegText = useMemo(() => {
-    const levels = Number(tournament?.late_reg_levels) || 0;
+    const levels = Number(tournament?.late_reg_levels ?? tournament?.rebuy_levels) || 0;
     const mins = Number(tournament?.late_reg_mins) || 0;
     if (levels > 0) return `Lv ${levels}`;
     if (mins > 0) return `${mins}m`;
     return 'Closed';
-  }, [tournament?.late_reg_levels, tournament?.late_reg_mins]);
+  }, [tournament?.late_reg_levels, tournament?.rebuy_levels, tournament?.late_reg_mins]);
 
   /* ── The nine stat tiles. ── */
   const stats = useMemo<StatTile[]>(() => {

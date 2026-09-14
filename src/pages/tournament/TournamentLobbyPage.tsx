@@ -1,3 +1,4 @@
+import type { TournamentEntryWindowRow } from '../../utils/tournamentEntryWindow';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT LOBBY PAGE — Browse & Register for Tournaments
@@ -33,7 +34,7 @@ import CasinoSurfaceHeader from '../../components/rewards/RewardsSurfaceHeader';
 type TournamentStatus = 'all' | 'upcoming' | 'REGISTERING' | 'RUNNING' | 'COMPLETED';
 type TournamentTypeFilter = 'all' | 'mtt' | 'sng' | 'spin' | 'bounty' | 'pko' | 'mystery';
 
-interface Tournament {
+interface Tournament extends TournamentEntryWindowRow {
   id: string;
   name: string;
   clubId: string;
@@ -320,6 +321,9 @@ export default function TournamentLobbyPage() {
                     tournament_type,
                     late_reg_mins,
                     late_reg_levels,
+                    rebuy_levels,
+                    prize_pool_finalized,
+                    started_at,
                     current_level,
                     is_rebuy,
                     is_reentry,
@@ -532,7 +536,11 @@ export default function TournamentLobbyPage() {
           isRegistered: registrations.includes(t.id),
           gameType: t.game_type || 'NLH',
           lateRegMins: t.late_reg_mins || 0,
-          late_reg_levels: t.late_reg_levels || t.late_reg_mins || 0,
+          late_reg_levels: t.late_reg_levels,
+          late_reg_mins: t.late_reg_mins,
+          rebuy_levels: t.rebuy_levels,
+          prize_pool_finalized: t.prize_pool_finalized,
+          started_at: t.started_at,
           current_level: t.current_level || 0,
           is_reentry: t.is_reentry || false,
           addon_levels: t.addon_levels || 1,
@@ -884,6 +892,12 @@ export default function TournamentLobbyPage() {
                       gameType: tournament.gameType,
                       startingChips: tournament.startingChips,
                       lateRegMins: tournament.lateRegMins,
+                      late_reg_levels: tournament.late_reg_levels,
+                      late_reg_mins: tournament.late_reg_mins,
+                      rebuy_levels: tournament.rebuy_levels,
+                      prize_pool_finalized: tournament.prize_pool_finalized,
+                      current_level: tournament.current_level,
+                      started_at: tournament.started_at,
                       isRebuy: tournament.isRebuy,
                       guaranteedPrize: tournament.guaranteedPrize,
                       isBounty: tournament.isBounty,

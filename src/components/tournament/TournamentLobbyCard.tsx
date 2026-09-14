@@ -1,3 +1,7 @@
+import {
+  tournamentEntryWindow,
+  type TournamentEntryWindowRow,
+} from '../../utils/tournamentEntryWindow';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT LOBBY CARD — Tournament Registration Display
@@ -21,7 +25,7 @@ import { formatGameTitle } from '../../utils/formatGameTitle';
 import { money } from '../../utils/buyIn';
 import { chipsCompact } from './details/types';
 
-interface Tournament {
+interface Tournament extends TournamentEntryWindowRow {
   id: string;
   name: string;
   type: 'sng' | 'mtt' | 'satellite' | 'spin' | 'bounty' | 'pko' | 'mystery';
@@ -53,10 +57,10 @@ interface Tournament {
   rebuyAllowed?: boolean;
   addonAllowed?: boolean;
   spinMultiplier?: number;
-  started_at?: string;
-  late_reg_mins?: number;
-  late_reg_levels?: number;
-  current_level?: number;
+  started_at?: string | null;
+  late_reg_mins?: number | null;
+  late_reg_levels?: number | null;
+  current_level?: number | null;
   addon_levels?: number;
   is_reentry?: boolean;
 }
@@ -97,7 +101,7 @@ export function isStartingSoon(msToStart: number | null): boolean {
 }
 
 export interface LateRegState {
-  /** Registration is still open (or believed open). */
+  /** The projected entry window is open; the server decides actual eligibility. */
   active: boolean;
   /** What to print after "Late Reg:". Empty when there is no window at all. */
   label: string;
@@ -116,8 +120,8 @@ export interface LateRegState {
  *     window, forever, so the countdown never counted down and never closed.
  *
  * The units are kept apart here and neither is ever invented from the other:
- * when the input needed to measure the window is missing, this says "Open"
- * rather than printing a number nobody supplied.
+ * when the input needed to measure the window is missing, this says
+ * "Unavailable" and does not offer a speculative registration.
  */
 export function lateRegState(opts: {
   levels: number;
@@ -125,11 +129,18 @@ export function lateRegState(opts: {
   currentLevel?: number | null;
   startedAtMs?: number | null;
   nowMs: number;
+  finalized?: boolean | null;
 }): LateRegState {
   const { levels, minutes, currentLevel, startedAtMs, nowMs } = opts;
+  if (
+    opts.finalized === true ||
+    [levels, minutes, currentLevel ?? 0].some((v) => !Number.isSafeInteger(v) || v < 0)
+  ) {
+    return { active: false, label: 'Closed' };
+  }
 
   if (levels > 0) {
-    if (currentLevel == null) return { active: true, label: 'Open' };
+    if (currentLevel == null) return { active: false, label: 'Unavailable' };
     if (currentLevel >= levels) return { active: false, label: 'Closed' };
     const left = levels - currentLevel;
     return { active: true, label: `${left} Lvl${left !== 1 ? 's' : ''} Left` };
@@ -137,7 +148,7 @@ export function lateRegState(opts: {
 
   if (minutes > 0) {
     if (startedAtMs == null || !Number.isFinite(startedAtMs)) {
-      return { active: true, label: 'Open' };
+      return { active: false, label: 'Unavailable' };
     }
     const msLeft = startedAtMs + minutes * 60_000 - nowMs;
     if (msLeft <= 0) return { active: false, label: 'Closed' };
@@ -203,8 +214,12 @@ function TournamentLobbyCardInner({
   }, [tournament.id, tournament.startsAt, knownRegistration]);
 
   // See lateRegState() above for why these two are not one variable.
-  const lateRegLevels = tournament.late_reg_levels ?? 0;
-  const lateRegMinutes = tournament.late_reg_mins ?? tournament.lateRegMins ?? 0;
+  const entryWindow = tournamentEntryWindow({
+    ...tournament,
+    late_reg_mins: tournament.late_reg_mins ?? tournament.lateRegMins,
+  });
+  const lateRegLevels = entryWindow.mode === 'levels' ? entryWindow.cap : 0;
+  const lateRegMinutes = entryWindow.mode === 'minutes' ? entryWindow.minutes : 0;
   const hasLateReg = lateRegLevels > 0 || lateRegMinutes > 0;
 
   useEffect(() => {
@@ -220,6 +235,8 @@ function TournamentLobbyCardInner({
     tournament.late_reg_levels,
     tournament.late_reg_mins,
     tournament.lateRegMins,
+    tournament.rebuy_levels,
+    tournament.prize_pool_finalized,
     tournament.current_level,
     tournament.started_at,
   ]);
@@ -274,7 +291,7 @@ function TournamentLobbyCardInner({
   };
 
   const updateLateRegCountdown = () => {
-    const startedAt = tournament.started_at ?? tournament.startsAt;
+    const startedAt = tournament.started_at;
     const startedMs = startedAt ? new Date(startedAt).getTime() : null;
     const next = lateRegState({
       levels: lateRegLevels,
@@ -282,6 +299,7 @@ function TournamentLobbyCardInner({
       currentLevel: tournament.current_level,
       startedAtMs: startedMs,
       nowMs: Date.now(),
+      finalized: tournament.prize_pool_finalized,
     });
     setLateRegActive(next.active);
     setLateRegCountdown(next.label);

@@ -573,23 +573,8 @@ export class RakebackSettlerService {
           }
         }
         this.scheduleCatchUp(backlogRemains, generation);
-        // RAKE-AUDIT 2026-07-24: weekly financial close now runs SERVER-SIDE.
-        // Previously the weekly rakeback settlement + credit-invoice generation
-        // lived only in the browser (FinancialCronService/SettlementCronService
-        // setInterval), so they fired ONLY while an admin had a tab open.
-        // AUDIT PASS 3 [ORDER + CADENCE]: the union's weekly 90% must land BEFORE
-        // runWeeklyFinancialClose() pays player rakeback, because player rakeback
-        // is now funded from clubs.chip_treasury and the union payback is what
-        // replenishes it - running them the other way round deferred every
-        // player payout by a week on the first close. It also runs EVERY cycle
-        // rather than inside the once-a-week gate: the RPC is idempotent and
-        // no-ops mid-week, so a close that fails (or an engine outage spanning a
-        // Monday) is retried within 30 minutes instead of 7 days.
-        await this.runUnionWeeklyRakeback();
-        // Player rakeback, every cycle. See runRakebackDrain: settle_club_rakeback
-        // is bounded, so it must be drained in a loop rather than called once a
-        // week. Ordered after the union 90% because that is what funds it.
-        await this.runRakebackDrain();
+        // One server coordinator owns the schedule, financial stages, invoices,
+        // notices and retries. Its receipt is the completion authority.
         await this.runWeeklyFinancialClose();
 
         /**
@@ -876,19 +861,6 @@ export class RakebackSettlerService {
   }
 
   /**
-   * RAKE-AUDIT 2026-07-24: Server-authoritative weekly financial close.
-   * Once per ISO week (first settler cycle on/after Monday 00:00 UTC):
-   *   1. settle_club_rakeback for every club with pending LAPSED rakeback
-   *      periods (the RPC pays each player's rakeback into their wallet and
-   *      marks the period paid; a guard in the RPC skips still-open weeks).
-   *   2. fn_generate_all_credit_invoices — weekly agent credit invoices.
-   *   3. Reset agents.weekly_rake_generated for the new week (the commission
-   *      RPC accumulates it; nothing ever reset it, so "weekly" grew forever).
-   * Idempotent via a daemon_state watermark keyed to the week's Monday date —
-   * every step is also individually idempotent (paid periods are skipped,
-   * invoices dedupe), so a crash mid-close is safe to re-run.
-   */
-  /**
    * AUDIT 2026-08-19 — Union treasury conservation sentinel.
    * fn_union_treasury_selftest() verifies: non-negative wallets, the
    * rake_wallet <= chip_balance sub-account invariant, audit-ledger
@@ -1150,239 +1122,37 @@ export class RakebackSettlerService {
     }
   }
 
-  /**
-   * AUDIT PASS 3 — Union weekly 90/10 rakeback, run every settler cycle.
-   *
-   * Dan's spec: rake is HELD in union_wallets.rake_wallet during the week; at
-   * close, 90% goes back to each member club's chip_treasury and the union
-   * keeps 10%. fn_union_weekly_rakeback_close_all closes EVERY unclosed lapsed
-   * ISO week, so any missed Monday self-heals. Treasury-funded, idempotent per
-   * (union, period), service_role only; insufficient-treasury rejections raise
-   * durable financial_alerts inside the RPC. Mid-week this is a no-op.
-   */
-  private async runUnionWeeklyRakeback(): Promise<void> {
-    let result: unknown = null;
-    let rpcError: unknown = null;
-    try {
-      const res = await supabase.rpc('fn_union_weekly_rakeback_close_all', {});
-      result = res.data;
-      rpcError = res.error;
-    } catch (e) {
-      rpcError = e;
-    }
-    if (rpcError) {
-      reportError(
-        new Error(`fn_union_weekly_rakeback_close_all failed: ${JSON.stringify(rpcError)}`),
-        'RakebackSettler.weekly_union_rakeback'
-      );
-      return;
-    }
-    const r = (Array.isArray(result) ? result[0] : result) as Record<string, unknown> | null;
-    const closes = (r?.closes ?? []) as unknown[];
-    if (closes.length > 0) {
-      console.log(`[RakebackSettler] Union weekly rakeback: ${JSON.stringify(closes)}`);
-    }
-  }
-
-  /**
-   * PLAYER RAKEBACK DRAIN - every cycle, not once a week (2026-09-07).
-   *
-   * settle_club_rakeback became BOUNDED on 2026-09-07: it settles at most 40
-   * periods and stops after ~4s of wall clock. It had to be - the unbounded
-   * version could not finish a 1,769-period backlog inside the 8s
-   * statement_timeout service_role carries, so it was cancelled every Monday
-   * and had settled nothing since 2026-08-20 while 443,513.92 sat owed to
-   * 1,005 players.
-   *
-   * A bound puts an obligation on the caller: DRAIN IN A LOOP. This used to be
-   * step 1 of runWeeklyFinancialClose, which sits behind a once-per-ISO-week
-   * gate and stamps the week closed whether or not anything drained - so one
-   * bounded pass per club would have paid 40 periods and then latched for
-   * seven days.
-   *
-   * So it moves here, for the reason the comment above runUnionWeeklyRakeback
-   * already gives: the RPC is idempotent and no-ops when nothing is due, so a
-   * club not finished this cycle is finished 30 minutes later instead of next
-   * Monday. It runs AFTER the union 90% lands, because player rakeback is
-   * funded from clubs.chip_treasury and the union payback is what fills it.
-   *
-   * It reads the response. supabaseRpc() discards `data`, and a refusal comes
-   * back as HTTP 200 with success:false - so a call that settles nothing
-   * because it was not authorised is invisible unless somebody looks.
-   */
-  private async runRakebackDrain(): Promise<void> {
-    const DEADLINE_MS = 60 * 1000; // one cycle spends at most a minute here
-    const MAX_PASSES_PER_CLUB = 40; // 40 passes x 40 periods = 1,600 per club
-    const started = Date.now();
-    let settled = 0;
-    let paid = 0;
-    let deferred = 0;
-    let errors = 0;
-    const reasons: Record<string, number> = {};
-
-    try {
-      const today = new Date().toISOString().slice(0, 10);
-      const { data: pendingClubs, error: readErr } = await supabase
-        .from('rakeback_periods')
-        .select('club_id')
-        .eq('status', 'pending')
-        .lt('period_end', today)
-        .limit(5000);
-      if (readErr) {
-        reportError(
-          new Error(`rakeback drain could not read pending clubs: ${readErr.message}`),
-          'RakebackSettler.rakeback_drain_read'
-        );
-        return;
-      }
-      const clubIds = [...new Set((pendingClubs ?? []).map((r) => r.club_id).filter(Boolean))];
-
-      for (const clubId of clubIds) {
-        for (let pass = 0; pass < MAX_PASSES_PER_CLUB; pass++) {
-          if (Date.now() - started > DEADLINE_MS) return;
-
-          const { data, error } = await supabase.rpc('settle_club_rakeback', {
-            p_club_id: clubId,
-          });
-          if (error) {
-            errors++;
-            reportError(
-              new Error(`settle_club_rakeback failed for club ${clubId}: ${JSON.stringify(error)}`),
-              'RakebackSettler.rakeback_drain'
-            );
-            break;
-          }
-          const r = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
-          if (!r || r.success !== true) {
-            errors++;
-            reportError(
-              new Error(`settle_club_rakeback refused for club ${clubId}: ${JSON.stringify(r)}`),
-              'RakebackSettler.rakeback_drain_refused'
-            );
-            break;
-          }
-
-          const settledThisPass = Number(r.periods_settled ?? 0);
-          settled += settledThisPass;
-          paid += Number(r.total_payout ?? 0);
-          deferred += Number(r.deferred ?? 0);
-          errors += Number(r.errors ?? 0);
-          for (const [k, v] of Object.entries(
-            (r.deferred_reasons ?? {}) as Record<string, number>
-          )) {
-            reasons[k] = (reasons[k] ?? 0) + Number(v ?? 0);
-          }
-
-          // Drained, or this pass could move nothing. Either way stop asking:
-          // the batch orders least-refused first, so a pass that settles zero
-          // has already looked past everything it was going to skip.
-          if (Number(r.periods_remaining ?? 0) === 0) break;
-          if (settledThisPass === 0) break;
-        }
-      }
-    } catch (e) {
-      reportError(
-        new Error((e as { message?: string })?.message || String(e)),
-        'RakebackSettler.rakeback_drain_threw'
-      );
-    }
-
-    if (settled > 0 || deferred > 0 || errors > 0) {
-      console.log(
-        `[RakebackSettler] Player rakeback: ${settled} periods paid, ${paid.toFixed(2)} chips, ` +
-          `${deferred} deferred ${JSON.stringify(reasons)}, ${errors} errors`
-      );
-    }
-  }
-
   private async runWeeklyFinancialClose(): Promise<void> {
-    const WEEKLY_KEY = 'weekly_financial_close';
     try {
-      const currentWeekStart = weekStart(new Date()); // Monday YYYY-MM-DD (UTC)
-      const { data: state, error: stateErr } = await supabase
-        .from('daemon_state')
-        .select('high_water_mark')
-        .eq('daemon', WEEKLY_KEY)
-        .maybeSingle();
-      if (stateErr) {
-        console.warn('[RakebackSettler] weekly-close state read failed - will retry next cycle');
+      const { data, error } = await supabase.rpc('fn_union_settlement_cascade_due', {});
+      if (error) throw new Error(`Weekly accounting request failed: ${error.message}`);
+      const result = Array.isArray(data) && data.length === 1 ? data[0] : data;
+      if (!result || typeof result !== 'object' || result.success !== true) {
+        throw new Error(`Weekly accounting remains incomplete: ${JSON.stringify(result)}`);
+      }
+      if (result.skipped === true) {
+        if (!['maintenance_window', 'already_running'].includes(result.reason)) {
+          throw new Error('Weekly accounting returned an unknown skip reason');
+        }
         return;
       }
-      const lastClosedWeek = state?.high_water_mark
-        ? new Date(state.high_water_mark).toISOString().slice(0, 10)
-        : null;
-      if (lastClosedWeek && lastClosedWeek >= currentWeekStart) return; // already closed this week
-
-      console.log(
-        `[RakebackSettler] Weekly financial close starting (week of ${currentWeekStart})`
-      );
-
-      // 1. Player rakeback payout MOVED OUT of this weekly gate on 2026-09-07,
-      //    to runRakebackDrain(), which runs every cycle. settle_club_rakeback
-      //    is bounded now (40 periods / ~4s per call), so it has to be called
-      //    in a loop - and this method runs once per ISO week and stamps the
-      //    week closed at step 4 whether or not anything drained. One bounded
-      //    pass per club here would have paid 40 periods and latched for seven
-      //    days. See the header of runRakebackDrain.
-
-      // 2. Weekly agent credit invoices
-      {
-        const { data, error } = await supabase.rpc('fn_generate_all_credit_invoices', {
-          p_period_end: `${currentWeekStart}T00:00:00Z`,
-        });
-        if (error || data?.success !== true || data?.failed !== 0) {
-          reportError(
-            new Error(
-              error
-                ? `fn_generate_all_credit_invoices failed: ${JSON.stringify(error)}`
-                : 'fn_generate_all_credit_invoices did not confirm zero failed invoices'
-            ),
-            'RakebackSettler.weekly_invoices'
-          );
-          return;
-        }
+      if (
+        result.failed !== 0 ||
+        !Number.isSafeInteger(result.checked) ||
+        result.checked < 0 ||
+        !Array.isArray(result.detail) ||
+        result.detail.length !== result.checked ||
+        result.detail.some(
+          (scope: { result?: { success?: boolean } }) => scope.result?.success !== true
+        )
+      ) {
+        throw new Error(`Weekly accounting receipt is incomplete: ${JSON.stringify(result)}`);
       }
-
-      // 3. Reset weekly agent rake counters for the new week
-      {
-        const { error } = await supabase
-          .from('agents')
-          .update({ weekly_rake_generated: 0 })
-          .gt('weekly_rake_generated', 0);
-        if (error) {
-          reportError(
-            new Error(`weekly_rake_generated reset failed: ${error.message}`),
-            'RakebackSettler.weekly_rake_reset'
-          );
-          return;
-        }
+      if (result.checked > 0) {
+        console.log(`[RakebackSettler] Weekly accounting confirmed ${result.checked} scope(s)`);
       }
-
-      // 4. Mark this week closed. Reset and latch are still separate writes;
-      // a lost latch receipt must be reported, never logged as confirmed completion.
-      const { error: closeError } = await supabase.from('daemon_state').upsert(
-        {
-          daemon: WEEKLY_KEY,
-          high_water_mark: new Date(`${currentWeekStart}T00:00:00Z`).toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'daemon' }
-      );
-      if (closeError) {
-        reportError(
-          new Error(`weekly-close latch failed: ${closeError.message}`),
-          'RakebackSettler.weekly_close'
-        );
-        return;
-      }
-      console.log(
-        '[RakebackSettler] Weekly financial close done: invoices generated, weekly counters reset'
-      );
-    } catch (e) {
-      reportError(
-        new Error((e as { message?: string })?.message || String(e)),
-        'RakebackSettler.weekly_close'
-      );
+    } catch (error) {
+      reportError(error, 'RakebackSettler.weekly_close');
     }
   }
 

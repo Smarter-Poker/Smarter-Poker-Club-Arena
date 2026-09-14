@@ -70,13 +70,9 @@ describe('the drain outranks the read-only sentinels', () => {
     expect(firstSentinelAt).toBeGreaterThan(gateAt);
   });
 
-  it('never defers money: the rakeback drain and the weekly close stay above the gate', () => {
+  it('the single accounting coordinator stays above the sentinel gate', () => {
     const gateAt = RUN.indexOf('if (backlogRemains) {');
-    for (const money of [
-      'await this.runUnionWeeklyRakeback();',
-      'await this.runRakebackDrain();',
-      'await this.runWeeklyFinancialClose();',
-    ]) {
+    for (const money of ['await this.runWeeklyFinancialClose();']) {
       const at = RUN.indexOf(money);
       expect(at, money).toBeGreaterThan(0);
       expect(at, `${money} must run before the gate`).toBeLessThan(gateAt);

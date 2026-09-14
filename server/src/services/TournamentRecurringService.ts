@@ -3378,7 +3378,8 @@ export class TournamentRecurringService {
         status: 'REGISTERING',
         blind_structure: config.blindStructure,
         payout_structure: config.payoutStructure,
-        payout_percent: mttPayoutPercent(config.payoutPercent),
+        // Satellite qualification uses its seat contract, not MTT paid depth.
+        // The atomic seat-first creator deliberately rejects unknown fields.
         start_time: startTime.toISOString(),
         late_reg_levels: 0,
         late_reg_mins: 0,
@@ -4261,7 +4262,8 @@ export class TournamentRecurringService {
         status: 'REGISTERING',
         blind_structure: config.blindStructure,
         payout_structure: config.payoutStructure || [],
-        payout_percent: mttPayoutPercent(config.payoutPercent),
+        // Heads-up has a fixed payout contract; paid depth belongs to fields.
+        ...(!seatFirstSng ? { payout_percent: mttPayoutPercent(config.payoutPercent) } : {}),
         start_time: startTime.toISOString(),
         late_reg_levels: 0,
         late_reg_mins: 0,

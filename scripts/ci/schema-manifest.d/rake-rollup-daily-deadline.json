@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/rake-rollup-daily-deadline",
+  "functions": ["fn_ca_rake_rollup_writer_silent"]
+}

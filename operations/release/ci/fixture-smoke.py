@@ -11,7 +11,7 @@ import subprocess
 import sys
 import uuid
 
-FILES = ('Dockerfile', 'package.json', 'package-lock.json', 'fixture-server.mjs',
+FILES = ('Dockerfile', 'package.json', 'package-lock.json', 'fixture-server.mjs', 'post-alignment-auth.mjs',
          'runtime-files.mjs', 'gateway.mjs', 'auth-fixture.mjs', 'auth-bootstrap-proof.mjs',
          'service-role-boundary.mjs', 'cron-provider.mjs', 'safeupdate-provider.mjs', 'service-preimage.mjs', 'role-alignment.mjs', 'provider-semantics.mjs', 'provider-semantic-sql.mjs', 'provider-probe-peer.mjs', 'role-native-entry.mjs', 'role-native-protocol.mjs', 'role-native-faults.mjs', 'role-native-access.mjs', 'role-alignment-render.mjs', 'role-alignment-installer.sql', 'role-alignment-native.json', 'role-alignment-aligned.json', 'role-alignment-graph.sql', 'role-alignment-membership.sql', 'actors.mjs', 'financial-route-phase.mjs',
          'seed-fixture.mjs', 'native-smoke.mjs', 'observation-bridge.mjs', 'build-image.sh', 'smoke-image.sh')
@@ -59,7 +59,7 @@ NATIVE_STAGES = frozenset((
         'postgresql-bootstrap-owner', 'postgresql-bootstrap-roles',
         'postgresql-native-cron-install', 'postgresql-safeupdate-configure',
         'genuine-auth-migrations', 'genuine-realtime-migrations',
-        'managed-postgres-event-trigger-boundary', 'post-service-catalog-preimage', 'full-role-alignment', 'native-role-fault-matrix', 'native-role-access-defaults', 'five-provider-semantics', 'cleanup'))))
+        'managed-postgres-event-trigger-boundary', 'post-service-catalog-preimage', 'full-role-alignment', 'native-role-fault-matrix', 'native-role-access-defaults', 'five-provider-semantics', 'post-alignment-auth', 'cleanup'))))
 NATIVE_ERROR_NAMES = frozenset(('Error', 'AssertionError', 'TypeError', 'RangeError',
                                 'SyntaxError', 'TimeoutError', 'AggregateError', 'error'))
 NATIVE_PG_ROUTINES = frozenset((
@@ -669,6 +669,45 @@ def service_preimage(output, path):
     return proof, raw
 
 
+def post_alignment_auth_record(output, alignment, providers):
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result)
+            result[key] = value
+        return result
+    rows = []
+    for line in output.splitlines():
+        if not line.startswith('{') or len(line) > 4096:
+            continue
+        try:
+            row = json.loads(line, object_pairs_hook=unique)
+        except ValueError:
+            continue
+        if isinstance(row, dict) and row.get('scope') == 'native-post-alignment-auth':
+            rows.append(row)
+    require(len(rows) == 1)
+    row = rows[0]
+    expected = dict(scope='native-post-alignment-auth', status='passed',
+        database='club_arena_qualification',
+        aligned_catalog_sha256=alignment['aligned_catalog_sha256'],
+        provider_build_sha256=providers['build_sha256'],
+        provider_catalog_sha256=providers['catalog_sha256'],
+        fresh_application_client=True, auth_role='supabase_auth_admin',
+        genuine_users=3, signed_in_sessions=3, persisted_aal1_sessions=2,
+        persisted_aal2_sessions=1, persisted_verified_totp_factors=1,
+        application_owner_boundary=True, auth_helper_boundary=True, genuine_migration_set=True,
+        retries=0, post_alignment_auth=True, post_alignment_services=False,
+        full_schema_ready=False, production_or_funded=False, fixture_resources_closed=True)
+    require(set(row) == set(expected) | {'postmaster_started_at'})
+    for key, value in expected.items():
+        require(type(row[key]) is type(value) and row[key] == value)
+    require(isinstance(row['postmaster_started_at'], str) and
+        re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,6})?\+00',
+                     row['postmaster_started_at']))
+    return row
+
+
 def execute(repo, output, expected, run=command):
     receipt = {'version': 1, 'scope': 'pull-request-native-service-smoke',
                'product_certificate': False, 'status': 'failed',
@@ -719,6 +758,8 @@ def execute(repo, output, expected, run=command):
         receipt['role_native_faults'] = role_native_record(result, 'faults')
         receipt['role_native_access'] = role_native_record(result, 'access')
         receipt['provider_semantics'] = provider_semantic_record(result)
+        receipt['post_alignment_auth'] = post_alignment_auth_record(
+            result, receipt['role_alignment'], receipt['provider_semantics'])
         proof, catalog_bytes = service_preimage(result, private_preimage)
         receipt['service_preimage'] = proof
         (output / 'native-service-preimage.json').write_bytes(catalog_bytes)

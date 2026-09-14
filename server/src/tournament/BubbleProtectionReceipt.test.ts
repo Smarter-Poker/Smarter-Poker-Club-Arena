@@ -40,7 +40,14 @@ describe('Bubble Protection is paid only by the finalized tournament batch', () 
     expect(eliminate).toContain('const ladderPool = prizePoolAvailableToPlaces(');
     expect(eliminate).toContain('tournament.bubble_protection === true');
     expect(eliminate).toContain('if (ladderPool === null)');
-    expect(eliminate).toContain('prize = computePlacePrize(ladderPool, payouts, position);');
+    // 2026-09-13: the call gained the tournament's unit, which is now a
+    // REQUIRED argument to computePlacePrize rather than one defaulting to a
+    // cent. The pin moved to the new shape in the same commit; what it guards
+    // is unchanged - this place is priced from the BUBBLE-RESERVED ladder pool,
+    // not the raw prize pool.
+    expect(eliminate).toContain(
+      'prize = computePlacePrize(ladderPool, payouts, position, this.placeLadderUnitCents());'
+    );
     expect(eliminate).not.toMatch(
       /settleTournamentObligation|fn_settle_tournament_obligation|bubble_protection_paid/
     );

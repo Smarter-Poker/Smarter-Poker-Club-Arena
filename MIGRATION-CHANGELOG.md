@@ -6,6 +6,14 @@
 **Why:** a retained operation for one tournament must not prevent another funded field from reaching its own launch authority.
 **Verified:** YES, actual old-loop counterexample plus12new cases; affected engine suites5,409/359PASS, zero skips. **TypeScript:** PASS. No SQL or production event mutation. Source/served/real first-hand acceptance remains open. See docs/changelog/2026-09-14-mtt-scheduled-start-isolation.md.
 
+## 2026-09-14: Keep MTT paid depth out of seat-first requests
+
+**File/lines:** server/src/services/TournamentRecurringService.ts original3381/4264; new SeatFirstCallerContract.test.ts and private fixture/runner.
+**What existed:** PR4533 added payout_percent to heads-up and satellite-headsup RPC payloads; current atomic creator refuses that unknown key, preventing creation.
+**What changed:** omit MTT paid-depth metadata for these two seat-first paths; preserve fieldSNG/MTT/XMTT settings, fixed prizes, target and all authority checks. Database contract remains unchanged.
+**Why:** actual served SEAT_FIRST_CREATE_UNKNOWN_CONFIG_KEY traced to this task's earlier caller regression; permissive mocks missed the installed request boundary.
+**Verified:** YES; eight original failures;39focused/2files, full5,350/350, nativeeightgroups/12actualcaller payloads pass. **TypeScript:** PASS through server build. Private cluster removed; no SQL applied. RequiredCI/served creation remains open. See docs/changelog/2026-09-14-seat-first-creator-contract.md.
+
 ## 2026-09-13: Reach the recorded launch proof for a played MTT
 
 The engine can now route a previously played, finalized MTT through the existing launch begin/complete authorities and normal resume before the fresh-field minimum gate. It preserves the precise first-hand timestamp, current levels, stacks and pool. A fresh short field still refuses; Spin retains its separate path. No live status or player state was manually changed.

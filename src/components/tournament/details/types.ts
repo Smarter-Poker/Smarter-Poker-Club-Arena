@@ -21,6 +21,7 @@
  *   showing a spinner forever is worse than a tab saying there is nothing yet.
  */
 
+import { compactChips } from '../../../utils/format';
 import type { Tournament } from '../../../types/database.types';
 import type { UseMysteryBountyResult } from '../../../hooks/useMysteryBounty';
 import { computePlacePrize, prizePoolAvailableToPlaces } from '../../../lib/payoutMath';
@@ -226,14 +227,18 @@ export function chips(n: number | null | undefined): string {
   return Math.round(v).toLocaleString();
 }
 
-/** Compact chips for tight columns: 1,250 -> 1.3K, 447,000 -> 447K. */
+/**
+ * Compact chips, Dan's rule: 1,250 -> 1.2K, 5,000 -> 5K, 447,000 -> 447K.
+ *
+ * This used to be a second, competing formatter - it ROUNDED (1,250 read
+ * "1.3K", overstating what a player has) and it kept the tenth on a round
+ * figure ("5.0K", a decimal on a forward-facing page, which Dan forbids).
+ * Both rules are wrong and both were visible on the tournament cards. There is
+ * one compact formatter on this platform now; this name stays because 25 call
+ * sites use it, but it delegates.
+ */
 export function chipsCompact(n: number | null | undefined): string {
-  const v = Number(n);
-  if (!Number.isFinite(v) || v === 0) return '0';
-  const abs = Math.abs(v);
-  if (abs >= 1_000_000) return `${(v / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}M`;
-  if (abs >= 1_000) return `${(v / 1_000).toFixed(abs >= 10_000 ? 0 : 1)}K`;
-  return String(Math.round(v));
+  return compactChips(n);
 }
 
 /**

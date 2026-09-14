@@ -1,298 +1,247 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  COMMISSION HISTORY MODAL — Premium Dark Theme CSS
- * ═══════════════════════════════════════════════════════════════════════════════
- */
+/* ═══════════════════════════════════════════════════════════════════════════
+   COMMISSION HISTORY - on the spade console (#ClubArenaConsole)
+
+   The chassis, its inks and its type come from SpadeConsole.css. This sheet
+   only places the console on the backdrop, switches off the global popup
+   chassis (metallic-popups.css paints a 16px rounded shell and a bevel on
+   anything whose class contains `_modal_`, with !important), and lays every
+   figure out as a ROW on the black glass between the rails.
+
+   WHAT WAS DELETED. A 16px rounded amber sheet with two shadows and a blur; a
+   header bar with a 32px square close button; three boxed summary cards, one
+   of them a gradient "highlight"; two boxed month cards; a rounded green trend
+   pill; six rounded filter pills; and one bordered, blurred card per row.
+
+   Rows are separated by an engraved rule - a black line with a light lip, the
+   same cut the master's own chrome rules are made of. Nothing here draws a
+   card, a tile, a pill or a button: no border-radius, no gradient, no
+   box-shadow on a box, no :hover. Sizes are cqw against the console, so a
+   320px phone and a 430px one get the same picture.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(8px) saturate(1.1);
-  -webkit-backdrop-filter: blur(8px) saturate(1.1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  inset: 0;
   z-index: 1000;
-  padding: 20px;
-}
-
-.modal {
-  width: 100%;
-  max-width: 600px;
-  max-height: 90vh;
-  background: linear-gradient(180deg, #1a1a2e 0%, #16162a 100%);
-  border: 1px solid rgba(251, 191, 36, 0.15);
-  border-radius: 16px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow:
-    0 20px 60px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(10px) saturate(1.05);
-  -webkit-backdrop-filter: blur(10px) saturate(1.05);
-}
-
-/* Header */
-.header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 20px 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.header h2 {
-  margin: 0;
-  font-size: 18px;
-  color: white;
-}
-
-.agentName {
-  color: #fbbf24;
-  font-weight: 500;
-  margin-left: auto;
-}
-
-.closeBtn {
-  width: 32px;
-  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.1);
-  border: none;
-  border-radius: 8px;
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 16px;
-  cursor: pointer;
-  transition: all 0.2s ease;
+  padding: 12px;
 }
 
-/* Summary Cards */
-.summary {
+/* Doubled class (0,2,0) so it outranks the popup chassis' :where() rule, which
+   is specificity 0,0,0 and !important. Every longhand that rule sets is
+   restated here; a `background` shorthand alone would leave its border and
+   radius clipping the art. */
+.modal.modal {
+  width: min(100%, 460px);
+  max-height: 100%;
+  overflow: visible auto;
+  padding: 0 !important;
+  border: 0 !important;
+  border-top: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+/* ── Figures: a label and its value on one engraved row ───────────────── */
+
+.rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  padding: 20px 24px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3cqw;
+  align-items: baseline;
+  padding: 2.2cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
-.summaryCard {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 16px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.summaryCard.highlight {
-  background: linear-gradient(135deg, rgba(251, 191, 36, 0.15), rgba(245, 158, 11, 0.1));
-  border-color: rgba(251, 191, 36, 0.3);
-}
-
-.summaryValue {
-  font-size: 24px;
-  font-weight: 700;
-  color: white;
-}
-
-.highlight .summaryValue {
-  color: #fbbf24;
-}
-
-.summaryLabel {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-top: 4px;
-}
-
-/* Comparison */
-.comparison {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 24px;
-  padding: 16px 24px;
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.compCard {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-
-.compLabel {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.compValue {
-  font-size: 18px;
-  font-weight: 600;
-  color: white;
-}
-
-.trend {
-  padding: 6px 12px;
-  background: rgba(16, 185, 129, 0.2);
-  color: #10b981;
-  border-radius: 20px;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-/* Filters */
-.filters {
-  display: flex;
-  justify-content: space-between;
-  padding: 16px 24px;
-  gap: 12px;
-}
-
-.filterGroup {
-  display: flex;
-  gap: 8px;
-}
-
-.filterBtn {
-  padding: 8px 16px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
-}
-
-.filterBtn.active {
-  background: rgba(251, 191, 36, 0.2);
-  border-color: #fbbf24;
-  color: #fbbf24;
-}
-
-/* Entries List */
-.entriesList {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0 24px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.entryCard {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
-  transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.entryIcon {
-  font-size: 20px;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  flex-shrink: 0;
-}
-
-.entryInfo {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.rowLabel {
   min-width: 0;
 }
 
-.entryDesc {
-  font-size: 14px;
-  color: white;
-  font-weight: 500;
+.rowValue {
+  font-size: 3.6cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: 0.01em;
+  text-align: right;
   white-space: nowrap;
+}
+
+/* ── Filters: lit words, never six drawn pills ────────────────────────── */
+
+.filters {
+  display: flex;
+  flex-direction: column;
+}
+
+.filterGroup {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.filterBtn {
+  appearance: none;
+  /* A filter on a phone still has to be hittable. */
+  min-height: 44px;
+  margin: 0;
+  padding: 2cqw 0.4cqw;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font-family: inherit;
+  font-size: 2.9cqw;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.filterOn {
+  color: #f4f7fb;
+  -webkit-text-fill-color: #f4f7fb;
+  text-shadow:
+    0 0 1cqw rgb(140 210 255 / 90%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+.filterBtn:active {
+  filter: brightness(1.25);
+  transform: none;
+}
+
+.filterBtn:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -1cqw;
+}
+
+/* ── Every movement, one engraved row each ────────────────────────────── */
+
+.entriesList {
+  display: flex;
+  flex-direction: column;
+}
+
+.entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.6cqw 3cqw;
+  align-items: baseline;
+  padding: 2.2cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.entryDesc {
+  min-width: 0;
   overflow: hidden;
+  color: #d7dee7;
+  -webkit-text-fill-color: #d7dee7;
+  font:
+    600 3.2cqw/1.35 Inter,
+    system-ui,
+    sans-serif;
   text-overflow: ellipsis;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  white-space: nowrap;
+}
+
+/* The tone comes from the console's own inks (sc-ink--green / sc-ink--red) on
+   the element itself; a component sheet never restates a house colour. */
+.entryAmount {
+  font-size: 3.4cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.entryMeta,
+.entryDate {
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font:
+    500 2.7cqw/1.3 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
 .entryMeta {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.4);
-}
-
-.entryRight {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-}
-
-.entryAmount {
-  font-size: 15px;
-  font-weight: 700;
-}
-
-.entryAmount.rake {
-  color: #10b981;
-}
-
-.entryAmount.payout {
-  color: #ef4444;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .entryDate {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.4);
+  text-align: right;
+  white-space: nowrap;
 }
 
-/* States */
-.loading,
-.empty {
-  padding: 48px;
-  text-align: center;
-  color: rgba(255, 255, 255, 0.5);
+.state {
+  padding: 6cqw 0.5cqw;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
-/* Mobile */
-@media (max-width: 480px) {
-  .modal {
-    max-height: 100vh;
-    max-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
-    border-radius: 0;
-  }
+/* ── The one action: a lit word above the flat closing cap ────────────── */
 
-  .summary {
-    grid-template-columns: 1fr;
-  }
+.close {
+  display: flex;
+  justify-content: center;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
 
-  .filters {
-    flex-direction: column;
-  }
+.closeWord {
+  appearance: none;
+  min-height: 44px;
+  margin: 0;
+  padding: 2.4cqw 6cqw;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  font-family: inherit;
+  font-size: 3.4cqw;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+  cursor: pointer;
+  touch-action: manipulation;
+}
 
-  .comparison {
-    flex-wrap: wrap;
-  }
+.closeWord:active {
+  filter: brightness(1.25);
+  transform: none;
+}
+
+.closeWord:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -1cqw;
 }

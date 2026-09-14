@@ -19,7 +19,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { AdCampaignService } from '../../services/AdCampaignService';
+import { AdCampaignService, formatDollars } from '../../services/AdCampaignService';
 import type { AdCampaign, AdRateCard } from '../../services/AdCampaignService';
 import type { AdSlot } from '../../services/AdService';
 import { AD_SURFACE_RATIO } from './HouseAdRotator';
@@ -103,8 +103,12 @@ export default function CampaignQueue() {
       title: decision === 'approve' ? 'Approve This Advert?' : 'Reject And Refund?',
       message:
         decision === 'approve'
-          ? `${c.clubName} Paid ${c.diamondsCharged.toLocaleString()} Diamonds. It Goes Live On The ${SLOT_LABEL[c.slot] ?? c.slot} For ${c.days} Day(s).`
-          : `${c.diamondsCharged.toLocaleString()} Diamonds Go Back To ${c.clubName}.`,
+          ? c.clubId == null
+            ? `${c.clubName} Was Quoted ${formatDollars(c.quotedCents ?? 0)}. Approving Makes It Live On The ${SLOT_LABEL[c.slot] ?? c.slot} For ${c.days} Day(s) And Means Somebody Raises That Invoice.`
+            : `${c.clubName} Paid ${c.diamondsCharged.toLocaleString()} Diamonds. It Goes Live On The ${SLOT_LABEL[c.slot] ?? c.slot} For ${c.days} Day(s).`
+          : c.clubId == null
+            ? `${c.clubName} Is Told It Was Not Approved. Nothing Was Charged.`
+            : `${c.diamondsCharged.toLocaleString()} Diamonds Go Back To ${c.clubName}.`,
       confirmText: decision === 'approve' ? 'Approve' : 'Reject And Refund',
       cancelText: 'Back',
       variant: decision === 'reject' ? 'danger' : 'default',
@@ -365,8 +369,11 @@ export default function CampaignQueue() {
                 </div>
                 <div className="campaign-queue__headline">{c.headline}</div>
                 <div className="campaign-queue__meta">
-                  {c.days} Day(s) {'·'} {c.diamondsCharged.toLocaleString()} Diamonds {'·'} Opens{' '}
-                  <code>{c.targetUrl}</code>
+                  {c.days} Day(s) {'·'}{' '}
+                  {c.clubId == null
+                    ? `${formatDollars(c.quotedCents ?? 0)} To Invoice`
+                    : `${c.diamondsCharged.toLocaleString()} Diamonds`}{' '}
+                  {'·'} Opens <code>{c.targetUrl}</code>
                 </div>
                 <label className="campaign-queue__note">
                   <span className="admin-label">Note To The Club</span>
@@ -439,7 +446,9 @@ export default function CampaignQueue() {
                       {new Date(c.endsAt).toLocaleDateString()}
                     </td>
                     <td>
-                      {c.diamondsCharged.toLocaleString()}
+                      {c.clubId == null
+                        ? `${formatDollars(c.quotedCents ?? 0)} Invoice`
+                        : c.diamondsCharged.toLocaleString()}
                       {c.diamondsRefunded > 0
                         ? ` (${c.diamondsRefunded.toLocaleString()} Back)`
                         : ''}

@@ -4575,14 +4575,25 @@ export abstract class TournamentManagerBase {
     console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] Resuming...`);
 
     try {
-      const { data: tournament } = await supabase
+      const { data: tournament, error: tournamentError } = await supabase
         .from('tournaments')
         .select('*')
         .eq('id', this.tournamentId)
         .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
       this.assertLifecycleCurrent(lifecycle);
 
-      if (!tournament) throw new Error('Tournament not found');
+      if (tournamentError)
+        throw new Error(`Tournament resume read failed: ${tournamentError.message}`);
+      if (!tournament || tournament.id !== this.tournamentId)
+        throw new Error('Tournament resume did not identify the admitted event');
+      // Discovery may have read RUNNING before the previous manager committed
+      // completion. The fresh row owns gameplay eligibility. Return through
+      // GameServer's existing exact-manager teardown; never await our own
+      // lifecycle operation or infer a payment receipt from this status.
+      if (tournament.status !== 'RUNNING') {
+        this.running = false;
+        return;
+      }
 
       if (typeof tournament.blind_structure === 'string') {
         try {

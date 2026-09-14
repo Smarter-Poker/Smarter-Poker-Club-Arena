@@ -114,8 +114,12 @@ describe('every BEM className resolves on the route that renders it', () => {
    * looked right by accident; `HandDetailModal.css` now defines it, and all
    * three references resolve. Baseline lowered in the same commit, per the
    * paragraph above.
+   *
+   * 2026-09-14: 41 -> 35. `rules-modal__section` was five of them; the rules
+   * sheet's stylesheet was rewritten for the shark frame (#ClubArenaConsole)
+   * and defines the section now. One more went with it.
    */
-  const BASELINE = 41;
+  const BASELINE = 35;
 
   it(`has no more than ${BASELINE} unresolved BEM class names`, () => {
     expect(unresolved.length).toBeLessThanOrEqual(BASELINE);

@@ -1010,65 +1010,115 @@ export function planOnlineGeometry(
         };
         choose(0);
       };
-      // Suffix DP proves the minimum movement count for the complete field.
-      // State h counts the less frequent floor/ceil target still required.
+      // A high target reduces outgoing movement cost by exactly one iff
+      // this table is above low. All other high choices have zero benefit.
+      // Thus exact minimum movement uses as many beneficial highs as possible.
       const highCount = users.size % tables.length;
-      const countHigh = highCount <= tables.length - highCount;
-      const remainder = Math.min(highCount, tables.length - highCount);
-      const counted = (n: number) => (high > low && (countHigh ? n === high : n === low) ? 1 : 0);
-      if ((tables.length + 1) * (remainder + 1) > 100_000) throw Error('search_budget_exhausted');
-      const dp: Float64Array[] = [];
-      for (let i = 0; i <= tables.length; i++) {
-        dp.push(new Float64Array(remainder + 1).fill(Infinity));
-      }
-      dp[tables.length][0] = 0;
-      for (let i = tables.length - 1; i >= 0; i--) {
-        const capacity = tables[i].maxSeats - tables[i].reservedSeats.length;
-        for (let h = 0; h <= remainder; h++) {
-          tick();
-          for (const n of new Set([low, high])) {
-            const remaining = h - counted(n);
-            if (n <= capacity && remaining >= 0)
-              dp[i][h] = Math.min(
-                dp[i][h],
-                Math.max(0, tables[i].players.length - n) + dp[i + 1][remaining]
-              );
-          }
-        }
-      }
-      if (!Number.isFinite(dp[0][remainder])) throw Error('capacity_unavailable');
-      // Iterative traversal avoids call-stack depth proportional to field size.
-      // Every globally minimal target vector is solved; no partial best escapes
-      // if the shared proof budget is exhausted.
-      const stack: { index: number; highLeft: number; nextChoice: number }[] = [
-        { index: 0, highLeft: remainder, nextChoice: 0 },
-      ];
-      while (stack.length) {
+      const category = tables.map((t) => {
         tick();
-        const state = stack[stack.length - 1];
-        if (state.index === tables.length) {
-          solveTargets();
-          stack.pop();
-          targets.pop();
-          continue;
+        const capacity = t.maxSeats - t.reservedSeats.length;
+        if (capacity < low) throw Error('capacity_unavailable');
+        return high > low && capacity >= high ? (t.players.length > low ? 1 : 0) : -1;
+      });
+      const beneficial = new Int32Array(tables.length + 1);
+      const neutral = new Int32Array(tables.length + 1);
+      for (let i = tables.length - 1; i >= 0; i--) {
+        beneficial[i] = beneficial[i + 1] + (category[i] === 1 ? 1 : 0);
+        neutral[i] = neutral[i + 1] + (category[i] === 0 ? 1 : 0);
+      }
+      const wantedBeneficial = Math.min(highCount, beneficial[0]);
+      const wantedNeutral = highCount - wantedBeneficial;
+      if (wantedNeutral > neutral[0]) throw Error('capacity_unavailable');
+      const minimumMoves =
+        tables.reduce((sum, t) => sum + Math.max(0, t.players.length - low), 0) - wantedBeneficial;
+      if (minimumMoves === 1) {
+        // Every complete one-move plan changes only its source and destination.
+        // An unbalanced field has an outlier, so at least one side is fixed;
+        // this avoids enumerating equivalent whole-field target vectors.
+        const above = tables
+          .map((t, i) => (t.players.length > high ? i : -1))
+          .filter((i) => i >= 0);
+        const below = tables.map((t, i) => (t.players.length < low ? i : -1)).filter((i) => i >= 0);
+        const donors = tables
+          .map((t, i) => i)
+          .filter(
+            (i) =>
+              tables[i].players.length - 1 >= low &&
+              tables[i].players.length - 1 <= high &&
+              (above.length === 0 || (above.length === 1 && above[0] === i))
+          );
+        const receivers = tables
+          .map((t, i) => i)
+          .filter(
+            (i) =>
+              tables[i].players.length + 1 >= low &&
+              tables[i].players.length + 1 <= high &&
+              tables[i].players.length + 1 <= tables[i].maxSeats - tables[i].reservedSeats.length &&
+              (below.length === 0 || (below.length === 1 && below[0] === i))
+          );
+        for (const from of donors) {
+          tick();
+          const source = tables[from];
+          for (const player of source.players
+            .slice()
+            .sort((a, b) => a.userId.localeCompare(b.userId)))
+            for (const to of receivers) {
+              if (from === to) continue;
+              const destination = tables[to];
+              for (let seat = 1; seat <= destination.maxSeats; seat++) {
+                if (
+                  destination.players.some((p) => p.seat === seat) ||
+                  destination.reservedSeats.includes(seat)
+                )
+                  continue;
+                evaluate([
+                  {
+                    playerId: player.userId,
+                    fromTableId: source.tableId,
+                    fromSeat: player.seat,
+                    toTableId: destination.tableId,
+                    toSeat: seat,
+                    reason: 'CLUB_ARENA_ONLINE_MTT_V1:balance',
+                  },
+                ]);
+              }
+            }
         }
-        const options = high === low ? [low] : [low, high];
-        if (state.nextChoice === options.length) {
-          stack.pop();
-          if (state.index > 0) targets.pop();
-          continue;
-        }
-        const n = options[state.nextChoice++];
-        const i = state.index;
-        const h = state.highLeft - counted(n);
-        const capacity = tables[i].maxSeats - tables[i].reservedSeats.length;
-        if (
-          h >= 0 &&
-          n <= capacity &&
-          Math.max(0, tables[i].players.length - n) + dp[i + 1][h] === dp[i][state.highLeft]
-        ) {
-          targets.push(n);
-          stack.push({ index: i + 1, highLeft: h, nextChoice: 0 });
+      } else {
+        // Enumerate every target meeting BOTH exact quotas, in canonical
+        // low-before-high order. Remaining suffix counts prune only impossibility.
+        const stack: {
+          index: number;
+          beneficialLeft: number;
+          neutralLeft: number;
+          nextChoice: number;
+        }[] = [
+          { index: 0, beneficialLeft: wantedBeneficial, neutralLeft: wantedNeutral, nextChoice: 0 },
+        ];
+        while (stack.length) {
+          tick();
+          const state = stack[stack.length - 1];
+          if (state.index === tables.length) {
+            solveTargets();
+            stack.pop();
+            targets.pop();
+            continue;
+          }
+          const options = high === low ? [low] : [low, high];
+          if (state.nextChoice === options.length) {
+            stack.pop();
+            if (state.index > 0) targets.pop();
+            continue;
+          }
+          const n = options[state.nextChoice++],
+            i = state.index;
+          if (n > low && category[i] === -1) continue;
+          const b = state.beneficialLeft - (n > low && category[i] === 1 ? 1 : 0);
+          const z = state.neutralLeft - (n > low && category[i] === 0 ? 1 : 0);
+          if (b >= 0 && z >= 0 && b <= beneficial[i + 1] && z <= neutral[i + 1]) {
+            targets.push(n);
+            stack.push({ index: i + 1, beneficialLeft: b, neutralLeft: z, nextChoice: 0 });
+          }
         }
       }
     }

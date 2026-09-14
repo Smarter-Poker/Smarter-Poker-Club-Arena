@@ -432,6 +432,24 @@
   outline-offset: -1.6cqw;
 }
 
+/* The dialog that carries a console is the console. metallic-popups.css
+   dresses every element whose class ends in "-dialog" (its [class$='-dialog']
+   inventory) in a card of its own - a #111823 shell, a 1px edge, 16px corners
+   and a 3px blue rail along the top, all !important at 0,0,0 - and that card
+   showed behind the art's chamfered corners as a second frame bolted on
+   (measured 2026-09-14 on the buy-in, the rail's #2d72d2 sitting outside the
+   chrome). Every console dialog wrapper carries sc-dialog beside its own
+   class; this switches the shell off longhand by longhand at 0,2,0. */
+.sc-dialog.sc-dialog {
+  isolation: auto;
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
 /* Inside a dialog the global popup chassis (metallic-popups.css) bevels,
    recolours and rounds every button with !important, and its primary /
    danger rule is a `background` shorthand at specificity 0,2,1. The plate

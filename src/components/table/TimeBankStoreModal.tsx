@@ -82,7 +82,7 @@ export const TimeBankStoreModal: React.FC<TimeBankStoreModalProps> = ({
       aria-labelledby="tbs-title"
       onClick={onClose}
     >
-      <div className="tbs-dialog" onClick={(e) => e.stopPropagation()}>
+      <div className="tbs-dialog sc-dialog" onClick={(e) => e.stopPropagation()}>
         <SpadeConsole
           as="section"
           family="riveted"

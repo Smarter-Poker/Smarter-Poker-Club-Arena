@@ -204,7 +204,7 @@ export default function AddOnModal({
   return (
     <div className="aom-overlay">
       <div
-        className="aom-dialog"
+        className="aom-dialog sc-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="add-on-modal-title"

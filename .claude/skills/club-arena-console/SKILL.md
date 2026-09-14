@@ -352,6 +352,15 @@ brings its own paint, so switch that chassis off **longhand by longhand at
 Restate the **longhands**. A `background` shorthand at `0,2,1` will otherwise
 repaint the plate face and clip the art.
 
+**The wrapper too.** The same stylesheet dresses every element whose class ends
+in `-dialog` (`[class$='-dialog']`, `[class$='-modal']` and friends) in a card
+of its own: a `#111823` shell, a 1px edge, 16px corners and a 3px blue rail
+along the top. Behind a console that card shows at the chamfered corners as a
+second frame bolted on. Every console dialog wrapper carries **`sc-dialog`**
+beside its own class (`className="wl-dialog sc-dialog"`); `SpadeConsole.css`
+switches the shell off. Check a corner of the render at 2x before you call a
+dialog done - the rail is three pixels of `#2d72d2` and easy to mistake for art.
+
 ---
 
 ## 4. The method

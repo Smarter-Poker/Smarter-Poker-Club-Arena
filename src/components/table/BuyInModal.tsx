@@ -342,7 +342,7 @@ export function BuyInModal({
       }}
     >
       <div
-        className="bim-dialog"
+        className="bim-dialog sc-dialog"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"

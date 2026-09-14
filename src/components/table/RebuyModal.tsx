@@ -64,7 +64,7 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
   return (
     <div className="rbm-overlay" onClick={onClose}>
       <div
-        className="rbm-dialog"
+        className="rbm-dialog sc-dialog"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"

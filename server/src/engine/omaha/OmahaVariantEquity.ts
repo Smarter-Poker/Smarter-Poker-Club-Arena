@@ -1,4 +1,5 @@
-import type { SeatPlayer } from '../../types.js';
+import type { GameVariant, SeatPlayer } from '../../types.js';
+import { isKnownVariant, isHiLoVariant } from '../VariantRules.js';
 import type { HorseEquityOutcomeSample } from '../HorseEval.js';
 import { calculatePots } from '../PokerEngine.js';
 import { isOmahaPolicyVariant, type OmahaPolicyVariant } from './OmahaVariantPolicyPack.js';
@@ -120,19 +121,31 @@ export function validOmahaVariantEquity(
  * I/O or chip mutations occur here. High/low values are shares of the whole
  * eligible pot and therefore sum to combined equity, even on no-low runouts.
  */
-export function omahaVariantEquityFromShowdowns(input: {
-  variant: OmahaPolicyVariant;
+export interface VariantJointShowdownInput {
+  variant: GameVariant;
   players: SeatPlayer[];
   heroId: string;
   callCost: number;
   opponentIds: string[];
   samples: HorseEquityOutcomeSample[];
-}): OmahaVariantEquityEvidence | null {
+}
+
+export function omahaVariantEquityFromShowdowns(
+  input: VariantJointShowdownInput & { variant: OmahaPolicyVariant }
+): OmahaVariantEquityEvidence | null {
+  return isOmahaPolicyVariant(input.variant) ? variantEquityFromShowdowns(input) : null;
+}
+
+/** Shared pot-share arithmetic consumes scored physical showdowns. It does
+ * not infer a game's card/range model from another variant's policy pack. */
+export function variantEquityFromShowdowns(
+  input: VariantJointShowdownInput
+): OmahaVariantEquityEvidence | null {
   const started = performance.now();
   const { heroId, opponentIds, samples } = input;
   const hero = input.players.find((p) => p.user_id === heroId);
   if (
-    !isOmahaPolicyVariant(input.variant) ||
+    !isKnownVariant(input.variant) ||
     input.players.length < 2 ||
     input.players.length > 10 ||
     !hero ||
@@ -216,7 +229,7 @@ export function omahaVariantEquityFromShowdowns(input: {
       );
       const bestHigh = Math.max(...scores.map((s) => s.high));
       const highWinners = scores.filter((s) => s.high === bestHigh);
-      const lows = input.variant === 'plo8' ? scores.filter((s) => s.low !== null) : [];
+      const lows = isHiLoVariant(input.variant) ? scores.filter((s) => s.low !== null) : [];
       const bestLow = lows.length ? Math.min(...lows.map((s) => s.low!)) : null;
       const lowWinners = bestLow === null ? [] : lows.filter((s) => s.low === bestLow);
       const hi = highWinners.some((s) => s.id === heroId)

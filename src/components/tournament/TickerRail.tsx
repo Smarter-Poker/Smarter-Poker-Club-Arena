@@ -20,7 +20,6 @@ import { useMemo, type CSSProperties, type ReactElement, type ReactNode } from '
 import {
   announcementFor,
   CLOCK_TOKEN,
-  countdown,
   FIELD_SEPARATOR,
   renderTickerItem,
   secondsLeft,
@@ -34,9 +33,9 @@ import {
   readableInk,
   safeHex,
   TONE_ACCENT,
-  withAlpha,
 } from './tickerTheme';
 import { useTickerMarquee } from './useTickerMarquee';
+import { TickerClock } from './TickerClock';
 import './TournamentStartingTicker.css';
 
 /** Under this many seconds the clock itself goes accent and beats once a second. */
@@ -72,9 +71,21 @@ export interface TickerRailProps {
  * `tabular-nums` has to apply to the digits and not to the letterspaced copy
  * around them, and the last-minute urgency treatment is on the DIGITS. A
  * pulsing strip over a live hand is an irritation; a pulsing number is a clock.
+ *
+ * ── ONE FIELD, ONE FLEX ITEM (fixed 2026-09-13, from a photograph) ─────────
+ *
+ * The live rail read "Starts In0:19". The three pieces of a field - the text
+ * before the clock, the clock, and the text after - used to be three SIBLING
+ * spans, and `.mtt-ticker__item` is `inline-flex`, so each of them was a flex
+ * item. A flex item's own trailing whitespace is trimmed at its line-box edge,
+ * which ate the space the author wrote between "In" and the number, on every
+ * countdown the bar has ever shown.
+ *
+ * A field is ONE flex item now and the clock is inline INSIDE it, so the
+ * spacing is ordinary inline text again and the clock is still its own
+ * stylable element. Nothing about the digits changed; the box around them did.
  */
-function itemNodes(entry: TickerItem, now: number, urgent: boolean): ReactNode[] {
-  const clock = typeof entry.deadlineMs === 'number' ? countdown(entry.deadlineMs - now) : '';
+function itemNodes(entry: TickerItem, urgent: boolean): ReactNode[] {
   const out: ReactNode[] = [];
   entry.parts.forEach((part, index) => {
     if (index > 0) {
@@ -85,20 +96,22 @@ function itemNodes(entry: TickerItem, now: number, urgent: boolean): ReactNode[]
       );
     }
     const at = part.toLowerCase().indexOf(CLOCK_TOKEN);
-    if (at === -1 || !clock) {
-      out.push(<span key={`p-${index}`}>{part.replace(/\{clock\}/gi, clock)}</span>);
-      return;
-    }
-    out.push(<span key={`p-${index}-a`}>{part.slice(0, at)}</span>);
     out.push(
-      <span
-        key={`p-${index}-clock`}
-        className={`mtt-ticker__clock${urgent ? ' mtt-ticker__clock--urgent' : ''}`}
-      >
-        {clock}
+      <span key={`p-${index}`} className="mtt-ticker__field">
+        {at === -1 || typeof entry.deadlineMs !== 'number' ? (
+          part.replace(/\{clock\}/gi, '')
+        ) : (
+          <>
+            {part.slice(0, at)}
+            {/* Its own component, with its own second. The container used to
+                advance a clock in state and re-render this entire strip sixty
+                times a minute to change four characters. */}
+            <TickerClock deadlineMs={entry.deadlineMs} urgent={urgent} />
+            {part.slice(at + CLOCK_TOKEN.length)}
+          </>
+        )}
       </span>
     );
-    out.push(<span key={`p-${index}-b`}>{part.slice(at + CLOCK_TOKEN.length)}</span>);
   });
   return out;
 }
@@ -153,8 +166,13 @@ export function TickerRail({
     paddingTop: top > 0 ? 0 : undefined,
     background: railBackground(appearance.backgroundColor),
     color: appearance.textColor,
-    borderBottomColor: withAlpha(flagAccent, 0.26),
-    boxShadow: railGlow(flagAccent),
+    /* THE MATERIAL IS NOT SET HERE (2026-09-13). The rail's bevel, cavity and
+       lift are composed in the stylesheet from the estate's --realism-* tokens
+       so a colour setting cannot overwrite them - an inline `box-shadow` beats
+       a stylesheet one, which is how the designed gradient was lost for three
+       weeks. The club's accent reaches the material as a single variable and
+       the stylesheet decides where it lands. */
+    '--ticker-glow': railGlow(flagAccent),
     fontFamily: appearance.fontFamily === 'System' ? 'system-ui' : appearance.fontFamily,
     '--ticker-text': appearance.textColor,
     '--ticker-accent': flagAccent,
@@ -182,8 +200,13 @@ export function TickerRail({
         {announcementFor(primary, now)}
       </span>
 
+      {/* Both forms ship and the stylesheet picks one, because a phone cannot
+          spare 185 of its 375 pixels for the least surprising word on the bar.
+          The chip is aria-hidden either way - the spoken announcement above
+          carries the flag in full. */}
       <span className="mtt-ticker__flag" aria-hidden="true">
-        {primary.flag}
+        <span className="mtt-ticker__flag-full">{primary.flag}</span>
+        <span className="mtt-ticker__flag-short">{primary.flagShort}</span>
       </span>
 
       <button
@@ -216,16 +239,31 @@ export function TickerRail({
                 {items.map((entry, index) => (
                   <span className="mtt-ticker__item" key={`${copy}-${entry.id}`}>
                     {index > 0 && <span className="mtt-ticker__pip" />}
-                    {itemNodes(entry, now, urgent && index === 0)}
+                    {itemNodes(entry, urgent && index === 0)}
                   </span>
                 ))}
               </span>
             ))}
           </span>
         </span>
-        <span className="mtt-ticker__cta" aria-hidden="true">
-          {primary.tableId ? 'OPEN' : 'REGISTER'}
-        </span>
+        {/*
+          A SIBLING OF THE VIEWPORT, NOT A LAYER OVER IT (fixed 2026-09-13).
+          This was absolutely positioned at the right edge with a scrim behind
+          it, and the message scrolled underneath: the live rail read
+          "$100 Freeroll - 12:00 PM StartREGISTER In". A scrim cannot fix that,
+          because the text is still there and still moving. As a flex sibling
+          the viewport is simply narrower, so the two can never occupy the same
+          pixels and the edge mask does the blending it was already there for.
+        */}
+        {/* AND ONLY WHEN THERE IS SOMEWHERE TO GO. A club's own message has
+            neither a tournament nor a table, and the rail was offering
+            "REGISTER" on it - a button promising a door that does not exist.
+            Seen in the harness on the CLUB UPDATE line. */}
+        {(primary.tournamentId || primary.tableId) && (
+          <span className="mtt-ticker__cta" aria-hidden="true">
+            {primary.tableId ? 'OPEN' : 'REGISTER'}
+          </span>
+        )}
       </button>
 
       <button
@@ -238,17 +276,20 @@ export function TickerRail({
 
       {/*
         The window, drawn rather than written. Two pixels of accent that empty
-        left to right across whatever the top item is counting down to, so the
-        bar reads as live rather than looped without spending a single character
-        on saying so.
+        across THIS item's own window - which used to be a hard-coded five
+        minutes for everything, so a registration closing in 4:12 drew a nearly
+        full bar and a start in 0:19 drew a stub that read as an artefact. An
+        item with no window draws nothing at all.
       */}
-      {typeof primary.deadlineMs === 'number' && left !== null && (
+      {typeof primary.deadlineMs === 'number' && left !== null && primary.windowMs ? (
         <span
           className="mtt-ticker__drain"
           aria-hidden="true"
-          style={{ width: `${Math.max(0, Math.min(100, (left / 300) * 100))}%` }}
+          style={{
+            width: `${Math.max(0, Math.min(100, (left / (primary.windowMs / 1000)) * 100))}%`,
+          }}
         />
-      )}
+      ) : null}
     </div>
   );
 }

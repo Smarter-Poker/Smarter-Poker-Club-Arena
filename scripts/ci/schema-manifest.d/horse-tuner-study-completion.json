@@ -1,0 +1,19 @@
+{
+  "_owner": "Horse Brain Phase 14 nightly completion",
+  "tables": ["horse_tuner_study_rosters", "horse_tuner_study_completions"],
+  "functions": [
+    "fn_horse_tuner_recorded_horses",
+    "fn_prepare_horse_tuner_study",
+    "fn_complete_horse_tuner_study"
+  ],
+  "columns": {
+    "horse_tuner_study_rosters": ["run_date", "request_hash", "request_payload", "created_at"],
+    "horse_tuner_study_completions": [
+      "run_date",
+      "request_hash",
+      "eligible_horses",
+      "studied",
+      "completed_at"
+    ]
+  }
+}

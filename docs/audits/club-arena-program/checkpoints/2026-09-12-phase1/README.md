@@ -1,0 +1,13 @@
+# G5 Phase 1 accepted; foundation delivery continues
+
+G8 accepted the research, recovered audit baseline and backlog-derived plan on September 12, 2026. The accepted G5 plan has eight phases: the completed audit/plan checkpoint and seven delivery milestones containing 18 delivery units. Financial foundation and all seven projects remain incomplete. All 18 MTT movement execution boundaries remain open.
+
+The consolidated packet preserves 1,551 original evidence records with one primary delivery home and 25 root-cause contracts. These records include safeguards, historical evidence, policy questions and repair findings; they are not 1,551 unique defects. Original 109 backlog identities and 216 controls keep their recorded status and scope. Independent review0052 and its addenda accepted the final consolidation and frozen input binding before G8 acceptance.
+
+COPY_MANIFEST.json binds the copied bytes. Sealed source packets retain their original absolute input paths as provenance. ACCEPTED_EXECUTION_PHASES.json is the current scheduling decision; FROZEN_EXECUTION_PHASE_INPUT.json is the exact predecision input required by the sealed consolidation. The input-reference addendum records this distinction. Historical intake and its original independent review remain unchanged elsewhere in this directory.
+
+Hub GDPR financial-refusal and exact Diamond credit permission containment were separately verified in production. CA PR4389 input validation is merged and publication/normal-route acceptance remains pending. Spin retained-seed API PR1744 is in protected CI. MTT destination navigation and ambiguous-source diagnostics are in implementation/review. F06 requires a durable original break completion and successor recovery contract; an in-memory retry map alone was rejected. These are scoped delivery states, not completion of a delivery phase.
+
+G8 coordinates through local handoffs; support tasks must never attempt outgoing message tools. Work advances on independent eligible tasks during publication. The revoked StageB global freeze is not reinstated. Existing production owners, normal protected checks, migration requirements, runtime ownership and maintenance certification remain applicable. Internal lead sessions reached usage limits after sealing their evidence; recovered work and existing support tasks continue without duplicate audits, new reset credits or competing writers.
+
+The main G8 conversation and work/g8/execution/ACTIVE_DELIVERY.json hold the evolving execution queue. This checkpoint is a recoverable accepted planning snapshot, not a live deployment certificate. Broader G1-G4/G6/G7 projects begin only after actual G5 foundation acceptance.

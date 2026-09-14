@@ -352,3 +352,12 @@ test.describe('mobile lobby chrome on the narrowest phone', () => {
     expect(Math.abs(m.sortbarTop - m.deckBottom), 'gap between deck and row').toBeLessThan(1);
   });
 });
+
+// The cash View failure was a native scroll target behind three chrome layers.
+// This fixture executes the real mobile card component and measured scrollport.
+for (const width of [375, 390]) {
+  test(`cash View stays reachable between measured chrome at ${width}px`, async ({ page }) => {
+    const { verifyLobbyScrollClearance } = await import('./helpers/lobby-scroll-clearance.mjs');
+    await verifyLobbyScrollClearance(page, width);
+  });
+}

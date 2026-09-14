@@ -38,6 +38,10 @@ BREAK_CUTOVER_PROOF_SECONDS=150
 BREAK_ROLLBACK_RESERVE_SECONDS=135
 BREAK_DEADLINE_SLACK_SECONDS=0
 NON_BREAK_RECOVERY_MAX_SECONDS=300
+# CLAUDE.md 13: the engine restarts inside the announced break that opens at
+# :55 of every hour. This is the same minute every other surface reads, and
+# tests/the-break-clocks-agree.law.test.ts pins them together.
+BREAK_START_MINUTE=55
 MIN_BREAK_REMAINING_MS=$(((BREAK_CUTOVER_PROOF_SECONDS + BREAK_ROLLBACK_RESERVE_SECONDS + BREAK_DEADLINE_SLACK_SECONDS) * 1000))
 
 die() {
@@ -55,6 +59,7 @@ GITHUB_RUN_ID="${RUN_ID%%-*}"
 [ "$MAX_RUNTIME_SECONDS" -ge 1200 ] && [ "$MAX_RUNTIME_SECONDS" -le 8400 ] \
   || die 'runtime budget must be between twenty minutes and two hours twenty minutes'
 STARTED_EPOCH="$(date +%s)"
+SUPERSEDED_BY=""
 DEADLINE=0
 CERTIFICATE_DEADLINE=0
 
@@ -204,8 +209,25 @@ release_engine_lock() {
   LOCK_HELD=0
 }
 
+# Whole-hour arithmetic only: the break opens on a fixed minute of every hour
+# and runs to the top of the next one, so the answer never depends on the local
+# timezone or on the engine being reachable. Zero means a break is open NOW -
+# the wrap-around reading it replaced said the next break was an hour away at
+# :56, which is inside the break this transaction is trying to use.
+seconds_to_next_break() {
+  local past break_at
+  past=$(( $(date -u +%s) % 3600 ))
+  break_at=$(( BREAK_START_MINUTE * 60 ))
+  if [ "$past" -ge "$break_at" ]; then
+    echo 0
+  else
+    echo $(( break_at - past ))
+  fi
+}
+
 source_target_is_current() {
   local main_sha latest remaining lock_wait fetch_wait attempt fetched source_deadline
+  local high_water high_water_contained
   remaining="$(remaining_seconds)" || die 'deadline expired before protected-main verification'
   source_deadline="$DEADLINE"
   if [ "${BREAK_END_EPOCH:-0}" -gt 0 ]; then
@@ -269,10 +291,34 @@ source_target_is_current() {
   EXPECTED_SERVER_TREE="$(timeout --signal=TERM --kill-after=1s "${remaining}s" env \
     GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" rev-parse --verify "$SHA:server")" \
     || die 'bounded target server tree lookup failed'
+  # A normal deploy must contain the durable high-water release, including
+  # after an intentional rollback moved desired-sha backwards. New protected-main
+  # merges do not revoke an otherwise forward target. The engine-lock rechecks
+  # and seal prepare repeat this ordering proof before any cutover can commit.
+  remaining=$((source_deadline - $(date +%s)))
+  [ "$remaining" -gt 2 ] || die 'source verification deadline expired before forward-only proof'
+  [ "$remaining" -le 10 ] || remaining=10
+  high_water="$(timeout --signal=TERM --kill-after=1s 5s "$RELEASE_SEAL" get high-water-sha 2>/dev/null || true)"
+  high_water_contained=0
+  if [[ "$high_water" =~ ^[0-9a-f]{40}$ ]]; then
+    if timeout --signal=TERM --kill-after=1s "${remaining}s" env GIT_NO_REPLACE_OBJECTS=1 \
+      git -C "$REPO_DIR" merge-base --is-ancestor "$high_water" "$SHA" 2>/dev/null; then
+      high_water_contained=1
+    fi
+  fi
   flock -u 8
   [[ "$latest" =~ ^[0-9a-f]{40}$ ]] || die 'latest engine component SHA is unreadable'
-  [ "$latest" = "$SHA" ] || die "target $SHA is stale; protected main requires $latest"
   [[ "$EXPECTED_SERVER_TREE" =~ ^[0-9a-f]{40}$ ]] || die 'target server tree is unreadable'
+  [[ "$high_water" =~ ^[0-9a-f]{40}$ ]] \
+    || die "target $SHA cannot prove the sealed high-water release"
+  [ "$high_water_contained" = 1 ] \
+    || die "target $SHA does not contain the sealed high-water release $high_water"
+  SUPERSEDED_BY=''
+  if [ "$latest" != "$SHA" ]; then
+    SUPERSEDED_BY="$latest"
+    echo "ENGINE_RELEASE_SUPERSEDED_BY=$latest"
+    echo "[engine-release-transaction] FORWARD TARGET BEHIND MAIN: latest engine $latest; target $SHA contains sealed high-water $high_water. The maintenance certificate and every cutover proof remain mandatory." >&2
+  fi
 }
 
 parse_health_instance_for_sha() {
@@ -791,8 +837,8 @@ release_engine_lock
 
 # The durable unit, not the SSH session, owns image construction. The outer
 # timeout bounds both the host build-lock wait and Docker itself. A source
-# freshness check after the build prevents an obsolete candidate from waiting
-# for or consuming the next table break.
+# check after the build repeats protected-main containment and the sealed
+# high-water ordering before the candidate waits for a certified table break.
 assert_time_remaining
 create_image_lease
 # The builder owns up to 1,800s of FIFO lock wait and 1,500s of bounded Docker
@@ -815,8 +861,8 @@ while :; do
   [ "$(date +%s)" -lt "$CERTIFICATE_DEADLINE" ] \
     || die 'the engine did not present a restart certificate with enough proof time remaining'
   if [ "$(date +%s)" -ge "$NEXT_FRESHNESS_CHECK" ]; then
-    # A superseded SHA must release its workflow and host resources promptly;
-    # it cannot occupy the wait until the next hourly certificate.
+    # Recheck containment and sealed high-water while waiting. A newer sealed
+    # release revokes an older target; a newer unshipped merge alone does not.
     source_target_is_current
     NEXT_FRESHNESS_CHECK=$(( $(date +%s) + 60 ))
   fi
@@ -825,7 +871,13 @@ while :; do
   CERTIFICATE_RC=$?
   set -e
   if [ "$CERTIFICATE_RC" -eq 2 ]; then
-    die "the certified table break has ${BREAK_REMAINING_MS:-0}ms remaining, below the ${MIN_BREAK_REMAINING_MS}ms candidate-and-recovery budget; refusing before mutation"
+    # A predecessor or image build can consume the beginning of this break.
+    # No prepare or break deadline exists yet. Keep the original request's
+    # absolute deadline and source-freshness checks while waiting for a later
+    # complete certificate; never reduce the candidate-and-recovery reserve.
+    echo "[engine-release-transaction] the certified table break has ${BREAK_REMAINING_MS:-0}ms remaining, below the ${MIN_BREAK_REMAINING_MS}ms candidate-and-recovery budget; refusing before mutation and waiting for a later certificate"
+    bounded_sleep 15
+    continue
   fi
   if [ "$CERTIFICATE_RC" -ne 0 ]; then
     bounded_sleep 5
@@ -843,7 +895,9 @@ while :; do
   set -e
   if [ "$CERTIFICATE_RC" -eq 2 ]; then
     release_engine_lock
-    die "the locked table break has ${BREAK_REMAINING_MS:-0}ms remaining, below the ${MIN_BREAK_REMAINING_MS}ms candidate-and-recovery budget"
+    echo "[engine-release-transaction] the locked table break has ${BREAK_REMAINING_MS:-0}ms remaining, below the ${MIN_BREAK_REMAINING_MS}ms candidate-and-recovery budget; waiting for a later certificate"
+    bounded_sleep 15
+    continue
   fi
   if [ "$CERTIFICATE_RC" -ne 0 ]; then
     release_engine_lock
@@ -954,8 +1008,8 @@ for attempt in $(seq 1 18); do
   bounded_sleep 5
 done
 
-# Main may advance during the cold-start/public proof. The durable
-# high-water mark moves only if this is still the latest engine component.
+# Main and the durable high-water may advance during the cold-start/public
+# proof. Recheck containment and forward ordering before committing this seal.
 source_target_is_current
 assert_break_proof_time
 ACTUAL_CID="$(bounded_break_command 10 docker container inspect -f '{{.Id}}' "$CONTAINER")"
@@ -994,10 +1048,16 @@ assert_time_remaining
 assert_break_proof_time
 
 set +e
+SEAL_REASON='local, public, and elected-leader compatibility proofs passed'
+if [ -n "$SUPERSEDED_BY" ]; then
+  # Written into the durable seal and therefore into engine-release-audit.jsonl.
+  # Record which newer engine commit was known when this forward release sealed.
+  SEAL_REASON="$SEAL_REASON; forward release behind protected-main engine $SUPERSEDED_BY"
+fi
 bounded_break_command 10 "$RELEASE_SEAL" commit \
   --sha "$SHA" --image "$TARGET_IMAGE_ID" --container "$CONTAINER" \
   --run-id "$RUN_ID" --run-url "$RUN_URL" --actor "$ACTOR" \
-  --reason 'local, public, and elected-leader compatibility proofs passed'
+  --reason "$SEAL_REASON"
 COMMIT_RC=$?
 set -e
 [ "$COMMIT_RC" -eq 0 ] \

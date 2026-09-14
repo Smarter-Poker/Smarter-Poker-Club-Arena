@@ -47,6 +47,7 @@ export interface OmahaVariantReceipt {
   shadowUtility?: import('../../types.js').HorseTournamentUtilityLedger;
   utilityOwner: 'cash' | 'phase7_pending' | 'phase7_evaluated' | 'phase7_unavailable';
   utilityLatencyMs?: number;
+  utilityUnavailableReason?: string;
   latencyMs: number;
   executionStatus: 'pending' | 'intended' | 'coerced' | 'fallback' | 'not_executed';
   executedAction: HorseDecision['action'] | null;

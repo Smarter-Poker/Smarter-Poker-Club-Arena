@@ -63,6 +63,77 @@ export const SPADE_CONSOLE_ZONES = {
   platePrimary: { x: 520, y: 46, width: 381, height: 129 },
 } satisfies Record<string, Zone>;
 
+/**
+ * THE SHARK FAMILY. Dan's shark heads-up master, cut into head / rails / foot
+ * like the spade (Dan 2026-09-13: not every card the same frame). One plate in
+ * the foot, the shark crest below it, the diamond crest in the head. All zone
+ * maths is in this master's own pixels: 733 wide.
+ */
+export const SHARK_CONSOLE_W = 733;
+export const SHARK_CONSOLE_TOP_H = 154;
+export const SHARK_CONSOLE_FOOT_H = 172;
+export const SHARK_CONSOLE_ZONES = {
+  eyebrow: { x: 70, y: 50, width: 440, height: 26 },
+  title: { x: 70, y: 76, width: 590, height: 66 },
+  titleBesidePill: { x: 70, y: 76, width: 440, height: 66 },
+  subtitle: { x: 70, y: 126, width: 440, height: 22 },
+  /** The rounded slot at the right of the well, x 527-642 y 70-122. */
+  pill: { x: 537, y: 79, width: 96, height: 36 },
+  /** The one blue plate's face, inside its chamfered rim. */
+  plate: { x: 110, y: 18, width: 512, height: 76 },
+} as const;
+
+/**
+ * THE RIVETED FAMILY. Dan's spade NLH master (game-cards/nlh/spade-nlh-premium-v1,
+ * 729 wide): bolted corners, a wider base that steps out around two plates,
+ * and the spade chip medallion in the bottom rail. Cut at the glass gap
+ * between the header well and the first bay (rows 246-256 are the plain
+ * rail), and again at the gap above the base (row 582). Two plates, like the
+ * spade console, on a heavier frame - for money.
+ */
+export const RIVETED_CONSOLE_W = 729;
+export const RIVETED_CONSOLE_TOP_H = 209;
+export const RIVETED_CONSOLE_FOOT_H = 333;
+export const RIVETED_CONSOLE_ZONES = {
+  eyebrow: { x: 88, y: 72, width: 350, height: 26 },
+  title: { x: 88, y: 100, width: 555, height: 72 },
+  titleBesidePill: { x: 88, y: 100, width: 350, height: 72 },
+  subtitle: { x: 88, y: 168, width: 350, height: 24 },
+  /** The chrome capsule at the right of the well, x 455-645 y 85-145. */
+  pill: { x: 472, y: 97, width: 156, height: 38 },
+  /** The two bolted plates' faces, inside their rims. */
+  plateSecondary: { x: 80, y: 82, width: 235, height: 98 },
+  platePrimary: { x: 380, y: 82, width: 260, height: 98 },
+} as const;
+
+export type ConsoleFamily = 'spade' | 'shark' | 'riveted';
+
+/** Everything that differs between families. Structure varies BETWEEN
+ *  families, never within one - each row here is one approved master. */
+const FAMILY = {
+  spade: {
+    W: SPADE_CONSOLE_W,
+    TOP_H: SPADE_CONSOLE_TOP_H,
+    FOOT_H: SPADE_CONSOLE_PLATES_H,
+    zones: SPADE_CONSOLE_ZONES,
+    plates: 2,
+  },
+  shark: {
+    W: SHARK_CONSOLE_W,
+    TOP_H: SHARK_CONSOLE_TOP_H,
+    FOOT_H: SHARK_CONSOLE_FOOT_H,
+    zones: SHARK_CONSOLE_ZONES,
+    plates: 1,
+  },
+  riveted: {
+    W: RIVETED_CONSOLE_W,
+    TOP_H: RIVETED_CONSOLE_TOP_H,
+    FOOT_H: RIVETED_CONSOLE_FOOT_H,
+    zones: RIVETED_CONSOLE_ZONES,
+    plates: 2,
+  },
+} as const;
+
 export function zonePct(zone: Zone, canvasW: number, canvasH: number): CSSProperties {
   return {
     left: `${(zone.x / canvasW) * 100}%`,
@@ -120,12 +191,14 @@ export function ZoneText({
   id?: string;
   minRatio?: number;
   /**
-   * Width safety factor. useFitText derives its ratio from ONE measurement of
-   * the unscaled text, so the scaled result lands a couple of percent wide -
-   * hinting at the smaller size, and the trailing letter-space. Measured on the
-   * header 2026-09-09: a 185px zone got a 190px title, and the zone (which hides
-   * its overflow) ate the last letter. Inflating `needed` shrinks the ratio by
-   * the same margin, so the line lands inside its zone with air.
+   * Horizontal stretch this zone's stylesheet applies via `transform: scaleX()`,
+   * which is invisible to scrollWidth and so has to be declared here. Leave it
+   * at 1 unless the zone really is stretched.
+   *
+   * It is NOT a safety margin. It was used as one until 2026-09-13, because
+   * useFitText trusted a single measurement and landed a few per cent wide;
+   * the hook now measures what it actually rendered and corrects, so inflating
+   * this only makes the line smaller than its zone allows.
    */
   headroom?: number;
   style?: CSSProperties;
@@ -146,6 +219,7 @@ export function SpadeConsole({
   pill,
   pillInk = 'blue',
   crest = 'spade',
+  family = 'spade',
   foot,
   plates,
   children,
@@ -162,6 +236,8 @@ export function SpadeConsole({
   pillInk?: ConsoleInk;
   /** Which emblem the head wears. Same structure, different dress. */
   crest?: ConsoleCrest;
+  /** Which approved master the frame is cut from. 'shark' carries ONE plate. */
+  family?: ConsoleFamily;
   /** 'plates' paints the two action plates into the foot; 'foot' just closes. */
   foot?: 'plates' | 'foot';
   plates?: {
@@ -173,15 +249,22 @@ export function SpadeConsole({
   as?: 'section' | 'div' | 'article';
 } & Record<string, unknown>) {
   const footKind = foot ?? (plates ? 'plates' : 'foot');
-  const W = SPADE_CONSOLE_W;
+  const F = FAMILY[family];
+  const W = F.W;
+  const TOP_H = F.TOP_H;
+  const Z = F.zones;
+  const onePlate = F.plates === 1;
   return (
-    <Tag className={`sc sc--${footKind} sc--crest-${crest} ${className}`.trim()} {...rest}>
+    <Tag
+      className={`sc sc--${footKind} sc--crest-${crest} sc--family-${family} ${className}`.trim()}
+      {...rest}
+    >
       <div className="sc__head">
         {eyebrow && (
           <ZoneText
             text={eyebrow}
             className="sc__eyebrow sc-ink--blue"
-            style={zonePct(SPADE_CONSOLE_ZONES.eyebrow, W, SPADE_CONSOLE_TOP_H)}
+            style={zonePct(Z.eyebrow, W, TOP_H)}
           />
         )}
         <ZoneText
@@ -196,42 +279,46 @@ export function SpadeConsole({
              thing the fit exists to prevent. The floor drops for titles only;
              every other zone keeps the default. */
           minRatio={0.44}
-          headroom={1.06}
-          style={zonePct(
-            pill ? SPADE_CONSOLE_ZONES.titleBesidePill : SPADE_CONSOLE_ZONES.title,
-            W,
-            SPADE_CONSOLE_TOP_H
-          )}
+          style={zonePct(pill ? Z.titleBesidePill : Z.title, W, TOP_H)}
         />
         {subtitle && (
           <ZoneText
             text={subtitle}
             className="sc__subtitle sc-ink--muted"
-            style={zonePct(SPADE_CONSOLE_ZONES.subtitle, W, SPADE_CONSOLE_TOP_H)}
+            style={zonePct(Z.subtitle, W, TOP_H)}
           />
         )}
         {pill && (
           <ZoneText
             text={pill}
             className={`sc__pill sc-ink--${pillInk}`}
-            headroom={1.06}
-            style={zonePct(SPADE_CONSOLE_ZONES.pill, W, SPADE_CONSOLE_TOP_H)}
+            style={zonePct(Z.pill, W, TOP_H)}
           />
         )}
       </div>
       {children !== undefined && children !== null && <div className="sc__body">{children}</div>}
       <div className="sc__foot">
-        {footKind === 'plates' && plates?.secondary && (
+        {onePlate && plates?.primary && (
           <PlateButton
-            zone={SPADE_CONSOLE_ZONES.plateSecondary}
-            canvasH={SPADE_CONSOLE_PLATES_H}
+            zone={SHARK_CONSOLE_ZONES.plate}
+            canvasW={W}
+            canvasH={F.FOOT_H}
+            {...plates.primary}
+          />
+        )}
+        {!onePlate && footKind === 'plates' && plates?.secondary && (
+          <PlateButton
+            zone={(Z as typeof SPADE_CONSOLE_ZONES).plateSecondary}
+            canvasW={W}
+            canvasH={F.FOOT_H}
             {...plates.secondary}
           />
         )}
-        {footKind === 'plates' && plates?.primary && (
+        {!onePlate && footKind === 'plates' && plates?.primary && (
           <PlateButton
-            zone={SPADE_CONSOLE_ZONES.platePrimary}
-            canvasH={SPADE_CONSOLE_PLATES_H}
+            zone={(Z as typeof SPADE_CONSOLE_ZONES).platePrimary}
+            canvasW={W}
+            canvasH={F.FOOT_H}
             {...plates.primary}
           />
         )}

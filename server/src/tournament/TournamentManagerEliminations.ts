@@ -34,6 +34,7 @@ import {
   eliminationSweepsInflight,
 } from '../observability/engineInstruments.js';
 import { computePlacePrize, prizePoolAvailableToPlaces } from './payoutMath.js';
+import { UNIT_CENTS_ASSET_NOT_READ } from './tournamentUnit.js';
 import { resolvePayoutStructure, parsePayoutStructure } from './payoutStructure.js';
 import type { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import type { VerifiedTournamentCompletionReceipt } from './completionSettlementReceipt.js';
@@ -148,6 +149,39 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * standings tie that the accepted hand can distinguish.
    */
   private readonly bustRefusalStreak = new Map<string, number>();
+
+  /**
+   * ═════════════════════════════════════════════════════════════════════════
+   *  THE UNIT THIS MANAGER PRICES PLACES IN - ONE ANSWER, TWO CALL SITES
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * Both places this file prices a finishing position - `eliminatePlayer` for
+   * places 2..N and the late-registration reprice for all of them - ask here
+   * rather than each naming a unit of their own. That is the shape the rest of
+   * Phase 8 was about: the ladder rule had four spellings and nothing held
+   * them together, so the unit gets one spelling from the start.
+   *
+   * DIAMOND-AWARE SINCE 2026-09-14. The 2026-09-13 note here held this at the
+   * chip unit because `fn_prepare_tournament_place_obligations` priced the
+   * ladder to the cent and demanded `tournament_players.prize` agree with it.
+   * Read again against the live estate before the payout migration: that
+   * function has no caller in the database or in this engine (it belongs to
+   * the ruling path the server does not call). The path the engine DOES call
+   * - fn_complete_tournament_terminal -> fn_settle_tournament_places - derives
+   * its ladder from fn_ca_tournament_place_amounts, which knows the unit, and
+   * stamps `tournament_players.prize` from that ladder in the same
+   * transaction; it never compares the engine's provisional figure with its
+   * own until the event is COMPLETED and the stamp is its own. So the number
+   * computed here is presentation, and the only wrong thing it can do is show
+   * a Diamond finisher 122.10 for a bust the database will settle at 122.
+   *
+   * The unit comes from the club read beside the tournament row
+   * (`readTournamentClub`). When that read failed, the named admission is
+   * passed and the failure was already reported there - never a bare cent.
+   */
+  private placeLadderUnitCents(): number {
+    return this.tournamentUnit() ?? UNIT_CENTS_ASSET_NOT_READ;
+  }
 
   override requestEliminationSweep(
     reason?: string,
@@ -994,10 +1028,22 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
              */
             if (this.eliminationWorkBudgetExpired()) {
               if (committedThisPass > 0 || !this.grantEliminationMutationGrace()) {
+                /* A BACKLOG ENDS THE ASSIGNMENT PASS, NEVER THE SWEEP
+                   (2026-09-12, drift incident 7ab0dcbe). This is the same class
+                   as the `bustBatchHasMore` return fixed below: returning here
+                   left eliminationSweepCursor at stage 1, so finishStage,
+                   addOnStage and balanceStage - the ONLY caller of
+                   checkTableBalance - were unreachable for as long as the work
+                   budget kept expiring mid-batch, which on a large backlog is
+                   every pass. Ending the LOOP instead leaves the rest of the
+                   sweep and the cursor exactly where completedStage(2) expects
+                   them; the unresolved-bust retry still re-drives the players
+                   this pass did not reach. */
+                bustBatchHasMore = true;
                 this.requestUrgentEliminationSweepAfter(
                   TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
                 );
-                return;
+                break;
               }
               reportError(
                 new Error(
@@ -1090,7 +1136,27 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                * stuck event reaches the money board and not only this log
                * line.
                */
-              if (streak < TournamentManagerBase.BUST_REFUSAL_SKIP_AFTER) return;
+              if (streak < TournamentManagerBase.BUST_REFUSAL_SKIP_AFTER) {
+                /* A REFUSAL ENDS THE ASSIGNMENT PASS, NEVER THE SWEEP
+                   (2026-09-12, drift incident 7ab0dcbe). The abort itself is
+                   deliberate and stays: takenPositions is stale the moment the
+                   door refuses, so no further place may be handed out from this
+                   snapshot. What was wrong was returning from the SWEEP -
+                   eliminationSweepCursor stayed at stage 1, balanceStage never
+                   ran, and one player the door would not accept stopped the
+                   whole field consolidating until its tables drained to one
+                   player each and could no longer deal. All 10 RUNNING events
+                   with a >20 zero-chip backlog were stuck this way; event
+                   05e104c7 dealt 22 hands in 12 minutes while resolving 0
+                   busts. The already-armed unresolved-bust retry rebuilds the
+                   ladder from persisted positions before it writes anybody
+                   else. */
+                bustBatchHasMore = true;
+                this.requestUrgentEliminationSweepAfter(
+                  TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+                );
+                break;
+              }
               reportError(
                 new Error(
                   `[Tournament:${this.tournamentId.slice(0, 8)}] the knockout door has refused ${refusedId.slice(0, 8)} ${streak} times running; recording the rest of the field and leaving that bust for the door to accept. The event no longer waits on one player it cannot record.`
@@ -1110,8 +1176,23 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         }
 
         if (bustBatchHasMore) {
+          /* A BACKLOG IS NOT A REASON TO SKIP THE REST OF THE SWEEP (2026-09-12,
+             drift incident 7ab0dcbe). This `return` left eliminationSweepCursor
+             at stage 1, so every later stage was unreachable for as long as more
+             than SWEEP_MUTATION_BATCH_SIZE zero-chip players existed - including
+             balanceStage, the ONLY caller of checkTableBalance. On a 200 runner
+             field that is the whole event, and it is self-reinforcing: no
+             consolidation means tables drain to one player, a table of one
+             cannot deal, and the busts that caused the backlog are never
+             recorded. Afternoon Free Buy 94b24ce3 wrote 200 seat rows for 199
+             players and NOT ONE balancer move, stopped dealing at 22:09Z on 23
+             tables holding one player each, and left 151 players unranked and
+             250.90 in escrow payable to nobody. Platform-wide when this was
+             found: 45 events in that state, 243 unranked players, 5,430.90
+             pinned. The backlog still re-arms the next sweep - it just no
+             longer holds the cursor hostage, so the remaining busts are taken
+             one batch per full cycle while the field actually consolidates. */
           this.requestEliminationSweep();
-          return;
         }
 
         if (completedStage(2)) return;
@@ -1329,6 +1410,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         if (!isMaintenanceFrozen()) {
           await this.checkTableBalance();
           if (sweepStopped()) return;
+          // Balancing can yield after an admitted move/read consumes the
+          // budget. Its void helper has not proved the stage complete; keep
+          // this cursor so the next admission finishes consolidating tables.
+          if (this.eliminationWorkBudgetExpired()) return;
 
           // The old five-second manager interval also happened to poll final
           // table deal votes. Preserve the feature's intended ten-second
@@ -1568,6 +1653,18 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
       }
     } finally {
+      // Helpers may yield inside a stage after a slow RPC consumes the work
+      // budget. They have not reached completedStage(), so the cursor and its
+      // causal wake still belong to this manager. Preserve that continuation
+      // without rearming a stopped or replaced lifecycle.
+      if (
+        !completedWholeSweep &&
+        !budgetRequeued &&
+        !sweepStopped() &&
+        this.eliminationWorkBudgetExpired()
+      ) {
+        this.requestEliminationSweep();
+      }
       if (completedWholeSweep && this.running && !signal.aborted) {
         try {
           await acknowledgeCapturedWakes();
@@ -2177,7 +2274,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           );
           return false;
         }
-        prize = computePlacePrize(ladderPool, payouts, position);
+        prize = computePlacePrize(ladderPool, payouts, position, this.placeLadderUnitCents());
       }
     }
 
@@ -3644,7 +3741,12 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     for (const player of eliminated) {
       const payoutEntry = payouts.find((p: any) => Number(p.place) === Number(player.position));
       const correctPrize = payoutEntry
-        ? computePlacePrize(ladderPool, payouts, Number(player.position))
+        ? computePlacePrize(
+            ladderPool,
+            payouts,
+            Number(player.position),
+            this.placeLadderUnitCents()
+          )
         : 0;
 
       /**
@@ -3984,6 +4086,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   private async cleanupCommittedTournament(
     receipt: VerifiedTournamentCompletionReceipt
   ): Promise<boolean> {
+    this.retireBlindClockAfterCommittedTerminal();
     this.tournamentFinished = true;
     this.committedFinishReceipt = receipt;
 
@@ -4006,6 +4109,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   private async cleanupCommittedSatellite(
     receipt: VerifiedSatelliteSettlementReceipt
   ): Promise<boolean> {
+    this.retireBlindClockAfterCommittedTerminal();
     this.tournamentFinished = true;
     this.committedSatelliteReceipt = receipt;
     await this.broadcastCommittedOutcome('tournament_winner', {
@@ -4770,6 +4874,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   private async settleFinalTableDeal(
     receipt: VerifiedTournamentCompletionReceipt
   ): Promise<boolean> {
+    this.retireBlindClockAfterCommittedTerminal();
     this.tournamentFinished = true;
     this.finalTableDealHandled = true;
     this.committedFinalTableDealReceipt = receipt;
@@ -4939,7 +5044,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           reportError(alertErr, 'Tournament.atomic_satellite_finish_alert_failed');
         }
         if (provenRefusal) releaseFinishGuard();
-        if (!provenRefusal) await this.stopAndWait();
+        if (!provenRefusal) {
+          this.fenceUnknownTerminalOutcome(
+            'Tournament.atomic_satellite_finish_manager_stop_failed'
+          );
+        }
         return;
       }
 
@@ -4983,6 +5092,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           {
             tournament_id: this.tournamentId,
             winner_id: winnerId,
+            // The durable inbox must retain the cause after this container's
+            // logs are gone; reportError alone does not preserve it there.
+            error: settlementErr instanceof Error ? settlementErr.message : String(settlementErr),
+            error_name: settlementErr instanceof Error ? settlementErr.name : typeof settlementErr,
             outcome_unknown: outcomeUnknown,
             proven_refusal: provenRefusal,
           }

@@ -16,7 +16,7 @@ describe('public table liveness carries category, never ownership authority', ()
     expect(snapshot).toContain('manager.getPublicLiveTableClubId()');
     expect(snapshot).toContain('manager.getTableIds()');
     expect(snapshot).toContain('tournamentDescriptorByTableId.get(id)');
-    expect(snapshot).toContain("engine.isTournament() ? null : 'cash'");
+    expect(snapshot).toContain("engine.isTournament() ? null : ('cash' as const)");
   });
 
   it('does not copy a lease proof or private tournament row into health', () => {

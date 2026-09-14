@@ -54,8 +54,21 @@ describe('one refused bust does not freeze an event', () => {
   it('a transient refusal still aborts the pass, and only a standing one is passed over', () => {
     expect(BASE).toMatch(/static readonly BUST_REFUSAL_SKIP_AFTER = 3;/);
     const refusal = sliceEnclosingBlock(ELIM, 'this.bustRefusalStreak.set(refusedId, streak);');
-    // the early return is still there for the first refusals
-    expect(refusal).toContain(
+    // The early abort is still there for the first refusals - takenPositions is
+    // stale the moment the door refuses, so no further place may be handed out
+    // from this snapshot.
+    //
+    // 2026-09-12 (drift incident 7ab0dcbe): it ends the ASSIGNMENT PASS, not
+    // the sweep. The `return` it used to be exited runEliminationSweep before
+    // completedStage(2), so eliminationSweepCursor stayed at stage 1 and every
+    // later stage was unreachable - including balanceStage, the ONLY caller of
+    // checkTableBalance. One player the door would not accept therefore stopped
+    // the whole field consolidating until its tables drained to one player each
+    // and could no longer deal, which is the freeze this law is named for
+    // arriving by a second route.
+    expect(refusal).toContain('if (streak < TournamentManagerBase.BUST_REFUSAL_SKIP_AFTER) {');
+    expect(refusal).toMatch(/bustBatchHasMore = true;[\s\S]{0,200}break;/);
+    expect(refusal, 'a refusal may never end the sweep').not.toContain(
       'if (streak < TournamentManagerBase.BUST_REFUSAL_SKIP_AFTER) return;'
     );
     // and past that the pass carries on with the rest of the field

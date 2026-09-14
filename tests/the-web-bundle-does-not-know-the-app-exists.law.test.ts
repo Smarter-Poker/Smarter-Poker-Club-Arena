@@ -45,7 +45,7 @@ describe('the web bundle does not know the native app exists', () => {
     expect(vite).toContain("const WEB_BASE = '/hub/club-arena/';");
     expect(vite).toContain("base: NATIVE ? '/' : WEB_BASE,");
     expect(vite).toContain("outDir: NATIVE ? 'dist-native' : 'dist',");
-    expect(vite).toContain('sourcemap: !NATIVE,');
+    expect(vite).toContain("sourcemap: NATIVE ? false : 'hidden',");
   });
 
   it('the entry point derives the basename instead of hardcoding it', () => {

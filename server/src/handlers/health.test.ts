@@ -50,6 +50,30 @@ describe('handleHealth', () => {
     expect(statusCodeFor({ ...ready, liveness: 'standby' })).toBe(503);
     expect(statusCodeFor({ ...ready, liveness: 'dead' })).toBe(503);
   });
+
+  it('rejects an invalid scope before rendering any fleet state', () => {
+    const { res, captured } = mockRes();
+    const gameServer = { getStatus: vi.fn(), getPrometheusMetrics: () => '' };
+    handleHealth(res, { gameServer }, new URLSearchParams('liveness_format=mtt'));
+    expect(captured.statusCode).toBe(400);
+    expect(parseJson(captured)).toEqual({ error: 'invalid_liveness_scope' });
+    expect(gameServer.getStatus).not.toHaveBeenCalled();
+  });
+
+  it('requests the scoped table snapshot without weakening dealer routing readiness', () => {
+    const { res, captured } = mockRes();
+    const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const status = { liveness: 'standby', tableLiveness: [] };
+    const gameServer = {
+      getStatus: vi.fn().mockReturnValue(status),
+      getPrometheusMetrics: () => '',
+    };
+    handleHealth(res, { gameServer }, new URLSearchParams({ liveness_table_ids: id }));
+    expect(gameServer.getStatus).toHaveBeenCalledTimes(1);
+    expect(gameServer.getStatus).toHaveBeenCalledWith({ kind: 'tables', tableIds: [id] });
+    expect(captured.statusCode).toBe(503);
+    expect(parseJson(captured)).toEqual(status);
+  });
 });
 
 describe('handleWsMetrics', () => {
@@ -58,6 +82,14 @@ describe('handleWsMetrics', () => {
     const tableStateHub = { totalSubscribers: vi.fn().mockReturnValue(12) };
     const engineWs = {
       connectionCount: vi.fn().mockReturnValue(7),
+      connectionAccessStats: () => ({
+        completed: 6,
+        failed: 1,
+        pending: 2,
+        oldestPendingMs: 120,
+        maxDurationMs: 1500,
+        over1200Ms: 1,
+      }),
       muxStats: vi.fn().mockReturnValue({
         muxSockets: 2,
         singleSockets: 5,
@@ -85,6 +117,14 @@ describe('handleWsMetrics', () => {
     expect(parseJson(captured)).toEqual({
       totalSubscribers: 12,
       activeConnections: 7,
+      connectionAccess: {
+        completed: 6,
+        failed: 1,
+        pending: 2,
+        oldestPendingMs: 120,
+        maxDurationMs: 1500,
+        over1200Ms: 1,
+      },
       muxSockets: 2,
       singleSockets: 5,
       muxSubscriptions: 6,
@@ -109,6 +149,7 @@ describe('handleWsMetrics', () => {
     expect(parseJson(captured)).toEqual({
       totalSubscribers: 1,
       activeConnections: 1,
+      connectionAccess: null,
       muxSockets: 0,
       singleSockets: 0,
       muxSubscriptions: 0,

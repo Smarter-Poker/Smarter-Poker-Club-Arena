@@ -216,7 +216,14 @@ describe('TournamentManager source move ownership', () => {
     expect(engine.releaseTournamentMovePause).not.toHaveBeenCalled();
   });
 
-  it('uses the no-engine path only for the explicit closed-orphan mode', async () => {
+  // 2026-09-12: this case used to assert that a live-source move with NO engine
+  // anywhere resolved 0 and never reached the database. That assertion was the
+  // deadlock: a table of one cannot deal, so it never holds an engine, so the
+  // move was re-planned every five seconds for ever while
+  // fn_move_tournament_player accepted the identical move. The no-engine path
+  // is now open to either mode, and the mode is still carried through to the
+  // database exactly as it was planned.
+  it('takes the no-engine path in either mode when no engine generation exists', async () => {
     const gameServer = {
       getTableEngine: vi.fn(() => undefined),
       ownsTournamentTableEngine: vi.fn(() => false),
@@ -234,7 +241,27 @@ describe('TournamentManager source move ownership', () => {
     expect(moveRpc.mock.calls[0][0].sourceMode).toBe('closed_orphan');
 
     moveRpc.mockClear();
-    await expect(manager.executePlayerMoves([move()])).resolves.toBe(0);
-    expect(moveRpc).not.toHaveBeenCalled();
+    await expect(manager.executePlayerMoves([move()])).resolves.toBe(1);
+    expect(moveRpc.mock.calls[0][0].sourceMode).toBe('live_source');
+  });
+
+  it('refuses the no-engine path while either registry still holds an engine', async () => {
+    // One registry at a time: the engineless path is exact only when BOTH are
+    // empty, so each one alone must refuse. The claim is stubbed to the
+    // engineless boundary so that only the request-side re-proof is under test.
+    for (const registry of ['manager', 'server'] as const) {
+      const { manager, engine, gameServer } = liveHarness();
+      if (registry === 'manager') gameServer.getTableEngine = vi.fn(() => undefined);
+      else manager.tableEngines = new Map();
+      moveRpc.mockReset();
+      moveRpc.mockImplementation(async (input) => receipt(input));
+      manager.claimTournamentMoveBoundary = vi
+        .fn()
+        .mockResolvedValue({ sourceMode: 'live_source', engine: null });
+
+      await expect(manager.executePlayerMoves([move()])).resolves.toBe(0);
+      expect(moveRpc, registry).not.toHaveBeenCalled();
+      expect(engine.executeTournamentMoveAtBoundary, registry).not.toHaveBeenCalled();
+    }
   });
 });

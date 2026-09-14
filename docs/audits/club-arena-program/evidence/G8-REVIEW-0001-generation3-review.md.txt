@@ -1,0 +1,17 @@
+**Accepted — exact document candidate only. All six document findings are resolved.**
+
+Assignment G8-REVIEW-0001, generation 3. Independent reviewer task `01a0923b-657e-78f3-94c7-58584d18073a`; main coordinator `01a0908a-36f9-7042-b4a2-02fb14d5a53e`.
+
+This decision applies to the 40-file candidate captured at **2026-09-11T20:59:53.427379Z** from `/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/program-records/`. Every file matches G8's `revision3-manifest.json`. The sorted file-hash manifest SHA256 is `6870d64bc57dfd9d3fcdc2b8fe33920b4ba67d90b0911de1043b6926d90e0b6a`. The final source recheck found no changes. Exact file hashes, timestamps and check results are in [the generation 3 manifest](G8-REVIEW-0001-generation3-manifest.json) and [hash list](G8-REVIEW-0001-generation3-sha256.txt).
+
+The two remaining R1 pointers in `PROGRAM_ISSUES.json:4–5` now identify the canonical backlog and requirements at exact revision `11a37306788567e9b60d6ac1ab32455b865de5c1`. Read-only Git object retrieval confirms both targets and their previously reviewed hashes: backlog `2f3a24138895f73d9d9f8696d9e2f50085b7fc89fd90a1973cd04b3c82d66ae9`; requirements `55f4bc6f419d3cf04a84a88a7f3d737203fad58b7d887cb532433edd586060b9`. R1 is resolved. The generation 2 resolutions of R2–R6 remain applicable.
+
+All 16 archive renames preserve their original bytes exactly. The `.txt` suffix changes storage names, not evidence content. The nine immutable handoff/prompt files and the archived SQL also remain unchanged. The five recovered-source manifest entries still match their archived lengths and hashes. All active top-level Markdown links and updated preflight/archive references resolve. All 19 JSON documents parse, including JSON receipts now stored with `.json.txt` names.
+
+Parsed JSON comparison found only the two intended canonical-pointer corrections and archive-reference renames; assignment and package-identity formatting preserved their values. Markdown changes consist of table formatting, literal-asterisk escaping, archive-reference updates, and an accurate explanation of the archive suffix. No substantive scope, ownership, authority, checkpoint or acceptance change was introduced. Two abbreviated plain-text evidence labels retain their original source basenames; the active provenance references correctly identify the renamed files.
+
+The complete governing source read and prior evidence checks were reused after immutable-byte comparison. No new broad audit or technical tests were performed. No shared files, Git indexes, runtime objects, credentials, deployment targets or reservations were changed by this reviewer; no agents were delegated.
+
+**Acceptance boundary:** this approves the reviewed coordination document candidate and closes R1–R6. It does not approve publication, the research gate, Phase 1, any delivery phase, the foundation, any deployment, or the final program. Historical evidence remains limited to its recorded scope; original acquisition gaps and coordinator-reported ownership details remain explicitly qualified. Future material changes require focused review of their affected claims.
+
+G8 may record this exact verdict and continue its already authorized coordination and research work. Publication and technical progression remain with their existing owners and checkpoints. No further document correction is required for this snapshot.

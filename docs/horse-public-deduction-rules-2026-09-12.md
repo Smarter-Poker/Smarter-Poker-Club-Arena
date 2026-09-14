@@ -1,0 +1,11 @@
+# Accepted Public Deduction Rules — September 12, 2026
+
+Accepted public action nodes now freeze the controller's rake percentage, caps, no-flop rule, ordered player-count tiers and jackpot collection configuration at the action. Previously these observations could only borrow later configuration or omit deductions, which is insufficient for estimating net utility. The capture uses a bounded public allowlist and retains no private cards or player names. Missing legacy metadata, invalid rules and unsupported timed rake remain unavailable for future pricing.
+
+The controller's settlement and accepted actions are unchanged. Jackpot minimum-pot configuration describes award eligibility, not the collection threshold. Rules are read at each accepted action because the controller owns a configuration reference that may change between actions; earlier snapshots remain frozen. The internal event and existing committed-hand action path carry the metadata; controller/UI action history does not.
+
+Validation on original source 000f83fc755de8b9a52de6a79ee3174de11f269e: server build passed; 64 focused tests passed across three files; full regression passed 11,076 tests with 145 existing skips (760 files passed, one skipped). The frozen actual-controller comparison matched all 162 complete hands across nine variants, seat counts and board/policy combinations, with 2,205 captured actions and 70 private-action exclusions. Only the new deductions field was removed for gameplay comparison; maximum captured node size was 821 bytes. The dedicated deduction tests also retain canonical heads-up rake caps and no-flop behavior across 80 cases.
+
+The reviewed three-file change was applied to protected main 56cc5366e293674dd1ca2901bd28a79e73847ad0 as e24a8cb76710aa80821e914584bd297836438064. Its integrated build passed and full regression passed 11,100 tests with 145 existing skips (762 files passed, one skipped; 81.56 seconds). All eight original frozen runtime source bindings match the integrated source. These separate suite totals are not additive.
+
+This is a Phase 14 prerequisite, not the completed self-tuning pipeline. Tournament-stage capture, durable scoped models, held-out populations, candidate evaluation, activation/rollback and natural model-path proof remain required. No strategy is promoted by this change.

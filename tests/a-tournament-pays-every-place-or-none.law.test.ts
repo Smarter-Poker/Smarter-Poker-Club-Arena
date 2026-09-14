@@ -830,8 +830,16 @@ describe('a tournament pays every place or none', () => {
       /const ladderPool = prizePoolAvailableToPlaces\(\s*finalPrizePool,\s*payouts,\s*finalField,\s*!isSatellite && this\.tournamentCache\?\.bubble_protection === true,\s*Number\(this\.tournamentCache\?\.buy_in_amount\)\s*\)/
     );
     expect(REPRICE).toMatch(/if \(ladderPool === null\) \{[\s\S]*?return false;/);
-    expect(REPRICE).toMatch(/computePlacePrize\(ladderPool, payouts, Number\(player\.position\)\)/);
-    expect(REPRICE).not.toMatch(/computePlacePrize\(finalPrizePool,/);
+    // 2026-09-13: the call gained the tournament's unit, which computePlacePrize
+    // now REQUIRES rather than defaulting to a cent, and Prettier wraps the four
+    // arguments across lines. The pin moved to the new shape in the same commit
+    // and guards exactly what it guarded before - this reprices from the
+    // BUBBLE-RESERVED ladder pool and from the player's OWN finishing position -
+    // with the unit added to it rather than anything taken away.
+    expect(REPRICE).toMatch(
+      /computePlacePrize\(\s*ladderPool,\s*payouts,\s*Number\(player\.position\),\s*this\.placeLadderUnitCents\(\),?\s*\)/
+    );
+    expect(REPRICE).not.toMatch(/computePlacePrize\(\s*finalPrizePool,/);
     expect(REPRICE).toMatch(/correctPrize - \(player\.prize \|\| 0\)/);
     expect(REPRICE).toContain("'fn_ca_reprice_unpaid_tournament_place'");
     expect(REPRICE).toContain('p_expected_prize: expectedPrize');

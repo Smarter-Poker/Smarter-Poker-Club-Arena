@@ -194,7 +194,7 @@
 .vipPill {
   color: #1d1406;
   border-color: #efd58d;
-  background: linear-gradient(145deg, #f1d58e, #b8842c);
+  background: linear-gradient(145deg, #f1d58e, #ffa500);
   box-shadow: inset 0 1px rgba(255, 255, 255, 0.45);
 }
 
@@ -1004,7 +1004,7 @@
   margin: -16px 0 13px;
   padding: 6px 9px;
   color: #1d1406;
-  background: linear-gradient(145deg, #efd38b, #b9852d);
+  background: linear-gradient(145deg, #efd38b, #ffa500);
   font:
     800 9px/1 'JetBrains Mono',
     ui-monospace,
@@ -1409,7 +1409,7 @@
   --market-muted: #5e6f7a;
   --market-blue: #087caf;
   --market-blue-deep: #045b84;
-  --market-brass: #8c641c;
+  --market-brass: #d6ad52;
   --market-red: #a62933;
   --market-green: #197d46;
   color: var(--market-copy);

@@ -1,0 +1,658 @@
+// Synthetic protocol inputs only: no Auth, engine, bank or product certificate.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { FINANCIAL_SECTIONS } from '../../operations/release/native/component-observation-protocol.mjs';
+import { createFinancialCheckpointObserver } from '../../operations/release/native/financial-checkpoint-observer.mjs';
+import { runFinancialRoute } from '../../operations/release/native/financial-route-runner.mjs';
+
+const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+const owner = {
+  tableId: id(1),
+  clubId: id(2),
+  actorIds: [id(3), id(4)],
+  opId: 'checkpoint-0001',
+  sourceSha: 'a'.repeat(40),
+};
+const hand = 1000001;
+const names = [
+  'topup.before',
+  'topup.malformed_refused',
+  'topup.accepted',
+  'topup.replayed',
+  'insurance.offered',
+  'insurance.malformed_refused',
+  'insurance.accepted',
+  'settlement.observed',
+];
+function fixture(overrides = {}) {
+  const initial = Object.fromEntries(Object.keys(FINANCIAL_SECTIONS).map((name) => [name, []]));
+  Object.assign(initial, {
+    actor_ids: [...owner.actorIds],
+    scope: [[id(1), id(2), null, null, 'false', null]],
+    banks: [['club', id(2), null, null]],
+    wallets: [
+      [id(3), '1800'],
+      [id(4), '1800'],
+    ],
+    seats: [
+      [id(5), id(3), '200', null],
+      [id(6), id(4), '200', null],
+    ],
+  });
+  const accepted = structuredClone(initial),
+    key = `addon:${id(1)}:${id(3)}:${owner.opId}`;
+  accepted.wallets[0][1] = '1790';
+  accepted.addons = [[id(7), id(3), '10', 'addon', null, null, null]];
+  accepted.addon_keys = [[key, id(3), '10', 'false', id(1)]];
+  accepted.receipts = [
+    [
+      'cash_addon',
+      key,
+      JSON.stringify({
+        door: 'atomic_table_addon',
+        user_id: id(3),
+        table_id: id(1),
+        amount: 10,
+        apply_to_seat: false,
+      }),
+      '{"balance":1790}',
+      '2026-09-12 00:00:00+00',
+      '2026-09-12 00:00:00+00',
+    ],
+  ];
+  accepted.ledger = [[id(8), 'player_wallet', id(3), 'table_stack', id(1), '10', 'addon', null]];
+  accepted.wallet_transactions = [[id(9), id(3), 'debit', 'addon', '10', '1790']];
+  const offered = structuredClone(accepted);
+  offered.offers = [[id(10), id(4), 'offered', '12', '200', 'turn', String(hand)]];
+  const final = structuredClone(offered);
+  final.addons[0].splice(4, 3, '2026-09-12 00:00:01+00', '10', '0');
+  final.hands = [[id(11), String(hand), '400', '3', '0']];
+  final.commits = [
+    [
+      id(11),
+      'b'.repeat(64),
+      '2026-09-12 00:00:01+00',
+      '2026-09-12 00:00:02+00',
+      'c'.repeat(64),
+      JSON.stringify({
+        ok: true,
+        hand_id: id(11),
+        hand_number: hand,
+        insurance: 1,
+        pending_addons: 1,
+      }),
+    ],
+  ];
+  final.insurance = [[id(12), id(4), '12', '200', '0', '-12', 'true', 'club', id(2)]];
+  final.seats[0][2] = '10'; // Losing actor's one deferred top-up.
+  final.seats[1][2] = '385'; // Winner: 400 pot -3 rake -12 premium.
+  final.banks = [['club', id(2), id(13), '12']];
+  final.ledger.push([
+    id(14),
+    'table_stack',
+    id(1),
+    'insurance_bank',
+    id(13),
+    '12',
+    'insurance',
+    null,
+  ]);
+  const rows = [initial, initial, accepted, accepted, offered, offered, offered, final].map((r) =>
+    structuredClone(r)
+  );
+  const entries = names.map((phase, i) => ({
+    phase,
+    hand_number: hand,
+    ...(i < 7 ? { actor_id: i < 4 ? id(3) : id(4) } : {}),
+  }));
+  entries[4].offer = {
+    type: 'insurance_offers',
+    table_id: id(1),
+    hand_number: hand,
+    street: 'turn',
+    offers: [{ playerId: id(4), fullPremium: 12, fullInsuredAmount: 200 }],
+  };
+  entries[6].response = { success: true, status: 'accepted', premium: 12, insuredAmount: 200 };
+  entries[7].event = {
+    type: 'hand_complete',
+    table_id: id(1),
+    hand_number: hand,
+    winner_ids: [id(4)],
+  };
+  let index = 0,
+    clock = 0,
+    instance = 'owned-boot-1',
+    source = owner.sourceSha;
+  const reads = [];
+  const defaultFelt = () =>
+    owner.actorIds.map((actor_id) => ({
+      actor_id,
+      sequence: index,
+      state: {
+        table_id: id(1),
+        hand_number: hand,
+        stage: index === 7 ? 'showdown' : 'preflop',
+        players: rows[index].seats.map((row) => ({
+          user_id: row[1],
+          stack: Number(row[2]),
+          bet: 200,
+        })),
+      },
+    }));
+  const options = {
+    owner,
+    observations: {
+      binding: { table_id: id(1) },
+      financialFacts:
+        overrides.financialFacts ??
+        (async (binding) => {
+          reads.push(structuredClone(binding));
+          return rows[index];
+        }),
+    },
+    readEngineIdentity:
+      overrides.readEngineIdentity ??
+      (async () => ({ source_sha: source, instance_id: instance, running: true })),
+    sampleFelt: overrides.sampleFelt ?? (async () => defaultFelt()),
+    now: () => clock,
+    sleep: async (ms) => {
+      clock += ms;
+    },
+  };
+  const observer = createFinancialCheckpointObserver(options);
+  return {
+    rows,
+    entries,
+    reads,
+    observer,
+    options,
+    defaultFelt,
+    setIndex: (value) => {
+      index = value;
+    },
+    setSource: (v) => {
+      source = v;
+    },
+    setInstance: (v) => {
+      instance = v;
+    },
+    advance: (ms) => {
+      clock += ms;
+    },
+    run: async (i) => {
+      index = i;
+      await observer.checkpoint(entries[i]);
+    },
+  };
+}
+
+function runnerFixture(f, startActors) {
+  return runFinancialRoute({
+    ...f.options,
+    users: owner.actorIds.map((id) => ({ id, session: { user: { id } } })),
+    startActors,
+  });
+}
+
+for (const field of ['readEngineIdentity', 'financialFacts', 'sampleFelt']) {
+  test(`closing the observer immediately rejects a pending ${field} observation`, async () => {
+    const f = fixture({ [field]: () => new Promise(() => {}) });
+    if (field !== 'readEngineIdentity') await f.observer.start();
+    const pending = field === 'readEngineIdentity' ? f.observer.start() : f.run(0);
+    const refused = assert.rejects(pending, /FINANCIAL_CHECKPOINT_CLOSED/);
+    await new Promise(setImmediate);
+    f.observer.close();
+    f.observer.close();
+    await refused;
+    await assert.rejects(f.observer.start(), /ALREADY_STARTED/);
+  });
+}
+
+test('closing before startup cannot create a new observer attempt', async () => {
+  const f = fixture();
+  f.observer.close();
+  await assert.rejects(f.observer.start(), /ALREADY_STARTED/);
+  assert.deepEqual(f.reads, []);
+});
+
+test('actor failure also retires a pending observer read before its deadline', async () => {
+  let entered;
+  const reading = new Promise((resolve) => {
+    entered = resolve;
+  });
+  const f = fixture({
+    financialFacts: () => {
+      entered();
+      return new Promise(() => {});
+    },
+  });
+  let checkpointResult = 'pending';
+  await assert.rejects(
+    runnerFixture(f, (input) => {
+      input.financialProof.checkpoint(f.entries[0]).catch((error) => {
+        checkpointResult = error.message;
+      });
+      void reading.then(() => input.onFailure(new Error('FIXTURE_ACTOR_SOCKET_CLOSED')));
+      return { stateObservations: f.options.sampleFelt, close() {} };
+    }),
+    /FIXTURE_ACTOR_SOCKET_CLOSED/
+  );
+  await new Promise(setImmediate);
+  assert.match(checkpointResult, /FINANCIAL_CHECKPOINT_CLOSED/);
+});
+
+test('runner couples every checkpoint to its own two client samples and closes the actors', async () => {
+  const f = fixture();
+  let closed = 0,
+    signal;
+  const result = await runnerFixture(f, (input) => {
+    signal = input.signal;
+    assert.equal(input.tableId, owner.tableId);
+    assert.deepEqual(
+      input.users.map((user) => user.id),
+      owner.actorIds
+    );
+    assert.equal(input.financialProof.opId, owner.opId);
+    void (async () => {
+      for (let index = 0; index < 8; index++) {
+        f.setIndex(index);
+        await input.financialProof.checkpoint(f.entries[index]);
+      }
+    })().catch(input.onFailure);
+    return {
+      stateObservations: f.options.sampleFelt,
+      close() {
+        closed++;
+      },
+    };
+  });
+  assert.equal(result.checkpoints.length, 8);
+  assert.equal(result.product_certificate, false);
+  assert.equal(signal.aborted, true);
+  assert.equal(closed, 1);
+});
+
+test('runner refuses changed economics and aborts its actors without retry', async () => {
+  const f = fixture();
+  f.rows[2].wallets[0][1] = '1700';
+  let starts = 0,
+    closed = 0,
+    signal;
+  await assert.rejects(
+    runnerFixture(f, (input) => {
+      starts++;
+      signal = input.signal;
+      void (async () => {
+        for (let index = 0; index < 3; index++) {
+          f.setIndex(index);
+          await input.financialProof.checkpoint(f.entries[index]);
+        }
+      })().catch(input.onFailure);
+      return {
+        stateObservations: f.options.sampleFelt,
+        close() {
+          closed++;
+        },
+      };
+    }),
+    /WALLET_DELTA/
+  );
+  assert.equal(starts, 1);
+  assert.equal(closed, 1);
+  assert.equal(signal.aborted, true);
+});
+
+test('runner never starts actors after an incorrect engine identity', async () => {
+  const f = fixture();
+  f.setSource('b'.repeat(40));
+  let starts = 0;
+  await assert.rejects(
+    runnerFixture(f, () => {
+      starts++;
+    }),
+    /ENGINE_SOURCE/
+  );
+  assert.equal(starts, 0);
+});
+
+test('runner propagates actor startup failure and aborts the same attempt', async () => {
+  const f = fixture();
+  let signal;
+  await assert.rejects(
+    runnerFixture(f, (input) => {
+      signal = input.signal;
+      throw new Error('FIXTURE_ACTOR_START_FAILED');
+    }),
+    /START_FAILED/
+  );
+  assert.equal(signal.aborted, true);
+});
+
+for (const lateStart of [false, true]) {
+  test(`runner's original deadline closes ${lateStart ? 'a late startup handle' : 'idle actors with no further checkpoint'}`, async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
+    const f = fixture();
+    let signal,
+      resolveStart,
+      closed = 0,
+      outcome = 'pending';
+    const handle = {
+      stateObservations: f.options.sampleFelt,
+      close() {
+        closed++;
+      },
+    };
+    const running = runnerFixture(f, (input) => {
+      signal = input.signal;
+      return lateStart
+        ? new Promise((resolve) => {
+            resolveStart = resolve;
+          })
+        : handle;
+    });
+    running.then(
+      () => {
+        outcome = 'resolved';
+      },
+      (error) => {
+        outcome = error.message;
+      }
+    );
+    await new Promise(setImmediate);
+    f.advance(120000);
+    context.mock.timers.tick(120000);
+    await new Promise(setImmediate);
+    assert.match(outcome, /FINANCIAL_RUNNER_DEADLINE/);
+    assert.equal(signal.aborted, true);
+    if (lateStart) resolveStart(handle);
+    await new Promise(setImmediate);
+    assert.equal(closed, 1);
+  });
+}
+test('ordered fixed observations compare the scoped economics without certifying the product', async () => {
+  const f = fixture();
+  await f.observer.start();
+  for (let i = 0; i < 8; i++) await f.run(i);
+  const result = f.observer.observations();
+  assert.equal(result.checkpoints.length, 8);
+  assert.equal(result.topup_database.debited_cents, '1000');
+  assert.equal(result.insurance_database.premium_cents, '1200');
+  assert.equal(result.product_certificate, false);
+  assert.equal(result.settled_player_felt.final_player_cents, '398500');
+  assert.equal(result.settled_player_felt.applied_addon_cents, '1000');
+  assert.equal(result.settled_player_felt.clients.length, 2);
+  for (const read of f.reads)
+    assert.deepEqual(read, { actor_index: 0, hand_number: hand, op_id: owner.opId });
+  result.checkpoints[0].facts.wallets[0][1] = '0';
+  assert.equal(f.observer.observations().checkpoints[0].facts.wallets[0][1], '1800');
+});
+test('changed actor or hand cannot repin an active sequence', async () => {
+  for (const mutate of [
+    (f) => {
+      f.entries[1].hand_number++;
+    },
+    (f) => {
+      f.entries[1].actor_id = id(4);
+    },
+  ]) {
+    const f = fixture();
+    await f.observer.start();
+    await f.run(0);
+    mutate(f);
+    await assert.rejects(f.run(1));
+    await assert.rejects(f.run(0), /CLOSED/);
+  }
+});
+for (const [name, change, reason] of [
+  [
+    'double-applied pending chips',
+    (f) => {
+      f.rows[7].seats[0][2] = '20';
+    },
+    /CHIP_CONSERVATION/,
+  ],
+  [
+    'second wallet debit',
+    (f) => {
+      f.rows[7].wallets[0][1] = '1780';
+    },
+    /EXTRA_WALLET_CHANGE/,
+  ],
+  [
+    'changed occupancy',
+    (f) => {
+      f.rows[7].seats[0][0] = id(99);
+    },
+    /OCCUPANCY_REPLACED/,
+  ],
+  [
+    'partial pending application',
+    (f) => {
+      f.rows[7].addons[0][5] = '5';
+    },
+    /ADDON_APPLIED/,
+  ],
+  [
+    'unrequested refund',
+    (f) => {
+      f.rows[7].addons[0][6] = '10';
+    },
+    /ADDON_REFUNDED/,
+  ],
+])
+  test(`final settlement refuses ${name}`, async () => {
+    const f = fixture();
+    await f.observer.start();
+    for (let i = 0; i < 7; i++) await f.run(i);
+    change(f);
+    await assert.rejects(f.run(7), reason);
+  });
+test('both felt clients must catch up within the original settlement deadline', async () => {
+  let finalReads = 0;
+  const f = fixture({
+    sampleFelt: async () => {
+      const value = f.defaultFelt();
+      if (value[0].state.stage === 'showdown' && finalReads++ === 0)
+        value[1].state.players[0].stack += 10;
+      return value;
+    },
+  });
+  await f.observer.start();
+  for (let i = 0; i < 8; i++) await f.run(i);
+  assert.equal(finalReads, 2);
+  assert.equal(f.observer.observations().settled_player_felt.clients.length, 2);
+});
+test('persistent felt over-credit cannot borrow a new settlement deadline', async () => {
+  const f = fixture({
+    sampleFelt: async () => {
+      const value = f.defaultFelt();
+      if (value[0].state.stage === 'showdown') value[1].state.players[0].stack += 10;
+      return value;
+    },
+  });
+  await f.observer.start();
+  for (let i = 0; i < 7; i++) await f.run(i);
+  await assert.rejects(f.run(7), /FELT_SETTLEMENT_TIMEOUT/);
+});
+test('next-hand live blinds reconcile to the prior committed seats without counting old bets twice', async () => {
+  const f = fixture({
+    sampleFelt: async () => {
+      const value = f.defaultFelt();
+      if (value[0].state.stage === 'showdown')
+        for (const sample of value) {
+          sample.state.hand_number++;
+          sample.state.stage = 'preflop';
+          for (const player of sample.state.players) {
+            player.stack -= 1;
+            player.bet = 1;
+          }
+        }
+      return value;
+    },
+  });
+  await f.observer.start();
+  for (let i = 0; i < 8; i++) await f.run(i);
+  assert.equal(f.observer.observations().settled_player_felt.clients[0].hand_number, hand + 1);
+});
+test('insurance refusal cannot mutate fixed financial facts', async () => {
+  const f = fixture();
+  await f.observer.start();
+  for (let i = 0; i < 5; i++) await f.run(i);
+  f.rows[5].wallets[1][1] = '1799';
+  await assert.rejects(f.run(5), /INSURANCE_REFUSAL_MUTATED/);
+});
+test('a hand-complete event cannot substitute for durable post-commit completion', async () => {
+  const f = fixture();
+  await f.observer.start();
+  for (let i = 0; i < 7; i++) await f.run(i);
+  f.rows[7].commits[0][3] = null;
+  await assert.rejects(f.run(7), /PERSISTENCE_TIMEOUT/);
+  assert.throws(() => f.observer.observations(), /CLOSED/);
+});
+test('a restarted engine cannot inherit the first engine observation', async () => {
+  const f = fixture();
+  await f.observer.start();
+  for (let i = 0; i < 7; i++) await f.run(i);
+  f.setInstance('replacement-boot');
+  await assert.rejects(f.run(7), /ENGINE_REPLACED/);
+});
+test('the observer refuses a different source before admitting route checkpoints', async () => {
+  const f = fixture();
+  f.setSource('b'.repeat(40));
+  await assert.rejects(f.observer.start(), /ENGINE_SOURCE/);
+  assert.deepEqual(f.reads, []);
+  await assert.rejects(f.run(0), /CLOSED/);
+});
+test('the original budget and required checkpoint order are not renewable', async () => {
+  const f = fixture();
+  await f.observer.start();
+  await f.run(0);
+  f.advance(120001);
+  await assert.rejects(f.run(1), /EXPIRED/);
+  const g = fixture();
+  await g.observer.start();
+  await assert.rejects(g.run(1), /ORDER/);
+});
+test('wrong table, hand identity or settlement counters refuse', async () => {
+  for (const mutate of [
+    (f) => {
+      f.rows[7].scope[0][0] = id(99);
+    },
+    (f) => {
+      f.rows[7].hands[0][0] = id(99);
+    },
+    (f) => {
+      const p = JSON.parse(f.rows[7].commits[0][5]);
+      p.pending_addons = 2;
+      f.rows[7].commits[0][5] = JSON.stringify(p);
+    },
+  ]) {
+    const f = fixture();
+    await f.observer.start();
+    for (let i = 0; i < 7; i++) await f.run(i);
+    mutate(f);
+    await assert.rejects(f.run(7));
+  }
+});
+
+for (const stage of [
+  'initial engine identity',
+  'financial facts',
+  'felt state',
+  'final engine identity',
+]) {
+  test(`the original deadline bounds a hung ${stage} callback`, async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
+    let resolveLate;
+    const pending = new Promise((resolve) => {
+      resolveLate = resolve;
+    });
+    let identityReads = 0;
+    const identity = { source_sha: owner.sourceSha, instance_id: 'owned-boot-1', running: true };
+    const f = fixture({
+      ...(stage === 'financial facts' ? { financialFacts: () => pending } : {}),
+      ...(stage === 'felt state' ? { sampleFelt: () => pending } : {}),
+      ...(['initial engine identity', 'final engine identity'].includes(stage)
+        ? {
+            readEngineIdentity: () =>
+              ++identityReads === (stage === 'initial engine identity' ? 1 : 2)
+                ? pending
+                : Promise.resolve(identity),
+          }
+        : {}),
+    });
+    if (stage !== 'initial engine identity') await f.observer.start();
+    if (stage === 'final engine identity') for (let i = 0; i < 7; i++) await f.run(i);
+    let result = 'pending';
+    const operation =
+      stage === 'initial engine identity'
+        ? f.observer.start()
+        : f.run(stage === 'final engine identity' ? 7 : 0);
+    operation.then(
+      () => {
+        result = 'resolved';
+      },
+      (error) => {
+        result = error.message;
+      }
+    );
+    await new Promise(setImmediate);
+    f.advance(120000);
+    context.mock.timers.tick(120000);
+    await new Promise(setImmediate);
+    assert.match(result, /FINANCIAL_CHECKPOINT_DEADLINE/);
+    resolveLate(identity);
+    await new Promise(setImmediate);
+    assert.throws(() => f.observer.observations(), /CLOSED/);
+    await assert.rejects(f.observer.start(), /ALREADY_STARTED/);
+  });
+}
+
+test('the initial identity read consumes the original budget instead of renewing it', async () => {
+  let resolveIdentity;
+  const f = fixture({
+    readEngineIdentity: () =>
+      new Promise((resolve) => {
+        resolveIdentity = resolve;
+      }),
+  });
+  const starting = f.observer.start();
+  await new Promise(setImmediate);
+  f.advance(119999);
+  resolveIdentity({ source_sha: owner.sourceSha, instance_id: 'owned-boot-1', running: true });
+  await starting;
+  f.advance(2);
+  await assert.rejects(f.run(0), /EXPIRED/);
+});
+
+for (const [checkpoint, budget] of [
+  [4, 5000],
+  [7, 15000],
+]) {
+  test(`a hung persistence read keeps the ${budget}ms checkpoint deadline`, async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
+    let index = 0,
+      hang = false;
+    const f = fixture({
+      financialFacts: () => (hang ? new Promise(() => {}) : Promise.resolve(f.rows[index])),
+    });
+    await f.observer.start();
+    for (; index < checkpoint; index++) await f.run(index);
+    hang = true;
+    let result = 'pending';
+    f.run(index).then(
+      () => {
+        result = 'resolved';
+      },
+      (error) => {
+        result = error.message;
+      }
+    );
+    await new Promise(setImmediate);
+    f.advance(budget);
+    context.mock.timers.tick(budget);
+    await new Promise(setImmediate);
+    assert.match(result, /FINANCIAL_CHECKPOINT_PERSISTENCE_TIMEOUT/);
+    assert.throws(() => f.observer.observations(), /CLOSED/);
+  });
+}

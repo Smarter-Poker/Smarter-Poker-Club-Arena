@@ -4,6 +4,15 @@ import type { TickerItem } from '../../src/components/tournament/tickerMessages'
 
 const mocks = vi.hoisted(() => ({
   userId: 'viewer-a' as string | null,
+  /* The route is /clubs/club-a - a SLUG, which is a legitimate club
+     identifier here (resolveClubIdFilter accepts uuid, integer code or slug).
+     What resolveClubUUID hands BACK has to be a real uuid though, because the
+     ticker now checks it before putting it in a uuid column: the resolver's
+     documented fallback is to return its own input, and that fallback is what
+     wrote 243 rows of Postgres 22P02 into horse_bug_reports.
+     See tests/a-route-segment-is-not-an-id.law.test.ts. */
+  clubUuid: '11111111-2222-4333-8444-555555555555',
+  warn: vi.fn(),
   hidden: false,
   read: vi.fn(),
   settings: vi.fn(),
@@ -84,7 +93,10 @@ vi.mock('react-router-dom', () => ({
   useNavigate: () => vi.fn(),
   useLocation: () => ({ pathname: '/clubs/club-a' }),
 }));
-vi.mock('../../src/utils/errorReporter', () => ({ reportError: mocks.report }));
+vi.mock('../../src/utils/errorReporter', () => ({
+  reportError: mocks.report,
+  reportWarning: mocks.warn,
+}));
 vi.mock('../../src/core/MasterBus', () => ({ busToast: mocks.toast }));
 vi.mock('../../src/hooks/useTableSettings', () => ({
   useTableSettings: () => ({ settings: { showTicker: true } }),
@@ -109,7 +121,12 @@ vi.mock('../../src/services/TickerManagementService', () => ({
   resetTickerSettingsCache: mocks.resetSettings,
   tickerManagementService: { get: mocks.settings },
 }));
-vi.mock('../../src/utils/clubIdResolver', () => ({ resolveClubUUID: async () => 'club-a' }));
+/* importActual keeps the REAL isUUID, so this suite exercises the actual
+   guard rather than a copy of it that could drift away from it. */
+vi.mock('../../src/utils/clubIdResolver', async (importActual) => ({
+  ...(await importActual<typeof import('../../src/utils/clubIdResolver')>()),
+  resolveClubUUID: async () => mocks.clubUuid,
+}));
 vi.mock('../../src/components/tournament/useTopChromeOffset', () => ({
   useTopChromeOffset: () => 0,
 }));
@@ -155,6 +172,16 @@ async function mount() {
   });
   return view;
 }
+/* THE CONTAINER'S SWEEP IS NO LONGER 1Hz (2026-09-14).
+
+   Both of the container's intervals used to run every second: one to advance a
+   countdown that has since moved into TickerClock, and one to walk every
+   announcement looking for the two toast thresholds. Neither needs a second,
+   and the strip sits above a live poker table on the same thread, so both are
+   CONTAINER_TICK_MS now. A test that advanced 1000ms and expected the sweep to
+   have run was pinned to the old cadence, not to any behaviour. */
+const TOAST_SWEEP_MS = 5_000;
+
 async function tick(ms = 30_000) {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(ms);
@@ -356,12 +383,12 @@ describe('the mounted ticker recovers without stale account data or overlapping 
         : answer(query)
     );
     await mount();
-    await tick(1000);
+    await tick(TOAST_SWEEP_MS);
     expect(mocks.toast).toHaveBeenCalledTimes(1);
     const reads = mocks.read.mock.calls.length;
     await emit('AUTH_STATE_CHANGED');
     expect(screen.getByText('Confirmed Event')).toBeTruthy();
-    await tick(1000);
+    await tick(TOAST_SWEEP_MS);
     expect(mocks.toast).toHaveBeenCalledTimes(1);
     expect(mocks.read).toHaveBeenCalledTimes(reads);
     expect(mocks.resetSettings).not.toHaveBeenCalled();

@@ -7,6 +7,7 @@ import { calculatePots } from './PokerEngine.js';
 import { bigBlindAnteTotal } from './AnteMath.js';
 import { scoreHoldem } from './HorseEval.js';
 import {
+  CONTINUATION_POLICY,
   continuationStrength,
   simulateTournamentContinuation,
 } from './HorseTournamentContinuation.js';
@@ -47,8 +48,31 @@ export interface FutureHandResult {
 /** Decision-local common cards/facts. Stack and betting outcomes are never cached here. */
 export interface FutureHandDraw {
   board: Card[];
-  seats: Map<string, { cards: Card[]; preflop: number; streets: number[]; showdown: number }>;
+  seats: Map<string, FutureSeatFacts>;
 }
+
+interface FutureSeatFacts {
+  cards: Card[];
+  preflop: number;
+  streets: number[];
+  showdown: number;
+}
+
+type SyntheticDealFacts = {
+  board: Card[];
+  seats: FutureSeatFacts[];
+};
+// These are the rollout model's synthetic cards and scores, never live cards,
+// player identities, stacks, pot rights or bounty values. The one-hand model's
+// shuffle depends only on the outcome index and number of surviving seats.
+// At most 32 * 9 entries are possible. Caller-visible draws are copied so an
+// observer's mutation cannot contaminate another decision's facts.
+const syntheticDealFacts = new Map<string, SyntheticDealFacts>();
+const copySeatFacts = (facts: SyntheticDealFacts['seats'][number]) => ({
+  ...facts,
+  cards: facts.cards.map((c) => ({ ...c })),
+  streets: facts.streets.slice(),
+});
 
 /** NLH-only synthetic rollout settlement. Compared against production per-pot
  * awards in the differential suite; never used to settle a real hand. */
@@ -100,6 +124,62 @@ function preflopStrength(cards: Card[]): number {
   );
 }
 
+function syntheticRandom(sampleIndex: number): () => number {
+  let seed = Math.imul(sampleIndex + 1, 0x9e3779b1) >>> 0;
+  return () => {
+    seed ^= seed << 13;
+    seed ^= seed >>> 17;
+    seed ^= seed << 5;
+    return (seed >>> 0) / 0x100000000;
+  };
+}
+
+function buildSyntheticDealFacts(count: number, random: () => number): SyntheticDealFacts {
+  const deck: Card[] = [];
+  for (const suit of ['clubs', 'diamonds', 'hearts', 'spades'] as const)
+    for (const rank of '23456789TJQKA') deck.push({ rank: rank as Card['rank'], suit });
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+  const cards = Array.from({ length: count }, () => [deck.pop()!, deck.pop()!]);
+  const board = Array.from({ length: 5 }, () => deck.pop()!);
+  return {
+    board,
+    seats: cards.map((cards) => {
+      const preflop = preflopStrength(cards);
+      return {
+        cards,
+        preflop,
+        showdown: scoreHoldem([...cards, ...board], 7, false),
+        streets: [3, 4, 5].map((size) =>
+          continuationStrength(
+            Math.floor(
+              scoreHoldem([...cards, ...board.slice(0, size)], size + 2, false) / 0x100000
+            ),
+            preflop
+          )
+        ),
+      };
+    }),
+  };
+}
+
+/** Prepare the bounded, identity-free model facts before accepting decisions.
+ * No betting, settlement, observation, telemetry or live cards are involved.
+ * Repeated startup calls reuse the same facts; caller draws remain copies.
+ */
+export function prepareTournamentFutureHandFacts(): void {
+  if (FUTURE_HAND_POLICY.maxHands !== 1) return;
+  for (let sample = 0; sample < CONTINUATION_POLICY.maxOutcomeSamples; sample++) {
+    for (let seats = 2; seats <= FUTURE_HAND_POLICY.maxSeats; seats++) {
+      const key = `${sample}:${seats}`;
+      if (!syntheticDealFacts.has(key))
+        syntheticDealFacts.set(key, buildSyntheticDealFacts(seats, syntheticRandom(sample)));
+    }
+  }
+}
+
 export function commitFutureChips(
   p: SeatPlayer,
   requested: number,
@@ -138,24 +218,25 @@ export function simulateTournamentFutureHands(args: {
   )
     return null;
   const vector = args.vector.slice();
-  const initialTotal = vector.reduce((a, b) => a + b, 0);
+  let initialTotal = 0;
+  for (let index = 0; index < vector.length; index++)
+    if (index in vector) initialTotal += vector[index];
+  let finalTotal = initialTotal;
   const eliminations: FutureElimination[] = [];
   const forcedPaid: Record<string, number> = {};
   let dealerSeat = args.dealerSeat;
   let hands = 0;
-  let seed = Math.imul(args.sampleIndex + 1, 0x9e3779b1) >>> 0;
-  const random = () => {
-    seed ^= seed << 13;
-    seed ^= seed >>> 17;
-    seed ^= seed << 5;
-    return (seed >>> 0) / 0x100000000;
-  };
+  const random = syntheticRandom(args.sampleIndex);
   for (let hand = 0; hand < FUTURE_HAND_POLICY.maxHands; hand++) {
     if (args.withinBudget?.() === false) return null;
     const players = args.players
       .filter((p) => vector[args.localIndex.get(p.user_id)!] > 0)
       .map((p) => ({
-        ...p,
+        // A simulated next hand owns only rule/settlement state. Keep its
+        // shape stable instead of copying unrelated live seat metadata.
+        user_id: p.user_id,
+        username: p.username,
+        seat: p.seat,
         stack: vector[args.localIndex.get(p.user_id)!],
         cards: [] as Card[],
         is_folded: false,
@@ -168,7 +249,8 @@ export function simulateTournamentFutureHands(args: {
       }))
       .sort((a, b) => a.seat - b.seat);
     if (players.length < 2 || !players.some((p) => p.user_id === args.heroId)) break;
-    const fieldCount = vector.filter((s) => s > 0).length;
+    let fieldCount = 0;
+    for (let index = 0; index < vector.length; index++) if (vector[index] > 0) fieldCount++;
     const starts = new Map(players.map((p) => [p.user_id, p.stack]));
     dealerSeat = players.find((p) => p.seat > dealerSeat)?.seat ?? players[0].seat;
     const button = players.findIndex((p) => p.seat === dealerSeat);
@@ -176,40 +258,32 @@ export function simulateTournamentFutureHands(args: {
     const bb = (sb + 1) % players.length;
     const drawKey = `${args.sampleIndex}:${hand}:${players.map((p) => p.user_id).join(',')}`;
     let draw = args.drawCache?.get(drawKey);
-    if (!draw) {
-      const deck: Card[] = [];
-      for (const suit of ['clubs', 'diamonds', 'hearts', 'spades'] as const)
-        for (const rank of '23456789TJQKA') deck.push({ rank: rank as Card['rank'], suit });
-      for (let i = deck.length - 1; i > 0; i--) {
-        const j = Math.floor(random() * (i + 1));
-        [deck[i], deck[j]] = [deck[j], deck[i]];
-      }
-      for (const p of players) p.cards = [deck.pop()!, deck.pop()!];
-      const board = Array.from({ length: 5 }, () => deck.pop()!);
+    const templateKey =
+      FUTURE_HAND_POLICY.maxHands === 1 &&
+      Number.isInteger(args.sampleIndex) &&
+      args.sampleIndex >= 0 &&
+      args.sampleIndex < CONTINUATION_POLICY.maxOutcomeSamples
+        ? `${args.sampleIndex}:${players.length}`
+        : null;
+    const template = templateKey === null ? undefined : syntheticDealFacts.get(templateKey);
+    if (!draw && template) {
       draw = {
-        board,
-        seats: new Map(
-          players.map((p) => {
-            const preflop = preflopStrength(p.cards);
-            return [
-              p.user_id,
-              {
-                cards: p.cards,
-                preflop,
-                showdown: scoreHoldem([...p.cards, ...board], 7, false),
-                streets: [3, 4, 5].map((size) =>
-                  continuationStrength(
-                    Math.floor(
-                      scoreHoldem([...p.cards, ...board.slice(0, size)], size + 2, false) / 0x100000
-                    ),
-                    preflop
-                  )
-                ),
-              },
-            ];
-          })
-        ),
+        board: template.board.map((c) => ({ ...c })),
+        seats: new Map(players.map((p, i) => [p.user_id, copySeatFacts(template.seats[i])])),
       };
+      args.drawCache?.set(drawKey, draw);
+    }
+    if (!draw) {
+      const facts = buildSyntheticDealFacts(players.length, random);
+      draw = {
+        board: facts.board,
+        seats: new Map(players.map((p, index) => [p.user_id, facts.seats[index]])),
+      };
+      if (templateKey !== null)
+        syntheticDealFacts.set(templateKey, {
+          board: draw.board.map((c) => ({ ...c })),
+          seats: players.map((p) => copySeatFacts(draw!.seats.get(p.user_id)!)),
+        });
       args.drawCache?.set(drawKey, draw);
     }
     for (const p of players) p.cards = draw.seats.get(p.user_id)!.cards;
@@ -230,9 +304,16 @@ export function simulateTournamentFutureHands(args: {
     }
     // Return a street's uncalled live wager before advancing its betting state.
     const refund = () => {
-      const sorted = players.slice().sort((a, b) => b.bet - a.bet);
-      const top = sorted[0];
-      const excess = top.bet - (sorted[1]?.bet ?? 0);
+      let top = players[0];
+      let secondBet = 0;
+      for (let i = 1; i < players.length; i++) {
+        const player = players[i];
+        if (player.bet > top.bet) {
+          secondBet = top.bet;
+          top = player;
+        } else if (player.bet > secondBet) secondBet = player.bet;
+      }
+      const excess = top.bet - secondBet;
       if (!top.is_folded && excess > 0) {
         top.stack += excess;
         top.bet -= excess;
@@ -256,6 +337,8 @@ export function simulateTournamentFutureHands(args: {
     }
     refund();
     const opponents = players.filter((p) => p.user_id !== args.heroId);
+    const opponentIds = opponents.map((p) => p.user_id);
+    const hero = players.find((p) => p.user_id === args.heroId)!;
     for (const [i, street] of (['flop', 'turn', 'river'] as const).entries()) {
       if (args.withinBudget?.() === false) return null;
       const contact = (p: SeatPlayer) => draw.seats.get(p.user_id)!.streets[i];
@@ -268,12 +351,12 @@ export function simulateTournamentFutureHands(args: {
             bigBlind: level.bigBlind,
             currentStreet: 'preflop',
             heroChecked: false,
-            opponentIds: opponents.map((p) => p.user_id),
+            opponentIds,
             sampleIndex: args.sampleIndex,
             streets: [
               {
                 street,
-                heroStrength: contact(players.find((p) => p.user_id === args.heroId)!),
+                heroStrength: contact(hero),
                 opponentStrength: opponents.map(contact),
               },
             ],
@@ -318,13 +401,16 @@ export function simulateTournamentFutureHands(args: {
       });
     }
     hands++;
-    if (Math.abs(vector.reduce((a, b) => a + b, 0) - initialTotal) > 0.005) return null;
+    finalTotal = 0;
+    for (let index = 0; index < vector.length; index++)
+      if (index in vector) finalTotal += vector[index];
+    if (Math.abs(finalTotal - initialTotal) > 0.005) return null;
   }
   return {
     vector,
     eliminations,
     hands,
     forcedPaid,
-    conservationError: Math.abs(vector.reduce((a, b) => a + b, 0) - initialTotal),
+    conservationError: Math.abs(finalTotal - initialTotal),
   };
 }

@@ -217,7 +217,6 @@ describe('nothing throws a seated player off their table without a gesture', () 
   const SUPABASE_LIB = read('src/lib/supabase.ts');
   const AD_SERVICE = read('src/services/AdService.ts');
   const AD_ROTATOR = read('src/components/ads/HouseAdRotator.tsx');
-  const AD_CARD = read('src/components/ads/HouseAdCard.tsx');
 
   it('a failed auth read is not evidence that there is no user', () => {
     // getAuthUser returns { user: null } both when signed out AND when its
@@ -282,7 +281,7 @@ describe('nothing throws a seated player off their table without a gesture', () 
     // navigate(). isSafeAdImage existed; its destination twin did not.
     expect(AD_SERVICE).toContain('export function isSafeAdTarget');
     expect(AD_ROTATOR).toContain('isSafeAdTarget(url)');
-    expect(AD_CARD).toContain('isSafeAdTarget(ad.targetUrl)');
+    // HouseAdCard was retired 2026-09-13; every surface is the rotator now.
     // Protocol-relative and backslash forms must be rejected, not just
     // "starts with a slash".
     expect(AD_SERVICE).toContain("!url.startsWith('//')");

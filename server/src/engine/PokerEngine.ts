@@ -531,7 +531,11 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
     Math.round(
       players.reduce((s, p) => s + (p.deadInvested ?? 0) - (p.individualAnteInvested ?? 0), 0) * 100
     ) / 100;
-  const allContributors = players.filter((p) => getInvestment(p) > 0);
+  // Investment is immutable throughout this partition. Round it once per
+  // seat, rather than again for every eligibility level and contributor.
+  const allContributors = players
+    .map((player) => ({ player, investment: getInvestment(player) }))
+    .filter((entry) => entry.investment > 0);
 
   // No live money at all (e.g. everyone folded to dead antes): the dead money
   // forms a single pot contested by the remaining non-folded players.
@@ -540,7 +544,7 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
     return [{ amount: deadTotal, eligiblePlayers: activePlayers.map((p) => p.user_id) }];
   }
 
-  const sortedInvestments = [...new Set(allContributors.map((p) => getInvestment(p)))].sort(
+  const sortedInvestments = [...new Set(allContributors.map((entry) => entry.investment))].sort(
     (a, b) => a - b
   );
   const pots: Pot[] = [];
@@ -571,13 +575,20 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
   for (const level of sortedInvestments) {
     if (level === 0) continue;
     const contribution = level - previousLevel;
-    const totalContributors = allContributors.filter((p) => getInvestment(p) >= level).length;
-    const eligiblePlayers = activePlayers.filter((p) => getInvestment(p) >= level);
+    // Count matched contributions and collect rights in the original seat
+    // order in one pass. Pot amounts and level arithmetic stay unchanged.
+    let totalContributors = 0;
+    const eligiblePlayers: string[] = [];
+    for (const entry of allContributors) {
+      if (entry.investment < level) continue;
+      totalContributors++;
+      if (!entry.player.is_folded) eligiblePlayers.push(entry.player.user_id);
+    }
 
     if (totalContributors > 0 && eligiblePlayers.length > 0) {
       pots.push({
         amount: contribution * totalContributors,
-        eligiblePlayers: eligiblePlayers.map((p) => p.user_id),
+        eligiblePlayers,
       });
     } else if (totalContributors > 0) {
       orphaned = Math.round((orphaned + contribution * totalContributors) * 100) / 100;
@@ -633,7 +644,13 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
   const merged: Pot[] = [pots[0]];
   for (let i = 1; i < pots.length; i++) {
     const last = merged[merged.length - 1];
-    if (JSON.stringify(last.eligiblePlayers) === JSON.stringify(pots[i].eligiblePlayers)) {
+    const next = pots[i];
+    // These are ordered arrays of player IDs. Compare those IDs directly,
+    // preserving order and boundaries without serializing every pot pair.
+    if (
+      last.eligiblePlayers.length === next.eligiblePlayers.length &&
+      last.eligiblePlayers.every((id, index) => id === next.eligiblePlayers[index])
+    ) {
       last.amount += pots[i].amount;
     } else {
       merged.push(pots[i]);
@@ -665,11 +682,13 @@ export function calculateContestablePot(
     Math.min(Math.max(0, Number(toCall) || 0), Math.max(0, player.stack))
   );
   const hypothetical = players.map((candidate) => {
-    if (candidate.user_id !== userId) return { ...candidate, cards: [...candidate.cards] };
+    // calculatePots only reads contribution/eligibility fields. Preserve the
+    // other immutable seats instead of copying every seat and private card
+    // array for each hypothetical call in a continuation.
+    if (candidate.user_id !== userId) return candidate;
     const stack = cents(Math.max(0, candidate.stack - effectiveCall));
     return {
       ...candidate,
-      cards: [...candidate.cards],
       stack,
       bet: cents(candidate.bet + effectiveCall),
       totalInvested: cents(candidate.totalInvested + effectiveCall),

@@ -47,13 +47,60 @@ describe('an accepted hand cannot outrun its durable post-commit obligations', (
     expect(laterRake).toBeGreaterThan(durableBarrier);
   });
 
-  it('keeps a committed hand behind an unbounded causal barrier until completion or lease loss', () => {
+  /**
+   * THE PIN MOVED, AND THIS PARAGRAPH IS WHY (2026-09-12).
+   *
+   * This used to read `while (!obligationsApplied && this.lifecycleCanMutate())`
+   * and was titled "unbounded ... until completion or lease loss". Both halves
+   * pinned a defect. `lifecycleCanMutate()` is a DEALER-LEASE check, and the
+   * call it guarded disclaims the lease in its own contract: the envelope is
+   * authorized by the durable hand receipt and serialized by the database's own
+   * per-table advisory lock. So on the one path this barrier exists for - a
+   * hand committed by an engine whose 20-second proof lapsed while the
+   * settlement was in flight - the loop body never ran at all, `attempt` stayed
+   * 0, and the give-up branch filed a CRITICAL financial alert saying the
+   * engine had "abandoned its durable post-commit envelope ... after 0
+   * attempt(s)". 935 of 949 such alerts all-time carry `attempts: 0`; 414 of
+   * them landed in eight hours on 2026-09-12.
+   *
+   * What is pinned now is the property the old pin was reaching for and the one
+   * it lost:
+   *   - the barrier is still unbounded while the engine can mutate (no attempt
+   *     cap, no break) - capping a healthy retry is `aDetectorMayNotCryWolf`'s
+   *     defect from the other end;
+   *   - the lease can never be the ONLY thing keeping the drain alive, so a
+   *     predecessor always gets at least one attempt at its own envelope;
+   *   - and `postCommitStateCanReflect` is still read from `lifecycleCanMutate`,
+   *     because only the DRAIN loses the lease term. Reflection never does.
+   */
+  it('lets a predecessor finish its own envelope, and still fences reflection on the lease', () => {
     const barrier = postHand.slice(
       postHand.indexOf('if (durablePostCommitObligations && v_handHistoryId)'),
       postHand.indexOf("runStep('rake_distribution'")
     );
-    expect(barrier).toContain('while (!obligationsApplied && this.lifecycleCanMutate())');
-    expect(barrier).toContain('await processHandPostCommitObligations(v_handHistoryId)');
+    /* The retry loop alone. The slice above also carries the reflection branch,
+       which is SUPPOSED to be lease-gated. */
+    const drain = barrier.slice(
+      barrier.indexOf('const drainDeadline ='),
+      barrier.indexOf('postCommitStateCanReflect = this.lifecycleCanMutate();')
+    );
+    expect(drain.length, 'the post-commit drain loop has moved').toBeGreaterThan(200);
+
+    expect(barrier).toContain('while (!obligationsApplied && mayStillDrain())');
+    expect(barrier).toContain('Date.now() + POST_COMMIT_DRAIN_BUDGET_MS');
+    expect(drain).toContain('this.lifecycleCanMutate() || Date.now() < drainDeadline');
+    // The regression itself, named so it cannot come back quietly.
+    expect(drain).not.toContain('while (!obligationsApplied && this.lifecycleCanMutate())');
+    // The backoff runs post-fence too, or the budget buys exactly one attempt.
+    expect(drain).toMatch(/this\.markProgress\(\);\s*const backoffMs/);
+    // Only the drain loses the lease term. The reflection fence is untouched.
+    expect(barrier).toContain('postCommitStateCanReflect = this.lifecycleCanMutate();');
+
+    // Observation keeps the original processor promise in this awaited
+    // barrier; it does not launch the obligation in the background.
+    expect(barrier).toMatch(
+      /const outcome = await this\.observeSettlementAwait\(\s*'post_commit_obligations',\s*persistenceGeneration,\s*snap\.handNumber,\s*\(\) => processHandPostCommitObligations\(v_handHistoryId!\)\s*\)/
+    );
     expect(barrier).toContain('if (!obligationsApplied)');
     expect(barrier).toContain('return;');
     expect(barrier).toContain('post_commit_stack_refresh_failed');

@@ -195,7 +195,9 @@ describe('the two gaps in how work reaches production', () => {
     expect(CI).toContain('::warning title=NO TESTS RAN::');
     // It must not be able to hide behind a skipped dependency.
     expect(CI).toMatch(/verdict:[\s\S]{0,400}if: always\(\)/);
-    expect(CI).toContain('needs: [changes, stub_gate, typecheck, unit, server]');
+    expect(CI).toContain(
+      'needs: [changes, stub_gate, typecheck, typecheck_compile, fixture_native, unit, server]'
+    );
   });
 
   it('and something actually verifies main on a schedule', () => {
@@ -204,7 +206,7 @@ describe('the two gaps in how work reaches production', () => {
     // Both suites must run unconditionally on that schedule - change
     // detection is meaningless when the question is about the whole branch.
     const jobs = parseWorkflow(CI).jobs;
-    for (const name of ['unit_shards', 'server', 'accounting_postgres']) {
+    for (const name of ['unit_shards', 'server_shards', 'accounting_postgres']) {
       expect(jobs[name].if, name + ' must verify the scheduled branch').toContain(
         "github.event_name == 'schedule' ||"
       );
@@ -213,9 +215,11 @@ describe('the two gaps in how work reaches production', () => {
 
   it('the required server check cannot pass without real accounting transaction tests', () => {
     const jobs = parseWorkflow(CI).jobs;
-    expect(jobs.server.needs).toContain('accounting_postgres');
-    expect(jobs.accounting_postgres.if).toBe(jobs.server.if);
-    expect(jobs.server.steps).toContainEqual(
+    expect(jobs.server.needs).toContain('server_shards');
+    expect(jobs.server.if).toBe('always()');
+    expect(jobs.server_shards.needs).toContain('accounting_postgres');
+    expect(jobs.accounting_postgres.if).toBe(jobs.server_shards.if);
+    expect(jobs.server_shards.steps).toContainEqual(
       expect.objectContaining({
         if: "needs.accounting_postgres.result != 'success'",
         run: expect.stringContaining('exit 1'),

@@ -522,6 +522,28 @@ describe('buildReplay — the pot line is not a claim about the main pot', () =>
     expect(flop.extraBoards).toHaveLength(1);
     expect(flop.extraBoards[0]).toHaveLength(3);
   });
+
+  /**
+   * EVERY RUN, ONCE THE RUNS DIFFER (2026-09-14). The all-in was on the flop,
+   * so the flop is one board and the turn is two: Qc on run one, 6d on run
+   * two. Bmore holds Qd Qs. On the shared flop that is one made hand; on the
+   * turn it is quads on run one and queens full of sixes on run two, and the
+   * label must say both, in the shape the showdown frame already uses.
+   */
+  it('names the made hand per run on the streets after the runs diverge', () => {
+    const flop = m.streets.find((s) => s.key === 'flop')!;
+    const turn = m.streets.find((s) => s.key === 'turn')!;
+    const river = m.streets.find((s) => s.key === 'river')!;
+    expect(flop.madeHands.find((x) => x.userId === BMORE)?.name).toBe('Three Of A Kind');
+    expect(turn.madeHands.find((x) => x.userId === BMORE)?.name).toBe(
+      'Run 1 Four Of A Kind · Run 2 Full House'
+    );
+    expect(river.madeHands.find((x) => x.userId === BMORE)?.name).toMatch(
+      /^Run 1 Four Of A Kind · Run 2 /
+    );
+    // The other seat is labelled per run too, never left on board one alone.
+    expect(turn.madeHands.find((x) => x.userId === HIGHROLLER)?.name).toMatch(/^Run 1 .* · Run 2 /);
+  });
 });
 
 describe('titleCase', () => {
@@ -529,5 +551,130 @@ describe('titleCase', () => {
     expect(titleCase('Four of a Kind')).toBe('Four Of A Kind');
     expect(titleCase('STRAIGHT FLUSH')).toBe('Straight Flush');
     expect(titleCase('royal flush')).toBe('Royal Flush');
+  });
+});
+
+/**
+ * WHO WON WHICH BOARD, OUT OF WHICH POT (2026-09-13).
+ *
+ * Every earlier test in this file drives the legacy pseudo-action path and
+ * none set `winnersByBoard`; the only coverage of the per-board reconstruction
+ * was indirect, through the share-link round trip. This fixture is the
+ * 3048511 hand re-recorded the way the engine writes it today: boards 2..N in
+ * the column, one per-board row per (board, winner, half), and - new - the
+ * slices saying which pot each row's share came out of.
+ */
+describe('buildReplay — the per-board record, read directly', () => {
+  const ROW = {
+    ...HAND_3048511,
+    actions: HAND_3048511.actions.filter((a) => a.userId !== 'system'),
+    extraBoards: [['6hearts', '2spades', 'Qhearts', '6diamonds', 'Kdiamonds']],
+    // Two runs; Bmore takes run 1 with quads, HighRoller takes run 2 with a
+    // straight. Amounts are the engine's post-rake shares.
+    winnersByBoard: [
+      {
+        board: 1,
+        userId: BMORE,
+        amount: 159.35,
+        handName: 'Four of a Kind',
+        pots: [{ index: 0, amount: 159.35 }],
+      },
+      {
+        board: 2,
+        userId: HIGHROLLER,
+        amount: 159.35,
+        handName: 'Two Pair',
+        pots: [
+          { index: 0, amount: 150.0 },
+          { index: 1, amount: 9.35 },
+        ],
+      },
+    ],
+    winners: [
+      { userId: BMORE, amount: 159.35, potIndex: 0, hand: { name: 'Four of a Kind', ranking: 8 } },
+      { userId: HIGHROLLER, amount: 159.35, potIndex: 1, hand: { name: 'Two Pair', ranking: 3 } },
+    ],
+    pots: [
+      { index: 0, amount: 300 },
+      { index: 1, amount: 18.7 },
+    ],
+  };
+  const m = buildReplay(ROW as never);
+
+  it('draws both boards and one winner per board', () => {
+    expect(m.boards).toHaveLength(2);
+    const winners = m.showdown.filter((r) => r.isWinner);
+    expect(winners.map((r) => [r.boardIndex, r.name])).toEqual([
+      [0, 'Bmorecharles'],
+      [1, 'HighRoller'],
+    ]);
+  });
+
+  it('names the hand each player made on the board they won', () => {
+    const run2 = m.showdown.find((r) => r.boardIndex === 1 && r.userId === HIGHROLLER)!;
+    expect(run2.handName).toBe('Two Pair');
+    const run1 = m.showdown.find((r) => r.boardIndex === 0 && r.userId === BMORE)!;
+    expect(run1.handName).toBe('Four Of A Kind');
+  });
+
+  it('carries the share of THAT board, not the whole-hand net', () => {
+    const run2 = m.showdown.find((r) => r.boardIndex === 1 && r.userId === HIGHROLLER)!;
+    expect(run2.net).toBe(159.35);
+  });
+
+  it('keeps the pot axis: a share paid out of two pots says so', () => {
+    const run2 = m.showdown.find((r) => r.boardIndex === 1 && r.userId === HIGHROLLER)!;
+    expect(run2.potSlices).toEqual([
+      { index: 0, amount: 150 },
+      { index: 1, amount: 9.35 },
+    ]);
+    expect(run2.potLabel).toBe('Main + Side 1 pots');
+    expect(run2.boardLabel).toBe('Board 2');
+    const run1 = m.showdown.find((r) => r.boardIndex === 0 && r.userId === BMORE)!;
+    expect(run1.potSlices).toEqual([{ index: 0, amount: 159.35 }]);
+    expect(run1.potLabel).toBe('Main pot');
+  });
+
+  it('a row without slices falls back to the whole-hand pot label and sets no axis', () => {
+    const older = buildReplay({
+      ...ROW,
+      winnersByBoard: ROW.winnersByBoard.map(({ pots: _pots, ...w }) => w),
+    } as never);
+    const run2 = older.showdown.find((r) => r.boardIndex === 1 && r.userId === HIGHROLLER)!;
+    expect(run2.potSlices).toBeUndefined();
+    expect(run2.potLabel).toBe('Side 1 pot');
+  });
+
+  it('a losing seat on a board is not a winner there and carries no share', () => {
+    const run1Loser = m.showdown.find((r) => r.boardIndex === 0 && r.userId === HIGHROLLER)!;
+    expect(run1Loser.isWinner).toBe(false);
+    expect(run1Loser.net).toBeNull();
+  });
+});
+
+describe('buildReplay — legacy pseudo-actions are read in run order', () => {
+  it('rit_board_3 recorded before rit_board_2 still lands as board 3', () => {
+    const row = {
+      ...HAND_3048511,
+      actions: [
+        ...HAND_3048511.actions.filter((a) => a.userId !== 'system'),
+        {
+          seat: 0,
+          stage: 'river',
+          action: 'rit_board_3:6hearts,2spades,Qhearts,9clubs,Tclubs',
+          userId: 'system',
+        },
+        {
+          seat: 0,
+          stage: 'river',
+          action: 'rit_board_2:6hearts,2spades,Qhearts,6diamonds,Kdiamonds',
+          userId: 'system',
+        },
+      ],
+    };
+    const m = buildReplay(row as never);
+    expect(m.boards).toHaveLength(3);
+    expect(m.boards[1].map((c) => `${c.rank}${c.suit}`)).toEqual(['6h', '2s', 'Qh', '6d', 'Kd']);
+    expect(m.boards[2].map((c) => `${c.rank}${c.suit}`)).toEqual(['6h', '2s', 'Qh', '9c', 'Tc']);
   });
 });

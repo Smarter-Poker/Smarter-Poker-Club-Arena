@@ -58,7 +58,7 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sql(
-      'TRUNCATE cash_seat_move_receipts,cash_seat_moves,cash_player_session,cash_cluster_events,cash_games,seat_admin_departure_authorizations,anti_cheat_events,profiles,seat_departure_requests,seat_cashout_receipts,tournaments,tables,table_seats,club_members,wallets,wallet_transactions,chip_transactions,wallet_credit_idempotency,session_closes'
+      'TRUNCATE table_waitlist,cash_game_waitlist,cash_seat_move_receipts,cash_seat_moves,cash_player_session,cash_cluster_events,cash_games,seat_admin_departure_authorizations,anti_cheat_events,profiles,seat_departure_requests,seat_cashout_receipts,tournaments,tables,table_seats,club_members,wallets,wallet_transactions,chip_transactions,wallet_credit_idempotency,session_closes'
     );
   });
 
@@ -361,6 +361,9 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
   );
   it('the actual service recovers a lost committed response using only the original move', async () => {
     seedMove();
+    const original = sql(
+      `SELECT to_json(source_occupancy_id) FROM cash_seat_moves WHERE id='${MOVE}'`
+    ) as string;
     const service = await import('../services/supabase/seatMoves.js');
     let calls = 0;
     transport.rpc.mockImplementation(async (name: string, args: { p_move_id: string }) => {
@@ -375,6 +378,7 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
       {
         move_id: MOVE,
         player_id: USER,
+        source_occupancy_id: original,
         to_table_id: OTHER_TABLE,
         to_table_name: null,
         to_role: null,
@@ -393,6 +397,39 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
     });
     expect(calls).toBe(2);
     expect(sql('SELECT count(*) FROM cash_seat_move_receipts')).toBe(1);
+  });
+
+  it('the pending RPC retains original occupancy and durable swap readiness', () => {
+    seedSwap();
+    const original = sql(
+      `SELECT to_json(source_occupancy_id) FROM cash_seat_moves WHERE id='${MOVE}'`
+    );
+    expect(move()).toMatchObject({ ok: false, held: true, reason: 'waiting_partner' });
+    const rows = sql(`SELECT json_agg(m) FROM fn_cash_seat_moves_pending('${TABLE}') m`);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      move_id: MOVE,
+      player_id: USER,
+      source_occupancy_id: original,
+    });
+    expect(rows[0].ready_at).toBeTruthy();
+    expect(
+      sql(
+        "SELECT to_json(has_function_privilege('authenticated','fn_cash_seat_moves_pending(uuid)','EXECUTE'))"
+      )
+    ).toBe(false);
+    expect(
+      sql(
+        "SELECT to_json(has_function_privilege('anon','fn_cash_seat_moves_pending(uuid)','EXECUTE'))"
+      )
+    ).toBe(false);
+    expect(
+      sql(
+        "SELECT to_json(has_function_privilege('service_role','fn_cash_seat_moves_pending(uuid)','EXECUTE'))"
+      )
+    ).toBe(true);
+    sql(`UPDATE cash_seat_moves SET expires_at=now()-interval '1 second' WHERE id='${MOVE}'`);
+    expect(sql(`SELECT count(*) FROM fn_cash_seat_moves_pending('${TABLE}')`)).toBe(0);
   });
 
   it('does not tear down a replacement engine occupancy after an old move reply', async () => {
@@ -414,6 +451,7 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
         {
           move_id: MOVE,
           player_id: USER,
+          source_occupancy_id: originalOutcome.source_occupancy_id,
           to_table_id: OTHER_TABLE,
           to_table_name: null,
           to_role: null,
@@ -735,6 +773,184 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
     }
     throw new Error('Contender did not reach the expected PostgreSQL lock');
   };
+
+  describe('game waitlist cancellation', () => {
+    const seedQueue = () => {
+      seedGame();
+      sql(`INSERT INTO cash_games(id) VALUES('${GAME}'),('${PARTNER_MOVE}');
+        INSERT INTO tables(id,cluster_id) VALUES('${CLUB}',NULL),('${PARTNER_MOVE}','${PARTNER_MOVE}');
+        INSERT INTO cash_game_waitlist(game_id,user_id,status) VALUES
+          ('${GAME}','${USER}','waiting'),('${GAME}','${PARTNER_USER}','notified'),
+          ('${PARTNER_MOVE}','${USER}','waiting');
+        INSERT INTO table_waitlist(table_id,user_id,status,hold_expires_at) VALUES
+          ('${TABLE}','${USER}','notified',now()+interval '1 minute'),
+          ('${OTHER_TABLE}','${USER}','waiting',NULL),
+          ('${TABLE}','${PARTNER_USER}','notified',now()+interval '1 minute'),
+          ('${CLUB}','${USER}','waiting',NULL),
+          ('${PARTNER_MOVE}','${USER}','notified',now()+interval '1 minute'),
+          ('${OTHER_TABLE}','${USER}','seated',NULL)`);
+    };
+    const cancelQueue = (table?: string) =>
+      sql(`BEGIN; SET LOCAL ROLE authenticated; SET LOCAL test.auth_uid='${USER}';
+        SELECT ${table ? `fn_table_waitlist_leave('${table}')` : `fn_cash_game_leave_waitlist('${GAME}')`}; COMMIT;`);
+    const remainingOwnOffers = () =>
+      sql(`SELECT count(*) FROM table_waitlist w JOIN tables t ON t.id=w.table_id
+        WHERE t.cluster_id='${GAME}' AND w.user_id='${USER}' AND w.status IN ('waiting','notified')`);
+
+    it('retires both records, preserves other players/games/history and never changes money or a seated stay', () => {
+      seedQueue();
+      const before = snapshot();
+      const stay = sql('SELECT to_jsonb(s) FROM table_seats s');
+      expect(cancelQueue()).toEqual({ ok: true, cancelled: 1, released_offers: 2 });
+      expect(remainingOwnOffers()).toBe(0);
+      expect(
+        sql("SELECT count(*) FROM table_waitlist WHERE status='left' AND hold_expires_at IS NULL")
+      ).toBe(2);
+      expect(
+        sql("SELECT count(*) FROM table_waitlist WHERE status IN ('waiting','notified')")
+      ).toBe(3);
+      expect(sql("SELECT count(*) FROM table_waitlist WHERE status='seated'")).toBe(1);
+      expect(
+        sql("SELECT count(*) FROM cash_game_waitlist WHERE status IN ('waiting','notified')")
+      ).toBe(2);
+      expect(sql('SELECT to_jsonb(s) FROM table_seats s')).toEqual(stay);
+      expect(snapshot()).toEqual(before);
+      expect(cancelQueue()).toEqual({ ok: true, cancelled: 0, released_offers: 0 });
+      expect(snapshot()).toEqual(before);
+    });
+
+    it('the physical-table exit cancels the same whole-game admission', () => {
+      seedQueue();
+      expect(cancelQueue(TABLE)).toEqual({ ok: true, cancelled: 2 });
+      expect(remainingOwnOffers()).toBe(0);
+      expect(
+        sql(
+          `SELECT to_json(status) FROM cash_game_waitlist WHERE game_id='${GAME}' AND user_id='${USER}'`
+        )
+      ).toBe('cancelled');
+      expect(cancelQueue(TABLE)).toEqual({ ok: true, cancelled: 0 });
+    });
+
+    it('keeps an ordinary table exit scoped to that table', () => {
+      seedQueue();
+      expect(cancelQueue(CLUB)).toEqual({ ok: true, cancelled: 1 });
+      expect(remainingOwnOffers()).toBe(2);
+      expect(sql("SELECT count(*) FROM cash_game_waitlist WHERE status='cancelled'")).toBe(0);
+    });
+
+    it.each(['fn_cash_game_leave_waitlist', 'fn_table_waitlist_leave'])(
+      '%s requires identity and is not executable anonymously',
+      (name) => {
+        seedQueue();
+        expect(() =>
+          sql(
+            `BEGIN; SET LOCAL ROLE authenticated; SET LOCAL test.auth_uid=''; SELECT ${name}('${GAME}'); COMMIT;`
+          )
+        ).toThrow(/NOT_AUTHENTICATED/);
+        expect(() => sql(`BEGIN; SET LOCAL ROLE anon; SELECT ${name}('${GAME}'); COMMIT;`)).toThrow(
+          /permission denied/
+        );
+        expect(remainingOwnOffers()).toBe(2);
+      }
+    );
+
+    it('preserves authenticated doors without granting direct queue writes', () => {
+      expect(
+        sql(`SELECT json_build_object(
+        'game',has_function_privilege('authenticated','fn_cash_game_leave_waitlist(uuid)','EXECUTE'),
+        'table',has_function_privilege('authenticated','fn_table_waitlist_leave(uuid)','EXECUTE'),
+        'engine',has_function_privilege('service_role','fn_cash_game_leave_waitlist(uuid)','EXECUTE'),
+        'game_write',has_table_privilege('authenticated','cash_game_waitlist','UPDATE'),
+        'table_write',has_table_privilege('authenticated','table_waitlist','UPDATE'))`)
+      ).toEqual({ game: true, table: true, engine: true, game_write: false, table_write: false });
+    });
+
+    it('rolls back the game cancellation if releasing its offer fails', () => {
+      seedQueue();
+      expect(() =>
+        sql(`BEGIN;
+        CREATE FUNCTION pg_temp.reject_release() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN RAISE EXCEPTION 'TEST_RELEASE_FAILURE'; END$$;
+        CREATE TRIGGER reject_release BEFORE UPDATE ON table_waitlist FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_release();
+        SET LOCAL test.auth_uid='${USER}'; SELECT fn_cash_game_leave_waitlist('${GAME}'); COMMIT;`)
+      ).toThrow(/TEST_RELEASE_FAILURE/);
+      expect(sql("SELECT count(*) FROM cash_game_waitlist WHERE status='cancelled'")).toBe(0);
+      expect(remainingOwnOffers()).toBe(2);
+      expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+    });
+
+    it('waits for a concurrent game join and releases its newly committed admission', async () => {
+      seedQueue();
+      sql(`DELETE FROM cash_game_waitlist WHERE game_id='${GAME}' AND user_id='${USER}';
+        DELETE FROM table_waitlist WHERE user_id='${USER}' AND table_id IN ('${TABLE}','${OTHER_TABLE}')`);
+      const holder = await holdingSql(`SELECT id FROM cash_games WHERE id='${GAME}' FOR UPDATE`);
+      const contender = concurrentSql(`SET application_name='native_queue_join_cancel';
+        BEGIN; SET LOCAL statement_timeout='5s'; SET LOCAL test.auth_uid='${USER}';
+        SELECT fn_cash_game_leave_waitlist('${GAME}'); COMMIT;`);
+      try {
+        await waitForDatabaseLock('native_queue_join_cancel');
+        expect(
+          (
+            await holder.finish(
+              true,
+              `INSERT INTO cash_game_waitlist(game_id,user_id,status) VALUES('${GAME}','${USER}','notified');
+          INSERT INTO table_waitlist(table_id,user_id,status,hold_expires_at) VALUES('${TABLE}','${USER}','notified',now()+interval '1 minute')`
+            )
+          ).code
+        ).toBe(0);
+        const result = await contender;
+        expect(result.code).toBe(0);
+        expect(JSON.parse(result.output)).toEqual({ ok: true, cancelled: 1, released_offers: 1 });
+        expect(remainingOwnOffers()).toBe(0);
+      } finally {
+        await holder.finish(false);
+        await contender;
+      }
+    });
+
+    it.each(['offer', 'cancel'] as const)(
+      '%s commits first: a racing offer cannot survive cancellation',
+      async (first) => {
+        seedQueue();
+        sql(
+          `UPDATE table_waitlist SET status='waiting',hold_expires_at=NULL WHERE table_id='${TABLE}' AND user_id='${USER}'`
+        );
+        const offer = `UPDATE table_waitlist SET status='notified',hold_expires_at=now()+interval '1 minute'
+        WHERE table_id='${TABLE}' AND user_id='${USER}' AND status='waiting'`;
+        const cancel = `SET LOCAL test.auth_uid='${USER}'; SELECT fn_cash_game_leave_waitlist('${GAME}')`;
+        const holder = await holdingSql(first === 'offer' ? offer : cancel);
+        const contender = concurrentSql(`SET application_name='native_queue_offer_cancel';
+        BEGIN; SET LOCAL statement_timeout='5s'; ${first === 'offer' ? cancel : offer}; COMMIT;`);
+        try {
+          await waitForDatabaseLock('native_queue_offer_cancel');
+          expect((await holder.finish(true)).code).toBe(0);
+          expect((await contender).code).toBe(0);
+          expect(remainingOwnOffers()).toBe(0);
+        } finally {
+          await holder.finish(false);
+          await contender;
+        }
+      }
+    );
+
+    it('refuses cancellation definition drift and rolls the rejected migration back', () => {
+      const migration = readFileSync(
+        resolve(
+          process.cwd(),
+          '../supabase/migrations/20260914110751_cash_game_waitlist_cancellation_releases_its_offers.sql'
+        ),
+        'utf8'
+      );
+      expect(() =>
+        sql(
+          `BEGIN; CREATE OR REPLACE FUNCTION public.fn_cash_game_leave_waitlist(uuid)
+        RETURNS jsonb LANGUAGE sql AS $$SELECT '{}'::jsonb$$;` + migration
+        )
+      ).toThrow(/Unreviewed waitlist cancellation baseline/);
+      seedQueue();
+      expect(cancelQueue()).toEqual({ ok: true, cancelled: 1, released_offers: 2 });
+    });
+  });
+
   it.each(['admission', 'close'] as const)(
     '%s commits first: the opposite transaction cannot create a closed-table occupancy',
     async (first) => {

@@ -206,7 +206,7 @@ const sqlTag = (key: string, consumer: string, note: string, since: string): Led
 });
 
 export const TAG_CONSUMERS: LedgerEntry[] = [
-  // Omaha stack-offs -> V40 pressure cap (PLO_STACKOFF_TAGS) + tuner dials
+  // Omaha stack-off diagnostics; proposals do not authorize policy adjustments.
   tag(
     'nonnut_flush_stackoff',
     'HorseLogic.ploStackoffLoad / nlhStackoffLoad; HorseSelfTuner (stackoff gate)',
@@ -243,7 +243,7 @@ export const TAG_CONSUMERS: LedgerEntry[] = [
     'top pair no redraw, 100bb+',
     'V38'
   ),
-  // hold em stack-offs -> V41 heat into the V20 cap (NLH_STACKOFF_TAGS)
+  // Hold em stack-off diagnostics (NLH_STACKOFF_TAGS).
   tag(
     'top_pair_weak_kicker_stackoff',
     'HorseLogic.nlhStackoffLoad / tourneyStackoffLoad',
@@ -258,8 +258,8 @@ export const TAG_CONSUMERS: LedgerEntry[] = [
   ),
   tag(
     'straight_into_flush_stackoff',
-    'HorseLogic.nlhStackoffLoad',
-    'straight on a three-flush board',
+    'HorseLogic.nlhStackoffLoad (hold em only; measurement-only in Omaha)',
+    'straight on a three-flush board - since 2026-09-13 also flagged in Omaha, where it is recorded and reviewed but deliberately NOT in PLO_STACKOFF_TAGS',
     'V21'
   ),
   tag(
@@ -269,7 +269,7 @@ export const TAG_CONSUMERS: LedgerEntry[] = [
     'V21'
   ),
   tag('underfull_stackoff', 'HorseLogic.nlhStackoffLoad', 'bottom boat', 'V21'),
-  // river wars -> V41 respect + war gate (RIVER_WAR_TAGS)
+  // River escalation diagnostics (RIVER_WAR_TAGS).
   tag(
     'river_raise_war',
     'HorseLogic.riverWarLoad',
@@ -282,9 +282,9 @@ export const TAG_CONSUMERS: LedgerEntry[] = [
     'bet the river, called a raise, lost',
     'V23'
   ),
-  // limped pots -> V41 limped-pot cap (LIMP_BLOAT_TAGS)
+  // Limped-pot diagnostics (LIMP_BLOAT_TAGS).
   tag('limped_pot_bloat', 'HorseLogic.limpBloatLoad', 'entered for one blind, lost 40bb+', 'V23'),
-  // preflop -> tuner tightness + V41 tournament premium
+  // Preflop audit proposals, including the historical tournament premium.
   tag(
     'preflop_stackoff',
     'HorseSelfTuner (preflop gate); HorseLogic.tourneyStackoffLoad',
@@ -554,13 +554,33 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase11'
   ),
   flag(
+    'phase12Remaining',
+    'separate Short Deck/Pineapple/FLH/FLO8 policies; shadow by default; candidate selection is offline only',
+    'Phase12'
+  ),
+  flag(
+    'phase12EvidenceMode',
+    'offline fixed-work remaining-variant clock; rejected by the live decision worker',
+    'Phase12'
+  ),
+  flag(
+    'phase13Joint',
+    'joint multiway and bomb policy; live shadow with offline-only candidate selection',
+    'Phase13'
+  ),
+  flag(
+    'phase13EvidenceMode',
+    'offline fixed-work joint evaluation; rejected by the live worker',
+    'Phase13'
+  ),
+  flag(
     'v43Tempo',
     'tempo reads: a river big bet priced by how fast it was made against what this player shows down at that tempo',
     'V43'
   ),
   flag(
     'v41Leaks',
-    'the rest of the tag table reaches a decision: hold em stack-off load, river-war load, limp-bloat load, by variant family',
+    'diagnostic telemetry for ignored historical review fields; never authorizes policy or sampling changes',
     'V41'
   ),
 
@@ -578,17 +598,6 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
       ['thinkRange', 'think-time band for V9 timing'],
       ['callRespect', 'variant call respect offset (HorseVariantProfile)'],
       ['familyBias', 'V18 sizing family hashed from the horse id'],
-      [
-        'ploStackoffLoad',
-        'V40: this horse own Omaha stack-off tag rate (profile leaks / leaksHands)',
-      ],
-      ['nlhStackoffLoad', 'V41: this horse own hold em stack-off tag rate (leaksHoldem)'],
-      ['riverWarLoad', 'V41: river raise-war / paid-off tag rate for this hand family'],
-      ['limpBloatLoad', 'V41: limped-pot bloat tag rate for this hand family'],
-      [
-        'tourneyLeakPremium',
-        'V41: extra ICM survival premium for a horse tagged for event stack-offs (leaksTournament)',
-      ],
     ] as const
   ).map(
     ([key, note]): LedgerEntry => ({
@@ -598,17 +607,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
       cadence: 'per_action',
       consumer: 'HorseLogic.decide / HorsePreflop.decidePreflopV7',
       note,
-      since:
-        key === 'ploStackoffLoad'
-          ? 'V40'
-          : key === 'nlhStackoffLoad' ||
-              key === 'riverWarLoad' ||
-              key === 'limpBloatLoad' ||
-              key === 'tourneyLeakPremium'
-            ? 'V41'
-            : key === 'familyBias'
-              ? 'V18'
-              : 'V2',
+      since: key === 'familyBias' ? 'V18' : 'V2',
     })
   ),
 
@@ -656,7 +655,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
         key === 'persona'
           ? 'HorsePersona.resolvePersona (ServerTableEngineDealing straddle round); HorseLogic.followsSolver (the GTO consult)'
           : key.startsWith('leaks')
-            ? 'HorseLogic.leakLoad'
+            ? 'HorseLogic.leakLoad (diagnostic only); HorseLogic.decide (ignored-evidence receipt)'
             : 'HorseLogic.decide',
       note,
       since,
@@ -736,6 +735,13 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   state('pots', 'live side-pot layers and exact eligible player ids'),
   state('rakeConfig', 'exact active per-hand rake percent and player-count cap schedule'),
+  state('bbjConfig', 'active hand jackpot fee configuration; null explicitly disables deductions'),
+  state(
+    'chipUnit',
+    'controller settlement unit: whole tournament or Diamond chips, cent-unit cash chips'
+  ),
+  state('asset', 'controller chip or Diamond asset, governing fee and precision rules'),
+  state('dealtSeatIds', 'public original dealt-seat census; folded deals still occupy the deck'),
   state('variantRules', 'explicit hole-card, board-use, deck and hi-lo rules'),
   state('communityCards', 'board 1'),
   state('communityCards2', 'board 2 (bomb pots)'),
@@ -787,6 +793,41 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   // TABLES. What the services compile and where it goes.
   // ─────────────────────────────────────────────────────────────────────────
   table(
+    'horse_observation_discovery_epochs',
+    'minute',
+    'HorseObservationDiscovery via fn_discover_horse_observation_requests; fn_prune_horse_observation_discovery',
+    'private bounded source-window discovery progress and retained gaps; roster discovery does not establish observation-time coverage, journal completion or model activation',
+    'Phase14'
+  ),
+  table(
+    'horse_observation_discovery_segments',
+    'minute',
+    'fn_discover_horse_observation_requests; fn_prune_horse_observation_discovery',
+    'private source snapshots, atomic-hand and actor digests, frozen novel actors and bounded admission cursor; pending membership survives source removal and restart',
+    'Phase14'
+  ),
+  table(
+    'horse_observation_discovery_members',
+    'minute',
+    'fn_discover_horse_observation_requests through canonical fn_admit_horse_observation_capture; fn_prune_horse_observation_discovery',
+    'private deduplicated actor-to-original-window request references; admission and membership commit together without financial or policy writes',
+    'Phase14'
+  ),
+  table(
+    'horse_observation_capture_work',
+    'minute',
+    'HorseObservationCapture via fn_claim_horse_observation_capture; HorseLearningQueueHealth via fn_horse_learning_work_health',
+    'private durable actor/window acquisition requests; bounded sequential cursor recovery in one queue slot and retained gaps; not source coverage or model activation',
+    'Phase14'
+  ),
+  table(
+    'horse_observation_capture_receipts',
+    'minute',
+    'HorseObservationCapture via fn_finish_horse_observation_capture_witness and legacy fn_finish_horse_observation_capture; HorseCaptureEvidence via fn_horse_observation_capture_evidence; fn_prune_horse_observation_captures',
+    'private immutable accepted-slice acknowledgments; exact source-read witnesses commit with journal admission and cursor advance; bounded revision-fenced evidence recovery compares independent journal receipts; legacy missing witnesses and unfinished gaps stay explicit without establishing source coverage',
+    'Phase14'
+  ),
+  table(
     'horse_mind_stats',
     'boot',
     'HorseMindPersistence (load at boot, save on a timer)',
@@ -821,7 +862,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   table(
     'horse_review_rollup',
     'nightly',
-    'HorseSelfTuner (leak counts -> dials and the V40 leak profile)',
+    'HorseSelfTuner (unapplied review proposals); HorseTunerObservationalAudit (preserved profile)',
     'per horse/day/variant tag counts',
     'V18',
     { dayColumn: 'day', freshnessDays: 2 }
@@ -853,8 +894,8 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   table(
     'horse_self_tune_log',
     'nightly',
-    'HorseDailyAudit (instrument liveness); the panel',
-    'what the tuner did to each horse and why',
+    'fn_complete_horse_tuner_study via HorseTunerStudyCompletion; HorseDailyAudit; the panel',
+    'what the tuner did to each horse and why; an individual row is only partial nightly progress',
     'V8',
     { dayColumn: 'run_date', freshnessDays: 2 }
   ),
@@ -948,6 +989,27 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'findings + agent analysis per day',
     'V13',
     { dayColumn: 'day', freshnessDays: 2 }
+  ),
+  table(
+    'horse_tuner_write_receipts',
+    'nightly',
+    'fn_horse_tuner_recorded_horses via HorseTunerStudyCompletion',
+    'immutable per-horse daily writes let an interrupted study resume without retuning accepted horses',
+    'Phase14'
+  ),
+  table(
+    'horse_tuner_study_rosters',
+    'nightly',
+    'fn_prepare_horse_tuner_study via HorseTunerStudyCompletion',
+    'durable original eligible membership prevents a resumed study from silently dropping unfinished horses',
+    'Phase14'
+  ),
+  table(
+    'horse_tuner_study_completions',
+    'nightly',
+    'HorseLeague / HorseSelfTuner',
+    'one execution receipt after every member of the captured eligible cohort has an atomic audit receipt; not causal validation',
+    'Phase14'
   ),
   table(
     'horse_job_runs',
@@ -1496,23 +1558,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'decide_omaha',
     0.0001
   ),
+
   receipt(
-    'v40_leak_profile_read',
-    'HorseLogic (V40)',
-    'the horse own review tags changed a decision; needs tuner-written leaks',
-    'V40'
-  ),
-  receipt(
-    'v41_nlh_leak_read',
-    'HorseLogic (V41)',
-    'a hold em horse tagged for stack-offs read a single big bet as pressure; needs tuner-written leaksHoldem',
-    'V41'
-  ),
-  receipt(
-    'v41_river_war_read',
-    'HorseLogic (V41)',
-    'a horse tagged for river raise wars gave a river raise more respect; needs tuner-written leaks',
-    'V41'
+    'phase14_review_signal_ignored',
+    'HorseLogic.decide',
+    'historical review fields were present and excluded from decision adjustments; diagnostic only',
+    'Phase14'
   ),
   receipt(
     'phase5_canonical_state',
@@ -1652,6 +1703,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     0.99
   ),
   receipt(
+    'phase10_unavailable_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'exact reason the existing tournament utility owner refused evaluation',
+    'Phase10'
+  ),
+  receipt(
     'phase10_utility_*',
     'HorseLogic -> HorseTournamentUtility',
     'cash or existing tournament utility ownership',
@@ -1718,6 +1775,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     0.99
   ),
   receipt(
+    'phase11_unavailable_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'exact reason the existing tournament utility owner refused evaluation',
+    'Phase11'
+  ),
+  receipt(
     'phase11_utility_*',
     'HorseLogic -> HorseTournamentUtility',
     'cash or existing tournament utility ownership',
@@ -1746,6 +1809,192 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
       'per-variant eligibility, completion, reason and final execution; depends on table mix',
       'Phase11'
     )
+  ),
+  receipt(
+    'phase12_seen',
+    'HorseLogic -> evaluateRemainingVariantPolicy',
+    'natural Short Deck/Pineapple/FLH/FLO8 decisions entering the versioned policy',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_eligible',
+    'evaluateRemainingVariantPolicy',
+    'complete supported single-board Short Deck/Pineapple/FLH/FLO8 nodes',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_fired',
+    'evaluateRemainingVariantPolicy',
+    'completed bounded Short Deck/Pineapple/FLH/FLO8 policy evaluation',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_shadow_changed',
+    'evaluateRemainingVariantPolicy',
+    'proposal differs from baseline; not a live action claim',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_applied',
+    'HorseLogic',
+    'approved policy proposal accepted before final utility and enforcement',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_baseline_retained',
+    'HorseLogic',
+    'shadow or unavailable policy retained the existing action',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_reason_*',
+    'evaluateRemainingVariantPolicy',
+    'exact selection or unavailable reason',
+    'Phase12',
+    'phase12_seen',
+    0.99
+  ),
+  receipt(
+    'phase12_street_*',
+    'evaluateRemainingVariantPolicy',
+    'street coverage for completed policy evaluations',
+    'Phase12',
+    'phase12_fired',
+    0.99
+  ),
+  receipt(
+    'phase12_unavailable_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'exact reason the existing tournament utility owner refused evaluation',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'cash or existing tournament utility ownership',
+    'Phase12',
+    'phase12_seen',
+    0.99
+  ),
+  receipt(
+    'phase12_execution_*',
+    'ServerTableEngineTurns',
+    'authoritative action or retired decision accounting',
+    'Phase12'
+  ),
+  receipt(
+    'phase12_variant_*',
+    'HorseLogic',
+    'partition entering decisions by exact variant',
+    'Phase12',
+    'phase12_seen',
+    0.99
+  ),
+  ...(['short_deck', 'pineapple', 'flh', 'flo8'] as const).map((variant) =>
+    receipt(
+      `phase12_${variant}_*`,
+      'HorseLogic; ServerTableEngineTurns',
+      'per-variant eligibility, completion, reason and final execution; depends on table mix',
+      'Phase12'
+    )
+  ),
+  receipt(
+    'phase13_seen',
+    'HorseLogic -> evaluateJointLivePolicy',
+    'natural multiway and bomb-pot decisions entering the versioned policy',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_eligible',
+    'evaluateJointLivePolicy',
+    'complete supported multiway and bomb-pot nodes',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_fired',
+    'evaluateJointLivePolicy',
+    'completed bounded multiway and bomb-pot policy evaluation',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_shadow_changed',
+    'evaluateJointLivePolicy',
+    'proposal differs from baseline; not a live action claim',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_applied',
+    'HorseLogic',
+    'approved policy proposal accepted before final utility and enforcement',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_baseline_retained',
+    'HorseLogic',
+    'shadow or unavailable policy retained the existing action',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_reason_*',
+    'evaluateJointLivePolicy',
+    'exact selection or unavailable reason',
+    'Phase13',
+    'phase13_seen',
+    0.99
+  ),
+  receipt(
+    'phase13_street_*',
+    'evaluateJointLivePolicy',
+    'street coverage for completed policy evaluations',
+    'Phase13',
+    'phase13_fired',
+    0.99
+  ),
+  receipt(
+    'phase13_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'cash or existing tournament utility ownership',
+    'Phase13',
+    'phase13_seen',
+    0.99
+  ),
+  receipt(
+    'phase13_execution_*',
+    'ServerTableEngineTurns',
+    'authoritative action or retired decision accounting',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_unavailable_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'explicit utility refusal, budget, context or legalization failure',
+    'Phase13'
+  ),
+  receipt(
+    'phase13_variant_*',
+    'HorseLogic',
+    'partition entering decisions by exact variant',
+    'Phase13',
+    'phase13_seen',
+    0.99
+  ),
+  ...(
+    ['nlh', 'plo4', 'plo5', 'plo6', 'plo8', 'short_deck', 'pineapple', 'flh', 'flo8'] as const
+  ).map((variant) =>
+    receipt(
+      `phase13_${variant}_*`,
+      'HorseLogic; ServerTableEngineTurns',
+      'per-variant eligibility, completion, reason and final execution; depends on table mix',
+      'Phase13'
+    )
+  ),
+  receipt(
+    'phase13_board_*',
+    'HorseLogic',
+    'actual controller board-count coverage',
+    'Phase13',
+    'phase13_seen',
+    0.99
   ),
   receipt(
     'phase8_seen',
@@ -2001,18 +2250,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'a river big bet was priced by its tempo; needs a player with five snap or tank showdowns',
     'V43'
   ),
-  receipt(
-    'v41_tourney_leak_read',
-    'HorseLogic (V41)',
-    'a horse tagged for event stack-offs paid extra ICM premium; tournament volume only, needs tuner-written leaksTournament',
-    'V41'
-  ),
-  receipt(
-    'v41_limp_bloat_*',
-    'HorseLogic (V41)',
-    'read / cap: a horse tagged for limped-pot bloat, in a limped pot, facing a big bet; needs tuner-written leaks',
-    'V41'
-  ),
+
   // TAGS. Every leak tag the review system emits, with its reader.
   ...TAG_CONSUMERS,
 ];

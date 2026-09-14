@@ -23,6 +23,7 @@ import {
   type DailyBonusTile,
 } from '../../services/DailyBonusService';
 import { reportError } from '../../utils/errorReporter';
+import { reportDailyBonusStatusError } from '../../services/dailyBonusStatusError';
 
 export interface ClaimOutcome {
   slot: number;
@@ -152,6 +153,7 @@ export function useDailyBonus(enabled: boolean) {
         setBoostSecondsLeft(boostLeft);
       } catch (err) {
         if (!mounted.current) return;
+        reportDailyBonusStatusError(err, 'useDailyBonus.getStatus');
         setLoadError(err instanceof Error ? err.message : 'Could Not Load Your Daily Bonus');
       } finally {
         inFlight.current = null;

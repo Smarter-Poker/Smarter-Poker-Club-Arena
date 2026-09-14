@@ -69,7 +69,8 @@ export default function GameCreationActions({
           type="button"
           onClick={() => (onNavigate || navigate)(`${managementPath}?create=${action.target}`)}
         >
-          <span aria-hidden="true">+</span> {action.label}
+          <span aria-hidden="true">+</span>
+          <strong>{action.label}</strong>
         </button>
       ))}
     </div>

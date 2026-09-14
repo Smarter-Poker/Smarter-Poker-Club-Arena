@@ -1,3 +1,10 @@
+import {
+  REMAINING_VARIANT_PACKS,
+  REMAINING_VARIANT_DOMAIN,
+  isRemainingPolicyVariant,
+  remainingVariantSeatCap,
+  type RemainingPolicyVariant,
+} from '../engine/remainingVariants/RemainingVariantPolicyPack.js';
 import type { Card, HandConfig, HandEvent, HorseStyle, SeatPlayer } from '../types.js';
 import { HandController } from '../engine/HandController.js';
 import { HorseLogic, type HorseGameStateV2 } from '../engine/HorseLogic.js';
@@ -18,6 +25,9 @@ import { equitySampleSizeOfLastCall, variantInfo } from '../engine/HorseEval.js'
 import { gtoChartCount } from '../engine/GtoCharts.js';
 import { gtoPostflopCount } from '../engine/GtoPostflop.js';
 import { gtoPostflopV31Count, gtoPostflopV31Dataset } from '../engine/GtoPostflopV31.js';
+import { JOINT_LIVE_DOMAIN } from '../engine/multiway/JointLivePolicy.js';
+import { maxSeatsForVariant } from '../config/tableSeating.js';
+import { maxSeatsFor } from '../engine/VariantRules.js';
 function assertFixedBudget() {
   if (
     process.env.EQUITY_GOVERNOR !== 'off' ||
@@ -34,7 +44,11 @@ export function plo4LeagueSeating(index: number, seats: number) {
 
 // Shared physical controller/paired accounting. Each variant supplies its own pack and fixed population.
 export interface Plo4LeagueProfile {
-  variant?: OmahaPolicyVariant;
+  variant?: OmahaPolicyVariant | RemainingPolicyVariant | 'nlh' | 'plo4';
+  jointPolicy?: boolean;
+  bombBoards?: 1 | 2 | 3;
+  asset?: 'chips' | 'diamonds';
+  bbj?: boolean;
   id: string;
   seats: number;
   stackBB: number;
@@ -116,8 +130,8 @@ export const PLO4_LEAGUE_PROFILES: readonly Readonly<Plo4LeagueProfile>[] = Obje
 ]);
 export const PLO4_LEAGUE_SEEDS = Object.freeze([10101101, 10102203, 10103307]);
 const BB = 2;
-function deckFor(seed: number): Card[] {
-  const deck = referenceDeck();
+function deckFor(seed: number, shortDeck = false): Card[] {
+  const deck = referenceDeck().filter((c) => !shortDeck || !'2345'.includes(c.rank));
   let value = seed >>> 0 || 1;
   for (let i = deck.length - 1; i > 0; i--) {
     value ^= value << 13;
@@ -129,6 +143,14 @@ function deckFor(seed: number): Card[] {
   return deck;
 }
 export interface Plo4HandReceipt {
+  joint?: {
+    seen: number;
+    fired: number;
+    utilityEvaluated: number;
+    utilityUnavailable: number;
+    boards: Record<string, number>;
+    opponents: Record<string, number>;
+  };
   complete: boolean;
   net: number[];
   rake: number;
@@ -154,7 +176,20 @@ export async function playPlo4PolicyHand(
   shouldContinue = () => true
 ): Promise<Plo4HandReceipt> {
   const variant = profile.variant ?? 'plo4';
+  const remainingVariant = isRemainingPolicyVariant(variant);
   const receipt: Plo4HandReceipt = {
+    ...(profile.jointPolicy
+      ? {
+          joint: {
+            seen: 0,
+            fired: 0,
+            utilityEvaluated: 0,
+            utilityUnavailable: 0,
+            boards: {},
+            opponents: {},
+          },
+        }
+      : {}),
     complete: false,
     net: [],
     rake: 0,
@@ -184,7 +219,7 @@ export async function playPlo4PolicyHand(
     is_horse: true,
   }));
   const config: HandConfig = {
-    tableId: `${profile.variant ? 'phase11' : 'phase10'}-offline-league`,
+    tableId: `${remainingVariant ? 'phase12' : profile.variant ? 'phase11' : 'phase10'}-offline-league`,
     handNumber: 1,
     gameVariant: variant,
     smallBlind: 1,
@@ -192,6 +227,17 @@ export async function playPlo4PolicyHand(
     ante: profile.anteBB * BB,
     isTournament: profile.tournament,
     rakeConfig: { percent: profile.rakePercent, cap: profile.rakeCapBB * BB, noFlopNoDrop: true },
+    ...(profile.jointPolicy
+      ? {
+          asset: profile.asset ?? 'chips',
+          ...(profile.bombBoards
+            ? { bombPot: { anteMultiplier: 2, boardCount: profile.bombBoards } }
+            : {}),
+          ...(profile.bbj
+            ? { bbjConfig: { enabled: true, feeBB: 0.5, minPlayersDealt: 2, minPotBB: 0 } }
+            : {}),
+        }
+      : {}),
     ...(profile.straddle
       ? { straddles: [{ seat: ((button + 2) % profile.seats) + 1, amount: BB * 2 }] }
       : {}),
@@ -199,7 +245,7 @@ export async function playPlo4PolicyHand(
   const controller = new HandController(config, players, button);
   // Only this offline controller's instance receives the fixed deck. No global
   // shuffle, live controller, persistent service or opponent memory is touched.
-  const deck = deckFor(seed);
+  const deck = deckFor(seed, variant === 'short_deck');
   const instance = controller.getState().deck as unknown as {
     deal(n?: number): Card[];
     dealOne(): Card;
@@ -227,27 +273,83 @@ export async function playPlo4PolicyHand(
   const rng = saveFastRandom();
   try {
     controller.start();
-    for (let step = 0; step < PLO4_POLICY_PACK.maxActionsPerHand && !finished; step++) {
+    for (
+      let step = 0;
+      step <
+        (remainingVariant
+          ? REMAINING_VARIANT_DOMAIN.maxActionsPerHand
+          : PLO4_POLICY_PACK.maxActionsPerHand) && !finished;
+      step++
+    ) {
       if (!shouldContinue()) return receipt;
       if (runout) {
         runout = false;
+        if (variant === 'pineapple') {
+          const pending = controller.getPineappleRunoutDiscardSnapshot();
+          if (pending) {
+            const decisions = new Map(
+              pending.players.map((p) => {
+                seedFastRandom((seed ^ Math.imul(p.seat, 1009) ^ 120012) >>> 0 || 1);
+                return [p.seat, HorseLogic.decideDiscard(p.cards, pending.flop, variant)];
+              })
+            );
+            if (!controller.preparePineappleRunoutDiscards(pending.flop, decisions)) {
+              receipt.illegalActions++;
+              return receipt;
+            }
+          }
+        }
         controller.continueRunout();
         continue;
       }
       const state = controller.getState();
+      if (variant === 'pineapple' && state.stage === 'pineapple_discard') {
+        for (const p of state.players.filter((p) => !p.is_folded && p.cards.length === 3)) {
+          seedFastRandom((seed ^ Math.imul(p.seat, 1009) ^ 120012) >>> 0 || 1);
+          const discard = HorseLogic.decideDiscard(
+            p.cards,
+            state.communityCards.slice(0, 3),
+            variant
+          );
+          if (!controller.performDiscard(p.seat, discard)) {
+            receipt.illegalActions++;
+            return receipt;
+          }
+        }
+        // This offline driver has no animation clock; use the controller's
+        // existing fuzzer bridge after every real discard has been accepted.
+        controller.flushPineappleSettle();
+        continue;
+      }
       const hero = state.players.find((p) => p.seat === state.currentPlayerSeat);
       if (!hero) {
         receipt.truncated++;
         return receipt;
       }
+      if (variant === 'pineapple')
+        hero.knownDeadCards = controller.getPineappleKnownDeadCards(hero.seat);
       const menu = controller.getAuthoritativeActionState(hero.user_id);
       if (!menu?.canAct) {
         receipt.truncated++;
         return receipt;
       }
       const gs: HorseGameStateV2 = {
-        players: state.players.map((p) => ({ ...p, cards: [] })),
+        players: state.players.map((p) => ({
+          ...p,
+          cards: [],
+          ...(variant === 'pineapple' ? { knownDeadCards: undefined } : {}),
+        })),
         communityCards: state.communityCards,
+        ...(profile.jointPolicy
+          ? {
+              communityCards2: state.communityCards2,
+              communityCards3: state.communityCards3,
+              bombPot: Boolean(profile.bombBoards),
+              boardCount: controller.getActiveBoardCount(),
+              dealtSeatIds: state.players.filter((p) => p.cards.length > 0).map((p) => p.seat),
+              ...controller.getChipRulesSnapshot(),
+            }
+          : {}),
         pot: state.pot,
         currentBet: state.currentBet,
         stage: state.stage,
@@ -263,12 +365,15 @@ export async function playPlo4PolicyHand(
         bigBlind: BB,
         ante: config.ante,
         straddleActive: profile.straddle,
-        boardCount: 1,
+        ...(!profile.jointPolicy ? { boardCount: 1 } : {}),
         legalActions: menu.legalActions,
         toCall: menu.toCall,
         minRaiseTo: menu.minRaiseTo,
         maxRaiseTo: menu.maxRaiseTo,
         bettingStructure: menu.structure,
+        ...(remainingVariant
+          ? { fixedBetSize: menu.fixedBetSize, wagersCapped: menu.wagersCapped }
+          : {}),
         pots: controller.computeLivePots(),
         contestablePot: calculateContestablePot(state.players, hero.user_id, menu.toCall),
         variantRules: horseVariantRulesFor(variant),
@@ -326,10 +431,19 @@ export async function playPlo4PolicyHand(
             decisionTimeMs: 0,
             v9Mood: false,
             phase8Postflop: 'off',
-            phase10Plo4: !profile.variant && hero.seat === heroSeat ? mode : 'off',
+            phase10Plo4:
+              !profile.jointPolicy && !profile.variant && hero.seat === heroSeat ? mode : 'off',
             phase10EvidenceMode: true,
-            phase11Omaha: profile.variant && hero.seat === heroSeat ? mode : 'off',
+            phase11Omaha:
+              !profile.jointPolicy && profile.variant && !remainingVariant && hero.seat === heroSeat
+                ? mode
+                : 'off',
             phase11EvidenceMode: true,
+            phase12Remaining:
+              !profile.jointPolicy && remainingVariant && hero.seat === heroSeat ? mode : 'off',
+            phase12EvidenceMode: true,
+            phase13Joint: profile.jointPolicy && hero.seat === heroSeat ? mode : 'off',
+            phase13EvidenceMode: true,
           }
         )
       );
@@ -338,11 +452,27 @@ export async function playPlo4PolicyHand(
         const work = String(equitySampleSizeOfLastCall());
         receipt.equityWork[work] = (receipt.equityWork[work] ?? 0) + 1;
       }
-      const policy = profile.variant ? baseline.omahaVariantPolicy : baseline.plo4Policy;
+      const policy = profile.jointPolicy
+        ? baseline.jointPolicy
+        : remainingVariant
+          ? baseline.remainingVariantPolicy
+          : profile.variant
+            ? baseline.omahaVariantPolicy
+            : baseline.plo4Policy;
       if (hero.seat === heroSeat && policy) {
+        if (receipt.joint && baseline.jointPolicy) {
+          const j = baseline.jointPolicy,
+            r = receipt.joint;
+          r.seen++;
+          r.fired += Number(j.fired);
+          r.utilityEvaluated += Number(j.utilityOwner === 'phase7_evaluated');
+          r.utilityUnavailable += Number(j.utilityOwner === 'phase7_unavailable');
+          r.boards[j.boardCount] = (r.boards[j.boardCount] ?? 0) + 1;
+          r.opponents[j.liveOpponents] = (r.opponents[j.liveOpponents] ?? 0) + 1;
+        }
         receipt.eligible += Number(policy.eligible);
         receipt.changed += Number(policy.applied);
-        const node = `${gs.gameMode}/${gs.stage}/${policy.role ?? 'outside_domain'}`;
+        const node = `${gs.gameMode}/${gs.stage}/${'role' in policy ? policy.role : profile.jointPolicy ? 'joint-board-' + gs.boardCount : 'outside_domain'}`;
         receipt.nodeCounts[node] = (receipt.nodeCounts[node] ?? 0) + 1;
         receipt.reasons[policy.reason] = (receipt.reasons[policy.reason] ?? 0) + 1;
       }
@@ -362,7 +492,19 @@ export async function playPlo4PolicyHand(
     }
     const end = controller.getState();
     try {
-      uniqueCards([...end.players.flatMap((p) => p.cards), ...end.communityCards]);
+      const physical = [
+        ...end.players.flatMap((p) => [
+          ...p.cards,
+          ...controller.getPineappleKnownDeadCards(p.seat),
+        ]),
+        ...end.communityCards,
+        ...(profile.jointPolicy
+          ? [...(end.communityCards2 ?? []), ...(end.communityCards3 ?? [])]
+          : []),
+      ];
+      uniqueCards(physical);
+      if (variant === 'short_deck' && physical.some((c) => '2345'.includes(c.rank)))
+        throw new Error('Invalid short-deck rank');
     } catch {
       receipt.cardErrors++;
     }
@@ -372,6 +514,7 @@ export async function playPlo4PolicyHand(
     receipt.complete = !receipt.cardErrors && !receipt.conservationErrors;
     return receipt;
   } finally {
+    controller.cancelPineappleSettle();
     restoreFastRandom(rng);
   }
 }
@@ -393,7 +536,16 @@ export async function runOmahaPolicyLeague(
     (profile.variant &&
       (profile.seats < 2 ||
         profile.seats >
-          omahaVariantSeatCap(profile.variant, profile.tournament ? 'tournament' : 'cash'))) ||
+          (profile.jointPolicy
+            ? profile.tournament
+              ? Math.min(10, maxSeatsFor(profile.variant))
+              : maxSeatsForVariant(profile.variant)
+            : isRemainingPolicyVariant(profile.variant)
+              ? remainingVariantSeatCap(profile.variant, profile.tournament ? 'tournament' : 'cash')
+              : omahaVariantSeatCap(
+                  profile.variant as OmahaPolicyVariant,
+                  profile.tournament ? 'tournament' : 'cash'
+                )))) ||
     !Number.isInteger(options.pairs) ||
     options.pairs < 1 ||
     options.pairs > PLO4_POLICY_PACK.maxPairs ||
@@ -465,9 +617,14 @@ export async function runOmahaPolicyLeague(
       : [Math.max(-bound, mean - width), Math.min(bound, mean + width)];
   const all = [...pairs.flatMap((p) => [p.candidate, p.baseline]), ...incompleteHands];
   return {
-    version: profile.variant
-      ? OMAHA_VARIANT_PACKS[profile.variant].version
-      : PLO4_POLICY_PACK.version,
+    version: profile.jointPolicy
+      ? JOINT_LIVE_DOMAIN.version
+      : profile.variant
+        ? (isRemainingPolicyVariant(profile.variant)
+            ? REMAINING_VARIANT_PACKS[profile.variant]
+            : OMAHA_VARIANT_PACKS[profile.variant as OmahaPolicyVariant]
+          ).version
+        : PLO4_POLICY_PACK.version,
     fixedWork: {
       governor: 'off',
       scale: 1,

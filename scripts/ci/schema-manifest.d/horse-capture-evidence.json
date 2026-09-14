@@ -1,0 +1,6 @@
+{
+  "_owner": "Horse Brain Phase14 bounded original capture evidence reader",
+  "tables": [],
+  "functions": ["fn_horse_observation_capture_evidence"],
+  "columns": {}
+}

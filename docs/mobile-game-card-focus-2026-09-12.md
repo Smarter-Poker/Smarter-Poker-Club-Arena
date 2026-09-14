@@ -1,0 +1,9 @@
+# Mobile Game-Card Focus Repair — September 12, 2026
+
+The cash live-continuity certification reached the game-details URL instead of the table after clicking View. Native WebKit and the actual rendered lobby components reproduced the cause: button focus bubbles to ArenaLobbyGameCard, whose onFocus called the parent openEntry action before the button click. The details panel then intercepted the intended action.
+
+Mobile card focus now only warms the table. The unused details-selection prop is removed from the mobile card and its LobbyTable call site. View, Join and Waitlist keep their explicit handlers; desktop row selection still opens details. The existing production table URL, authoritative subscription, snapshot, gameplay and recovery checks are unchanged.
+
+Before the repair, all ten regression cases failed at the premature selection assertion: nine cash variants and a clustered game. Afterward, 101 tests passed across five files, including desktop details selection and distinct View/Join actions. Client typecheck and the production client build passed. Native WebKit reproduced the old focus opening details with no View action; with the correction, focus made no navigation and clicking View opened the table once without joining. The native harness renders the actual components with simplified CSS and no external network; it proves event behavior, not production layout or live engine continuity. The committed source is linked to the native runtime hashes in the evidence archive.
+
+The previously published bounded-health repair already passed MTT, Spin and SNG continuity in workflow34703792074. Cash certification remains failed until this UI correction is published and the normal exact-source live test passes. The separate289-test general suite passed in that workflow. None of these results closes Horse Brain Phase8 performance or the remaining Phase14/15 program gates.

@@ -325,6 +325,51 @@ add per-board award persistence: it exists. Use `winners_by_board`.**
   2026-08-30 decision was full 5-card boards for every run, stacked. Kept as
   is — see the divergence list in §2b.
 
+## 2f. Round 6 (2026-09-13) — the line-by-line re-read
+
+Eight days after round 5 the feature was verified live (`aa6b6387a` is an
+ancestor of the running engine; 285 of 285 multi-board hands in 24h conserve
+money per board) and re-read line by line, engine and client. Findings and
+fixes are in `docs/changelog/2026-09-13-run-it-twice-round-three-engine.md`
+and `...-client.md`. The ones that touch this spec:
+
+- **Pot rows during the ship are the GROSS rows** (§2e finding 2, completed).
+  The rows come from `rit_result.pots` now, so a raked pot no longer drops
+  by the rake at the first ship and a side pot keeps its own row.
+- **A heads-up TABLE never offers the question.** Dan's rule named it; the
+  code enforced only the tournament half of it. A two-way all-in on a full
+  ring is the ordinary case and is untouched.
+- **The expiry names the one silent seat** ("Name Did Not Answer In Time"),
+  the way a decliner is named.
+- **A horse's answer latency is spread across the window**, not a 1-4s band.
+- **The record keeps the pot axis**: `winners_by_board[].pots` says which pot
+  each board share came out of, and every hand-history surface shows it.
+- **`hand_history.pots` amounts are cents-exact** (PR #4485): the capture
+  stored the live float sum verbatim.
+
+## 2g. Round 7 (2026-09-14) — the wait, the record, the sound
+
+`docs/changelog/2026-09-14-run-it-twice-round-four.md`. The ones that touch
+this spec:
+
+- **The consent panel is heard.** It opened silently; a player on another
+  table found out when the clock was half gone. It plays the same attention
+  cue as "your turn" and the insurance offer, for the all-in seats only.
+- **The host's wait listens instead of polling.** One event ends it - the
+  engine now emits on every way an offer can end, the chooser's "1"
+  included - and one safety timeout remains as the net. The settlement no
+  longer starts up to 250 ms after the last consent.
+- **The record names the hand that won the money.** `winners[].hand` on a
+  multi-board hand read the board-one showdown row; a flush on run two was
+  recorded as a pair. It reads the player's largest per-run share now.
+- **`pot_distributed` is exact per pot.** The per-winner share was a
+  proportional estimate from whole-hand totals; it reads the per-pot award
+  slices now, in cents that sum to the pot.
+- **The replay names each run's made hand on the streets after the runs
+  diverge** ("Run 1 Four Of A Kind · Run 2 Three Of A Kind"), not board one's.
+- **The timeout is driven through the host end to end** in a test, on an
+  injected clock.
+
 ## 3. Explicitly out of scope
 
 - No PokerBros assets, artwork or text is copied; visual layout is our own.

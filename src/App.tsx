@@ -47,6 +47,7 @@ import MilestoneToast from './components/common/MilestoneToast';
 import { GlobalBalanceSync } from './core/useGlobalBalanceSync';
 import ClubBottomNav from './components/club/ClubBottomNav';
 import { shouldShowClubFooterFor } from './components/club/clubFooterVisibility';
+import { applyArenaScheme, arenaSchemeFor } from './lib/arenaScheme';
 import { useInTabLobbyActive, useInTabLobbyClubId } from './components/club/inTabLobbySurface';
 
 // Auth Guards
@@ -312,6 +313,17 @@ function FullApp() {
      run a days-old bundle while production serves the fix. Applies the update
      only away from a table and only with the tab visible; see the hook. */
   useShellUpdateGate();
+  /* DIAMOND ARENA IS LIGHT, AND ONLY DIAMOND ARENA (Dan 2026-09-11). The
+     scheme is published on `<html>` from HERE because this is the one place
+     that already holds both inputs the answer needs, and it holds them for
+     exactly the same reason the club footer does: the in-table "+" opens a
+     club lobby as a TAB while the URL stays on /table/<id>, so a route gate
+     alone would put the chip estate's chrome around the Diamond lobby.
+     `data-arena-scheme` is its own attribute with one writer; it says where
+     you ARE and never touches `data-theme`, which is what you PREFER. */
+  useEffect(() => {
+    applyArenaScheme(arenaSchemeFor(location.pathname, inTabLobbyActive ? inTabLobbyClubId : null));
+  }, [location.pathname, inTabLobbyActive, inTabLobbyClubId]);
   /* And the reader for what that gate emits (2026-08-30). The gate has been
      publishing SHELL_STALENESS_CHECKED / SHELL_RELOADED since 2026-08-29 with
      nothing subscribed — the same shape as SHELL_UPDATED itself, which was
@@ -1655,6 +1667,19 @@ function FullApp() {
                           <ClubAdvertisePage />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                {/* An outside sponsor, signed in, books a picture that sends
+                    players to their own site and is invoiced off platform
+                    (2026-09-13). Any account; the house reviews every flight. */}
+                <Route
+                  path="advertise"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Advertise">
+                        <ClubAdvertisePage mode="sponsor" />
+                      </PageErrorBoundary>
                     </AuthGuard>
                   }
                 />

@@ -1,8 +1,8 @@
 /**
  * A DECLARED GUARD CHANGE IS RECORDED, NOT RAISED (2026-09-10).
  *
- * `fn_ca_guard_defs_watch` compares each of the 28 functions on
- * `fn_ca_guard_watchlist()` against a stored baseline and raises an INFO notice
+ * `fn_ca_guard_defs_watch` compares each function on `fn_ca_guard_watchlist()`
+ * (28 when this was written, 41 since 2026-09-13) against a stored baseline and raises an INFO notice
  * when they differ. Its own text ends "Then resolve this notice - it does not
  * close itself."
  *
@@ -38,19 +38,48 @@ const DECLARE = 'fn_ca_declare_guard_redefinition';
  * that defines `fn_ca_guard_watchlist`, so adding a guard to the watchlist
  * automatically extends this law rather than quietly leaving the new guard out.
  */
+const watchlistDefinitions = () =>
+  migrationsMentioning('CREATE OR REPLACE FUNCTION public.fn_ca_guard_watchlist')
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((m) => {
+      const start = m.sql.indexOf('CREATE OR REPLACE FUNCTION public.fn_ca_guard_watchlist');
+      const body = m.sql.slice(start, m.sql.indexOf('$function$;', start));
+      const names = [...body.matchAll(/'(fn_[a-z0-9_]+)'/g)].map((x) => x[1]);
+      return { name: m.name, guards: [...new Set(names)] };
+    });
+
 const watchlist = (): string[] => {
-  const defs = migrationsMentioning('CREATE OR REPLACE FUNCTION public.fn_ca_guard_watchlist').sort(
-    (a, b) => a.name.localeCompare(b.name)
-  );
+  const defs = watchlistDefinitions();
   const newest = defs[defs.length - 1];
   expect(newest, 'some migration must define fn_ca_guard_watchlist').toBeDefined();
-  const start = newest!.sql.indexOf('CREATE OR REPLACE FUNCTION public.fn_ca_guard_watchlist');
-  const body = newest!.sql.slice(start, newest!.sql.indexOf('$function$;', start));
-  const names = [...body.matchAll(/'(fn_[a-z0-9_]+)'/g)].map((m) => m[1]);
-  expect(names.length, 'the watchlist should parse to a non-trivial set of guards').toBeGreaterThan(
-    10
-  );
-  return [...new Set(names)];
+  expect(
+    newest!.guards.length,
+    'the watchlist should parse to a non-trivial set of guards'
+  ).toBeGreaterThan(10);
+  return newest!.guards;
+};
+
+/**
+ * A GUARD IS WATCHED FROM THE MIGRATION THAT FIRST NAMED IT (2026-09-13).
+ *
+ * The first time the list was widened (the Diamond money doors and the Phase 8
+ * unit rules, `the_diamond_guards_are_watched`), every earlier migration that
+ * had redefined one of the new names became an offender here retroactively -
+ * eleven of them, all applied before anything watched those functions, none of
+ * which could have declared a change to a list it was not on. That is not what
+ * this law is for. A migration owes a declaration only for a guard that was
+ * already watched when it ran, so a guard's history starts at the migration
+ * that put it on the list, or at the declaration law itself, whichever is
+ * later. A guard on the original list is watched from the law, as before.
+ */
+const watchedFrom = (): Map<string, string> => {
+  const from = new Map<string, string>();
+  for (const def of watchlistDefinitions()) {
+    for (const g of def.guards) {
+      if (!from.has(g)) from.set(g, def.name > LAW ? def.name : LAW);
+    }
+  }
+  return from;
 };
 
 /** Does this migration text redefine `guard`? */
@@ -65,11 +94,14 @@ const redefines = (sql: string, guard: string): boolean =>
 describe('a declared guard change is recorded, not raised', () => {
   it('a migration that redefines a watched guard declares it in the same transaction', () => {
     const guards = watchlist();
+    const from = watchedFrom();
     const offenders: string[] = [];
     for (const m of migrationCorpus()) {
       if (m.name < LAW) continue; // history: the declaration did not exist yet
       if (m.sql.includes(DECLARE)) continue;
       for (const g of guards) {
+        // history for THIS guard: it was not on the list when the migration ran
+        if (m.name < (from.get(g) ?? LAW)) continue;
         if (redefines(m.sql, g)) offenders.push(`${m.name} redefines ${g}`);
       }
     }
@@ -83,6 +115,20 @@ describe('a declared guard change is recorded, not raised', () => {
         offenders.join('\n'),
       ].join('\n')
     ).toEqual([]);
+  });
+
+  it('a guard is watched from the migration that first named it, never before', () => {
+    const from = watchedFrom();
+    // the original list is watched from the declaration law itself
+    expect(from.get('fn_ca_guard_defs_watch')).toBe(LAW);
+    // the Diamond doors joined on 2026-09-12 and are watched from that migration,
+    // so the door migrations that came before it are history for them
+    const widened = from.get('fn_poker_diamond_reserve');
+    expect(widened).toBeDefined();
+    expect(widened!).toMatch(/_the_diamond_guards_are_watched\.sql$/);
+    expect(widened! > LAW).toBe(true);
+    // and a guard on the newest list always has a start
+    for (const g of watchlist()) expect(from.has(g), `${g} has no watched-from`).toBe(true);
   });
 
   it('the declaration refuses an unnamed change and a guard nobody watches', () => {

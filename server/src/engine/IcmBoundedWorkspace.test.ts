@@ -46,4 +46,23 @@ describe('bounded continuation of an existing ICM workspace', () => {
     expect(workspace.estimate(stacks, 128)).toEqual(workspace.estimate(stacks));
     expect(workspace.estimate(stacks, 128).errorBound).toBe(0);
   });
+  it('keeps sanitized local rates and tolerated remote live counts without mutating input', () => {
+    const stacks = Array.from({ length: 20 }, (_, i) => 500 + i * 3).concat([0, 0]);
+    const workspace = createIcmEquityEstimator(stacks, [60, 30, 10], 1, [2, 0, 1], 128);
+    for (const value of [Number.NaN, Infinity, -1, 0]) {
+      const malformed = stacks.slice();
+      malformed[0] = value;
+      const normalized = stacks.slice();
+      normalized[0] = 0;
+      Object.freeze(malformed);
+      expect(workspace.estimate(malformed)).toEqual(workspace.estimate(normalized));
+    }
+    const tolerated = stacks.slice();
+    tolerated[20] = 0.004;
+    Object.freeze(tolerated);
+    expect(workspace.estimate(tolerated).modeledPlayers).toBe(21);
+    const rejected = stacks.slice();
+    rejected[20] = 0.006;
+    expect(() => workspace.estimate(rejected)).toThrow('ICM remote stack changed');
+  });
 });

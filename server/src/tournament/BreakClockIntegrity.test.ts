@@ -86,7 +86,7 @@ describe('DEFECT 1 - the level clock neither ticks nor advances during a break',
   it('refuses to advance a level while the tournament is on break', () => {
     // The guard must sit BEFORE the increment, or the level is already gone.
     const guardAt = advance.indexOf('if (this.isOnBreak())');
-    const bumpAt = advance.indexOf('this.currentLevel++');
+    const bumpAt = advance.indexOf('this.currentLevel = nextLevel');
     expect(guardAt, 'advanceBlindLevel must check isOnBreak()').toBeGreaterThan(-1);
     expect(bumpAt).toBeGreaterThan(-1);
     expect(guardAt).toBeLessThan(bumpAt);
@@ -102,11 +102,15 @@ describe('DEFECT 1 - the level clock neither ticks nor advances during a break',
 
   it('does not arm a live level timer when a break began mid-transition', () => {
     // The tail used to be a bare `this.startBlindTimer(blindStructure);`.
-    const tail = advance.slice(advance.lastIndexOf('if (this.isOnBreak())'));
+    const committedTail = advance.slice(advance.indexOf('if (committed) {'));
+    const tail = committedTail.slice(committedTail.indexOf('if (this.isOnBreak())'));
     const breakBranch = methodBody(tail, 'if (this.isOnBreak())');
     expect(breakBranch).toMatch(/this\.savedBlindTimerRemaining\s*=\s*this\.levelDurationMs\(/);
     expect(breakBranch).not.toContain('this.startBlindTimer(');
-    const liveBranch = methodBody(tail, 'else');
+    const maintenanceBranch = methodBody(tail, 'else if (isMaintenanceFrozen())');
+    expect(maintenanceBranch).toContain('this.scheduleBlindLevelWake(blindStructure, 1000)');
+    expect(maintenanceBranch).not.toContain('this.startBlindTimer(');
+    const liveBranch = methodBody(tail, 'else {');
     expect(liveBranch).toMatch(
       /this\.startBlindTimer\(\s*blindStructure,\s*this\.levelDurationMs\(level\)\s*-\s*\(Date\.now\(\)\s*-\s*levelStartedAt\)\s*\);/
     );

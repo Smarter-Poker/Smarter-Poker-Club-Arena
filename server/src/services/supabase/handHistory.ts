@@ -16,8 +16,11 @@ import { recordHorseHandReviews } from '../HorseHandReview.js';
 import { readScopeOf } from '../../engine/HorseMind.js';
 import { getLiveHorseDecisionWorker } from '../../engine/horseDecision/index.js';
 import { wakeHandProjection } from './handProjection.js';
+import { bindHorseObservationIdentity } from '../../engine/HorseObservationIdentity.js';
 
 export interface AtomicHandCommitInput {
+  /** Local diagnostics only; excluded from the immutable database payload. */
+  observeCommitProgress?: (detail: string) => void;
   stacks: Array<{
     user_id: string;
     stack: number;
@@ -238,6 +241,8 @@ export async function logHandHistory(params: {
     handName?: string;
     /** HI-LO: the entry for the low half. See HandEvent WINNERS.winnersByBoard. */
     low?: boolean;
+    /** Per-pot slices of this share (2026-09-13). See HandEvent WINNERS.winnersByBoard. */
+    pots?: Array<{ index: number; amount: number }>;
   }[];
   /**
    * POT-LEVEL SETTLEMENT (Dan section 29, 2026-08-25).
@@ -310,6 +315,11 @@ export async function logHandHistory(params: {
    * (CLAUDE.md 10.12): the hand carries one identity from settlement onward.
    */
   handId?: string;
+  /** The dealt hand's frozen generations, copied before settlement's first await. */
+  seatGenerations?: ReadonlyMap<
+    string,
+    import('../../engine/handSeatGeneration.js').HandSeatGeneration
+  >;
   players: { userId: string; username: string; seat: number; stack: number; cards: string[] }[];
   actions: {
     seat: number;
@@ -318,6 +328,9 @@ export async function logHandHistory(params: {
     amount?: number;
     timestamp?: number;
     stage: string;
+    publicNode?: import('../../engine/HorsePublicActionNode.js').HorsePublicActionNode;
+    origin?: import('../../types.js').AcceptedActionOrigin;
+    observationIdentity?: import('../../engine/HorseObservationIdentity.js').HorseObservationIdentity;
   }[];
   showdownResults?: {
     userId: string;
@@ -427,6 +440,24 @@ export async function logHandHistory(params: {
   const holeCardsPayload = Object.keys(holeCardsByUser).length > 0 ? holeCardsByUser : null;
   const boardPayload = params.communityCards?.length ? params.communityCards : null;
 
+  // Recompute at the sole accepted producer. Supplied identity is never trusted.
+  // Preserve ordinals in the full list, including forced/discard/pseudo-actions.
+  // Older actions stay unannotated; a later receipt UUID cannot retroactively
+  // supply lineage that was absent from the durable transaction's payload.
+  const acceptedActions = params.actions.map((action, actionOrdinal) => {
+    const { observationIdentity: _suppliedIdentity, ...record } = action;
+    return action.publicNode
+      ? {
+          ...record,
+          observationIdentity: bindHorseObservationIdentity(action, actionOrdinal, {
+            handId: params.handId,
+            tableId: params.tableId,
+            seatGenerations: params.seatGenerations,
+          }),
+        }
+      : record;
+  });
+
   const row = {
     // See `handId` on the params above. Omitted entirely when the caller did
     // not mint one, so the column keeps its gen_random_uuid() default and
@@ -486,7 +517,7 @@ export async function logHandHistory(params: {
         }))
       : null,
     players: params.players,
-    actions: params.actions,
+    actions: acceptedActions,
     hole_cards: holeCardsPayload,
     board: boardPayload,
     button_seat: params.buttonSeat ?? null,
@@ -518,8 +549,8 @@ export async function logHandHistory(params: {
   const inserted = await insertHandHistoryRow(row, bombUnits, params.atomicCommit);
   const handId = inserted.id;
 
-  // V28 AUDIT FIX (2026-08-29): observe regardless of whether the history row
-  // landed. ROOT-CAUSE CAPACITY FIX (2026-09-08): HorseMind now lives beside
+  // Observe only after the authoritative transaction accepts the hand above.
+  // ROOT-CAUSE CAPACITY FIX (2026-09-08): HorseMind now lives beside
   // HorseLogic in the sole worker FIFO. Enqueueing establishes the ordering:
   // this observation is ahead of every decision the table can request next.
   // Waiting for its ACK here would instead hold this table's settlement behind
@@ -537,7 +568,8 @@ export async function logHandHistory(params: {
         'observe',
       ].join(':'),
       handKey,
-      actions: params.actions,
+      committedHandId: handId,
+      actions: acceptedActions,
       bigBlind: params.bigBlind,
       showdown: params.showdownReveal ?? null,
       // V45: the hand's scope - card family and how many were dealt in.
@@ -701,6 +733,13 @@ async function insertHandHistoryRow(
       : {}),
   });
   let lastError = 'no response';
+  const observe = (detail: string) => {
+    try {
+      atomicCommit.observeCommitProgress?.(detail);
+    } catch {
+      /* Diagnostic failure cannot alter an accepted hand or its retry budget. */
+    }
+  };
 
   // Every retry is the same idempotent transaction.  This loop exists only
   // for the ambiguous transport case: a lost HTTP response may follow a
@@ -708,7 +747,9 @@ async function insertHandHistoryRow(
   for (let attempt = 0; attempt <= HAND_COMMIT_RETRY_DELAYS_MS.length; attempt++) {
     try {
       atomicCommit.assertLeaseAuthority?.();
+      observe('rpc_request:' + (attempt + 1));
       const { data, error } = await supabase.rpc('fn_ca_commit_hand_settlement', payload);
+      observe('rpc_response:' + (attempt + 1));
       const result = (data ?? {}) as AtomicCommitResult;
       if (!error && result.success === true && result.atomic_hand_commit === true) {
         if (hasPostCommitObligations && result.post_commit_obligations !== true) {
@@ -746,6 +787,7 @@ async function insertHandHistoryRow(
             handNumber: row.hand_number,
           })
         );
+        observe('receipt_accepted:' + (attempt + 1));
         return {
           id: historyId,
           settlementCommitted: true,
@@ -767,6 +809,7 @@ async function insertHandHistoryRow(
 
     const delayMs = HAND_COMMIT_RETRY_DELAYS_MS[attempt];
     if (delayMs !== undefined) {
+      observe('retry_wait:' + (attempt + 1));
       await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
     }
   }

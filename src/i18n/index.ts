@@ -3,6 +3,37 @@
  *  i18n — Internationalization Framework (Bible V8 Chapter 8 NFR)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
+ * ⚠ NOTHING IN THIS APPLICATION USES THIS MODULE. Measured 2026-09-13:
+ *
+ *     files importing it ................... 0
+ *     calls to setLocale or registerLocale .. 0
+ *     locale files on disk .................. 0  (only the `en` map below)
+ *     surfaces offering a language picker ... 0
+ *
+ * The framework is complete and it is unwired. Twelve locales are declared in
+ * the type below and there is no way for a player to select one, nothing to
+ * load if they did, and no consumer to re-render when it changed.
+ *
+ * THIS NOTE EXISTS BECAUSE IT MISLEADS. An audit of the ticker in September
+ * 2026 concluded that "twelve locales ship and 417 files go through the
+ * translation layer, so the rail is the only surface speaking English at
+ * everybody" - and nearly rewrote a working component's copy to match. The 417
+ * came from grepping for `t('`, which also matches `.at(`, `import(` and
+ * `sort(`; the twelve came from reading the type above this line. Both numbers
+ * were wrong, and the shape of the mistake is easy to repeat, because a file
+ * this complete does not look like a file nobody calls.
+ *
+ * If you are here to translate a surface, that is a PLATFORM programme - locale
+ * files, a loader, a picker, and then every surface at once - not a change to
+ * one component. If the estate is English-only by choice, this module is dead
+ * code advertising a capability the product does not have, and deleting it is a
+ * smaller job than keeping it honest.
+ *
+ * What IS live and locale-sensitive today is the house Title Case rule in
+ * utils/popupStyle.ts and utils/titleCase.ts, which operators' own club and
+ * tournament names pass through. See
+ * tests/unit/houseCaseIsNotAsciiOnly.test.ts.
+ *
  * Lightweight, zero-dependency i18n system for Club Arena.
  * Supports 12+ languages via JSON locale files with:
  * - Interpolation: t('pot_amount', { amount: 500 }) => "Pot: 500"

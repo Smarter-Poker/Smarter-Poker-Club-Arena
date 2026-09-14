@@ -468,6 +468,7 @@ describe('Phase 8 counterfactual selection', () => {
       expect(fresh.ledger.fired).toBe(true);
       expect(shared).toEqual(fresh);
       expect(JSON.stringify(shared.ledger)).not.toContain('continuePostflop');
+      expect(JSON.stringify(shared.ledger)).not.toContain('vectorKey');
     }
   );
   it.each([false, true])(
@@ -521,6 +522,49 @@ describe('Phase 8 counterfactual selection', () => {
       } finally {
         future.mockRestore();
         estimator.mockRestore();
+      }
+    }
+  );
+  it.each([5, 200, 1000])(
+    'refuses a conserved remote-field swap in a %i-player forecast',
+    (count) => {
+      const { gs, hero, input } = scenario();
+      const remote = Array.from({ length: count - 3 }, (_, i) => 100 + i * 100);
+      input.context.fieldStacks.push(...remote);
+      input.context.playersLeft = count;
+      gs.tournament!.stacks!.push(...remote);
+      gs.tournament!.playersLeft = count;
+      const previous = evaluateTournamentUtilityDetailed(input);
+      expect(previous.result).not.toBeNull();
+      const baseline = { ...previous.result!.decision, tournamentUtility: previous.result!.ledger };
+      const original = FutureHand.simulateTournamentFutureHands;
+      const future = vi
+        .spyOn(FutureHand, 'simulateTournamentFutureHands')
+        .mockImplementation((args) => {
+          const result = original(args);
+          if (result) {
+            const local = new Set(args.localIndex.values());
+            const remote = result.vector.map((_, i) => i).filter((i) => !local.has(i));
+            result.vector[remote[0]] += 1;
+            result.vector[remote[1]] -= 1;
+          }
+          return result;
+        });
+      try {
+        const out = evaluateTournamentPostflop(
+          hero,
+          gs,
+          baseline,
+          input,
+          'shadow',
+          () => 0,
+          previous.continuePostflop
+        );
+        expect(out.ledger.reason).toBe('continuation_numerical_error');
+        expect(out.ledger.fired).toBe(false);
+        expect(out.decision).toBe(baseline);
+      } finally {
+        future.mockRestore();
       }
     }
   );

@@ -46,6 +46,7 @@ import { supabase } from './supabase/client.js';
    table ends up restarting every twenty seconds with nothing to read. */
 import { leaseHeartbeatOutcomesTotal } from '../observability/engineInstruments.js';
 import { INSTANCE_ID, INSTANCE_VERSION } from './tableLease.js';
+import { throttledLeaseWarning } from './leaseWarningThrottle.js';
 
 /** Matches the table lease, and the RPC default. */
 export const TOURNAMENT_LEASE_STALE_SECONDS = 30;
@@ -104,6 +105,12 @@ let heartbeatErrors = 0;
 /** Legacy health counter: successful heartbeats that proved the row was gone. */
 let reclaimableHeartbeats = 0;
 
+/** See throttledLeaseWarning in tableLease.ts: quiet, never permanently silent. */
+function warnTournamentLease(key: string, message: string): void {
+  const line = throttledLeaseWarning(`tournament:${key}`, message);
+  if (line !== null) console.warn(line);
+}
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export interface TournamentLeaseHeartbeatClaim {
@@ -145,12 +152,11 @@ function unverifiedClaimResult(
   detail: string
 ): TournamentLeaseClaimResult {
   claimErrors++;
-  if (claimErrors <= 3) {
-    console.warn(
-      `[tournament-lease] claim_tournament_lease ${reason} for ${tournamentId} (${detail}) - ` +
-        'refusing to run a manager until ownership can be proven'
-    );
-  }
+  warnTournamentLease(
+    'claim',
+    `[tournament-lease] claim_tournament_lease ${reason} for ${tournamentId} (${detail}) - ` +
+      'refusing to run a manager until ownership can be proven'
+  );
   return { status: 'retryable_failure', reason, requestedGeneration, mayHaveCommitted };
 }
 
@@ -299,11 +305,10 @@ export async function heartbeatTournaments(
     });
     if (error) {
       heartbeatErrors++;
-      if (heartbeatErrors <= 3) {
-        console.warn(
-          `[tournament-lease] heartbeat failed (${error.message}) - retaining only the prior proof window`
-        );
-      }
+      warnTournamentLease(
+        'rpc_error',
+        `[tournament-lease] heartbeat failed (${error.message}) - retaining only the prior proof window`
+      );
       return { status: 'uncertain', reason: 'rpc_error' };
     }
 
@@ -341,10 +346,25 @@ export async function heartbeatTournaments(
 
     if (malformed || rowsById.size !== claims.length) {
       heartbeatErrors++;
-      if (heartbeatErrors <= 3) {
-        console.warn(
-          '[tournament-lease] heartbeat returned an incomplete or malformed generation proof'
-        );
+      warnTournamentLease(
+        'malformed_response',
+        '[tournament-lease] heartbeat returned an incomplete or malformed generation proof'
+      );
+      /* EVERY CLAIM IS ACCOUNTED FOR, ESPECIALLY THE UNREADABLE ONES (2026-09-12)
+         `state=malformed` has been declared and zero-seeded in engineInstruments
+         since this counter shipped, described there as "the response could not be
+         read as an answer". Nothing ever incremented it: both whole-answer refusals
+         return here, above the per-row loop that is the counter's only writer, so
+         production read exactly 0 while this path fenced the fleet.
+         That silence is not cosmetic. `LeaseHeartbeatsNotBeingKept` (critical, SMS)
+         is a RATIO of not-kept to total, so a refusal that increments neither half
+         contributes nothing to either - the one event that loses every lease in a
+         scope at once was the one event that alert could not see. Counting the
+         claims here is what makes it 100% not-kept and fires it. */
+      try {
+        leaseHeartbeatOutcomesTotal.inc(claims.length, { scope: 'tournament', state: 'malformed' });
+      } catch {
+        /* metrics must never affect a lease decision */
       }
       return { status: 'answered', proofs: [], lostTournamentIds: tournamentIds };
     }
@@ -385,11 +405,10 @@ export async function heartbeatTournaments(
     return { status: 'answered', proofs, lostTournamentIds };
   } catch (err) {
     heartbeatErrors++;
-    if (heartbeatErrors <= 3) {
-      console.warn(
-        `[tournament-lease] heartbeat threw (${(err as Error)?.message}) - retaining only the prior proof window`
-      );
-    }
+    warnTournamentLease(
+      'rpc_threw',
+      `[tournament-lease] heartbeat threw (${(err as Error)?.message}) - retaining only the prior proof window`
+    );
     return { status: 'uncertain', reason: 'rpc_threw' };
   }
 }

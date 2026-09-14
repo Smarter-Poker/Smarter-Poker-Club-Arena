@@ -1,0 +1,5 @@
+{
+  "_owner": "Horse Brain Phase 14 queue observability",
+  "_comment": "Bounded service-only aggregate; no payloads, policy state or completeness marker.",
+  "functions": ["fn_horse_adaptive_journal_work_health"]
+}

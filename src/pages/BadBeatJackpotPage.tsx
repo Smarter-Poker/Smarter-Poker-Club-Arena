@@ -12,7 +12,7 @@ import {
   BBJ_PIVOT_APPROACH_FRACTION,
   type BbjAllocationPolicy,
 } from '../lib/bbjPoolFeed';
-import { watchBbjMini, type BbjMiniSnapshot } from '../lib/bbjMiniFeed';
+import { watchBbjMini, type BbjMiniSnapshot, type BbjMiniReadOutcome } from '../lib/bbjMiniFeed';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import './BadBeatJackpotPage.css';
@@ -46,6 +46,18 @@ export default function BadBeatJackpotPage() {
   const { clubId } = useParams();
   const { user } = useAuthUser();
   const toast = useToast();
+  const scopeKey = `${clubId ?? ''}:${user?.id ?? ''}`;
+  const scopeRef = useRef({ key: scopeKey });
+  if (scopeRef.current.key !== scopeKey) scopeRef.current = { key: scopeKey };
+  // Object identity also retires an old A request after an A -> B -> A switch.
+  const scope = scopeRef.current;
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const [jackpot, setJackpot] = useState<JackpotInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,6 +67,8 @@ export default function BadBeatJackpotPage() {
      days of mini hits. The "Backup Pool" card below is what funds it, and until
      today the page never said so. */
   const [pageMini, setPageMini] = useState<BbjMiniSnapshot | null>(null);
+  const [miniFirstRead, setMiniFirstRead] = useState<BbjMiniReadOutcome | null>(null);
+  const [settledScope, setSettledScope] = useState<object | null>(null);
   /* Which winners the history lists. Dan 2026-09-11: main and mini winners
      are separate lists, the mini one tap away rather than mixed in. */
   const [historyKind, setHistoryKind] = useState<'main' | 'mini'>('main');
@@ -167,7 +181,7 @@ export default function BadBeatJackpotPage() {
          replay only happens for a club already watched, so the previous
          club's mini would otherwise sit under this one's heading. */
       setPageMini(null);
-      loadJackpotData(() => isMounted);
+      setMiniFirstRead(null);
 
       const channelKey = 'jackpot-live';
 
@@ -232,10 +246,17 @@ export default function BadBeatJackpotPage() {
           prevAmountRef.current = snap.mainBalance;
           setJackpot((prev) => (prev ? { ...prev, main_balance: snap.mainBalance } : prev));
         });
-        stopMini = watchBbjMini(resolvedId, (snap) => {
-          if (!isMounted) return;
-          setPageMini(snap);
-        });
+        stopMini = watchBbjMini(
+          resolvedId,
+          (snap) => {
+            if (!isMounted) return;
+            setPageMini(snap);
+            setMiniFirstRead('ready');
+          },
+          (outcome) => {
+            if (isMounted) setMiniFirstRead(outcome);
+          }
+        );
 
         /* No filter means the pool could not be resolved; binding on a guess
            is what this commit removed. The poll above keeps the number live. */
@@ -268,7 +289,10 @@ export default function BadBeatJackpotPage() {
           });
       };
 
-      setupRealtime().catch((e) => console.warn('[BadBeatJackpotPage] Realtime setup failed:', e));
+      setupRealtime().catch((e) => {
+        if (isMounted) setMiniFirstRead('error');
+        console.warn('[BadBeatJackpotPage] Realtime setup failed:', e);
+      });
 
       return () => {
         isMounted = false;
@@ -283,10 +307,10 @@ export default function BadBeatJackpotPage() {
     }
   }, [clubId]);
 
-  const loadingRef = useRef(false);
+  const loadingRef = useRef<{ scope: object } | null>(null);
 
   /**
-   * RESET PER-CLUB STATE WHEN NAVIGATING BETWEEN CLUBS.
+   * RESET ACCOUNT AND CLUB STATE BEFORE READING THE NEW SCOPE.
    *
    * This cleared three things and left four behind: `jackpot`, `poolFacts`,
    * `myHands` and `loadFailed`. The load below only assigns `if (jackpotData)`,
@@ -297,6 +321,7 @@ export default function BadBeatJackpotPage() {
    * the worst failure this page has.
    */
   useEffect(() => {
+    setLoading(Boolean(clubId));
     setJustUpdated(false);
     setPlayerContribution(0);
     setJackpot(null);
@@ -308,20 +333,33 @@ export default function BadBeatJackpotPage() {
     setMyHands(0);
     setLoadFailed(false);
     prevAmountRef.current = 0;
-    loadingRef.current = false;
-  }, [clubId]);
+    let active = true;
+    loadRef.current(() => active);
+    return () => {
+      active = false;
+      if (loadingRef.current?.scope === scope) loadingRef.current = null;
+    };
+  }, [clubId, scope]);
 
   const loadJackpotData = useCallback(
     async (getIsMounted?: () => boolean) => {
+      const isCurrentScope = () =>
+        mounted.current && scopeRef.current === scope && (!getIsMounted || getIsMounted());
+      if (!isCurrentScope()) return;
       if (!clubId) {
         setLoading(false);
+        setSettledScope(scope);
         return;
       }
-      if (loadingRef.current) return;
-      loadingRef.current = true;
-      if (!getIsMounted || getIsMounted()) setLoading(true);
+      if (loadingRef.current?.scope === scope) return;
+      const request = { scope };
+      loadingRef.current = request;
+      const isCurrent = () => isCurrentScope() && loadingRef.current === request;
+      // Initial scope/retry owns the skeleton. Routine live refreshes keep
+      // children mounted so their first reads can finish and geometry stays put.
       try {
         const resolvedId = await resolveClubUUID(clubId);
+        if (!isCurrent()) return;
 
         // RAKE-AUDIT 2026-07-24: read the pool where the server actually banks
         // the money — union-level pool when the club belongs to a union, else
@@ -344,6 +382,7 @@ export default function BadBeatJackpotPage() {
           .select('union_id')
           .eq('id', resolvedId)
           .maybeSingle();
+        if (!isCurrent()) return;
         if (clubUnionErr) {
           throw new Error(`Could not read the club's union: ${clubUnionErr.message}`);
         }
@@ -363,7 +402,7 @@ export default function BadBeatJackpotPage() {
           throw new Error(`Could not read the jackpot pool: ${jackpotErr.message}`);
         }
 
-        if (getIsMounted && !getIsMounted()) return;
+        if (!isCurrent()) return;
         if (jackpotData) {
           setJackpot(jackpotData);
           prevAmountRef.current = jackpotData.main_balance || 0;
@@ -399,7 +438,7 @@ export default function BadBeatJackpotPage() {
             ? supabase.rpc('fn_bbj_promo_facts', { p_pool_id: jackpotData.id })
             : Promise.resolve({ data: null }),
         ]);
-        if (getIsMounted && !getIsMounted()) return;
+        if (!isCurrent()) return;
 
         {
           const promoRow = Array.isArray(promoRes.data) ? promoRes.data[0] : promoRes.data;
@@ -435,16 +474,19 @@ export default function BadBeatJackpotPage() {
             setMyHands(Number(mine.hands_contributed) || 0);
           }
         }
-        if (!getIsMounted || getIsMounted()) setLoadFailed(false);
+        if (isCurrent()) setLoadFailed(false);
       } catch (error) {
-        reportError(error, 'BadBeatJackpotPage.Failed_to_load_jackpot');
-        if (!getIsMounted || getIsMounted()) {
+        if (isCurrent()) {
+          reportError(error, 'BadBeatJackpotPage.Failed_to_load_jackpot');
           setLoadFailed(true);
           toast.error('Failed to load jackpot data.');
         }
       } finally {
-        loadingRef.current = false;
-        if (!getIsMounted || getIsMounted()) setLoading(false);
+        if (isCurrent()) {
+          setLoading(false);
+          setSettledScope(scope);
+        }
+        if (loadingRef.current === request) loadingRef.current = null;
       }
     },
     // `user?.id` is READ in this body (the fn_bbj_my_contribution block), and
@@ -453,7 +495,7 @@ export default function BadBeatJackpotPage() {
     // when auth resolved, every later caller kept invoking the stale version.
     // "Your Contribution (90D)" therefore never appeared until the club id
     // itself changed. `toast` is captured for the same reason.
-    [clubId, user?.id, toast]
+    [clubId, user?.id, toast, scope]
   );
 
   // Keep the realtime handler pointed at the newest loader. See loadRef above.
@@ -472,9 +514,9 @@ export default function BadBeatJackpotPage() {
     return unsubHand;
   }, [clubId, loadJackpotData]);
 
-  if (loading) {
+  if (loading || settledScope !== scope) {
     return (
-      <div className="bbj-page">
+      <div className="bbj-page" data-initial-layout="pending">
         <div className="loading-state">
           <PageSkeleton variant="stats" />
         </div>
@@ -494,7 +536,7 @@ export default function BadBeatJackpotPage() {
    */
   if (loadFailed || !jackpot) {
     return (
-      <div className="bbj-page">
+      <div className="bbj-page" data-initial-layout="settled">
         <div className="bbj-page__empty">
           <h2 className="bbj-page__empty-title">
             {loadFailed ? 'Could Not Load The Jackpot' : 'No Jackpot Pool For This Club Yet'}
@@ -505,7 +547,14 @@ export default function BadBeatJackpotPage() {
               : 'A Pool Starts Building As Soon As Hands Are Dealt With The Jackpot Drop Enabled.'}
           </p>
           {loadFailed && (
-            <button type="button" className="bbj-page__retry" onClick={() => loadJackpotData()}>
+            <button
+              type="button"
+              className="bbj-page__retry"
+              onClick={() => {
+                setLoading(true);
+                void loadJackpotData();
+              }}
+            >
               Try Again
             </button>
           )}
@@ -515,7 +564,7 @@ export default function BadBeatJackpotPage() {
   }
 
   return (
-    <div className="bbj-page">
+    <div className="bbj-page" data-initial-layout={miniFirstRead !== null ? 'settled' : 'pending'}>
       {/* Current Jackpot — Main Balance */}
       <div className="bbj-clubbuttons-hero-wrap">
         <ArenaJackpotDisplay
@@ -640,7 +689,7 @@ export default function BadBeatJackpotPage() {
           <span className="info-label">Mini Jackpot</span>
           <span className="info-value" style={{ color: '#ffb020' }}>
             {(() => {
-              if (!pageMini) return 'Reading';
+              if (!pageMini) return miniFirstRead === null ? 'Reading' : 'Unavailable';
               if (!pageMini.enabled) return 'Off';
               const payable = pageMini.tiers
                 .filter((t) => t.enabled && t.payable)

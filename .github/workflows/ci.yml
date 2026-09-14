@@ -80,8 +80,9 @@ jobs:
   # every one ran the server engine suite, and a third never touch src/ yet
   # every one built the bundle, ran the unit suite and drove a browser.
   #
-  # This job answers "what changed" once, from the API, with no checkout, and
-  # the heavy jobs below gate on it. A job skipped by a job-level `if` reports
+  # This job compares the event-bound base/head Git commits, including old
+  # and new rename paths. Unavailable or uncertain input runs every suite.
+  # The heavy jobs below gate on that immutable classification. A job skipped by a job-level `if` reports
   # as SKIPPED, and a ruleset counts a skipped required check as satisfied - so
   # nothing has to change in branch protection and no pull request can be left
   # waiting on a check that never runs. That is the whole reason this is a job
@@ -93,109 +94,35 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   changes:
     name: What changed
-    # Pull-request metadata is untrusted input. Never run it on the persistent
-    # estate hosts used by privileged workflows.
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
     if: github.event_name == 'pull_request'
-    # The gh call below is a 403 without this. GITHUB_TOKEN defaults to read on
-    # contents only, and there is no top-level permissions block in this file.
     permissions:
       contents: read
-      pull-requests: read
     outputs:
       src: ${{ steps.f.outputs.src }}
       server: ${{ steps.f.outputs.server }}
       tests: ${{ steps.f.outputs.tests }}
       phase4: ${{ steps.f.outputs.phase4 }}
+      fixture: ${{ steps.f.outputs.fixture }}
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          # blob:none keeps every one of the 7,223 commits and drops the blobs of old
+          # revisions. Measured 2026-09-13, three runs each: 33-35s / 531MB against
+          # 36-43s / 766MB, for identical ancestry. Nothing in this repo's workflows
+          # reads a historical file version - they ask merge-base, rev-list, log and
+          # cat-file -e, which are all commit-graph work - so those blobs were paid
+          # for on every run and never read.
+          filter: blob:none
+          persist-credentials: false
       - id: f
         env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-          REPO: ${{ github.repository }}
-        run: |
-          # V13: retry, and FAIL OPEN. This call fails the entire CI run on a
-          # transient GitHub 500 ("this diff is temporarily unavailable due to
-          # heavy server load"), which happened on PR #436 and blocked a green
-          # branch on an infrastructure hiccup. A path filter is an
-          # OPTIMISATION - when it cannot tell what changed, the safe answer is
-          # to run everything, never to fail the build.
-          # PAGINATION (Dan 2026-08-31). This asked for per_page=300, and the
-          # GitHub REST API caps per_page at 100 - silently. It does not error,
-          # it returns the first 100 filenames. A pull request touching more
-          # than 100 files would therefore be classified on a truncated list,
-          # and a change to server/** sitting at position 101 would report
-          # server=false. The Server Engine job would then be SKIPPED, and a
-          # ruleset counts a skipped required check as SATISFIED - the exact
-          # silent-green failure the fail-open logic above exists to prevent,
-          # arriving through the door next to it.
-          #
-          # No pull request in this repo has come close to 100 files yet (the
-          # largest of the last 60 is 19), so this is a latent hole rather than
-          # a live one. --paginate walks every page, so it is closed whether or
-          # not that day arrives.
-          FILES=""
-          for attempt in 1 2 3; do
-            if FILES=$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename'); then
-              break
-            fi
-            echo "::warning::could not list changed files (attempt $attempt) - retrying"
-            FILES=""
-            sleep $((attempt * 5))
-          done
-          if [ -z "$FILES" ]; then
-            echo "::notice::changed-file list unavailable - running everything"
-            echo "src=true"    >> "$GITHUB_OUTPUT"
-            echo "server=true" >> "$GITHUB_OUTPUT"
-            echo "tests=true"  >> "$GITHUB_OUTPUT"
-            echo "phase4=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "$FILES" | sed 's/^/  /'
-          has() { echo "$FILES" | grep -qE "$1" && echo true || echo false; }
-          # A change to the workflow, the lockfile or the build config can break
-          # anything, so treat those as touching everything.
-          # .npmrc and .nvmrc are in this list because they change how
-          # dependencies INSTALL and which runtime runs them, so they can break
-          # anything - added 2026-08-23 when the pull request REMOVING an .npmrc
-          # setting skipped the build job that was supposed to prove it safe.
-          # EVERY workflow, not only this one (2026-09-05). Nine unit tests
-          # read the OTHER workflow files as text (deployCannotPinStaleCode,
-          # deployAndPublishAreHonest, theCopyRulesReachTheEngineAndTheDatabase,
-          # the-break-clocks-agree ...). #3070 rewrote auto-deploy-hetzner.yml
-          # and nothing else, so this list said "no src, no tests", the unit
-          # suite was skipped, the ruleset counted the skip as green, and main
-          # was red for every pull request after it (five pins, three files).
-          WIDE=$(has '^(package(-lock)?\.json|vite\.config|vitest\.config|tsconfig|\.npmrc|\.nvmrc|\.node-version|\.github/workflows/)')
-          PHASE4=$(has '^(\.github/workflows/ci\.yml|scripts/ci/probes/horse-phase4-certified-solver/|supabase/migrations/20260909(165541|170039|170749|171644|172537|175000|180000)_|server/src/(benchmark/(HorseLeague|HorseSolverAgreementV31)|engine/(GtoDecisionContext|GtoPostflopV31|GtoV31|HorseDataLedger|HorseLogic|LiveHorseDecisionWorkerHealth|horseDecision/)|services/GtoPostflopV31Loader))')
-          if [ "$WIDE" = "true" ]; then
-            echo "src=true"    >> "$GITHUB_OUTPUT"
-            echo "server=true" >> "$GITHUB_OUTPUT"
-            echo "tests=true"  >> "$GITHUB_OUTPUT"
-            echo "phase4=$PHASE4" >> "$GITHUB_OUTPUT"
-            echo "::notice::build/config change - running everything"
-            exit 0
-          fi
-          # supabase/migrations/ counts as touching server AND tests: law
-          # tests in both suites read the migration FILES (the GTO batch-floor
-          # guard, migration-version uniqueness). On 2026-09-02 a migrations-only
-          # backfill PR (#2580) merged with the server suite skipped, turned the
-          # clobber-era floor into the newest clamp declaration, and every
-          # hourly deploy after it was refused by its own test gate.
-          # server/ ALSO counts as touching the client suite. 96 files under
-          # tests/ readFileSync server/src/** to pin engine behaviour, and
-          # `vitest related` cannot see a readFileSync. On 2026-09-02 #2695 -
-          # a correct engine fix that added `maintenancePaused` to
-          # isPausedByDesign() - merged with "Client Unit Tests" SKIPPED as a
-          # server-only diff, turned tournamentRakeAndBreaks.test.ts red on
-          # main, and the ONE publisher's shard 1/4 failed on every merge after
-          # it. Production froze at 19:10 while main kept moving. Same lesson
-          # as the migrations line above, one directory over.
-          echo "src=$(has '^src/')"       >> "$GITHUB_OUTPUT"
-          echo "server=$(has '^(server/|supabase/migrations/|scripts/dev/)')" >> "$GITHUB_OUTPUT"
-          echo "tests=$(has '^(tests/|supabase/migrations/|server/|scripts/dev/)')"   >> "$GITHUB_OUTPUT"
-          echo "phase4=$PHASE4" >> "$GITHUB_OUTPUT"
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/ci/classify-ci-changes.mjs
 
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 1: TypeScript compilation check (fast — ~40s)
@@ -282,14 +209,53 @@ jobs:
           fi
           echo "No bare TODO or FIXME markers found."
 
+  fixture_native:
+    name: Native fixture prerequisites
+    needs: changes
+    if: >-
+      always() && github.event_name == 'pull_request' &&
+      (needs.changes.result != 'success' || needs.changes.outputs.fixture != 'false')
+    permissions:
+      contents: read
+    uses: ./.github/workflows/component-fixture-native-smoke.yml
+    with:
+      source_sha: ${{ github.event.pull_request.head.sha }}
+
+  # Keep the existing required check name, but never allow a skipped native
+  # prerequisite to masquerade as successful verification of affected source.
   typecheck:
+    name: TypeScript Check
+    needs: [typecheck_compile, changes, fixture_native]
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Require compilation and every applicable native fixture proof
+        env:
+          CI_EVENT_NAME: ${{ github.event_name }}
+          COMPILE_RESULT: ${{ needs.typecheck_compile.result }}
+          DIFF_RESULT: ${{ needs.changes.result }}
+          FIXTURE_CHANGED: ${{ needs.changes.outputs.fixture }}
+          NATIVE_RESULT: ${{ needs.fixture_native.result }}
+          NATIVE_VERIFIED: ${{ needs.fixture_native.outputs.native_verified }}
+          NATIVE_SOURCE_SHA: ${{ needs.fixture_native.outputs.source_sha }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/ci/fixture-native-gate.mjs
+
+  typecheck_compile:
     # COST 2026-08-23: this already ran, and passed, on the pull request -
     # the ruleset will not merge without it. Re-running it on the merge
     # commit tests an identical tree. 34 of every 100 CI runs were that
     # duplicate, and CI is six jobs, each billed as a whole minute even
     # when it takes twenty seconds.
     if: github.event_name == 'pull_request'
-    name: TypeScript Check
+    name: TypeScript compilation and repository checks
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -300,6 +266,7 @@ jobs:
           # The new-migration gate diffs this branch against its base, so it
           # needs more than the single commit a default checkout brings.
           fetch-depth: 0
+          filter: blob:none
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -307,8 +274,17 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Native fixture gate rejects missing and skipped proof
+        run: node --test tests/operations/fixture-required-ci.test.mjs
+
       - name: Mac dependency policy keeps Linux enforcement
         run: node --test tests/operations/local-dependency-policy.test.mjs
+
+      - name: Protected merge queue handles concurrent PR changes
+        run: node --test tests/operations/queue-pr.test.mjs
+
+      - name: Post-deploy verdict distinguishes an unstarted publisher
+        run: node --test tests/operations/post-deploy-origin-verdict.test.mjs
 
       # 2026-09-01 (cost audit): cache the installed tree, skip npm ci on a
       # hit. `nm-lite` is deliberately a DIFFERENT key from the full-install
@@ -532,6 +508,10 @@ jobs:
             exit 1
           fi
           echo "All $TOTAL invariant guards passed." >> "$GITHUB_STEP_SUMMARY"
+      - name: Evaluate real SLO alert durations, thresholds and recovery
+        run: bash scripts/ci/test-slo-stall-duration.sh
+      - name: Evaluate fleet throughput against live dealing capacity
+        run: bash scripts/ci/test-fleet-throughput.sh
       - name: Report Typecheck Time
         if: always()
         run: |
@@ -810,6 +790,68 @@ jobs:
             echo "A migration declares an UPDATE or DELETE with no WHERE clause. It will work" >> $GITHUB_STEP_SUMMARY
             echo "when you run it and be refused by safeupdate on the PostgREST path the" >> $GITHUB_STEP_SUMMARY
             echo "engine and the browser both use. See the log for the exact remedy." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      # A LEASE HOLDER DOES NOT STARVE ITS OWN HEARTBEAT (2026-09-12).
+      #
+      # heartbeat_table_leases_v4 renews with FOR NO KEY UPDATE ... SKIP LOCKED
+      # so it never queues behind a settlement. FOR SHARE conflicts with that,
+      # so a holder taking FOR SHARE on the lease row makes the heartbeat skip
+      # and extend nothing for the length of its transaction.
+      #
+      # This is LATENT, not an incident. Measured contention across the 78 cash
+      # lease rows was 0.8% of rows, and an expiry needs four consecutive
+      # misses. The restart loop it was found next to is engine-side and is not
+      # this. Saying otherwise was the first draft's mistake.
+      #
+      # It is refused anyway because it buys nothing in exchange. The PK is the
+      # id alone, so a takeover is a NON-KEY update and takes the same strength
+      # as the heartbeat - no holder lock can block one and admit the other.
+      # Exclusion belongs to the takeover. The tournament half was fixed
+      # 2026-09-10 and the cash half was missed, eleven lines apart in one
+      # function.
+      - name: Supabase Invariants - No FOR SHARE On A Lease Row
+        run: |
+          set -o pipefail
+          echo "## Lease Lock Strength" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-lease-lock-strength.mjs 2>&1 | tee /tmp/leaselock.log; then
+            echo "OK - no new holder takes FOR SHARE on an engine lease row." >> $GITHUB_STEP_SUMMARY
+          else
+            code=$?
+            if [ "$code" = "2" ]; then
+              echo "COULD NOT TELL - the diff was unreadable. Not reported as clean." >> $GITHUB_STEP_SUMMARY
+            else
+              echo "A migration takes FOR SHARE on an engine lease row. That starves the" >> $GITHUB_STEP_SUMMARY
+              echo "heartbeat the lease depends on and excludes nothing in return. Use" >> $GITHUB_STEP_SUMMARY
+              echo "FOR KEY SHARE if you are a holder, FOR UPDATE if you are a takeover." >> $GITHUB_STEP_SUMMARY
+            fi
+            exit 1
+          fi
+
+      # A TRIGGER ON A MONEY TABLE DECLARES ITSELF (2026-09-12).
+      # UndeclaredTriggerOnAMoneyTable is critical and pages by SMS, and it read
+      # 76 on 2026-09-12 having read 74 ninety minutes earlier: saturated, and
+      # still climbing. A counter that only goes up cannot be acted on, so the
+      # declaration is enforced where the trigger is WRITTEN. The last
+      # unreviewed one broke a third of all hand settlements.
+      - name: Supabase Invariants - A Money Trigger Declares Itself
+        run: |
+          set -o pipefail
+          echo "## Money Trigger Declarations" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-money-trigger-declared.mjs 2>&1 | tee /tmp/trigdecl.log; then
+            echo "OK - every trigger created on a money table declares itself." >> $GITHUB_STEP_SUMMARY
+          else
+            code=$?
+            if [ "$code" = "2" ]; then
+              echo "COULD NOT TELL - the diff was unreadable. Not reported as clean." >> $GITHUB_STEP_SUMMARY
+            else
+              echo "A migration creates a trigger on a money table without declaring it" >> $GITHUB_STEP_SUMMARY
+              echo "in the same migration. Add the ca_declared_money_triggers row there;" >> $GITHUB_STEP_SUMMARY
+              echo "a declaration in a later migration is a promise, not a declaration." >> $GITHUB_STEP_SUMMARY
+            fi
             exit 1
           fi
 
@@ -1092,14 +1134,82 @@ jobs:
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
           sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17
+      - name: BBJ bank replay identity and drift-safe installation
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-bbj-bank-replay.py
+      - name: Horse identity trigger semantics, rollback and concurrent stamp writes
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-horse-identity-triggers.py
+      - name: Horse hand touches belong to the currently observed table
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-horse-seat-touch-session.py
+      - name: Tournament finish incidents retain their own event identity
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-tournament-incident-identity.py
+      - name: Exclusive waitlist offers respect concurrent table and player claims
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-waitlist-offer-concurrency.py
+      - name: New seat occupants cannot inherit another player's sit-out state
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-seat-turnover-sitout.py
+      - name: Profile referral codes remain unique across concurrent generators
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-profile-referral-code.py
+      - name: Player exports preserve standalone rake and horse visibility
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-club-player-export.py
+      - name: Concurrent hands preserve shared F06 custody lanes
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-f06-zero-seat-hand-lane.py
+      - name: Accepted hands and terminal operations obey one lock order
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-f06-terminal-lock-order.py
+      - name: Daily rake monitor respects the writer deadline and UTC boundaries
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-rake-rollup-due.py
+      - name: Video scrape history lookup stays indexed without blocking audit writers
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-video-scrape-status-index.py
+
+      - name: Native video inventory snapshot and service permissions
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-video-library-inventory.py
+      - name: Diamond health requires complete known comparisons
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-diamond-health-comparisons.py
+      - name: Chip statement pages retain tied entries and caller authority
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-chip-statement-cursor.py
       - name: Atomic departures, ownership, rollback and concurrency
         env:
           PGBIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/probe-departure-postgres.sh
+<<<<<<< HEAD
       - name: Standalone rake burns once and union rake stays banked
         env:
           PG17_BINDIR: /usr/lib/postgresql/17/bin
         run: python3 scripts/dev/probe-standalone-rake-burn-pg17.py
+=======
+      - name: Horse profile authority, API roles and concurrent writes
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-horse-profile-authority.py
+>>>>>>> origin/main
       - name: Tournament reminder receipts, rollback and overlapping consumers
         env:
           PGBIN: /usr/lib/postgresql/17/bin
@@ -1111,6 +1221,11 @@ jobs:
           PGBIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/probe-a-bust-is-ranked-by-when-it-happened-pg17.sh
 
+      - name: Agent downline rake stays in overseer clubs
+        env:
+          PGBIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/dev/probe-agent-downline-rake-scope-pg17.py
+
       - name: Certified V31 PostgreSQL 17 behavior gate
         if: >-
           github.event_name == 'schedule' ||
@@ -1120,7 +1235,7 @@ jobs:
           PG17_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/ci/probes/horse-phase4-certified-solver/run-pg17.sh
 
-  server:
+  server_shards:
     # COST 2026-08-23: this already ran, and passed, on the pull request -
     # the ruleset will not merge without it. Re-running it on the merge
     # commit tests an identical tree. 34 of every 100 CI runs were that
@@ -1149,9 +1264,14 @@ jobs:
        (github.event_name == 'pull_request' &&
         (needs.changes.result != 'success' ||
          needs.changes.outputs.server == 'true')))
-    name: Server Engine (typecheck + tests)
+    name: Server Engine shard ${{ matrix.shard }}/4
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: [1, 2, 3, 4]
 
     defaults:
       run:
@@ -1200,7 +1320,11 @@ jobs:
         run: npx vitest run src/engine/FreezeRegression.test.ts src/engine/TableWatchdog.test.ts src/maintenance/MaintenanceBreak.test.ts src/maintenance/thawInstallments.test.ts --reporter=verbose
 
       - name: Full server test suite
-        run: npm test
+        env:
+          SERVER_TEST_SHARD: ${{ matrix.shard }}
+        run: |
+          [[ "$SERVER_TEST_SHARD" =~ ^[1-4]$ ]]
+          npm test -- --shard="$SERVER_TEST_SHARD/4"
 
       # Guards the single highest-impact line of the freeze fix. The all-in
       # dead-buttons bug (production hand #1315: 30.1s between a river shove
@@ -1210,6 +1334,34 @@ jobs:
       - name: All-in action panel must never be pointer-events:none
         working-directory: .
         run: node scripts/ci/check-allin-pointer-events.mjs
+
+  # Preserve the required check name. A cancelled/failed matrix, or an
+  # unexplained skip, must never satisfy branch protection through one shard.
+  server:
+    needs: [changes, server_shards]
+    if: always()
+    name: Server Engine (typecheck + tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Every shard passed
+        env:
+          MATRIX_RESULT: ${{ needs.server_shards.result }}
+          DIFF_RESULT: ${{ needs.changes.result }}
+          SERVER_CHANGED: ${{ needs.changes.outputs.server }}
+          CI_EVENT_NAME: ${{ github.event_name }}
+        run: |
+          case "$MATRIX_RESULT" in
+            success) echo 'All four server shards passed.' ;;
+            skipped)
+              if [ "$CI_EVENT_NAME" = pull_request ] && [ "$DIFF_RESULT" = success ] && [ "$SERVER_CHANGED" = false ]; then
+                echo 'Server tests skipped: the checked diff does not change the server.'
+              else
+                echo '::error::Required server tests were unexpectedly skipped.'
+                exit 1
+              fi ;;
+            *) echo "::error::The server matrix did not pass ($MATRIX_RESULT)."; exit 1 ;;
+          esac
 
   # ═══════════════════════════════════════════════════════════════════════════
   #  WHAT DID THIS RUN ACTUALLY VERIFY?
@@ -1234,13 +1386,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     if: always()
-    needs: [changes, stub_gate, typecheck, unit, server]
+    needs: [changes, stub_gate, typecheck, typecheck_compile, fixture_native, unit, server]
     steps:
       - name: Say what ran, and what did not
         run: |
           UNIT='${{ needs.unit.result }}'
           SERVER='${{ needs.server.result }}'
           TYPECHECK='${{ needs.typecheck.result }}'
+          COMPILE='${{ needs.typecheck_compile.result }}'
+          NATIVE='${{ needs.fixture_native.result }}'
           STUB='${{ needs.stub_gate.result }}'
           CHANGES='${{ needs.changes.result }}'
 
@@ -1251,7 +1405,9 @@ jobs:
             echo "| --- | --- |"
             echo "| What changed | $CHANGES |"
             echo "| Stub Gate | $STUB |"
-            echo "| TypeScript + repo invariants | $TYPECHECK |"
+            echo "| Required compilation + fixture result | $TYPECHECK |"
+            echo "| TypeScript + repo invariants | $COMPILE |"
+            echo "| Native fixture prerequisites | $NATIVE |"
             echo "| Client Unit Tests | $UNIT |"
             echo "| Server Engine | $SERVER |"
             echo ""
@@ -1317,6 +1473,7 @@ jobs:
           # Provenance compares ancestry against origin/main. A shallow merge
           # can falsely appear behind even when main is its direct parent.
           fetch-depth: 0
+          filter: blob:none
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -1343,6 +1500,9 @@ jobs:
       - name: Install Dependencies
         if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci
+
+      - name: Verify production minifier execution and hidden maps
+        run: node --test tests/operations/client-chunk-execution.test.mjs
 
       # 2026-09-04: the optimized rasters are content-addressed, so this is
       # keyed on the media that feeds them plus the script that encodes them.
@@ -1384,6 +1544,7 @@ jobs:
       - name: Build
         run: npm run build:ci
         env:
+          CA_BUILD_PURPOSE: ${{ github.event_name == 'pull_request' && 'ci-validation' || 'release-build' }}
           NODE_ENV: production
           # Public browser configuration. The previous PR build omitted these,
           # so it produced an artifact that threw before React mounted and no
@@ -1513,6 +1674,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          filter: blob:none
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -1759,6 +1921,7 @@ jobs:
           # Provenance compares ancestry against origin/main. A shallow merge
           # can falsely appear behind even when main is its direct parent.
           fetch-depth: 0
+          filter: blob:none
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -1833,6 +1996,7 @@ jobs:
       # added to every push-to-live.
       - name: Build this commit
         env:
+          CA_BUILD_PURPOSE: ${{ github.event_name == 'pull_request' && 'ci-validation' || 'release-build' }}
           # The app fails closed before React mounts when these Vite values are
           # absent. Footer route probes do not call Supabase, so deterministic
           # non-secret placeholders are the correct isolated CI configuration.
@@ -1909,6 +2073,7 @@ jobs:
           exit 1
 
       - name: Run the beats against this commit's CSS
+        id: css-beats
         env:
           ARENA_BASE_URL: http://127.0.0.1:${{ steps.preview-port.outputs.port }}/hub/club-arena
           BASE_URL: http://127.0.0.1:${{ steps.preview-port.outputs.port }}/hub/club-arena/
@@ -1988,16 +2153,40 @@ jobs:
         # above and torn down in an always() step below; all three suites share
         # it. See the note on "Serve one build to every suite".
         run: |
-          npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line --retries=1
+          npx playwright test tests/e2e/live-css-loader.spec.ts tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line --retries=1
+
+      # Capture the failed fixture before a later suite can clear its output.
+      # These tests use the local build and synthetic data, without a login.
+      - name: Preserve failed CSS beat browser evidence
+        if: ${{ failure() && steps.css-beats.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: css-beats-failure-${{ github.sha }}-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 3
+          if-no-files-found: warn
 
       # Unlike the CSS fixtures above, this mounts the production Studio and
       # drives its real Supabase client through a deterministic browser mock.
       # Its dedicated route redirects unless the test-harness flag is enabled -
       # which the shared build below now carries, so this needs no server.
       - name: Table Studio real-component purchase, sync, and accessibility gate
+        id: table-studio
         env:
           ARENA_SHARED_PREVIEW_URL: http://127.0.0.1:${{ steps.preview-port.outputs.port }}
         run: npm run test:e2e:customization
+
+      # These traces contain the throwaway Studio mock, not authenticated
+      # production journeys. Preserve failures before the next suite can clear
+      # Playwright's output directory; keep the original gate failure intact.
+      - name: Preserve failed Table Studio browser evidence
+        if: ${{ failure() && steps.table-studio.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: table-studio-failure-${{ github.sha }}-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 3
+          if-no-files-found: warn
 
       - name: Insurance and Rabbit Hunt 375px decision gate
         env:

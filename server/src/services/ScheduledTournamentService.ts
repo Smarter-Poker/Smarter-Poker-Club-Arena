@@ -1,3 +1,4 @@
+import { validateMttBlindStructure } from '../domain/tournamentBlindContract.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * SCHEDULED TOURNAMENT SERVICE — data-driven recurring MTT spawner (2026-08-22)
@@ -36,8 +37,14 @@ import { supabase } from './supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
 import { buyInFor, freeBuyColumns, rakeRateFor, wholeChips } from '../config/buyIn.js';
+import { mttBountyAmount } from '../tournament/mttBountyAllocation.js';
+import { mysteryBountyCreationColumns } from '../domain/mysteryBountyCreation.js';
 import { TournamentRecurringService, MTT_PUBLISH_LEAD_MS } from './TournamentRecurringService.js';
-import { buildLadder, type GeneratedBlindLevel } from '../tournament/blindLadder.js';
+import {
+  MTT_BLIND_PRESETS,
+  mttSpeedColumns,
+  mttPayoutPercent,
+} from '../tournament/mttStructurePolicy.js';
 import { SPIN_SEATS, SPIN_TIERS, spinBlindsForLevel } from '../config/spinSpec.js';
 import {
   HEADS_UP_BLIND_STRUCTURE,
@@ -378,59 +385,7 @@ const MYSTERY_MAX_MULT = 13;
  * additions (12-minute early levels, extra depth). An explicit
  * `blindStructure` array in the config always wins over the preset.
  */
-export const SCHEDULE_BLIND_PRESETS: Record<string, GeneratedBlindLevel[]> = {
-  /**
-   * GENERATED AND DEEP (2026-08-31). These were hand-written 5-12 level arrays.
-   * Measured over 579 completed MTTs the average event reached level 14 and the
-   * deepest reached 124, so 95.7% of tournaments played their late game on the
-   * overflow path — which doubled the blinds every level. 38.1% ended with all
-   * chips in play worth under three big blinds.
-   *
-   * Level 1 of every preset is unchanged, so advertised structures still read
-   * exactly as they did. See tournament/blindLadder.ts.
-   */
-  SLOW: buildLadder({
-    startBigBlind: 50,
-    speed: 'SLOW',
-    levels: 40,
-    openingMinutes: 12,
-    floorMinutes: 6,
-    anteFromLevel: 3,
-  }),
-  STANDARD: buildLadder({
-    startBigBlind: 50,
-    speed: 'STANDARD',
-    levels: 40,
-    openingMinutes: 10,
-    floorMinutes: 5,
-    anteFromLevel: 2,
-  }),
-  TURBO: buildLadder({
-    startBigBlind: 50,
-    speed: 'TURBO',
-    levels: 24,
-    openingMinutes: 4,
-    floorMinutes: 2,
-    anteFromLevel: 1,
-  }),
-  HYPER_TURBO: buildLadder({
-    startBigBlind: 100,
-    speed: 'HYPER_TURBO',
-    levels: 16,
-    openingMinutes: 2,
-    floorMinutes: 1,
-    anteFromLevel: 1,
-  }),
-};
-SCHEDULE_BLIND_PRESETS.DEEP = SCHEDULE_BLIND_PRESETS.SLOW;
-// DEEPSTACK is what the schedule seeds actually wrote (19 active schedules on
-// production carry `blindPreset: "DEEPSTACK"`, all created 2026-08-25) and it
-// resolved to NOTHING — every one of those events was silently skipped with
-// `structure_missing` on each spawn attempt: Morning Grind Deepstack,
-// Five-Card Big Stack, Midweek Morning Stack, Wednesday PLO Stack, Sunday
-// Funday Six-Card Closer, and fourteen more never ran once. Same structure as
-// DEEP/SLOW — a deep stack IS the slow structure.
-SCHEDULE_BLIND_PRESETS.DEEPSTACK = SCHEDULE_BLIND_PRESETS.SLOW;
+export const SCHEDULE_BLIND_PRESETS = MTT_BLIND_PRESETS;
 
 /** Named payout presets, resolvable as `payoutPreset`. */
 export const SCHEDULE_PAYOUT_PRESETS: Record<
@@ -1155,23 +1110,17 @@ export class ScheduledTournamentService {
     const buyInAmount = isSpin ? buyIn : split.prize;
     const buyInFee = isSpin ? 0 : split.fee;
 
-    // Bounty head: absolute bountyAmount wins; else the recurring service's
-    // percent-of-total convention (default 30), never exceeding the prize half.
+    // All engine creators use the same cent allocation and entry-fee cap.
     let bountyAmount = 0;
     if (isBountyType) {
-      const absolute = wholeChips(cfg.bountyAmount);
-      if (absolute > 0) {
-        bountyAmount = Math.min(split.prize, absolute);
-      } else {
-        const pct = Number(cfg.bountyPercent) || 30;
-        bountyAmount = Math.min(split.prize, Math.max(0, Math.round((split.total * pct) / 100)));
-      }
-      if (bountyAmount <= 0) {
+      try {
+        bountyAmount = mttBountyAmount(split, cfg);
+      } catch (error) {
         reportError(
           new Error(
-            `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} bounty type with no bounty head - skipping`
+            `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} invalid bounty allocation: ${String(error)}`
           ),
-          'ScheduledTournaments.bounty_missing'
+          'ScheduledTournaments.bounty_invalid'
         );
         return null;
       }
@@ -1219,6 +1168,7 @@ export class ScheduledTournamentService {
 
     const maxRebuysRaw = Number(cfg.maxRebuys);
     const maxReentriesRaw = Number(cfg.maxReentries);
+    if (!isSng && !isSpin) validateMttBlindStructure(blinds, cfg.startingStack ?? 10000);
 
     const row: Record<string, unknown> = {
       club_id: schedule.club_id,
@@ -1240,13 +1190,16 @@ export class ScheduledTournamentService {
       current_players: 0,
       status: 'REGISTERING',
       blind_structure: blinds,
+      ...mttSpeedColumns(blinds),
       payout_structure: payouts,
+      payout_percent: mttPayoutPercent(cfg.payoutPercent),
       start_time: startTime.toISOString(),
       late_reg_levels: lateRegLevels,
       late_reg_mins: lateRegLevels,
       is_bounty: isBountyType,
       is_pko: type === 'progressive_bounty',
       is_mystery_bounty: type === 'mystery_bounty',
+      ...(type === 'mystery_bounty' ? mysteryBountyCreationColumns(cfg) : {}),
       bounty_amount: bountyAmount,
       mystery_bounty_min: mysteryMin,
       mystery_bounty_max: mysteryMax,
@@ -1414,6 +1367,7 @@ export class ScheduledTournamentService {
     'min_players',
     'blind_structure',
     'payout_structure',
+    'payout_percent',
     'guaranteed_prize',
     'late_reg_levels',
     'late_reg_mins',
@@ -1432,6 +1386,12 @@ export class ScheduledTournamentService {
     'is_mystery_bounty',
     'mystery_bounty_min',
     'mystery_bounty_max',
+    'mystery_bounty_profile',
+    'mystery_bounty_activation',
+    'mystery_bounty_activation_value',
+    'mystery_bounty_pool_percent',
+    'mystery_bounty_regular_pool_percent',
+    'mystery_bounty_top_percent',
     'spin_type',
     'satellite_target_id',
     'satellite_seats',
@@ -1571,6 +1531,11 @@ export class ScheduledTournamentService {
     for (const col of ScheduledTournamentService.RESTART_COPY_COLUMNS) {
       if (old[col] !== undefined) row[col] = old[col];
     }
+    const cloneBlinds =
+      typeof row.blind_structure === 'string'
+        ? JSON.parse(row.blind_structure)
+        : row.blind_structure;
+    if (Array.isArray(cloneBlinds)) Object.assign(row, mttSpeedColumns(cloneBlinds));
 
     // A legacy instance can carry a pre-floor fee split (e.g. 22+3 = 12%)
     // that tournaments_rake_within_10_pct now rejects on INSERT — the clone

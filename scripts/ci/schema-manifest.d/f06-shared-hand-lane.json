@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/f06-preserve-shared-hand-lane; applied migration 20260913203241 verified live with unchanged private execution grants",
+  "functions": ["smarter_private.f06_source_guard"]
+}

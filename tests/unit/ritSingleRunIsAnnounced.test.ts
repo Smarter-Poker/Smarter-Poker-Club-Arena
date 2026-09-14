@@ -59,11 +59,14 @@ describe('a Run It Twice offer that ends in one board says so', () => {
   it('the client turns each reason into its own message', () => {
     const block = TABLE_PAGE.slice(
       TABLE_PAGE.indexOf("if (eventType === 'rit_single_run')"),
-      TABLE_PAGE.indexOf("if (eventType === 'rit_single_run')") + 1400
+      TABLE_PAGE.indexOf("if (eventType === 'rit_single_run')") + 1800
     );
     expect(block).toContain('chooser_chose_one');
     expect(block).toContain('player_declined');
     expect(block).toContain('Not Everyone Agreed In Time');
+    // 2026-09-13: one silent seat is named, the way a decliner is.
+    expect(block).toContain("reason === 'no_answer' && name");
+    expect(block).toContain('Did Not Answer In Time');
 
     // House popup rules: Title Case, no em dashes. Scoped to the MESSAGE
     // strings - a first draft scanned the whole slice and failed on an em dash
@@ -76,5 +79,19 @@ describe('a Run It Twice offer that ends in one board says so', () => {
       expect(m, m).not.toMatch(/—/);
       expect(m, m).not.toMatch(/\b(a|an|the|in|on|of|to)\b [a-z]/);
     }
+  });
+});
+
+describe('the expiry names the one seat that held things up (2026-09-13)', () => {
+  it('the host forwards a single silent player by id, and the collective line otherwise', () => {
+    const fn = RUNOUT.slice(
+      RUNOUT.indexOf('protected wireRunItTwiceEvents(): void {'),
+      RUNOUT.indexOf('protected wireRunItTwiceEvents(): void {') + 1200
+    );
+    expect(fn).toContain(
+      "if (silent.length === 1) this.emitRitSingleRun('no_answer', silent[0] as string);"
+    );
+    expect(fn).toContain("else this.emitRitSingleRun('no_agreement');");
+    expect(RUNOUT).toContain("| 'no_answer'");
   });
 });

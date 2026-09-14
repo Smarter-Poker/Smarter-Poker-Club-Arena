@@ -1,0 +1,184 @@
+{
+  "observed_at": "2026-09-12T09:28:37.205989+00:00",
+  "source_base": "758d91a88a2520c46376af3444c90425133720bf",
+  "scope": "Exact previously applied migration history and scoped current catalog",
+  "production_data_writes": 0,
+  "engine_source_changes": false,
+  "world_hub_writes": 0,
+  "product_certificate": false,
+  "records": [
+    {
+      "version": "20260912044158",
+      "name": "a_function_audited_as_moving_no_money_is_not_undeclared",
+      "archive": "docs/audits/installed-migrations/20260912-pr4392/20260912044158_a_function_audited_as_moving_no_money_is_not_undeclared.sql",
+      "statement_count": 1,
+      "statement_bytes": 2536,
+      "statement_sha256": "920154b8a94c3478479e9d429c9ee81dcd7520928d208cd78d92b2af9325ac08",
+      "history_statement_bytes_match": true,
+      "functions": ["fn_ca_undeclared_money_paths"],
+      "original_proposal": {
+        "pr": 4392,
+        "head": "aed0ba2f5324e0fe66d5ca2ae1f12cce0ae751b0",
+        "path": "supabase/migrations/20260912043948_a_function_audited_as_moving_no_money_is_not_undeclared.sql",
+        "sha256": "e2d639f3c493467af29dd343d353ec874bd1e0068057d24d1afa3ba38d42ef19",
+        "same_as_recorded": false
+      },
+      "disposition": "Historical installation record only; never run as a new migration."
+    },
+    {
+      "version": "20260912044609",
+      "name": "the_supply_meter_counts_the_pending_addon_float",
+      "archive": "docs/audits/installed-migrations/20260912-pr4392/20260912044609_the_supply_meter_counts_the_pending_addon_float.sql",
+      "statement_count": 1,
+      "statement_bytes": 16057,
+      "statement_sha256": "c557812a547f0cc775ecc47d3f5a25f9be4001b1e2f84d251a39b9da5f8e0dba",
+      "history_statement_bytes_match": true,
+      "functions": ["fn_ca_supply_snapshot", "fn_ca_trial_balance"],
+      "original_proposal": {
+        "pr": 4392,
+        "head": "aed0ba2f5324e0fe66d5ca2ae1f12cce0ae751b0",
+        "path": "supabase/migrations/20260912043947_the_supply_meter_counts_the_pending_addon_float.sql",
+        "sha256": "1cc1588800d7dff10e5fff7c70a5ec028840b8b18c7e1ee92ca5f527f93e205c",
+        "same_as_recorded": false
+      },
+      "disposition": "Historical installation record only; never run as a new migration."
+    },
+    {
+      "version": "20260912044823",
+      "name": "the_rake_rollup_stale_check_counts_both_legs",
+      "archive": "docs/audits/installed-migrations/20260912-pr4392/20260912044823_the_rake_rollup_stale_check_counts_both_legs.sql",
+      "statement_count": 1,
+      "statement_bytes": 2673,
+      "statement_sha256": "702346c63a9962caf184c945f06865c5f204dfa7510fcfdb3cdda4dc91e03f9b",
+      "history_statement_bytes_match": true,
+      "functions": ["fn_union_rake_stale_days"],
+      "original_proposal": {
+        "pr": 4392,
+        "head": "aed0ba2f5324e0fe66d5ca2ae1f12cce0ae751b0",
+        "path": "supabase/migrations/2026091204390624_the_rake_rollup_stale_check_counts_both_legs.sql",
+        "sha256": "9a0690f46262ece1dc237e5ff951b5553f426ef1fe48047a42c3377f4162a98d",
+        "same_as_recorded": false
+      },
+      "disposition": "Historical installation record only; never run as a new migration."
+    },
+    {
+      "version": "20260912050321",
+      "name": "the_ladder_is_the_one_the_money_was_paid_by",
+      "archive": "docs/audits/installed-migrations/20260912-pr4392/20260912050321_the_ladder_is_the_one_the_money_was_paid_by.sql",
+      "statement_count": 1,
+      "statement_bytes": 4015,
+      "statement_sha256": "4297a48c536c384dd8ad34b56e793f020732f7d99eb50ae61cf5c5b12102a7b0",
+      "history_statement_bytes_match": true,
+      "functions": [],
+      "original_proposal": {
+        "pr": 4392,
+        "head": "aed0ba2f5324e0fe66d5ca2ae1f12cce0ae751b0",
+        "path": "supabase/migrations/20260912050039_the_ladder_is_the_one_the_money_was_paid_by.sql",
+        "sha256": "56890f8bc9c1a243cff8d19ff28f399192708d3718b891016f085091e1edf5de",
+        "same_as_recorded": false
+      },
+      "disposition": "Historical installation record only; never run as a new migration."
+    },
+    {
+      "version": "20260912050353",
+      "name": "a_money_adjacent_post_hand_failure_is_not_info",
+      "archive": "docs/audits/installed-migrations/20260912-pr4392/20260912050353_a_money_adjacent_post_hand_failure_is_not_info.sql",
+      "statement_count": 1,
+      "statement_bytes": 5893,
+      "statement_sha256": "eef9bde4b159a27fbc7f0257d0034fc975e3ca38d52d7fdb236bc3c1ccc84599",
+      "history_statement_bytes_match": true,
+      "functions": ["fn_ca_financial_alert_to_incident"],
+      "original_proposal": {
+        "pr": 4392,
+        "head": "aed0ba2f5324e0fe66d5ca2ae1f12cce0ae751b0",
+        "path": "supabase/migrations/20260912043949_a_money_adjacent_post_hand_failure_is_not_info.sql",
+        "sha256": "2cdda85a9c380cab509d078f089b3af9175dc0e4a8b4035a9fd61796a65da628",
+        "same_as_recorded": false
+      },
+      "disposition": "Historical installation record only; never run as a new migration."
+    }
+  ],
+  "current_functions": [
+    {
+      "name": "fn_ca_financial_alert_to_incident",
+      "owner": "postgres",
+      "result": "trigger",
+      "comment": null,
+      "raw_acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "arguments": "",
+      "proconfig": ["search_path=public"],
+      "prosecdef": true,
+      "provolatile": "v",
+      "definition_md5": "591d71ae6e8a7572640e531d247b13bc",
+      "identity_arguments": "",
+      "body_matches_recorded_statement": true
+    },
+    {
+      "name": "fn_ca_supply_snapshot",
+      "owner": "postgres",
+      "result": "numeric",
+      "comment": null,
+      "raw_acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "arguments": "",
+      "proconfig": ["search_path=public, pg_temp"],
+      "prosecdef": true,
+      "provolatile": "v",
+      "definition_md5": "261db1022bd41955c49ea8248390ae92",
+      "identity_arguments": "",
+      "body_matches_recorded_statement": true
+    },
+    {
+      "name": "fn_ca_trial_balance",
+      "owner": "postgres",
+      "result": "TABLE(account text, balance_delta numeric, ledger_net numeric, difference numeric, writers text, window_start timestamp with time zone, window_end timestamp with time zone)",
+      "comment": null,
+      "raw_acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "arguments": "p_since timestamp with time zone DEFAULT NULL::timestamp with time zone",
+      "proconfig": ["search_path=public"],
+      "prosecdef": true,
+      "provolatile": "v",
+      "definition_md5": "69c6be700a1baec747970d2158d42943",
+      "identity_arguments": "p_since timestamp with time zone",
+      "body_matches_recorded_statement": true
+    },
+    {
+      "name": "fn_ca_undeclared_money_paths",
+      "owner": "postgres",
+      "result": "TABLE(proname text, tbl text, col text)",
+      "comment": "Functions that move a balance fn_ca_autoledger watches without declaring the other side, so their movements land on settlement_suspense. TEXTUAL: it matches an UPDATE of a watched table anywhere in the body and a watched column anywhere in the body, so a function that only NAMES a balance column (an INSERT column list, a guard, a comment) scores without moving anything. A function registered status='system' in ca_money_rpc_registry has been audited as moving no money and is excluded. The count must only ever go down.",
+      "raw_acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "arguments": "",
+      "proconfig": ["search_path=public"],
+      "prosecdef": true,
+      "provolatile": "s",
+      "definition_md5": "f4f1d53ea0a5dd835a8fec1f477ea1d2",
+      "identity_arguments": "",
+      "body_matches_recorded_statement": true
+    },
+    {
+      "name": "fn_union_rake_stale_days",
+      "owner": "postgres",
+      "result": "SETOF date",
+      "comment": null,
+      "raw_acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "arguments": "p_union_id uuid, p_from date, p_to_exclusive date",
+      "proconfig": ["search_path=public", "plan_cache_mode=force_custom_plan"],
+      "prosecdef": true,
+      "provolatile": "s",
+      "definition_md5": "d3214ae859af4c756f4d6f1e94c95ce1",
+      "identity_arguments": "p_union_id uuid, p_from date, p_to_exclusive date",
+      "body_matches_recorded_statement": true
+    }
+  ],
+  "current_column": {
+    "name": "pending_addons",
+    "type": "numeric",
+    "table": "ca_supply_snapshots",
+    "comment": "Unresolved table_pending_addons at taken_at: chips a mid-hand add-on has already debited and journalled to table_stack, which have not yet reached table_seats.stack. NULL on snapshots taken before basis pending-addon-v4.",
+    "default": null,
+    "not_null": false
+  },
+  "storage_note": "The byte-exact statements are an archival record, not forward migrations. One statement is a completed one-time ladder correction and another reschedules an existing job; replay is not authorized. Function replacements preserved installed service-only ACLs, which a text-only fresh-create check cannot infer. No guard or allowlist was changed.",
+  "read_only_production_queries": true,
+  "production_mutating_sql_executed": false
+}

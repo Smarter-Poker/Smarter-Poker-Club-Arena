@@ -44,6 +44,39 @@ const run = (
   return result;
 };
 describe('Phase 8 funded future-hand transition', () => {
+  it('keeps reusable synthetic facts independent of player identities and caller mutations', () => {
+    const players = [player(0, 100), player(1, 300), player(2, 25)];
+    const args = {
+      players,
+      vector: [100, 300, 25],
+      localIndex: new Map(players.map((p, i) => [p.user_id, i])),
+      heroId: 'p0',
+      dealerSeat: 2,
+      sampleIndex: 27,
+      level: { smallBlind: 5, bigBlind: 10, ante: 3, anteType: 'per_player' as const },
+    };
+    const drawCache = new Map();
+    const first = simulateTournamentFutureHands({ ...args, drawCache })!;
+    for (const draw of drawCache.values()) {
+      draw.board[0].rank = '2';
+      for (const facts of draw.seats.values()) {
+        facts.cards[0].rank = '2';
+        facts.streets.fill(0);
+        facts.showdown = 0;
+      }
+    }
+    const renamed = players.map((p) => ({ ...p, user_id: 'renamed-' + p.user_id }));
+    const second = simulateTournamentFutureHands({
+      ...args,
+      players: renamed,
+      heroId: 'renamed-p0',
+      localIndex: new Map(renamed.map((p, i) => [p.user_id, i])),
+    })!;
+    expect(second.vector).toEqual(first.vector);
+    expect(second.conservationError).toBe(0);
+    expect(Object.keys(second.forcedPaid).every((id) => id.startsWith('renamed-'))).toBe(true);
+    expect(simulateTournamentFutureHands(args)).toEqual(first);
+  });
   it('preserves an individual ante through zero-value shared-ante posting and caps short stacks', () => {
     const short = player(0, 7),
       deep = player(1, 100);

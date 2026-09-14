@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# macOS + PostgreSQL 17: without this the postmaster aborts at startup with
+# "postmaster became multithreaded during startup" and the probe cannot run at all.
+export LC_ALL=C
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PGBIN="${PGBIN:-/opt/homebrew/opt/postgresql@17/bin}"
 case "$("$PGBIN/postgres" --version)" in

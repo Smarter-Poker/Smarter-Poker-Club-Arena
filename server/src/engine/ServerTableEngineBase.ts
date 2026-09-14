@@ -9,6 +9,7 @@
  */
 
 import { HandController } from './HandController.js';
+import { SettlementAwait } from '../observability/SettlementAwait.js';
 import type { HandSeatGeneration } from './handSeatGeneration.js';
 import { playerActionContext } from './PlayerActionContext.js';
 import { PreciseActionTimer } from './PreciseActionTimer.js';
@@ -101,7 +102,8 @@ import {
 import { headsUpButtonSeat } from './headsUpButton.js';
 import type { StateMachine } from './StateMachine.js';
 import type { TableStatus } from '../types.js';
-import { assertDiamondCashTable } from '../domain/DiamondCashBoundary.js';
+import { assertDiamondTable } from '../domain/DiamondCashBoundary.js';
+import { HEADS_UP_SEATS } from '../config/headsUpSpec.js';
 
 export type EngineLeaseAuthority =
   | {
@@ -606,6 +608,45 @@ export abstract class ServerTableEngineBase {
   // If a player wins a pot and their stack + add-on exceeds max buy-in,
   // the add-on is reduced or canceled. Map<userId, requestedAmount>.
   protected pendingAddOns: Map<string, number> = new Map();
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  MID-HAND DIAMOND TOP-UPS ARE AN INTENT, NOT A DEBIT
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * The chip lane takes the money at request time and lands the chips at the
+   * end of the hand, through the durable `table_pending_addons` ledger. A
+   * Diamond seat cannot do that, and the reason is a constraint rather than a
+   * preference: the deferred trigger `zzz_diamond_seat_keeps_custody` requires
+   * a Diamond seat's `stack` to EQUAL its custody balance at every COMMIT. A
+   * reservation made now and applied later is a committed state where the two
+   * disagree, so there is no ordering of the chip lane's two steps that this
+   * arena permits.
+   *
+   * The alternative to a debit is an INTENT: nothing moves until the hand
+   * ends, and then the whole top-up happens in the one transaction the
+   * constraint does allow, through `fn_poker_diamond_top_up` - the door that
+   * already exists and is already certified.
+   *
+   * WHAT THE PLAYER GIVES UP, stated plainly because they are told it too: the
+   * chip lane guarantees the money is committed the moment they tap. This
+   * guarantees only that it will be attempted the moment the hand ends, so a
+   * player who spends those Diamonds elsewhere in the intervening thirty
+   * seconds gets an honest refusal instead. That is a narrower promise, and it
+   * is the widest one this constraint leaves; the chip lane's promise is not
+   * as wide as it looks either, since it re-sizes at landing and refunds the
+   * difference when the pot has moved the stack.
+   *
+   * KEYED BY REQUEST ID, not by user, so a retry of the same tap overwrites
+   * itself and two genuine taps both count. The id is the same uuidv5 the
+   * between-hands path derives, so the SQL door de-duplicates a replay of the
+   * landing itself.
+   *
+   * MEMORY ONLY, deliberately. An intent lost to an engine restart costs the
+   * player nothing, because nothing was taken; a DEBIT lost to a restart is
+   * the failure mode the durable chip ledger exists to prevent. There is
+   * nothing here worth making durable.
+   */
+  protected diamondTopUpIntents: Map<string, { userId: string; amount: number }> = new Map();
   /**
    * A2: does the durable `table_pending_addons` ledger need a sweep?
    *
@@ -1167,6 +1208,8 @@ export abstract class ServerTableEngineBase {
     handName?: string;
     /** HI-LO: the low half's entry (2026-09-04). */
     low?: boolean;
+    /** Per-pot slices of this share, main pot first (2026-09-13). */
+    pots?: Array<{ index: number; amount: number }>;
   }> = [];
   /**
    * SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): the unmerged per-pot(-half)
@@ -1557,6 +1600,7 @@ export abstract class ServerTableEngineBase {
   // rather than by the next hand. See trackSettlementInFlight().
   protected settlementInFlight: Set<Promise<void>> = new Set();
   private settlementStartedAtMs: number | null = null;
+  private settlementAwaitObserver?: SettlementAwait;
 
   /**
    * The one dealing-loop generation owned by this engine instance.
@@ -2266,8 +2310,24 @@ export abstract class ServerTableEngineBase {
     // impossible rather than merely unlikely.)
     const ritIsTournament =
       !!this.tableInfo.tournament_id || this.tableInfo.game_type === 'tournament';
+    /**
+     * HEADS-UP TABLE GATE (2026-09-13). The ruling quoted above names three
+     * places run-it-twice never goes - MTT, Spins, HEADS UP - and for eighteen
+     * days the code enforced two of them. Every heads-up TABLE on the platform
+     * happens to be a tournament (the 2-seat heads-up SNG shapes in
+     * TournamentRecurringService), so the tournament gate covered it by
+     * accident; the first 2-seat cash table would have offered the question.
+     *
+     * A heads-up table is a table FORMAT: two seats. It is not a two-way
+     * all-in on a full ring - that is the ordinary run-it-twice hand, and the
+     * reference recordings that shaped this feature are exactly that.
+     */
+    const ritIsHeadsUpTable =
+      Number(this.tableInfo.max_players) > 0 &&
+      Number(this.tableInfo.max_players) <= HEADS_UP_SEATS;
     const ritEnabled =
       !ritIsTournament &&
+      !ritIsHeadsUpTable &&
       (((this.tableInfo.run_it_twice ?? true) && (this.tableInfo.allow_run_it_twice ?? true)) ||
         (this.tableInfo.run_it_twice_enabled ?? false));
     // ALL-CASH INSURANCE 2026-08-26 (Dan): insurance is a CASH feature.
@@ -3093,6 +3153,17 @@ export abstract class ServerTableEngineBase {
     for (const uid of this.heldForSwap) {
       if (!liveHeld.has(uid)) this.heldForSwap.delete(uid);
     }
+    // The database keeps ready_at through a restart or a lost executor reply.
+    // Rebuild the hold for the original stay before the partner can move it.
+    for (const m of pending) {
+      if (m.ready_at == null) continue;
+      const current = this.seatedPlayers.find((p) => p.user_id === m.player_id);
+      if (current?.occupancy_id === m.source_occupancy_id) {
+        this.heldForSwap.add(m.player_id);
+      } else {
+        this.heldForSwap.delete(m.player_id);
+      }
+    }
   }
 
   /**
@@ -3114,10 +3185,10 @@ export abstract class ServerTableEngineBase {
    * enumeration nobody could read must never be mistaken for an empty one, and
    * a throw cannot be ignored by accident the way a value can.
    *
-   * At these two call sites the correct response to "I could not tell" is to
-   * CHANGE NOTHING - do not prune, do not release a swap hold, do not announce
-   * - and then carry on. A notice that could not be read must never stop a
-   * table dealing, and an unread list must never look like an empty one. So
+   * At these two call sites "I could not tell" must CHANGE NOTHING: do not
+   * prune, release a swap hold, or announce. The pre-deal caller also defers
+   * the deal: after restart or a lost executor reply a durable ready_at can
+   * exist without a local hold. An unread list is never an empty one. So
    * the throw is translated here, once, and reported: everything above this
    * line keeps main's contract, everything below it keeps this lane's
    * invariant.
@@ -3131,15 +3202,22 @@ export abstract class ServerTableEngineBase {
     }
   }
 
-  protected async announcePendingSeatMoves(): Promise<void> {
-    if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return;
+  protected async announcePendingSeatMoves(): Promise<boolean> {
+    if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return true;
+    if (!this.lifecycleCanMutate()) return false;
     const pending = await this.readPendingSeatMoves();
-    // A read that failed says nothing about what is pending: announce nothing,
-    // release nothing. The next hand asks again.
-    if (pending === null) return;
+    // A fresh engine has no local swap holds. Unknown durable readiness must
+    // defer its next deal too, rather than move a player out of a live hand.
+    if (!this.lifecycleCanMutate() || pending === null) return false;
     this.reconcileSeatMoveHolds(pending);
     const fresh: string[] = [];
     for (const m of pending) {
+      if (
+        !this.seatedPlayers.some(
+          (p) => p.user_id === m.player_id && p.occupancy_id === m.source_occupancy_id
+        )
+      )
+        continue;
       /* PRESENCE FOLLOWS THE PLAYER (2026-09-05). Stamped here, once per
          hand, for EVERY pending move rather than only for the ones this
          engine executes - because a SWAP is landed by the OTHER table's
@@ -3164,6 +3242,7 @@ export abstract class ServerTableEngineBase {
       });
     }
     if (fresh.length > 0) await announceSeatMoves(fresh);
+    return this.lifecycleCanMutate();
   }
 
   /**
@@ -3494,7 +3573,15 @@ export abstract class ServerTableEngineBase {
       console.log(
         `[ServerTableEngine:${this.tableId}] cluster table is ${row.lifecycle ?? row.status} and empty - stopping the engine`
       );
-      await this.stop();
+      // This also runs inside dealingLoop(), which stop() must join before
+      // releasing ownership. Publish its synchronous fence, then let this
+      // caller return so the captured loop can finish. The cached teardown
+      // promise still owns every writer and remains joinable by the map owner.
+      void this.stop().catch((error) =>
+        reportError(error, 'ServerTableEngine.cluster_closed_stop_failed', {
+          tableId: this.tableId,
+        })
+      );
     }
   }
 
@@ -3679,7 +3766,62 @@ export abstract class ServerTableEngineBase {
       msg.includes('supabase_timeout') ||
       msg.includes('This operation was aborted') ||
       msg.includes('The operation was aborted') ||
-      msg.includes('deal_step_timeout')
+      msg.includes('deal_step_timeout') ||
+      /* A SERIALIZATION FAILURE IS THE DATABASE BLINKING, BY DEFINITION
+         (2026-09-12).
+         Every entry above is a TRANSPORT failure. The one error Postgres
+         itself defines as "this conflicted, run it again" was missing, so the
+         question in this method's own title was answered "the code is wrong"
+         for the textbook case of the database blinking.
+         `smarter_private.f06_try_lane` raises exactly this when it cannot take
+         the shared `ca:tournament-terminal-settlement:v1` lock, and it spells
+         the remedy into the message:
+             RAISE EXCEPTION 'F06_RETRY_CANONICAL_LANE' USING ERRCODE='40001'
+         Nothing has been written when it fires - the lock is taken before the
+         work - and the caller sees `atomic_hand_rolled_back`, so a retry
+         re-runs a transaction that committed nothing.
+         Measured on production 2026-09-12: 412 hands in two hours whose
+         history was never written, 820 alerts in all, because the engine
+         treated an explicit request to retry as a terminal refusal. */
+      msg.includes('F06_RETRY_CANONICAL_LANE') ||
+      /^40001$/.test(String((err as { code?: unknown })?.code ?? '')) ||
+      msg.includes('could not serialize access') ||
+      msg.includes('deadlock detected')
+    );
+  }
+
+  /**
+   * Did the database roll the WHOLE hand back and ask to be run again?
+   *
+   * `fn_ca_commit_hand_settlement` answers a refusal with a reason, and two of
+   * those reasons mean "this transaction wrote nothing":
+   * `atomic_hand_rolled_back` (the accepted-hand core's own
+   * `EXCEPTION WHEN OTHERS`) and `rolled_back` (the stack core's). They reach
+   * the engine as `atomic hand commit refused (<reason>): <sqlerrm>`, and
+   * `insertHandHistoryRow` throws them without a retry because every string
+   * containing "atomic hand commit refused" is treated as deterministic.
+   *
+   * Most of them ARE deterministic and must stay terminal - a conservation
+   * violation, a negative stack, a constraint, a missing column. What
+   * separates the rest is the SQLERRM the reason carries, so this asks BOTH
+   * questions: the database said it rolled back, AND the cause is the one
+   * Postgres defines as "this conflicted, run it again". Only then is another
+   * attempt a re-run of a transaction that committed nothing.
+   *
+   * Measured on production 2026-09-12, 10:00-11:35 UTC: 1,021 of 1,023
+   * semantic refusals were exactly this pair - `atomic_hand_rolled_back` or
+   * `rolled_back`, carrying `F06_RETRY_CANONICAL_LANE`. Not one carried a
+   * rounding, denomination, pot-total or seat-set reason.
+   */
+  protected static isRolledBackSerializationRefusal(err: unknown): boolean {
+    const msg =
+      err instanceof Error
+        ? err.message
+        : (err as { message?: string })?.message ||
+          (typeof err === 'object' && err !== null ? JSON.stringify(err) : String(err));
+    return (
+      /atomic hand commit refused \((?:atomic_hand_)?rolled_back\)/.test(msg) &&
+      ServerTableEngineBase.isTransientDbError(err)
     );
   }
 
@@ -3859,6 +4001,20 @@ export abstract class ServerTableEngineBase {
    */
   hasSettlementInFlight(): boolean {
     return (this.settlementInFlight?.size ?? 0) > 0;
+  }
+
+  protected observeSettlementAwait<T>(
+    stage: string,
+    generation: number,
+    handNumber: number,
+    operation: (progress: (detail: string) => void) => Promise<T>
+  ): Promise<T> {
+    const observer = (this.settlementAwaitObserver ??= new SettlementAwait());
+    return observer.observe(stage, generation, handNumber, operation);
+  }
+
+  settlementAwaits() {
+    return this.settlementAwaitObserver?.snapshot() ?? [];
   }
 
   /** Continuous age of the owned settlement; null after completion. */
@@ -5686,7 +5842,9 @@ export abstract class ServerTableEngineBase {
          recorded rather than silently swallowed. */
       if (tableRow && this.tableInfo && (this.tableInfo as any).arena?.asset === 'diamonds') {
         try {
-          assertDiamondCashTable(tableRow as unknown as Record<string, unknown>);
+          // The boundary of the table's own kind: a tournament table is held
+          // to the tournament boundary, a cash table to the cash one.
+          assertDiamondTable(tableRow as unknown as Record<string, unknown>);
         } catch (error) {
           console.error(
             `[refreshRakeConfig] Diamond table ${this.tableId} rules changed to something the ` +
@@ -6415,8 +6573,8 @@ export abstract class ServerTableEngineBase {
    * authoritative for the running process; this column is only ever read by
    * `restoreEntryHoldsFromSeats()` on boot.
    *
-   * Scoped to the live seat (`left_at IS NULL`) so it can never resurrect state
-   * onto a historical row for a player who has since left and come back.
+   * Scoped to the original occupancy and the live seat (`left_at IS NULL`),
+   * so neither a historical row nor a replacement stay can receive it.
    */
   /**
    * WRITE ORDER IS THE STATE (2026-08-30). persistEntryHold is fire-and-forget
@@ -6530,6 +6688,10 @@ export abstract class ServerTableEngineBase {
     state: { hold: 'waiting' | 'posting' | null; agreed?: boolean }
   ): void {
     if (this.isTournamentTable()) return;
+    // Capture the stay when the decision is made. A queued write can start
+    // after this user leaves and returns to the same table.
+    const occupancyId = this.seatedPlayers.find((p) => p.user_id === userId)?.occupancy_id;
+    if (!occupancyId) return;
     const patch: Record<string, unknown> = { entry_hold: state.hold };
     if (state.agreed !== undefined) patch.entry_post_agreed = state.agreed;
     /* Promise.resolve() around the builder, deliberately. A PostgREST query
@@ -6547,6 +6709,7 @@ export abstract class ServerTableEngineBase {
             .update(patch)
             .eq('table_id', this.tableId)
             .eq('user_id', userId)
+            .eq('occupancy_id', occupancyId)
             .is('left_at', null)
         )
       )

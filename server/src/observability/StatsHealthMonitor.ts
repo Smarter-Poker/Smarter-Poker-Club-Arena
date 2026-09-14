@@ -449,9 +449,9 @@ export class StatsHealthMonitor {
         return;
     }
 
-    // 2. The live trigger. A hand with no stat row 90 seconds after it was
-    //    written means trg_ca_stats_live_from_hand raised (it WARNs and lets
-    //    the hand land) - the page is now waiting on the 15-minute roll.
+    // 2. Missing published stats. Accepted atomic hands deliberately bypass
+    //    the inline stats trigger and publish through hand_projection_outbox.
+    //    A gap proves publication is late; it does not identify a failed writer.
     const gap = s.recentHandsWithoutStat;
     if (gap !== null && gap > 0) {
       if (
@@ -460,12 +460,13 @@ export class StatsHealthMonitor {
             alertname: STATS_TRIGGER_GAP_ALERT,
             severity: 'warning',
             component: STATS_HEALTH_COMPONENT,
-            summary: `${gap} recent hand(s) have no stat row - the live stats trigger is failing`,
+            summary: `${gap} recent hand(s) have no stat row - stats publication is delayed`,
             description:
-              'trg_ca_stats_live_from_hand writes ca_hand_player_stat inside the hand insert and ' +
-              'swallows its own errors as WARNINGs so the hand always lands. Read the Postgres log ' +
-              'for "trg_ca_stats_live_from_hand:" to see why; the forward roll will backfill, but ' +
-              'the page is not live until this is 0.',
+              'Accepted atomic hands publish stats through hand_projection_outbox; their inline ' +
+              'stats trigger intentionally skips that work. Match each missing hand to its atomic ' +
+              'receipt and outbox row, then inspect projection progress and the active drain. ' +
+              'For hands outside that path, inspect trg_ca_stats_live_from_hand warnings. ' +
+              'A maintenance run can clear the gap temporarily; verify the writer before closing the incident.',
             labels: { hands_without_stat: String(gap) },
           })
         ))

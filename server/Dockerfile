@@ -11,17 +11,25 @@ COPY package.json package-lock.json ./
 RUN npm ci --include=dev --no-audit --no-fund
 
 # Copy source
-COPY tsconfig.json ./
+COPY tsconfig.json tsconfig.runtime.json ./
 COPY src/ ./src/
 
-# Build TypeScript
-RUN npx tsc
+# Exact-source release preflight performs the full typecheck and tests in CI.
+# Emit runtime files here without repeating that memory-heavy check on the
+# game host. Resource CI compares every emitted runtime file to the full build.
+# The runtime project omits unit-test entrypoints and unused declarations.
+# Full test compilation and execution remain in the exact-source CI preflight.
+RUN ulimit -c 0 && node --max-old-space-size=768 ./node_modules/typescript/bin/tsc --project tsconfig.runtime.json --noCheck
 
 # Remove dev dependencies
 RUN npm prune --omit=dev --no-audit --no-fund
 
 # Run
 ENV NODE_ENV=production
+ENV ENGINE_ALERT_JOURNAL_DIR=/var/lib/club-arena/engine-alerts
+# The release seal requires this image's journal to live on the durable host
+# bind mount, including when the canonical recovery path starts the image.
+LABEL sp.alert-journal.schema=1
 # 2026-08-30: Node tried IPv6 first to Supabase on a host with no IPv6 route,
 # burning ~40s per fresh connection while the client's deadline was 15s —
 # every request on a new socket aborted as supabase_timeout and the platform

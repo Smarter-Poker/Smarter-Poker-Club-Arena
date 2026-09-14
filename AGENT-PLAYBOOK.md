@@ -84,8 +84,14 @@ A green CI pipeline and a merged PR only prove your code does not crash. It **DO
 # AGENT PLAYBOOK
 
 **Read this before you touch anything.** Claude, Antigravity, Cowork, Codex,
-any agent, any repo in this estate. It is byte-identical in all seven repos and
-`.github/scripts/estate-integrity.sh` checks hourly that it still is.
+any agent, any repo in this estate.
+
+It is SUPPOSED to be byte-identical in all seven repos, and
+`.github/scripts/estate-integrity.sh` reports when it is not. Measured against
+the API on 2026-09-12, it is not: the file exists in **two** of the seven
+(Club Arena 41,351 bytes, World Hub 46,143 bytes - already different from each
+other) and returns 404 in Training, Social, Trivia, Arcade and Near-Me. Read
+this copy as Club Arena's, not as the estate's, until that is reconciled.
 
 Last rebuilt 2026-08-22. It exists because work kept disappearing — deleted by
 another agent's checkout, orphaned by a reset, merged but never published, or
@@ -110,10 +116,28 @@ git push origin HEAD:refs/heads/<your-branch>
 ```
 
 `agent-open-pr.yml` opens the pull request within seconds of the push, on
-`create` AND on `push`, for any branch name. You do not open it, and on the Mac
-you cannot: **`gh` is not installed there** (see 8b). This step used to read
-`gh pr create --fill`, which meant every agent in a Cowork session watched the
-push succeed and the next command die with `command not found`.
+`create` AND on `push`, for any branch name. **You do not open it** - the
+workflow owns proposal and merge, and a hand-opened pull request races it.
+
+**`gh` IS installed on this Mac.** `/opt/homebrew/bin/gh`, v2.86.0, logged in
+as `Smarter-Poker` (verified 2026-09-12). This paragraph called it absent for
+days, and that was the RIGHT OBSERVATION with the WRONG CAUSE.
+This step used to read `gh pr create --fill`, and every agent in a Cowork
+session watched the push succeed and the next command die with
+`command not found` - not because `gh` was missing, but because
+**`/opt/homebrew/bin` is not on a NON-INTERACTIVE PATH**. A tool-driven shell
+gets `/usr/bin:/bin:/usr/sbin:/sbin` and cannot see it. One line fixes it:
+
+```bash
+export PATH="/opt/homebrew/bin:$PATH"
+```
+
+This is not cosmetic. `scripts/guard-merged-branch.sh` fails CLOSED without
+`gh` and runs from `.husky/pre-push`, so the same gap refused pushes that were
+perfectly fine, with a message about the GitHub CLI that reads like a missing
+install. The hook now repairs PATH for every tool its guards require, and
+`tests/the-docs-describe-this-environment.law.test.ts` fails if this paragraph
+ever goes back to calling `gh` absent while a guard demands it.
 
 Autopilot enables squash auto-merge within seconds, keeps the branch fresh, and
 GitHub merges it the moment the required checks are green. **You never merge.**

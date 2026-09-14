@@ -173,10 +173,11 @@ describe('direct table-engine terminal recovery', () => {
     const start = method('private async performStart(');
     const stopFence = method('stop(): Promise<void>');
     const stop = method('private async performStop(');
-    expect(start.match(/this\.launchDiscoveryJob\(/g) ?? []).toHaveLength(4);
+    expect(start.match(/this\.launchDiscoveryJob\(/g) ?? []).toHaveLength(5);
     for (const loop of [
       'private async discoverCashTables()',
       'private async discoverTournaments()',
+      'private async discoverScheduledMttStarts()',
       'private async discoverRunningResumes()',
       'private async discoverSeatFirstStarts()',
     ]) {
@@ -211,12 +212,22 @@ describe('direct table-engine terminal recovery', () => {
 
   it('runs one serialized ownership lifecycle independently of discovery', () => {
     const boot = method('private async performStart(');
-    const renewalStart = boot.indexOf('this.runOwnershipLeaseRenewalLoop(generation)');
+    /* 2026-09-12: boot launches the SUPERVISOR, not the loop. `launchServerLifecycleJob`
+       reports what a job throws and forgets it, which is right for a discovery
+       sweep that re-enters itself and wrong for the only loop in the process
+       that renews a lease - it left on 2026-09-12 and every table in the fleet
+       died on its own 20s proof for two hours. The position pins below are
+       unchanged in intent: ownership renewal still starts before discovery. */
+    const renewalStart = boot.indexOf('this.superviseOwnershipLeaseRenewal(generation)');
     const cashDiscovery = boot.indexOf('this.discoverCashTables()', renewalStart);
     const tournamentDiscovery = boot.indexOf('this.discoverTournaments()', renewalStart);
     expect(renewalStart).toBeGreaterThan(-1);
     expect(cashDiscovery).toBeGreaterThan(renewalStart);
     expect(tournamentDiscovery).toBeGreaterThan(renewalStart);
+    // ...and the supervisor is what runs the loop, on the same generation fence.
+    const supervisor = method('private async superviseOwnershipLeaseRenewal(');
+    expect(supervisor).toContain('while (this.directAdmissionIsCurrent(generation))');
+    expect(supervisor).toContain('await this.runOwnershipLeaseRenewalLoop(generation);');
 
     const wrapper = method('private renewOwnedEngineLeaseProofs()');
     expect(wrapper).toContain('const existing = this.ownershipLeaseRenewalOperation;');

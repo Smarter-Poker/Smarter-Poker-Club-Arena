@@ -26,6 +26,8 @@ import type {
   HorseDecision,
   SeatPlayer,
   AuthoritativeActionState,
+  AcceptedActionOrigin,
+  ActionRecord,
 } from '../types.js';
 
 import { HorseLogic, resolveHorseStyle, type HorseGameStateV2 } from './HorseLogic.js';
@@ -50,6 +52,13 @@ import { ServerTableEngineSeating } from './ServerTableEngineSeating.js';
 // Static watchdog thresholds live on the Base class (single source of truth).
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { noteFire } from './BrainTelemetry.js';
+import {
+  createHorseExecutionWitness,
+  retireHorseExecutionWitness,
+  settleHorseExecutionWitness,
+  type HorseExecutionRetirement,
+  type HorseAcceptedAction,
+} from './HorseExecutionWitness.js';
 import {
   buildHorseDecisionKey,
   getLiveHorseDecisionWorker,
@@ -664,8 +673,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // next seat's freshly scheduled work instead.
       this.cancelHorseDecisionWork();
       try {
-        applied = this.handController.performAction(seat, forced as any);
-        if (!applied) applied = this.handController.performAction(seat, 'fold' as any);
+        applied = this.handController.performAction(seat, forced as any, undefined, 'forced');
+        if (!applied)
+          applied = this.handController.performAction(seat, 'fold' as any, undefined, 'forced');
       } catch (err) {
         reportError(err, 'ServerTableEngine.' + this.tableId + '.watchdog_force_action_failed');
       }
@@ -718,7 +728,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const order: Array<'check' | 'fold'> = preferCheck ? ['check', 'fold'] : ['fold'];
     for (const a of order) {
       try {
-        if (this.handController.performAction(seat, a as any)) return true;
+        if (this.handController.performAction(seat, a as any, undefined, 'forced')) return true;
       } catch (err) {
         reportError(err, 'ServerTableEngine.' + this.tableId + '.force_' + a + '_threw');
       }
@@ -1496,7 +1506,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         player.stack
       );
       if (preResult.executed && preResult.action) {
-        const acted = this.handlePlayerAction(userId, preResult.action, preResult.amount);
+        const acted = this.handlePlayerAction(
+          userId,
+          preResult.action,
+          preResult.amount,
+          undefined,
+          'pre_action'
+        );
         if (acted.success) {
           console.log(
             `[ServerTableEngine:${this.tableId}] Pre-action armed mid-turn executed immediately: ${userId} -> ${preResult.action}${preResult.amount ? ` ${preResult.amount}` : ''}`
@@ -1526,7 +1542,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     userId: string,
     action: string,
     amount?: number,
-    actionContext?: string | null
+    actionContext?: string | null,
+    trustedOrigin?: 'pre_action'
   ): { success: boolean; error?: string; code?: string; hint?: Record<string, unknown> } {
     if (!this.lifecycleCanMutate()) {
       return {
@@ -1556,7 +1573,16 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     }
     this.actionLock = true;
     try {
-      return this._handlePlayerActionInner(userId, action, amount);
+      return this._handlePlayerActionInner(
+        userId,
+        action,
+        amount,
+        actionContext !== undefined
+          ? 'player'
+          : trustedOrigin === 'pre_action'
+            ? 'pre_action'
+            : 'unknown'
+      );
     } finally {
       this.actionLock = false;
     }
@@ -1565,7 +1591,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   protected _handlePlayerActionInner(
     userId: string,
     action: string,
-    amount?: number
+    amount?: number,
+    origin: AcceptedActionOrigin = 'unknown'
   ): { success: boolean; error?: string; code?: string; hint?: Record<string, unknown> } {
     if (!this.handController) {
       return { success: false, error: 'No active hand' };
@@ -1865,7 +1892,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       const actionApplied = this.handController.performAction(
         seat,
         normalizedAction as any,
-        amount
+        amount,
+        origin
       );
       if (!actionApplied) {
         // Restore whatever was pending; this action contributed nothing.
@@ -2235,7 +2263,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         preApplied = controllerAtBeat.performAction(
           seat,
           preResult.action as any,
-          preResult.amount
+          preResult.amount,
+          'pre_action'
         );
       } catch (err) {
         reportError(err, 'ServerTableEngine.' + this.tableId + '.preaction_threw');
@@ -2645,7 +2674,24 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     let pendingPostflopLedger: HorseDecision['tournamentPostflop'];
     let pendingPlo4Ledger: HorseDecision['plo4Policy'];
     let pendingOmahaLedger: HorseDecision['omahaVariantPolicy'];
+    let pendingRemainingLedger: HorseDecision['remainingVariantPolicy'];
+    let pendingJointLedger: HorseDecision['jointPolicy'];
+    let pendingExecutionWitness: HorseDecision['executionWitness'];
 
+    const retireUtility = (ledger: HorseDecision['tournamentUtility']): void => {
+      if (ledger?.executionStatus === 'pending') {
+        ledger.executedAction = null;
+        ledger.executedAmount = null;
+        ledger.executionStatus = 'not_executed';
+        noteFire('phase7_utility_not_executed');
+      }
+    };
+    const retirePostflop = (ledger: HorseDecision['tournamentPostflop']): void => {
+      if (ledger?.executionStatus === 'pending') {
+        ledger.executionStatus = 'not_executed';
+        noteFire('phase8_execution_not_executed');
+      }
+    };
     const retirePlo4 = (ledger: HorseDecision['plo4Policy']): void => {
       if (ledger?.executionStatus === 'pending') {
         ledger.executionStatus = 'not_executed';
@@ -2659,19 +2705,45 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         noteFire(`phase11_${ledger.variant}_execution_not_executed`);
       }
     };
+    const retireRemaining = (ledger: HorseDecision['remainingVariantPolicy']): void => {
+      if (ledger?.executionStatus === 'pending') {
+        ledger.executionStatus = 'not_executed';
+        noteFire('phase12_execution_not_executed');
+        noteFire(`phase12_${ledger.variant}_execution_not_executed`);
+      }
+    };
+    const retireJoint = (ledger: HorseDecision['jointPolicy']): void => {
+      if (ledger?.executionStatus === 'pending') {
+        ledger.executionStatus = 'not_executed';
+        noteFire('phase13_execution_not_executed');
+        noteFire(`phase13_${ledger.variant}_execution_not_executed`);
+      }
+    };
     const markPendingUtilityNotExecuted = (): void => {
+      retireHorseExecutionWitness(pendingExecutionWitness, 'turn_abandoned');
+      retireUtility(pendingUtilityLedger);
+      retirePostflop(pendingPostflopLedger);
       retirePlo4(pendingPlo4Ledger);
       retireOmaha(pendingOmahaLedger);
-      if (pendingPostflopLedger?.executionStatus === 'pending') {
-        pendingPostflopLedger.executionStatus = 'not_executed';
-        noteFire('phase8_execution_not_executed');
-      }
-      if (!pendingUtilityLedger || pendingUtilityLedger.executionStatus !== 'pending') return;
-      pendingUtilityLedger.executedAction = null;
-      pendingUtilityLedger.executedAmount = null;
-      pendingUtilityLedger.executionStatus = 'not_executed';
-      noteFire('phase7_utility_not_executed');
+      retireRemaining(pendingRemainingLedger);
+      retireJoint(pendingJointLedger);
     };
+    const retireDecision = (
+      decision: HorseDecision,
+      reason: HorseExecutionRetirement = 'response_fence'
+    ): void => {
+      retireHorseExecutionWitness(decision.executionWitness, reason);
+      retireUtility(decision.tournamentUtility);
+      retirePostflop(decision.tournamentPostflop);
+      retirePlo4(decision.plo4Policy);
+      retireOmaha(decision.omahaVariantPolicy);
+      retireRemaining(decision.remainingVariantPolicy);
+      retireJoint(decision.jointPolicy);
+    };
+    // Cancellation clears the action timer, so no future fence check can
+    // retire an already-returned decision. The turn owns its receipts until
+    // cancellation or until the executor explicitly takes ownership below.
+    abortController.signal.addEventListener('abort', markPendingUtilityNotExecuted, { once: true });
 
     /* WHY the fence refused, not merely that it did.
        Six stages guard on this, and until 2026-09-11 every one of them
@@ -2780,21 +2852,34 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const decisionPlayer: SeatPlayer = {
       ...authoritativePlayer,
       cards: [...authoritativePlayer.cards],
+      knownDeadCards:
+        activeVariant === 'pineapple'
+          ? handControllerRef.getPineappleKnownDeadCards(authoritativePlayer.seat)
+          : [],
       is_sitting_out:
         authoritativePlayer.is_sitting_out === true ||
         this.disconnectEngine.isSittingOut(this.tableId, authoritativePlayer.user_id),
     };
-    const publicPlayers: SeatPlayer[] = state.players.map((candidate) => ({
-      ...candidate,
-      // HIDDEN-INFORMATION FIREWALL: every seat in the shared state is public
-      // only. Hero's private cards exist exactly once, on decisionPlayer.
-      cards: [],
-      is_sitting_out:
-        candidate.is_sitting_out === true ||
-        this.disconnectEngine.isSittingOut(this.tableId, candidate.user_id),
-    }));
+    const publicPlayers: SeatPlayer[] = state.players.map((candidate) => {
+      const { knownDeadCards: _privateDeadCards, ...publicCandidate } = candidate;
+      return {
+        ...publicCandidate,
+        // HIDDEN-INFORMATION FIREWALL: every seat in the shared state is public
+        // only. Hero's private cards exist exactly once, on decisionPlayer.
+        cards: [],
+        is_sitting_out:
+          candidate.is_sitting_out === true ||
+          (!candidate.is_all_in &&
+            this.disconnectEngine.isSittingOut(this.tableId, candidate.user_id)),
+      };
+    });
     const gameState: HorseGameStateV2 = {
       stateSchemaVersion: 1,
+      dealtSeatIds: state.players
+        .filter((candidate) => candidate.cards.length > 0)
+        .map((candidate) => candidate.seat)
+        .sort((a, b) => a - b),
+      ...handControllerRef.getChipRulesSnapshot(),
       heroSeat: boundedActions.heroSeat,
       currentPlayerSeat: boundedActions.currentPlayerSeat,
       legalActions: [...boundedActions.legalActions],
@@ -2834,11 +2919,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // so it consulted hold'em solver cells built for single-raised-pot
       // ranges, and read a first-to-act bettor as the preflop aggressor.
       bombPot: this.currentHandBombPot != null,
-      boardCount:
-        this.currentHandBombPot?.board_count ??
-        1 +
-          ((state.communityCards2?.length ?? 0) > 0 ? 1 : 0) +
-          ((state.communityCards3?.length ?? 0) > 0 ? 1 : 0),
+      boardCount: handControllerRef.getActiveBoardCount(),
       pot: state.pot,
       currentBet: state.currentBet,
       minRaise: state.minRaise,
@@ -2939,6 +3020,16 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           action: toCall > 0 ? 'fold' : 'check',
           thinkTime: 0,
         };
+        safeDecision.executionWitness = createHorseExecutionWitness(
+          decisionSnapshot,
+          safeDecision,
+          {
+            requestId: -1,
+            lane: 'worker_fallback',
+            computeMs: 0,
+            governorScale: 0,
+          }
+        );
         return {
           type: 'FAST_RESULT',
           requestId: -1,
@@ -2961,11 +3052,15 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         pendingPostflopLedger = decision.tournamentPostflop;
         pendingPlo4Ledger = decision.plo4Policy;
         pendingOmahaLedger = decision.omahaVariantPolicy;
+        pendingRemainingLedger = decision.remainingVariantPolicy;
+        pendingJointLedger = decision.jointPolicy;
+        pendingExecutionWitness = decision.executionWitness;
         if (
           fastResult.generation !== turnToken ||
           fastResult.fence !== fence ||
           !fenceIsCurrent('fast_result')
         ) {
+          retireHorseExecutionWitness(pendingExecutionWitness, 'response_fence');
           markPendingUtilityNotExecuted();
           return;
         }
@@ -3131,12 +3226,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                   deepResult.fence !== fence ||
                   !fenceIsCurrent('deep_result')
                 ) {
-                  retirePlo4(deepResult.decision.plo4Policy);
-                  retireOmaha(deepResult.decision.omahaVariantPolicy);
-                  if (deepResult.decision.tournamentPostflop?.executionStatus === 'pending') {
-                    deepResult.decision.tournamentPostflop.executionStatus = 'not_executed';
-                    noteFire('phase8_execution_not_executed');
-                  }
+                  retireDecision(deepResult.decision);
                   return;
                 }
                 const verdict = ServerTableEngineTurns.secondLookVerdict(
@@ -3145,12 +3235,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                 );
                 if (verdict) {
                   noteFire('v44_second_look_flipped');
-                  retirePlo4(pendingPlo4Ledger);
-                  retireOmaha(pendingOmahaLedger);
-                  if (pendingPostflopLedger?.executionStatus === 'pending') {
-                    pendingPostflopLedger.executionStatus = 'not_executed';
-                    noteFire('phase8_execution_not_executed');
-                  }
+                  retireHorseExecutionWitness(pendingExecutionWitness, 'second_look_replaced');
+                  markPendingUtilityNotExecuted();
                   decision = {
                     // The deep replay owns the Phase 7 utility receipt too.
                     // Keeping the fast object while changing only its action
@@ -3165,13 +3251,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                   pendingPostflopLedger = decision.tournamentPostflop;
                   pendingPlo4Ledger = decision.plo4Policy;
                   pendingOmahaLedger = decision.omahaVariantPolicy;
+                  pendingRemainingLedger = decision.remainingVariantPolicy;
+                  pendingJointLedger = decision.jointPolicy;
+                  pendingExecutionWitness = decision.executionWitness;
                 } else {
-                  retirePlo4(deepResult.decision.plo4Policy);
-                  retireOmaha(deepResult.decision.omahaVariantPolicy);
-                  if (deepResult.decision.tournamentPostflop?.executionStatus === 'pending') {
-                    deepResult.decision.tournamentPostflop.executionStatus = 'not_executed';
-                    noteFire('phase8_execution_not_executed');
-                  }
+                  retireDecision(deepResult.decision, 'second_look_unchanged');
                 }
               })
               .catch((error) => {
@@ -3199,8 +3283,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           const postflopLedger = decision.tournamentPostflop;
           const plo4Ledger = decision.plo4Policy;
           const omahaLedger = decision.omahaVariantPolicy;
+          const remainingLedger = decision.remainingVariantPolicy;
+          const jointLedger = decision.jointPolicy;
           pendingPlo4Ledger = plo4Ledger;
           pendingOmahaLedger = omahaLedger;
+          pendingRemainingLedger = remainingLedger;
+          pendingJointLedger = jointLedger;
           pendingPostflopLedger = postflopLedger;
           pendingUtilityLedger = utilityLedger;
           if (!fenceIsCurrent('commit')) return;
@@ -3211,6 +3299,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           // The action is now authoritative. Cancel a queued/running deep read
           // before it can race the mutation below; this also retires the local
           // turn token so no later continuation can become current again.
+          abortController.signal.removeEventListener('abort', markPendingUtilityNotExecuted);
           this.cancelHorseDecisionWork();
 
           // Verify it's still this player's turn (timer might have expired)
@@ -3330,11 +3419,6 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
           const normalizedAmount =
             typeof amount === 'number' && Number.isFinite(amount) ? amount : null;
-          const matchesUtilitySelection =
-            !utilityLedger ||
-            (utilityLedger.selectedAction === action &&
-              utilityLedger.selectedAmount === normalizedAmount);
-
           // 2026-08-15 FREEZE FIX. HandController.performAction RETURNS FALSE on an
           // illegal action - it does not throw (HandController.ts:416/430/437). So
           // this catch never fired, and a horse whose decision the engine rejected
@@ -3349,12 +3433,28 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           let intendedApplied = false;
           let executedAction: ActionType | null = null;
           let executedAmount: number | null = null;
+          const acceptedActions: HorseAcceptedAction[] = [];
+          let attemptingFallback = false;
+          const acceptanceObserver: [] | [(record: Readonly<ActionRecord>) => void] =
+            decision.executionWitness
+              ? [
+                  (record) => {
+                    acceptedActions.push({ record, intended: !attemptingFallback });
+                  },
+                ]
+              : [];
           const horseClockWasArmed = this.lastActionAcceptedAtMs;
           this.lastActionAcceptedAtMs = Date.now();
           const worker = getLiveHorseDecisionWorker();
           worker.runWithDispatchBarrier(() => {
             try {
-              applied = handControllerRef.performAction(seat, action as any, amount);
+              applied = handControllerRef.performAction(
+                seat,
+                action as any,
+                amount,
+                safeWorkerFallback ? 'horse_fallback' : 'horse_policy',
+                ...acceptanceObserver
+              );
               intendedApplied = applied;
               if (applied) {
                 executedAction = action as ActionType;
@@ -3386,6 +3486,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                 });
             }
             if (!applied) {
+              attemptingFallback = true;
               console.warn(
                 '[ServerTableEngine:' +
                   this.tableId +
@@ -3400,12 +3501,24 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                 // above produced no broadcast, so the clock must start again for
                 // whichever of these two lands.
                 this.lastActionAcceptedAtMs = Date.now();
-                applied = handControllerRef.performAction(seat, 'check' as any);
+                applied = handControllerRef.performAction(
+                  seat,
+                  'check' as any,
+                  undefined,
+                  'horse_fallback',
+                  ...acceptanceObserver
+                );
                 if (applied) {
                   executedAction = 'check';
                   executedAmount = null;
                 } else {
-                  applied = handControllerRef.performAction(seat, 'fold' as any);
+                  applied = handControllerRef.performAction(
+                    seat,
+                    'fold' as any,
+                    undefined,
+                    'horse_fallback',
+                    ...acceptanceObserver
+                  );
                   if (applied) {
                     executedAction = 'fold';
                     executedAmount = null;
@@ -3415,6 +3528,21 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                 /* Hand already resolved. */
               }
             }
+            settleHorseExecutionWitness(decision.executionWitness, {
+              applied,
+              acceptedActions,
+            });
+            if (applied && acceptedActions.length === 1) {
+              const actual = acceptedActions[0].record;
+              executedAction = actual.action;
+              executedAmount = ['bet', 'raise', 'call'].includes(actual.action)
+                ? actual.amount
+                : null;
+            }
+            const matchesUtilitySelection =
+              !utilityLedger ||
+              (utilityLedger.selectedAction === executedAction &&
+                utilityLedger.selectedAmount === executedAmount);
             if (utilityLedger) {
               utilityLedger.executedAction = executedAction;
               utilityLedger.executedAmount = executedAmount;
@@ -3467,6 +3595,42 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                     : 'coerced';
               noteFire(`phase11_execution_${omahaLedger.executionStatus}`);
               noteFire(`phase11_${omahaLedger.variant}_execution_${omahaLedger.executionStatus}`);
+            }
+            if (remainingLedger) {
+              remainingLedger.executedAction = executedAction;
+              remainingLedger.executedAmount = executedAmount;
+              const matched =
+                executedAction === remainingLedger.finalAction &&
+                (!['bet', 'raise'].includes(remainingLedger.finalAction) ||
+                  executedAmount === remainingLedger.finalAmount);
+              remainingLedger.executionStatus = !applied
+                ? 'not_executed'
+                : !intendedApplied
+                  ? 'fallback'
+                  : matched
+                    ? 'intended'
+                    : 'coerced';
+              noteFire(`phase12_execution_${remainingLedger.executionStatus}`);
+              noteFire(
+                `phase12_${remainingLedger.variant}_execution_${remainingLedger.executionStatus}`
+              );
+            }
+            if (jointLedger) {
+              jointLedger.executedAction = executedAction;
+              jointLedger.executedAmount = executedAmount;
+              const matched =
+                executedAction === jointLedger.finalAction &&
+                (!['bet', 'raise'].includes(jointLedger.finalAction) ||
+                  executedAmount === jointLedger.finalAmount);
+              jointLedger.executionStatus = !applied
+                ? 'not_executed'
+                : !intendedApplied
+                  ? 'fallback'
+                  : matched
+                    ? 'intended'
+                    : 'coerced';
+              noteFire(`phase13_execution_${jointLedger.executionStatus}`);
+              noteFire(`phase13_${jointLedger.variant}_execution_${jointLedger.executionStatus}`);
             }
             if (postflopLedger) {
               postflopLedger.executedAction = executedAction;

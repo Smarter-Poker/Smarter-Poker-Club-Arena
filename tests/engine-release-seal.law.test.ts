@@ -376,6 +376,7 @@ exit 1
       FAKE_DOCKER_RUN_LOG: runLog,
       LOCK_FILE: join(sandbox, 'engine-up.lock'),
       LOG_DIR: join(sandbox, 'logs'),
+      ENGINE_ALERT_JOURNAL_HOST_DIR: join(sandbox, 'engine-alerts'),
     };
 
     const candidate = spawnSync(
@@ -394,6 +395,9 @@ exit 1
     );
     expect(candidate.status, candidate.stderr).toBe(0);
     expect(readFileSync(runLog, 'utf8')).toContain('--restart no');
+    expect(readFileSync(runLog, 'utf8')).toContain(
+      `--mount type=bind,source=${join(sandbox, 'engine-alerts')},target=/var/lib/club-arena/engine-alerts`
+    );
 
     writeFileSync(runLog, '');
     const desired = spawnSync('bash', [engineUp], {
@@ -402,6 +406,34 @@ exit 1
     });
     expect(desired.status, desired.stderr).toBe(0);
     expect(readFileSync(runLog, 'utf8')).toContain('--restart always');
+    expect(readFileSync(runLog, 'utf8')).toContain(
+      'ENGINE_ALERT_JOURNAL_DIR=/var/lib/club-arena/engine-alerts'
+    );
+  });
+
+  it('requires journal-capable images to use durable storage without breaking legacy recovery', () => {
+    const proof = spawnSync(
+      'python3',
+      [resolve(ROOT, 'tests/engine-alert-journal-mount.test.py')],
+      { encoding: 'utf8' }
+    );
+    expect(proof.status, proof.stdout + proof.stderr).toBe(0);
+  });
+
+  it('keeps one journal writer by holding the canonical lock through old process exit and replacement', () => {
+    const source = readFileSync(resolve(ROOT, 'server/scripts/engine-up.sh'), 'utf8');
+    const lock = source.indexOf('flock -w 180 9');
+    const stop = source.indexOf('  docker stop -t 45 "$CONTAINER"');
+    const remove = source.indexOf('  docker rm "$CONTAINER"');
+    const start = source.indexOf('docker run -d');
+    expect(lock).toBeGreaterThan(-1);
+    expect(stop).toBeGreaterThan(lock);
+    expect(remove).toBeGreaterThan(stop);
+    expect(start).toBeGreaterThan(remove);
+    expect(source).toContain('--name "$CONTAINER"');
+    expect(source).not.toContain('flock -u');
+    // Docker itself refuses the replacement name if both stop/remove attempts
+    // fail; a second writer cannot be started over a still-existing process.
   });
 
   it('preserves the exact sealed pre-label container during causal desired recovery', () => {
@@ -1709,7 +1741,8 @@ describe('every host mutation path obeys the durable release authority', () => {
     expect(workflow).toContain('cancel-in-progress: false');
     expect(workflow).not.toContain('queue: max');
     expect(queuedRecheck).toContain('git merge-base --is-ancestor "$CONTROL_SHA" "$MAIN_SHA"');
-    expect(queuedRecheck).toContain('[ "$LATEST_REQUIRED" = "$SHA" ]');
+    expect(queuedRecheck).toContain('[[ "$LATEST_REQUIRED" =~ ^[0-9a-f]{40}$ ]]');
+    expect(queuedRecheck).toContain('host forward-only admission is still required.');
     expect(hostStage).toContain(
       'git -C "$REPO_DIR" merge-base --is-ancestor "$commit" "$MAIN_SHA"'
     );
@@ -2092,14 +2125,47 @@ if [ "$1" = image ] && [ "$2" = inspect ]; then
   fi
   exit 0
 fi
-if [ "$1" = build ]; then
-  shift
+if [ "$1" = buildx ]; then
+  if [ "$2" = create ]; then
+    printf '%s\\n' "$@" > "$STATE_DIR/builder-create"
+    touch "$STATE_DIR/builder"
+    exit 0
+  fi
+  if [ "$2" = inspect ]; then
+    [ -f "$STATE_DIR/builder" ] || exit 1
+    printf 'Driver: %s\\n' "\${FAKE_BUILDER_DRIVER:-docker-container}"
+    exit 0
+  fi
+  if [ "$2" = stop ]; then printf 'stop\\n' >> "$STATE_DIR/builder-stops"; exit 0; fi
+fi
+if [ "$1" = inspect ]; then
+  printf '%s\\n' 'moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8 939524096 939524096 100000 100000 no'
+  exit 0
+fi
+if [ "$1" = exec ]; then
+  case "$4" in
+    */memory.max) printf '%s\\n' "\${FAKE_CGROUP_MEMORY:-939524096}" ;;
+    */memory.peak) printf '922746880\\n' ;;
+    */memory.swap.max) printf '0\\n' ;;
+    */cpu.max) printf '100000 100000\\n' ;;
+    /etc/buildkit/buildkitd.toml)
+      printf '[worker.oci]\\nmax-parallelism = %s\\ngc = true\\nreservedSpace = "512MB"\\nmaxUsedSpace = "%s"\\nminFreeSpace = "2GB"\\n' "\${FAKE_WORKER_PARALLELISM:-1}" "\${FAKE_CACHE_TARGET:-2GB}"
+      ;;
+    *) exit 9 ;;
+  esac
+  exit 0
+fi
+if [ "$1" = buildx ] && [ "$2" = build ]; then
+  shift 2
   [ -f "$PWD/src/tracked.ts" ]
   [ ! -e "$PWD/src/untracked-sentinel.ts" ]
   [ ! -e "$PWD/.env" ]
   printf '%s\\n' "$PWD" > "$STATE_DIR/context-path"
   while [ "$#" -gt 0 ]; do
     case "$1" in
+      --builder) [ "$2" = club-arena-engine-bounded-v2 ]; shift 2 ;;
+      --load) shift ;;
+      --progress) [ "$2" = plain ]; shift 2 ;;
       --build-arg) printf '%s' "$2" > "$STATE_DIR/build-arg"; shift 2 ;;
       --label)
         case "$2" in
@@ -2125,8 +2191,15 @@ exit 5
 `;
       writeFileSync(join(bin, 'docker'), fakeDocker);
       chmodSync(join(bin, 'docker'), 0o755);
+      writeFileSync(
+        join(bin, 'awk'),
+        '#!/usr/bin/env bash\nprintf "%s\\n" "${FAKE_AVAILABLE_KIB:-2097152}"\n'
+      );
+      chmodSync(join(bin, 'awk'), 0o755);
       writeFileSync(join(bin, 'flock'), '#!/usr/bin/env bash\nexit 0\n');
       chmodSync(join(bin, 'flock'), 0o755);
+      writeFileSync(join(bin, 'setsid'), '#!/usr/bin/env bash\nexec "$@"\n');
+      chmodSync(join(bin, 'setsid'), 0o755);
       writeFileSync(
         join(bin, 'timeout'),
         '#!/usr/bin/env bash\nset -e\nwhile [[ "${1:-}" == --* ]]; do shift; done\n[[ "${1:-}" =~ ^[0-9]+s$ ]] && shift\nexec "$@"\n'
@@ -2167,6 +2240,7 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
         ...isolatedEnv,
         PATH: `${bin}:${isolatedEnv.PATH ?? ''}`,
         FAKE_DOCKER_STATE_DIR: dockerState,
+        FAKE_AVAILABLE_KIB: '1179648',
         ENGINE_BUILD_CONTEXT_ROOT: contextRoot,
         ENGINE_BUILD_LOCK_FILE: join(sandbox, 'engine-build.lock'),
       };
@@ -2208,6 +2282,61 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
       expect(failedArchive.status, failedArchive.stderr).toBe(47);
       expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
       expect(readdirSync(contextRoot)).toEqual([]);
+
+      // Failed cgroup readback never enters Docker's build operation. It stops
+      // the owned builder and removes the source staging directory.
+      const noLimit = spawnSync(
+        'bash',
+        [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
+        {
+          encoding: 'utf8',
+          env: { ...env, FAKE_CGROUP_MEMORY: 'max' },
+        }
+      );
+      expect(noLimit.status).toBe(1);
+      expect(noLimit.stderr).toContain('cgroup limits are not enforced');
+      expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
+      expect(readFileSync(join(dockerState, 'builder-stops'), 'utf8')).toBe('stop\nstop\n');
+      expect(readdirSync(contextRoot)).toEqual([]);
+      const noHeadroom = spawnSync(
+        'bash',
+        [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
+        {
+          encoding: 'utf8',
+          env: { ...env, FAKE_AVAILABLE_KIB: '1179647' },
+        }
+      );
+      expect(noHeadroom.status).toBe(1);
+      expect(noHeadroom.stderr).toContain('insufficient memory headroom');
+      expect(noHeadroom.stderr).toContain('available=1179647KiB, required=1179648KiB');
+      expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
+      expect(readdirSync(contextRoot)).toEqual([]);
+      const wrongDriver = spawnSync(
+        'bash',
+        [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
+        {
+          encoding: 'utf8',
+          env: { ...env, FAKE_BUILDER_DRIVER: 'docker' },
+        }
+      );
+      expect(wrongDriver.status).toBe(1);
+      expect(wrongDriver.stderr).toContain('not the dedicated container driver');
+      expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
+      expect(readdirSync(contextRoot)).toEqual([]);
+      for (const drift of [{ FAKE_WORKER_PARALLELISM: '4' }, { FAKE_CACHE_TARGET: '20GB' }]) {
+        const changedWorker = spawnSync(
+          'bash',
+          [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
+          { encoding: 'utf8', env: { ...env, ...drift } }
+        );
+        expect(changedWorker.status).toBe(1);
+        expect(changedWorker.stderr).toContain('worker configuration could not be verified');
+        expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
+        expect(readdirSync(contextRoot)).toEqual([]);
+      }
+      expect(readFileSync(join(dockerState, 'builder-stops'), 'utf8')).toBe(
+        'stop\nstop\nstop\nstop\n'
+      );
     } finally {
       rmSync(sandbox, { recursive: true, force: true });
     }
@@ -2236,6 +2365,20 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
     expect(transaction).toContain('m.get("unparkedTables")==0');
     expect(transaction).toContain('if remaining<int(__import__("os").environ["MIN_BREAK_MS"]):');
     expect(transaction).toContain('MIN_BREAK_MS="$MIN_BREAK_REMAINING_MS"');
+  });
+
+  it('executes short-window queue refusal, retry, deadline, supersession and cancellation cases', () => {
+    const result = spawnSync(
+      'python3',
+      [join(ROOT, 'tests/operations/engine-release-window-queue.py')],
+      {
+        cwd: ROOT,
+        encoding: 'utf8',
+        timeout: 10_000,
+      }
+    );
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+    expect(result.stderr).toContain('Ran 10 tests');
   });
 
   it('guarantee and rollback can only recover the durable desired image', () => {
@@ -2610,6 +2753,26 @@ exit 91
 
       writeFileSync(join(generation, 'observe-engine-release.sh'), observer);
       chmodSync(join(generation, 'observe-engine-release.sh'), 0o755);
+      const journalLog = join(sandbox, 'journal.log');
+      const timeoutLog = join(sandbox, 'timeout.log');
+      writeFileSync(
+        join(bin, 'timeout'),
+        `#!/usr/bin/env bash
+printf '%s\n' "$*" >> '${timeoutLog}'
+[ "\${TEST_JOURNAL_TIMEOUT:-0}" = 1 ] && exit 124
+shift 3
+exec "$@"
+`
+      );
+      writeFileSync(
+        join(bin, 'journalctl'),
+        `#!/usr/bin/env bash
+printf '%s\n' "$*" >> '${journalLog}'
+[ "\${TEST_JOURNAL_UNAVAILABLE:-0}" = 1 ] && exit 1
+printf '%s\n' '[engine-release-transaction] FATAL: target is stale; protected main requires a newer release'
+`
+      );
+      for (const command of ['timeout', 'journalctl']) chmodSync(join(bin, command), 0o755);
       const observed = spawnSync(
         join(generation, 'observe-engine-release.sh'),
         ['--sha', B_SHA, '--run-id', '778-1'],
@@ -2626,6 +2789,39 @@ exit 91
       expect(observed.status).toBe(1);
       expect(observed.stderr).toContain('release attempt failed permanently (status=1)');
       expect(observed.stderr).toContain(`sealed desired runtime ${A_SHA} was recovered`);
+      expect(observed.stdout).toContain('target is stale; protected main requires a newer release');
+      expect(readFileSync(journalLog, 'utf8').trim()).toBe(
+        `_SYSTEMD_INVOCATION_ID=${'e'.repeat(32)} --no-pager -o cat -n 200`
+      );
+      expect(readFileSync(timeoutLog, 'utf8')).toContain(
+        `--signal=TERM --kill-after=1s 5s journalctl _SYSTEMD_INVOCATION_ID=${'e'.repeat(32)}`
+      );
+      for (const failure of ['TEST_JOURNAL_UNAVAILABLE', 'TEST_JOURNAL_TIMEOUT']) {
+        const unavailable = spawnSync(
+          join(generation, 'observe-engine-release.sh'),
+          ['--sha', B_SHA, '--run-id', '778-1'],
+          {
+            encoding: 'utf8',
+            env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}`, [failure]: '1' },
+          }
+        );
+        expect(unavailable.status).toBe(1);
+        expect(unavailable.stderr).toContain('failure journal unavailable within its bounded read');
+        expect(unavailable.stderr).toContain('release attempt failed permanently (status=1)');
+      }
+      const readsBeforeMalformedReceipt = readFileSync(journalLog, 'utf8');
+      writeFileSync(
+        join(generation, 'engine-release-seal.py'),
+        `#!/usr/bin/env bash\nprintf '%s\\n' 'failed ${A_SHA} ${C_SHA} ${'e'.repeat(32)} 1 ${A_SHA} ${A_IMAGE}'\n`
+      );
+      const malformed = spawnSync(
+        join(generation, 'observe-engine-release.sh'),
+        ['--sha', B_SHA, '--run-id', '778-1'],
+        { encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}` } }
+      );
+      expect(malformed.status).toBe(1);
+      expect(malformed.stderr).toContain('durable failure attestation is malformed');
+      expect(readFileSync(journalLog, 'utf8')).toBe(readsBeforeMalformedReceipt);
       expect(existsSync(systemctlLog), 'failed observation must not query systemd').toBe(false);
     } finally {
       rmSync(sandbox, { recursive: true, force: true });

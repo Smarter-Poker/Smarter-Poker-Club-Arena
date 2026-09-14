@@ -166,9 +166,16 @@ export function BBJRulesPanel({ poolAmount = 0, mini = null }: BBJRulesPanelProp
           tabIndex={0}
         >
           <p className="bbj-rules__note">
+            {/* THE BAR IS PER GAME SINCE 2026-09-12, so this cannot say "any
+                quads in Omaha" any more: PLO5/FLO5 is Quad Tens or better and
+                Pineapple is Quad Deuces. A blanket sentence here would be a
+                money rule misstated to the player on the page whose whole job
+                is to state it. The per-game bars are in the table underneath,
+                which reads them from the variant. */}
             The Mini Jackpot Pays A Flat Amount, By The Stakes You Were Playing, For The Bad Beats
-            The Main Rule Turns Away: Aces Full Or Better Losing To Quads Or Better In Hold’em, Any
-            Quads Losing To Bigger Quads Or Better In Omaha. The Winner Must Still Hold Quads Or
+            The Main Rule Turns Away. The Losing Hand Bar Depends On The Game And Is Listed Below:
+            Aces Full Or Better In Hold’em, Quad Tens Or Better In PLO5 And FLO5, Quad Deuces In
+            Pineapple, And Any Quads In The Other Omaha Games. The Winner Must Still Hold Quads Or
             Better; The Same Pot, Player And Board Conditions Apply. It Is Paid From The Backup Pool
             And Pauses While That Reserve Is At Its Floor. One Hand Pays One Jackpot, Never Both.
           </p>

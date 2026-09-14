@@ -19,7 +19,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { AdCampaignService } from '../../services/AdCampaignService';
+import { AdCampaignService, formatDollars } from '../../services/AdCampaignService';
 import type { AdCampaign, AdRateCard } from '../../services/AdCampaignService';
 import type { AdSlot } from '../../services/AdService';
 import { AD_SURFACE_RATIO } from './HouseAdRotator';
@@ -50,6 +50,7 @@ const EMPTY_SPONSOR = {
   headline: '',
   slot: 'lobby_strip' as AdSlot,
   imageUrl: '',
+  posterUrl: '',
   externalUrl: '',
   days: 7,
   contactEmail: '',
@@ -102,8 +103,12 @@ export default function CampaignQueue() {
       title: decision === 'approve' ? 'Approve This Advert?' : 'Reject And Refund?',
       message:
         decision === 'approve'
-          ? `${c.clubName} Paid ${c.diamondsCharged.toLocaleString()} Diamonds. It Goes Live On The ${SLOT_LABEL[c.slot] ?? c.slot} For ${c.days} Day(s).`
-          : `${c.diamondsCharged.toLocaleString()} Diamonds Go Back To ${c.clubName}.`,
+          ? c.clubId == null
+            ? `${c.clubName} Was Quoted ${formatDollars(c.quotedCents ?? 0)}. Approving Makes It Live On The ${SLOT_LABEL[c.slot] ?? c.slot} For ${c.days} Day(s) And Means Somebody Raises That Invoice.`
+            : `${c.clubName} Paid ${c.diamondsCharged.toLocaleString()} Diamonds. It Goes Live On The ${SLOT_LABEL[c.slot] ?? c.slot} For ${c.days} Day(s).`
+          : c.clubId == null
+            ? `${c.clubName} Is Told It Was Not Approved. Nothing Was Charged.`
+            : `${c.diamondsCharged.toLocaleString()} Diamonds Go Back To ${c.clubName}.`,
       confirmText: decision === 'approve' ? 'Approve' : 'Reject And Refund',
       cancelText: 'Back',
       variant: decision === 'reject' ? 'danger' : 'default',
@@ -141,6 +146,7 @@ export default function CampaignQueue() {
       headline: sponsor.headline.trim(),
       slot: sponsor.slot,
       imageUrl: sponsor.imageUrl.trim(),
+      posterUrl: sponsor.posterUrl.trim() || null,
       externalUrl: sponsor.externalUrl.trim(),
       startsAt: new Date(),
       days: sponsor.days,
@@ -156,6 +162,7 @@ export default function CampaignQueue() {
         unknown_slot: 'That Surface Does Not Exist',
         bad_days: 'Choose Between 1 And 365 Days',
         creative_not_same_origin: 'The Creative Must Be A Path On This Site, Uploaded First',
+        poster_not_same_origin: 'The Poster Must Be A Path On This Site, Uploaded First',
         destination_must_be_https: 'The Destination Must Be A Full https Address',
         bad_pacing: 'Pacing Must Be Even Or Asap',
       };
@@ -174,6 +181,7 @@ export default function CampaignQueue() {
     sponsor.advertiserName.trim().length > 0 &&
     sponsor.headline.trim().length > 0 &&
     sponsor.imageUrl.trim().startsWith('/') &&
+    (sponsor.posterUrl.trim() === '' || sponsor.posterUrl.trim().startsWith('/')) &&
     /^https:\/\/[a-zA-Z0-9]/.test(sponsor.externalUrl.trim()) &&
     sponsor.days >= 1 &&
     !sponsorBusy;
@@ -272,6 +280,17 @@ export default function CampaignQueue() {
                 />
               </label>
               <label className="campaign-queue__field">
+                <span className="admin-label">Poster Path (3 By 4, Optional)</span>
+                <input
+                  className="admin-input"
+                  maxLength={300}
+                  value={sponsor.posterUrl}
+                  onChange={(e) => setSponsor((s) => ({ ...s, posterUrl: e.target.value }))}
+                  placeholder="/ad-creatives/sponsor/acme/poster.webp"
+                  disabled={sponsorBusy}
+                />
+              </label>
+              <label className="campaign-queue__field">
                 <span className="admin-label">Their Address</span>
                 <input
                   className="admin-input"
@@ -350,8 +369,11 @@ export default function CampaignQueue() {
                 </div>
                 <div className="campaign-queue__headline">{c.headline}</div>
                 <div className="campaign-queue__meta">
-                  {c.days} Day(s) {'·'} {c.diamondsCharged.toLocaleString()} Diamonds {'·'} Opens{' '}
-                  <code>{c.targetUrl}</code>
+                  {c.days} Day(s) {'·'}{' '}
+                  {c.clubId == null
+                    ? `${formatDollars(c.quotedCents ?? 0)} To Invoice`
+                    : `${c.diamondsCharged.toLocaleString()} Diamonds`}{' '}
+                  {'·'} Opens <code>{c.targetUrl}</code>
                 </div>
                 <label className="campaign-queue__note">
                   <span className="admin-label">Note To The Club</span>
@@ -424,7 +446,9 @@ export default function CampaignQueue() {
                       {new Date(c.endsAt).toLocaleDateString()}
                     </td>
                     <td>
-                      {c.diamondsCharged.toLocaleString()}
+                      {c.clubId == null
+                        ? `${formatDollars(c.quotedCents ?? 0)} Invoice`
+                        : c.diamondsCharged.toLocaleString()}
                       {c.diamondsRefunded > 0
                         ? ` (${c.diamondsRefunded.toLocaleString()} Back)`
                         : ''}

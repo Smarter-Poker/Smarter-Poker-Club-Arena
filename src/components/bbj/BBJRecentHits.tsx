@@ -228,6 +228,8 @@ export function BBJRecentHits({
   const kindArg = kind === 'all' ? null : kind;
   const [hits, setHits] = useState<Hit[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [settledKey, setSettledKey] = useState<string | null>(null);
+  const layoutKey = `${poolId}:${kindArg}:${limit}`;
   /**
    * PAGING. The list ended at `limit` and said nothing about the rest.
    *
@@ -278,6 +280,12 @@ export function BBJRecentHits({
     };
   }, [poolId]);
 
+  // Scope changes need a new initial read, even when returning to a prior pool.
+  useEffect(() => {
+    setHits(null);
+    setSettledKey(null);
+  }, [poolId, limit, kindArg]);
+
   useEffect(() => {
     if (!poolId) return;
     let alive = true;
@@ -289,7 +297,8 @@ export function BBJRecentHits({
        nothing ever set it back to false, so one transient RPC error stuck the
        panel on its error message for the life of the component, including
        through the realtime refetch after a real jackpot landed. */
-    setHits(null);
+    // A live refresh keeps the rows on screen. Only a new scope needs its
+    // first-layout skeleton; replacing it on every hit moves the whole page.
     setTotal(null);
     setFailed(false);
     setMoreFailed(false);
@@ -317,12 +326,14 @@ export function BBJRecentHits({
           setFailed(true);
           reportError(e, 'BBJRecentHits.threw');
         }
+      } finally {
+        if (alive) setSettledKey(layoutKey);
       }
     })();
     return () => {
       alive = false;
     };
-  }, [poolId, limit, revision, kindArg]);
+  }, [poolId, limit, revision, kindArg, layoutKey]);
 
   /**
    * The next page, appended.
@@ -411,7 +422,7 @@ export function BBJRecentHits({
    */
   if (!poolId) {
     return (
-      <div className="bbj-hits">
+      <div className="bbj-hits" data-initial-layout="settled">
         <div className="bbj-hits__empty">
           No Jackpot Pool For This Club Yet.
           <span className="bbj-hits__empty-sub">Winners Appear Here Once The Pool Is Running.</span>
@@ -420,15 +431,17 @@ export function BBJRecentHits({
     );
   }
 
-  if (failed) {
+  if (settledKey === layoutKey && failed) {
     return (
-      <div className="bbj-hits__empty">Couldn&rsquo;T Load Recent Jackpots. Try Again Shortly.</div>
+      <div className="bbj-hits__empty" data-initial-layout="settled">
+        Couldn&rsquo;T Load Recent Jackpots. Try Again Shortly.
+      </div>
     );
   }
 
-  if (hits === null) {
+  if (settledKey !== layoutKey || hits === null) {
     return (
-      <div className="bbj-hits">
+      <div className="bbj-hits" data-initial-layout="pending">
         {[0, 1, 2, 3, 4].map((i) => (
           <div key={i} className="bbj-hits__skeleton" />
         ))}
@@ -441,7 +454,7 @@ export function BBJRecentHits({
        quad kings); printing them under a "Mini" caption would teach the wrong
        bar. The mini's empty state says so and stops. */
     return (
-      <div className="bbj-hits">
+      <div className="bbj-hits" data-initial-layout="settled">
         <div className="bbj-hits__caption">Mini Bad Beat Jackpot Winners</div>
         <p className="bbj-hits__examplenote">
           No Mini Jackpot Has Been Paid On This Pool Yet. Aces Full Or Better (Hold’em) Or Any Quads
@@ -457,7 +470,7 @@ export function BBJRecentHits({
     // empty there is no honest figure, so the row names the share instead.
     const examplePool = poolAmount > 0 ? (poolAmount * 40) / 100 : 0;
     return (
-      <div className="bbj-hits">
+      <div className="bbj-hits" data-initial-layout="settled">
         {/* NOT "Last 3 Bad Beat Jackpot Winners". That is a factual claim that
             this club has paid three jackpots, printed above three invented
             players with plausible dates and a real chip figure. The rows are
@@ -512,7 +525,7 @@ export function BBJRecentHits({
   }
 
   return (
-    <div className="bbj-hits">
+    <div className="bbj-hits" data-initial-layout="settled">
       {/* The caption stated a count as though it were the whole history. It is
           a page, so it says which page of what. */}
       <div className="bbj-hits__caption">

@@ -124,6 +124,64 @@ describe('Diamond cash uses the shared NLH controller with indivisible units', (
     expect(events.filter((event) => event.type === 'HAND_COMPLETE')).toHaveLength(1);
   });
 
+  /* A DIAMOND TABLE MAY BOMB (2026-09-12, Phase 7 line three). The ante is a
+     forced bet out of a stack and the multi-board settlement has cut its shares
+     in the table's own unit since the tournament fix, so a Diamond bomb divides
+     in whole Diamonds by the same rule run it twice does. */
+  it.each<[string, NonNullable<HandConfig['bombPot']>]>([
+    ['one board', { anteMultiplier: 2 }],
+    ['two boards', { anteMultiplier: 2, boardCount: 2, doubleBoard: true }],
+    ['three boards', { anteMultiplier: 3, boardCount: 3, doubleBoard: true }],
+    ['a fixed ante', { anteMultiplier: 2, anteFixed: 7 }],
+  ])('deals a Diamond bomb pot over %s and conserves the table', (_name, bombPot) => {
+    const hc = new HandController(config({ bombPot }), players(), 1);
+    const events: HandEvent[] = [];
+    hc.onEvent((event) => events.push(event));
+    hc.start();
+    const posted = hc.getState();
+    /* Every dealt-in player put the SAME whole number in, and it is the ante
+       the row asked for: a fixed ante when there is one, two or three times the
+       blind otherwise. */
+    const expected = bombPot.anteFixed ?? 2 * bombPot.anteMultiplier;
+    for (const p of posted.players) {
+      expect(p.totalInvested, `${p.user_id} anted ${p.totalInvested}`).toBe(expected);
+      expect(Number.isSafeInteger(p.stack)).toBe(true);
+    }
+    expect(posted.pot).toBe(expected * posted.players.length);
+    finish(hc);
+    const after = hc.getState();
+    expect(after.players.reduce((sum, p) => sum + p.stack, 0)).toBe(300);
+    expect(after.players.every((p) => Number.isSafeInteger(p.stack))).toBe(true);
+    expect(events.filter((event) => event.type === 'HAND_COMPLETE')).toHaveLength(1);
+  });
+
+  it('rounds a bomb ante to the whole Diamond rather than the cent', () => {
+    /* The boundary refuses a row whose ante could not be whole. This is the
+       second half of the same rule: if one ever reached the engine, the forced
+       bet is a whole Diamond rather than a fraction the hand guard would then
+       refuse from a table that has already dealt. */
+    const hc = new HandController(
+      config({ smallBlind: 1, bigBlind: 3, bombPot: { anteMultiplier: 1.5 } }),
+      players(),
+      1
+    );
+    hc.start();
+    for (const p of hc.getState().players) {
+      expect(Number.isSafeInteger(p.totalInvested), `anted ${p.totalInvested}`).toBe(true);
+    }
+    expect(hc.getState().pot).toBe(hc.getState().players.length * 5);
+  });
+
+  it('keeps the chip bomb ante on the cent', () => {
+    const hc = new HandController(
+      config({ asset: 'chips', smallBlind: 0.5, bigBlind: 1, bombPot: { anteMultiplier: 1.5 } }),
+      players([100, 100, 100]),
+      1
+    );
+    hc.start();
+    for (const p of hc.getState().players) expect(p.totalInvested).toBe(1.5);
+  });
+
   it('refuses a fractional straddle before dealing anything', () => {
     expect(
       () => new HandController(config({ straddles: [{ seat: 4, amount: 4.5 }] }), players(), 1)
@@ -178,12 +236,55 @@ describe('Diamond cash uses the shared NLH controller with indivisible units', (
     ).toThrow('Whole Units');
     expect(hc.getState()).toEqual(before);
   });
-  it.each<Partial<HandConfig>>([
-    { bombPot: { anteMultiplier: 2 } },
-    { insuranceEnabled: true },
-    { gameVariant: 'plo4' },
-  ])('keeps later financial game features outside the initial certificate: %j', (feature) => {
-    expect(() => new HandController(config(feature), players(), 1)).toThrow('Plain NLH');
+  it.each<Partial<HandConfig>>([{ insuranceEnabled: true }])(
+    'keeps later financial game features outside the initial certificate: %j',
+    (feature) => {
+      expect(() => new HandController(config(feature), players(), 1)).toThrow(
+        'Requires A Supported Game With No Deductions'
+      );
+    }
+  );
+
+  /* PLO4 LEFT THAT LIST ON 2026-09-12, and for the same kind of reason run it
+     twice did below: it was never a POLICY refusal, it was a refusal standing
+     in for arithmetic nobody had checked. The only question another game asks
+     of an indivisible unit is whether it divides a pot somewhere the
+     cent-denominated code did not have to care about, and the answer is the
+     hi-lo split - which takes the same `chipUnit` the tie chop takes, so the
+     low half of a Diamond pot is a whole number of Diamonds and the odd unit
+     goes to high. Pot-limit sizing is pure addition; fixed-limit multiplies
+     the blind; short deck derives no ante. The nine games the chip cash screen
+     offers are admitted, and the money proof for the Omaha family is in
+     Phase9MultiboardUnits.test.ts, which checks plo4, plo8 and flo8 over two
+     and three boards against an INDEPENDENT reference allocator. */
+  it.each<string>([
+    'nlh',
+    'plo4',
+    'plo5',
+    'plo6',
+    'plo8',
+    'pineapple',
+    'short_deck',
+    'flh',
+    'flo8',
+  ])('deals %s for Diamonds', (gameVariant) => {
+    expect(
+      () => new HandController(config({ gameVariant } as Partial<HandConfig>), players(), 1)
+    ).not.toThrow();
+  });
+
+  it('and still refuses a game this estate does not deal', () => {
+    expect(
+      () =>
+        new HandController(
+          /* `razz` is deliberately not a GameVariant: the point of the case is
+             that the boundary refuses a game this estate has no rules for, and
+             a value the type already forbids is the only way to write it. */
+          config({ gameVariant: 'razz' } as unknown as Partial<HandConfig>),
+          players(),
+          1
+        )
+    ).toThrow('Requires A Supported Game With No Deductions');
   });
 
   /* RUN IT TWICE LEFT THAT LIST ON 2026-09-12. It was there because the RIT

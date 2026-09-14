@@ -268,6 +268,14 @@
   outline-offset: 2px;
 }
 
+/* A continuation control belongs to the list above it, so it spans the list
+   rather than sitting beside it as an unrelated action. */
+.vault-btn--wide {
+  display: flex;
+  width: 100%;
+  margin-top: 12px;
+}
+
 .vault-btn:disabled {
   cursor: not-allowed;
   opacity: 0.45;
@@ -401,11 +409,48 @@
 
 /* The plate render ends in an empty machined bay; the bay below is drawn in
    its palette so the live figures read as etched into the same hardware. */
-.wallet-plate__bay {
+/* ── THE BAY IS IN THE ARTWORK, SO THE READOUT GOES IN THE ARTWORK ────────
+ *
+ * Every plate is drawn with an empty machined bay across its lower half. The
+ * figures used to sit in a `__bay` block BELOW the whole image, so the bay the
+ * art exists to fill rendered empty on all four plates while the totals were
+ * listed underneath them.
+ *
+ * The insets below are MEASURED from the shipped artwork, not guessed. Sampling
+ * luminance down the centre of each 1088x548 plate and walking out to the lit
+ * machined frame gives the inner slot as:
+ *
+ *   diamonds       top 52.0%  bottom 92.5%  left 5.2%  right 94.9%
+ *   player-wallet  top 51.3%  bottom 93.1%  left 6.1%  right 93.7%
+ *   promo-wallet   top 52.0%  bottom 93.2%  left 3.8%  right 96.2%
+ *   agent-wallet   top 51.8%  bottom 92.3%  left 5.1%  right 94.9%
+ *
+ * One inset has to clear the tightest of all four, so it takes the largest top
+ * (52.0), the largest left/right (6.1) and the largest bottom margin (7.7),
+ * each with a little air: 53% / 7.5% / 8.5%.
+ */
+
+.wallet-plate__frame {
+  position: relative;
+  /* The readout sizes itself in cqw, so the type scales with the PLATE rather
+     than the viewport. Without this the numbers overflow the slot the moment
+     the grid goes two-up on a tablet. */
+  container-type: inline-size;
+}
+
+.wallet-plate__readout {
+  position: absolute;
+  inset: 53% 7.5% 8.5%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2.2cqw;
+}
+
+.wallet-plate__footer {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-top: -6px;
   padding: 12px 16px 16px;
   border-top: 1px solid rgba(184, 195, 205, 0.12);
   background: linear-gradient(180deg, #0a0e14, #06090d);
@@ -415,14 +460,15 @@
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 12px;
+  gap: 3cqw;
 }
 
 .wallet-plate__stat {
   display: flex;
   flex: 1 1 0;
   flex-direction: column;
-  gap: 2px;
+  gap: 0.4cqw;
+  min-width: 0;
 }
 
 .wallet-plate__stat.wide {
@@ -430,12 +476,30 @@
 }
 
 .wallet-plate__value {
+  overflow: hidden;
   color: var(--vault-chrome-hot);
   font-family: var(--vault-font-display);
   font-size: 1.35rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  line-height: 1.1;
+  line-height: 1.05;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* IN THE BAY the type is sized against the PLATE (cqw), not the viewport, so a
+   two-up grid on a tablet shrinks it correctly instead of overflowing the slot.
+   The floors are legibility floors, arrived at by measuring: with three stats
+   in this bay the labels computed to 6.4px, which is why there is only one. */
+.wallet-plate__readout .wallet-plate__value {
+  font-size: clamp(1rem, 5.6cqw, 1.85rem);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+.wallet-plate__readout .wallet-plate__label {
+  color: var(--vault-chrome);
+  font-size: clamp(0.5rem, 2.1cqw, 0.68rem);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95);
 }
 
 .wallet-plate__value.available {
@@ -446,26 +510,34 @@
   color: var(--vault-gold);
 }
 
+/* The diamond plate carries ONE figure in the same slot, so it gets the room
+   the three-up plates cannot have. */
 .wallet-plate__value.diamond {
   color: var(--vault-cyan);
-  font-size: 1.7rem;
-  text-shadow: 0 0 16px rgba(0, 212, 255, 0.3);
+  font-size: clamp(0.95rem, 6cqw, 1.9rem);
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.85),
+    0 0 16px rgba(0, 212, 255, 0.3);
 }
 
 .wallet-plate__label {
+  overflow: hidden;
   color: var(--vault-muted);
   font-family: var(--vault-font-label);
   font-size: 0.62rem;
   font-weight: 700;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.14em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   text-transform: uppercase;
 }
 
 .wallet-plate__meter {
-  height: 4px;
+  height: clamp(2px, 0.7cqw, 4px);
   overflow: hidden;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.55);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6);
 }
 
 .wallet-plate__meter-fill {
@@ -480,7 +552,7 @@
 }
 
 .wallet-plate.business .wallet-plate__meter-fill {
-  background: linear-gradient(90deg, #9a7a2c, var(--vault-gold));
+  background: linear-gradient(90deg, #ffa500, var(--vault-gold));
 }
 
 .wallet-plate__desc {
@@ -509,6 +581,30 @@
 .wallet-plate__cta:focus-visible {
   outline: 2px solid var(--vault-cyan);
   outline-offset: 2px;
+}
+
+/* Two doors on the diamonds plate: Buy Diamonds and the Diamond Arena. They
+   wrap at 375px rather than shrink; a door is a tap target, not a label. */
+.wallet-plate__doors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* The arena is closed: a sentence in the plate's own muted ink, no chrome, so
+   nobody reads a dead button as a broken one. */
+.wallet-plate__door-note {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 4px;
+  color: var(--vault-muted);
+  font-family: var(--vault-font-label);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 /* ── Panels (send / receive / earn / ledger) ────────────────────────── */
@@ -806,6 +902,13 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Diamonds LEAVING. The same row, read the other way, so the colour has to
+   carry the direction: a send rendered in the credit green tells a player
+   their balance went up. Chrome rather than red - a gift is not an error. */
+.incoming-row__amount.is-outgoing {
+  color: var(--vault-chrome);
+}
+
 .incoming-row__time {
   color: var(--vault-muted);
   font-size: 0.7rem;
@@ -967,9 +1070,11 @@
     grid-template-columns: 1fr 1fr;
   }
 
-  .wallet-plate__value {
-    font-size: 1.15rem;
-  }
+  /* `.wallet-plate__value` used to be forced to 1.15rem here. It is sized in
+     cqw against the plate now, which already narrows it correctly at every
+     width - and a fixed rem inside a media query would win over that clamp and
+     push the figures back out of the machined bay at exactly this breakpoint,
+     which is the bug this whole pass exists to fix. Deliberately not replaced. */
 
   .receive-ids__row dd {
     flex-direction: column;

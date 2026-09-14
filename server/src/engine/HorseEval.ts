@@ -812,16 +812,35 @@ export interface OmahaNutStatus {
   higherFlushRanks: number;
   /** made straight only: no two hole cards make a bigger straight here */
   straightIsNut: boolean;
+  /** three or more of one suit on the board, so SOMEBODY can hold a flush.
+   *  Omaha plays exactly two hole cards, so three of a suit on the board is
+   *  the threshold - the same bar the NLH status uses. */
+  flushPossible: boolean;
 }
 
-const NO_NUT_STATUS: OmahaNutStatus = { category: 0, higherFlushRanks: 0, straightIsNut: true };
+const NO_NUT_STATUS: OmahaNutStatus = {
+  category: 0,
+  higherFlushRanks: 0,
+  straightIsNut: true,
+  flushPossible: false,
+};
 
 export function omahaNutStatus(hole: Card[], board: Card[]): OmahaNutStatus {
   if (!hole || hole.length < 2 || !board || board.length < 3) return NO_NUT_STATUS;
   try {
     const score = scoreOmahaHiPartial(hole, board);
     const cat = Math.floor(score / 0x100000);
-    const out: OmahaNutStatus = { category: cat, higherFlushRanks: 0, straightIsNut: true };
+    const out: OmahaNutStatus = {
+      category: cat,
+      higherFlushRanks: 0,
+      straightIsNut: true,
+      flushPossible: false,
+    };
+    // Computed for every category, not just the branch that reads it: a field
+    // named flushPossible that is only true sometimes is a field that lies.
+    const boardSuitCounts = new Map<string, number>();
+    for (const c of board) boardSuitCounts.set(c.suit, (boardSuitCounts.get(c.suit) ?? 0) + 1);
+    for (const n of boardSuitCounts.values()) if (n >= 3) out.flushPossible = true;
 
     if (cat === 6) {
       // The flush suit: >= 3 on the board (Omaha uses exactly 3 board cards)
@@ -2155,7 +2174,10 @@ export function simulateEquity(
   // V12: board-contact conditioning per opponent (NLH family only).
   oppReads?: Array<OppPostflopRead | null>,
   // Phase 7: bounded raw showdown outcomes from this same conditioned pass.
-  outcomeOut?: HorseEquityOutcomeCollector
+  outcomeOut?: HorseEquityOutcomeCollector,
+  // A hero's known discard stays out of every future board and opponent hand.
+  // Callers may provide only cards already known to that decision's owner.
+  knownDeadCards: readonly Card[] = []
 ): number {
   // V3 perf: banded Omaha sampling adds rejection-scoring cost; trim the
   // iteration count to stay inside the per-decision millisecond budget.
@@ -2205,6 +2227,7 @@ export function simulateEquity(
   const known = new Set<string>();
   for (const c of holeCards) known.add(cardKey(c));
   for (const c of boardCards) known.add(cardKey(c));
+  for (const c of knownDeadCards) known.add(cardKey(c));
 
   const base = vi.isShortDeck ? SHORT_DECK_CARDS : FULL_DECK;
   const deck = base.filter((c) => !known.has(cardKey(c)));

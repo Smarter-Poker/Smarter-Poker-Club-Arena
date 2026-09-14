@@ -60,6 +60,19 @@ export interface BBJQualifyingHand {
   handRank?: string;
   minRankValue?: string;
   eligible?: boolean;
+  /* THE MINI'S OWN BAR FOR THIS VARIANT (Dan, 2026-09-12).
+
+     The mini used to derive its bar from the MAIN rule's family: `full_house`
+     meant hold'em, so aces-full-or-better; anything else meant Omaha, so ANY
+     quads. That is a two-value guess standing in for a per-game decision, and
+     Dan made the decision: PLO5/FLO5 is Quad Tens or better, Pineapple is Quad
+     Deuces. Where `miniMinQuadRank` is set it is the lowest QUAD rank that
+     clears the mini bar (A=14 ... 2=2) and it replaces the family default;
+     where it is absent the family default still applies, so every other game
+     is untouched. `miniBarLabel` is what a player is told, and it lives beside
+     the number so the two cannot drift. */
+  miniMinQuadRank?: number;
+  miniBarLabel?: string;
 }
 
 export interface RakeConfigResult {
@@ -370,10 +383,51 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
     ],
     handRank: 'straight_flush',
     minRankValue: '87654',
+    /* MINI: Quad Tens or better (Dan, 2026-09-12). Stricter than the Omaha
+       family default of any quads - five hole cards make quads common. */
+    miniMinQuadRank: 10,
+    miniBarLabel: 'Quad Tens Or Better',
   },
   // BBJ-SYNC 2026-08-18: server (the authority that actually detects hits)
   // marks PLO6 ineligible — this entry used to advertise an 8-high SF rule the
   // engine never pays. Synced to match server/src/config/RakeConfig.ts.
+  /* FLO4 / FLO5 ARE THE SAME GAMES AS PLO4 / PLO5 (2026-09-12). Both labels
+     have always read "PLO4 / FLO4" and "PLO5 / FLO5", but neither key existed,
+     and the engine's BBJ detectors look this table up by the RAW variant - only
+     the client normalises. So an FLO5 table would have taken the mini's
+     "variant not covered" branch and paid NO mini at all, while getRakeConfig's
+     `|| BBJ_QUALIFYING_HANDS.nlh` fallback judged its MAIN bar by hold'em
+     rules. That is the Pineapple defect exactly: a key on one side and not the
+     other. No such table exists in production today (nlh, plo4, plo5, plo6,
+     plo8, short_deck, pineapple, flh, flo8 are the live variants), so this
+     closes a trap rather than repairing a loss - and `flo8` and `flh` were
+     already here for the same reason. */
+  flo4: {
+    label: 'PLO4 / FLO4',
+    minLosingHand: 'KKKK2',
+    description: 'Four Of A Kind (Kings) Or Better Must LOSE',
+    rules: [
+      'Must use exactly 2 cards from hand',
+      'Both players must use two cards from their hole cards',
+    ],
+    handRank: 'four_of_a_kind',
+    minRankValue: 'KKKK',
+  },
+  flo5: {
+    label: 'PLO5 / FLO5',
+    minLosingHand: '87654',
+    description: 'Straight Flush (8-High) Or Better Must LOSE',
+    rules: [
+      'Must use exactly 2 cards from hand',
+      'Both players must use two cards from their hole cards',
+    ],
+    handRank: 'straight_flush',
+    minRankValue: '87654',
+    /* MINI: Quad Tens or better (Dan, 2026-09-12) - the same bar as plo5,
+       because it is the same game. */
+    miniMinQuadRank: 10,
+    miniBarLabel: 'Quad Tens Or Better',
+  },
   plo6: {
     label: 'PLO6',
     minLosingHand: null,
@@ -408,6 +462,11 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
     ],
     handRank: 'four_of_a_kind',
     minRankValue: 'KKKK',
+    /* MINI: Quad Deuces (Dan, 2026-09-12) - every quad clears it. Same effect
+       as the old family default for this game, written down explicitly so the
+       bar is a stated rule rather than a fall-through nobody chose. */
+    miniMinQuadRank: 2,
+    miniBarLabel: 'Quad Deuces Or Better',
   },
 };
 
@@ -458,6 +517,8 @@ const BBJ_SHORT_LABELS: Record<string, string> = {
   plo8: 'Quad Kings or better must lose (high hand only)',
   plo_hilo: 'Quad Kings or better must lose (high hand only)',
   plo5: '8-high Straight Flush or better must lose',
+  flo4: 'Quad Kings or better must lose',
+  flo5: '8-high Straight Flush or better must lose',
   flo8: 'Quad Kings or better must lose (high hand only)',
   /* Without this, Pineapple fell through to `q.description` and printed
      SHOUTY "Four Of A Kind (Kings) Or Better Must LOSE" where every other row

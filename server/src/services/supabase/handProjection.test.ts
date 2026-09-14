@@ -15,11 +15,24 @@ import {
 } from './dataActorContext.js';
 
 type OutboxReply = {
-  data: Array<{ hand_id: string; table_id?: string; hand_number: number }> | null;
+  data: Array<{
+    hand_id: string;
+    table_id?: string;
+    hand_number: number;
+  }> | null;
   error: unknown;
 };
 type RpcReply = { data: unknown; error: unknown };
 
+let outboxModel:
+  | ((call: {
+      after?: number;
+      ceiling?: number;
+      ascending?: boolean;
+      limit?: number;
+    }) => OutboxReply)
+  | null = null;
+let projectionModel: ((id: string) => RpcReply | Promise<RpcReply>) | null = null;
 const outboxReplies: Array<OutboxReply | Promise<OutboxReply>> = [];
 const projectionReplies: RpcReply[] = [];
 /** Replies keyed by p_hand_id, consulted before the FIFO queue; a promise holds the RPC open. */
@@ -30,6 +43,7 @@ const queryCalls: Array<{
   table: string;
   columns?: string;
   after?: number;
+  ceiling?: number;
   ascending?: boolean;
   limit?: number;
 }> = [];
@@ -39,6 +53,38 @@ const channels: FakeChannel[] = [];
 const removedChannels: FakeChannel[] = [];
 
 type StatusCallback = (status: string) => void;
+
+/**
+ * What an AbortSignal does to a request in flight.
+ *
+ * PostgrestBuilder.abortSignal() hands the signal to fetch, and undici rejects
+ * the request when it fires. The fakes below do the same, because "the drain
+ * pass can end a call it is waiting on" is the property these tests exist to
+ * hold: a fake that ignored the signal would let a wire-up regression pass.
+ * The underlying reply is left to settle on its own, exactly as the real
+ * transaction may still commit after the client has stopped listening.
+ */
+function abortable<T>(reply: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return reply;
+  if (signal.aborted) {
+    void reply.catch(() => undefined);
+    return Promise.reject(signal.reason);
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+    reply.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(error);
+      }
+    );
+  });
+}
 
 class FakeChannel {
   changeCallback: (() => void) | null = null;
@@ -63,6 +109,7 @@ vi.mock('./client.js', () => ({
       requestActors.push(dataActorHeaders().get('x-smarter-data-actor')!);
       const call = { table } as (typeof queryCalls)[number];
       queryCalls.push(call);
+      let signal: AbortSignal | undefined;
       const query = {
         select(columns: string) {
           call.columns = columns;
@@ -72,37 +119,67 @@ vi.mock('./client.js', () => ({
           call.after = value;
           return query;
         },
+        lte(_column: string, value: number) {
+          call.ceiling = value;
+          return query;
+        },
         order(_column: string, options: { ascending: boolean }) {
           call.ascending = options.ascending;
           return query;
         },
+        abortSignal(value: AbortSignal) {
+          signal = value;
+          return query;
+        },
         limit(value: number) {
           call.limit = value;
-          return Promise.resolve(outboxReplies.shift() ?? { data: [], error: null });
+          return abortable(
+            Promise.resolve(
+              outboxModel?.(call) ?? outboxReplies.shift() ?? { data: [], error: null }
+            ),
+            signal
+          );
         },
       };
       return query;
     },
-    rpc: async (fn: string, args: Record<string, unknown>) => {
+    rpc: (fn: string, args: Record<string, unknown>) => {
       requestActors.push(dataActorHeaders().get('x-smarter-data-actor')!);
       rpcCalls.push({ fn, args });
       rpcInFlight.now++;
       rpcInFlight.max = Math.max(rpcInFlight.max, rpcInFlight.now);
-      try {
-        const byId = projectionRepliesById.get(String(args.p_hand_id));
-        if (byId) {
-          projectionRepliesById.delete(String(args.p_hand_id));
-          return await byId;
-        }
-        return (
-          projectionReplies.shift() ?? {
-            data: { ok: false, reason: 'missing_test_reply' },
-            error: null,
+      const reply = (async (): Promise<RpcReply> => {
+        try {
+          if (projectionModel) return await projectionModel(String(args.p_hand_id));
+          const byId = projectionRepliesById.get(String(args.p_hand_id));
+          if (byId) {
+            projectionRepliesById.delete(String(args.p_hand_id));
+            return await byId;
           }
-        );
-      } finally {
-        rpcInFlight.now--;
-      }
+          return (
+            projectionReplies.shift() ?? {
+              data: { ok: false, reason: 'missing_test_reply' },
+              error: null,
+            }
+          );
+        } finally {
+          rpcInFlight.now--;
+        }
+      })();
+      // PostgrestClient.rpc() returns a builder, not a promise: it is awaited
+      // through `then`, and `.abortSignal()` may be chained before that.
+      let awaited: Promise<RpcReply> = reply;
+      const builder = {
+        abortSignal(signal: AbortSignal) {
+          awaited = abortable(reply, signal);
+          return builder;
+        },
+        then: <A, B>(
+          onOk?: ((value: RpcReply) => A | PromiseLike<A>) | null,
+          onErr?: ((reason: unknown) => B | PromiseLike<B>) | null
+        ) => awaited.then(onOk, onErr),
+      };
+      return builder;
     },
     channel: () => {
       const channel = new FakeChannel();
@@ -118,6 +195,7 @@ vi.mock('./client.js', () => ({
 
 const mockReportError = vi.fn();
 vi.mock('../errorReporter.js', () => ({
+  describeError: (error: unknown) => JSON.stringify(error),
   reportError: (...args: unknown[]) => mockReportError(...args),
 }));
 
@@ -125,6 +203,8 @@ const worker = await import('./handProjection.js');
 
 beforeEach(async () => {
   await worker.stopHandProjectionWorker();
+  outboxModel = null;
+  projectionModel = null;
   outboxReplies.length = 0;
   projectionReplies.length = 0;
   projectionRepliesById.clear();
@@ -138,6 +218,12 @@ beforeEach(async () => {
   mockReportError.mockReset();
   worker.startHandProjectionWorker();
   await vi.waitFor(() => expect(queryCalls).toHaveLength(1));
+  /* JOIN THE STARTUP PASS, not merely its first read. `runDrain` issues that
+     read synchronously, so waitFor is satisfied while the pass is still in
+     flight - and a wake that arrives then is coalesced onto it, so the test
+     would read the startup pass's empty summary instead of its own. One
+     macrotask is enough for a pass whose reply is already resolved. */
+  await new Promise((resolve) => setTimeout(resolve, 0));
   queryCalls.length = 0;
   rpcCalls.length = 0;
   mockReportError.mockReset();
@@ -162,7 +248,12 @@ describe('the accepted-hand projection worker', () => {
 
     const summary = await worker.wakeHandProjection();
 
-    expect(summary).toEqual({ projected: 1, alreadyCompleted: 1, deferred: 1, failed: 0 });
+    expect(summary).toEqual({
+      projected: 1,
+      alreadyCompleted: 1,
+      deferred: 1,
+      failed: 0,
+    });
     expect(queryCalls).toEqual([
       {
         table: 'hand_projection_outbox',
@@ -193,7 +284,10 @@ describe('the accepted-hand projection worker', () => {
       data: { ok: false, reason: 'projection_refused' },
       error: null,
     });
-    projectionRepliesById.set('h-202', { data: null, error: { message: 'transport unavailable' } });
+    projectionRepliesById.set('h-202', {
+      data: null,
+      error: { message: 'transport unavailable' },
+    });
 
     await expect(worker.wakeHandProjection()).resolves.toEqual({
       projected: 0,
@@ -253,7 +347,7 @@ describe('the accepted-hand projection worker', () => {
     await vi.waitFor(() => expect(queryCalls).toHaveLength(11));
 
     expect(rpcCalls).toHaveLength(1_000);
-    expect(queryCalls[10]).toMatchObject({ after: 0, limit: 100 });
+    expect(queryCalls[10]).toMatchObject({ ascending: false, limit: 1 });
   });
 
   it('subscribes before startup drain and removes the exact channel on stop', async () => {
@@ -290,7 +384,9 @@ describe('the accepted-hand projection worker', () => {
         { data: { ok: true, hand_id: 'h-301' }, error: null }
       );
 
-      await expect(worker.wakeHandProjection()).resolves.toMatchObject({ failed: 1 });
+      await expect(worker.wakeHandProjection()).resolves.toMatchObject({
+        failed: 1,
+      });
       await vi.advanceTimersByTimeAsync(250);
       await vi.waitFor(() => expect(rpcCalls).toHaveLength(2));
 
@@ -312,7 +408,9 @@ describe('the accepted-hand projection worker', () => {
         { data: { ok: true, hand_id: 'h-401' }, error: null }
       );
 
-      await expect(worker.wakeHandProjection()).resolves.toMatchObject({ deferred: 1 });
+      await expect(worker.wakeHandProjection()).resolves.toMatchObject({
+        deferred: 1,
+      });
       await vi.advanceTimersByTimeAsync(250);
       await vi.waitFor(() => expect(rpcCalls).toHaveLength(2));
     } finally {
@@ -327,9 +425,14 @@ describe('the accepted-hand projection worker', () => {
         data: [{ hand_id: 'h-501', hand_number: 501 }],
         error: null,
       });
-      projectionReplies.push({ data: null, error: { message: 'connection reset' } });
+      projectionReplies.push({
+        data: null,
+        error: { message: 'connection reset' },
+      });
 
-      await expect(worker.wakeHandProjection()).resolves.toMatchObject({ failed: 1 });
+      await expect(worker.wakeHandProjection()).resolves.toMatchObject({
+        failed: 1,
+      });
       await worker.stopHandProjectionWorker();
       await vi.advanceTimersByTimeAsync(30_000);
 
@@ -353,17 +456,35 @@ describe('the accepted-hand projection worker', () => {
     const executable = blankNonCode(source);
     // One interval: the safety poll. The causal retry stays the one setTimeout.
     expect(executable.match(/\bsetInterval\s*\(/g)).toHaveLength(1);
-    /* TWO TIMERS, BOTH DELIBERATE (2026-09-11). The first is the causal
-       retry. The second is the drain deadline, added because a pass whose
-       promise never settled left `drainPromise` non-null for ever and
-       `pollIsDue` opens by returning false on exactly that - so one hung pass
-       took the only remaining wake out of service. Measured live:
-       drains_total frozen at 324 for fifteen minutes while the outbox climbed
-       past 27,000 rows and fifty-one minutes. Both timers are unref'd; a third
-       is still a regression worth catching here. */
+    /* TWO TIMERS, AND WHICH TWO IS THE POINT (2026-09-12, second repair).
+       The first is the causal retry. The second is the pass's OWN budget, and
+       it is not the timer this test used to forbid: that one RACED the pass -
+       at expiry the wrapper settled, `beginDrain` released the lane, and a
+       second `runDrain` started beside a first that nothing had cancelled.
+       Per-table chain order is this worker's entire purpose, so that is the
+       one thing it must never do - and the orphans held PostgREST chains open
+       on the same client the table lease heartbeats use, starved them, and had
+       every table on the platform killed and rebuilt for five hours
+       (2026-09-12 00:04-05:14) until a restart cleared them.
+       This timer does not settle anything and does not touch the lane. It
+       aborts the signal the pass's own calls carry, so the pass ends ITSELF:
+       the calls in flight are cancelled, the loops unwind, and the promise
+       settles with nothing left running. A timer that resolves or rejects a
+       wrapper is the regression to catch here, so `withDeadline` stays
+       forbidden by name and `beginDrain` stays unwrapped. */
     expect(executable.match(/\bsetTimeout\s*\(/g)).toHaveLength(2);
-    expect(source).toContain('const active = withDeadline(runDrain());');
-    expect(source).toContain('function withDeadline(');
+    expect(source).toContain('const active = runDrain();');
+    expect(executable).not.toContain('withDeadline');
+    // The budget reaches the work: every call the pass owns carries its signal.
+    expect(executable.match(/\.abortSignal\(budget\)/g)).toHaveLength(3);
+    expect(source).toContain('budget.abort(');
+    expect(source).toContain('clearTimeout(budgetTimer);');
+    expect(source).toContain('const deadlineAt = lastDrainStartedAt + DRAIN_DEADLINE_MS;');
+    expect(source).toContain(
+      'while (!stopping && visited < DRAIN_MAX && Date.now() < deadlineAt) {'
+    );
+    expect(source).toContain('while (!stopping && Date.now() < deadlineAt) {');
+    expect(source).toContain('visited >= DRAIN_MAX || Date.now() >= deadlineAt');
     expect(source).toContain('if (!workerActive || stopping) return;');
     expect(source).toContain('drainRunning: drainPromise !== null,');
     expect(source).toContain('retryArmed: retryTimer !== null,');
@@ -371,28 +492,120 @@ describe('the accepted-hand projection worker', () => {
     expect(source).toContain('cancelCausalRetry(true)');
   });
 
-  it('a drain pass cannot run for ever, because the only remaining wake is gated on it', async () => {
-    /* THE WEDGE, in one test. `pollIsDue` returns false while a drain is
-       running, and the escape hatch beneath it is about a stuck RETRY, so a
-       pass that never settles disables the safety poll permanently. On
-       2026-09-11 that is exactly what happened on engine-01: the Realtime
-       channel was in CHANNEL_ERROR, LISTEN was unconfigured, the 5 s poll was
-       the whole net, and a pass that hung during an image build on the same
-       host switched it off. The lane is bounded now, so the promise always
-       settles and every existing net resumes. */
+  it('a drain pass cannot run for ever: the budget cancels the read it is waiting on', async () => {
+    /* THE WEDGE AND BOTH OF ITS REPAIRS, in one test.
+
+       `pollIsDue` returns false while a drain is running and the escape hatch
+       beneath it is about a stuck RETRY, so a pass that never settles disables
+       the safety poll permanently. 2026-09-11, engine-01: Realtime in
+       CHANNEL_ERROR, LISTEN unconfigured, the 5 s poll the whole net, and a
+       pass that hung during an image build switched it off.
+
+       REPAIR ONE raced a timer against the pass and could not cancel it. At
+       the deadline the wrapper settled, the lane was released, and a SECOND
+       pass started beside a first that was still in flight - the one thing
+       this worker must never do. The orphans held PostgREST chains open on the
+       client the table lease heartbeats use and starved them: 2026-09-12
+       00:04-05:14, zero tournament hands, ~180-204 cash_lease_proof_expired a
+       minute, every table killed and rebuilt until the 05:14 restart.
+
+       REPAIR TWO moved the deadline into the pass's own loops - and every one
+       of those reads sits BETWEEN awaits, so it stopped the second pass and
+       not the first. Measured on engine-01 running exactly that, 2026-09-12:
+       one pass started 07:35:12Z and was still in flight at 07:55:56Z when the
+       process was replaced. drain_age_ms 109,245 -> 1,187,842 (9.9x the
+       120,000 budget); drains_total frozen at 641; every drain_results_total
+       counter frozen, projected at 23,625; wakes{poll} frozen at 83 for
+       nineteen minutes; outbox_depth 1,230 -> 2,205; event-loop p99 flat at
+       21 ms, so it was not busy - it was waiting.
+
+       THIS TEST HELD THE READ AND THEN ANSWERED IT ITSELF, which is why it
+       passed against a worker that could not settle. Nothing answers it now.
+       The budget aborts the signal the read carries, the read rejects, the
+       pass returns its summary, and the lane clears on its own. */
     expect(worker.HAND_PROJECTION_DRAIN_DEADLINE_MS).toBeGreaterThanOrEqual(10_000);
 
-    const neverSettles = new Promise<never>(() => {});
-    await expect(worker.withDrainDeadlineForTest(neverSettles, 25)).rejects.toThrow(
-      /did not settle/
-    );
+    vi.useFakeTimers();
+    try {
+      // A read nobody will ever answer.
+      outboxReplies.push(new Promise<OutboxReply>(() => {}));
 
-    // A pass that DOES settle is passed through untouched, and its timer is
-    // cleared rather than left to fire.
-    const summary = { projected: 3, alreadyCompleted: 0, deferred: 0, failed: 0 };
-    await expect(worker.withDrainDeadlineForTest(Promise.resolve(summary), 25)).resolves.toEqual(
-      summary
-    );
+      const pass = worker.wakeHandProjection();
+      await vi.advanceTimersByTimeAsync(worker.HAND_PROJECTION_DRAIN_DEADLINE_MS - 1_000);
+
+      // NOT ABANDONED. Inside the budget the pass still owns the lane: no
+      // second read, nothing reported, no replacement pass beside it.
+      expect(queryCalls).toHaveLength(1);
+      expect(mockReportError).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(2_000);
+
+      // BOUNDED, WITHOUT HELP. `drainPromise` clears, so `pollIsDue` answers
+      // again and every wake this worker has is back in service.
+      await expect(pass).resolves.toEqual({
+        projected: 0,
+        alreadyCompleted: 0,
+        deferred: 0,
+        failed: 0,
+      });
+      // A HANDOFF IS NOT AN ERROR. The bound firing is the design working; the
+      // wrapper this replaces reported HandProjection.drain_failed every two
+      // minutes for ninety minutes and paged nobody to any purpose.
+      expect(mockReportError).not.toHaveBeenCalled();
+      // It is still COUNTED, on the series that says the budget is too small.
+      expect(worker.handProjectionWakesToPrometheus()).toContain(
+        'poker_hand_projection_drain_deadline_cuts_total 1'
+      );
+
+      // And the worker goes back to work: the causal retry this pass owes
+      // drains again, off a cursor no cancelled read was allowed to advance.
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(queryCalls.length).toBeGreaterThan(1);
+      expect(queryCalls[queryCalls.length - 1].after).toBe(0);
+
+      await worker.stopHandProjectionWorker();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('the budget cancels an RPC mid-chain, and defers that hand rather than failing it', async () => {
+    /* The read is not the only unbounded await in a pass: `projectChain` walks
+       up to DRAIN_PAGE rows of one table and used to test `stopping` and
+       nothing else, so a chain that started before the deadline ran every one
+       of its rows after it. A cancelled projection is DEFERRED, not failed:
+       the outbox row is untouched, and if the transaction committed anyway the
+       next pass reads not_pending and counts it already_completed. Nothing is
+       reported - this is the bound, not a refusal. */
+    vi.useFakeTimers();
+    try {
+      outboxReplies.push({
+        data: [
+          { hand_id: 'gated-1', table_id: 't-gated', hand_number: 1 },
+          { hand_id: 'gated-2', table_id: 't-gated', hand_number: 2 },
+        ],
+        error: null,
+      });
+      // The first row's projection never answers, so the chain never reaches
+      // its second row on its own.
+      projectionRepliesById.set('gated-1', new Promise<RpcReply>(() => {}));
+
+      const pass = worker.wakeHandProjection();
+      await vi.advanceTimersByTimeAsync(worker.HAND_PROJECTION_DRAIN_DEADLINE_MS + 1_000);
+
+      await expect(pass).resolves.toEqual({
+        projected: 0,
+        alreadyCompleted: 0,
+        deferred: 2,
+        failed: 0,
+      });
+      expect(mockReportError).not.toHaveBeenCalled();
+      expect(rpcCalls.map((c) => c.args.p_hand_id)).toEqual(['gated-1']);
+
+      await worker.stopHandProjectionWorker();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('pollIsDue: a running drain always wins, an armed retry wins only while it can still fire', () => {
@@ -406,7 +619,12 @@ describe('the accepted-hand projection worker', () => {
       })
     ).toBe(false);
     expect(
-      worker.pollIsDue({ drainRunning: false, retryArmed: false, msSinceLastDrainStart: 0, pollMs })
+      worker.pollIsDue({
+        drainRunning: false,
+        retryArmed: false,
+        msSinceLastDrainStart: 0,
+        pollMs,
+      })
     ).toBe(true);
     // An armed retry fires within 15 s (RETRY_MAX_MS); it holds the poll off for that plus two intervals.
     expect(
@@ -492,7 +710,10 @@ describe('the accepted-hand projection worker', () => {
       }),
       { data: [{ hand_id: 'h-follow', hand_number: 7 }], error: null }
     );
-    projectionReplies.push({ data: { ok: true, hand_id: 'h-follow' }, error: null });
+    projectionReplies.push({
+      data: { ok: true, hand_id: 'h-follow' },
+      error: null,
+    });
 
     const running = worker.wakeHandProjection('local');
     const joined = worker.wakeHandProjection('poll');
@@ -594,17 +815,31 @@ describe('the accepted-hand projection worker', () => {
       // interval elapses three times and must not fire once, or the backoff
       // would collapse to 5 s forever.
       for (let i = 0; i < 6; i++) {
-        outboxReplies.push({ data: [{ hand_id: 'h-601', hand_number: 601 }], error: null });
-        projectionReplies.push({ data: null, error: { message: 'connection reset' } });
+        outboxReplies.push({
+          data: [{ hand_id: 'h-601', hand_number: 601 }],
+          error: null,
+        });
+        projectionReplies.push({
+          data: null,
+          error: { message: 'connection reset' },
+        });
       }
-      await expect(worker.wakeHandProjection()).resolves.toMatchObject({ failed: 1 });
+      await expect(worker.wakeHandProjection()).resolves.toMatchObject({
+        failed: 1,
+      });
       await vi.advanceTimersByTimeAsync(15_750);
       expect(rpcCalls).toHaveLength(6);
       expect(worker.handProjectionWakeCounts().poll).toBe(before);
 
       // Once the row commits and no retry is armed, the poll resumes.
-      outboxReplies.push({ data: [{ hand_id: 'h-601', hand_number: 601 }], error: null });
-      projectionReplies.push({ data: { ok: true, hand_id: 'h-601' }, error: null });
+      outboxReplies.push({
+        data: [{ hand_id: 'h-601', hand_number: 601 }],
+        error: null,
+      });
+      projectionReplies.push({
+        data: { ok: true, hand_id: 'h-601' },
+        error: null,
+      });
       await vi.advanceTimersByTimeAsync(15_000);
       expect(rpcCalls).toHaveLength(7);
       await vi.advanceTimersByTimeAsync(worker.HAND_PROJECTION_POLL_MS * 2);
@@ -723,7 +958,10 @@ describe('the drain projects one ordered chain per table, N tables at a time', (
       ],
       error: null,
     });
-    projectionRepliesById.set('A1', { data: null, error: { message: 'connection reset' } });
+    projectionRepliesById.set('A1', {
+      data: null,
+      error: { message: 'connection reset' },
+    });
     projectionRepliesById.set('B2', { data: { ok: true }, error: null });
     projectionRepliesById.set('B5', { data: { ok: true }, error: null });
 
@@ -739,7 +977,9 @@ describe('the drain projects one ordered chain per table, N tables at a time', (
     ]);
     // The pass owes a causal retry for table A; the retry re-reads the outbox.
     outboxReplies.push({ data: [], error: null });
-    await vi.waitFor(() => expect(queryCalls).toHaveLength(2), { timeout: 2_000 });
+    await vi.waitFor(() => expect(queryCalls).toHaveLength(2), {
+      timeout: 2_000,
+    });
   });
 
   it('a dependency-deferred hand blocks its table across pages of the same pass', async () => {
@@ -751,7 +991,10 @@ describe('the drain projects one ordered chain per table, N tables at a time', (
     }));
     outboxReplies.push(
       { data: page1, error: null },
-      { data: [{ hand_id: 'A101', table_id: 'A', hand_number: 101 }], error: null }
+      {
+        data: [{ hand_id: 'A101', table_id: 'A', hand_number: 101 }],
+        error: null,
+      }
     );
     projectionRepliesById.set('T1', {
       data: { ok: false, reason: 'predecessor_pending' },
@@ -779,7 +1022,10 @@ describe('the drain projects one ordered chain per table, N tables at a time', (
       ],
       error: null,
     });
-    projectionRepliesById.set('A1', { data: { ok: false, reason: 'not_pending' }, error: null });
+    projectionRepliesById.set('A1', {
+      data: { ok: false, reason: 'not_pending' },
+      error: null,
+    });
     projectionRepliesById.set('A2', { data: { ok: true }, error: null });
     await expect(worker.wakeHandProjection()).resolves.toEqual({
       projected: 1,
@@ -800,7 +1046,10 @@ describe('the drain projects one ordered chain per table, N tables at a time', (
       error: null,
     });
     projectionRepliesById.set('A1', { data: { ok: true }, error: null });
-    projectionRepliesById.set('B2', { data: { ok: false, reason: 'not_pending' }, error: null });
+    projectionRepliesById.set('B2', {
+      data: { ok: false, reason: 'not_pending' },
+      error: null,
+    });
     await worker.wakeHandProjection();
     const after = worker.handProjectionDrainResultCounts();
     expect(after.projected).toBe(before.projected + 1);
@@ -862,7 +1111,9 @@ describe('projection worker owns its request context', () => {
     expect(() =>
       runWithTournamentDataAuthority(authority, () => worker.startHandProjectionWorker())
     ).toThrow('must start outside tournament authority');
-    await expect(worker.wakeHandProjection()).resolves.toMatchObject({ projected: 0 });
+    await expect(worker.wakeHandProjection()).resolves.toMatchObject({
+      projected: 0,
+    });
     expect(requestActors).toEqual([]);
     worker.startHandProjectionWorker();
     await vi.waitFor(() => expect(requestActors).toEqual(['service']));
@@ -881,4 +1132,439 @@ describe('projection worker owns its request context', () => {
     await vi.waitFor(() => expect(rpcCalls).toHaveLength(2));
     expect(requestActors).toEqual(['service', 'service', 'service', 'service']);
   });
+});
+
+describe('bounded fair sweeps over unchanged blocked prefixes', () => {
+  it.each([1000, 1205])(
+    'passes %i blocked rows, then recovers original work in order',
+    async (count) => {
+      vi.useFakeTimers();
+      try {
+        const pending = Array.from({ length: count }, (_, i) => ({
+          hand_id: `blocked-${i + 1}`,
+          table_id: 'blocked',
+          hand_number: i + 1,
+        }));
+        pending.push({
+          hand_id: 'healthy',
+          table_id: 'healthy',
+          hand_number: count + 1,
+        });
+        let blocked = true;
+        const completed: string[] = [];
+        outboxModel = (call) => ({
+          data: pending
+            .filter(
+              (r) =>
+                r.hand_number > (call.after ?? 0) && r.hand_number <= (call.ceiling ?? Infinity)
+            )
+            .sort((a, b) =>
+              call.ascending === false
+                ? b.hand_number - a.hand_number
+                : a.hand_number - b.hand_number
+            )
+            .slice(0, call.limit),
+          error: null,
+        });
+        projectionModel = (id) => {
+          // Frequent immediate wake signals must coalesce, not reset the sweep.
+          for (let i = 0; i < 5; i++) void worker.wakeHandProjection('listen');
+          if (id.startsWith('blocked') && blocked)
+            return {
+              data: { ok: false, reason: 'predecessor_pending' },
+              error: null,
+            };
+          const index = pending.findIndex((r) => r.hand_id === id);
+          if (
+            pending.some(
+              (r) =>
+                r.table_id === pending[index].table_id && r.hand_number < pending[index].hand_number
+            )
+          )
+            throw new Error('worker skipped original predecessor');
+          completed.push(id);
+          pending.splice(index, 1);
+          return { data: { ok: true }, error: null };
+        };
+        await worker.wakeHandProjection();
+        // Flush promise continuations without advancing the retry timer.
+        for (let i = 0; i < 100; i++) await Promise.resolve();
+        expect(completed).toEqual(['healthy']);
+        expect(rpcCalls.filter((c) => c.args.p_hand_id === 'blocked-1')).toHaveLength(1);
+        expect(queryCalls.filter((c) => c.ascending !== false).length).toBeLessThanOrEqual(14);
+        const before = rpcCalls.length;
+        await vi.advanceTimersByTimeAsync(249);
+        expect(rpcCalls.length).toBe(before);
+        blocked = false;
+        await vi.advanceTimersByTimeAsync(1);
+        for (let i = 0; i < 100; i++) await Promise.resolve();
+        expect(pending).toHaveLength(0);
+        expect(completed).toEqual([
+          'healthy',
+          ...Array.from({ length: count }, (_, i) => `blocked-${i + 1}`),
+        ]);
+        expect(new Set(completed).size).toBe(count + 1);
+        expect(
+          rpcCalls.every(
+            (c) =>
+              c.fn === 'fn_project_hand_side_effects' && Object.keys(c.args).join() === 'p_hand_id'
+          )
+        ).toBe(true);
+      } finally {
+        await worker.stopHandProjectionWorker();
+        vi.useRealTimers();
+      }
+    }
+  );
+});
+
+describe('fair sweep boundaries', () => {
+  it.each([false, true])(
+    'bounds a sweep despite new arrivals=%s and retries the original blocker',
+    async (arrivals) => {
+      vi.useFakeTimers();
+      try {
+        const pending = Array.from({ length: 1000 }, (_, i) => ({
+          hand_id: `a-${i + 1}`,
+          table_id: 'a',
+          hand_number: i + 1,
+        }));
+        if (arrivals)
+          pending.push({
+            hand_id: 'healthy-old',
+            table_id: 'b',
+            hand_number: 1001,
+          });
+        let captured = false;
+        outboxModel = (call) => {
+          const data = pending
+            .filter(
+              (r) =>
+                r.hand_number > (call.after ?? 0) && r.hand_number <= (call.ceiling ?? Infinity)
+            )
+            .sort((a, b) =>
+              call.ascending === false
+                ? b.hand_number - a.hand_number
+                : a.hand_number - b.hand_number
+            )
+            .slice(0, call.limit);
+          if (call.ascending === false && arrivals && !captured) {
+            captured = true;
+            pending.push({
+              hand_id: 'arriving',
+              table_id: 'b',
+              hand_number: 1002,
+            });
+          }
+          return { data, error: null };
+        };
+        projectionModel = (id) => {
+          if (id === 'a-1')
+            return {
+              data: { ok: false, reason: 'predecessor_pending' },
+              error: null,
+            };
+          pending.splice(
+            pending.findIndex((r) => r.hand_id === id),
+            1
+          );
+          return { data: { ok: true }, error: null };
+        };
+        const summary = await worker.wakeHandProjection();
+        expect(summary.deferred).toBe(1000);
+        for (let i = 0; i < 100; i++) await Promise.resolve();
+        expect(rpcCalls.filter((c) => c.args.p_hand_id === 'a-1')).toHaveLength(1);
+        expect(rpcCalls.some((c) => c.args.p_hand_id === 'arriving')).toBe(false);
+        await vi.advanceTimersByTimeAsync(249);
+        expect(rpcCalls.filter((c) => c.args.p_hand_id === 'a-1')).toHaveLength(1);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(rpcCalls.filter((c) => c.args.p_hand_id === 'a-1')).toHaveLength(2);
+        if (arrivals) expect(rpcCalls.some((c) => c.args.p_hand_id === 'arriving')).toBe(true);
+      } finally {
+        await worker.stopHandProjectionWorker();
+        vi.useRealTimers();
+      }
+    }
+  );
+  it('reports a failed frontier read and resumes from durable claims on the causal retry', async () => {
+    vi.useFakeTimers();
+    try {
+      const pending = Array.from({ length: 1001 }, (_, i) => ({
+        hand_id: `p-${i + 1}`,
+        table_id: 'one',
+        hand_number: i + 1,
+      }));
+      let failed = false;
+      outboxModel = (call) => {
+        if (call.ascending === false && !failed) {
+          failed = true;
+          return { data: null, error: { message: 'frontier offline' } };
+        }
+        return {
+          data: pending
+            .filter(
+              (r) =>
+                r.hand_number > (call.after ?? 0) && r.hand_number <= (call.ceiling ?? Infinity)
+            )
+            .slice(0, call.limit),
+          error: null,
+        };
+      };
+      projectionModel = (id) => {
+        pending.splice(
+          pending.findIndex((r) => r.hand_id === id),
+          1
+        );
+        return { data: { ok: true }, error: null };
+      };
+      await expect(worker.wakeHandProjection()).rejects.toThrow('projection frontier read failed');
+      await vi.advanceTimersByTimeAsync(250);
+      expect(pending).toHaveLength(0);
+      expect(rpcCalls).toHaveLength(1001);
+      expect(mockReportError).toHaveBeenCalledWith(
+        expect.any(Error),
+        'HandProjection.drain_failed'
+      );
+    } finally {
+      await worker.stopHandProjectionWorker();
+      vi.useRealTimers();
+    }
+  });
+  describe.each(['page', 'frontier'])('strict %s ordering responses', (surface) => {
+    const invalid = [
+      null,
+      undefined,
+      {},
+      [null],
+      [{}],
+      ...[
+        null,
+        undefined,
+        'garbage',
+        Infinity,
+        NaN,
+        0,
+        -1,
+        1.5,
+        Number.MAX_SAFE_INTEGER + 1,
+        '9007199254740993',
+        'Infinity',
+        '1e3',
+      ].map((hand_number) => [{ hand_id: 'bad', hand_number }]),
+    ];
+    it.each(invalid.map((data, index) => ({ data, index })))(
+      'rejects invalid response $index and retries',
+      async ({ data }) => {
+        vi.useFakeTimers();
+        try {
+          const pending = Array.from({ length: surface === 'frontier' ? 1001 : 1 }, (_, i) => ({
+            hand_id: `strict-${i + 1}`,
+            table_id: 'one',
+            hand_number: i + 1,
+          }));
+          let injected = false;
+          outboxModel = (call) => {
+            if (!injected && (surface === 'page' || call.ascending === false)) {
+              injected = true;
+              return { data, error: null } as unknown as OutboxReply;
+            }
+            return {
+              data: pending.filter((r) => r.hand_number > (call.after ?? 0)).slice(0, call.limit),
+              error: null,
+            };
+          };
+          projectionModel = (id) => {
+            pending.splice(
+              pending.findIndex((r) => r.hand_id === id),
+              1
+            );
+            return { data: { ok: true }, error: null };
+          };
+          await expect(worker.wakeHandProjection()).rejects.toThrow('projection ordering');
+          expect(pending).toHaveLength(1);
+          expect(rpcCalls).toHaveLength(surface === 'frontier' ? 1000 : 0);
+          await vi.advanceTimersByTimeAsync(249);
+          expect(pending).toHaveLength(1);
+          await vi.advanceTimersByTimeAsync(1);
+          expect(pending).toHaveLength(0);
+          expect(new Set(rpcCalls.map((c) => c.args.p_hand_id)).size).toBe(rpcCalls.length);
+        } finally {
+          await worker.stopHandProjectionWorker();
+          vi.useRealTimers();
+        }
+      }
+    );
+  });
+
+  it.each([false, true])(
+    'accepts exact numeric ordering including wire strings=%s',
+    async (wire) => {
+      const pending = Array.from({ length: 1001 }, (_, i) => ({
+        hand_id: `valid-${i + 1}`,
+        hand_number: i + 1,
+      }));
+      outboxModel = (call) => ({
+        data: pending
+          .filter(
+            (r) => r.hand_number > (call.after ?? 0) && r.hand_number <= (call.ceiling ?? Infinity)
+          )
+          .sort((a, b) =>
+            call.ascending === false ? b.hand_number - a.hand_number : a.hand_number - b.hand_number
+          )
+          .slice(0, call.limit)
+          .map((r) => ({
+            ...r,
+            hand_number: wire ? String(r.hand_number) : r.hand_number,
+          })) as unknown as OutboxReply['data'],
+        error: null,
+      });
+      projectionModel = (id) => {
+        pending.splice(
+          pending.findIndex((r) => r.hand_id === id),
+          1
+        );
+        return { data: { ok: true }, error: null };
+      };
+      await worker.wakeHandProjection();
+      await vi.waitFor(() => expect(pending).toHaveLength(0));
+      expect(rpcCalls).toHaveLength(1001);
+    }
+  );
+
+  it('rejects an out-of-order page before projecting its valid prefix', async () => {
+    outboxReplies.push({
+      data: [
+        { hand_id: 'a', hand_number: 2 },
+        { hand_id: 'b', hand_number: 1 },
+      ],
+      error: null,
+    });
+    await expect(worker.wakeHandProjection()).rejects.toThrow('outside bounds');
+    expect(rpcCalls).toHaveLength(0);
+  });
+  it.each(['page', 'frontier'])('accepts a verified empty %s array', async (surface) => {
+    vi.useFakeTimers();
+    try {
+      const pending = Array.from({ length: surface === 'frontier' ? 1000 : 0 }, (_, i) => ({
+        hand_id: `empty-${i + 1}`,
+        hand_number: i + 1,
+      }));
+      outboxModel = (call) => ({
+        data: pending.filter((r) => r.hand_number > (call.after ?? 0)).slice(0, call.limit),
+        error: null,
+      });
+      projectionModel = (id) => {
+        pending.splice(
+          pending.findIndex((r) => r.hand_id === id),
+          1
+        );
+        return { data: { ok: true }, error: null };
+      };
+      await worker.wakeHandProjection();
+      await vi.advanceTimersByTimeAsync(250);
+      expect(pending).toHaveLength(0);
+      expect(mockReportError).not.toHaveBeenCalled();
+      expect(rpcCalls).toHaveLength(surface === 'frontier' ? 1000 : 0);
+    } finally {
+      await worker.stopHandProjectionWorker();
+      vi.useRealTimers();
+    }
+  });
+  it.each([1, 2])(
+    'keeps physical lanes owned and revisits unstarted partial-page chains with %s lanes',
+    async (lanes) => {
+      vi.stubEnv('HAND_PROJECTION_DRAIN_CONCURRENCY', String(lanes));
+      vi.useFakeTimers();
+      try {
+        let blocked = true;
+        const pending = Array.from({ length: 1205 }, (_, i) => ({
+          hand_id: `timed-${i + 1}`,
+          hand_number: i + 1,
+          table_id:
+            i === 0 || (i >= 100 && i < 1204) ? 'blocked' : i === 99 ? 'table-2' : `table-${i + 1}`,
+        }));
+        const settle = async () => {
+          for (let i = 0; i < 20; i++) await Promise.resolve();
+        };
+        const gates = Array.from({ length: lanes }, () => {
+          let resolve!: (reply: RpcReply) => void;
+          const promise = new Promise<RpcReply>((done) => {
+            resolve = done;
+          });
+          return { promise, resolve };
+        });
+        const completed: string[] = [];
+        outboxModel = (call) => ({
+          data: pending
+            .filter(
+              (r) =>
+                r.hand_number > (call.after ?? 0) && r.hand_number <= (call.ceiling ?? Infinity)
+            )
+            .sort((a, b) =>
+              call.ascending === false
+                ? b.hand_number - a.hand_number
+                : a.hand_number - b.hand_number
+            )
+            .slice(0, call.limit),
+          error: null,
+        });
+        projectionModel = async (id) => {
+          const row = pending.find((r) => r.hand_id === id)!;
+          if (row.table_id === 'blocked' && blocked)
+            return { data: { ok: false, reason: 'predecessor_pending' }, error: null };
+          const gateIndex = row.hand_number - 2;
+          if (gateIndex >= 0 && gateIndex < lanes) await gates[gateIndex].promise;
+          completed.push(id);
+          pending.splice(
+            pending.findIndex((r) => r.hand_id === id),
+            1
+          );
+          return { data: { ok: true }, error: null };
+        };
+        const pass = worker.wakeHandProjection();
+        await settle();
+        expect(rpcInFlight.now).toBe(lanes);
+        const queryCount = queryCalls.length;
+        // Inside its budget the pass owns the lane: wakes are coalesced onto
+        // it and none of them starts a second read beside it.
+        for (let i = 0; i < 8; i++) void worker.wakeHandProjection();
+        await settle();
+        expect(queryCalls).toHaveLength(queryCount);
+        expect(rpcInFlight.now).toBe(lanes);
+
+        /* AND THE BUDGET ENDS IT, with the gated calls still unanswered
+           (2026-09-12, second repair). This advanced past
+           HAND_PROJECTION_DRAIN_DEADLINE_MS and then asserted that the pass
+           STILL owned the lane and STILL had its calls in flight, and only
+           settled once the test itself resolved the gates - the wedge, written
+           down as the contract. Nothing here answers them now. */
+        await vi.advanceTimersByTimeAsync(worker.HAND_PROJECTION_DRAIN_DEADLINE_MS + 1);
+        await expect(pass).resolves.toMatchObject({ failed: 0 });
+        expect(mockReportError).not.toHaveBeenCalled();
+        // Lanes stayed physical: `lanes` calls at once and never more, and the
+        // cut did not let a replacement pass read beside this one.
+        expect(rpcInFlight.max).toBe(lanes);
+        expect(queryCalls).toHaveLength(queryCount);
+
+        for (const gate of gates) gate.resolve({ data: { ok: true }, error: null });
+        blocked = false;
+        await vi.advanceTimersByTimeAsync(30_000);
+        /* A cut pass publishes no sweep: it never read its own frontier, and a
+           ceiling it never saw is not a bound. So the next pass resumes from
+           the oldest durable row and revisits every chain this one did not
+           finish, rather than stepping over them on a cursor no finished chain
+           earned. */
+        const ascending = queryCalls.filter((c) => c.ascending === true);
+        expect(ascending[1].after).toBe(0);
+        expect(pending).toHaveLength(0);
+        expect(new Set(completed).size).toBe(1205);
+        expect(completed).toHaveLength(1205);
+        expect(completed).toContain(`timed-${lanes + 2}`);
+        expect(completed).toContain('timed-1205');
+      } finally {
+        await worker.stopHandProjectionWorker();
+        vi.useRealTimers();
+      }
+    }
+  );
 });

@@ -1,0 +1,9 @@
+# Wire the exact engine image producer in CI
+
+The producer now has an executable CI entrypoint. It resolves the current protected-main target and control commits, archives the exact target server tree into an owned temporary directory, performs the full runtime typecheck there, then calls the existing bounded image proof once for that same target. The image is normalized, checked with the separate native importer and refusal matrix, and subjected to the existing OOM, wrapper and neighboring-runtime checks.
+
+A provisional artifact callback reuses that image and its actual copied runtime. It cannot publish job outputs. The resource proof returns only after its final cleanup check; the producer then checks the complete verdict, exposes the bundle and removes its reference source and dependencies. A late native, cleanup or source-removal failure leaves the producer failed and prevents outputs. Portable tests execute this boundary with controlled native responses and real temporary source/archive files.
+
+The existing native resource workflow gains these portable checks and the producer source paths. Its default native run still builds one image and preserves all prior checks and the 40-minute ceiling. The accompanying release-workflow wiring is a separate transition candidate: it adds a producer job without SSH/database credentials, immutable artifact upload, and exact same-run consumer admission before SSH. Existing request freshness, concurrency, deadlines, maintenance, hand-drain, rollback and final deployment checks are preserved.
+
+The release-workflow transition must be composed with a separately qualified host image-acquisition change before activation. This patch does not supply or authorize that host loader, and the CI-only source subset does not remove the currently active production compile call. Actual native producer delivery, timing within the existing ceiling, host import containment and final served-engine proof remain required.

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type {
+  FastHorseDecisionResult,
   HorseDecisionWorkerReady,
   HorseDecisionWorkerResponse,
   LiveHorseDecisionSnapshot,
@@ -177,7 +178,7 @@ const ready = {
   },
 };
 
-const fastResult = (requestId: number, fence: string) => ({
+const fastResult = (requestId: number, fence: string): FastHorseDecisionResult => ({
   type: 'FAST_RESULT' as const,
   requestId,
   generation: 7,
@@ -191,6 +192,45 @@ const fastResult = (requestId: number, fence: string) => ({
 });
 
 describe('LiveHorseDecisionWorkerClient', () => {
+  it.each(['fast', 'deep'] as const)(
+    'binds the %s response to its canonical request without copying private inputs',
+    async (lane) => {
+      const worker = new FakeWorker();
+      const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+      worker.emitMessage(ready);
+      const input = snapshot('witness');
+      const pending =
+        lane === 'fast'
+          ? client.decideFast(input)
+          : client.decideDeep({ ...input, rngBefore: 11, deepEquity: 6 });
+      const reply = fastResult(1, 'witness');
+      worker.emitMessage(lane === 'fast' ? reply : { ...reply, type: 'DEEP_RESULT' });
+      const result = await pending;
+      expect(result.decision.executionWitness).toMatchObject({
+        identity: {
+          decisionKey: input.decisionKey,
+          requestId: 1,
+          generation: input.generation,
+          fence: input.fence,
+          decisionTimeMs: input.decisionTimeMs,
+          lane,
+          variant: 'nlh',
+          stage: 'preflop',
+        },
+        selected: { action: 'fold', amount: null },
+        executionStatus: 'pending',
+        executedAction: null,
+        executedAmount: null,
+        retirementReason: null,
+        computeMs: 4,
+        governorScale: 0.35,
+      });
+      const encoded = JSON.stringify(result.decision.executionWitness);
+      for (const forbidden of ['cards', 'spades', 'horse-1', 'rngBefore', 'rngAfter']) {
+        expect(encoded).not.toContain(forbidden);
+      }
+    }
+  );
   it('holds work behind READY and, pinned to a window of one, posts exactly one FIFO job at a time', async () => {
     const worker = new FakeWorker();
     const client = new LiveHorseDecisionWorkerClient({
@@ -239,7 +279,13 @@ describe('LiveHorseDecisionWorkerClient', () => {
 
     // The synchronous worker may finish before it sees CANCEL. Its result is
     // consumed only to release the lane and can never resolve the stale job.
-    worker.emitMessage(fastResult(1, 'active'));
+    const discarded = fastResult(1, 'active');
+    worker.emitMessage(discarded);
+    expect(discarded.decision.executionWitness).toMatchObject({
+      executionStatus: 'not_executed',
+      retirementReason: 'caller_settled',
+      executedAction: null,
+    });
     expect(client.status()).toMatchObject({ phase: 'ready', queueDepth: 0 });
   });
 
@@ -415,7 +461,13 @@ describe('LiveHorseDecisionWorkerClient', () => {
       expect(onFatal).not.toHaveBeenCalled();
 
       const successor = client.decideFast(snapshot('successor'));
-      worker.emitMessage(fastResult(2, 'near-deadline'));
+      const expired = fastResult(2, 'near-deadline');
+      worker.emitMessage(expired);
+      expect(expired.decision.executionWitness).toMatchObject({
+        executionStatus: 'not_executed',
+        retirementReason: 'caller_settled',
+        executedAction: null,
+      });
       expect(worker.sent.at(-1)).toMatchObject({ type: 'DECIDE_FAST', requestId: 3 });
       worker.emitMessage(fastResult(3, 'successor'));
       await expect(successor).resolves.toMatchObject({ fence: 'successor' });

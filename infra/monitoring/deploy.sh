@@ -194,6 +194,11 @@ fi
 echo "🟢 Starting stack..."
 cd "$RUN_DIR"
 docker compose pull --quiet
+# Validate the candidate through a fresh mount before disturbing the service.
+# An existing container can retain an unlinked config inode after a publisher
+# replaces the host path; validating inside that container would test old bytes.
+docker compose run --rm --no-deps --entrypoint /bin/amtool alertmanager \
+  check-config /etc/alertmanager/alertmanager.yml
 docker compose up -d
 
 # ─── 6. Health check ─────────────────────────────────────────────────────
@@ -216,6 +221,29 @@ for svc in "Prometheus http://127.0.0.1:9090/-/reload" "AlertManager http://127.
     exit 1
   fi
 done
+
+# HTTP 200 proves only that the mounted file reloaded. On 2026-09-13 it was an
+# old, detached inode: host config and release receipt had advanced while the
+# process still used the old notification routes. Compare the process's own
+# successful-load fingerprint with the authorized host file before publishing.
+AM_VERIFIER="$SRC_DIR/infra/monitoring/verify-alertmanager-config.py"
+AM_CONFIG="$SRC_DIR/infra/monitoring/alertmanager.yml"
+AM_VERIFY_STATUS=0
+python3 "$AM_VERIFIER" "$AM_CONFIG" || AM_VERIFY_STATUS=$?
+if [[ "$AM_VERIFY_STATUS" == "2" ]]; then
+  echo "🔁 Reattaching Alertmanager to the shipped configuration; retaining its named data volume..."
+  docker compose up -d --no-deps --force-recreate alertmanager
+  for attempt in {1..15}; do
+    if curl --max-time 2 -sf http://127.0.0.1:9093/-/ready >/dev/null; then
+      break
+    fi
+    sleep 1
+  done
+  python3 "$AM_VERIFIER" "$AM_CONFIG"
+elif [[ "$AM_VERIFY_STATUS" != "0" ]]; then
+  echo "❌ Alertmanager runtime configuration could not be verified; release is not acknowledged."
+  exit "$AM_VERIFY_STATUS"
+fi
 
 FAIL=0
 check() {

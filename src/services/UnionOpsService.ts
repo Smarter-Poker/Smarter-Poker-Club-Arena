@@ -16,6 +16,58 @@ import { safeErrorMessage } from '../utils/safeErrorMessage';
 
 export const MIDWAY_UNION_ID = 'fade0000-0000-0000-0000-000000000001';
 
+export interface CompletedUnionSettlement {
+  success: true;
+  union_id: string;
+  round2_club_to_agents: { amount: number; shortfalls: 0 };
+  round3_agents_to_players: { amount: number; shortfalls: 0 };
+}
+
+function settlementRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function completedSettlement(data: unknown, unionId: string): CompletedUnionSettlement {
+  const receipt = settlementRecord(data);
+  if (receipt?.success === false) {
+    // Earlier rounds may already have paid recipients. Do not report completion
+    // or automatically retry a partially completed financial operation.
+    throw new Error(
+      'Settlement did not complete. Review the settlement rounds before trying again.'
+    );
+  }
+  const round2 = settlementRecord(receipt?.round2_club_to_agents);
+  const round3 = settlementRecord(receipt?.round3_agents_to_players);
+  const validRound = (round: Record<string, unknown> | null) =>
+    round !== null &&
+    typeof round.amount === 'number' &&
+    Number.isFinite(round.amount) &&
+    round.amount >= 0 &&
+    Number.isSafeInteger(Math.round(round.amount * 100)) &&
+    round.shortfalls === 0 &&
+    round.success !== false;
+  if (
+    receipt?.success !== true ||
+    receipt.union_id !== unionId ||
+    !validRound(round2) ||
+    !validRound(round3)
+  ) {
+    throw new Error(
+      'Settlement could not be verified. Refresh the settlement rounds before trying again.'
+    );
+  }
+  // Only return the verified amounts used by the completion message. Missing or
+  // malformed amounts must never become an invented zero-chip success.
+  return {
+    success: true,
+    union_id: unionId,
+    round2_club_to_agents: { amount: round2!.amount as number, shortfalls: 0 },
+    round3_agents_to_players: { amount: round3!.amount as number, shortfalls: 0 },
+  };
+}
+
 export interface AgentRosterRow {
   player_id: string;
   username: string | null;
@@ -298,7 +350,7 @@ export const UnionOpsService = {
       p_period_end: to ?? null,
     });
     if (error) throw error;
-    return data as Record<string, unknown>;
+    return completedSettlement(data, unionId);
   },
 
   async getDistributionCheck(

@@ -24,6 +24,7 @@ import type {
   HorseDecisionWorkerStatusResult,
 } from './protocol.js';
 import { horseDecisionSolverStoresAreValid } from './protocol.js';
+import { horseDecisionReceiptIsValid } from './responseValidation.js';
 import type { HorseMindDecisionEffect } from '../HorseMind.js';
 
 export interface WorkerLike {
@@ -802,6 +803,10 @@ export class LiveHorseDecisionWorkerClient {
           message.decision.policyFallback !== 'brain_exception')
       ) {
         this.fail(new Error('horse decision worker returned invalid fallback provenance'));
+        return;
+      }
+      if (!horseDecisionReceiptIsValid(message.decision)) {
+        this.fail(new Error('horse decision worker returned invalid policy receipt'));
         return;
       }
       const witness = createHorseExecutionWitness(active.request, message.decision, {

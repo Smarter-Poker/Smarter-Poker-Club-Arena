@@ -7,6 +7,7 @@ import type {
   LiveHorseDecisionSnapshot,
 } from './protocol.js';
 import { buildHorseDecisionKey } from './protocol.js';
+import { HorsePolicyGraph, HORSE_POLICY_ORDER } from '../HorsePolicyGraph.js';
 import {
   HorseDecisionAbortedError,
   HorseDecisionExpiredError,
@@ -192,6 +193,58 @@ const fastResult = (requestId: number, fence: string): FastHorseDecisionResult =
 });
 
 describe('LiveHorseDecisionWorkerClient', () => {
+  it.each(['fast', 'deep'] as const)(
+    'rejects malformed %s policy graphs inside the failure boundary',
+    async (lane) => {
+      const worker = new FakeWorker();
+      const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+      worker.emitMessage(ready);
+      const input = snapshot('invalid-graph');
+      const pending =
+        lane === 'fast'
+          ? client.decideFast(input)
+          : client.decideDeep({ ...input, rngBefore: 11, deepEquity: 6 });
+      void pending.catch(() => undefined);
+      const reply = fastResult(1, 'invalid-graph');
+      reply.decision.policyGraph = { version: 'horse-policy-order-v1', transitions: null } as any;
+      expect(() =>
+        worker.emitMessage(lane === 'fast' ? reply : { ...reply, type: 'DEEP_RESULT' })
+      ).not.toThrow();
+      await expect(pending).rejects.toThrow('invalid policy receipt');
+      expect(client.status().phase).toBe('failed');
+      expect(worker.terminateCalls).toBe(1);
+    }
+  );
+  it.each([
+    'discontinuity',
+    'wrong_final',
+    'private_field',
+    'invalid_action',
+    'invalid_clock',
+  ] as const)('rejects a returned decision with %s', async (fault) => {
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    const pending = client.decideFast(snapshot('invalid-receipt'));
+    void pending.catch(() => undefined);
+    const reply = fastResult(1, 'invalid-receipt');
+    const graph = new HorsePolicyGraph(() => 0);
+    for (const node of HORSE_POLICY_ORDER)
+      graph.run(node, node === 'reference' ? null : reply.decision, () => ({
+        decision: reply.decision,
+      }));
+    reply.decision = graph.finish(reply.decision);
+    if (fault === 'discontinuity')
+      reply.decision.policyGraph!.transitions[2].before!.action = 'raise';
+    if (fault === 'wrong_final') reply.decision.action = 'check';
+    if (fault === 'private_field')
+      Object.assign(reply.decision.policyGraph!.transitions[1], { cards: ['private-input'] });
+    if (fault === 'invalid_action') reply.decision.action = 'invalid' as any;
+    if (fault === 'invalid_clock') reply.decision.thinkTime = NaN;
+    expect(() => worker.emitMessage(reply)).not.toThrow();
+    await expect(pending).rejects.toThrow('invalid policy receipt');
+    expect(client.status().phase).toBe('failed');
+  });
   it('keeps the brain failure provenance in the exact private execution witness', async () => {
     const worker = new FakeWorker(),
       client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });

@@ -193,6 +193,7 @@ class NativeSmokeFailure(RuntimeError):
         super().__init__('native_fixture_services_failed')
         self.diagnostics = native_failures(output)
         self.role_fault_failure = role_fault_failure(output)
+        self.provider_failure = provider_failure_record(output)
         self.exit_code = exit_code if type(exit_code) is int and 1 <= exit_code <= 255 else None
 
 
@@ -330,6 +331,57 @@ def role_alignment_record(output):
     for key in hashes:
         require(isinstance(result[key], str) and re.fullmatch('[0-9a-f]{64}', result[key]))
     return result
+
+
+def provider_failure_record(output):
+    # Retain bounded failure observations only. This record cannot admit a
+    # fixture and never includes SQL, error messages, keys or service output.
+    records = []
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('duplicate provider field')
+            result[key] = value
+        return result
+    for line in output.splitlines():
+        if not line.startswith('{') or len(line) > 4096:
+            continue
+        try:
+            item = json.loads(line, object_pairs_hook=unique)
+        except ValueError:
+            continue
+        if isinstance(item, dict) and item.get('scope') == 'native-five-provider-semantics':
+            records.append(item)
+    if len(records) != 1:
+        return None
+    item = records[0]
+    completed = ('genuine_symbols', 'role_acl_catalog', 'actual_anon_vault_denial',
+        'postgis_geometry_geography_gist', 'http_private_response', 'pg_net_worker_identity',
+        'pg_net_commit_only', 'pg_net_rollback_absent', 'vault_encrypt_update_rollback',
+        'plpgsql_valid_invalid', 'dummy_objects_removed', 'all_probe_clients_closed', 'private_http_closed')
+    unqualified = ('production_binary_parity', 'complete_catalog_parity',
+        'actual_login_and_default_acl_tests', 'post_alignment_services', 'full_schema_ready', 'funded_or_production_complete')
+    expected = set(completed + unqualified) | {'scope', 'status', 'stage', 'versions',
+        'build_sha256', 'catalog_sha256', 'failure_type', 'sqlstate'}
+    if (set(item) != expected or item['status'] != 'failed'
+            or not isinstance(item['stage'], str) or item['stage'] not in {
+                'identity', 'install', 'postgis', 'plpgsql-check', 'vault', 'private-http', 'pg-net', 'cleanup'}
+            or not isinstance(item['failure_type'], str) or item['failure_type'] not in {
+                'Error', 'AssertionError', 'TypeError', 'RangeError', 'error'}
+            or (item['sqlstate'] is not None and (not isinstance(item['sqlstate'], str)
+                or not re.fullmatch('[0-9A-Z]{5}', item['sqlstate'])))
+            or any(type(item[k]) is not bool for k in completed)
+            or any(item[k] is not False for k in unqualified)
+            or item['versions'] != {'http': '1.6', 'pg_net': '0.19.5', 'plpgsql_check': '2.7',
+                'postgis': '3.3.7', 'supabase_vault': '0.3.1'}
+            or not isinstance(item['build_sha256'], str) or not re.fullmatch('[0-9a-f]{64}', item['build_sha256'])
+            or (item['catalog_sha256'] is not None and (not isinstance(item['catalog_sha256'], str)
+                or not re.fullmatch('[0-9a-f]{64}', item['catalog_sha256'])))):
+        return None
+    return {'scope': 'native-five-provider-semantics-failure', 'status': 'failed',
+        **{k: item[k] for k in ('stage', 'failure_type', 'sqlstate')},
+        'observations': {k: item[k] for k in completed}}
 
 
 def provider_semantic_record(output):
@@ -676,6 +728,8 @@ def execute(repo, output, expected, run=command):
             receipt['native_failures'] = error.diagnostics
             if error.role_fault_failure is not None:
                 receipt['role_native_fault_failure'] = error.role_fault_failure
+            if error.provider_failure is not None:
+                receipt['provider_semantic_failure'] = error.provider_failure
             if error.exit_code is not None:
                 receipt['native_command_exit_code'] = error.exit_code
         failed = True

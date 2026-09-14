@@ -59,7 +59,7 @@ test('the image launcher reads only fixed private data and fails when that data 
     await assert.rejects(promisify(execFile)(launcher, [], { timeout: 3000 }));
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
-function fixture({ endHook, peerCloseHook }={}) {
+function fixture({ endHook, peerCloseHook, queryHook }={}) {
   const clients=[]; const hits=Object.fromEntries(names.map(n=>[n,0])); let transaction=false,pending=[],sequence=0;
   const peer={ body:'{"fixture":"synthetic"}',closeCalls:0,
     url(name){ assert.ok(names.includes(name)); return 'http://127.0.0.1:1/review/'+name; },
@@ -71,6 +71,7 @@ function fixture({ endHook, peerCloseHook }={}) {
     async connect(){}
     async end(){await endHook?.(this);this.closed=true;this.emit('end');}
     async query({text,values}){
+      await queryHook?.(text);
       if(text===sql.identity)return rows([{pid:this.processID,database:'club_arena_qualification',role:'supabase_admin',session_role:'supabase_admin',local:true,superuser:true,read_only:this.config.options.includes('read_only=on')?'on':'off',...(sql.identity.includes('server_version_num') ? {version_num:'170011'} : {version:'17.11'})}]);
       if(text===sql.empty)return rows([{empty:true}]);
       if(text===sql.install)return rows([], 'COMMIT');
@@ -112,6 +113,33 @@ function fixture({ endHook, peerCloseHook }={}) {
 
 test('controlled successful protocol remains explicitly portable, with no production claims',async()=>{
   const f=fixture();const proof=await f.run();assert.equal(proof.status,'passed');assert.equal(proof.funded_or_production_complete,false);assert.equal(proof.production_binary_parity,false);assert.equal(f.clients.length,4);assert.ok(f.clients.every(c=>c.closed));assert.equal(f.peer.closeCalls,1);
+});
+test('provider failure retains only its safe stage and SQLSTATE through cleanup failure', async () => {
+  const f = fixture({ queryHook(text) {
+    if (text === sql.install) throw Object.assign(new Error('PRIVATE SQL AND KEY'), { name: 'error', code: '42501' });
+  }, endHook(client) { client.emit('error', new Error('PRIVATE CLEANUP ERROR')); } });
+  await assert.rejects(f.run(), (error) => {
+    assert.equal(error.proof.stage, 'install');
+    assert.equal(error.proof.failure_type, 'error');
+    assert.equal(error.proof.sqlstate, '42501');
+    assert.equal(error.proof.status, 'failed');
+    assert.equal(error.proof.all_probe_clients_closed, true);
+    assert.equal(JSON.stringify(error.proof).includes('PRIVATE'), false);
+    return true;
+  });
+  assert.ok(f.clients.every(client => client.closed));
+});
+test('provider failure drops arbitrary error names and non-SQLSTATE codes', async () => {
+  const f = fixture({ queryHook(text) {
+    if (text === sql.postgis) throw Object.assign(new Error('PRIVATE SQL'), { name: 'PRIVATE KEY', code: 'PRIVATE DATA' });
+  } });
+  await assert.rejects(f.run(), (error) => {
+    assert.equal(error.proof.stage, 'postgis');
+    assert.equal(error.proof.failure_type, 'Error');
+    assert.equal(error.proof.sqlstate, null);
+    assert.equal(JSON.stringify(error.proof).includes('PRIVATE'), false);
+    return true;
+  });
 });
 test('cancellation during final peer cleanup cannot become a passing qualification',async()=>{
   const abort=new AbortController();const f=fixture({peerCloseHook:()=>abort.abort()});

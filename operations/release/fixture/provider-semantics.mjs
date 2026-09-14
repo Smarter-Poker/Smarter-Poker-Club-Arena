@@ -283,8 +283,12 @@ export async function qualifyFixtureProviders({ Client, signal, buildSha256, rol
     assert.deepEqual((await query(fresh, sql.cleaned, [ids, secretId])).rows, [{ cleaned: true }]);
     await close(fresh);
     proof.dummy_objects_removed = true;
-  } catch {
+  } catch (error) {
     // Native diagnostics disclose stage and safe proof only, never SQL/errors.
+    proof.failure_type = ['Error', 'AssertionError', 'TypeError', 'RangeError', 'error'].includes(error?.name)
+      ? error.name : 'Error';
+    proof.sqlstate = typeof error?.code === 'string' && /^[0-9A-Z]{5}$/.test(error.code)
+      ? error.code : null;
     throw Object.assign(new Error('FIXTURE_PROVIDER_SEMANTICS_FAILED'), { proof });
   } finally {
     let failed = false;
@@ -297,7 +301,12 @@ export async function qualifyFixtureProviders({ Client, signal, buildSha256, rol
       try { await bounded(() => peerTask, true); } catch { failed = true; }
     }
     try { await closePeer(); } catch { failed = true; }
-    if (failed || signal?.aborted || records.some((record) => record.failed)) throw Object.assign(new Error('FIXTURE_PROVIDER_CLEANUP_FAILED'), { proof });
+    if (failed || signal?.aborted || records.some((record) => record.failed)) {
+      // Cleanup failure cannot replace the first semantic failure's location.
+      proof.failure_type ??= 'Error';
+      proof.sqlstate ??= null;
+      throw Object.assign(new Error('FIXTURE_PROVIDER_CLEANUP_FAILED'), { proof });
+    }
   }
   proof.status = 'passed';
   proof.stage = 'complete';

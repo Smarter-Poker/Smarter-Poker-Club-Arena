@@ -259,6 +259,10 @@ class RunnerTests(unittest.TestCase):
                         raise m.NativeSmokeFailure(json.dumps({'status': 'failed', 'stage': 'initialization', 'error': 'Error'}) + '\nPRIVATE TOKEN', 7)
                     if fault == 'native-role-stage':
                         raise m.NativeSmokeFailure(json.dumps(failed_role_faults()) + '\nPRIVATE TOKEN', 7)
+                    if fault == 'native-provider-stage':
+                        provider = dict(PROVIDER_SEMANTICS, status='failed', stage='postgis',
+                            failure_type='error', sqlstate='42501')
+                        raise m.NativeSmokeFailure(json.dumps(provider) + '\nPRIVATE TOKEN', 7)
                     raw, proof = preimage_material()
                     private = Path(env['FIXTURE_SERVICE_PREIMAGE_PATH'])
                     self.assertNotEqual(private.parent, root / 'evidence')
@@ -308,6 +312,35 @@ class RunnerTests(unittest.TestCase):
         code, receipt, _ = self.exercise()
         self.assertEqual(code, 0)
         self.assertEqual(receipt['provider_semantics'], PROVIDER_SEMANTICS)
+
+    def test_provider_failure_survives_controller_and_cannot_admit_fixture(self):
+        code, receipt, calls = self.exercise('native-provider-stage')
+        self.assertEqual(code, 1)
+        failure = receipt['provider_semantic_failure']
+        self.assertEqual(failure['scope'], 'native-five-provider-semantics-failure')
+        self.assertEqual(failure['stage'], 'postgis')
+        self.assertEqual(failure['sqlstate'], '42501')
+        self.assertEqual(failure['status'], 'failed')
+        self.assertNotIn('provider_semantics', receipt)
+        self.assertNotIn('PRIVATE', json.dumps(receipt))
+        self.assertTrue(all(receipt['cleanup'].values()))
+        with self.assertRaises(RuntimeError):
+            m.provider_semantic_record(json.dumps(failure))
+
+    def test_provider_failure_refuses_forged_unbounded_or_duplicate_fields(self):
+        original = dict(PROVIDER_SEMANTICS, status='failed', stage='install',
+            failure_type='error', sqlstate='42501', catalog_sha256=None)
+        mutations = [('status','passed'), ('stage','PRIVATE SQL'), ('failure_type','PRIVATE KEY'),
+            ('sqlstate','PRIVATE SQL'), ('all_probe_clients_closed',1), ('full_schema_ready',True),
+            ('versions',{}), ('build_sha256','PRIVATE'), ('catalog_sha256','PRIVATE'), ('token','PRIVATE')]
+        for key, value in mutations:
+            with self.subTest(key=key):
+                self.assertIsNone(m.provider_failure_record(json.dumps(dict(original, **{key:value}))))
+        raw = json.dumps(original)
+        self.assertIsNotNone(m.provider_failure_record(raw))
+        self.assertIsNone(m.provider_failure_record(raw+'\n'+raw))
+        self.assertIsNone(m.provider_failure_record(raw.replace('"status": "failed"', '"status": "failed", "status": "failed"')))
+        self.assertIsNone(m.provider_failure_record('{'+(' '*4097)+'}'))
 
     def test_provider_semantic_receipt_refuses_incomplete_or_overclaimed_results(self):
         for key, value in [('status', 'failed'), ('private_http_closed', False),

@@ -1146,6 +1146,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-horse-seat-touch-session.py
+      - name: Union integrity reports keep event and incident scope
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-union-integrity-scope.py
       - name: Tournament finish incidents retain their own event identity
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

@@ -17412,3 +17412,10 @@ Hand-for-hand retains synchronized/add-on break pauses, preserves their budgets 
 ## 2026-09-14: Qualify scheduled discovery under full CI initialization
 
 **Files:** server/src/engine/DirectEngineRecovery.guard.test.ts original176; server/src/tournament/ScheduledStartDiscoveryIsolation.test.ts. **Before:**shutdown inventory countedfourjobs; discovery case included pre-test import diagnostics. **After:**assert five supervised loops and scheduled-loop lifecycle fence; clear import-time error history before each operation. **Why:**actualCI34795506067 failed these two cases. **Verified:**87/7PASS with servicekeyunset and originalwarningretained inlog; **TypeScript:**PASS. No runtimebehavior orauthority changed; fullCI remainsrequired.
+
+## 2026-09-14: Union integrity observations and incidents retain union scope
+
+**Files:** migration20260914110900; native PostgreSQL runner and captured fixtures; required accounting CI step.
+**What existed:** the integrity report returned foreign-union transfers to an authorized owner, attributed their warning to the wrong union and suppressed the correct union through global source-only deduplication.
+**What changed:** observations use actual table/tournament/club identity; host clubs and legitimate own-union signals remain included. Incident claims and the 20-hour window are scoped per union. Existing financial writers, caller authorization and response keys are preserved.
+**Verified:** 43 native PostgreSQL17 checks, three original counterexamples, real concurrency, rollback, insert-trigger refusal, positive and adversarial scope, ACL and drift refusal. Required CI, installation and live verification remain separate.

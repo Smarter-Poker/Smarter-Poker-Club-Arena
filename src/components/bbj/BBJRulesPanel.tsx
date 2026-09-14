@@ -15,6 +15,7 @@
  * so they cannot drift into fiction again.
  */
 
+import { titleCase } from '../../utils/titleCase';
 import { useState } from 'react';
 import {
   BBJ_QUALIFYING_HANDS,
@@ -202,7 +203,7 @@ export function BBJRulesPanel({ poolAmount = 0, mini = null }: BBJRulesPanelProp
                 return (
                   <tr key={row.key} className={info.eligible ? '' : 'is-ineligible'}>
                     <td>{row.games}</td>
-                    <td>{info.eligible ? info.shortLabel : 'Mini Not Available'}</td>
+                    <td>{info.eligible ? titleCase(info.shortLabel) : 'Mini Not Available'}</td>
                   </tr>
                 );
               })}
@@ -288,7 +289,7 @@ export function BBJRulesPanel({ poolAmount = 0, mini = null }: BBJRulesPanelProp
                 return (
                   <tr key={row.key} className={eligible ? '' : 'is-ineligible'}>
                     <td>{row.games}</td>
-                    <td>{eligible ? info.shortLabel : 'Jackpot Not Available'}</td>
+                    <td>{eligible ? titleCase(info.shortLabel) : 'Jackpot Not Available'}</td>
                   </tr>
                 );
               })}

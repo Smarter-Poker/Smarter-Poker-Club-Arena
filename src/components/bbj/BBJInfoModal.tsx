@@ -28,6 +28,7 @@
  * follows it: the main pool, or the flat mini for this table's stakes.
  */
 
+import { titleCase } from '../../utils/titleCase';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import BBJRecentHits from './BBJRecentHits';
@@ -535,7 +536,7 @@ export function BBJInfoModal({
                       <>
                         <span className="bbj-modal__rule-label">At This Table</span>
                         <p className="bbj-modal__rule-text">
-                          {isMini ? miniInfo.shortLabel : info.shortLabel}
+                          {titleCase(isMini ? miniInfo.shortLabel : info.shortLabel)}
                         </p>
                         {(isMini ? miniInfo.subLabel : info.subLabel) && (
                           <p className="bbj-modal__rule-sub">

@@ -298,11 +298,29 @@
    Tablet / desktop
    ───────────────────────────────────────────────────────────── */
 
+/* On a wide viewport the stepper console sits BESIDE the felt, not above
+   it. A 420px console is ~520px tall, which pushed the river card below a
+   720px desktop fold and the squeeze e2e's pointer hit nothing
+   (river-squeeze-interactive, 2026-09-14). The felt keeps the top edge. */
 @media (min-width: 640px) {
   .sim-page {
-    max-width: 720px;
+    max-width: 900px;
+    display: grid;
+    grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+    grid-template-areas:
+      'stepper felt'
+      'log felt';
+    align-items: start;
+    column-gap: 16px;
+  }
+  .sim-page__console:not(.sim-page__log) {
+    grid-area: stepper;
+  }
+  .sim-page__log {
+    grid-area: log;
   }
   .sim-page__felt-wrapper {
+    grid-area: felt;
     padding-bottom: 100%;
   }
 }

@@ -18,6 +18,7 @@
  * not touch this page — drop it in ALL_SCENARIOS and it shows up in the dropdown.
  */
 
+import { titleCase } from '../utils/titleCase';
 import React, { useState, useMemo, useCallback } from 'react';
 import { SeatSlot } from '../components/table/SeatSlot';
 import { CommunityCards } from '../components/table/CommunityCards';
@@ -142,16 +143,18 @@ const SimPage: React.FC = () => {
           >
             {ALL_SCENARIOS.map((s, i) => (
               <option key={s.id} value={i}>
-                {s.name}
+                {titleCase(s.name)}
               </option>
             ))}
           </select>
         </div>
 
         {scenario.bug ? (
-          <div className="sim-page__bug-badge sc-ink--red">REGRESSION: {scenario.bug}</div>
+          <div className="sim-page__bug-badge sc-ink--red">
+            Regression: {titleCase(scenario.bug)}
+          </div>
         ) : null}
-        <p className="sc-copy sim-page__description">{scenario.description}</p>
+        <p className="sc-copy sim-page__description">{titleCase(scenario.description)}</p>
 
         <div className="sim-page__step-controls">
           <span className="sim-page__step-counter sc-ink--silver">
@@ -275,16 +278,17 @@ const SimPage: React.FC = () => {
               onClick={() => setStepIdx(i)}
             >
               <div className="sim-page__log-row">
-                <span className="sim-page__log-event sc-ink--blue">{s.event}</span>
+                <span className="sim-page__log-event sc-ink--blue">{titleCase(s.event)}</span>
                 <span
                   className={`sim-page__log-label ${i === stepIdx ? 'sc-ink--white' : 'sc-ink--silver'}`}
                 >
-                  {s.label}
+                  {titleCase(s.label)}
                 </span>
               </div>
               {s.expect && i === stepIdx ? (
                 <div className="sc-copy sim-page__log-expect">
-                  <strong className="sim-page__expect-word sc-ink--gold">Expect:</strong> {s.expect}
+                  <strong className="sim-page__expect-word sc-ink--gold">Expect:</strong>{' '}
+                  {titleCase(s.expect)}
                 </div>
               ) : null}
             </li>

@@ -17,6 +17,7 @@ import {
   loadFeaturePricing,
 } from '../../services/VIPService';
 import { useVIPStatus } from '../../hooks/useVIP';
+import { openInBrowser } from '../../lib/openExternal';
 import { SpadeConsole, type ConsoleInk } from '../console/SpadeConsole';
 import './VIPCardsModal.css';
 
@@ -144,7 +145,7 @@ export function VIPCardsModal({ isOpen, onClose }: VIPInfoModalProps) {
                   primary: {
                     label: 'Join Membership',
                     ink: 'white',
-                    onClick: () => window.open(MEMBERSHIP_URL, '_blank', 'noopener,noreferrer'),
+                    onClick: () => openInBrowser(MEMBERSHIP_URL),
                   },
                 }
           }

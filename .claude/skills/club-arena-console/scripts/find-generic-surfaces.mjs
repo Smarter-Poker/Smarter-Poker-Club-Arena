@@ -52,6 +52,28 @@ const VISUAL_TEST =
    the most generic surface in the app, behind a law that would have applied to
    its rebuild anyway. */
 
+/* INTERNAL ONLY: Dan, 2026-09-14 - "THESE POP UPS OR EVENT LOGS (IF INTERNAL
+   USE ONLY) DO NOT NEED DYNAMIC IMAGES AND POP UPS." A surface no player and
+   no club operator can reach - the QA scenario harness, the bus event log,
+   the platform's own engine/analytics/ads dashboards - is a tool for the
+   house. It is held to the copy laws and the colour schema, never to the
+   painted chassis, and it is off the sweep so nobody spends a round of art on
+   a page four people open. Anything a CLUB owner reaches is customer-facing
+   and stays in. */
+const INTERNAL_ONLY = [
+  'src/pages/SimPage.tsx',
+  'src/pages/BusDevToolsPage.tsx',
+  'src/pages/admin/EngineDashboard.tsx',
+  'src/pages/admin/AnalyticsDashboard.tsx',
+  'src/pages/admin/HouseAdsPage.tsx',
+  'src/pages/AdminDashboardPage.tsx',
+  'src/pages/DriftIncidentsPage.tsx',
+  'src/pages/ClubFooterShowcasePage.tsx',
+  'src/pages/CustomizationStudioShowcasePage.tsx',
+];
+/* Everything under src/pages/dev/ is a showcase harness by definition. */
+const isInternal = (rel) => INTERNAL_ONLY.includes(rel) || rel.startsWith('src/pages/dev/');
+
 const spokenFor = new Set();
 try {
   for (const t of walk(join(ROOT, 'tests'))) {
@@ -118,7 +140,8 @@ for (const tsx of files) {
     hover: count(style, /:hover/g),
     px: count(style, /font-size:\s*\d+(\.\d+)?px/g),
   };
-  row.spokenFor = spokenFor.has(rel);
+  row.internalOnly = isInternal(rel);
+  row.spokenFor = spokenFor.has(rel) || row.internalOnly;
   row.score =
     row.master + row.console > 0 || row.spokenFor
       ? 0

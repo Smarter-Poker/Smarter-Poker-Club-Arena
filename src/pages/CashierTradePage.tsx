@@ -2656,7 +2656,6 @@ export default function CashierTradePage() {
                       {r.playerNumber ? `ID: ${r.playerNumber} · ` : ''}
                       <span style={{ textTransform: 'capitalize' }}>
                         {roleLabel(r.role as ClubRole)}
-                        {r.isHorse ? ' (Horse)' : ''}
                       </span>
                       {r.username ? ` · @${r.username}` : ''}
                     </span>

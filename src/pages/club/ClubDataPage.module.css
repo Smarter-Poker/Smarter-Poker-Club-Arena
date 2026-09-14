@@ -491,10 +491,6 @@
   text-align: center;
 }
 
-.horseTag {
-  font-size: 2.3cqw;
-}
-
 .totals {
   display: flex;
   flex-wrap: wrap;
@@ -508,11 +504,6 @@
   font-size: 3.6cqw;
   font-weight: 700;
   white-space: nowrap;
-}
-
-.totalsScope {
-  flex-basis: 100%;
-  text-align: right;
 }
 
 /* ── Skeleton rows while the first read is out ────────────────────────── */

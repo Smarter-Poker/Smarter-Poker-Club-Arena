@@ -256,3 +256,37 @@ describe('CashoutService', () => {
     });
   });
 });
+
+describe('exact-cent request boundary', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+  it.each([0.01, 0.29, 1.25, 308.5, 1e9])(
+    'serializes %s unchanged into the original atomic RPC',
+    async (amount) => {
+      accept({ cashout_id: 'cent-request', replayed: true });
+      await cashoutService.requestCashout('p1', 'club-1', amount, undefined, 'cent-operation');
+      expect(rpc).toHaveBeenCalledWith('fn_cashout_request', {
+        p_club_id: 'club-1',
+        p_amount: amount,
+        p_note: null,
+        p_op_id: 'cent-operation',
+      });
+      expect(JSON.parse(JSON.stringify(rpc.mock.calls[0][1])).p_amount).toBe(amount);
+    }
+  );
+  it.each([
+    NaN,
+    Infinity,
+    -Infinity,
+    0,
+    -1,
+    1.001,
+    0.30000000000000004,
+    1e9 + 0.01,
+    Number.MAX_SAFE_INTEGER,
+  ])('refuses invalid %s before the RPC', async (amount) => {
+    await expect(cashoutService.requestCashout('p1', 'club-1', amount)).rejects.toThrow();
+    expect(rpc).not.toHaveBeenCalled();
+  });
+});

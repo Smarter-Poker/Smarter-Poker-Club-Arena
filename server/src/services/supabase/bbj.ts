@@ -14,6 +14,7 @@ import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
 import { raiseFinancialAlert } from '../financialAlerts.js';
 import { bbjSharesParkedTotal } from '../../observability/engineInstruments.js';
+import { isMaintenanceFrozen } from '../../maintenance/freezeState.js';
 
 /**
  * BBJ AUDIT 2026-09-05: every club that shares a jackpot pool with `clubId`.
@@ -284,6 +285,104 @@ export async function processBBJPayout(
       () => bbjPayoutQueue!.claim(params, 'write-ahead: detected, payout not yet attempted'),
       'claim'
     );
+  }
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     A JACKPOT IS A CHIP MOVEMENT, AND THE PLATFORM FREEZES (2026-09-11)
+     ═════════════════════════════════════════════════════════════════════════
+
+     Dan, section 13: "THE ENTIRE PLATFORM NEEDS TO FREEZE FOR THE 5 MINUTES,
+     NO BUY INS, NO CHIP MOVEMENTS ... EVERYTHING JUST FREEZES, THEN PICKS BACK
+     UP EXACTLY AS IT WAS." Rule 5 of that section: a sweep checks
+     `isMaintenanceFrozen()` before moving money or seats. Crediting a seat
+     with a jackpot share is moving money.
+
+     WHY THE DATABASE WAS NEVER GOING TO CATCH THIS. `zz_freeze_guard` sits on
+     `table_seats` and `club_members` - the two tables this payout credits -
+     and it looks like the backstop. It is not, for the engine:
+     `fn_refuse_while_frozen` returns early for any caller whose
+     `request.jwt.claims.role` is `service_role`, and the engine holds
+     SUPABASE_SERVICE_ROLE_KEY. So the freeze is enforced against browsers and
+     not against us; on this path the engine is the only thing that can honour
+     it, and this function did not.
+
+     The header above already named "the :55 maintenance freeze refusing the
+     write" as one of the causes the queue exists to survive. It cannot refuse
+     us, so that survival path was never reached and the payout simply went
+     through.
+
+     MEASURED BEFORE IT WAS CHANGED: zero of the 27 payouts since the freeze
+     shipped on 2026-09-01 landed between :55 and :00. That is the break
+     working - tables are told to finish at :53 and parked at :55 - and not a
+     guarantee: a long hand, `drainHands()` parking mid-flight at the :57
+     restart, or a reconciler re-drive landing in the window would each put a
+     credit inside the freeze.
+
+     WHY DEFERRING COSTS NOBODY ANYTHING. The write-ahead claim above is
+     already on disk, and it is a RECORD rather than a chip movement, so it is
+     not what the freeze forbids. The row survives the :57 engine restart, the
+     reconciler re-drives it once play resumes, and the RPC is idempotent on
+     (pool, table, hand) - so a jackpot deferred by a break is paid in full a
+     few minutes later rather than not paid at all. "PICKS BACK UP EXACTLY AS
+     IT WAS" is the whole design.
+
+     AND IT IS NOT A FAILURE. Falling into the attempt loop would burn four
+     attempts against a guard that is doing its job and end in a CRITICAL
+     financial alert for a break we scheduled - the alarm-that-is-always-on
+     shape CLAUDE.md 10.84 warns about. This returns `queued` directly, with
+     no attempts and no alert. */
+  if (isMaintenanceFrozen()) {
+    const reason =
+      'platform frozen for the scheduled maintenance break; the claim is on disk ' +
+      'and the reconciler pays it when play resumes';
+    console.log(
+      `[processBBJPayout] deferring ${params.kind === 'mini' ? 'mini ' : ''}jackpot for ` +
+        `${params.tableId}#${params.handNumber}: ${reason}`
+    );
+    /* THE DEFERRAL IS ONLY SAFE IF THE RECORD LANDED.
+       The first cut of this gate called `claim` and threw the answer away,
+       which made it the one `queued` return in this function that could leave
+       NOTHING behind. The failure it misses is not exotic - it is Postgres
+       being unreachable while the flag is set, which is the outage shape this
+       queue exists for - and the cost is the whole parameter set: the table is
+       told "your jackpot is coming" by the pending event, and nothing anywhere
+       knows who was dealt in, who took the beat, or which tier it was.
+       So the claim's answer is read. Both attempts, because the write-ahead
+       above can fail for the same reason and this is its second chance. */
+    /* The claim is made even when the write-ahead already confirmed, and NOT
+       short-circuited past it: `queueUnpaidBBJPayout` refreshes `last_error`
+       on its own open row, so this is what turns the note from "detected,
+       payout not yet attempted" into "deferred for the break". An operator
+       reading the queue during a break should see why a jackpot is sitting
+       there, not a stale note that makes it look stuck. */
+    const deferralNoted =
+      options.fromQueue === true
+        ? true // the reconciler owns the row; it is on disk by definition
+        : await queueSafely(() => bbjPayoutQueue!.claim(params, `deferred: ${reason}`), 'claim');
+    const deferralRecorded = claimConfirmed || deferralNoted;
+
+    if (!deferralRecorded) {
+      /* Loud, and carrying everything needed to re-drive by hand - the same
+         payload the exhausted path raises. This is NOT the alarm-that-is-
+         always-on that the gate exists to avoid: it fires only when the
+         durable write failed, never on an ordinary break. */
+      const detail =
+        `[BBJ] Jackpot DEFERRED for the maintenance break with NO durable claim ` +
+        `(table ${params.tableId} hand #${params.handNumber}, club ${params.clubId}, ` +
+        `bad beat ${params.loserUserId} with ${params.loserHandName} beaten by ` +
+        `${params.winnerUserId} with ${params.winnerHandName}, ` +
+        `${params.dealtInPlayerIds.length} dealt in, ` +
+        `${params.kind === 'mini' ? `Mini tier ${params.tierId}` : `${params.payoutTotalPercent}% of main`}). ` +
+        `The platform is frozen so it was not paid, and the queue write did not confirm, ` +
+        `so nothing will re-drive it. The jackpot RPC is idempotent on (pool, table, hand).`;
+      reportError(new Error(detail), 'processBBJPayout.frozen_without_a_claim');
+      await raiseFinancialAlert('critical', 'processBBJPayout.frozen_without_a_claim', detail, {
+        ...params,
+        frozen: true,
+        queued: false,
+      });
+    }
+    return { status: 'queued', lastError: reason };
   }
 
   let lastError = '';
@@ -658,14 +757,17 @@ async function attemptBBJPayoutOnce(
           ? 'is still owed to you and is pending delivery.'
           : 'has a confirmed jackpot credit.';
         const which = `on hand #${params.handNumber}`;
+        /* WHICH JACKPOT (2026-09-11). The mini reuses this path, and a mini
+           recipient was told a "Bad Beat Jackpot" had hit - the notification
+           is the one record a seated player keeps, so it has to say which. */
+        const jackpotName = params.kind === 'mini' ? 'Mini Bad Beat Jackpot' : 'Bad Beat Jackpot';
         return {
           user_id: r.id,
           type: 'bonus',
-          title: r.pending
-            ? 'Bad Beat Jackpot - Payment Pending'
-            : 'Bad Beat Jackpot - You Got Paid!',
-          message: `A Bad Beat Jackpot hit ${which}. ${role}, and your share of $${money(r.share)} ${where}`,
+          title: r.pending ? `${jackpotName} - Payment Pending` : `${jackpotName} - You Got Paid!`,
+          message: `A ${jackpotName} hit ${which}. ${role}, and your share of ${money(r.share)} ${where}`,
           metadata: {
+            kind: params.kind === 'mini' ? 'mini' : 'main',
             tableId: params.tableId,
             handNumber: params.handNumber,
             amount: r.share,

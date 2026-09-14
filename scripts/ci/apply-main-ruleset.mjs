@@ -36,9 +36,9 @@
  * publish workflow did.
  *
  * Usage:
- *   GH_PAT=... node scripts/ci/apply-main-ruleset.mjs --stage=1
- *   GH_PAT=... node scripts/ci/apply-main-ruleset.mjs --stage=2
- *   GH_PAT=... node scripts/ci/apply-main-ruleset.mjs --stage=2 --dry-run
+ *   GH_TOKEN=<short-lived administration token> node scripts/ci/apply-main-ruleset.mjs --stage=1
+ *   GH_TOKEN=<short-lived administration token> node scripts/ci/apply-main-ruleset.mjs --stage=2
+ *   GH_TOKEN=<short-lived administration token> node scripts/ci/apply-main-ruleset.mjs --stage=2 --dry-run
  *
  * The token needs "Administration: Read and write" on the repository. A token
  * that can push code cannot change protection rules - that separation is
@@ -50,15 +50,22 @@ const REPO = 'Smarter-Poker-Club-Arena';
 const NAME = 'main protection';
 
 /** The checks that must pass. Job display names from .github/workflows/ci.yml. */
-const REQUIRED_CHECKS = ['TypeScript Check', 'Client Unit Tests (vitest)'];
+const REQUIRED_CHECKS = [
+  'TypeScript Check',
+  'Client Unit Tests (vitest)',
+  'Server Engine (typecheck + tests)',
+  'Production Build',
+  'CSS Beat E2E (multi-table + animations)',
+  'Silent Revert Guard',
+];
 
 const args = process.argv.slice(2);
 const stage = Number((args.find((a) => a.startsWith('--stage=')) || '--stage=1').split('=')[1]);
 const dryRun = args.includes('--dry-run');
-const token = process.env.GH_PAT || process.env.GITHUB_TOKEN;
+const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
 
 if (!token) {
-  console.error('No token. Set GH_PAT (it is in the World Hub env file) and re-run.');
+  console.error('No token. Authenticate gh or provide a short-lived repository administration token without writing it to an env file.');
   process.exit(1);
 }
 if (stage !== 1 && stage !== 2) {

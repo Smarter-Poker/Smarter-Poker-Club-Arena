@@ -6,7 +6,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { isClubStaff } from '../types/clubRoles';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { tournamentService } from '../services/TournamentService';
+import { tournamentService, tournamentUnregisterSuccessText } from '../services/TournamentService';
 import type { Tournament } from '../types/database.types';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
 import './TournamentPage.css';
@@ -14,7 +14,7 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { tableService } from '../services/TableService';
-// Tournament registration/refunds handled via TournamentService → Player Wallet RPCs
+// Tournament registration and exact wallet-or-ticket returns use TournamentService.
 import { useToast } from '../components/common/Toast';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -35,14 +35,12 @@ import { TournamentClock } from '../components/tournament/TournamentClock';
    marker, the distance to the money, the click-through to a player's table -
    come with it. */
 import RankingTab from '../components/tournament/details/RankingTab';
-import type { NormalisedBlindLevel, TournamentTable } from '../components/tournament/details/types';
-/* ONE PAYOUT RULE, ONE PARSER (2026-09-09). The two payout surfaces on this page
-   priced places themselves; see the note above the Payouts list below. */
 import {
-  chips,
-  effectivePrizePool,
-  parsePayoutStructure,
+  effectivePlaceLadderPool,
   placePrize,
+  resolvePayoutStructure,
+  type NormalisedBlindLevel,
+  type TournamentTable,
 } from '../components/tournament/details/types';
 import { useTournamentEntries } from '../hooks/useTournamentEntries';
 import { blindLevelMinutes } from '../components/lobby/tournamentFigures';
@@ -61,6 +59,7 @@ import {
 import { formatBuyIn, money, totalBuyIn } from '../utils/buyIn';
 import { relayTournamentEvent } from '../services/tournamentEventBridge';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
+import { uuid } from '../utils/uuid';
 
 type TournFilter = 'all' | 'freeroll' | 'micro' | 'highroller';
 
@@ -142,6 +141,18 @@ export default function TournamentPage() {
   const [canRebuyNow, setCanRebuyNow] = useState(false);
   const [canAddOnNow, setCanAddOnNow] = useState(false);
   const [isProcessingRebuy, setIsProcessingRebuy] = useState(false);
+  /** One immutable token for one visible rebuy offer. A failed request keeps
+   * this token so a retry can only replay the same purchase. */
+  const rebuyPromptTokenRef = useRef<string | null>(null);
+  const beginRebuyPrompt = useCallback((): string => {
+    if (rebuyPromptTokenRef.current) return rebuyPromptTokenRef.current;
+    const token = uuid();
+    rebuyPromptTokenRef.current = token;
+    return token;
+  }, []);
+  const endRebuyPrompt = useCallback(() => {
+    rebuyPromptTokenRef.current = null;
+  }, []);
   const selectedTournamentRef = useRef<Tournament | null>(null);
   const [visibleTournaments, setVisibleTournaments] = useState<Set<string>>(new Set());
 
@@ -188,6 +199,10 @@ export default function TournamentPage() {
           t.buy_in_fee,
           t.start_time,
           t.current_level,
+          t.variant,
+          t.tournament_type,
+          t.spin_multiplier,
+          JSON.stringify(t.payout_structure),
         ].join(':')
       )
       .join('|');
@@ -202,6 +217,13 @@ export default function TournamentPage() {
   useEffect(() => {
     selectedTournamentRef.current = selectedTournament;
   }, [selectedTournament]);
+
+  // Opening an offer mints its token before the player confirms. Closing it or
+  // changing its player/tournament identity retires that token first.
+  useEffect(() => {
+    endRebuyPrompt();
+    if (canRebuyNow) beginRebuyPrompt();
+  }, [canRebuyNow, selectedTournament?.id, currentUser.id, beginRebuyPrompt, endRebuyPrompt]);
 
   // Check club ownership
   useEffect(() => {
@@ -496,21 +518,6 @@ export default function TournamentPage() {
     };
   }, [selectedTournament?.id, currentUser.id]);
 
-  // Helper to notify of a balance change
-  const notifyWalletChange = (amount: number, isDeduction: boolean) => {
-    try {
-      masterBus.emit('BALANCE_UPDATED', {
-        source: 'tournament',
-        userId: currentUser.id,
-        amount: amount,
-        isDeduction: isDeduction,
-        timestamp: Date.now(),
-      });
-    } catch (e) {
-      reportError(e, 'TournamentPage.Failed_to_notify_of_wallet_change');
-    }
-  };
-
   // Register for tournament
   const handleRegister = () => {
     if (!selectedTournament) return;
@@ -651,42 +658,16 @@ export default function TournamentPage() {
       return;
     }
     try {
-      // unregisterPlayer handles the full refund to Player Wallet via credit_player_wallet RPC
-      await tournamentService.unregisterPlayer(selectedTournament.id, currentUser.id);
+      const result = await tournamentService.unregisterPlayer(
+        selectedTournament.id,
+        currentUser.id
+      );
 
       setIsRegistered(false);
-
-      // Mirror of the registration debit: the pool gives back the prize half,
-      // the wallet gets the whole total back. Same integers both directions.
-      const prizeContribution = Math.round(Number(selectedTournament.buy_in_amount) || 0);
-      const refundedTotal = totalBuyIn(
-        selectedTournament.buy_in_amount,
-        selectedTournament.buy_in_fee
-      );
-      setTournaments((prev) =>
-        prev.map((t) =>
-          t.id === selectedTournament.id
-            ? {
-                ...t,
-                current_players: Math.max(0, t.current_players - 1),
-                prize_pool: Math.max(0, t.prize_pool - prizeContribution),
-              }
-            : t
-        )
-      );
-      setSelectedTournament((prev) =>
-        prev
-          ? {
-              ...prev,
-              current_players: Math.max(0, prev.current_players - 1),
-              prize_pool: Math.max(0, prev.prize_pool - prizeContribution),
-            }
-          : null
-      );
-
-      notifyWalletChange(refundedTotal, false);
-
-      toast.success(`Unregistered! ${money(refundedTotal)} chips refunded.`);
+      // The database owns the exact pool, bounty, fee and wallet/ticket split.
+      // Realtime refreshes the tournament row; this page must not reconstruct
+      // financial state from a mutable buy-in display value.
+      toast.success(tournamentUnregisterSuccessText(result));
     } catch (error) {
       toast.error('Unregister failed: ' + (error as Error).message);
     }
@@ -753,7 +734,7 @@ export default function TournamentPage() {
       const { data, error } = await supabase
         .from('tournaments')
         .select(
-          'id, name, status, current_players, max_players, prize_pool, buy_in_amount, buy_in_fee, starting_chips, current_level, late_reg_levels, late_reg_mins, start_time, started_at'
+          'id, name, status, current_players, max_players, prize_pool, buy_in_amount, buy_in_fee, starting_chips, current_level, late_reg_levels, late_reg_mins, start_time, started_at, variant, tournament_type, spin_multiplier, payout_structure'
         )
         .eq('id', id)
         .maybeSingle();
@@ -915,9 +896,15 @@ export default function TournamentPage() {
     if (!selectedTournament) return;
     setIsProcessingRebuy(true);
     try {
-      const result = await tournamentService.processRebuy(selectedTournament.id, currentUser.id);
+      const clientToken = beginRebuyPrompt();
+      const result = await tournamentService.processRebuy(
+        selectedTournament.id,
+        currentUser.id,
+        clientToken
+      );
       if (result.success) {
         toast.success(`Rebuy successful! New stack: ${result.newStack?.toLocaleString()}`);
+        endRebuyPrompt();
         setCanRebuyNow(false);
         // Refresh tournament
         const updated = await tournamentService.getTournament(selectedTournament.id);
@@ -1055,16 +1042,52 @@ export default function TournamentPage() {
      minutes. Everything else it derives itself. */
 
   const selectedIsRunning = selectedTournament?.status === 'RUNNING';
+  const selectedIsCompleted = selectedTournament?.status === 'COMPLETED';
 
   const {
     entries: liveEntries,
+    entryCount: durableEntryCount,
     loading: entriesLoading,
     loadFailed: entriesFailed,
   } = useTournamentEntries(
     selectedTournament?.id ?? null,
-    Boolean(selectedIsRunning),
+    Boolean(selectedIsRunning || selectedIsCompleted),
     Number(selectedTournament?.starting_chips) || 0
   );
+
+  const selectedPayouts = useMemo(
+    () => resolvePayoutStructure(selectedTournament) ?? [],
+    [selectedTournament]
+  );
+  const selectedIsSatellite =
+    String(selectedTournament?.variant ?? '').toLowerCase() === 'satellite' ||
+    String(selectedTournament?.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
+    Boolean(selectedTournament?.satellite_target_id || selectedTournament?.satellite_target);
+  const selectedBubbleNeedsDurableField =
+    !selectedIsSatellite &&
+    selectedTournament?.bubble_protection === true &&
+    Boolean(selectedIsRunning || selectedIsCompleted);
+  const selectedPlaceLadderPool = useMemo<number | null>(() => {
+    if (!selectedTournament) return 0;
+    if (selectedBubbleNeedsDurableField && durableEntryCount === null) return null;
+    const fieldSize =
+      durableEntryCount ?? Math.max(0, Number(selectedTournament.current_players) || 0);
+    return effectivePlaceLadderPool(
+      selectedTournament.prize_pool,
+      selectedTournament.guaranteed_prize,
+      selectedPayouts,
+      fieldSize,
+      selectedTournament.bubble_protection === true,
+      Number(selectedTournament.buy_in_amount) || 0,
+      selectedIsSatellite
+    );
+  }, [
+    durableEntryCount,
+    selectedBubbleNeedsDurableField,
+    selectedIsSatellite,
+    selectedPayouts,
+    selectedTournament,
+  ]);
 
   const rankingTables = useMemo<TournamentTable[]>(
     () =>
@@ -1557,54 +1580,52 @@ export default function TournamentPage() {
                   PAYOUTS — priced by the engine's rule, not by this file
                   ═══════════════════════════════════════════════════════════════
 
-                  Until 2026-09-09 this list parsed `payout_structure` inline (a
-                  third copy of `parsePayoutStructure`) and priced each place as
-                  `Math.trunc(((prize_pool * pct) / 100) * 100) / 100` — the exact
-                  expression src/lib/payoutMath.ts was written to delete, and the
-                  last surviving copy of it. Three defects in one line:
+                  This list used to parse `payout_structure` inline and price
+                  each place as `Math.trunc(((prize_pool * pct) / 100) * 100) /
+                  100` - the exact expression src/lib/payoutMath.ts was written
+                  to delete, and the last surviving copy of it. Three defects in
+                  one line:
 
                     * it TRUNCATED a binary float where the engine rounds. Pool
                       513.00, place 8 at 3.5%: (513 * 3.5 / 100) * 100 is
                       1795.4999999999998, so this printed 17.95 while the wallet
-                      was credited 17.96 (payoutMath.ts:101-113);
-                    * it had no residual rule, so the places shown did not sum to
-                      the pool — 13 of 78 production (pool, structure) pairs
-                      showed a different number from the one that was paid
-                      (payoutMath.ts:16-25);
+                      was credited 17.96 (payoutMath.ts);
+                    * it had no residual rule, so the places shown did not sum
+                      to the pool - 13 of 78 production (pool, structure) pairs
+                      showed a different number from the one that was paid;
                     * it read the raw `prize_pool`, so a guaranteed event's
                       overlay was missing from every figure.
 
-                  `placePrize` prices the WHOLE ladder in integer cents and reads
-                  one place out of it, which is the only way the residual can be
-                  expressed; `effectivePrizePool` is the pool floored by the
-                  guarantee. Both are what Rewards and Detail already use. */}
+                  `placePrize` prices the WHOLE ladder in integer cents and
+                  reads one place out of it, which is the only way the residual
+                  can be expressed. The ladder and its pool are resolved once
+                  into `selectedPayouts` / `selectedPlaceLadderPool` above.
+                  A pool this page cannot yet determine is `null` and renders
+                  as "-" rather than as a number nobody can stand behind
+                  (10.86: "could not tell" is its own outcome). */}
               <div className="payout-structure">
                 <h3>Payouts</h3>
                 <div className="payout-list">
-                  {(() => {
-                    const places = parsePayoutStructure(selectedTournament.payout_structure) ?? [];
-                    const pool = effectivePrizePool(
-                      selectedTournament.prize_pool,
-                      selectedTournament.guaranteed_prize
-                    );
-                    return places.slice(0, 5).map((payout) => (
-                      <div key={payout.place} className="payout-item">
+                  {selectedPayouts.slice(0, 5).map((payout, i) => {
+                    const pos = payout.place;
+                    const amount =
+                      selectedPlaceLadderPool === null
+                        ? null
+                        : placePrize(selectedPlaceLadderPool, selectedPayouts, pos);
+                    return (
+                      <div key={i} className="payout-item">
                         <span className="payout-place">
-                          {payout.place === 1
-                            ? ''
-                            : payout.place === 2
-                              ? ''
-                              : payout.place === 3
-                                ? ''
-                                : `${payout.place}th`}
+                          {pos === 1 ? '' : pos === 2 ? '' : pos === 3 ? '' : `${pos}th`}
                         </span>
                         <span className="payout-percent">{payout.percentage}%</span>
                         <span className="payout-amount">
-                          {chips(placePrize(pool, places, payout.place))}
+                          {amount === null
+                            ? '-'
+                            : amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}
                         </span>
                       </div>
-                    ));
-                  })()}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1703,24 +1724,33 @@ export default function TournamentPage() {
                   {/* The same one rule as the live Payouts list above, for the
                       same reason: this podium truncated a float off the raw
                       pool and could print a different number from the one the
-                      winner was actually paid. */}
+                      winner was actually paid. Stronger here than a derivation
+                      can be - the RECORDED prize on the entry row is what the
+                      player was credited, so it wins outright, and the ladder
+                      is only the fallback when no prize was recorded. Prefer
+                      the witness that was there (10.9). */}
                   <div className="results-podium">
-                    {(() => {
-                      const places =
-                        parsePayoutStructure(selectedTournament.payout_structure) ?? [];
-                      const pool = effectivePrizePool(
-                        selectedTournament.prize_pool,
-                        selectedTournament.guaranteed_prize
-                      );
-                      return places.slice(0, 3).map((p, i) => (
-                        <div key={p.place} className={`podium-place podium-${i + 1}`}>
+                    {selectedPayouts.slice(0, 3).map((p, i) => {
+                      const recorded = liveEntries.find(
+                        (entry) => entry.position === p.place
+                      )?.prize;
+                      const amount =
+                        recorded !== undefined && Number.isFinite(recorded)
+                          ? recorded
+                          : selectedPlaceLadderPool === null
+                            ? null
+                            : placePrize(selectedPlaceLadderPool, selectedPayouts, p.place);
+                      return (
+                        <div key={i} className={`podium-place podium-${i + 1}`}>
                           <div className="podium-icon">{i === 0 ? '★' : i === 1 ? '☆' : '✧'}</div>
                           <div className="podium-payout">
-                            {chips(placePrize(pool, places, p.place))}
+                            {amount === null
+                              ? '-'
+                              : amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}
                           </div>
                         </div>
-                      ));
-                    })()}
+                      );
+                    })}
                   </div>
                 </div>
               )}

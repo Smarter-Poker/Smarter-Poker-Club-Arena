@@ -1,0 +1,9 @@
+# Sealed predecessor health compatibility
+
+The running predecessor `14794f7dc20daf06529f517cd6d4e3c4cf33ebdd` publishes its eight-character version and process instance, but predates the `releaseSha` health field. On September 11, accepted host request `34623692969-1` failed before candidate replacement because its pinned recovery supervisor required that absent field. The same assumption also exists in the transaction's later rollback-readiness check, so changing only the supervisor does not complete the repair.
+
+Both predecessor-only checks now accept the exact short version when the full field is absent. A present null, empty, malformed or wrong full field is refused. Before either check, the already-sealed immutable image must contain exactly one full `GIT_COMMIT_SHA` matching the durable desired SHA. Existing image ID, container labels, restart policy, local/public instance, liveness and fresh database-leader checks remain in force. Rollback readiness also proves that the container ID and start generation remained unchanged through those observations.
+
+Candidate, precommit, final publication, observer and workflow health checks still require the full exact SHA and HTTP 200. This change does not edit the frozen v1 wrapper, request format, protocol, seal or recovery script. Native fixtures exercise the actual shell/Python predicates and sealed-image recovery paths, including malformed identities and degraded predecessor health.
+
+The original accepted request remains bound to its original immutable control generation. Publishing these compatible bytes does not retarget or complete that request. It needs separate, explicitly recorded terminal reconciliation before another native request can proceed. Local passing tests do not prove installation or successful production release.

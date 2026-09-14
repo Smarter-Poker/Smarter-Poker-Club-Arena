@@ -6,7 +6,7 @@
  * Real Supabase integration — no demo data
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import styles from './AgentManagementPage.module.css';
 import ConfirmModal from '@/components/common/ConfirmModal';
@@ -93,10 +93,21 @@ export default function AgentManagementPage() {
   const navigate = useNavigate();
   const { user } = useAuthUser();
   const toast = useToast();
+  /* THE AGENTS ON SCREEN ARE THE AGENTS OF THE CLUB IN THE URL (2026-09-10).
+     Every agents load was guarded by isMounted alone, so changing club while
+     a read was in flight landed the previous club's credit limits, wallet
+     balances and debt under the new club's header. Each load claims a
+     ticket; a result whose ticket is no longer current is dropped. The
+     ticket is reissued whenever the club changes. */
+  const agentsLoadTicket = useRef(0);
+  const claimAgentsLoad = () => ++agentsLoadTicket.current;
+  const agentsLoadIsCurrent = (ticket: number) =>
+    isMounted.current && ticket === agentsLoadTicket.current;
   useVisibilityRefresh(async () => {
     if (!clubId) return;
+    const ticket = claimAgentsLoad();
     const data = await AgentService.getAgents(clubId);
-    setAgents(data);
+    if (agentsLoadIsCurrent(ticket)) setAgents(data);
   });
   const [activeTab, setActiveTab] = useState<TabType>('agents');
   const swipeHandlers = useSwipeTabs({
@@ -190,17 +201,23 @@ export default function AgentManagementPage() {
 
     setIsLoading(true);
     setError(null);
+    setAgents([]);
+    const ticket = claimAgentsLoad();
 
     AgentService.getAgents(clubId)
       .then((data) => {
-        if (isMounted.current) setAgents(data);
+        if (agentsLoadIsCurrent(ticket)) setAgents(data);
       })
       .catch((err) => {
-        if (isMounted.current) setError(safeErrorMessage(err));
+        if (agentsLoadIsCurrent(ticket)) setError(safeErrorMessage(err));
       })
       .finally(() => {
-        if (isMounted.current) setIsLoading(false);
+        if (agentsLoadIsCurrent(ticket)) setIsLoading(false);
       });
+    return () => {
+      // A club change reissues the ticket so the read in flight is dropped.
+      claimAgentsLoad();
+    };
   }, [clubId]);
 
   // Load recent distributions for clawback
@@ -297,18 +314,19 @@ export default function AgentManagementPage() {
 
     const loadAgentsData = async () => {
       setIsLoading(true);
+      const ticket = claimAgentsLoad();
       try {
         const data = await AgentService.getAgents(clubId);
-        if (!isMounted.current) return;
+        if (!agentsLoadIsCurrent(ticket)) return;
         setAgents(data);
         setError(null);
       } catch (err) {
-        if (!isMounted.current) return;
+        if (!agentsLoadIsCurrent(ticket)) return;
         reportError(err, 'AgentManagementPage.Failed_to_reload_agents');
         toast.error('Failed to load agents');
         setError(safeErrorMessage(err, 'Failed to reload agents'));
       } finally {
-        if (isMounted.current) setIsLoading(false);
+        if (agentsLoadIsCurrent(ticket)) setIsLoading(false);
       }
     };
 
@@ -656,9 +674,7 @@ export default function AgentManagementPage() {
           'Excluded from the club by an administrator'
         );
         toast.info(
-          removal.removed > 0
-            ? `Removed Them From ${fmt(removal.removed)} Live ${removal.removed === 1 ? 'Table' : 'Tables'}.`
-            : removal.firstError || 'They Are Still Seated. Remove Them From The Table Manually.'
+          `Removed From ${fmt(removal.removed)} Tables; ${fmt(removal.pending)} Pending; ${fmt(removal.failed)} Failed. ${removal.firstError || ''}`.trim()
         );
       }
       if (Number(outcome.chips_held) > 0 || Number(outcome.credit_used) > 0) {

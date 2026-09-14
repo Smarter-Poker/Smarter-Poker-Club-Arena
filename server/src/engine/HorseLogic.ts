@@ -1,3 +1,22 @@
+import { evaluateJointLivePolicy } from './multiway/JointLivePolicy.js';
+import { horseVariantRulesFor } from './VariantRules.js';
+import { jointPlayersBehind } from './multiway/JointActionModel.js';
+import { tournamentSampleEquity } from './HorseTournamentUtility.js';
+import {
+  evaluateRemainingVariantPolicy,
+  type RemainingVariantMode,
+} from './remainingVariants/RemainingVariantLivePolicy.js';
+import { isRemainingPolicyVariant } from './remainingVariants/RemainingVariantPolicyPack.js';
+import {
+  evaluateOmahaVariantPolicy,
+  type OmahaVariantMode,
+} from './omaha/OmahaVariantLivePolicy.js';
+import { isOmahaPolicyVariant } from './omaha/OmahaVariantPolicyPack.js';
+import {
+  evaluatePlo4LivePolicy,
+  type Plo4EquityEvidence,
+  type Plo4LiveMode,
+} from './plo4/Plo4LivePolicy.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * HORSE AI — Server-Side Horse Decision Engine (V2 — 2026-07-23 full rewrite)
@@ -56,8 +75,17 @@ import type {
   HorseDecision,
   HorseGameState,
   ActionRecord,
+  ActionType,
+  Pot,
+  RakeConfig,
+  HorseVariantRules,
 } from '../types.js';
-import { RANK_VALUES, validateAction, calculateBettingState } from './PokerEngine.js';
+import {
+  RANK_VALUES,
+  validateAction,
+  calculateBettingState,
+  HEADS_UP_RAKE_PERCENT,
+} from './PokerEngine.js';
 // V3 (2026-07-23): real-time opponent intelligence — live stats, range reading,
 // exploit adjustments, board texture, blockers. See HorseMind.ts.
 import { bestPineappleDiscard } from './pineappleDiscardChoice.js';
@@ -70,6 +98,15 @@ import {
   PLO_MIN_OPEN_BB,
   type PreflopPosition,
 } from './HorsePreflop.js';
+import {
+  classifyTournamentPreflopBranch,
+  tournamentMZone,
+  tournamentPositionForSeat,
+  tournamentPreflopPolicy,
+  type TournamentAnteType,
+  type TournamentContextStatus,
+  type TournamentMState,
+} from './HorseTournamentPreflop.js';
 import { potLimitRaiseTo } from './BettingStructure.js';
 import { reportError } from '../services/errorReporter.js';
 // V16 ICM: real Malmuth-Harville pressure from the live stack distribution.
@@ -77,7 +114,7 @@ import { bubbleFactor, premiumFromBubbleFactor } from './IcmModel.js';
 // PROOF OF RECEIPT (Dan 2026-08-26): live decisions stamp the layers that
 // actually executed. Gated on opts.telemetry — league/benchmark/tests never
 // count. See engine/BrainTelemetry.ts.
-import { noteFire, telemetryOn } from './BrainTelemetry.js';
+import { noteDecisionMs, noteFire, telemetryOn } from './BrainTelemetry.js';
 // V27 (Dan 2026-08-29): the PioSolver push/fold charts, preloaded in memory
 // by GtoChartLoader so the synchronous decision can read them at zero I/O.
 // See engine/GtoCharts.ts for scope and why absence falls back to heuristics.
@@ -97,6 +134,7 @@ import {
   type GtoV31ActionFamily,
   type GtoV31GameFamily,
   type GtoV31Objective,
+  type GtoV31SourceSeal,
 } from './GtoPostflopV31.js';
 import {
   classifyGtoDecisionContext,
@@ -105,7 +143,12 @@ import {
   gtoV31Position,
   gtoV31PotType,
   gtoV31UtilityContext,
+  type GtoV31FacingKind,
   type GtoV31NodeRole,
+  type GtoV31Position,
+  type GtoV31PotType,
+  type GtoV31SizeBucket,
+  type GtoV31UtilityContext,
 } from './GtoDecisionContext.js';
 import { gtoFacingDefense, realizationFactor } from './GtoFacingDefenseV32.js';
 // V7 split: evaluators + Monte Carlo equity + preflop scores live in
@@ -113,9 +156,11 @@ import { gtoFacingDefense, realizationFactor } from './GtoFacingDefenseV32.js';
 import {
   setEquityDepth,
   fastRandom,
+  equitySampleSizeOfLastCall,
   variantInfo,
   type VariantInfo,
   simulateEquity,
+  type HorseEquityOutcomeCollector,
   type HiLoSplit,
   omahaDrawQuality,
   type OmahaDrawInfo,
@@ -149,6 +194,16 @@ import { personaFromValue, followsSolver, type HorsePersonaV2 } from './HorsePer
 // arbiter for the games with no solver export and for every river fold/call
 // the hold'em solver range did not answer. See HorseEvEngine.ts.
 import { evaluateSpot, riverCallVerdict, type EvOpponentModel } from './HorseEvEngine.js';
+import {
+  evaluateTournamentUtilityDetailed,
+  type TournamentUtilityInput,
+  type TournamentContinuationRunner,
+  type TournamentUtilityOpponentEvidence,
+  type TournamentUtilityShowdownSample,
+} from './HorseTournamentUtility.js';
+import { evaluateTournamentPostflop, type Phase8Mode } from './HorseTournamentPostflop.js';
+import { liveHorsePhase8Safety } from './HorsePhase8Safety.js';
+import { performance } from 'node:perf_hooks';
 
 // BUG 020 FIX (2026-04-15) — round chip amounts to whole cents so horse decisions
 // don't pollute hand_history.actions with 15-digit floats. Bible V8 §2.6.
@@ -612,7 +667,8 @@ function classifyPosition(
   heroSeat: number,
   dealerSeat: number | undefined,
   players: SeatPlayer[],
-  v13: boolean = true
+  v13: boolean = true,
+  allPlayersDealt: boolean = false
 ): PositionClass {
   // ── V13 (2026-08-23): position comes from who was DEALT IN ───────────────
   // Filtering on `!is_folded` derived position from who is still LIVE, so
@@ -626,6 +682,7 @@ function classifyPosition(
   // and let the 13-20bb reshove jam over an under-the-gun open. A player who
   // has folded still occupied their seat when the button was set.
   const dealtIn = (p: SeatPlayer): boolean =>
+    allPlayersDealt ||
     p.seat === heroSeat ||
     (p.totalInvested ?? 0) > 0 ||
     (Array.isArray(p.cards) && p.cards.length > 0) ||
@@ -893,6 +950,38 @@ function scareShift(board: Card[]): ScareShift {
 
 /** Extended game state — ServerTableEngine passes the full HandController view. */
 export interface HorseGameStateV2 extends HorseGameState {
+  /** Phase 5 Round 1 canonical live-decision contract. Offline fixtures may
+   * omit it; every live worker request is runtime-validated at version 1. */
+  stateSchemaVersion?: 1;
+  /** Public deal census captured before stripping private cards. Connectivity
+   * and folding never return a dealt hand to the physical deck. */
+  dealtSeatIds?: number[];
+  /** Settlement units from the active controller, including whole Diamonds. */
+  chipUnit?: 0.01 | 1;
+  asset?: 'chips' | 'diamonds';
+  bbjConfig?: import('../types.js').HandConfig['bbjConfig'] | null;
+  heroSeat?: number;
+  currentPlayerSeat?: number;
+  legalActions?: ActionType[];
+  toCall?: number;
+  /** Absolute street wager / raise-to bounds from HandController. */
+  minRaiseTo?: number | null;
+  maxRaiseTo?: number | null;
+  bettingStructure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
+  fixedBetSize?: number | null;
+  wagersCapped?: boolean;
+  commitmentCapRemaining?: number | null;
+  /** Live side-pot layers with exact eligibility, before settlement. */
+  pots?: Pot[];
+  /**
+   * Chips already in the middle hero can win after taking the effective call,
+   * excluding hero's not-yet-committed call. Required on every live request;
+   * optional only for legacy/offline fixtures.
+   */
+  contestablePot?: number;
+  /** Exact active per-hand rake schedule, not a strategy approximation. */
+  rakeConfig?: RakeConfig;
+  variantRules?: HorseVariantRules;
   dealerSeat?: number;
   lastRaise?: number;
   actionHistory?: ActionRecord[];
@@ -902,14 +991,61 @@ export interface HorseGameStateV2 extends HorseGameState {
    *  heuristic is a legacy fallback only - ServerTableEngine always passes
    *  gameMode, and isTournamentMode() trusts it first. */
   tournament?: {
+    /** Phase 6 context contract. Every live tournament decision carries it. */
+    schemaVersion?: 1;
+    contextStatus?: TournamentContextStatus;
+    contextIssues?: string[];
+    sourceAgeMs?: number | null;
+    tournamentId?: string | null;
+    tournamentType?: string;
+    tournamentStatus?: string;
+    gameVariant?: string;
+    entrants?: number;
     nearBubble?: boolean;
     inMoney?: boolean;
     playersLeft?: number;
     spotsPaid?: number;
     avgStackChips?: number;
+    medianStackChips?: number;
+    seatsPerTable?: number;
+    playersAtTable?: number;
+    currentLevel?: number;
+    currentSmallBlind?: number;
+    currentBigBlind?: number;
+    currentAnte?: number;
+    anteType?: TournamentAnteType;
+    nextSmallBlind?: number | null;
+    nextBigBlind?: number | null;
+    nextAnte?: number | null;
+    levelDurationMin?: number | null;
+    levelElapsedMin?: number | null;
+    registrationOpen?: boolean;
+    lateRegistrationOpen?: boolean;
+    registrationRequiresAuthorization?: boolean;
+    isPko?: boolean;
+    isBounty?: boolean;
+    isMysteryBounty?: boolean;
+    mysteryBountyStage?: 'none' | 'pending' | 'active' | 'complete';
+    reentryAllowed?: boolean;
+    reentryOpen?: boolean;
+    maxReentries?: number | null;
+    rebuyAllowed?: boolean;
+    rebuyOpen?: boolean;
+    maxRebuys?: number | null;
+    addOnAvailable?: boolean;
+    addOnPeriodOpen?: boolean;
+    addOnCost?: number | null;
+    addOnChips?: number | null;
+    addOnLevels?: number | null;
+    onBreak?: boolean;
+    handForHand?: boolean;
+    handForHandExpected?: boolean;
+    m?: TournamentMState;
     bountyFactor?: number;
     /** V16 ICM: live stacks (chips, desc) + payout percentages by place. */
     stacks?: number[];
+    /** Cached field stacks keyed by the local table identities they belong to. */
+    stackByUser?: Record<string, number>;
     payoutPct?: number[];
     /** V26 PRIZE LANDSCAPE: the mystery-bounty inventory as it stands. */
     mysteryChestsLeft?: number;
@@ -918,7 +1054,20 @@ export interface HorseGameStateV2 extends HorseGameState {
     mysteryTopLive?: boolean;
     /** V26: mean live PKO bounty per remaining player, in cents. */
     meanBountyCents?: number;
-    /** V23 ENDGAME: at the final table (MTT, <= 9 left). */
+    /** Phase 7: funded pools and recovery terms in one explicit unit. */
+    prizePoolCents?: number;
+    bountyPoolCents?: number;
+    buyInCents?: number | null;
+    startingStackChips?: number | null;
+    rebuyCostCents?: number | null;
+    rebuyChips?: number | null;
+    rebuyPrizeContributionCents?: number | null;
+    rebuyBountyContributionCents?: number | null;
+    reloadsUsed?: number | null;
+    addOnTaken?: boolean | null;
+    rebuyAffordable?: boolean | null;
+    addOnAffordable?: boolean | null;
+    /** V23 ENDGAME: at the final table (MTT, <= 10 left). */
     finalTable?: boolean;
     /** V23 BLIND CLOCK: minutes to the next level (null/undefined = unknown). */
     nextBlindInMin?: number | null;
@@ -935,7 +1084,7 @@ export interface HorseGameStateV2 extends HorseGameState {
    *  word "spin": MOST spins are winner-take-all chip-EV (no ICM), but 10x
    *  and above pay 80/20 or 80/12/8 and therefore have a real ladder. See
    *  icmRisk. */
-  format?: 'cash' | 'mtt' | 'spin' | 'hu_sng';
+  format?: 'cash' | 'mtt' | 'sng' | 'spin' | 'hu_sng';
   /** V11 (Dan 2026-08-22): EXPLICIT game mode from the table engine
    *  (tournament_id / game_type). Cash and tournaments are different games;
    *  when this is present it is trusted over every heuristic. */
@@ -985,6 +1134,21 @@ function isTournamentMode(gs: HorseGameStateV2): boolean {
 }
 
 /**
+ * Phase 6 keeps partial tournament snapshots on the decision payload so the
+ * engine can emit an honest `TOURNAMENT_CONTEXT_INCOMPLETE` receipt.  Those
+ * observable facts are not strategy inputs until the complete-context
+ * contract holds, however.  Legacy/offline callers have no schema marker and
+ * retain their historical behavior.
+ */
+function trustedTournamentContext(
+  gs: HorseGameStateV2
+): NonNullable<HorseGameStateV2['tournament']> | undefined {
+  const t = gs.tournament;
+  if (t?.schemaVersion === 1 && t.contextStatus !== 'complete') return undefined;
+  return t;
+}
+
+/**
  * V7 ICM-lite: the survival premium in tournament play. Chips lost hurt more
  * than chips won help, so every calling threshold rises and bluff volume
  * drops — hardest around the bubble, gone again deep in the money with a big
@@ -1009,7 +1173,7 @@ export function endgameAdjust(
   stackBB: number,
   on: boolean
 ): number {
-  const t = gs.tournament;
+  const t = trustedTournamentContext(gs);
   if (!on || !t) return risk;
   if ((t.playersLeft ?? 0) === 2) return Math.min(risk, 0.01);
   if (t.finalTable === true && (t.inMoney ?? true)) {
@@ -1075,7 +1239,7 @@ export function satelliteRead(
   stackBB: number,
   on: boolean = true
 ): SatelliteRead {
-  const t = gs.tournament;
+  const t = trustedTournamentContext(gs);
   if (!on || !t || t.satellite !== true) return NO_SATELLITE;
   const seats = t.satelliteSeats ?? t.spotsPaid ?? 0;
   const left = t.playersLeft ?? 0;
@@ -1109,7 +1273,9 @@ export function satelliteRead(
   const bb = gs.bigBlind > 0 ? gs.bigBlind : 1;
   const heroChips = stackBB * bb;
   const stacks = Array.isArray(t.stacks) ? t.stacks : [];
-  // rank: substitute hero's live stack for its closest field entry
+  // Conservative rank uses the worst place in an equal-stack tie. Counting
+  // only strictly larger stacks made four equal stacks all claim rank 1 on a
+  // three-seat bubble, so every horse believed its seat was locked.
   let rank = 0;
   if (stacks.length >= 2 && heroChips > 0) {
     let closest = 0;
@@ -1117,8 +1283,15 @@ export function satelliteRead(
       if (Math.abs(stacks[i] - heroChips) < Math.abs(stacks[closest] - heroChips)) closest = i;
     }
     let above = 0;
-    for (let i = 0; i < stacks.length; i++) if (i !== closest && stacks[i] > heroChips) above++;
-    rank = 1 + above;
+    let tied = 0;
+    for (let i = 0; i < stacks.length; i++) {
+      if (stacks[i] > heroChips + 0.005) above++;
+      else if (Math.abs(stacks[i] - heroChips) <= 0.005) tied++;
+    }
+    rank =
+      tied > 0
+        ? above + tied
+        : 1 + stacks.filter((stack, index) => index !== closest && stack > heroChips).length;
   }
   const bustsNeeded = left - seats;
   const orbitBB =
@@ -1177,7 +1350,7 @@ export function satelliteRead(
  *    per-player map is absent (older context), so nothing regresses.
  */
 export function prizeLandscapeScale(gs: HorseGameStateV2, on: boolean = true): number {
-  const t = gs.tournament;
+  const t = trustedTournamentContext(gs);
   if (!on || !t) return 1;
   const meanCents = Math.max(0, t.mysteryMeanCents ?? t.meanBountyCents ?? 0);
   const chestsLeft = Math.max(0, t.mysteryChestsLeft ?? 0);
@@ -1194,7 +1367,7 @@ export function prizeLandscapeScale(gs: HorseGameStateV2, on: boolean = true): n
 }
 
 export function headBountyScale(gs: HorseGameStateV2, userId: string | undefined): number {
-  const t = gs.tournament;
+  const t = trustedTournamentContext(gs);
   if (!t || !userId || !t.bountyByUser) return 1;
   const head = Number(t.bountyByUser[userId]) || 0;
   const mean = Math.max(0, t.meanBountyCents ?? 0);
@@ -1223,7 +1396,7 @@ export function bubblePressure(
   raiserSeat: number,
   on: boolean = true
 ): number {
-  const t = gs.tournament;
+  const t = trustedTournamentContext(gs);
   if (!on || !t || !isTournamentMode(gs) || gs.format === 'spin') return 0;
   if (t.satellite === true) return 0;
   const pl = t.playersLeft ?? 0;
@@ -1265,7 +1438,7 @@ function icmRiskBase(
 ): number {
   lastIcmPath = 'legacy';
   // icmRisk v2 (V12, 2026-08-22): real bubble model from TournamentBrainContext.
-  const explicit = gs.tournament;
+  const explicit = trustedTournamentContext(gs);
   if (!isTournamentMode(gs)) return 0;
   // A SPIN IS NOT AUTOMATICALLY WINNER-TAKE-ALL (corrected 2026-08-31). The
   // ladder pays one place below 10x, but 10x pays 80/20 and 25x/50x/100x pay
@@ -1363,6 +1536,55 @@ function icmRiskBase(
     if ((explicit.bountyFactor ?? 0) >= 0.2) risk = Math.max(0, risk - 0.02);
   }
   return Math.min(endgameAdjust(Math.min(risk, 0.12), gs, stackBB, useV23End), 0.15);
+}
+
+export interface GtoV31DecisionStateReceipt {
+  schemaVersion: 1;
+  street: Extract<HandStage, 'flop' | 'turn' | 'river'>;
+  gameVariant: 'nlh';
+  gameFamily: GtoV31GameFamily;
+  objective: GtoV31Objective;
+  utilityContext: GtoV31UtilityContext;
+  format: 'cash' | 'mtt' | 'sng' | 'spin' | 'hu_sng';
+  tableSize: number;
+  potType: GtoV31PotType;
+  heroPosition: GtoV31Position;
+  opponentPosition: GtoV31Position;
+  stackBb: number;
+  depthBucket: number;
+  textureClass: string;
+  nodeRole: GtoV31NodeRole;
+  facingKind: GtoV31FacingKind;
+  facingSizeBucket: GtoV31SizeBucket;
+  hand: string;
+  handKey: string;
+  cell: string;
+  board: Card[];
+  holeCards: Card[];
+  pot: number;
+  currentBet: number;
+  toCall: number;
+  bigBlind: number;
+}
+
+export interface GtoV31DecisionReceipt {
+  datasetId: string;
+  datasetChecksum: string;
+  decisionState: GtoV31DecisionStateReceipt;
+  nodeRole: GtoV31NodeRole;
+  cell: string;
+  handKey: string;
+  actionId: string;
+  sampledActionFamily: GtoV31ActionFamily;
+  sampledAmount: number | null;
+  finalAction: HorseDecision['action'];
+  finalAmount: number | null;
+  /** True only when legalization preserved the sampled family and wager size. */
+  executedAsIntended: boolean;
+  referenceDistribution: Record<string, number>;
+  policyEvBb: number | null;
+  actionEvsBb: Record<string, number | null> | null;
+  sourceSeal: GtoV31SourceSeal;
 }
 
 /** V3/V4/V5 decision options (benchmark/test hooks — production uses defaults). */
@@ -1611,19 +1833,12 @@ export interface HorseDecideOpts {
    * same action path without allowing a candidate to replace live policy.
    */
   gtoV31DatasetChecksum?: string;
-  /** Offline promotion evidence hook. Never set by the live engine. */
-  onGtoV31Decision?: (receipt: {
-    datasetChecksum: string;
-    nodeRole: GtoV31NodeRole;
-    cell: string;
-    actionId: string;
-    sampledActionFamily: GtoV31ActionFamily;
-    sampledAmount: number | null;
-    finalAction: HorseDecision['action'];
-    finalAmount: number | null;
-    /** True only when legalization preserved the sampled family and wager size. */
-    executedAsIntended: boolean;
-  }) => void;
+  /**
+   * Offline evidence hook used by candidate gates and the daily active-corpus
+   * agreement probe. Never set by the live engine. The receipt is emitted
+   * only after the ordinary V31 lookup, sample, and legalization path runs.
+   */
+  onGtoV31Decision?: (receipt: GtoV31DecisionReceipt) => void;
   /** V32: facing-a-bet defence from the solver's own betting range. */
   v32FacingDefense?: boolean;
   /** V33 (2026-09-01): refuse a solver consult the warehouse cannot honestly
@@ -1665,6 +1880,24 @@ export interface HorseDecideOpts {
    *  double-suited 3-bets, a rundown flats, AAA-x folds. Disable to ablate
    *  (default: enabled). Hold'em is unaffected either way. */
   v46Charts?: boolean;
+  /** Phase 7 Round 1: final action-specific tournament utility arbiter.
+   *  Complete schema-v1 tournament decisions evaluate every legal action
+   *  family after all legacy strategy layers; no global style multiplier can
+   *  overwrite its choice (default: enabled). */
+  phase7Utility?: boolean;
+  /** Phase 8 is shadow by default. Candidate mode is for isolated promotion runs. */
+  phase8Postflop?: Phase8Mode;
+  /** Phase 10 complete baseline runs in shadow until its own promotion gate passes. */
+  phase10Plo4?: Plo4LiveMode;
+  /** Offline fixed-work evaluation only; rejected at the live worker boundary. */
+  phase10EvidenceMode?: boolean;
+  /** Phase 11 variant policies are live shadow; candidate/evidence controls are offline only. */
+  phase11Omaha?: OmahaVariantMode;
+  phase11EvidenceMode?: boolean;
+  phase12Remaining?: RemainingVariantMode;
+  phase12EvidenceMode?: boolean;
+  phase13Joint?: import('./multiway/JointLivePolicy.js').JointPolicyMode;
+  phase13EvidenceMode?: boolean;
   /** V44 (2026-09-05): the SECOND LOOK. When set above 1, every Monte Carlo
    *  read in this decision runs at that multiple of its budgeted sample. The
    *  engine uses it to replay a close decision inside the think time it was
@@ -1713,22 +1946,95 @@ function moodOf(userId: string, decisionTimeMs = Date.now()): number {
  * HorsePreflop), so open, call, defend and 3-bet ranges all widen together -
  * VPIP is voluntary money in preflop by any route.
  */
+/**
+ * THE WINDOW THE FLOOR IS JUDGED OVER. `tables.maintain_hands`, pinned at 10
+ * on every surface by migration 20260904231353 (`v_vpip_window := 10`,
+ * `SET maintain_hands = 10`, `'{vpip_window}'` in the ruleset snapshot).
+ */
+export const VPIP_JUDGED_OVER_HANDS = 10;
+
+/**
+ * HOW FAR ABOVE THE FLOOR A HORSE AIMS, IN STANDARD ERRORS OF THAT WINDOW.
+ *
+ * ── DERIVED, NOT GUESSED (2026-09-09) ─────────────────────────────────────
+ *
+ * The cushion used to be a flat ten points, and the fleet hit it exactly -
+ * which was the problem. `fn_nit_check` judges the CUMULATIVE VPIP of a
+ * sitting the moment it reaches ten hands, and a ten-hand proportion has a
+ * standard error near 15 points, so aiming ten points over a floor puts the
+ * floor about two thirds of one standard error away and roughly a sixth of
+ * all sittings under it at the very first check.
+ *
+ * Measured on production over the 24 hours to 2026-09-09 22:00, horse
+ * sittings at floored tables that reached ten hands:
+ *
+ *   | template | floor | sittings | mean VPIP over first 10 | under floor at hand 10 |
+ *   | action   |  30   |   392    |         47.1%           |    25  (6.4%)          |
+ *   | madness  |  50   |   597    |         59.2%           |   104 (17.4%)          |
+ *
+ * The mean cleared both floors; the SAMPLE did not. And because the check
+ * re-runs on every hand after the tenth, that first-check risk compounds into
+ * the observed outcome over the same window: of every horse sitting that
+ * ENDED, 56% of Madness and 27% of Action ended in `vpip_evicted`, median at
+ * hand 11 - the first moment the rule can fire. Each one also writes a
+ * two-hour bar on that game (`fn_cash_session_close`), which is why 42 Action
+ * and Madness tables were holding 13 horses between them.
+ *
+ * `tests/a-vpip-floor-must-be-reachable.law.test.ts` was written for exactly
+ * this and states the acceptance criterion being missed: "a horse that is
+ * booted every ten hands is not obeying the floor, it is churning the game."
+ *
+ * 1.3 standard errors puts about a tenth of windows under the floor instead
+ * of a sixth, and it is the largest margin that still leaves the widening
+ * layer room to steer at the highest floor the product may set: at floor 50
+ * the prior multiplier becomes 0.40, comfortably above the 0.35 clamp that
+ * means "this floor cannot be reached by widening at all".
+ *
+ * THE FLOOR VALUES THEMSELVES ARE NOT TOUCHED HERE. 30 and 50 are Dan's
+ * (2026-09-05) and a migration asserts no live table carries anything else.
+ * This is only how hard the horse plays to clear one.
+ */
+export const VPIP_FLOOR_MARGIN_SIGMAS = 1.3;
+
+/** The fleet's own preflop width with no floor applied. */
+const BASE_VPIP = 0.28;
+/** The most this layer may widen. A bar at a third of its height is already
+ *  playing nearly everything; past that the floor is unreachable and the
+ *  table churns however long the horse sits there. */
+const VPIP_FLOOR_MUL = 0.35;
+
+/**
+ * The frequency a horse aims at on a table whose floor is `floorPct`: the
+ * floor plus enough margin that an ordinary ten-hand sample does not fall
+ * under it. Exported so the law that judges reachability asks the SAME
+ * function the brain uses, rather than restating the arithmetic and drifting
+ * from it.
+ */
+export function vpipTargetFor(floorPct: number): number {
+  const floor = Number(floorPct) / 100;
+  if (!(floor > 0)) return 0;
+  /* The standard error of a proportion over the judged window, taken AT THE
+     FLOOR - the horse is steering from below, so the floor is the relevant
+     variance, and it is the figure that does not move as the horse's own
+     rate does. */
+  const se = Math.sqrt((floor * (1 - floor)) / VPIP_JUDGED_OVER_HANDS);
+  return Math.min(0.95, floor + VPIP_FLOOR_MARGIN_SIGMAS * se);
+}
+
 export function vpipFloorMul(gs: {
   vpipFloor?: number;
   ownVpip?: { hands: number; vpip: number | null };
 }): number {
   const floor = Number(gs.vpipFloor ?? 0);
   if (!(floor > 0)) return 1;
-  const target = Math.min(0.95, floor / 100 + 0.1);
-  const BASE_VPIP = 0.28;
-  const FLOOR_MUL = 0.35;
+  const target = vpipTargetFor(floor);
   const own = gs.ownVpip;
   if (!own || own.hands < 3 || own.vpip === null || !Number.isFinite(own.vpip)) {
-    return Math.max(FLOOR_MUL, Math.min(1, BASE_VPIP / target));
+    return Math.max(VPIP_FLOOR_MUL, Math.min(1, BASE_VPIP / target));
   }
   const gap = target - own.vpip / 100;
   if (gap <= 0) return 1;
-  return Math.max(FLOOR_MUL, 1 - 1.5 * gap);
+  return Math.max(VPIP_FLOOR_MUL, 1 - 1.5 * gap);
 }
 
 /**
@@ -1739,6 +2045,206 @@ export function vpipFloorMul(gs: {
  * single-threaded, and the consumer resets it every read.
  */
 let difficultyHint = 0;
+
+interface Phase7EquityEvidence {
+  equity: number;
+  sampleSize: number;
+  standardError: number;
+  opponents: TournamentUtilityOpponentEvidence[];
+  sampledOpponentIds: string[];
+  showdownSamples: TournamentUtilityShowdownSample[];
+}
+
+/**
+ * Per-decision bridge from the equity pass to Phase 7's final arbiter. Like
+ * difficultyHint, the live worker is the only owner and HorseLogic decisions
+ * are synchronous. It is cleared before and after every decision.
+ */
+let phase7EquityEvidence: Phase7EquityEvidence | null = null;
+let phase10EquityEvidence: Plo4EquityEvidence | null = null;
+let phase11DecisionEquityCeiling: number | null = null;
+let phase12DecisionEquityCeiling: number | null = null;
+
+function phase7PlayersBehind(gs: HorseGameStateV2, hero: SeatPlayer): Set<string> {
+  if (gs.dealerSeat === undefined) return new Set<string>();
+  const dealt = gs.players
+    .filter((player) => !player.is_sitting_out)
+    .slice()
+    .sort((left, right) => left.seat - right.seat);
+  if (dealt.length < 2) return new Set<string>();
+
+  const afterSeat = (seat: number, steps: number): number => {
+    let index = dealt.findIndex((player) => player.seat === seat);
+    if (index < 0) index = 0;
+    return dealt[(index + steps) % dealt.length].seat;
+  };
+  let firstSeat: number;
+  if (gs.stage === 'preflop') {
+    if (dealt.length === 2) firstSeat = gs.dealerSeat;
+    else {
+      // Button -> SB -> BB -> first actor. A live straddle advances one more
+      // seat; the live contract currently supports the single UTG straddle.
+      firstSeat = afterSeat(gs.dealerSeat, gs.straddleActive ? 4 : 3);
+    }
+  } else {
+    firstSeat = afterSeat(gs.dealerSeat, 1);
+  }
+
+  const start = dealt.findIndex((player) => player.seat === firstSeat);
+  const ordered = dealt.slice(start).concat(dealt.slice(0, start));
+  const heroIndex = ordered.findIndex((player) => player.seat === hero.seat);
+  if (heroIndex < 0) return new Set<string>();
+  return new Set(
+    ordered
+      .slice(heroIndex + 1)
+      .filter(
+        (player) =>
+          !player.is_folded &&
+          !player.is_sitting_out &&
+          !player.is_all_in &&
+          player.user_id !== hero.user_id
+      )
+      .map((player) => player.user_id)
+  );
+}
+
+function capturePhase7Equity(
+  gs: HorseGameStateV2,
+  hero: SeatPlayer,
+  equity: number,
+  sampleSize: number,
+  bands: Array<[number, number] | null> | undefined,
+  useMind: boolean,
+  outcomeBoards: HorseEquityOutcomeCollector[]
+): void {
+  const active = gs.players.filter(
+    (player) => player.user_id !== hero.user_id && !player.is_folded && !player.is_sitting_out
+  );
+  const behind = phase7PlayersBehind(gs, hero);
+  const n = Math.max(0, Math.floor(sampleSize));
+  const boundedEquity = clamp01(equity);
+  const outcomeCount = outcomeBoards.reduce(
+    (minimum, collector) => Math.min(minimum, collector.samples.length),
+    outcomeBoards.length > 0 ? Infinity : 0
+  );
+  const showdownSamples: TournamentUtilityShowdownSample[] = [];
+  for (let index = 0; index < outcomeCount; index++) {
+    showdownSamples.push({
+      boards: outcomeBoards.map((collector) => collector.samples[index]),
+    });
+  }
+  phase7EquityEvidence = {
+    equity: boundedEquity,
+    sampleSize: n,
+    standardError: n > 0 ? Math.sqrt((boundedEquity * (1 - boundedEquity)) / n) : 0,
+    sampledOpponentIds: active.map((opponent) => opponent.user_id),
+    showdownSamples,
+    opponents: active.map((opponent, index) => {
+      let foldMul = 1;
+      if (useMind) {
+        try {
+          foldMul = HorseMind.exploit(opponent.user_id).bluffMod;
+        } catch {
+          foldMul = 1;
+        }
+      }
+      return {
+        userId: opponent.user_id,
+        range: bands?.[index] ?? null,
+        foldMul,
+        actsAfterHero: behind.has(opponent.user_id),
+      };
+    }),
+  };
+}
+
+function buildPhase7UtilityInput(
+  gs: HorseGameStateV2,
+  player: SeatPlayer,
+  decision: HorseDecision,
+  vi: ReturnType<typeof variantInfo>,
+  tournament: NonNullable<HorseGameStateV2['tournament']>,
+  evidence7: Phase7EquityEvidence
+): TournamentUtilityInput {
+  if (!gs.pots || !gs.legalActions) throw new Error('joint_utility_canonical_state_unavailable');
+  const toCall = Math.max(0, gs.currentBet - player.bet);
+  return {
+    street: gs.stage,
+    hero: player,
+    players: gs.players,
+    pots: gs.pots,
+    pot: Math.max(0, Number(gs.pot) || 0),
+    currentBet: Math.max(0, Number(gs.currentBet) || 0),
+    toCall: Math.min(Math.max(0, Number(gs.toCall ?? toCall) || 0), Math.max(0, player.stack)),
+    legalActions: gs.legalActions,
+    minRaiseTo: gs.minRaiseTo ?? null,
+    maxRaiseTo: gs.maxRaiseTo ?? null,
+    bettingStructure:
+      gs.bettingStructure ??
+      (vi.isFixedLimit ? 'fixed_limit' : vi.isPotLimit ? 'pot_limit' : 'no_limit'),
+    baseline: decision,
+    heroEquity: evidence7.equity,
+    equitySampleSize: evidence7.sampleSize,
+    equityStandardError: evidence7.standardError,
+    opponents: evidence7.opponents,
+    sampledOpponentIds: evidence7.sampledOpponentIds,
+    showdownSamples: evidence7.showdownSamples,
+    context: {
+      format:
+        gs.format === 'spin' || gs.format === 'sng' || gs.format === 'hu_sng' ? gs.format : 'mtt',
+      playersLeft: Math.max(0, tournament.playersLeft ?? 0),
+      spotsPaid: Math.max(0, tournament.spotsPaid ?? 0),
+      satellite: tournament.satellite === true,
+      satelliteSeats: Math.max(0, tournament.satelliteSeats ?? 0),
+      // Once the field is already in the money, lower-place prizes
+      // belong to players who have finished. Price only places the
+      // live field can still occupy; keeping the full paid tail made
+      // every playersLeft < spotsPaid decision fail validation.
+      payoutPct: (tournament.payoutPct ?? []).slice(0, Math.max(0, tournament.playersLeft ?? 0)),
+      fieldStacks: tournament.stacks ?? [],
+      fieldStackByUser: tournament.stackByUser ?? {},
+      isPko: tournament.isPko === true,
+      isBounty: tournament.isBounty === true,
+      isMysteryBounty: tournament.isMysteryBounty === true,
+      mysteryBountyStage: tournament.mysteryBountyStage ?? 'none',
+      bountyFactor: Math.max(0, tournament.bountyFactor ?? 0),
+      bountyByUser: tournament.bountyByUser ?? {},
+      mysteryMeanCents: Math.max(0, tournament.mysteryMeanCents ?? 0),
+      meanBountyCents: Math.max(0, tournament.meanBountyCents ?? 0),
+      prizePoolCents: Math.max(0, tournament.prizePoolCents ?? 0),
+      bountyPoolCents: Math.max(0, tournament.bountyPoolCents ?? 0),
+      reentryOpen: tournament.reentryOpen === true,
+      rebuyOpen: tournament.rebuyOpen === true,
+      maxReentries: tournament.maxReentries ?? null,
+      maxRebuys: tournament.maxRebuys ?? null,
+      addOnPeriodOpen: tournament.addOnPeriodOpen === true,
+      addOnCostCents:
+        tournament.addOnCost == null ? null : Math.round(Math.max(0, tournament.addOnCost) * 100),
+      addOnChips: tournament.addOnChips ?? null,
+      buyInCents: tournament.buyInCents ?? null,
+      startingStackChips: tournament.startingStackChips ?? null,
+      rebuyCostCents: tournament.rebuyCostCents ?? null,
+      rebuyChips: tournament.rebuyChips ?? null,
+      rebuyPrizeContributionCents: tournament.rebuyPrizeContributionCents ?? null,
+      rebuyBountyContributionCents: tournament.rebuyBountyContributionCents ?? null,
+      reloadsUsed: tournament.reloadsUsed ?? null,
+      addOnTaken: tournament.addOnTaken ?? null,
+      rebuyAffordable: tournament.rebuyAffordable ?? null,
+      addOnAffordable: tournament.addOnAffordable ?? null,
+    },
+  };
+}
+
+function currentPhase7Equity(): Phase7EquityEvidence | null {
+  return phase7EquityEvidence;
+}
+
+function phase7OutcomeBudget(playersLeft: number | undefined): number {
+  const field = Math.max(0, Math.floor(playersLeft ?? 0));
+  if (field <= 10) return 160;
+  if (field <= 200) return 64;
+  return 32;
+}
 
 /** V23 RAISE-RESPONSE PLAN — set per postflop decision, consumed by
  *  betSize/raiseTo (the only places a postflop chip goes in), recorded into
@@ -1770,18 +2276,114 @@ function snapFraction(frac: number, familyBias: number = 0.5): number {
 }
 
 /**
- * V10 RAKE — the room's cash schedule is ~10% with a per-stakes dollar cap and
- * no-flop-no-drop. Only the MARGINAL rake matters to a decision: while the pot
- * is BELOW the cap every chip that ends up in it is taxed ~10%, so marginal
- * calls in small pots need a touch more equity than raw pot odds imply. Once
- * the cap is reached the marginal rake is zero and pot odds are honest again.
- * Returns the marginal rake fraction (0.10 or 0). The cap is approximated at
- * 2.5bb (schedule: $5 cap at 1/2, $7.5 at 2/5) — deliberately conservative.
+ * V10 RAKE — only the MARGINAL rake matters to a decision. Live schema-v1
+ * states carry the exact active percentage and player-count cap, including the
+ * heads-up ceiling. Once that cap is reached the marginal rake is zero and pot
+ * odds are honest again. The historical 10% / 2.5bb approximation remains only
+ * for offline fixtures that predate the canonical state contract.
  */
 const RAKE_PCT = 0.1;
-function rakeDrag(pot: number, bigBlind: number): number {
+function rakeDrag(
+  pot: number,
+  bigBlind: number,
+  config?: RakeConfig,
+  playerCount?: number
+): number {
+  if (config) {
+    // Timed collection is not a marginal tax on this pot.
+    if (config.timedRake) return 0;
+    let rate = Math.max(0, config.percent) / 100;
+    if (playerCount !== undefined && playerCount <= 2) {
+      rate = Math.min(rate, HEADS_UP_RAKE_PERCENT / 100);
+    }
+    let cap = Math.max(0, config.cap);
+    if (config.playerCountCaps?.length && playerCount !== undefined) {
+      const tier = [...config.playerCountCaps]
+        .sort((a, b) => b.players - a.players)
+        .find((candidate) => playerCount >= candidate.players);
+      if (tier) cap = Math.max(0, tier.cap);
+    }
+    return pot > 0 && rate > 0 && cap > 0 && pot * rate < cap ? rate : 0;
+  }
   const capChips = Math.max((bigBlind > 0 ? bigBlind : 2) * 2.5, 3);
   return pot > 0 && pot * RAKE_PCT < capChips ? RAKE_PCT : 0;
+}
+
+/**
+ * Last-mile Phase 5 legality. Strategy may express intent, but the immutable
+ * HandController menu is the authority for reopening rights, structure caps
+ * and table commitment caps. When intent cannot be represented legally, this
+ * degrades without committing extra chips: check first, otherwise fold.
+ */
+function enforceAuthoritativeDecision(
+  decision: HorseDecision,
+  player: SeatPlayer,
+  gs: HorseGameStateV2
+): HorseDecision {
+  if (gs.stateSchemaVersion !== 1 || !Array.isArray(gs.legalActions)) return decision;
+
+  const legal = new Set(gs.legalActions);
+  const stack = Number.isFinite(player.stack) ? Math.max(0, player.stack) : 0;
+  const toCall = Number.isFinite(gs.toCall)
+    ? Math.max(0, gs.toCall as number)
+    : Math.max(0, gs.currentBet - player.bet);
+  const cents = (value: number): number => Math.round(value * 100) / 100;
+  const safe = (): HorseDecision => {
+    if (toCall <= 0.005 && legal.has('check')) return { action: 'check', thinkTime: 0 };
+    if (legal.has('fold')) return { action: 'fold', thinkTime: 0 };
+    if (legal.has('check')) return { action: 'check', thinkTime: 0 };
+    // A malformed menu should already have been rejected at the worker
+    // boundary. These final branches keep direct/offline callers total.
+    if (legal.has('call')) {
+      return { action: 'call', amount: cents(Math.min(toCall, stack)), thinkTime: 0 };
+    }
+    return { action: 'fold', thinkTime: 0 };
+  };
+  const call = (): HorseDecision => {
+    if (!legal.has('call')) return safe();
+    if (toCall >= stack - 0.005 && legal.has('all_in')) {
+      return { action: 'all_in', thinkTime: 0 };
+    }
+    return { action: 'call', amount: cents(Math.min(toCall, stack)), thinkTime: 0 };
+  };
+
+  if (decision.action === 'call') return call();
+  if (decision.action === 'check') return legal.has('check') ? decision : safe();
+  if (decision.action === 'fold') {
+    const normalized =
+      toCall <= 0.005 && legal.has('check') ? { action: 'check' as const, thinkTime: 0 } : safe();
+    return normalized.action === 'fold' ? { ...decision, ...normalized } : normalized;
+  }
+  if (decision.action === 'all_in' && legal.has('all_in')) return decision;
+
+  let wagerAction: 'bet' | 'raise' | null = null;
+  if (decision.action === 'bet' || decision.action === 'raise' || decision.action === 'all_in') {
+    const contextual = gs.currentBet > 0 ? 'raise' : 'bet';
+    if (legal.has(contextual)) wagerAction = contextual;
+  }
+  if (!wagerAction) {
+    return decision.action === 'raise' || decision.action === 'all_in' ? call() : safe();
+  }
+
+  const minTo = gs.minRaiseTo;
+  const maxTo = gs.maxRaiseTo;
+  if (
+    typeof minTo !== 'number' ||
+    !Number.isFinite(minTo) ||
+    typeof maxTo !== 'number' ||
+    !Number.isFinite(maxTo) ||
+    maxTo < minTo - 0.005
+  ) {
+    return wagerAction === 'raise' ? call() : safe();
+  }
+  const requested =
+    decision.action === 'all_in'
+      ? maxTo
+      : Number.isFinite(decision.amount)
+        ? decision.amount!
+        : minTo;
+  const amount = cents(Math.max(minTo, Math.min(maxTo, requested)));
+  return { action: wagerAction, amount, thinkTime: 0 };
 }
 
 export class HorseLogic {
@@ -1842,11 +2444,19 @@ export class HorseLogic {
       // different player, possibly a different table — inherited the tank
       // multiplier. Clear it on the way out.
       difficultyHint = 0;
+      phase7EquityEvidence = null;
+      phase10EquityEvidence = null;
+      phase11DecisionEquityCeiling = null;
+      phase12DecisionEquityCeiling = null;
       const toCall = Math.max(0, (gameState.currentBet || 0) - (player.bet || 0));
       return toCall === 0
         ? { action: 'check', thinkTime: 1500 }
         : { action: 'fold', thinkTime: 1500 };
     } finally {
+      phase7EquityEvidence = null;
+      phase10EquityEvidence = null;
+      phase11DecisionEquityCeiling = null;
+      phase12DecisionEquityCeiling = null;
       HorseMind.setDecisionScope(null);
     }
   }
@@ -1858,6 +2468,10 @@ export class HorseLogic {
     mods: HorseProfileMods,
     opts: HorseDecideOpts = {}
   ): HorseDecision {
+    phase7EquityEvidence = null;
+    phase10EquityEvidence = null;
+    phase11DecisionEquityCeiling = null;
+    phase12DecisionEquityCeiling = null;
     const base = STYLE_PARAMS[styleName] || STYLE_PARAMS.balanced;
     const params: StyleParams = {
       ...base,
@@ -1869,7 +2483,30 @@ export class HorseLogic {
     // V40: the review system's verdict on this horse, read every decision.
     params.ploStackoffLoad = ploStackoffLoad(mods);
 
-    const vi = variantInfo(gs.gameVariant);
+    const compiledVariant = variantInfo(gs.gameVariant);
+    // Phase 5 live requests carry explicit rules and the worker proves they
+    // match gameVariant before this method runs. Read those facts here rather
+    // than transporting a contract the brain then ignores. Offline fixtures
+    // without schema-v1 rules retain the historical variant resolver.
+    const vi: VariantInfo = gs.variantRules
+      ? {
+          ...compiledVariant,
+          holeCount: gs.variantRules.holeCardsDealt,
+          isOmaha:
+            gs.variantRules.holeCardsUse === 'exactly_two' &&
+            gs.variantRules.boardCardsUse === 'exactly_three',
+          isHiLo: gs.variantRules.splitLow8OrBetter,
+          isShortDeck: gs.variantRules.deckSize === 36,
+          isPotLimit:
+            gs.bettingStructure !== undefined
+              ? gs.bettingStructure === 'pot_limit'
+              : compiledVariant.isPotLimit,
+          isFixedLimit:
+            gs.bettingStructure !== undefined
+              ? gs.bettingStructure === 'fixed_limit'
+              : compiledVariant.isFixedLimit,
+        }
+      : compiledVariant;
     // V41: the rest of the verdict, by this hand's variant family.
     {
       const fam41: LeakFamily = vi.isOmaha ? 'omaha' : 'holdem';
@@ -1969,6 +2606,19 @@ export class HorseLogic {
     if (tele) {
       noteFire('decide');
       noteFire(`decide_${vi.isOmaha ? 'omaha' : vi.isShortDeck ? 'short_deck' : 'nlh'}`);
+      if (isTournamentMode(gs)) {
+        noteFire('decide_tournament');
+        if (gs.stage === 'preflop') noteFire('decide_tournament_preflop');
+      }
+      if (isTournamentMode(gs) && gs.tournament?.schemaVersion === 1) {
+        noteFire('phase6_tournament_context');
+        if (gs.tournament.contextStatus === 'complete') {
+          noteFire('phase6_tournament_context_complete');
+        } else {
+          noteFire('phase6_tournament_context_incomplete');
+        }
+        if (gs.tournament.m?.schemaVersion === 1) noteFire('phase6_m_engine');
+      }
     }
     let decision: HorseDecision;
     if (gs.stage === 'preflop') {
@@ -1991,7 +2641,456 @@ export class HorseLogic {
       );
     }
 
+    // Legalize the heuristic/solver proposal first so its exact legal size is
+    // one of Phase 7's candidates. Phase 7 then runs LAST: no mood, style,
+    // threshold, chart or global ICM multiplier is allowed to overwrite its
+    // action-specific tournament utility choice.
     decision = this.legalize(decision, player, gs, vi);
+    const beforePhase10 = decision;
+    const phase10 =
+      gs.gameVariant === 'plo4' && opts.phase10Plo4 !== 'off'
+        ? evaluatePlo4LivePolicy(
+            player,
+            gs,
+            decision,
+            phase10EquityEvidence,
+            opts.phase10Plo4 ?? 'shadow',
+            opts.phase10EvidenceMode && !tele ? () => 0 : undefined
+          )
+        : null;
+    if (phase10) decision = this.legalize(phase10.decision, player, gs, vi);
+    const phase11 =
+      isOmahaPolicyVariant(gs.gameVariant) && opts.phase11Omaha !== 'off'
+        ? evaluateOmahaVariantPolicy(
+            player,
+            gs,
+            decision,
+            null,
+            opts.phase11Omaha ?? 'shadow',
+            opts.phase11EvidenceMode && !tele ? () => 0 : undefined,
+            phase11DecisionEquityCeiling ?? 1
+          )
+        : null;
+    if (phase11) decision = this.legalize(phase11.decision, player, gs, vi);
+    const phase12 =
+      isRemainingPolicyVariant(gs.gameVariant) && opts.phase12Remaining !== 'off'
+        ? evaluateRemainingVariantPolicy(
+            player,
+            gs,
+            decision,
+            null,
+            opts.phase12Remaining ?? 'shadow',
+            opts.phase12EvidenceMode && !tele ? () => 0 : undefined,
+            phase12DecisionEquityCeiling ?? 1
+          )
+        : null;
+    if (phase12) decision = this.legalize(phase12.decision, player, gs, vi);
+    const variantPolicy = phase10 ?? phase11 ?? phase12;
+
+    let phase8UtilityInput: TournamentUtilityInput | null = null;
+    let phase8ReuseUtility: TournamentContinuationRunner | undefined;
+    if (
+      (opts.phase7Utility ?? true) !== false &&
+      isTournamentMode(gs) &&
+      gs.tournament?.schemaVersion === 1
+    ) {
+      const tournament = trustedTournamentContext(gs);
+      const evidence7 = currentPhase7Equity();
+      if (!tournament) {
+        if (tele) noteFire('phase7_utility_skip_incomplete');
+      } else if (
+        gs.stateSchemaVersion === 1 &&
+        Array.isArray(gs.legalActions) &&
+        gs.legalActions.some((action) => action !== 'discard') &&
+        Array.isArray(gs.pots) &&
+        // Round 1 requires one coherent joint showdown sample per utility
+        // branch.  The existing multi-board strategy still prices those
+        // hands, but Phase 7 must not consume the independent per-board
+        // samples as though they came from one shared-deck deal.  Keep the
+        // baseline and expose the unavailable receipt until the later depth
+        // pass supplies that sampler.  Guard here as well as at capture time:
+        // preflop fixtures and restored hands can already carry extra boards.
+        !(Array.isArray(gs.communityCards2) && gs.communityCards2.length > 0) &&
+        !(Array.isArray(gs.communityCards3) && gs.communityCards3.length > 0) &&
+        (gs.boardCount ?? 1) <= 1 &&
+        evidence7
+      ) {
+        try {
+          phase8UtilityInput = buildPhase7UtilityInput(
+            gs,
+            player,
+            decision,
+            vi,
+            tournament,
+            evidence7
+          );
+          const evaluation = evaluateTournamentUtilityDetailed(phase8UtilityInput);
+          if (variantPolicy) {
+            if (variantPolicy.receipt.mode === 'shadow' && variantPolicy.receipt.fired) {
+              const shadowStart = performance.now();
+              const shadow = evaluateTournamentUtilityDetailed({
+                ...phase8UtilityInput,
+                baseline: this.legalize(variantPolicy.proposal, player, gs, vi),
+                showdownSamples: phase8UtilityInput.showdownSamples.slice(0, 32),
+                withinBudget:
+                  (opts.phase10EvidenceMode ||
+                    opts.phase11EvidenceMode ||
+                    opts.phase12EvidenceMode) &&
+                  !tele
+                    ? () => true
+                    : () => performance.now() - shadowStart < 4,
+              });
+              variantPolicy.receipt.utilityLatencyMs = performance.now() - shadowStart;
+              variantPolicy.receipt.utilityOwner = shadow.result
+                ? 'phase7_evaluated'
+                : 'phase7_unavailable';
+              if (shadow.result) variantPolicy.receipt.shadowUtility = shadow.result.ledger;
+              else
+                variantPolicy.receipt.utilityUnavailableReason =
+                  shadow.unavailableReason ?? 'unknown';
+            } else {
+              variantPolicy.receipt.utilityOwner = evaluation.result
+                ? 'phase7_evaluated'
+                : 'phase7_unavailable';
+              if (!evaluation.result)
+                variantPolicy.receipt.utilityUnavailableReason =
+                  evaluation.unavailableReason ?? 'unknown';
+            }
+          }
+          phase8ReuseUtility = evaluation.continuePostflop;
+          const result = evaluation.result;
+          if (result) {
+            const selected = this.legalize(result.decision, player, gs, vi);
+            const selectedAmount =
+              typeof selected.amount === 'number' && Number.isFinite(selected.amount)
+                ? selected.amount
+                : null;
+            if (
+              selected.action !== result.ledger.selectedAction ||
+              selectedAmount !== result.ledger.selectedAmount
+            ) {
+              // A utility receipt may never be relabeled as a different legal
+              // action. Keep the already-legal baseline if this invariant is
+              // ever violated and make the skipped arbiter observable.
+              if (tele) {
+                noteFire('phase7_utility_unavailable');
+                noteFire('phase7_unavailable_legalizer_mismatch');
+              }
+            } else {
+              decision = { ...selected, tournamentUtility: result.ledger };
+              if (tele) {
+                noteFire('phase7_tournament_utility');
+                noteFire(`phase7_objective_${result.ledger.objective}`);
+                noteFire(`phase7_icm_${result.ledger.icmMethod}`);
+                if (result.ledger.overrodeBaseline) noteFire('phase7_utility_override');
+                if (result.ledger.sidePotCount > 1) noteFire('phase7_side_pot');
+                if (result.ledger.playersBehind.length > 0) noteFire('phase7_players_behind');
+                if (result.ledger.objective === 'pko') noteFire('phase7_bounty_utility');
+              }
+            }
+          } else if (tele) {
+            noteFire('phase7_utility_unavailable');
+            noteFire(`phase7_unavailable_${evaluation.unavailableReason ?? 'unknown'}`);
+          }
+        } catch (error) {
+          reportError(error, 'HorseLogic.phase7_tournament_utility');
+          if (variantPolicy) variantPolicy.receipt.utilityUnavailableReason = 'exception';
+          if (tele) {
+            noteFire('phase7_utility_unavailable');
+            noteFire('phase7_unavailable_exception');
+          }
+        }
+      } else if (tele && gs.legalActions?.some((action) => action !== 'discard')) {
+        noteFire('phase7_utility_unavailable');
+        const multiBoardUnavailable =
+          (Array.isArray(gs.communityCards2) && gs.communityCards2.length > 0) ||
+          (Array.isArray(gs.communityCards3) && gs.communityCards3.length > 0) ||
+          (gs.boardCount ?? 1) > 1;
+        noteFire(
+          multiBoardUnavailable
+            ? 'phase7_unavailable_multi_board'
+            : evidence7
+              ? 'phase7_unavailable_state_contract'
+              : 'phase7_unavailable_equity_evidence'
+        );
+      }
+    }
+    if (
+      (opts.phase8Postflop ?? 'shadow') !== 'off' &&
+      isTournamentMode(gs) &&
+      gs.stage !== 'preflop'
+    ) {
+      const disabledReason = tele ? liveHorsePhase8Safety.disabledReason : null;
+      const phase8 = evaluateTournamentPostflop(
+        player,
+        gs,
+        decision,
+        disabledReason ? null : phase8UtilityInput,
+        opts.phase8Postflop === 'candidate' ? 'candidate' : 'shadow',
+        () => performance.now(),
+        phase8ReuseUtility
+      );
+      if (disabledReason) phase8.ledger.reason = `disabled_${disabledReason}`;
+      const proposed = this.legalize(phase8.decision, player, gs, vi);
+      if (
+        proposed.action !== phase8.decision.action ||
+        proposed.amount !== phase8.decision.amount
+      ) {
+        phase8.ledger.applied = false;
+        phase8.ledger.reason = 'illegal_candidate';
+      } else decision = phase8.decision;
+      decision = { ...decision, tournamentPostflop: phase8.ledger };
+      if (tele) {
+        liveHorsePhase8Safety.observe(phase8.ledger);
+        noteFire('phase8_seen');
+        noteDecisionMs('phase8', phase8.ledger.latencyMs);
+        noteFire(`phase8_format_${gs.format ?? 'unknown'}`);
+        noteFire(`phase8_reason_${phase8.ledger.reason}`);
+        if (phase8.ledger.eligible) noteFire('phase8_eligible');
+        if (phase8.ledger.fired) {
+          noteFire('phase8_fired');
+          noteFire(`phase8_objective_${phase8.ledger.objective}`);
+        }
+        if (phase8.ledger.changed) noteFire('phase8_shadow_changed');
+        if (phase8.ledger.applied) noteFire('phase8_applied');
+        else noteFire('phase8_baseline_retained');
+        for (const reason of phase8.ledger.reasons) noteFire(`phase8_feature_${reason}`);
+      }
+    }
+    if (phase10) {
+      if (isTournamentMode(gs) && phase10.receipt.utilityOwner !== 'phase7_evaluated') {
+        phase10.receipt.utilityOwner = 'phase7_unavailable';
+        phase10.receipt.utilityUnavailableReason ??= 'context_or_equity_evidence_unavailable';
+        if (phase10.receipt.mode === 'candidate') {
+          decision = beforePhase10;
+          phase10.receipt.applied = false;
+        }
+      }
+      phase10.receipt.finalAction = decision.action;
+      phase10.receipt.finalAmount = decision.amount ?? null;
+      decision = { ...decision, plo4Policy: phase10.receipt };
+      if (tele) {
+        noteFire('phase10_seen');
+        noteDecisionMs('phase10', phase10.receipt.latencyMs);
+        noteFire(`phase10_reason_${phase10.receipt.reason}`);
+        if (phase10.receipt.eligible) noteFire('phase10_eligible');
+        if (phase10.receipt.fired) {
+          noteFire('phase10_fired');
+          noteFire(`phase10_street_${gs.stage}`);
+        }
+        if (phase10.receipt.changed) noteFire('phase10_shadow_changed');
+        if (phase10.receipt.applied) noteFire('phase10_applied');
+        else noteFire('phase10_baseline_retained');
+        noteFire(`phase10_utility_${phase10.receipt.utilityOwner}`);
+        if (phase10.receipt.utilityUnavailableReason)
+          noteFire(`phase10_unavailable_utility_${phase10.receipt.utilityUnavailableReason}`);
+      }
+    }
+    if (phase11) {
+      if (isTournamentMode(gs) && phase11.receipt.utilityOwner !== 'phase7_evaluated') {
+        phase11.receipt.utilityOwner = 'phase7_unavailable';
+        phase11.receipt.utilityUnavailableReason ??= 'context_or_equity_evidence_unavailable';
+        if (phase11.receipt.mode === 'candidate') {
+          decision = beforePhase10;
+          phase11.receipt.applied = false;
+        }
+      }
+      phase11.receipt.finalAction = decision.action;
+      phase11.receipt.finalAmount = decision.amount ?? null;
+      decision = { ...decision, omahaVariantPolicy: phase11.receipt };
+      if (tele) {
+        noteFire('phase11_seen');
+        noteFire(`phase11_variant_${phase11.receipt.variant}`);
+        noteDecisionMs('phase11', phase11.receipt.latencyMs);
+        noteDecisionMs(`phase11_${phase11.receipt.variant}`, phase11.receipt.latencyMs);
+        noteFire(`phase11_${phase11.receipt.variant}_reason_${phase11.receipt.reason}`);
+        if (phase11.receipt.eligible) noteFire(`phase11_${phase11.receipt.variant}_eligible`);
+        if (phase11.receipt.fired) noteFire(`phase11_${phase11.receipt.variant}_fired`);
+        noteFire(`phase11_reason_${phase11.receipt.reason}`);
+        if (phase11.receipt.eligible) noteFire('phase11_eligible');
+        if (phase11.receipt.fired) {
+          noteFire('phase11_fired');
+          noteFire(`phase11_street_${gs.stage}`);
+        }
+        if (phase11.receipt.changed) noteFire('phase11_shadow_changed');
+        if (phase11.receipt.applied) noteFire('phase11_applied');
+        else noteFire('phase11_baseline_retained');
+        noteFire(`phase11_utility_${phase11.receipt.utilityOwner}`);
+        if (phase11.receipt.utilityUnavailableReason)
+          noteFire(`phase11_unavailable_utility_${phase11.receipt.utilityUnavailableReason}`);
+      }
+    }
+    if (phase12) {
+      if (isTournamentMode(gs) && phase12.receipt.utilityOwner !== 'phase7_evaluated') {
+        phase12.receipt.utilityOwner = 'phase7_unavailable';
+        phase12.receipt.utilityUnavailableReason ??= 'context_or_equity_evidence_unavailable';
+        if (phase12.receipt.mode === 'candidate') {
+          decision = beforePhase10;
+          phase12.receipt.applied = false;
+        }
+      }
+      phase12.receipt.finalAction = decision.action;
+      phase12.receipt.finalAmount = decision.amount ?? null;
+      decision = { ...decision, remainingVariantPolicy: phase12.receipt };
+      if (tele) {
+        noteFire('phase12_seen');
+        noteFire(`phase12_variant_${phase12.receipt.variant}`);
+        noteDecisionMs('phase12', phase12.receipt.latencyMs);
+        noteDecisionMs(`phase12_${phase12.receipt.variant}`, phase12.receipt.latencyMs);
+        noteFire(`phase12_${phase12.receipt.variant}_reason_${phase12.receipt.reason}`);
+        if (phase12.receipt.eligible) noteFire(`phase12_${phase12.receipt.variant}_eligible`);
+        if (phase12.receipt.fired) noteFire(`phase12_${phase12.receipt.variant}_fired`);
+        noteFire(`phase12_reason_${phase12.receipt.reason}`);
+        if (phase12.receipt.eligible) noteFire('phase12_eligible');
+        if (phase12.receipt.fired) {
+          noteFire('phase12_fired');
+          noteFire(`phase12_street_${gs.stage}`);
+        }
+        if (phase12.receipt.changed) noteFire('phase12_shadow_changed');
+        if (phase12.receipt.applied) noteFire('phase12_applied');
+        else noteFire('phase12_baseline_retained');
+        noteFire(`phase12_utility_${phase12.receipt.utilityOwner}`);
+        if (phase12.receipt.utilityUnavailableReason)
+          noteFire(`phase12_unavailable_utility_${phase12.receipt.utilityUnavailableReason}`);
+      }
+    }
+    if (decision.action === 'fold' && beforePhase10.continuationGuard)
+      decision = { ...decision, continuationGuard: beforePhase10.continuationGuard };
+    const beforePhase13 = decision;
+    const jointPolicy =
+      opts.phase13Joint === 'off'
+        ? null
+        : evaluateJointLivePolicy(
+            player,
+            gs,
+            decision,
+            opts.phase13Joint ?? 'shadow',
+            opts.phase13EvidenceMode && !tele ? () => 0 : undefined
+          );
+    if (jointPolicy) {
+      let proposal = this.legalize(jointPolicy.proposal, player, gs, vi);
+      if (isTournamentMode(gs)) {
+        const tournament = trustedTournamentContext(gs);
+        const joint = jointPolicy.jointEvidence;
+        if (jointPolicy.receipt.fired && joint && tournament) {
+          const utilityStarted = performance.now();
+          try {
+            const behind = new Set(jointPlayersBehind(player, gs));
+            const moments = tournamentSampleEquity({
+              hero: player,
+              sampledOpponentIds: joint.opponentIds,
+              showdownSamples: joint.samples,
+            });
+            const evidence: Phase7EquityEvidence = {
+              ...moments,
+              sampledOpponentIds: joint.opponentIds,
+              showdownSamples: joint.samples,
+              // The actual public-line distributions are in joint.ranges and
+              // the scored samples; no invented calibrated percentile band.
+              opponents: joint.opponentIds.map((userId) => ({
+                userId,
+                range: null,
+                foldMul: 1,
+                actsAfterHero: behind.has(userId),
+              })),
+            };
+            const input = buildPhase7UtilityInput(gs, player, proposal, vi, tournament, evidence);
+            input.settlement = {
+              chipUnit: 1,
+              dealerSeat: gs.dealerSeat!,
+              splitLow: horseVariantRulesFor(gs.gameVariant).splitLow8OrBetter,
+            };
+            input.withinBudget =
+              opts.phase13EvidenceMode && !tele
+                ? () => true
+                : () => performance.now() - utilityStarted < 4;
+            const evaluated = evaluateTournamentUtilityDetailed(input);
+            if (evaluated.result) {
+              const selected = this.legalize(evaluated.result.decision, player, gs, vi);
+              if (
+                selected.action === evaluated.result.ledger.selectedAction &&
+                (selected.amount ?? null) === evaluated.result.ledger.selectedAmount
+              ) {
+                proposal = selected;
+                jointPolicy.receipt.shadowUtility = evaluated.result.ledger;
+                jointPolicy.receipt.utilityOwner = 'phase7_evaluated';
+                if (jointPolicy.receipt.mode === 'candidate')
+                  decision = {
+                    ...beforePhase13,
+                    ...selected,
+                    tournamentUtility: evaluated.result.ledger,
+                  };
+              } else {
+                jointPolicy.receipt.utilityOwner = 'phase7_unavailable';
+                jointPolicy.receipt.utilityUnavailableReason = 'legalizer_mismatch';
+              }
+            } else {
+              jointPolicy.receipt.utilityOwner = 'phase7_unavailable';
+              jointPolicy.receipt.utilityUnavailableReason =
+                evaluated.unavailableReason ?? 'no_result';
+            }
+          } catch {
+            jointPolicy.receipt.utilityOwner = 'phase7_unavailable';
+            jointPolicy.receipt.utilityUnavailableReason = 'numerical_error';
+          }
+          jointPolicy.receipt.utilityLatencyMs = performance.now() - utilityStarted;
+        } else {
+          jointPolicy.receipt.utilityOwner = 'phase7_unavailable';
+          jointPolicy.receipt.utilityUnavailableReason = 'context_or_joint_samples_unavailable';
+        }
+        if (jointPolicy.receipt.utilityOwner !== 'phase7_evaluated') proposal = beforePhase13;
+      } else if (jointPolicy.receipt.mode === 'candidate' && jointPolicy.receipt.fired)
+        decision = { ...beforePhase13, ...proposal };
+      if (beforePhase13.action === 'fold' && beforePhase13.continuationGuard) {
+        proposal = beforePhase13;
+        decision = beforePhase13;
+        jointPolicy.receipt.reason = 'protected_' + beforePhase13.continuationGuard;
+      }
+      const sameAction = (a: HorseDecision, b: HorseDecision) =>
+        a.action === b.action && (!['bet', 'raise'].includes(a.action) || a.amount === b.amount);
+      const receipt = jointPolicy.receipt;
+      receipt.proposalAction = proposal.action;
+      receipt.proposalAmount = proposal.amount ?? null;
+      receipt.changed = !sameAction(proposal, beforePhase13);
+      receipt.applied = !sameAction(decision, beforePhase13);
+      receipt.finalAction = decision.action;
+      receipt.finalAmount = decision.amount ?? null;
+      for (const prior of [
+        decision.plo4Policy,
+        decision.omahaVariantPolicy,
+        decision.remainingVariantPolicy,
+      ])
+        if (prior) {
+          prior.finalAction = decision.action;
+          prior.finalAmount = decision.amount ?? null;
+        }
+      decision = { ...decision, jointPolicy: receipt };
+      if (tele) {
+        noteFire('phase13_seen');
+        noteFire(`phase13_variant_${receipt.variant}`);
+        noteFire(`phase13_board_${receipt.boardCount}`);
+        noteFire(`phase13_reason_${receipt.reason}`);
+        noteFire(`phase13_${receipt.variant}_reason_${receipt.reason}`);
+        if (receipt.utilityUnavailableReason)
+          noteFire(`phase13_unavailable_utility_${receipt.utilityUnavailableReason}`);
+        noteDecisionMs('phase13', receipt.latencyMs);
+        noteDecisionMs(`phase13_${receipt.variant}`, receipt.latencyMs);
+        if (receipt.utilityLatencyMs !== undefined)
+          noteDecisionMs('phase13_utility', receipt.utilityLatencyMs);
+        if (receipt.eligible) {
+          noteFire('phase13_eligible');
+          noteFire(`phase13_${receipt.variant}_eligible`);
+        }
+        if (receipt.fired) {
+          noteFire('phase13_fired');
+          noteFire(`phase13_${receipt.variant}_fired`);
+          noteFire(`phase13_street_${gs.stage}`);
+        }
+        if (receipt.changed) noteFire('phase13_shadow_changed');
+        noteFire(receipt.applied ? 'phase13_applied' : 'phase13_baseline_retained');
+        noteFire(`phase13_utility_${receipt.utilityOwner}`);
+      }
+    }
     decision.thinkTime = this.computeThinkTime(
       decision,
       gs,
@@ -2020,7 +3119,12 @@ export class HorseLogic {
     opts: HorseDecideOpts = {}
   ): HorseDecision {
     const bb = gs.bigBlind > 0 ? gs.bigBlind : 2;
+    const trustedTournament = trustedTournamentContext(gs);
     const toCall = Math.max(0, gs.currentBet - player.bet);
+    const effectiveCall = Math.min(toCall, player.stack);
+    const contestablePot = Number.isFinite(gs.contestablePot)
+      ? Math.max(0, gs.contestablePot as number)
+      : Math.max(0, gs.pot - Math.max(0, toCall - effectiveCall));
 
     let strength: number;
     // PERCENTILE, not the raw Omaha score. decidePreflopV7's thresholds are
@@ -2065,6 +3169,7 @@ export class HorseLogic {
      */
     let callersOfPreviousRaise = 0;
     let lastRaiserSeat = -1;
+    let firstRaiserSeat = -1;
     for (const a of history) {
       /**
        * ═══ V28 AUDIT FIX (2026-08-29): AN ALL-IN IS NEVER INVISIBLE ═══
@@ -2096,6 +3201,7 @@ export class HorseLogic {
         raises++;
         callersOfPreviousRaise = callers; // the squeeze shape, before the reset
         callers = 0; // callers-of-THE-raise reset when a new raise lands
+        if (firstRaiserSeat < 0) firstRaiserSeat = a.seat;
         lastRaiserSeat = a.seat;
       } else if (a.action === 'call' || a.action === 'all_in') {
         // an all-in call-off (isFullRaise undefined) is a caller of the price
@@ -2130,10 +3236,23 @@ export class HorseLogic {
       raises = gs.currentBet > bb * 4.5 ? 2 : 1;
     }
 
-    const position = classifyPosition(player.seat, gs.dealerSeat, gs.players, opts.v13 !== false);
+    const phase6DealtRoster = gs.tournament?.schemaVersion === 1;
+    const position = classifyPosition(
+      player.seat,
+      gs.dealerSeat,
+      gs.players,
+      opts.v13 !== false,
+      phase6DealtRoster
+    );
     const raiserPosition: PreflopPosition | null =
       lastRaiserSeat >= 0
-        ? classifyPosition(lastRaiserSeat, gs.dealerSeat, gs.players, opts.v13 !== false)
+        ? classifyPosition(
+            lastRaiserSeat,
+            gs.dealerSeat,
+            gs.players,
+            opts.v13 !== false,
+            phase6DealtRoster
+          )
         : null;
     // V13: a sitting-out player counted as an opponent, so a two-handed table
     // with one sitter reported oppsLeft = 2 and switched OFF the heads-up and
@@ -2142,7 +3261,187 @@ export class HorseLogic {
     const oppsLeft = gs.players.filter(
       (p) => !p.is_folded && p.seat !== player.seat && (opts.v13 === false || !p.is_sitting_out)
     ).length;
+
+    // Phase 7 needs one range-conditioned equity observation before any
+    // solver/chart/atlas early return. The legacy preflop policy still
+    // proposes the baseline; this observation lets the final tournament
+    // arbiter price that baseline against every other legal action.
+    if (
+      (opts.phase7Utility ?? true) !== false &&
+      gs.stateSchemaVersion === 1 &&
+      isTournamentMode(gs) &&
+      oppsLeft > 0 &&
+      trustedTournament?.schemaVersion === 1 &&
+      trustedTournament.contextStatus === 'complete'
+    ) {
+      try {
+        const useMind7 = opts.mind !== false;
+        const bands7 = useMind7
+          ? HorseMind.bandsForOpponents(
+              player.seat,
+              gs.players,
+              gs.actionHistory,
+              gs.bigBlind,
+              (opts.v7SizeReads ?? opts.v7) !== false
+            )
+          : undefined;
+        const deckSize7 = vi.isShortDeck ? 36 : 52;
+        const opponentCards7 = Math.max(2, vi.isOmaha ? vi.holeCount : player.cards.length);
+        const maxByDeck7 = Math.max(
+          1,
+          Math.floor((deckSize7 - player.cards.length - 5) / opponentCards7)
+        );
+        const sampledOpponents7 = Math.max(1, Math.min(oppsLeft, maxByDeck7));
+        const requestedSamples7 = Math.max(160, Math.min(320, vi.iterations));
+        const outcomes7: HorseEquityOutcomeCollector = {
+          maxSamples: phase7OutcomeBudget(trustedTournament.playersLeft),
+          samples: [],
+        };
+        const equity7 = simulateEquity(
+          player.cards,
+          [],
+          sampledOpponents7,
+          vi,
+          requestedSamples7,
+          bands7,
+          false,
+          undefined,
+          undefined,
+          outcomes7
+        );
+        capturePhase7Equity(gs, player, equity7, equitySampleSizeOfLastCall(), bands7, useMind7, [
+          outcomes7,
+        ]);
+      } catch (error) {
+        reportError(error, 'HorseLogic.phase7_preflop_equity');
+        phase7EquityEvidence = null;
+        phase10EquityEvidence = null;
+        phase11DecisionEquityCeiling = null;
+        phase12DecisionEquityCeiling = null;
+      }
+    }
     const stackBB = player.stack / bb;
+    const heroPreviouslyActed = history.some(
+      (action) =>
+        action.seat === player.seat && action.action !== 'fold' && action.action !== 'check'
+    );
+    const heroWasInitialRaiser = firstRaiserSeat === player.seat;
+    const squeezed =
+      (opts.v18Squeeze ?? true) !== false &&
+      raises === 2 &&
+      callersOfPreviousRaise >= 1 &&
+      heroWasInitialRaiser;
+
+    // Phase 6 exact tournament coordinate. The schema gate preserves every
+    // older/offline fixture; every live tournament worker snapshot is v1.
+    const phase6 = (() => {
+      const tournament = gs.tournament;
+      if (!isTournamentMode(gs) || tournament?.schemaVersion !== 1 || !tournament.m) return;
+      // A schema-v1 live snapshot is built from HandController.state.players,
+      // which is already the dealt roster. A player who disconnects or folds
+      // remains part of the positional ring for this hand.
+      const dealtInSeats = gs.players.map((candidate) => candidate.seat);
+      const heroPosition = tournamentPositionForSeat(player.seat, gs.dealerSeat, dealtInSeats);
+      const exactRaiserPosition =
+        lastRaiserSeat >= 0
+          ? tournamentPositionForSeat(lastRaiserSeat, gs.dealerSeat, dealtInSeats)
+          : null;
+      // A player whose blind consumed a short stack is marked is_all_in but
+      // made no strategic all-in action. Count only seats with an actual
+      // preflop all-in record, otherwise two forced blinds can manufacture a
+      // multiway-all-in node and suppress a profitable price-in call.
+      const voluntaryAllInSeats = new Set(
+        history.filter((action) => action.action === 'all_in').map((action) => action.seat)
+      );
+      const imminentLevel =
+        typeof tournament.nextBlindInMin === 'number' &&
+        tournament.nextBlindInMin <= 3 &&
+        (tournament.nextBlindMult ?? 1) > 1.15;
+      const branchMZone = imminentLevel
+        ? tournamentMZone(
+            Math.min(tournament.m.effectiveM, tournament.m.projectedEffectiveM),
+            tournament.m.zone
+          )
+        : tournament.m.zone;
+      const branch = classifyTournamentPreflopBranch({
+        raises,
+        limpers,
+        callers,
+        callersOfPreviousRaise,
+        opponentsAllIn: gs.players.filter(
+          (candidate) =>
+            candidate.seat !== player.seat &&
+            !candidate.is_folded &&
+            !candidate.is_sitting_out &&
+            candidate.is_all_in &&
+            voluntaryAllInSeats.has(candidate.seat)
+        ).length,
+        opponentsLeft: oppsLeft,
+        stackBB,
+        mZone: branchMZone,
+        heroPosition,
+        raiserPosition: exactRaiserPosition,
+        heroPreviouslyActed,
+        heroWasInitialRaiser,
+        squeezed,
+      });
+      const gameFamily = vi.isOmaha
+        ? ('omaha' as const)
+        : !vi.isShortDeck && vi.holeCount === 2 && !vi.isFixedLimit
+          ? ('nlh' as const)
+          : ('other' as const);
+      const heroTotalStack = Math.max(0, player.stack + player.bet);
+      const policyOpponent =
+        lastRaiserSeat >= 0
+          ? gs.players.find(
+              (candidate) =>
+                candidate.seat === lastRaiserSeat &&
+                !candidate.is_folded &&
+                !candidate.is_sitting_out
+            )
+          : undefined;
+      // A response range is indexed by the stack that can actually be won or
+      // lost against the current aggressor, not by hero's stack in isolation.
+      // Unopened nodes retain hero depth because there is no opposing actor.
+      const effectivePolicyDepthBB =
+        policyOpponent && bb > 0
+          ? Math.min(heroTotalStack, Math.max(0, policyOpponent.stack + policyOpponent.bet)) / bb
+          : heroTotalStack / bb;
+      const policy = tournamentPreflopPolicy({
+        gameFamily,
+        contextStatus: tournament.contextStatus ?? 'incomplete',
+        tableSize:
+          tournament.playersAtTable ??
+          gs.players.filter((candidate) => !candidate.is_sitting_out).length,
+        heroPosition,
+        raiserPosition: exactRaiserPosition,
+        anteType:
+          tournament.anteType ??
+          (gs.bigBlindAnte === true ? 'big_blind' : (gs.ante ?? 0) > 0 ? 'per_player' : 'none'),
+        branch,
+        stackBB: effectivePolicyDepthBB,
+        m: tournament.m,
+      });
+      if (telemetryOn(opts)) {
+        noteFire('phase6_tournament_preflop');
+      }
+      return { policy, m: tournament.m };
+    })();
+
+    let phase6RouteNoted = false;
+    const notePhase6Route = (route: 'atlas' | 'solver' | 'variant_fallback'): void => {
+      if (!phase6 || phase6RouteNoted || !telemetryOn(opts)) return;
+      phase6RouteNoted = true;
+      noteFire(`phase6_route_${route}`);
+      noteFire(`phase6_branch_${phase6.policy.branch}`);
+      if (route === 'atlas') {
+        noteFire(
+          `phase6_atlas_${
+            phase6.policy.source === 'deterministic_baseline' ? 'baseline' : 'fallback'
+          }`
+        );
+      }
+    };
 
     // ═══ V27 GTO CHARTS (Dan 2026-08-29) ══════════════════════════════════
     // "THEY'RE NOT JUST GUESSING — THEY HAVE SPECIFIC GTO RENDERED PLAYS."
@@ -2239,9 +3538,16 @@ export class HorseLogic {
             // The chart gives the mixed strategy; the horse rolls it. A 77%
             // jam is jammed 77% of the time, not rounded to always.
             const pushProb = advice.action === 'push' ? advice.freq : 1 - advice.freq;
-            if (fastRandom() < pushProb) return { action: 'all_in', thinkTime: 0 };
+            if (fastRandom() < pushProb) {
+              notePhase6Route('solver');
+              return { action: 'all_in', thinkTime: 0 };
+            }
             // SB folding still surrenders the small blind; check when free.
-            if (toCall <= 0) return { action: 'check', thinkTime: 0 };
+            if (toCall <= 0) {
+              notePhase6Route('solver');
+              return { action: 'check', thinkTime: 0 };
+            }
+            notePhase6Route('solver');
             return { action: 'fold', thinkTime: 0 };
           }
         }
@@ -2267,8 +3573,10 @@ export class HorseLogic {
             if (telemetryOn(opts)) noteFire('v27_gto_bb_defend');
             const callProb = advice.action === 'call' ? advice.freq : 1 - advice.freq;
             if (fastRandom() < callProb) {
+              notePhase6Route('solver');
               return { action: 'call', amount: Math.min(toCall, player.stack), thinkTime: 0 };
             }
+            notePhase6Route('solver');
             return { action: 'fold', thinkTime: 0 };
           }
         }
@@ -2331,8 +3639,7 @@ export class HorseLogic {
             bands38,
             false
           );
-          const uncallable38 = Math.max(0, toCall - effCall38);
-          const pot38 = Math.max(0.01, gs.pot - uncallable38);
+          const pot38 = Math.max(0.01, contestablePot);
           const riskAdd38 = icmRisk(
             gs,
             stackBB,
@@ -2342,7 +3649,14 @@ export class HorseLogic {
           );
           const share38 = Math.min(1, effCall38 / Math.max(1, player.stack));
           const rake38 =
-            (opts.v10Rake ?? opts.v10) !== false && !isTournamentMode(gs) ? rakeDrag(pot38, bb) : 0;
+            (opts.v10Rake ?? opts.v10) !== false && !isTournamentMode(gs)
+              ? rakeDrag(
+                  pot38,
+                  bb,
+                  gs.rakeConfig,
+                  gs.players.filter((candidate) => !candidate.is_sitting_out).length
+                )
+              : 0;
           // Omaha's range read narrows by score percentile, which cannot see
           // domination (four napkins keep 44% against the sampled "3-bet
           // range" in PLO6; against the real one it is nearer 35%). The price
@@ -2361,10 +3675,13 @@ export class HorseLogic {
             // Clearly ahead of the price with chips behind and others still
             // to act: put them in, so nobody gets a cheap look.
             if (gap38 >= 0.12 && player.stack > effCall38 * 1.5 && live38 > 1) {
+              notePhase6Route('variant_fallback');
               return { action: 'all_in', thinkTime: 0 };
             }
+            notePhase6Route('variant_fallback');
             return { action: 'call', amount: Math.min(toCall, player.stack), thinkTime: 0 };
           }
+          notePhase6Route('variant_fallback');
           return { action: 'fold', thinkTime: 0 };
         } catch {
           /* the price read is best-effort; the range play below decides */
@@ -2414,6 +3731,7 @@ export class HorseLogic {
       oppsLeft,
       toCall,
       currentBet: gs.currentBet,
+      contestablePot,
       pot: gs.pot,
       bigBlind: bb,
       stack: player.stack,
@@ -2472,7 +3790,7 @@ export class HorseLogic {
       // this existed before; icmRisk only trimmed its own premium slightly.
       ...(() => {
         const useV24 = (opts.v24Bounty ?? true) !== false;
-        const bf = useV24 ? (gs.tournament?.bountyFactor ?? 0) : 0;
+        const bf = useV24 ? (trustedTournament?.bountyFactor ?? 0) : 0;
         if (!(bf > 0) || lastRaiserSeat < 0) return {};
         const raiser = gs.players.find((p) => p.seat === lastRaiserSeat);
         if (!raiser) return {};
@@ -2486,7 +3804,7 @@ export class HorseLogic {
         // does: the mean live chest IS the EV of a bust, and comparing it
         // to the pot in the same unit turns "there is a bounty" into a
         // number the thresholds can use.
-        const t26 = gs.tournament;
+        const t26 = trustedTournament;
         const useV26 = (opts.v26Prizes ?? true) !== false;
         // Cents -> chips is not a conversion the engine can make (real money
         // and tournament chips are different scales), so the bust is priced
@@ -2514,9 +3832,10 @@ export class HorseLogic {
       // V23 BLIND CLOCK: jam BEFORE the level halves the M, not after.
       nextBlindInMin:
         (opts.v23Endgame ?? true) !== false
-          ? (gs.tournament?.nextBlindInMin ?? undefined)
+          ? (trustedTournament?.nextBlindInMin ?? undefined)
           : undefined,
-      nextBlindMult: (opts.v23Endgame ?? true) !== false ? gs.tournament?.nextBlindMult : undefined,
+      nextBlindMult:
+        (opts.v23Endgame ?? true) !== false ? trustedTournament?.nextBlindMult : undefined,
       // V12: table format — spins widen (3-max, shallow, high blind
       // pressure), HU SNGs ride the heads-up ranges. Not "winner-take-all
       // chip EV": at 10x and above a spin pays two or three places, and that
@@ -2534,6 +3853,7 @@ export class HorseLogic {
       // V18 SQUEEZE: hero opened, at least one caller came along, and then
       // a 3-bet arrived - the classic squeeze shape. Squeeze ranges are
       // polarized toward air, so the opener defends wider.
+      // Callers of the OPEN are captured before the squeeze resets `callers`.
       squeezed:
         (opts.v18Squeeze ?? true) !== false &&
         raises === 2 &&
@@ -2549,6 +3869,7 @@ export class HorseLogic {
           }
           return false;
         })(),
+      phase6,
       // V16 PLO POLARITY: AAxx is the premium the generic percentile cannot
       // see past double-counted side cards; rundowns without it flat more.
       omahaAA:
@@ -2609,6 +3930,9 @@ export class HorseLogic {
       })(),
       rand: fastRandom,
     });
+    notePhase6Route(
+      phase6?.policy.fallbackReason === 'unsupported_variant' ? 'variant_fallback' : 'atlas'
+    );
     // V20 proof-of-receipt: the M-zone wiring reached the preflop engine.
     if (telemetryOn(opts) && (opts.v20Mzone ?? true) !== false && isTournamentMode(gs) && bb > 0) {
       noteFire('v20_mzone_wired');
@@ -2650,6 +3974,10 @@ export class HorseLogic {
     const toCall = Math.max(0, currentBet - player.bet);
     const stack = player.stack;
     const stackBB = stack / bb;
+    const effectiveCall = Math.min(toCall, stack);
+    const pricePot = Number.isFinite(gs.contestablePot)
+      ? Math.max(0, gs.contestablePot as number)
+      : Math.max(0, pot - Math.max(0, toCall - effectiveCall));
 
     // Hand strength 0..1 (percentile-style, variant-aware). Omaha goes
     // through its empirical CDF so it actually IS percentile-style — the
@@ -2862,7 +4190,7 @@ export class HorseLogic {
         return { action: 'call', amount: toCall, thinkTime: 0 };
       }
       // Getting a monster price closing the action
-      if (toCall > 0 && toCall <= pot * 0.15 && strength >= 0.45) {
+      if (toCall > 0 && toCall <= pricePot * 0.15 && strength >= 0.45) {
         return { action: 'call', amount: toCall, thinkTime: 0 };
       }
       if (toCall === 0) return { action: 'check', thinkTime: 0 };
@@ -2907,6 +4235,7 @@ export class HorseLogic {
     const useRake10 = (opts.v10Rake ?? opts.v10) !== false;
     const useThin10 = (opts.v10ThinValue ?? opts.v10) !== false;
     const { currentBet } = gs;
+    const trustedTournament = trustedTournamentContext(gs);
     // PROOF OF RECEIPT: declared once, up front — several stamped blocks run
     // before the equity/risk section.
     const tele15 = telemetryOn(opts);
@@ -2937,7 +4266,12 @@ export class HorseLogic {
     const rawToCall = Math.max(0, currentBet - player.bet);
     const toCall = Math.min(rawToCall, player.stack);
     const uncallableExcess = rawToCall - toCall;
-    const pot = Math.max(0.01, gs.pot - uncallableExcess);
+    const pot = Math.max(
+      0.01,
+      Number.isFinite(gs.contestablePot)
+        ? Math.max(0, gs.contestablePot as number)
+        : gs.pot - uncallableExcess
+    );
     const stack = player.stack;
     const facingBet = toCall > 0;
     const street: HandStage = gs.stage;
@@ -3080,12 +4414,42 @@ export class HorseLogic {
      * seven-way flop against four sampled hands overstates every equity.
      */
     const bomb36 = gs.bombPot === true;
+    const captureOutcomes7 =
+      (opts.phase7Utility ?? true) !== false &&
+      gs.stateSchemaVersion === 1 &&
+      isTournamentMode(gs) &&
+      // Phase 7 Round 1 never zips independently sampled boards into a fake
+      // joint deal. The existing audited multi-board layer remains authority
+      // until one shared-deck sampler is added in the later depth round.
+      extraBoards.length === 0 &&
+      trustedTournament?.schemaVersion === 1 &&
+      trustedTournament.contextStatus === 'complete';
+    const deckSize7 = vi.isShortDeck ? 36 : 52;
+    const opponentCards7 = Math.max(2, vi.isOmaha ? vi.holeCount : player.cards.length);
+    const maxByDeck7 = Math.max(
+      1,
+      Math.floor((deckSize7 - player.cards.length - 5) / opponentCards7)
+    );
     // (five for the 5/6-card Omaha games: their per-iteration evaluation is
     // the most expensive on the platform and a triple-board PLO6 bomb pot
     // runs three of them per decision.)
-    const mcOpps = Math.min(oppCount, bomb36 ? (vi.holeCount >= 5 ? 5 : 6) : 4);
+    const mcOpps = Math.min(
+      oppCount,
+      captureOutcomes7 ? maxByDeck7 : bomb36 ? (vi.holeCount >= 5 ? 5 : 6) : 4
+    );
     const boardEq36: number[] = [];
+    const outcomeBoards7: HorseEquityOutcomeCollector[] = [];
     if (extraBoards.length === 0) {
+      const outcomes7: HorseEquityOutcomeCollector | undefined = captureOutcomes7
+        ? {
+            maxSamples: phase7OutcomeBudget(trustedTournament?.playersLeft),
+            captureContinuation:
+              (opts.phase8Postflop ?? 'shadow') !== 'off' &&
+              gs.gameVariant === 'nlh' &&
+              !(telemetryOn(opts) && liveHorsePhase8Safety.disabledReason),
+            samples: [],
+          }
+        : undefined;
       equity = simulateEquity(
         player.cards,
         gs.communityCards,
@@ -3095,8 +4459,11 @@ export class HorseLogic {
         bands,
         useAdaptiveMC,
         hiLoSplit,
-        oppReads
+        oppReads,
+        outcomes7,
+        player.knownDeadCards
       );
+      if (outcomes7) outcomeBoards7.push(outcomes7);
       boardEq36.push(equity);
     } else {
       const boards = [gs.communityCards, ...extraBoards];
@@ -3119,6 +4486,12 @@ export class HorseLogic {
         const perBoardSplit: HiLoSplit | undefined = hiLoSplit
           ? { hi: 0, lo: 0, scoop: 0, quarter: 0 }
           : undefined;
+        const outcomes7: HorseEquityOutcomeCollector | undefined = captureOutcomes7
+          ? {
+              maxSamples: phase7OutcomeBudget(trustedTournament?.playersLeft),
+              samples: [],
+            }
+          : undefined;
         const eb = simulateEquity(
           player.cards,
           b,
@@ -3128,8 +4501,11 @@ export class HorseLogic {
           bands,
           useAdaptiveMC,
           perBoardSplit,
-          oppReadsPerBoard
+          oppReadsPerBoard,
+          outcomes7,
+          player.knownDeadCards
         );
+        if (outcomes7) outcomeBoards7.push(outcomes7);
         boardEq36.push(eb);
         sum += eb;
         if (loAcc && perBoardSplit) {
@@ -3146,6 +4522,25 @@ export class HorseLogic {
         hiLoSplit.scoop = loAcc.scoop / boards.length;
         hiLoSplit.quarter = loAcc.quarter / boards.length;
       }
+    }
+
+    if (captureOutcomes7) {
+      // Adaptive MC can return at its first 40% checkpoint. Record that
+      // conservative lower bound rather than advertising the requested
+      // budget as statistical precision the decision may not have consumed.
+      const perBoardSamples7 = Math.max(
+        1,
+        Math.floor(equitySampleSizeOfLastCall() * (useAdaptiveMC ? 0.4 : 1))
+      );
+      capturePhase7Equity(
+        gs,
+        player,
+        equity,
+        perBoardSamples7 * (extraBoards.length + 1),
+        bands,
+        useMind,
+        outcomeBoards7
+      );
     }
 
     // V36: multi-board facts. nBoards36 boards pay equally; a board hero
@@ -3793,7 +5188,15 @@ export class HorseLogic {
     // V11: tournaments rake the buy-in, not the pot — pot odds are honest.
     // V34: computed here, above the solver consult, so V32 prices the same
     // raked pot the heuristic call line does.
-    const rakeMarg = useRake10 && !isTournamentMode(gs) ? rakeDrag(pot, gs.bigBlind) : 0;
+    const rakeMarg =
+      useRake10 && !isTournamentMode(gs)
+        ? rakeDrag(
+            pot,
+            gs.bigBlind,
+            gs.rakeConfig,
+            gs.players.filter((candidate) => !candidate.is_sitting_out).length
+          )
+        : 0;
 
     // V31 CERTIFIED DIRECT POLICY. Node role, response semantics, both seats,
     // objective, stack depth, board texture and holding are all part of the
@@ -3843,13 +5246,13 @@ export class HorseLogic {
         objective31 = 'cash_ev';
       } else if (gs.format === 'spin') {
         family31 = 'spin';
-        objective31 = (gs.tournament?.spotsPaid ?? 1) <= 1 ? 'chip_ev' : 'icm';
+        objective31 = (trustedTournament?.spotsPaid ?? 1) <= 1 ? 'chip_ev' : 'icm';
       } else if (
-        Array.isArray(gs.tournament?.stacks) &&
-        gs.tournament.stacks.length >= 2 &&
-        Array.isArray(gs.tournament?.payoutPct) &&
-        gs.tournament.payoutPct.length >= 1 &&
-        !((gs.tournament?.playersLeft ?? 0) <= 2 && (gs.tournament?.spotsPaid ?? 1) <= 1)
+        Array.isArray(trustedTournament?.stacks) &&
+        trustedTournament.stacks.length >= 2 &&
+        Array.isArray(trustedTournament?.payoutPct) &&
+        trustedTournament.payoutPct.length >= 1 &&
+        !((trustedTournament?.playersLeft ?? 0) <= 2 && (trustedTournament?.spotsPaid ?? 1) <= 1)
       ) {
         family31 = 'tourney_icm';
         objective31 = 'icm';
@@ -3862,9 +5265,11 @@ export class HorseLogic {
           ? gtoV31UtilityContext({
               family: family31,
               objective: objective31,
-              tournament: gs.tournament,
+              tournament: trustedTournament,
             })
           : null;
+      const potType31 = gtoV31PotType(gs.actionHistory);
+      const hand31 = gtoHandClass(player.cards[0], player.cards[1]);
 
       const opponentRootStack31 = gtoV31FlopRootStack({
         street,
@@ -3904,12 +5309,12 @@ export class HorseLogic {
               objective: objective31,
               utilityContext: utility31,
               tableSize: heroSeat31.tableSize,
-              potType: gtoV31PotType(gs.actionHistory),
+              potType: potType31,
               heroPosition: heroSeat31.position,
               opponentPosition: opponentSeat31.position,
               stackBB: stackBB31,
               board: gs.communityCards,
-              hand: gtoHandClass(player.cards[0], player.cards[1]),
+              hand: hand31,
               holeCards: player.cards,
               nodeRole: context31.nodeRole,
               facingKind: context31.facingKind,
@@ -3966,17 +5371,60 @@ export class HorseLogic {
               finalAmount: finalAmount31,
               bigBlind: gs.bigBlind,
             });
-            if (opts.gtoV31DatasetChecksum && opts.onGtoV31Decision) {
+            if (
+              opts.onGtoV31Decision &&
+              hand31 &&
+              context31 &&
+              family31 &&
+              objective31 &&
+              utility31 &&
+              heroSeat31 &&
+              opponentSeat31
+            ) {
               opts.onGtoV31Decision({
+                datasetId: direct31.sourceSeal.dataset_id,
                 datasetChecksum: direct31.sourceSeal.dataset_checksum,
+                decisionState: {
+                  schemaVersion: 1,
+                  street,
+                  gameVariant: 'nlh',
+                  gameFamily: family31,
+                  objective: objective31,
+                  utilityContext: utility31,
+                  format: gs.format ?? (isTournamentMode(gs) ? 'mtt' : 'cash'),
+                  tableSize: heroSeat31.tableSize,
+                  potType: potType31,
+                  heroPosition: heroSeat31.position,
+                  opponentPosition: opponentSeat31.position,
+                  stackBb: stackBB31,
+                  depthBucket: direct31.depthBucket,
+                  textureClass: direct31.textureClass,
+                  nodeRole: direct31.nodeRole,
+                  facingKind: context31.facingKind,
+                  facingSizeBucket: context31.facingSizeBucket,
+                  hand: hand31,
+                  handKey: direct31.handKey,
+                  cell: direct31.cell,
+                  board: structuredClone(gs.communityCards),
+                  holeCards: structuredClone(player.cards),
+                  pot,
+                  currentBet,
+                  toCall,
+                  bigBlind: gs.bigBlind,
+                },
                 nodeRole: direct31.nodeRole,
                 cell: direct31.cell,
+                handKey: direct31.handKey,
                 actionId: actionId31,
                 sampledActionFamily: action31.family,
                 sampledAmount: sampledAmount31,
                 finalAction: final31.action,
                 finalAmount: finalAmount31,
                 executedAsIntended: executedAsIntended31,
+                referenceDistribution: structuredClone(direct31.mix),
+                policyEvBb: direct31.policyEvBb,
+                actionEvsBb: structuredClone(direct31.actionEvsBb),
+                sourceSeal: structuredClone(direct31.sourceSeal),
               });
             }
             if (tele15) {
@@ -4575,7 +6023,15 @@ export class HorseLogic {
             inPosition: ip,
             drawy: drawy38,
           }),
-          rakeMarg: useRake10 && !isTournamentMode(gs) ? rakeDrag(pot, gs.bigBlind) : 0,
+          rakeMarg:
+            useRake10 && !isTournamentMode(gs)
+              ? rakeDrag(
+                  pot,
+                  gs.bigBlind,
+                  gs.rakeConfig,
+                  gs.players.filter((candidate) => !candidate.is_sitting_out).length
+                )
+              : 0,
           riskPremium: risk,
           minBet: Math.max(gs.minRaise || 0, 0.01),
           maxBet: vi.isPotLimit ? pot : stack,
@@ -5088,6 +6544,39 @@ export class HorseLogic {
       }
     }
 
+    // The Phase 7 utility model must inherit every structural safety cap
+    // (notably the multiway T8o and dominated-Omaha repairs), not resurrect
+    // the raw random-range estimate after those layers have rejected it.
+    if (phase7EquityEvidence) {
+      const bounded7 = clamp01(eq15);
+      phase7EquityEvidence.equity = bounded7;
+      phase7EquityEvidence.standardError =
+        phase7EquityEvidence.sampleSize > 0
+          ? Math.sqrt((bounded7 * (1 - bounded7)) / phase7EquityEvidence.sampleSize)
+          : 0;
+    }
+
+    if (isOmahaPolicyVariant(gs.gameVariant) && eq15 < equity) {
+      phase11DecisionEquityCeiling = clamp01(eq15);
+    }
+
+    if (isRemainingPolicyVariant(gs.gameVariant) && eq15 < equity) {
+      phase12DecisionEquityCeiling = clamp01(eq15);
+    }
+
+    if (gs.gameVariant === 'plo4') {
+      const sampleCount = Math.max(
+        1,
+        Math.floor(equitySampleSizeOfLastCall() * (useAdaptiveMC ? 0.4 : 1))
+      );
+      const value = clamp01(eq15);
+      phase10EquityEvidence = {
+        equity: value,
+        samples: sampleCount,
+        standardError: Math.sqrt((value * (1 - value)) / sampleCount),
+      };
+    }
+
     // ═══ V23 PLAN CONSULT ═══ hero bet this street and got raised: the
     // answer was decided at bet time. foldToRaise folds (unless the price is
     // trivially too good); callOnce may continue but never escalates.
@@ -5156,7 +6645,7 @@ export class HorseLogic {
       if (
         (opts.v23Endgame ?? true) !== false &&
         isTournamentMode(gs) &&
-        (gs.tournament?.bountyFactor ?? 0) >= 0.1 &&
+        (trustedTournament?.bountyFactor ?? 0) >= 0.1 &&
         seriousAllIns20 >= 1
       ) {
         let biggestAllIn = 0;
@@ -5173,7 +6662,7 @@ export class HorseLogic {
           const scale37 =
             prizeLandscapeScale(gs, (opts.v26Prizes ?? true) !== false) *
             headBountyScale(gs, allInId);
-          bounty23 = Math.min(0.08, (gs.tournament?.bountyFactor ?? 0) * 0.12 * scale37);
+          bounty23 = Math.min(0.08, (trustedTournament?.bountyFactor ?? 0) * 0.12 * scale37);
           if (tele15) noteFire('v23_bounty_call');
           if (tele15 && scale37 !== 1) noteFire('v37_bounty_call_scaled');
         }
@@ -5204,7 +6693,15 @@ export class HorseLogic {
       // V34: a solver-approved draw call is honored here too — the committed
       // bar must never fold a hand the solver's own range priced as a call.
       if (eq15 >= required || solverCall32) return { action: 'call', amount: toCall, thinkTime: 0 };
-      return { action: 'fold', thinkTime: 0 };
+      return {
+        action: 'fold',
+        thinkTime: 0,
+        ...(useV20 && pressure20 >= 2
+          ? { continuationGuard: 'multiway_commitment_floor' as const }
+          : dominated21 || (vi.isOmaha && made40?.weak && eq15 < equity)
+            ? { continuationGuard: 'dominated_commitment_floor' as const }
+            : {}),
+      };
     }
 
     // Raise for value. V4: out of position lean harder on the check-raise
@@ -5727,7 +7224,13 @@ export class HorseLogic {
     gs: HorseGameStateV2,
     vi: VariantInfo
   ): HorseDecision {
-    return this.capPotLimitJam(this.legalizeInner(d, player, gs, vi), player, gs, vi);
+    const structurallyLegal = this.capPotLimitJam(
+      this.legalizeInner(d, player, gs, vi),
+      player,
+      gs,
+      vi
+    );
+    return enforceAuthoritativeDecision(structurallyLegal, player, gs);
   }
 
   /**
@@ -6042,7 +7545,10 @@ export class HorseLogic {
     // there no matter what the tempo multipliers do.
     const facingBet = toCall > 0;
     const stage = gs.stage;
-    const bigRiverCall = stage === 'river' && toCall > gs.pot * 0.5;
+    const pricePot = Number.isFinite(gs.contestablePot)
+      ? Math.max(0, gs.contestablePot as number)
+      : gs.pot;
+    const bigRiverCall = stage === 'river' && toCall > pricePot * 0.5;
 
     // Per-horse TEMPO, stable for the life of the horse: some people are just
     // fast and some are just deliberate, and that is most of what makes a
@@ -6215,6 +7721,8 @@ export class HorseLogic {
     snapFraction,
     // V10 strategy internals
     rakeDrag,
+    // Phase 5 canonical state / legality boundary
+    enforceAuthoritativeDecision,
     // V12 tournament internals
     icmRisk,
     // V15 Omaha nut discipline internals

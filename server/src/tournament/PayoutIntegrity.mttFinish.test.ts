@@ -37,12 +37,30 @@ const RECOVERY = read('src/tournament/tournamentRecovery.ts');
 const ATOMIC_ELIMINATION = read(
   '../supabase/migrations/20260908042000_bounty_elimination_outbox_is_atomic_and_recoverable.sql'
 );
-const ATOMIC_FINAL_TABLE_DEAL = read(
-  '../supabase/migrations/20260908042500_a_final_table_deal_pays_every_share_or_none.sql'
+const migrationDirectory = path.join(process.cwd(), '..', 'supabase', 'migrations');
+const allMigrationNames = fs.readdirSync(migrationDirectory);
+const migrationNames = allMigrationNames.filter((name) => name.endsWith('.sql'));
+const stagedOrPromotedMigration = (logicalName: string): string => {
+  if (!/^[a-z0-9_]+$/.test(logicalName)) {
+    throw new Error(`invalid staged-or-promoted migration name: ${logicalName}`);
+  }
+  const exactName = new RegExp(`^[0-9]{14}_${logicalName}\\.sql(?:\\.pending)?$`);
+  const matches = allMigrationNames.filter((name) => exactName.test(name));
+  if (matches.length !== 1) {
+    throw new Error(
+      `expected exactly one staged-or-promoted ${logicalName} migration; found ${matches.length}`
+    );
+  }
+  return read(`../supabase/migrations/${matches[0]}`);
+};
+const terminalSettlementName = migrationNames.find((name) =>
+  name.includes('non_satellite_terminal_settlement_commits_one_stored_receipt')
 );
-const FINISH_CERTIFICATE = read(
-  '../supabase/migrations/20260908042600_completed_means_financially_certified.sql'
-);
+if (!terminalSettlementName) {
+  throw new Error('current tournament terminal settlement migration is missing');
+}
+const TERMINAL_SETTLEMENT = read(`../supabase/migrations/${terminalSettlementName}`);
+const SEAT_EXIT_SETTLEMENT = stagedOrPromotedMigration('stage_b_current_postimage_contraction');
 
 /** Strip line and block comments so a guard cannot pass on a mention in prose. */
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
@@ -51,10 +69,13 @@ const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \
 const sqlFunction = (src: string, name: string): string => {
   const start = src.indexOf(`CREATE OR REPLACE FUNCTION public.${name}`);
   if (start < 0) throw new Error(`SQL function ${name} is missing`);
-  const bodyStart = src.indexOf('AS $function$', start);
-  const end = src.indexOf('$function$;', bodyStart);
-  if (bodyStart < 0 || end < 0) throw new Error(`SQL function ${name} has no complete body`);
-  return src.slice(start, end + '$function$;'.length);
+  const body = src.slice(start).match(/\bAS\s+(\$[A-Za-z0-9_]*\$)/);
+  if (!body || body.index == null) throw new Error(`SQL function ${name} has no body`);
+  const tag = body[1];
+  const bodyStart = start + body.index + body[0].length;
+  const end = src.indexOf(`${tag};`, bodyStart);
+  if (end < 0) throw new Error(`SQL function ${name} has no complete body`);
+  return src.slice(start, end + tag.length + 1);
 };
 
 // The 9-place structure carried by 410 live tournaments, verbatim.
@@ -173,7 +194,7 @@ describe('every payout site shares the one rounding rule', () => {
     // top-up disagreed with the payment it was adjusting, wrote its own number
     // into `prize`, and left the row permanently at odds with
     // fn_tournament_payout_reconcile.
-    expect(code(ELIM)).toMatch(/computePlacePrize\(\s*finalPrizePool\s*,/);
+    expect(code(ELIM)).toMatch(/computePlacePrize\(\s*ladderPool\s*,/);
     expect(code(ELIM)).not.toMatch(/finalPrizePool\s*\*\s*payoutEntry\.percentage/);
   });
 
@@ -233,29 +254,38 @@ describe('every payout site shares the one rounding rule', () => {
 });
 
 describe('a failed query must never read as "nobody is left" - the money paths', () => {
-  it('a cancelled tournament with an unreadable registration list refunds nobody AND closes nobody', () => {
-    // Defect: `openRows ?? []` made an unreadable list an empty one. The
-    // refund loop found nothing, then the code below closed every
-    // 'playing'/'registered' row and the tables — destroying every entrant's
-    // buy-in, rebuys and add-ons, and leaving no candidates for a retry.
-    expect(code(RECOVERY)).toMatch(/cancel_refund_open_rows_unreadable/);
-    expect(code(RECOVERY)).not.toMatch(/const\s*\{\s*data:\s*openRows\s*\}\s*=/);
-    // The branch must be REACHED, not merely present: an early sabotage run
-    // replaced `if (openRowsErr)` with `if (false)` and every string-matching
-    // assertion above still passed.
-    expect(code(RECOVERY)).toMatch(/if\s*\(\s*openRowsErr\s*\)\s*\{[\s\S]{0,600}?\n\s*return;/);
+  it('the engine has no cancellation refund or close fallback to misread a list', () => {
+    // Cancellation moved completely into the database transaction authority.
+    // Keeping the former TypeScript helper, even unused, would preserve a
+    // second partial refund/close implementation that a future caller could
+    // reconnect. Recovery may resolve COMPLETING receipts only; it never
+    // cancels a tournament or writes cancellation money/state itself.
+    const recovery = code(RECOVERY);
+    expect(recovery).not.toMatch(/refundAndCloseCancelledTournament/);
+    expect(recovery).not.toMatch(/atomic_cancel_tournament/);
+    expect(recovery).not.toMatch(/cancel_refund_/);
+    expect(recovery).not.toMatch(/\.update\(\{\s*status:\s*['"]CANCELLED['"]/);
+    expect(recovery).not.toMatch(/\.from\(['"]tournament_players['"]\)[\s\S]{0,180}?\.delete\(/);
   });
 
   it('the stuck-COMPLETING rescue refuses to complete a field it could not read', () => {
     // Defect: `players ?? []` paid nobody and then flipped COMPLETING ->
     // COMPLETED anyway. Terminal: this watchdog only looks at COMPLETING, so
     // the tournament it just emptied can never be rescued again.
-    expect(code(RECOVERY)).not.toMatch(/const\s*\{\s*data:\s*players\s*\}\s*=/);
-    // Reached, not merely present — `if (false) { throw ... }` passed a
-    // string-only assertion during the sabotage run.
-    expect(code(RECOVERY)).toMatch(
-      /if\s*\(\s*playersErr\s*\|\|\s*!Array\.isArray\(players\)\s*\)\s*\{[\s\S]{0,400}?refusing to complete a tournament we cannot pay/
+    const recovery = sliceMethod(
+      code(RECOVERY),
+      'export async function recoverStuckCompletingTournaments('
     );
+    const readField = recovery.indexOf('const field = await readRecoveryField(tournament.id)');
+    const refusal = recovery.indexOf('if (!field.rows || field.rows.length < 1)', readField);
+    const receipt = recovery.indexOf('requestTournamentTerminalReceipt(', refusal);
+    expect(code(RECOVERY)).toMatch(
+      /return \{ rows: !error && Array\.isArray\(data\) \? \(data as RecoveryPlayer\[\]\) : null, error \}/
+    );
+    expect(readField).toBeGreaterThanOrEqual(0);
+    expect(refusal).toBeGreaterThan(readField);
+    expect(receipt).toBeGreaterThan(refusal);
+    expect(recovery.slice(refusal, receipt)).toMatch(/field_unreadable[\s\S]*?continue;/);
   });
 
   it('and an unreadable COMPLETING scan is not an empty one', () => {
@@ -297,13 +327,15 @@ describe('a tournament that cannot be paid is left where the watchdog can find i
     // nobody. recoverStuckCompletingTournaments only looks at COMPLETING, so
     // that write put the event permanently beyond the one mechanism built to
     // rescue it.
-    const branch = code(ELIM).slice(
-      code(ELIM).indexOf('if (!tournament || tourneyLoadErr)'),
-      code(ELIM).indexOf('const isSatelliteFinish')
+    const finish = sliceMethod(code(ELIM), 'finishTournament(winnerId: string): Promise<void>');
+    const branch = finish.slice(
+      finish.indexOf('if (!tournament)'),
+      finish.indexOf('const isSatelliteFinish')
     );
     expect(branch.length).toBeGreaterThan(0);
     expect(branch).not.toMatch(/COMPLETED/);
-    expect(code(ELIM)).toMatch(/left in COMPLETING for recoverStuckCompletingTournaments/);
+    expect(branch).not.toMatch(/requestTournamentTerminalReceipt|processSatelliteAwards/);
+    expect(branch).toMatch(/finish_identity_unavailable[\s\S]*?return;/);
   });
 });
 
@@ -314,18 +346,36 @@ describe('finishing places must be distinct - in the rescue path too', () => {
     // repeated USER, not a repeated PLACE, so both holders are paid in full.
     // Identical shape to the Math.max(2, ...) clamp that cost 11 tournaments
     // 12 extra payments.
-    expect(code(RECOVERY)).toMatch(/recoverStuckCompleting_position_collision/);
-  });
-
-  it('proves there is no position collision before funding the guarantee', () => {
     const recovery = sliceMethod(
       code(RECOVERY),
       'export async function recoverStuckCompletingTournaments('
     );
-    const collision = recovery.indexOf('if (collisions.length > 0)');
-    const funding = recovery.indexOf("'fn_apply_prize_guarantee'");
-    expect(collision).toBeGreaterThan(-1);
-    expect(funding).toBeGreaterThan(collision);
+    expect(recovery).not.toMatch(/\.update\(|\.insert\(|\.delete\(/);
+    expect(recovery).toMatch(/recovery will not invent a multi-player finish from stacks/);
+  });
+
+  it('proves one durable winner witness before asking the terminal authority', () => {
+    const recovery = sliceMethod(
+      code(RECOVERY),
+      'export async function recoverStuckCompletingTournaments('
+    );
+    const winner = recovery.indexOf(
+      'winnerId = live.length === 1 ? live[0].user_id : canonicalWinner(rows)'
+    );
+    const refusal = recovery.indexOf('if (!winnerId)', winner);
+    const settlement = recovery.indexOf('requestTournamentTerminalReceipt(', refusal);
+    const ranker = code(RECOVERY).slice(
+      code(RECOVERY).indexOf('function canonicalWinner('),
+      code(RECOVERY).indexOf('async function readRecoveryField(')
+    );
+    expect(ranker).toMatch(/if \(winners\.length > 1\) return null/);
+    expect(ranker).toMatch(/eliminated\.length !== rows\.length/);
+    expect(ranker).toMatch(
+      /new Set\(sequenced\.map\(\(\{ sequence \}\) => sequence\)\)\.size !== sequenced\.length/
+    );
+    expect(winner).toBeGreaterThanOrEqual(0);
+    expect(refusal).toBeGreaterThan(winner);
+    expect(settlement).toBeGreaterThan(refusal);
   });
 });
 
@@ -340,8 +390,8 @@ describe('finishing places must be distinct - in the rescue path too', () => {
  * blinds escalating, table dead, champion uncrowned, first prize unpaid.
  *
  * The ladder was one place short from the very first bust because it was
- * seeded off a live `playing` count, which does not include an entrant still
- * sitting in `registered` while ensureLateRegSeated catches up.
+ * seeded off a live `playing` count, which can miss an entrant whose atomic
+ * late-registration transaction has not yet become visible to that snapshot.
  */
 describe('the finishing ladder cannot drift, and cannot strand a busted player', () => {
   it('seeds the ladder from players who hold no place yet, not from a live playing count', () => {
@@ -397,64 +447,78 @@ describe('a write that decides a payout is checked', () => {
     expect(code(ELIM)).toMatch(/atomic elimination FAILED/);
   });
 
-  it('the winner row stamp is checked on both finish paths', () => {
-    expect(code(ELIM)).toMatch(/winner_row_stamp_failed/);
-    expect(code(ELIM)).toMatch(/final_table_deal_winner_stamp_failed/);
+  it('the terminal transaction proves exactly one durable winner on both cash modes', () => {
+    const terminal = sqlFunction(TERMINAL_SETTLEMENT, 'fn_complete_tournament_terminal(');
+    const count = terminal.indexOf('SELECT count(*) INTO v_winner_count');
+    const identity = terminal.indexOf('INTO v_winner_id', count);
+    const refusal = terminal.indexOf('IF v_winner_count <> 1 OR v_winner_id IS NULL', identity);
+    const candidate = terminal.indexOf(
+      'v_winner_id IS DISTINCT FROM p_observed_winner_id',
+      refusal
+    );
+    expect(count).toBeGreaterThanOrEqual(0);
+    expect(identity).toBeGreaterThan(count);
+    expect(refusal).toBeGreaterThan(identity);
+    expect(candidate).toBeGreaterThan(refusal);
   });
 
   it('the final-table-deal domain transaction owns every payment and COMPLETED together', () => {
-    const atomic = sqlFunction(ATOMIC_FINAL_TABLE_DEAL, 'fn_settle_final_table_deal_atomic(');
-    const claim = atomic.indexOf("SET status = 'COMPLETING'");
-    const firstPayment = atomic.indexOf(
-      'fn_settle_tournament_obligation_before_atomic_batch_gate(',
-      claim
+    const atomic = sqlFunction(TERMINAL_SETTLEMENT, 'fn_complete_tournament_terminal(');
+    const rootLock = atomic.indexOf('pg_advisory_xact_lock(');
+    const replay = atomic.indexOf('RETURN public.fn_ca_tournament_terminal_receipt(', rootLock);
+    const deal = atomic.indexOf('public.fn_settle_tournament_final_table_deal(', replay);
+    const bounty = atomic.indexOf('public.fn_finalize_bounty_pool(', deal);
+    const rake = atomic.indexOf('public.fn_settle_tournament_rake(', deal);
+    const seatClose = atomic.indexOf('UPDATE public.table_seats', Math.max(bounty, rake));
+    const complete = atomic.indexOf("SET status = 'COMPLETED'", seatClose);
+    const tableClose = atomic.indexOf('UPDATE public.tables', complete);
+    const receipt = atomic.indexOf(
+      'INSERT INTO public.tournament_terminal_settlements',
+      tableClose
     );
-    const proof = atomic.indexOf('fn_check_atomic_final_table_deal(p_tournament_id)', firstPayment);
-    const bounty = atomic.indexOf('fn_finalize_bounty_pool(p_tournament_id, v_leader)', proof);
-    const rake = atomic.indexOf('fn_settle_tournament_rake(', proof);
-    const complete = atomic.indexOf("SET status = 'COMPLETED'", rake);
-    const rollbackBoundary = atomic.indexOf('EXCEPTION WHEN OTHERS', complete);
 
-    expect(claim).toBeGreaterThanOrEqual(0);
-    expect(firstPayment).toBeGreaterThan(claim);
-    expect(proof).toBeGreaterThan(firstPayment);
-    expect(bounty).toBeGreaterThan(proof);
-    expect(rake).toBeGreaterThan(proof);
-    expect(complete).toBeGreaterThan(Math.max(bounty, rake));
-    expect(rollbackBoundary).toBeGreaterThan(complete);
-    expect(atomic).toMatch(/IF v_failure IS NOT NULL THEN[\s\S]*?'paid', 0, 'completed', false/);
+    expect(rootLock).toBeGreaterThanOrEqual(0);
+    expect(replay).toBeGreaterThan(rootLock);
+    expect(deal).toBeGreaterThan(replay);
+    expect(bounty).toBeGreaterThan(deal);
+    expect(rake).toBeGreaterThan(deal);
+    expect(seatClose).toBeGreaterThan(Math.max(bounty, rake));
+    expect(complete).toBeGreaterThan(seatClose);
+    expect(tableClose).toBeGreaterThan(complete);
+    expect(receipt).toBeGreaterThan(tableClose);
+    expect(atomic).not.toMatch(/EXCEPTION WHEN OTHERS/);
   });
 
-  it('COMPLETED is synchronously certified by the database, never by a runtime follow-up', () => {
-    const guard = sqlFunction(FINISH_CERTIFICATE, 'fn_guard_tournament_completed_certificate()');
-    const readiness = guard.indexOf('fn_tournament_finish_readiness(NEW.id,v_winner)');
-    const refusal = guard.indexOf(
-      "RAISE EXCEPTION 'tournament % is not financially certified",
-      readiness
+  it('COMPLETED and its immutable receipt are one database transaction', () => {
+    const terminal = sqlFunction(TERMINAL_SETTLEMENT, 'fn_complete_tournament_terminal(');
+    const complete = terminal.indexOf("SET status = 'COMPLETED'");
+    const receipt = terminal.indexOf(
+      'INSERT INTO public.tournament_terminal_settlements',
+      complete
     );
-    const receipt = guard.indexOf('UPDATE public.tournament_finish_receipts', refusal);
-
-    expect(readiness).toBeGreaterThanOrEqual(0);
-    expect(refusal).toBeGreaterThan(readiness);
-    expect(receipt).toBeGreaterThan(refusal);
-    expect(FINISH_CERTIFICATE).toMatch(
-      /CREATE TRIGGER zzzzzz_tournaments_financial_certificate[\s\S]*?BEFORE UPDATE OF status[\s\S]*?WHEN \(NEW\.status = 'COMPLETED'/
-    );
-    expect(code(ELIM)).not.toMatch(/certifyTournamentFinish/);
-    expect(code(RECOVERY)).not.toMatch(/certifyTournamentFinish/);
+    const returned = terminal.indexOf('RETURN public.fn_ca_tournament_terminal_receipt(', receipt);
+    expect(complete).toBeGreaterThanOrEqual(0);
+    expect(receipt).toBeGreaterThan(complete);
+    expect(returned).toBeGreaterThan(receipt);
+    expect(code(ELIM)).not.toMatch(/certifyTournamentFinish|status:\s*'COMPLETED'/);
+    expect(code(RECOVERY)).not.toMatch(/certifyTournamentFinish|status:\s*'COMPLETED'/);
   });
 
   it('a final-table deal requires atomic completion proof before its runtime tail', () => {
     // The former server loop could pay some shares, fail another, and still
     // write COMPLETED. The database RPC now owns shares + standings + terminal
     // state, and the server refuses to continue on ok:true without completed.
-    const deal = sliceMethod(code(ELIM), 'protected async checkFinalTableDeal(');
-    const proof = deal.indexOf('if (!deal.ok || !deal.completed)');
-    const tail = deal.indexOf('return this.settleFinalTableDeal(deal)');
+    const deal = sliceMethod(code(ELIM), 'private async completeFinalTableDealAtBoundary(');
+    const request = deal.indexOf('requestTournamentTerminalReceipt(');
+    const shape = deal.indexOf('const payoutShapeIsExact', request);
+    const committed = deal.indexOf('this.committedFinalTableDealReceipt = receipt', shape);
+    const tail = deal.indexOf('return this.settleFinalTableDeal(receipt)', committed);
 
-    expect(deal).toMatch(/settleFinalTableDealAtomically\(supabase, this\.tournamentId\)/);
-    expect(proof).toBeGreaterThanOrEqual(0);
-    expect(tail).toBeGreaterThan(proof);
+    expect(request).toBeGreaterThanOrEqual(0);
+    expect(deal).toMatch(/'final_table_deal',[\s\S]*?null/);
+    expect(shape).toBeGreaterThan(request);
+    expect(committed).toBeGreaterThan(shape);
+    expect(tail).toBeGreaterThan(committed);
   });
 
   it('the rescue only claims success after the atomic settlement proves completion', () => {
@@ -462,93 +526,52 @@ describe('a write that decides a payout is checked', () => {
       code(RECOVERY),
       'export async function recoverStuckCompletingTournaments('
     );
-    const proof = recovery.indexOf('if (!settlement.ok || !settlement.completed)');
-    const success = recovery.indexOf('[GameServer] Recovered stuck COMPLETING tournament');
+    const request = recovery.indexOf('await requestTournamentTerminalReceipt(');
+    const success = recovery.indexOf('[GameServer] Recovered tournament', request);
+    const refusal = recovery.indexOf('error instanceof TerminalSettlementRefusedError', success);
+    const unknown = recovery.indexOf('reportUnknownRecoveryOutcome(', refusal);
 
-    expect(recovery).toMatch(/await settleTournamentPlacesAtomically\(/);
-    expect(recovery).toMatch(
-      /if \(!settlement\.ok \|\| !settlement\.completed\) \{[\s\S]*?throw new Error/
-    );
-    expect(
-      proof,
-      'the recovery path must reject a response without completion proof'
-    ).toBeGreaterThanOrEqual(0);
-    expect(success, 'the recovery path must retain an observable success report').toBeGreaterThan(
-      proof
-    );
+    expect(request).toBeGreaterThanOrEqual(0);
+    expect(success).toBeGreaterThan(request);
+    expect(refusal).toBeGreaterThan(success);
+    expect(unknown).toBeGreaterThan(refusal);
+    expect(recovery).not.toMatch(/\.update\(|\.insert\(|\.delete\(/);
   });
 });
 
 describe('one player, one stack', () => {
-  it('the chip sync keys on the player, not on the seat', () => {
-    // Defect: one entry pushed per SEAT. A table move that writes the
-    // destination seat without stamping left_at on the source leaves a player
-    // holding two open seats. Measured on production 2026-08-25, one running
-    // MTT: 502 open seats across 376 players, 108 holding more than one,
-    // double-counting 1,461,180 chips. Postgres resolves
-    // `UPDATE ... FROM jsonb_to_recordset` against duplicate keys by picking an
-    // ARBITRARY row, so fn_sync_tournament_chips could overwrite a live stack
-    // with a dead one — and a dead seat's stack is usually 0, which is exactly
-    // what the bust sweep eliminates players for.
-    expect(code(ELIM)).toContain("'fn_sync_tournament_live_seat_chips'");
-    expect(ATOMIC_ELIMINATION).toMatch(/latest AS \([\s\S]*?GROUP BY user_id/);
-    expect(ATOMIC_ELIMINATION).toMatch(/latest_joined_at IS NOT NULL AND latest_count=1/);
+  it('the accepted hand mirrors the exact player roster before it commits', () => {
+    const stacks = sqlFunction(TERMINAL_SETTLEMENT, 'fn_ca_settle_hand_stacks_absolute');
+    expect(stacks).toMatch(
+      /UPDATE public\.tournament_players tp[\s\S]*?tp\.tournament_id = v_tournament_id[\s\S]*?tp\.user_id = target\.user_id[\s\S]*?tp\.status::text = 'playing'/
+    );
+    expect(stacks).toContain('tournament % hand % did not durably sync every final seat stack');
   });
 
-  it('two live seats with no usable joined_at is UNKNOWN, not a guess', () => {
-    expect(code(ELIM)).toMatch(/ambiguous_live_seat/);
+  it('has no delayed chip snapshot writer left in runtime or schema', () => {
+    expect(code(ELIM)).not.toMatch(/fn_sync_tournament_(?:live_seat_)?chips/);
+    expect(SEAT_EXIT_SETTLEMENT).toContain(
+      'DROP FUNCTION public.fn_sync_tournament_live_seat_chips(uuid) RESTRICT;'
+    );
+    expect(SEAT_EXIT_SETTLEMENT).toContain(
+      'DROP FUNCTION public.fn_sync_tournament_chips(uuid,jsonb) RESTRICT;'
+    );
   });
 
-  it('a failed seat read stops the sweep rather than busting on a partial picture', () => {
-    // Defect: `if (seats)` skipped a table whose read failed exactly as if it
-    // had no seats, and the sweep went on to decide who was out.
-    // Reached, not merely present.
-    //
-    // 2026-08-28: the condition was widened from `if (seatsErr)` to
-    // `if (seatsErr || !chunk)` when the per-table loop became one paged read.
-    // A null page is the same UNKNOWN as an errored one and must bail the same
-    // way — a page that came back as nothing would otherwise end the paging
-    // loop early and hand the sweep a SHORT chip picture, which is the exact
-    // failure this test exists to prevent, wearing a different hat.
+  it('a failed roster read stops the sweep rather than guessing that nobody busted', () => {
+    // The accepted-hand transaction is now the only seat-to-roster writer.
+    // An unreadable roster is still UNKNOWN and must stop this sweep before
+    // any placement, payout, or terminal decision.
     expect(code(ELIM)).toMatch(
-      /if\s*\(liveSeatSnapshotErr \|\| liveSeatSnapshot\.ok !== true\)\s*\{[\s\S]{0,600}?live_seat_chip_snapshot_failed[\s\S]*?return;/
+      /if\s*\(bustedErr\)\s*\{[\s\S]{0,700}?busted_list_unavailable[\s\S]*?return;/
     );
   });
 
-  /**
-   * THE SWEEP MUST NOT GET SLOWER AS THE FIELD GETS BIGGER (2026-08-28).
-   *
-   * Reported: a horse at 0 chips, unmarked, for 22 minutes in a running
-   * 326-player freeroll with zero eliminations recorded. The cause was this
-   * read: one AWAITED round-trip PER TABLE, and that event had 37 tables. At
-   * even 150ms apiece the "5-second" sweep needed 5.5s just to read seats, so
-   * `isProcessingEliminations` dropped tick after tick. The bigger the field
-   * the later the sweep — exactly backwards, since a big field is where busts
-   * come fastest.
-   */
-  it('reads seats once for the tournament, not once per table', () => {
-    expect(ATOMIC_ELIMINATION).toMatch(
-      /FROM public\.tables t\s+JOIN public\.table_seats s[\s\S]*?WHERE t\.tournament_id=p_tournament_id/
-    );
-  });
-
-  it('does the complete seat reduction inside Postgres, with no client page ceiling', () => {
-    const syncStart = ATOMIC_ELIMINATION.indexOf(
-      'CREATE OR REPLACE FUNCTION public.fn_sync_tournament_live_seat_chips'
-    );
-    const syncEnd = ATOMIC_ELIMINATION.indexOf('$function$;', syncStart);
-    const sync = ATOMIC_ELIMINATION.slice(syncStart, syncEnd);
-    expect(syncStart).toBeGreaterThan(-1);
-    expect(sync).toContain('WITH live AS');
-    expect(sync).not.toMatch(/LIMIT|OFFSET/);
-  });
-
-  it('covers tables this process holds no engine for', () => {
-    // The old loop read an IN-MEMORY map. A table adopted late, created by the
-    // balancer between hydrations, or orphaned by a restart was invisible: its
-    // players' chips never synced, so they could never appear in the bust list,
-    // so they could never be eliminated, so their seats sat there permanently.
-    expect(ATOMIC_ELIMINATION).toContain('WHERE t.tournament_id=p_tournament_id');
+  it('reads the already-committed roster once instead of reconstructing it from seats', () => {
+    const sweep = sliceMethod(code(ELIM), 'private async runEliminationSweep(');
+    expect(sweep).toContain(".from('tournament_players')");
+    expect(sweep).toContain(".eq('tournament_id', this.tournamentId)");
+    expect(sweep).not.toMatch(/\.from\(['"]table_seats['"]\)|tables!inner/);
   });
 });
 

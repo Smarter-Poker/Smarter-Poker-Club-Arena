@@ -36,10 +36,9 @@
 # scrapes. So these are written against gauges that exist today, and they fire
 # today.
 #
-# External reachability (is smarter.poker up from the outside) is NOT covered
-# here and cannot be from this stack — the engine cannot see itself from the
-# internet. That coverage lives in the World Hub's publish-watchdog.yml, which
-# deliberately does not share a failure domain with the pipeline it watches.
+# External reachability is not measured by this Prometheus stack. Club Arena's
+# read-only production-integrity audit verifies the Hetzner origin and public
+# rewrite without owning a retry, repair, or publish path.
 #
 # Naming: sp:<objective>:<window>. Recording rules only — the objectives
 # themselves are asserted in slo-alerts.yml.
@@ -70,11 +69,21 @@ groups:
         expr: |
           rate(poker_hands_dealt_total[5m])
 
-      # Tables that exist but have made no progress. poker_table_ms_since_progress
-      # is emitted per table; this is the worst one.
+      # Tables that exist but have made no progress: the worst one.
+      #
+      # READ FROM THE FLEET GAUGE, NOT FROM A THOUSAND SERIES (2026-09-11).
+      # `poker_table_ms_since_progress` was emitted for EVERY table, and this
+      # rule was its only consumer anywhere - 1,363 samples scraped every
+      # fifteen seconds so that one `max()` could pick one of them, with the
+      # whole exposition built on the engine's authoritative event loop. The
+      # engine publishes the maximum directly now. The per-table series still
+      # exists for a table that has actually stalled, which is the one an
+      # operator wants to name, so `max()` over it would ALSO be correct - but
+      # it would be absent on a healthy fleet, and an absent SLO is not a
+      # healthy one (CLAUDE.md 10.86). This gauge is always present.
       - record: sp:table_stall:max_ms
         expr: |
-          max(poker_table_ms_since_progress)
+          max(poker_fleet_table_stall_max_ms)
 
       # ── RESPONDING ──────────────────────────────────────────────────────
       # From a player's action arriving to every seat seeing it. This is the
@@ -101,3 +110,36 @@ groups:
       - record: sp:db_error:rate10m
         expr: |
           rate(poker_rpc_errors_total[10m])
+
+  # ── HOW OLD THE MONEY, SETTLEMENT AND CRON READINGS ARE ─────────────────
+  #
+  # 2026-09-11. Fifteen rules were written on 2026-09-04 against thirteen
+  # metric names that nothing emitted. Three of those rules exist to catch
+  # exactly that - CronMetricsBlind, MoneyHealthBlind, SettlementMetricsBlind -
+  # and each was written as `poker_..._stale_seconds > 600`, which is an empty
+  # vector when the collector never ran at all. The blindness detector was
+  # blind in the one case it was built for.
+  #
+  # collect-monitoring-health.sh now publishes one collection timestamp
+  # alongside those gauges. Staleness is DERIVED from it here rather than
+  # written by the collector, because a collector can only ever write zero for
+  # its own age: the moment it stops, a self-reported age freezes at zero and
+  # reads as perfectly fresh forever. Computed against time(), it climbs.
+  #
+  # All three names resolve to the same reading because one collector produces
+  # all three families. They stay three names because the alerts are three
+  # alerts, and a later split should not have to rewrite them.
+  - name: money-health-freshness
+    interval: 30s
+    rules:
+      - record: poker_settlement_metrics_stale_seconds
+        expr: |
+          time() - poker_health_collected_timestamp_seconds
+
+      - record: poker_money_health_stale_seconds
+        expr: |
+          time() - poker_health_collected_timestamp_seconds
+
+      - record: poker_cron_metrics_stale_seconds
+        expr: |
+          time() - poker_health_collected_timestamp_seconds

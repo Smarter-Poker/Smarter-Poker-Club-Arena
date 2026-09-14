@@ -15,8 +15,8 @@
  *  1. The reporting rollup triggers take pg_advisory_xact_lock_SHARED(918273645);
  *     only the range rebuilds take the exclusive form. An exclusive lock held
  *     to commit by every wallet and rake row was a global queue for chips.
- *  2. fn_sync_tournament_chips locks the rows it will write in user_id order
- *     before the bulk UPDATE (247 self-deadlocks a day).
+ *  2. accepted-hand settlement locks its exact tournament roster in user_id
+ *     order and retires the delayed bulk chip-sync writer.
  *  3. fn_settle_tournament_rake locks club_wallets before it credits the
  *     union wallet or the club treasury - the order atomic_distribute_rake
  *     already uses - and holds the tournament FOR NO KEY UPDATE (249 a day).
@@ -34,7 +34,7 @@ import { join } from 'path';
 
 const MIGRATIONS = join(__dirname, '..', 'supabase', 'migrations');
 const files = readdirSync(MIGRATIONS)
-  .filter((f) => f.endsWith('.sql'))
+  .filter((f) => f.endsWith('.sql') || f.endsWith('.sql.pending'))
   .sort();
 const read = (needle: string) => {
   const f = files.find((x) => x.includes(needle));
@@ -46,6 +46,8 @@ const m3 = read('tournament_rake_settles_in_the_same_lock_order_as_cash_rake');
 const m4 = read('a_seat_cashout_locks_the_game_before_the_seat');
 const m5 = read('seating_a_horse_takes_the_missions_lock_before_the_game_row');
 const m7 = read('one_seat_first_repair_runs_at_a_time');
+const m8 = read('non_satellite_terminal_settlement_commits_one_stored_receipt');
+const m9 = read('stage_b_current_postimage_contraction');
 
 /** The body of one CREATE OR REPLACE FUNCTION in a migration. */
 function body(sql: string, fn: string): string {
@@ -78,12 +80,13 @@ describe('two writers of the same money take their locks in one order', () => {
     );
   });
 
-  it('2. tournament chips are locked in user_id order before the bulk update', () => {
-    const b = body(m2.sql, 'fn_sync_tournament_chips');
-    const lock = b.indexOf('ORDER BY tp.user_id\n   FOR UPDATE OF tp;');
+  it('2. accepted-hand chips lock the exact roster before its in-transaction mirror', () => {
+    const b = body(m8.sql, 'fn_ca_settle_hand_stacks_absolute');
+    const lock = b.indexOf('ORDER BY tp.user_id,tp.id\n       FOR UPDATE;');
     const update = b.indexOf('UPDATE public.tournament_players tp');
     expect(lock).toBeGreaterThan(-1);
     expect(lock).toBeLessThan(update);
+    expect(m9.sql).toContain('DROP FUNCTION public.fn_sync_tournament_chips(uuid,jsonb) RESTRICT;');
   });
 
   it('3. tournament rake settles club_wallets -> union_wallets | clubs, like cash rake', () => {

@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/claude-diamond-phase-7/feature/diamond-straddles. Phase 7 checklist line three, first feature. A straddle is priced at exactly two times the current blind and every Diamond guard already refuses a table whose blinds are not whole, so it is whole by construction with no counterparty and no ledger. Two migrations, both applied to kuklfnapbkmacvwxktbh on 2026-09-12: 20260912013000 drops the three straddle clauses from fn_poker_diamond_buyin and adds the staff door below, and 20260912014500 makes the same door read rake_cap_bb, bbj_percent and the two run-it columns the way the engine does, which the isolated fixture caught it not doing. No new table or column; the staff door is the only new object.",
+  "functions": ["fn_poker_diamond_set_table_straddle"]
+}

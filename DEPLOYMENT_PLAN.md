@@ -1,44 +1,49 @@
-# 🛰️ ANTIGRAVITY DEPLOYMENT PLAN
-## Project: Club Arena (Orb #2 / Yellow Ball)
+# Club Arena Deployment Plan
 
----
+Status: current. Club Arena owns both of its production release paths. The
+World Hub is not a Club Arena publisher.
 
-## 📋 Execution Sequence
+## Player Frontend
 
-### Phase 1: Source Control
-1. ✅ Verify `.gitignore` exists (create if missing)
-2. ✅ Initialize Git repository
-3. ✅ Stage all files
-4. ✅ Create initial commit
+1. Work on an isolated branch and merge current `origin/main` into it when
+   needed. Never push directly to protected `main`.
+2. Run the relevant tests and production build, commit normally, and push the
+   branch with hooks enabled.
+3. `agent-open-pr.yml` opens the pull request. Autopilot merges only after the
+   required gates pass.
+4. `.github/workflows/publish-club-arena.yml` builds the exact tip of Club
+   Arena `main`, rsyncs it to the Hetzner origin under
+   `/srv/club-arena/releases/<ca_sha>/`, and atomically switches `current`.
+5. The World Hub contains only the public rewrite from
+   `/hub/club-arena/*` to `https://ca-static.smarter.poker`; no Club Arena
+   bundle is built, copied, committed, or published there.
 
-### Phase 2: GitHub Remote
-5. ✅ Create GitHub repository via `gh` CLI
-6. ✅ Push to `main` branch
+The frontend publisher uses the Club Arena repository secrets
+`CA_ORIGIN_SSH_KEY`, `CA_ORIGIN_HOST`, and `CA_ORIGIN_HOST_KEY`. Credential
+values never belong in this file or a local `.env`.
 
-### Phase 3: Vercel Deployment
-7. ✅ Link project via `vercel` CLI
-8. ✅ Configure environment variables (if available)
-9. ✅ Trigger production deployment
+## Realtime Engine
 
----
+Server changes use `.github/workflows/auto-deploy-hetzner.yml`. The workflow
+builds an immutable image from the exact committed `server/` tree, stages it
+immediately, and allows cutover only under the sealed maintenance authority.
+Never start, restart, or mutate the Club Arena engine from the World Hub.
 
-## 🔧 Environment Variables Required
-| Variable | Source |
-|----------|--------|
-| `VITE_SUPABASE_URL` | Supabase Dashboard |
-| `VITE_SUPABASE_ANON_KEY` | Supabase Dashboard |
+The engine workflow uses the Club Arena repository secrets
+`HETZNER_SSH_PRIVATE_KEY`, `HETZNER_HOST`, and pinned `HETZNER_HOST_KEY`.
+There is no legacy key-name or cross-repository fallback.
 
-*Note: App runs in Demo Mode if variables are not set.*
+## Release Proof
 
----
+A branch push, merged pull request, or green build is not publication proof.
+Before declaring a release complete, verify:
 
-## 📊 Status
-- **Generated**: 2026-01-12T13:47Z
-- **Agent**: Antigravity v2.0
-- **Terminal Policy**: Auto-Execute
+- Club Arena `main` equals the intended merge SHA.
+- `https://ca-static.smarter.poker/build-info.json` reports that exact SHA.
+- `https://smarter.poker/hub/club-arena/build-info.json` reports the same SHA.
+- Any server-changing merge has a successful exact-SHA Hetzner deployment and
+  cache-busted `https://engine.smarter.poker/health` reports that version with
+  healthy, stable runtime evidence.
 
----
-
-## 🔗 Expected Outputs
-- GitHub URL: `https://github.com/[user]/club-arena`
-- Vercel URL: `https://club-arena-[hash].vercel.app`
+See `.github/DEPLOYMENT.md`, `.agent/architecture/deploy-paths.md`, and
+`CLAUDE.md` section 1.1 for the detailed contracts.

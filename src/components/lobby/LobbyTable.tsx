@@ -11,7 +11,8 @@
  * (stakesValue / buyInValue / startValue), never the formatted strings.
  */
 
-import { memo, useMemo, useRef, useState, useEffect, useCallback } from 'react';
+import { memo, useMemo, useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react';
+import { observeLobbyScrollClearance } from './lobbyScrollClearance';
 import type { LobbyEntry, LobbyStatusKey, LobbyTournamentRow } from './lobbyEntries';
 import { tournamentBlinds, tournamentLevel } from './tournamentFigures';
 import {
@@ -856,7 +857,9 @@ const COL_ACTIONS: ColumnDef = {
     };
 
     if (e.kind === 'cash') {
-      const seated = ctx.seatedIds.has(e.id);
+      /* Through playerStateOf: a seat on any table of a must-move game counts
+         (the game id is in seatedIds), not only a seat on the row's Main 1. */
+      const seated = playerStateOf(e, ctx) === 'seated';
       const headsUp = e.capacity === 2;
       /* GATE 6 (OPORD 1.4 s2.9): a must-move game is joined and viewed as a
          GAME. `full` is already impossible for one (capacity 0) - a full
@@ -867,6 +870,11 @@ const COL_ACTIONS: ColumnDef = {
          the waitlist offer. */
       const full = !seated && e.capacity > 0 && e.players >= e.capacity;
       const waiting = ctx.waitlistedIds.has(e.id);
+      /* A disabled game (or a paused table) is not taking players: its door
+         refuses, so the button says so instead of offering a Join that can
+         only fail. A seat the player already holds still wins - they finish
+         their hand through Return To Game. */
+      const closed = !seated && e.status === 'closed';
       return (
         <span className="lt-actions">
           {ctx.onViewTable && (
@@ -880,7 +888,18 @@ const COL_ACTIONS: ColumnDef = {
               {game ? 'View Game' : 'View Table'}
             </button>
           )}
-          {full && ctx.onWaitlistToggle && (
+          {closed && (
+            <button type="button" className="lt-act lt-act--done" disabled aria-disabled="true">
+              {game ? 'Game' : 'Table'} {e.statusLabel}
+            </button>
+          )}
+          {/* THE CLOSED GATE COMES BEFORE THE QUEUE (2026-09-12), same repair
+              as GameLobbyPanel's. A full table in a closed arena offered Join
+              Waitlist, and the queue exists to lead to a buy-in the door then
+              refuses, on a hold that lasts sixty seconds. `waiting` keeps the
+              LEAVE action reachable: a player already queued must always be
+              able to get off. */}
+          {!closed && full && ctx.onWaitlistToggle && !(ctx.seatsClosedLabel && !waiting) && (
             <button
               type="button"
               className={`lt-act ${waiting ? 'lt-act--done' : 'lt-act--primary'}`}
@@ -891,7 +910,21 @@ const COL_ACTIONS: ColumnDef = {
               {waiting ? 'Leave Waitlist' : 'Join Waitlist'}
             </button>
           )}
-          {!full && ctx.onJoinTable && (
+          {/* A board nobody may sit at says so, rather than offering a seat the
+              buy-in door will refuse. A player already seated still returns to
+              their own table: the closed gate is about taking a NEW seat. */}
+          {!closed && ctx.seatsClosedLabel && !seated && !waiting && (
+            <button
+              type="button"
+              className="lt-act"
+              data-act="closed"
+              disabled
+              aria-label={`${e.name}: ${ctx.seatsClosedLabel}`}
+            >
+              {ctx.seatsClosedLabel}
+            </button>
+          )}
+          {!closed && !full && ctx.onJoinTable && !(ctx.seatsClosedLabel && !seated) && (
             <button
               type="button"
               className="lt-act lt-act--primary"
@@ -1560,6 +1593,12 @@ export default function LobbyTable({
   );
   const bodyRef = useRef<HTMLTableSectionElement>(null);
   const mobileCardsRef = useRef<HTMLDivElement>(null);
+  const sortbarRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (sortbarRef.current && mobileCardsRef.current) {
+      return observeLobbyScrollClearance(sortbarRef.current, mobileCardsRef.current);
+    }
+  }, [category]);
   /* Which chip of the mobile sort toolbar owns the single tab stop. */
   const sortChipsRef = useRef<HTMLDivElement>(null);
   const [sortFocus, setSortFocus] = useState(0);
@@ -1879,6 +1918,7 @@ export default function LobbyTable({
       {sortableColumns.length > 0 && (
         <div
           className="lobby-sortbar"
+          ref={sortbarRef}
           role="toolbar"
           aria-label="Sort Games"
           aria-orientation="horizontal"
@@ -2011,7 +2051,6 @@ export default function LobbyTable({
             entry={entry}
             ctx={rowCtx}
             selected={entry.id === selectedId}
-            onSelect={onSelect}
           />
         ))}
       </div>

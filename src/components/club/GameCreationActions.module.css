@@ -1,90 +1,114 @@
+/* One continuous, purpose-built four-bay render. The buttons paint no frame of
+   their own; they are semantic hit targets over the bays in the master art. */
 .actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  flex-wrap: wrap;
+  position: relative;
+  container-type: inline-size;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  width: min(100%, 680px);
+  aspect-ratio: 2172 / 724;
+  margin-inline-start: auto;
+  padding: 9.5% 5.2% 10%;
+  box-sizing: border-box;
+  background: url('/assets/club-buttons/table-management/command-rail-v1/chassis.png') center / 100%
+    100% no-repeat;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   THE PLUS SITS ON THE WORD'S CENTRE LINE (Dan 2026-09-02)
-   ---------------------------------------------------------------------------
-   "ALL PLUS SIGNS ON ALL BUTTONS NEED TO BE LOWER SO THEY ARE BALANCED AND
-   PERFECTLY CENTERED WITH THE WORDS ON THE BUTTON."
-
-   The glyph and the label were two inline boxes of different sizes - 15px and
-   11px - sharing one baseline. Baseline alignment lines up the BOTTOM of the
-   two shapes, so the taller box necessarily rides higher; and a "+" is drawn
-   around the middle of its em box rather than sitting on the baseline the way
-   a letter does. Both push it up, which is what Dan is seeing.
-
-   A flex row centres the two boxes against each other, which is the geometric
-   answer rather than a nudge: it holds at any font size, at any zoom, and in
-   the `.compact` variant, none of which a magic `top` offset would. */
 .actions button {
+  appearance: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid rgba(74, 180, 255, 0.62);
-  border-radius: 5px;
-  color: #e9f7ff;
-  background: linear-gradient(180deg, #163b58 0%, #071621 48%, #06101a 100%);
-  box-shadow:
-    inset 0 1px rgba(255, 255, 255, 0.14),
-    0 0 10px rgba(0, 132, 255, 0.18);
+  gap: 0.6cqw;
+  min-width: 0;
+  min-height: 0;
+  margin: 0 2.2%;
+  padding: 0 7%;
+  border: 0;
+  color: #e4e7ec;
+  background: transparent;
   font:
-    700 11px/1 Rajdhani,
-    Inter,
+    800 clamp(9px, 2.35cqw, 16px) / 1 'Roboto Condensed',
+    Rajdhani,
     sans-serif;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.055em;
   text-transform: uppercase;
+  text-shadow:
+    0 -1px 0 rgb(255 255 255 / 42%),
+    0 2px 0 #080a0d,
+    0 0 10px rgb(69 173 255 / 58%);
   cursor: pointer;
+  touch-action: manipulation;
+  overflow: hidden;
 }
 
-.actions button:focus-visible {
-  outline: 2px solid #8fd4ff;
-  outline-offset: 2px;
+.actions button strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .actions button span {
-  color: #35b8ff;
-  font-size: 15px;
-  /* Without this the glyph carries the button's `11px/1` line box scaled to
-     15px and re-introduces a fraction of the offset the flex row just
-     removed. `1` makes its box exactly the glyph's own height, so centring
-     has nothing left to fight. */
+  color: #45adff;
+  font-size: 1.35em;
   line-height: 1;
+  text-shadow: 0 0 8px rgb(49 168 255 / 82%);
 }
 
-/* DESKTOP ONLY, WHERE A HOST ASKS FOR IT (Dan 2026-09-02): "THIS SHOULDN'T BE
-   DISPLAYED ON MOBILE, THIS IS DESK TOP ONLY BUTTONS REMOVE THEM FROM
-   MOBILE." Opt-in rather than a blanket rule on `.actions`, because the union
-   and game-management screens render this row as their ONLY route to creating
-   a game - hiding it there would strip the feature from a phone rather than
-   tidy a lobby. The club lobby passes this class; nothing else does. */
+.actions button:active {
+  filter: brightness(1.2);
+}
+
+.actions button:focus-visible {
+  outline: 3px solid #8fd4ff;
+  outline-offset: -6px;
+}
+
+.compact {
+  width: min(100%, 560px);
+}
+
+.compact button {
+  min-height: 0;
+}
+
 @media (max-width: 900px) {
   .desktopOnly {
     display: none;
   }
 }
 
-.compact button {
-  min-height: 30px;
-  padding-inline: 9px;
-  font-size: 10px;
+@media (max-width: 760px) {
+  .actions button,
+  .compact button {
+    min-height: 44px;
+  }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 520px) {
   .actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
     width: 100%;
+    margin-inline: auto;
+    padding-inline: 4.7%;
   }
 
   .actions button {
-    width: 100%;
+    margin-inline: 1.5%;
+    padding-inline: 2%;
+    font-size: clamp(8px, 2.8cqw, 11px);
+    letter-spacing: 0.02em;
+  }
+}
+
+@media (forced-colors: active) {
+  .actions {
+    background: Canvas;
+    outline: 1px solid CanvasText;
+  }
+
+  .actions button {
+    border: 1px solid ButtonText;
+    color: ButtonText;
   }
 }

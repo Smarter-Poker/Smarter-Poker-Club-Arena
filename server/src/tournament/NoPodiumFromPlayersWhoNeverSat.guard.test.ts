@@ -19,8 +19,8 @@
  *      path capable of inventing lifecycle truth.
  *
  * `registered` survivors remain payable whenever at least one player is
- * 'playing' — a genuine late registrant waiting on ensureLateRegSeated is owed
- * their place, and that case is unchanged.
+ * 'playing' — a genuine late registrant concurrently completing atomic
+ * admission is owed their place, and that case is unchanged.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
@@ -32,22 +32,23 @@ describe('a recovery may not invent a podium', () => {
   it('tournamentRecovery pays nobody when no surviving entrant was dealt in', () => {
     const src = read('./tournamentRecovery.ts');
 
-    // The guard exists, and is computed from the alive set.
-    expect(src).toMatch(/const anyDealtIn = alive\.some\(\(r\) => r\.status === 'playing'\)/);
-    expect(src).toMatch(/if \(alive\.length > 0 && !anyDealtIn\)/);
+    // A sole survivor must be an actual playing entrant, and the hand table
+    // must prove that this tournament dealt at least one hand.
+    expect(src).toMatch(/live\.length === 1 && live\[0\]\.status !== 'playing'/);
     expect(src).toContain('GameServer.recoverStuckCompleting_no_dealt_in_survivor');
+    expect(src).toContain('const hand = await hasHandEvidence(tournament)');
 
     // It must sit before the atomic batch that credits every place, or it
     // guards nothing.
-    const guardAt = src.indexOf('const anyDealtIn');
-    const payAt = src.indexOf('settleTournamentPlacesAtomically(');
+    const guardAt = src.indexOf("live.length === 1 && live[0].status !== 'playing'");
+    const payAt = src.indexOf('requestTournamentTerminalReceipt(');
     expect(guardAt).toBeGreaterThan(-1);
     expect(payAt).toBeGreaterThan(-1);
     expect(guardAt).toBeLessThan(payAt);
 
-    // A registered survivor is still payable alongside a playing one: the
-    // alive filter itself must not have been narrowed.
-    expect(src).toMatch(/r\.status === 'playing' \|\| r\.status === 'registered'/);
+    // Registered rows remain part of the ambiguity check but can never be the
+    // sole result witness.
+    expect(src).toMatch(/row\.status === 'playing' \|\| row\.status === 'registered'/);
   });
 
   it('has no receipt-free played-but-registering reconciliation path', () => {

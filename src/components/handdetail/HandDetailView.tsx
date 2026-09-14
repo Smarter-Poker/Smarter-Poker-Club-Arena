@@ -314,7 +314,14 @@ function ShowdownRow({
         >
           {net === null ? '' : `${net >= 0 ? '+' : '-'}${money(Math.abs(net))}`}
         </span>
-        <span className="hdv__sd-pot">{row.boardLabel || row.potLabel}</span>
+        {/* Both axes when the record has both (2026-09-13): a run-it-twice
+            hand with a side pot used to show "Board 2" and never which pot
+            the share came out of, because the board label always won. */}
+        <span className="hdv__sd-pot">
+          {row.boardLabel && row.potSlices?.length
+            ? `${row.boardLabel} · ${row.potLabel}`
+            : row.boardLabel || row.potLabel}
+        </span>
       </div>
     </div>
   );

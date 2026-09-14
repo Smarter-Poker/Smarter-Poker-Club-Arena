@@ -28,6 +28,7 @@ import {
   type MysteryBountyPlayerTotals,
 } from '../../services/MysteryBountyService';
 import CasinoSurfaceHeader from '../../components/rewards/RewardsSurfaceHeader';
+import TournamentPaymentStatus from '../../components/tournament/TournamentPaymentStatus';
 
 interface CompletedTournament {
   id: string;
@@ -76,6 +77,13 @@ interface TournamentResult {
   /** Knockouts that paid. */
   bounties_collected: number;
   status: string;
+}
+
+interface ArchiveRead<T> {
+  tournamentId: string | null;
+  data: T;
+  loading: boolean;
+  error: string | null;
 }
 
 interface HandHistoryRecord {
@@ -127,10 +135,26 @@ export default function TournamentResultsPage() {
   const [tournaments, setTournaments] = useState<CompletedTournament[]>([]);
   const [selectedTournament, setSelectedTournament] = useState<CompletedTournament | null>(null);
   const [visibleResults, setVisibleResults] = useState<Set<string>>(new Set());
-  const [results, setResults] = useState<TournamentResult[]>([]);
+  const [resultsRead, setResultsRead] = useState<ArchiveRead<TournamentResult[]>>({
+    tournamentId: null,
+    data: [],
+    loading: false,
+    error: null,
+  });
+  const resultsRequestRef = useRef(0);
+  const results = resultsRead.tournamentId === selectedTournament?.id ? resultsRead.data : [];
   const deepLinkedRef = useRef(false);
-  const [handHistory, setHandHistory] = useState<HandHistoryRecord[]>([]);
+  const [handsRead, setHandsRead] = useState<ArchiveRead<HandHistoryRecord[]>>({
+    tournamentId: null,
+    data: [],
+    loading: false,
+    error: null,
+  });
+  const handsRequestRef = useRef(0);
+  const handHistory = handsRead.tournamentId === selectedTournament?.id ? handsRead.data : [];
   const [isLoading, setIsLoading] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
+  const listRequestRef = useRef(0);
   /* DEEP-LINKABLE FILTERS (2026-08-29, round 10). Other surfaces can now
      send a player straight to a filtered view - the hamburger's "My Spin
      Results" links `?filter=mine&type=spin`. Values are validated against
@@ -160,10 +184,19 @@ export default function TournamentResultsPage() {
    */
   const [resultSort, setResultSort] = useState<ResultSort>('finish');
   /** Mystery bounty split for the selected event. Empty for every other format. */
-  const [mysteryBoard, setMysteryBoard] = useState<MysteryBountyLeaderboardRow[]>([]);
-  const [mysteryTotals, setMysteryTotals] = useState<Map<string, MysteryBountyPlayerTotals>>(
-    () => new Map()
-  );
+  const [mysteryRead, setMysteryRead] = useState<
+    ArchiveRead<{
+      board: MysteryBountyLeaderboardRow[];
+      totals: Map<string, MysteryBountyPlayerTotals>;
+    }>
+  >({ tournamentId: null, data: { board: [], totals: new Map() }, loading: false, error: null });
+  const mysteryRequestRef = useRef(0);
+  const mysteryBoard =
+    mysteryRead.tournamentId === selectedTournament?.id ? mysteryRead.data.board : [];
+  const mysteryTotals =
+    mysteryRead.tournamentId === selectedTournament?.id
+      ? mysteryRead.data.totals
+      : new Map<string, MysteryBountyPlayerTotals>();
   /* BIGGEST HITS (2026-08-29, round 11). The wheel's big draws are the
      format's whole story and nothing surfaced them: who hit 25x, 50x, 100x,
      at what stake, for how much. Loaded only when the Spin type filter is
@@ -174,7 +207,7 @@ export default function TournamentResultsPage() {
       tournamentId: string;
       multiplier: number;
       buyIn: number;
-      prize: number;
+      prize: number | null;
       winnerName: string;
       endedAt: string;
     }>
@@ -198,8 +231,15 @@ export default function TournamentResultsPage() {
 
   // Load completed tournaments
   const loadTournaments = async () => {
+    const request = ++listRequestRef.current;
     setIsLoading(true);
+    setListError(null);
     try {
+      if (filter === 'mine' && !user?.id) {
+        setTournaments([]);
+        setListError('Sign In To View Your Tournament Results.');
+        return;
+      }
       /* MINE IS A JOIN, NOT A CLIENT SCAN (2026-08-29, round 12).
          The old shape fetched EVERY tournament_players row the player ever
          had - fetchAllRows, paged, thousands of rows for a regular - to
@@ -234,22 +274,24 @@ export default function TournamentResultsPage() {
       // routes it to the existing report + toast.
       const { data, error: listErr } = await query;
       if (listErr) throw listErr;
-      if (!isMounted.current) return;
-      if (!data) return;
+      if (!isMounted.current || request !== listRequestRef.current) return;
       /* Strip the join column so the rest of the page keeps its exact shape.
          The `unknown` hop is because supabase-js cannot statically parse a
          ternary select string; the columns are the same literal both ways. */
       const completedList = (
-        data as unknown as Array<CompletedTournament & { tournament_players?: unknown }>
+        (data ?? []) as unknown as Array<CompletedTournament & { tournament_players?: unknown }>
       ).map(({ tournament_players: _tp, ...t }) => t as CompletedTournament);
 
       setTournaments(completedList);
     } catch (err) {
-      if (!isMounted.current) return;
+      if (!isMounted.current || request !== listRequestRef.current) return;
       reportError(err, 'TournamentResultsPage.Failed_to_load_tournament_results');
+      setTournaments([]);
+      setListError('Could Not Load Tournament Results. Please Retry.');
       toast?.error('Failed to load tournament results');
+    } finally {
+      if (isMounted.current && request === listRequestRef.current) setIsLoading(false);
     }
-    if (isMounted.current) setIsLoading(false);
   };
 
   useEffect(() => {
@@ -305,9 +347,12 @@ export default function TournamentResultsPage() {
               tournamentId: String(h.id),
               multiplier: Number(h.spin_multiplier) || 0,
               buyIn: Number(h.buy_in_amount) || 0,
+              // A missing award is unknown. Pool arithmetic cannot reconstruct
+              // a winner's payout, and a recorded zero must remain zero.
               prize:
-                Number(w?.prize) ||
-                (Number(h.buy_in_amount) || 0) * (Number(h.spin_multiplier) || 0),
+                w?.prize !== null && w?.prize !== undefined && Number.isFinite(Number(w.prize))
+                  ? Number(w.prize)
+                  : null,
               winnerName: String(w?.username ?? 'Player'),
               endedAt: String(h.ended_at ?? ''),
             };
@@ -378,7 +423,8 @@ export default function TournamentResultsPage() {
     }
 
     // If not in list yet (might still be COMPLETING), load it directly
-    if (tournaments.length > 0 && !found) {
+    if (!isLoading && !found) {
+      let cancelled = false;
       // Tournament list loaded but ID not found — try direct load
       (async () => {
         const { data, error: deepLinkErr } = await supabase
@@ -396,20 +442,26 @@ export default function TournamentResultsPage() {
             tournamentId,
           });
         }
-        if (!isMounted.current) return;
-        if (!data) return;
-        setSelectedTournament(data as CompletedTournament);
+        if (cancelled || !isMounted.current || deepLinkErr || !data) return;
+        const linkedTournament = data as CompletedTournament;
+        setTournaments((current) =>
+          current.some((t) => t.id === tournamentId) ? current : [linkedTournament, ...current]
+        );
+        setSelectedTournament(linkedTournament);
         deepLinkedRef.current = true;
       })();
+      return () => {
+        cancelled = true;
+      };
     }
-  }, [tournaments, searchParams]);
+  }, [tournaments, searchParams, isLoading]);
 
   // Load results for selected tournament
   const loadResults = async () => {
-    if (!selectedTournament) {
-      setResults([]);
-      return;
-    }
+    const request = ++resultsRequestRef.current;
+    const tournamentId = selectedTournament?.id ?? null;
+    setResultsRead({ tournamentId, data: [], loading: Boolean(tournamentId), error: null });
+    if (!tournamentId) return;
 
     try {
       // ROUND 10 (2026-08-29): a resolved error rendered as an EMPTY standings
@@ -422,7 +474,7 @@ export default function TournamentResultsPage() {
            is right for a plain KO event and a PKO as well, and the mystery
            split below is an extra breakdown rather than the only source. */
         .select('user_id, username, position, prize, bounty_winnings, bounties_collected, status')
-        .eq('tournament_id', selectedTournament!.id)
+        .eq('tournament_id', tournamentId)
         .order('position', { ascending: true, nullsFirst: false })
         /* A 1,001-entrant field would have lost its tail - and the tail of a
            results table is the players who busted first, i.e. most of the
@@ -433,9 +485,12 @@ export default function TournamentResultsPage() {
         .limit(50000);
       if (standingsErr) throw standingsErr;
 
-      if (isMounted.current) {
-        setResults(
-          (data || []).map((r) => ({
+      if (isMounted.current && request === resultsRequestRef.current) {
+        setResultsRead({
+          tournamentId,
+          loading: false,
+          error: null,
+          data: (data || []).map((r) => ({
             user_id: String((r as { user_id: string }).user_id),
             username: String((r as { username: string | null }).username ?? 'Player'),
             position: (r as { position: number | null }).position ?? null,
@@ -444,11 +499,18 @@ export default function TournamentResultsPage() {
             bounties_collected:
               Number((r as { bounties_collected: number | null }).bounties_collected) || 0,
             status: String((r as { status: string | null }).status ?? ''),
-          }))
-        );
+          })),
+        });
       }
     } catch (err) {
+      if (!isMounted.current || request !== resultsRequestRef.current) return;
       reportError(err, 'TournamentResultsPage.loadResults_error');
+      setResultsRead({
+        tournamentId,
+        data: [],
+        loading: false,
+        error: 'Could Not Load These Standings. Please Retry.',
+      });
     }
   };
 
@@ -462,31 +524,46 @@ export default function TournamentResultsPage() {
    * the tables, which have RLS on with no select policy.
    */
   const loadMysteryBounty = async () => {
+    const request = ++mysteryRequestRef.current;
     const t = selectedTournament;
-    if (!t || !t.is_mystery_bounty) {
-      setMysteryBoard([]);
-      setMysteryTotals(new Map());
-      return;
-    }
+    const tournamentId = t?.id ?? null;
+    setMysteryRead({
+      tournamentId,
+      data: { board: [], totals: new Map() },
+      loading: Boolean(t?.is_mystery_bounty),
+      error: null,
+    });
+    if (!t?.is_mystery_bounty) return;
     try {
       const [board, awards] = await Promise.all([
         MysteryBountyService.getLeaderboard(t.id),
         MysteryBountyService.getAllAwards(t.id),
       ]);
-      if (!isMounted.current) return;
-      setMysteryBoard(board);
-      setMysteryTotals(playerTotalsFromAwards(awards.rows));
+      if (!isMounted.current || request !== mysteryRequestRef.current) return;
+      setMysteryRead({
+        tournamentId,
+        data: { board, totals: playerTotalsFromAwards(awards.rows) },
+        loading: false,
+        error: null,
+      });
     } catch (err) {
+      if (!isMounted.current || request !== mysteryRequestRef.current) return;
       reportError(err, 'TournamentResultsPage.loadMysteryBounty_error');
+      setMysteryRead({
+        tournamentId,
+        data: { board: [], totals: new Map() },
+        loading: false,
+        error: 'Could Not Load These Mystery Awards. Please Retry.',
+      });
     }
   };
 
   // Load hand history for selected tournament
   const loadHandHistory = async () => {
-    if (!selectedTournament) {
-      setHandHistory([]);
-      return;
-    }
+    const request = ++handsRequestRef.current;
+    const tournamentId = selectedTournament?.id ?? null;
+    setHandsRead({ tournamentId, data: [], loading: Boolean(tournamentId), error: null });
+    if (!tournamentId) return;
 
     try {
       // ROUND 10 (2026-08-29): same shape - a resolved error read as "no
@@ -496,14 +573,28 @@ export default function TournamentResultsPage() {
         .select(
           'id, hand_number, small_blind, big_blind, pot_size, game_variant, community_cards, winners, players, created_at'
         )
-        .eq('tournament_id', selectedTournament!.id)
+        .eq('tournament_id', tournamentId)
         .order('hand_number', { ascending: false })
         .limit(100);
       if (handsErr) throw handsErr;
 
-      if (isMounted.current) setHandHistory((data || []) as HandHistoryRecord[]);
+      if (isMounted.current && request === handsRequestRef.current) {
+        setHandsRead({
+          tournamentId,
+          data: (data || []) as HandHistoryRecord[],
+          loading: false,
+          error: null,
+        });
+      }
     } catch (err) {
+      if (!isMounted.current || request !== handsRequestRef.current) return;
       reportError(err, 'TournamentResultsPage.loadHandHistory_error');
+      setHandsRead({
+        tournamentId,
+        data: [],
+        loading: false,
+        error: 'Could Not Load These Hands. Please Retry.',
+      });
     }
   };
 
@@ -531,11 +622,12 @@ export default function TournamentResultsPage() {
   useEffect(() => {
     if (results.length === 0) return;
     setVisibleResults(new Set());
-    results.forEach((result, index) => {
+    const timers = results.map((result, index) =>
       setTimeout(() => {
         setVisibleResults((prev) => new Set(prev).add(result.user_id));
-      }, index * 60);
-    });
+      }, index * 60)
+    );
+    return () => timers.forEach(clearTimeout);
   }, [results]);
 
   // Subscribe to tournament results/standings updates
@@ -616,22 +708,15 @@ export default function TournamentResultsPage() {
     return `${pos}th`;
   };
 
-  /* ═══════════════════════════════════════════════════════════════════════
-     `formatAmount` LIVED HERE AND IS GONE (2026-09-09)
-     ═══════════════════════════════════════════════════════════════════════
-
-     It was `Math.trunc(n * 100) / 100` — a second money formatter, TRUNCATING,
-     sitting in the same standings row as the exact `formatCents` this page
-     already imports. Because `bounty_winnings` INCLUDES the mystery chest
-     money, one row printed both: the Mystery sub-line read 22.05 from
-     `formatCents(mysteryCents)` while the Bounty column beside it read 22.04
-     from the truncation of the same money. The Total column stacked a second
-     deficit on top, since `totalPayout` adds two binary floats and this then
-     truncated the sum.
-
-     Every figure on this page now formats the way MysteryBountyPanel.tsx:478
-     already did: convert to INTEGER CENTS first, then `formatCents`. There is
-     one money formatter on this page, and it is the exact one. */
+  /* MONEY IS FORMATTED FROM INTEGER CENTS, ON EVERY COLUMN OF EVERY ROW.
+     This was `Math.trunc(n * 100) / 100`, which drops a cent whenever `n * 100`
+     lands just below its integer - the production case `payoutMath.ts` records.
+     It mattered here because `formatCents` is used in the SAME ROW for the
+     mystery sub-line, and `bounty_winnings` INCLUDES that chest money: a player
+     whose bounty money was all chests could read 22.05 on the Mystery line and
+     22.04 in the Bounty column beside it. `formatCents` is the exact one
+     (integer cents, one division) and is now the only one. */
+  const formatAmount = (n: number) => formatCents(Math.round(n * 100));
 
   const getVariantLabel = (t: CompletedTournament) => {
     if (t.is_xmtt) return 'XMTT';
@@ -681,6 +766,7 @@ export default function TournamentResultsPage() {
       }}
     >
       <CasinoSurfaceHeader
+        crest="vip"
         eyebrow="Play & Review / Results"
         title="Tournament Archive"
         description="Inspect Completed Fields, Standings, Total Payouts, Bounty Awards, Spin Outcomes, And Recorded Hands Without Flattening Format-Specific Results."
@@ -851,7 +937,8 @@ export default function TournamentResultsPage() {
                   {h.winnerName}
                 </div>
                 <div style={{ fontSize: '11px', color: '#64748b' }}>
-                  Won {h.prize.toLocaleString()} On A {h.buyIn.toLocaleString()} Spin
+                  {h.prize === null ? 'Prize Not Confirmed' : `Won ${h.prize.toLocaleString()}`} On
+                  A {h.buyIn.toLocaleString()} Spin
                 </div>
               </div>
             ))}
@@ -943,6 +1030,10 @@ export default function TournamentResultsPage() {
         <div style={{ textAlign: 'center', color: '#64748b', padding: '40px' }}>
           Loading Results...
         </div>
+      ) : listError ? (
+        <div role="alert">
+          {listError} <button onClick={() => void loadTournaments()}>Retry Results</button>
+        </div>
       ) : tournaments.length === 0 ? (
         <div style={{ textAlign: 'center', color: '#64748b', padding: '40px' }}>
           No Completed Tournaments Found
@@ -1013,7 +1104,7 @@ export default function TournamentResultsPage() {
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ color: '#10b981', fontSize: '14px', fontWeight: 600 }}>
-                    {formatCents(Math.round(t.prize_pool * 100))} Prize Pool
+                    {formatAmount(t.prize_pool)} Prize Pool
                   </div>
                   <div style={{ color: '#64748b', fontSize: '11px' }}>
                     {t.current_players} Entries · {formatDuration(t.started_at, t.ended_at)}
@@ -1022,311 +1113,343 @@ export default function TournamentResultsPage() {
               </div>
 
               <div style={{ color: '#475569', fontSize: '11px' }}>
-                Buy-In: {formatCents(Math.round(t.buy_in_amount * 100))} +{' '}
-                {formatCents(Math.round(t.buy_in_fee * 100))} · Entries: {t.current_players} ·
-                Duration: {formatDuration(t.started_at, t.ended_at)} · Ended:{' '}
+                Buy-In: {formatAmount(t.buy_in_amount)} + {formatAmount(t.buy_in_fee)} · Entries:{' '}
+                {t.current_players} · Duration: {formatDuration(t.started_at, t.ended_at)} · Ended:{' '}
                 {t.ended_at ? new Date(t.ended_at).toLocaleDateString() : '-'}
               </div>
 
-              {/* Expanded Results — Tabs */}
-              {selectedTournament?.id === t.id &&
-                (results.length > 0 || handHistory.length > 0) && (
-                  <div
-                    style={{
-                      marginTop: '12px',
-                      borderTop: '1px solid #1e293b',
-                      paddingTop: '12px',
-                    }}
-                  >
-                    {/* Tab Buttons */}
-                    <div style={{ display: 'flex', gap: '4px', marginBottom: '12px' }}>
-                      <button
-                        onClick={() => setActiveTab('standings')}
-                        style={{
-                          padding: '6px 12px',
-                          borderRadius: '6px',
-                          border: 'none',
-                          fontSize: '12px',
-                          cursor: 'pointer',
-                          background: activeTab === 'standings' ? '#10b981' : '#1e293b',
-                          color: activeTab === 'standings' ? '#000' : '#94a3b8',
-                          fontWeight: activeTab === 'standings' ? 600 : 400,
-                        }}
-                      >
-                        Standings
-                      </button>
-                      <button
-                        onClick={() => setActiveTab('hands')}
-                        style={{
-                          padding: '6px 12px',
-                          borderRadius: '6px',
-                          border: 'none',
-                          fontSize: '12px',
-                          cursor: 'pointer',
-                          background: activeTab === 'hands' ? '#10b981' : '#1e293b',
-                          color: activeTab === 'hands' ? '#000' : '#94a3b8',
-                          fontWeight: activeTab === 'hands' ? 600 : 400,
-                        }}
-                      >
-                        Hand History ({handHistory.length})
-                      </button>
-                    </div>
+              {selectedTournament?.id === t.id && activeTab === 'standings' && (
+                <div onClick={(event) => event.stopPropagation()}>
+                  <TournamentPaymentStatus tournamentId={t.id} />
+                </div>
+              )}
 
-                    {/* Standings Tab */}
-                    {activeTab === 'standings' && results.length > 0 && (
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: 8,
-                          flexWrap: 'wrap',
-                          marginBottom: '8px',
-                        }}
-                      >
-                        <div style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 600 }}>
-                          Final Standings
-                        </div>
-                        {/* Sections 42 and 44: the money order is a real view,
+              {/* Expanded Results — Tabs */}
+              {selectedTournament?.id === t.id && (
+                <div
+                  onClick={(event) => event.stopPropagation()}
+                  style={{
+                    marginTop: '12px',
+                    borderTop: '1px solid #1e293b',
+                    paddingTop: '12px',
+                  }}
+                >
+                  {/* Tab Buttons */}
+                  <div style={{ display: 'flex', gap: '4px', marginBottom: '12px' }}>
+                    <button
+                      onClick={() => setActiveTab('standings')}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                        background: activeTab === 'standings' ? '#10b981' : '#1e293b',
+                        color: activeTab === 'standings' ? '#000' : '#94a3b8',
+                        fontWeight: activeTab === 'standings' ? 600 : 400,
+                      }}
+                    >
+                      Standings
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('hands')}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                        background: activeTab === 'hands' ? '#10b981' : '#1e293b',
+                        color: activeTab === 'hands' ? '#000' : '#94a3b8',
+                        fontWeight: activeTab === 'hands' ? 600 : 400,
+                      }}
+                    >
+                      Hand History ({handHistory.length})
+                    </button>
+                  </div>
+
+                  {activeTab === 'standings' &&
+                    (resultsRead.tournamentId !== t.id || resultsRead.loading) && (
+                      <p role="status">Loading Standings...</p>
+                    )}
+                  {activeTab === 'standings' &&
+                    resultsRead.tournamentId === t.id &&
+                    resultsRead.error && (
+                      <div role="alert">
+                        {resultsRead.error}{' '}
+                        <button onClick={() => void loadResults()}>Retry Standings</button>
+                      </div>
+                    )}
+                  {activeTab === 'standings' &&
+                    resultsRead.tournamentId === t.id &&
+                    !resultsRead.loading &&
+                    !resultsRead.error &&
+                    results.length === 0 && <p>No Standings Recorded Yet.</p>}
+                  {activeTab === 'standings' &&
+                    mysteryRead.tournamentId === t.id &&
+                    mysteryRead.error && (
+                      <div role="alert">
+                        {mysteryRead.error}{' '}
+                        <button onClick={() => void loadMysteryBounty()}>
+                          Retry Mystery Awards
+                        </button>
+                      </div>
+                    )}
+                  {activeTab === 'hands' &&
+                    (handsRead.tournamentId !== t.id || handsRead.loading) && (
+                      <p role="status">Loading Hands...</p>
+                    )}
+                  {activeTab === 'hands' && handsRead.tournamentId === t.id && handsRead.error && (
+                    <div role="alert">
+                      {handsRead.error}{' '}
+                      <button onClick={() => void loadHandHistory()}>Retry Hands</button>
+                    </div>
+                  )}
+
+                  {/* Standings Tab */}
+                  {activeTab === 'standings' && results.length > 0 && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 8,
+                        flexWrap: 'wrap',
+                        marginBottom: '8px',
+                      }}
+                    >
+                      <div style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 600 }}>
+                        Final Standings
+                      </div>
+                      {/* Sections 42 and 44: the money order is a real view,
                             not a footnote, because in a bounty event it is
                             frequently not the same order as the finish. */}
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          {(['finish', 'total'] as ResultSort[]).map((s) => (
-                            <button
-                              key={s}
-                              onClick={() => setResultSort(s)}
-                              style={{
-                                padding: '4px 10px',
-                                borderRadius: 6,
-                                border: 'none',
-                                fontSize: 11,
-                                cursor: 'pointer',
-                                minHeight: 32,
-                                touchAction: 'manipulation',
-                                background: resultSort === s ? '#3b82f6' : '#1e293b',
-                                color: resultSort === s ? '#fff' : '#64748b',
-                              }}
-                            >
-                              {s === 'finish' ? 'By Finish' : 'By Total Payout'}
-                            </button>
-                          ))}
-                        </div>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        {(['finish', 'total'] as ResultSort[]).map((s) => (
+                          <button
+                            key={s}
+                            onClick={() => setResultSort(s)}
+                            style={{
+                              padding: '4px 10px',
+                              borderRadius: 6,
+                              border: 'none',
+                              fontSize: 11,
+                              cursor: 'pointer',
+                              minHeight: 32,
+                              touchAction: 'manipulation',
+                              background: resultSort === s ? '#3b82f6' : '#1e293b',
+                              color: resultSort === s ? '#fff' : '#64748b',
+                            }}
+                          >
+                            {s === 'finish' ? 'By Finish' : 'By Total Payout'}
+                          </button>
+                        ))}
                       </div>
-                    )}
-                    {/* Section 44: say it out loud when the champion was not the
+                    </div>
+                  )}
+                  {/* Section 44: say it out loud when the champion was not the
                         biggest earner, rather than leaving a reader to notice. */}
-                    {activeTab === 'standings' && championWasOutEarned && topEarner && (
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: '#6fdcff',
-                          border: '1px solid rgba(111,220,255,0.35)',
-                          background: 'rgba(111,220,255,0.08)',
-                          borderRadius: 6,
-                          padding: '6px 8px',
-                          marginBottom: 8,
-                        }}
-                      >
-                        Biggest Total Payout: {topEarner.username} (
-                        {getOrdinalPosition(topEarner.position)}) With{' '}
-                        {formatCents(
-                          Math.round(topEarner.prize * 100) +
-                            Math.round(topEarner.bounty_winnings * 100)
-                        )}
-                        , More Than The Champion
-                      </div>
-                    )}
-                    {/* Column key. Kept above the rows because every row is a
+                  {activeTab === 'standings' && championWasOutEarned && topEarner && (
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: '#6fdcff',
+                        border: '1px solid rgba(111,220,255,0.35)',
+                        background: 'rgba(111,220,255,0.08)',
+                        borderRadius: 6,
+                        padding: '6px 8px',
+                        marginBottom: 8,
+                      }}
+                    >
+                      Biggest Total Payout: {topEarner.username} (
+                      {getOrdinalPosition(topEarner.position)}) With{' '}
+                      {formatAmount(totalPayout(topEarner))}, More Than The Champion
+                    </div>
+                  )}
+                  {/* Column key. Kept above the rows because every row is a
                         four-number line and a phone has no room for headers on
                         each one. */}
-                    {activeTab === 'standings' && results.length > 0 && (
-                      <div
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: 'minmax(0,1fr) 62px 46px 62px 68px',
-                          gap: 6,
-                          fontSize: 9,
-                          color: '#475569',
-                          textTransform: 'uppercase',
-                          letterSpacing: 0.4,
-                          padding: '0 8px 4px',
-                        }}
-                      >
-                        <span>Finish And Player</span>
-                        <span style={{ textAlign: 'right' }}>Prize</span>
-                        <span style={{ textAlign: 'right' }}>KOs</span>
-                        <span style={{ textAlign: 'right' }}>Bounty</span>
-                        <span style={{ textAlign: 'right' }}>Total</span>
-                      </div>
-                    )}
-                    {activeTab === 'standings' && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        {sortedResults.map((r) => {
-                          const isMe = r.user_id === user?.id;
-                          const posColor =
-                            r.position === 1
-                              ? '#6fdcff'
-                              : r.position === 2
-                                ? '#94a3b8'
-                                : r.position === 3
-                                  ? '#d97706'
-                                  : '#475569';
-                          const total = totalPayout(r);
-                          /* The four money columns of this row are summed and
-                             printed in INTEGER CENTS. `totalPayout` adds two
-                             binary floats, which is fine for the "did anyone
-                             out-earn the champion" comparisons it feeds, and
-                             not fine for a number a player reads beside
-                             `formatCents(mysteryCents)`. */
-                          const prizeCents = Math.round(r.prize * 100);
-                          const bountyCents = Math.round(r.bounty_winnings * 100);
-                          const totalCents = prizeCents + bountyCents;
-                          /* The server's own aggregate first (section 69);
+                  {activeTab === 'standings' && results.length > 0 && (
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'minmax(0,1fr) 62px 46px 62px 68px',
+                        gap: 6,
+                        fontSize: 9,
+                        color: '#475569',
+                        textTransform: 'uppercase',
+                        letterSpacing: 0.4,
+                        padding: '0 8px 4px',
+                      }}
+                    >
+                      <span>Finish And Player</span>
+                      <span style={{ textAlign: 'right' }}>Prize</span>
+                      <span style={{ textAlign: 'right' }}>KOs</span>
+                      <span style={{ textAlign: 'right' }}>Bounty</span>
+                      <span style={{ textAlign: 'right' }}>Total</span>
+                    </div>
+                  )}
+                  {activeTab === 'standings' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      {sortedResults.map((r) => {
+                        const isMe = r.user_id === user?.id;
+                        const posColor =
+                          r.position === 1
+                            ? '#6fdcff'
+                            : r.position === 2
+                              ? '#94a3b8'
+                              : r.position === 3
+                                ? '#d97706'
+                                : '#475569';
+                        const total = totalPayout(r);
+                        /* The server's own aggregate first (section 69);
                                the award-derived totals supply the one thing it
                                cannot know, the LARGEST single chest. */
-                          const awardTotals = mysteryTotals.get(r.user_id);
-                          const boardRow = mysteryBoardByUser.get(r.user_id);
-                          const mysteryCount =
-                            boardRow?.bountiesWon ?? awardTotals?.bountiesWon ?? 0;
-                          const mysteryCents =
-                            boardRow?.earningsCents ?? awardTotals?.earningsCents ?? 0;
-                          const mysteryLargest = awardTotals?.largestCents ?? 0;
-                          const isTopEarner =
-                            !!topEarner && topEarner.user_id === r.user_id && total > 0;
-                          /* Sections 42 and 44 in one grid: the four money
+                        const awardTotals = mysteryTotals.get(r.user_id);
+                        const boardRow = mysteryBoardByUser.get(r.user_id);
+                        const mysteryCount = boardRow?.bountiesWon ?? awardTotals?.bountiesWon ?? 0;
+                        const mysteryCents =
+                          boardRow?.earningsCents ?? awardTotals?.earningsCents ?? 0;
+                        const mysteryLargest = awardTotals?.largestCents ?? 0;
+                        const isTopEarner =
+                          !!topEarner && topEarner.user_id === r.user_id && total > 0;
+                        /* Sections 42 and 44 in one grid: the four money
                                columns are separate and the TOTAL is the widest
                                and the brightest, so a 14th place with a jackpot
                                reads as the bigger night that it was. */
-                          const rowStyle: CSSProperties = {
-                            display: 'grid',
-                            gridTemplateColumns: 'minmax(0,1fr) 62px 46px 62px 68px',
-                            gap: 6,
-                            alignItems: 'center',
-                            padding: '6px 8px',
-                            borderRadius: '6px',
-                            background: isMe
-                              ? 'rgba(16, 185, 129, 0.1)'
-                              : isTopEarner
-                                ? 'rgba(111, 220, 255, 0.07)'
-                                : 'transparent',
-                            border: isMe
-                              ? '1px solid rgba(16, 185, 129, 0.3)'
-                              : isTopEarner
-                                ? '1px solid rgba(111, 220, 255, 0.3)'
-                                : '1px solid transparent',
-                          };
-                          return (
-                            <div
-                              key={r.user_id}
-                              className={`${visibleResults.has(r.user_id) ? 'fadeInUp' : 'hidden'}`}
-                              style={
-                                visibleResults.has(r.user_id)
-                                  ? rowStyle
-                                  : { ...rowStyle, opacity: 0, transform: 'translateY(8px)' }
-                              }
-                            >
-                              <div style={{ minWidth: 0 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  <span
-                                    style={{
-                                      color: posColor,
-                                      fontSize: '13px',
-                                      fontWeight: 700,
-                                      minWidth: '28px',
-                                    }}
-                                  >
-                                    {getOrdinalPosition(r.position)}
-                                  </span>
-                                  <span
-                                    style={{
-                                      color: isMe ? '#10b981' : '#cbd5e1',
-                                      fontSize: '13px',
-                                      overflowWrap: 'anywhere',
-                                      minWidth: 0,
-                                    }}
-                                  >
-                                    {r.username}
-                                    {isMe && (
-                                      <span
-                                        style={{
-                                          fontSize: '10px',
-                                          color: '#10b981',
-                                          marginLeft: '4px',
-                                        }}
-                                      >
-                                        (You)
-                                      </span>
-                                    )}
-                                  </span>
-                                </div>
-                                {/* Section 37: the MYSTERY share of the bounty
+                        const rowStyle: CSSProperties = {
+                          display: 'grid',
+                          gridTemplateColumns: 'minmax(0,1fr) 62px 46px 62px 68px',
+                          gap: 6,
+                          alignItems: 'center',
+                          padding: '6px 8px',
+                          borderRadius: '6px',
+                          background: isMe
+                            ? 'rgba(16, 185, 129, 0.1)'
+                            : isTopEarner
+                              ? 'rgba(111, 220, 255, 0.07)'
+                              : 'transparent',
+                          border: isMe
+                            ? '1px solid rgba(16, 185, 129, 0.3)'
+                            : isTopEarner
+                              ? '1px solid rgba(111, 220, 255, 0.3)'
+                              : '1px solid transparent',
+                        };
+                        return (
+                          <div
+                            key={r.user_id}
+                            className={`${visibleResults.has(r.user_id) ? 'fadeInUp' : 'hidden'}`}
+                            style={
+                              visibleResults.has(r.user_id)
+                                ? rowStyle
+                                : { ...rowStyle, opacity: 0, transform: 'translateY(8px)' }
+                            }
+                          >
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span
+                                  style={{
+                                    color: posColor,
+                                    fontSize: '13px',
+                                    fontWeight: 700,
+                                    minWidth: '28px',
+                                  }}
+                                >
+                                  {getOrdinalPosition(r.position)}
+                                </span>
+                                <span
+                                  style={{
+                                    color: isMe ? '#10b981' : '#cbd5e1',
+                                    fontSize: '13px',
+                                    overflowWrap: 'anywhere',
+                                    minWidth: 0,
+                                  }}
+                                >
+                                  {r.username}
+                                  {isMe && (
+                                    <span
+                                      style={{
+                                        fontSize: '10px',
+                                        color: '#10b981',
+                                        marginLeft: '4px',
+                                      }}
+                                    >
+                                      (You)
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
+                              {/* Section 37: the MYSTERY share of the bounty
                                       column, broken out where there is one. The
                                       rest of the bounty column is the flat
                                       bounty paid before the chests opened. */}
-                                {mysteryCents > 0 && (
-                                  <div
-                                    style={{
-                                      fontSize: 10,
-                                      color: '#6fdcff',
-                                      marginTop: 2,
-                                      overflowWrap: 'anywhere',
-                                    }}
-                                  >
-                                    {mysteryCount.toLocaleString('en-US')} Mystery (
-                                    {formatCents(mysteryCents)}), Largest{' '}
-                                    {formatCents(mysteryLargest)}
-                                  </div>
-                                )}
-                              </div>
-                              <span
-                                style={{
-                                  color: r.prize > 0 ? '#10b981' : '#475569',
-                                  fontSize: '12px',
-                                  fontWeight: r.prize > 0 ? 600 : 400,
-                                  textAlign: 'right',
-                                }}
-                              >
-                                {r.prize > 0 ? formatCents(prizeCents) : '-'}
-                              </span>
-                              <span
-                                style={{
-                                  color: r.bounties_collected > 0 ? '#cbd5e1' : '#475569',
-                                  fontSize: '12px',
-                                  textAlign: 'right',
-                                }}
-                              >
-                                {r.bounties_collected > 0
-                                  ? r.bounties_collected.toLocaleString('en-US')
-                                  : '-'}
-                              </span>
-                              <span
-                                style={{
-                                  color: r.bounty_winnings > 0 ? '#6fdcff' : '#475569',
-                                  fontSize: '12px',
-                                  fontWeight: r.bounty_winnings > 0 ? 600 : 400,
-                                  textAlign: 'right',
-                                }}
-                              >
-                                {r.bounty_winnings > 0 ? formatCents(bountyCents) : '-'}
-                              </span>
-                              <span
-                                style={{
-                                  color: total > 0 ? '#10b981' : '#475569',
-                                  fontSize: '13px',
-                                  fontWeight: 800,
-                                  textAlign: 'right',
-                                }}
-                              >
-                                {total > 0 ? formatCents(totalCents) : '-'}
-                              </span>
+                              {mysteryCents > 0 && (
+                                <div
+                                  style={{
+                                    fontSize: 10,
+                                    color: '#6fdcff',
+                                    marginTop: 2,
+                                    overflowWrap: 'anywhere',
+                                  }}
+                                >
+                                  {mysteryCount.toLocaleString('en-US')} Mystery (
+                                  {formatCents(mysteryCents)}), Largest{' '}
+                                  {formatCents(mysteryLargest)}
+                                </div>
+                              )}
                             </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                            <span
+                              style={{
+                                color: r.prize > 0 ? '#10b981' : '#475569',
+                                fontSize: '12px',
+                                fontWeight: r.prize > 0 ? 600 : 400,
+                                textAlign: 'right',
+                              }}
+                            >
+                              {r.prize > 0 ? formatAmount(r.prize) : '-'}
+                            </span>
+                            <span
+                              style={{
+                                color: r.bounties_collected > 0 ? '#cbd5e1' : '#475569',
+                                fontSize: '12px',
+                                textAlign: 'right',
+                              }}
+                            >
+                              {r.bounties_collected > 0
+                                ? r.bounties_collected.toLocaleString('en-US')
+                                : '-'}
+                            </span>
+                            <span
+                              style={{
+                                color: r.bounty_winnings > 0 ? '#6fdcff' : '#475569',
+                                fontSize: '12px',
+                                fontWeight: r.bounty_winnings > 0 ? 600 : 400,
+                                textAlign: 'right',
+                              }}
+                            >
+                              {r.bounty_winnings > 0 ? formatAmount(r.bounty_winnings) : '-'}
+                            </span>
+                            <span
+                              style={{
+                                color: total > 0 ? '#10b981' : '#475569',
+                                fontSize: '13px',
+                                fontWeight: 800,
+                                textAlign: 'right',
+                              }}
+                            >
+                              {total > 0 ? formatAmount(total) : '-'}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
 
-                    {/* Hand History Tab */}
-                    {activeTab === 'hands' && (
+                  {/* Hand History Tab */}
+                  {activeTab === 'hands' &&
+                    handsRead.tournamentId === t.id &&
+                    !handsRead.loading &&
+                    !handsRead.error && (
                       <div
                         style={{
                           display: 'flex',
@@ -1375,7 +1498,7 @@ export default function TournamentResultsPage() {
                               </div>
                               <div style={{ color: '#94a3b8', fontSize: '10px' }}>
                                 {hand.game_variant} · {hand.small_blind}/{hand.big_blind} · Pot:{' '}
-                                {formatCents(Math.round(hand.pot_size * 100))}
+                                {formatAmount(hand.pot_size)}
                               </div>
                               {hand.winners.length > 0 && (
                                 <div
@@ -1389,8 +1512,8 @@ export default function TournamentResultsPage() {
                         )}
                       </div>
                     )}
-                  </div>
-                )}
+                </div>
+              )}
             </div>
           ))}
         </div>

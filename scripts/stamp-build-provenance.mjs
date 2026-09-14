@@ -3,7 +3,8 @@
  * stamp-build-provenance.mjs — LAYER 1 of the anti-regression system
  * ═══════════════════════════════════════════════════════════════════════════
  * Writes dist/ca-provenance.json describing WHERE this build came from, so the
- * World Hub can refuse a bundle that would move production BACKWARDS.
+ * Club Arena publisher can refuse a bundle that would move production
+ * BACKWARDS.
  *
  * WHY THIS EXISTS (2026-08-21)
  * Production silently lost the 49-item dynamic throwables. Nothing was
@@ -38,7 +39,7 @@
  */
 
 import { execSync } from 'node:child_process';
-import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { writeFileSync, mkdirSync, existsSync, readFileSync, lstatSync } from 'node:fs';
 import path from 'node:path';
 
 // CA_DIST: the native build (npm run build:native) writes dist-native/ so the
@@ -73,16 +74,75 @@ const dirty = git('status --porcelain', '') !== '';
 // In CI the checkout is detached with a fetched origin/main, so this is
 // usually available on both sides.
 const hasOriginMain = git('rev-parse --verify --quiet origin/main', '') !== '';
-const behindMain = hasOriginMain ? gitCount('HEAD..origin/main') : null;
-const aheadMain = hasOriginMain ? gitCount('origin/main..HEAD') : null;
+// rev-list treats shallow boundaries as roots. Even a merge of current main
+// can then appear to be thousands of commits behind it on a reused runner.
+const shallowRepository = git('rev-parse --is-shallow-repository', 'unknown');
+const historyComplete =
+  shallowRepository === 'false' ? true : shallowRepository === 'true' ? false : null;
+const behindMain = hasOriginMain && historyComplete ? gitCount('HEAD..origin/main') : null;
+const aheadMain = hasOriginMain && historyComplete ? gitCount('origin/main..HEAD') : null;
+
+function isPullRequestValidation() {
+  if (process.env.CA_BUILD_PURPOSE !== 'ci-validation') return false;
+  if (process.env.GITHUB_ACTIONS !== 'true' || process.env.GITHUB_EVENT_NAME !== 'pull_request')
+    throw new Error('Invalid PR build validation identity');
+  const repository = 'Smarter-Poker/Smarter-Poker-Club-Arena';
+  const ref = process.env.GITHUB_REF || '';
+  const match = /^refs\/pull\/([1-9][0-9]*)\/merge$/.exec(ref);
+  const eventPath = process.env.GITHUB_EVENT_PATH || '';
+  const fail = () => {
+    throw new Error('Invalid PR build validation identity');
+  };
+  if (
+    !match ||
+    process.env.GITHUB_REPOSITORY !== repository ||
+    process.env.GITHUB_WORKFLOW_REF !== `${repository}/.github/workflows/ci.yml@${ref}` ||
+    !/^[0-9a-f]{40}$/.test(commit) ||
+    process.env.GITHUB_SHA !== commit ||
+    !path.isAbsolute(eventPath) ||
+    historyComplete !== true
+  )
+    fail();
+  const stat = lstatSync(eventPath);
+  if (!stat.isFile() || stat.size <= 0 || stat.size > 4 * 1024 * 1024) fail();
+  const event = JSON.parse(readFileSync(eventPath, 'utf8'));
+  const pr = event.pull_request;
+  if (
+    !pr ||
+    event.number !== Number(match[1]) ||
+    pr.number !== event.number ||
+    pr.base?.ref !== 'main' ||
+    pr.base?.repo?.full_name !== repository ||
+    !/^[0-9a-f]{40}$/.test(pr.base?.sha || '') ||
+    !/^[0-9a-f]{40}$/.test(pr.head?.sha || '')
+  )
+    fail();
+  const parents = git('rev-list --parents -n 1 HEAD', '').split(/\s+/);
+  if (
+    parents.length !== 3 ||
+    parents[0] !== commit ||
+    parents[2] !== pr.head.sha ||
+    !/^[0-9a-f]{40}$/.test(parents[1]) ||
+    git(`merge-base --is-ancestor ${pr.base.sha} ${parents[1]}`, null) !== '' ||
+    git(`merge-base --is-ancestor ${parents[1]} origin/main`, null) !== ''
+  )
+    fail();
+  return true;
+}
+
+// CI validates the captured merge even if main advances; publishers refuse
+// this explicit marker and retain all existing protected-main ancestry gates.
+const validationOnly = isPullRequestValidation();
 
 const info = {
   schema: 1,
+  validationOnly,
   commit,
   commitTime,
   buildTime: new Date().toISOString(),
   branch,
   dirty,
+  historyComplete,
   behindMain,
   aheadMain,
   ciRun:
@@ -108,17 +168,32 @@ console.log(
 // A build from a checkout that is behind canonical main is exactly the
 // regression that happened. Refuse it outright in CI, and warn loudly
 // locally (where a developer may legitimately be testing an older tree but
-// must never SHIP it — the World Hub gate is the backstop either way).
+// must never ship it — the Club Arena publisher is the backstop either way).
+const strictProvenance = process.env.GITHUB_ACTIONS || process.env.STRICT_PROVENANCE === '1';
+if (commit !== 'unknown' && historyComplete !== true) {
+  const msg =
+    '\n✗ Build ancestry cannot be verified: incomplete Git history.\n' +
+    '  FIX: fetch full history (actions/checkout fetch-depth: 0), then rebuild.\n';
+  if (strictProvenance) {
+    console.error(msg);
+    process.exit(1);
+  }
+  console.warn(msg);
+}
 const BEHIND_LIMIT = 0;
 if (typeof behindMain === 'number' && behindMain > BEHIND_LIMIT) {
   const msg =
     `\n✗ This build is ${behindMain} commit(s) BEHIND origin/main.\n` +
     `  Shipping it would erase whatever landed in those commits — that is\n` +
     `  precisely the 2026-08-21 throwables regression.\n\n` +
-    `  FIX: git pull --rebase origin main, then rebuild.\n`;
-  if (process.env.GITHUB_ACTIONS || process.env.STRICT_PROVENANCE === '1') {
+    `  FIX: merge current origin/main into this feature branch, then rebuild.\n`;
+  if (strictProvenance && !validationOnly) {
     console.error(msg);
-    console.log("bypassed");
+    process.exit(1);
   }
-  console.warn(msg);
+  console.warn(
+    validationOnly
+      ? `CI validation captured ${behindMain} later main commit(s); this bundle cannot be published.`
+      : msg
+  );
 }

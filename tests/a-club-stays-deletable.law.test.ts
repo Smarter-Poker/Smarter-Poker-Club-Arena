@@ -36,7 +36,8 @@
  * The rules this pins:
  *
  *   - every single-column foreign key into clubs has an index that can answer it,
- *     and the question is asked of production - not of a manifest - on every PR;
+ *     and trusted default-branch code asks production after every successful
+ *     publish rather than handing production credentials to pull-request code;
  *   - "has an index" means valid, non-partial, and leading on the referencing
  *     column, because the other definition is the one that was already wrong;
  *   - the question is a read-only RPC, service_role only, that nothing schedules;
@@ -60,6 +61,10 @@ function read(fragment: string): string {
 const INDEXES = read('a_club_cannot_be_deleted_in_time');
 const GAPS = read('the_repo_can_ask_production_whether_a_club_is_still_deletable');
 const GATE = readFileSync(resolve(__dirname, '..', 'scripts/ci/check-club-fk-indexes.mjs'), 'utf8');
+const POST_DEPLOY = readFileSync(
+  resolve(__dirname, '..', '.github/workflows/post-deploy-e2e.yml'),
+  'utf8'
+);
 
 const CLOSED: Array<[string, string]> = [
   ['idx_game_management_events_club_id', 'public.game_management_events'],
@@ -131,10 +136,28 @@ describe('a club stays deletable', () => {
     expect(GAPS).not.toContain('fn_ca_raise_drift_incident');
   });
 
-  it('is asked on a pull request, against production, and fails the branch', () => {
+  it('is asked read-only after every successful publish from trusted default-branch code', () => {
     expect(GATE).toContain('fn_ca_fk_index_gaps');
     expect(GATE).toContain("const PARENTS = ['public.clubs']");
     expect(GATE).toContain('process.exit(1)');
     expect(GATE).toContain('SUPABASE_SERVICE_ROLE_KEY');
+    expect(POST_DEPLOY).toContain("workflows: ['Publish Club Arena']");
+    expect(POST_DEPLOY).toContain('node scripts/ci/check-club-fk-indexes.mjs');
+    const liveSchemaStep = POST_DEPLOY.slice(
+      POST_DEPLOY.indexOf('- name: Prove every club foreign key remains deletable'),
+      POST_DEPLOY.indexOf('- name: Audit the remaining live schema from trusted code')
+    );
+    expect(liveSchemaStep).not.toMatch(/^\s*if:/m);
+    expect(liveSchemaStep).toContain('node scripts/ci/check-club-fk-indexes.mjs');
+    expect(POST_DEPLOY.indexOf('node scripts/ci/check-club-fk-indexes.mjs')).toBeLessThan(
+      POST_DEPLOY.indexOf('node scripts/ci/check-phantom-tables.mjs')
+    );
+  });
+
+  it('refuses malformed RPC data instead of translating it to zero gaps', () => {
+    expect(GATE).toContain("keys.join(',') === 'checked_at,gaps,parent'");
+    expect(GATE).toContain('answer.parent === parent');
+    expect(GATE).toContain('Array.isArray(answer.gaps)');
+    expect(GATE).not.toContain('answer.gaps || []');
   });
 });

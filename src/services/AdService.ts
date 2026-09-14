@@ -61,11 +61,48 @@ export interface HouseAd {
    */
   advertiserKind: 'house' | 'club' | 'sponsor';
   advertiserName: string | null;
+  /**
+   * The picture the full-screen popup shows when the advert is tapped (Dan
+   * 2026-09-13). A 3:4 poster where the campaign has one; otherwise the
+   * resolver falls back to the surface creative, so this is never null when
+   * imageUrl is not. Same-origin, same three locks.
+   */
+  posterUrl: string | null;
 }
 
 /** Only these labels exist; an unknown kind from the wire is treated as a sponsor, never as the house. */
 export function readAdvertiserKind(v: unknown): HouseAd['advertiserKind'] {
   return v === 'house' || v === 'club' ? v : 'sponsor';
+}
+
+/**
+ * WHERE A SPONSOR'S CLICK GOES, AND WHY IT STILL LOOKS LIKE A LOCAL PATH.
+ *
+ * A sponsor advertises in order to send a player to their OWN site, and every
+ * destination in this system is a rooted path on smarter.poker, checked in four
+ * independent places. Both are true at once because the address is never what
+ * travels: the campaign holds it, the campaign gets an opaque code, and the
+ * resolver serves `/c/<code>`. isSafeAdTarget sees exactly the rooted path it
+ * has always seen, and the World Hub route at that path is what knows the
+ * address.
+ *
+ * So this prefix is the one thing that tells a renderer "this click LEAVES the
+ * app". It matters twice over:
+ *
+ *   1. React Router must not be handed it. Club Arena is mounted under a
+ *      basename, so navigate('/c/x') resolves to /hub/club-arena/c/x, which is
+ *      nothing. It needs a real document navigation.
+ *   2. The click must NOT be logged here. The redirect logs it server-side, in
+ *      the same call that hands back the address, because a browser being torn
+ *      down is the least reliable place to count the one number an advertiser
+ *      has any reason to dispute. Logging in both places would bill a sponsor
+ *      for double the clicks they got.
+ */
+export const AD_CLICK_PREFIX = '/c/';
+
+/** True when this destination leaves the app through the click redirect. */
+export function isExternalAdClick(url: string | null | undefined): url is string {
+  return typeof url === 'string' && url.startsWith(AD_CLICK_PREFIX);
 }
 
 /**
@@ -169,6 +206,7 @@ export const AdService = {
         placementId: r.placement_id == null ? null : String(r.placement_id),
         advertiserKind: readAdvertiserKind(r.advertiser_kind),
         advertiserName: r.advertiser_name == null ? null : String(r.advertiser_name),
+        posterUrl: r.poster_url == null ? null : String(r.poster_url),
       }));
     } catch (e) {
       reportError(e, 'AdService.resolve', { slot });

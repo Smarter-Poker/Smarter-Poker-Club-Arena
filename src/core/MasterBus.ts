@@ -27,6 +27,7 @@ import { supabase } from '../lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { reportError } from '../utils/errorReporter';
 import { STORAGE_KEYS } from '../lib/storage';
+import { IS_NATIVE_BUILD } from '../lib/appBase';
 import { playerDisplayName } from '../utils/playerDisplayName';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1620,15 +1621,27 @@ class MasterBusCore {
 
     // #9b: Forward critical events to Service Worker for background notifications
     if (CRITICAL_EVENTS.includes(type)) {
-      try {
-        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-          navigator.serviceWorker.controller.postMessage({
-            type: 'BUS_EVENT',
-            event: { type, payload, timestamp: event.timestamp },
+      if (IS_NATIVE_BUILD) {
+        // The app has no service worker (App.tsx). The same events become
+        // native local notifications, shown only while the app is in the
+        // background. Compile-time constant: this branch is not in the web
+        // bundle, and the worker path below is not in the app.
+        import('../lib/native/localNotifications')
+          .then((m) => m.notifyInBackground(type, payload))
+          .catch(() => {
+            /* the plugin refused; a missed banner, nothing more */
           });
+      } else {
+        try {
+          if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.controller.postMessage({
+              type: 'BUS_EVENT',
+              event: { type, payload, timestamp: event.timestamp },
+            });
+          }
+        } catch {
+          /* SW not available */
         }
-      } catch {
-        /* SW not available */
       }
     }
 

@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/claude-diamond-phase-7. Phase 7 needed a way to create a Diamond table at all, and then found that none could exist: the Gate 7 constraint tables_cash_needs_a_game requires every live cash table to carry a cluster id, while the Phase 6 Diamond boundary refuses any table that has one. Three migrations, all applied to kuklfnapbkmacvwxktbh with Dan's approval on 2026-09-11: the creation door (production version 20260911222904), the constraint amendment exempting the platform Diamond arena (20260911230657), and the door naming tables.game_type, without which every call was refused (20260911230759). No new table or column; the function is the only new object.",
+  "functions": ["fn_poker_diamond_open_cash_table"]
+}

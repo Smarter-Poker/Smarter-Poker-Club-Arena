@@ -1,0 +1,7 @@
+{
+  "_owner": "agent/cowork-mustmove/audit/must-move-classic-action-madness (lane A)",
+  "_comment": "20260910181447: cash_seat_moves.resolved_at - when a move left pending, stamped by the BEFORE INSERT OR UPDATE OF state trigger zz_cash_seat_move_resolved (fn_cash_seat_move_stamp_resolved). The three planners' 60-second back-off for a refused player is keyed on it instead of on created_at, which is the plan time and had usually already lapsed by the time the refusal landed (finding A7 of the 2026-09-09 must-move audit).",
+  "tables": [],
+  "functions": ["fn_cash_seat_move_stamp_resolved"],
+  "columns": { "cash_seat_moves": ["resolved_at"] }
+}

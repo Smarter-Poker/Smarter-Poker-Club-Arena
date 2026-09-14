@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { vpipFloorMul } from './HorseLogic.js';
+import { vpipFloorMul, vpipTargetFor } from './HorseLogic.js';
 
 const ROOT = resolve(__dirname, '../../..');
 const read = (p: string) => readFileSync(resolve(ROOT, p), 'utf8');
@@ -21,24 +21,65 @@ describe('vpipFloorMul', () => {
     expect(vpipFloorMul({ vpipFloor: 0, ownVpip: { hands: 30, vpip: 5 } })).toBe(1);
   });
 
+  /**
+   * THE CUSHION IS DERIVED, NOT FLAT (2026-09-09). These numbers moved when
+   * the target stopped being "floor + 10 points" and became "floor + 1.3
+   * standard errors of the ten-hand window it is judged over". The reason is
+   * in vpipTargetFor: a flat ten points put the floor two thirds of one
+   * standard error away, and 17.4% of Madness sittings were under it at the
+   * very FIRST check (104 of 597, production, 24h to 2026-09-09 22:00).
+   *
+   * The expectations are written as the arithmetic that produces them so a
+   * future change to either constant fails here with its own derivation
+   * visible, rather than as a bare decimal nobody can check.
+   */
   it('arrives loose enough before there is a sample (the prior)', () => {
-    // Action hold'em: floor 30 -> target 40 -> 0.28 / 0.40 = 0.7
-    expect(vpipFloorMul({ vpipFloor: 30 })).toBeCloseTo(0.7, 5);
-    expect(vpipFloorMul({ vpipFloor: 30, ownVpip: { hands: 2, vpip: 0 } })).toBeCloseTo(0.7, 5);
-    // Madness PLO: floor 70 -> target 80 -> 0.35 floored (0.28 / 0.80 = 0.35)
+    // Action: floor 30 -> se .1449 -> target .4884 -> 0.28 / .4884
+    expect(vpipFloorMul({ vpipFloor: 30 })).toBeCloseTo(0.573315, 5);
+    expect(vpipFloorMul({ vpipFloor: 30, ownVpip: { hands: 2, vpip: 0 } })).toBeCloseTo(
+      0.573315,
+      5
+    );
+    // Madness: floor 50 -> se .1581 -> target .7055 -> still clear of the clamp,
+    // which is what makes 50 a floor the widening layer can actually reach.
+    expect(vpipFloorMul({ vpipFloor: 50 })).toBeCloseTo(0.396855, 5);
+    expect(vpipFloorMul({ vpipFloor: 50 })).toBeGreaterThan(0.35);
+    // The retired 70 floor stays pinned at the clamp: unreachable by widening.
     expect(vpipFloorMul({ vpipFloor: 70 })).toBeCloseTo(0.35, 5);
     // A floor so high the target caps at 95%.
     expect(vpipFloorMul({ vpipFloor: 90 })).toBeCloseTo(0.35, 5);
   });
 
   it('closes the loop on the judged figure: under target loosens, over target does nothing', () => {
-    // Madness hold'em, floor 60 -> target 70. At 45% the gap is 25 points -> 1 - 0.375
-    expect(vpipFloorMul({ vpipFloor: 60, ownVpip: { hands: 12, vpip: 45 } })).toBeCloseTo(0.625, 5);
-    // At 15% the gap is 55 points -> 0.175, floored at 0.35
+    // floor 60 -> target .8014. At 45% the gap is 35.1 points -> 1 - 1.5 x .3514
+    expect(vpipFloorMul({ vpipFloor: 60, ownVpip: { hands: 12, vpip: 45 } })).toBeCloseTo(
+      0.472907,
+      5
+    );
+    // At 15% the gap is 65 points -> 0.023, floored at 0.35
     expect(vpipFloorMul({ vpipFloor: 60, ownVpip: { hands: 20, vpip: 15 } })).toBeCloseTo(0.35, 5);
-    // Above the target: the horse's own style resumes, never tightened.
-    expect(vpipFloorMul({ vpipFloor: 60, ownVpip: { hands: 20, vpip: 72 } })).toBe(1);
+    /* A HORSE 12 POINTS OVER THE FLOOR IS STILL INSIDE THE SAMPLING ERROR,
+       and is still widened a little - it is not yet safe from its own next
+       ten hands. This pin USED to assert 1 here, on a target of floor + 10,
+       and that is precisely the state the evicted majority was in. */
+    expect(vpipFloorMul({ vpipFloor: 60, ownVpip: { hands: 20, vpip: 72 } })).toBeCloseTo(
+      0.877907,
+      5
+    );
+    // Genuinely clear of the target: the horse's own style resumes, never tightened.
     expect(vpipFloorMul({ vpipFloor: 60, ownVpip: { hands: 20, vpip: 95 } })).toBe(1);
+  });
+
+  it('aims far enough above the floor that a ten-hand sample rarely dips under', () => {
+    /* THE POINT OF THE WHOLE LAYER, stated as the margin it buys. A ten-hand
+       proportion at the floor has a standard error of sqrt(p(1-p)/10); the
+       target must sit at least one of those above the floor, or the first
+       check at hand ten is a coin toss the horse loses too often. */
+    for (const floor of [30, 50]) {
+      const se = Math.sqrt(((floor / 100) * (1 - floor / 100)) / 10);
+      const margin = vpipTargetFor(floor) - floor / 100;
+      expect(margin, `floor ${floor} needs a real cushion`).toBeGreaterThan(se);
+    }
   });
 
   it('never exceeds 1 and never goes below the 0.35 floor', () => {
@@ -102,7 +143,7 @@ describe('the wiring', () => {
 
   it("the engine hands the brain the floor and the seat's own judged figure", () => {
     expect(TURNS).toMatch(/vpipFloor: this\.vpipFloor\(\),/);
-    expect(TURNS).toMatch(/this\.nitStatus\.get\(enginePlayer\.user_id\)/);
+    expect(TURNS).toMatch(/this\.nitStatus\.get\(authoritativePlayer\.user_id\)/);
   });
 
   it('the judged figures are read beside the eviction, from the same rows', () => {

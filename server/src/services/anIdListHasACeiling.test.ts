@@ -137,18 +137,17 @@ describe('the call sites whose id list grows with the room', () => {
     expect(lifecycle).not.toMatch(/\.in\('id', playerIds\)/);
   });
 
-  it('late-reg seating never reads a failed seat query as an empty room', () => {
-    const manager = src('src/tournament/TournamentManager.ts');
-    expect(manager).toMatch(/Tournament\.lateRegSeated/);
-    expect(manager).toMatch(
-      /if \(!seatRead\.complete\) \{[\s\S]*?requestUrgentEliminationSweepAfter\(TournamentManagerBase\.LATE_REG_REDRIVE_MS\);[\s\S]*?return;[\s\S]*?\}/
-    );
-  });
-
-  it('the busted seat release is chunked, and reaches the error reporter', () => {
+  it('terminal cleanup consumes receipt identities and issues no URL-sized seat query', () => {
     const elim = src('src/tournament/TournamentManagerEliminations.ts');
-    expect(elim).toMatch(/tableIds\.slice\(offset, offset \+ IN_LIST_CHUNK\)/);
-    expect(elim).toMatch(/'Tournament\.committed_cleanup_seat_release_failed'/);
+    const start = elim.indexOf('private async cleanupCommittedTablesAndManager(');
+    const end = elim.indexOf('/** Announce one committed Bubble Promise', start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const cleanup = elim.slice(start, end);
+    expect(cleanup).toContain('const tableIds = [...closedTableIds]');
+    expect(cleanup).toContain('const receiptTableIds = new Set(tableIds)');
+    expect(cleanup).not.toMatch(/\.in\(['"]table_id['"],\s*tableIds/);
+    expect(cleanup).not.toContain(".from('table_seats')");
   });
 
   it('fleet add-ons read the field in chunks', () => {

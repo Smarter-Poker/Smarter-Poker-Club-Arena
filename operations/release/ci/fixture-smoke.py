@@ -1,0 +1,781 @@
+#!/usr/bin/env python3
+"""Pull-request native smoke evidence; never a release/product certificate."""
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import signal
+import stat
+import subprocess
+import sys
+import uuid
+
+FILES = ('Dockerfile', 'package.json', 'package-lock.json', 'fixture-server.mjs',
+         'runtime-files.mjs', 'gateway.mjs', 'auth-fixture.mjs', 'auth-bootstrap-proof.mjs',
+         'service-role-boundary.mjs', 'cron-provider.mjs', 'safeupdate-provider.mjs', 'service-preimage.mjs', 'role-alignment.mjs', 'provider-semantics.mjs', 'provider-semantic-sql.mjs', 'provider-probe-peer.mjs', 'role-native-entry.mjs', 'role-native-protocol.mjs', 'role-native-faults.mjs', 'role-native-access.mjs', 'role-alignment-render.mjs', 'role-alignment-installer.sql', 'role-alignment-native.json', 'role-alignment-aligned.json', 'role-alignment-graph.sql', 'role-alignment-membership.sql', 'actors.mjs', 'financial-route-phase.mjs',
+         'seed-fixture.mjs', 'native-smoke.mjs', 'observation-bridge.mjs', 'build-image.sh', 'smoke-image.sh')
+PREFIX = 'operations/release/fixture/'
+CONTROL_FILES = tuple('operations/release/native/' + name for name in (
+    'component-observation-protocol.mjs', 'component-observation-client.mjs',
+    'component-semantic-observations.mjs'))
+NATIVE_STAGES = frozenset((
+    'fixture-service-preimage',
+    'managed-postgres-event-trigger-boundary', 'postgresql-native-cron-install', 'postgresql-native-cron-metadata',
+    'postgresql-safeupdate-configure', 'postgresql-safeupdate-fresh-session', 'postgrest-safeupdate-native-http',
+    'gotrue-platform-helper-authority', 'gotrue-platform-helper-http',
+    'initialization', 'observer-user-isolation', 'native-observation-bridge',
+    'chromium-native-read-and-rls', 'postgresql-17-extensions',
+    'postgresql-version', 'postgrest-version', 'gotrue-version', 'postgresql-initialize',
+    'postgresql-start', 'postgresql-ready', 'postgresql-create-database',
+    'postgresql-client-connection', 'postgresql-client-cleanup', 'postgresql-slot-identity',
+    'postgresql-wal2json-native-slot', 'postgresql-wal2json-slot-inspection',
+    'postgresql-wal2json-slot-drop', 'postgresql-bootstrap-roles', 'postgresql-bootstrap-schemas',
+    'postgresql-extension-dblink', 'postgresql-extension-pg-stat-statements',
+    'postgresql-extension-pg-trgm', 'postgresql-extension-pgcrypto',
+    'postgresql-extension-uuid-ossp', 'postgresql-extension-vector',
+    'postgresql-extension-inventory', 'gotrue-genuine-migrations-and-mfa',
+    'gotrue-database-namespace', 'gotrue-migrate-command', 'gotrue-migration-ledger', 'gotrue-server-start',
+    'gotrue-server-ready', 'gotrue-real-user-signin', 'gotrue-real-mfa-enrollment',
+    'gotrue-real-mfa-persistence', 'gotrue-disabled-ledger-attribution',
+    'postgrest-14-5-authentication-and-rls', 'realtime-genuine-migrations-and-change',
+    'postgrest-server-start', 'postgrest-server-ready', 'postgrest-anonymous-rls', 'postgrest-invalid-token',
+    'realtime-migrate-command', 'realtime-seed-command', 'realtime-tenant-row', 'realtime-tenant-migration-ledger',
+    'realtime-server-start', 'realtime-server-ready', 'realtime-cookie-rpc', 'realtime-cookie-proof',
+    'realtime-websocket-open', 'realtime-postgres-subscription', 'realtime-causal-change',
+    'realtime-two-user-causal-isolation', 'postgrest-two-user-isolation',
+    'native-observation-bridge-start', 'observer-and-browser-handoff',
+    'realtime-loopback-and-gateway', 'candidate-peer-isolation',
+    'native-migrated-service-role-boundary',
+    *( 'smoke-shell-' + step for step in (
+        'arguments', 'platform', 'source', 'image-identity', 'helpers', 'owned-names',
+        'helper-staging', 'network-create', 'services-start', 'services-ready', 'peer',
+        'oracle', 'services-shutdown', 'preimage-start', 'preimage-ready', 'preimage-copy',
+        'preimage-ack', 'preimage-shutdown', 'cleanup')),
+    *( 'fixture-preimage-' + step for step in (
+        'arguments', 'package', 'directories', 'cookie', 'postgres-socket', 'archives',
+        'postgresql', 'postgresql-provider-key', 'postgresql-start', 'postgresql-ready',
+        'postgresql-bootstrap-connect', 'postgresql-bootstrap-configuration',
+        'postgresql-bootstrap-owner', 'postgresql-bootstrap-roles',
+        'postgresql-native-cron-install', 'postgresql-safeupdate-configure',
+        'genuine-auth-migrations', 'genuine-realtime-migrations',
+        'managed-postgres-event-trigger-boundary', 'post-service-catalog-preimage', 'full-role-alignment', 'native-role-fault-matrix', 'native-role-access-defaults', 'five-provider-semantics', 'cleanup'))))
+NATIVE_ERROR_NAMES = frozenset(('Error', 'AssertionError', 'TypeError', 'RangeError',
+                                'SyntaxError', 'TimeoutError', 'AggregateError', 'error'))
+NATIVE_PG_ROUTINES = frozenset((
+    'CheckSlotPermissions', 'CheckLogicalDecodingRequirements', 'internal_load_library',
+    'CreateSlotOnDisk', 'SaveSlotToPath', 'XLogFileRead', 'XLogFileReadAnyTLI',
+    'ReorderBufferRestoreChanges', 'ReorderBufferSerializeTXN', 'aclcheck_error'))
+
+
+def native_failures(output):
+    # Enumerated labels only. Never retain messages, stacks, arbitrary error
+    # names, SQL, service logs, or additional fields from child output.
+    records = []
+    for line in output.splitlines():
+        if len(line) > 2048:
+            continue
+        try:
+            row = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        if (not isinstance(row, dict) or row.get('status') != 'failed'
+                or not isinstance(row.get('stage'), str) or row['stage'] not in NATIVE_STAGES):
+            continue
+        has_native_line = 'native_line' in row
+        native_line = row.pop('native_line', None)
+        if has_native_line and (type(native_line) is not int or not 1 <= native_line <= 9999):
+            continue
+        realtime = {key: row.pop(key) for key in ('realtime_log_markers', 'realtime_frames', 'realtime_database_errors') if key in row}
+        if realtime and (not {'realtime_log_markers', 'realtime_frames'} <= set(realtime)
+                or type(realtime['realtime_log_markers']) is not int
+                or not 0 <= realtime['realtime_log_markers'] < 2 ** 22
+                or not isinstance(realtime['realtime_frames'], list)
+                or len(realtime['realtime_frames']) > 8
+                or any(not isinstance(frame, str) or not re.fullmatch('[0-9a-f]{64}:[1-9][0-9]{0,5}', frame)
+                       for frame in realtime['realtime_frames'])):
+            continue
+        if 'realtime_database_errors' in realtime:
+            allowed_errors = {'insufficient_privilege', 'undefined_object', 'undefined_function',
+                              'undefined_table', 'undefined_column', 'datatype_mismatch',
+                              'unique_violation', 'object_not_in_prerequisite_state',
+                              'invalid_schema_name', 'invalid_parameter_value',
+                              'permission denied for database', 'permission denied for schema',
+                              'permission denied for table', 'permission denied for relation',
+                              'must be owner of', 'permission denied to create', 'must have admin option',
+                              'permission denied to grant', 'must be member of role',
+                              'must be able to set role', 'no schema has been selected'}
+            errors = realtime['realtime_database_errors']
+            if (not isinstance(errors, list) or not 1 <= len(errors) <= len(allowed_errors)
+                    or any(not isinstance(error, str) or error not in allowed_errors for error in errors)
+                    or len(errors) != len(set(errors))):
+                continue
+        service = {key: row.pop(key) for key in ('native_service', 'service_exit_code',
+                   'service_signal', 'service_oom_kills') if key in row}
+        if (('native_service' in service and (not isinstance(service['native_service'], str)
+                or service['native_service'] not in {'postgres', 'auth', 'postgrest', 'realtime'}))
+                or ('service_signal' in service and (not isinstance(service['service_signal'], str)
+                    or service['service_signal'] not in {'SIGKILL','SIGTERM','SIGABRT','SIGSEGV','SIGBUS','SIGILL'}))
+                or any(key in service and (type(service[key]) is not int or not 0 <= service[key] <= limit)
+                       for key, limit in [('service_exit_code', 255), ('service_oom_kills', 999999999)])):
+            continue
+        listener = {key: row.pop(key) for key in ('listener_reason', 'listener_loopback4',
+                    'listener_other4', 'listener_ipv6', 'listener_rows4', 'listener_rows6',
+                    'listener_port4000', 'listener_http_port', 'listener_http_address') if key in row}
+        if listener and (not isinstance(listener.get('listener_reason'), str)
+                or listener['listener_reason'] not in {'header', 'row-shape', 'address-shape', 'listener-set'}
+                or ('listener_http_address' in listener and (not isinstance(listener['listener_http_address'], str)
+                    or listener['listener_http_address'] not in {'ipv4-loopback', 'ipv4-wildcard', 'ipv4-other',
+                        'ipv6-loopback', 'ipv6-wildcard', 'ipv6-other', 'unknown'}))
+                or any(type(value) is not int or not 0 <= value <= 65535
+                       for key, value in listener.items() if key not in {'listener_reason', 'listener_http_address'})):
+            continue
+        auth = {key: row.pop(key) for key in ('auth_stage', 'auth_http_status') if key in row}
+        if ('auth_stage' in auth and (not isinstance(auth['auth_stage'], str)
+                or auth['auth_stage'] not in {'mfa-enroll', 'mfa-factor-id', 'mfa-challenge',
+                    'mfa-challenge-id', 'mfa-totp', 'mfa-verify', 'mfa-session'})):
+            continue
+        if ('auth_http_status' in auth and (type(auth['auth_http_status']) is not int
+                or not 100 <= auth['auth_http_status'] <= 599)):
+            continue
+        if (set(row) == {'status', 'stage', 'error'} and isinstance(row['error'], str)
+                and row['error'] in NATIVE_ERROR_NAMES):
+            record = {'stage': row['stage'], 'category': row['error']}
+        elif ({'status', 'stage', 'error', 'exit_code'} <= set(row)
+                <= {'status', 'stage', 'error', 'exit_code', 'command_phase', 'command_sqlstate'}
+                and row['error'] == 'Error' and type(row['exit_code']) is int
+                and 1 <= row['exit_code'] <= 255
+                and ('command_phase' not in row or (isinstance(row['command_phase'], str)
+                     and row['command_phase'] in {'auth-url', 'auth-open', 'auth-connect',
+                                                 'auth-migrator', 'auth-migrations'}))
+                and ('command_sqlstate' not in row or (isinstance(row['command_sqlstate'], str)
+                     and re.fullmatch('[0-9A-Z]{5}', row['command_sqlstate'])))):
+            record = {'stage': row['stage'], 'category': 'Error', 'exit_code': row['exit_code']}
+            for key in ('command_phase', 'command_sqlstate'):
+                if key in row:
+                    record[key] = row[key]
+        elif ({'status', 'stage', 'error', 'sqlstate'} <= set(row)
+                <= {'status', 'stage', 'error', 'sqlstate', 'position', 'routine', 'routine_sha256', 'file_sha256'}
+                and row['error'] == 'error' and isinstance(row['sqlstate'], str)
+                and re.fullmatch('[0-9A-Z]{5}', row['sqlstate'])
+                and ('position' not in row or (type(row['position']) is int
+                     and 1 <= row['position'] <= 999999))
+                and ('routine' not in row or (isinstance(row['routine'], str)
+                     and row['routine'] in NATIVE_PG_ROUTINES))
+                and all(key not in row or (isinstance(row[key], str)
+                    and re.fullmatch('[0-9a-f]{64}', row[key]))
+                    for key in ('routine_sha256', 'file_sha256'))):
+            record = {'stage': row['stage'], 'category': 'error', 'sqlstate': row['sqlstate']}
+            if 'position' in row:
+                record['position'] = row['position']
+            if 'routine' in row:
+                record['routine'] = row['routine']
+            for key in ('routine_sha256', 'file_sha256'):
+                if key in row:
+                    record[key] = row[key]
+        elif set(row) == {'status', 'stage', 'reason'} and row['reason'] == 'deadline':
+            record = {'stage': row['stage'], 'category': 'deadline'}
+        else:
+            continue
+        if native_line is not None:
+            record['native_line'] = native_line
+        record.update(auth)
+        record.update(listener)
+        record.update(service)
+        record.update(realtime)
+        if record not in records:
+            records.append(record)
+    return records
+
+
+class NativeSmokeFailure(RuntimeError):
+    def __init__(self, output, exit_code=None):
+        super().__init__('native_fixture_services_failed')
+        self.diagnostics = native_failures(output)
+        self.role_fault_failure = role_fault_failure(output)
+        self.provider_failure = provider_failure_record(output)
+        self.exit_code = exit_code if type(exit_code) is int and 1 <= exit_code <= 255 else None
+
+
+def require(value):
+    if not value:
+        raise RuntimeError('native_fixture_smoke_requirement_failed')
+
+
+def command(args, cwd, env, timeout=120):
+    process = subprocess.Popen(args, cwd=cwd, env=env, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, text=True, start_new_session=True)
+    stdout = stderr = ''
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except BaseException:
+        # Stop the entire locally spawned command group, then clean exact Docker resources.
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            stdout, stderr = process.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            stdout, stderr = process.communicate()
+        raise
+    finally:
+        # Only the reviewed image build is eligible. Its allowlisted context has
+        # no credentials or application data; synthetic secrets are generated
+        # later during native-smoke and that command's output stays private.
+        if args[:2] == ['bash', PREFIX + 'build-image.sh'] and env.get('FIXTURE_SMOKE_BUILD_LOG'):
+            build_log = Path(env['FIXTURE_SMOKE_BUILD_LOG'])
+            fd = os.open(build_log, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, 'w') as log:
+                log.write('Reviewed image build only; no native service output.\n')
+                log.write((stdout + '\n' + stderr)[-131072:])
+    if process.returncode != 0 and args[:2] == ['bash', PREFIX + 'smoke-image.sh']:
+        raise NativeSmokeFailure(stdout + '\n' + stderr, process.returncode)
+    require(process.returncode == 0)
+    return stdout
+
+
+def labels_match(labels, revision):
+    return all(labels.get(key) == value for key, value in {
+        'org.opencontainers.image.revision': revision,
+        'org.opencontainers.image.source': 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena',
+        'com.smarter-poker.scope': 'isolated-component-fixture',
+        'com.smarter-poker.control-revision': revision,
+        'com.smarter-poker.source-revision': revision,
+    }.items())
+
+
+def smoke_records(output):
+    rows = []
+    for line in output.splitlines():
+        if line.startswith('{'):
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    observer = {'scope': 'native-service-smoke', 'observer': 'passed',
+                'browser': 'chromium', 'retries': 0,
+                'observation_bridge': 'native-synthetic-protocol', 'postgres_socket': 'denied'}
+    services = {'scope': 'native-service-smoke', 'postgres': '17.11',
+                'extensions': 7,
+                'cron': {'source': '9490f9cc9803f75105f2f7d89839a998f011f8d8',
+                         'extension_version': '1.6.4', 'native_functions': 7,
+                         'metadata_api': 'schedule-alter-unschedule-rollback',
+                         'application_ddl': 'denied', 'background_jobs': 'disabled',
+                         'production_binary_parity': False, 'complete_cron_acl_parity': False}, 'auth': '2.196.0', 'mfa': 'aal2',
+                'safeupdate': {'library': 'safeupdate-1.4', 'source': '104f78d27b607076b49f22927ba33828fd0a98a0', 'fresh_session': 'authenticator-native-loaded', 'protected_setting_read': 'sql-and-http-42501', 'sql_refusals': 'update-delete-cte-21000', 'ordinary_disable': '42501', 'http': 'unfiltered-denied-filtered-committed', 'probe_cleanup': 'rows-restored-objects-absent', 'production_binary_parity': False, 'complete_role_graph_parity': False, 'production_pre_request_parity': False},
+                'ledger_attribution': 'banned-without-session',
+                'service_roles': {'auth_admin_inheritance': 'disabled',
+                                  'auth_claim_helpers': 'service-owned-and-http-verified',
+                                  'authenticator_membership': 'set-without-inherit',
+                                  'auth_schema_owner': 'supabase_admin',
+                                  'auth_schema_create': 'auth-admin-only-among-application-callers',
+                                  'bootstrap_postgres': 'non-superuser-managed-owner',
+                                  'initdb_identity': 'supabase_admin',
+                                  'production_application_privilege_parity': False},
+                'managed_postgres': {'library': 'supautils-3.4.3',
+                                     'source': 'e35f8affc4467202ff0d98f8dd14cb955bc13c75',
+                                     'application_superuser': False,
+                                     'owned_event_trigger': 'created-altered-fired',
+                                     'ordinary_role': 'trigger-fired-create-denied',
+                                     'rollback': 'schema-trigger-role-absent',
+                                     'production_binary_version_parity': False,
+                                     'complete_application_acl_parity': False},
+                'postgrest': '14.5', 'realtime': '2.134.10',
+                'change': 'observed', 'retries': 0,
+                'realtime_listener': '127.0.0.1:4000',
+                'realtime_gateway': 'authenticated-change-observed',
+                'realtime_rls': 'two-users-causal-isolation',
+                'observation_bridge': 'native-synthetic-protocol'}
+    peer = {'scope': 'native-service-smoke', 'peer': 'passed', 'gateway': 'reachable',
+            'realtime_direct': 'refused', 'tenant_administration': 'refused'}
+    require(rows.count(observer) == 1 and rows.count(services) == 1 and rows.count(peer) == 1)
+    require('Native service smoke and container/network cleanup passed (not a product certificate).' in output.splitlines())
+    return [observer, services, peer]
+
+
+def role_alignment_record(output):
+    records = []
+    def unique_object(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result)
+            result[key] = value
+        return result
+    for line in output.splitlines():
+        if not line.startswith('{') or len(line) > 4096:
+            continue
+        try:
+            item = json.loads(line, object_pairs_hook=unique_object)
+        except ValueError:
+            continue
+        if isinstance(item, dict) and item.get('scope') == 'native-full-role-installer':
+            records.append(item)
+    require(len(records) == 1)
+    result = records[0]
+    expected = {
+        'scope': 'native-full-role-installer', 'status': 'passed', 'stage': 'complete',
+        'template_sha256': '75de4863de9a9276e701526389a6fbe0a033589d60844b71dd42eb44fbdf31db',
+        'install_submitted': True, 'commit_acknowledged': True, 'catalog_outcome': 'committed',
+        'rollback_acknowledged': False, 'separate_read_only_observers': 4,
+        'graph_assertion': True, 'membership_assertion': True,
+        'actual_login_and_default_acl_tests': False, 'post_alignment_services': False,
+        'full_schema_ready': False, 'funded_or_production_complete': False,
+        'installer_backend_absent': True, 'all_driver_clients_closed': True,
+    }
+    hashes = {'original_catalog_sha256', 'aligned_catalog_sha256'}
+    require(set(result) == set(expected) | hashes)
+    for key, value in expected.items():
+        require(type(result[key]) is type(value) and result[key] == value)
+    for key in hashes:
+        require(isinstance(result[key], str) and re.fullmatch('[0-9a-f]{64}', result[key]))
+    return result
+
+
+def provider_failure_record(output):
+    # Retain bounded failure observations only. This record cannot admit a
+    # fixture and never includes SQL, error messages, keys or service output.
+    records = []
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('duplicate provider field')
+            result[key] = value
+        return result
+    for line in output.splitlines():
+        if not line.startswith('{') or len(line) > 4096:
+            continue
+        try:
+            item = json.loads(line, object_pairs_hook=unique)
+        except ValueError:
+            continue
+        if isinstance(item, dict) and item.get('scope') == 'native-five-provider-semantics':
+            records.append(item)
+    if len(records) != 1:
+        return None
+    item = records[0]
+    completed = ('genuine_symbols', 'role_acl_catalog', 'actual_anon_vault_denial',
+        'postgis_geometry_geography_gist', 'http_private_response', 'pg_net_worker_identity',
+        'pg_net_commit_only', 'pg_net_rollback_absent', 'vault_encrypt_update_rollback',
+        'plpgsql_valid_invalid', 'dummy_objects_removed', 'all_probe_clients_closed', 'private_http_closed')
+    unqualified = ('production_binary_parity', 'complete_catalog_parity',
+        'actual_login_and_default_acl_tests', 'post_alignment_services', 'full_schema_ready', 'funded_or_production_complete')
+    expected = set(completed + unqualified) | {'scope', 'status', 'stage', 'versions',
+        'build_sha256', 'catalog_sha256', 'failure_type', 'sqlstate'}
+    if (set(item) != expected or item['status'] != 'failed'
+            or not isinstance(item['stage'], str) or item['stage'] not in {
+                'identity', 'install', 'postgis', 'plpgsql-check', 'vault', 'private-http', 'pg-net', 'cleanup'}
+            or not isinstance(item['failure_type'], str) or item['failure_type'] not in {
+                'Error', 'AssertionError', 'TypeError', 'RangeError', 'error'}
+            or (item['sqlstate'] is not None and (not isinstance(item['sqlstate'], str)
+                or not re.fullmatch('[0-9A-Z]{5}', item['sqlstate'])))
+            or any(type(item[k]) is not bool for k in completed)
+            or any(item[k] is not False for k in unqualified)
+            or item['versions'] != {'http': '1.6', 'pg_net': '0.19.5', 'plpgsql_check': '2.7',
+                'postgis': '3.3.7', 'supabase_vault': '0.3.1'}
+            or not isinstance(item['build_sha256'], str) or not re.fullmatch('[0-9a-f]{64}', item['build_sha256'])
+            or (item['catalog_sha256'] is not None and (not isinstance(item['catalog_sha256'], str)
+                or not re.fullmatch('[0-9a-f]{64}', item['catalog_sha256'])))):
+        return None
+    return {'scope': 'native-five-provider-semantics-failure', 'status': 'failed',
+        **{k: item[k] for k in ('stage', 'failure_type', 'sqlstate')},
+        'observations': {k: item[k] for k in completed}}
+
+
+def provider_semantic_record(output):
+    records = []
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result)
+            result[key] = value
+        return result
+    for line in output.splitlines():
+        if not line.startswith('{') or len(line) > 4096:
+            continue
+        try:
+            item = json.loads(line, object_pairs_hook=unique)
+        except ValueError:
+            continue
+        if isinstance(item, dict) and item.get('scope') == 'native-five-provider-semantics':
+            records.append(item)
+    require(len(records) == 1)
+    result = records[0]
+    expected = {
+        'scope': 'native-five-provider-semantics', 'status': 'passed', 'stage': 'complete',
+        'versions': {'http': '1.6', 'pg_net': '0.19.5', 'plpgsql_check': '2.7', 'postgis': '3.3.7', 'supabase_vault': '0.3.1'},
+        **{key: True for key in ('genuine_symbols', 'role_acl_catalog', 'actual_anon_vault_denial',
+            'postgis_geometry_geography_gist', 'http_private_response', 'pg_net_worker_identity',
+            'pg_net_commit_only', 'pg_net_rollback_absent', 'vault_encrypt_update_rollback',
+            'plpgsql_valid_invalid', 'dummy_objects_removed', 'all_probe_clients_closed', 'private_http_closed')},
+        **{key: False for key in ('production_binary_parity', 'complete_catalog_parity',
+            'actual_login_and_default_acl_tests', 'post_alignment_services', 'full_schema_ready', 'funded_or_production_complete')},
+    }
+    require(set(result) == set(expected) | {'build_sha256', 'catalog_sha256'})
+    for key, value in expected.items():
+        require(type(result[key]) is type(value) and result[key] == value)
+    for key in ('build_sha256', 'catalog_sha256'):
+        require(isinstance(result[key], str) and re.fullmatch('[0-9a-f]{64}', result[key]))
+    return result
+
+
+ROLE_FAULT_NAMES = tuple(
+    [stage + '-' + fault for stage in ('entry', 'final') for fault in
+     ('extra-role', 'flags', 'settings', 'membership', 'schema-owner', 'schema-acl', 'default-acl', 'extension-version', 'extension-owner')]
+    + [stage + '-statement-error' for stage in ('middle', 'late')]
+    + [stage + '-' + fault for stage in ('entry', 'final') for fault in
+     ('absent', 'replacement', 'extra-client', 'idle-transaction', 'active', 'other-database', 'prepared', 'cron-job')])
+ROLE_LOGIN_NAMES = ('authenticator', 'pgbouncer', 'postgres', 'supabase_auth_admin',
+    'supabase_backup_admin', 'supabase_etl_admin', 'supabase_functions_admin',
+    'supabase_read_only_user', 'supabase_replication_admin', 'supabase_storage_admin')
+ROLE_DEFAULT_GROUPS = (('postgres', 'public'), ('postgres', 'storage'), ('supabase_admin', 'cron'),
+    ('supabase_admin', 'extensions'), ('supabase_admin', 'graphql'), ('supabase_admin', 'graphql_public'),
+    ('supabase_admin', 'public'), ('supabase_admin', 'realtime'), ('supabase_auth_admin', 'auth'))
+ROLE_FAULT_STEPS = frozenset(('source', 'connect-application', 'native-preimage',
+    'connect-installer', 'password-before', 'bind-application', 'render-installer', 'install-prefix',
+    'fault-injection', 'expected-refusal', 'rollback', 'cancel-active', 'close-case', 'rollback-prepared',
+    'backends-absent', 'catalog-restored', 'password-restored', 'close-observer', 'close-all', 'unobserved'))
+
+
+def role_fault_failure(output):
+    """Retain a bounded failed stage, never raw SQL/service errors or a pass."""
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('duplicate key')
+            result[key] = value
+        return result
+    rows = []
+    for line in output.splitlines():
+        if not line.startswith('{') or len(line) > 20000:
+            continue
+        try:
+            row = json.loads(line, object_pairs_hook=unique)
+        except (ValueError, RecursionError):
+            continue
+        if isinstance(row, dict) and row.get('scope') == 'native-role-fault-matrix':
+            rows.append(row)
+    if len(rows) != 1:
+        return None
+    row = rows[0]
+    keys = {'scope', 'status', 'stage', 'cases', 'all_clients_closed', 'production_or_funded',
+            'commit_transport_faults_qualified', 'failure_step', 'failure_type', 'sqlstate'}
+    if (set(row) != keys or row['status'] != 'failed'
+            or row['production_or_funded'] is not False or row['commit_transport_faults_qualified'] is not False
+            or type(row['all_clients_closed']) is not bool
+            or not isinstance(row['failure_step'], str) or row['failure_step'] not in ROLE_FAULT_STEPS
+            or row['failure_type'] not in ('Error', 'AssertionError', 'TypeError', 'RangeError',
+                                          'AbortError', 'TimeoutError', 'error', 'unknown')
+            or (row['sqlstate'] is not None and (not isinstance(row['sqlstate'], str)
+                or not re.fullmatch('[0-9A-Z]{5}', row['sqlstate'])))
+            or not isinstance(row['cases'], list) or len(row['cases']) > len(ROLE_FAULT_NAMES)):
+        return None
+    count = len(row['cases'])
+    stage = ROLE_FAULT_NAMES[min(count, len(ROLE_FAULT_NAMES) - 1)]
+    if row['stage'] != stage and not (count == 0 and row['stage'] == 'source'):
+        return None
+    for observed, name in zip(row['cases'], ROLE_FAULT_NAMES):
+        if (not isinstance(observed, dict) or set(observed) != {'name', 'expected_refusal',
+                'rollback_acknowledged', 'original_catalog_sha256', 'password_catalog_restored', 'backends_absent'}
+                or observed['name'] != name
+                or any(observed[flag] is not True for flag in ('expected_refusal',
+                    'rollback_acknowledged', 'password_catalog_restored', 'backends_absent'))
+                or not isinstance(observed['original_catalog_sha256'], str)
+                or not re.fullmatch('[a-f0-9]{64}', observed['original_catalog_sha256'])):
+            return None
+    return dict(scope='native-role-fault-matrix-failure', status='failed', stage=row['stage'],
+        failure_step=row['failure_step'], failure_type=row['failure_type'], sqlstate=row['sqlstate'],
+        completed_cases=count, all_clients_closed=row['all_clients_closed'])
+
+
+def role_native_record(output, kind):
+    require(kind in ('faults', 'access'))
+    scope = 'native-role-fault-matrix' if kind == 'faults' else 'native-role-access-defaults'
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result)
+            result[key] = value
+        return result
+    rows = []
+    for line in output.splitlines():
+        if not line.startswith('{') or len(line) > 20000:
+            continue
+        try:
+            item = json.loads(line, object_pairs_hook=unique)
+        except ValueError:
+            continue
+        if isinstance(item, dict) and item.get('scope') == scope:
+            rows.append(item)
+    require(len(rows) == 1)
+    row = rows[0]
+    expected = dict(scope=scope, status='passed', stage='complete', all_clients_closed=True,
+                    production_or_funded=False)
+    if kind == 'faults':
+        expected['commit_transport_faults_qualified'] = False
+        require(set(row) == set(expected) | {'cases'})
+        require(isinstance(row['cases'], list) and len(row['cases']) == len(ROLE_FAULT_NAMES))
+        for observed, name in zip(row['cases'], ROLE_FAULT_NAMES):
+            require(isinstance(observed, dict) and set(observed) == {'name', 'expected_refusal',
+                'rollback_acknowledged', 'original_catalog_sha256', 'password_catalog_restored', 'backends_absent'})
+            require(observed['name'] == name)
+            for flag in ('expected_refusal', 'rollback_acknowledged', 'password_catalog_restored', 'backends_absent'):
+                require(observed[flag] is True)
+            require(isinstance(observed['original_catalog_sha256'], str)
+                    and re.fullmatch('[a-f0-9]{64}', observed['original_catalog_sha256']))
+    else:
+        expected.update(set_role_pairs=250, administrative_denials=5, expired_cli_scram_denied=True,
+            wrong_password_denied=True, read_only_write_denied=True, ordinary_creations=24,
+            instrumented_default_materializations=3, storage_create_denials=3,
+            temporary_schema_grants_restored=True, failure_cleanup_observed=False,
+            privilege_checks=1080, actual_object_reads=270, all_objects_removed=True,
+            original_aligned_catalog_restored=True, post_alignment_services=False, full_schema_ready=False)
+        require(set(row) == set(expected) | {'login_roles', 'future_objects'})
+        require(row['login_roles'] == [dict(name=name, authentication='peer' if name == 'postgres' else 'scram-sha-256') for name in ROLE_LOGIN_NAMES])
+        require(isinstance(row['future_objects'], list) and len(row['future_objects']) == 27)
+        for observed, (creator, schema, kind_type) in zip(row['future_objects'],
+                [(creator, schema, kind_type) for creator, schema in ROLE_DEFAULT_GROUPS for kind_type in ('S','f','r')]):
+            require(isinstance(observed, dict) and set(observed) == {'creator','schema','type','creation','direct_acl_sha256'})
+            require(observed['creator'] == creator and observed['schema'] == schema and observed['type'] == kind_type)
+            require(observed['creation'] == ('instrumented-latent-default' if creator == 'postgres' and schema == 'storage' else 'ordinary'))
+            require(isinstance(observed['direct_acl_sha256'], str) and re.fullmatch('[a-f0-9]{64}', observed['direct_acl_sha256']))
+    for key, value in expected.items():
+        require(type(row[key]) is type(value) and row[key] == value)
+    return row
+
+
+def service_preimage(output, path):
+    """Validate private candidate bytes before exposing any catalog artifact."""
+    def unique_object(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result)
+            result[key] = value
+        return result
+    proofs = []
+    for line in output.splitlines():
+        if not line.startswith('{') or len(line) > 2048:
+            continue
+        try:
+            value = json.loads(line, object_pairs_hook=unique_object)
+        except ValueError:
+            continue
+        if isinstance(value, dict) and value.get('scope') == 'native-service-preimage':
+            proofs.append(value)
+    require(len(proofs) == 1)
+    proof = proofs[0]
+    counts = ('roles', 'memberships', 'schemas', 'extensions', 'role_settings', 'default_acl')
+    require(set(proof) == set(counts) | {'scope', 'status', 'catalog_sha256',
+                                       'production_parity', 'application_schema_restored'})
+    require(proof['status'] == 'captured' and proof['production_parity'] is False
+            and proof['application_schema_restored'] is False)
+    require(isinstance(proof['catalog_sha256'], str)
+            and re.fullmatch('[0-9a-f]{64}', proof['catalog_sha256']))
+    require(all(type(proof[k]) is int and 0 <= proof[k] <= 128 for k in counts))
+    require(all(proof[k] > 0 for k in ('roles', 'memberships', 'schemas', 'extensions')))
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        info = os.fstat(fd)
+        require(stat.S_ISREG(info.st_mode) and 0 < info.st_size <= 1024 * 1024)
+        with os.fdopen(fd, 'rb', closefd=False) as stream:
+            raw = stream.read(1024 * 1024 + 1)
+        require(len(raw) == info.st_size)
+    finally:
+        os.close(fd)
+    require(hashlib.sha256(raw).hexdigest() == proof['catalog_sha256'])
+    catalog = json.loads(raw, object_pairs_hook=unique_object)
+    require(isinstance(catalog, dict) and set(catalog) == set(counts) | {
+        'version', 'scope', 'observed_at', 'database', 'role_scope',
+        'production_parity', 'contains_passwords_or_user_rows'})
+    require(type(catalog['version']) is int and catalog['version'] == 1
+            and catalog['scope'] == 'owned-post-service-preimage'
+            and catalog['database'] == 'club_arena_qualification'
+            and catalog['role_scope'] == 'all roles including unconnected builtin and fixture roles'
+            and catalog['production_parity'] is False
+            and catalog['contains_passwords_or_user_rows'] is False)
+    require(isinstance(catalog['observed_at'], str)
+            and re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9:.]+\+[0-9:]+', catalog['observed_at']))
+    for key in counts:
+        require(isinstance(catalog[key], list) or (key in {'role_settings', 'default_acl'} and catalog[key] is None))
+        require(len(catalog[key] or []) == proof[key])
+    def name(value):
+        return isinstance(value, str) and re.fullmatch('[A-Za-z_][A-Za-z0-9_-]{0,62}', value)
+    def fields(row, keys):
+        require(isinstance(row, dict) and set(row) == set(keys.split()))
+    def text(value, limit=512):
+        return isinstance(value, str) and len(value) <= limit and all(32 <= ord(c) < 127 for c in value)
+    def configs(rows):
+        require(rows is None or isinstance(rows, list))
+        keys = []
+        visible = {'search_path', 'statement_timeout', 'lock_timeout',
+                   'idle_in_transaction_session_timeout', 'default_transaction_read_only',
+                   'log_statement', 'pgrst.db_pre_request', 'session_preload_libraries', 'app.settings.jwt_exp'}
+        for row in rows or []:
+            fields(row, 'key value value_md5')
+            require(text(row['key'], 128) and isinstance(row['value_md5'], str)
+                    and re.fullmatch('[0-9a-f]{32}', row['value_md5']))
+            require(text(row['value']) if row['key'] in visible else row['value'] is None)
+            if row['value'] is not None:
+                require(hashlib.md5(row['value'].encode()).hexdigest() == row['value_md5'])
+            keys.append(row['key'])
+        require(len(keys) == len(set(keys)))
+    roles = catalog['roles']
+    require(roles and all(isinstance(r, dict) and name(r.get('name')) for r in roles))
+    names = {r['name'] for r in roles}
+    require(len(names) == len(roles) and {'postgres', 'supabase_admin', 'authenticator'} <= names)
+    flags = ('superuser', 'inherit', 'create_role', 'create_db', 'login', 'replication', 'bypass_rls')
+    for role in roles:
+        fields(role, 'name connection_limit valid_until configuration ' + ' '.join(flags))
+        require(all(type(role[k]) is bool for k in flags))
+        require(type(role['connection_limit']) is int and -1 <= role['connection_limit'] <= 2147483647)
+        require(role['valid_until'] is None or text(role['valid_until'], 64))
+        configs(role['configuration'])
+    for row in catalog['memberships']:
+        fields(row, 'role member grantor admin inherit set')
+        require(all(row[k] in names for k in ('role', 'member', 'grantor')))
+        require(all(type(row[k]) is bool for k in ('admin', 'inherit', 'set')))
+    for row in catalog['role_settings'] or []:
+        fields(row, 'role database settings')
+        require(row['role'] == 'ALL' or row['role'] in names)
+        require(name(row['database']))
+        configs(row['settings'])
+    for row in catalog['schemas']:
+        fields(row, 'name owner acl')
+        require(name(row['name']) and row['owner'] in names)
+        require(row['acl'] is None or (isinstance(row['acl'], list) and all(text(a) for a in row['acl'])))
+    for row in catalog['extensions']:
+        fields(row, 'name version schema owner')
+        require(name(row['name']) and name(row['schema']) and row['owner'] in names)
+        require(isinstance(row['version'], str) and re.fullmatch('[0-9][0-9a-z.-]{0,31}', row['version']))
+    for row in catalog['default_acl'] or []:
+        fields(row, 'creator schema type acl')
+        require(row['creator'] in names and name(row['schema']) and row['type'] in {'r', 'S', 'f', 'T', 'n'})
+        require(isinstance(row['acl'], list))
+        for acl in row['acl']:
+            fields(acl, 'grantor grantee privilege grantable')
+            require(acl['grantor'] in names and (acl['grantee'] == 'PUBLIC' or acl['grantee'] in names))
+            require(acl['privilege'] in {'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES',
+                                        'TRIGGER', 'MAINTAIN', 'USAGE', 'EXECUTE', 'CREATE'})
+            require(type(acl['grantable']) is bool)
+    for key, columns in (('memberships', ('role', 'member', 'grantor')),
+                         ('role_settings', ('role', 'database')),
+                         ('schemas', ('name',)), ('extensions', ('name',)),
+                         ('default_acl', ('creator', 'schema', 'type'))):
+        identities = [tuple(row[k] for k in columns) for row in catalog[key] or []]
+        require(len(identities) == len(set(identities)))
+    return proof, raw
+
+
+def execute(repo, output, expected, run=command):
+    receipt = {'version': 1, 'scope': 'pull-request-native-service-smoke',
+               'product_certificate': False, 'status': 'failed',
+               'stage': 'source', 'cleanup': {'container_absent': False, 'peer_absent': False, 'preimage_absent': False,
+                                             'network_absent': False, 'image_removed': False}}
+    output.mkdir(parents=True, exist_ok=True)
+    env = {key: os.environ[key] for key in ('PATH', 'HOME') if key in os.environ}
+    env.update({'LANG': 'C.UTF-8', 'GIT_CONFIG_GLOBAL': '/dev/null',
+                'GIT_CONFIG_SYSTEM': '/dev/null', 'GIT_NO_REPLACE_OBJECTS': '1'})
+    name = 'ca-fixture-smoke-' + uuid.uuid4().hex
+    peer, network = name + '-peer', name + '-network'
+    preimage = name + '-preimage'
+    private_preimage = output.parent / ('.' + name + '-preimage.json')
+    require(not private_preimage.exists() and not private_preimage.is_symlink())
+    tag = 'club-arena-component-fixture:smoke-' + uuid.uuid4().hex
+    env['FIXTURE_SMOKE_CONTAINER'] = name
+    env['FIXTURE_SMOKE_BUILD_LOG'] = str(output / 'native-build.log')
+    env['FIXTURE_SERVICE_PREIMAGE_PATH'] = str(private_preimage)
+    image_id = None
+    build_started = False
+    failed = False
+    try:
+        require(re.fullmatch('[0-9a-f]{40}', expected))
+        revision = run(['git', 'rev-parse', 'HEAD'], repo, env).strip()
+        require(revision == expected)
+        run(['git', 'diff', '--exit-code', 'HEAD', '--', PREFIX], repo, env)
+        manifest = {}
+        for relative in tuple(PREFIX + file for file in FILES) + CONTROL_FILES:
+            path = repo / relative
+            require(path.is_file() and not path.is_symlink())
+            run(['git', 'ls-files', '--error-unmatch', relative], repo, env)
+            manifest[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+        receipt.update({'control_revision': revision, 'source_revision': revision,
+                        'source_sha256': manifest, 'container': name, 'peer': peer, 'preimage': preimage, 'network': network})
+        receipt['stage'] = 'build'
+        build_started = True
+        run(['bash', PREFIX + 'build-image.sh', tag], repo, env, timeout=2400)
+        image = json.loads(run(['docker', 'image', 'inspect', tag], repo, env))[0]
+        image_id = image['Id']
+        require(re.fullmatch('sha256:[0-9a-f]{64}', image_id))
+        require(image['Os'] == 'linux' and image['Architecture'] == 'amd64')
+        require(labels_match(image['Config'].get('Labels') or {}, revision))
+        receipt['image_id'] = image_id
+        receipt['stage'] = 'native-services-and-browser'
+        result = run(['bash', PREFIX + 'smoke-image.sh', image_id], repo, env, timeout=420)
+        receipt['observations'] = smoke_records(result)
+        receipt['role_alignment'] = role_alignment_record(result)
+        receipt['role_native_faults'] = role_native_record(result, 'faults')
+        receipt['role_native_access'] = role_native_record(result, 'access')
+        receipt['provider_semantics'] = provider_semantic_record(result)
+        proof, catalog_bytes = service_preimage(result, private_preimage)
+        receipt['service_preimage'] = proof
+        (output / 'native-service-preimage.json').write_bytes(catalog_bytes)
+    except Exception as error:
+        # Never serialize command output, environment, service logs, or tokens.
+        if isinstance(error, NativeSmokeFailure):
+            receipt['native_failures'] = error.diagnostics
+            if error.role_fault_failure is not None:
+                receipt['role_native_fault_failure'] = error.role_fault_failure
+            if error.provider_failure is not None:
+                receipt['provider_semantic_failure'] = error.provider_failure
+            if error.exit_code is not None:
+                receipt['native_command_exit_code'] = error.exit_code
+        failed = True
+    finally:
+        try:
+            # Exact caller-owned names, never a broad prune. Remove containers
+            # before their network, including when the peer check fails early.
+            for owned, field in ((preimage, 'preimage_absent'), (peer, 'peer_absent'), (name, 'container_absent')):
+                ids = run(['docker', 'container', 'ls', '-aq', '--filter', 'name=^/' + owned + '$'], repo, env).split()
+                if ids:
+                    run(['docker', 'container', 'rm', '--force', owned], repo, env)
+                    failed = True  # Smoke did not itself finish cleanup.
+                require(not run(['docker', 'container', 'ls', '-aq', '--filter', 'name=^/' + owned + '$'], repo, env).strip())
+                receipt['cleanup'][field] = True
+            names = run(['docker', 'network', 'ls', '--filter', 'name=^' + network + '$', '--format', '{{.Name}}'], repo, env).split()
+            if network in names:
+                run(['docker', 'network', 'rm', network], repo, env)
+                failed = True
+            require(network not in run(['docker', 'network', 'ls', '--filter', 'name=^' + network + '$', '--format', '{{.Name}}'], repo, env).split())
+            receipt['cleanup']['network_absent'] = True
+            if build_started:
+                ids = run(['docker', 'image', 'ls', '-q', '--no-trunc', tag], repo, env).split()
+                if ids:
+                    run(['docker', 'image', 'rm', tag], repo, env)
+                require(not run(['docker', 'image', 'ls', '-q', '--no-trunc', tag], repo, env).strip())
+                # Removal of our tag must also remove the newly built image.
+                if image_id:
+                    require(image_id not in run(['docker', 'image', 'ls', '-aq', '--no-trunc'], repo, env).split())
+            receipt['cleanup']['image_removed'] = True
+        except Exception:
+            failed = True
+        try:
+            private_preimage.unlink(missing_ok=True)
+        except Exception:
+            failed = True
+        if not failed:
+            receipt.update({'status': 'passed', 'stage': 'complete'})
+        (output / 'native-smoke-receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
+    return 1 if failed else 0
+
+
+if __name__ == '__main__':
+    if len(sys.argv) != 4:
+        sys.exit(2)
+    def interrupted(signum, frame):
+        raise InterruptedError('native_smoke_interrupted')
+    signal.signal(signal.SIGTERM, interrupted)
+    signal.signal(signal.SIGINT, interrupted)
+    sys.exit(execute(Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve(), sys.argv[3]))

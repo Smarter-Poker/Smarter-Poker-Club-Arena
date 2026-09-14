@@ -20,8 +20,9 @@ export interface AgentWalletIntent {
   userId: string;
   clubId: string;
   targetId: string;
-  kind: 'self_stake' | 'agent_send';
+  kind: 'self_stake' | 'agent_send' | 'club_bank_send';
   amount: number;
+  destination?: 'player_wallet' | 'agent_wallet';
 }
 
 export interface AgentWalletOperation {
@@ -49,6 +50,8 @@ export async function reserveAgentWalletOperation(
         intent.kind,
         'club_chips',
         intent.amount.toFixed(2),
+        // Preserve existing player-wallet reservations across this upgrade.
+        ...(intent.destination === 'agent_wallet' ? ['agent_wallet'] : []),
       ])
     )
   );
@@ -116,6 +119,7 @@ export function runAgentWalletOperation(
     intent.targetId.toLowerCase(),
     intent.kind,
     intent.amount.toFixed(2),
+    ...(intent.destination === 'agent_wallet' ? ['agent_wallet'] : []),
   ]);
   const pending = submissions.get(scope);
   if (pending) return pending;
@@ -134,22 +138,24 @@ export function runAgentWalletOperation(
 export function confirmedAgentWalletReceipt(
   value: unknown,
   amount: number,
-  kind: AgentWalletIntent['kind']
+  kind: AgentWalletIntent['kind'],
+  destination: 'player_wallet' | 'agent_wallet' = 'player_wallet'
 ): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const r = value as Record<string, unknown>;
   const balance = kind === 'self_stake' ? r.player_wallet_after : r.recipient_balance_after;
+  const sourceBalance = kind === 'club_bank_send' ? r.bank_after : r.agent_wallet_after;
   return (
     r.success === true &&
     typeof r.transaction_id === 'string' &&
     UUID.test(r.transaction_id) &&
     r.amount === amount &&
-    typeof r.agent_wallet_after === 'number' &&
-    Number.isFinite(r.agent_wallet_after) &&
-    r.agent_wallet_after >= 0 &&
+    typeof sourceBalance === 'number' &&
+    Number.isFinite(sourceBalance) &&
+    sourceBalance >= 0 &&
     typeof balance === 'number' &&
     Number.isFinite(balance) &&
     balance >= 0 &&
-    (kind === 'self_stake' || r.destination === 'player_wallet' || r.destination === 'agent_wallet')
+    (kind === 'self_stake' || r.destination === destination)
   );
 }

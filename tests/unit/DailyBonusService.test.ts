@@ -23,6 +23,7 @@ import {
   dailyBonusService,
   diamondsToCentsLabel,
 } from '../../src/services/DailyBonusService';
+import { DailyBonusStatusError } from '../../src/services/dailyBonusStatusError';
 
 const STATUS = {
   eligible: true,
@@ -35,6 +36,7 @@ const STATUS = {
   multiplier: 1.2,
   is_vip: false,
   claimed_today: false,
+  shown_today: false,
   unclaimed: 3,
   tiles: [
     {
@@ -62,6 +64,7 @@ describe('DailyBonusService', () => {
   beforeEach(() => {
     mocks.rpc.mockReset();
     mocks.emit.mockReset();
+    mocks.reportError.mockReset();
     sessionStorage.clear();
   });
 
@@ -74,11 +77,53 @@ describe('DailyBonusService', () => {
   });
 
   it('throws a player-facing error when the status RPC fails', async () => {
-    mocks.rpc.mockResolvedValueOnce({ data: null, error: { message: 'boom' } });
-    await expect(dailyBonusService.getStatus()).rejects.toThrow('Could Not Load Your Daily Bonus');
+    const cause = { message: 'boom', code: 'XX000' };
+    mocks.rpc.mockResolvedValueOnce({
+      data: null,
+      error: cause,
+      status: 503,
+      statusText: 'Unavailable',
+    });
+    const failure = await dailyBonusService.getStatus().catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(DailyBonusStatusError);
+    expect(failure).toMatchObject({
+      message: 'Could Not Load Your Daily Bonus',
+      kind: 'rpc_error',
+      cause,
+      httpStatus: 503,
+      httpStatusText: 'Unavailable',
+      payloadKind: 'null',
+    });
+    expect(mocks.reportError).not.toHaveBeenCalled();
   });
 
-  it('claims by slot and request id only; the amount is never sent', async () => {
+  it.each([null, [], 'invalid', 0])(
+    'rejects a non-object status without logging its body: %j',
+    async (data) => {
+      mocks.rpc.mockResolvedValueOnce({ data, error: null, status: 204, statusText: 'No Content' });
+      await expect(dailyBonusService.getStatus()).rejects.toMatchObject({
+        kind: 'invalid_payload',
+        cause: null,
+        httpStatus: 204,
+        httpStatusText: 'No Content',
+      });
+      expect(mocks.reportError).not.toHaveBeenCalled();
+    }
+  );
+
+  it('preserves a rejected transport error for the request owner', async () => {
+    const cause = new TypeError('Failed to fetch');
+    mocks.rpc.mockRejectedValueOnce(cause);
+    await expect(dailyBonusService.getStatus()).rejects.toMatchObject({
+      kind: 'rpc_error',
+      cause,
+      httpStatus: null,
+      payloadKind: 'unavailable',
+    });
+    expect(mocks.reportError).not.toHaveBeenCalled();
+  });
+
+  it('claims by slot, request id and the day the sheet showed; the amount is never sent', async () => {
     mocks.rpc.mockResolvedValueOnce({
       data: {
         success: true,
@@ -92,8 +137,9 @@ describe('DailyBonusService', () => {
     expect(result.success).toBe(true);
     const [name, args] = mocks.rpc.mock.calls[0];
     expect(name).toBe('fn_ca_daily_bonus_claim');
-    expect(Object.keys(args).sort()).toEqual(['p_request_id', 'p_slot']);
+    expect(Object.keys(args).sort()).toEqual(['p_bonus_date', 'p_request_id', 'p_slot']);
     expect(args.p_slot).toBe(1);
+    expect(args.p_bonus_date).toBe('2026-09-08');
     expect(args.p_request_id).toMatch(/^[0-9a-f-]{36}$/);
   });
 
@@ -134,9 +180,100 @@ describe('DailyBonusService', () => {
     );
   });
 
+  it('paints the ledger’s balance on the header the moment diamonds are granted', async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: {
+        success: true,
+        granted: { kind: 'diamonds', diamonds: 12, quantity: 0, balance_after: 512 },
+        streak: 3,
+      },
+      error: null,
+    });
+    await dailyBonusService.claim('2026-09-08', 1);
+    expect(mocks.emit).toHaveBeenCalledWith('DIAMOND_BALANCE_CHANGED', {
+      newBalance: 512,
+      delta: 12,
+      source: 'daily_bonus',
+    });
+  });
+
+  it('a claim that lands after midnight is a refusal the sheet can read, not a payment', async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: { success: false, reason: 'day_rolled_over', today: '2026-09-09' },
+      error: null,
+    });
+    const result = await dailyBonusService.claim('2026-09-08', 1);
+    expect(result.success).toBe(false);
+    expect(claimReasonText(result.reason)).toBe('A New Day Has Started, Here Is Today’s Sheet');
+    expect(mocks.emit).not.toHaveBeenCalled();
+  });
+
+  it('normalises a status payload so the sheet never counts or ticks from a missing field', async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: {
+        eligible: false,
+        reason: 'fixture',
+        today: '2026-09-08',
+        reset_at: '2026-09-09T05:00:00+00:00',
+      },
+      error: null,
+    });
+    const status = await dailyBonusService.getStatus();
+    expect(status.unclaimed).toBe(0);
+    expect(status.seconds_to_reset).toBe(0);
+    expect(status.shown_today).toBe(false);
+    expect(status.tiles).toEqual([]);
+    // Phase 3 fields read as nothing held, nothing running, nothing protected
+    // when the payload predates them.
+    expect(status.shield).toEqual({ held: 0, expires_at: null });
+    expect(status.boost).toEqual({ active: false });
+    expect(status.streak_protected).toBe(false);
+  });
+
+  it('carries the shield, the live boost and a protected day through, as the ledger reports them', async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: {
+        ...STATUS,
+        shield: { held: 2, expires_at: '2026-10-10T18:00:00+00:00' },
+        boost: {
+          active: true,
+          factor: 2,
+          kind: 'mission_diamonds',
+          ends_at: '2026-09-09T18:00:00+00:00',
+          seconds_left: 4000,
+          applied_diamonds: 30,
+        },
+        streak_protected: true,
+      },
+      error: null,
+    });
+    const status = await dailyBonusService.getStatus();
+    expect(status.shield).toEqual({ held: 2, expires_at: '2026-10-10T18:00:00+00:00' });
+    expect(status.boost.active).toBe(true);
+    expect(status.boost.seconds_left).toBe(4000);
+    expect(status.boost.applied_diamonds).toBe(30);
+    expect(status.streak_protected).toBe(true);
+    // A boost the ledger says is not active never becomes one here.
+    mocks.rpc.mockResolvedValueOnce({
+      data: { ...STATUS, boost: { active: 'yes', seconds_left: 99 } },
+      error: null,
+    });
+    expect((await dailyBonusService.getStatus()).boost).toEqual({ active: false });
+  });
+
+  it('marks today shown through its own RPC and swallows a failure (the local mark covers it)', async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: { success: true }, error: null });
+    await dailyBonusService.markShown();
+    expect(mocks.rpc).toHaveBeenCalledWith('fn_ca_daily_bonus_mark_shown');
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: { message: 'boom' } });
+    await expect(dailyBonusService.markShown()).resolves.toBeUndefined();
+    expect(mocks.reportError).toHaveBeenCalled();
+  });
+
   it('maps every server reason to Title Case copy and reads an unknown one as itself', () => {
     expect(claimReasonText('vip_only')).toBe('VIP Members Only');
     expect(claimReasonText('daily_cap')).toBe('Daily Diamond Cap Reached');
+    expect(claimReasonText('boost_already_live')).toBe('A Mission Boost Is Already Running');
     expect(claimReasonText('something_new')).toBe('Could Not Claim (something_new)');
   });
 

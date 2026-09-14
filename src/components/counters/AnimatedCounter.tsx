@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './AnimatedCounter.css';
 
 interface AnimatedCounterProps {
@@ -16,9 +16,19 @@ export const AnimatedCounter: React.FC<AnimatedCounterProps> = ({
 }) => {
   const [displayValue, setDisplayValue] = useState(0);
 
+  /* ONE LOOP AT A TIME, AND NONE AFTER UNMOUNT (2026-09-10). The frame id
+     was never captured and the effect had no cleanup, so a value change
+     mid-animation started a second loop fighting the first over
+     setDisplayValue, and the loop kept setting state after unmount. The
+     start value is read from a ref so a re-run does not need displayValue in
+     its deps (which would restart the loop on every frame). */
+  const displayRef = useRef(0);
+  displayRef.current = displayValue;
+
   useEffect(() => {
     let start: number | null = null;
-    const startValue = displayValue;
+    let frame = 0;
+    const startValue = displayRef.current;
     const diff = value - startValue;
 
     const animate = (timestamp: number) => {
@@ -28,11 +38,12 @@ export const AnimatedCounter: React.FC<AnimatedCounterProps> = ({
       setDisplayValue(Math.round(startValue + diff * eased));
 
       if (progress < 1) {
-        requestAnimationFrame(animate);
+        frame = requestAnimationFrame(animate);
       }
     };
 
-    requestAnimationFrame(animate);
+    frame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frame);
   }, [value, duration]);
 
   return (

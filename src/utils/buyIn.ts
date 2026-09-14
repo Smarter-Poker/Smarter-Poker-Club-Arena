@@ -357,6 +357,20 @@ export function money(n: number): string {
   return (Number.isFinite(v) ? Math.round(v) : 0).toLocaleString('en-US');
 }
 
+/**
+ * Exact financial component display. Tournament prices remain whole chips,
+ * but their prize/fee split is stored to cents (for example 13.50 + 1.50).
+ * Never pass an on-felt stack through this helper: it exists for ledger parts.
+ */
+export function moneyExact(n: number): string {
+  const v = Number(n);
+  const exact = Number.isFinite(v) ? round2(v) : 0;
+  return exact.toLocaleString('en-US', {
+    minimumFractionDigits: Number.isInteger(exact) ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 /** The total a player pays, from the two stored columns. Always whole. */
 export function totalBuyIn(prize: number, fee: number | null | undefined): number {
   return Math.round(cents((Number(prize) || 0) + (Number(fee) || 0)));
@@ -378,11 +392,10 @@ export function formatBuyIn(prize: number, fee: number | null | undefined): stri
   // IS - free to enter, 1-chip rebuys and add-ons - not just "free".
   if (total <= 0) return FREE_BUY_LABEL;
   if (f <= 0) return money(total);
-  // Round the FEE and take the prize as the remainder, rather than rounding
-  // both ends. Rounding each independently is how a legacy 13.5 + 1.5 row
-  // renders as "15 (14 + 2)" and the parts stop adding up to the total.
-  const shownFee = Math.min(total, Math.max(0, Math.round(f)));
-  return `${money(total)} (${money(total - shownFee)} + ${money(shownFee)})`;
+  // Entry totals stay whole chips; their disclosed components retain cents.
+  // Derive the remainder from the displayed total so the split still adds up.
+  const shownFee = Math.min(total, Math.max(0, round2(f)));
+  return `${money(total)} (${moneyExact(total - shownFee)} + ${moneyExact(shownFee)})`;
 }
 
 /** Compact form for a narrow lobby card: just the total. */

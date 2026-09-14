@@ -13,6 +13,11 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+// Isolate the canonical identity boundary; these tests do not bootstrap authentication.
+vi.mock('../../src/core/IdentityDNA', () => ({
+  getIdentityDNAStatus: () => ({ loaded: true, authenticated: false, userId: null }),
+}));
+
 // ─── Mock dependencies ────────────────────────────────────────────────────
 
 const buildChain = (): any => {

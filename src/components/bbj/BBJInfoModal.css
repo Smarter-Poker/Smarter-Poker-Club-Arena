@@ -135,6 +135,47 @@
   box-shadow: inset 0 -2px 0 #d5dae2;
 }
 
+/* THE SECOND ROW (Dan 2026-09-11): Bad Beat Jackpot | Mini. Smaller and
+   quieter than the three page tabs on purpose - "shouldn't be a main feature"
+   - a pill pair under the tabs rather than a fourth tab beside them. */
+.bbj-modal__tiers {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px 0;
+}
+
+.bbj-modal__tier {
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 15px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+}
+
+.bbj-modal__tier.is-active {
+  color: #0a1626;
+  background: #d5dae2;
+  border-color: #d5dae2;
+}
+
+/* The header follows the row: a flat mini reads as a smaller figure than the
+   pool, and it carries one line under it saying which stakes it is for. */
+.bbj-modal__amount--mini {
+  font-size: 22px;
+}
+
+.bbj-modal__sublabel {
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  color: rgba(226, 231, 238, 0.6);
+  margin-top: 2px;
+}
+
 .bbj-modal__body {
   padding: 12px;
   flex: 1;

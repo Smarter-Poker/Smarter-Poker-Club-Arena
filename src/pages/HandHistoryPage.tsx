@@ -21,6 +21,7 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { handAssetTotals, historyAssetLabel } from '../lib/handAssetTotals';
 import { handHistoryService } from '../services/HandHistoryService';
 import type { HandRecord as ServiceHandRecord } from '../services/HandHistoryService';
 import type { HandRecord } from '../components/table/HandHistoryPanel';
@@ -48,6 +49,7 @@ import { handNotesService, type HandNote } from '../services/HandNotesService';
 import { handFlagService, type HandFlag } from '../services/HandFlagService';
 import { toPokerStarsFile } from '../utils/pokerStarsExport';
 import { openInBrowser } from '../lib/openExternal';
+import { downloadBlob } from '../utils/downloadCsv';
 
 /**
  * PHASE 5 (2026-09-06): the chips are a QUERY now, not four hard-coded
@@ -402,16 +404,10 @@ export default function HandHistoryPage() {
       toast.error('None Of These Hands Can Be Written In That Format');
       return;
     }
-    const blob = new Blob([file.text], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `club-arena-pokerstars-${Date.now()}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    /* Revoking synchronously cancels the download on Firefox. */
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    downloadBlob(
+      `club-arena-pokerstars-${Date.now()}.txt`,
+      new Blob([file.text], { type: 'text/plain;charset=utf-8' })
+    );
     toast.success(
       file.skipped.length
         ? `Exported ${file.written} Hands. ${file.skipped.length} Could Not Be Written In That Format.`
@@ -481,19 +477,34 @@ export default function HandHistoryPage() {
     return () => timers.forEach(clearTimeout);
   }, [idSignature]);
 
+  const assetTotals = useMemo(
+    () =>
+      handAssetTotals(
+        hands.map((h) => ({
+          arenaAsset: h.arenaAsset,
+          net: h.replay.players.find((p) => p.userId === userId)?.net ?? 0,
+          pot: h.replay.potTotal,
+        }))
+      ),
+    [hands, userId]
+  );
+  const biggestPotsByAsset =
+    assetTotals
+      .map(
+        (t) =>
+          money(t.biggestPot, t.asset === 'diamonds' ? 0 : 2) + ' ' + historyAssetLabel(t.asset)
+      )
+      .join(' / ') || 'Asset Unavailable';
+
   const stats = useMemo(() => {
     let wins = 0;
     let losses = 0;
-    let net = 0;
-    let biggestPot = 0;
     let vpip = 0;
     for (const h of hands) {
       const me = h.replay.players.find((p) => p.userId === userId);
       if (!me) continue;
       if (me.net > 0) wins += 1;
       if (me.net < 0) losses += 1;
-      net += me.net;
-      biggestPot = Math.max(biggestPot, h.replay.potTotal);
       const pre = h.replay.streets.find((s) => s.key === 'preflop');
       if (
         pre?.rows.some(
@@ -505,8 +516,6 @@ export default function HandHistoryPage() {
     return {
       wins,
       losses,
-      net: Math.round(net * 100) / 100,
-      biggestPot,
       vpipPct: hands.length ? Math.round((vpip / hands.length) * 100) : 0,
     };
   }, [hands, userId]);
@@ -519,6 +528,7 @@ export default function HandHistoryPage() {
         table: h.tableName || '',
         game: gameTypeLabel(h.replay.gameVariant) || h.gameType,
         stakes: h.blinds,
+        asset: h.arenaAsset ?? 'unclassified',
         hand_number: h.handNumber,
         pot: h.replay.potTotal,
         rake: h.rake,
@@ -578,7 +588,7 @@ export default function HandHistoryPage() {
         metrics={[
           { label: 'Loaded', value: hands.length },
           { label: 'Won', value: stats.wins, tone: 'live' },
-          { label: 'Biggest Pot', value: money(stats.biggestPot), tone: 'attention' },
+          { label: 'Biggest Pot', value: biggestPotsByAsset, tone: 'attention' },
         ]}
       />
 
@@ -705,18 +715,24 @@ export default function HandHistoryPage() {
               <span className="stat-value">{stats.losses}</span>
               <span className="stat-label">Lost</span>
             </div>
-            <div
-              className={`summary-stat ${stats.net > 0 ? 'positive' : stats.net < 0 ? 'negative' : ''}`}
-            >
-              <span className="stat-value">{signed(stats.net)}</span>
-              <span className="stat-label">Net</span>
-            </div>
+            {assetTotals.map((total) => (
+              <div
+                key={total.asset}
+                className={`summary-stat ${total.net > 0 ? 'positive' : total.net < 0 ? 'negative' : ''}`}
+              >
+                <span className="stat-value">
+                  {total.net > 0 ? '+' : ''}
+                  {money(total.net, total.asset === 'diamonds' ? 0 : 2)}
+                </span>
+                <span className="stat-label">Net {historyAssetLabel(total.asset)}</span>
+              </div>
+            ))}
             <div className="summary-stat">
               <span className="stat-value">{stats.vpipPct}%</span>
               <span className="stat-label">VPIP</span>
             </div>
             <div className="summary-stat">
-              <span className="stat-value">{money(stats.biggestPot)}</span>
+              <span className="stat-value">{biggestPotsByAsset}</span>
               <span className="stat-label">Biggest Pot</span>
             </div>
             <button
@@ -826,7 +842,10 @@ export default function HandHistoryPage() {
                     </div>
                   </div>
                   <div className="hand-footer">
-                    <span className="stakes">{hand.blinds}</span>
+                    <span className="stakes">
+                      {hand.blinds}
+                      {hand.arenaAsset === 'diamonds' ? ' Diamonds' : ''}
+                    </span>
                     <span className="players">{hand.players.length} Players</span>
                     <span className="hand-card__chevron" aria-hidden="true">
                       {expanded ? '▴' : '▾'}

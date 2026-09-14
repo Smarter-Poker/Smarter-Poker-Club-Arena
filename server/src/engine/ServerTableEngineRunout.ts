@@ -700,6 +700,12 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   protected handlePineappleDiscard(event: HandEvent): void {
     if (event.type !== 'PINEAPPLE_DISCARD_REQUIRED' || !this.handController) return;
 
+    // The discard round owns per-seat discard deadlines, not an ordinary turn
+    // clock. Cancel every preflop turn deadline and speculative Horse action at
+    // this boundary. HandController also parks currentPlayerSeat at -1 and
+    // rejects ordinary actions during the round; both sides are intentional so
+    // a delayed callback cannot manufacture a `check` in pineapple_discard.
+    this.clearTurnTimer();
     const seats = (event as any).seats as number[];
     const timeoutMs = (this.tableInfo?.action_time_seconds || 15) * 1000;
     const deadline = Date.now() + timeoutMs;
@@ -1841,7 +1847,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         new Error(
           `[ServerTableEngine:${this.tableId}] RIT: Not enough cards for ${runs} runouts (need ${cardsNeeded * runs}, have ${remainingDeck.length})`
         ),
-        'ServerTableEnginethistableId.RIT'
+        `ServerTableEngine.${this.tableId}.rit_insufficient_deck`
       );
       /**
        * 2026-08-27: this path had BOTH silent-fallback defects at once. It
@@ -1958,7 +1964,9 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
      */
     this.currentHandPots = pots.map((p, index) => ({
       index,
-      amount: Number(p?.amount) || 0,
+      // Cents, not floats - same rule as the WINNERS capture. This record is
+      // what hand_history.pots is written from.
+      amount: Math.round((Number(p?.amount) || 0) * 100) / 100,
       eligible: Array.isArray(p?.eligiblePlayers)
         ? p.eligiblePlayers.map((u) => String(u ?? '')).filter(Boolean)
         : [],
@@ -2015,13 +2023,33 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
      * Conservation is exact by construction: a pot's slices sum to
      * `base * runs + remainder`, which is the pot, to the cent.
      */
+    /**
+     * ── AND THE SLICE IS A WHOLE UNIT OF WHATEVER IS ON THE TABLE (2026-09-12) ──
+     *
+     * The rule above was written in integer CENTS, which is the indivisible
+     * unit of a chip and half of a Diamond. A five Diamond pot over two runs is
+     * 250 cents a board, which is two and a half Diamonds, and every Diamond
+     * guard refuses a fractional amount outright - which is why run it twice
+     * was CLOSED for Diamond rather than merely untested.
+     *
+     * The unit is now read from the table: one cent for chips, one hundred for
+     * a Diamond, the same `unitCents` HandController's own payout math uses.
+     * The stated rule does not change and neither does the chip arithmetic -
+     * unitCents is 1 there, so `units === cents` by construction. Only what the
+     * rule counts in changes.
+     */
+    const unitCents = this.tableInfo?.arena?.asset === 'diamonds' ? 100 : 1;
     const potSlicesByBoard: Array<typeof pots> = Array.from({ length: runs }, () => []);
     for (const p of pots) {
       const cents = Math.round((Number(p.amount) || 0) * 100);
-      const base = Math.floor(cents / runs);
-      const remainder = cents - base * runs;
+      const units = Math.round(cents / unitCents);
+      const base = Math.floor(units / runs);
+      const remainder = units - base * runs;
       for (let b = 0; b < runs; b++) {
-        potSlicesByBoard[b].push({ ...p, amount: (base + (b < remainder ? 1 : 0)) / 100 });
+        potSlicesByBoard[b].push({
+          ...p,
+          amount: ((base + (b < remainder ? 1 : 0)) * unitCents) / 100,
+        });
       }
     }
 
@@ -2039,7 +2067,13 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         potSlicesByBoard[boardIdx],
         variant,
         dealerSeat,
-        perPotOut
+        perPotOut,
+        /* No eligibility-fallback collector here; the slice below is the unit
+           this board may chop a tie in, and for a Diamond that is one Diamond,
+           not one cent. Without it a two-way tie on a Diamond board pays .50
+           and the accepted-hand guard refuses the whole hand. */
+        undefined,
+        unitCents / 100
       );
       perBoardWinners.push([...new Set(boardWinnersFull.map((w) => w.userId))]);
       for (const w of boardWinnersFull) {
@@ -2111,7 +2145,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
      */
     const ritIsTournamentHand =
       !!this.tableInfo?.tournament_id || this.tableInfo?.game_type === 'tournament';
-    if (ritIsTournamentHand && totalDistribution.size > 0) {
+    /* A DIAMOND TAKES THE SAME BACKSTOP (2026-09-12), and for the same reason a
+       tournament chip does: the stack it lands in is an integer everywhere it
+       is stored, and the accepted-hand guard refuses a fraction rather than
+       flooring it. The slicing and the tie-chop above already work in whole
+       Diamonds, so this should never have anything to do - which is exactly
+       what defense in depth means here. */
+    const ritNeedsWholeUnits = ritIsTournamentHand || this.tableInfo?.arena?.asset === 'diamonds';
+    if (ritNeedsWholeUnits && totalDistribution.size > 0) {
       const seatOf = new Map<string, number>();
       for (const p of state.players) seatOf.set(p.user_id, p.seat);
       const maxSeat = Math.max(...state.players.map((p) => p.seat), dealerSeat ?? 0) + 1;
@@ -2157,7 +2198,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // any drift into the largest share, and since the credited totals are
     // integers (odd-chip block above) every "+N" float and run label lands
     // on a whole number.
-    if (ritIsTournamentHand) {
+    if (ritNeedsWholeUnits) {
       for (const a of this.currentHandPerPotAwards) a.amount = Math.round(a.amount);
     }
     // EXACTNESS PASS 2026-08-26: per-player penny repair. Each display share

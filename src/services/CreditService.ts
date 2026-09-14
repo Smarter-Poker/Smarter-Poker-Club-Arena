@@ -1,3 +1,4 @@
+import { getIdentityDNAStatus } from '../core/IdentityDNA';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * 💳 CREDIT SERVICE — Agent Credit Line Management
@@ -132,10 +133,23 @@ export interface CreditLimitRequest {
 // SERVICE
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Module-level circuit breakers — silence RLS/permission spam for non-admin users.
-// When a read fails (expected for players who don't own these tables via RLS),
-// we report once then go quiet. Prevents Sentry/console flood from polling loops.
-let _agentInvoicesDisabled = false;
+let creditReadGeneration = 0;
+let creditIdentity: string | null | undefined;
+function creditIdentityReady(): boolean {
+  const snapshot = getIdentityDNAStatus();
+  // Do not start debt reads/scans while canonical auth initialization is incomplete.
+  if (!snapshot?.loaded) return false;
+  if (creditIdentity === undefined)
+    creditIdentity = snapshot.authenticated ? snapshot.userId : null;
+  return true;
+}
+
+masterBus.subscribe('AUTH_STATE_CHANGED', (event) => {
+  const nextIdentity = event.payload.isAuthenticated ? event.payload.userId : null;
+  if (creditIdentity === nextIdentity) return;
+  creditIdentity = nextIdentity;
+  creditReadGeneration += 1;
+});
 
 export const CreditService = {
   // ─────────────────────────────────────────────────────────────────────────────
@@ -486,7 +500,9 @@ export const CreditService = {
       }
       return this.mapInvoice(data.invoice, account.agentName);
     } catch (e) {
-      reportError(e, 'CreditService.generateSundayInvoice.tableAccess', { agentId });
+      reportError(e, 'CreditService.generateSundayInvoice.tableAccess', {
+        agentId,
+      });
       return null;
     }
   },
@@ -495,11 +511,10 @@ export const CreditService = {
    * Get invoices for an agent
    */
   async getAgentInvoices(agentId: string): Promise<CreditInvoice[]> {
-    // Circuit breaker — if previous calls hit RLS/permission errors,
-    // silently return empty instead of spamming Sentry on every poll.
-    if (_agentInvoicesDisabled) return [];
-
-    let data: any[] | null = null;
+    if (!creditIdentityReady())
+      throw new Error('Invoice identity is not initialized; retry after authentication');
+    const generation = creditReadGeneration;
+    let data: any[];
     try {
       const result = await supabase
         .from('credit_invoices')
@@ -509,23 +524,12 @@ export const CreditService = {
         .eq('agent_id', agentId)
         .order('created_at', { ascending: false })
         .limit(QUERY_LIMITS.LIST);
-
-      if (result.error) {
-        _agentInvoicesDisabled = true;
-        reportError(result.error, 'CreditService.getAgentInvoices', {
-          agentId,
-          note: 'Disabling subsequent calls - likely RLS/permission for non-agent user',
-        });
-        return [];
-      }
+      if (result.error) throw result.error;
+      if (!Array.isArray(result.data)) throw new Error('Invoice debt is unavailable');
       data = result.data;
-    } catch (e) {
-      _agentInvoicesDisabled = true;
-      reportError(e, 'CreditService.getAgentInvoices.tableAccess', {
-        agentId,
-        note: 'Disabling subsequent calls - likely RLS/permission for non-agent user',
-      });
-      return [];
+    } catch (error) {
+      reportError(error, 'CreditService.getAgentInvoices', { agentId });
+      throw error;
     }
 
     // Fetch agent display name separately (safe — no FK hint needed)
@@ -548,7 +552,8 @@ export const CreditService = {
       /* non-critical — agent name lookup is a nice-to-have */
     }
 
-    return (data || []).map((inv) => this.mapInvoice(inv, agentName));
+    if (generation !== creditReadGeneration) throw new Error('Invoice account changed');
+    return data.map((inv) => this.mapInvoice(inv, agentName));
   },
 
   /**
@@ -582,7 +587,10 @@ export const CreditService = {
       );
 
       if (error) {
-        reportError(error, 'CreditService.processPayment.wallet', { invoiceId, amount });
+        reportError(error, 'CreditService.processPayment.wallet', {
+          invoiceId,
+          amount,
+        });
         throw new Error('Payment failed');
       }
 
@@ -623,7 +631,10 @@ export const CreditService = {
     });
 
     if (applyErr) {
-      reportError(applyErr, 'CreditService.processPayment.apply', { invoiceId, method });
+      reportError(applyErr, 'CreditService.processPayment.apply', {
+        invoiceId,
+        method,
+      });
       throw new Error(`Invoice update failed: ${applyErr.message}`);
     }
 
@@ -704,10 +715,12 @@ export const CreditService = {
    * Reinstate suspended agent after payment
    */
   async reinstateAgent(agentId: string): Promise<boolean> {
+    const generation = creditReadGeneration;
     // Check nothing is still owed. Same trap as checkSuspension, and worse in
     // the other direction: counting a cancelled invoice as overdue here means
     // an agent who has settled everything can never be let back in.
     const invoices = await this.getAgentInvoices(agentId);
+    if (generation !== creditReadGeneration) throw new Error('Invoice account changed');
     const hasOverdue = invoices.some(
       (i) => OWED_INVOICE_STATUSES.has(i.status) && new Date(i.dueDate) < new Date()
     );
@@ -728,6 +741,10 @@ export const CreditService = {
         `Failed to reinstate agent: ${error?.message || res?.error || 'update failed'}`
       );
     }
+
+    // The dispatched mutation may already have committed; suppress stale local consumption.
+    if (generation !== creditReadGeneration)
+      throw new Error('Invoice account changed; reinstatement may have committed');
 
     // Emit CREDIT_UPDATED
     if (res.club_id) {

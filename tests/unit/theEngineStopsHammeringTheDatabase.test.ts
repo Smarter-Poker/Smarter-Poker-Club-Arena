@@ -50,42 +50,24 @@ describe('a seat-first board that will not fill is asked less and less often', (
   });
 });
 
-describe('the websocket upgrade asks its four gates at once', () => {
-  const upgrade = WS.slice(
-    WS.indexOf("if (!url.pathname.startsWith('/ws/table/')) return;"),
-    WS.indexOf('this.logConnectionAudit(auth.userId, tableId, clientIp);')
-  );
+describe('the websocket transport resolves durable gates in one database snapshot', () => {
+  const gate = read('server/src/services/TableConnectionAccess.ts');
 
-  it('authorizeViewer, the blacklist, restrict-observers and the IP rule are one Promise.all', () => {
-    expect(upgrade).toMatch(
-      /const \[viewerAccess, banned, observerRestricted, ipConflict\] = await Promise\.all\(\[/
-    );
-    expect(upgrade).toContain('this.authorizeViewer(tableId, auth.userId),');
-    expect(upgrade).toContain('this.isBannedFromTable(tableId, auth.userId).catch(() => false),');
-    expect(upgrade).toContain('this.isRestrictedObserver(tableId, auth.userId),');
-    expect(upgrade).toContain(
-      'this.isIpConflict(tableId, auth.userId, clientIp).catch(() => false),'
-    );
+  it('uses the same complete authority for upgrade and mux without per-gate queries', () => {
+    expect(WS.match(/await this\.authorizeConnection\(tableId,/g)).toHaveLength(2);
+    expect(gate.match(/supabase\.rpc\(/g)).toHaveLength(1);
+    expect(gate).toContain("'fn_ca_engine_table_connection_access'");
+    expect(WS).not.toContain(".from('tables')");
+    expect(WS).not.toContain(".from('table_seats')");
+    expect(WS).not.toContain(".from('blacklists')");
+    expect(WS).not.toContain('banCache');
   });
 
-  it('no gate is awaited on its own any more between the token and the audit log', () => {
-    expect(upgrade).not.toMatch(
-      /await this\.(isBannedFromTable|isRestrictedObserver|isIpConflict|authorizeViewer)\(/
-    );
-  });
-
-  it('the verdicts are still judged in the original order: access, ban, observers, ip', () => {
-    const order = [
-      'if (!viewerAccess.allowed) {',
-      'if (banned) {',
-      'if (observerRestricted) {',
-      'if (ipConflict) {',
-    ].map((needle) => upgrade.indexOf(needle));
-    expect(order.every((i) => i > -1)).toBe(true);
-    expect([...order].sort((a, b) => a - b)).toEqual(order);
-  });
-
-  it('the fail-open rules survived the move: a failed CHECK is never a refusal', () => {
-    expect(upgrade).toContain('.catch(() => false)');
+  it('keeps failed authority closed and checks live IP conflicts after durable authority', () => {
+    expect(gate).toContain("reason: 'check_failed'");
+    expect(gate).toContain('if (error');
+    expect(gate).toContain('return refused;');
+    expect(WS).not.toContain('.catch(() => false)');
+    expect(WS.match(/viewerAccess.ipRestricted/g)).toHaveLength(2);
   });
 });

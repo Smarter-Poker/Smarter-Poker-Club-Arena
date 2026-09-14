@@ -24,8 +24,10 @@
  * Hub link does on native (src/lib/openExternal.ts).
  */
 
-import { WEB_ORIGIN, nativePlatform } from '../appBase';
+import { nativePlatform } from '../appBase';
 import { pushAuthHeaders, pushDeviceId } from '../pushClient';
+import { openPushUrl } from './openPushUrl';
+export { openPushUrl } from './openPushUrl';
 
 /* Same shape as Capacitor's PluginListenerHandle; declared here so the only
    Capacitor imports in this file are dynamic (the web-bundle law). */
@@ -65,24 +67,6 @@ export async function storedToken(): Promise<string | null> {
   } catch {
     return null;
   }
-}
-
-/** Route a notification tap. Exported for tests; pure apart from navigation. */
-export async function openPushUrl(rawUrl: string | undefined | null): Promise<void> {
-  const url = typeof rawUrl === 'string' && rawUrl.trim() ? rawUrl.trim() : '/hub/club-arena';
-  let absolute: string;
-  try {
-    absolute = new URL(url, WEB_ORIGIN).toString();
-  } catch {
-    absolute = `${WEB_ORIGIN}/hub/club-arena`;
-  }
-  const { parseAppUrl, handleAppUrl } = await import('./deepLinks');
-  if (parseAppUrl(absolute)) {
-    await handleAppUrl(absolute);
-    return;
-  }
-  const { openInAppBrowser } = await import('./browser');
-  await openInAppBrowser(absolute);
 }
 
 /**

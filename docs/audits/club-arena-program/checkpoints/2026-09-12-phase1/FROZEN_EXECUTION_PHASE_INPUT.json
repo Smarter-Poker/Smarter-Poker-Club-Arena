@@ -1,0 +1,253 @@
+{
+  "at": "2026-09-12T04:36:08.871495+00:00",
+  "status": "G8 draft derived from actual G5 candidate; not an accepted total count or baseline pass",
+  "current_required_notice": "Phase 1, Total Phases Not Yet Determined",
+  "proposed_total_phases": 8,
+  "accepted_total_phases": null,
+  "basis": {
+    "g5_candidate": "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g5/baseline-delivery-candidate-0002",
+    "phase_definition_sha256": "335ca2364643162af8c900ee4b5178cf9f6b30680019fd42f0cfe16a80d22336",
+    "95_core_cause_homes": true,
+    "15_units_grouped_by_actual_output_and_shared_interface": true,
+    "7_milestones_plus_existing_audit_phase": true,
+    "peer_maps": "G5 existing exact map plus G4/Backlog/Connected/Diamond/Life current qualified placement addenda; final membership checks pending.",
+    "accepted_planning_units": 18
+  },
+  "phases": [
+    {
+      "number": 1,
+      "name": "Research, complete foundation audit and accepted delivery plan",
+      "state": "Research accepted; finite authority closure and independent baseline/plan decisions pending",
+      "complete": false,
+      "owner": "G5 accountable; assigned domain reviewers; G8 independent acceptance",
+      "exit": "Recovered existing work and original109/216 status; complete actual financial/admission/lifecycle source/runtime classification; lossless findings, concrete repair phases, dependency/writer/verification ownership and separate independent/G8 acceptance."
+    },
+    {
+      "number": 2,
+      "name": "Contract integrity",
+      "units": ["DU-SCOPE", "DU-REPLAY", "DU-JOURNAL", "DU-LEGACY"],
+      "core_contracts": [
+        "G5-CAUSE-015",
+        "G5-CAUSE-082",
+        "G5-CAUSE-010",
+        "G5-CAUSE-011",
+        "G5-CAUSE-025",
+        "G5-CAUSE-055",
+        "G5-CAUSE-071",
+        "G5-CAUSE-072",
+        "G5-CAUSE-016",
+        "G5-CAUSE-017",
+        "G5-CAUSE-018",
+        "G5-CAUSE-031",
+        "G5-CAUSE-032",
+        "G5-CAUSE-039",
+        "G5-CAUSE-043",
+        "G5-CAUSE-051",
+        "G5-CAUSE-003",
+        "G5-CAUSE-006",
+        "G5-CAUSE-007",
+        "G5-CAUSE-008",
+        "G5-CAUSE-009",
+        "G5-CAUSE-014",
+        "G5-CAUSE-019",
+        "G5-CAUSE-020",
+        "G5-CAUSE-021",
+        "G5-CAUSE-023",
+        "G5-CAUSE-024",
+        "G5-CAUSE-026",
+        "G5-CAUSE-035"
+      ],
+      "result": "A recoverable, scoped, exact original operation and retained ledger contract for the specifically repaired doors.",
+      "interfaces": [
+        "Existing original estate, actor, amount, Accounting envelope and receipt semantics for the exact edited path; no new blanket predecessor gate."
+      ],
+      "first_candidates": ["FWP-01", "FWP-02"],
+      "parallel_eligibility": "Consumer design can proceed with accepted narrow receipt/estate/amount contracts. Consumers wait only for a changed interface they actually invoke, not all journal or legacy work.",
+      "exit_rule": "Exact candidate accepted before protected integration; applicable original normal funded route and durable receipt proof, served identity and accounted cleanup accepted afterward. No phase complete from source review alone.",
+      "state": "Proposed; independent/G8 plan acceptance and exact writer allocation pending",
+      "complete": false
+    },
+    {
+      "number": 3,
+      "name": "Funded wallet and admission",
+      "units": ["DU-INTENT", "DU-CREDIT", "DU-CASH", "DU-IDENTITY", "DU-RESERVE"],
+      "core_contracts": [
+        "G5-CAUSE-002",
+        "G5-CAUSE-005",
+        "G5-CAUSE-012",
+        "G5-CAUSE-013",
+        "G5-CAUSE-053",
+        "G5-CAUSE-054",
+        "G5-CAUSE-062",
+        "G5-CAUSE-063",
+        "G5-CAUSE-065",
+        "G5-CAUSE-066",
+        "G5-CAUSE-074",
+        "G5-CAUSE-079",
+        "G5-CAUSE-080",
+        "G5-CAUSE-084",
+        "G5-CAUSE-085",
+        "G5-CAUSE-089",
+        "G5-CAUSE-090",
+        "G5-CAUSE-091",
+        "G5-CAUSE-092",
+        "G5-CAUSE-022",
+        "G5-CAUSE-052",
+        "G5-CAUSE-056",
+        "G5-CAUSE-057",
+        "G5-CAUSE-058",
+        "G5-CAUSE-059",
+        "G5-CAUSE-060",
+        "G5-CAUSE-061",
+        "G5-CAUSE-067",
+        "G5-CAUSE-068",
+        "G5-CAUSE-069",
+        "G5-CAUSE-070",
+        "G5-CAUSE-027",
+        "G5-CAUSE-029",
+        "G5-CAUSE-030",
+        "G5-CAUSE-034",
+        "G5-CAUSE-037",
+        "G5-CAUSE-038",
+        "G5-CAUSE-048",
+        "G5-CAUSE-049",
+        "G5-CAUSE-064",
+        "G5-CAUSE-075",
+        "G5-CAUSE-077",
+        "G5-CAUSE-078",
+        "G5-CAUSE-086"
+      ],
+      "result": "Normal players and staff can fund the intended estate, recover the same operation and leave with correct cashout; current account views never substitute another owner.",
+      "interfaces": [
+        "Original operation actor/estate/amount/result used by the affected caller",
+        "Existing cash occupancy and payment authority"
+      ],
+      "first_candidates": ["FWP-03", "FWP-05", "FWP-06"],
+      "parallel_eligibility": "These three first repairs can proceed independently with existing contracts after assignment. Changed canonical receipt fields create only the exact caller dependency.",
+      "exit_rule": "Exact candidate accepted before protected integration; applicable original normal funded route and durable receipt proof, served identity and accounted cleanup accepted afterward. No phase complete from source review alone.",
+      "state": "Proposed; independent/G8 plan acceptance and exact writer allocation pending",
+      "complete": false
+    },
+    {
+      "number": 4,
+      "name": "Accepted hand and occupancy",
+      "units": ["DU-HAND", "DU-OWED", "DU-JACKPOT"],
+      "core_contracts": [
+        "G5-CAUSE-028",
+        "G5-CAUSE-036",
+        "G5-CAUSE-040",
+        "G5-CAUSE-047",
+        "G5-CAUSE-050"
+      ],
+      "result": "Normal legal hands commit one authoritative result; queued financial and projection work advances without losing occupancy or replaying money.",
+      "interfaces": [
+        "Accepted-hand contract owned by Accounting",
+        "Lease generation contract for actual manager writes"
+      ],
+      "first_candidates": ["FWP-04", "FWP-07"],
+      "parallel_eligibility": "Input refusal and projection traversal changes need existing accepted-envelope semantics, not all payout/format policy. Unresolved economics holds only the affected offer/award change.",
+      "exit_rule": "Exact candidate accepted before protected integration; applicable original normal funded route and durable receipt proof, served identity and accounted cleanup accepted afterward. No phase complete from source review alone.",
+      "state": "Proposed; independent/G8 plan acceptance and exact writer allocation pending",
+      "complete": false
+    },
+    {
+      "number": 5,
+      "name": "MTT movement and clocks",
+      "units": ["DU-MTT", "DU-LAUNCH"],
+      "core_contracts": [],
+      "result": "Normal RUNNING MTTs balance, retire tables and recover the destination safely; launch recovery consumes separately proven funding and canonical time.",
+      "interfaces": [
+        "Existing seven-argument movement and receipt contract",
+        "Manager generation and source/destination custody",
+        "F03 financial/time contract for DU-LAUNCH only"
+      ],
+      "first_candidates": ["MTT-R01", "MTT-R02", "MTT-R03"],
+      "parallel_eligibility": "Run normal-RUNNING movement work while F03 waits for its exact financial/time authority. All18 movement boundaries remain mandatory for final movement acceptance.",
+      "exit_rule": "Exact candidate accepted before protected integration; applicable original normal funded route and durable receipt proof, served identity and accounted cleanup accepted afterward. No phase complete from source review alone.",
+      "state": "Proposed; independent/G8 plan acceptance and exact writer allocation pending",
+      "complete": false
+    },
+    {
+      "number": 6,
+      "name": "Configured tournament closure",
+      "units": ["DU-TERMINAL", "DU-CREATE"],
+      "core_contracts": [
+        "G5-CAUSE-033",
+        "G5-CAUSE-041",
+        "G5-CAUSE-042",
+        "G5-CAUSE-044",
+        "G5-CAUSE-045",
+        "G5-CAUSE-046",
+        "G5-CAUSE-083"
+      ],
+      "result": "Every required configured tournament can reach a correct terminal or cancellation outcome with complete original obligations.",
+      "interfaces": [
+        "Original entry/escrow/hand/rank/proposal/refund receipts",
+        "Exact approved rules only for their affected format"
+      ],
+      "first_candidates": [],
+      "parallel_eligibility": "Fix replay/order, missing required symbols and receipt binding without choosing house economics. P01 residual/attribution policy holds only the dependent bounty disposition; it is not blanket proof that every terminal path is unread.",
+      "exit_rule": "Exact candidate accepted before protected integration; applicable original normal funded route and durable receipt proof, served identity and accounted cleanup accepted afterward. No phase complete from source review alone.",
+      "state": "Proposed; independent/G8 plan acceptance and exact writer allocation pending",
+      "complete": false
+    },
+    {
+      "number": 7,
+      "name": "Paid and promotional outcomes",
+      "units": ["DU-BENEFIT"],
+      "core_contracts": [],
+      "result": "Actual shared Diamond and commerce consideration yields its original durable award/benefit/refund, with exact authority and recovery semantics.",
+      "interfaces": [
+        "The specific BD decision whose authority the edited route invokes",
+        "Existing canonical Diamond journal/lot/receipt"
+      ],
+      "first_candidates": [],
+      "parallel_eligibility": "Use accepted Diamond/Connected contracts and preserve existing provider/payer owners. Do not gate unrelated G5 repairs on content, shipping or solver completion.",
+      "exit_rule": "Exact candidate accepted before protected integration; applicable original normal funded route and durable receipt proof, served identity and accounted cleanup accepted afterward. No phase complete from source review alone.",
+      "state": "Proposed; independent/G8 plan acceptance and exact writer allocation pending",
+      "complete": false
+    },
+    {
+      "number": 8,
+      "name": "Financial truth and foundation proof",
+      "units": ["DU-REPORT"],
+      "core_contracts": [
+        "G5-CAUSE-001",
+        "G5-CAUSE-004",
+        "G5-CAUSE-073",
+        "G5-CAUSE-076",
+        "G5-CAUSE-081",
+        "G5-CAUSE-087",
+        "G5-CAUSE-088",
+        "G5-CAUSE-093",
+        "G5-CAUSE-094",
+        "G5-CAUSE-095"
+      ],
+      "result": "Users and operators can distinguish paid, owed, unavailable and partial facts; required routes reconcile and survive their required recovery and release checks.",
+      "interfaces": [
+        "Accepted source-event and repaired outcome contracts for the report being verified"
+      ],
+      "first_candidates": [],
+      "parallel_eligibility": "Reporting fixes may start independently where the immutable input is already established. Final full foundation acceptance waits for required repaired normal routes, MTT18, reconciliation/restore and served evidence, not merely a report or CI pass.",
+      "exit_rule": "Exact candidate accepted before protected integration; applicable original normal funded route and durable receipt proof, served identity and accounted cleanup accepted afterward. No phase complete from source review alone.",
+      "state": "Proposed; independent/G8 plan acceptance and exact writer allocation pending",
+      "complete": false
+    }
+  ],
+  "common_rules": [
+    "G5 foundation first; downstream seven-project leads release only after actual foundation acceptance.",
+    "Exact contract dependencies control parallel work, not a blanket wait for publication; ownership acknowledged before shared edits.",
+    "Known broken flow or policy question stays in its repair/verification home; it is not an unread-body baseline prerequisite.",
+    "Every completed delivery phase requires accepted source/schema/config, protected integration, real normal funded route and original receipt/replay/role/failure/cleanup evidence, and final served identity.",
+    "All18 MTT boundaries remain mandatory including destination next accepted hand; normal RUNNING movement does not depend on unresolved F03 launch proof.",
+    "Independent reviewer differs from implementer; G8 alone records checkpoint acceptance.",
+    "Original G07 excluded, current C12 qualifications and revoked StageB freeze retained.",
+    "Urgent GDPR and exact ACL containment remain separately authorized, not substitutes for Phase1 or whole foundation."
+  ],
+  "not_yet_ready_reasons": [
+    "Root exact remaining158 frozen-register evidence homes/9 multiple-home joins plus later epoch delta; preserve safeguards/history and no body recount.",
+    "Independent final consolidated root/control planning acceptance; current specialist sessions hit usage limit."
+  ],
+  "updated_at": "2026-09-12T04:54:38.992279+00:00",
+  "current_frontier_overlay": "FINITE_BASELINE_DECISIONS_CURRENT.json; delivered actual admission13/training grade0009 and checkout3 closures supersede older candidate body-gap strings."
+}

@@ -203,7 +203,7 @@
 /* Lifetime is brass: the one warm accent on the plate. */
 .vipBadgeLifetime {
   border-color: rgba(234, 217, 168, 0.7);
-  background: linear-gradient(180deg, #e9cf8a, #b8902f);
+  background: linear-gradient(180deg, #e9cf8a, #ffa500);
   color: #1b1405;
 }
 
@@ -1032,7 +1032,7 @@
   --identity-dim: #6b7d8b;
   --identity-blue: #1878c8;
   --identity-blue-soft: #146bb3;
-  --identity-gold: #a07a1e;
+  --identity-gold: #d6ad52;
   --identity-green: #1f8f55;
   --identity-red: #c23d3d;
   --identity-hero-veil: 230, 235, 239;

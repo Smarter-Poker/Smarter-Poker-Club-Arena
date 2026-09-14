@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import sharp from 'sharp';
 
 /**
  * THE HEADER PORTRAIT FRAME, RENDERED.
@@ -91,37 +92,28 @@ test.describe('Club Arena header portrait frame', () => {
       );
       expect(geo.slotBorder, `${width}px: the slot has its hairline`).toBe('solid');
 
-      // Paint the header and read the pixels back through a canvas - no
-      // image library needed, and it is the composited result we care about.
+      // Paint the header and decode the composited pixels in Node. Sending the
+      // entire raw RGBA plane back through page.evaluate serialised millions
+      // of numbers over Playwright's protocol across these six viewports. On
+      // a contended CI runner that blocked the renderer until the 30s test
+      // ceiling, even though the screenshot itself was already complete.
+      // Sharp keeps the same pixel-for-pixel contract without that transfer.
       const shot = await page.screenshot({
         clip: { x: 0, y: 0, width, height: Math.ceil(geo.art.h) + 1 },
       });
-      const pixels = await page.evaluate(
-        async ({ png, w, h }) => {
-          const img = new Image();
-          img.src = `data:image/png;base64,${png}`;
-          await img.decode();
-          const canvas = document.createElement('canvas');
-          canvas.width = img.naturalWidth;
-          canvas.height = img.naturalHeight;
-          const ctx = canvas.getContext('2d')!;
-          ctx.drawImage(img, 0, 0);
-          const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-          return {
-            data: Array.from(data),
-            width: canvas.width,
-            height: canvas.height,
-            dpr: canvas.width / w,
-            cssH: h,
-          };
-        },
-        { png: shot.toString('base64'), w: width, h: Math.ceil(geo.art.h) + 1 }
-      );
+      const decoded = await sharp(shot).raw().toBuffer({ resolveWithObject: true });
+      const pixels = {
+        data: decoded.data,
+        width: decoded.info.width,
+        height: decoded.info.height,
+        channels: decoded.info.channels,
+        dpr: decoded.info.width / width,
+      };
 
       const at = (x: number, y: number) => {
         const xi = Math.min(pixels.width - 1, Math.max(0, Math.round(x)));
         const yi = Math.min(pixels.height - 1, Math.max(0, Math.round(y)));
-        const i = (yi * pixels.width + xi) * 4;
+        const i = (yi * pixels.width + xi) * pixels.channels;
         return [pixels.data[i], pixels.data[i + 1], pixels.data[i + 2]] as const;
       };
       const dpr = pixels.dpr;

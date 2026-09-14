@@ -32,6 +32,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { parse } from 'yaml';
 
 const ROOT = join(__dirname, '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
@@ -76,16 +77,25 @@ describe('the build typechecks where it ships', () => {
     expect(plain).toHaveLength(0);
   });
 
-  it('TypeScript Check still runs on every pull request and no diff filter can skip it', () => {
+  it('TypeScript compilation still runs on every pull request and no diff filter can skip it', () => {
     const ci = read('.github/workflows/ci.yml');
-    const start = ci.indexOf('\n  typecheck:');
+    const start = ci.indexOf('\n  typecheck_compile:');
     expect(start, 'the typecheck job disappeared').toBeGreaterThan(-1);
     // Up to the next top-level job key (two-space indent, then a name+colon).
     const rest = ci.slice(start + 1);
     const nextJob = rest.slice(1).search(/\n {2}[a-z_][a-z0-9_-]*:\n/i);
     const job = nextJob === -1 ? rest : rest.slice(0, nextJob + 1);
-    expect(job, 'the typecheck job disappeared').toContain('TypeScript Check');
+    expect(job, 'the typecheck job disappeared').toContain(
+      'TypeScript compilation and repository checks'
+    );
     expect(job).toMatch(/tsc --noEmit/);
+    const step = parse(ci).jobs.typecheck_compile.steps.find(
+      (step: { name?: string }) => step.name === 'TypeScript Check'
+    );
+    expect(step.run.trim().split('\n')).toEqual([
+      'npx tsc --noEmit',
+      'npx tsc -p tsconfig.node.json --noEmit',
+    ]);
     // It must not be gated on the `changes` job. A skipped required check
     // counts as SATISFIED by the ruleset, so a filter here is how the whole
     // typecheck quietly stops happening.

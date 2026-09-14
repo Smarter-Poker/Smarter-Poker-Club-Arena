@@ -24,10 +24,12 @@
  * Windows are structure-bounded (tests/helpers/sourceWindow.ts).
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { act, renderHook } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { sliceBlockAfter, sliceEnclosingBlock } from '../helpers/sourceWindow';
+import { useTournamentRebalance } from '../../src/hooks/useTournamentRebalance';
 
 const root = join(__dirname, '..', '..');
 const TABLE_PAGE = readFileSync(join(root, 'src', 'pages', 'TablePage.tsx'), 'utf8');
@@ -35,17 +37,12 @@ const TABLE_SERVICE = readFileSync(join(root, 'src', 'services', 'TableService.t
 const CLUB_HOME = readFileSync(join(root, 'src', 'pages', 'ClubHomePage.tsx'), 'utf8');
 
 describe('round 9: TableService', () => {
-  it('leaveTable refuses when the table-context read fails, instead of guessing cash', () => {
-    const gate = sliceEnclosingBlock(TABLE_SERVICE, 'leaveTable_table_context_read_failed', 0, 2);
-    expect(gate).toContain('return { success: false, chipsReturned: 0 }');
-    // The cash-path fork must still sit BELOW the guard.
-    const guardAt = TABLE_SERVICE.indexOf('leaveTable_table_context_read_failed');
-    // CHIP STANDARD C1 (2026-09-02): the browser's cash-out RPC is now
-    // atomic_seat_cashout_locked (one cash-out path); the fork position pin
-    // is unchanged.
-    const forkAt = TABLE_SERVICE.indexOf("'atomic_seat_cashout_locked'");
-    expect(guardAt).toBeGreaterThan(-1);
-    expect(forkAt).toBeGreaterThan(guardAt);
+  it('leaveTable delegates classification to the engine instead of guessing cash from a browser read', () => {
+    const block = sliceBlockAfter(TABLE_SERVICE, 'async leaveTable(');
+    expect(block).toContain('leaveSeatWithIntent(tableId, userId)');
+    expect(block).toContain('if (!result.success) return result');
+    expect(block).not.toContain('tournament_id');
+    expect(block).not.toContain('supabase.rpc');
   });
 
   it('getClubTables consults the cached union scope on a failed union read', () => {
@@ -113,9 +110,33 @@ describe('round 9: a paid entrant is never demoted to spectator by a timeout', (
 });
 
 describe('round 9: rebalance and bounty reads take their fallbacks on resolved errors', () => {
-  it('a failed rebalance read reaches the catch that refreshes the seats', () => {
-    const block = sliceEnclosingBlock(TABLE_PAGE, 'error: rebalanceErr', 0, 2);
-    expect(block).toContain('if (rebalanceErr) throw rebalanceErr');
+  it('a failed rebalance read reaches the catch that refreshes the seats', async () => {
+    const error = new Error('roster unavailable');
+    const refresh = vi.fn();
+    const report = vi.fn();
+    const navigate = vi.fn();
+    const view = renderHook(() =>
+      useTournamentRebalance({
+        tableId: 'source',
+        userId: 'player',
+        routeTableId: 'source',
+        subscribeAuth: () => () => {},
+        readRoster: async () => ({ data: { table_id: 'destination' }, error }),
+        refresh,
+        report,
+        navigate,
+      })
+    );
+    try {
+      await act(async () => {
+        await view.result.current('tournament', () => true);
+      });
+      expect(report).toHaveBeenCalledExactlyOnceWith(error);
+      expect(refresh).toHaveBeenCalledOnce();
+      expect(navigate).not.toHaveBeenCalled();
+    } finally {
+      view.unmount();
+    }
   });
 
   it('a failed bounty read keeps the map the table already has', () => {

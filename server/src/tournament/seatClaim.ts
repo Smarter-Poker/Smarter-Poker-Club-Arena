@@ -18,7 +18,9 @@
  * between 17:13:39 and 17:16:28 while the start-seating pass was still running,
  * 46 of the 72 pairs sitting exactly 14 tables apart — two independent
  * round-robin cursors walking the same table list. Both seats are dealt, both
- * stacks diverge, and `fn_sync_tournament_chips` then has to pick one.
+ * stacks diverge, and the former delayed chip snapshot then had to pick one.
+ * The accepted-hand transaction now mirrors one exact roster and the delayed
+ * writer has been removed, but duplicate seating must still be refused here.
  *
  * So the snapshot is not the check. THIS is the check, and it is taken
  * immediately before the write, by every writer.
@@ -58,7 +60,7 @@ export async function findLiveSeatsInTournament(
   try {
     const { data, error } = await client
       .from('table_seats')
-      .select('id, table_id, seat_number, tables!inner(tournament_id)')
+      .select('id, table_id, seat_number, tables!table_seats_table_id_fkey!inner(tournament_id)')
       .is('left_at', null)
       .eq('tables.tournament_id', tournamentId)
       .eq('user_id', userId);

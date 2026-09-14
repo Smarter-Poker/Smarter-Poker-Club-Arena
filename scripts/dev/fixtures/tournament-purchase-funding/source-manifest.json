@@ -1,0 +1,363 @@
+{
+  "functions": [
+    {
+      "signature": "fn_ca_process_tournament_chip_purchase_money_v1(uuid,uuid,text,numeric,numeric,integer,text)",
+      "body_md5": "ebff39bd84c1a1ac9a75e7b09ceaa74b"
+    },
+    {
+      "signature": "process_tournament_rebuy(uuid,uuid,text,numeric,numeric,integer,text)",
+      "body_md5": "63e4762f2f293da5f2c66ae03fd92947"
+    },
+    {
+      "signature": "fn_ca_assign_tournament_player_seat_locked(uuid,uuid,uuid,integer)",
+      "body_md5": "16a587f7567336fe4379135f22e3fb41"
+    },
+    {
+      "signature": "fn_ca_choose_tournament_seat_locked(uuid,uuid,uuid,integer)",
+      "body_md5": "cd199b528866665d702100c86b5a89ee"
+    },
+    {
+      "signature": "fn_ca_latest_committed_knockout_candidate(uuid,uuid)",
+      "body_md5": "0602827901be20bbb6e0dce6ece17f94"
+    },
+    {
+      "signature": "fn_ca_tournament_rebuy_window(uuid)",
+      "body_md5": "b9b7ba44728a4f9a72a0c8f77934dbc3"
+    },
+    {
+      "signature": "fn_emit_tournament_manager_wake(uuid,text)",
+      "body_md5": "bc71b7d556d72d7d85c7fb2f0ea22406"
+    },
+    {
+      "signature": "fn_seat_club_for_user(uuid,uuid,uuid)",
+      "body_md5": "685ccf0299798df1ebfeefba331e901d"
+    },
+    {
+      "signature": "fn_ca_tournament_seat_cap(uuid)",
+      "body_md5": "177e2e82ef01b126d16e7706f9d29e12"
+    },
+    {
+      "signature": "fn_ensure_late_registration_capacity(uuid,integer)",
+      "body_md5": "b36dd36a9348d29be1092c7d42954c03"
+    },
+    {
+      "signature": "fn_ca_guard_seat_creation()",
+      "body_md5": "534207f17003588a6ada8b6ea894442d"
+    },
+    {
+      "signature": "fn_clear_sitout_on_turnover()",
+      "body_md5": "6ded94049da680cfcd5eb679c27d3da2"
+    },
+    {
+      "signature": "fn_guard_one_live_tournament_seat()",
+      "body_md5": "8750784ecac2800db5c6b0867730abdf"
+    },
+    {
+      "signature": "fn_new_seat_clear_sitout()",
+      "body_md5": "84c78b67385e6807a6b8ee72a16fcddd"
+    },
+    {
+      "signature": "fn_refuse_reentry_with_pending_bounty()",
+      "body_md5": "bf6c3702af679b2189515d094ee3a3d3"
+    },
+    {
+      "signature": "fn_require_live_seat_parent()",
+      "body_md5": "22412833cfa9e0617492c5261f9a4069"
+    },
+    {
+      "signature": "fn_seat_change_syncs_seat_first_count()",
+      "body_md5": "d105db62a249ba49b267d8d28bb55b2f"
+    },
+    {
+      "signature": "fn_stamp_active_seat_game_scope()",
+      "body_md5": "43179b85d6717e3b512dc34cfad9d89c"
+    },
+    {
+      "signature": "fn_stamp_seat_club()",
+      "body_md5": "aae09b5c2a9a82e0d72bbc7ab5020467"
+    },
+    {
+      "signature": "fn_stamp_seat_horse_id()",
+      "body_md5": "890d7343f1f79736cce8b572aa583355"
+    },
+    {
+      "signature": "fn_stamp_seat_occupancy()",
+      "body_md5": "aa11dad7e910735d01c28c8638698a3f"
+    },
+    {
+      "signature": "fn_stamp_sit_out_at()",
+      "body_md5": "0fe6f1a355f1caf1ac7ae7d164019e74"
+    },
+    {
+      "signature": "fn_stamp_tournament_elimination_sequence()",
+      "body_md5": "78943d7a0d060e33830281500f08dfca"
+    },
+    {
+      "signature": "fn_sync_tournament_current_players()",
+      "body_md5": "ecb120c2c6a4ecee6c2e04d4c9b5ebc7"
+    },
+    {
+      "signature": "fn_tournament_live_seat_acquisition_requires_authority()",
+      "body_md5": "7a50958787ad79ffbb8b9f175f1d90a7"
+    },
+    {
+      "signature": "trg_assert_live_tournament_seat_has_roster()",
+      "body_md5": "b756632b7e50ef84a232a19afb0264dd"
+    },
+    {
+      "signature": "trg_entry_purchase_receipt_is_immutable()",
+      "body_md5": "1581e33b8712d4773406e4ab858ec654"
+    },
+    {
+      "signature": "trg_lock_and_validate_tournament_live_seat()",
+      "body_md5": "1daab0d4125165fa5b501506299965d3"
+    },
+    {
+      "signature": "trg_refuse_live_seat_on_closed_tournament_table()",
+      "body_md5": "37bcf8042464443094bd0709e1062747"
+    },
+    {
+      "signature": "trg_seat_parent_keys_match()",
+      "body_md5": "10bd21d1a3e607818ea0a4ad7c0723fd"
+    },
+    {
+      "signature": "fn_sync_seat_first_player_count(uuid)",
+      "body_md5": "609983772f8468d96b7b3d8dcfeafaea"
+    },
+    {
+      "signature": "fn_tournament_primary_table(uuid)",
+      "body_md5": "9844a7c70aeca43795cdbf856cf50311"
+    },
+    {
+      "signature": "fn_bounty_obligation_has_complete_marker(uuid)",
+      "body_md5": "bd29069e8d07bedf84e24e57242c2afe"
+    }
+  ],
+  "tables": [
+    {
+      "name": "hand_atomic_commits",
+      "foreign_keys": "not loaded; external parent programmes excluded"
+    },
+    {
+      "name": "settlement_idempotency_keys",
+      "foreign_keys": "not loaded; external parent programmes excluded"
+    },
+    {
+      "name": "tournament_bounty_obligations",
+      "foreign_keys": "not loaded; external parent programmes excluded"
+    },
+    {
+      "name": "tournament_capacity_table_receipts",
+      "foreign_keys": "not loaded; external parent programmes excluded"
+    },
+    {
+      "name": "tournament_knockout_candidates",
+      "foreign_keys": "not loaded; external parent programmes excluded"
+    },
+    {
+      "name": "tournament_manager_wakes",
+      "foreign_keys": "not loaded; external parent programmes excluded"
+    }
+  ],
+  "triggers": [
+    {
+      "body_md5": "1581e33b8712d4773406e4ab858ec654",
+      "definition": "CREATE TRIGGER z_entry_purchase_receipt_is_immutable BEFORE DELETE OR UPDATE ON entry_purchase_idempotency_receipts FOR EACH ROW EXECUTE FUNCTION trg_entry_purchase_receipt_is_immutable()",
+      "proname": "trg_entry_purchase_receipt_is_immutable",
+      "table_name": "entry_purchase_idempotency_receipts",
+      "tgenabled": "O",
+      "tgname": "z_entry_purchase_receipt_is_immutable"
+    },
+    {
+      "body_md5": "7a50958787ad79ffbb8b9f175f1d90a7",
+      "definition": "CREATE TRIGGER a0_tournament_live_seat_root_guard BEFORE INSERT OR UPDATE OF table_id, user_id, seat_number, left_at ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_tournament_live_seat_acquisition_requires_authority()",
+      "proname": "fn_tournament_live_seat_acquisition_requires_authority",
+      "table_name": "table_seats",
+      "tgenabled": "O",
+      "tgname": "a0_tournament_live_seat_root_guard"
+    },
+    {
+      "body_md5": "1daab0d4125165fa5b501506299965d3",
+      "definition": "CREATE TRIGGER aa_tournament_live_seat_proof_lock BEFORE INSERT OR DELETE OR UPDATE ON table_seats FOR EACH ROW EXECUTE FUNCTION trg_lock_and_validate_tournament_live_seat()",
+      "proname": "trg_lock_and_validate_tournament_live_seat",
+      "table_name": "table_seats",
+      "tgenabled": "O",
+      "tgname": "aa_tournament_live_seat_proof_lock"
+    },
+    {
+      "body_md5": "37bcf8042464443094bd0709e1062747",
+      "definition": "CREATE TRIGGER ab_refuse_live_seat_on_closed_tournament_table BEFORE INSERT OR UPDATE OF table_id, user_id, left_at ON table_seats FOR EACH ROW EXECUTE FUNCTION trg_refuse_live_seat_on_closed_tournament_table()",
+      "proname": "trg_refuse_live_seat_on_closed_tournament_table",
+      "table_name": "table_seats",
+      "tgenabled": "O",
+      "tgname": "ab_refuse_live_seat_on_closed_tournament_table"
+    },
+    {
+      "body_md5": "b756632b7e50ef84a232a19afb0264dd",
+      "definition": "CREATE CONSTRAINT TRIGGER tournament_live_seat_has_active_roster AFTER INSERT ON table_seats DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION trg_assert_live_tournament_seat_has_roster()",
+      "proname": "trg_assert_live_tournament_seat_has_roster",
+      "table_name": "table_seats",
+      "tgenabled": "O",
+      "tgname": "tournament_live_seat_has_active_roster"
+    },
+    {
+      "body_md5": "b756632b7e50ef84a232a19afb0264dd",
+      "definition": "CREATE CONSTRAINT TRIGGER tournament_live_seat_update_has_active_roster AFTER UPDATE OF table_id, user_id, left_at ON table_seats DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION trg_assert_live_tournament_seat_has_roster()",
+      "proname": "trg_assert_live_tournament_seat_has_roster",
+      "table_name": "table_seats",
+      "tgenabled": "O",
+      "tgname": "tournament_live_seat_update_has_active_roster"
+    },
+    {
+      "body_md5": "534207f17003588a6ada8b6ea894442d",
+      "definition": "CREATE TRIGGER trg_ca_guard_seat_creation BEFORE INSERT OR UPDATE OF left_at ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_ca_guard_seat_creation()",
+      "proname": "fn_ca_guard_seat_creation",
+      "table_name": "table_seats",
+      "tgenabled": "O",
+      "tgname": "trg_ca_guard_seat_creation"
+    },
+    {
+      "body_md5": "6ded94049da680cfcd5eb679c27d3da2",
+      "definition": "CREATE TRIGGER trg_clear_sitout_on_turnover BEFORE UPDATE ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_clear_sitout_on_turnover()",
+      "proname": "fn_clear_sitout_on_turnover",
+      "table_name": "table_seats",
+      "tgenabled": "O",
+      "tgname": "trg_clear_sitout_on_turnover"
+    },
+    {
+      "body_md5": "84c78b67385e6807a6b8ee72a16fcddd",
+      "definition": "CREATE TRIGGER trg_new_seat_clear_sitout BEFORE INSERT ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_new_seat_clear_sitout()",
+      "proname": "fn_new_seat_clear_sitout",
+      "table_name": "table_seats",
+      "tgenabled": "O",
+      "tgname": "trg_new_seat_clear_sitout"
+    },
+    {
+      "body_md5": "8750784ecac2800db5c6b0867730abdf",
+      "definition": "CREATE TRIGGER trg_one_live_seat_per_tournament BEFORE INSERT OR UPDATE OF user_id, left_at, table_id ON table_seats FOR EACH ROW WHEN (new.left_at IS NULL) EXECUTE FUNCTION fn_guard_one_live_tournament_seat()",
+      "proname": "fn_guard_one_live_tournament_seat",
+      "table_name": "table_seats",
+      "tgenabled": "O",
+      "tgname": "trg_one_live_seat_per_tournament"
+    },
+    {
+      "body_md5": "d105db62a249ba49b267d8d28bb55b2f",
+      "definition": "CREATE TRIGGER trg_seat_change_syncs_seat_first_count AFTER INSERT OR DELETE OR UPDATE OF left_at ON table_seats FOR EACH ROW WHEN (pg_trigger_depth() < 2) EXECUTE FUNCTION fn_seat_change_syncs_seat_first_count()",
+      "proname": "fn_seat_change_syncs_seat_first_count",
+      "table_name": "table_seats",
+      "tgenabled": "O",
+      "tgname": "trg_seat_change_syncs_seat_first_count"
+    },
+    {
+      "body_md5": "890d7343f1f79736cce8b572aa583355",
+      "definition": "CREATE TRIGGER trg_stamp_seat_horse_id BEFORE INSERT OR UPDATE OF user_id ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_stamp_seat_horse_id()",
+      "proname": "fn_stamp_seat_horse_id",
+      "table_name": "table_seats",
+      "tgenabled": "O",
+      "tgname": "trg_stamp_seat_horse_id"
+    },
+    {
+      "body_md5": "0fe6f1a355f1caf1ac7ae7d164019e74",
+      "definition": "CREATE TRIGGER trg_stamp_sit_out_at BEFORE INSERT OR UPDATE ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_stamp_sit_out_at()",
+      "proname": "fn_stamp_sit_out_at",
+      "table_name": "table_seats",
+      "tgenabled": "O",
+      "tgname": "trg_stamp_sit_out_at"
+    },
+    {
+      "body_md5": "aae09b5c2a9a82e0d72bbc7ab5020467",
+      "definition": "CREATE TRIGGER trg_table_seats_stamp_club BEFORE INSERT OR UPDATE ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_stamp_seat_club()",
+      "proname": "fn_stamp_seat_club",
+      "table_name": "table_seats",
+      "tgenabled": "O",
+      "tgname": "trg_table_seats_stamp_club"
+    },
+    {
+      "body_md5": "aa11dad7e910735d01c28c8638698a3f",
+      "definition": "CREATE TRIGGER zzz_stamp_seat_occupancy BEFORE INSERT OR UPDATE ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_stamp_seat_occupancy()",
+      "proname": "fn_stamp_seat_occupancy",
+      "table_name": "table_seats",
+      "tgenabled": "O",
+      "tgname": "zzz_stamp_seat_occupancy"
+    },
+    {
+      "body_md5": "43179b85d6717e3b512dc34cfad9d89c",
+      "definition": "CREATE TRIGGER zzzz_stamp_active_seat_game_scope BEFORE INSERT OR UPDATE ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_stamp_active_seat_game_scope()",
+      "proname": "fn_stamp_active_seat_game_scope",
+      "table_name": "table_seats",
+      "tgenabled": "O",
+      "tgname": "zzzz_stamp_active_seat_game_scope"
+    },
+    {
+      "body_md5": "22412833cfa9e0617492c5261f9a4069",
+      "definition": "CREATE TRIGGER zzzzz_require_live_seat_parent BEFORE INSERT OR UPDATE ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_require_live_seat_parent()",
+      "proname": "fn_require_live_seat_parent",
+      "table_name": "table_seats",
+      "tgenabled": "O",
+      "tgname": "zzzzz_require_live_seat_parent"
+    },
+    {
+      "body_md5": "10bd21d1a3e607818ea0a4ad7c0723fd",
+      "definition": "CREATE TRIGGER zzzzz_seat_parent_keys_match BEFORE INSERT OR UPDATE ON table_seats FOR EACH ROW EXECUTE FUNCTION trg_seat_parent_keys_match()",
+      "proname": "trg_seat_parent_keys_match",
+      "table_name": "table_seats",
+      "tgenabled": "O",
+      "tgname": "zzzzz_seat_parent_keys_match"
+    },
+    {
+      "body_md5": "b756632b7e50ef84a232a19afb0264dd",
+      "definition": "CREATE CONSTRAINT TRIGGER tournament_roster_cannot_orphan_live_seat AFTER DELETE ON tournament_players DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION trg_assert_live_tournament_seat_has_roster()",
+      "proname": "trg_assert_live_tournament_seat_has_roster",
+      "table_name": "tournament_players",
+      "tgenabled": "O",
+      "tgname": "tournament_roster_cannot_orphan_live_seat"
+    },
+    {
+      "body_md5": "b756632b7e50ef84a232a19afb0264dd",
+      "definition": "CREATE CONSTRAINT TRIGGER tournament_roster_update_cannot_orphan_live_seat AFTER UPDATE OF tournament_id, user_id, status ON tournament_players DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION trg_assert_live_tournament_seat_has_roster()",
+      "proname": "trg_assert_live_tournament_seat_has_roster",
+      "table_name": "tournament_players",
+      "tgenabled": "O",
+      "tgname": "tournament_roster_update_cannot_orphan_live_seat"
+    },
+    {
+      "body_md5": "bf6c3702af679b2189515d094ee3a3d3",
+      "definition": "CREATE TRIGGER trg_refuse_reentry_with_pending_bounty BEFORE UPDATE OF status ON tournament_players FOR EACH ROW EXECUTE FUNCTION fn_refuse_reentry_with_pending_bounty()",
+      "proname": "fn_refuse_reentry_with_pending_bounty",
+      "table_name": "tournament_players",
+      "tgenabled": "O",
+      "tgname": "trg_refuse_reentry_with_pending_bounty"
+    },
+    {
+      "body_md5": "ecb120c2c6a4ecee6c2e04d4c9b5ebc7",
+      "definition": "CREATE TRIGGER trg_sync_tournament_current_players AFTER INSERT OR DELETE OR UPDATE OF status, tournament_id ON tournament_players FOR EACH ROW EXECUTE FUNCTION fn_sync_tournament_current_players()",
+      "proname": "fn_sync_tournament_current_players",
+      "table_name": "tournament_players",
+      "tgenabled": "O",
+      "tgname": "trg_sync_tournament_current_players"
+    },
+    {
+      "body_md5": "78943d7a0d060e33830281500f08dfca",
+      "definition": "CREATE TRIGGER zz_stamp_tournament_elimination_sequence BEFORE INSERT OR UPDATE OF status, elimination_sequence ON tournament_players FOR EACH ROW EXECUTE FUNCTION fn_stamp_tournament_elimination_sequence()",
+      "proname": "fn_stamp_tournament_elimination_sequence",
+      "table_name": "tournament_players",
+      "tgenabled": "O",
+      "tgname": "zz_stamp_tournament_elimination_sequence"
+    }
+  ],
+  "catalog_date_utc": "2026-09-10",
+  "reused_fixtures": {
+    "scripts/dev/fixtures/satellite-refund/fixture.sql": "e2226b4ec69a16113a088db5ea71d72c6342adbf308e9a535d211c4a18455972",
+    "scripts/dev/fixtures/registration-funding/installed.sql": "5e78455fcb7b3a4eba04dff7b5ccfa74c3a813d1ed13c81d78ec990b85826b9a"
+  },
+  "synthetic_inputs": [
+    "auth.role",
+    "fn_caller_is_engine",
+    "fn_freeze_bypass_active",
+    "inherited auth/session/maintenance functions",
+    "empty bounty award/recipient/payment read relations",
+    "accepted-hand and settlement rows"
+  ],
+  "catalog_reconciled_at_utc": "2026-09-10T02:50:01Z",
+  "catalog_reconciliation": "31 function bodies unchanged; fn_stamp_seat_club and trg_lock_and_validate_tournament_live_seat recaptured after installed seat-trigger optimization."
+}

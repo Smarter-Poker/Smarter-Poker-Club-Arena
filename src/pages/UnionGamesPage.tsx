@@ -14,7 +14,7 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { masterBus } from '../core/MasterBus';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import { tournamentService } from '../services/TournamentService';
+import { tournamentService, tournamentUnregisterSuccessText } from '../services/TournamentService';
 import PageSkeleton from '../components/common/PageSkeleton';
 import styles from './UnionGamesPage.module.css';
 import { useIsMounted } from '../hooks/useIsMounted';
@@ -355,8 +355,8 @@ export default function UnionGamesPage() {
     if (!user) return;
     try {
       // unregisterPlayer handles buy-in refund, status validation, CAS deletion, and rollback
-      await tournamentService.unregisterPlayer(tournamentId, user.id);
-      toast.success('Unregistered - buy-in refunded');
+      const result = await tournamentService.unregisterPlayer(tournamentId, user.id);
+      toast.success(tournamentUnregisterSuccessText(result));
       loadUnionData(unionId || undefined);
     } catch (err: any) {
       toast.error(err.message);
@@ -368,6 +368,7 @@ export default function UnionGamesPage() {
   return (
     <div className={styles.page}>
       <CasinoSurfaceHeader
+        crest="club"
         eyebrow="Union Network / Games"
         title={`${unionName || 'Union'} Games`}
         description="Enter Active Union Tables, Register For Network Tournaments, And Inspect The Shared Bad-Beat Pool Through The Existing Game Services."

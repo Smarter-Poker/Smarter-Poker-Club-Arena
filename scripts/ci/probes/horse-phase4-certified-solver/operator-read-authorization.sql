@@ -23,6 +23,8 @@ BEGIN
   PERFORM set_config('request.jwt.claim.sub','',true);
   PERFORM 1 FROM public.ca_horse_solver_agreement(14);
   PERFORM 1 FROM public.ca_horse_solver_agreement_decisions(NULL,'gto_charts',100);
+  PERFORM 1 FROM public.ca_horse_solver_agreement_decisions(NULL,'gto_v31_certified',100);
+  PERFORM 1 FROM public.ca_horse_solver_agreement_v31_decisions(NULL,100);
   PERFORM public.ca_solver_pipeline_liveness();
 
   -- The one fixture admin is admitted through the same path used by PostgREST.
@@ -30,6 +32,8 @@ BEGIN
   PERFORM set_config('request.jwt.claim.sub','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',true);
   PERFORM 1 FROM public.ca_horse_solver_agreement(14);
   PERFORM 1 FROM public.ca_horse_solver_agreement_decisions(NULL,'gto_charts',100);
+  PERFORM 1 FROM public.ca_horse_solver_agreement_decisions(NULL,'gto_v31_certified',100);
+  PERFORM 1 FROM public.ca_horse_solver_agreement_v31_decisions(NULL,100);
   PERFORM public.ca_solver_pipeline_liveness();
 
   -- An authenticated non-admin must be rejected by every Phase 4 operator read.
@@ -37,6 +41,8 @@ BEGIN
   FOREACH v_name IN ARRAY ARRAY[
     'agreement summary',
     'agreement decisions',
+    'agreement V31 drilldown',
+    'V31 agreement decisions',
     'pipeline liveness'
   ] LOOP
     blocked := false;
@@ -46,6 +52,10 @@ BEGIN
           PERFORM 1 FROM public.ca_horse_solver_agreement(14);
         WHEN 'agreement decisions' THEN
           PERFORM 1 FROM public.ca_horse_solver_agreement_decisions(NULL,'gto_charts',100);
+        WHEN 'agreement V31 drilldown' THEN
+          PERFORM 1 FROM public.ca_horse_solver_agreement_decisions(NULL,'gto_v31_certified',100);
+        WHEN 'V31 agreement decisions' THEN
+          PERFORM 1 FROM public.ca_horse_solver_agreement_v31_decisions(NULL,100);
         WHEN 'pipeline liveness' THEN
           PERFORM public.ca_solver_pipeline_liveness();
       END CASE;
@@ -59,6 +69,7 @@ BEGIN
 
   IF has_function_privilege('anon','public.ca_horse_solver_agreement(integer)','EXECUTE')
      OR has_function_privilege('anon','public.ca_horse_solver_agreement_decisions(date,text,integer)','EXECUTE')
+     OR has_function_privilege('anon','public.ca_horse_solver_agreement_v31_decisions(date,integer)','EXECUTE')
      OR has_function_privilege('anon','public.ca_solver_pipeline_liveness()','EXECUTE') THEN
     RAISE EXCEPTION 'anon retains EXECUTE on a Phase 4 operator read';
   END IF;
@@ -68,6 +79,7 @@ BEGIN
    WHERE t.proname IN (
      'ca_horse_solver_agreement',
      'ca_horse_solver_agreement_decisions',
+     'ca_horse_solver_agreement_v31_decisions',
      'ca_solver_pipeline_liveness'
    );
   IF v_open IS NOT NULL THEN

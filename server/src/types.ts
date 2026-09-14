@@ -86,6 +86,9 @@ export interface SeatPlayer {
    * BBA and dead blinds remain shared dead money and never populate this field. */
   individualAnteInvested?: number;
   cards: Card[];
+  /** Decision-player copy only: this player's own known Pineapple discard.
+   * Never serialize it on public seats or store it on authoritative players. */
+  knownDeadCards?: Card[];
   is_folded: boolean;
   is_all_in: boolean;
   is_sitting_out: boolean;
@@ -116,6 +119,7 @@ export interface SeatPlayer {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface TableInfo {
+  arena?: import('./domain/ArenaContext.js').ArenaIdentity;
   id: string;
   club_id: string;
   small_blind: number;
@@ -291,6 +295,11 @@ export interface TableInfo {
 }
 
 export interface SeatedPlayer {
+  /** Required by the dealt-hand boundary; preserved from the authoritative roster read. */
+  seat_id?: string;
+  seat_joined_at?: string;
+  /** Database-generated seating identity, required at every cashout boundary. */
+  occupancy_id?: string;
   /** Server-only, authoritative membership used by disconnect protection. */
   reconnect_membership?: {
     is_vip?: boolean | null;
@@ -348,6 +357,8 @@ export interface SeatedPlayer {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface HandConfig {
+  /** Authoritative table funding asset. Legacy chip callers keep cent precision. */
+  asset?: 'chips' | 'diamonds';
   tableId: string;
   handNumber: number;
   /**
@@ -514,6 +525,15 @@ export interface HandStateBroadcast {
   action_history: ActionRecord[];
 }
 
+/** Authored by the final engine executor, never inferred from player identity. */
+export type AcceptedActionOrigin =
+  | 'player'
+  | 'pre_action'
+  | 'horse_policy'
+  | 'horse_fallback'
+  | 'forced'
+  | 'unknown';
+
 export interface ActionRecord {
   seat: number;
   userId: string;
@@ -523,6 +543,10 @@ export interface ActionRecord {
   stage: HandStage;
   /** Bible V8 §4.14: Short all-in (less than a full raise) does NOT reopen betting */
   isFullRaise?: boolean;
+  /** Accepted-hand learning metadata, omitted from controller/UI history. */
+  publicNode?: import('./engine/HorsePublicActionNode.js').HorsePublicActionNode;
+  /** Durable history only; unknown/forced/fallback actions cannot train a voluntary model. */
+  origin?: AcceptedActionOrigin;
 }
 
 export type HandEvent =
@@ -574,6 +598,10 @@ export type HandEvent =
       action: ActionType;
       amount: number;
       stage?: HandStage;
+      /** Accepted immutable history; late consumers must not read a later action. */
+      record?: Readonly<ActionRecord>;
+      publicNode?: import('./engine/HorsePublicActionNode.js').HorsePublicActionNode;
+      origin?: AcceptedActionOrigin;
     }
   | { type: 'POT_UPDATE'; pot: number; pots: Pot[] }
   | { type: 'TURN_CHANGE'; seat: number; availableActions: ActionType[] }
@@ -730,6 +758,38 @@ export interface BettingState {
   structure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
 }
 
+/**
+ * Phase 5 Round 1: the HandController's authoritative answer for one live
+ * decision. Consumers must not reconstruct these bounds from a partial table
+ * snapshot: reopening rights, fixed-limit caps and short all-ins all depend on
+ * the controller's complete action history.
+ */
+export interface AuthoritativeActionState {
+  schemaVersion: 1;
+  heroSeat: number;
+  currentPlayerSeat: number;
+  canAct: boolean;
+  legalActions: ActionType[];
+  toCall: number;
+  /** Absolute street wager ("raise to"), or null when no sized wager is legal. */
+  minRaiseTo: number | null;
+  /** Absolute street wager ("raise to"), or null when no sized wager is legal. */
+  maxRaiseTo: number | null;
+  structure: 'no_limit' | 'pot_limit' | 'fixed_limit';
+  /** Fixed-limit street bet, distinct from a short-wager completion size. */
+  fixedBetSize: number | null;
+  wagersCapped: boolean;
+}
+
+/** Public variant facts compiled into every live horse decision snapshot. */
+export interface HorseVariantRules {
+  holeCardsDealt: number;
+  holeCardsUse: 'any' | 'exactly_two' | 'discard_to_two';
+  boardCardsUse: 'any' | 'exactly_three';
+  deckSize: number;
+  splitLow8OrBetter: boolean;
+}
+
 export interface RakeConfig {
   percent: number;
   cap: number;
@@ -758,7 +818,8 @@ export interface Winner {
  * shares (scaled + penny-repaired against the user's credited total in
  * HandController before WINNERS is emitted); board is set on double-board
  * hands.
- * Presentation data only — never used to move money.
+ * Amounts are presentation values, never another chip transfer. Tournament
+ * history also preserves pot and recipient identities for knockout attribution.
  */
 export interface PerPotAward {
   userId: string;
@@ -783,10 +844,119 @@ export interface PerPotAward {
 
 export type HorseStyle = 'tag' | 'lag' | 'balanced' | 'tricky' | 'grinder';
 
+export type HorseTournamentUtilityObjective =
+  | 'mtt_payout'
+  | 'satellite_seat_equity'
+  | 'pko'
+  | 'mystery_bounty'
+  | 'sng'
+  | 'spin_chip_ev'
+  | 'spin_payout';
+
+/** One legal action evaluated by the Phase 7 tournament utility arbiter. */
+export interface HorseTournamentUtilityCandidateLedger {
+  id: string;
+  action: ActionType;
+  /** Absolute wager/raise-to amount; null for fold/check/call/jam. */
+  amount: number | null;
+  investment: number;
+  /** Expected change in hero's behind-stack, in tournament chips. */
+  chipEv: number;
+  /** Expected payout value, in percentage points of the total funded pools. */
+  payoutEv: number;
+  /** Bounties won less bounty value conceded, in the same pool-percentage unit. */
+  bountyEv: number;
+  /** Re-entry/rebuy and add-on option value, never included in payoutEv. */
+  optionEv: number;
+  /** payoutEv + bountyEv + optionEv. Chip EV is not added a second time. */
+  combinedUtility: number;
+  /** Sampling standard error of combined utility. */
+  utilityStandardError: number;
+  /** 99.9% selection half-width including equity and ICM uncertainty. */
+  utilityConfidenceHalfWidth: number;
+  winProbability: number;
+  allFoldProbability: number;
+  bustProbability: number;
+  bountyWinProbability: number;
+  outcomeCount: number;
+  /** Number of distinct post-action stack vectors represented. */
+  resultingStackVectors: number;
+  /** True when no later hero decision is omitted by the Round 1 rollout. */
+  terminalForHero: boolean;
+  /** Maximum number of main/side-pot layers produced by this action. */
+  sidePotCount: number;
+  /** Maximum absolute chip-conservation error over this action's outcomes. */
+  stackConservationError: number;
+  /** Phase 8 sampled continuation facts; resource units never added to payout. */
+  continuation?: {
+    shortStackCollisionProbability: number;
+    futureHands?: number;
+    futureForcedPaid?: number;
+    futureLevelUtilityEnvelope?: number;
+    expectedRetainedStackBb: number;
+    expectedCoveredStacks: number;
+    noFullBlindRaiseProbability: number;
+  };
+}
+
+/**
+ * Phase 7's action-specific tournament receipt. It crosses the live worker
+ * boundary with the accepted HorseDecision; Phase 15 will add the complete
+ * policy-graph provenance around these already-explicit utility components.
+ */
+export interface HorseTournamentUtilityLedger {
+  schemaVersion: 1;
+  model: 'horse-tournament-utility-phase7-round1' | 'horse-tournament-utility-phase8-round1';
+  outcomeModel: 'conditioned_showdown_samples' | 'conditioned_public_street_continuation';
+  objective: HorseTournamentUtilityObjective;
+  utilityUnit: 'total_funded_pool_pct';
+  chipEvUnit: 'tournament_chips';
+  baselineAction: ActionType;
+  baselineAmount: number | null;
+  selectedAction: ActionType;
+  selectedAmount: number | null;
+  /** Filled by the authoritative table boundary after the action attempt. */
+  executedAction: ActionType | null;
+  executedAmount: number | null;
+  executionStatus: 'pending' | 'intended' | 'coerced' | 'fallback' | 'not_executed';
+  overrodeBaseline: boolean;
+  /** True when point utility favored another action but intervals overlapped. */
+  baselineRetainedForUncertainty: boolean;
+  /** True when Phase 8 future-action simulation is required before overriding. */
+  baselineRetainedForContinuation: boolean;
+  sidePotCount: number;
+  playersBehind: string[];
+  coveringPlayers: string[];
+  conditionedOpponentRanges: number;
+  equitySampleSize: number;
+  utilityOutcomeSamples: number;
+  equityStandardError: number;
+  equityCalibrationError: number;
+  effectiveOutcomeSamples: number;
+  fieldPlayersActual: number;
+  fieldPlayersModeled: number;
+  /** Closest-stack replacement error while restoring local player identities. */
+  fieldReconciliationErrorChips: number;
+  icmMethod: 'exact_mh' | 'plackett_luce_mc';
+  icmErrorBound: number;
+  componentReconciliationError: number;
+  candidates: HorseTournamentUtilityCandidateLedger[];
+}
+
 export interface HorseDecision {
+  /** Existing catastrophe owner rejected this committed continuation. An
+   * uncalibrated later joint proposal cannot reopen its rejected call-off. */
+  continuationGuard?: 'multiway_commitment_floor' | 'dominated_commitment_floor';
+  plo4Policy?: import('./engine/plo4/Plo4LivePolicy.js').Plo4LiveReceipt;
+  omahaVariantPolicy?: import('./engine/omaha/OmahaVariantLivePolicy.js').OmahaVariantReceipt;
+  remainingVariantPolicy?: import('./engine/remainingVariants/RemainingVariantLivePolicy.js').RemainingVariantReceipt;
+  jointPolicy?: import('./engine/multiway/JointLivePolicy.js').JointPolicyReceipt;
+  tournamentPostflop?: import('./engine/HorseTournamentPostflop.js').HorseTournamentPostflopLedger;
   action: ActionType;
   amount?: number;
   thinkTime: number;
+  /** Present on complete-context tournament decisions after Phase 7. */
+  tournamentUtility?: HorseTournamentUtilityLedger;
 }
 
 /** @deprecated Use HorseDecision */

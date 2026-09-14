@@ -30,8 +30,28 @@ const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*
 
 describe('every client door that sizes a chip amount rounds it first', () => {
   it('the auto top-up rounds before it sends', () => {
-    expect(strip(read('src/pages/TablePage.tsx'))).toMatch(
-      /Math\.round\(Math\.min\(maxBuyIn - currentStack, accountBalance \?\? 0\) \* 100\) \/ 100/
+    /* THE PIN MOVED WITH THE CODE (2026-09-12). The expression gained a second
+       denomination: the shortfall is computed once and then sized by the
+       TABLE'S own unit. Whole Diamonds, because the custody door reserves
+       whole units and floors anything else, so a fractional request would
+       report one number and move another. Cents for chips, for the reason
+       this whole file exists - `atomic_table_addon` stores the number
+       verbatim, and a non-cent `table_pending_addons.amount` can never be
+       resolved against the post-commit obligation.
+
+       The chip half is what this file is about and it is unchanged. The
+       Diamond half is asserted here too, because "two decimals on every money
+       path" is the wrong rule for a unit that has none, and a reader arriving
+       at this pin should find out why rather than assume an omission. */
+    const page = read('src/pages/TablePage.tsx');
+    const shortfall = sliceStatement(page, 'const shortfall =');
+    expect(shortfall).toMatch(/Math\.min\(maxBuyIn - currentStack, accountBalance \?\? 0\)/);
+    const amount = sliceStatement(page, 'const topUpAmount =');
+    expect(amount, 'a chip top-up is still sized to the cent').toMatch(
+      /Math\.round\(shortfall \* 100\) \/ 100/
+    );
+    expect(amount, 'and a Diamond is never divided into cents').toMatch(
+      /arenaAsset === 'diamonds'[\s\S]*Math\.floor\(shortfall\)/
     );
   });
 
@@ -102,8 +122,11 @@ describe('the engine refuses, and rounds, at its own doors', () => {
     expect(src).toMatch(/loserSeat\.stack = cents\(loserSeat\.stack \+ result\.loserShare\)/);
     expect(src).toMatch(/winnerSeat\.stack = cents\(winnerSeat\.stack \+ result\.winnerShare\)/);
     expect(src).toMatch(/seat\.stack = cents\(seat\.stack \+ result\.perPlayerShare\)/);
-    // the mini jackpot's table share is reserve/players - the same shape
-    expect(src).toMatch(/seat\.stack = cents\(Number\(seat\.stack \|\| 0\) \+ amount\)/);
+    // The mini jackpot's table share is reserve/players. Its existing stack,
+    // credit and rounded result must all pass the finite-money boundary.
+    expect(src).toMatch(/const credit = this\.requireFiniteStackMoney\(amount,/);
+    expect(src).toMatch(/const stack = this\.requireFiniteStackMoney\(seat\.stack,/);
+    expect(src).toMatch(/cents\(stack \+ credit\)/);
     expect(src).not.toMatch(/Seat\.stack \+= result\./);
   });
 
@@ -120,8 +143,10 @@ describe('the engine refuses, and rounds, at its own doors', () => {
     // there refuses a debit that is exactly the stack.
     const src = strip(read('server/src/engine/AtomicStackService.ts'));
     expect(src).toMatch(/const round2 = \(n: number\): number =>/);
+    expect(src).toMatch(/stack: round2\(stack\), version: 1/);
     expect(src).toMatch(/sv\.stack = round2\(sv\.stack - amount\);/);
-    expect(src).toMatch(/sv\.stack = round2\(sv\.stack \+ amount\);/);
+    expect(src).toMatch(/const nextStack = sv\.stack \+ amount;/);
+    expect(src).toMatch(/sv\.stack = round2\(nextStack\);/);
     expect(src).toMatch(/sv\.stack = round2\(sv\.stack \+ s\.delta\);/);
   });
 
@@ -136,7 +161,7 @@ describe('the engine refuses, and rounds, at its own doors', () => {
 
 describe('and the database will not accept one either', () => {
   const mig = read(
-    'supabase/migrations/20260909062006_chips_are_two_decimals_on_the_addon_path.sql'
+    'supabase/migrations/20260909165548_chips_are_two_decimals_on_the_addon_path.sql'
   );
 
   it('says who may call each function, so a replay cannot create it PUBLIC', () => {

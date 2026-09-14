@@ -51,6 +51,20 @@ describe('tournament table engines recover from their causal generation signal',
     expect(perform).toContain('this.tableEngines.get(tableId) !== engine');
   });
 
+  it('causally retries both exact-incumbent quarantine deferrals', () => {
+    const perform = sliceMethod(BASE, 'private async performManagedTableEngineRecovery(');
+    const retry = 'this.scheduleManagedTableEngineRecovery(tableId, engine, lifecycle, reason)';
+    const quarantineAt = perform.indexOf(
+      'if (!(await this.resolveTournamentSeatMoveQuarantine(tableId, engine)))'
+    );
+    const replacementRefusedAt = perform.indexOf('if (!replaced)');
+
+    expect(quarantineAt).toBeGreaterThan(-1);
+    expect(replacementRefusedAt).toBeGreaterThan(quarantineAt);
+    expect(perform.indexOf(retry, quarantineAt)).toBeLessThan(replacementRefusedAt);
+    expect(perform.indexOf(retry, replacementRefusedAt)).toBeGreaterThan(replacementRefusedAt);
+  });
+
   it('inherits break and hand-for-hand holds before a replacement can start', () => {
     const prepare = sliceMethod(BASE, 'private prepareManagedTableEngineForPlay(');
     expect(prepare).toContain('if (this.onBreak)');

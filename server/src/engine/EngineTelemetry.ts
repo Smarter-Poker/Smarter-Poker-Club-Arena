@@ -604,6 +604,15 @@ export class EngineTelemetry {
     EngineTelemetry.fleetCounters.seen = new WeakMap();
   }
 
+  /**
+   * How many tables keep a per-table sample per metric name.
+   *
+   * Twenty answers "which table is hot" for a human and costs sixty samples
+   * instead of two and a half thousand. A fleet smaller than this is emitted
+   * whole, so nothing changes for a small process or for a test fixture.
+   */
+  private static readonly PER_TABLE_SAMPLE_CAP = 20;
+
   static renderFleetMetrics(engines: Iterable<EngineTelemetry>): string {
     let activeTables = 0;
     let activePlayers = 0;
@@ -642,6 +651,54 @@ export class EngineTelemetry {
       p95Broadcast = Math.max(p95Broadcast, p.p95BroadcastMs);
       tableLines.push(...e.getPrometheusTableLines());
     }
+
+    /* ── A SCRAPE IS NOT A STALL (2026-09-11) ────────────────────────────────
+     *
+     * These three per-table gauges are emitted for EVERY table the process
+     * owns, and `/metrics` is rendered on the AUTHORITATIVE EVENT LOOP. At 804
+     * dealing tables that is 2,412 samples of the 7,005 in one exposition;
+     * the whole body was 590 KB and took 136-502 ms to build, every fifteen
+     * seconds, on the single thread that also runs every turn timer, every
+     * broadcast and every horse decision round trip. Measured on engine-01 the
+     * same evening, with the main loop already at 309 ms p50.
+     *
+     * Nothing reads them per table. Not one alert rule in infra/monitoring and
+     * not one recording rule names `poker_table_hands_dealt`,
+     * `poker_table_hands_per_hour` or `poker_table_timer_utilization`; the
+     * fleet questions are answered by `poker_hands_dealt_total`,
+     * `poker_active_tables` and the aggregates below, which are always
+     * present and correct.
+     *
+     * So: the BUSIEST tables keep their per-table line, because "which table
+     * is hot" is a real question an operator asks and the answer is useless if
+     * it is a thousand rows. Everything else is summarised. The cut is by
+     * hands dealt, so a table that is doing anything at all is the one that
+     * survives, and a fleet smaller than the cap is emitted whole - which is
+     * also why `oneSeriesPerMetricName.law.test.ts` still sees every fixture
+     * table it asserts on.
+     */
+    const perTableCap = EngineTelemetry.PER_TABLE_SAMPLE_CAP;
+    const byName = new Map<string, string[]>();
+    for (const line of tableLines) {
+      const name = line.slice(0, line.indexOf('{'));
+      const list = byName.get(name);
+      if (list) list.push(line);
+      else byName.set(name, [line]);
+    }
+    const keptTableLines: string[] = [];
+    for (const [, list] of byName) {
+      if (list.length <= perTableCap) {
+        keptTableLines.push(...list);
+        continue;
+      }
+      const valueOf = (line: string): number => Number(line.slice(line.lastIndexOf('} ') + 2)) || 0;
+      keptTableLines.push(
+        ...[...list].sort((a, b) => valueOf(b) - valueOf(a)).slice(0, perTableCap)
+      );
+    }
+    const tableSampleCount = tableLines.length;
+    tableLines.length = 0;
+    tableLines.push(...keptTableLines);
 
     // Read the BANKED totals, not a sum over whoever happens to be alive.
     const totalHandsDealt = EngineTelemetry.fleetCounters.hands;
@@ -738,12 +795,22 @@ export class EngineTelemetry {
       '# TYPE poker_threshold_violations_total counter',
       `poker_threshold_violations_total{type="action_processing"} ${processingViolations}`,
       `poker_threshold_violations_total{type="broadcast_latency"} ${broadcastViolations}`,
-      '# HELP poker_table_hands_dealt Hands dealt per table',
+      '# HELP poker_table_hands_dealt Hands dealt per table (busiest tables only, see poker_fleet_per_table_samples_total)',
       '# TYPE poker_table_hands_dealt counter',
-      '# HELP poker_table_hands_per_hour Hands per hour per table',
+      '# HELP poker_table_hands_per_hour Hands per hour per table (busiest tables only)',
       '# TYPE poker_table_hands_per_hour gauge',
-      '# HELP poker_table_timer_utilization Timer expiry rate per table',
+      '# HELP poker_table_timer_utilization Timer expiry rate per table (busiest tables only)',
       '# TYPE poker_table_timer_utilization gauge',
+      /* THE TRUNCATION IS NEVER SILENT (CLAUDE.md 10.86). These two say how
+         many per-table samples the fleet had and how many this exposition
+         carries, so "my table is not in the scrape" has an answer that is a
+         number rather than a mystery. */
+      '# HELP poker_fleet_per_table_samples_total Per-table samples the fleet would emit uncapped',
+      '# TYPE poker_fleet_per_table_samples_total gauge',
+      `poker_fleet_per_table_samples_total ${tableSampleCount}`,
+      '# HELP poker_fleet_per_table_samples_emitted Per-table samples this exposition carries',
+      '# TYPE poker_fleet_per_table_samples_emitted gauge',
+      `poker_fleet_per_table_samples_emitted ${tableLines.length}`,
       ...tableLines,
     ];
 

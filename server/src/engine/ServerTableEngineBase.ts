@@ -9,6 +9,7 @@
  */
 
 import { HandController } from './HandController.js';
+import type { HandSeatGeneration } from './handSeatGeneration.js';
 import { playerActionContext } from './PlayerActionContext.js';
 import { PreciseActionTimer } from './PreciseActionTimer.js';
 import { ServerActionValidator } from './ServerActionValidator.js';
@@ -29,7 +30,10 @@ import { ChipRaceEngine } from './ChipRaceEngine.js';
 import { TableBalancer } from './TableBalancer.js';
 import { TableBreakEngine } from './TableBreakEngine.js';
 import { EngineTelemetry } from './EngineTelemetry.js';
-import { getTournamentBrainContext } from '../services/TournamentBrainContext.js';
+import {
+  peekTournamentBrainContext,
+  refreshTournamentBrainContext,
+} from '../services/TournamentBrainContext.js';
 import {
   getFullRakeConfig,
   getPlayerCountCaps,
@@ -67,6 +71,7 @@ import {
   announceSeatMoves,
   executePendingSeatMoves,
   pendingSeatMoves,
+  seatMoveCancelledNotice,
   seatMoveNotice,
   type PendingSeatMove,
 } from '../services/supabase/seatMoves.js';
@@ -96,6 +101,7 @@ import {
 import { headsUpButtonSeat } from './headsUpButton.js';
 import type { StateMachine } from './StateMachine.js';
 import type { TableStatus } from '../types.js';
+import { assertDiamondCashTable } from '../domain/DiamondCashBoundary.js';
 
 export type EngineLeaseAuthority =
   | {
@@ -601,6 +607,45 @@ export abstract class ServerTableEngineBase {
   // the add-on is reduced or canceled. Map<userId, requestedAmount>.
   protected pendingAddOns: Map<string, number> = new Map();
   /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  MID-HAND DIAMOND TOP-UPS ARE AN INTENT, NOT A DEBIT
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * The chip lane takes the money at request time and lands the chips at the
+   * end of the hand, through the durable `table_pending_addons` ledger. A
+   * Diamond seat cannot do that, and the reason is a constraint rather than a
+   * preference: the deferred trigger `zzz_diamond_seat_keeps_custody` requires
+   * a Diamond seat's `stack` to EQUAL its custody balance at every COMMIT. A
+   * reservation made now and applied later is a committed state where the two
+   * disagree, so there is no ordering of the chip lane's two steps that this
+   * arena permits.
+   *
+   * The alternative to a debit is an INTENT: nothing moves until the hand
+   * ends, and then the whole top-up happens in the one transaction the
+   * constraint does allow, through `fn_poker_diamond_top_up` - the door that
+   * already exists and is already certified.
+   *
+   * WHAT THE PLAYER GIVES UP, stated plainly because they are told it too: the
+   * chip lane guarantees the money is committed the moment they tap. This
+   * guarantees only that it will be attempted the moment the hand ends, so a
+   * player who spends those Diamonds elsewhere in the intervening thirty
+   * seconds gets an honest refusal instead. That is a narrower promise, and it
+   * is the widest one this constraint leaves; the chip lane's promise is not
+   * as wide as it looks either, since it re-sizes at landing and refunds the
+   * difference when the pot has moved the stack.
+   *
+   * KEYED BY REQUEST ID, not by user, so a retry of the same tap overwrites
+   * itself and two genuine taps both count. The id is the same uuidv5 the
+   * between-hands path derives, so the SQL door de-duplicates a replay of the
+   * landing itself.
+   *
+   * MEMORY ONLY, deliberately. An intent lost to an engine restart costs the
+   * player nothing, because nothing was taken; a DEBIT lost to a restart is
+   * the failure mode the durable chip ledger exists to prevent. There is
+   * nothing here worth making durable.
+   */
+  protected diamondTopUpIntents: Map<string, { userId: string; amount: number }> = new Map();
+  /**
    * A2: does the durable `table_pending_addons` ledger need a sweep?
    *
    * Starts true so a freshly started engine always checks once for rows a dead
@@ -668,6 +713,8 @@ export abstract class ServerTableEngineBase {
   protected lastSnapshotAtMs = 0;
   protected snapshotDirty = false;
   protected snapshotTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The exact snapshot writer currently owned by this engine generation. */
+  protected snapshotFlushPromise: Promise<void> | null = null;
 
   /**
    * CROSS-INSTANCE OWNERSHIP (2026-08-22).
@@ -1186,6 +1233,7 @@ export abstract class ServerTableEngineBase {
   // exactly these players must sum to exactly this - see
   // tournamentChipConservation.ts and the persist gate in postHandTasks.
   protected currentHandDealtStacks: Map<string, number> = new Map();
+  protected currentHandSeatGenerations: Map<string, HandSeatGeneration> = new Map();
   // Bible V8 §2.5: Action Record requires seat, userId, action, amount, timestamp, stage
   protected currentHandActions: {
     seat: number;
@@ -1424,6 +1472,7 @@ export abstract class ServerTableEngineBase {
    * outlast the short hand-for-hand window without self-resuming.
    */
   protected pauseMaxWaitMs: number | null = null;
+  protected pauseRequiresExplicitResume = false;
   /**
    * DOES THIS PAUSE FORBID THE NEXT HAND, OR ONLY THE ONE AFTER IT?
    *
@@ -1487,16 +1536,65 @@ export abstract class ServerTableEngineBase {
    */
   protected finalTableDealPaused: boolean = false;
 
+  /**
+   * Terminal tournament closeout owns a stricter gate than an ordinary pause.
+   *
+   * Once armed, elapsed time may make the closeout caller stand down, but it
+   * may never make the table deal again.  Only the caller that received a
+   * proven pre-commit refusal may explicitly release this authority.  The
+   * waiters are event-driven so settlement completion, the physical pause
+   * edge, or an engine stop wakes the closeout without a polling reconciler.
+   */
+  protected terminalCloseoutPaused: boolean = false;
+  /**
+   * A tournament seat move owns the source felt until its one atomic receipt
+   * returns.  The owner is the exact TournamentManager generation, not a
+   * boolean: overlapping pause authorities cannot release one another.
+   *
+   * An unclaimed owner is deliberately retained while the current hand lands.
+   * Once the loop reaches the physical pause gate it gets a short expiry, so a
+   * planner that no longer wants the move cannot strand an otherwise healthy
+   * table.  A claimed owner has no elapsed-time escape; the bounded RPC's
+   * finally block is the only release authority.
+   */
+  protected tournamentMovePauseOwners: Set<string> = new Set();
+  protected claimedTournamentMovePauseOwners: Set<string> = new Set();
+  private tournamentMovePauseExpiryTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
+  private tournamentMoveOperations: Set<Promise<void>> = new Set();
+  private tournamentMoveOperationByOwner: Map<string, Promise<void>> = new Map();
+  protected boundaryPauseWaiters: Set<() => void> = new Set();
+  protected terminalBoundaryPersistenceGeneration = 0;
+  protected terminalBoundaryPendingGenerations: Set<number> = new Set();
+  protected terminalBoundaryPersistenceFailed = false;
+  protected terminalCloseoutDiscardedPreparedHand = false;
+
   // Bible V8 §1.1.4: Action serialization lock — prevents parallel action processing
   protected actionLock: boolean = false;
 
   // FIX 211: Bible V8 §1.9 — Track postHandTasks promise to prevent next hand
   // starting before DB stacks are synced (was fire-and-forget, risked stale stacks)
   protected postHandTasksPromise: Promise<void> | null = null;
+  // Serialize financial departure against asynchronous hand preparation.
+  // Release after controller start, not after the hand finishes.
+  protected seatBoundaryTail: Promise<void> = Promise.resolve();
+  protected async acquireSeatBoundary(): Promise<() => void> {
+    if (this.terminal) throw new Error('Table Engine Is Stopping');
+    const previous = this.seatBoundaryTail;
+    let release!: () => void;
+    this.seatBoundaryTail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    if (this.terminal) {
+      release();
+      throw new Error('Table Engine Is Stopping');
+    }
+    return release;
+  }
 
   // 2026-09-06: the drain's view of the same fact, cleared by the promise
   // rather than by the next hand. See trackSettlementInFlight().
-  protected settlementInFlight: Promise<void> | null = null;
+  protected settlementInFlight: Set<Promise<void>> = new Set();
   private settlementStartedAtMs: number | null = null;
 
   /**
@@ -1567,6 +1665,8 @@ export abstract class ServerTableEngineBase {
    * budgeted steps can outlast the idle window without ever looking wedged.
    */
   protected static readonly DEAL_STEP_BUDGET_MS = 20_000;
+  /** Time a physically parked but unclaimed balancer fence may wait for its next sweep. */
+  private static readonly TOURNAMENT_MOVE_UNCLAIMED_PARK_MS = 15_000;
 
   /**
    * Attempts at the opening `loadTable` before start() gives up and lets the
@@ -1659,9 +1759,8 @@ export abstract class ServerTableEngineBase {
    * Sitting back in withdraws the request. Not persisted: after a restart the
    * seat is an ordinary sat-out seat and the sit-out eviction handles it.
    */
-  protected leaveHeldByClock: Set<string> = new Set();
+  protected leaveHeldByClock: Map<string, string> = new Map();
   /** CHIP CONTINUITY: mid-hand leaves that are system exits (admin kick). */
-  protected forcedLeaves: Set<string> = new Set();
   protected disconnectEngine: DisconnectEngine;
   protected preActionEngine: PreActionEngine;
   protected atomicStackService: AtomicStackService;
@@ -1695,7 +1794,8 @@ export abstract class ServerTableEngineBase {
 
     this.chipContinuity = new ChipContinuityTracker({
       tableId,
-      isCash: () => !!this.tableInfo && !this.isTournamentTable(),
+      isCash: () =>
+        !!this.tableInfo && this.tableInfo.arena?.asset !== 'diamonds' && !this.isTournamentTable(),
       isFrozen: () => isMaintenanceFrozen(),
       canMutate: () => this.lifecycleCanMutate(),
       evaluate: evaluateCashSessions,
@@ -1765,12 +1865,28 @@ export abstract class ServerTableEngineBase {
       // fire-and-forget, the UI write must never affect gameplay.
       if (event.type === 'PLAYER_SAT_OUT' || event.type === 'PLAYER_SAT_BACK') {
         const sittingOut = event.type === 'PLAYER_SAT_OUT';
+        const satPlayer = this.seatedPlayers.find((p) => p.user_id === event.playerId);
+        const occupancyId = satPlayer?.occupancy_id;
+        /* A horse the strike ladder sat out has lost its seat: nothing on the
+           platform sits a horse back in (sitBack is POST /sitout only), so a
+           cash seat is evicted after 2 orbits / 5 minutes and a tournament
+           seat is blinded off. Counted fleet-wide so it can page (Dan
+           2026-09-11). Twelve were parked this way at 14:55 UTC that day. */
+        if (sittingOut && event.reason === 'forced' && satPlayer?.is_horse) {
+          try {
+            EngineMetrics.horseForcedSitOutsTotal.inc(1, { format: this.tableFormat() });
+          } catch {
+            /* metrics must never affect gameplay */
+          }
+        }
+        if (!occupancyId) return;
         void Promise.resolve(
           supabase
             .from('table_seats')
             .update({ is_sitting_out: sittingOut })
             .eq('table_id', this.tableId)
             .eq('user_id', event.playerId)
+            .eq('occupancy_id', occupancyId)
             .is('left_at', null)
         )
           .then(({ error }) => {
@@ -2126,15 +2242,23 @@ export abstract class ServerTableEngineBase {
    * decision for the two to disagree, and no code path can reach the offer
    * without passing through it.
    *
-   * ONE CAVEAT, and it is the important one: `this.tableInfo` is itself a
-   * cached snapshot. It is assigned exactly once (start(), from loadTable) and
-   * the only thing that refreshes any part of it afterwards is refreshBlinds(),
-   * which copies back three columns — small_blind, big_blind, ante — and only
-   * for tournament tables. So this method re-reads the freshest values the
-   * PROCESS has; it does not re-read the DATABASE. Adding a per-hand
-   * `loadTable` for these five columns is a separate decision (an extra round
-   * trip on every hand, under the 90s deal watchdog) and is deliberately NOT
-   * taken here.
+   * THE CAVEAT THAT USED TO BE HERE IS GONE (2026-09-09, lane E). It read:
+   * "`this.tableInfo` is itself a cached snapshot ... this method re-reads the
+   * freshest values the PROCESS has; it does not re-read the DATABASE. Adding
+   * a per-hand `loadTable` for these five columns is a separate decision ...
+   * and is deliberately NOT taken here."
+   *
+   * That was the correct call while a table's rules were set once by a host.
+   * It stopped being correct at Gate 5, when `fn_cash_apply_ruleset` began
+   * rewriting the four run-it columns from the game's template on every
+   * cluster tick - and it showed up as `NLH 0.50/1 Classic` offering Run It
+   * Twice on four of its five tables and not on the fifth, with a must-move
+   * carrying players between them mid-session.
+   *
+   * `refreshRakeConfig` now re-reads those columns (throttled, one row, at the
+   * hand boundary) and calls this method afterwards, so the RIT engine is
+   * compiled from the fresh row rather than the boot one. This method itself
+   * is unchanged: it still reads `this.tableInfo`, which is now kept current.
    *
    * Returns `insuranceEnabled` so start() can keep configuring the insurance
    * engine from the same computation. The insurance engine is deliberately NOT
@@ -2314,12 +2438,12 @@ export abstract class ServerTableEngineBase {
       // V22 (2026-08-27, Phase 2): pre-warm the tournament ICM context the
       // moment the engine knows which tournament it serves. The cache used to
       // warm on the FIRST HORSE DECISION — with 7,000+ spins a day, the
-      // opening hands of every event ran on the flat premium while the fetch
-      // was still in flight. The call is synchronous-cheap: it only kicks the
-      // background refresh.
+      // opening hands of every event lacked real context while the fetch was
+      // still in flight. The call is synchronous-cheap: it only kicks the
+      // background refresh; Phase 6 labels any remaining warm-up explicitly.
       if (this.tableInfo?.tournament_id) {
         try {
-          getTournamentBrainContext(String(this.tableInfo.tournament_id));
+          refreshTournamentBrainContext(String(this.tableInfo.tournament_id));
         } catch {
           /* warming is best-effort */
         }
@@ -2452,6 +2576,9 @@ export abstract class ServerTableEngineBase {
 
       // Wait for the host's AutoStart figure (2 unless they raised it)
       this.setLoopPhase('start_wait_for_players');
+      // The first sweep is the boot read, not a change: nothing was known
+      // before it, and a game with anyone seated is on every pass already.
+      let firstWaitSweep = true;
       while (this.running) {
         /**
          * THE QUIET TABLE PARKS TOO (Dan 2026-09-01).
@@ -2480,6 +2607,8 @@ export abstract class ServerTableEngineBase {
         if (
           this.maintenancePaused ||
           this.finalTableDealPaused ||
+          this.terminalCloseoutPaused ||
+          this.tournamentMovePauseOwners.size > 0 ||
           (this.handForHandPaused && this.holdBeforeNextHand)
         ) {
           this.setLoopPhase('parked_for_pause');
@@ -2487,6 +2616,7 @@ export abstract class ServerTableEngineBase {
           if (!this.running) break;
           this.setLoopPhase('start_wait_for_players');
         }
+        const idsBeforeSweep = new Set(this.seatedPlayers.map((p) => p.user_id));
         try {
           this.seatedPlayers = await loadSeatedPlayers(this.tableId);
           if (!this.lifecycleCanMutate()) return;
@@ -2500,6 +2630,20 @@ export abstract class ServerTableEngineBase {
           await this.sleep(5000);
           continue;
         }
+        // A SEAT CHANGED WHILE WAITING (2026-09-09, must-move audit). The
+        // dealing loop's roster diff wakes the game's ClusterController; this
+        // loop, where a one-player Main 1 or a fresh feeder spends its life,
+        // did not - so the second chair that takes a feeder live, or the seat
+        // that opens on a waiting Main 1, reached the controller at the next
+        // pass instead of inside a second. Same wake, same debounce.
+        if (
+          !firstWaitSweep &&
+          (this.seatedPlayers.length !== idsBeforeSweep.size ||
+            this.seatedPlayers.some((p) => !idsBeforeSweep.has(p.user_id)))
+        ) {
+          this.wakeClusterGame('seat_change');
+        }
+        firstWaitSweep = false;
         /* A cash table below its deal minimum never reaches dealingLoop(). A
            bust rebuy can still be committed from the player's cashier while
            the table waits here, so this boundary must run the same exact,
@@ -2538,7 +2682,7 @@ export abstract class ServerTableEngineBase {
         // for one horse, one a minute, every one expired, while Main 1 sat one
         // short beside it. A table below the minimum is at a hand boundary
         // all the time; every pending move lands now.
-        await this.executePendingSeatMoves().catch((err) =>
+        await this.executeIdleSeatMoves().catch((err) =>
           reportError(err, 'ServerTableEngine.' + this.tableId + '.wait_loop_seat_moves')
         );
         if (!this.lifecycleCanMutate()) return;
@@ -2616,7 +2760,7 @@ export abstract class ServerTableEngineBase {
       void dealingLoop.catch(() => undefined);
     } catch (err) {
       this.settleReady(false);
-      reportError(err, 'ServerTableEnginethistableId.Failed_to_start');
+      reportError(err, `ServerTableEngine.${this.tableId}.failed_to_start`);
       // 2026-08-22: was a bare `running = false`, which could leak an armed
       // heartbeat scheduler entry (scheduleHeartbeatCheck runs before the
       // awaits later in start()) and left partial state for the reaper to
@@ -2645,25 +2789,33 @@ export abstract class ServerTableEngineBase {
     // reacts to that fence and may return in the same microtask turn; neither
     // it nor its current settlement may disappear from the ownership proof.
     const dealingLoopAtFence = this.dealingLoopPromise;
-    const settlementAtFence = this.settlementInFlight ?? this.postHandTasksPromise;
+    const settlementsAtFence = [...(this.settlementInFlight ?? new Set<Promise<void>>())];
+    if (this.postHandTasksPromise) settlementsAtFence.push(this.postHandTasksPromise);
+    settlementsAtFence.push(...this.tournamentMoveOperations);
 
     // Publish the terminal fence synchronously. Any start/restart attempt in
     // the same turn observes it before teardown reaches its first await.
     this.terminal = true;
     this.running = false;
     this.clearEngineLeaseExpiryTimer();
+    this.clearUnclaimedTournamentMovePauses();
     this.releasePendingPauseWait();
+    this.notifyBoundaryPauseWaiters();
     // A stop before `waiting` is a "never got there"; after it, a no-op.
     this.settleReady(false);
 
-    const teardown = this.performStop(dealingLoopAtFence, settlementAtFence);
+    const teardown = this.performStop(dealingLoopAtFence, settlementsAtFence);
     this.teardownPromise = teardown;
     return teardown;
   }
 
   private async performStop(
     dealingLoopAtFence: Promise<void> | null = this.dealingLoopPromise,
-    settlementAtFence: Promise<void> | null = this.settlementInFlight ?? this.postHandTasksPromise
+    settlementsAtFence: readonly Promise<void>[] = [
+      ...(this.settlementInFlight ?? new Set<Promise<void>>()),
+      ...(this.postHandTasksPromise ? [this.postHandTasksPromise] : []),
+      ...this.tournamentMoveOperations,
+    ]
   ): Promise<void> {
     const failures: unknown[] = [];
 
@@ -2691,16 +2843,26 @@ export abstract class ServerTableEngineBase {
     };
 
     if (dealingLoopAtFence) await joinOwnedWriter(dealingLoopAtFence);
-    if (settlementAtFence) await joinOwnedWriter(settlementAtFence);
-    while (this.settlementInFlight || this.postHandTasksPromise) {
-      const settlement = this.settlementInFlight;
+    for (const settlementAtFence of settlementsAtFence) {
+      await joinOwnedWriter(settlementAtFence);
+    }
+    while (
+      (this.settlementInFlight?.size ?? 0) > 0 ||
+      this.postHandTasksPromise ||
+      this.tournamentMoveOperations.size > 0
+    ) {
+      const settlements = [...(this.settlementInFlight ?? new Set<Promise<void>>())];
       const postHandTasks = this.postHandTasksPromise;
-      await joinOwnedWriter(settlement);
+      const tournamentMoves = [...this.tournamentMoveOperations];
+      for (const settlement of settlements) await joinOwnedWriter(settlement);
       await joinOwnedWriter(postHandTasks);
-      if (this.settlementInFlight === settlement) this.settlementInFlight = null;
+      for (const tournamentMove of tournamentMoves) await joinOwnedWriter(tournamentMove);
       if (this.postHandTasksPromise === postHandTasks) this.postHandTasksPromise = null;
     }
     if (this.dealingLoopPromise === dealingLoopAtFence) this.dealingLoopPromise = null;
+    // A cashout accepted before the terminal fence remains an owned writer.
+    // Do not release this engine's resources until its transaction returns.
+    await this.seatBoundaryTail;
 
     // CROSS-INSTANCE GUARD (2026-08-22): if a replacement engine for this
     // tableId has already been constructed, every shared resource (scheduler
@@ -2725,9 +2887,17 @@ export abstract class ServerTableEngineBase {
       // handController is null saveSnapshot() early-returns, so a pending write
       // would be silently lost on every shutdown.
       try {
-        await this.flushSnapshot();
+        await this.flushSnapshot(true);
       } catch (error) {
+        // stop() is shared by cash tables and tournament tables that do not
+        // necessarily have a durable terminal receipt. Keep the failure in the
+        // teardown certificate while still completing physical cleanup below;
+        // committed-terminal callers may retire this exact generation only
+        // after hasReleasedProcessOwnership() proves that cleanup completed.
         failures.push(error);
+        reportError(error, 'ServerTableEngine.terminal_snapshot_flush_failed', {
+          tableId: this.tableId,
+        });
       }
     }
     if (this.snapshotTimer) {
@@ -2824,41 +2994,61 @@ export abstract class ServerTableEngineBase {
   protected async releaseLeavesHeldByClock(): Promise<void> {
     if (this.leaveHeldByClock.size === 0 || this.isTournamentTable()) return;
     if (isMaintenanceFrozen()) return;
-    for (const userId of [...this.leaveHeldByClock]) {
-      const seated = this.seatedPlayers.find((p) => p.user_id === userId);
-      if (!seated) {
-        // Gone by another path (eviction, kick): nothing to release.
-        this.leaveHeldByClock.delete(userId);
-        continue;
+    const releaseSeatBoundary = await this.acquireSeatBoundary();
+    try {
+      while (this.postHandTasksPromise) {
+        const pending = this.postHandTasksPromise;
+        await pending;
+        if (this.postHandTasksPromise === pending) break;
       }
-      if (this.chipContinuity.leaveLock(userId, seated.stack).locked) continue;
-      if (this.handController) {
-        const live = this.handController.getState().players.find((p) => p.user_id === userId);
-        if (live && !live.is_folded) continue; // dealt in after all: wait for the boundary
-      }
-      const res = await atomicCashoutVoluntary(userId, this.tableId, seated.seat_number);
-      if (res.ok) {
-        this.leaveHeldByClock.delete(userId);
-        this.disconnectEngine.unregisterPlayer(this.tableId, userId);
-        this.timeBankEngine.removePlayer(this.tableId, userId);
-        this.straddleEngine.removePlayer(this.tableId, userId);
-        this.preActionEngine.removePlayer(this.tableId, userId);
-        this.chipContinuity.forget(userId);
-        this.hub?.emitEvent(this.tableId, {
-          type: 'seat_left',
-          table_id: this.tableId,
-          seat: seated.seat_number,
-          user_id: userId,
-          mid_hand: false,
-          timestamp: Date.now(),
-        });
-        console.log(
-          `[ServerTableEngine:${this.tableId}] held leave released for ${userId} - stay clock reached zero`
+      for (const [userId, occupancyId] of [...this.leaveHeldByClock]) {
+        const seated = this.seatedPlayers.find((p) => p.user_id === userId);
+        if (!seated || seated.occupancy_id !== occupancyId) {
+          // Gone by another path (eviction, kick): nothing to release.
+          this.leaveHeldByClock.delete(userId);
+          continue;
+        }
+        if (this.chipContinuity.leaveLock(userId, seated.stack).locked) continue;
+        if (this.handController) {
+          const live = this.handController.getState().players.find((p) => p.user_id === userId);
+          if (live) continue; // dealt in after all: wait for the boundary
+        }
+        const res = await atomicCashoutVoluntary(
+          userId,
+          this.tableId,
+          seated.seat_number,
+          seated.occupancy_id
         );
-        void this.broadcastCurrentState();
-      } else if (res.code === 'LEAVE_LOCKED') {
-        this.chipContinuity.noteRefusal(userId, res.stayRemainingMs);
+        if (this.seatedPlayers.some((p) => p.user_id === userId && p.occupancy_id !== occupancyId))
+          continue;
+        if (res.ok) {
+          this.seatedPlayers = this.seatedPlayers.filter(
+            (p) => p.user_id !== userId || p.occupancy_id !== occupancyId
+          );
+          this.leaveHeldByClock.delete(userId);
+          this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+          this.timeBankEngine.removePlayer(this.tableId, userId);
+          this.straddleEngine.removePlayer(this.tableId, userId);
+          this.preActionEngine.removePlayer(this.tableId, userId);
+          this.chipContinuity.forget(userId);
+          this.hub?.emitEvent(this.tableId, {
+            type: 'seat_left',
+            table_id: this.tableId,
+            seat: seated.seat_number,
+            user_id: userId,
+            mid_hand: false,
+            timestamp: Date.now(),
+          });
+          console.log(
+            `[ServerTableEngine:${this.tableId}] held leave released for ${userId} - stay clock reached zero`
+          );
+          void this.broadcastCurrentState();
+        } else if (res.code === 'LEAVE_LOCKED') {
+          this.chipContinuity.noteRefusal(userId, res.stayRemainingMs);
+        }
       }
+    } finally {
+      releaseSeatBoundary();
     }
   }
 
@@ -2874,8 +3064,15 @@ export abstract class ServerTableEngineBase {
    * left). They are still seated - sat out by their own request - and are
    * told the countdown. Nothing is torn down.
    */
-  protected onLeaveRefusedAtSettlement(userId: string, stayRemainingMs: number): void {
-    this.leaveHeldByClock.add(userId);
+  protected onLeaveRefusedAtSettlement(
+    userId: string,
+    stayRemainingMs: number,
+    occupancyId: string
+  ): void {
+    const current = this.seatedPlayers.find((p) => p.user_id === userId);
+    const original = occupancyId;
+    if (!original || current?.occupancy_id !== original) return;
+    this.leaveHeldByClock.set(userId, original);
     this.chipContinuity.noteRefusal(userId, stayRemainingMs);
     console.log(
       `[ServerTableEngine:${this.tableId}] leave_pending refused at settlement for ${userId} - stay clock ${stayRemainingMs}ms remaining`
@@ -2905,19 +3102,25 @@ export abstract class ServerTableEngineBase {
   protected heldForSwap: Set<string> = new Set();
 
   /**
-   * MUST-MOVE, the engine's half (OPORD 1.3 s9.5, OPORD 1.4 s18.3). At the
-   * START of a hand every player with a planned move is told, once:
-   * "Seat Open On Main 2. Moving After This Hand." Nothing is asked.
+   * WHAT THIS ENGINE STILL HOLDS FOR A MOVE, AGAINST WHAT IS STILL PENDING
+   * (2026-09-09, must-move audit).
    *
-   * THE PROMISE IS WRITTEN DOWN (2026-09-05): the row is stamped announced_at
-   * and its expiry extended to cover the hand, so settlement executes exactly
-   * the moves the deal promised, and a slow hand cannot expire one from under
-   * the player who was told. Called immediately before dealHand, so it only
-   * ever speaks of a hand that is about to be dealt.
+   * Both prunes used to live inside `announcePendingSeatMoves`, which runs
+   * IMMEDIATELY BEFORE `dealHand` and therefore never runs on a table that
+   * cannot deal. A held swap side is filtered out of `activePlayers`, so on a
+   * two-handed table one hold drops the table below the minimum, it takes the
+   * idle branch, and it never announces again: if that swap then died in a way
+   * the executor is never asked about - the planner cancelling the request, or
+   * plain expiry - the player stayed out of the deal for ever and the table
+   * never dealt another hand. Called from the announce AND from every execute,
+   * so both loops reach it (idle: every 3 s, waiting: every 5 s).
+   *
+   * NEVER CALLED WITH A FAILED READ. `pendingSeatMoves` returns null for that,
+   * and pruning against a list that is empty only because PostgREST hiccuped
+   * would release a hold whose entire job is to keep a player out of a hand
+   * the other table is about to move them out of.
    */
-  protected async announcePendingSeatMoves(): Promise<void> {
-    if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return;
-    const pending = await pendingSeatMoves(this.tableId);
+  protected reconcileSeatMoveHolds(pending: readonly PendingSeatMove[]): void {
     const live = new Set(pending.map((m) => m.move_id));
     for (const id of this.announcedSeatMoves) {
       if (!live.has(id)) this.announcedSeatMoves.delete(id);
@@ -2929,6 +3132,51 @@ export abstract class ServerTableEngineBase {
     for (const uid of this.heldForSwap) {
       if (!liveHeld.has(uid)) this.heldForSwap.delete(uid);
     }
+  }
+
+  /**
+   * MUST-MOVE, the engine's half (OPORD 1.3 s9.5, OPORD 1.4 s18.3). At the
+   * START of a hand every player with a planned move is told, once:
+   * "Seat Open On Main 2. Moving After This Hand." Nothing is asked.
+   *
+   * THE PROMISE IS WRITTEN DOWN (2026-09-05): the row is stamped announced_at
+   * and its expiry extended to cover the hand, so settlement executes exactly
+   * the moves the deal promised, and a slow hand cannot expire one from under
+   * the player who was told. Called immediately before dealHand, so it only
+   * ever speaks of a hand that is about to be dealt.
+   */
+  /**
+   * The pending list, or `null` when the read FAILED.
+   *
+   * `pendingSeatMoves` THROWS on an unreadable answer (#3974, and see the long
+   * note on that function). That is the right contract for the service: an
+   * enumeration nobody could read must never be mistaken for an empty one, and
+   * a throw cannot be ignored by accident the way a value can.
+   *
+   * At these two call sites the correct response to "I could not tell" is to
+   * CHANGE NOTHING - do not prune, do not release a swap hold, do not announce
+   * - and then carry on. A notice that could not be read must never stop a
+   * table dealing, and an unread list must never look like an empty one. So
+   * the throw is translated here, once, and reported: everything above this
+   * line keeps main's contract, everything below it keeps this lane's
+   * invariant.
+   */
+  private async readPendingSeatMoves(): Promise<PendingSeatMove[] | null> {
+    try {
+      return await pendingSeatMoves(this.tableId);
+    } catch (err) {
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.pending_seat_moves_unreadable');
+      return null;
+    }
+  }
+
+  protected async announcePendingSeatMoves(): Promise<void> {
+    if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return;
+    const pending = await this.readPendingSeatMoves();
+    // A read that failed says nothing about what is pending: announce nothing,
+    // release nothing. The next hand asks again.
+    if (pending === null) return;
+    this.reconcileSeatMoveHolds(pending);
     const fresh: string[] = [];
     for (const m of pending) {
       /* PRESENCE FOLLOWS THE PLAYER (2026-09-05). Stamped here, once per
@@ -2993,18 +3241,92 @@ export abstract class ServerTableEngineBase {
    * deal (loadSeatedPlayers) and the controller wakes a dealer for a table
    * that has none.
    */
+  protected async cashoutVoluntaryStay(
+    player: SeatedPlayer
+  ): Promise<Awaited<ReturnType<typeof atomicCashoutVoluntary>> | null> {
+    // Snapshot before awaiting: callers may retain a mutable roster object.
+    const { user_id, seat_number, occupancy_id } = player;
+    const mayReflect = () => {
+      if (!this.lifecycleCanMutate()) return false;
+      const current = this.seatedPlayers.find((seat) => seat.user_id === user_id);
+      return (
+        !current || (current.occupancy_id === occupancy_id && current.seat_number === seat_number)
+      );
+    };
+    if (!mayReflect()) return null;
+    const result = await atomicCashoutVoluntary(user_id, this.tableId, seat_number, occupancy_id);
+    // The durable outcome is still retained, but a later stay must not inherit
+    // either its refusal clock or the cleanup of its local presence trackers.
+    return mayReflect() ? result : null;
+  }
+
+  protected async executeIdleSeatMoves(): Promise<string[]> {
+    const release = await this.acquireSeatBoundary();
+    try {
+      if (!this.lifecycleCanMutate()) return [];
+      const raw = this.executePendingSeatMoves();
+      const budgeted = this.withStepBudget(
+        'idle_seat_moves',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        raw
+      );
+      // A time budget cannot cancel a committed or in-flight transfer.
+      // Keep the boundary until the original operation has actually settled.
+      const [outcome, budget] = await Promise.allSettled([raw, budgeted]);
+      if (outcome.status === 'rejected') throw outcome.reason;
+      if (budget.status === 'rejected') throw budget.reason;
+      return outcome.value;
+    } finally {
+      release();
+    }
+  }
+
   protected async executePendingSeatMoves(
     opts: { announcedOnly: boolean } = { announcedOnly: false },
-    prefetched?: readonly PendingSeatMove[]
+    /** Read at this boundary by the caller; `null` is a read that FAILED. */
+    prefetched?: readonly PendingSeatMove[] | null
   ): Promise<string[]> {
     if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return [];
-    const { done, held } = await executePendingSeatMoves(this.tableId, opts, prefetched);
+    /* ONE READ, USED TWICE (2026-09-09). The list is what the service would
+       have fetched anyway, so this costs the same single round trip - and
+       having it HERE is what lets a table that cannot deal still release a
+       swap hold whose move has died (see reconcileSeatMoveHolds). */
+    const pending = prefetched === undefined ? await this.readPendingSeatMoves() : prefetched;
+    if (!this.lifecycleCanMutate()) return [];
+    if (pending === null) return [];
+    this.reconcileSeatMoveHolds(pending);
+    const { done, held, refused } = await executePendingSeatMoves(this.tableId, opts, pending);
     // The SQL move is durable and idempotent, but this process's mirrors and
     // broadcasts belong only to the exact engine generation that requested it.
     if (!this.lifecycleCanMutate()) return [];
+    // A MOVE THAT DID NOT HAPPEN IS SAID OUT LOUD (2026-09-09, must-move
+    // audit). The deal promised "Moving After This Hand"; the executor then
+    // found the seat taken, the table closed, or the swap partner gone, and
+    // cancelled the row with a note. The row said so and the player was told
+    // nothing - the corner notice simply vanished on the next lobby poll. They
+    // keep the chair they are in; this says so, once, for the one player it
+    // is about. The row is already terminal, so it cannot repeat.
+    for (const r of refused) {
+      this.announcedSeatMoves.delete(r.move_id);
+      this.heldForSwap.delete(r.player_id);
+      this.hub?.emitEvent(this.tableId, {
+        type: 'seat_move_cancelled',
+        table_id: this.tableId,
+        user_id: r.player_id,
+        move_id: r.move_id,
+        reason: r.reason,
+        message: seatMoveCancelledNotice(r.reason),
+        timestamp: Date.now(),
+      });
+      console.log(
+        `[ServerTableEngine:${this.tableId}] move ${r.move_id} for ${r.player_id} refused (${r.reason}) - the player keeps their chair`
+      );
+    }
     // The first side of a swap to reach its boundary: held out of the deal
     // until the other table lands both chairs. Told once.
     for (const h of held) {
+      const current = this.seatedPlayers.find((sp) => sp.user_id === h.player_id);
+      if (!current || current.occupancy_id !== h.source_occupancy_id) continue;
       // A held side is still seated HERE and will be moved by the other
       // table's transaction: refresh its deposit while this engine still has
       // its presence to give.
@@ -3022,6 +3344,8 @@ export abstract class ServerTableEngineBase {
     }
     const movedIds: string[] = [];
     for (const m of done) {
+      const current = this.seatedPlayers.find((sp) => sp.user_id === m.player_id);
+      if (current && current.occupancy_id !== m.source_occupancy_id) continue;
       movedIds.push(m.player_id);
       this.announcedSeatMoves.delete(m.move_id);
       this.heldForSwap.delete(m.player_id);
@@ -3035,11 +3359,18 @@ export abstract class ServerTableEngineBase {
       this.timeBankEngine.removePlayer(this.tableId, m.player_id);
       this.straddleEngine.removePlayer(this.tableId, m.player_id);
       this.preActionEngine.removePlayer(this.tableId, m.player_id);
-      this.forcedLeaves.delete(m.player_id);
       this.leaveHeldByClock.delete(m.player_id);
       // The session row followed the player; only this engine's mirror of
       // it is dropped. The destination engine rebuilds its mirror from rows.
       this.chipContinuity.forget(m.player_id);
+      /* THE TAB FOLLOWS THE CHAIR, EVEN THROUGH A DROPPED SOCKET (2026-09-09,
+         must-move audit). `seat_moved` is the one packet that tells the
+         hero's client their chair is now at another table. It was fire-once:
+         a hero whose socket was between reconnects for the instant the move
+         landed came back to a table they no longer sit at, with nothing to
+         tell them where they went. `replay_until` asks the hub to hand it to
+         a subscriber that (re)joins this room inside a minute (D3 retention:
+         once per subscriber, never to one that already got it live). */
       this.hub?.emitEvent(this.tableId, {
         type: 'seat_moved',
         table_id: this.tableId,
@@ -3050,6 +3381,7 @@ export abstract class ServerTableEngineBase {
         stack: m.stack,
         reason: m.reason,
         timestamp: Date.now(),
+        replay_until: Date.now() + 60_000,
       });
       console.log(
         `[ServerTableEngine:${this.tableId}] ${m.player_id} moved to ${m.to_table_id} seat ${m.to_seat_number} with ${m.stack} (${m.reason})`
@@ -3070,6 +3402,7 @@ export abstract class ServerTableEngineBase {
           stack: m.partner.stack,
           reason: 'seat_change',
           timestamp: Date.now(),
+          replay_until: Date.now() + 60_000,
         });
         console.log(
           `[ServerTableEngine:${this.tableId}] swap: ${m.partner.player_id} arrived from ${m.partner.from_table_id} into seat ${m.partner.to_seat_number}`
@@ -3187,7 +3520,14 @@ export abstract class ServerTableEngineBase {
       .select('lifecycle, status')
       .eq('id', this.tableId)
       .maybeSingle();
-    if (error || !data) return;
+    if (error) {
+      // Once a minute and harmless to miss once - but a read that keeps
+      // failing keeps an engine on a closed table for ever, and a swallowed
+      // error is how nobody finds out (CLAUDE.md 10.86).
+      reportError(error, 'ServerTableEngine.' + this.tableId + '.cluster_closed_read_failed');
+      return;
+    }
+    if (!data) return;
     const row = data as { lifecycle?: string | null; status?: string | null };
     if (row.lifecycle === 'closed' || row.status === 'closed') {
       console.log(
@@ -3233,6 +3573,11 @@ export abstract class ServerTableEngineBase {
           }
           this.disconnectEngine.checkStaleHeartbeats(this.tableId);
           this.runTableWatchdog();
+          // Phase 6: refresh cached tournament facts from a lifecycle-owned
+          // tick, never while a horse's action clock is being constructed.
+          if (this.tableInfo?.tournament_id) {
+            refreshTournamentBrainContext(String(this.tableInfo.tournament_id));
+          }
           // CHIP CONTINUITY: presence just got re-evaluated above (stale
           // heartbeats -> disconnected), so this is the moment to tell the
           // database which stay clocks pause and which resume. Only
@@ -3373,7 +3718,62 @@ export abstract class ServerTableEngineBase {
       msg.includes('supabase_timeout') ||
       msg.includes('This operation was aborted') ||
       msg.includes('The operation was aborted') ||
-      msg.includes('deal_step_timeout')
+      msg.includes('deal_step_timeout') ||
+      /* A SERIALIZATION FAILURE IS THE DATABASE BLINKING, BY DEFINITION
+         (2026-09-12).
+         Every entry above is a TRANSPORT failure. The one error Postgres
+         itself defines as "this conflicted, run it again" was missing, so the
+         question in this method's own title was answered "the code is wrong"
+         for the textbook case of the database blinking.
+         `smarter_private.f06_try_lane` raises exactly this when it cannot take
+         the shared `ca:tournament-terminal-settlement:v1` lock, and it spells
+         the remedy into the message:
+             RAISE EXCEPTION 'F06_RETRY_CANONICAL_LANE' USING ERRCODE='40001'
+         Nothing has been written when it fires - the lock is taken before the
+         work - and the caller sees `atomic_hand_rolled_back`, so a retry
+         re-runs a transaction that committed nothing.
+         Measured on production 2026-09-12: 412 hands in two hours whose
+         history was never written, 820 alerts in all, because the engine
+         treated an explicit request to retry as a terminal refusal. */
+      msg.includes('F06_RETRY_CANONICAL_LANE') ||
+      /^40001$/.test(String((err as { code?: unknown })?.code ?? '')) ||
+      msg.includes('could not serialize access') ||
+      msg.includes('deadlock detected')
+    );
+  }
+
+  /**
+   * Did the database roll the WHOLE hand back and ask to be run again?
+   *
+   * `fn_ca_commit_hand_settlement` answers a refusal with a reason, and two of
+   * those reasons mean "this transaction wrote nothing":
+   * `atomic_hand_rolled_back` (the accepted-hand core's own
+   * `EXCEPTION WHEN OTHERS`) and `rolled_back` (the stack core's). They reach
+   * the engine as `atomic hand commit refused (<reason>): <sqlerrm>`, and
+   * `insertHandHistoryRow` throws them without a retry because every string
+   * containing "atomic hand commit refused" is treated as deterministic.
+   *
+   * Most of them ARE deterministic and must stay terminal - a conservation
+   * violation, a negative stack, a constraint, a missing column. What
+   * separates the rest is the SQLERRM the reason carries, so this asks BOTH
+   * questions: the database said it rolled back, AND the cause is the one
+   * Postgres defines as "this conflicted, run it again". Only then is another
+   * attempt a re-run of a transaction that committed nothing.
+   *
+   * Measured on production 2026-09-12, 10:00-11:35 UTC: 1,021 of 1,023
+   * semantic refusals were exactly this pair - `atomic_hand_rolled_back` or
+   * `rolled_back`, carrying `F06_RETRY_CANONICAL_LANE`. Not one carried a
+   * rounding, denomination, pot-total or seat-set reason.
+   */
+  protected static isRolledBackSerializationRefusal(err: unknown): boolean {
+    const msg =
+      err instanceof Error
+        ? err.message
+        : (err as { message?: string })?.message ||
+          (typeof err === 'object' && err !== null ? JSON.stringify(err) : String(err));
+    return (
+      /atomic hand commit refused \((?:atomic_hand_)?rolled_back\)/.test(msg) &&
+      ServerTableEngineBase.isTransientDbError(err)
     );
   }
 
@@ -3459,6 +3859,7 @@ export abstract class ServerTableEngineBase {
     this.terminal = true;
     this.running = false;
     this.clearEngineLeaseExpiryTimer();
+    this.clearUnclaimedTournamentMovePauses();
     this.releasePendingPauseWait();
     this.settleReady(false);
     this.heartbeatActive = false;
@@ -3551,12 +3952,12 @@ export abstract class ServerTableEngineBase {
    * board_not_recorded detectors have been finding their work.
    */
   hasSettlementInFlight(): boolean {
-    return this.settlementInFlight !== null;
+    return (this.settlementInFlight?.size ?? 0) > 0;
   }
 
   /** Continuous age of the owned settlement; null after completion. */
   settlementAgeMs(): number | null {
-    if (!this.settlementInFlight || this.settlementStartedAtMs === null) return null;
+    if (!this.hasSettlementInFlight() || this.settlementStartedAtMs === null) return null;
     return Math.max(0, Date.now() - this.settlementStartedAtMs);
   }
 
@@ -3575,21 +3976,35 @@ export abstract class ServerTableEngineBase {
    * newer one.
    */
   protected trackSettlementInFlight(p: Promise<void> | null): void {
+    // Some recovery/test harnesses are deliberately constructed without the
+    // class field initializers. Re-establish the same empty-set invariant at
+    // the ownership boundary instead of throwing while trying to record the
+    // very writer teardown must wait for.
+    const settlements =
+      this.settlementInFlight ?? (this.settlementInFlight = new Set<Promise<void>>());
+    if (!p) {
+      settlements.clear();
+      this.settlementStartedAtMs = null;
+      this.notifyBoundaryPauseWaiters();
+      return;
+    }
     // Extending a hand's barrier must retain its original age. Retry
     // heartbeats prove the process runs, not that this settlement completed.
-    if (!p) this.settlementStartedAtMs = null;
-    else if (!this.settlementInFlight) this.settlementStartedAtMs = Date.now();
-    this.settlementInFlight = p;
-    if (!p) return;
+    if (settlements.size === 0) this.settlementStartedAtMs = Date.now();
+    settlements.add(p);
     const tracked = p;
-    const clear = (): void => {
-      if (this.settlementInFlight === tracked) this.settlementInFlight = null;
+    const clear = (failed: boolean): void => {
+      settlements.delete(tracked);
+      if (failed) this.terminalBoundaryPersistenceFailed = true;
+      if (settlements.size === 0) this.settlementStartedAtMs = null;
+      if (this.postHandTasksPromise === tracked) this.postHandTasksPromise = null;
+      this.notifyBoundaryPauseWaiters();
     };
     /* .then(clear).catch(clear) rather than .then(clear, clear): the two-arg
        form handles rejection just as well, but noUnhandledRejections.law reads
        `void ....then(` and asks for a visible .catch, and a reader scanning for
        one deserves the same answer the linter gets. */
-    void tracked.then(clear).catch(clear);
+    void tracked.then(() => clear(false)).catch(() => clear(true));
   }
   /**
    * Allocate this hand's GLOBAL hand number (2026-08-18).
@@ -3686,6 +4101,17 @@ export abstract class ServerTableEngineBase {
   }
 
   /**
+   * Horses currently seated with chips, the twin of humansSeated() for the
+   * fleet gauges (`poker_horses_seated`, `poker_tables_with_horses` in
+   * GameServer.getPrometheusMetrics). Identification only (CLAUDE.md 10.5):
+   * it counts, it decides nothing. Dan 2026-09-11: the page for "the horses
+   * can't play" needs the number of horses playing to exist as a series.
+   */
+  horsesSeated(): number {
+    return this.seatedPlayers.filter((p) => p.is_horse === true && p.stack > 0).length;
+  }
+
+  /**
    * Drill-only public wrapper over the protected killForRestart path.  The
    * classification is structural rather than inferred from the reason text:
    * a drill may deliberately use a real-looking reason while exercising the
@@ -3771,12 +4197,16 @@ export abstract class ServerTableEngineBase {
    * pause now say so; the safety net still exists, it is just sized to the
    * pause being requested.
    */
-  pauseAfterHand(maxWaitMs?: number, opts?: { beforeNextHand?: boolean }): void {
+  pauseAfterHand(
+    maxWaitMs?: number,
+    opts?: { beforeNextHand?: boolean; untilResumed?: boolean }
+  ): void {
     this.handForHandPaused = true;
     this.pauseMaxWaitMs = maxWaitMs && maxWaitMs > 0 ? maxWaitMs : null;
     // See holdBeforeNextHand. Sticky within one pause: a break already holding
     // the table must not be downgraded by a later ordinary pause request.
     if (opts?.beforeNextHand) this.holdBeforeNextHand = true;
+    if (opts?.untilResumed) this.pauseRequiresExplicitResume = true;
     if (this.pausedSinceMs === 0) this.pausedSinceMs = Date.now();
   }
 
@@ -3817,6 +4247,307 @@ export abstract class ServerTableEngineBase {
       this.pauseMaxWaitMs = Math.max(this.pauseMaxWaitMs ?? 0, maxWaitMs);
     }
     if (this.pausedSinceMs === 0) this.pausedSinceMs = Date.now();
+  }
+
+  /** Register the one hand whose durable stack boundary is about to begin. */
+  protected beginTerminalBoundaryPersistence(): number {
+    if (
+      !this.terminalCloseoutPaused &&
+      this.terminalBoundaryPendingGenerations.size === 0 &&
+      !this.hasSettlementInFlight()
+    ) {
+      this.terminalBoundaryPersistenceFailed = false;
+    }
+    const generation = ++this.terminalBoundaryPersistenceGeneration;
+    this.terminalBoundaryPendingGenerations.add(generation);
+    this.notifyBoundaryPauseWaiters();
+    return generation;
+  }
+
+  /** Resolve exactly the generation opened immediately before HandController.start. */
+  protected finishTerminalBoundaryPersistence(generation: number, succeeded: boolean): void {
+    if (!this.terminalBoundaryPendingGenerations.delete(generation)) return;
+    if (!succeeded) this.terminalBoundaryPersistenceFailed = true;
+    this.notifyBoundaryPauseWaiters();
+  }
+
+  /** Wake every closeout waiter after a relevant lifecycle edge. */
+  private notifyBoundaryPauseWaiters(): void {
+    const registered = this.boundaryPauseWaiters;
+    if (!registered || registered.size === 0) return;
+    const waiters = [...registered];
+    registered.clear();
+    for (const wake of waiters) wake();
+  }
+
+  /**
+   * Install an irreversible-until-explicit-release next-hand fence and wait
+   * until the table is physically inside that fence with every accepted hand
+   * writer drained.  Timeout returns false but deliberately leaves the fence
+   * armed; elapsed wall time is never authority to start another hand.
+   */
+  async parkForTerminalCloseout(maxWaitMs: number): Promise<boolean> {
+    this.terminalCloseoutPaused = true;
+    this.holdBeforeNextHand = true;
+    if (this.pausedSinceMs === 0) this.pausedSinceMs = Date.now();
+    this.notifyBoundaryPauseWaiters();
+
+    const deadline = Date.now() + Math.max(0, maxWaitMs);
+    for (;;) {
+      if (!this.running || this.terminalBoundaryPersistenceFailed) return false;
+      if (
+        this.handForHandResolve !== null &&
+        this.isBetweenHands() &&
+        this.terminalBoundaryPendingGenerations.size === 0 &&
+        !this.hasSettlementInFlight() &&
+        this.postHandTasksPromise === null
+      ) {
+        return true;
+      }
+
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return false;
+      await new Promise<void>((resolve) => {
+        let finished = false;
+        const wake = (): void => {
+          if (finished) return;
+          finished = true;
+          clearTimeout(timer);
+          this.boundaryPauseWaiters.delete(wake);
+          resolve();
+        };
+        const timer = setTimeout(wake, remaining);
+        (timer as { unref?: () => void }).unref?.();
+        this.boundaryPauseWaiters.add(wake);
+      });
+    }
+  }
+
+  /**
+   * Fence this exact source engine before a tournament player is moved.
+   *
+   * A caller may wait only a small slice of its shared scheduler budget.  If
+   * the current hand needs longer, the owner remains armed and the next
+   * deterministic tournament sweep claims the already-parked boundary.  The
+   * fence becomes time-bounded only AFTER the engine is physically parked;
+   * this guarantees a long legitimate hand cannot outrun the request while a
+   * stale planner can never leave a healthy table parked forever.
+   */
+  async parkForTournamentMove(ownerId: string, maxWaitMs: number): Promise<boolean> {
+    if (!ownerId) return false;
+    // Recovery may have stopped and fully drained this exact generation while
+    // an earlier lost response remains unresolved. Its claimed owner survives
+    // teardown, and the stopped object is then a safe quarantine for replay:
+    // it cannot deal, owns no process scheduler, and still proves the UUID's
+    // source generation. No new owner may be created on a stopped engine.
+    if (!this.running) {
+      return (
+        this.claimedTournamentMovePauseOwners.has(ownerId) &&
+        this.terminal &&
+        this.hasReleasedProcessOwnership() &&
+        this.tournamentMoveOperations.size === 0 &&
+        !this.hasSettlementInFlight() &&
+        this.postHandTasksPromise === null
+      );
+    }
+    this.tournamentMovePauseOwners.add(ownerId);
+    this.holdBeforeNextHand = true;
+    if (this.pausedSinceMs === 0) this.pausedSinceMs = Date.now();
+    this.notifyBoundaryPauseWaiters();
+
+    const deadline = Date.now() + Math.max(0, maxWaitMs);
+    for (;;) {
+      if (!this.running || this.terminalBoundaryPersistenceFailed) {
+        this.releaseTournamentMovePause(ownerId);
+        return false;
+      }
+      if (
+        this.tournamentMovePauseOwners.has(ownerId) &&
+        this.handForHandResolve !== null &&
+        this.isBetweenHands() &&
+        this.terminalBoundaryPendingGenerations.size === 0 &&
+        !this.hasSettlementInFlight() &&
+        this.postHandTasksPromise === null
+      ) {
+        this.claimedTournamentMovePauseOwners.add(ownerId);
+        const expiry = this.tournamentMovePauseExpiryTimers.get(ownerId);
+        if (expiry) clearTimeout(expiry);
+        this.tournamentMovePauseExpiryTimers.delete(ownerId);
+        return true;
+      }
+
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return false;
+      await new Promise<void>((resolve) => {
+        let finished = false;
+        const wake = (): void => {
+          if (finished) return;
+          finished = true;
+          clearTimeout(timer);
+          this.boundaryPauseWaiters.delete(wake);
+          resolve();
+        };
+        const timer = setTimeout(wake, remaining);
+        (timer as { unref?: () => void }).unref?.();
+        this.boundaryPauseWaiters.add(wake);
+      });
+    }
+  }
+
+  /** Release only the tournament-move owner named by the caller. */
+  releaseTournamentMovePause(ownerId: string): void {
+    // An early or duplicate release may not erase the physical fence beneath
+    // an RPC that still owns this source. The awaited caller must release again
+    // after executeTournamentMoveAtBoundary has removed its exact barrier.
+    if (this.tournamentMoveOperationByOwner.has(ownerId)) return;
+    this.tournamentMovePauseOwners.delete(ownerId);
+    this.claimedTournamentMovePauseOwners.delete(ownerId);
+    const expiry = this.tournamentMovePauseExpiryTimers.get(ownerId);
+    if (expiry) clearTimeout(expiry);
+    this.tournamentMovePauseExpiryTimers.delete(ownerId);
+    this.notifyBoundaryPauseWaiters();
+    if (
+      this.tournamentMovePauseOwners.size > 0 ||
+      this.handForHandPaused ||
+      this.maintenancePaused ||
+      this.finalTableDealPaused ||
+      this.terminalCloseoutPaused
+    )
+      return;
+    this.releasePauseGate();
+  }
+
+  /** Start the stale-planner deadline only after the source is truly parked. */
+  private armUnclaimedTournamentMovePauseExpiry(): void {
+    for (const ownerId of this.tournamentMovePauseOwners) {
+      if (
+        this.claimedTournamentMovePauseOwners.has(ownerId) ||
+        this.tournamentMovePauseExpiryTimers.has(ownerId)
+      )
+        continue;
+      const timer = setTimeout(() => {
+        if (!this.claimedTournamentMovePauseOwners.has(ownerId)) {
+          this.releaseTournamentMovePause(ownerId);
+        }
+      }, ServerTableEngineBase.TOURNAMENT_MOVE_UNCLAIMED_PARK_MS);
+      (timer as { unref?: () => void }).unref?.();
+      this.tournamentMovePauseExpiryTimers.set(ownerId, timer);
+    }
+  }
+
+  /** Engine teardown owns every local pause timer and waiter. */
+  private clearUnclaimedTournamentMovePauses(): void {
+    for (const timer of this.tournamentMovePauseExpiryTimers.values()) clearTimeout(timer);
+    this.tournamentMovePauseExpiryTimers.clear();
+    for (const ownerId of [...this.tournamentMovePauseOwners]) {
+      if (!this.claimedTournamentMovePauseOwners.has(ownerId)) {
+        this.tournamentMovePauseOwners.delete(ownerId);
+      }
+    }
+  }
+
+  /**
+   * Run the one source-seat RPC inside a claimed physical boundary.  The
+   * non-rejecting barrier is process ownership: engine replacement and stop()
+   * must join it before another dealer generation can start on this table.
+   */
+  async executeTournamentMoveAtBoundary<T>(
+    ownerId: string,
+    operation: () => Promise<T>
+  ): Promise<T> {
+    const stoppedQuarantine =
+      !this.running &&
+      this.terminal &&
+      this.hasReleasedProcessOwnership() &&
+      this.tournamentMoveOperations.size === 0 &&
+      !this.hasSettlementInFlight() &&
+      this.postHandTasksPromise === null;
+    const livePhysicalBoundary =
+      this.running &&
+      this.handForHandResolve !== null &&
+      this.isBetweenHands() &&
+      this.terminalBoundaryPendingGenerations.size === 0 &&
+      !this.hasSettlementInFlight() &&
+      this.postHandTasksPromise === null;
+    if (
+      !this.claimedTournamentMovePauseOwners.has(ownerId) ||
+      (!livePhysicalBoundary && !stoppedQuarantine)
+    ) {
+      throw new Error('tournament move source boundary is not physically owned');
+    }
+
+    if (this.tournamentMoveOperationByOwner.has(ownerId)) {
+      throw new Error('tournament move source owner already has an operation in flight');
+    }
+
+    const result = operation();
+    const barrier = result.then(
+      () => undefined,
+      () => undefined
+    );
+    this.tournamentMoveOperations.add(barrier);
+    this.tournamentMoveOperationByOwner.set(ownerId, barrier);
+    this.notifyBoundaryPauseWaiters();
+    try {
+      return await result;
+    } finally {
+      this.tournamentMoveOperations.delete(barrier);
+      if (this.tournamentMoveOperationByOwner.get(ownerId) === barrier) {
+        this.tournamentMoveOperationByOwner.delete(ownerId);
+      }
+      this.notifyBoundaryPauseWaiters();
+    }
+  }
+
+  /** A replacement dealer may not cross an unresolved move outcome. */
+  hasClaimedTournamentMoveBoundary(): boolean {
+    return this.claimedTournamentMovePauseOwners.size > 0 || this.tournamentMoveOperations.size > 0;
+  }
+
+  /** Only a proven pre-commit refusal may call this terminal release. */
+  releaseTerminalCloseoutPause(): void {
+    this.terminalCloseoutPaused = false;
+    this.notifyBoundaryPauseWaiters();
+    if (
+      this.tournamentMovePauseOwners.size > 0 ||
+      this.handForHandPaused ||
+      this.maintenancePaused ||
+      this.finalTableDealPaused
+    )
+      return;
+    this.releasePauseGate();
+  }
+
+  /** Owners that forbid opening the next hand, including an operator hold. */
+  protected isNextHandPaused(): boolean {
+    return (
+      this.adminPauseLock ||
+      this.maintenanceLock ||
+      this.maintenancePaused ||
+      this.finalTableDealPaused ||
+      this.terminalCloseoutPaused ||
+      this.tournamentMovePauseOwners.size > 0 ||
+      (this.handForHandPaused && this.holdBeforeNextHand)
+    );
+  }
+
+  /** Drop an unstarted controller without a table, seat, stack or wallet write. */
+  protected discardPreparedHandForPause(): boolean {
+    if (!this.isNextHandPaused()) return false;
+    this.handController = null;
+    this.currentHandDealtStacks.clear();
+    if (this.handSpan) {
+      try {
+        this.handSpan.end();
+      } catch {
+        // Tracing can never keep a terminal boundary open.
+      }
+      this.handSpan = null;
+    }
+    this.shadowRecorder = null;
+    this.terminalCloseoutDiscardedPreparedHand = true;
+    this.notifyBoundaryPauseWaiters();
+    return true;
   }
 
   /**
@@ -3866,14 +4597,26 @@ export abstract class ServerTableEngineBase {
   /** Lift the maintenance break. Leaves any hand-for-hand pause in place. */
   resumeFromMaintenance(): void {
     this.maintenancePaused = false;
-    if (this.handForHandPaused || this.finalTableDealPaused) return;
+    if (
+      this.tournamentMovePauseOwners.size > 0 ||
+      this.handForHandPaused ||
+      this.finalTableDealPaused ||
+      this.terminalCloseoutPaused
+    )
+      return;
     this.releasePauseGate();
   }
 
   /** Lift only the final-table-deal authority. Other pause owners remain. */
   resumeFromFinalTableDeal(): void {
     this.finalTableDealPaused = false;
-    if (this.handForHandPaused || this.maintenancePaused) return;
+    if (
+      this.tournamentMovePauseOwners.size > 0 ||
+      this.handForHandPaused ||
+      this.maintenancePaused ||
+      this.terminalCloseoutPaused
+    )
+      return;
     this.releasePauseGate();
   }
 
@@ -3956,9 +4699,10 @@ export abstract class ServerTableEngineBase {
     this.pausedSinceMs = 0;
     this.lastPauseAlarmAtMs = 0;
     this.pauseMaxWaitMs = null;
+    this.pauseRequiresExplicitResume = false;
     this.holdBeforeNextHand = false;
     // Bible V8 §3.1: Table FSM — paused → running
-    if (this.tableFSM.state === 'paused') {
+    if (this.tableFSM.state === 'paused' && !this.adminPauseLock && !this.maintenanceLock) {
       this.tableFSM.transition('running');
     }
     this.releasePendingPauseWait();
@@ -3984,7 +4728,12 @@ export abstract class ServerTableEngineBase {
     // during a break is immediately — and without this line it would deal a
     // hand inside the break and destroy the break's pause budget on the way
     // through. See the `maintenancePaused` field.
-    if (this.maintenancePaused || this.finalTableDealPaused) {
+    if (
+      this.tournamentMovePauseOwners.size > 0 ||
+      this.maintenancePaused ||
+      this.finalTableDealPaused ||
+      this.terminalCloseoutPaused
+    ) {
       this.pausedSinceMs = this.pausedSinceMs || Date.now();
       return;
     }
@@ -4045,7 +4794,11 @@ export abstract class ServerTableEngineBase {
   protected async awaitPauseGate(): Promise<void> {
     // Either authority holds the gate; see the `maintenancePaused` field.
     if (
-      (!this.handForHandPaused && !this.maintenancePaused && !this.finalTableDealPaused) ||
+      (!this.handForHandPaused &&
+        !this.maintenancePaused &&
+        !this.finalTableDealPaused &&
+        !this.terminalCloseoutPaused &&
+        this.tournamentMovePauseOwners.size === 0) ||
       !this.running
     )
       return;
@@ -4061,6 +4814,8 @@ export abstract class ServerTableEngineBase {
     );
     await new Promise<void>((resolve) => {
       this.handForHandResolve = resolve;
+      this.armUnclaimedTournamentMovePauseExpiry();
+      this.notifyBoundaryPauseWaiters();
       /**
        * Safety timeout so a table can never wedge forever.
        *
@@ -4074,6 +4829,19 @@ export abstract class ServerTableEngineBase {
       const maxWaitMs = this.pauseMaxWaitMs ?? 120000;
       this.pauseGateTimer = setTimeout(() => {
         if (this.handForHandResolve === resolve) {
+          if (
+            this.pauseRequiresExplicitResume ||
+            this.terminalCloseoutPaused ||
+            this.claimedTournamentMovePauseOwners.size > 0
+          ) {
+            // A synchronized break can outlast its initial drain estimate.
+            // Only its manager can release that pause after all hands finish.
+            // Terminal closeout is fail-closed. Its caller has its own bounded
+            // wait, but this table stays fenced until that caller explicitly
+            // proves the transaction did not commit and releases it.
+            this.pauseGateTimer = null;
+            return;
+          }
           console.warn(
             `[ServerTableEngine:${this.tableId}] Pause safety timeout after ${Math.round(
               maxWaitMs / 1000
@@ -4206,8 +4974,57 @@ export abstract class ServerTableEngineBase {
       this.handForHandPaused ||
       this.maintenancePaused ||
       this.finalTableDealPaused ||
+      this.terminalCloseoutPaused ||
+      (this.tournamentMovePauseOwners.size > 0 && this.handForHandResolve !== null) ||
       this.dealHoldUntilMs > Date.now() ||
       this.tableFSM.state === 'paused'
+    );
+  }
+
+  /**
+   * A by-design pause that has TAKEN EFFECT - the question the table watchdog
+   * and GameServer's zombie reaper ask before they stand down (2026-09-11).
+   *
+   * isPausedByDesign() goes true the moment an authority raises its flag, and
+   * for what it was written for that is right: a parked table is not a stall.
+   * But almost every authority is a "stop at the next hand boundary" fence,
+   * raised on tables still playing a hand: the maintenance break at :53
+   * (maintenancePaused, on EVERY table), the tournament's own synchronized
+   * break at :55 and hand-for-hand (pauseAfterHand -> handForHandPaused, on
+   * every table of the event), and a deal hold. None of them stops the turn
+   * clock. Until the hand lands the table is PLAYING, and a hand that froze is
+   * exactly as dead under one of those flags as without it.
+   *
+   * Both readers took the flag for the fact. The watchdog stood down for every
+   * table still mid-hand when a flag went up, so a hand that lost its clock in
+   * the last-hand window could not be rescued; the reaper exempted it for
+   * MAX_HEALTHY_PAUSE_MS - ten minutes, longer than the whole break - so it
+   * could not be reaped either. It never parked, and one table that never
+   * parks keeps readyForRestart shut. On 2026-09-11 build 404948b3 froze
+   * tournament tables mid-hand (#4225) and held 514, 526 and 523 of them
+   * unparked through three countdowns: no certificate, no restart, and no way
+   * for the fix to ship without an owner-approved exception.
+   *
+   * So: between hands every authority means what it says. Mid-hand, only a
+   * fence a REBUILD WOULD LOSE still holds the table - the final-table deal,
+   * the terminal closeout and an FSM 'paused' lock live on this engine alone.
+   * The others survive a rebuild: MaintenanceBreak.adopt() parks every engine
+   * created during the break, and TournamentManagerBase.
+   * prepareManagedTableEngineForPlay() re-applies the tournament break, the
+   * add-on break and hand-for-hand to a replacement before admitting it. So a
+   * frozen hand under them is worked by the watchdog and reaped on its usual
+   * clock, and its replacement arrives parked - the certificate is earned,
+   * not waived.
+   *
+   * (First draft counted every non-maintenance authority at once, mid-hand
+   * too. Review caught it: the :55 tournament break raises handForHandPaused
+   * on every MTT table, so from :55 - the only minutes readyForRestart can
+   * open - the draft shielded a frozen MTT hand again.)
+   */
+  isParkedByDesign(): boolean {
+    if (this.isBetweenHands()) return this.isPausedByDesign();
+    return (
+      this.finalTableDealPaused || this.terminalCloseoutPaused || this.tableFSM.state === 'paused'
     );
   }
 
@@ -4381,8 +5198,12 @@ export abstract class ServerTableEngineBase {
     if (!this.isTournamentTable()) return 'cash';
     try {
       const id = this.tableInfo?.tournament_id;
-      const ctx = id ? getTournamentBrainContext(String(id)) : null;
-      return ctx?.format ?? 'mtt';
+      const ctx = id ? peekTournamentBrainContext(String(id)) : null;
+      // Phase 7 distinguishes multi-seat SNG utility from MTT utility inside
+      // the horse snapshot. The table-feel metric deliberately keeps its
+      // established four-value cardinality, so those SNG tables share the MTT
+      // transport series rather than creating an unbounded label change.
+      return ctx?.format === 'sng' ? 'mtt' : (ctx?.format ?? 'mtt');
     } catch {
       return 'mtt';
     }
@@ -4890,6 +5711,30 @@ export abstract class ServerTableEngineBase {
    * changes perhaps twice a year.
    *
    * Deliberately best-effort: on any error the previous values stand.
+   *
+   * ── IT IS NOT ONLY RAKE ANY MORE (2026-09-09, lane E of the must-move audit)
+   *
+   * "A value that changes perhaps twice a year" was true of every column this
+   * read, and stopped being true at Gate 5. A cluster table's rules are now
+   * written by `fn_cash_apply_ruleset` on EVERY tick from the template its
+   * players chose the game by, so the ante, the VPIP floor, run-it-N-times,
+   * seven-deuce, the straddle switches, the buy-in band and the action clock
+   * are all values the database can change under a running engine.
+   *
+   * They were not in this read. `this.tableInfo` has exactly three writers -
+   * `start()` (once per process), `refreshBlinds()` (tournaments only) and
+   * this method - so every one of them was a boot-time snapshot held until the
+   * engine restarted.
+   *
+   * MEASURED: on 2026-09-09 the realignment turned antes off on 19 live
+   * Classic tables and bombs off on 24. The bomb half followed within this
+   * method's 60-second throttle because those columns were already here. The
+   * ante half would have gone on being collected until each table's next
+   * restart, on a game sold as "No Antes".
+   *
+   * The hourly :55 restart caps the damage at an hour. That is luck, not a
+   * fix (10.11/10.12), so the whole templated rule set is read here now.
+   * A rule the player was sold under the game's name follows the row.
    */
   protected async refreshRakeConfig(force = false): Promise<void> {
     if (!this.tableInfo || this.isTournamentTable()) return;
@@ -4907,10 +5752,43 @@ export abstract class ServerTableEngineBase {
           // BOMB POT STANDARDIZATION 2026-08-27: the five new canonical
           // columns ride along — board count, trigger mode, timed interval,
           // minimum players and fixed ante.
-          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_button_policy, bomb_pot_announce_seconds, bomb_pot_manual_pending'
+          // THE WHOLE TEMPLATED RULE SET RIDES ALONG TOO (2026-09-09, lane E
+          // of the must-move audit). See the doc comment above for why: these
+          // are no longer host settings that change twice a year, they are
+          // rewritten by fn_cash_apply_ruleset on every cluster tick.
+          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_button_policy, bomb_pot_announce_seconds, bomb_pot_manual_pending, ante_enabled, ante, big_blind_ante_enabled, nit_game, maintain_percent_min, maintain_hands, career_percent_min, run_it_mode, run_it_twice, allow_run_it_twice, run_it_twice_enabled, insurance_enabled, seven_deuce_enabled, seven_deuce_amount, straddle_enabled, auto_utg_straddle, voluntary_straddle, min_buy_in, max_buy_in, action_time_seconds'
         )
         .eq('id', this.tableId)
         .maybeSingle();
+      /* A DIAMOND TABLE'S RULES DO NOT LEAVE THE BOUNDARY UNDER IT (2026-09-11,
+         restated 2026-09-12 when straddles and run it twice were admitted).
+
+         Everything below re-reads the row roughly once a minute and applies
+         it, which is right for a chip club: the rules follow the row. For an
+         arena table it was a hole, because admission is the only OTHER place
+         the Diamond boundary is checked, so a column flipped afterwards was
+         honoured here whatever it said.
+
+         The fix is not to freeze an arena table. A staff door may legitimately
+         turn straddles or run it twice on for a table that is already running,
+         and both are inside the boundary now, so the refreshed row SHOULD be
+         applied and the table picks the change up without a restart. What must
+         never be applied is a row the boundary would no longer admit - rake, a
+         jackpot percentage, insurance, a bomb pot, a variant, or a run-it
+         column that has gone unset. Those are refused here and the table keeps
+         dealing under the rules its players sat down to, with the refusal
+         recorded rather than silently swallowed. */
+      if (tableRow && this.tableInfo && (this.tableInfo as any).arena?.asset === 'diamonds') {
+        try {
+          assertDiamondCashTable(tableRow as unknown as Record<string, unknown>);
+        } catch (error) {
+          console.error(
+            `[refreshRakeConfig] Diamond table ${this.tableId} rules changed to something the ` +
+              `arena boundary refuses; keeping the admitted rules. ${String(error)}`
+          );
+          return;
+        }
+      }
       if (tableRow && this.tableInfo) {
         this.tableInfo.rake_percent = tableRow.rake_percent ?? undefined;
         this.tableInfo.rake_cap_bb = tableRow.rake_cap_bb ?? undefined;
@@ -4943,6 +5821,64 @@ export abstract class ServerTableEngineBase {
         // rather than having to wait for an engine restart to be able to fire
         // a manual bomb at all.
         if (this.tableInfo.bomb_pot_enabled === true) this.subscribeManualBomb();
+
+        /* ── THE TEMPLATED RULES, RE-READ (2026-09-09, lane E) ──────────────
+           Everything below is a rule the PLAYER was sold under the game's
+           name - Classic "No Antes, No Bombs, No VPIP Floor", Action "Small
+           Blind Ante ...", Madness "Big Blind Ante ...". Until today only the
+           bomb half of that promise was re-read; the rest was sampled once in
+           start() and held for the life of the process.
+
+           On 2026-09-09 the realignment migration turned the ante off on 19
+           live Classic tables and the bombs off on 24. The bombs stopped
+           inside a minute. THE ANTES WOULD HAVE KEPT BEING COLLECTED until
+           each engine's next restart, in a game whose own card says it has
+           none. Forced money out of a stack is not a cosmetic mismatch.
+
+           The hourly :55 restart bounded that at one hour, which is why it
+           never showed up as a flood. A defect that a restart happens to wash
+           away is not fixed (CLAUDE.md 10.11/10.12); it is the platform
+           getting lucky on a clock. So the rules follow the row. */
+        this.tableInfo.ante_enabled = (tableRow as any).ante_enabled ?? undefined;
+        this.tableInfo.ante = (tableRow as any).ante ?? undefined;
+        this.tableInfo.big_blind_ante_enabled =
+          (tableRow as any).big_blind_ante_enabled ?? undefined;
+        this.tableInfo.nit_game = (tableRow as any).nit_game ?? undefined;
+        this.tableInfo.maintain_percent_min = (tableRow as any).maintain_percent_min ?? undefined;
+        this.tableInfo.maintain_hands = (tableRow as any).maintain_hands ?? undefined;
+        this.tableInfo.career_percent_min = (tableRow as any).career_percent_min ?? undefined;
+        this.tableInfo.run_it_mode = (tableRow as any).run_it_mode ?? undefined;
+        this.tableInfo.run_it_twice = (tableRow as any).run_it_twice ?? undefined;
+        this.tableInfo.allow_run_it_twice = (tableRow as any).allow_run_it_twice ?? undefined;
+        this.tableInfo.run_it_twice_enabled = (tableRow as any).run_it_twice_enabled ?? undefined;
+        this.tableInfo.insurance_enabled = (tableRow as any).insurance_enabled ?? undefined;
+        (this.tableInfo as any).seven_deuce_enabled =
+          (tableRow as any).seven_deuce_enabled ?? undefined;
+        (this.tableInfo as any).seven_deuce_amount =
+          (tableRow as any).seven_deuce_amount ?? undefined;
+        this.tableInfo.straddle_enabled = (tableRow as any).straddle_enabled ?? undefined;
+        (this.tableInfo as any).auto_utg_straddle =
+          (tableRow as any).auto_utg_straddle ?? undefined;
+        (this.tableInfo as any).voluntary_straddle =
+          (tableRow as any).voluntary_straddle ?? undefined;
+        this.tableInfo.min_buy_in = (tableRow as any).min_buy_in ?? undefined;
+        this.tableInfo.max_buy_in = (tableRow as any).max_buy_in ?? undefined;
+        this.tableInfo.action_time_seconds = (tableRow as any).action_time_seconds ?? undefined;
+
+        /* The four run-it columns are not read directly at the offer; they are
+           COMPILED into the RIT engine by applyRunItTwiceConfig. Refreshing
+           the row without re-running it would leave the engine configured from
+           the boot row, so the re-read would be silently ineffective for the
+           one rule most likely to differ between two tables of one game.
+
+           Insurance is deliberately NOT re-configured here: start() sets only
+           `enabled` on that engine while other call sites also set houseMargin
+           and offerTimeoutSeconds, so a partial re-configure mid-flow would
+           drop them. applyRunItTwiceConfig only READS insurance_enabled (it
+           returns it), so this is safe. The straddle and seven-deuce columns
+           are read straight off tableInfo at the moment they matter, so the
+           assignment above is the whole of their fix. */
+        this.applyRunItTwiceConfig();
       }
       const clubId = this.tableInfo?.club_id;
       if (clubId) {
@@ -4983,12 +5919,12 @@ export abstract class ServerTableEngineBase {
   /**
    * C15 FIX (2026-08-09): coalesce snapshot writes instead of paying one per action.
    *
-   * saveSnapshot() serializes the whole hand state and does one or two upserts.
+   * saveSnapshot() serializes the whole hand state and does one upsert.
    * It was fired after EVERY accepted action — 20 to 80 writes per hand per
    * table — which at 500+ tables is enough on its own to saturate the connection
    * pool. And it buys very little today: rehydrate() is never called and
    * checkCrashRecovery() abandons in-flight hands (see B10), so the snapshot's
-   * only live consumers are forensics and getActiveHandSnapshot.
+   * only live consumers are forensics and getActiveHandSnapshotFull.
    *
    * Rather than drop it (which would foreclose resume-after-restart) this
    * coalesces: write immediately if the last write is old enough, otherwise mark
@@ -5012,19 +5948,42 @@ export abstract class ServerTableEngineBase {
     this.snapshotTimer.unref?.();
   }
 
-  /** Write now if anything changed since the last write. Safe to call spuriously. */
-  protected async flushSnapshot(): Promise<void> {
+  /**
+   * Write now if anything changed since the last write. Safe to call spuriously.
+   * Gameplay-triggered snapshots stay best-effort; terminal teardown opts into a
+   * rejection so its owner receives an honest cleanup certificate.
+   */
+  protected async flushSnapshot(rejectOnFailure = false): Promise<void> {
     if (this.snapshotTimer) {
       clearTimeout(this.snapshotTimer);
       this.snapshotTimer = null;
     }
-    if (!this.snapshotDirty) return;
-    this.snapshotDirty = false;
-    this.lastSnapshotAtMs = Date.now();
-    try {
-      await this.saveSnapshot();
-    } catch {
-      /* snapshotting must never affect gameplay */
+
+    for (;;) {
+      let write = this.snapshotFlushPromise;
+      if (!write) {
+        if (!this.snapshotDirty) return;
+        this.snapshotDirty = false;
+        this.lastSnapshotAtMs = Date.now();
+        write = this.saveSnapshot();
+        this.snapshotFlushPromise = write;
+      }
+
+      try {
+        await write;
+      } catch (error) {
+        /* Gameplay remains best-effort; teardown observes the same writer. */
+        if (rejectOnFailure) throw error;
+        return;
+      } finally {
+        if (this.snapshotFlushPromise === write) this.snapshotFlushPromise = null;
+      }
+
+      // An action may have dirtied the snapshot while the prior write was in
+      // flight. A teardown caller has already fenced actions and therefore
+      // drains this loop to a stable point without letting a writer outlive it.
+      if (this.snapshotFlushPromise && this.snapshotFlushPromise !== write) continue;
+      if (!this.snapshotDirty) return;
     }
   }
 
@@ -5219,7 +6178,7 @@ export abstract class ServerTableEngineBase {
    * the same cashout again under the same idempotency key.
    */
   protected async releaseBustedSeat(
-    player: { user_id: string; seat_number: number; username?: string },
+    player: { user_id: string; seat_number: number; username?: string; occupancy_id?: string },
     reason: 'busted_no_rebuy' | 'busted_stop_loss' | 'busted_unfunded'
   ): Promise<boolean> {
     try {
@@ -5230,6 +6189,7 @@ export abstract class ServerTableEngineBase {
          money path's books either way (CLAUDE.md 11.5). */
       await atomicCashout(player.user_id, this.tableId, player.seat_number, {
         leaveMode: 'forced',
+        occupancyId: player.occupancy_id,
       });
     } catch (err) {
       reportError(err, 'ServerTableEngine.' + this.tableId + '.busted_release_cashout', {
@@ -5239,6 +6199,12 @@ export abstract class ServerTableEngineBase {
       });
       return false;
     }
+    if (
+      this.seatedPlayers.some(
+        (p) => p.user_id === player.user_id && p.occupancy_id !== player.occupancy_id
+      )
+    )
+      return false;
     // The event goes out only once the row says the chair is empty.
     this.hub?.emitEvent(this.tableId, {
       type: 'seat_left',
@@ -5266,143 +6232,191 @@ export abstract class ServerTableEngineBase {
     // the one and not the other. The gate the law names, here, so it holds
     // from every call site.
     if (isMaintenanceFrozen()) return;
-    const seatedIds = this.seatedPlayers.map((p) => p.user_id);
-    if (seatedIds.length === 0) return;
-
-    const sitOutEvictable = this.disconnectEngine.tickSitOutsAndCollectEvictions(
-      this.tableId,
-      seatedIds,
-      { countOrbit: opts.countOrbit }
-    );
-    // Dan 2026-08-23, BINDING: away-blind cap. "IF A PLAYER IS AWAY FROM THE
-    // CASH GAME TABLE, ONCE THEY LOSE ONE BB AND ONE SB THEY MUST BE AUTO
-    // REMOVED." Collected together so one pass removes the seat once.
-    const blindEvictable = this.disconnectEngine.collectAwayBlindEvictions(this.tableId, seatedIds);
-
-    // Dan 2026-08-25, table-creation parity: NIT GAME. `nit_game` and its three
-    // numbers were columns the creation page wrote and nothing read, while the
-    // toggle's own tooltip promised a "Penalty for tight play".
-    //
-    // The rule is a QUERY (fn_nit_evictions) rather than engine state, because
-    // ca_hand_facts already stores VPIP per player per hand from the same
-    // derivation the player's own HUD shows. A second counter here would be a
-    // second answer, and the two would part company the first time this process
-    // restarted mid-session.
-    //
-    // GATED ON THE COLUMN so the round trip never happens on a table without the
-    // rule — which is every table today. A failure returns an empty list: a
-    // stats query that cannot answer must not throw anyone out of a hand they
-    // were entitled to play.
-    //
-    // Merged into this shared method 2026-08-25: it arrived on main inside the
-    // inline block this method replaced, and it belongs wherever the other two
-    // eviction reasons live — including the start-up wait loop.
-    const nitEvictable: string[] = [];
-    if (this.tableInfo?.nit_game === true) {
-      // The board every seat is judged on, kept for the brain (Dan
-      // 2026-09-04). Read beside the eviction, at the same boundary, from the
-      // same rows, so what a horse steers by is what it is stood up on.
-      this.nitStatus = await collectNitStatus(this.tableId);
-      const nits = await collectNitEvictions(this.tableId);
-      for (const n of nits) {
-        console.log(
-          `[ServerTableEngine:${this.tableId}] nit game: ${n.userId} is at ` +
-            `${n.vpip}% VPIP over ${n.hands} hands, table requires ${n.required}%`
-        );
-        nitEvictable.push(n.userId);
+    const releaseSeatBoundary = await this.acquireSeatBoundary();
+    try {
+      while (this.postHandTasksPromise) {
+        const settlement = this.postHandTasksPromise;
+        await settlement;
+        if (this.postHandTasksPromise === settlement) break;
       }
-    }
+      if (this.terminal || isMaintenanceFrozen()) return;
+      const originalOccupancies = new Map(this.seatedPlayers.map((p) => [p.user_id, { ...p }]));
+      const seatedIds = [...originalOccupancies.keys()];
+      if (seatedIds.length === 0) return;
 
-    // 2026-09-04: a seat nobody is behind for five minutes, never sat out and
-    // never charged a blind (a quiet table), is released on the same clock
-    // as a sit-out. See DisconnectEngine.collectAbandonedSeatEvictions.
-    const abandonedEvictable = this.disconnectEngine.collectAbandonedSeatEvictions(
-      this.tableId,
-      seatedIds
-    );
-
-    const blindEvictSet = new Set(blindEvictable);
-    const nitEvictSet = new Set(nitEvictable);
-    const abandonedEvictSet = new Set(abandonedEvictable);
-    const evictable = Array.from(
-      new Set([...sitOutEvictable, ...blindEvictable, ...nitEvictable, ...abandonedEvictable])
-    );
-    if (evictable.length === 0) return;
-
-    // Dan 2026-08-26, binding: "a player can never leave the table while they
-    // are all in. they must wait for the hand to be finished." An eviction is
-    // still a departure, and this one cashes the seat out. Both call sites are
-    // between hands today, so this should never fire - which is the point: the
-    // safety was call-site placement rather than a check, and a future caller
-    // would not know that. leaveTable() refuses the same case explicitly.
-    const evictHand = this.handController?.getState();
-
-    const departed = new Set<string>();
-    for (const userId of evictable) {
-      const seated = this.seatedPlayers.find((p) => p.user_id === userId);
-      if (!seated) continue;
-      const evictSelf = evictHand?.players.find((p) => p.user_id === userId);
-      if (evictSelf?.is_all_in && !evictSelf.is_folded) {
-        console.log(
-          `[ServerTableEngine:${this.tableId}] NOT evicting ${userId} - all-in in a live hand`
-        );
-        continue;
-      }
-      const awayBlindEvict = blindEvictSet.has(userId);
-      const nitEvict = !awayBlindEvict && nitEvictSet.has(userId);
-      const abandonedEvict =
-        !awayBlindEvict &&
-        !nitEvict &&
-        !sitOutEvictable.includes(userId) &&
-        abandonedEvictSet.has(userId);
-      console.log(
-        awayBlindEvict
-          ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - away, already charged one SB and one BB`
-          : nitEvict
-            ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - below this nit game's VPIP floor`
-            : abandonedEvict
-              ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - gone for 5 minutes with nobody behind the seat`
-              : `[ServerTableEngine:${this.tableId}] evicting ${userId} - sat out past the 2-orbit / 5-minute limit`
+      const sitOutEvictable = this.disconnectEngine.tickSitOutsAndCollectEvictions(
+        this.tableId,
+        seatedIds,
+        { countOrbit: opts.countOrbit }
       );
-      try {
-        // BOOTED FOR LOW VPIP = BARRED FOR TWO HOURS (Dan 2026-09-05): the
-        // database writes the bar from this leave mode; every other eviction
-        // stays a plain system exit.
-        await atomicCashout(
-          userId,
-          this.tableId,
-          seated.seat_number,
-          nitEvict ? { leaveMode: 'vpip_evicted' } : undefined
-        );
-        departed.add(userId);
-        this.hub?.emitEvent(this.tableId, {
-          type: 'seat_left',
-          table_id: this.tableId,
-          seat: seated.seat_number,
-          user_id: userId,
-          mid_hand: false,
-          reason: awayBlindEvict
-            ? 'away_blind_cap'
-            : nitEvict
-              ? 'nit_game_vpip'
-              : abandonedEvict
-                ? 'abandoned_seat'
-                : 'sit_out_timeout',
-          timestamp: Date.now(),
-        });
-        this.disconnectEngine.unregisterPlayer(this.tableId, userId);
-        this.timeBankEngine.removePlayer(this.tableId, userId);
-        this.straddleEngine.removePlayer(this.tableId, userId);
-        this.preActionEngine.removePlayer(this.tableId, userId);
-        this.leaveHeldByClock.delete(userId);
-        this.chipContinuity.forget(userId);
-      } catch (err) {
-        reportError(err, 'ServerTableEngine.' + this.tableId + '.sitout_evict_cashout');
-        // Keep the roster and tracking until the next pass confirms departure.
-        // Retrying through a different helper would discard the eviction mode.
+      // Dan 2026-08-23, BINDING: away-blind cap. "IF A PLAYER IS AWAY FROM THE
+      // CASH GAME TABLE, ONCE THEY LOSE ONE BB AND ONE SB THEY MUST BE AUTO
+      // REMOVED." Collected together so one pass removes the seat once.
+      const blindEvictable = this.disconnectEngine.collectAwayBlindEvictions(
+        this.tableId,
+        seatedIds
+      );
+
+      // Dan 2026-08-25, table-creation parity: NIT GAME. `nit_game` and its three
+      // numbers were columns the creation page wrote and nothing read, while the
+      // toggle's own tooltip promised a "Penalty for tight play".
+      //
+      // The rule is a QUERY (fn_nit_evictions) rather than engine state, because
+      // ca_hand_facts already stores VPIP per player per hand from the same
+      // derivation the player's own HUD shows. A second counter here would be a
+      // second answer, and the two would part company the first time this process
+      // restarted mid-session.
+      //
+      // GATED ON THE COLUMN so the round trip never happens on a table without the
+      // rule — which is every table today. A failure returns an empty list: a
+      // stats query that cannot answer must not throw anyone out of a hand they
+      // were entitled to play.
+      //
+      // Merged into this shared method 2026-08-25: it arrived on main inside the
+      // inline block this method replaced, and it belongs wherever the other two
+      // eviction reasons live — including the start-up wait loop.
+      const nitEvictable: string[] = [];
+      if (this.tableInfo?.nit_game === true) {
+        // The board every seat is judged on, kept for the brain (Dan
+        // 2026-09-04). Read beside the eviction, at the same boundary, from the
+        // same rows, so what a horse steers by is what it is stood up on.
+        this.nitStatus = await collectNitStatus(this.tableId);
+        const nits = await collectNitEvictions(this.tableId);
+        for (const n of nits) {
+          console.log(
+            `[ServerTableEngine:${this.tableId}] nit game: ${n.userId} is at ` +
+              `${n.vpip}% VPIP over ${n.hands} hands, table requires ${n.required}%`
+          );
+          nitEvictable.push(n.userId);
+        }
       }
+
+      // 2026-09-04: a seat nobody is behind for five minutes, never sat out and
+      // never charged a blind (a quiet table), is released on the same clock
+      // as a sit-out. See DisconnectEngine.collectAbandonedSeatEvictions.
+      const abandonedEvictable = this.disconnectEngine.collectAbandonedSeatEvictions(
+        this.tableId,
+        seatedIds
+      );
+
+      const blindEvictSet = new Set(blindEvictable);
+      const nitEvictSet = new Set(nitEvictable);
+      const abandonedEvictSet = new Set(abandonedEvictable);
+      const evictable = Array.from(
+        new Set([...sitOutEvictable, ...blindEvictable, ...nitEvictable, ...abandonedEvictable])
+      );
+      if (evictable.length === 0) return;
+
+      // Dan 2026-08-26, binding: "a player can never leave the table while they
+      // are all in. they must wait for the hand to be finished." An eviction is
+      // still a departure, and this one cashes the seat out. Both call sites are
+      // between hands today, so this should never fire - which is the point: the
+      // safety was call-site placement rather than a check, and a future caller
+      // would not know that. leaveTable() refuses the same case explicitly.
+      const evictHand = this.handController?.getState();
+
+      const departed = new Set<string>();
+      for (const userId of evictable) {
+        if (this.terminal || isMaintenanceFrozen()) break;
+        const seated = originalOccupancies.get(userId);
+        if (
+          !seated ||
+          !this.seatedPlayers.some(
+            (p) =>
+              p.user_id === userId &&
+              p.occupancy_id === seated.occupancy_id &&
+              p.seat_number === seated.seat_number
+          )
+        )
+          continue;
+        const evictSelf = evictHand?.players.find((p) => p.user_id === userId);
+        if (evictSelf?.is_all_in && !evictSelf.is_folded) {
+          console.log(
+            `[ServerTableEngine:${this.tableId}] NOT evicting ${userId} - all-in in a live hand`
+          );
+          continue;
+        }
+        // Folding removes winning eligibility, not a participant's unsettled
+        // contribution. Every live-hand participant waits for settlement.
+        if (evictSelf) continue;
+        // Presence can change while an eligibility read or an earlier
+        // player's cashout is awaited. Recheck this original occupant now,
+        // without charging another orbit.
+        const stillTimedOut = this.disconnectEngine
+          .tickSitOutsAndCollectEvictions(this.tableId, [userId], { countOrbit: false })
+          .includes(userId);
+        const stillAway = this.disconnectEngine
+          .collectAwayBlindEvictions(this.tableId, [userId])
+          .includes(userId);
+        const stillAbandoned = this.disconnectEngine
+          .collectAbandonedSeatEvictions(this.tableId, [userId])
+          .includes(userId);
+        if (!stillTimedOut && !stillAway && !stillAbandoned && !nitEvictSet.has(userId)) continue;
+        const awayBlindEvict = blindEvictSet.has(userId) && stillAway;
+        const nitEvict = !awayBlindEvict && nitEvictSet.has(userId);
+        const abandonedEvict =
+          !awayBlindEvict &&
+          !nitEvict &&
+          !stillTimedOut &&
+          abandonedEvictSet.has(userId) &&
+          stillAbandoned;
+        console.log(
+          awayBlindEvict
+            ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - away, already charged one SB and one BB`
+            : nitEvict
+              ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - below this nit game's VPIP floor`
+              : abandonedEvict
+                ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - gone for 5 minutes with nobody behind the seat`
+                : `[ServerTableEngine:${this.tableId}] evicting ${userId} - sat out past the 2-orbit / 5-minute limit`
+        );
+        try {
+          // BOOTED FOR LOW VPIP = BARRED FOR TWO HOURS (Dan 2026-09-05): the
+          // database writes the bar from this leave mode; every other eviction
+          // stays a plain system exit.
+          await atomicCashout(userId, this.tableId, seated.seat_number, {
+            occupancyId: seated.occupancy_id,
+            ...(nitEvict ? { leaveMode: 'vpip_evicted' as const } : {}),
+          });
+          if (
+            this.seatedPlayers.some(
+              (p) => p.user_id === userId && p.occupancy_id !== seated.occupancy_id
+            )
+          )
+            continue;
+          departed.add(seated.occupancy_id!);
+          this.hub?.emitEvent(this.tableId, {
+            type: 'seat_left',
+            table_id: this.tableId,
+            seat: seated.seat_number,
+            user_id: userId,
+            mid_hand: false,
+            reason: awayBlindEvict
+              ? 'away_blind_cap'
+              : nitEvict
+                ? 'nit_game_vpip'
+                : abandonedEvict
+                  ? 'abandoned_seat'
+                  : 'sit_out_timeout',
+            timestamp: Date.now(),
+          });
+          this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+          this.timeBankEngine.removePlayer(this.tableId, userId);
+          this.straddleEngine.removePlayer(this.tableId, userId);
+          this.preActionEngine.removePlayer(this.tableId, userId);
+          this.leaveHeldByClock.delete(userId);
+          this.chipContinuity.forget(userId);
+        } catch (err) {
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.sitout_evict_cashout');
+          // Keep the roster and tracking until the next pass confirms departure.
+          // Retrying through a different helper would discard the eviction mode.
+        }
+      }
+      this.seatedPlayers = this.seatedPlayers.filter(
+        (p) => !p.occupancy_id || !departed.has(p.occupancy_id)
+      );
+    } finally {
+      releaseSeatBoundary();
     }
-    this.seatedPlayers = this.seatedPlayers.filter((p) => !departed.has(p.user_id));
   }
 
   /**
@@ -5515,6 +6529,95 @@ export abstract class ServerTableEngineBase {
    * stays bounded by in-flight writers, not by table lifetime.
    */
   private entryHoldWriteChains: Map<string, Promise<void>> = new Map();
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  A TABLE THAT CANNOT DEAL HOLDS NOBODY FOR A BLIND
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Waiting for the big blind exists so a newcomer cannot enter behind the
+   * blinds and take the button for free. It is a rule about a hand that is
+   * being dealt. On a table that is NOT dealing it is a deadlock, and on
+   * 2026-09-11 it was holding seven live must-move tables shut:
+   *
+   *   tbl      | seated | waiting | active | oldest | hands in 30m
+   *   2755c54c |      6 |       5 |      1 |  94min |            0
+   *   1c45cada |      6 |       5 |      1 |  94min |            0
+   *   9e851fff |      6 |       5 |      1 |  94min |            0
+   *   1dc09e13 |      4 |       3 |      1 |  94min |            0
+   *   e670d636 |      4 |       3 |      1 |  34min |            0
+   *   5fceabfd |      2 |       1 |      1 |   7min |            0
+   *   140532e7 |      2 |       1 |      1 |   6min |            0
+   *
+   * Every one of the 129 open cluster tables that was seated-but-not-dealing
+   * was a table with a waiter on it, and no other table was stuck: the
+   * correlation was exact. The cycle is closed and cannot break itself -
+   * `activePlayers` excludes a waiter, so the deal gate sees one player and
+   * sleeps; no deal means the big blind never moves; the big blind never
+   * moving means the natural release at the top of the loop never fires. The
+   * only other way out is the player tapping "post to enter", and these were
+   * horses, which never tap. Six funded seats sat at a dead table for an hour
+   * and a half while the floor showed the game as running.
+   *
+   * So: while the table cannot deal, nobody waits. There is no blind in
+   * flight to dodge, the next deal is the table's first hand and its blinds
+   * post by position - which is exactly what the dealing loop already says
+   * about its own first iteration. The released seat is NOT seeded into
+   * `dealtInUserIds`: it has never been dealt a hand here, so "a new player
+   * never gets the button" still holds on the hand it enters.
+   *
+   * THIS IS NOT THE FREE RELEASE DAN REVERSED, and the difference is the
+   * whole point. Dan 2026-08-26, binding: "Every single player needs to
+   * either wait for the BB or post when entering a cash game... no free hands
+   * or coming in behind the blinds" - which killed a release that let a
+   * waiter in on the NEXT TICK of a running table, behind blinds that had
+   * already been posted. Nothing here runs at a running table. The gate above
+   * this call has already decided the table cannot deal, so there are no
+   * blinds to come in behind and no hand to come in behind it: every seat
+   * enters on the same hand and that hand posts its blinds by position,
+   * identical to six players opening a brand-new table, which this engine
+   * already deals without making anyone wait. `EntryPostingAndButton` still
+   * owns the running-table rule and is untouched.
+   *
+   * Only when the release actually starts the game. If the table would still
+   * be short with everyone let in, the hold costs nothing and stays - it is
+   * still a real hold for whenever the table fills.
+   *
+   * @returns how many seats were released, for the caller to log.
+   */
+  protected releaseWaitersNoBlindCanReach(): number {
+    if (this.isTournamentTable()) return 0;
+    if (this.waitingForBB.size === 0) return 0;
+
+    // The deal gate's own predicate, minus the one exclusion under test.
+    const dealableIgnoringTheWait = this.seatedPlayers.filter(
+      (p) =>
+        p.stack > 0 &&
+        !this.disconnectEngine.isSittingOut(this.tableId, p.user_id) &&
+        !this.isHeldForSwap(p.user_id)
+    );
+    if (dealableIgnoringTheWait.length < this.minPlayersToDeal()) return 0;
+
+    let released = 0;
+    for (const p of dealableIgnoringTheWait) {
+      if (!this.waitingForBB.has(p.user_id)) continue;
+      this.waitingForBB.delete(p.user_id);
+      // Same write as the natural big-blind release: the seat owes nothing
+      // from here, so a standing post agreement goes with the hold rather
+      // than surviving to bill a second blind.
+      this.postBBWhenClear.delete(p.user_id);
+      this.postingBBToEnter.delete(p.user_id);
+      this.persistEntryHold(p.user_id, { hold: null, agreed: false });
+      released += 1;
+    }
+    if (released > 0) {
+      console.log(
+        `[ServerTableEngine:${this.tableId}] released ${released} seat(s) held for a big blind that could not arrive: ` +
+          `${dealableIgnoringTheWait.length} funded seat(s) and nothing being dealt`
+      );
+    }
+    return released;
+  }
 
   protected persistEntryHold(
     userId: string,
@@ -5770,7 +6873,11 @@ export abstract class ServerTableEngineBase {
   abstract rePushHoleCards(userId: string): Promise<void>;
 
   // ── Implemented by ServerTableEngineHandEvents (layer 7/8) ──
-  protected abstract handleHandEvent(event: HandEvent, players: SeatedPlayer[]): Promise<void>;
+  protected abstract handleHandEvent(
+    event: HandEvent,
+    players: SeatedPlayer[],
+    persistenceGeneration?: number
+  ): Promise<void>;
 
   // ── Implemented by ServerTableEngine (layer 8/8) ──
   protected abstract broadcastCurrentState(): Promise<void>;

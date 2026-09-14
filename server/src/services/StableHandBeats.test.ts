@@ -212,3 +212,32 @@ describe('SOURCE LAW: the heartbeat never blocks the floor', () => {
     }
   });
 });
+
+describe('SOURCE LAW: a beat read that failed is not "never beat" (CLAUDE.md 10.86)', () => {
+  const raw = readFileSync(resolve(__dirname, 'StableHandBeats.ts'), 'utf8');
+  const src = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const fn = src.slice(
+    src.indexOf('export async function lastBeatAt('),
+    src.indexOf('export type BeatVerdict')
+  );
+
+  it('throws on a read error instead of answering null', () => {
+    // null means never_beat to beatVerdict, and never_beat files a financial
+    // alert saying the controller is not running. A PostgREST blip is not that.
+    expect(fn).toContain('if (error) {');
+    expect(fn).toContain('throw new Error(');
+    expect(fn).not.toContain('if (error || !data) return null;');
+    // An honest empty table is still null: the controller genuinely never beat.
+    expect(fn).toContain('if (!data) return null;');
+  });
+
+  it('every reader of lastBeatAt is inside a try/catch', async () => {
+    const fleet = readFileSync(resolve(__dirname, 'HorseFleetManager.ts'), 'utf8');
+    const i = fleet.indexOf('lastBeatAtMs: await lastBeatAt()');
+    expect(i).toBeGreaterThan(-1);
+    const before = fleet.slice(Math.max(0, i - 400), i);
+    expect(before).toContain('try {');
+    const handler = readFileSync(resolve(__dirname, '..', 'handlers', 'stableHand.ts'), 'utf8');
+    expect(handler.indexOf('try {')).toBeLessThan(handler.indexOf('lastBeatAt()'));
+  });
+});

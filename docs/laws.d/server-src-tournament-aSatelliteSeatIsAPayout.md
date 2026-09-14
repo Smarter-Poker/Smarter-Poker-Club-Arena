@@ -1,3 +1,3 @@
 # server/src/tournament/aSatelliteSeatIsAPayout.law.test.ts
 
-A satellite seat is a payout and the seat itself is recorded, not just the cash equivalent
+A Satellite Seat Is A Payout: Every Awarded Seat Has Durable, Replay-Safe Value Evidence, And An Unknown Legacy Seat Origin Can Never Be Treated As Proof That Another Satellite Funded It.

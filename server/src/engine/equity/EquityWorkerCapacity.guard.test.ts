@@ -49,11 +49,11 @@ describe('equity worker capacity is a routing prerequisite', () => {
     expect(cashRelease).toBeGreaterThan(ownershipGate);
   });
 
-  it('publishes queue pressure and refuses healthy routing at partial capacity', () => {
-    const health = sliceMethod(gameServer, 'getStatus()');
+  it('publishes queue pressure and keeps dealer health through bounded optional recovery', () => {
+    const health = sliceMethod(gameServer, '\n  getStatus(');
     const metrics = sliceMethod(gameServer, 'getPrometheusMetrics()');
     expect(health).toContain('equityWorkerPool: equityWorkers');
-    expect(health).toContain("equityWorkers.phase === 'ready'");
+    expect(health).toContain('equityWorkerPoolPreservesDealerLiveness(equityWorkers)');
     expect(metrics).toContain('equityWorkerPoolQueueDepth.set(equityWorkers.queueDepth)');
     expect(metrics).toContain(
       'equityWorkerPoolOldestQueuedAgeMs.set(equityWorkers.oldestQueuedAgeMs)'

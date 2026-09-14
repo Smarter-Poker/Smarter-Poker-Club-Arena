@@ -23,6 +23,19 @@ export function arenaGameCardActionsForEntry(
         onSecondary: () => ctx.onViewTable?.(entry),
       };
     }
+    /* A disabled game (or a paused table) is not taking players; the door
+       refuses GAME_CLOSED. Say so rather than offer a Join that only fails. */
+    if (entry.status === 'closed') {
+      return {
+        /* No onPrimary: the button is disabled, so a handler on it would be
+           code that can never run. The secondary still opens the game. */
+        primaryLabel: `${entry.game ? 'Game' : 'Table'} ${entry.statusLabel}`,
+        primaryTone: 'neutral',
+        primaryDisabled: true,
+        secondaryLabel: entry.game ? 'View Game' : 'View Table',
+        onSecondary: () => ctx.onViewTable?.(entry),
+      };
+    }
     if (entry.status === 'full' || entry.status === 'waitlist') {
       const joined = mine === 'waitlisted';
       return {
@@ -37,6 +50,18 @@ export function arenaGameCardActionsForEntry(
     /* GATE 6 (OPORD 1.4 s2.9): a must-move game is JOIN GAME / VIEW GAME -
        the platform picks the table. A single manual table keeps its words. */
     const game = Boolean(entry.game);
+    /* The board is visible but no seat can be taken: the same shape the closed
+       branch above uses, because a button that always fails is worse than a
+       button that says so. Watching is still offered. */
+    if (ctx.seatsClosedLabel) {
+      return {
+        primaryLabel: ctx.seatsClosedLabel,
+        primaryTone: 'neutral',
+        primaryDisabled: true,
+        secondaryLabel: game ? 'View Game' : 'View Table',
+        onSecondary: () => ctx.onViewTable?.(entry),
+      };
+    }
     return {
       primaryLabel: game ? 'Join Game' : 'Join Table',
       primaryTone: 'blue',
@@ -138,12 +163,10 @@ export const ArenaLobbyGameCard = memo(function ArenaLobbyGameCard({
   entry,
   ctx,
   selected,
-  onSelect,
 }: {
   entry: LobbyEntry;
   ctx: LobbyRowContext;
   selected?: boolean;
-  onSelect?: (entry: LobbyEntry) => void;
 }) {
   const data = useMemo(() => {
     const normalized = arenaGameCardDataFromEntry(entry);
@@ -226,8 +249,9 @@ export const ArenaLobbyGameCard = memo(function ArenaLobbyGameCard({
         if (entry.kind === 'cash') warmTable(entry.id);
       }}
       onFocus={() => {
+        // Button focus precedes its click. Opening the details panel here
+        // intercepts View/Join before the selected action can run.
         if (entry.kind === 'cash') warmTable(entry.id);
-        onSelect?.(entry);
       }}
     >
       <ArenaGameCard data={data.card} actions={actions} presentation="mobile" selected={selected} />

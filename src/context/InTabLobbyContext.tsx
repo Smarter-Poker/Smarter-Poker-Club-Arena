@@ -85,6 +85,8 @@ export interface InTabLobbyNav {
    * caller must fall through to a real navigation.
    */
   openHub: (path: string) => boolean;
+  /** Select an arena inside the current lobby tab; null opens the shared selector. */
+  openArena?: (clubKey: string | null) => boolean;
   /**
    * The header's Back, in a tab. A drill-in inside the tab pushes no history
    * entry, so browser Back would step OUT of the table route rather than back
@@ -141,6 +143,19 @@ export function tournamentTargetFromTo(to: To): InTabTournamentTarget | null {
  * `useNavigate` — the same function object react-router handed back — so
  * adopting it is free on every other route.
  */
+/** Only selector and exact club lobbies are rendered inside the host tab. */
+export function arenaTargetFromTo(to: To): { clubKey: string | null } | null {
+  const path = (typeof to === 'string' ? to : to.pathname || '').split(/[?#]/)[0];
+  if (path === '/' || path === '/home' || path === '/lobby') return { clubKey: null };
+  const match = path.match(/^\/clubs\/([^/]+)\/?$/);
+  if (!match) return null;
+  try {
+    return { clubKey: decodeURIComponent(match[1]) };
+  } catch {
+    return null;
+  }
+}
+
 export function useAppNavigate(): NavigateFunction {
   const navigate = useNavigate();
   const inTab = useInTabLobby();
@@ -155,6 +170,8 @@ export function useAppNavigate(): NavigateFunction {
         navigate(to);
         return;
       }
+      const arena = arenaTargetFromTo(to);
+      if (arena && inTab.openArena?.(arena.clubKey)) return;
       const target = tournamentTargetFromTo(to);
       // `openTournament` returning false means the container had no room for
       // it. Falling through to a real navigate is the honest outcome: the

@@ -1,5 +1,9 @@
 # SWARM BRIEF - Chip Accounting Standard implementation (2026-09-02)
 
+> Historical lane brief. Current release authority is `.github/DEPLOYMENT.md`.
+> Never scrape a workstation `.env`, call a deployment API directly, or use
+> this dated brief as a credential or publishing runbook.
+
 You are one lane of a swarm implementing `docs/CHIP-ACCOUNTING-STANDARD.md` (read it first; it is in your worktree at that path). Your lane, worktree and deliverables are in your task prompt. This file is the shared operating contract.
 
 ## Environment - you are on Dan's Mac
@@ -8,7 +12,9 @@ You are one lane of a swarm implementing `docs/CHIP-ACCOUNTING-STANDARD.md` (rea
   `export PATH="$HOME/.nvm/versions/node/$(ls ~/.nvm/versions/node | tail -1)/bin:$PATH"`.
 - Your worktree is already created on branch `fix/chip-std-<lane>` from `origin/main` and is connected for Read/Write/Edit/Grep/Glob. Never touch another lane's worktree or `~/Documents/club-arena` (the main clone).
 - Supabase production: project `kuklfnapbkmacvwxktbh`. Read with `mcp__527a2e75-ebb7-44df-9538-92d3a9619012__execute_sql`. Apply DDL ONLY with `mcp__527a2e75-ebb7-44df-9538-92d3a9619012__apply_migration` (name = your migration file name without `.sql`). The repo mirror of money functions is stale in places; **read the live body from `pg_proc.prosrc` before you replace a function**, and keep every behaviour you did not set out to change.
-- GitHub: `gh` is not installed. Open the PR with `curl` against `https://api.github.com/repos/Smarter-Poker/Smarter-Poker-Club-Arena/pulls` using `GITHUB_TOKEN` from `~/Documents/club-arena/.env` (read it with `grep '^GITHUB_TOKEN=' ~/Documents/club-arena/.env | cut -d= -f2-`; never print it).
+- GitHub: use the configured `gh` credential store. Push the branch normally;
+  the branch-proposal signal and trusted default-branch opener create the PR.
+  Local env files are never repository or release authority.
 
 ## Binding rules (CLAUDE.md, enforced by hooks and CI)
 

@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/mtt-progress-observability-sep13. Read-only service-role aggregate for independently stalled MTTs and overdue breaks. Migration 20260913184615; no balance, lifecycle or gameplay writes.",
+  "functions": ["fn_tournament_progress_metrics"]
+}

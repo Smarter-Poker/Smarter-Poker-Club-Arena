@@ -251,31 +251,49 @@ describe('club route guards', () => {
 });
 
 describe('Diamond entitlement precedes every private club guard', () => {
-  it.each(['/clubs/diamond', '/clubs/diamond/finance', '/clubs/diamond/agents'])(
-    'never redirects automatic Diamond members or mounts chip tools at %s',
+  const diamondEntitlement = {
+    arena: { id: 'diamond', kind: 'diamond_arena', asset: 'diamonds' },
+    member: true,
+    automaticMembership: true,
+    role: 'player',
+    capabilities: { join: false, hierarchy: false, chipWallet: false, diamondTransfers: true },
+  };
+
+  const guarded = (path: string) => {
+    workspace = makeWorkspace({ status: 'denied', isMember: false, membershipStatus: null });
+    arenaMocks.access.mockResolvedValue(diamondEntitlement);
+    return render(
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route
+            path="/clubs/:clubId/*"
+            element={
+              <ClubMemberGuard>
+                <div>Chip Tool</div>
+              </ClubMemberGuard>
+            }
+          />
+          <Route path="/invite/:clubId" element={<div>Invite Route</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+  };
+
+  /* The workspace above is DENIED on purpose: a Diamond player has no
+     `club_members` row, so this is the state every one of them is in. The
+     entitlement has to win over it on every route, and what each route then
+     renders is the part that changed on 2026-09-11. */
+  it('renders the shared lobby on the arena route, never a join redirect', async () => {
+    guarded('/clubs/diamond');
+    expect(await screen.findByText('Chip Tool')).toBeInTheDocument();
+    expect(screen.queryByText('Invite Route')).toBeNull();
+    expect(arenaMocks.access).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['/clubs/diamond/finance', '/clubs/diamond/agents'])(
+    'keeps the chip operator route %s on the safe shell and off the join page',
     async (path) => {
-      workspace = makeWorkspace({ status: 'denied', isMember: false, membershipStatus: null });
-      arenaMocks.access.mockResolvedValue({
-        arena: { id: 'diamond', kind: 'diamond_arena', asset: 'diamonds' },
-        member: true,
-        automaticMembership: true,
-        role: 'player',
-      });
-      render(
-        <MemoryRouter initialEntries={[path]}>
-          <Routes>
-            <Route
-              path="/clubs/:clubId/*"
-              element={
-                <ClubMemberGuard>
-                  <div>Chip Tool</div>
-                </ClubMemberGuard>
-              }
-            />
-            <Route path="/invite/:clubId" element={<div>Invite Route</div>} />
-          </Routes>
-        </MemoryRouter>
-      );
+      guarded(path);
       expect(await screen.findByText('You Are Already A Member.')).toBeInTheDocument();
       expect(screen.queryByText('Invite Route')).toBeNull();
       expect(screen.queryByText('Chip Tool')).toBeNull();

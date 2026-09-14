@@ -44,7 +44,10 @@ import { useParams, useLocation, useSearchParams, Link } from 'react-router-dom'
    untouched - useAppNavigate deliberately only rewrites /tournaments/:id.
    See InTabLobbyContext.tsx. */
 import { useAppNavigate } from '../../context/InTabLobbyContext';
-import { tournamentService } from '../../services/TournamentService';
+import {
+  tournamentService,
+  tournamentUnregisterSuccessText,
+} from '../../services/TournamentService';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
@@ -81,6 +84,18 @@ import { useMysteryBounty } from '../../hooks/useMysteryBounty';
 import { openTableAsObserver } from '../../utils/observeTable';
 import './PremiumTournamentConsole.css';
 import { publicOrigin } from '../../lib/appBase';
+
+interface TournamentSnapshotOwner {
+  tournamentId: string | undefined;
+  userId: string | undefined;
+  active: boolean;
+  pending: boolean;
+  inFlight: Promise<void> | null;
+  hasSnapshot: boolean;
+  tournamentPatches: Array<(previous: Tournament | null) => Tournament | null> | null;
+  entryPatches: Array<(previous: TournamentEntry[]) => TournamentEntry[]> | null;
+  tablePatches: Array<(previous: TournamentTable[]) => TournamentTable[]> | null;
+}
 
 /** Ordinal suffix helper (1st, 2nd, 3rd...) */
 function getOrdinal(n: number): string {
@@ -150,6 +165,9 @@ export default function TournamentDetails({
   const autoOpenedTableRef = useRef(false);
   const [tables, setTables] = useState<TournamentTable[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [snapshotReady, setSnapshotReady] = useState(false);
+  const snapshotOwnerRef = useRef<TournamentSnapshotOwner | null>(null);
   /* `showSignUpModal` deleted 2026-08-25 - this page no longer owns a buy-in
      modal. See handleRegister. */
 
@@ -283,21 +301,31 @@ export default function TournamentDetails({
   }, [isLoading, tournament?.id, isEmbedded]);
 
   useEffect(() => {
-    let isMounted = true;
-    /* One auto-seat per TOURNAMENT, which is what the ref's comment promises —
-       it was one per MOUNT (2026-08-26). React Router reuses this component
-       across /tournaments/:tournamentId -> a different id without unmounting,
-       and MultiTablePage embeds it with a changing `tournamentIdOverride`, so a
-       player auto-seated in event A and then browsing to event B was never
-       taken to their seat in B: exactly the "registered, but left on the
-       details screen while their table blinds them off" failure the block
-       exists to prevent. */
+    const owner: TournamentSnapshotOwner = {
+      tournamentId,
+      userId: user?.id,
+      active: true,
+      pending: false,
+      inFlight: null,
+      hasSnapshot: false,
+      tournamentPatches: null,
+      entryPatches: null,
+      tablePatches: null,
+    };
+    snapshotOwnerRef.current = owner;
     autoOpenedTableRef.current = false;
-    if (tournamentId) {
-      loadTournament(() => isMounted);
-    }
+    setTournament(null);
+    setEntries([]);
+    setTables([]);
+    setIsRegistered(false);
+    setIsProcessing(false);
+    setLoadError(null);
+    setSnapshotReady(false);
+    setIsLoading(Boolean(tournamentId));
+    if (tournamentId) void loadTournament();
     return () => {
-      isMounted = false;
+      owner.active = false;
+      owner.pending = false;
       if (lateRegTimerRef.current) clearInterval(lateRegTimerRef.current);
     };
   }, [tournamentId, user?.id]);
@@ -402,6 +430,7 @@ export default function TournamentDetails({
     if (!user?.id) return;
     if (autoOpenedTableRef.current) return;
 
+    if (tournament.id !== tournamentId || !snapshotReady) return;
     const myEntry = entries.find((e) => e.user_id === user.id);
     if (!myEntry?.table_id) return;
     // Only seat-bound states: an eliminated or finished player must never be
@@ -410,11 +439,38 @@ export default function TournamentDetails({
 
     autoOpenedTableRef.current = true;
     navigate(`/table/${myEntry.table_id}`);
-  }, [tournament?.status, entries, user?.id, navigate, suppressAutoOpenTable]);
+  }, [
+    tournamentId,
+    tournament?.status,
+    entries,
+    user?.id,
+    navigate,
+    suppressAutoOpenTable,
+    snapshotReady,
+  ]);
 
   // ── Realtime subscription: live tournament updates ──
   useEffect(() => {
     if (!tournamentId) return;
+    const owner = snapshotOwnerRef.current;
+    const isCurrent = () => owner?.active && snapshotOwnerRef.current === owner;
+    // Keep changes that arrive during a snapshot read and replay them on its
+    // result. A busy table must not trigger a second full-field query per patch.
+    const patchTournament = (patch: (previous: Tournament | null) => Tournament | null) => {
+      if (!isCurrent()) return;
+      owner?.tournamentPatches?.push(patch);
+      setTournament(patch);
+    };
+    const patchEntries = (patch: (previous: TournamentEntry[]) => TournamentEntry[]) => {
+      if (!isCurrent()) return;
+      owner?.entryPatches?.push(patch);
+      setEntries(patch);
+    };
+    const patchTables = (patch: (previous: TournamentTable[]) => TournamentTable[]) => {
+      if (!isCurrent()) return;
+      owner?.tablePatches?.push(patch);
+      setTables(patch);
+    };
 
     /**
      * ONE CHANNEL PER MOUNT, NOT PER TOURNAMENT (2026-08-30).
@@ -452,8 +508,9 @@ export default function TournamentDetails({
           filter: `id=eq.${tournamentId}`,
         },
         (payload) => {
+          if (!isCurrent()) return;
           if (payload.eventType === 'UPDATE' && payload.new) {
-            setTournament((prev) => (prev ? { ...prev, ...payload.new } : null));
+            patchTournament((prev) => (prev ? { ...prev, ...payload.new } : null));
           }
         }
       )
@@ -466,6 +523,7 @@ export default function TournamentDetails({
           filter: `tournament_id=eq.${tournamentId}`,
         },
         (payload) => {
+          if (!isCurrent()) return;
           if (payload.eventType === 'INSERT' && payload.new) {
             // New player registered.
             //
@@ -482,13 +540,14 @@ export default function TournamentDetails({
               chips?: number;
               status: string;
               position?: number | null;
+              prize?: number | null;
               table_id?: string | null;
               registered_at?: string | null;
               rebuys?: number | null;
               add_on?: boolean | null;
               is_satellite_qualifier?: boolean | null;
             };
-            setEntries((prev) => {
+            patchEntries((prev) => {
               /**
                * DE-DUP (added 2026-08-26).
                *
@@ -522,6 +581,12 @@ export default function TournamentDetails({
                   // call (triggered by TOURNAMENT_UPDATED) hydrates the rest.
                   chips: newPlayer.chips || 0,
                   position: newPlayer.position || undefined,
+                  prize:
+                    newPlayer.prize !== null &&
+                    newPlayer.prize !== undefined &&
+                    Number.isFinite(Number(newPlayer.prize))
+                      ? Number(newPlayer.prize)
+                      : undefined,
                   status: newPlayer.status as TournamentEntry['status'],
                   table_id: newPlayer.table_id || null,
                   created_at: newPlayer.registered_at ?? null,
@@ -542,12 +607,13 @@ export default function TournamentDetails({
               chips?: number;
               status: string;
               position?: number | null;
+              prize?: number | null;
               table_id?: string | null;
               rebuys?: number | null;
               add_on?: boolean | null;
               is_satellite_qualifier?: boolean | null;
             };
-            setEntries((prev) =>
+            patchEntries((prev) =>
               prev.map((e) =>
                 e.id === updatedPlayer.id
                   ? {
@@ -555,6 +621,10 @@ export default function TournamentDetails({
                       chips: updatedPlayer.chips,
                       status: updatedPlayer.status as TournamentEntry['status'],
                       position: updatedPlayer.position || undefined,
+                      prize:
+                        updatedPlayer.prize !== undefined && updatedPlayer.prize !== null
+                          ? Number(updatedPlayer.prize)
+                          : e.prize,
                       table_id:
                         updatedPlayer.table_id !== undefined ? updatedPlayer.table_id : e.table_id,
                       rebuys:
@@ -578,7 +648,7 @@ export default function TournamentDetails({
             );
           } else if (payload.eventType === 'DELETE' && payload.old) {
             // Player unregistered or eliminated
-            setEntries((prev) => prev.filter((e) => e.id !== (payload.old as { id: string }).id));
+            patchEntries((prev) => prev.filter((e) => e.id !== (payload.old as { id: string }).id));
           }
         }
       )
@@ -591,13 +661,14 @@ export default function TournamentDetails({
           filter: `tournament_id=eq.${tournamentId}`,
         },
         (payload) => {
+          if (!isCurrent()) return;
           if (payload.eventType === 'INSERT' && payload.new) {
             const t = payload.new as TournamentTable & {
               name?: string | null;
               is_deleted?: boolean | null;
             };
             if (t.is_deleted === true) return;
-            setTables((prev) => {
+            patchTables((prev) => {
               // The load path may already carry this row — `loadTournament`
               // runs again on TOURNAMENT_UPDATED — and appending blind would
               // duplicate the React key the Tables list renders on.
@@ -622,10 +693,10 @@ export default function TournamentDetails({
                eligible to be featured. Drop it the way a hard DELETE is
                dropped. */
             if (t.is_deleted === true) {
-              setTables((prev) => prev.filter((tbl) => tbl.id !== t.id));
+              patchTables((prev) => prev.filter((tbl) => tbl.id !== t.id));
               return;
             }
-            setTables((prev) =>
+            patchTables((prev) =>
               prev.map((tbl) =>
                 tbl.id === t.id
                   ? {
@@ -639,13 +710,15 @@ export default function TournamentDetails({
               )
             );
           } else if (payload.eventType === 'DELETE' && payload.old) {
-            setTables((prev) =>
+            patchTables((prev) =>
               prev.filter((tbl) => tbl.id !== (payload.old as { id: string }).id)
             );
           }
         }
       )
       .subscribe((status: string, err?: Error) => {
+        if (!isCurrent()) return;
+        if (status === 'SUBSCRIBED') void loadTournament(undefined, { quiet: true });
         if (status === 'CHANNEL_ERROR') {
           if (err) reportError(err?.message || err, 'TournamentDetails._Realtime_channel_error');
         }
@@ -658,9 +731,9 @@ export default function TournamentDetails({
     const unsubElim = masterBus.subscribeDebounced(
       'PLAYER_ELIMINATED',
       (event) => {
-        if (event.payload.tournamentId !== tournamentId) return;
+        if (event.payload.tournamentId !== tournamentId || !isCurrent()) return;
         // Immediately update entries list when a player is eliminated
-        setEntries((prev) =>
+        patchEntries((prev) =>
           prev.map((e) =>
             e.user_id === event.payload.userId
               ? { ...e, status: 'eliminated' as const, position: event.payload.position }
@@ -686,7 +759,7 @@ export default function TournamentDetails({
     const unsubBlind = masterBus.subscribeDebounced(
       'BLIND_LEVEL_CHANGE',
       (event) => {
-        if (event.payload.tournamentId !== tournamentId) return;
+        if (event.payload.tournamentId !== tournamentId || !isCurrent()) return;
         /**
          * `- 1`: THE PAYLOAD IS THE DISPLAY LEVEL, THE COLUMN IS AN INDEX.
          *
@@ -702,7 +775,7 @@ export default function TournamentDetails({
          */
         const displayLevel = Number(event.payload.level);
         if (!Number.isFinite(displayLevel) || displayLevel < 1) return;
-        setTournament((prev) =>
+        patchTournament((prev) =>
           prev ? ({ ...prev, current_level: displayLevel - 1 } as Tournament) : prev
         );
       },
@@ -747,7 +820,7 @@ export default function TournamentDetails({
     const unsubBreak = masterBus.subscribeDebounced(
       'TOURNAMENT_BREAK',
       (event) => {
-        if (event.payload.tournamentId !== tournamentId) return;
+        if (event.payload.tournamentId !== tournamentId || !isCurrent()) return;
         toast.info('Tournament break - play resumes shortly');
       },
       300
@@ -756,7 +829,7 @@ export default function TournamentDetails({
     const unsubBreakEnd = masterBus.subscribeDebounced(
       'TOURNAMENT_BREAK_END',
       (event) => {
-        if (event.payload.tournamentId !== tournamentId) return;
+        if (event.payload.tournamentId !== tournamentId || !isCurrent()) return;
         toast.info('Break over - play resuming');
       },
       300
@@ -770,7 +843,7 @@ export default function TournamentDetails({
       unsubBreak();
       unsubBreakEnd();
     };
-  }, [tournamentId]);
+  }, [tournamentId, user?.id]);
 
   /* A BALANCE_UPDATED subscription used to live here. It refreshed a
      `walletBalance` this page no longer holds - see the note at its old
@@ -781,9 +854,9 @@ export default function TournamentDetails({
   // ── Refresh tournament data when tournament is updated ──
   useMasterBusSubscription(
     'TOURNAMENT_UPDATED',
-    () => {
-      if (tournamentId) {
-        loadTournament();
+    (payload) => {
+      if (tournamentId && payload.tournamentId === tournamentId) {
+        void loadTournament(undefined, { quiet: true });
       }
     },
     { debounce: 500 }
@@ -874,7 +947,7 @@ export default function TournamentDetails({
     };
     // `start_time` is in the deps because it decides the cadence: an event
     // rescheduled while the card is open must re-arm against its new clock.
-  }, [tournamentId, tournament?.status, tournament?.start_time]);
+  }, [tournamentId, user?.id, tournament?.status, tournament?.start_time]);
 
   /**
    * Registration status, recomputed whenever the entry list moves.
@@ -901,143 +974,231 @@ export default function TournamentDetails({
    * seconds, which is what an unconditional `setIsLoading(true)` would do.
    */
   const loadTournament = async (getIsMounted?: () => boolean, opts?: { quiet?: boolean }) => {
-    if (!tournamentId) return;
-    if (!opts?.quiet && (!getIsMounted || getIsMounted())) setIsLoading(true);
-    try {
-      const data = await tournamentService.getTournament(tournamentId);
-      if (getIsMounted && !getIsMounted()) return;
-      setTournament(data);
-
-      if (data) {
-        /**
-         * THE ENTRY QUERY IS THE TAB CONTRACT.
-         *
-         * It used to select `id, user_id, username, chips, status, position,
-         * table_id` and hardcode `avatar_url: null`. RankingTab reads
-         * `entry.avatar_url` straight from props with no query of its own, so
-         * that null drew initials for the entire field; and EntriesTab got
-         * neither a registration time nor a rebuy count from props. The three
-         * added columns are on the row already (no join), and the profiles
-         * embed rides `fk_tournament_players_user_id_profiles` - one join for
-         * the whole list, not one request per player.
-         *
-         * `add_on` is a BOOLEAN in production, not a count; the contract field
-         * is `add_ons: number`, so it collapses to 0 or 1 here rather than
-         * pretending the database records how many.
-         */
-        const { data: playersData, error } = await supabase
-          .from('tournament_players')
-          .select(
-            'id, user_id, username, chips, status, position, table_id, registered_at, rebuys, add_on, is_satellite_qualifier, profile:profiles!user_id(player_number, avatar_url:arena_avatar_url)'
-          )
-          .eq('tournament_id', data.id)
-          .order('registered_at', { ascending: true });
-
+    const owner = snapshotOwnerRef.current;
+    if (
+      !tournamentId ||
+      !owner?.active ||
+      owner.tournamentId !== tournamentId ||
+      owner.userId !== user?.id ||
+      (getIsMounted && !getIsMounted())
+    )
+      return;
+    const isOwner = () => owner.active && snapshotOwnerRef.current === owner;
+    if (owner.inFlight) {
+      owner.pending = true;
+      return owner.inFlight;
+    }
+    const callerIsMounted = getIsMounted;
+    getIsMounted = () => isOwner() && !owner.pending && (!callerIsMounted || callerIsMounted());
+    const readSnapshot = async () => {
+      let complete = true;
+      owner.tournamentPatches = [];
+      owner.entryPatches = null;
+      owner.tablePatches = null;
+      if (!opts?.quiet && (!getIsMounted || getIsMounted())) setIsLoading(true);
+      try {
+        const result = await tournamentService.getTournament(tournamentId, { throwOnError: true });
         if (getIsMounted && !getIsMounted()) return;
+        const data = owner.tournamentPatches.reduce((previous, patch) => patch(previous), result);
+        owner.tournamentPatches = null;
+        setTournament(data);
 
-        if (!error && playersData) {
-          setEntries(
-            playersData.map((e: Record<string, unknown>): TournamentEntry => {
-              // PostgREST returns an embedded row as an object, but types it as
-              // an array in some shapes. Accept both rather than guess - this
-              // exact shape caused bugs in the past.
-              const rawProfile = e.profile as
-                | { player_number?: string | null; avatar_url?: string | null }
-                | { player_number?: string | null; avatar_url?: string | null }[]
-                | null
-                | undefined;
-              const profile = Array.isArray(rawProfile) ? rawProfile[0] : rawProfile;
-              return {
-                id: String(e.id),
-                user_id: String(e.user_id),
-                username: (e.username as string) || 'Player',
-                avatar_url: profile?.avatar_url || null,
-                player_code: profile?.player_number ? String(profile.player_number) : null,
-                chips: (e.chips as number) || data.starting_chips,
-                position: (e.position as number) || undefined,
-                status: e.status as TournamentEntry['status'],
-                /* `club_id` was selected here and mapped onto the entry solely
+        if (data) {
+          /**
+           * THE ENTRY QUERY IS THE TAB CONTRACT.
+           *
+           * It used to select `id, user_id, username, chips, status, position,
+           * table_id` and hardcode `avatar_url: null`. RankingTab reads
+           * `entry.avatar_url` straight from props with no query of its own, so
+           * that null drew initials for the entire field; and EntriesTab got
+           * neither a registration time nor a rebuy count from props. The three
+           * added columns are on the row already (no join), and the profiles
+           * embed rides `fk_tournament_players_user_id_profiles` - one join for
+           * the whole list, not one request per player.
+           *
+           * `add_on` is a BOOLEAN in production, not a count; the contract field
+           * is `add_ons: number`, so it collapses to 0 or 1 here rather than
+           * pretending the database records how many.
+           */
+          owner.entryPatches = [];
+          const { data: playersData, error } = await supabase
+            .from('tournament_players')
+            .select(
+              'id, user_id, username, chips, status, position, prize, table_id, registered_at, rebuys, add_on, is_satellite_qualifier, profile:profiles!user_id(player_number, avatar_url:arena_avatar_url)'
+            )
+            .eq('tournament_id', data.id)
+            .order('registered_at', { ascending: true });
+
+          if (getIsMounted && !getIsMounted()) return;
+
+          if (!error && playersData) {
+            const recoveredEntries = playersData.map(
+              (e: Record<string, unknown>): TournamentEntry => {
+                // PostgREST returns an embedded row as an object, but types it as
+                // an array in some shapes. Accept both rather than guess - this
+                // exact shape caused bugs in the past.
+                const rawProfile = e.profile as
+                  | { player_number?: string | null; avatar_url?: string | null }
+                  | { player_number?: string | null; avatar_url?: string | null }[]
+                  | null
+                  | undefined;
+                const profile = Array.isArray(rawProfile) ? rawProfile[0] : rawProfile;
+                return {
+                  id: String(e.id),
+                  user_id: String(e.user_id),
+                  username: (e.username as string) || 'Player',
+                  avatar_url: profile?.avatar_url || null,
+                  player_code: profile?.player_number ? String(profile.player_number) : null,
+                  chips:
+                    e.chips != null && Number.isFinite(Number(e.chips))
+                      ? Number(e.chips)
+                      : data.starting_chips,
+                  position: (e.position as number) || undefined,
+                  prize:
+                    e.prize !== null && e.prize !== undefined && Number.isFinite(Number(e.prize))
+                      ? Number(e.prize)
+                      : undefined,
+                  status: e.status as TournamentEntry['status'],
+                  /* `club_id` was selected here and mapped onto the entry solely
                    so the old inline Unions block could count
                    `new Set(entries.map(e => e.club_id))`. UnionsTab selects it
                    itself, for the whole field, and then falls back to
                    club_members for the ~40% of history that predates the
                    column - so carrying it here now would be a second, weaker
                    copy of a resolution that tab already does properly. */
-                table_id: (e.table_id as string | null) || null,
-                created_at: (e.registered_at as string | null) ?? null,
-                rebuys: Number(e.rebuys) || 0,
-                add_ons: e.add_on ? 1 : 0,
-                is_satellite_qualifier: Boolean(e.is_satellite_qualifier),
-              };
-            })
-          );
-
-          // Check if current user is registered
-          if (user) {
-            const isUserRegistered = playersData.some(
-              (e: { user_id: string }) => e.user_id === user.id
+                  table_id: (e.table_id as string | null) || null,
+                  created_at: (e.registered_at as string | null) ?? null,
+                  rebuys: Number(e.rebuys) || 0,
+                  add_ons: e.add_on ? 1 : 0,
+                  is_satellite_qualifier: Boolean(e.is_satellite_qualifier),
+                };
+              }
             );
-            setIsRegistered(isUserRegistered);
-          }
-        } else {
-          setEntries([]);
-        }
+            const currentEntries = owner.entryPatches.reduce(
+              (previous, patch) => patch(previous),
+              recoveredEntries
+            );
+            owner.entryPatches = null;
+            setEntries(currentEntries);
 
-        /* Fetch tournament tables.
+            // Check if current user is registered against the patched field.
+            if (user) {
+              const isUserRegistered = currentEntries.some(
+                (e: { user_id: string }) => e.user_id === user.id
+              );
+              setIsRegistered(isUserRegistered);
+            }
+          } else {
+            complete = false;
+            reportError(
+              error ?? new Error('Missing Tournament Entries'),
+              'TournamentDetails.Entries_load_failed'
+            );
+          }
+
+          /* Fetch tournament tables.
            `isLateStatus` as well as RUNNING (2026-08-30): a LATE_REG event has
            players at tables, and reading only RUNNING left `tables` empty for
            it — which meant no featured table, so no WATCH button, and an empty
            Tables tab on an event that is visibly dealing. The footer already
            uses `isWatchable` for exactly this reason; the query it depends on
            did not. */
-        if (data.status === 'RUNNING' || isLateStatus(data.status)) {
-          const { data: tablesData, error: tablesErr } = await supabase
-            .from('tables')
-            .select('id, name, status, max_players, current_players, small_blind, big_blind')
-            .eq('tournament_id', data.id)
-            /**
-             * SOFT-DELETED TABLES ARE NOT WATCHABLE (added 2026-08-26).
-             *
-             * This query feeds BOTH `featuredTableId` and TablesTab, so a
-             * deleted row could win the busiest-table sort and the WATCH button
-             * — and the `?watch=1` intent — would open a felt that no longer
-             * exists. `featuredTableId`'s `status !== 'closed'` guard does not
-             * exclude it: a soft-deleted table very often still reads
-             * `status = 'running'`. TournamentPage was fixed for exactly this
-             * on 2026-08-25; the details page, which is where Dan's WATCH
-             * button actually lives, was not.
-             *
-             * `.not(..., 'is', true)` rather than `.eq(..., false)` because the
-             * column is NULLABLE — verified against production, where the split
-             * is 81,352 false / 43 true / 0 null but the schema still permits
-             * null, and `.eq(false)` would silently drop any row that acquires
-             * one.
-             */
-            .not('is_deleted', 'is', true);
-          // A failed read used to be indistinguishable from "no tables": the
-          // error was destructured away, `tablesData` came back null, and the
-          // page showed an empty Tables tab and no WATCH button as though the
-          // event had no felt. Keep whatever we already had instead.
-          if (tablesErr) reportError(tablesErr, 'TournamentDetails.Tables_load_failed');
-          if (!tablesErr && (!getIsMounted || getIsMounted())) {
-            setTables((tablesData || []) as TournamentTable[]);
+          if (data.status === 'RUNNING' || isLateStatus(data.status)) {
+            owner.tablePatches = [];
+            const { data: tablesData, error: tablesErr } = await supabase
+              .from('tables')
+              .select('id, name, status, max_players, current_players, small_blind, big_blind')
+              .eq('tournament_id', data.id)
+              /**
+               * SOFT-DELETED TABLES ARE NOT WATCHABLE (added 2026-08-26).
+               *
+               * This query feeds BOTH `featuredTableId` and TablesTab, so a
+               * deleted row could win the busiest-table sort and the WATCH button
+               * — and the `?watch=1` intent — would open a felt that no longer
+               * exists. `featuredTableId`'s `status !== 'closed'` guard does not
+               * exclude it: a soft-deleted table very often still reads
+               * `status = 'running'`. TournamentPage was fixed for exactly this
+               * on 2026-08-25; the details page, which is where Dan's WATCH
+               * button actually lives, was not.
+               *
+               * `.not(..., 'is', true)` rather than `.eq(..., false)` because the
+               * column is NULLABLE — verified against production, where the split
+               * is 81,352 false / 43 true / 0 null but the schema still permits
+               * null, and `.eq(false)` would silently drop any row that acquires
+               * one.
+               */
+              .not('is_deleted', 'is', true);
+            // A failed read used to be indistinguishable from "no tables": the
+            // error was destructured away, `tablesData` came back null, and the
+            // page showed an empty Tables tab and no WATCH button as though the
+            // event had no felt. Keep whatever we already had instead.
+            if (!getIsMounted()) return;
+            if (tablesErr) {
+              complete = false;
+              reportError(tablesErr, 'TournamentDetails.Tables_load_failed');
+            }
+            if (!tablesErr && (!getIsMounted || getIsMounted())) {
+              setTables(
+                owner.tablePatches.reduce(
+                  (previous, patch) => patch(previous),
+                  (tablesData || []) as TournamentTable[]
+                )
+              );
+              owner.tablePatches = null;
+            }
           }
-        }
 
-        /* The union-name lookup that used to live here is gone. UnionsTab
+          /* The union-name lookup that used to live here is gone. UnionsTab
            resolves the union AND every participating club itself, in two
            queries, which is strictly more than the one name this page fetched
            and then rendered in a tab it no longer owns. */
-      }
-    } catch (error) {
-      reportError(error, 'TournamentDetails.Failed_to_load_tournament');
-      /* A quiet refresh that fails is a retry next tick, not a toast. Toasting
+        } else {
+          setEntries([]);
+          setTables([]);
+          setIsRegistered(false);
+        }
+        if (!getIsMounted()) return;
+        if (complete) {
+          owner.hasSnapshot = true;
+          setSnapshotReady(true);
+          setLoadError(null);
+        } else {
+          setLoadError(
+            owner.hasSnapshot
+              ? 'Tournament Details Could Not Be Refreshed. Showing The Last Confirmed Data.'
+              : 'Tournament Details Could Not Be Loaded.'
+          );
+        }
+      } catch (error) {
+        if (!getIsMounted()) return;
+        setLoadError(
+          owner.hasSnapshot
+            ? 'Tournament Details Could Not Be Refreshed. Showing The Last Confirmed Data.'
+            : 'Tournament Details Could Not Be Loaded.'
+        );
+        reportError(error, 'TournamentDetails.Failed_to_load_tournament');
+        /* A quiet refresh that fails is a retry next tick, not a toast. Toasting
          it would put an error on screen every few seconds for the whole of a
          network wobble, on a page that is otherwise still perfectly readable. */
-      if (!opts?.quiet && (!getIsMounted || getIsMounted()))
-        toast.error('Failed to load tournament details');
-    }
-    if (!opts?.quiet && (!getIsMounted || getIsMounted())) setIsLoading(false);
+        if (!opts?.quiet && (!getIsMounted || getIsMounted()))
+          toast.error('Failed To Load Tournament Details');
+      }
+      if (!opts?.quiet && (!getIsMounted || getIsMounted())) setIsLoading(false);
+    };
+    owner.inFlight = (async () => {
+      try {
+        do {
+          owner.pending = false;
+          await readSnapshot();
+          owner.tournamentPatches = null;
+          owner.entryPatches = null;
+          owner.tablePatches = null;
+        } while (owner.pending && isOwner());
+      } finally {
+        owner.inFlight = null;
+      }
+    })();
+    return owner.inFlight;
   };
 
   /**
@@ -1062,6 +1223,7 @@ export default function TournamentDetails({
       is_mystery_bounty?: boolean;
       club_id?: string | null;
     };
+    const owner = snapshotOwnerRef.current;
     registerMtt(
       {
         id: tournament.id,
@@ -1079,15 +1241,15 @@ export default function TournamentDetails({
         status: tournament.status,
         /* `undefined`, not `false`. The hook does
            `t.is_late_registration ?? isLateStatus(t.status)`, and `false ?? x`
-           is `false` — so passing the boolean from a pre-start Register button
-           OVERRODE the derivation and told a LATE_REG entrant "Cannot Unregister
-           Within 1 Minute Of The Start Time", which is the untrue copy that
-           derivation exists to prevent. Only ever force it to TRUE. */
+           is `false`, so passing the boolean from a pre-start Register button
+           overrode the derivation and gave a late entrant pre-start guidance.
+           Only ever force it to TRUE. */
         is_late_registration: isLate || undefined,
       },
       () => {
+        if (!owner?.active || snapshotOwnerRef.current !== owner) return;
         setIsRegistered(true);
-        setTimeout(() => loadTournament(), 50);
+        void loadTournament(undefined, { quiet: true });
       }
     );
   };
@@ -1215,7 +1377,7 @@ export default function TournamentDetails({
    */
   const watchIntentDoneRef = useRef(false);
   useEffect(() => {
-    if (watchIntentDoneRef.current) return;
+    if (!snapshotReady || tournament?.id !== tournamentId || watchIntentDoneRef.current) return;
     const params = new URLSearchParams(search);
     if (params.get('watch') !== '1') return;
     if (!isWatchable) return;
@@ -1242,7 +1404,17 @@ export default function TournamentDetails({
       navigate({ search: qs ? `?${qs}` : '' }, { replace: true });
     }
     watchTable(featuredTableId);
-  }, [featuredTableId, isWatchable, search, searchOverride, watchTable, navigate]);
+  }, [
+    featuredTableId,
+    isWatchable,
+    search,
+    searchOverride,
+    watchTable,
+    navigate,
+    snapshotReady,
+    tournament?.id,
+    tournamentId,
+  ]);
 
   /**
    * ═══════════════════════════════════════════════════════════════════════
@@ -1269,7 +1441,7 @@ export default function TournamentDetails({
   }, [tournament?.variant, tournament?.max_players]);
 
   useEffect(() => {
-    if (seatIntentDoneRef.current) return;
+    if (!snapshotReady || tournament?.id !== tournamentId || seatIntentDoneRef.current) return;
     const params = new URLSearchParams(search);
     if (params.get('seat') !== '1') return;
     if (!isSeatFirstTournament) return;
@@ -1281,7 +1453,16 @@ export default function TournamentDetails({
       navigate({ search: qs ? `?${qs}` : '' }, { replace: true });
     }
     navigate(`/table/${featuredTableId}`);
-  }, [featuredTableId, isSeatFirstTournament, search, searchOverride, navigate]);
+  }, [
+    featuredTableId,
+    isSeatFirstTournament,
+    search,
+    searchOverride,
+    navigate,
+    snapshotReady,
+    tournament?.id,
+    tournamentId,
+  ]);
 
   const handleUnregister = async () => {
     if (isProcessing || !tournament) return;
@@ -1289,20 +1470,22 @@ export default function TournamentDetails({
       toast.error('Loading your profile... please try again in a moment');
       return;
     }
+    const owner = snapshotOwnerRef.current;
     setIsProcessing(true);
 
     try {
-      await tournamentService.unregisterPlayer(tournament.id, user.id);
+      const result = await tournamentService.unregisterPlayer(tournament.id, user.id);
+      if (!owner?.active || snapshotOwnerRef.current !== owner) return;
       setIsRegistered(false);
-      toast.success('Unregistered - buy-in refunded to your wallet');
-      // Defer reload so the UI updates instantly (fixes INP)
-      setTimeout(() => loadTournament(), 50);
+      toast.success(tournamentUnregisterSuccessText(result));
+      void loadTournament(undefined, { quiet: true });
     } catch (error) {
+      if (!owner?.active || snapshotOwnerRef.current !== owner) return;
       reportError(error, 'TournamentDetails.Unregistration_failed');
       const msg = (error as Error).message || 'Unknown error';
       toast.error(`Unregister failed: ${msg}`);
     } finally {
-      setIsProcessing(false);
+      if (owner?.active && snapshotOwnerRef.current === owner) setIsProcessing(false);
     }
   };
 
@@ -1412,6 +1595,19 @@ export default function TournamentDetails({
     ]
   );
 
+  const recoveryNotice = loadError ? (
+    <div role="alert" className="tournament-recovery-notice">
+      <p>{loadError}</p>
+      <button
+        type="button"
+        className="btn btn-primary"
+        onClick={() => void loadTournament(undefined, { quiet: true })}
+      >
+        Try Again
+      </button>
+    </div>
+  ) : null;
+
   if (isLoading) {
     return (
       <div className="tournament-details loading">
@@ -1419,6 +1615,10 @@ export default function TournamentDetails({
         <p>Loading Tournament...</p>
       </div>
     );
+  }
+
+  if (loadError && !snapshotOwnerRef.current?.hasSnapshot) {
+    return <div className="tournament-details error">{recoveryNotice}</div>;
   }
 
   // tabProps is null exactly when `tournament` is null, so this one guard
@@ -1449,6 +1649,7 @@ export default function TournamentDetails({
   return (
     <PageErrorBoundary pageName="TournamentDetails">
       <div className="tournament-details" ref={shellRef} data-active-tab={activeTab}>
+        {recoveryNotice}
         {/* Header */}
         <div className="details-header">
           <h1>Game Details</h1>

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 /**
  * The router matches on the PATH, not the whole request target (2026-09-03).
@@ -54,5 +54,30 @@ describe('the router answers /health with a query string', () => {
       res
     );
     expect(captured.statusCode).toBe(404);
+  });
+
+  it('carries explicit table scope through the real router and rejects an unbounded request', async () => {
+    const tableId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const getStatus = vi.fn(gameServer.getStatus);
+    const scoped = createRouter({ gameServer: { ...gameServer, getStatus } } as never);
+    const { res, captured } = fakeRes();
+    await scoped(
+      {
+        method: 'GET',
+        url: `/health?cb=1&liveness_table_ids=${tableId}`,
+        headers: {},
+      } as IncomingMessage,
+      res
+    );
+    expect(captured.statusCode).toBe(200);
+    expect(getStatus).toHaveBeenCalledTimes(1);
+    expect(getStatus).toHaveBeenCalledWith({ kind: 'tables', tableIds: [tableId] });
+    const invalid = fakeRes();
+    await scoped(
+      { method: 'GET', url: '/health?liveness_all=true', headers: {} } as IncomingMessage,
+      invalid.res
+    );
+    expect(invalid.captured.statusCode).toBe(400);
+    expect(getStatus).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,0 +1,40 @@
+{
+  "actual_version": "20260912111633",
+  "name": "cash_lease_canonical_ownership_and_heartbeat",
+  "statement_count": 1,
+  "statement_bytes": 51371,
+  "statement_sha256": "ff0019970249c73395606aeb3a451003da558010d45147bdb51ea82d64d28cf9",
+  "source_migration": "supabase/migrations/20260912111633_cash_lease_canonical_ownership_and_heartbeat.sql",
+  "original_merged_source": {
+    "pr": 4375,
+    "merge": "5d5422807087909e3aff7c938a8a41b1af71f2ed",
+    "original_query_sha256": "82cefa8bf4014a09bab4347f739cea99a7e65083c91b21f8e6a639468e9bbb3d",
+    "original_proposal_version": "20260912012000",
+    "original_proposal_history_present": false,
+    "replay_original": false
+  },
+  "direct_mutation_closure_origin": {
+    "pr": 4273,
+    "commit": "66d5e530b174d02fa863f11b8310378b73c2197b"
+  },
+  "accepted_envelope": "0018",
+  "independent_source_review": "G8-LEASE-0018-INDEPENDENT-REVIEW",
+  "application_result": "success",
+  "root_postflight": {
+    "at": "2026-09-12T11:16:49.194741+00:00",
+    "all_four_function_definitions_owner_config_acl_match": true,
+    "table_column_and_role_metadata_match": true,
+    "all_application_direct_table_and_column_mutations_closed": true,
+    "service_select_and_rpc_execute_preserved": true,
+    "one_exact_actual_history_statement": true
+  },
+  "qualification": [
+    "Atomic target DML drain and coupled change under reserved targeted administrative deployment ownership.",
+    "No serialization claim for arbitrary database-owner GRANT, role or function changes.",
+    "Local nonsuperuser authority adapter and PostgreSQL patch-version difference remain disclosed in review.",
+    "Independent installed review is separate; source publication does not prove funded runtime or explain the health timeout observed after installation.",
+    "The historical submitted comment INACTIVE0018 remains unchanged because this is an exact actual-history record."
+  ],
+  "financial_runtime_complete": false,
+  "f12_activation": false
+}

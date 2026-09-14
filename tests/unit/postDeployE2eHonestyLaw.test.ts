@@ -29,6 +29,11 @@ import { join, resolve } from 'node:path';
 
 const ROOT = resolve(__dirname, '../..');
 const WORKFLOW = readFileSync(join(ROOT, '.github/workflows/post-deploy-e2e.yml'), 'utf8');
+const ENGINE_STAGE = readFileSync(join(ROOT, '.github/workflows/stage-engine-release.yml'), 'utf8');
+const LIVE_TABLE = readFileSync(
+  join(ROOT, 'tests/e2e/production-live-table-realtime.spec.ts'),
+  'utf8'
+);
 const GLOBAL_SETUP = readFileSync(join(ROOT, 'tests/e2e/global-setup.ts'), 'utf8');
 const CHECKER = join(ROOT, 'scripts/ci/assert-e2e-actually-ran.mjs');
 
@@ -181,6 +186,29 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
     expect(upload).toContain('failure() || cancelled()');
   });
 
+  it('cannot pass after production changes or loses exact provenance during the suite', () => {
+    const cleanupAt = WORKFLOW.indexOf('- name: Hard-delete the isolated production E2E account');
+    const proofAt = WORKFLOW.indexOf(
+      '- name: Prove production stayed on one exact release during certification'
+    );
+    const uploadAt = WORKFLOW.indexOf(
+      '- name: Upload the report when something is wrong on production'
+    );
+    const proof = step(
+      WORKFLOW,
+      'Prove production stayed on one exact release during certification'
+    );
+
+    expect(cleanupAt).toBeGreaterThan(-1);
+    expect(proofAt).toBeGreaterThan(cleanupAt);
+    expect(uploadAt).toBeGreaterThan(proofAt);
+    expect(proof).toContain("if: always() && steps.live.outputs.ready == 'true'");
+    expect(proof).toContain('EXPECTED_LIVE_SHA: ${{ steps.live.outputs.sha }}');
+    expect(proof).toContain('production-e2e-provenance.mjs unchanged "$EXPECTED_LIVE_SHA"');
+    expect(proof).not.toContain('for i in');
+    expect(proof).not.toContain('sleep ');
+  });
+
   it('emits the JSON the honesty check reads, from every playwright invocation', () => {
     for (const report of [
       'cashier.json',
@@ -214,13 +242,42 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
   it('runs live-table continuity as real mobile WebKit with exact engine provenance', () => {
     const sweep = step(WORKFLOW, 'Run the specs that need a deployed page');
     const honesty = step(WORKFLOW, 'Did the suite actually verify production?');
+    const engine = step(WORKFLOW, 'Resolve the exact protected-main engine component');
 
     expect(sweep).toContain('tests/e2e/production-live-table-realtime.spec.ts');
     expect(sweep).toContain('--project=webkit-live-table-realtime');
     expect(sweep).toContain("LIVE_TABLE_REALTIME_CERTIFICATION: '1'");
-    expect(sweep).toContain('EXPECTED_ENGINE_SHA: ${{ steps.live.outputs.sha }}');
+    expect(sweep).toContain('EXPECTED_ENGINE_SHA: ${{ steps.engine.outputs.sha }}');
     expect(sweep).toContain('live table realtime exit=$live_table_realtime_rc');
     expect(honesty).toContain('e2e-report/live-table-realtime.json');
+    for (const pathspec of [
+      "'server/**'",
+      "':(exclude)server/**/*.test.ts'",
+      "':(exclude)server/sim/**'",
+    ]) {
+      expect(engine).toContain(pathspec);
+      expect(ENGINE_STAGE).toContain(pathspec);
+    }
+    expect(engine).toContain('git log "$MAIN_SHA" -1 --format=%H');
+    expect(engine).toContain('ENGINE_SHA="$ENGINE_TRIGGER_SHA"');
+    expect(engine).toContain('git cat-file -e "$ENGINE_SHA^{commit}"');
+    expect(engine).toContain('git merge-base --is-ancestor "$ENGINE_SHA" "$MAIN_SHA"');
+    expect(LIVE_TABLE).toContain('releaseSha: string | null;');
+    expect(LIVE_TABLE).toContain('observedReleaseSha');
+    expect(LIVE_TABLE).toContain('toMatch(/^[0-9a-f]{40}$/)');
+    expect(LIVE_TABLE).toContain('toBe(EXPECTED_ENGINE_SHA)');
+    expect(LIVE_TABLE).not.toContain('engineVersionMatchesExpected');
+    expect(LIVE_TABLE).not.toContain('EXPECTED_ENGINE_SHA.startsWith');
+  });
+
+  it('accepts an engine certification trigger only with one exact protected-main SHA', () => {
+    const gate = step(WORKFLOW, 'Read The Origin Job Verdict');
+    expect(WORKFLOW).toContain(
+      'run-name: Post-Deploy E2E ${{ github.event.client_payload.engine_sha || github.sha }}'
+    );
+    expect(gate).toContain('if [ "$EVENT_NAME" = repository_dispatch ]');
+    expect(gate).toMatch(/\[\[ "\$ENGINE_TRIGGER_SHA" =~ \^\[0-9a-f\]\{40\}\$ \]\]/);
+    expect(gate).toContain('engine_trigger_sha=$ENGINE_TRIGGER_SHA');
   });
 
   it('refuses a green verdict when the Daily Missions database settlement suite only skipped', () => {
@@ -249,7 +306,9 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
     // global-setup.ts back to before E2E_REQUIRE_AUTH existed - disabling the
     // fix on precisely the runs it was written for.
     const align = step(WORKFLOW, 'Take the specs from the commit production is actually serving');
-    expect(align).toContain('git checkout "$HERE" -- tests/e2e/global-setup.ts tests/e2e/support');
+    expect(align).toContain('tests/e2e/global-setup.ts');
+    expect(align).toContain('tests/e2e/production-live-table-realtime.spec.ts');
+    expect(align).toContain('tests/e2e/support');
   });
 
   it('annotates the run when a supplied credential silently did not work', () => {
@@ -280,7 +339,8 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
     // Runs 33394046555 and 33394398578 failed on an element that existed on
     // main and was simply not deployed yet. Nothing was broken.
     expect(WORKFLOW).toContain('Take the specs from the commit production is actually serving');
-    expect(WORKFLOW).toContain('git merge-base --is-ancestor');
+    expect(WORKFLOW).toContain('production-e2e-provenance.mjs lineage "$LIVE" "$HERE"');
+    expect(WORKFLOW).not.toContain('::warning::deployed sha');
     expect(WORKFLOW, 'the ancestor check needs history the shallow clone lacks').toContain(
       'fetch-depth: 0'
     );

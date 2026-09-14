@@ -102,8 +102,12 @@ export interface PlayerConnectionState {
 
      NO HORSE BRANCH, DELIBERATELY. A horse acts through the same
      `performAction` path as anybody else (HorseLogic -> scheduleHorseAction
-     -> performAction -> recordPlayerActed), so it sets `everActed` on its
-     first decision and can never trip this. The signal is BEHAVIOURAL rather
+     -> performAction -> settleHorseSeatActed -> recordPlayerActed), so it
+     sets `everActed` on its first decision and can never trip this. Until
+     2026-09-11 the horse path skipped recordPlayerActed entirely (this
+     comment described a call that did not exist): strikes from orphaned
+     time-bank expiries were never cleared and 12 horses were parked SAT_OUT
+     'forced' at the 14:55 park that day. The signal is BEHAVIOURAL rather
      than an identity test, which is why the HORSES ARE PLAYERS law needs no
      exemption here: a horse is measured by exactly the same yardstick as a
      human, and passes it for exactly the same reason. */

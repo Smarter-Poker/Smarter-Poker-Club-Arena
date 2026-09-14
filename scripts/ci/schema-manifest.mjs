@@ -16,21 +16,24 @@
  * agent its own file. "Two files written independently cannot conflict."
  *
  * So the base snapshot is now READ-ONLY to agents. To declare something you
- * just created, drop a fragment in scripts/ci/schema-manifest.d/<your-slug>.json:
+ * just created or retired, drop a fragment in
+ * scripts/ci/schema-manifest.d/<your-slug>.json:
  *
- *   { "tables":    ["ca_engine_deploy_attempts"],
- *     "functions": ["fn_ca_engine_deploy_truth_watch"],
+ *   { "tables":           ["ca_engine_deploy_attempts"],
+ *     "functions":        ["fn_ca_record_engine_deploy_attempt"],
+ *     "removedFunctions": ["legacy_repair_writer"],
  *     "columns":   { "tables": ["no_rathole"] } }
  *
  * Every key is optional. Your file is yours alone, so it cannot conflict with
  * anyone else's, and the CI gates read the base UNION every fragment.
  *
- * The overlay only ever ADDS names, so the phantom-reference gates stay exactly
- * as strict about everything nobody has declared. What stops a fragment from
- * lying is the nightly refresh (schema-manifest-refresh.yml): it regenerates
- * the base from the live database, deletes every fragment the base has absorbed,
- * and goes red on any fragment naming something production does not have.
- * A wrong fragment therefore survives at most one day and announces itself.
+ * Additions let the branch reference a new object before the live snapshot
+ * catches up. Explicit removal tombstones do the inverse: once a migration
+ * retires a function/table, the stale live snapshot must not keep blessing a
+ * reference to it until the next nightly refresh. What stops either direction
+ * from lying is the nightly refresh (schema-manifest-refresh.yml): it
+ * regenerates the base, deletes every absorbed declaration/tombstone, and goes
+ * red when a promised addition is absent or a promised removal is still live.
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -39,7 +42,15 @@ export const BASE_SCHEMA = 'scripts/ci/supabase-schema-manifest.json';
 export const BASE_COLUMNS = 'scripts/ci/supabase-columns-manifest.json';
 export const FRAGMENT_DIR = 'scripts/ci/schema-manifest.d';
 
-const KNOWN_KEYS = new Set(['tables', 'functions', 'columns', '_comment', '_owner']);
+const KNOWN_KEYS = new Set([
+  'tables',
+  'functions',
+  'removedTables',
+  'removedFunctions',
+  'columns',
+  '_comment',
+  '_owner',
+]);
 
 function parse(path, label) {
   try {
@@ -68,18 +79,24 @@ export function readFragments(repo = process.cwd()) {
     for (const key of Object.keys(data)) {
       if (!KNOWN_KEYS.has(key)) {
         throw new Error(
-          `manifest fragment ${name} has unknown key "${key}" - expected tables, functions or columns`
+          `manifest fragment ${name} has unknown key "${key}" - expected tables, functions, removal tombstones or columns`
         );
       }
     }
-    for (const key of ['tables', 'functions']) {
+    for (const key of ['tables', 'functions', 'removedTables', 'removedFunctions']) {
       if (data[key] !== undefined && !Array.isArray(data[key])) {
         throw new Error(`manifest fragment ${name}: "${key}" must be an array of names`);
       }
     }
     if (data.columns !== undefined) {
-      if (data.columns === null || typeof data.columns !== 'object' || Array.isArray(data.columns)) {
-        throw new Error(`manifest fragment ${name}: "columns" must be an object of table -> [columns]`);
+      if (
+        data.columns === null ||
+        typeof data.columns !== 'object' ||
+        Array.isArray(data.columns)
+      ) {
+        throw new Error(
+          `manifest fragment ${name}: "columns" must be an object of table -> [columns]`
+        );
       }
       for (const [table, cols] of Object.entries(data.columns)) {
         if (!Array.isArray(cols)) {
@@ -92,7 +109,10 @@ export function readFragments(repo = process.cwd()) {
   return out;
 }
 
-/** The table/function manifest: the nightly base snapshot union every fragment. */
+/**
+ * The effective table/function manifest: nightly base plus branch additions,
+ * minus explicit branch retirement tombstones.
+ */
 export function loadSchemaManifest(repo = process.cwd()) {
   const basePath = join(repo, BASE_SCHEMA);
   if (!existsSync(basePath)) {
@@ -101,30 +121,59 @@ export function loadSchemaManifest(repo = process.cwd()) {
   const base = parse(basePath, 'schema manifest');
   const tables = new Set(base.tables || []);
   const functions = new Set(base.functions || []);
+  const addedTables = new Set();
+  const addedFunctions = new Set();
+  const removedTables = new Set();
+  const removedFunctions = new Set();
   let declared = 0;
   for (const { data } of readFragments(repo)) {
     for (const t of data.tables || []) {
       if (!tables.has(t)) declared++;
       tables.add(t);
+      addedTables.add(t);
     }
     for (const f of data.functions || []) {
       if (!functions.has(f)) declared++;
       functions.add(f);
+      addedFunctions.add(f);
     }
+    for (const t of data.removedTables || []) removedTables.add(t);
+    for (const f of data.removedFunctions || []) removedFunctions.add(f);
+  }
+  for (const t of removedTables) {
+    if (addedTables.has(t)) {
+      throw new Error(`schema fragments both add and remove table "${t}"`);
+    }
+    tables.delete(t);
+  }
+  for (const f of removedFunctions) {
+    if (addedFunctions.has(f)) {
+      throw new Error(`schema fragments both add and remove function "${f}"`);
+    }
+    functions.delete(f);
   }
   return {
     tables: [...tables].sort(),
     functions: [...functions].sort(),
     declaredByFragments: declared,
+    removedByFragments: removedTables.size + removedFunctions.size,
   };
 }
 
-/** The column manifest: the nightly base snapshot union every fragment's columns. */
+/**
+ * The effective column manifest: the nightly base union fragment additions,
+ * minus every relation retired by a fragment tombstone.
+ */
 export function loadColumnsManifest(repo = process.cwd()) {
   const basePath = join(repo, BASE_COLUMNS);
-  const columns = existsSync(basePath) ? { ...(parse(basePath, 'columns manifest').columns || {}) } : {};
+  const columns = existsSync(basePath)
+    ? { ...(parse(basePath, 'columns manifest').columns || {}) }
+    : {};
   let declared = 0;
-  for (const { data } of readFragments(repo)) {
+  const fragments = readFragments(repo);
+  const removedTables = new Set();
+  for (const { data } of fragments) {
+    for (const table of data.removedTables || []) removedTables.add(table);
     for (const [table, cols] of Object.entries(data.columns || {})) {
       const merged = new Set(columns[table] || []);
       for (const c of cols) {
@@ -134,5 +183,6 @@ export function loadColumnsManifest(repo = process.cwd()) {
       columns[table] = [...merged].sort();
     }
   }
-  return { columns, declaredByFragments: declared };
+  for (const table of removedTables) delete columns[table];
+  return { columns, declaredByFragments: declared, removedByFragments: removedTables.size };
 }

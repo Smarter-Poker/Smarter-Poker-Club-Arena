@@ -59,6 +59,12 @@ export interface PayoutSubject {
   spin_multiplier?: number | null;
 }
 
+function numericJsonScalar(value: unknown): number {
+  if (typeof value !== 'number' && typeof value !== 'string') return Number.NaN;
+  if (typeof value === 'string' && value.trim() === '') return Number.NaN;
+  return Number(value);
+}
+
 /** Is this a Spin? Either column may carry it, in either case. */
 export function isSpinTournament(t: PayoutSubject | null | undefined): boolean {
   if (!t) return false;
@@ -87,17 +93,28 @@ export function parsePayoutStructure(raw: unknown): PayoutPlace[] | null {
   if (!Array.isArray(value) || value.length === 0) return null;
 
   const places: PayoutPlace[] = [];
+  const seen = new Set<number>();
   for (const entry of value) {
-    const place = Number((entry as any)?.place);
-    const percentage = Number((entry as any)?.percentage);
-    if (!Number.isFinite(place) || place < 1) return null;
-    if (!Number.isFinite(percentage) || percentage < 0) return null;
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+    const place = numericJsonScalar((entry as any)?.place);
+    const percentage = numericJsonScalar((entry as any)?.percentage);
+    const basisPoints = Math.round(percentage * 100);
+    if (!Number.isInteger(place) || place < 1 || place > 2_147_483_647) return null;
+    if (
+      !Number.isFinite(percentage) ||
+      percentage <= 0 ||
+      !Number.isSafeInteger(basisPoints) ||
+      basisPoints <= 0
+    ) {
+      return null;
+    }
+    if (seen.has(place)) continue;
+    seen.add(place);
     places.push({ place, percentage });
   }
-  if (!places.some((p) => p.place === 1)) return null;
-  if (places.reduce((s, p) => s + p.percentage, 0) <= 0) return null;
+  if (!seen.has(1)) return null;
 
-  return places;
+  return places.sort((a, b) => a.place - b.place);
 }
 
 /** The structure a Spin's multiplier implies, from the canonical spec. */
@@ -169,113 +186,10 @@ export function trimStructureToField(
   return kept;
 }
 
-/**
- * ═══════════════════════════════════════════════════════════════════════════
- *  PAYOUT DEPTH SCALES WITH THE FIELD (2026-08-31)
- * ═══════════════════════════════════════════════════════════════════════════
- *
- * Measured over 579 completed MTTs, average places paid by field size:
- *
- *     field < 10   (14 events)  ->  5.1 places
- *     10-29       (393 events)  ->  5.8
- *     30-59       (113 events)  ->  7.1
- *     60-99        (31 events)  ->  6.8
- *     100+ (avg 334, 28 events) ->  8.9      <- 2.7% of the field
- *
- * Depth was flat because the preset map tops out at NINE, so a 334-runner event
- * paid the same nine places as a 30-runner one. The industry norm is 10-15% of
- * the field, and the gap is not cosmetic: it is the difference between a big
- * event feeling worth entering and feeling like a lottery with nine tickets.
- *
- * TWO RULES KEEP THIS SAFE, and both are about the direction that overpays.
- *
- *   1. PERCENTAGES ALWAYS SUM TO EXACTLY 100. The residual from rounding lands
- *      on the LAST paid place, never the first — the same choice
- *      computePlacePrize makes, and for the same reason: an error on last place
- *      is a rounding cent, an error on first place is a headline.
- *
- *   2. IT IS ONLY CALLED WHEN THE FIELD CAN NO LONGER GROW. A structure built
- *      for a field that then grows would pay too few places; one built for a
- *      field that shrank would promote an earlier place to residual holder and
- *      overpay it. The single caller sits at prize-pool finalisation, where
- *      entry is closed by definition and `recalculateEliminatedPrizes` already
- *      re-prices everyone who busted before the change.
- *
- * The shape is a geometric decay: first place takes a fixed share and each
- * subsequent place takes a constant fraction of the one above, which is what
- * every published structure approximates.
- */
-export const PAID_FRACTION_OF_FIELD = 0.15;
-export const MIN_PAID_PLACES = 3;
-
-export function paidPlacesForField(fieldSize: number): number {
-  const field = Number(fieldSize);
-  if (!Number.isFinite(field) || field < 1) return MIN_PAID_PLACES;
-  // Never pay more places than there are players, and never pay every player:
-  // a structure that pays 100% of the field is a refund, not a tournament.
-  const byFraction = Math.round(field * PAID_FRACTION_OF_FIELD);
-  const capped = Math.min(byFraction, Math.floor(field / 2));
-  return Math.max(1, Math.min(Math.max(MIN_PAID_PLACES, capped), Math.floor(field)));
-}
-
-/** Places in the steep top tier. Beyond this the tail flattens. */
-const TOP_TIER_PLACES = 9;
-/** Decay inside the top tier — tuned to the long-standing NINE preset. */
-const TOP_TIER_DECAY = 0.72;
-/** Decay across the flat min-cash tail. */
-const TAIL_DECAY = 0.97;
-
-/**
- * What share of the pool the top nine places take, as depth grows.
- *
- * A REAL PAYOUT STRUCTURE HAS TWO REGIMES, and the first version of this
- * function did not — it was a single geometric decay, which is right for nine
- * places and impossible for seventy-five. At 0.72 per place, place 28 of a
- * 500-runner field rounded to 0.00%: a "paid" place that pays nothing. The law
- * test caught it, which is what it is for.
- *
- * Published structures are steep across the final table and nearly flat across
- * the min-cash tail, so that is what this models. The top nine keep their
- * familiar shape at every depth; everyone below shares what is left with a
- * gentle decline.
- */
-function topTierShareFor(places: number): number {
-  if (places <= TOP_TIER_PLACES) return 100;
-  return Math.max(50, Math.min(100, 100 - (places - TOP_TIER_PLACES) * 0.7));
-}
-
-export function payoutStructureForField(fieldSize: number): PayoutPlace[] {
-  const places = paidPlacesForField(fieldSize);
-  const topCount = Math.min(places, TOP_TIER_PLACES);
-  const tailCount = places - topCount;
-  const topShare = tailCount > 0 ? topTierShareFor(places) : 100;
-
-  // Raw weights per tier, each normalised inside its own share of the pool.
-  const topWeights: number[] = [];
-  for (let i = 0; i < topCount; i++) topWeights.push(Math.pow(TOP_TIER_DECAY, i));
-  const topWeightTotal = topWeights.reduce((s, w) => s + w, 0);
-
-  const tailWeights: number[] = [];
-  for (let i = 0; i < tailCount; i++) tailWeights.push(Math.pow(TAIL_DECAY, i));
-  const tailWeightTotal = tailWeights.reduce((s, w) => s + w, 0) || 1;
-
-  const raw: number[] = [
-    ...topWeights.map((w) => (w / topWeightTotal) * topShare),
-    ...tailWeights.map((w) => (w / tailWeightTotal) * (100 - topShare)),
-  ];
-
-  const out: PayoutPlace[] = [];
-  let running = 0;
-  for (let i = 0; i < places; i++) {
-    const isLast = i === places - 1;
-    // Two decimals: the column and every downstream reader are money-shaped.
-    // The residual lands on the LAST place, never the first.
-    const pct = isLast ? Math.round((100 - running) * 100) / 100 : Math.round(raw[i] * 100) / 100;
-    running = Math.round((running + pct) * 100) / 100;
-    out.push({ place: i + 1, percentage: pct });
-  }
-  return out;
-}
+// MTT field ladders are generated by fn_ca_payout_structure inside the atomic
+// database entry close. The retired TypeScript generator used a different paid
+// depth and dumped percentage rounding on the last place. Do not reconstruct a
+// funded ladder here; consume the close receipt and its stored snapshot.
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════

@@ -104,7 +104,7 @@ describe('an unknown origin is not a "no"', () => {
 
   it('one database RPC owns every seat/cash outcome and completion', () => {
     const manager = MANAGER();
-    expect(manager).toContain("supabase.rpc('fn_settle_satellite_finish_atomic'");
+    expect(manager).toContain('requestSatelliteSettlementReceipt(this.tournamentId, winnerId)');
     expect(manager).not.toContain("supabase.rpc('fn_award_satellite_seat'");
     expect(manager).not.toContain('settleTournamentObligation(supabase');
   });
@@ -146,5 +146,58 @@ describe('the spin unpaid view stays narrow on purpose', () => {
     // That fallback makes 4,590 CANCELLED spins read as 21,329 chips short and
     // raises one critical alert each.
     expect(view()).not.toMatch(/COALESCE\(d\.prize_drawn, t\.prize_pool\)/);
+  });
+});
+
+/**
+ * ── AND THE GAUGE THAT WATCHES FOR UNPAID TOURNAMENTS KNOWS IT TOO ─────────
+ *
+ * (2026-09-12) `TournamentCompletedUnpaid` is critical severity, pages by SMS,
+ * and reads "Players bought in and nobody was paid." It fired 12 times in the
+ * 14 days to 2026-09-12. All 12 were satellites. All 12 had paid.
+ *
+ * `fn_tournament_metrics` asked only whether a `wallet_transactions` row with
+ * `category = 'prize'` existed. A satellite pays in a seat or a ticket, so the
+ * one format that does not pay in chips was unpaid by construction - the same
+ * lesson the structure reconciler was taught in the describe block above, on
+ * the same day, and this gauge was not.
+ *
+ * An alert that is wrong every time it fires is not noise. It is the loss of
+ * the alert: the day a tournament genuinely pays nobody, that page looks
+ * exactly like the last twelve.
+ */
+describe('the unpaid gauge knows a seat is a payment', () => {
+  const METRICS = () => executable(migration('a_satellite_that_paid_in_seats_read_as_unpaid'));
+
+  it('does not count a satellite that delivered an award as unpaid', () => {
+    expect(METRICS()).toMatch(
+      /NOT EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+tournament_satellite_awards\s+a\s+WHERE\s+a\.tournament_id\s*=\s*t\.id\s*\)/
+    );
+  });
+
+  it('still requires cash for a tournament that pays in chips', () => {
+    // Dropping this half would make every completed tournament read as paid,
+    // which is the same defect pointing the other way.
+    expect(METRICS()).toMatch(/w\.related_entity_id\s*=\s*t\.id\s+AND\s+w\.category\s*=\s*'prize'/);
+  });
+
+  it('does not accept a payout row as proof that anything was delivered', () => {
+    // `tournament_payouts.paid_at` is written by the payout code itself, so it
+    // evidences INTENT. `tournament_satellite_awards` evidences DELIVERY by
+    // constraint: seat => registration_id, ticket => ticket_id FK, cash =>
+    // obligation_id FK, all ON DELETE RESTRICT.
+    expect(METRICS()).not.toMatch(/tournament_payouts/);
+  });
+
+  it('does not widen prize to include bounty', () => {
+    // A bounty is not a prize. Counting it as one would let a tournament that
+    // paid every bounty and not one prize read as paid.
+    expect(METRICS()).not.toMatch(/'bounty'/);
+  });
+
+  it('refuses to install itself if the count went up', () => {
+    // This change may only ever REMOVE satellites that paid. If it ever adds a
+    // tournament, the predicate is wrong and the migration aborts.
+    expect(METRICS()).toContain('unpaid_completed went UP');
   });
 });

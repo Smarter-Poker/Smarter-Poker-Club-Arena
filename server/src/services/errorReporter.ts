@@ -57,7 +57,9 @@ export function flushBudgetSummary(): boolean {
   if (!summary) return false;
   const top = summary.byKey.slice(0, 15);
   const lines = top.map((r) => `${r.dropped} x ${r.key}`).join('\n');
-  console.warn(`[Sentry:Server] budget dropped ${summary.total} event(s) since last summary:\n${lines}`);
+  console.warn(
+    `[Sentry:Server] budget dropped ${summary.total} event(s) since last summary:\n${lines}`
+  );
   try {
     Sentry.captureMessage(
       `[SentryBudget] dropped ${summary.total} engine event(s) in the last ${BUDGET_SUMMARY_INTERVAL_MS / 60_000} min`,
@@ -67,7 +69,7 @@ export function flushBudgetSummary(): boolean {
         contexts: { sentryBudget: { total: summary.total, top, distinct: summary.byKey.length } },
         // One issue per engine, not one per interval: group every summary together.
         fingerprint: ['sentry-budget-summary'],
-      },
+      }
     );
   } catch {
     // Never let the summary crash the engine
@@ -163,9 +165,67 @@ export function initSentry(): void {
  * @param context - A short string identifying where the error occurred
  * @param extra - Optional additional data to attach to the Sentry event
  */
+/**
+ * Describe ANY thrown value as readable text.
+ *
+ * `String(err)` renders every non-Error object as the literal string
+ * "[object Object]". Supabase rejects with a PostgrestError - a plain object,
+ * never an Error instance - so every money path that reported an error with
+ * `err instanceof Error ? err.message : String(err)` recorded the four words
+ * "[object Object]" and threw the diagnosis away.
+ *
+ * Measured 2026-09-08/09: 1,058 CRITICAL `financial_alerts` rows for
+ * `ServerTableEngine.post_commit_obligations_pending`, every one of them
+ * carrying `"error": "[object Object]"`. The incident dashboard classified
+ * all of them `unknown` because there was nothing left to classify. Nobody
+ * could act on them, so nobody did.
+ *
+ * Same precedence `reportError` already applies below, extracted so the alert
+ * paths can share it: message, then the Supabase/GoTrue detail fields, then
+ * JSON, and a PostgREST code when one is present.
+ */
+export function describeError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  if (error === null || error === undefined) return String(error);
+  if (typeof error === 'object') {
+    const e = error as Record<string, any>;
+    const head = e.message || e.error_description || e.details || e.hint || e.error || null;
+    const code = e.code ? ` (${e.code})` : '';
+    if (head) return `${String(head)}${code}`;
+    try {
+      return `${JSON.stringify(error)}`;
+    } catch {
+      return Object.prototype.toString.call(error);
+    }
+  }
+  return String(error);
+}
+
 export function reportError(error: unknown, context: string, extra?: Record<string, any>): void {
-  // Always log to console for stdout/stderr visibility
-  console.error(`[${context}]`, error);
+  /* THE LOG LINE IS INSIDE A TRY, AND THAT IS NOT PARANOIA (2026-09-12).
+   *
+   * `console.error` writes to fd 2 synchronously. On a container whose stderr
+   * is a pipe nobody is draining it throws EAGAIN, and on one whose log
+   * collector has gone away it throws EPIPE. This line used to sit OUTSIDE
+   * every try in this function, so that throw did not stay here: it came out
+   * of `reportError` itself.
+   *
+   * Every `catch (error) { reportError(...) }` in this engine is written on
+   * the assumption that reporting cannot fail. When it can, the catch handler
+   * throws, the `while` around it unwinds, and the loop that called it is
+   * gone - with no log line, because the thing that failed WAS the log line.
+   * That is the amplifier behind the 2026-09-12 lease-renewal outage: a
+   * supervisor now relaunches that loop (GameServer.performStart), and this
+   * makes the push that knocks it over unavailable in the first place.
+   *
+   * A swallowed log line costs one message. An escaping one costs the loop. */
+  try {
+    // Always log to console for stdout/stderr visibility
+    console.error(`[${context}]`, error);
+  } catch {
+    // stderr is not a reason to lose the caller's control flow.
+  }
 
   // Send to Sentry if initialized
   if (!initialized) return;
@@ -210,7 +270,12 @@ export function reportError(error: unknown, context: string, extra?: Record<stri
  * Report a warning-level issue (non-fatal but noteworthy).
  */
 export function reportWarning(message: string, context: string, data?: Record<string, any>): void {
-  console.warn(`[${context}] ${message}`);
+  // Same EPIPE/EAGAIN hazard as reportError above, same one-line answer.
+  try {
+    console.warn(`[${context}] ${message}`);
+  } catch {
+    // stderr is not a reason to lose the caller's control flow.
+  }
 
   if (!initialized) return;
 

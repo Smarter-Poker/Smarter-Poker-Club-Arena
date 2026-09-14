@@ -1,0 +1,91 @@
+[
+  {
+    "source": "supabase/migrations/20260902183602_freerolls_are_free_buy.sql",
+    "function": "public.fn_is_free_buy_event",
+    "body_md5": "e83794453846edb7d457e77603e5b141",
+    "referenced_new_columns": [],
+    "assigned_new_columns": [],
+    "format_literals": ["MTT", "sng", "spin"],
+    "predicate_references_free_buy_flag": false,
+    "predicate_references_addon_start_flag": false
+  },
+  {
+    "source": "supabase/migrations/20260902183602_freerolls_are_free_buy.sql",
+    "function": "public.fn_freerolls_are_free_buy",
+    "body_md5": "6ccef82173fab0579e3ba30dd5b6d507",
+    "referenced_new_columns": [
+      "add_on_available",
+      "addon_chips",
+      "addon_cost",
+      "addon_levels",
+      "buy_in_amount",
+      "buy_in_fee",
+      "id",
+      "is_rebuy",
+      "max_rebuys",
+      "name",
+      "rebuy_chips",
+      "rebuy_cost",
+      "rebuy_levels",
+      "starting_chips",
+      "status",
+      "tournament_type",
+      "variant"
+    ],
+    "assigned_new_columns": [
+      "add_on_available",
+      "addon_chips",
+      "addon_cost",
+      "addon_levels",
+      "buy_in_fee",
+      "is_rebuy",
+      "max_rebuys",
+      "rebuy_chips",
+      "rebuy_cost",
+      "rebuy_levels"
+    ],
+    "format_literals": [],
+    "predicate_references_free_buy_flag": false,
+    "predicate_references_addon_start_flag": false
+  },
+  {
+    "source": "supabase/migrations/20260904065106_free_buy_tiers_may_set_their_own_price.sql",
+    "function": "public.fn_freerolls_are_free_buy",
+    "body_md5": "2b230da1098d05a4472bf35bf598a101",
+    "referenced_new_columns": [
+      "add_on_available",
+      "addon_chips",
+      "addon_cost",
+      "addon_levels",
+      "buy_in_amount",
+      "buy_in_fee",
+      "free_buy",
+      "id",
+      "is_rebuy",
+      "max_rebuys",
+      "name",
+      "rebuy_chips",
+      "rebuy_cost",
+      "rebuy_levels",
+      "starting_chips",
+      "status",
+      "tournament_type",
+      "variant"
+    ],
+    "assigned_new_columns": [
+      "add_on_available",
+      "addon_chips",
+      "addon_cost",
+      "addon_levels",
+      "buy_in_fee",
+      "is_rebuy",
+      "max_rebuys",
+      "rebuy_chips",
+      "rebuy_cost",
+      "rebuy_levels"
+    ],
+    "format_literals": [],
+    "predicate_references_free_buy_flag": true,
+    "predicate_references_addon_start_flag": false
+  }
+]

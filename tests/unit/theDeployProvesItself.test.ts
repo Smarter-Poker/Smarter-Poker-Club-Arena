@@ -1,164 +1,82 @@
-/**
- * A DEPLOY THAT PROVES ITSELF (2026-09-05).
- *
- * A deploy run reported success and shipped nothing: the container came back
- * on the OLD image and /health.version never changed. Every check the
- * workflow had compared what the engine SAID over HTTP against the target;
- * none remembered what was running BEFORE, and none asked the database what
- * the engine WROTE about itself. These pins keep the two halves of the fix
- * wired to each other and behaving.
- */
-import { describe, expect, it, afterAll, beforeAll } from 'vitest';
+/** The durable Hetzner transaction must prove every release before sealing it. */
+import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { spawn } from 'node:child_process';
-import { createServer, type Server } from 'node:http';
 
 const root = resolve(__dirname, '..', '..');
 const read = (p: string) => readFileSync(resolve(root, p), 'utf8');
 const WF = read('.github/workflows/auto-deploy-hetzner.yml');
-const SCRIPT = resolve(root, 'scripts/ci/prove-engine-version-moved.mjs');
+const TRANSACTION = read('server/scripts/engine-release-transaction.sh');
+const OBSERVER = read('server/scripts/observe-engine-release.sh');
+const INSTALLER = read('server/scripts/install-engine-supervisor.sh');
 
-describe('the workflow records before and proves after', () => {
-  it('records the pre-cutover version at the START of the job, best-effort', () => {
-    const at = WF.indexOf('name: Record the version production runs before the cutover');
-    expect(at).toBeGreaterThan(-1);
-    expect(at, 'recorded before the dedupe decides anything').toBeLessThan(
-      WF.indexOf('name: Skip if production already serves this commit')
+describe('the durable engine release proves itself', () => {
+  it('certifies an already-running exact release synchronously instead of trusting HTTP alone', () => {
+    const lock = TRANSACTION.indexOf("acquire_engine_lock 'duplicate certification'");
+    const freshness = TRANSACTION.indexOf('source_target_is_current', lock);
+    const runtime = TRANSACTION.indexOf('EXACT_INSTANCE="$(exact_runtime_instance)"', freshness);
+    const certify = TRANSACTION.indexOf('emit_already_released "$EXACT_INSTANCE"', runtime);
+    expect(lock).toBeGreaterThan(-1);
+    expect(freshness).toBeGreaterThan(lock);
+    expect(runtime).toBeGreaterThan(freshness);
+    expect(certify).toBeGreaterThan(runtime);
+
+    const duplicateProof = TRANSACTION.slice(
+      TRANSACTION.indexOf('emit_already_released()'),
+      TRANSACTION.indexOf('create_image_lease()')
     );
-    const block = WF.slice(at, WF.indexOf('- name:', at + 10));
-    expect(block).toContain('continue-on-error: true');
-    expect(block).toContain('MODE: record');
-    expect(block).toContain('node scripts/ci/prove-engine-version-moved.mjs');
+    expect(duplicateProof).toContain('"$DATABASE_PROOF"');
+    expect(duplicateProof).toContain('persist_result already-released');
   });
 
-  it('proves after the promote and before the rollback, so a failed proof rolls back', () => {
-    const prove = WF.indexOf("name: 'PROVE the version moved");
-    expect(prove).toBeGreaterThan(-1);
-    expect(prove).toBeGreaterThan(WF.indexOf('name: Promote :current to the verified build'));
-    expect(prove).toBeLessThan(WF.indexOf('name: ROLLBACK'));
-    const block = WF.slice(prove, WF.indexOf('- name:', prove + 10));
-    expect(block).toContain('id: prove');
-    expect(block).toContain('MODE: prove');
-    expect(block).toMatch(/TIMEOUT_S: '240'/);
-    expect(block, 'the same gate as the cutover itself').toContain(
-      "if: steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'"
+  it('proves candidate identity before commit and proves it again before the durable result', () => {
+    const database = TRANSACTION.indexOf('"$DATABASE_PROOF" --env-file');
+    const precommitLocal = TRANSACTION.indexOf('PRECOMMIT_LOCAL_INSTANCE=', database);
+    const precommitPublic = TRANSACTION.indexOf('PRECOMMIT_PUBLIC_INSTANCE=', precommitLocal);
+    const commit = TRANSACTION.indexOf('"$RELEASE_SEAL" commit', precommitPublic);
+    const finalLocal = TRANSACTION.indexOf('FINAL_LOCAL_INSTANCE=', commit);
+    const finalPublic = TRANSACTION.indexOf('FINAL_PUBLIC_INSTANCE=', finalLocal);
+    const receipt = TRANSACTION.indexOf('persist_result sealed', finalPublic);
+    expect(database).toBeGreaterThan(-1);
+    expect(precommitLocal).toBeGreaterThan(database);
+    expect(precommitPublic).toBeGreaterThan(precommitLocal);
+    expect(commit).toBeGreaterThan(precommitPublic);
+    expect(finalLocal).toBeGreaterThan(commit);
+    expect(finalPublic).toBeGreaterThan(finalLocal);
+    expect(receipt).toBeGreaterThan(finalPublic);
+    expect(TRANSACTION).toContain('trap recover_on_exit EXIT');
+  });
+
+  it('the database is told a deploy shipped only after exact cutover and proof success', () => {
+    expect(WF).toMatch(
+      /shipped: .*steps\.release\.outputs\.result == 'sealed'.*steps\.verify\.outputs\.verified == 'true'/
     );
-    expect(block, 'no continue-on-error: a failed proof is a failed deploy').not.toContain(
-      'continue-on-error'
+    expect(WF).toContain('SHIPPED: ${{ needs.deploy.outputs.shipped }}');
+    expect(WF).toContain("steps.release.outputs.result == 'already-released'");
+    expect(WF).toContain('[ "$UNIT_RESULT" = success ] && [ "$RESULT_SHA" = "$SHA" ]');
+    expect(WF).toContain('case "$RESULT" in sealed|already-released)');
+    expect(WF).toContain("STRICT_RECEIPT: '1'");
+    expect(WF).not.toMatch(/SHIPPED:.*!= 'failure'/);
+  });
+
+  it('the workflow, observer, systemd unit, and transaction budgets fit inside one another', () => {
+    const workflowSeconds =
+      Math.max(...[...WF.matchAll(/timeout-minutes: (\d+)/g)].map((match) => Number(match[1]))) *
+      60;
+    const observeSeconds = Number(
+      OBSERVER.match(/OBSERVE_SECONDS="\$\{ENGINE_RELEASE_OBSERVE_SECONDS:-(\d+)\}"/)![1]
     );
-  });
-
-  it('the database is told a deploy shipped only when the proof did not fail', () => {
-    expect(WF).toMatch(/SHIPPED: .*steps\.prove\.outcome != 'failure'/);
-    expect(WF).toContain("steps.prove.outcome == 'failure' &&");
-  });
-
-  it('the job budget grew by the proof, in both places the number lives', () => {
-    const timeout = Number(WF.match(/timeout-minutes: (\d+)/)![1]);
-    const jobTimeout = Number(WF.match(/JOB_TIMEOUT_S=\$\(\( (\d+) \* 60 \)\)/)![1]);
-    expect(jobTimeout, 'the gate must know the real timeout').toBe(timeout);
-    const reserve = Number(WF.match(/CUTOVER_RESERVE_S=(\d+)/)![1]);
-    expect(reserve, 'reserve covers cutover + verify + a 4-minute proof').toBeGreaterThanOrEqual(
-      300 + 240
+    const handoffSeconds = Number(
+      OBSERVER.match(
+        /INVOCATION_WAIT_SECONDS="\$\{ENGINE_RELEASE_INVOCATION_WAIT_SECONDS:-(\d+)\}"/
+      )![1]
     );
-  });
-});
-
-describe('prove-engine-version-moved.mjs', () => {
-  let server: Server;
-  let port = 0;
-  let version = 'deadbeef';
-  beforeAll(async () => {
-    server = createServer((_req, res) => {
-      res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify({ version, running: true }));
-    });
-    await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
-    port = (server.address() as { port: number }).port;
-  });
-  afterAll(() => server.close());
-
-  // spawn, not spawnSync: the stub server lives on THIS event loop, and a
-  // synchronous child would block it, so every fetch would hang for 15 s.
-  const run = (env: Record<string, string>) =>
-    new Promise<{ status: number | null; stdout: string }>((resolve) => {
-      const child = spawn(process.execPath, [SCRIPT], {
-        env: {
-          PATH: process.env.PATH ?? '',
-          ENGINE_URL: `http://127.0.0.1:${port}`,
-          POLL_S: '1',
-          TIMEOUT_S: '1',
-          ...env,
-        },
-      });
-      let stdout = '';
-      child.stdout.on('data', (d) => (stdout += d.toString()));
-      child.stderr.on('data', (d) => (stdout += d.toString()));
-      child.on('close', (status) => resolve({ status, stdout }));
-    });
-
-  it('record: reads the running version and never fails', async () => {
-    version = 'deadbeef';
-    const r = await run({ MODE: 'record' });
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain('pre-cutover engine version: deadbeef');
-  });
-
-  it('prove: FAILS when the version still equals the pre-cutover version', async () => {
-    version = 'deadbeef';
-    const r = await run({
-      MODE: 'prove',
-      TARGET_SHA: '0123456789abcdef',
-      PRE_CUTOVER_VERSION: 'deadbeef',
-    });
-    expect(r.status).toBe(1);
-    expect(r.stdout).toContain('::error title=DEPLOY SHIPPED NOTHING::');
-    expect(r.stdout).toContain('did not move');
-  });
-
-  it('prove: FAILS when a third build is answering', async () => {
-    version = 'feedface';
-    const r = await run({
-      MODE: 'prove',
-      TARGET_SHA: '0123456789abcdef',
-      PRE_CUTOVER_VERSION: 'deadbeef',
-    });
-    expect(r.status).toBe(1);
-    expect(r.stdout).toContain('A third build is answering');
-  });
-
-  it('prove: passes the moment the witness reports the target', async () => {
-    version = '01234567';
-    const r = await run({
-      MODE: 'prove',
-      TARGET_SHA: '0123456789abcdef',
-      PRE_CUTOVER_VERSION: 'deadbeef',
-    });
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain('PROVED');
-  });
-
-  it('prove: silence is a warning, never a failure and never a rollback', async () => {
-    const r = await run({
-      MODE: 'prove',
-      ENGINE_URL: 'http://127.0.0.1:1',
-      TARGET_SHA: '0123456789abcdef',
-      PRE_CUTOVER_VERSION: 'deadbeef',
-    });
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain('::warning title=DEPLOY PROOF INCONCLUSIVE::');
-  });
-
-  it('prefers the engine_leader witness and says which one spoke', () => {
-    const src = read('scripts/ci/prove-engine-version-moved.mjs');
-    expect(src).toContain('FROM public.engine_leader WHERE id = true');
-    expect(src).toContain('/rest/v1/engine_leader?select=engine_version,heartbeat_at');
-    expect(src, 'a stale leader row is not proof').toContain('heartbeatAgeS <= 60');
-    expect(src, 'the fallback busts the cache').toContain('/health?nocache=');
-    expect(src, 'raises the in-app notification publish-watchdog raises').toContain(
-      '/rest/v1/rpc/fn_raise_notification'
+    const transactionSeconds = Number(
+      TRANSACTION.match(/MAX_RUNTIME_SECONDS="\$\{ENGINE_RELEASE_MAX_RUNTIME_SECONDS:-(\d+)\}"/)![1]
     );
-    expect(src).toContain('ca_incident_recipients?scope=eq.platform&active=eq.true');
+    const unitSeconds = Number(INSTALLER.match(/TimeoutStartSec=(\d+)min/)![1]) * 60;
+    expect(unitSeconds).toBeGreaterThanOrEqual(transactionSeconds);
+    expect(observeSeconds).toBeGreaterThanOrEqual(unitSeconds);
+    expect(workflowSeconds).toBeGreaterThanOrEqual(handoffSeconds + observeSeconds + 20 * 60);
   });
 });

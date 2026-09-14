@@ -19,6 +19,7 @@ import type {
   PineappleDiscardSnapshot,
   HorseDecisionWorkerStatusResult,
 } from './protocol.js';
+import { horseDecisionSolverStoresAreValid } from './protocol.js';
 import type { HorseMindDecisionEffect } from '../HorseMind.js';
 
 export interface WorkerLike {
@@ -33,8 +34,14 @@ export interface WorkerLike {
 export interface LiveHorseDecisionWorkerClientOptions {
   workerFactory?: () => WorkerLike;
   readyTimeoutMs?: number;
-  /** Terminal deadline for one posted FIFO operation. */
+  /** Caller deadline from enqueue and worker-integrity deadline from dispatch. */
   jobTimeoutMs?: number;
+  /**
+   * How many jobs may be posted to the worker before the one it is running
+   * answers. The worker still runs them one at a time, oldest first; see the
+   * class comment for why the order does not depend on this being one.
+   */
+  maxInFlight?: number;
   /**
    * Sole-worker failure is process-fatal in production. Invoked once, after
    * pending work is rejected and termination has been initiated.
@@ -48,13 +55,34 @@ export interface LiveHorseDecisionWorkerStatus {
   phase: LiveHorseDecisionWorkerPhase;
   startedAt: number | null;
   readyAt: number | null;
+  /**
+   * How many jobs this lane will keep posted to the worker at once.
+   *
+   * Reported because the lane's throughput is `maxInFlight / round trip` and
+   * that arithmetic was invisible while the queue drowned: an operator could
+   * see 520 queued and 49 expiring a second with no way to tell what the lane
+   * was configured to sustain.
+   */
+  maxInFlight: number;
   queueDepth: number;
+  /** Of `queueDepth`, the jobs already posted and waiting on the worker's own port. */
+  inFlightJobs: number;
   activeRequestId: number | null;
   activeJobAgeMs: number | null;
   oldestQueuedAgeMs: number | null;
   lastCompletedAt: number | null;
   lastComputeMs: number | null;
   completedJobs: number;
+  /** Accepted operations whose queue-plus-compute caller deadline elapsed. */
+  expiredJobs: number;
+  lastExpiredAt: number | null;
+  lastExpiredRequestType: HorseDecisionJobRequest['type'] | null;
+  lastExpiredPhase: 'queued' | 'active' | null;
+  /** Requests rejected at worker validation while its FIFO and runtime stayed healthy. */
+  recoverableRequestErrors: number;
+  lastRecoverableRequestErrorAt: number | null;
+  lastRecoverableRequestErrorType: HorseDecisionJobRequest['type'] | null;
+  lastRecoverableRequestError: string | null;
   lastError: string | null;
   solverStores: HorseDecisionWorkerReady['solverStores'] | null;
   solverPolicyArtifact: HorseDecisionWorkerReady['solverPolicyArtifact'] | null;
@@ -66,6 +94,20 @@ export class HorseDecisionAbortedError extends Error {
   override readonly name = 'AbortError';
 
   constructor(message = 'horse decision was aborted') {
+    super(message);
+  }
+}
+
+/**
+ * The request used its complete queue-plus-compute action budget. This is not
+ * an authority cancellation: the turn may still be current and must take the
+ * caller's fail-safe action instead of being silently abandoned. A separately
+ * measured execution deadline still terminal-fails a genuinely wedged worker.
+ */
+export class HorseDecisionExpiredError extends Error {
+  override readonly name = 'TimeoutError';
+
+  constructor(message = 'horse decision expired before worker dispatch') {
     super(message);
   }
 }
@@ -86,20 +128,35 @@ interface QueuedJob {
   abortListener?: () => void;
   settled: boolean;
   enqueuedAt: number;
+  /** Caller/action-clock deadline measured from enqueue. */
   deadlineTimer: ReturnType<typeof setTimeout> | null;
+  /** Worker-integrity deadline measured only after this job is posted. */
+  executionTimer: ReturnType<typeof setTimeout> | null;
+  /** One poll-turn grace for a worker response already waiting on its port. */
+  executionDeadlineCheck: ReturnType<typeof setImmediate> | null;
 }
 
 const stoppedStatus = (): LiveHorseDecisionWorkerStatus => ({
   phase: 'stopped',
   startedAt: null,
   readyAt: null,
+  maxInFlight: 0,
   queueDepth: 0,
+  inFlightJobs: 0,
   activeRequestId: null,
   activeJobAgeMs: null,
   oldestQueuedAgeMs: null,
   lastCompletedAt: null,
   lastComputeMs: null,
   completedJobs: 0,
+  expiredJobs: 0,
+  lastExpiredAt: null,
+  lastExpiredRequestType: null,
+  lastExpiredPhase: null,
+  recoverableRequestErrors: 0,
+  lastRecoverableRequestErrorAt: null,
+  lastRecoverableRequestErrorType: null,
+  lastRecoverableRequestError: null,
   lastError: null,
   solverStores: null,
   solverPolicyArtifact: null,
@@ -120,16 +177,103 @@ function errorMessage(error: unknown): string {
 }
 
 /**
- * Main-thread owner of the process-wide single FIFO. Only one job is posted
- * at a time, so worker scheduling cannot reorder RNG-consuming decisions.
+ * Main-thread owner of the process-wide single FIFO.
+ *
+ * ── ONE LANE, NOT ONE MESSAGE AT A TIME (2026-09-11) ────────────────────────
+ *
+ * This used to post exactly one job and wait for its answer before posting the
+ * next, "so worker scheduling cannot reorder RNG-consuming decisions". The
+ * order never depended on that. A MessagePort delivers in post order, the
+ * worker chains what it receives onto one promise, oldest first, and it answers
+ * in that same order. What one-at-a-time really bought was an idle worker:
+ * every job paid a full round trip through the MAIN event loop, where the
+ * answer waited its turn behind table timers, broadcasts and settlement before
+ * the next job could even be posted, and that gap was charged to every
+ * decision queued behind it.
+ *
+ * Production, 2026-09-11 ~11:50 UTC, ~185 tables dealing: 126-156 decisions
+ * queued, the oldest 2.6-3.8 s old, the lane finishing about 40 jobs a second
+ * at 2-38 ms of compute each, while no engine thread was busier than 60% of a
+ * core. Since the 10:55 build the queue had averaged 98-130 deep (it was
+ * 2-7 all morning) and horses acted seconds after the think time they chose,
+ * so hands dragged for every seat at those tables.
+ *
+ * Now up to `maxInFlight` jobs are posted ahead, so the worker always has its
+ * next job waiting on its own port. Everything else is unchanged:
+ *   - FIFO is still enforced: every answer must be for the oldest posted job,
+ *     and anything else is terminal protocol corruption, as before.
+ *   - An abort or expiry of a posted job sends CANCEL (the worker skips a job
+ *     it has not started) and the job stays a FIFO owner until its terminal
+ *     answer arrives, exactly as the single active job always did.
+ *   - The integrity (execution) clock starts when a job reaches the HEAD of
+ *     the posted FIFO, never when it is posted. A job waiting behind a slow
+ *     predecessor is not charged that predecessor's compute; charging it would
+ *     fail a healthy worker, and a failed worker restarts the whole fleet (see
+ *     onJobDeadline).
+ *   - The dispatch barrier still holds every post, so a priority effect commit
+ *     still lands after older work and before the TURN_CHANGE work it must
+ *     precede.
+ * The worker turns its event loop between jobs (HorseDecisionWorkerRuntime
+ * .receive), so a full window can never starve its timers, its CANCEL handling
+ * or its governor's sampler.
  */
 export class LiveHorseDecisionWorkerClient {
   private static readonly DEFAULT_READY_TIMEOUT_MS = 90_000;
   private static readonly DEFAULT_JOB_TIMEOUT_MS = 8_000;
+  /**
+   * Covers a slow main-loop round trip several times over at 2-40 ms of compute
+   * per job, and stays small enough that an abort or expiry usually reaches the
+   * worker before the job it cancels has started.
+   */
+  /**
+   * ── WHY 4 BECAME 32 (2026-09-11, evening) ─────────────────────────────────
+   *
+   * The pipeline exists because every job pays a round trip through the MAIN
+   * event loop (see the note above this class). Its throughput is therefore
+   * `maxInFlight / mainLoopRoundTrip`, and 4 was derived when that round trip
+   * was small and ~185 tables were dealing.
+   *
+   * Measured on engine-01 at 20:2x UTC, 470 tables dealing and 2,646 horses
+   * seated after the day's fixes put them back on the floor:
+   *
+   *     poker_event_loop_delay_p50_ms                     309
+   *     poker_main_event_loop_governor_scale              0.2   (already shedding)
+   *     poker_horse_decision_worker_event_loop_delay_p50    22   (the worker is NOT busy)
+   *     poker_horse_decision_worker_last_compute_ms       0.07 .. 337
+   *     poker_horse_decision_worker_queue_depth           ~520
+   *     poker_horse_decision_worker_oldest_queued_age_ms  ~8,200 (pinned at the deadline)
+   *     poker_horse_decision_worker_expired_jobs          +49 per second
+   *     poker_horse_decision_fallbacks_total              13,973
+   *
+   * Four in flight against a 309 ms round trip is about 13 jobs a second. The
+   * queue sat 520 deep with its head at the 8-second caller deadline, so ~49
+   * decisions a second EXPIRED, and an expired decision is a seat taking the
+   * legal check or fold without thinking. Fourteen thousand hands were played
+   * that way. The worker meanwhile ran a 22 ms loop: it was never the
+   * constraint, the serialisation was.
+   *
+   * 32 gives about 100 jobs a second at the same round trip, which is roughly
+   * twice the measured shortfall, and it is still bounded: the worker holds at
+   * most 32 posted jobs, most of them costing well under a millisecond.
+   *
+   * NOTHING ELSE MOVES. FIFO ownership, CANCEL on abort or expiry, the
+   * integrity clock starting at the HEAD of the posted FIFO, and the dispatch
+   * barrier are all independent of the depth - they are pinned in
+   * client.test.ts and none of those pins changes here. The one real cost of a
+   * deeper pipeline is that a cancel more often arrives after the job it
+   * cancels has started, which wastes a sub-millisecond computation.
+   *
+   * THIS IS NOT A CAPACITY FIX. The main loop is genuinely saturated at 309 ms
+   * with its own governor at 0.2, and that is engine-01's three cores against a
+   * floor that doubled today. This stops the decision lane being serialised
+   * behind that saturation; it does not create headroom that is not there.
+   */
+  private static readonly DEFAULT_MAX_IN_FLIGHT = 32;
   private static readonly STATUS_INTERVAL_MS = 1_000;
   private readonly worker: WorkerLike;
   private readonly onFatal?: (error: Error) => void;
   private readonly jobTimeoutMs: number;
+  private readonly maxInFlight: number;
   private phase: LiveHorseDecisionWorkerPhase = 'starting';
   private readonly startedAt = Date.now();
   private readyAt: number | null = null;
@@ -141,9 +285,23 @@ export class LiveHorseDecisionWorkerClient {
   private lastCompletedAt: number | null = null;
   private lastComputeMs: number | null = null;
   private completedJobs = 0;
+  private expiredJobs = 0;
+  private lastExpiredAt: number | null = null;
+  private lastExpiredRequestType: HorseDecisionJobRequest['type'] | null = null;
+  private lastExpiredPhase: 'queued' | 'active' | null = null;
+  private recoverableRequestErrors = 0;
+  private lastRecoverableRequestErrorAt: number | null = null;
+  private lastRecoverableRequestErrorType: HorseDecisionJobRequest['type'] | null = null;
+  private lastRecoverableRequestError: string | null = null;
   private nextRequestId = 1;
+  /** Accepted jobs not yet posted to the worker. */
   private readonly queue: QueuedJob[] = [];
-  private active: QueuedJob | null = null;
+  /**
+   * Posted jobs, oldest first. The worker answers them in this order; the head
+   * is the job it is running (or about to run).
+   */
+  private readonly inFlight: QueuedJob[] = [];
+  /** When the current head of `inFlight` became the worker's running job. */
   private activeStartedAt: number | null = null;
   private dispatchHoldDepth = 0;
   /** Insert commits after work queued before the barrier, before causal successors. */
@@ -168,6 +326,12 @@ export class LiveHorseDecisionWorkerClient {
       1,
       Math.floor(options.jobTimeoutMs ?? LiveHorseDecisionWorkerClient.DEFAULT_JOB_TIMEOUT_MS)
     );
+    const maxInFlight = Math.floor(
+      options.maxInFlight ?? LiveHorseDecisionWorkerClient.DEFAULT_MAX_IN_FLIGHT
+    );
+    this.maxInFlight = Number.isSafeInteger(maxInFlight)
+      ? Math.max(1, maxInFlight)
+      : LiveHorseDecisionWorkerClient.DEFAULT_MAX_IN_FLIGHT;
     this.readyPromise = new Promise((resolve, reject) => {
       this.resolveReady = resolve;
       this.rejectReady = reject;
@@ -201,7 +365,10 @@ export class LiveHorseDecisionWorkerClient {
 
   status(): LiveHorseDecisionWorkerStatus {
     const now = Date.now();
-    const oldestQueued = this.queue.reduce<QueuedJob | null>(
+    const active = this.inFlight[0] ?? null;
+    // Everything still waiting for its turn: posted jobs behind the head, and
+    // jobs not yet posted. The head is running and is reported as active.
+    const oldestQueued = [...this.inFlight.slice(1), ...this.queue].reduce<QueuedJob | null>(
       (oldest, job) =>
         job.settled || (oldest && oldest.enqueuedAt <= job.enqueuedAt) ? oldest : job,
       null
@@ -210,18 +377,26 @@ export class LiveHorseDecisionWorkerClient {
       phase: this.phase,
       startedAt: this.startedAt,
       readyAt: this.readyAt,
-      queueDepth: this.queue.length + (this.active ? 1 : 0),
-      activeRequestId: this.active?.request.requestId ?? null,
+      maxInFlight: this.maxInFlight,
+      queueDepth: this.queue.length + this.inFlight.length,
+      inFlightJobs: this.inFlight.length,
+      activeRequestId: active?.request.requestId ?? null,
       activeJobAgeMs:
-        this.active && this.activeStartedAt !== null
-          ? Math.max(0, now - this.activeStartedAt)
-          : null,
+        active && this.activeStartedAt !== null ? Math.max(0, now - this.activeStartedAt) : null,
       oldestQueuedAgeMs: oldestQueued ? Math.max(0, now - oldestQueued.enqueuedAt) : null,
       lastCompletedAt: this.lastCompletedAt,
       lastComputeMs: this.lastComputeMs,
       completedJobs: this.completedJobs,
+      expiredJobs: this.expiredJobs,
+      lastExpiredAt: this.lastExpiredAt,
+      lastExpiredRequestType: this.lastExpiredRequestType,
+      lastExpiredPhase: this.lastExpiredPhase,
+      recoverableRequestErrors: this.recoverableRequestErrors,
+      lastRecoverableRequestErrorAt: this.lastRecoverableRequestErrorAt,
+      lastRecoverableRequestErrorType: this.lastRecoverableRequestErrorType,
+      lastRecoverableRequestError: this.lastRecoverableRequestError,
       lastError: this.lastError,
-      solverStores: this.solverStores ? { ...this.solverStores } : null,
+      solverStores: this.solverStores ? structuredClone(this.solverStores) : null,
       solverPolicyArtifact: this.solverPolicyArtifact
         ? structuredClone(this.solverPolicyArtifact)
         : null,
@@ -400,6 +575,8 @@ export class LiveHorseDecisionWorkerClient {
         settled: false,
         enqueuedAt,
         deadlineTimer: null,
+        executionTimer: null,
+        executionDeadlineCheck: null,
       };
       job.deadlineTimer = setTimeout(() => this.onJobDeadline(job), this.jobTimeoutMs);
       job.deadlineTimer.unref?.();
@@ -423,10 +600,10 @@ export class LiveHorseDecisionWorkerClient {
     this.detachAbort(job);
     job.reject(new HorseDecisionAbortedError());
 
-    if (this.active === job) {
+    if (this.inFlight.includes(job)) {
       // HorseLogic is synchronous and cannot be interrupted mid-instruction.
-      // The response is therefore stale-discarded; CANCEL still lets the
-      // worker skip the request when it has not started yet.
+      // A posted job's response is therefore stale-discarded; CANCEL still
+      // lets the worker skip the request when it has not started yet.
       this.safePost({ type: 'CANCEL', requestId: job.request.requestId });
       return;
     }
@@ -440,19 +617,47 @@ export class LiveHorseDecisionWorkerClient {
   private maybeDispatch(): void {
     const canDispatch =
       this.phase === 'ready' || (this.phase === 'stopping' && this.readyAt !== null);
-    if (this.active || this.dispatchHoldDepth > 0 || !canDispatch) return;
-    while (this.queue.length > 0) {
+    if (this.dispatchHoldDepth > 0 || !canDispatch) return;
+    while (this.queue.length > 0 && this.inFlight.length < this.maxInFlight) {
       const job = this.queue.shift()!;
       if (job.settled) continue;
-      this.active = job;
-      this.activeStartedAt = Date.now();
-      this.safePost(job.request);
-      return;
+      this.inFlight.push(job);
+      if (this.inFlight.length === 1) this.startExecutionClock(job);
+      if (!this.safePost(job.request)) return;
     }
-    if (this.phase === 'stopping' && !this.shutdownPosted) {
+    if (
+      this.phase === 'stopping' &&
+      !this.shutdownPosted &&
+      this.inFlight.length === 0 &&
+      this.queue.length === 0
+    ) {
       this.shutdownPosted = true;
       this.safePost({ type: 'SHUTDOWN' });
     }
+  }
+
+  /**
+   * The enqueue timer is the table/action-clock budget. A separate timer starts
+   * when a job becomes the worker's running job - the head of the posted FIFO -
+   * so a request that spent most of that budget waiting, in either queue,
+   * cannot be mistaken for a wedged worker after only a few milliseconds of
+   * actual execution. A real wedge is still terminal after a full worker
+   * execution budget.
+   */
+  private startExecutionClock(job: QueuedJob): void {
+    this.activeStartedAt = Date.now();
+    job.executionTimer = setTimeout(() => this.onExecutionDeadline(job), this.jobTimeoutMs);
+    job.executionTimer.unref?.();
+  }
+
+  /** The head's terminal answer arrived: retire it and start its successor's clock. */
+  private retireHead(job: QueuedJob): void {
+    if (this.inFlight[0] === job) this.inFlight.shift();
+    this.clearActiveDeadline();
+    this.clearJobDeadline(job);
+    this.detachAbort(job);
+    const next = this.inFlight[0];
+    if (next) this.startExecutionClock(next);
   }
 
   private onMessage(message: HorseDecisionWorkerResponse): void {
@@ -461,9 +666,13 @@ export class LiveHorseDecisionWorkerClient {
         this.fail(new Error(`unexpected READY while worker is ${this.phase}`));
         return;
       }
+      if (!horseDecisionSolverStoresAreValid(message.solverStores)) {
+        this.fail(new Error('live horse decision worker returned invalid solver-store identity'));
+        return;
+      }
       this.readyAt = Date.now();
       clearTimeout(this.readyTimer);
-      this.solverStores = { ...message.solverStores };
+      this.solverStores = structuredClone(message.solverStores);
       this.solverPolicyArtifact = structuredClone(message.solverPolicyArtifact);
       this.governor = { ...message.governor };
       this.statusSampledAt = Date.now();
@@ -479,7 +688,7 @@ export class LiveHorseDecisionWorkerClient {
     }
 
     if (message.type === 'STOPPED') {
-      if (this.phase !== 'stopping' || this.active || this.queue.length > 0) {
+      if (this.phase !== 'stopping' || this.inFlight.length > 0 || this.queue.length > 0) {
         this.fail(new Error('live horse decision worker stopped before its FIFO drained'));
         return;
       }
@@ -505,7 +714,7 @@ export class LiveHorseDecisionWorkerClient {
       return;
     }
 
-    const active = this.active;
+    const active = this.inFlight[0];
     if (!active) {
       this.fail(new Error(`unexpected horse decision worker message ${message.type}`));
       return;
@@ -531,10 +740,27 @@ export class LiveHorseDecisionWorkerClient {
       return;
     }
     if (message.type === 'ERROR') {
-      // A job-level ERROR is still worker-runtime corruption: every production
-      // request is built by this typed client. Continuing would leave health
-      // green while live seats repeatedly degrade to safety actions.
-      this.fail(new Error(message.message));
+      // Only the runtime's explicit structured-clone validation rejection is
+      // safe to isolate to one caller. A plain typed ERROR can represent Horse
+      // execution, durable-effect, or worker-runtime corruption and remains
+      // process-fatal. This distinction prevents one malformed Pineapple
+      // snapshot from restarting the fleet without hiding real worker faults.
+      if (message.recoverable !== true) {
+        this.fail(new Error(message.message));
+        return;
+      }
+      const error = new Error(message.message);
+      this.retireHead(active);
+      this.lastCompletedAt = Date.now();
+      this.recoverableRequestErrors += 1;
+      this.lastRecoverableRequestErrorAt = this.lastCompletedAt;
+      this.lastRecoverableRequestErrorType = active.request.type;
+      this.lastRecoverableRequestError = error.message;
+      if (!active.settled) {
+        active.settled = true;
+        active.reject(error);
+      }
+      this.maybeDispatch();
       return;
     }
     if (message.type !== 'CANCELLED' && message.type !== active.expected) {
@@ -560,10 +786,7 @@ export class LiveHorseDecisionWorkerClient {
       }
     }
 
-    this.active = null;
-    this.clearActiveDeadline();
-    this.clearJobDeadline(active);
-    this.detachAbort(active);
+    this.retireHead(active);
     this.lastCompletedAt = Date.now();
     this.completedJobs += 1;
     if (
@@ -574,7 +797,11 @@ export class LiveHorseDecisionWorkerClient {
       this.lastComputeMs = message.computeMs;
       if (this.governor) this.governor = { ...this.governor, scale: message.governorScale };
     } else if (message.type === 'STATUS_RESULT') {
-      this.solverStores = { ...message.solverStores };
+      if (!horseDecisionSolverStoresAreValid(message.solverStores)) {
+        this.fail(new Error('live horse decision worker status lost solver-store identity'));
+        return;
+      }
+      this.solverStores = structuredClone(message.solverStores);
       this.solverPolicyArtifact = structuredClone(message.solverPolicyArtifact);
       this.governor = { ...message.governor };
       this.statusSampledAt = this.lastCompletedAt;
@@ -602,11 +829,10 @@ export class LiveHorseDecisionWorkerClient {
     this.stopStatusTimer();
     this.clearActiveDeadline();
     this.rejectReady(error);
-    if (this.active) {
-      this.clearJobDeadline(this.active);
-      this.detachAbort(this.active);
-      if (!this.active.settled) this.active.reject(error);
-      this.active = null;
+    for (const job of this.inFlight.splice(0)) {
+      this.clearJobDeadline(job);
+      this.detachAbort(job);
+      if (!job.settled) job.reject(error);
     }
     for (const job of this.queue.splice(0)) {
       this.clearJobDeadline(job);
@@ -642,30 +868,69 @@ export class LiveHorseDecisionWorkerClient {
   }
 
   private onJobDeadline(job: QueuedJob): void {
-    if (this.active === job) {
-      this.fail(
-        new Error(
-          `live horse decision worker job ${job.request.requestId} (${job.request.type}) exceeded its ${this.jobTimeoutMs}ms queue-plus-compute deadline`
-        )
-      );
-      return;
-    }
     if (job.settled) return;
-    const index = this.queue.indexOf(job);
-    if (index >= 0) this.queue.splice(index, 1);
+    // This callback owns the elapsed enqueue timer. Keep the independently
+    // armed execution timer intact when the job is already running.
+    job.deadlineTimer = null;
+    const posted = this.inFlight.includes(job);
+    this.noteExpiredJob(job, this.inFlight[0] === job ? 'active' : 'queued');
     job.settled = true;
     this.detachAbort(job);
     job.reject(
-      new HorseDecisionAbortedError(
-        `horse decision expired after ${this.jobTimeoutMs}ms before worker dispatch`
+      new HorseDecisionExpiredError(
+        posted
+          ? `horse decision expired after ${this.jobTimeoutMs}ms of queue-plus-compute time`
+          : `horse decision expired after ${this.jobTimeoutMs}ms before worker dispatch`
       )
     );
+    if (posted) {
+      // HorseLogic is synchronous. Keep this request as a FIFO owner until
+      // its terminal response arrives, then stale-discard that response just
+      // like an active authority abort. Killing the sole worker here caused a
+      // full-fleet restart when a 7.8-second queue wait left a healthy request
+      // only milliseconds of the enqueue deadline to compute. CANCEL lets the
+      // worker skip it if it is still waiting behind older posted work.
+      this.safePost({ type: 'CANCEL', requestId: job.request.requestId });
+      return;
+    }
+    const index = this.queue.indexOf(job);
+    if (index >= 0) this.queue.splice(index, 1);
     this.maybeDispatch();
+  }
+
+  private onExecutionDeadline(job: QueuedJob): void {
+    if (this.inFlight[0] !== job || this.phase === 'failed' || this.phase === 'stopped') return;
+    job.executionTimer = null;
+    // A worker may have posted its response before this timer became runnable
+    // while the main loop was busy. Timers run before MessagePort's poll work,
+    // so give that already-completed response one poll turn to retire the head.
+    // A genuinely wedged worker still fails in this same event-loop cycle.
+    job.executionDeadlineCheck = setImmediate(() => {
+      job.executionDeadlineCheck = null;
+      if (this.inFlight[0] !== job || this.phase === 'failed' || this.phase === 'stopped') return;
+      this.fail(
+        new Error(
+          `live horse decision worker job ${job.request.requestId} (${job.request.type}) exceeded its ${this.jobTimeoutMs}ms execution deadline after dispatch`
+        )
+      );
+    });
+    job.executionDeadlineCheck.unref?.();
+  }
+
+  private noteExpiredJob(job: QueuedJob, phase: 'queued' | 'active'): void {
+    this.expiredJobs += 1;
+    this.lastExpiredAt = Date.now();
+    this.lastExpiredRequestType = job.request.type;
+    this.lastExpiredPhase = phase;
   }
 
   private clearJobDeadline(job: QueuedJob): void {
     if (job.deadlineTimer) clearTimeout(job.deadlineTimer);
     job.deadlineTimer = null;
+    if (job.executionTimer) clearTimeout(job.executionTimer);
+    job.executionTimer = null;
+    if (job.executionDeadlineCheck) clearImmediate(job.executionDeadlineCheck);
+    job.executionDeadlineCheck = null;
   }
 
   private clearActiveDeadline(): void {
@@ -688,7 +953,7 @@ export class LiveHorseDecisionWorkerClient {
 
   private queueStatusRefresh(): void {
     if (this.phase !== 'ready') return;
-    if (this.active?.request.type === 'STATUS') return;
+    if (this.inFlight.some((job) => job.request.type === 'STATUS')) return;
     if (this.queue.some((job) => !job.settled && job.request.type === 'STATUS')) return;
     const request = {
       type: 'STATUS' as const,

@@ -1,0 +1,93 @@
+{
+  "programme": "109-item comprehensive Club Arena accounting audit",
+  "control": "CA-03-11",
+  "phase": 3,
+  "status": "native_semantics_accepted_current_dependency_parity_pending",
+  "source_probe": "scripts/ci/probes/tournament-cancellation-entrant-refunds.sql",
+  "source_guard": "tests/tournament-cancellation-entrant-refunds.guard.test.ts",
+  "source_guard_scope": "Text contract only; passing this guard is not native cancellation acceptance.",
+  "prepared_policy_changes": [
+    "Use authenticated request-bound registration instead of the retired one-argument registration alias.",
+    "Assert registration charges and stamps its host-club wallet while preserving the other club wallet.",
+    "Require the wallet-funded entrant to receive one 100-chip refund in its exact source wallet.",
+    "Require the satellite-funded entrant to receive one 100-chip tournament-entry-only ticket and zero wallet chips.",
+    "Require the tournament-ticket-funded entrant to receive exactly one replacement 100-chip tournament-entry-only ticket and zero wallet chips.",
+    "Retain exact stored receipt replay, fee attribution, escrow closure and immutable evidence assertions.",
+    "Restore only the exact tracked atomic_cancel_tournament platform-source seed omitted from the schema-only database."
+  ],
+  "seed_provenance": {
+    "path": "supabase/migrations/20260905203123_phase_6_1_a_settlement_outside_the_platform_needs_an_approve.sql",
+    "source": "atomic_cancel_tournament",
+    "note": "DB caller",
+    "admission_guard_changed": false
+  },
+  "native_attempts": [
+    {
+      "run": "without_missing_static_source_seed",
+      "exit_code": 3,
+      "result": "exact refund source atomic_cancel_tournament is not a platform authority",
+      "rollback_verified": true,
+      "log": "/tmp/codex-chip-entry-cancellation-native.log"
+    },
+    {
+      "run": "with_exact_tracked_static_source_seed",
+      "exit_code": 3,
+      "result": "accepted exact source-instrument outcome; the old cash-for-satellite expectation was the defect",
+      "observed": {
+        "ok": true,
+        "fully_settled": true,
+        "total_refunded": 100,
+        "refund_line_count": 1,
+        "total_ticket_returned": 100,
+        "ticket_return_count": 1,
+        "fees_reversed": 20
+      },
+      "expected": {
+        "total_refunded": 100,
+        "refund_line_count": 1,
+        "total_ticket_returned": 100,
+        "ticket_return_count": 1,
+        "satellite_wallet_chips_credited": 0,
+        "fees_reversed": 20
+      },
+      "semantic_acceptance": true,
+      "rollback_verified": true,
+      "current_corrected_sql_bytes": 29164,
+      "current_corrected_sql_sha256": "485d48aad7147ab9b54d8c0f3118a6d928948468aade3da2361452f9ccedfce5",
+      "log": "/tmp/codex-chip-entry-cancellation-seeded-native.log"
+    }
+  ],
+  "local_dependency_fingerprints": [
+    {
+      "signature": "atomic_cancel_tournament(uuid,uuid)",
+      "body_md5": "6aae8b91e135ac1eac7e6a768b574c13",
+      "acl": null
+    },
+    {
+      "signature": "fn_ca_tournament_cancellation_receipt(uuid,uuid)",
+      "body_md5": "1e4c6d2f87ac2068455dbff2ace3fb2e",
+      "acl": null
+    },
+    {
+      "signature": "fn_ca_satellite_settlement_receipt(uuid,uuid)",
+      "body_md5": "d05d7b1b783ce29fa2e806e1028adf36",
+      "acl": null
+    }
+  ],
+  "known_parity_gap": {
+    "signature": "fn_ca_satellite_settlement_receipt(uuid,uuid)",
+    "previously_recorded_live_body_md5_prefix": "381b",
+    "previously_recorded_live_acl": "owner-only",
+    "local_body_has_null_acl": true,
+    "comparison_scope": "Saved fingerprint provenance only; no new live definition read or restoration attempted.",
+    "full_current_catalog_parity": false
+  },
+  "limits": [
+    "The native mixed-schema run accepted here proves the source-instrument split, not complete current-live catalog parity.",
+    "The eight verified satellite origin-wallet groups exercise unregister/refund and actual-start migration replay, not atomic cancellation.",
+    "The 100-chip cash refund plus 100-chip entry-ticket outcome is accepted; CA-03-11 remains open only for a current dependency-graph replay and the remaining concurrency/interruption cases.",
+    "No deeper rejected cancellation source inspection, denied restoration, production financial write, engine action or Stage B production mutation was attempted."
+  ],
+  "cleanup": "Transaction-scoped registration wrapper and current origin-wallet function rehearsals were rolled back. Empty users, tournaments and ca_settle_sources were independently verified; original resolver hash and missing request wrapper were restored. Database returned to coordinator.",
+  "required_next_step": "Verify a complete authorized current dependency graph, then replay this already-corrected source-instrument probe and the remaining concurrency/interruption cases. Do not treat source guard tests alone as live catalog parity."
+}

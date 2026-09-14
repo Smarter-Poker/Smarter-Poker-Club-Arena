@@ -62,9 +62,6 @@
   .rakeback-page .summary-card,
   .rakeback-page .rakeback-chart,
   .rakeback-page .period-row,
-  .promotions-page .daily-bonus-banner,
-  .promotions-page .referral-banner,
-  .promotions-page .promo-card,
   .bonus-page .day-card,
   .bonus-page .special-card,
   .achievements-page .achievement-card,
@@ -75,7 +72,9 @@
   /* THE MATERIAL BELONGS HERE, not in six page stylesheets fighting it.
      These rules are `!important` by design - the sheet exists to converge the
      family onto one surface - which means a page that writes its own panel
-     material loses. Measured 2026-09-05: RakebackPage.css had just been given
+     material loses. The promotions page left this list on 2026-09-09: its
+     offers print on the spade console (#ClubArenaConsole) and nothing there
+     is a panel any more. Measured 2026-09-05: RakebackPage.css had just been given
      the machined realism treatment and none of it rendered, because
      `.rakeback-page .summary-card` below overpaints it.
      So the realism vocabulary lands in the CONVERGENCE layer, and all six
@@ -101,7 +100,6 @@
 :is(
   .transaction-history-page .transaction-row,
   .rakeback-page .period-row,
-  .promotions-page .promo-card,
   .bonus-page .special-card,
   .achievements-page .achievement-card
 ) {
@@ -112,7 +110,6 @@
 :is(
   .transaction-history-page .transaction-row,
   .rakeback-page .period-row,
-  .promotions-page .promo-card,
   .bonus-page .special-card,
   .achievements-page .achievement-card
 )::after {
@@ -146,7 +143,7 @@
   text-transform: uppercase;
 }
 
-:is(.rakeback-page .rakeback-promo-banner, .promotions-page .daily-bonus-banner) {
+.rakeback-page .rakeback-promo-banner {
   color: #ddf3ff !important;
   animation: none !important;
   /* The last #3aa8ff in this sheet. The lit spine down a promo banner is the
@@ -162,7 +159,6 @@
     .vip-page .vip-section,
     .rakeback-page .rakeback-summary,
     .rakeback-page .rakeback-chart,
-    .promotions-page .promotions-list,
     .bonus-page .bonus-section
   ) {
     margin-right: 12px;

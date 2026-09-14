@@ -150,7 +150,11 @@ async function openRiver(
  */
 test.describe('with Reduce Motion on, the perk survives - only the motion collapses', () => {
   test('the river still holds face down and still opens under the finger', async ({ page }) => {
-    await openRiver(page, { reduce: true });
+    // Freeze the independent auto-open ceiling while Playwright is driving
+    // the gesture. A saturated CI runner can otherwise spend the whole 2.55s
+    // allowance between mouse steps and remove the host mid-drag. The real
+    // ceiling remains covered by the dedicated "left alone" test below.
+    await openRiver(page, { reduce: true, manualClock: true });
     const host = page.locator(HOST);
     /* ONE evaluate per reading. The card opens itself at the ceiling and the
        host unmounts ~400ms later, so a chain of polling assertions can spend
@@ -187,6 +191,8 @@ test.describe('with Reduce Motion on, the perk survives - only the motion collap
 
     await page.mouse.move(cx + box.width * 1.2, cy, { steps: 6 });
     await page.mouse.up();
+    // CSS animations use the compositor clock, while the independent JS
+    // auto-open deadline remains paused by the test clock.
     await page.waitForTimeout(450);
     const end = await faces();
     expect(end.gone || end.front > 0.9, `face up after release (${JSON.stringify(end)})`).toBe(
@@ -233,7 +239,9 @@ test.describe('the river squeeze, with a real mouse', () => {
   });
 
   test('a drag turns it, and letting go past the threshold opens it', async ({ page }) => {
-    await openRiver(page);
+    // Keep the server-paced ceiling from racing the deliberately stepped
+    // synthetic pointer. Automatic opening is verified separately below.
+    await openRiver(page, { manualClock: true });
     const host = page.locator(HOST);
     await expect(host).toHaveCount(1, { timeout: 4000 });
     const box = (await host.boundingBox())!;

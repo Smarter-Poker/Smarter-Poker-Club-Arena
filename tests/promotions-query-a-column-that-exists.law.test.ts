@@ -26,6 +26,9 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+// Read the migration directory once per file, not once per question - it is
+// the one thing in this repo that only ever grows. See the helper's header.
+import { migrationCorpus, migrationsMentioning } from './helpers/migrationCorpus';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 /** Strip comments so a guard cannot pass on prose describing the old code. */
@@ -57,13 +60,7 @@ describe('PromotionService filters on real columns', () => {
 });
 
 describe('the money-path migrations that guard the bounty chests', () => {
-  const MIGRATIONS = path.join(process.cwd(), 'supabase', 'migrations');
-  const all = () =>
-    fs
-      .readdirSync(MIGRATIONS)
-      .filter((f) => f.endsWith('.sql'))
-      .sort()
-      .map((f) => ({ name: f, body: fs.readFileSync(path.join(MIGRATIONS, f), 'utf8') }));
+  const all = () => migrationCorpus().map((m) => ({ name: m.name, body: m.sql }));
 
   it('an award cannot commit without recipients', () => {
     /**
@@ -89,31 +86,53 @@ describe('the money-path migrations that guard the bounty chests', () => {
      * from retry forever, and fn_mystery_bounty_settle then reported the event
      * "balanced" off that same false flag.
      */
-    const owning = all().filter((m) => m.body.includes('FUNCTION public.fn_mystery_bounty_pay'));
+    const owning = all().filter((m) =>
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.fn_mystery_bounty_pay\s*\(/i.test(m.body)
+    );
     expect(owning.length, 'no migration defines fn_mystery_bounty_pay').toBeGreaterThan(0);
     const latest = owning[owning.length - 1].body;
-    const delegatesToLockedImplementation = latest.includes(
+    const creditedImplementation = owning.find((m) =>
+      m.body.includes('A RECIPIENT IS ONLY "PAID" IF THE CREDIT ACTUALLY MOVED')
+    )?.body;
+    expect(
+      creditedImplementation,
+      'the credit-checked mystery bounty payer migration is missing'
+    ).toBeDefined();
+
+    // The original correction must keep the paid marker inside the branch
+    // whose wallet credit actually moved.
+    expect(creditedImplementation).toMatch(
+      /IF COALESCE\(v_credited, false\) THEN[\s\S]*?SET paid_at = now\(\)/
+    );
+    expect(creditedImplementation).toMatch(/v_refused/);
+
+    // The outbox hardening edits that exact credited branch in the stored
+    // function body, strengthening it to require the exact paid amount before
+    // the same recipient UPDATE. It then seals the implementation behind a
+    // tournament-first wrapper.
+    const hardening = all().find((m) =>
+      m.body.includes('fn_mystery_bounty_pay exact-credit substitution did not match exactly once')
+    )?.body;
+    expect(hardening, 'the atomic mystery payer hardening is missing').toBeDefined();
+    expect(hardening).toMatch(
+      /v_old := \$old\$IF COALESCE\(v_credited, false\) THEN[\s\S]*?v_new := \$new\$IF COALESCE\(v_credited, false\)[\s\S]*?UPDATE public\.tournament_bounty_award_recipients/
+    );
+    expect(hardening).toContain(
       'RETURN public.fn_mystery_bounty_pay_unguarded_20260907(p_award_id)'
     );
-    const payingImplementation = delegatesToLockedImplementation
-      ? (owning.at(-2)?.body ?? '')
-      : latest;
 
-    if (delegatesToLockedImplementation) {
-      // The current public entry point serializes on the tournament before it
-      // invokes the prior, credit-checked implementation. Follow that explicit
-      // delegation instead of mistaking the lock wrapper for the payer body.
-      expect(latest).toMatch(
-        /PERFORM 1 FROM public\.tournaments[\s\S]*?FOR UPDATE;[\s\S]*?fn_mystery_bounty_pay_unguarded_20260907/
-      );
-    }
-
-    // The stamp must sit inside the credited branch.
-    expect(payingImplementation).toMatch(
-      /IF COALESCE\(v_credited, false\) THEN[\s\S]{0,400}?SET paid_at = now\(\)/
+    // The terminal authority must now own the tournament and keep the
+    // exact-credit check in its self-contained root. Stage two removes the
+    // temporary rolling-deployment helper, so delegating to it here would
+    // reopen the money path after cleanup.
+    const latestPayer = latest.match(
+      /CREATE OR REPLACE FUNCTION public\.fn_mystery_bounty_pay\(p_award_id uuid\)[\s\S]*?\$function\$;/
+    )?.[0];
+    expect(latestPayer, 'the latest migration has no complete mystery payer root').toBeDefined();
+    expect(latestPayer).toMatch(
+      /PERFORM 1 FROM public\.tournaments t WHERE t\.id=v_tournament_id FOR UPDATE;[\s\S]*?IF COALESCE\(v_credited, false\)[\s\S]*?AND round\(COALESCE\(\(v_settle->>'paid'\)::numeric,0\),2\)[\s\S]*?UPDATE public\.tournament_bounty_award_recipients[\s\S]*?SET paid_at = now\(\)/
     );
-    // And an award must not be completed over a refusal.
-    expect(payingImplementation).toMatch(/v_refused/);
+    expect(latestPayer).not.toContain('fn_mystery_bounty_pay_unguarded_20260907');
   });
 });
 
@@ -137,15 +156,8 @@ describe('a promotion cannot advertise a prize nobody can win, silently', () => 
    *
    * WHEN THE PAYOUT IS BUILT: delete the trigger and this test together.
    */
-  const MIGRATIONS = path.join(process.cwd(), 'supabase', 'migrations');
-
   it('warns when an unpayable promotion type goes active with a prize pool', () => {
-    const owning = fs
-      .readdirSync(MIGRATIONS)
-      .filter((f) => f.endsWith('.sql'))
-      .sort()
-      .map((f) => fs.readFileSync(path.join(MIGRATIONS, f), 'utf8'))
-      .filter((b) => b.includes('trg_promotion_prize_has_no_payout_path'));
+    const owning = migrationsMentioning('trg_promotion_prize_has_no_payout_path').map((m) => m.sql);
 
     expect(owning.length, 'the no-payout-path guard migration is missing').toBeGreaterThan(0);
     const latest = owning[owning.length - 1];

@@ -18,6 +18,11 @@ import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { IN_LIST_CHUNK, selectInChunks } from './supabase/chunkedIn.js';
 import { reportError } from './errorReporter.js';
+import {
+  emptySeatFirstPrecheckTally,
+  recordSeatFirstPrecheck,
+  type SeatFirstPrecheckTally,
+} from './seatFirstPrecheckMetrics.js';
 import nodeCrypto from 'node:crypto';
 import {
   BUY_IN_LADDER,
@@ -28,9 +33,16 @@ import {
   wholeChips,
 } from '../config/buyIn.js';
 import { gameLaneFor, horseHash, isActiveNow } from './HorseBehavior.js';
+import { BOOKING_COUNTS_WITHIN_MS } from './HorseGameLoad.js';
 import { bankrollPolicyFor, canEnterTournament } from './HorseBankroll.js';
 import { bankrollEvent } from './HorseBankrollTelemetry.js';
 import { buildLadder } from '../tournament/blindLadder.js';
+import { mttBountyAmount } from '../tournament/mttBountyAllocation.js';
+import {
+  MTT_BLIND_PRESETS,
+  mttSpeedColumns,
+  mttPayoutPercent,
+} from '../tournament/mttStructurePolicy.js';
 import { clampSeatsForVariant } from '../config/tableSeating.js';
 import {
   FREE_BUY_HOSTS,
@@ -101,7 +113,9 @@ interface TournamentConfig {
   horsesToRegister: number;
   blindStructure: any[];
   payoutStructure: any[];
+  payoutPercent?: 10 | 15 | 20;
   bountyPercent?: number;
+  bountyAmount?: number;
   /**
    * ROLLOUT 2026-08-15 (Dan: "enable on a few recurring formats first").
    * Rebuys / re-entries / add-ons had NEVER been offered: 0 of 8,210
@@ -126,6 +140,7 @@ interface SNGConfig {
   horsesToRegister: number;
   blindStructure: any[];
   payoutStructure: any[];
+  payoutPercent?: 10 | 15 | 20;
 }
 
 interface SpinConfig {
@@ -169,7 +184,9 @@ interface XMTTConfig {
   horsesToRegister: number;
   blindStructure: any[];
   payoutStructure: any[];
+  payoutPercent?: 10 | 15 | 20;
   bountyPercent?: number;
+  bountyAmount?: number;
   /**
    * ROLLOUT 2026-08-15 (Dan: "enable on a few recurring formats first").
    * Rebuys / re-entries / add-ons had NEVER been offered: 0 of 8,210
@@ -227,14 +244,7 @@ export const BLIND_STRUCTURES = {
   // A turbo reaches its own conclusion well inside 24 levels; deeper than that
   // and the ladder's own 1.58x cadence walks past MAX_BLIND_VALUE, which is how
   // the first draft of this generated a 25,000,000 big blind at level 30.
-  TURBO: buildLadder({
-    startBigBlind: 50,
-    speed: 'TURBO',
-    levels: 24,
-    openingMinutes: 4,
-    floorMinutes: 2,
-    anteFromLevel: 1,
-  }),
+  TURBO: MTT_BLIND_PRESETS.TURBO,
   /**
    * ═══════════════════════════════════════════════════════════════════════
    *  THE FREE BUY LADDER, and why it is not TURBO
@@ -271,22 +281,8 @@ export const BLIND_STRUCTURES = {
     anteFromLevel: 1,
   }),
   // 40 levels at ~1.33x — the reference MTT ladder.
-  STANDARD: buildLadder({
-    startBigBlind: 50,
-    speed: 'STANDARD',
-    levels: 40,
-    openingMinutes: 10,
-    floorMinutes: 5,
-    anteFromLevel: 2,
-  }),
-  HYPER_TURBO: buildLadder({
-    startBigBlind: 100,
-    speed: 'HYPER_TURBO',
-    levels: 16,
-    openingMinutes: 2,
-    floorMinutes: 1,
-    anteFromLevel: 1,
-  }),
+  STANDARD: MTT_BLIND_PRESETS.STANDARD,
+  HYPER_TURBO: MTT_BLIND_PRESETS.HYPER_TURBO,
   SNG_6MAX: buildLadder({
     startBigBlind: 20,
     speed: 'TURBO',
@@ -979,6 +975,25 @@ export function seatFirstHeldEmpty(
  * prove two properties without a database: a busy horse is never selected,
  * and selection can reach the whole fleet rather than a stable first page.
  */
+/**
+ * Where registerHorses starts walking its candidate queue for THIS event in
+ * THIS hour: an offset in [0, poolLength). Pure, so the spread is pinned
+ * without a database. The event id is in the seed so two events ramped in the
+ * same hour start at different horses; the hour is in it so one event's queue
+ * still moves along over the day (the old `(hour * 7919) % length` kept only
+ * the second property, and one horse collected 34 bookings in an hour).
+ */
+export function rampQueueRotation(
+  tournamentId: string,
+  hourUTC: number,
+  poolLength: number
+): number {
+  const n = Math.max(0, Math.floor(Number(poolLength) || 0));
+  if (n === 0) return 0;
+  const seed = (horseHash(`${tournamentId}:ramp-rotation`) ^ Math.imul(hourUTC, 7919)) >>> 0;
+  return mix32(seed) % n;
+}
+
 export function selectHorseCandidates(
   fleetIds: string[],
   busy: ReadonlySet<string>,
@@ -1132,9 +1147,10 @@ export function automatedRegistrationIsPermitted(
  *     ahead of its own clock. There is always a seat for a human.
  *  2. It is capped at MTT_PRESTART_MAX_HORSES regardless of field size,
  *     UNLESS the event carries a guarantee - see the guarantee block in the
- *     function. Every registration is a REAL buy-in through
- *     fn_register_horse_for_tournament (real wallet debit, real rake, real
- *     prize-pool contribution), so an uncapped ramp on a 1,000-seat event
+ *     function. Every registration is a REAL funded entry through
+ *     fn_register_horse_for_tournament (an exact returned ticket first, or a
+ *     real wallet debit; both write real rake and prize-pool contribution),
+ *     so an uncapped ramp on a 1,000-seat event
  *     would spend the club's chips on a field nobody asked for. A guarantee
  *     is the one case where the club has ALREADY promised that money, so
  *     covering it with entries is strictly better than paying it as overlay.
@@ -1296,11 +1312,114 @@ export const HORSE_MAX_CONCURRENT_TABLES = 4;
  * further out than this can still take one and be back before the field
  * seats. Measured 2026-09-07: without this bound 2,092 far-future bookings
  * held 615 of 1,000 horses out of every open board.
+ *
+ * THE DATABASE'S WINDOW, NOT A SECOND ONE (2026-09-11). This was a literal 30
+ * minutes while `fn_concurrent_game_load` clause (2) counts a booking from 60
+ * minutes before its start ("A BOOKING IS A GAME FROM ONE HOUR BEFORE ITS
+ * TOURNAMENT STARTS") and HorseGameLoad.ts, the fleet's mirror of the same
+ * function, says 60 too. A picker that counts less than the trigger offers
+ * horses the trigger then refuses: measured live 2026-09-11 13:5x UTC, 21 of
+ * 1,000 horses read as pickable here and at four games in the database, and
+ * every one of them cost a locked RPC that ended "FOUR TABLE LIMIT". One
+ * constant, imported from the mirror the fleet already trusts, so the three
+ * cannot disagree again.
  */
-export const REGISTRATION_LOAD_HORIZON_MS = 30 * 60_000;
+export const REGISTRATION_LOAD_HORIZON_MS = BOOKING_COUNTS_WITHIN_MS;
 
 export function horseAtCapacity(load: number): boolean {
   return (Number(load) || 0) >= HORSE_MAX_CONCURRENT_TABLES;
+}
+
+/**
+ * How long a HorseTopUpPass may hold an answer (2026-09-11). The pass forgets
+ * everything when one of ITS top-ups seats or registers somebody, but the rest
+ * of the platform - the fleet's cash seating, the seat-first fast lane, the
+ * scheduler, humans buying seats - moves horses without telling it. The old
+ * walk re-read at the start of every top-up, so its answers were a few
+ * seconds old at the first seat. Ten seconds keeps them close to that: a walk
+ * that runs 40 s after a thaw re-reads four times instead of ~150, and a walk
+ * that slows down for any reason cannot make its answers any older.
+ */
+export const HORSE_TOP_UP_PASS_MAX_AGE_MS = 10_000;
+
+/**
+ * ONE FLEET READ PER DISCOVERY PASS (2026-09-11).
+ *
+ * GameServer.discoverTournaments tops up every short REGISTERING tournament,
+ * and every topUpWithHorses call re-read the same pass-invariant answers
+ * before it could say "nobody": the four-game load map (three 1,000-row joined
+ * seat pages plus a registration page), the whole horse fleet (two pages), the
+ * cash-room reserve (two reads) and its club's entire membership (two to four
+ * reads) - eleven of the ~16 sequential round trips of a seat-first top-up.
+ * Measured on production 2026-09-11 04:36-04:44Z: ~146 such calls in one pass
+ * at a median 2.6 s each, nearly all ending "0 of N claimable", so a pass took
+ * 8-10 minutes and every start, ramp and top-up waited behind it.
+ *
+ * A pass holds those answers once. It changes WHEN they are read, never what
+ * is decided from them:
+ *   - an unknown answer (null load map, incomplete page, unreadable reserve or
+ *     membership) is never held, so the next caller asks again, as before;
+ *   - when one of the pass's top-ups has seated or registered anybody, the pass
+ *     forgets it all, so the next claim is decided on fresh reads, as the old
+ *     walk did;
+ *   - nothing is held longer than HORSE_TOP_UP_PASS_MAX_AGE_MS, so what the
+ *     rest of the platform changes reaches the walk within seconds however
+ *     long the walk runs;
+ *   - the database still decides every claim (the four-table trigger under its
+ *     per-player lock, the seat RPC's tournament lane, roster capacity),
+ *     exactly as it always did across the read-then-claim gap every caller
+ *     already has.
+ * A caller that passes no HorseTopUpPass (the fast lane, the boards, the
+ * scheduler, the overlay guard) reads everything per call, unchanged.
+ */
+export class HorseTopUpPass {
+  private readonly held = new Map<string, { readAt: number; answer: Promise<unknown> }>();
+  private readonly maxAgeMs: number;
+  private readonly now: () => number;
+
+  constructor(
+    maxAgeMs: number = HORSE_TOP_UP_PASS_MAX_AGE_MS,
+    now: () => number = () => Date.now()
+  ) {
+    this.maxAgeMs = maxAgeMs;
+    this.now = now;
+  }
+
+  /**
+   * The answer for `key`, read at most once per pass and per maxAgeMs; `keep`
+   * says whether it may be held at all.
+   */
+  once<T>(key: string, read: () => Promise<T>, keep: (value: T) => boolean): Promise<T> {
+    const held = this.held.get(key);
+    if (held && this.now() - held.readAt < this.maxAgeMs) return held.answer as Promise<T>;
+    const pending: Promise<T> = read().then(
+      (value) => {
+        if (!keep(value) && this.held.get(key)?.answer === pending) this.held.delete(key);
+        return value;
+      },
+      (error: unknown) => {
+        if (this.held.get(key)?.answer === pending) this.held.delete(key);
+        throw error;
+      }
+    );
+    this.held.set(key, { readAt: this.now(), answer: pending });
+    return pending;
+  }
+
+  /** Somebody was seated or registered: nothing held may decide the next claim. */
+  forget(): void {
+    this.held.clear();
+  }
+}
+
+/** Through the pass when the caller holds one, straight to the database when not. */
+function viaTopUpPass<T>(
+  pass: HorseTopUpPass | undefined,
+  key: string,
+  read: () => Promise<T>,
+  keep: (value: T) => boolean
+): Promise<T> {
+  return pass ? pass.once(key, read, keep) : read();
 }
 
 /**
@@ -1528,6 +1647,193 @@ export function isExpectedSeatRefusal(message: string | null | undefined): boole
   );
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A SEAT THE HORSE ALREADY HOLDS IS NOT A CALL WORTH QUEUEING FOR
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * fn_seat_horse_in_seat_first_game begins, before it reads a single row of the
+ * game, with fn_ca_lock_tournament_seat_acquisition: an EXCLUSIVE advisory lock
+ * on one platform-wide key ('ca:tournament-terminal-settlement:v1') that every
+ * hand settlement holds SHARED for the whole of its commit. Heavyweight-lock
+ * queueing is FIFO, so each call waits for every in-flight hand commit and
+ * every hand commit arriving after it queues behind the call. Measured
+ * 2026-09-10 03:05-03:40 UTC on the 2XL box (pg_stat_statements): 1,533 calls,
+ * mean 590 ms against a 2.4 ms minimum, max 5,889 ms - the same figure as the
+ * hand-commit max, because it is the same convoy - and 572 shared blocks per
+ * call, which is under 5 ms of real work. pg_stat_activity sampled at 100 ms
+ * during a seeding burst showed the RPC in a Lock wait 100 samples out of 110.
+ *
+ * And most of those calls seat nobody. The same window produced at most 579
+ * seats for 1,533 calls; 02:34-04:04 produced 266 live horse seats at
+ * seat-first tables for 4,025 calls. The RPC answers `{ok:true,
+ * already_seated:true}` when the horse already holds a live seat at the game's
+ * primary table, and `{ok:false, reason:'table_full'}` when no seat number in
+ * 1..capacity is free - after it has taken the lock and stalled the hand path.
+ *
+ * The lock cannot be narrowed on the database side without changing what a
+ * concurrent settlement can observe, so the fix is on this side of the wire.
+ * topUpWithHorses already reads the game's live seats before it fills, so it
+ * now keeps what it read - who is seated, which seat numbers are taken, and
+ * the table's capacity - and asks these two functions before each call. A
+ * horse the ledger shows seated is skipped; a table the ledger shows full is
+ * skipped. Every other horse goes through the SAME RPC with the SAME
+ * arguments, and the RPC remains the authority: it re-checks both conditions
+ * under its lock, so a stale ledger costs at most one wasted call, never a
+ * wrong seat. The one difference a horse can observe is that a seat it
+ * vacated between the read and the (now skipped) call is offered again on the
+ * next five-second pass instead of this one.
+ *
+ * The race the read cannot see is the other one: on 2026-09-10 every one of
+ * the 199 open seat-first games had a table capacity equal to its tournament
+ * capacity, so a `table_full` answer today is always another service filling
+ * the last seat on the same five-second tick (GameServer discovery, the
+ * scheduler and the overlay guard each own a seeder). The loop carries three
+ * candidates per seat to absorb refusals, so one such answer used to be
+ * followed by two more calls for the same answer. Once the RPC has said
+ * `table_full` under its lock, the ledger believes it for the rest of the pass.
+ *
+ * HORSES ARE PLAYERS (CLAUDE.md 10.5). Nothing here filters on is_horse and
+ * nothing here denies a horse a seat it would have received: the only calls
+ * removed are the ones whose answer was already `already_seated` or
+ * `table_full`. A horse that needs a seat still gets it through the same door.
+ *
+ * The capacity expression is the RPC's own, copied rather than approximated:
+ * COALESCE(NULLIF(tables.max_players, 0), tournaments.max_players, 3). When
+ * the table row cannot be read the capacity is UNKNOWN and the table-full skip
+ * is disabled - an unknown never skips a call. Pure, so the decision is pinned
+ * without a database.
+ */
+export interface SeatFirstSeatLedger {
+  /** Holders of live seats at the game's primary table, as read before the fill. */
+  seatedUsers: Set<string>;
+  /** Seat numbers with a live occupant at that table. */
+  occupiedSeats: Set<number>;
+  /** The RPC's capacity expression, or null when the table row was unreadable. */
+  capacity: number | null;
+  /**
+   * Set once the RPC itself has answered `table_full` this pass. The authority
+   * has spoken: the spare candidates behind that answer (three per seat, see
+   * seatFirstCandidateCount) would each queue for the lock to hear it again.
+   * A seat freed in the same five seconds is offered on the next pass.
+   */
+  rpcSaidFull: boolean;
+}
+
+export type SeatFirstPrecheck = 'call' | 'already_seated' | 'table_full';
+
+export function seatFirstSeatLedger(
+  seatRows: Array<{ user_id?: string | null; seat_number?: number | null }> | null | undefined,
+  /** tables.max_players; null for a NULL column, undefined when the row could not be read. */
+  tableMaxPlayers: number | null | undefined,
+  tournamentMaxPlayers: number | null | undefined
+): SeatFirstSeatLedger {
+  const seatedUsers = new Set<string>();
+  const occupiedSeats = new Set<number>();
+  for (const row of seatRows ?? []) {
+    const id = String(row?.user_id ?? '');
+    if (id.length > 0) seatedUsers.add(id);
+    const n = Number(row?.seat_number);
+    if (Number.isInteger(n) && n > 0) occupiedSeats.add(n);
+  }
+  let capacity: number | null;
+  if (tableMaxPlayers === undefined) {
+    capacity = null;
+  } else if (tableMaxPlayers !== null && Number(tableMaxPlayers) !== 0) {
+    capacity = Math.floor(Number(tableMaxPlayers));
+  } else if (tournamentMaxPlayers !== null && tournamentMaxPlayers !== undefined) {
+    capacity = Math.floor(Number(tournamentMaxPlayers));
+  } else {
+    capacity = 3;
+  }
+  if (capacity !== null && !Number.isFinite(capacity)) capacity = null;
+  return { seatedUsers, occupiedSeats, capacity, rpcSaidFull: false };
+}
+
+export function seatFirstSeatPrecheck(
+  ledger: SeatFirstSeatLedger,
+  horse: string
+): SeatFirstPrecheck {
+  // The RPC's order: the seat the horse already holds is checked before the
+  // free-seat search, so a seated horse at a full table reads already_seated.
+  if (ledger.seatedUsers.has(horse)) return 'already_seated';
+  if (ledger.rpcSaidFull) return 'table_full';
+  if (ledger.capacity !== null) {
+    let free = false;
+    for (let s = 1; s <= ledger.capacity; s++) {
+      if (!ledger.occupiedSeats.has(s)) {
+        free = true;
+        break;
+      }
+    }
+    if (!free) return 'table_full';
+  }
+  return 'call';
+}
+
+/** Record a seat the RPC just granted, so the rest of this pass sees it. */
+export function seatFirstNoteSeated(
+  ledger: SeatFirstSeatLedger,
+  horse: string,
+  seatNumber: unknown
+): void {
+  ledger.seatedUsers.add(horse);
+  const n = Number(seatNumber);
+  if (Number.isInteger(n) && n > 0) ledger.occupiedSeats.add(n);
+}
+
+/** Record that the RPC answered `table_full`, so the rest of this pass believes it. */
+export function seatFirstNoteTableFull(ledger: SeatFirstSeatLedger): void {
+  ledger.rpcSaidFull = true;
+}
+
+/**
+ * A SKIP IS VERIFIED BEFORE IT IS TAKEN.
+ *
+ * The rows behind the ledger were read before the candidate pickers ran and
+ * before every RPC call ahead of this one in the loop, and each of those calls
+ * spends a mean 590 ms in the lock queue. By the third candidate the ledger is
+ * a second old. A horse that left its seat in that second, or a seat that
+ * opened after the RPC said `table_full`, would read as a skip and stay empty
+ * until the next five-second pass - where the RPC would have seated it.
+ *
+ * So the ledger never skips on the rows it was built from. When the pre-check
+ * says skip, the caller re-reads the same rows (a primary-key-indexed read of
+ * at most a handful of rows, no advisory lock) and folds them in here; the
+ * pre-check is then asked again against rows that are milliseconds old, and
+ * only that second answer can skip. A stale row therefore falls through to
+ * the RPC. This costs one cheap read per skip in place of one locked call.
+ *
+ * The RPC's own `table_full` yields to a fresh read that shows a free seat in
+ * 1..capacity: the read is newer than the answer. It stands when the capacity
+ * is unknown, because then the rows cannot say whether the table is full and
+ * the RPC's word under its lock is the better evidence.
+ */
+export function seatFirstLedgerRefresh(
+  ledger: SeatFirstSeatLedger,
+  freshRows: Array<{ user_id?: string | null; seat_number?: number | null }> | null | undefined
+): void {
+  const fresh = seatFirstSeatLedger(freshRows, undefined, undefined);
+  ledger.seatedUsers = fresh.seatedUsers;
+  ledger.occupiedSeats = fresh.occupiedSeats;
+  if (ledger.capacity !== null) ledger.rpcSaidFull = false;
+}
+
+/** The grep-able production evidence for the skip. One line per fill pass that had candidates. */
+export function seatFirstPrecheckLogLine(
+  tournamentId: string,
+  tally: SeatFirstPrecheckTally
+): string {
+  return (
+    `[TournamentRecurring] seat-first-precheck ${tournamentId.slice(0, 8)}: ` +
+    `rpc_called=${tally.rpcCalled} skipped_already_seated=${tally.skippedAlreadySeated} ` +
+    `skipped_table_full=${tally.skippedTableFull} verify_reads=${tally.verifyReads} ` +
+    `seated=${tally.seated} ` +
+    `rpc_already_seated=${tally.rpcAlreadySeated} rpc_table_full=${tally.rpcTableFull} ` +
+    `rpc_refused=${tally.rpcRefused} rpc_other_noop=${tally.rpcOtherNoop}`
+  );
+}
+
 export const SEAT_FIRST_START_STALL_MS = 3 * 60 * 1000;
 
 /**
@@ -1620,11 +1926,13 @@ export function mttPrestartHorseTarget(opts: {
      to 24 would have left roughly 15,000 of overlay on an event the club had
      already promised to cover.
 
-     A horse entry is a REAL entry. fn_register_horse_for_tournament debits the
-     horse's wallet through atomic_deduct_wallet_and_log, writes a rake row and
-     adds `v_split.prize` to prize_pool - the same money movement a human makes.
-     So horses filling seats does not paper over the shortfall, it genuinely
-     funds it, and the guarantee stops being an overlay at all.
+     A horse entry is a REAL entry. fn_register_horse_for_tournament first
+     commits an exact returned tournament ticket directly into escrow; only
+     when no ticket exists may it debit the horse's wallet through
+     atomic_deduct_wallet_and_log. Both paths write the rake evidence and add
+     `v_split.prize` to prize_pool - the same funded split a human makes. So
+     horses filling seats does not paper over the shortfall, it genuinely funds
+     it, and the guarantee stops being an overlay at all.
 
      THE CAP IS STILL A CAP. `seats - 1` is untouched (safety property 1: the
      table always leaves a chair for a human), and a guarantee can never ask
@@ -1882,7 +2190,7 @@ const SPIN_BOARD_BUYINS = [1, 2, 3, 5, 10, 20, 50, 100];
  *     finish path (isSatelliteFinish -> processSatelliteAwards) registers the winner into
  *     the target through the same money-correct path the scheduled satellite
  *     MTTs use, and pays whatever the pool holds beyond the seat to the
- *     runner-up as cash (satelliteAwardPlan);
+ *     single next finisher as the atomic settlement remainder;
  *   - the lobby classifies a two-seat game as heads-up whatever its variant
  *     (classifyTournament: a cap of 2 is an 'sng'), and lobbyEntries puts the
  *     SATELLITE badge on anything whose name says so. So it appears in the
@@ -1891,8 +2199,10 @@ const SPIN_BOARD_BUYINS = [1, 2, 3, 5, 10, 20, 50, 100];
  * WHAT IS A TARGET. Any scheduled MTT in the owner's own scope (the union for
  * the house board, the club for a standalone club) that is open for
  * registration, starts at least SATELLITE_HU_TARGET_LEAD_MS from now and no
- * more than SATELLITE_HU_TARGET_HORIZON_MS away, and costs at least
- * SATELLITE_HU_MIN_TICKET to enter. "Bigger buy-in" is that floor: nobody
+ * more than SATELLITE_HU_TARGET_HORIZON_MS away, costs at least
+ * SATELLITE_HU_MIN_TICKET to enter, and whose entry the satellite finish can
+ * deliver (satelliteTargetIsDeliverable: never a bounty, PKO, mystery-bounty
+ * or Spin event, whose seat the settlement authority refuses). "Bigger buy-in" is that floor: nobody
  * needs a satellite into a 5-chip turbo. The board keeps one satellite per
  * target for the SATELLITE_HU_TARGETS_PER_OWNER dearest targets, so the
  * biggest events of the week always have a feeder running.
@@ -1938,6 +2248,44 @@ export interface SatelliteTargetRow {
   variant: string | null;
   max_players: number | null;
   game_type?: string | null;
+  tournament_type?: string | null;
+  is_bounty?: boolean | null;
+  is_pko?: boolean | null;
+  is_mystery_bounty?: boolean | null;
+  is_premium_spin?: boolean | null;
+}
+
+/**
+ * A FEEDER ONLY FEEDS AN EVENT ITS FINISH CAN SEAT (2026-09-11).
+ *
+ * The one satellite settlement authority (fn_settle_satellite_tournament)
+ * refuses every target whose entry is not a plain prize + fee split: bounty,
+ * PKO, mystery bounty and Spin, and any row whose flags are unknown (NULL is
+ * refused there, because the bounty slice of a seat must never be booked as
+ * prize). The feeder read none of those columns, so the dearest weekly event
+ * - Sunday Funday High Roller PKO, 67.50 + 7.50 with a 35.00 bounty - got a
+ * heads-up satellite every half hour from 03:01 UTC on 2026-09-11, and every
+ * one of them was played to a winner and then refused at the finish.
+ *
+ * This is the same predicate, so the feeder and the finish agree. The
+ * database refuses the insert as well (the migration that ships with this),
+ * so no other creation path can open a satellite the finish will refuse.
+ * Unknown is not supported: a row without the flags is not a target.
+ */
+export function satelliteTargetIsDeliverable(row: SatelliteTargetRow): boolean {
+  const flags = [row.is_bounty, row.is_pko, row.is_mystery_bounty, row.is_premium_spin];
+  if (flags.some((flag) => flag !== false)) return false;
+  const variant = String(row.variant ?? '').toLowerCase();
+  if (
+    variant === 'spin' ||
+    variant === 'bounty' ||
+    variant === 'progressive_bounty' ||
+    variant === 'mystery_bounty' ||
+    variant === 'pko'
+  )
+    return false;
+  if (String(row.tournament_type ?? '').toUpperCase() === 'SPIN') return false;
+  return true;
 }
 
 /**
@@ -1958,6 +2306,7 @@ export function pickSatelliteTargets(
     .filter((r) => {
       const v = String(r.variant ?? '').toLowerCase();
       if (v === 'spin' || v === 'sng' || v === 'satellite') return false;
+      if (!satelliteTargetIsDeliverable(r)) return false;
       const seats = Number(r.max_players);
       if (Number.isFinite(seats) && seats > 0 && seats <= 2) return false;
       const start = r.start_time ? Date.parse(r.start_time) : NaN;
@@ -2277,6 +2626,12 @@ export class TournamentRecurringService {
    */
   private seatFirstHeldIds = new Set<string>();
   private lastHeldReportAt = 0;
+  /**
+   * Tournaments whose top-up was refused because their prize pool is already
+   * finalized - reported once each, not on every backoff. Bounded by the
+   * number of such rows a process ever meets (40 measured, see topUpWithHorses).
+   */
+  private finalizedPoolTopUpsRefused = new Set<string>();
   private static readonly HELD_REPORT_EVERY_MS = 10 * 60_000;
 
   private noteSeatFirstHeld(tournamentId: string): void {
@@ -2937,7 +3292,9 @@ export class TournamentRecurringService {
     try {
       let q = supabase
         .from('tournaments')
-        .select('id, name, start_time, buy_in_amount, buy_in_fee, variant, max_players, game_type')
+        .select(
+          'id, name, start_time, buy_in_amount, buy_in_fee, variant, max_players, game_type, tournament_type, is_bounty, is_pko, is_mystery_bounty, is_premium_spin'
+        )
         .eq('status', 'REGISTERING')
         .gt('start_time', new Date(Date.now() + SATELLITE_HU_TARGET_LEAD_MS).toISOString())
         .lt('start_time', new Date(Date.now() + SATELLITE_HU_TARGET_HORIZON_MS).toISOString())
@@ -3021,6 +3378,7 @@ export class TournamentRecurringService {
         status: 'REGISTERING',
         blind_structure: config.blindStructure,
         payout_structure: config.payoutStructure,
+        payout_percent: mttPayoutPercent(config.payoutPercent),
         start_time: startTime.toISOString(),
         late_reg_levels: 0,
         late_reg_mins: 0,
@@ -3430,17 +3788,10 @@ export class TournamentRecurringService {
         config.type === 'bounty' ||
         config.type === 'progressive_bounty' ||
         config.type === 'mystery_bounty';
-      const bountyPercent = config.bountyPercent || 30;
-      // WHOLE CHIPS (Dan 2026-08-20): "Sit and Go and any tournament buy-ins
-      // must never be decimal buy-ins, whole numbers only." `split` is the
-      // authoritative whole-dollar price this row is created at - a rebuy or an
-      // add-on costs the SAME snapped total, not the raw (possibly off-ladder)
-      // config value. The bounty is a whole cut of that total; it used to be
-      // round(buyIn * pct) / 100, which produced 4.5 on a 15 buy-in.
+      // Whole-chip entry prices can fund fractional bounties. Use the same
+      // cent allocation as scheduled MTTs without changing a booked head.
       const split = buyInFor(config.buyIn);
-      const bountyAmount = isBountyType
-        ? Math.min(split.prize, Math.max(0, Math.round((split.total * bountyPercent) / 100)))
-        : 0;
+      const bountyAmount = isBountyType ? mttBountyAmount(split, config) : 0;
       // MYSTERY RANGE 2026-08-21 (Dan: "make sure that this is fully added to
       // the mystery bounty tournaments"). These columns were advertising a
       // range the draw could not produce.
@@ -3511,7 +3862,9 @@ export class TournamentRecurringService {
             current_players: 0,
             status: 'REGISTERING',
             blind_structure: config.blindStructure,
+            ...mttSpeedColumns(config.blindStructure),
             payout_structure: config.payoutStructure || [],
+            payout_percent: mttPayoutPercent(config.payoutPercent),
             start_time: startTime.toISOString(),
             late_reg_levels: 10, // Level-based late reg for XMTT
             late_reg_mins: 10, // Legacy fallback
@@ -3672,18 +4025,9 @@ export class TournamentRecurringService {
         config.type === 'progressive_bounty' ||
         config.type === 'mystery_bounty';
 
-      // Calculate bounty amount using configurable bountyPercent
-      // Round 40 RE-RUN: Math.round (not Math.trunc) for IEEE 754 drift safety —
-      // mirrors the same fix applied to the other bounty-config branch in this file.
-      const bountyPercent = config.bountyPercent || 30;
-      // WHOLE CHIPS (Dan 2026-08-20) - mirrors the XMTT branch above. `split`
-      // is the snapped whole-dollar price the row is actually created at, so
-      // the bounty, the rebuy and the add-on all key off it rather than off the
-      // raw config value.
+      // Share scheduled/XMTT bounty arithmetic; entry pricing remains unchanged.
       const split = buyInFor(config.buyIn);
-      const bountyAmount = isBountyType
-        ? Math.min(split.prize, Math.max(0, Math.round((split.total * bountyPercent) / 100)))
-        : 0;
+      const bountyAmount = isBountyType ? mttBountyAmount(split, config) : 0;
       // Mystery bounty range: min = base bounty, max = 10x base
       // MYSTERY RANGE 2026-08-21 (Dan: "make sure that this is fully added to
       // the mystery bounty tournaments"). These columns were advertising a
@@ -3754,7 +4098,9 @@ export class TournamentRecurringService {
             current_players: 0,
             status: 'REGISTERING',
             blind_structure: config.blindStructure,
+            ...mttSpeedColumns(config.blindStructure),
             payout_structure: config.payoutStructure || [],
+            payout_percent: mttPayoutPercent(config.payoutPercent),
             start_time: startTime.toISOString(),
             late_reg_levels: 8, // Level-based late reg
             late_reg_mins: 8, // Legacy fallback
@@ -3915,6 +4261,7 @@ export class TournamentRecurringService {
         status: 'REGISTERING',
         blind_structure: config.blindStructure,
         payout_structure: config.payoutStructure || [],
+        payout_percent: mttPayoutPercent(config.payoutPercent),
         start_time: startTime.toISOString(),
         late_reg_levels: 0,
         late_reg_mins: 0,
@@ -4047,15 +4394,23 @@ export class TournamentRecurringService {
        */
       // Dan 2026-08-26: a held-empty game opens with NO horses — its seats
       // are the invitation. topUpWithHorses fills it the moment a human sits.
-      // A club-owned board belongs to that club's actual membership. The
-      // house fleet may keep the house lobby liquid, but it cannot silently
-      // enroll itself in a player's newly created club merely because that
-      // owner enabled Spins or Heads-Up.
-      const isHouseBoard = tournament.club_id === this.houseOwner.clubId;
-      const opening =
-        isHouseBoard && !seatFirstHeldEmpty(tournament.id, seats)
-          ? openingHorsesForSeatFirst(seats)
-          : 0;
+      //
+      // A CLUB BOARD OPENS WITH ITS OWN MEMBERS (2026-09-11). This carried a
+      // house-board-only condition, written when the pool was the whole platform
+      // fleet and a house horse could wander into a user club's game. The pool
+      // has been club-scoped since 2026-09-01 (clubMemberIdsForTournament, via
+      // the tournamentId passed below), so the guard protected nothing and
+      // did exactly what its own changelog (2026-09-03, "a club board fills
+      // from its own members") said must stop: every Deep Stack Society Spin
+      // and heads-up opened 0/3 and 0/2, and only the past-start top-up could
+      // ever put a horse in one. Measured live 2026-09-11 13:5x UTC: 82 of 83
+      // open DSS seat-first boards had no seat sold, against Dan's 09-01
+      // directive that club boards open "exactly the way the house does". A
+      // club with no horse members still opens empty - the pool is empty, not
+      // the rule.
+      const opening = !seatFirstHeldEmpty(tournament.id, seats)
+        ? openingHorsesForSeatFirst(seats)
+        : 0;
       const candidates = await this.pickFreeHorses(opening, false, tournament.id);
       let seated = 0;
       for (const horse of candidates) {
@@ -4087,46 +4442,10 @@ export class TournamentRecurringService {
         );
       }
 
-      /**
-       * Dan 2026-08-23: TELL THE LOBBY THE SEATS ARE SOLD.
-       *
-       * The horses above take REAL seats, and that fixed the game logic. It
-       * did not fix the shop window: `current_players` is a stored column, a
-       * seat row does not touch it, and this was the one seat-first path that
-       * never synced it. Measured live before this fix: 16 open Spins
-       * advertising "0/3" while holding 32 paid seats between them - two of
-       * three sold, ONE SEAT FROM DEALING, and the lobby said empty. Nine SNGs
-       * the same. The fourteen Spins that read correctly all got there through
-       * topUpWithHorses, which does sync.
-       *
-       * That is the same complaint as the MTT ramp, arriving from the opposite
-       * direction: "PLAYERS DON'T JUMP IN AND PLAY TOURNAMENTS THAT HAVE NO
-       * PLAYERS IN THEM." Here the players were already in them. Only the
-       * number was wrong, and the number is the entire thing a player decides
-       * on.
-       *
-       * Derived from the seat rows, never incremented: registrations and seats
-       * disagree constantly for these formats, which is why a counter that
-       * counts registrations had spins reading 3/3 on two bought seats
-       * (refusing every further sit-down as 'tournament_full') and 0/3 on
-       * three (never starting).
-       *
-       * Best-effort by design. A failed sync must not fail table creation -
-       * the seats are real either way, and the next top-up pass syncs again.
-       */
-      if (seated > 0) {
-        const { error: syncErr } = await supabase.rpc('fn_sync_seat_first_player_count', {
-          p_tournament_id: tournament.id,
-        });
-        if (syncErr) {
-          reportError(
-            new Error(
-              `[TournamentRecurring] seat-count sync failed for ${tournament.name}: ${syncErr.message}`
-            ),
-            'TournamentRecurring.seat_first_count_sync_failed'
-          );
-        }
-      }
+      // Every successful horse-seat transaction fires the strict AFTER-seat
+      // count/Spin-booking invariant before its receipt returns. A separate
+      // service-role sync here used to be a best-effort reconciler and could
+      // acquire the terminal lock only after the seat row was already locked.
 
       return tableId;
     } catch (err: any) {
@@ -4169,7 +4488,19 @@ export class TournamentRecurringService {
    * they did before the reserve existed. A reserve that turns a database blip
    * into a frozen lobby would be worse than no reserve.
    */
-  private async cashRoomReserve(): Promise<number> {
+  private async cashRoomReserve(pass?: HorseTopUpPass): Promise<number> {
+    // A pass holds a reserve it READ, never the fail-open 0 of one it could not.
+    const reserve = await viaTopUpPass(
+      pass,
+      'cash-room-reserve',
+      () => this.readCashRoomReserve(),
+      (value) => value !== null
+    );
+    return reserve ?? 0;
+  }
+
+  /** The reserve, or null when it could not be read. cashRoomReserve fails that OPEN, as 0. */
+  private async readCashRoomReserve(): Promise<number | null> {
     try {
       const { data: cashTables, error: tErr } = await supabase
         .from('tables')
@@ -4178,7 +4509,8 @@ export class TournamentRecurringService {
         .eq('is_deleted', false)
         .in('status', ['waiting', 'running'])
         .limit(2000);
-      if (tErr || !cashTables || cashTables.length === 0) return 0;
+      if (tErr || !cashTables) return null;
+      if (cashTables.length === 0) return 0;
 
       const ids = cashTables.map((t) => (t as { id: string }).id);
       /* CHUNKED, AND A FAILED READ IS REPORTED (2026-09-03). `ids` is up to
@@ -4210,13 +4542,13 @@ export class TournamentRecurringService {
           ),
           'TournamentRecurring.cash_floor_reserve_read_failed'
         );
-        return 0;
+        return null;
       }
 
       const wanted = ids.length * CASH_FLOOR_PER_TABLE;
       return Math.max(0, wanted - seated);
     } catch {
-      return 0;
+      return null;
     }
   }
 
@@ -4291,7 +4623,7 @@ export class TournamentRecurringService {
              seat-first chair from a separate booking for the same game. */
       const { data: chunk, error: seatErr } = await supabase
         .from('table_seats')
-        .select('user_id, table_id, tables!inner(status, tournament_id)')
+        .select('user_id, table_id, tables!table_seats_table_id_fkey!inner(status, tournament_id)')
         .is('left_at', null)
         .neq('tables.status', 'closed')
         /*
@@ -4470,7 +4802,10 @@ export class TournamentRecurringService {
    * partial read is not an empty club, and refusing to register on a failed
    * read starves every event on the platform.
    */
-  private async clubMemberIdsForTournament(tournamentId: string): Promise<Set<string> | null> {
+  private async clubMemberIdsForTournament(
+    tournamentId: string,
+    pass?: HorseTopUpPass
+  ): Promise<Set<string> | null> {
     const hostClub = await supabase
       .from('tournaments')
       .select('club_id, union_id')
@@ -4479,7 +4814,21 @@ export class TournamentRecurringService {
     const hostClubId = (hostClub.data as { club_id?: string } | null)?.club_id;
     const unionId = (hostClub.data as { union_id?: string } | null)?.union_id;
     if (!hostClubId) return null;
+    // Membership depends on the club and the union alone: a pass reads each
+    // scope once, not once per tournament in it. An unknown (null) is not held.
+    return viaTopUpPass(
+      pass,
+      `club-members:${hostClubId}:${unionId ?? ''}`,
+      () => this.clubMemberIdsForScope(hostClubId, unionId),
+      (members) => members !== null
+    );
+  }
 
+  /** Who may enter an event this club hosts, or null when that is unknowable right now. */
+  private async clubMemberIdsForScope(
+    hostClubId: string,
+    unionId: string | undefined
+  ): Promise<Set<string> | null> {
     /* The clubs whose members may enter. For a standalone club that is the one
        host club and nothing else. For a union event it is every club in the
        union, plus the union's own club row (which holds members of its own and
@@ -4523,16 +4872,47 @@ export class TournamentRecurringService {
     return new Set(memberPage.rows.map((r) => r.user_id));
   }
 
+  /**
+   * The club wallets an entry into this event can be charged to, or null when
+   * that is unknowable right now.
+   *
+   * Mirrors `fn_tournament_club_for_user`, which `atomic_deduct_wallet_and_log`
+   * consults for every tournament buy-in: a standalone event charges the host
+   * club's wallet; a union event charges one of the player's wallets at the
+   * union's MEMBER clubs (`union_clubs`), never the union's own house row.
+   */
+  private async walletClubsForScope(
+    hostClubId: string,
+    unionId: string | undefined
+  ): Promise<string[] | null> {
+    if (!unionId) return [hostClubId];
+    const joined = await supabase.from('union_clubs').select('club_id').eq('union_id', unionId);
+    if (joined.error) return null;
+    const ids = new Set<string>();
+    for (const r of joined.data ?? []) {
+      const id = (r as { club_id?: string }).club_id;
+      if (id) ids.add(id);
+    }
+    return [...ids];
+  }
+
   private async pickFreeHorses(
     count: number,
     allLanes = false,
-    tournamentId?: string
+    tournamentId?: string,
+    pass?: HorseTopUpPass
   ): Promise<string[]> {
     if (count <= 0) return [];
     try {
       // Dan 2026-08-23: a horse is unavailable at FOUR concurrent games, not
       // at one. See horseLoadMap for what that replaced and what it keeps.
-      const load = await this.horseLoadMap();
+      // One read per discovery pass when the caller holds one (HorseTopUpPass).
+      const load = await viaTopUpPass(
+        pass,
+        'horse-load',
+        () => this.horseLoadMap(),
+        (map) => map !== null
+      );
       // Unknown load, not zero load. horseLoadMap has already reported why.
       // Picking against an empty map means picking horses that are at four
       // tables, which the trigger refuses one by one.
@@ -4575,18 +4955,24 @@ export class TournamentRecurringService {
       // the fleet idled beyond the page. The fleet is ~600 rows of ids; just
       // read all of it keyset-paged (fetchAllRows, the same pattern
       // HorseFleetManager.seedAllTables uses) and filter/shuffle in memory.
-      const fleetPage = await fetchAllRows<{ id: string }>(
-        (cursor, want) => {
-          let q = supabase
-            .from('profiles')
-            .select('id')
-            .eq('is_horse', true)
-            .order('id', { ascending: true })
-            .limit(want);
-          if (cursor) q = q.gt('id', cursor);
-          return q;
-        },
-        { label: 'TournamentRecurring.pickFreeHorses', maxRows: 50_000 }
+      const fleetPage = await viaTopUpPass(
+        pass,
+        'horse-fleet',
+        () =>
+          fetchAllRows<{ id: string }>(
+            (cursor, want) => {
+              let q = supabase
+                .from('profiles')
+                .select('id')
+                .eq('is_horse', true)
+                .order('id', { ascending: true })
+                .limit(want);
+              if (cursor) q = q.gt('id', cursor);
+              return q;
+            },
+            { label: 'TournamentRecurring.pickFreeHorses', maxRows: 50_000 }
+          ),
+        (page) => page.complete
       );
       if (!fleetPage.complete) {
         // The fleet read failing used to read as "the fleet is empty", which
@@ -4611,7 +4997,9 @@ export class TournamentRecurringService {
        * path shut.
        */
       const fleetIds = fleetPage.rows.map((h) => h.id);
-      const clubIds = tournamentId ? await this.clubMemberIdsForTournament(tournamentId) : null;
+      const clubIds = tournamentId
+        ? await this.clubMemberIdsForTournament(tournamentId, pass)
+        : null;
       const inClub = clubIds ? fleetIds.filter((id) => clubIds.has(id)) : fleetIds;
 
       const candidates = selectHorseCandidates(inClub, busy, allLanes, new Date().getUTCHours());
@@ -4656,7 +5044,7 @@ export class TournamentRecurringService {
         const j = nodeCrypto.randomInt(i + 1);
         [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
       }
-      const reserved = await this.cashRoomReserve();
+      const reserved = await this.cashRoomReserve(pass);
       const claimable = Math.max(0, candidates.length - reserved);
       if (claimable < count) {
         console.log(
@@ -4979,12 +5367,16 @@ export class TournamentRecurringService {
    *   consider themselves a cash specialist. With this set, cash-lane horses
    *   are eligible too, and the pool is filtered by whether the horse is
    *   INSIDE ITS ACTIVITY WINDOW instead - "if they are playing".
+   * @param opts.pass  GameServer's discovery pass (HorseTopUpPass): the fleet,
+   *   its load, the cash-room reserve and club membership are read once per
+   *   pass instead of once per call. Every other caller omits it.
    */
   async topUpWithHorses(
     tournamentId: string,
     targetPlayers: number,
-    opts: { allLanes?: boolean } = {}
+    opts: { allLanes?: boolean; pass?: HorseTopUpPass } = {}
   ): Promise<number> {
+    const pass = opts.pass;
     // This entry point is also used by GameServer discovery and by the
     // scheduled/overlay services. Register its whole continuation so stop()
     // cannot release leadership while a paid registration is still in flight.
@@ -5015,7 +5407,7 @@ export class TournamentRecurringService {
          */
         const { data: tRow, error: tErr } = await supabase
           .from('tournaments')
-          .select('variant, max_players, club_id')
+          .select('variant, max_players, club_id, start_time, prize_pool_finalized')
           .eq('id', tournamentId)
           .maybeSingle();
         if (tErr || !tRow) {
@@ -5031,6 +5423,36 @@ export class TournamentRecurringService {
           String((tRow as { variant?: string } | null)?.variant ?? ''),
           Number((tRow as { max_players?: number } | null)?.max_players ?? 0)
         );
+
+        /* A FINALIZED POOL TAKES NO ENTRANT (2026-09-11). Both doors refuse it -
+           the human core reads prize_pool_finalized and answers
+           registration_closed, the horse core meets the trigger that raises
+           "registration is closed because tournament ... prize pool is
+           finalized" - and both refusals arrive AFTER the seat-acquisition
+           lock every hand settlement queues on. Measured 2026-09-11 12:27-13:27
+           UTC: 39 seat-first games and one MTT that dealt on 2026-09-08 and were
+           left REGISTERING with started_at NULL when that engine stopped at :53
+           (every healthy REGISTERING row on the board reads finalized=false;
+           these 40 read true), asked here every backoff: 1,796 locked
+           fn_seat_horse_in_seat_first_game calls (330 fill passes ending
+           rpc_other_noop=3) and 1,169 locked fn_register_horse_for_tournament
+           calls in that hour that could only ever say no, and 298 "CANNOT
+           FILL" alarms naming the wrong cause.
+           A row whose pool is finalized has left registration whatever its
+           status column says; it needs the finish path, never a fill. Said
+           once per row per process, with the state that recovery needs. */
+        if ((tRow as { prize_pool_finalized?: boolean | null }).prize_pool_finalized === true) {
+          if (!this.finalizedPoolTopUpsRefused.has(tournamentId)) {
+            this.finalizedPoolTopUpsRefused.add(tournamentId);
+            reportError(
+              new Error(
+                `[TournamentRecurring] top-up refused for ${tournamentId.slice(0, 8)}: its prize pool is finalized, so it has left registration whatever its status says - it needs the finish path, not a fill`
+              ),
+              'TournamentRecurring.top_up_refused_pool_finalized'
+            );
+          }
+          return 0;
+        }
 
         /* MEMBERSHIP IS EXPLICIT, AND IT IS ENFORCED IN THE POOL - FOR EVERY FORMAT.
          See automatedRegistrationIsPermitted above for the measurement and the
@@ -5078,6 +5500,11 @@ export class TournamentRecurringService {
          */
         let liveCount = 0;
         let primaryTableId: string | null = null;
+        /* THE SEATS AS READ, kept for the fill loop. See seatFirstSeatPrecheck:
+           the loop skips the RPC for a horse this shows seated and for a table
+           this shows full, so the read below returns the rows rather than a
+           bare count. Same rows, same index, same liveCount. */
+        let liveSeatRows: Array<{ user_id?: string | null; seat_number?: number | null }> = [];
         if (seatFirst) {
           const { data: primaryId, error: primErr } = await supabase.rpc(
             'fn_tournament_primary_table',
@@ -5099,11 +5526,12 @@ export class TournamentRecurringService {
           }
           if (primaryId) {
             primaryTableId = String(primaryId);
-            const { count: seatCount, error: seatErr } = await supabase
+            const { data: seatRows, error: seatErr } = await supabase
               .from('table_seats')
-              .select('table_id', { count: 'exact', head: true })
+              .select('user_id, seat_number')
               .eq('table_id', primaryTableId)
-              .is('left_at', null);
+              .is('left_at', null)
+              .limit(1000);
             if (seatErr) {
               reportError(
                 new Error(`[TournamentRecurring] seat count read failed: ${seatErr.message}`),
@@ -5111,7 +5539,8 @@ export class TournamentRecurringService {
               );
               return 0;
             }
-            liveCount = seatCount || 0;
+            liveSeatRows = (seatRows ?? []) as typeof liveSeatRows;
+            liveCount = liveSeatRows.length;
           }
         } else {
           const { count: regCount, error: countErr } = await supabase
@@ -5141,48 +5570,55 @@ export class TournamentRecurringService {
          * The rule is "leave some boards EMPTY for a human to start", not "strand
          * boards half-full". Once a seat is sold the board is committed and the
          * only right move is to finish filling it so it can deal.
+         *
+         * THE HOLD IS THE HUMAN WINDOW, NOT THE BUCKET (2026-09-11). The hold
+         * rotated on a 30-minute bucket so no price point could be held for
+         * ever, and that fixed the dead board of 2026-08-27. It left the other
+         * half: a board that opened at 2/3 lives about four minutes (window,
+         * fill, deal, replacement), a board that opened at 0/3 lived until its
+         * bucket rolled and the backed-off past-start ask came round - up to
+         * forty minutes. Two lifetimes ten to one, so the board a human sees is
+         * almost all held ones. Measured 2026-09-11 13:5x UTC: 149 of 158 open
+         * seat-first boards had no seat sold, every one past its human window,
+         * and 138 of those 149 read as held in the current bucket (the
+         * survivorship the 2026-08-27 note describes, one bucket at a time).
+         * Dan's rule is a share of the board AT ANY INSTANT - "LEAVE ... 33% OF
+         * ALL SPINS AND 50% OF HEADS UP [EMPTY]" - and his later, more specific
+         * ruling on how long a seat is kept for a person is the window itself:
+         * "fleet should hold the seat for 90-350 seconds max before filling"
+         * (2026-09-05). So a held board is held for its human window - the
+         * same 90-350 seconds a horse-opened board keeps its last seat - and
+         * once start_time passes it fills like any other board. Both kinds of
+         * board now live about as long, so the instantaneous share is the
+         * rolled share. The roll itself (seatFirstHeldEmpty, id and bucket) and
+         * seedOpenSeatTable's use of it are unchanged: a held board still opens
+         * with nobody in it. A row with no readable start_time keeps the hold,
+         * because it never reaches the past-start ask either.
          */
+        const heldStartMs = Date.parse(
+          String((tRow as { start_time?: string | null }).start_time ?? '')
+        );
+        const humanWindowOpen = !Number.isFinite(heldStartMs) || heldStartMs > Date.now();
         if (
           seatFirst &&
           liveCount === 0 &&
+          humanWindowOpen &&
           seatFirstHeldEmpty(
             tournamentId,
             Number((tRow as { max_players?: number } | null)?.max_players ?? 0)
           )
         ) {
-          /**
-           * liveCount === 0 above, so there is nobody seated at all - human or
-           * horse - and the board is genuinely open for a human to start. The
-           * seat-count reconciliation still runs, because a board advertising a
-           * stale count is the other way a seat-first game gets stuck.
-           *
-           * The `humanSeated` probe that used to live here (two queries per
-           * skipped board, every 5 seconds, on every held board) is gone: it was
-           * guarded on `liveCount > 0`, which this branch now excludes, so it
-           * could never once return true. A human who sits makes liveCount 1 and
-           * never reaches this branch at all.
-           */
-          await supabase.rpc('fn_sync_seat_first_player_count', {
-            p_tournament_id: tournamentId,
-          });
+          // With no seat mutation there is nothing to reconcile. The stored
+          // count is maintained in the same transaction as every canonical
+          // create/revive/exit, so this held board simply remains available.
           this.noteSeatFirstHeld(tournamentId);
           return 0;
         }
 
         const shortfall = targetPlayers - liveCount;
         if (shortfall <= 0) {
-          /**
-           * Nothing to add - but the COUNTER may still be stale, and a stale
-           * counter is precisely what stops the game starting. The old code
-           * returned here, before the reconciliation at the foot of this
-           * function, so a full field whose count had drifted could never
-           * repair itself. That is the loop that held 39 live tournaments.
-           */
-          if (seatFirst) {
-            await supabase.rpc('fn_sync_seat_first_player_count', {
-              p_tournament_id: tournamentId,
-            });
-          }
+          // No seat changed. Canonical seat transactions already commit the
+          // exact count, so an idle sweep has no write authority here.
           return 0;
         }
 
@@ -5201,8 +5637,44 @@ export class TournamentRecurringService {
           const wantCandidates = seatFirstCandidateCount(shortfall);
           const poolWanted = Math.max(0, wantCandidates - own.length);
           const pool =
-            poolWanted > 0 ? await this.pickFreeHorses(poolWanted, false, tournamentId) : [];
+            poolWanted > 0 ? await this.pickFreeHorses(poolWanted, false, tournamentId, pass) : [];
           const candidates = seatFirstFillOrder(wantCandidates, own, pool);
+
+          /* THE LEDGER (see seatFirstSeatPrecheck). The table's capacity is the
+             one value the seat read above does not carry; it is a lock-free
+             primary-key read, paid only when there are candidates to seat. An
+             unreadable row leaves the capacity UNKNOWN, which disables the
+             table-full skip and nothing else - an unknown never skips a call. */
+          let tableMaxPlayers: number | null | undefined = undefined;
+          if (candidates.length > 0 && primaryTableId) {
+            const { data: tblRow, error: tblErr } = await supabase
+              .from('tables')
+              .select('max_players')
+              .eq('id', primaryTableId)
+              .maybeSingle();
+            if (tblErr || !tblRow) {
+              console.warn(
+                `[TournamentRecurring] seat-first-precheck ${tournamentId.slice(0, 8)}: table capacity unreadable (${tblErr?.message ?? 'no row'}) - every candidate goes to the RPC this pass`
+              );
+            } else {
+              const raw = (tblRow as { max_players?: number | null }).max_players;
+              tableMaxPlayers = raw === null || raw === undefined ? null : Number(raw);
+            }
+          }
+          const ledger = seatFirstSeatLedger(
+            liveSeatRows,
+            tableMaxPlayers,
+            (tRow as { max_players?: number | null } | null)?.max_players ?? null
+          );
+          const tally = emptySeatFirstPrecheckTally();
+          /* WHY THE RPC SAID NO (2026-09-11). `rpc_other_noop` counted every
+             `ok:false` that was not table_full and never said which: the 60
+             minutes to 13:27 UTC logged 298 boards at `rpc_other_noop=3` and
+             nothing on the platform could say what the three answers were
+             (they were `tournament_full` on 2026-09-08 rows whose pool was
+             finalized - see the finalized refusal above). A refusal with no
+             reason is the "answers when it does not know" shape of 10.86. */
+          const otherReasons = new Map<string, number>();
 
           for (const horse of candidates) {
             // The slack above is there to absorb REFUSALS, not to seat extras: a
@@ -5212,6 +5684,45 @@ export class TournamentRecurringService {
             // opening-seat loop above and the one-refusal pin in
             // seatFirstFillOrder.test.ts.
             if (isMaintenanceFrozen()) continue;
+            /* SKIP THE CALL WHOSE ANSWER IS ALREADY KNOWN. The RPC would return
+               already_seated / table_full for exactly these rows - after taking
+               the global exclusive lock every hand settlement waits on. The RPC
+               still decides for everybody else. A skipped already_seated is not
+               a covered seat (it never was, see the note under the RPC result
+               below), so the loop moves on to the next candidate. */
+            let precheck = seatFirstSeatPrecheck(ledger, horse);
+            if (precheck !== 'call') {
+              /* VERIFY BEFORE SKIPPING (see seatFirstLedgerRefresh). The rows
+                 behind that answer are as old as every call made ahead of this
+                 one. Re-read them - same index, same predicate, no lock - and
+                 ask again. A seat that opened in the meantime goes to the RPC
+                 on THIS pass, as it always did; only a skip the fresh rows
+                 still support is taken. A failed re-read cannot verify
+                 anything, so it does not skip: the RPC decides. */
+              precheck = 'call';
+              if (primaryTableId) {
+                tally.verifyReads++;
+                const { data: freshRows, error: freshErr } = await supabase
+                  .from('table_seats')
+                  .select('user_id, seat_number')
+                  .eq('table_id', primaryTableId)
+                  .is('left_at', null)
+                  .limit(1000);
+                if (!freshErr) {
+                  seatFirstLedgerRefresh(ledger, freshRows as typeof liveSeatRows);
+                  precheck = seatFirstSeatPrecheck(ledger, horse);
+                }
+              }
+            }
+            if (precheck === 'already_seated') {
+              tally.skippedAlreadySeated++;
+              continue;
+            }
+            if (precheck === 'table_full') {
+              tally.skippedTableFull++;
+              continue;
+            }
+            tally.rpcCalled++;
             const { data: res, error: seatRpcErr } = await supabase.rpc(
               'fn_seat_horse_in_seat_first_game',
               { p_tournament_id: tournamentId, p_user_id: horse }
@@ -5232,6 +5743,7 @@ export class TournamentRecurringService {
             // refusals that do need reading. isExpectedSeatRefusal names them;
             // everything else is still reported, unchanged.
             if (seatRpcErr) {
+              tally.rpcRefused++;
               if (!isExpectedSeatRefusal(seatRpcErr.message)) {
                 reportError(
                   new Error(
@@ -5242,7 +5754,52 @@ export class TournamentRecurringService {
               }
               continue;
             }
-            if ((res as { ok?: boolean } | null)?.ok === true) added++;
+            const outcome = res as {
+              ok?: boolean;
+              already_seated?: boolean;
+              reason?: string;
+              seat_number?: number;
+            } | null;
+            if (outcome?.ok === true && outcome.already_seated === true) {
+              /* The ledger was stale: the horse took its seat between the read
+                 and this call. `ok:true` here covered NO seat - it used to be
+                 counted as one, which stopped a pass one seat short whenever a
+                 seated horse was drawn first, and a small club fleet draws the
+                 same seated horse pass after pass. Note it, seat nobody, and let
+                 the next candidate have the seat. */
+              tally.rpcAlreadySeated++;
+              seatFirstNoteSeated(ledger, horse, undefined);
+              continue;
+            }
+            if (outcome?.ok === true) {
+              added++;
+              tally.seated++;
+              seatFirstNoteSeated(ledger, horse, outcome.seat_number);
+              continue;
+            }
+            if (outcome?.reason === 'table_full') {
+              /* The race the ledger cannot see: another service filled the last
+                 seat on this same tick. The RPC has now said so under its lock;
+                 the spare candidates behind this one skip the queue. */
+              tally.rpcTableFull++;
+              seatFirstNoteTableFull(ledger);
+              continue;
+            }
+            tally.rpcOtherNoop++;
+            const why = String(outcome?.reason ?? 'no_reason');
+            otherReasons.set(why, (otherReasons.get(why) ?? 0) + 1);
+          }
+
+          if (candidates.length > 0) {
+            console.log(seatFirstPrecheckLogLine(tournamentId, tally));
+            // The same numbers on /metrics, so the saving is visible without log access.
+            recordSeatFirstPrecheck(tally);
+            if (otherReasons.size > 0) {
+              const summary = [...otherReasons.entries()].map(([r, n]) => `${r} x${n}`).join(', ');
+              console.warn(
+                `[TournamentRecurring] seat-first fill ${tournamentId.slice(0, 8)}: the seat RPC answered ok:false - ${summary}`
+              );
+            }
           }
 
           if (added === 0 && candidates.length > 0) {
@@ -5252,8 +5809,11 @@ export class TournamentRecurringService {
             );
           }
         } else {
-          added = await this.registerHorses(tournamentId, shortfall, opts.allLanes === true);
+          added = await this.registerHorses(tournamentId, shortfall, opts.allLanes === true, pass);
         }
+
+        // Somebody was seated or registered: what this pass read is stale now.
+        if (added > 0) pass?.forget();
 
         /**
          * Dan 2026-08-23: "spins can never ever start until 3 players have sat
@@ -5290,11 +5850,7 @@ export class TournamentRecurringService {
          * were opened against a stale base and every one sat DIRTY on this one
          * comment - nothing else across 27 files conflicted at all.
          */
-        if (seatFirst) {
-          await supabase.rpc('fn_sync_seat_first_player_count', {
-            p_tournament_id: tournamentId,
-          });
-        } else {
+        if (!seatFirst) {
           // Re-read rather than trusting `liveCount + added`: a human may have
           // registered while we were seating horses.
           const { count: finalCount } = await supabase
@@ -5313,6 +5869,8 @@ export class TournamentRecurringService {
 
         return added;
       } catch {
+        // A throw can land after a seat was taken: trust nothing the pass holds.
+        pass?.forget();
         return 0;
       }
     } finally {
@@ -5323,7 +5881,8 @@ export class TournamentRecurringService {
   private async registerHorses(
     tournamentId: string,
     count: number,
-    allLanes = false
+    allLanes = false,
+    pass?: HorseTopUpPass
   ): Promise<number> {
     try {
       // TOURNEY-AUDIT 2026-07-24: exclude horses already registered/playing in
@@ -5335,7 +5894,12 @@ export class TournamentRecurringService {
       // rule excluded any horse holding a single seat or registration, which
       // made 554 of 584 horses invisible to every tournament while they dealt
       // cash. See horseLoadMap.
-      const load = await this.horseLoadMap();
+      const load = await viaTopUpPass(
+        pass,
+        'horse-load',
+        () => this.horseLoadMap(),
+        (map) => map !== null
+      );
       // Unknown load, not zero load — see horseLoadMap. Registering against an
       // empty map double-books horses that are already at four tables.
       if (!load) return 0;
@@ -5424,24 +5988,30 @@ export class TournamentRecurringService {
        * the HorseFleetManager.seedAllTables pattern) and filter in memory.
        * The hourly rotation below still spreads who is first in line.
        */
-      const poolPage = await fetchAllRows<{
-        id: string;
-        display_name: string | null;
-        username: string | null;
-        use_real_name: boolean | null;
-      }>(
-        (cursor, want) => {
-          let q = supabase
-            .from('profiles')
-            .select('id, display_name, username, use_real_name')
-            .eq('is_horse', true)
-            .eq('horse_status', 'available')
-            .order('id', { ascending: true })
-            .limit(want);
-          if (cursor) q = q.gt('id', cursor);
-          return q;
-        },
-        { label: 'TournamentRecurring.registerHorses', maxRows: 50_000 }
+      const poolPage = await viaTopUpPass(
+        pass,
+        'horse-pool-available',
+        () =>
+          fetchAllRows<{
+            id: string;
+            display_name: string | null;
+            username: string | null;
+            use_real_name: boolean | null;
+          }>(
+            (cursor, want) => {
+              let q = supabase
+                .from('profiles')
+                .select('id, display_name, username, use_real_name')
+                .eq('is_horse', true)
+                .eq('horse_status', 'available')
+                .order('id', { ascending: true })
+                .limit(want);
+              if (cursor) q = q.gt('id', cursor);
+              return q;
+            },
+            { label: 'TournamentRecurring.registerHorses', maxRows: 50_000 }
+          ),
+        (page) => page.complete
       );
       // Fail closed: an incomplete fleet read is not an empty fleet, and
       // registering from half a pool is how the same page gets drained.
@@ -5453,6 +6023,41 @@ export class TournamentRecurringService {
       let busyDropped = 0;
       let laneDropped = 0;
       let clubDropped = 0;
+
+      /**
+       * A returned satellite ticket is already-paid tournament value. Read one
+       * database-owned hint before any lane, bankroll or count filter so the
+       * server cannot strand an underrolled/cash-lane ticket horse beyond the
+       * candidate window. The hint intentionally includes corrupt candidates:
+       * those horses reach the atomic door with wallet authority disabled, and
+       * the database refuses them instead of silently charging chips.
+       */
+      const { data: ticketHintResult, error: ticketHintError } = await supabase.rpc(
+        'fn_horse_tournament_entry_ticket_hints',
+        { p_tournament_id: tournamentId }
+      );
+      const ticketHintPayload = ticketHintResult as {
+        ok?: boolean;
+        holder_ids?: unknown;
+        reason?: string;
+      } | null;
+      if (ticketHintError || ticketHintPayload?.ok !== true) {
+        reportError(
+          ticketHintError ??
+            new Error(
+              `[TournamentRecurring] ticket hint refused: ${ticketHintPayload?.reason ?? 'unknown'}`
+            ),
+          'TournamentRecurring.horse_ticket_hint_failed'
+        );
+        return 0;
+      }
+      const ticketHintIds = new Set(
+        Array.isArray(ticketHintPayload.holder_ids)
+          ? ticketHintPayload.holder_ids.filter(
+              (id): id is string => typeof id === 'string' && id.length > 0
+            )
+          : []
+      );
 
       /**
        * A CLUB'S TOURNAMENTS DRAW FROM THAT CLUB'S MEMBERS (Dan 2026-09-01:
@@ -5478,7 +6083,7 @@ export class TournamentRecurringService {
        * platform. Verified before shipping that no board is starved by this -
        * Shark holds 584 horse members, JAQK 580, Midway 323, Deep Stack 416.
        */
-      const clubMemberIds = await this.clubMemberIdsForTournament(tournamentId);
+      const clubMemberIds = await this.clubMemberIdsForTournament(tournamentId, pass);
 
       const eligible = poolAll.filter((h) => {
         if (busyIds.has(h.id)) {
@@ -5490,6 +6095,9 @@ export class TournamentRecurringService {
           clubDropped++;
           return false;
         }
+        // The ticket is the lane: its value is already committed to this
+        // tournament contract and must reach the atomic ticket-first door.
+        if (ticketHintIds.has(h.id)) return true;
         // Freeroll override (Dan 2026-08-27): free money is not a lane
         // decision - every horse currently playing enters. Otherwise the
         // 2026-08-26 rule stands: cash-only horses never register for
@@ -5532,39 +6140,63 @@ export class TournamentRecurringService {
       try {
         const { data: t } = await supabase
           .from('tournaments')
-          .select('club_id, buy_in_amount, buy_in_fee')
+          .select('club_id, union_id, buy_in_amount, buy_in_fee')
           .eq('id', tournamentId)
           .maybeSingle();
         const cost =
           (Number((t as any)?.buy_in_amount) || 0) + (Number((t as any)?.buy_in_fee) || 0);
         const clubId = (t as any)?.club_id as string | undefined;
+        const unionId = ((t as any)?.union_id as string | null | undefined) ?? undefined;
 
         if (clubId && eligible.length > 0) {
           const ids = eligible.map((h) => h.id);
           const rolls = new Map<string, number>();
-          const rollPage = await fetchAllRows<{ user_id: string; chip_balance: number | null }>(
-            (cursor, want) => {
-              let q = supabase
-                .from('club_members')
-                .select('user_id, chip_balance')
-                .eq('club_id', clubId)
-                .in('user_id', ids)
-                .order('user_id', { ascending: true })
-                .limit(want);
-              if (cursor) q = q.gt('user_id', cursor);
-              return q;
-            },
-            { label: 'TournamentRecurring.bankrolls', maxRows: 50_000, idKey: 'user_id' }
-          );
+          /* THE WALLET THE DATABASE DEBITS, NOT THE ROW THE EVENT HANGS OFF
+             (2026-09-11). This read `club_members` at `tournaments.club_id`. For
+             a union event that is the union's own house row (fade0000...),
+             which `atomic_deduct_wallet_and_log` -> `fn_tournament_club_for_user`
+             never charges: it resolves one of the horse's MEMBER-club wallets
+             (JAQK or SHARK for Midway). So for the 323 horses holding a wallet
+             on the house row the gate judged a wallet that is never debited,
+             and for the other 261 it read nothing and let them through - the
+             same wrong-wallet shape lane A found in the fleet's sit verdict and
+             lane B in the rebuy path. Read every wallet the resolver could pick
+             (walletClubsForScope mirrors it) and judge the smallest, so the
+             verdict holds whichever one the hash lands on; a standalone club
+             still reads exactly its own wallet. Chunked, because `ids` is the
+             whole eligible fleet and one `.in()` past ~675 ids is an HTTP 400
+             that used to read as "no rolls". Fail-open shape unchanged: an
+             incomplete read or an unread horse leaves the pool as it was. */
+          const walletClubs = await this.walletClubsForScope(clubId, unionId);
+          const rollPage =
+            walletClubs === null || walletClubs.length === 0
+              ? {
+                  rows: [] as Array<{ user_id: string; chip_balance: number | null }>,
+                  complete: false,
+                }
+              : await selectInChunks<{ user_id: string; chip_balance: number | null }>(
+                  ids,
+                  (batch) =>
+                    supabase
+                      .from('club_members')
+                      .select('user_id, club_id, chip_balance')
+                      .in('club_id', walletClubs)
+                      .in('user_id', batch)
+                      .in('status', ['active', 'approved']),
+                  'TournamentRecurring.bankrolls'
+                );
           if (rollPage.complete) {
             for (const r of rollPage.rows) {
               const v = Number(r.chip_balance);
-              if (Number.isFinite(v)) rolls.set(r.user_id, v);
+              if (!Number.isFinite(v)) continue;
+              const prev = rolls.get(r.user_id);
+              rolls.set(r.user_id, prev === undefined ? v : Math.min(prev, v));
             }
 
             if (cost > 0) {
               const before = pool.length;
               pool = pool.filter((h) => {
+                if (ticketHintIds.has(h.id)) return true;
                 const roll = rolls.get(h.id);
                 if (roll === undefined) return true; // unread -> fail open
                 return canEnterTournament(roll, cost, bankrollPolicyFor(h.id));
@@ -5612,10 +6244,27 @@ export class TournamentRecurringService {
         reportError(err, 'TournamentRecurring.bankroll_gate');
       }
 
-      const eligiblePool = pool;
-      const rot =
-        eligiblePool.length > 0 ? (new Date().getUTCHours() * 7919) % eligiblePool.length : 0;
-      const horses = eligiblePool.slice(rot).concat(eligiblePool.slice(0, rot)).slice(0, count);
+      // Ticket holders first. Slicing the ordinary rotated pool before this
+      // partition was the count-truncation half of the stranding bug.
+      const ticketPool = pool.filter((horse) => ticketHintIds.has(horse.id));
+      const walletPool = pool.filter((horse) => !ticketHintIds.has(horse.id));
+      /* THE QUEUE ROTATES PER EVENT, NOT ONLY PER HOUR (2026-09-11). This was
+         the hour times 7919, modulo the pool, so every tournament ramped in the same
+         hour started its queue at the SAME horse, and a weekly programme
+         publishing thirty events at once put the first few horses in the pool
+         into all thirty. Measured live: one DSS horse carried 41 open bookings,
+         34 of them registered between 00:00 and 01:00 UTC into 28 different
+         events; 27 horses carried nine or more. Every booking is a real buy-in
+         out of one wallet. The event id folds into the rotation so two events
+         ramped in the same tick start their queues in different places; the
+         hour still moves everybody along, and the hourly spread the old note
+         describes is kept. */
+      const hour = new Date().getUTCHours();
+      const ticketRot = rampQueueRotation(tournamentId, hour, ticketPool.length);
+      const walletRot = rampQueueRotation(tournamentId, hour, walletPool.length);
+      const orderedTickets = ticketPool.slice(ticketRot).concat(ticketPool.slice(0, ticketRot));
+      const orderedWallets = walletPool.slice(walletRot).concat(walletPool.slice(0, walletRot));
+      const horses = orderedTickets.concat(orderedWallets).slice(0, count);
 
       if (!horses || horses.length === 0) {
         // Say WHY the pool came up empty — "added NONE" with no numbers is
@@ -5644,11 +6293,11 @@ export class TournamentRecurringService {
        * were still paid in full, so tournaments minted roughly 27,000-30,000
        * chips a day out of nothing.
        *
-       * fn_register_horse_for_tournament is fn_register_for_tournament with the
-       * caller passed in rather than read from auth.uid() (which the engine has
-       * no way to satisfy), and is locked to horses and service_role. Same
-       * entry split, same debit, same rake row, same pool updates — so rake is
-       * real and the prize pool is funded by actual buy-ins.
+       * fn_register_horse_for_tournament is the single service-role horse entry
+       * authority. It spends an exact returned ticket first; only an
+       * authoritative no-ticket result may reach the wallet core. Both paths
+       * use the same entry split, rake evidence and pool updates, so rake is
+       * real and the prize pool is funded by actual entries.
        */
       let registered = 0;
       const failures = new Map<string, number>();
@@ -5658,7 +6307,14 @@ export class TournamentRecurringService {
         if (isMaintenanceFrozen()) break;
         const { data: res, error: regError } = await supabase.rpc(
           'fn_register_horse_for_tournament',
-          { p_tournament_id: tournamentId, p_user_id: horse.id }
+          {
+            p_tournament_id: tournamentId,
+            p_user_id: horse.id,
+            // A hinted ticket that disappears between the read and this RPC
+            // must not become a wallet charge. A newly-issued ticket is still
+            // consumed first by the database even when this is true.
+            p_allow_wallet_charge: !ticketHintIds.has(horse.id),
+          }
         );
 
         if (regError) {

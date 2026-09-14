@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { cashBuyInRefusalText } from '../../src/lib/cashBuyIn';
@@ -108,12 +108,74 @@ describe('booted for low VPIP is barred for two hours (Dan 2026-09-05)', () => {
     );
   });
 
+  /* ─── THE DIAMOND REFUSALS (2026-09-12) ────────────────────────────────
+     Every one of these reached the player as the caller's generic fallback -
+     "Buy-in failed. Please check your balance and try again." Three have
+     nothing to do with a balance, and `diamond_cash_not_open` is a table that
+     is not open yet, so a waitlisted player who arrived on time was told they
+     were short of Diamonds.
+
+     The messages are asserted against the SQL exception names, and the names
+     are asserted to be the ones the database actually raises, so a renamed
+     refusal fails here rather than degrading silently into the fallback. */
+  it('translates every Diamond refusal a player can reach', () => {
+    const cases: Array<[string, string]> = [
+      ['insufficient_settled_diamonds', 'Your Settled Diamonds Do Not Cover This Buy In'],
+      ['diamond_cash_not_open', 'Diamond Cash Games Are Not Open Yet'],
+      ['diamond_plain_cash_table_required', 'This Table Is Not Set Up For Diamond Play'],
+      ['invalid_diamond_cash_purchase', 'A Diamond Buy In Must Be A Whole Number Of Diamonds'],
+      [
+        'diamond_cash_requires_whole_amounts',
+        'A Diamond Buy In Must Be A Whole Number Of Diamonds',
+      ],
+      ['diamond_debt_requires_settlement', 'Settle Your Outstanding Diamonds Before Taking A Seat'],
+      ['diamond_custody_requires_settlement', 'Your Last Seat Has Not Finished Settling Yet'],
+      ['diamond_purchase_arena_mismatch', 'That Purchase Belongs To A Different Arena'],
+      ['diamond_seat_custody_binding_failed', 'That Seat Could Not Be Held'],
+      ['diamond_arena_policy_missing', 'The Arena Is Not Accepting Seats Right Now'],
+      ['diamond_top_up_exceeds_max_buy_in', 'That Would Put You Over This Table Maximum'],
+      ['diamond_top_up_requires_a_live_seat', 'You Are Not Seated At This Table'],
+      ['diamond_top_up_stale_seat', 'The Seat Changed While That Was In Flight'],
+    ];
+    for (const [refusal, expected] of cases) {
+      const text = cashBuyInRefusalText({ message: refusal });
+      expect(text, `${refusal} reaches the player untranslated`).not.toBeNull();
+      expect(text, `${refusal} says the wrong thing`).toContain(expected);
+    }
+  });
+
+  it('and none of those names is one the database stopped raising', () => {
+    /* A translation keyed on a name the database no longer uses is worse than
+       no translation: it looks handled and is dead. The names are read back
+       out of the migrations that raise them. */
+    const dir = resolve(__dirname, '../../supabase/migrations');
+    const sql = readdirSync(dir)
+      .filter((f) => f.endsWith('.sql'))
+      .map((f) => readFileSync(resolve(dir, f), 'utf8'))
+      .join('\n');
+    for (const refusal of [
+      'insufficient_settled_diamonds',
+      'diamond_cash_not_open',
+      'diamond_plain_cash_table_required',
+      'invalid_diamond_cash_purchase',
+      'diamond_cash_requires_whole_amounts',
+      'diamond_debt_requires_settlement',
+      'diamond_purchase_arena_mismatch',
+      'diamond_arena_policy_missing',
+      'diamond_top_up_exceeds_max_buy_in',
+      'diamond_top_up_requires_a_live_seat',
+      'diamond_top_up_stale_seat',
+    ]) {
+      expect(sql, `${refusal} is translated but never raised`).toContain(refusal);
+    }
+  });
+
   it('the eviction passes the leave mode the database writes the bar from', () => {
     const base = readFileSync(
       resolve(__dirname, '../../server/src/engine/ServerTableEngineBase.ts'),
       'utf8'
     );
-    expect(base).toMatch(/nitEvict \? \{ leaveMode: 'vpip_evicted' \} : undefined/);
+    expect(base).toMatch(/nitEvict \? \{ leaveMode: 'vpip_evicted' as const \} : \{\}/);
     const mig = readFileSync(
       resolve(
         __dirname,

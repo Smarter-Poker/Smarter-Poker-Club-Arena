@@ -1,13 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mock = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn(), reportError: vi.fn() }));
-vi.mock('./client.js', () => ({ supabase: { rpc: mock.rpc, from: mock.from } }));
+const mock = vi.hoisted(() => ({ from: vi.fn(), reportError: vi.fn() }));
+vi.mock('./client.js', () => ({ supabase: { from: mock.from } }));
 vi.mock('../errorReporter.js', () => ({ reportError: mock.reportError }));
-vi.mock('./pendingWrites.js', () => ({
-  drainPendingWrites: vi.fn().mockResolvedValue(undefined),
-  enqueuePendingWrite: vi.fn(),
-}));
-import { loadSeatedPlayers, syncStacks } from './tables.js';
+import { loadSeatedPlayers, persistTimeBanks } from './tables.js';
 
 const player = {
   user_id: 'user',
@@ -29,24 +25,19 @@ function arrangeWrite(result: unknown = { error: null }) {
 }
 beforeEach(() => {
   vi.resetAllMocks();
-  mock.rpc.mockResolvedValue({ data: { success: true }, error: null });
 });
 
 describe('time bank settlement requests', () => {
-  it('settles stacks but sends no bank request when the fresh roster already matches', async () => {
-    await syncStacks('table', [player], 1);
-    expect(mock.rpc).toHaveBeenCalledTimes(1);
-    expect(mock.rpc.mock.calls[0][0]).toBe('fn_ca_settle_hand_stacks_absolute');
+  it('sends no bank request when the fresh roster already matches', async () => {
+    await persistTimeBanks('table', [player]);
     expect(mock.from).not.toHaveBeenCalled();
   });
 
   it('persists consumption down to zero with the existing active-seat and WAL guards', async () => {
     const write = arrangeWrite();
-    await syncStacks(
-      'table',
-      [{ ...player, time_bank_remaining: 0, time_bank_uses_remaining: 0 }],
-      1
-    );
+    await persistTimeBanks('table', [
+      { ...player, time_bank_remaining: 0, time_bank_uses_remaining: 0 },
+    ]);
     expect(write.update).toHaveBeenCalledWith({
       time_bank_remaining: 0,
       time_bank_uses_remaining: 0,
@@ -59,7 +50,7 @@ describe('time bank settlement requests', () => {
 
   it('persists replenishment without rewriting the unchanged column', async () => {
     const write = arrangeWrite();
-    await syncStacks('table', [{ ...player, time_bank_remaining: 60 }], 1);
+    await persistTimeBanks('table', [{ ...player, time_bank_remaining: 60 }]);
     expect(write.update).toHaveBeenCalledWith({ time_bank_remaining: 60 });
     expect(write.or.mock.calls[0][0]).not.toContain('time_bank_uses_remaining');
   });
@@ -68,11 +59,9 @@ describe('time bank settlement requests', () => {
     'does not treat an unknown baseline as a persisted zero (%j)',
     async (persisted_time_bank) => {
       const write = arrangeWrite();
-      await syncStacks(
-        'table',
-        [{ ...player, persisted_time_bank, time_bank_remaining: 0, time_bank_uses_remaining: 0 }],
-        1
-      );
+      await persistTimeBanks('table', [
+        { ...player, persisted_time_bank, time_bank_remaining: 0, time_bank_uses_remaining: 0 },
+      ]);
       expect(write.update).toHaveBeenCalledWith({
         time_bank_remaining: 0,
         time_bank_uses_remaining: 0,
@@ -84,10 +73,10 @@ describe('time bank settlement requests', () => {
     const failure = { message: 'write unavailable' };
     const write = arrangeWrite({ error: failure });
     const consumed = { ...player, time_bank_remaining: 20, time_bank_uses_remaining: 1 };
-    await syncStacks('table', [consumed], 1);
+    await persistTimeBanks('table', [consumed]);
     expect(mock.reportError).toHaveBeenCalledWith(failure, 'DB.persist_time_banks_failed');
     write.or.mockResolvedValue({ error: null });
-    await syncStacks('table', [consumed], 2);
+    await persistTimeBanks('table', [consumed]);
     expect(write.update).toHaveBeenCalledTimes(2);
     expect(consumed.persisted_time_bank).toEqual({ remainingSeconds: 40, usesRemaining: 2 });
   });
@@ -101,7 +90,7 @@ describe('time bank settlement requests', () => {
       })
     );
     let settled = false;
-    const work = syncStacks('table', [{ ...player, time_bank_remaining: 20 }], 1).then(() => {
+    const work = persistTimeBanks('table', [{ ...player, time_bank_remaining: 20 }]).then(() => {
       settled = true;
     });
     await vi.waitFor(() => expect(write.or).toHaveBeenCalled());
@@ -120,6 +109,8 @@ describe('time bank settlement requests', () => {
         error: null,
         data: [
           {
+            id: '10000000-0000-4000-8000-000000000001',
+            joined_at: '2026-09-09T10:00:00.123456+00:00',
             user_id: 'user',
             stack: 100,
             seat_number: 1,
@@ -134,5 +125,8 @@ describe('time bank settlement requests', () => {
     const [seat] = await loadSeatedPlayers('table');
     expect(seat.persisted_time_bank).toEqual({ remainingSeconds: null, usesRemaining: 0 });
     expect(seat.time_bank_remaining).toBe(0);
+    expect(seat.seat_id).toBe('10000000-0000-4000-8000-000000000001');
+    expect(seat.seat_joined_at).toBe('2026-09-09T10:00:00.123456+00:00');
+    expect(read.select.mock.calls[0][0]).toContain('id, joined_at, user_id');
   });
 });

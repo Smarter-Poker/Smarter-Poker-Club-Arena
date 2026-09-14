@@ -131,6 +131,20 @@ describe('a horse plays inside its own club', () => {
     expect(resolver).toContain('if (mine.length === 0) return null;');
   });
 
+  /**
+   * Slice the source between two anchors, refusing an anchor that is not
+   * there. A pin built on a bare indexOf turns a moved anchor into an empty
+   * string and then into an assertion failure about BEHAVIOUR, which sends the
+   * reader looking for a bug that does not exist.
+   */
+  const region = (src: string, from: string, to: string): string => {
+    const start = src.indexOf(from);
+    expect(start, `source anchor not found: ${from}`).toBeGreaterThanOrEqual(0);
+    const end = src.indexOf(to, start);
+    expect(end, `source anchor not found after ${from}: ${to}`).toBeGreaterThan(start);
+    return src.slice(start, end);
+  };
+
   it('a seat already held in the same scope decides the wallet, as the database rules', () => {
     const resolver = SRC.slice(
       SRC.indexOf('private resolveSeatClub('),
@@ -149,10 +163,14 @@ describe('a horse plays inside its own club', () => {
       SRC.indexOf('private async seatHorse(')
     );
     expect(sizing).toContain('bankrolls.get(`${seatClub}:${horseId}`)');
-    const rpc = SRC.slice(
-      SRC.indexOf("supabase.rpc('atomic_table_buyin'"),
-      SRC.indexOf('if (rpcErr)')
-    );
+    // Anchored on the CALL, not on the client that makes it. This read
+    // `supabase.rpc(` until 2026-09-11, when the fleet's seat purchases moved
+    // to `seedingSupabase` for its shorter deadline: indexOf returned -1, the
+    // slice produced '', and the failure read as "expected '' to contain
+    // p_club_id" - a missing anchor wearing the costume of a missing
+    // behaviour. `region` below refuses to slice from an anchor it did not
+    // find, so the next rename says so plainly.
+    const rpc = region(SRC, ".rpc('atomic_table_buyin'", 'if (rpcErr)');
     expect(rpc).toContain('p_club_id: clubId');
   });
 });

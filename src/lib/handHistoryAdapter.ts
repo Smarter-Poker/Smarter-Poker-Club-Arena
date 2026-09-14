@@ -110,6 +110,7 @@ export function replayFromServiceRecord(h: ServiceHandRecord): ReplayModel {
       amount: w.amount,
       handName: w.hand_name,
       low: w.low === true,
+      ...(w.pots?.length ? { pots: w.pots } : {}),
     })),
     holeCards,
     privateHoleCards,
@@ -247,6 +248,7 @@ export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): P
 
   return {
     id: h.id,
+    arenaAsset: h.arenaAsset,
     handNumber: h.hand_number,
     timestamp: Date.parse(h.played_at) || Date.now(),
     gameType: h.game_type,

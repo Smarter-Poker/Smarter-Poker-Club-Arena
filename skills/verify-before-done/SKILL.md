@@ -46,7 +46,7 @@ description: 'MANDATORY verification protocol. Agents MUST verify all work is ac
 [ ] Code compiles — `npm run build` exits with 0 errors
 [ ] No lint/type regressions — no NEW errors introduced
 [ ] Pushed to GitHub — (see `auto-push` skill)
-[ ] Deployed to smarter.poker — Vercel deployment completed
+[ ] Deployed to smarter.poker — Club Arena Hetzner publisher completed
 [ ] Tested on smarter.poker — (see `testing-protocol` skill)
 [ ] Proof collected — Screenshots, terminal output, or browser observations
 ```

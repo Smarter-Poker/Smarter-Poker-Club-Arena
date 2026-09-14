@@ -1,0 +1,401 @@
+--- a/server/src/GameServer.ts
++++ b/server/src/GameServer.ts
+@@ -0,0 +1 @@
++import { bindToProcessRoot } from './services/supabase/dataActorContext.js';
+@@ -177 +178 @@
+-import { runThawInstallments } from './maintenance/thawInstallments.js';
++import { runMaintenanceThawV3 } from './maintenance/maintenanceThawV3.js';
+@@ -1752,12 +1753,11 @@
+-    // runThawInstallments calls again until complete, and retries a call that
+-    // died - a timed-out call committed nothing, so the retry is exactly
+-    // right. Idempotent per freeze and per step on the database side.
+-    thaw: async (freezeStartedAtMs, frozenSeconds) => {
+-      const args = {
+-        p_freeze_started: new Date(freezeStartedAtMs).toISOString(),
+-        p_frozen_seconds: frozenSeconds,
+-        p_thawed_by:
+-          process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
+-      };
+-      const summary = await runThawInstallments(
+-        async () => {
++    // The v3 client retries the exact owner and freeze identity. A lost response
++    // can recover its committed receipt. Completion schedules a future release;
++    // MaintenanceBreak keeps the pause until that certified boundary.
++    thaw: bindToProcessRoot(async (request, signal) => {
++      const release = await runMaintenanceThawV3(
++        {
++          ...request,
++          thawedBy:
++            process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
++        },
++        async (args) => {
+@@ -1766 +1766 @@
+-          return (data ?? {}) as Record<string, unknown>;
++          return data;
+@@ -1768,5 +1768 @@
+-        { log: (line) => console.log(line) }
+-      );
+-      console.log(
+-        `[MaintenanceBreak] thaw: complete in ${summary.calls} call(s), ${summary.errors} error(s):`,
+-        JSON.stringify(summary.last?.shifted ?? null)
++        { signal, log: (line) => console.log(line) }
+@@ -1790 +1786,2 @@
+-    },
++      return release;
++    }),
+--- a/server/src/maintenance/MaintenanceBreak.ts
++++ b/server/src/maintenance/MaintenanceBreak.ts
+@@ -103,0 +104,7 @@
++import {
++  assertMaintenanceThawRelease,
++  MaintenanceThawError,
++  waitForMaintenanceThaw,
++  type MaintenanceThawRequest,
++  type MaintenanceThawRelease,
++} from './maintenanceThawV3.js';
+@@ -162,0 +170,2 @@
++  /** Null only after the database's completed-v3 release boundary expires. */
++  loadReleaseBoundary(): Promise<number | null>;
+@@ -264 +273,4 @@
+-  thaw?: (freezeStartedAtMs: number, frozenSeconds: number) => Promise<void>;
++  thaw?: (
++    request: Readonly<MaintenanceThawRequest>,
++    signal: AbortSignal
++  ) => Promise<MaintenanceThawRelease>;
+@@ -421,0 +434,4 @@
++  private readonly lifecycleAbort = new AbortController();
++  private releaseBoundaryOnly = false;
++  private recoveryReadPending = false;
++  static readonly THAW_RETRY_MS = 5_000;
+@@ -464,0 +481 @@
++    this.lifecycleAbort.abort(new Error('Maintenance break lifecycle stopped'));
+@@ -636,66 +652,0 @@
+-  }
+-
+-  /**
+-   * Give back the frozen minutes of a break that ENDED while nobody was alive
+-   * to end it (2026-09-08).
+-   *
+-   * `end()` is the only caller of the thaw, and `end()` only ever runs on a
+-   * process still holding the break when its own timer fires. So when the
+-   * engine that declared a break dies inside it and its replacement arrives
+-   * after the hour, this path deleted the row, started dealing, and the frozen
+-   * minutes were never handed back to anything.
+-   *
+-   * That is not a reporting gap. `fn_thaw_platform` is what moves every
+-   * in-flight absolute deadline forward by the frozen duration - sit-out
+-   * clocks, seat holds, rebuy prompts, blind levels, bomb-pot timers,
+-   * reconnect windows. Skipping it burns all of them, for every player who was
+-   * mid-decision at :55. On 2026-09-08 it was skipped three hours running:
+-   * 14:00, 15:00 and 16:00 all recorded `thaw_ran: false`, and by 16:00 the
+-   * break was otherwise perfect - zero hands in the window, the fleet held
+-   * from 15:54 to 16:00 - with the missing thaw the only remaining fault.
+-   *
+-   * SAFE ON A BREAK SOMEBODY ELSE MAY ALREADY HAVE THAWED.
+-   * `engine_maintenance_thaws` is keyed `PRIMARY KEY (freeze_started_at)`, and
+-   * the function claims that row with `ON CONFLICT DO NOTHING`, returning
+-   * `already_thawed` once it is complete. A second call for the same freeze
+-   * therefore cannot shift the platform's clocks twice. This was read out of
+-   * the deployed function before relying on it, not assumed.
+-   *
+-   * ONLY A COUNTDOWN IS EVIDENCE. A `last_hand` row that expired never began
+-   * its five minutes, so there is no frozen interval to return and this
+-   * declines. Inventing one would shift every deadline on the platform for a
+-   * freeze that never ran.
+-   */
+-  private async thawAnAbandonedBreak(
+-    abandoned: PersistedMaintenanceBreak,
+-    endsAt: number
+-  ): Promise<void> {
+-    if (!this.deps.thaw) return;
+-    if (abandoned.phase !== 'counting_down' || !abandoned.breakStartedAt) return;
+-
+-    const startedAt = abandoned.breakStartedAt;
+-    const frozenSeconds = Math.round((endsAt - startedAt) / 1000);
+-    if (frozenSeconds <= 0 || frozenSeconds > MaintenanceBreak.MAX_THAWABLE_SECONDS) {
+-      console.warn(
+-        `[MaintenanceBreak] an abandoned break claims ${frozenSeconds}s of freeze, outside what ` +
+-          'fn_thaw_platform accepts. Leaving every clock alone rather than shifting the whole ' +
+-          'platform by a number nobody can defend.'
+-      );
+-      return;
+-    }
+-
+-    /* The same marker end() sets, so engines built during the rehydration that
+-       follows still get their reconnect deadlines shifted. */
+-    completeReconnectFreeze(startedAt, frozenSeconds * 1000);
+-    try {
+-      await this.deps.thaw(startedAt, frozenSeconds);
+-      console.warn(
+-        `[MaintenanceBreak] thawed a break nobody was alive to end (+${frozenSeconds}s) - the ` +
+-          'engine that declared it did not survive to its own resume.'
+-      );
+-    } catch (err) {
+-      /* end() makes the same call: a failed thaw costs the clocks their
+-         minutes, but refusing to clear the row would leave the platform
+-         frozen, which is strictly worse. */
+-      console.error('[MaintenanceBreak] THAW FAILED for an abandoned break', err);
+-    }
+@@ -793,9 +744,2 @@
+-      // Fail OPEN, but only after the retries above. A break we cannot read
+-      // is a break we cannot honour, and refusing to deal because the
+-      // database is unhappy would turn a storage blip into a platform outage.
+-      console.warn(
+-        `[MaintenanceBreak] could not read the persisted break after ${
+-          MaintenanceBreak.RESTORE_ATTEMPTS
+-        } attempts: ${(lastErr as Error)?.message ?? lastErr}`
+-      );
+-      await this.enterBreakFromTheClock(generation, 'the persisted break could not be read');
++      console.error('[MaintenanceBreak] recovery state unreadable; holding and retrying', lastErr);
++      this.holdForRecoveryRead();
+@@ -804,0 +749,12 @@
++      try {
++        const releaseAt = await this.deps.store.loadReleaseBoundary();
++        if (!this.lifecycleIsCurrent(generation)) return;
++        if (releaseAt !== null) {
++          this.holdForReleaseBoundary(releaseAt);
++          return;
++        }
++      } catch (error) {
++        console.error('[MaintenanceBreak] release witness unreadable; holding and retrying', error);
++        this.holdForRecoveryRead();
++        return;
++      }
+@@ -873,50 +829,2 @@
+-    // ── AND A STALE ROW CANNOT FREEZE THE PLATFORM HOURS LATER ─────────────
+-    // For a `last_hand` row `remaining` used to be the constant
+-    // BREAK_DURATION_MS, so the staleness check below could NEVER fire: an
+-    // orphaned announcement from any earlier hour would be adopted by any
+-    // engine booting at any later time and would park the entire fleet for
+-    // five minutes from that boot. Bounding by the row's own age closes it,
+-    // and the clamp above already refuses to run past the hour.
+-    const rowAgeMs = saved.announcedAt ? this.now() - saved.announcedAt : 0;
+-    if (rowAgeMs > MaintenanceBreak.ADOPTABLE_ROW_MAX_AGE_MS) {
+-      console.warn(
+-        `[MaintenanceBreak] ignoring a persisted break announced ${Math.round(
+-          rowAgeMs / 1000
+-        )}s ago - older than the ${Math.round(
+-          MaintenanceBreak.ADOPTABLE_ROW_MAX_AGE_MS / 1000
+-        )}s adoption window, so it belongs to an hour that has already passed.`
+-      );
+-      const claimed = await this.claimPersistedState(saved);
+-      if (!claimed) {
+-        console.warn(
+-          '[MaintenanceBreak] stale break ownership changed before cleanup; leaving the newer owner untouched'
+-        );
+-        return;
+-      }
+-      await this.safeClear(claimed);
+-      await this.enterBreakFromTheClock(
+-        generation,
+-        'the persisted break belonged to an hour that has already passed'
+-      );
+-      return;
+-    }
+-
+-    if (remaining <= 1000) {
+-      // Expired while we were down. Own the exact row before clearing it so a
+-      // retiring process cannot erase a replacement's state; if clear fails,
+-      // retaining the claimed token lets this process replace it next hour.
+-      const claimed = await this.claimPersistedState(saved);
+-      if (!claimed) {
+-        console.warn(
+-          '[MaintenanceBreak] expired break ownership changed before cleanup; leaving the newer owner untouched'
+-        );
+-        return;
+-      }
+-      /* The break really ran and nobody ended it. Hand the frozen minutes back
+-         BEFORE the row goes, so a thaw that throws still leaves the evidence
+-         of what was frozen in place for the next boot to find. */
+-      await this.thawAnAbandonedBreak(claimed, endsAt);
+-      await this.safeClear(claimed);
+-      await this.enterBreakFromTheClock(generation, 'the persisted break had already expired');
+-      return;
+-    }
++    // The current SQL freeze outlives its process and visible countdown.
++    // Claim and recover even an expired row; age is never release authority.
+@@ -971 +879 @@
+-    if (saved.phase === 'last_hand') {
++    if (saved.phase === 'last_hand' && remaining > 1000) {
+@@ -1272,0 +1181,54 @@
++  private armRecoveryRetry(): void {
++    if (this.endTimer) this.clearTimer(this.endTimer);
++    const generation = this.lifecycleGeneration;
++    this.endTimer = this.setTimer(() => {
++      this.endTimer = null;
++      if (this.lifecycleIsCurrent(generation)) this.launchLifecycleJob(this.end(), 'recovery retry failed');
++    }, MaintenanceBreak.THAW_RETRY_MS);
++  }
++
++  private holdForRecoveryRead(): void {
++    this.phase = 'counting_down';
++    this.recoveryReadPending = true;
++    this.durableConfirmed = false;
++    setMaintenanceFrozen(true);
++    this.parkEveryEngine();
++    this.armRecoveryRetry();
++  }
++
++  private holdForReleaseBoundary(releaseAt: number): void {
++    if (!Number.isFinite(releaseAt) || releaseAt <= 0) {
++      throw new MaintenanceThawError('maintenance_release_boundary_invalid', false);
++    }
++    this.phase = 'counting_down';
++    this.releaseBoundaryOnly = true;
++    this.announcedAt = 0;
++    this.breakStartedAt = 0;
++    this.breakEndsAt = releaseAt;
++    this.durableConfirmed = false;
++    this.reason = 'Restoring every frozen table clock';
++    setMaintenanceFrozen(true);
++    this.parkEveryEngine();
++    this.armEndTimer();
++  }
++
++  private async waitForCertifiedRelease(releaseAt: number, generation: number): Promise<void> {
++    const signal = this.lifecycleAbort.signal;
++    let boundary = releaseAt;
++    while (this.lifecycleIsCurrent(generation)) {
++      const remaining = boundary - this.now();
++      if (remaining > 0) await waitForMaintenanceThaw(remaining, signal);
++      if (!this.lifecycleIsCurrent(generation)) return;
++      const currentBoundary = await this.deps.store.loadReleaseBoundary();
++      if (!this.lifecycleIsCurrent(generation)) return;
++      if (currentBoundary === null) return;
++      if (!Number.isFinite(currentBoundary) || currentBoundary <= 0) {
++        throw new MaintenanceThawError('maintenance_release_boundary_invalid', false);
++      }
++      boundary = currentBoundary;
++      // A fast host clock cannot release while the database still reports a
++      // future certificate. Wait between those skew-correction reads.
++      if (boundary <= this.now()) await waitForMaintenanceThaw(250, signal);
++    }
++  }
++
+@@ -1288,10 +1250 @@
+-  /**
+-   * Resume every table, together, and clear the row.
+-   *
+-   * The row is cleared even if a resume throws. A stranded row is worse than a
+-   * stranded engine: the engine has its own safety timeout inside
+-   * awaitPauseGate and will deal again on its own, whereas a row nobody
+-   * deletes keeps every browser on the platform showing a break screen for a
+-   * break that ended. fn_maintenance_break_state self-expires for the same
+-   * reason, as a second line of defence.
+-   */
++  /** The v3 transaction owns durable release. Local gates follow its certificate. */
+@@ -1314,11 +1267 @@
+-    /**
+-     * THE THAW COMES FIRST (Dan 2026-09-01: "picks back up exactly as it
+-     * was"). Deadlines are shifted while every table is still parked, so no
+-     * clock can be judged - a sit-out evicted, a seat hold expired, a Spin
+-     * level rolled - in the gap between the first table resuming and the
+-     * shift landing. If the thaw itself fails, play still resumes: five
+-     * minutes of clock drift is a wrong that heals, a platform that stays
+-     * frozen is not.
+-     */
+-    const reconnectFreezeStartedAt = this.breakStartedAt;
+-    completeReconnectFreeze(reconnectFreezeStartedAt, this.now() - reconnectFreezeStartedAt);
++    let reconnectFreezeStartedAt = this.breakStartedAt;
+@@ -1326,5 +1269,29 @@
+-    if (this.deps.thaw && this.breakStartedAt > 0) {
+-      const frozenSeconds = Math.max(1, Math.round((this.now() - this.breakStartedAt) / 1000));
+-      try {
+-        await this.deps.thaw(this.breakStartedAt, frozenSeconds);
+-        if (!this.lifecycleIsCurrent(generation)) {
++    try {
++      if (this.recoveryReadPending) {
++        this.recoveryReadPending = false;
++        // Keep the existing table gates and process freeze held while the
++        // ordinary recovery path obtains a durable row or release witness.
++        this.phase = 'idle';
++        await this.restoreFromStore(generation);
++        if (!this.lifecycleIsCurrent(generation)) { this.ending = false; return; }
++        if (this.phase !== 'idle') { this.ending = false; return; }
++        this.phase = 'counting_down';
++        this.releaseBoundaryOnly = true;
++      }
++      if (this.releaseBoundaryOnly) {
++        await this.waitForCertifiedRelease(this.breakEndsAt, generation);
++      } else if (this.deps.thaw) {
++        const durable = this.lastDurableState;
++        if (!durable || durable.ownershipToken !== this.ownershipToken) {
++          throw new MaintenanceThawError('maintenance_thaw_durable_identity_unproven', false);
++        }
++        const freezeStartedAt = durable.breakStartedAt ??
++          durable.announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS;
++        const request = Object.freeze({
++          announcedAt: durable.announcedAt,
++          freezeStartedAt,
++          frozenSeconds: Math.max(1, (this.now() - freezeStartedAt) / 1000),
++          ownershipToken: durable.ownershipToken,
++        });
++        const release = await this.deps.thaw(request, this.lifecycleAbort.signal);
++        if (!this.lifecycleIsCurrent(generation) || this.ownershipToken !== request.ownershipToken) {
+@@ -1333,0 +1301,3 @@
++        assertMaintenanceThawRelease(request, release);
++        await this.waitForCertifiedRelease(release.creditedThroughAt, generation);
++        reconnectFreezeStartedAt = request.freezeStartedAt;
+@@ -1335,7 +1304,0 @@
+-        console.log(`[MaintenanceBreak] Thawed the platform clocks (+${frozenSeconds}s).`);
+-      } catch (err) {
+-        thawOk = false;
+-        console.error(
+-          '[MaintenanceBreak] THAW FAILED - resuming anyway; clocks lost the frozen minutes.',
+-          err
+-        );
+@@ -1343,2 +1306 @@
+-    }
+-    if (!this.lifecycleIsCurrent(generation)) {
++    } catch (error) {
+@@ -1345,0 +1308,3 @@
++      if (!this.lifecycleIsCurrent(generation)) return;
++      console.error('[MaintenanceBreak] thaw/release unproven; keeping every table paused', error);
++      if (!(error instanceof MaintenanceThawError) || error.retryable) this.armRecoveryRetry();
+@@ -1348,2 +1313,4 @@
+-    // The database wait is still frozen time for every reconnect allowance.
+-    completeReconnectFreeze(reconnectFreezeStartedAt, this.now() - reconnectFreezeStartedAt);
++    if (!this.lifecycleIsCurrent(generation)) { this.ending = false; return; }
++    if (reconnectFreezeStartedAt > 0) {
++      completeReconnectFreeze(reconnectFreezeStartedAt, this.now() - reconnectFreezeStartedAt);
++    }
+@@ -1359 +1326 @@
+-    const completedState = this.persistedState();
++    const completedState = this.releaseBoundaryOnly ? null : this.persistedState();
+@@ -1360,0 +1328,2 @@
++    const releasedByV3 = this.releaseBoundaryOnly || Boolean(this.deps.thaw);
++    this.releaseBoundaryOnly = false;
+@@ -1388 +1357 @@
+-    const resumed = this.resumeEveryEngine(reconnectFreezeStartedAt);
++    const resumed = this.resumeEveryEngine(reconnectFreezeStartedAt > 0 ? reconnectFreezeStartedAt : undefined);
+@@ -1393 +1362 @@
+-    if (this.deps.recordOutcome) {
++    if (this.deps.recordOutcome && reconnectFreezeStartedAt > 0) {
+@@ -1412 +1381 @@
+-    await this.safeClear(completedState);
++    if (!releasedByV3 && completedState) await this.safeClear(completedState);
+@@ -1417 +1386 @@
+-    if (durableState && !MaintenanceBreak.samePersistedState(durableState, completedState)) {
++    if (!releasedByV3 && completedState && durableState && !MaintenanceBreak.samePersistedState(durableState, completedState)) {
+--- a/server/src/maintenance/maintenanceBreakStore.ts
++++ b/server/src/maintenance/maintenanceBreakStore.ts
+@@ -11,0 +12 @@
++import { bindToProcessRoot } from '../services/supabase/dataActorContext.js';
+@@ -17,0 +19,9 @@
++    loadReleaseBoundary: bindToProcessRoot(async (): Promise<number | null> => {
++      const { data, error } = await maintenanceSupabase.rpc('fn_active_maintenance_release_boundary');
++      if (error) throw new Error(error.message);
++      if (data === null) return null;
++      if (typeof data !== 'string' || !Number.isFinite(Date.parse(data))) {
++        throw new Error('maintenance_release_boundary_response_invalid');
++      }
++      return Date.parse(data);
++    }),
+--- a/server/src/maintenance/reconnectFreeze.ts
++++ b/server/src/maintenance/reconnectFreeze.ts
+@@ -18 +18 @@
+-    durationMs > 900_000 ||
++    !Number.isFinite(startMs + durationMs) ||
+@@ -40 +40 @@
+-    endMs - startMs > 900_000
++    !Number.isFinite(endMs - startMs)

@@ -31,8 +31,9 @@
  *      swallowed the error, and the badge went dark for real users.
  *
  *   4. The engine growing its own opinion about which pool to use. It passes
- *      the playing club and the database resolves — that is what keeps a
- *      cached client from ever being out of contract with the money path.
+ *      only the immutable tournament identity to the atomic authority; the
+ *      database reads the playing club and resolves the reserve owner under
+ *      the same lock that commits the draw.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -48,8 +49,11 @@ const tsCode = (src: string) =>
   src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 const MIGRATION = 'supabase/migrations/20260822030000_union_level_spin_reserve_wallet.sql';
+const ATOMIC_MIGRATION =
+  'supabase/migrations/20260909174722_spin_draw_books_one_funded_rule_receipt.sql';
 
 const migration = sqlCode(read(MIGRATION));
+const atomicMigration = sqlCode(read(ATOMIC_MIGRATION));
 const engine = tsCode(read('server/src/tournament/TournamentManagerBase.ts'));
 
 /** The body of one CREATE [OR REPLACE] FUNCTION, bounded by its own $$ pair. */
@@ -154,19 +158,36 @@ describe('Spin reserve ownership', () => {
     expect(migration).toMatch(/'merge', r\.balance/);
   });
 
-  it('leaves the engine passing the playing club, unchanged', () => {
-    // The RPCs resolve inside the database precisely so no deployed client or
-    // engine build can disagree with them about which pool is correct.
-    for (const rpc of ['fn_spin_draw_multiplier', 'fn_spin_settle_game']) {
-      const i = engine.indexOf(`supabase.rpc('${rpc}'`);
-      expect(i, `expected the engine to call ${rpc}`).toBeGreaterThan(-1);
-      const call = sliceCall(engine, `supabase.rpc('${rpc}'`);
-      expect(call, `${rpc} must be called with the playing club`).toMatch(
-        /p_club_id:\s*tournament\.club_id/
+  it('keeps reserve ownership inside the launch-bound atomic database authority', () => {
+    const call = sliceCall(engine, "supabase.rpc('fn_spin_draw_and_settle_atomic'");
+    expect(call).toMatch(/p_tournament_id:\s*this\.tournamentId/);
+    expect(call).toMatch(/p_launch_id:\s*launchId/);
+    expect(call).toMatch(/p_lease_generation:\s*this\.tournamentLeaseGeneration/);
+    expect(call).toMatch(/p_rule_manifest:\s*ruleManifest/);
+    expect(call).not.toMatch(/p_club_id|p_union_id|union_id/);
+
+    // The two old process-side doors remain database primitives during the
+    // rolling migration, but the live engine may no longer call either one.
+    expect(engine).not.toMatch(/supabase\.rpc\('fn_spin_(?:draw_multiplier|settle_game)'/);
+
+    const authority = (() => {
+      const start = atomicMigration.indexOf(
+        'CREATE OR REPLACE FUNCTION public.fn_spin_draw_and_settle_atomic('
       );
-      // No union plumbing in the engine. If this ever fails, ownership has
-      // leaked out of the database and back into application code.
-      expect(call).not.toMatch(/p_union_id|union_id/);
-    }
+      expect(start).toBeGreaterThan(-1);
+      const source = atomicMigration.slice(start);
+      const open = source.indexOf('AS $function$');
+      const close = source.indexOf('$function$;', open + 1);
+      expect(open).toBeGreaterThan(-1);
+      expect(close).toBeGreaterThan(open);
+      return source.slice(open, close);
+    })();
+    expect(authority).toMatch(
+      /SELECT \* INTO v_t FROM public\.tournaments WHERE id = p_tournament_id/
+    );
+    expect(authority).toMatch(/public\.fn_spin_draw_multiplier\(v_t\.club_id, v_t\.buy_in_amount/);
+    expect(authority).toMatch(
+      /public\.fn_spin_settle_game\(p_tournament_id, v_t\.club_id,\s*v_t\.buy_in_amount/
+    );
   });
 });

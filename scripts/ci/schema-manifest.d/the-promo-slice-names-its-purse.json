@@ -1,0 +1,4 @@
+{
+  "_owner": "feat/one-qualifying-rule. BBJ programme phase 5 of 5. Applied to production 2026-09-11 as 20260911170328: fn_bbj_promo_facts reports where a pool's promo slice actually goes - the union's promo_wallet or the standalone club's promo_balance (the purse), not bbj_pools.promo_balance (a staging slot the sweep empties continuously).",
+  "functions": ["fn_bbj_promo_facts"]
+}

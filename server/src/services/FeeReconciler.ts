@@ -40,7 +40,7 @@ import { processBBJPayout, setBBJPayoutQueue } from './supabase/bbj.js';
 import type { BBJPayoutParams } from './supabase/bbj.js';
 import { reportError } from './errorReporter.js';
 import { raiseFinancialAlert } from './financialAlerts.js';
-import { enqueuePendingWrite } from './supabase/pendingWrites.js';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 
 /**
  * 'bbj_payout' (BBJ audit 2026-09-05): a jackpot the engine DETECTED but could
@@ -296,48 +296,6 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
       await new Promise((r) => setTimeout(r, QUEUE_BACKOFF_MS(attempt)));
     }
 
-    /* THIS LADDER IS ALSO SHORTER THAN THE EVENT IT WAS WRITTEN FOR
-       (2026-09-08). Four attempts over ~10.7s, and the comment above
-       QUEUE_BACKOFF_MS says plainly what it is for: "buys the reload time to
-       finish". A PostgREST schema-cache reload on this database takes ~28s. On
-       2026-09-08 two migrations exhausted it 23 times.
-
-       Not a single one of those 23 had lost a chip - every fee was banked, and
-       the check that would have said so could not run either (see
-       feeIsAccountedFor). So the fix is in two halves: only a definite "no"
-       may alarm, and the patience moves off this path. */
-    if (TRANSIENT_DB_ERROR.test(lastError)) {
-      const queued = enqueuePendingWrite({
-        key: `fee:${fee.tableId}:${fee.handId ?? fee.handNumber}:${kind}`,
-        describedAs: `unbanked ${kind} queue insert for hand ${fee.handId ?? fee.handNumber}`,
-        attempt: async () => {
-          const res = await insertOnce();
-          if (res.done) return { done: true };
-          // A permanent rejection ends retrying only after the original fee
-          // is checked and any unconfirmed banking reaches the existing alarm.
-          if (!TRANSIENT_DB_ERROR.test(res.error)) {
-            await alarmUnqueueableFee(kind, fee, res.error);
-            return { done: true, refused: true };
-          }
-          return { done: false, error: res.error };
-        },
-        onGiveUp: async (finalError, elapsedMs, attempts) => {
-          await alarmUnqueueableFee(
-            kind,
-            fee,
-            `${finalError} (after ${attempts} off-path attempts over ${Math.round(elapsedMs / 1000)}s)`
-          );
-        },
-      });
-      if (queued) {
-        console.warn(
-          `[A5] Queue insert for ${kind} on hand ${fee.handId ?? fee.handNumber} could not reach ` +
-            `the database ("${lastError}"); handed to the off-path retry. No alarm unless it too gives up.`
-        );
-        return;
-      }
-    }
-
     // ASK BEFORE ALARMING (2026-08-22).
     //
     // A timeout is not a failure — it is the absence of an answer, and the
@@ -360,8 +318,8 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
  * The last word on a fee that could not be queued: ask whether the chips are
  * really missing, and alarm only if the answer is a definite no.
  *
- * Split out of queueUnbankedFee on 2026-09-08 so the off-path retry can reach
- * the same ending when its own budget is spent.
+ * Split out of queueUnbankedFee so every terminal queue-insert outcome reaches
+ * the same evidence check and the same durable alert boundary.
  */
 async function alarmUnqueueableFee(
   kind: PendingFeeKind,
@@ -384,12 +342,10 @@ async function alarmUnqueueableFee(
        predates this change and stays: chips have already left the pot, and
        silence about them is the one outcome worse than a false alarm.
 
-       What changed is WHEN we arrive here. The 23 criticals of 2026-09-08 were
-       raised 10.7 seconds into a 28-second schema-cache reload, and all 23 were
-       false. The queue insert is now handed to the off-path retry first, so by
-       the time this runs the database has been unreachable for the whole
-       PENDING_WRITE_BUDGET_MS - about three minutes. An alarm after that is
-       worth Dan's attention; one after ten seconds was not.
+       The durable claim insert gets the bounded transient retries above before
+       this evidence check. A response timeout can mean the write committed, so
+       the final read distinguishes that ambiguous transport result from a
+       proven missing fee before choosing the alert wording.
 
        And the alarm no longer overstates itself. `verifiedUnbanked: true` used
        to be written whether or not the verification had run. */
@@ -581,8 +537,14 @@ export async function reconcilePendingFees(): Promise<{
   resolved: number;
   stillFailing: number;
   exhausted: number;
+  /* DEFERRED IS ITS OWN OUTCOME (2026-09-11). A jackpot row skipped because
+     the platform is on its maintenance break is neither resolved nor still
+     failing, and folding it into either would be a signal answering when it
+     has deliberately not looked (CLAUDE.md 10.86). scanned - resolved -
+     stillFailing must still add up, so the deferral has to be countable. */
+  deferredFrozen: number;
 }> {
-  const summary = { scanned: 0, resolved: 0, stillFailing: 0, exhausted: 0 };
+  const summary = { scanned: 0, resolved: 0, stillFailing: 0, exhausted: 0, deferredFrozen: 0 };
 
   const { data, error } = await supabase
     .from('pending_fee_distributions')
@@ -603,9 +565,37 @@ export async function reconcilePendingFees(): Promise<{
   if (rows.length === 0) return summary;
 
   for (const row of rows) {
+    /* ═══════════════════════════════════════════════════════════════════════
+       THE SWEEP CHECKS THE FREEZE, FOR EVERY KIND (section 13 rule 5, 2026-09-11)
+       ═══════════════════════════════════════════════════════════════════════
+
+       Every row this loop re-drives moves money: `bbj_payout` credits seats,
+       `rake` calls `atomic_distribute_rake`, and the fall-through banks a BBJ
+       drop through `logBBJCollection`. Dan, section 13: "NO CHIP MOVEMENTS."
+
+       The first cut of this check gated only the jackpot branch, on the
+       reasoning that jackpots were what this programme was about. That left
+       the other two moving money through the break, and made the check's own
+       justification false: it is here so that a caller which forgets to gate
+       the cycle cannot slip money through, and two thirds of the money was
+       still slipping. `GameServer` does return early while frozen, but the
+       cycle is sized to run "comfortably under a minute of sequential RPCs" -
+       a freeze that begins MID-cycle is exactly the case a caller-level gate
+       cannot cover, and exactly the case this one is for.
+
+       The row is left completely untouched rather than attempted and failed:
+       bumping its attempt counter and writing a failure message would read in
+       the log as work that failed, when what happened is a break we scheduled.
+       It is also checked FIRST, before the `hand_history` resolution below,
+       so a deferred row costs no reads either. */
+    if (isMaintenanceFrozen()) {
+      summary.deferredFrozen++;
+      continue;
+    }
+
     let ok = false;
     let failureMessage = '';
-    /* A jackpot that landed from the QUEUE rather than live. The table is told
+    /* A jackpot that landed from the durable fee queue rather than live. The table is told
        when it does, so the celebration still happens - late, but it happens
        (phase 2.2). */
     let paidLate: {
@@ -617,15 +607,10 @@ export async function reconcilePendingFees(): Promise<{
 
     // REVIEW FIX 2026-08-20 — the hole that kept this alert alive.
     //
-    // A queued fee captures hand_id at the moment settlement FAILED. During an
-    // outage both writes fail together: hand_history has no row yet, so the
-    // captured hand_id is null. The engine's retry queue writes that hand a few
-    // seconds later and calls fn_relink_rake_record_to_hand — which finds
-    // nothing to link, because the rake row does not exist yet either. Then
-    // THIS function finally creates it, passing the stale null through, and the
-    // row is unlinkable forever. That is precisely the `unlinkable_rows` signal
-    // auditBBJDrift reports below, with nothing left in the system able to
-    // repair it.
+    // Historical queued fees can carry a null hand_id from the former split
+    // writer. Resolve the already-durable history row here so replaying that
+    // old claim cannot preserve an unlinkable identity. Accepted hands now
+    // commit history and fee ownership together and never enter this state.
     //
     // The hand row exists by now, so resolve the id here instead of trusting a
     // null captured minutes ago. hand_number is globally unique above
@@ -1276,12 +1261,12 @@ export async function auditSatelliteConservation(
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- *  A HAND'S RAKE THAT MISSED THE QUEUE HEALS ITSELF
+ *  HISTORICAL PRE-ATOMIC RAKE CLAIM RECOVERY
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * `pendingHands` is an IN-MEMORY queue drained on shutdown. When the process
- * dies between the inline fee write failing and that drain, nothing on disk
- * remembers the hand owed a fee — and no existing healer looks for it:
+ * Before accepted hands used one atomic transaction, a process death between
+ * the independent history and fee writes could leave nothing on disk that
+ * remembered the hand owed a fee. No older healer could see it:
  * fn_bbj_repair_unbanked heals BBJ *from* rake_records, so a hand with no
  * rake_records row at all is invisible to it.
  *

@@ -1,0 +1,13 @@
+# Verified Capabilities
+
+The runtime advertises four total concurrency slots including G8. G8 successfully started three concrete specialist assignments. Use a flat root-managed pool: G5 plus lifecycle delegate plus contract reviewer. No deeper spawning is authorized in this wave. Child spawning is exposed by tools, but maximum nested depth has not been experimentally established. It is unnecessary for this topology.
+
+Available and used: collaboration.spawn_agent, send_message; list_agents for status; followup_task for reuse, interrupt_agent and wait_agent exposed. Completion/interruption slot release has not yet been observed; do not assume either frees a slot. Reuse existing workers at boundaries rather than launching more waiting leads. Reserve an independent reviewer role by assigning contract review independently from implementations.
+
+Codex task tools successfully listed/read existing tasks and delivered ownership messages. Delivery is not acknowledgment; named acknowledgments are recorded separately. At the initial pre-support checkpoint, no separate task had yet been created; this historical statement was superseded by the four user-requested creations below. Browser control is available but unused; no private UI access is assumed. GitHub CLI authenticated read access and Supabase metadata-only read access succeeded. Shell network reads require sandbox escalation; the repository read and public identity reads were approved. Files outside the task need the same scoped approval mechanism. No automatic approval rejection occurred during this preflight.
+
+This is active session coordination, not an unattended service. No automation or timer has been installed. If execution ends, record that active oversight stopped; no promise of future monitoring is implied.
+
+The user subsequently explicitly requested up to four new chats. Four projectless support tasks were successfully created with create_thread; current list_agents separately confirms G8 plus three running internal agents. The support tasks are listed in PROGRAM_INDEX.md; no extra nested agents or resource writes were authorized. Support-task status is observed with bounded wait_threads snapshots, not assumed from creation.
+
+Observation 2026-09-11T20:56:55.129831+00:00: collaboration.list_agents returned root plus foundation_contract_review, foundation_lifecycle and g5_foundation_lead, all running. Support activity is independently recorded in evidence/review-generation1-evidence.json.txt at 20:52:46Z; the review task returned Needs Changes at 20:54UTC. Creation is not completion. No slot-release or nesting limit has been experimentally inferred.

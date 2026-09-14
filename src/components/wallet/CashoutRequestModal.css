@@ -270,11 +270,12 @@
 
 .quick-amounts {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
 .quick-btn {
+  min-width: 0;
   padding: 14px 8px;
   min-height: 48px;
   border-radius: 12px;

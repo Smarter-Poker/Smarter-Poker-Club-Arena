@@ -31,6 +31,8 @@ import { resolve } from 'node:path';
 
 const read = (p: string) => readFileSync(resolve(process.cwd(), p), 'utf8');
 const WF = read('.github/workflows/auto-deploy-hetzner.yml');
+const TRANSACTION = read('server/scripts/engine-release-transaction.sh');
+const OBSERVER = read('server/scripts/observe-engine-release.sh');
 
 describe('the drain gate cannot pin production on stale code', () => {
   it('the deploy has a path that actually lands, and it is not a staleness cap', () => {
@@ -47,25 +49,37 @@ describe('the drain gate cannot pin production on stale code', () => {
      * hands, and opens `maintenance.readyForRestart`. There is a real,
      * routinely-reachable path again, so nothing has to be forced through.
      */
-    expect(WF).not.toMatch(/MAX_ENGINE_AGE_SEC/);
-    expect(WF).toMatch(/readyForRestart/);
-    // And the deploy must never simply give up on the window: a break that
-    // opens has to be acted on. #3070 (2026-09-05): the fixed 56 x 15 s poll
-    // gave up 23 s before the :55 break once builds grew past its budget, and
-    // production sat four merges behind while every run reported success.
-    // The poll is now SIZED TO THE NEXT :56 (plus a 90 s margin), capped by
-    // what the job has left after a cutover reserve, and a run that cannot
-    // reach the gate says so and exits rather than sleeping to the same answer.
-    expect(WF).toMatch(/SECS_TO_GATE=\$\(\( \(56 - MIN_NOW\) \* 60 - SEC_NOW \)\)/);
-    expect(WF).toMatch(/ATTEMPTS=\$\(\( \(SECS_TO_GATE \+ 90\) \/ POLL_S \)\)/);
-    expect(WF).toMatch(/for i in \$\(seq 1 \$ATTEMPTS\); do/);
-    expect(WF).toMatch(/sleep 15\n/);
-    expect(WF).toMatch(/BUDGET_CAP_S=\$\(\( JOB_TIMEOUT_S - ELAPSED_S - CUTOVER_RESERVE_S \)\)/);
-    expect(WF).toMatch(/if \[ "\$SECS_TO_GATE" -gt "\$BUDGET_CAP_S" \]; then/);
-    // The job itself leaves room for a full hour's wait plus the cutover: a
-    // tick at :35 with an 18-minute build still reaches :55 inside 40 minutes.
-    const timeout = Number(WF.match(/timeout-minutes: (\d+)/)![1]);
-    expect(timeout).toBeGreaterThanOrEqual(40);
+    expect(WF).not.toMatch(/MAX_ENGINE_AGE_SEC|STALENESS_CAP/);
+    expect(TRANSACTION).toContain('maintenance_certificate()');
+    expect(TRANSACTION).toContain('m.get("readyForRestart") is True');
+    expect(TRANSACTION).toContain('m.get("unparkedTables")==0');
+    // The durable host transaction owns the cold build and waits until the
+    // certificate itself appears. It fails at its absolute deadline; it does
+    // not return a successful staged-only outcome.
+    const build = TRANSACTION.indexOf('"$IMAGE_BUILDER" "$REPO_DIR" "$SHA" "$IMAGE_REF"');
+    const wait = TRANSACTION.indexOf('while :; do', build);
+    const certificate = TRANSACTION.indexOf('maintenance_certificate)', wait);
+    expect(build).toBeGreaterThan(0);
+    expect(wait).toBeGreaterThan(build);
+    expect(certificate).toBeGreaterThan(wait);
+    expect(TRANSACTION.slice(wait, certificate)).toContain('CERTIFICATE_DEADLINE');
+    expect(TRANSACTION).toContain('bounded_sleep 15');
+
+    // The Actions observer has room to see intake assignment plus the entire
+    // host-owned transaction and a substantial transport/proof margin.
+    const timeout = Math.max(
+      ...[...WF.matchAll(/timeout-minutes: (\d+)/g)].map((match) => Number(match[1]))
+    );
+    const observeSeconds = Number(
+      OBSERVER.match(/OBSERVE_SECONDS="\$\{ENGINE_RELEASE_OBSERVE_SECONDS:-(\d+)\}"/)![1]
+    );
+    const handoffSeconds = Number(
+      OBSERVER.match(
+        /INVOCATION_WAIT_SECONDS="\$\{ENGINE_RELEASE_INVOCATION_WAIT_SECONDS:-(\d+)\}"/
+      )![1]
+    );
+    expect(timeout * 60).toBeGreaterThanOrEqual(observeSeconds + handoffSeconds + 20 * 60);
+    expect(WF).toContain('Dispatch the staged SHA through the durable Hetzner intake');
   });
 
   it('proceeding is safe because the engine drains itself first', () => {
@@ -94,129 +108,57 @@ describe('the drain gate cannot pin production on stale code', () => {
     expect(deadline).toBeLessThan(grace);
   });
 
-  it('a run that ships nothing says so loudly, not quietly', () => {
-    // Both no-op paths must annotate. An agent reading `gh run list` sees
-    // only "success"; a warning surfaces in the run header without anyone
-    // thinking to open the log of a green run. This is how three and a half
-    // hours of staleness went unnoticed.
-    expect(WF).toMatch(/::warning title=NOT DEPLOYED::/);
-    // Was PROCEEDING ON STALENESS CAP, which announced the workflow giving up
-    // and restarting on live tables. That path is gone; the no-op path that
-    // remains is a break that never opened, and it must be just as loud.
-    expect(WF).toMatch(/::warning title=BREAK NEVER OPENED::/);
+  it('a run cannot report shipped without a durable result and independent proof', () => {
+    expect(WF).toContain('[ "$UNIT_RESULT" = success ] && [ "$RESULT_SHA" = "$SHA" ]');
+    expect(WF).toContain('case "$RESULT" in sealed|already-released)');
+    expect(WF).toMatch(
+      /shipped: .*steps\.release\.outputs\.result == 'sealed'.*steps\.verify\.outputs\.verified == 'true'/
+    );
+    expect(WF).toContain('SHIPPED: ${{ needs.deploy.outputs.shipped }}');
+    expect(WF).toContain("steps.release.outputs.result || 'not completed'");
+    expect(WF).toContain("STRICT_RECEIPT: '1'");
+  });
+});
+
+describe('there is no bypass around current restart authority', () => {
+  const gate = TRANSACTION.slice(
+    TRANSACTION.indexOf('maintenance_certificate()'),
+    TRANSACTION.indexOf('validate_candidate_image()')
+  );
+
+  it('requires the full maintenance certificate and fails closed', () => {
+    expect(gate).toContain('m.get("active") is True');
+    expect(gate).toContain('m.get("durableConfirmed") is True');
+    expect(gate).toContain('m.get("readyForRestart") is True');
+    expect(gate).toContain('m.get("phase")=="counting_down"');
+    expect(gate).toContain('m.get("unparkedTables")==0');
+    expect(gate).toContain('MIN_BREAK_MS');
+    expect(gate).not.toContain('skip=true');
+    expect(TRANSACTION).toContain(
+      "die 'the engine did not present a restart certificate with enough proof time remaining'"
+    );
+  });
+
+  it('has no force, legacy, staleness, or straggler restart path', () => {
+    expect(gate).not.toMatch(
+      /github\.event\.inputs\.force|LEGACY ENGINE|STALE_MIN|STRAGGLER_NOW|RESTARTING ON A STRAGGLER/
+    );
   });
 });
 
 /**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  AND THE ESCAPE HATCH BEHIND THAT PATH IS REACHABLE (2026-09-02)
- * ═══════════════════════════════════════════════════════════════════════════════
+ * THE ONE-BUILD EXCEPTION IS SPENT (2026-09-11).
  *
- * The block above pins that a landable path EXISTS. This one pins that the
- * hatch behind it - the one that fires when a straggler table can never park -
- * can actually be reached. It could not, from the day it was written.
- *
- * It gates on `BEHIND_MIN >= STALE_MIN`, and BEHIND_MIN came from
- * `git show -s --format=%ct "$LIVE"` guarded by `git cat-file -e`.
- * actions/checkout defaults to fetch-depth: 1, so the only commit object on
- * the runner is the one being deployed. Dating the LIVE sha always failed, the
- * else branch printed "treating as not-stale", BEHIND_MIN stayed 0, and the
- * comparison could never be true.
- *
- * Run 33656444491: production had served 93d167b5 for 798 minutes, a break WAS
- * running, 40 tables never parked - every precondition the hatch exists for -
- * and it printed "could not date the live commit (93d167b5) - treating as
- * not-stale", then BREAK NEVER OPENED, and shipped nothing. The engine
- * carrying the fix for the unparked tables was stranded behind those same
- * unparked tables.
- *
- * The second failure was timing. The hatch was evaluated only AFTER all 56
- * attempts. Run 33662583560: gate opened 17:47:24, break ran 17:55-18:00, loop
- * ended 18:01:24, engine restarted 18:02:24 - two and a half minutes after the
- * window closed, while the step printed "Restarting inside the break".
- *
- * Both were invisible because nothing pinned them.
+ * Dan approved replacing build 404948b3 without a readyForRestart certificate
+ * because its frozen tables could never park (#4235). It was used once, at the
+ * 06:55 break, and removed. An exception that outlives its build is a force
+ * input with a longer name, so it may not come back quietly: the next frozen
+ * build must earn its certificate (a frozen hand is reaped and re-parked inside
+ * the break), or be put in front of Dan again.
  */
-describe('the escape hatch behind that path is reachable', () => {
-  /** The block that decides how far behind production is. */
-  const dating = (): string => {
-    const start = WF.indexOf('BEHIND_MIN=0');
-    expect(start, 'the gate must still compute BEHIND_MIN').toBeGreaterThan(0);
-    const end = WF.indexOf('STALE_MIN=', start);
-    expect(end, 'STALE_MIN must still follow the dating block').toBeGreaterThan(start);
-    return WF.slice(start, end);
-  };
-
-  const pollLoop = (): string => {
-    const start = WF.indexOf('for i in $(seq 1 $ATTEMPTS)');
-    expect(start).toBeGreaterThan(0);
-    const end = WF.indexOf('done', start);
-    expect(end).toBeGreaterThan(start);
-    return WF.slice(start, end);
-  };
-
-  it('dates the live commit in a way a shallow checkout cannot defeat', () => {
-    const block = dating();
-    const usesLocalGit = /git\s+(show|cat-file)/.test(block);
-    const hasRemoteFallback = /api\.github\.com\/repos\/.*\/commits\//.test(block);
-    expect(
-      !usesLocalGit || hasRemoteFallback,
-      'BEHIND_MIN is computed from local git with no remote fallback. The checkout is ' +
-        'fetch-depth: 1, so the live commit object is not on the runner and this always ' +
-        'answers "not-stale" - which silently disarms the escape hatch.'
-    ).toBe(true);
-  });
-
-  it('does not try to rescue it with a plain git fetch', () => {
-    // /health reports an ABBREVIATED sha, and fetch requires a full one:
-    // "fatal: couldn't find remote ref 93d167b5", verified against a real
-    // depth-1 clone of this repo. A fetch is not a valid fix.
-    expect(/git\s+fetch[^\n]*\$\{?LIVE\}?/.test(dating())).toBe(false);
-  });
-
-  it('still fails closed when the commit cannot be dated at all', () => {
-    // Unknown staleness must never read as stale enough to restart.
-    expect(dating()).toMatch(/BEHIND_MIN=0/);
-    expect(dating()).toMatch(/treating as not-stale/);
-  });
-
-  it('decides while the break is still open, not after the poll outlives it', () => {
-    expect(
-      /STRAGGLER_NOW=yes/.test(pollLoop()),
-      'nothing inside the poll loop escalates, so the gate waits out all 56 attempts and ' +
-        'restarts after the break has already ended - the unannounced restart the break ' +
-        'exists to prevent.'
-    ).toBe(true);
-  });
-
-  it('can only fire on a break that is actually counting down', () => {
-    // last_hand is the :53 warning, not the break. Escalating there would
-    // restart with cards still in the air.
-    const loop = pollLoop();
-    expect(loop).toMatch(/phase=counting_down/);
-    expect(loop.slice(0, loop.indexOf('STRAGGLER_NOW=yes'))).toMatch(/BREAK_RUNNING/);
-  });
-
-  it('leaves enough of the break for the cutover to land inside it', () => {
-    expect(WF).toMatch(/MIN_BREAK_LEFT_S=(\d+)/);
-    const floor = Number(WF.match(/MIN_BREAK_LEFT_S=(\d+)/)![1]);
-    // docker stop -t 45, image start, liveness verify.
-    expect(floor).toBeGreaterThanOrEqual(60);
-    // The break is 300s; a floor at or above it could never be satisfied.
-    expect(floor).toBeLessThan(300);
-  });
-
-  it('still requires production to be genuinely stale', () => {
-    // The hatch trades a straggler's hand for shipping stranded code. That
-    // trade is only worth making when code really is stranded.
-    expect(WF).toMatch(/STALE_MIN=190/);
-  });
-
-  it('keeps the post-loop escalation as the fallback', () => {
-    // The in-break path is additive. If it never fires, behaviour must be
-    // exactly what shipped before it existed.
-    const after = WF.slice(WF.indexOf('if [ "$READY" = "yes" ]; then exit 0; fi'));
-    expect(after).toMatch(/BREAK NEVER OPENED/);
-    expect(after).toMatch(/STALE_MIN/);
+describe('the one frozen-build exception is spent', () => {
+  it('names no build and has no expiry left', () => {
+    expect(WF).not.toMatch(/FROZEN_BUILD_OVERRIDE/);
+    expect(WF).not.toMatch(/frozen_override/);
   });
 });

@@ -26,8 +26,22 @@ const sql = (src: string) => src.replace(/^\s*--.*$/gm, '');
 
 const BASE = code(read('src/tournament/TournamentManagerBase.ts'));
 const RECOVERY = code(read('src/tournament/tournamentRecovery.ts'));
-const MANAGER = code(read('src/tournament/TournamentManager.ts'));
 const ELIM = code(read('src/tournament/TournamentManagerEliminations.ts'));
+const TERMINAL_RPC = code(read('src/tournament/terminalSettlementRpc.ts'));
+const RECEIPT_VERIFIER = code(read('src/tournament/completionSettlementReceipt.ts'));
+const MIGRATIONS = path.join(process.cwd(), '..', 'supabase', 'migrations');
+const migrationNames = fs.readdirSync(MIGRATIONS).filter((name) => name.endsWith('.sql'));
+const cashSettlementName = migrationNames.find((name) =>
+  name.includes('tournament_cash_settlement_has_one_atomic_authority')
+);
+const terminalSettlementName = migrationNames.find((name) =>
+  name.includes('non_satellite_terminal_settlement_commits_one_stored_receipt')
+);
+if (!cashSettlementName || !terminalSettlementName) {
+  throw new Error('current cash/terminal settlement migrations are missing');
+}
+const CASH_SETTLEMENT = sql(read(`../supabase/migrations/${cashSettlementName}`));
+const TERMINAL_SETTLEMENT = sql(read(`../supabase/migrations/${terminalSettlementName}`));
 const LATE_REG = sql(
   read('../supabase/migrations/20260908042200_late_registration_can_build_its_first_table.sql')
 );
@@ -61,7 +75,7 @@ describe('a column that is read is a column that is selected', () => {
 });
 
 describe('the stuck-tournament watchdog', () => {
-  it('treats a winner row as holding its finishing place', () => {
+  it('accepts one winner row and refuses duplicate winner witnesses', () => {
     /**
      * The collision map tested `status === 'eliminated'` only, and
      * finishTournament stamps the champion `status: 'winner', position: 1`.
@@ -74,7 +88,14 @@ describe('the stuck-tournament watchdog', () => {
      * prize and receives NOTHING, while the place they actually finished in is
      * never paid to anybody.
      */
-    expect(RECOVERY).toMatch(/r\.status === 'eliminated' \|\| r\.status === 'winner'/);
+    const ranker = RECOVERY.slice(
+      RECOVERY.indexOf('function canonicalWinner('),
+      RECOVERY.indexOf('async function readRecoveryField(')
+    );
+    expect(ranker).toMatch(/row\.status === 'winner' && Number\(row\.position\) === 1/);
+    expect(ranker).toMatch(/if \(winners\.length === 1\) return winners\[0\]\.user_id/);
+    expect(ranker).toMatch(/if \(winners\.length > 1\) return null/);
+    expect(ranker).toMatch(/eliminated\.length !== rows\.length/);
   });
 });
 
@@ -91,84 +112,34 @@ describe('no money path writes a ledger row it did not earn', () => {
    * automated net there is. `fn_credit_and_log` returns boolean and writes the
    * row only when the credit actually landed.
    */
-  const MIGRATIONS = path.join(process.cwd(), '..', 'supabase', 'migrations');
-  /**
-   * A migration REDEFINES the reconciler only when it carries a CREATE OR
-   * REPLACE for it. A GRANT or REVOKE names the function too
-   * (20260902203500_db_payers_state_their_grants.sql states who may call it
-   * and defines nothing), and a grants-only file sorted last made this guard
-   * read an empty body and report that exact-cent pricing had been dropped.
-   * The question is "what does production RUN", so only definitions count.
-   */
-  const REDEFINES =
-    /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.fn_tournament_payout_reconcile\s*\(/i;
-
-  it('the reconciler credits through fn_credit_and_log', () => {
-    const files = fs
-      .readdirSync(MIGRATIONS)
-      .filter((f) => f.endsWith('.sql'))
-      .sort();
-    // The LAST migration that redefines the reconciler is what production runs.
-    const owning = files.filter((f) =>
-      REDEFINES.test(sql(fs.readFileSync(path.join(MIGRATIONS, f), 'utf8')))
+  it('the terminal authority accepts payout evidence only with its exact wallet identity', () => {
+    expect(CASH_SETTLEMENT).toMatch(
+      /p\.idempotency_key IS NULL OR NOT EXISTS \([\s\S]*?FROM public\.wallet_credit_idempotency k[\s\S]*?k\.key = p\.idempotency_key[\s\S]*?k\.user_id = p\.user_id[\s\S]*?k\.amount = p\.amount/
     );
-    expect(owning.length, 'no migration defines the reconciler').toBeGreaterThan(0);
-
-    const latest = sql(fs.readFileSync(path.join(MIGRATIONS, owning[owning.length - 1]), 'utf8'));
-    // The original reconciler now delegates to the obligation writer. Verify
-    // both executable calls so a money_path label or comment cannot pass.
-    expect(latest).toMatch(/v_settle\s*:=\s*public\.fn_settle_tournament_obligation\s*\(/i);
-    const settlementDefinitions = files.filter((file) =>
-      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.fn_settle_tournament_obligation\s*\(/i.test(
-        sql(fs.readFileSync(path.join(MIGRATIONS, file), 'utf8'))
-      )
+    const finish = sliceMethod(ELIM, 'finishTournament(winnerId: string): Promise<void>');
+    const recovery = sliceMethod(
+      RECOVERY,
+      'export async function recoverStuckCompletingTournaments('
     );
-    expect(settlementDefinitions.length, 'no obligation writer definition').toBeGreaterThan(1);
-    const rollingWrapper = sql(
-      fs.readFileSync(path.join(MIGRATIONS, settlementDefinitions.at(-1)!), 'utf8')
-    );
-    const coreDefinition = sql(
-      fs.readFileSync(path.join(MIGRATIONS, settlementDefinitions.at(-2)!), 'utf8')
-    );
-    expect(rollingWrapper).toMatch(
-      /RETURN public\.fn_settle_tournament_obligation_before_atomic_batch_gate\s*\(/
-    );
-    expect(coreDefinition).toMatch(/v_credited\s*:=\s*public\.fn_credit_and_log\s*\(/i);
-    for (const body of [latest, rollingWrapper, coreDefinition]) {
-      expect(body, 'bare credit can leave an unearned ledger row').not.toMatch(
-        /(?:PERFORM|SELECT)\s+(?:public\.)?credit_player_wallet\s*\(/i
-      );
+    for (const source of [finish, recovery]) {
+      expect(source).not.toMatch(/credit_player_wallet|log_wallet_transaction|wallet_transactions/);
+      expect(source).not.toMatch(/settleTournamentObligation|fn_settle_tournament_obligation/);
     }
   });
 
-  it('the last-written reconciler keeps the exact-cent pricing', () => {
-    /**
-     * Two migrations written on 2026-08-29 both redefined this function -- one
-     * added exact integer-cent pricing, the other added the prize stamp -- and
-     * the second sorted AFTER the first, so a replay would have silently
-     * reverted exactness. That is the regression this guard exists to catch:
-     * whoever redefines the reconciler next must carry every fix forward.
-     */
-    const files = fs
-      .readdirSync(MIGRATIONS)
-      .filter((f) => f.endsWith('.sql'))
-      .sort();
-    const owning = files.filter((f) =>
-      REDEFINES.test(sql(fs.readFileSync(path.join(MIGRATIONS, f), 'utf8')))
-    );
-    const latest = sql(fs.readFileSync(path.join(MIGRATIONS, owning[owning.length - 1]), 'utf8'));
-
-    expect(latest, 'exact-cent pricing was dropped by a later redefinition').toMatch(
-      /v_pool_cents/
-    );
-    expect(latest, 'the prize stamp was dropped by a later redefinition').toMatch(
-      /SET prize = v_expected/
+  it('the terminal ladder remains exact-cent and its receipt must conserve the total', () => {
+    expect(CASH_SETTLEMENT).toMatch(/fn_ca_tournament_place_amounts/);
+    expect(CASH_SETTLEMENT).toMatch(/IS DISTINCT FROM round\(v_amount,2\)/);
+    expect(CASH_SETTLEMENT).toMatch(/SET prize = v_row\.amount/);
+    expect(RECEIPT_VERIFIER).toMatch(/payoutCents !== Math\.round\(cashPayoutTotal \* 100\)/);
+    expect(TERMINAL_SETTLEMENT).toMatch(
+      /SET status = 'COMPLETED'[\s\S]*?INSERT INTO public\.tournament_terminal_settlements/
     );
   });
 });
 
 describe('the recovery watchdog cannot pay money it has no right to', () => {
-  it('records final entitlements, then settles the complete place set atomically', () => {
+  it('has one whole-event receipt door per format and no fragment writer', () => {
     /**
      * The ITM top-up used `tourney:{id}:prize:place:{N}` -- the key
      * eliminatePlayer already paid that place under. The comment said "recorded
@@ -188,48 +159,66 @@ describe('the recovery watchdog cannot pay money it has no right to', () => {
       RECOVERY,
       'export async function recoverStuckCompletingTournaments('
     );
-    expect(recovery).toMatch(/\.update\(\{ prize: owed \}\)/);
-    expect(recovery).toMatch(/await settleTournamentPlacesAtomically\(/);
-    expect(recovery).toMatch(/'engine\.recoverStuckCompleting'/);
-    expect(recovery).not.toMatch(/settleTournamentObligation\(/);
-    expect(recovery).not.toMatch(/fn_settle_tournament_obligation/);
+    expect(recovery.match(/requestTournamentTerminalReceipt\(/g)).toHaveLength(1);
+    expect(recovery.match(/requestSatelliteSettlementReceipt\(/g)).toHaveLength(1);
+    expect(recovery).not.toMatch(
+      /settleTournamentPlacesAtomically|settleTournamentObligation|fn_settle_tournament_obligation/
+    );
+    expect(recovery).not.toMatch(/\.insert\(|\.update\(|\.delete\(/);
   });
 
-  it('rejects a batch without completion proof before reporting recovery success', () => {
+  it('reports recovery success only after the receipt helper returns', () => {
     const recovery = sliceMethod(
       RECOVERY,
       'export async function recoverStuckCompletingTournaments('
     );
-    const proof = recovery.indexOf('if (!settlement.ok || !settlement.completed)');
-    const success = recovery.indexOf('[GameServer] Recovered stuck COMPLETING tournament');
-
-    expect(recovery).toMatch(
-      /if \(!settlement\.ok \|\| !settlement\.completed\) \{[\s\S]*?throw new Error/
-    );
-    expect(proof).toBeGreaterThanOrEqual(0);
-    expect(success).toBeGreaterThan(proof);
+    const request = recovery.indexOf('const receipt = await requestTournamentTerminalReceipt(');
+    const success = recovery.indexOf('[GameServer] Recovered tournament', request);
+    const refusal = recovery.indexOf('error instanceof TerminalSettlementRefusedError', success);
+    const unknown = recovery.indexOf('reportUnknownRecoveryOutcome(', refusal);
+    expect(request).toBeGreaterThanOrEqual(0);
+    expect(success).toBeGreaterThan(request);
+    expect(refusal).toBeGreaterThan(success);
+    expect(unknown).toBeGreaterThan(refusal);
+    expect(TERMINAL_RPC).toMatch(/verifyTournamentCompletionReceipt\(/);
+    expect(TERMINAL_RPC).toMatch(/fn_resolve_tournament_terminal_outcome/);
   });
 
   it('refuses to pay structure cash on a satellite', () => {
     // A satellite awards SEATS. Both live payout sites check this; recovery
     // did not, and paid cash under the same key processSatelliteAwards uses
     // for the ticket value -- a race between two different amounts.
-    expect(RECOVERY).toMatch(/=== 'satellite'/);
-    expect(RECOVERY).toMatch(/recoverStuckCompleting_satellite_skipped/);
+    const recovery = sliceMethod(
+      RECOVERY,
+      'export async function recoverStuckCompletingTournaments('
+    );
+    const branch = recovery.slice(
+      recovery.indexOf('if (isSatellite)'),
+      recovery.indexOf('const [dealPayouts, dealObligations]')
+    );
+    expect(branch).toMatch(/requestSatelliteSettlementReceipt\(tournament\.id, winnerId\)/);
+    expect(branch).toMatch(/continue;/);
+    expect(branch).not.toMatch(/requestTournamentTerminalReceipt|resolvePayoutStructure/);
   });
 
   it('refuses to pay over a final-table deal', () => {
     // Recovery recognizes the durable deal receipt and re-drives only those
     // exact idempotent deal obligations. It never falls through to structure
     // cash, which would pay new money over the negotiated shares.
-    expect(RECOVERY).toMatch(/final_table_deal/);
-    expect(RECOVERY).toMatch(/recoverStuckCompleting_chopped_skipped/);
-    expect(RECOVERY).toContain('durably completed final-table deal');
-    const dealBranch = RECOVERY.slice(
-      RECOVERY.indexOf('const [dealPayouts, dealObligations]'),
-      RECOVERY.indexOf('const { data: players, error: playersErr }')
+    const recovery = sliceMethod(
+      RECOVERY,
+      'export async function recoverStuckCompletingTournaments('
     );
-    expect(dealBranch).not.toContain('settleTournamentPlacesAtomically(');
+    const evidence = recovery.indexOf('const hasDeal =');
+    const winner = recovery.indexOf('let winnerId: string | null = null', evidence);
+    const ordinaryRanking = recovery.indexOf('if (!hasDeal)', winner);
+    const receipt = recovery.indexOf("hasDeal ? 'final_table_deal' : 'places'", ordinaryRanking);
+    expect(evidence).toBeGreaterThanOrEqual(0);
+    expect(winner).toBeGreaterThan(evidence);
+    expect(ordinaryRanking).toBeGreaterThan(winner);
+    expect(receipt).toBeGreaterThan(ordinaryRanking);
+    expect(recovery.slice(winner, ordinaryRanking)).toContain('winnerId: string | null = null');
+    expect(recovery).not.toMatch(/settleTournamentPlacesAtomically|\.update\(\{ prize:/);
   });
 });
 

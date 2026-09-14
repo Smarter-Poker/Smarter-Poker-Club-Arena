@@ -1,0 +1,105 @@
+{
+  "verified_at": "2026-09-10T07:16:05.111912+00:00",
+  "passed": false,
+  "rollback_exact": true,
+  "before_sha256": "42a4a19c35318f84b6fad33ed46a58566939e72d38ab47dc7c65c071bd2222bf",
+  "after_sha256": "42a4a19c35318f84b6fad33ed46a58566939e72d38ab47dc7c65c071bd2222bf",
+  "tables": [
+    "auth.users",
+    "public.users",
+    "public.profiles",
+    "public.clubs",
+    "public.club_wallets",
+    "public.club_members",
+    "public.tournaments",
+    "public.tournament_players",
+    "public.tables",
+    "public.table_seats",
+    "public.engine_tournament_leases",
+    "public.hand_history",
+    "public.wallets",
+    "public.wallet_transactions",
+    "public.wallet_credit_idempotency",
+    "public.chip_ledger",
+    "public.tournament_escrow",
+    "public.rake_records",
+    "public.rake_attributions",
+    "public.spin_bonus_pools",
+    "public.spin_reserve_ledger",
+    "public.spin_draw_receipts",
+    "public.tournament_launch_receipts",
+    "public.tournament_refund_entitlements",
+    "public.tournament_finish_receipts",
+    "public.tournament_terminal_settlements",
+    "public.tournament_rake_settlements",
+    "public.tournament_payouts",
+    "public.tournament_obligations",
+    "public.tournament_place_settlement_batches",
+    "public.agent_commissions",
+    "public.vip_points_carry",
+    "public.player_stats"
+  ],
+  "source_definitions": [
+    {
+      "name": "fn_ca_lock_settlement_lane_global",
+      "before": "343015440ea5c84ee4ca7ae583c73d30",
+      "after": "343015440ea5c84ee4ca7ae583c73d30"
+    },
+    {
+      "name": "fn_complete_tournament_terminal",
+      "before": "589388ad7204fef460a1deebf32ecb69",
+      "after": "f4275f9fa8cb2711f19ffdf7b16a04e6"
+    },
+    {
+      "name": "fn_resolve_tournament_terminal_outcome",
+      "before": "4c151073f56b53e4b0363bdd916b78d4",
+      "after": "022c1883533939caf8ebed0cb5699e8c"
+    },
+    {
+      "name": "fn_settle_tournament_rake",
+      "before": "b945872c72d3414909d4b4b41cfb7849",
+      "after": "05a512317bb7bdcecfaec19ef8ee4e63"
+    },
+    {
+      "name": "fn_settle_tournament_places",
+      "before": "351bfe3e401ad90eeb9b40bad366bb0e",
+      "after": "d0262f4928b12eea1cc5e9175cbf2737"
+    },
+    {
+      "name": "fn_ca_settle_tournament_place_raw",
+      "before": "329237bd65214e17d4ca3298f363f248",
+      "after": "329237bd65214e17d4ca3298f363f248"
+    },
+    {
+      "name": "fn_settle_tournament_obligation",
+      "before": "915f3ebd5c4a2efb97ad3a354dfeb365",
+      "after": "915f3ebd5c4a2efb97ad3a354dfeb365"
+    }
+  ],
+  "native_exit": 3,
+  "programme": "109-item comprehensive Club Arena accounting audit",
+  "control": "CA-03-08",
+  "status": "current_terminal_subset_refused_by_existing_native_seat_guard",
+  "production_mutations": false,
+  "runner": "scripts/ci/rehearse-spin-current-terminal.py",
+  "probe": "scripts/ci/probes/spin-current-terminal-native.sql",
+  "requires": [
+    "Unchanged complete34412 source SHA2560634d1da3856c1db483ea99fb9713838a5c7c5158e1d2f3ee6daf58f335dcf7f",
+    "Unchanged35435 source SHA256d07cbe35f62ef4a18e29779c812526c27420da4a82c891c0bf2f136b9e6a31fe"
+  ],
+  "native_refusal": "TOURNAMENT_SEAT_EXIT_REQUIRES_TOURNAMENT_AUTHORITY",
+  "observed_at": "fn_complete_tournament_terminal(uuid,uuid,text) line716, live-seat release UPDATE",
+  "scope": [
+    "Current live-matching terminal f4275, resolver022c, rake05a512, placewrapperd0262f, raw329237 and shared public obligation915f composed with exact current native Spin34412.",
+    "Existing core68f74 and attribution45ec/treasury472e remain native; only the two approved rake leaves have their exactlive postgres+service-only ACLs applied transactionally.",
+    "The seven tournament guards remain enabled O. No satellite receipt definition, body or ACL restoration.",
+    "The native call reached seat release after the cash and rake checks, then the existing native guard refused. No terminal PASS or terminal completion was recorded.",
+    "Every public function definition/owner/ACL, trigger and all33compared fixturetables returned to exact pre-call state after the aborted outer transaction.",
+    "This is a local current-function composition incompatibility. Live seat-guard parity was not established, so this does not certify a live bug."
+  ],
+  "remaining": [
+    "Resolve the allowed native terminal/seat-authority compatibility gate without bypassing guards.",
+    "Then rerun late-terminal-fault, payout, exact escrow, closure and replay assertions, which were not reached in this run.",
+    "Currentwrapper concurrency and production acceptance remain open."
+  ]
+}

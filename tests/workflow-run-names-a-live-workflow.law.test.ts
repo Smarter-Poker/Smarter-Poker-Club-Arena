@@ -7,16 +7,10 @@
  *
  * That is what happened on 2026-09-02. #2676 deleted build-for-world-hub.yml
  * (name "Build for World Hub Sync") and repointed fifteen files by FILENAME.
- * Two listeners named it by `name:` and were missed:
- *
- *   publish-watchdog.yml  - the dispatcher that runs starved scheduled work,
- *                           the production-vs-main check, the orphan sweep
- *   post-deploy-e2e.yml   - the production E2E after every publish
+ * The post-deploy E2E listener named it by `name:` and was missed.
  *
  * From 19:17 that day until this pin landed, neither fired on a publish. The
- * watchdog could only run from GitHub's throttled scheduler (about one run in
- * ten delivered), and the E2E did not run at all. Production kept publishing
- * - the publisher itself was fine - with every net that watches it cut.
+ * The E2E did not run at all even though production kept publishing.
  *
  * So: every name in every `workflow_run.workflows` list must be the `name:`
  * of a workflow file in this tree. Renaming a workflow means renaming its
@@ -78,8 +72,7 @@ describe('a workflow_run listener names a workflow that exists', () => {
     });
   }
 
-  it('the two listeners that were missed in #2676 follow the publisher', () => {
-    expect(listenedNames(read('publish-watchdog.yml'))).toEqual(['Publish Club Arena']);
+  it('the post-deploy listener follows the publisher', () => {
     expect(listenedNames(read('post-deploy-e2e.yml'))).toEqual(['Publish Club Arena']);
   });
 

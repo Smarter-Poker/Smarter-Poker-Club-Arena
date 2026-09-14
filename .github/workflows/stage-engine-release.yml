@@ -1,0 +1,118 @@
+name: Stage Exact Club Arena Engine Release
+
+# A reviewed server change must enter the existing Hetzner release lane as soon
+# as it reaches protected main. The owning deploy workflow still builds, tests,
+# waits for the certified table break, cuts over, and proves the release. This
+# signal has no SSH, environment, source-write, or restart authority.
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  detect:
+    name: Prove Whether The Server Tree Changed
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    outputs:
+      release_required: ${{ steps.change.outputs.release_required }}
+      target_sha: ${{ steps.change.outputs.target_sha }}
+    steps:
+      # Do not use push.paths here. GitHub only evaluates a bounded portion of
+      # a very large diff for path filters, which can omit a real server change
+      # and silently strand that SHA. Every main push enters this read-only
+      # detector; only the exact tree comparison may suppress the signal.
+      - name: Checkout the exact protected-main push
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          # blob:none keeps every one of the 7,223 commits and drops the blobs of old
+          # revisions. Measured 2026-09-13, three runs each: 33-35s / 531MB against
+          # 36-43s / 766MB, for identical ancestry. Nothing in this repo's workflows
+          # reads a historical file version - they ask merge-base, rev-list, log and
+          # cat-file -e, which are all commit-graph work - so those blobs were paid
+          # for on every run and never read.
+          filter: blob:none
+
+      - name: Compare the complete server tree
+        id: change
+        env:
+          AFTER_SHA: ${{ github.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          [[ "$AFTER_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "::error::Protected-main push did not provide one full lowercase commit SHA."; exit 1; }
+
+          LATEST_REQUIRED=$(git log "$AFTER_SHA" -1 --format=%H -- \
+            'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**')
+          [[ "$LATEST_REQUIRED" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "::error::Could not resolve one engine-runtime commit from protected main."; exit 1; }
+
+          RELEASE_REQUIRED=true
+          if [[ "$BEFORE_SHA" =~ ^[0-9a-f]{40}$ ]] && \
+             [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] && \
+             git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+            if git diff --quiet "$BEFORE_SHA" "$AFTER_SHA" -- \
+              'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**'; then
+              RELEASE_REQUIRED=false
+            fi
+          else
+            echo "::notice::Previous commit is missing or unreadable; failing closed by staging the exact SHA."
+          fi
+
+          echo "release_required=$RELEASE_REQUIRED" >> "$GITHUB_OUTPUT"
+          echo "target_sha=$LATEST_REQUIRED" >> "$GITHUB_OUTPUT"
+          echo "Engine runtime release required: $RELEASE_REQUIRED"
+          echo "Exact engine component SHA: $LATEST_REQUIRED"
+
+  signal:
+    name: Dispatch The Exact Main SHA
+    needs: detect
+    if: needs.detect.outputs.release_required == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Send the immutable engine release request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF_SHA: ${{ needs.detect.outputs.target_sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          [[ "$REF_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "::error::Protected-main push did not provide one full lowercase commit SHA."; exit 1; }
+          SENT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          # A 204 proves only that GitHub accepted the HTTP request. Perform at
+          # most one same-SHA redelivery when no correlated receiver exists;
+          # the receiver's durable exact-release dedupe makes that retry inert
+          # if GitHub merely delayed the first run. This is bounded delivery,
+          # not a polling watcher or a second deployment authority.
+          RECEIVER_ID=''
+          for delivery in 1 2; do
+            gh api --method POST "repos/$REPO/dispatches" \
+              -f event_type=deploy-club-arena-engine \
+              -F "client_payload[ref_sha]=$REF_SHA"
+            echo "Dispatch delivery $delivery accepted for Club Arena engine release $REF_SHA"
+            for _ in $(seq 1 12); do
+              RECEIVER_ID=$(gh api \
+                "repos/$REPO/actions/workflows/auto-deploy-hetzner.yml/runs?event=repository_dispatch&per_page=30" \
+                --jq "[.workflow_runs[] | select(.display_title == \"Engine Release $REF_SHA\" and .created_at >= \"$SENT_AT\")][0].id // empty")
+              [ -n "$RECEIVER_ID" ] && break 2
+              sleep 5
+            done
+            if [ "$delivery" = 1 ]; then
+              echo '::warning::No correlated receiver appeared after the first delivery; issuing the one permitted exact-SHA retry.'
+            fi
+          done
+          [[ "$RECEIVER_ID" =~ ^[0-9]+$ ]] \
+            || { echo "::error::GitHub accepted two bounded deliveries but no exact correlated engine-release run appeared."; exit 1; }
+          echo "Receiver run $RECEIVER_ID accepted exact engine component $REF_SHA."

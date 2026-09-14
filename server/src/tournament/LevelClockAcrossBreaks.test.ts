@@ -38,7 +38,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { sliceBlockAfter } from '../testHelpers/sourceWindow.js';
 
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
@@ -90,12 +89,9 @@ describe('the blind clock survives a synchronized break', () => {
     expect(resume).toMatch(/this\.savedBlindTimerRemaining\s*=\s*0/);
   });
 
-  it('DEFECT 1 (cause) - every entry into a break suspends the clock the same way', () => {
-    // The measurement now lives in suspendLevelClock, shared by BOTH ways a
-    // tournament enters a break: pauseForBreak (the :55 path) and resume()
-    // restarting into a live break. They used to disagree — resume() left the
-    // blind timer it had just armed running straight through the break, and
-    // resumeFromBreak then handed out a fresh full level on top of that.
+  it('DEFECT 1 (cause) - beginning a live break always saves a usable clock', () => {
+    // The live :55 path measures the running timer. Engine restart recovery
+    // instead restores the persisted remainder without arming during a break.
     expect(pause).toMatch(/this\.suspendLevelClock\(\)/);
     const suspend = methodBody(BASE, 'protected suspendLevelClock()');
     // Every path out of it must leave savedBlindTimerRemaining meaningful. The
@@ -106,32 +102,8 @@ describe('the blind clock survives a synchronized break', () => {
     expect(suspend).toMatch(/savedBlindTimerRemaining/);
   });
 
-  it('DEFECT 6 - a restart INTO a live break suspends the level clock too', () => {
-    // resume() arms the level timer, then discovers the tournament is on a
-    // break. Without suspending, that timer ran for the whole break and
-    // resumeFromBreak then granted a fresh full level on top.
-    /**
-     * UPDATED 2026-08-25. The anchor was the literal
-     * `if (tournament.on_break && tournament.break_ends_at)`, and that second
-     * condition was itself a defect: pauseForBreak writes break_ends_at as
-     * NULL on purpose (at :55 only the LAST HAND is announced; the end time is
-     * stamped up to LAST_HAND_GRACE_MS later, once every table has parked), so
-     * a restart inside that window skipped the whole recovery — engines were
-     * never re-paused, the level clock was never suspended, and resumeFromBreak
-     * could never clear on_break again. The block is entered on `on_break`
-     * ALONE now and reconstructs the end time when the row carries none.
-     */
-    expect(BASE).not.toMatch(/tournament\.on_break\s*&&\s*tournament\.break_ends_at/);
-    const at = BASE.indexOf('if (tournament.on_break)');
-    expect(at, 'resume() must react to on_break on its own').toBeGreaterThan(-1);
-    const block = sliceBlockAfter(BASE, 'if (tournament.on_break)');
-    expect(block).toMatch(/this\.suspendLevelClock\(\)/);
-    // The missing end time is reconstructed from break_started_at, not treated
-    // as "there is no break".
-    expect(block).toMatch(/break_started_at/);
-    expect(block).toMatch(/LAST_HAND_GRACE_MS/);
-    expect(block).toMatch(/BREAK_DURATION_MS/);
-  });
+  // Restart recovery is exercised against the production methods in
+  // ResumeBlindClockBehavior.test.ts, including durable-anchor preservation.
 });
 
 describe('levels advance past structure break rows without stalling', () => {
@@ -159,7 +131,7 @@ describe('levels advance past structure break rows without stalling', () => {
     // then never opened for the life of the tournament. Idempotency is already
     // guaranteed by addOnPeriodTriggered.
     expect(advance).not.toMatch(/prevLevel\s*<\s*rebuyLevelCap\s*&&/);
-    const persisted = advance.indexOf('.update({ current_level: this.currentLevel })');
+    const persisted = advance.indexOf("'fn_publish_tournament_blind_level'");
     const reconciled = advance.indexOf("reconcileTournamentEntryWindow('engine.level_change')");
     expect(persisted).toBeGreaterThan(-1);
     expect(reconciled).toBeGreaterThan(persisted);

@@ -322,6 +322,12 @@ class EngineSocketMuxImpl {
   private watchdogTimer: ReturnType<typeof setInterval> | null = null;
   private handshakeTimer: ReturnType<typeof setTimeout> | null = null;
   private stateProbeResumeAt = 0;
+  private readonly onOffline = () => this.closeOfflineTransport();
+
+  /** The browser has declared this physical transport unusable. */
+  closeOfflineTransport(): void {
+    this.teardownPhysical(4001, 'browser offline');
+  }
 
   /** @internal Scheduled downtime is not a failed foreground state request. */
   canProbeState(): boolean {
@@ -484,7 +490,7 @@ class EngineSocketMuxImpl {
    */
   isSubscribed(tableId: string): boolean {
     const f = this.facades.get(tableId);
-    return !!f && f.readyState !== 3 /* CLOSED */;
+    return !!f && f.readyState !== 3; /* CLOSED */
   }
 
   /** A socket is authenticated at its handshake, not by changing these fields. */
@@ -526,6 +532,7 @@ class EngineSocketMuxImpl {
   }
 
   private stopWatchdog(): void {
+    if (typeof window !== 'undefined') window.removeEventListener('offline', this.onOffline);
     if (this.watchdogTimer !== null) {
       clearInterval(this.watchdogTimer);
       this.watchdogTimer = null;
@@ -614,6 +621,14 @@ class EngineSocketMuxImpl {
   }
 
   private ensureSocket(): void {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      const waiting = [...this.facades.values()];
+      this.facades.clear();
+      void Promise.resolve().then(() => {
+        for (const facade of waiting) facade._close(4001, 'browser offline');
+      });
+      return;
+    }
     if (this.ws && this.ws.readyState <= WebSocket.OPEN) return; // CONNECTING or OPEN
     // Carries this bundle's protocol version, from the same helper the
     // per-table socket uses (Realtime Phase 4): a version on only one of the
@@ -637,6 +652,7 @@ class EngineSocketMuxImpl {
       return;
     }
     this.ws = ws;
+    if (typeof window !== 'undefined') window.addEventListener('offline', this.onOffline);
 
     // 2026-08-22: bound CONNECTING — a wedged handshake fires neither onopen
     // nor onclose, and `readyState <= OPEN` above would trust it forever.

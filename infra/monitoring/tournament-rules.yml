@@ -41,7 +41,7 @@ groups:
           severity: critical
           component: tournament
         annotations:
-          summary: "{{ $value }} MTT(s) past their start time and never started"
+          summary: '{{ $value }} MTT(s) past their start time and never started'
           description: |
             One or more MTTs are still REGISTERING/ANNOUNCED more than 10
             minutes after their advertised start time. Players who registered
@@ -85,7 +85,7 @@ groups:
           severity: critical
           component: tournament
         annotations:
-          summary: "The leader engine owns NO tournament manager while tournaments are RUNNING"
+          summary: 'The leader engine owns NO tournament manager while tournaments are RUNNING'
           description: |
             This engine is the leader, is past its boot grace, holds a fresh
             database snapshot, and owns zero tournament managers while the
@@ -99,6 +99,53 @@ groups:
             perfectly healthy throughout - it is measuring the cash fleet.
           runbook: https://monitor.smarter.poker/runbooks/tournament-fleet-unserved
 
+      # September 13: all 84 running MTTs were silent while 509 managers
+      # renewed leases and cash games continued. Neither global hand rate nor
+      # manager count detects that. The RPC checks each event independently.
+      # Fifteen minutes exceeds the seven-day max hand (214.389s over 2.1m
+      # hands). A five-minute sustained alert and the break guard exclude an
+      # ordinary five-minute break, slow hand and immediate post-thaw recovery.
+      - alert: MttPlayStopped
+        expr: |
+          (poker_mtt_stalled_running > 0)
+          and on(instance) (poker_tournament_metrics_stale_seconds < 300)
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 5m
+        labels:
+          severity: critical
+          component: tournament
+        annotations:
+          summary: '{{ $value }} MTT(s) have stopped producing hands'
+          description: |
+            Each counted MTT has been running for at least 15 minutes and has
+            no recorded hand for its own event in that window, outside its
+            break and add-on grace. Other tournaments and cash games cannot
+            clear this count. Inspect manager scheduler in-flight work,
+            unprocessed knockouts, one-player tables and table adoption.
+          runbook: docs/changelog/2026-09-13-mtt-progress-monitoring.md
+
+      # A break flag must not make a stalled tournament invisible forever.
+      # Ten extra minutes exceed the measured longest hand plus ordinary thaw;
+      # use the later break/add-on end, including pre-countdown missing ends.
+      - alert: MttBreakDidNotEnd
+        expr: |
+          (poker_mtt_overdue_breaks > 0)
+          and on(instance) (poker_tournament_metrics_stale_seconds < 300)
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 2m
+        labels:
+          severity: critical
+          component: tournament
+        annotations:
+          summary: '{{ $value }} MTT break(s) have not resumed'
+          description: |
+            An MTT remains marked on break more than ten minutes beyond its
+            break or add-on deadline. Missing countdown timestamps have a
+            bounded grace as well. Inspect break-clear acknowledgment, add-on
+            finalization and maintenance thaw; do not force-release tables
+            before the outstanding owner finishes.
+          runbook: docs/changelog/2026-09-13-mtt-progress-monitoring.md
+
       # ── Money is owed and the settle path did not finish ──────────────
       # recoverStuckCompletingTournaments should settle a COMPLETING event
       # within a sweep. Ten minutes means it did not, and the prize pool is
@@ -110,7 +157,7 @@ groups:
           severity: critical
           component: tournament
         annotations:
-          summary: "{{ $value }} tournament(s) stuck in COMPLETING"
+          summary: '{{ $value }} tournament(s) stuck in COMPLETING'
           description: |
             A tournament has been in COMPLETING for over 10 minutes. The
             recovery watchdog settles these within a sweep, so this means it
@@ -136,7 +183,7 @@ groups:
           severity: critical
           component: tournament
         annotations:
-          summary: "{{ $value }} tournament entrant(s) holding chips with no seat"
+          summary: '{{ $value }} tournament entrant(s) holding chips with no seat'
           description: |
             Entrants in a RUNNING tournament hold chips but have no open seat
             anywhere in that event. They cannot be eliminated, so the
@@ -147,7 +194,15 @@ groups:
 
       # ── A finished tournament that paid nobody ────────────────────────
       # The strongest money signal available: COMPLETED, has a prize pool, and
-      # not one prize row exists against it.
+      # nothing of value reached anybody against it.
+      #
+      # "Nothing of value" is deliberately wider than "no cash" (2026-09-12).
+      # A satellite pays in a SEAT at the target event or a TICKET to enter one
+      # later, neither of which is a wallet transaction, so a cash-only test
+      # made every satellite unpaid by construction: 12 firings in 14 days, 12
+      # satellites, 0 unpaid. `fn_tournament_metrics` now also clears a
+      # tournament that delivered a `tournament_satellite_awards` row, which
+      # evidences delivery by constraint rather than by the ledger's intent.
       - alert: TournamentCompletedUnpaid
         expr: poker_tournaments_unpaid_completed > 0
         for: 15m
@@ -155,13 +210,17 @@ groups:
           severity: critical
           component: tournament
         annotations:
-          summary: "{{ $value }} completed tournament(s) with a prize pool and no payout"
+          summary: '{{ $value }} completed tournament(s) with a prize pool and no payout'
           description: |
             One or more tournaments finished in the last 6 hours with a
-            non-zero prize pool and zero prize payments recorded. Players
-            bought in and nobody was paid. The payout sweep and the reconciler
-            both run on a schedule; if this persists, both have declined to
-            act and it needs a human.
+            non-zero prize pool and NOTHING delivered against it: no cash
+            prize on the wallet ledger, and no satellite award either. A
+            satellite pays in a seat or a ticket rather than in chips and both
+            count as payment here, so a satellite in this number is one that
+            failed to settle, not one that paid in kind. Players bought in and
+            nobody was paid. The payout sweep and the reconciler both run on a
+            schedule; if this persists, both have declined to act and it needs
+            a human.
           runbook: https://monitor.smarter.poker/runbooks/tournament-unpaid
 
       # ── THE ALERT ABOUT THE ALERTS ───────────────────────────────────
@@ -181,7 +240,7 @@ groups:
           severity: warning
           component: tournament
         annotations:
-          summary: "Tournament gauges are {{ $value }}s stale — every tournament alert is blind"
+          summary: 'Tournament gauges are {{ $value }}s stale — every tournament alert is blind'
           description: |
             The tournament metrics collector has not completed a refresh in
             over 10 minutes. The gauges above are frozen at their last good
@@ -203,7 +262,7 @@ groups:
           severity: warning
           component: tournament
         annotations:
-          summary: "No tournaments open for registration for 30 minutes"
+          summary: 'No tournaments open for registration for 30 minutes'
           description: |
             poker_tournaments_registering has been zero for half an hour while
             the collector is fresh, so this is a real empty board rather than a

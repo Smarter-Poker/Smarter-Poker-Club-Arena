@@ -80,11 +80,21 @@ describe('the hand rests before the next one', () => {
     expect(arm, 'the rest is not armed after the broadcast').toBeGreaterThan(broadcast);
     expect(awaited, 'the rest is not awaited in the dealing loop').toBeGreaterThan(-1);
     expect(deal).toBeGreaterThan(awaited);
-    // The sole permitted statement between the rest and the deal is the
-    // authority re-proof. A dealer whose lease expired while awaiting the
-    // rest must not start one final hand.
+    const betweenRestAndDeal = DEALING_CODE.slice(
+      awaited + 'await this.awaitNextHandRest();'.length,
+      deal
+    );
+    // A requested pause can arrive under the rest. These exact owner gates
+    // have no unpaused-path wait; the lease re-proof remains the only other
+    // work before the deal, preserving the ordinary two-second rest.
+    const boundaryGate =
+      /if \(\s*this\.terminalCloseoutPaused\s*\|\|\s*this\.tournamentMovePauseOwners\.size > 0\s*\) \{\s*await this\.awaitPauseGate\(\);\s*if \(!this\.running\) break;\s*continue;\s*\}/g;
+    const requestedPauseGate =
+      /if \(this\.isNextHandPaused\(\)\) \{\s*if \(!this\.adminPauseLock && !this\.maintenanceLock\) await this\.awaitPauseGate\(\);\s*if \(!this\.running\) break;\s*continue;\s*\}/g;
+    expect(betweenRestAndDeal.match(boundaryGate)?.length ?? 0).toBeGreaterThanOrEqual(1);
+    expect(betweenRestAndDeal.match(requestedPauseGate)).toHaveLength(1);
     expect(
-      DEALING_CODE.slice(awaited + 'await this.awaitNextHandRest();'.length, deal).trim()
+      betweenRestAndDeal.replace(boundaryGate, '').replace(requestedPauseGate, '').trim()
     ).toBe('if (!this.lifecycleCanMutate()) return;');
   });
 

@@ -71,6 +71,22 @@ export interface AdCampaign {
   viewers: number;
   /** The price a sponsor was shown when they booked, US cents. Null on a club flight. */
   quotedCents: number | null;
+  /** When staff recorded the sponsor invoice as sent / paid. Null on a club flight. */
+  invoicedAt: string | null;
+  paidAt: string | null;
+}
+
+/** A sponsor advertiser as platform staff see it: who owns it and what is owed. */
+export interface SponsorAdvertiserRow {
+  id: string;
+  name: string;
+  contactEmail: string | null;
+  status: string;
+  selfServe: boolean;
+  ownerEmail: string | null;
+  flights: number;
+  unpaidCents: number;
+  createdAt: string;
 }
 
 export interface SubmitCampaignInput {
@@ -199,7 +215,17 @@ function mapCampaign(r: Record<string, unknown>): AdCampaign {
     clicks: Number(r.clicks ?? 0),
     viewers: Number(r.viewers ?? 0),
     quotedCents: r.quoted_cents == null ? null : Number(r.quoted_cents),
+    invoicedAt: r.invoiced_at == null ? null : String(r.invoiced_at),
+    paidAt: r.paid_at == null ? null : String(r.paid_at),
   };
+}
+
+/** What a sponsor flight's money is doing, in words a sponsor and staff both read. */
+export function billingLabel(c: Pick<AdCampaign, 'status' | 'invoicedAt' | 'paidAt'>): string {
+  if (c.paidAt) return 'Paid';
+  if (c.invoicedAt) return 'Invoice Sent';
+  if (c.status === 'approved') return 'To Be Invoiced';
+  return 'Quoted';
 }
 
 /** Whole dollars for a forward-facing page: $10, never $10.00. */
@@ -515,6 +541,67 @@ export const AdCampaignService = {
       pacing: r.pacing === 'asap' ? 'asap' : 'even',
       goalImpressions: r.goal_impressions == null ? null : Number(r.goal_impressions),
     }));
+  },
+
+  /**
+   * Platform staff record an offline fact: the invoice went out, or it was
+   * paid. 'none' undoes a mistaken click. Moves no chips and no diamonds.
+   */
+  async bill(
+    campaignId: string,
+    mark: 'invoiced' | 'paid' | 'none'
+  ): Promise<{ ok: boolean; reason?: string }> {
+    const { data, error } = await supabase.rpc('fn_sponsor_campaign_bill', {
+      p_campaign_id: campaignId,
+      p_mark: mark,
+    });
+    if (error) {
+      reportError(error, 'AdCampaignService.bill');
+      return { ok: false, reason: error.message };
+    }
+    const r = (data ?? {}) as Record<string, unknown>;
+    return { ok: r.ok === true, reason: r.reason == null ? undefined : String(r.reason) };
+  },
+
+  /** Platform staff: every sponsor advertiser, who owns it, and what is owed. */
+  async sponsorAdvertisers(): Promise<SponsorAdvertiserRow[]> {
+    const { data, error } = await supabase.rpc('fn_sponsor_advertiser_list');
+    if (error) {
+      reportError(error, 'AdCampaignService.sponsorAdvertisers');
+      throw error;
+    }
+    return ((data || []) as Record<string, unknown>[]).map((r) => ({
+      id: String(r.id),
+      name: String(r.name ?? ''),
+      contactEmail: r.contact_email == null ? null : String(r.contact_email),
+      status: String(r.status ?? 'active'),
+      selfServe: r.self_serve === true,
+      ownerEmail: r.owner_email == null ? null : String(r.owner_email),
+      flights: Number(r.flights ?? 0),
+      unpaidCents: Number(r.unpaid_cents ?? 0),
+      createdAt: String(r.created_at ?? ''),
+    }));
+  },
+
+  /**
+   * Platform staff hand a sponsor opened over the phone to the account that
+   * will log in as it. The account must exist and must not already own a
+   * sponsor; from then on that person's own page lists every flight.
+   */
+  async advertiserHandoff(
+    advertiserId: string,
+    email: string
+  ): Promise<{ ok: boolean; reason?: string }> {
+    const { data, error } = await supabase.rpc('fn_sponsor_advertiser_handoff', {
+      p_advertiser_id: advertiserId,
+      p_email: email,
+    });
+    if (error) {
+      reportError(error, 'AdCampaignService.advertiserHandoff');
+      return { ok: false, reason: error.message };
+    }
+    const r = (data ?? {}) as Record<string, unknown>;
+    return { ok: r.ok === true, reason: r.reason == null ? undefined : String(r.reason) };
   },
 
   /**

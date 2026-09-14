@@ -259,7 +259,9 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
       expect(ENGINE_STAGE).toContain(pathspec);
     }
     expect(engine).toContain('git log "$MAIN_SHA" -1 --format=%H');
-    expect(engine).toContain('[ "$ENGINE_TRIGGER_SHA" != "$ENGINE_SHA" ]');
+    expect(engine).toContain('ENGINE_SHA="$ENGINE_TRIGGER_SHA"');
+    expect(engine).toContain('git cat-file -e "$ENGINE_SHA^{commit}"');
+    expect(engine).toContain('git merge-base --is-ancestor "$ENGINE_SHA" "$MAIN_SHA"');
     expect(LIVE_TABLE).toContain('releaseSha: string | null;');
     expect(LIVE_TABLE).toContain('observedReleaseSha');
     expect(LIVE_TABLE).toContain('toMatch(/^[0-9a-f]{40}$/)');
@@ -268,7 +270,7 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
     expect(LIVE_TABLE).not.toContain('EXPECTED_ENGINE_SHA.startsWith');
   });
 
-  it('accepts an engine certification trigger only with one exact current component SHA', () => {
+  it('accepts an engine certification trigger only with one exact protected-main SHA', () => {
     const gate = step(WORKFLOW, 'Read The Origin Job Verdict');
     expect(WORKFLOW).toContain(
       'run-name: Post-Deploy E2E ${{ github.event.client_payload.engine_sha || github.sha }}'

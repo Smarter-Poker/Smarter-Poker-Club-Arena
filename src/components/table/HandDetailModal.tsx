@@ -332,7 +332,12 @@ function SummaryRow({
             ? ''
             : `${row.net > 0 ? '+' : row.net < 0 ? '-' : ''}${money(Math.abs(row.net))}`}
         </span>
-        <span className="hdm-sd__pot">{row.boardLabel || row.potLabel}</span>
+        {/* Both axes when the record has both (2026-09-13), see HandDetailView. */}
+        <span className="hdm-sd__pot">
+          {row.boardLabel && row.potSlices?.length
+            ? `${row.boardLabel} · ${row.potLabel}`
+            : row.boardLabel || row.potLabel}
+        </span>
       </div>
     </div>
   );

@@ -157,8 +157,10 @@ export interface ReplayInput {
   pots?: { index?: number; amount?: number }[] | null;
   /**
    * WHO WON EACH BOARD (hand_history.winners_by_board, 2026-09-04). Per
-   * (board, winner): 1-based board index, pre-rake share, the hand ON THAT
-   * board. Absent on single-board hands and rows older than the column.
+   * (board, winner, half): 1-based board index, the POST-RAKE share the pot
+   * actually paid (the engine has written it post-rake since 2026-09-04; an
+   * earlier note here said pre-rake and was wrong), the hand ON THAT board.
+   * Absent on single-board hands and rows older than the column.
    */
   winnersByBoard?:
     | {
@@ -174,6 +176,13 @@ export interface ReplayInput {
          * carry no flag and are read as high.
          */
         low?: boolean;
+        /**
+         * WHICH POT EACH CENT CAME FROM (2026-09-13): one slice per pot index
+         * this share was paid out of, main pot first, summing to `amount`.
+         * Absent on rows older than the field, in which case the row can
+         * still say which board but not which pot.
+         */
+        pots?: { index?: number; amount?: number }[] | null;
       }[]
     | null;
   /**
@@ -366,6 +375,14 @@ export interface ReplayShowdownRow {
   /** Net for the hand. Null on the second and later boards — see the note. */
   net: number | null;
   potLabel: string;
+  /**
+   * THE POT AXIS, WHEN THE RECORD HAS IT (2026-09-13). The slices of this
+   * row's share by pot index, main pot first, summing to `net` on a winning
+   * row. Set only from `winnersByBoard[].pots`; absent on older rows and on
+   * rows that won nothing. When present, `potLabel` names exactly these pots
+   * and a renderer may show it beside `boardLabel` instead of instead of it.
+   */
+  potSlices?: Array<{ index: number; amount: number }>;
   isWinner: boolean;
 }
 
@@ -543,12 +560,15 @@ function stageOf(a: ReplayActionInput): string {
  * `rit_boards` column. Both are read; the pseudo-actions never become rows.
  */
 function ritBoardsFromActions(actions: ReplayActionInput[]): StoredCard[][] {
-  const out: StoredCard[][] = [];
+  /* IN RUN ORDER (2026-09-13). The run number is in the pseudo-action's name
+     and this used to discard it, appending boards in whatever order the log
+     held them; the service's own copy of this parser sorted. One reading. */
+  const out: Array<{ run: number; cards: StoredCard[] }> = [];
   for (const a of actions) {
-    const m = /^rit_board_\d+:(.+)$/.exec(String(a.action || ''));
-    if (m) out.push(m[1].split(',').map((s) => s.trim()));
+    const m = /^rit_board_(\d+):(.+)$/.exec(String(a.action || ''));
+    if (m) out.push({ run: Number(m[1]) || 0, cards: m[2].split(',').map((s) => s.trim()) });
   }
-  return out;
+  return out.sort((x, y) => x.run - y.run).map((b) => b.cards);
 }
 
 const isSystemAction = (a: ReplayActionInput) =>
@@ -1066,17 +1086,38 @@ export function buildReplay(input: ReplayInput): ReplayModel {
 
   /* WHO WON EACH BOARD, when the row says (2026-09-04). Keyed `${board}|${uid}`
      with the 1-based board index the writer uses. */
-  const perBoard = new Map<string, { amount: number; handName?: string }>();
+  const perBoard = new Map<
+    string,
+    { amount: number; handName?: string; pots?: Array<{ index: number; amount: number }> }
+  >();
   for (const w of input.winnersByBoard || []) {
     const uid = w.userId || w.user_id;
     if (!uid) continue;
+    /* THE POT AXIS (2026-09-13): the slices, when the row carries them, in
+       pot order. A row that names no pot is a row from before the field. */
+    const pots = Array.isArray(w.pots)
+      ? w.pots
+          .map((p) => ({ index: Number(p?.index) || 0, amount: Number(p?.amount) || 0 }))
+          .filter((p) => p.index >= 0)
+          .sort((a, b) => a.index - b.index)
+      : [];
     /* One key per (board, winner, half). A row older than the `low` flag has
        no half and is read as high, which is what it was. */
     perBoard.set(`${Number(w.board) || 1}|${uid}|${w.low ? 'lo' : 'hi'}`, {
       amount: Number(w.amount) || 0,
       handName: w.handName || undefined,
+      ...(pots.length ? { pots } : {}),
     });
   }
+  /* Names the pots a per-board share came out of: "Main pot", "Side 1 pot",
+     "Main + Side 1 pots". The whole-hand potLabelFor below is the fallback
+     for rows that carry no slices. */
+  const potLabelForSlices = (slices: Array<{ index: number }>): string => {
+    const names = slices.map((s) =>
+      s.index <= 0 ? 'Main' : (potBreakdown[s.index]?.label ?? `Side ${s.index}`)
+    );
+    return names.length > 1 ? `${names.join(' + ')} pots` : `${names[0] ?? 'Main'} pot`;
+  };
   const hasPerBoard = perBoard.size > 0;
   const hasLowAwards = [...perBoard.keys()].some((k) => k.endsWith('|lo'));
 
@@ -1146,8 +1187,10 @@ export function buildReplay(input: ReplayInput): ReplayModel {
             : null,
         // Names the pot this player actually contested. It was hard-coded to
         // "Main pot" for every row, which is a claim rather than a label the
-        // moment a hand has a side pot.
-        potLabel: potLabelFor(p.userId),
+        // moment a hand has a side pot. When the record says which pots THIS
+        // board's share came out of, that wins over the whole-hand guess.
+        potLabel: onThisBoard?.pots ? potLabelForSlices(onThisBoard.pots) : potLabelFor(p.userId),
+        ...(onThisBoard?.pots ? { potSlices: onThisBoard.pots } : {}),
         // A one-board winner is not a winner on the other boards.
         isWinner: hasPerBoard ? !!onThisBoard : won > 0,
       });
@@ -1177,7 +1220,10 @@ export function buildReplay(input: ReplayInput): ReplayModel {
             boardIndex,
             boardLabel: boards.length > 1 ? `Board ${boardIndex + 1} Low` : 'Low',
             net: lowOnThisBoard ? money(lowOnThisBoard.amount) : null,
-            potLabel: potLabelFor(p.userId),
+            potLabel: lowOnThisBoard?.pots
+              ? potLabelForSlices(lowOnThisBoard.pots)
+              : potLabelFor(p.userId),
+            ...(lowOnThisBoard?.pots ? { potSlices: lowOnThisBoard.pots } : {}),
             isWinner: !!lowOnThisBoard,
           });
         }
@@ -1316,12 +1362,16 @@ export function replayInputFromRow(
   });
   const winnersByBoard = arr(row.winners_by_board).map((w) => {
     const r = rec(w);
+    const pots = arr(r.pots)
+      .map((p) => rec(p))
+      .map((p) => ({ index: Number(p.index) || 0, amount: Number(p.amount) || 0 }));
     return {
       board: Number(r.board) || 1,
       userId: String(r.userId ?? r.user_id ?? ''),
       amount: Number(r.amount) || 0,
       handName: typeof r.handName === 'string' ? r.handName : undefined,
       low: r.low === true,
+      ...(pots.length ? { pots } : {}),
     };
   });
   const buttonRaw = Number(row.button_seat);

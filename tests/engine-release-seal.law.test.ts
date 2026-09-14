@@ -376,6 +376,7 @@ exit 1
       FAKE_DOCKER_RUN_LOG: runLog,
       LOCK_FILE: join(sandbox, 'engine-up.lock'),
       LOG_DIR: join(sandbox, 'logs'),
+      ENGINE_ALERT_JOURNAL_HOST_DIR: join(sandbox, 'engine-alerts'),
     };
 
     const candidate = spawnSync(
@@ -394,6 +395,9 @@ exit 1
     );
     expect(candidate.status, candidate.stderr).toBe(0);
     expect(readFileSync(runLog, 'utf8')).toContain('--restart no');
+    expect(readFileSync(runLog, 'utf8')).toContain(
+      `--mount type=bind,source=${join(sandbox, 'engine-alerts')},target=/var/lib/club-arena/engine-alerts`
+    );
 
     writeFileSync(runLog, '');
     const desired = spawnSync('bash', [engineUp], {
@@ -402,6 +406,34 @@ exit 1
     });
     expect(desired.status, desired.stderr).toBe(0);
     expect(readFileSync(runLog, 'utf8')).toContain('--restart always');
+    expect(readFileSync(runLog, 'utf8')).toContain(
+      'ENGINE_ALERT_JOURNAL_DIR=/var/lib/club-arena/engine-alerts'
+    );
+  });
+
+  it('requires journal-capable images to use durable storage without breaking legacy recovery', () => {
+    const proof = spawnSync(
+      'python3',
+      [resolve(ROOT, 'tests/engine-alert-journal-mount.test.py')],
+      { encoding: 'utf8' }
+    );
+    expect(proof.status, proof.stdout + proof.stderr).toBe(0);
+  });
+
+  it('keeps one journal writer by holding the canonical lock through old process exit and replacement', () => {
+    const source = readFileSync(resolve(ROOT, 'server/scripts/engine-up.sh'), 'utf8');
+    const lock = source.indexOf('flock -w 180 9');
+    const stop = source.indexOf('  docker stop -t 45 "$CONTAINER"');
+    const remove = source.indexOf('  docker rm "$CONTAINER"');
+    const start = source.indexOf('docker run -d');
+    expect(lock).toBeGreaterThan(-1);
+    expect(stop).toBeGreaterThan(lock);
+    expect(remove).toBeGreaterThan(stop);
+    expect(start).toBeGreaterThan(remove);
+    expect(source).toContain('--name "$CONTAINER"');
+    expect(source).not.toContain('flock -u');
+    // Docker itself refuses the replacement name if both stop/remove attempts
+    // fail; a second writer cannot be started over a still-existing process.
   });
 
   it('preserves the exact sealed pre-label container during causal desired recovery', () => {
@@ -1709,7 +1741,8 @@ describe('every host mutation path obeys the durable release authority', () => {
     expect(workflow).toContain('cancel-in-progress: false');
     expect(workflow).not.toContain('queue: max');
     expect(queuedRecheck).toContain('git merge-base --is-ancestor "$CONTROL_SHA" "$MAIN_SHA"');
-    expect(queuedRecheck).toContain('[ "$LATEST_REQUIRED" = "$SHA" ]');
+    expect(queuedRecheck).toContain('[[ "$LATEST_REQUIRED" =~ ^[0-9a-f]{40}$ ]]');
+    expect(queuedRecheck).toContain('host forward-only admission is still required.');
     expect(hostStage).toContain(
       'git -C "$REPO_DIR" merge-base --is-ancestor "$commit" "$MAIN_SHA"'
     );
@@ -2106,13 +2139,13 @@ if [ "$1" = buildx ]; then
   if [ "$2" = stop ]; then printf 'stop\\n' >> "$STATE_DIR/builder-stops"; exit 0; fi
 fi
 if [ "$1" = inspect ]; then
-  printf '%s\\n' 'moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8 1073741824 1073741824 100000 100000 no'
+  printf '%s\\n' 'moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8 939524096 939524096 100000 100000 no'
   exit 0
 fi
 if [ "$1" = exec ]; then
   case "$4" in
-    */memory.max) printf '%s\\n' "\${FAKE_CGROUP_MEMORY:-1073741824}" ;;
-    */memory.peak) printf '1048576000\\n' ;;
+    */memory.max) printf '%s\\n' "\${FAKE_CGROUP_MEMORY:-939524096}" ;;
+    */memory.peak) printf '922746880\\n' ;;
     */memory.swap.max) printf '0\\n' ;;
     */cpu.max) printf '100000 100000\\n' ;;
     /etc/buildkit/buildkitd.toml)
@@ -2130,7 +2163,7 @@ if [ "$1" = buildx ] && [ "$2" = build ]; then
   printf '%s\\n' "$PWD" > "$STATE_DIR/context-path"
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --builder) [ "$2" = club-arena-engine-bounded-v1 ]; shift 2 ;;
+      --builder) [ "$2" = club-arena-engine-bounded-v2 ]; shift 2 ;;
       --load) shift ;;
       --progress) [ "$2" = plain ]; shift 2 ;;
       --build-arg) printf '%s' "$2" > "$STATE_DIR/build-arg"; shift 2 ;;
@@ -2207,6 +2240,7 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
         ...isolatedEnv,
         PATH: `${bin}:${isolatedEnv.PATH ?? ''}`,
         FAKE_DOCKER_STATE_DIR: dockerState,
+        FAKE_AVAILABLE_KIB: '1179648',
         ENGINE_BUILD_CONTEXT_ROOT: contextRoot,
         ENGINE_BUILD_LOCK_FILE: join(sandbox, 'engine-build.lock'),
       };
@@ -2269,11 +2303,12 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
         [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
         {
           encoding: 'utf8',
-          env: { ...env, FAKE_AVAILABLE_KIB: '40000' },
+          env: { ...env, FAKE_AVAILABLE_KIB: '1179647' },
         }
       );
       expect(noHeadroom.status).toBe(1);
       expect(noHeadroom.stderr).toContain('insufficient memory headroom');
+      expect(noHeadroom.stderr).toContain('available=1179647KiB, required=1179648KiB');
       expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
       expect(readdirSync(contextRoot)).toEqual([]);
       const wrongDriver = spawnSync(

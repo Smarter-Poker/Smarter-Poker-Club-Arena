@@ -880,8 +880,8 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   table(
     'horse_self_tune_log',
     'nightly',
-    'HorseDailyAudit (instrument liveness); the panel',
-    'what the tuner did to each horse and why',
+    'fn_complete_horse_tuner_study via HorseTunerStudyCompletion; HorseDailyAudit; the panel',
+    'what the tuner did to each horse and why; an individual row is only partial nightly progress',
     'V8',
     { dayColumn: 'run_date', freshnessDays: 2 }
   ),
@@ -975,6 +975,27 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'findings + agent analysis per day',
     'V13',
     { dayColumn: 'day', freshnessDays: 2 }
+  ),
+  table(
+    'horse_tuner_write_receipts',
+    'nightly',
+    'fn_horse_tuner_recorded_horses via HorseTunerStudyCompletion',
+    'immutable per-horse daily writes let an interrupted study resume without retuning accepted horses',
+    'Phase14'
+  ),
+  table(
+    'horse_tuner_study_rosters',
+    'nightly',
+    'fn_prepare_horse_tuner_study via HorseTunerStudyCompletion',
+    'durable original eligible membership prevents a resumed study from silently dropping unfinished horses',
+    'Phase14'
+  ),
+  table(
+    'horse_tuner_study_completions',
+    'nightly',
+    'HorseLeague / HorseSelfTuner',
+    'one execution receipt after every member of the captured eligible cohort has an atomic audit receipt; not causal validation',
+    'Phase14'
   ),
   table(
     'horse_job_runs',

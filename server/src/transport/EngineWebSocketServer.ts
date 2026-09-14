@@ -33,6 +33,7 @@ import { WebSocketServer, WebSocket, type RawData } from 'ws';
 import type { IncomingMessage } from 'http';
 import type { Server as HttpServer } from 'http';
 import { randomUUID } from 'crypto';
+import { WEBSOCKET_HARD_BACKPRESSURE_BYTES } from './webSocketBackpressure.js';
 import { supabase } from '../services/supabase.js';
 import { reportError } from '../services/errorReporter.js';
 import {
@@ -848,16 +849,12 @@ export class EngineWebSocketServer {
       // 2026-08-24: hub hard-drop → close the socket so the client's
       // onclose fires NOW and it reconnects on the slow ladder (4429),
       // instead of holding an open socket that will never speak again.
-      evict() {
-        try {
-          ws.close(CLOSE_RATE_LIMITED, 'backpressure evict - reconnect');
-        } catch {
-          /* ignore */
-        }
-      },
+      evict: () =>
+        this.retireConnection(conn, CLOSE_RATE_LIMITED, 'backpressure evict - reconnect'),
     };
     (ws as unknown as { __sub: HubSubscriber }).__sub = subscriber;
     this.hub.subscribe(tableId, subscriber);
+    if (!this.connectionCanWrite(conn)) return;
     // FIX 2 (2026-07-24): a fresh (re)connect gets the public SNAPSHOT above;
     // ask the engine to also re-deliver this player's hole cards for the
     // current hand so a reconnecting player isn't left blind.
@@ -867,8 +864,8 @@ export class EngineWebSocketServer {
     // handler: a permanent leak the sweeps could never collect.
     try {
       this.resyncPlayer(tableId, userId);
-      // Presence: tell the engine this player has a live transport again.
-      this.onConnect?.(tableId, userId);
+      // Presence belongs only to a physical connection that remains usable.
+      if (this.connectionCanWrite(conn)) this.onConnect?.(tableId, userId);
     } catch {
       /* engine wiring must never take down the transport */
     }
@@ -912,33 +909,83 @@ export class EngineWebSocketServer {
     }
   }
 
+  /** Retire a physical connection before any callback can revive its adapters. */
+  private retireConnection(conn: ConnectionState, code: number, reason: string): void {
+    const ws = conn.ws;
+    if (this.connections.get(ws) !== conn) return;
+    this.onClose(ws);
+    try {
+      ws.close(code, reason);
+    } catch {
+      try {
+        ws.terminate();
+      } catch {
+        /* Registry and hub cleanup already completed. */
+      }
+      return;
+    }
+    if (ws.readyState === WebSocket.CLOSED) return;
+    // Give the close frame the existing heartbeat grace period to flush. A
+    // half-open peer must not retain its fd or send queue indefinitely.
+    const reaper = setTimeout(() => {
+      if (ws.readyState === WebSocket.CLOSED) return;
+      try {
+        ws.terminate();
+      } catch {
+        /* Registry and hub cleanup already completed. */
+      }
+    }, TERMINATE_GRACE_MS);
+    reaper.unref?.();
+  }
+
+  private connectionCanWrite(conn: ConnectionState): boolean {
+    if (this.connections.get(conn.ws) !== conn) return false;
+    if (conn.ws.readyState !== WebSocket.OPEN) {
+      // Closing sockets can still own their send queue until the peer replies.
+      // Preserve the bounded physical reaper before removing registry ownership.
+      if (conn.ws.readyState === WebSocket.CLOSING)
+        this.retireConnection(conn, 1001, 'connection closing');
+      else this.onClose(conn.ws);
+      return false;
+    }
+    if (conn.ws.bufferedAmount > WEBSOCKET_HARD_BACKPRESSURE_BYTES) {
+      this.retireConnection(conn, CLOSE_RATE_LIMITED, 'backpressure evict - reconnect');
+      return false;
+    }
+    return true;
+  }
+
+  /** Control frames use the same physical limit as hub snapshots and events. */
+  private sendControl(conn: ConnectionState, message: Record<string, unknown>): boolean {
+    if (!this.connectionCanWrite(conn)) return false;
+    try {
+      conn.ws.send(JSON.stringify(message));
+      return true;
+    } catch {
+      this.retireConnection(conn, 1001, 'transport send failed');
+      return false;
+    }
+  }
+
   private sendMuxError(
     conn: ConnectionState,
     tableId: string,
     code: string,
     message: string
   ): void {
-    try {
-      conn.ws.send(JSON.stringify({ type: 'ERROR', tableId, code, message }));
-    } catch {
-      /* next close/sweep collects the socket */
-    }
+    this.sendControl(conn, { type: 'ERROR', tableId, code, message });
   }
 
   private async handleMuxSubscribe(conn: ConnectionState, tableId: string): Promise<void> {
-    if (!conn.subs) return;
+    if (!conn.subs || !this.connectionCanWrite(conn)) return;
     const existing = conn.subs.get(tableId);
     if (typeof existing === 'symbol') return; // in flight - first one wins
     if (existing) {
       // Idempotent: already subscribed. Re-ack + resync so a client retry
       // converges instead of erroring.
-      try {
-        conn.ws.send(JSON.stringify({ type: 'SUBSCRIBED', tableId }));
-      } catch {
-        /* ignore */
-      }
+      if (!this.sendControl(conn, { type: 'SUBSCRIBED', tableId })) return;
       this.hub.resync(tableId, existing);
-      this.resyncPlayer(tableId, conn.userId);
+      if (this.connectionCanWrite(conn)) this.resyncPlayer(tableId, conn.userId);
       return;
     }
     // Audit round 4: counting only SETTLED subscriptions let a client that
@@ -955,7 +1002,7 @@ export class EngineWebSocketServer {
     }
     let owned: HubSubscriber | symbol = Symbol('pending subscription');
     conn.subs.set(tableId, owned);
-    const isCurrent = () => this.connections.has(conn.ws) && conn.subs?.get(tableId) === owned;
+    const isCurrent = () => this.connectionCanWrite(conn) && conn.subs?.get(tableId) === owned;
     try {
       const viewerAccess = await this.authorizeConnection(tableId, conn.userId);
       const banned = viewerAccess.banned;
@@ -1028,31 +1075,26 @@ export class EngineWebSocketServer {
         send(data: string) {
           ws.send(data);
         },
-        // 2026-08-24: on a mux socket, closing the whole connection would
-        // punish the user's OTHER tables for one table's backpressure.
-        // Drop just this table's subscription and say so; the client's
-        // per-table facade sees the close and reconnects that table alone.
+        // bufferedAmount belongs to the shared socket, not this table. Keeping
+        // the physical connection lets each retry create a fresh adapter and
+        // queue more acknowledgements/errors after the hub retires the old one.
         evict() {
-          conn.subs?.delete(tableId);
-          self.sendMuxError(conn, tableId, 'EVICTED', 'backpressure evict - resubscribe');
+          self.retireConnection(conn, CLOSE_RATE_LIMITED, 'backpressure evict - reconnect');
         },
       };
       owned = subscriber;
       conn.subs.set(tableId, subscriber);
-      try {
-        conn.ws.send(JSON.stringify({ type: 'SUBSCRIBED', tableId }));
-      } catch {
-        /* ignore */
-      }
+      if (!this.sendControl(conn, { type: 'SUBSCRIBED', tableId })) return;
       this.hub.subscribe(tableId, subscriber);
+      if (!isCurrent()) return;
       // 2026-08-22 review: guarded separately — after hub.subscribe() has
       // succeeded, a throw from these engine callbacks must not fall into the
       // outer catch, which would delete the sub entry and orphan the hub
       // subscriber (unreachable by onClose).
       try {
         this.resyncPlayer(tableId, conn.userId);
-        // Presence: mux SUBSCRIBE established a live transport for this table.
-        this.onConnect?.(tableId, conn.userId);
+        // Presence belongs only to an adapter that survived the private replay.
+        if (isCurrent()) this.onConnect?.(tableId, conn.userId);
       } catch {
         /* engine wiring must never take down the transport */
       }
@@ -1087,7 +1129,7 @@ export class EngineWebSocketServer {
         const sub = conn.subs.get(tableId);
         if (sub && typeof sub !== 'symbol') {
           this.hub.resync(tableId, sub);
-          this.resyncPlayer(tableId, conn.userId);
+          if (this.connectionCanWrite(conn)) this.resyncPlayer(tableId, conn.userId);
         }
         return;
       }
@@ -1097,6 +1139,7 @@ export class EngineWebSocketServer {
   }
 
   private onMessage(conn: ConnectionState, raw: RawData): void {
+    if (!this.connectionCanWrite(conn)) return;
     // Rate limit by sliding-window count.
     const now = Date.now();
     if (now - conn.inboundWindowStart >= INBOUND_RATE_WINDOW_MS) {
@@ -1151,7 +1194,7 @@ export class EngineWebSocketServer {
         this.hub.resync(conn.tableId, sub);
         // FIX 2 (2026-07-24): re-deliver hole cards alongside the public
         // snapshot — the RESYNC snapshot only carries scrubbed public state.
-        this.resyncPlayer(conn.tableId, conn.userId);
+        if (this.connectionCanWrite(conn)) this.resyncPlayer(conn.tableId, conn.userId);
         return;
       }
       default:
@@ -1288,6 +1331,7 @@ export class EngineWebSocketServer {
     // whose session died is closed on this sweep rather than pinged first.
     this.reauthSweep(now);
     for (const [ws, conn] of this.connections) {
+      if (!this.connectionCanWrite(conn)) continue;
       // If THIS process was late, a healthy PONG can be queued behind the same
       // event-loop stall that delayed this sweep. Credit only the lost
       // scheduling time (not a whole new timeout), then send a fresh probe.
@@ -1299,38 +1343,10 @@ export class EngineWebSocketServer {
       }
       const lastFairLivenessAt = Math.max(conn.lastPongAt, conn.heartbeatGraceAt);
       if (now - lastFairLivenessAt > HEARTBEAT_TIMEOUT_MS) {
-        try {
-          ws.close(1001, 'heartbeat timeout');
-        } catch {
-          /* ignore */
-        }
-        // FIX 2026-08-22: close() starts a graceful handshake a half-open
-        // socket can never finish, so the fd lingered until the OS TCP
-        // timeout. A peer that missed 60s of pongs is gone — terminate.
-        //
-        // ...but terminating in the SAME TICK discarded the close frame we had
-        // just written, so every client saw 1006 "abnormal" and none ever
-        // learned it was a heartbeat timeout. A socket that is merely slow
-        // rather than half-open can still receive that frame if given a moment,
-        // and a truly half-open one loses nothing by waiting: it is already off
-        // the connection map above, so the sweep will not see it again.
-        const doomed = ws;
-        const reaper = setTimeout(() => {
-          try {
-            doomed.terminate();
-          } catch {
-            /* ignore */
-          }
-        }, TERMINATE_GRACE_MS);
-        (reaper as { unref?: () => void }).unref?.();
-        this.onClose(ws);
+        this.retireConnection(conn, 1001, 'heartbeat timeout');
         continue;
       }
-      try {
-        ws.send(JSON.stringify({ type: 'PING', ts: now }));
-      } catch {
-        /* next sweep will collect */
-      }
+      this.sendControl(conn, { type: 'PING', ts: now });
     }
   }
 }

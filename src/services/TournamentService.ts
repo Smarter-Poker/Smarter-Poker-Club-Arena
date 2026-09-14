@@ -27,6 +27,7 @@ import type { Tournament, TournamentPlayer } from '../types/database.types';
 import type { TournamentGameVariant } from '../config/tournamentVariants';
 import { reportError } from '../utils/errorReporter';
 import { computePlacePrize } from '../lib/payoutMath';
+import { UNIT_CENTS_ASSET_NOT_READ } from '../../server/src/tournament/tournamentUnit';
 import { gameManagementService } from './GameManagementService';
 import { PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
 import { uuid } from '../utils/uuid';
@@ -420,6 +421,8 @@ export interface TournamentConfig {
   minPlayers: number;
   blindStructure: BlindLevel[];
   payoutStructure: PayoutStructure[];
+  /** Share of actual entrants paid at entry close; the database owns the ladder. */
+  payoutPercent?: 10 | 15 | 20;
   lateRegistrationLevels: number;
   startTime?: Date;
 
@@ -896,6 +899,8 @@ class TournamentService {
       isXmtt: config.isXmtt || false,
       isPrivate: config.isPrivate || false,
     };
+
+    if (config.payoutPercent !== undefined) p.payoutPercent = config.payoutPercent;
 
     // ── Parity keys: only what the creator set ──
     const short = config.shortDescription?.trim();
@@ -1681,7 +1686,13 @@ class TournamentService {
     // truncated where the engine rounds and had no residual rule, so its
     // places did not sum to the pool. One rule now, shared with the engine
     // byte for byte -- see src/lib/payoutMath.ts.
-    return computePlacePrize(prizePool, structure, position);
+    //
+    // 2026-09-13: the unit is stated rather than defaulted. This method is
+    // documented above as display-only ("it must never be wired back into a
+    // credit") and takes no tournament, so it has no club to read an asset
+    // from. UNIT_CENTS_ASSET_NOT_READ says that, and is what the Diamond
+    // tournament work greps for. See server/src/tournament/tournamentUnit.ts.
+    return computePlacePrize(prizePool, structure, position, UNIT_CENTS_ASSET_NOT_READ);
   }
 
   /**

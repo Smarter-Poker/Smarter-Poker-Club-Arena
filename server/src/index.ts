@@ -22,6 +22,7 @@
  */
 
 import { AsyncResource } from 'node:async_hooks';
+import { horseAdaptiveJournalWorker } from './services/HorseAdaptiveJournalWorker.js';
 import { createEngineHttpServer } from './http/createEngineHttpServer.js';
 import { reportError } from './services/errorReporter.js';
 import { tableStateHub } from './transport/TableStateHub.js';
@@ -58,6 +59,7 @@ import {
 import { HorseSessionRotator } from './services/HorseSessionRotator.js';
 import { StableHandExecutor } from './services/StableHandExecutor.js';
 import { registerLeadershipShutdownHandler } from './services/leadership.js';
+import { persistEngineAlertsBeforeExit } from './services/engineAlerts.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -202,6 +204,8 @@ async function startLeaderOwnedServices(): Promise<void> {
   // Proof of receipt (Dan 2026-08-26): live layer-fire counters, flushed to
   // horse_brain_telemetry every minute for the daily audit + admin panel.
   startBrainTelemetryFlush();
+  // Journal I/O and parsing have a separate background thread and durable leases.
+  horseAdaptiveJournalWorker.start();
   // Phase 1 of the real-time build plan (Dan 2026-09-04): the Horse Data
   // Ledger - every input the brain consumes, with its source, cadence,
   // consumer and receipt - carried into horse_data_ledger so the daily
@@ -257,6 +261,7 @@ function stopLeaderOwnedServices(): Promise<void> {
     ['HorseLeague', stopHorseLeague],
     ['HorseDailyAudit', stopHorseDailyAudit],
     ['BrainTelemetryFlush', stopBrainTelemetryFlush],
+    ['HorseAdaptiveJournalWorker', () => horseAdaptiveJournalWorker.stop()],
     ['HorseDataLedgerSync', stopHorseDataLedgerSync],
     ['HorseLaneLoader', stopHorseLaneLoader],
     ['GtoAggregationDriver', stopGtoAggregationDriver],
@@ -410,6 +415,7 @@ async function performShutdown(): Promise<void> {
         `${localFailures.length} local shutdown step(s) failed after ownership release`
       );
     }
+    await persistEngineAlertsBeforeExit();
     clearTimeout(hardDeadline);
     process.exit(shutdownMustFail ? 1 : 0);
   } catch (error) {

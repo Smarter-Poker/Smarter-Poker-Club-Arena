@@ -37,6 +37,12 @@ import { BOOKING_COUNTS_WITHIN_MS } from './HorseGameLoad.js';
 import { bankrollPolicyFor, canEnterTournament } from './HorseBankroll.js';
 import { bankrollEvent } from './HorseBankrollTelemetry.js';
 import { buildLadder } from '../tournament/blindLadder.js';
+import { mttBountyAmount } from '../tournament/mttBountyAllocation.js';
+import {
+  MTT_BLIND_PRESETS,
+  mttSpeedColumns,
+  mttPayoutPercent,
+} from '../tournament/mttStructurePolicy.js';
 import { clampSeatsForVariant } from '../config/tableSeating.js';
 import {
   FREE_BUY_HOSTS,
@@ -107,7 +113,9 @@ interface TournamentConfig {
   horsesToRegister: number;
   blindStructure: any[];
   payoutStructure: any[];
+  payoutPercent?: 10 | 15 | 20;
   bountyPercent?: number;
+  bountyAmount?: number;
   /**
    * ROLLOUT 2026-08-15 (Dan: "enable on a few recurring formats first").
    * Rebuys / re-entries / add-ons had NEVER been offered: 0 of 8,210
@@ -132,6 +140,7 @@ interface SNGConfig {
   horsesToRegister: number;
   blindStructure: any[];
   payoutStructure: any[];
+  payoutPercent?: 10 | 15 | 20;
 }
 
 interface SpinConfig {
@@ -175,7 +184,9 @@ interface XMTTConfig {
   horsesToRegister: number;
   blindStructure: any[];
   payoutStructure: any[];
+  payoutPercent?: 10 | 15 | 20;
   bountyPercent?: number;
+  bountyAmount?: number;
   /**
    * ROLLOUT 2026-08-15 (Dan: "enable on a few recurring formats first").
    * Rebuys / re-entries / add-ons had NEVER been offered: 0 of 8,210
@@ -233,14 +244,7 @@ export const BLIND_STRUCTURES = {
   // A turbo reaches its own conclusion well inside 24 levels; deeper than that
   // and the ladder's own 1.58x cadence walks past MAX_BLIND_VALUE, which is how
   // the first draft of this generated a 25,000,000 big blind at level 30.
-  TURBO: buildLadder({
-    startBigBlind: 50,
-    speed: 'TURBO',
-    levels: 24,
-    openingMinutes: 4,
-    floorMinutes: 2,
-    anteFromLevel: 1,
-  }),
+  TURBO: MTT_BLIND_PRESETS.TURBO,
   /**
    * ═══════════════════════════════════════════════════════════════════════
    *  THE FREE BUY LADDER, and why it is not TURBO
@@ -277,22 +281,8 @@ export const BLIND_STRUCTURES = {
     anteFromLevel: 1,
   }),
   // 40 levels at ~1.33x — the reference MTT ladder.
-  STANDARD: buildLadder({
-    startBigBlind: 50,
-    speed: 'STANDARD',
-    levels: 40,
-    openingMinutes: 10,
-    floorMinutes: 5,
-    anteFromLevel: 2,
-  }),
-  HYPER_TURBO: buildLadder({
-    startBigBlind: 100,
-    speed: 'HYPER_TURBO',
-    levels: 16,
-    openingMinutes: 2,
-    floorMinutes: 1,
-    anteFromLevel: 1,
-  }),
+  STANDARD: MTT_BLIND_PRESETS.STANDARD,
+  HYPER_TURBO: MTT_BLIND_PRESETS.HYPER_TURBO,
   SNG_6MAX: buildLadder({
     startBigBlind: 20,
     speed: 'TURBO',
@@ -3388,6 +3378,8 @@ export class TournamentRecurringService {
         status: 'REGISTERING',
         blind_structure: config.blindStructure,
         payout_structure: config.payoutStructure,
+        // Satellite qualification uses its seat contract, not MTT paid depth.
+        // The atomic seat-first creator deliberately rejects unknown fields.
         start_time: startTime.toISOString(),
         late_reg_levels: 0,
         late_reg_mins: 0,
@@ -3797,17 +3789,10 @@ export class TournamentRecurringService {
         config.type === 'bounty' ||
         config.type === 'progressive_bounty' ||
         config.type === 'mystery_bounty';
-      const bountyPercent = config.bountyPercent || 30;
-      // WHOLE CHIPS (Dan 2026-08-20): "Sit and Go and any tournament buy-ins
-      // must never be decimal buy-ins, whole numbers only." `split` is the
-      // authoritative whole-dollar price this row is created at - a rebuy or an
-      // add-on costs the SAME snapped total, not the raw (possibly off-ladder)
-      // config value. The bounty is a whole cut of that total; it used to be
-      // round(buyIn * pct) / 100, which produced 4.5 on a 15 buy-in.
+      // Whole-chip entry prices can fund fractional bounties. Use the same
+      // cent allocation as scheduled MTTs without changing a booked head.
       const split = buyInFor(config.buyIn);
-      const bountyAmount = isBountyType
-        ? Math.min(split.prize, Math.max(0, Math.round((split.total * bountyPercent) / 100)))
-        : 0;
+      const bountyAmount = isBountyType ? mttBountyAmount(split, config) : 0;
       // MYSTERY RANGE 2026-08-21 (Dan: "make sure that this is fully added to
       // the mystery bounty tournaments"). These columns were advertising a
       // range the draw could not produce.
@@ -3878,7 +3863,9 @@ export class TournamentRecurringService {
             current_players: 0,
             status: 'REGISTERING',
             blind_structure: config.blindStructure,
+            ...mttSpeedColumns(config.blindStructure),
             payout_structure: config.payoutStructure || [],
+            payout_percent: mttPayoutPercent(config.payoutPercent),
             start_time: startTime.toISOString(),
             late_reg_levels: 10, // Level-based late reg for XMTT
             late_reg_mins: 10, // Legacy fallback
@@ -4039,18 +4026,9 @@ export class TournamentRecurringService {
         config.type === 'progressive_bounty' ||
         config.type === 'mystery_bounty';
 
-      // Calculate bounty amount using configurable bountyPercent
-      // Round 40 RE-RUN: Math.round (not Math.trunc) for IEEE 754 drift safety —
-      // mirrors the same fix applied to the other bounty-config branch in this file.
-      const bountyPercent = config.bountyPercent || 30;
-      // WHOLE CHIPS (Dan 2026-08-20) - mirrors the XMTT branch above. `split`
-      // is the snapped whole-dollar price the row is actually created at, so
-      // the bounty, the rebuy and the add-on all key off it rather than off the
-      // raw config value.
+      // Share scheduled/XMTT bounty arithmetic; entry pricing remains unchanged.
       const split = buyInFor(config.buyIn);
-      const bountyAmount = isBountyType
-        ? Math.min(split.prize, Math.max(0, Math.round((split.total * bountyPercent) / 100)))
-        : 0;
+      const bountyAmount = isBountyType ? mttBountyAmount(split, config) : 0;
       // Mystery bounty range: min = base bounty, max = 10x base
       // MYSTERY RANGE 2026-08-21 (Dan: "make sure that this is fully added to
       // the mystery bounty tournaments"). These columns were advertising a
@@ -4121,7 +4099,9 @@ export class TournamentRecurringService {
             current_players: 0,
             status: 'REGISTERING',
             blind_structure: config.blindStructure,
+            ...mttSpeedColumns(config.blindStructure),
             payout_structure: config.payoutStructure || [],
+            payout_percent: mttPayoutPercent(config.payoutPercent),
             start_time: startTime.toISOString(),
             late_reg_levels: 8, // Level-based late reg
             late_reg_mins: 8, // Legacy fallback
@@ -4282,6 +4262,8 @@ export class TournamentRecurringService {
         status: 'REGISTERING',
         blind_structure: config.blindStructure,
         payout_structure: config.payoutStructure || [],
+        // Heads-up has a fixed payout contract; paid depth belongs to fields.
+        ...(!seatFirstSng ? { payout_percent: mttPayoutPercent(config.payoutPercent) } : {}),
         start_time: startTime.toISOString(),
         late_reg_levels: 0,
         late_reg_mins: 0,

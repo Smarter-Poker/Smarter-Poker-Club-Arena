@@ -3,6 +3,7 @@ import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import { computePlacePrize, prizePoolAvailableToPlaces } from './payoutMath.js';
 import { resolvePayoutStructure } from './payoutStructure.js';
+import { UNIT_CENTS_ASSET_NOT_READ } from './tournamentUnit.js';
 
 const source = readFileSync('src/tournament/TournamentManagerEliminations.ts', 'utf8');
 const ast = ts.createSourceFile('manager.ts', source, ts.ScriptTarget.Latest, true);
@@ -10,13 +11,20 @@ const manager = ast.statements.find(
   (n): n is ts.ClassDeclaration =>
     ts.isClassDeclaration(n) && n.name?.text === 'TournamentManagerEliminations'
 );
-const methods = ['eliminatePlayer', 'recalculateEliminatedPrizes'].map((name) => {
-  const method = manager?.members.find(
-    (n) => ts.isMethodDeclaration(n) && n.name.getText(ast) === name
-  );
-  if (!method) throw new Error(`Actual method ${name} is missing`);
-  return method.getText(ast);
-});
+// 2026-09-13: `placeLadderUnitCents` is extracted alongside the two payout
+// methods rather than stubbed on the fixture. Both of them now ask it for the
+// unit they price in, and the real method is the thing worth running here - a
+// stub would make this harness agree with itself about a number the engine
+// actually gets from somewhere else.
+const methods = ['eliminatePlayer', 'recalculateEliminatedPrizes', 'placeLadderUnitCents'].map(
+  (name) => {
+    const method = manager?.members.find(
+      (n) => ts.isMethodDeclaration(n) && n.name.getText(ast) === name
+    );
+    if (!method) throw new Error(`Actual method ${name} is missing`);
+    return method.getText(ast);
+  }
+);
 const deepestPlace = ast.statements.find(
   (n) => ts.isFunctionDeclaration(n) && n.name?.text === 'deepestCanonicalPaidPlace'
 );
@@ -96,6 +104,9 @@ function harness(
     'prizePoolAvailableToPlaces',
     'resolvePayoutStructure',
     'TournamentManagerBase',
+    // The free identifier `placeLadderUnitCents` returns, injected by name for
+    // the same reason every other one above is.
+    'UNIT_CENTS_ASSET_NOT_READ',
     compiled
   )(
     db,
@@ -104,7 +115,8 @@ function harness(
     computePlacePrize,
     prizePoolAvailableToPlaces,
     resolvePayoutStructure,
-    { SWEEP_MUTATION_BATCH_SIZE: 100, UNRESOLVED_BUST_RETRY_MS: 100 }
+    { SWEEP_MUTATION_BATCH_SIZE: 100, UNRESOLVED_BUST_RETRY_MS: 100 },
+    UNIT_CENTS_ASSET_NOT_READ
   );
   const subject = Object.assign(new Subject(), {
     tournamentId: 'event',

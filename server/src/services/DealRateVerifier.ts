@@ -419,19 +419,16 @@ export class DealRateVerifier {
       return;
     }
     if (age <= FLEET_PULSE_STALE_SECONDS) {
-      if (this.fleetLoopStalledChecks >= CONSECUTIVE_PULSE_STALE) {
-        /* Through the owned launcher, like every other alert here: a
-           fire-and-forget promise nobody holds is one shutdown cannot drain
-           (ProducerShutdownOwnership). */
-        this.launchAlert(
-          resolveEngineAlert(
-            'ClubArenaHorseFleetLoopStopped',
-            COMPONENT,
-            'The horse fleet seeding cycle is beating again'
-          ),
-          'DealRateVerifier.fleet_pulse_resolve_failed'
-        );
-      }
+      // A previous process can have a persisted firing episode even though
+      // this process has no stalled checks. The journal owns recovery dedupe.
+      this.launchAlert(
+        resolveEngineAlert(
+          'ClubArenaHorseFleetLoopStopped',
+          COMPONENT,
+          'The horse fleet seeding cycle is beating again'
+        ),
+        'DealRateVerifier.fleet_pulse_resolve_failed'
+      );
       this.fleetLoopStalledChecks = 0;
       return;
     }
@@ -442,7 +439,7 @@ export class DealRateVerifier {
         alertname: 'ClubArenaHorseFleetLoopStopped',
         severity: 'critical',
         component: COMPONENT,
-        // Dan 2026-09-11: the horses unable to take a seat reaches his phone.
+        // Preserve urgent incident priority in the Codex investigation task.
         page: true,
         summary: 'The horse fleet has not completed a seeding cycle for ' + Math.round(age) + 's',
         description:
@@ -545,7 +542,7 @@ export class DealRateVerifier {
               alertname: 'ClubArenaFleetFloorLost',
               severity: 'critical',
               component: COMPONENT,
-              // Dan 2026-09-11: the fleet unable to play reaches his phone.
+              // Preserve urgent incident priority in the Codex investigation task.
               page: true,
               summary:
                 'Only ' + tableIds.length + ' table(s) should be dealing - the fleet has collapsed',
@@ -633,7 +630,7 @@ export class DealRateVerifier {
               alertname: 'ClubArenaFleetSilent',
               severity: 'critical',
               component: COMPONENT,
-              // Dan 2026-09-11: the fleet unable to play reaches his phone.
+              // Preserve urgent incident priority in the Codex investigation task.
               page: true,
               summary:
                 'ZERO hands in ' +

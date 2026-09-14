@@ -1670,6 +1670,19 @@ function FullApp() {
                     </AuthGuard>
                   }
                 />
+                {/* An outside sponsor, signed in, books a picture that sends
+                    players to their own site and is invoiced off platform
+                    (2026-09-13). Any account; the house reviews every flight. */}
+                <Route
+                  path="advertise"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Advertise">
+                        <ClubAdvertisePage mode="sponsor" />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
                 <Route
                   path="vip"
                   element={

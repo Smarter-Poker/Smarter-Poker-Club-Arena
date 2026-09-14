@@ -45,6 +45,7 @@ import WeeklyScheduleEditor, {
 import { HelpPopover } from '../components/common/HelpPopover';
 import { Toggle, Slider, NumberField } from '../components/table-config/controls';
 import CashGameCreateFlow from '../components/cash/CashGameCreateFlow';
+import { SpadeConsole } from '../components/console/SpadeConsole';
 import {
   FREE_BUY_ADDON_COST,
   FREE_BUY_HELPER,
@@ -442,12 +443,15 @@ export interface TableConfigPageProps {
   gameTypeOverride?: string;
   /** Embedded hosts receive every exit instead of a club navigation. */
   onExit?: (exit: TableConfigExit) => void;
+  /** The parent Table Management console already owns the painted chassis. */
+  embedded?: boolean;
 }
 
 export default function TableConfigPage({
   clubIdOverride,
   gameTypeOverride,
   onExit,
+  embedded = false,
 }: TableConfigPageProps = {}) {
   const params = useParams<{ clubId: string; gameType: string }>();
   const clubId = clubIdOverride || params.clubId;
@@ -1028,7 +1032,7 @@ export default function TableConfigPage({
     }
   };
 
-  return (
+  const content = (
     <div className="table-config-page">
       {/* Header */}
       <div className="config-header">
@@ -1724,5 +1728,21 @@ export default function TableConfigPage({
         </footer>
       )}
     </div>
+  );
+
+  if (embedded) return content;
+
+  return (
+    <main className="table-config-page__standalone">
+      <SpadeConsole
+        eyebrow="Table Management"
+        title={`${gameInfo.name} Setup`}
+        subtitle="Configure, Validate, Then Publish"
+        pill="Creator"
+        crest="club"
+      >
+        {content}
+      </SpadeConsole>
+    </main>
   );
 }

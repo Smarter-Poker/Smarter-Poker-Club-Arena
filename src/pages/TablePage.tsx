@@ -5418,6 +5418,25 @@ function LiveTablePage({
     sides: SidePot[];
     retired: number[];
   } | null>(null);
+  /**
+   * THE ROWS A MULTI-BOARD HAND PLAYED FOR, GROSS (2026-09-13).
+   *
+   * `state.pots` is only ever assigned by the single-board settlement, so on a
+   * run-it-twice hand the snapshot never carries a pot partition: the felt
+   * shows one running total all hand and, at POT_WIN, `potShipView` had to
+   * reconstruct rows from the award groups - which are NET shares. A 6.76 pot
+   * raked to 6.05 read 6.76 all hand and 6.05 the instant the ship started,
+   * and a three-way all-in with a side pot froze as one merged row instead of
+   * the main row and the side row the reference holds up (20.32 / 1.95).
+   *
+   * `rit_result` already carries the live pots the boards were evaluated
+   * against, gross, with each pot's eligible players. Stamped with the hand
+   * so a late event cannot dress the next hand's ship in this one's rows.
+   */
+  const ritGrossPotsRef = useRef<{
+    handNumber: number;
+    pots: Array<{ amount: number; eligiblePlayers: string[] }>;
+  } | null>(null);
   // Reveal timeline: how many cards of each RIT board are face up right now.
   // rit_result arrives with the full boards; the reference client deals them
   // street by street (flop → pause → turn → pause → river, board by board),
@@ -5555,6 +5574,7 @@ function LiveTablePage({
     }
     setRitFeltBanner(null);
     setPotShipView(null);
+    ritGrossPotsRef.current = null;
     /* THE TAB PILL (Dan 2026-09-04): "RUN IT / 0s Left" stayed red in the
        multi-table strip for the rest of the session. The deadline was set on
        rit_offer and cleared by ONE effect keyed on showRIT changing - but the
@@ -10931,7 +10951,12 @@ function LiveTablePage({
             ? `Running It Once. ${name} Chose One Board.`
             : reason === 'player_declined'
               ? `Running It Once. ${name} Declined.`
-              : 'Running It Once. Not Everyone Agreed In Time.';
+              : /* 2026-09-13: the engine's expiry now says which ONE seat was
+                   still silent when the clock ran out, the way it names a
+                   decliner. Two or more silent seats keep the collective line. */
+                reason === 'no_answer' && name
+                ? `Running It Once. ${name} Did Not Answer In Time.`
+                : 'Running It Once. Not Everyone Agreed In Time.';
         // Felt strip, not a toast — the reference rides the rejection over
         // the table and leaves it up through the start of the single runout.
         // (resetRitPanelState above cleared the waiting strip; this replaces
@@ -10980,6 +11005,24 @@ function LiveTablePage({
           : [];
         const distribution = (handState.distribution as Record<string, number>) || {};
         const pots = (handState.pots as Array<{ amount: number }>) || [];
+        /* Gross rows for the ship (see ritGrossPotsRef). Kept even when the
+           boards below cannot be presented: the pot still ships, and its rows
+           should still be the ones the hand played for. */
+        {
+          const rows = Array.isArray(handState.pots)
+            ? (handState.pots as Array<Record<string, unknown>>)
+                .map((p) => ({
+                  amount: Math.round((Number(p?.amount) || 0) * 100) / 100,
+                  eligiblePlayers: Array.isArray(p?.eligiblePlayers)
+                    ? (p.eligiblePlayers as unknown[]).map((u) => String(u ?? '')).filter(Boolean)
+                    : [],
+                }))
+                .filter((p) => p.amount > 0)
+            : [];
+          ritGrossPotsRef.current = rows.length
+            ? { handNumber: Number(handState.hand_number) || 0, pots: rows }
+            : null;
+        }
         if (boards.length < 2) {
           // Not presentable as a multi-board runout. Say so once — a RIT hand
           // that reaches here with fewer than two usable boards is a payload
@@ -17227,6 +17270,8 @@ function LiveTablePage({
             user_id: string;
             amount: number;
             hand_name?: string;
+            /** 2026-09-13: the low half's row on a hi-lo board (the wire carries it now). */
+            low?: boolean;
           }>) || [];
         const boardHandNames: [string, string, string] | null =
           winnersByBoard.length > 0
@@ -17248,12 +17293,26 @@ function LiveTablePage({
           winnersByBoard.length > 0
             ? (() => {
                 const byBoard: Array<Record<string, string>> = [];
+                /* A SCOOP HAS TWO ROWS (2026-09-13). On a hi-lo board a player
+                   who takes both halves has a high row and a low row; the low
+                   arrives second and used to overwrite the seat's name with
+                   "Low: 8-6-4-3-2". The seat names the high hand when the
+                   player made one, the low only when that is all they won. */
+                const lowOnly: Array<Record<string, string>> = [];
                 for (const wb of winnersByBoard) {
                   const idx = (Number(wb.board) || 1) - 1;
-                  if (idx < 0) continue;
-                  if (!byBoard[idx]) byBoard[idx] = {};
-                  if (wb.hand_name && wb.user_id) byBoard[idx][wb.user_id] = wb.hand_name;
+                  if (idx < 0 || !wb.hand_name || !wb.user_id) continue;
+                  const target = wb.low === true ? lowOnly : byBoard;
+                  if (!target[idx]) target[idx] = {};
+                  target[idx][wb.user_id] = wb.hand_name;
                 }
+                lowOnly.forEach((names, idx) => {
+                  if (!names) return;
+                  if (!byBoard[idx]) byBoard[idx] = {};
+                  for (const [uid, name] of Object.entries(names)) {
+                    if (!byBoard[idx][uid]) byBoard[idx][uid] = name;
+                  }
+                });
                 return byBoard;
               })()
             : null;
@@ -17948,6 +18007,18 @@ function LiveTablePage({
             if (sequenced) {
               const snapSides = tableStateRef.current.sidePots ?? [];
               const snapMain = tableStateRef.current.pot;
+              /* THE ROWS THE HAND PLAYED FOR (2026-09-13). On a multi-board
+                 hand the snapshot never carries a pot partition (see
+                 ritGrossPotsRef), so the rows come from rit_result: gross, one
+                 per pot, with the eligible players named. The reference holds
+                 20.32 / 1.95 up through the whole sequence; these are those. */
+              const ritRows =
+                ritGrossPotsRef.current &&
+                (ritGrossPotsRef.current.handNumber === 0 ||
+                  ritGrossPotsRef.current.handNumber ===
+                    (Number((evt.data as any).hand_number) || ritGrossPotsRef.current.handNumber))
+                  ? ritGrossPotsRef.current.pots
+                  : null;
               // Prefer the live snapshot's pot rows (they carry the true
               // pre-rake contested amounts and their own ids). If the snapshot
               // has already been zeroed, fall back to reconstructing one row
@@ -17957,7 +18028,18 @@ function LiveTablePage({
               const haveSnapRows = snapMain > 0 || snapSides.length > 0;
               let main = snapMain > 0 ? snapMain : potAmount;
               let sides: SidePot[] = snapSides;
-              if (!haveSnapRows) {
+              if (ritRows && ritRows.length > 0) {
+                const nameOf = (uid: string) =>
+                  tableStateRef.current.players.find((p) => p?.id === uid)?.name;
+                main = ritRows[0].amount;
+                sides = ritRows.slice(1).map<SidePot>((p, i) => ({
+                  id: `rit-pot-${i + 1}`,
+                  amount: p.amount,
+                  eligiblePlayers: p.eligiblePlayers
+                    .map(nameOf)
+                    .filter((n): n is string => typeof n === 'string'),
+                }));
+              } else if (!haveSnapRows) {
                 const byPot = new Map<number, number>();
                 for (const g of awardGroups) {
                   const total = g.floats.reduce((s, f) => s + (f.amount || 0), 0);

@@ -121,6 +121,14 @@ describe('the booked Spin tier determines the presentation patch', () => {
       expect(patch).not.toHaveProperty('spin_multiplier');
       expect(patch).not.toHaveProperty('prize_pool');
       expect(patch).not.toHaveProperty('starting_chips');
+      expect(patch).not.toHaveProperty('is_premium_spin');
     }
   );
+
+  it('does not change the funded entry product when the booked draw hits 100x', async () => {
+    const { patch } = await run(2, 100);
+    expect(patch).not.toHaveProperty('is_premium_spin');
+    expect(patch.payout_structure).toEqual(receipt(100).payout_structure);
+    expect(patch.blind_structure).toEqual(receipt(100).blind_structure);
+  });
 });

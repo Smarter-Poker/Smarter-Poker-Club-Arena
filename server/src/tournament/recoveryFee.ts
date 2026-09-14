@@ -28,8 +28,14 @@
  *
  * `Math.floor(x / 1) * 1` is `x`, which is the whole reason the chip path is
  * unchanged by construction rather than by inspection.
+ *
+ * THE UNIT IS REQUIRED (2026-09-13). It defaulted to 1 for a day, which is
+ * CLAUDE.md 10.86 rule 1 written as a parameter: a caller that had never read
+ * a club got the same confident cent as a caller that had. `tournamentUnit.ts`
+ * holds the two answers a caller can legitimately give - `tournamentUnitCents`
+ * when it has the club row, `UNIT_CENTS_ASSET_NOT_READ` when it does not.
  */
-export function unitFloorCents(cents: number, unitCents = 1): number {
+export function unitFloorCents(cents: number, unitCents: number): number {
   const unit = Number.isSafeInteger(unitCents) && unitCents >= 1 ? unitCents : 1;
   if (!Number.isFinite(cents) || cents <= 0) return 0;
   return Math.floor(cents / unit) * unit;
@@ -60,8 +66,10 @@ export function tournamentFeeRatio(buyIn: number, buyInFee: number): number {
  *
  * The cap is floored to the unit as well. A cap that is not on the grid is not
  * a cap the fee can honour.
+ *
+ * THE UNIT IS REQUIRED, for the reason given on `unitFloorCents` above.
  */
-export function recoveryFeeCents(grossCents: number, feeRatio: number, unitCents = 1): number {
+export function recoveryFeeCents(grossCents: number, feeRatio: number, unitCents: number): number {
   if (!Number.isFinite(grossCents) || grossCents <= 0) return 0;
   if (!Number.isFinite(feeRatio) || feeRatio <= 0) return 0;
   return Math.min(

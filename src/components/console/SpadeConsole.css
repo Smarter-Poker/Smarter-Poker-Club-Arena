@@ -14,15 +14,32 @@
    fills, no borders, no shadows on boxes. No :hover.
    ═══════════════════════════════════════════════════════════════════════════ */
 
+/* ── THE DESKTOP CEILING (Dan 2026-09-13) ─────────────────────────────
+   The chassis sizes everything in cqw against its own width, which is what
+   makes a 320px phone and a 430px one get the same picture. With no ceiling
+   that same rule hands a 1440px monitor the phone picture blown up 3.7x:
+   measured 2026-09-13, a plate label rendered at 46px and body copy at 53px,
+   and the 1000px master art was stretched to 1440px, so the chrome and the
+   crest went soft - against "EVERYTHING MUST BE CLEAN AND CRISP".
+
+   So the console stops growing at the master's own width and centres. The art
+   is never asked for more pixels than it has, and the picture is the same one
+   everywhere; a wide screen gets black margin, not a bigger phone. A surface
+   that wants to sit narrower than native sets --sc-max; nothing may raise it
+   past the width of the art. */
 .sc {
   --sc-art: '';
+  /* SPADE_CONSOLE_W - the master's own width. Never raise this. */
+  --sc-max: 1000px;
   position: relative;
   container-type: inline-size;
   display: flex;
   flex-direction: column;
   width: 100%;
+  max-width: var(--sc-max);
   min-width: 0;
-  margin: 0;
+  margin-block: 0;
+  margin-inline: auto;
   padding: 0;
   overflow: visible;
   color: #e6e9ee;

@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/seat-turnover-sitout-state; derivative state follows the actual occupant",
+  "functions": ["fn_clear_sitout_on_turnover"]
+}

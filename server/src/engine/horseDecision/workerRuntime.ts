@@ -1070,7 +1070,10 @@ export class HorseDecisionWorkerRuntime {
       rngAfter,
       computeMs,
       governorScale,
-      effects: captured.effects,
+      // A caught policy failure may have prepared plans before degrading to
+      // check/fold. Those plans do not belong to the fallback action and must
+      // never reach the later authoritative effect-commit path.
+      effects: captured.value.policyFallback === 'brain_exception' ? [] : captured.effects,
     });
   }
 

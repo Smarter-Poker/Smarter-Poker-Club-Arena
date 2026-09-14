@@ -139,6 +139,19 @@ describe('private execution witness', () => {
     expect(witness.policyGraph).toBeNull();
   });
 
+  it('counts an accepted brain-exception decision as fallback instead of normal policy intent', () => {
+    const witness = make({ action: 'fold', thinkTime: 1500, policyFallback: 'brain_exception' });
+    settleHorseExecutionWitness(witness, {
+      applied: true,
+      acceptedActions: accepted('fold', null),
+    });
+    expect(witness).toMatchObject({
+      executionStatus: 'fallback',
+      policyFallback: 'brain_exception',
+      executedAction: 'fold',
+    });
+  });
+
   it('leaves no executed action when every attempted action was rejected', () => {
     const witness = make();
     settleHorseExecutionWitness(witness, {

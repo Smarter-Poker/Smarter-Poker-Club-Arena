@@ -794,6 +794,16 @@ export class LiveHorseDecisionWorkerClient {
       (message.type === 'FAST_RESULT' && active.request.type === 'DECIDE_FAST') ||
       (message.type === 'DEEP_RESULT' && active.request.type === 'DECIDE_DEEP')
     ) {
+      if (
+        !message.decision ||
+        typeof message.decision !== 'object' ||
+        Array.isArray(message.decision) ||
+        (message.decision.policyFallback !== undefined &&
+          message.decision.policyFallback !== 'brain_exception')
+      ) {
+        this.fail(new Error('horse decision worker returned invalid fallback provenance'));
+        return;
+      }
       const witness = createHorseExecutionWitness(active.request, message.decision, {
         requestId: message.requestId,
         lane: message.type === 'FAST_RESULT' ? 'fast' : 'deep',

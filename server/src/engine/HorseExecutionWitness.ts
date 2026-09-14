@@ -9,6 +9,7 @@ export type HorseExecutionRetirement =
   | 'response_fence'
   | 'second_look_replaced'
   | 'second_look_unchanged'
+  | 'brain_exception'
   | 'action_rejected'
   | 'accepted_without_record'
   | 'multiple_accepted_actions';
@@ -38,6 +39,7 @@ export interface HorseExecutionWitness {
     boardCount: number | null;
   }>;
   readonly selected: Readonly<{ action: ActionType; amount: number | null }>;
+  readonly policyFallback: HorseDecision['policyFallback'] | null;
   readonly policyGraph: HorsePolicyGraphReceipt | null;
   readonly computeMs: number;
   readonly governorScale: number;
@@ -77,6 +79,7 @@ export function createHorseExecutionWitness(
       boardCount: snapshot.gameState.boardCount ?? null,
     }),
     selected: Object.freeze({ action: decision.action, amount: decision.amount ?? null }),
+    policyFallback: decision.policyFallback ?? null,
     policyGraph: decision.policyGraph
       ? {
           version: decision.policyGraph.version,
@@ -158,7 +161,9 @@ export function settleHorseExecutionWitness(
     ? null
     : accepted.record.amount;
   witness.executionStatus =
-    !accepted.intended || witness.identity.lane === 'worker_fallback'
+    !accepted.intended ||
+    witness.identity.lane === 'worker_fallback' ||
+    witness.policyFallback === 'brain_exception'
       ? 'fallback'
       : matched
         ? 'intended'

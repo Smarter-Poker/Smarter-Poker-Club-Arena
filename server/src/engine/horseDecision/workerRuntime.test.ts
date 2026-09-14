@@ -1245,6 +1245,34 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(h.stopped()).toBe(1);
   });
 
+  it('drops partial decision effects when the real brain catches an evaluation failure', async () => {
+    const h = harness(true);
+    h.setCapturedEffects([
+      {
+        type: 'raise_plan',
+        handKey: 'table:hand',
+        userId: 'horse-2',
+        street: 'flop',
+        plan: 'foldToRaise',
+      },
+    ]);
+    const failed = vi.spyOn(HorseLogic as any, 'decideInternal').mockImplementation(() => {
+      throw Error('failed policy evaluation');
+    });
+    try {
+      h.runtime.receive(fastRequest(1));
+      await h.runtime.drain();
+      expect(h.messages.at(-1)).toMatchObject({
+        type: 'FAST_RESULT',
+        decision: { action: 'fold', policyFallback: 'brain_exception' },
+        effects: [],
+      });
+      expect(h.appliedEffects).toEqual([]);
+    } finally {
+      failed.mockRestore();
+    }
+  });
+
   it('applies fast decision effects only through an explicit FIFO commit', async () => {
     const h = harness();
     const effects: HorseMindDecisionEffect[] = [

@@ -913,73 +913,80 @@ describe.each([
       effects: [],
     };
   };
-  it.each(['accepted', 'unchanged', 'generation', 'fence', 'after_commit', 'cancelled'] as const)(
-    'reconciles the actual scheduled deep result: %s',
-    async (mode) => {
-      const { engine, player, enginePlayer, state, performAction } = harness(true);
-      const fast = ledger(),
-        deep = ledger(mode === 'unchanged' ? 'call' : 'fold', mode === 'unchanged' ? 20 : null);
-      state.currentBet = 20;
-      const authority = engine.handController.getAuthoritativeActionState();
-      engine.handController.getAuthoritativeActionState = () => ({
-        ...authority,
-        legalActions: ['fold', 'call', 'raise', 'all_in'],
-        toCall: 20,
-        minRaiseTo: 40,
+  it.each([
+    'accepted',
+    'unchanged',
+    'generation',
+    'fence',
+    'after_commit',
+    'cancelled',
+    'brain_exception',
+  ] as const)('reconciles the actual scheduled deep result: %s', async (mode) => {
+    const { engine, player, enginePlayer, state, performAction } = harness(true);
+    const fast = ledger(),
+      deep = ledger(mode === 'unchanged' ? 'call' : 'fold', mode === 'unchanged' ? 20 : null);
+    state.currentBet = 20;
+    const authority = engine.handController.getAuthoritativeActionState();
+    engine.handController.getAuthoritativeActionState = () => ({
+      ...authority,
+      legalActions: ['fold', 'call', 'raise', 'all_in'],
+      toCall: 20,
+      minRaiseTo: 40,
+    });
+    vi.spyOn(ServerTableEngineTurns, 'secondLookPlan').mockReturnValue({
+      ok: true,
+      afterMs: 100,
+    });
+    decisionWorker.decideFast.mockImplementationOnce(async (s: any) => response(s, fast, 'call'));
+    let release: (v: any) => void = () => {};
+    let deepSnapshot: any;
+    decisionWorker.worker.decideDeep.mockImplementationOnce((s: any) => {
+      deepSnapshot = s;
+      return new Promise((resolve) => {
+        release = resolve;
       });
-      vi.spyOn(ServerTableEngineTurns, 'secondLookPlan').mockReturnValue({
-        ok: true,
-        afterMs: 100,
-      });
-      decisionWorker.decideFast.mockImplementationOnce(async (s: any) => response(s, fast, 'call'));
-      let release: (v: any) => void = () => {};
-      let deepSnapshot: any;
-      decisionWorker.worker.decideDeep.mockImplementationOnce((s: any) => {
-        deepSnapshot = s;
-        return new Promise((resolve) => {
-          release = resolve;
-        });
-      });
-      engine.scheduleHorseAction(player, 1, enginePlayer, state);
-      await vi.advanceTimersByTimeAsync(100);
-      expect(decisionWorker.worker.decideDeep).toHaveBeenCalledOnce();
-      if (mode === 'after_commit') await vi.advanceTimersByTimeAsync(1000);
-      if (mode === 'cancelled') engine.cancelHorseDecisionWork();
-      const result = response(
-        deepSnapshot,
-        deep,
-        mode === 'unchanged' ? 'call' : 'fold',
-        mode === 'unchanged' ? 20 : undefined,
-        'deep'
-      );
-      if (mode === 'generation') result.generation += 1;
-      if (mode === 'fence') result.fence = 'retired';
-      release({ ...result, type: 'DEEP_RESULT' });
-      await vi.advanceTimersByTimeAsync(1100);
-      expect(fast.executionStatus).toBe(
-        mode === 'accepted' || mode === 'cancelled' ? 'not_executed' : 'intended'
-      );
-      expect(deep.executionStatus).toBe(mode === 'accepted' ? 'intended' : 'not_executed');
-      if (mode === 'cancelled') expect(performAction).not.toHaveBeenCalled();
-      else {
-        expect(performAction).toHaveBeenCalledOnce();
-        expect(performAction.mock.calls[0][1]).toBe(mode === 'accepted' ? 'fold' : 'call');
-      }
-      expect(mode === 'accepted' ? fast.executedAction : deep.executedAction).toBeNull();
-      const retirementFeature = {
-        tournamentUtility: 'phase7_utility_not_executed',
-        tournamentPostflop: 'phase8_execution_not_executed',
-        plo4Policy: 'phase10_execution_not_executed',
-        omahaVariantPolicy: 'phase11_execution_not_executed',
-        remainingVariantPolicy: 'phase12_execution_not_executed',
-        jointPolicy: 'phase13_execution_not_executed',
-        executionWitness: 'phase15_execution_not_executed',
-      }[policyKey];
-      expect(drainFires().find(({ feature }) => feature === retirementFeature)?.fires).toBe(
-        mode === 'cancelled' ? 2 : 1
-      );
+    });
+    engine.scheduleHorseAction(player, 1, enginePlayer, state);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(decisionWorker.worker.decideDeep).toHaveBeenCalledOnce();
+    if (mode === 'after_commit') await vi.advanceTimersByTimeAsync(1000);
+    if (mode === 'cancelled') engine.cancelHorseDecisionWork();
+    const result = response(
+      deepSnapshot,
+      deep,
+      mode === 'unchanged' ? 'call' : 'fold',
+      mode === 'unchanged' ? 20 : undefined,
+      'deep'
+    );
+    if (mode === 'brain_exception')
+      Object.assign(result.decision, { policyFallback: 'brain_exception' });
+    if (mode === 'generation') result.generation += 1;
+    if (mode === 'fence') result.fence = 'retired';
+    release({ ...result, type: 'DEEP_RESULT' });
+    await vi.advanceTimersByTimeAsync(1100);
+    expect(fast.executionStatus).toBe(
+      mode === 'accepted' || mode === 'cancelled' ? 'not_executed' : 'intended'
+    );
+    expect(deep.executionStatus).toBe(mode === 'accepted' ? 'intended' : 'not_executed');
+    if (mode === 'cancelled') expect(performAction).not.toHaveBeenCalled();
+    else {
+      expect(performAction).toHaveBeenCalledOnce();
+      expect(performAction.mock.calls[0][1]).toBe(mode === 'accepted' ? 'fold' : 'call');
     }
-  );
+    expect(mode === 'accepted' ? fast.executedAction : deep.executedAction).toBeNull();
+    const retirementFeature = {
+      tournamentUtility: 'phase7_utility_not_executed',
+      tournamentPostflop: 'phase8_execution_not_executed',
+      plo4Policy: 'phase10_execution_not_executed',
+      omahaVariantPolicy: 'phase11_execution_not_executed',
+      remainingVariantPolicy: 'phase12_execution_not_executed',
+      jointPolicy: 'phase13_execution_not_executed',
+      executionWitness: 'phase15_execution_not_executed',
+    }[policyKey];
+    expect(drainFires().find(({ feature }) => feature === retirementFeature)?.fires).toBe(
+      mode === 'cancelled' ? 2 : 1
+    );
+  });
   it.each(['coerced', 'rejected'] as const)(
     'reports %s at the actual action boundary',
     async (mode) => {

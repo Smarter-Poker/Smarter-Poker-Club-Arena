@@ -2162,6 +2162,32 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     0.001
   ),
   receipt(
+    'phase15_brain_exception',
+    'HorseLogic.decide',
+    'a policy exception produced an explicit check/fold liveness fallback; the private error is not part of the action receipt',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_deep_brain_exception_retired',
+    'ServerTableEngineTurns.scheduleHorseAction',
+    'a failed deep evaluation was retired while the original fast decision and its execution authority were retained',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_execution_*',
+    'HorseExecutionWitness.countFinal',
+    'one terminal memory-witness outcome per returned decision, bound to the controller accepted record; not a durable decision ledger',
+    'Phase15'
+  ),
+  ...(['fast', 'deep', 'worker_fallback'] as const).map((lane) =>
+    receipt(
+      `phase15_${lane}_execution_*`,
+      'HorseExecutionWitness.countFinal',
+      `terminal execution-witness outcomes from the ${lane} lane; failed or discarded computation is distinct from accepted policy intent`,
+      'Phase15'
+    )
+  ),
+  receipt(
     'v44_second_look_flipped',
     'ServerTableEngineTurns.scheduleHorseAction',
     'the deeper read overturned the fast answer',

@@ -399,8 +399,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    */
   static secondLookVerdict(
     fast: { action: string; amount?: number },
-    deep: { action: string; amount?: number }
+    deep: { action: string; amount?: number; policyFallback?: HorseDecision['policyFallback'] }
   ): { action: string; amount?: number } | null {
+    if (deep.policyFallback !== undefined) return null;
     if (deep.action !== 'call' && deep.action !== 'fold' && deep.action !== 'all_in') return null;
     if (deep.action === fast.action) return null;
     return { action: deep.action, amount: deep.amount };
@@ -3227,6 +3228,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                   !fenceIsCurrent('deep_result')
                 ) {
                   retireDecision(deepResult.decision);
+                  return;
+                }
+                if (deepResult.decision.policyFallback === 'brain_exception') {
+                  retireDecision(deepResult.decision, 'brain_exception');
+                  noteFire('phase15_deep_brain_exception_retired');
                   return;
                 }
                 const verdict = ServerTableEngineTurns.secondLookVerdict(

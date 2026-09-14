@@ -2379,9 +2379,10 @@ export class HorseLogic {
       phase11DecisionEquityCeiling = null;
       phase12DecisionEquityCeiling = null;
       const toCall = Math.max(0, (gameState.currentBet || 0) - (player.bet || 0));
+      if (telemetryOn(opts)) noteFire('phase15_brain_exception');
       return toCall === 0
-        ? { action: 'check', thinkTime: 1500 }
-        : { action: 'fold', thinkTime: 1500 };
+        ? { action: 'check', thinkTime: 1500, policyFallback: 'brain_exception' }
+        : { action: 'fold', thinkTime: 1500, policyFallback: 'brain_exception' };
     } finally {
       phase7EquityEvidence = null;
       phase10EquityEvidence = null;

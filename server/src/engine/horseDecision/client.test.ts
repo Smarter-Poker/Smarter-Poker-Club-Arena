@@ -192,6 +192,41 @@ const fastResult = (requestId: number, fence: string): FastHorseDecisionResult =
 });
 
 describe('LiveHorseDecisionWorkerClient', () => {
+  it('keeps the brain failure provenance in the exact private execution witness', async () => {
+    const worker = new FakeWorker(),
+      client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    worker.emitMessage(ready);
+    const pending = client.decideFast(snapshot('brain-exception'));
+    const reply = fastResult(1, 'brain-exception');
+    reply.decision.policyFallback = 'brain_exception';
+    worker.emitMessage(reply);
+    const result = await pending;
+    expect(result.decision.executionWitness).toMatchObject({
+      policyFallback: 'brain_exception',
+      identity: { lane: 'fast' },
+    });
+  });
+  it.each([
+    null,
+    [],
+    { action: 'fold', thinkTime: 1, policyFallback: 'unknown' },
+    { action: 'fold', thinkTime: 1, policyFallback: true },
+  ])(
+    'rejects malformed decision provenance without throwing from the message handler: %j',
+    async (decision) => {
+      const worker = new FakeWorker(),
+        client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+      worker.emitMessage(ready);
+      const pending = client.decideFast(snapshot('bad-provenance'));
+      const rejected = expect(pending).rejects.toThrow('invalid fallback provenance');
+      expect(() =>
+        worker.emitMessage({ ...fastResult(1, 'bad-provenance'), decision } as any)
+      ).not.toThrow();
+      await rejected;
+      expect(client.status().phase).toBe('failed');
+    }
+  );
+
   it.each(['fast', 'deep'] as const)(
     'binds the %s response to its canonical request without copying private inputs',
     async (lane) => {

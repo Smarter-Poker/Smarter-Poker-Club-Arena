@@ -38,6 +38,7 @@ import { useWalletStore } from '../stores/useWalletStore';
 import { useUserStore } from '../stores/useUserStore';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { useDiamondWalletSummary } from '../hooks/useDiamondWalletSummary';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useToast } from '../components/common/Toast';
 import { confirmDialog } from '../components/common/confirmDialog';
@@ -439,8 +440,23 @@ export default function PlayerWalletPage() {
     if (user?.id) {
       loadBalances(user.id, { force: true });
       loadDiamonds(user.id, { force: true });
+      void loadWalletSummary();
     }
   });
+
+  /* THE DIAMOND WALLET IN ONE READ (phase 1): on hand, sendable, collateral,
+     diamonds in Diamond Arena custody, the arena's open flags. `undefined`
+     while reading, `null` when the read failed, never a fabricated zero. */
+  const isMounted = useIsMounted();
+  const { summary: walletSummary, load: loadWalletSummary } = useDiamondWalletSummary(
+    user?.id,
+    isMounted
+  );
+  /* What a send will actually be allowed: the RPC refuses purchased diamonds
+     still inside the refund window. When the summary is unknown the on-hand
+     figure stands, and the server remains the final word. */
+  const sendable = walletSummary ? walletSummary.sendable : diamonds;
+  const heldCollateral = walletSummary ? walletSummary.collateral : 0;
 
   const [activeTab, setActiveTab] = useState<WalletTab>('overview');
   const [transferFrom, setTransferFrom] = useState<WalletType>('PLAYER');
@@ -451,7 +467,6 @@ export default function PlayerWalletPage() {
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const [showDisputeModal, setShowDisputeModal] = useState(false);
-  const isMounted = useIsMounted();
 
   // ── Send diamonds ──
   const [friends, setFriends] = useState<FriendOption[] | null>(null);
@@ -772,8 +787,12 @@ export default function PlayerWalletPage() {
       toast.error('Enter A Whole Number Of Diamonds');
       return;
     }
-    if (amount > diamonds) {
-      toast.error(`You Only Have ${fmtNum(diamonds)} Diamonds`);
+    if (amount > sendable) {
+      toast.error(
+        heldCollateral > 0 && amount <= diamonds
+          ? `Only ${fmtNum(sendable)} Diamonds Can Be Sent Right Now. ${fmtNum(heldCollateral)} Bought Recently Are Held Until The Refund Window Closes`
+          : `You Only Have ${fmtNum(diamonds)} Diamonds`
+      );
       return;
     }
     const friend = friends?.find((f) => f.id === recipientId);
@@ -1188,7 +1207,7 @@ export default function PlayerWalletPage() {
                     type="number"
                     inputMode="numeric"
                     min={MIN_DIAMOND_SEND}
-                    max={Math.max(MIN_DIAMOND_SEND, diamonds)}
+                    max={Math.max(MIN_DIAMOND_SEND, sendable)}
                     step={1}
                     placeholder={`${MIN_DIAMOND_SEND}`}
                     value={sendAmount}
@@ -1196,7 +1215,14 @@ export default function PlayerWalletPage() {
                   />
                 </label>
                 <div className="vault-form__row">
-                  <span className="vault-form__hint">Available: {fmtNum(diamonds)} Diamonds</span>
+                  <span className="vault-form__hint">
+                    {walletSummary === null
+                      ? `On Hand: ${fmtNum(diamonds)} Diamonds (Sendable Amount Could Not Be Read)`
+                      : `Sendable: ${fmtNum(sendable)} Diamonds`}
+                    {heldCollateral > 0
+                      ? `. ${fmtNum(heldCollateral)} Bought Recently Are Held Until The Refund Window Closes`
+                      : ''}
+                  </span>
                   <button
                     type="button"
                     className="vault-btn primary"

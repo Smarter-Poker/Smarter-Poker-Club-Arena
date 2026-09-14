@@ -57,8 +57,20 @@ Buy-In" / "Diamond Arena Cash-Out" instead of the humaniser's "Arena Deposit";
 the gift kinds and every high-volume kind of the last 30 days that had no
 label (daily challenge claims are 55,183 of 57,000 rows) get one.
 
-Nothing renders yet. Phase 2 draws the plate and the three figures from this
-read; phase 3 opens the door.
+**Wired in (verification pass, 2026-09-14).** A read nobody calls is a stub,
+so the page now owns it through `useDiamondWalletSummary` (three outcomes:
+reading / failed / known; re-reads on `BALANCE_UPDATED` and on tab
+visibility). The Send pane prints **Sendable**, the figure the transfer RPC
+will actually honour, says when it could not read it rather than printing On
+Hand as if it were sendable, and tells a player holding refund-window
+collateral why the two differ - before the server refuses them. The client
+check and the input's `max` use the same figure. Phase 2 draws the plate and
+the hero's three figures from the same hook; phase 3 opens the door.
+
+**World Hub parity (same pass).** Its wallet fell back to "Adjustment" for
+any unknown kind, so every daily challenge claim and any future arena row
+read as an admin correction. Same labels there now, and an unknown kind is
+humanised instead (PR #1754).
 
 ## Verified
 

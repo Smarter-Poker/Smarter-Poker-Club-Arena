@@ -2,6 +2,8 @@
  * DiamondService.getWalletSummary: one RPC, parsed honestly, null on failure.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 const rpc = vi.fn();
 vi.mock('../../src/lib/supabase', () => ({ supabase: { rpc: (...a: unknown[]) => rpc(...a) } }));
@@ -81,5 +83,37 @@ describe('DiamondService.getWalletSummary', () => {
     expect(await DiamondService.getWalletSummary()).toBeNull();
     rpc.mockRejectedValueOnce(new Error('network'));
     expect(await DiamondService.getWalletSummary()).toBeNull();
+  });
+});
+
+describe('the summary is wired into the wallet page', () => {
+  const read = (p: string) => readFileSync(resolve(process.cwd(), p), 'utf8');
+  const page = read('src/pages/PlayerWalletPage.tsx');
+  const hook = read('src/hooks/useDiamondWalletSummary.ts');
+
+  it('the page reads the summary through one hook and refreshes it with the balances', () => {
+    expect(page).toContain(
+      "import { useDiamondWalletSummary } from '../hooks/useDiamondWalletSummary';"
+    );
+    expect(page).toContain('useDiamondWalletSummary(\n    user?.id,\n    isMounted\n  )');
+    expect(page).toContain('void loadWalletSummary();');
+    expect(hook).toContain(
+      "masterBus.subscribeDebounced('BALANCE_UPDATED', () => void load(), 1200)"
+    );
+    expect(hook).toContain('DiamondService.getWalletSummary()');
+  });
+
+  it('the Send pane tells the truth about what can be sent, and says when it could not read it', () => {
+    expect(page).toContain('const sendable = walletSummary ? walletSummary.sendable : diamonds;');
+    expect(page).toContain('if (amount > sendable) {');
+    expect(page).toContain('max={Math.max(MIN_DIAMOND_SEND, sendable)}');
+    expect(page).toContain('Sendable: ${fmtNum(sendable)} Diamonds');
+    expect(page).toContain('(Sendable Amount Could Not Be Read)');
+    expect(page).toContain('Bought Recently Are Held Until The Refund Window Closes');
+  });
+
+  it('the hook has three outcomes: reading, failed, known', () => {
+    expect(hook).toContain('useState<DiamondWalletSummary | null | undefined>(undefined)');
+    expect(hook).toContain('if (!isMounted.current || seq !== seqRef.current) return;');
   });
 });

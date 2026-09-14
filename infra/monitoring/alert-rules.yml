@@ -705,7 +705,7 @@ groups:
           component: hand-projection
         annotations:
           summary: 'Oldest unprojected hand has waited {{ $value | humanizeDuration }}'
-          description: 'hand_projection_outbox is not draining as fast as hands settle. Club and player stats, rake and BBJ bookings for those hands are late. Read poker_hand_projection_drain_results_total by result on /metrics: failed climbing means the RPC is refusing (Sentry HandProjection.*); projected flat with depth > 0 is the stall alert below. Raise HAND_PROJECTION_DRAIN_CONCURRENCY (default 4, max 16) only after reading pg_stat_activity for lock waits on hand-projection:<table>.'
+          description: 'hand_projection_outbox is not draining as fast as hands settle. Club and player stats, rake and BBJ bookings for those hands are late. Read poker_hand_projection_drain_results_total by result, drain age, deadline cuts and wakes on /metrics. Check the configured concurrency and pg_stat_activity for per-table projection lock waits; concurrency cannot release an already-stuck drain. Preserve the durable rows and identify the active await or actual refusal before changing the worker.'
           runbook: 'docs/changelog/2026-09-10-hand-projection-wakes-by-notify-with-a-poll-net.md'
 
       - alert: HandProjectionOutboxBacklogCritical
@@ -722,8 +722,8 @@ groups:
           description: 'Half an hour of hands have not reached club stats, player stats or their rake/BBJ bookings. The durable rows are safe; do not delete or hand-mark them. Find the reason in poker_hand_projection_drain_results_total{result="failed"} and Sentry HandProjection.rpc_failed / semantic_refusal before changing anything.'
           runbook: 'docs/changelog/2026-09-10-hand-projection-wakes-by-notify-with-a-poll-net.md'
 
-      # Rows waiting and nothing projected for ten minutes is the worker not
-      # running at all (no leader boot, poll timer gone) or every RPC failing.
+      # Zero progress can mean an inactive worker, a still-pending drain,
+      # repeated refusals, or deferred dependencies. Counters distinguish them.
       - alert: HandProjectionDrainStalled
         expr: |
           poker_hand_projection_outbox_depth > 0
@@ -736,7 +736,7 @@ groups:
           component: hand-projection
         annotations:
           summary: 'The hand projection drain has projected nothing in ten minutes with rows waiting (poker_hand_projection_outbox_depth)'
-          description: 'Check poker_hand_projection_wakes_total{source="poll"} is still climbing (the 5 s poll is the only cross-process wake while ENGINE_PG_LISTEN_URL is unset). If wakes climb and projected does not, every fn_project_hand_side_effects call is failing: read Sentry HandProjection.rpc_failed and pg_stat_activity.'
+          description: 'Read drain age, drains started, deadline cuts, result counters and wake counters together. The safety poll deliberately waits while a drain owns the lane, so flat poll wakes can be the consequence of a pending drain. Rising failed or deferred results require their exact RPC or dependency evidence; zero progress alone does not prove RPC failure. Inspect the active await, transport and pg_stat_activity. Keep the durable rows and never release a still-live drain or manufacture completion.'
           runbook: 'docs/changelog/2026-09-10-hand-projection-wakes-by-notify-with-a-poll-net.md'
 
       - alert: HandProjectionMetricsBlind

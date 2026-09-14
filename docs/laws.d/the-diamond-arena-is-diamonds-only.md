@@ -1,0 +1,3 @@
+# tests/the-diamond-arena-is-diamonds-only.law.test.ts
+
+The Diamond Arena holds diamonds and never chips: the wallet's summary read (fn_diamond_wallet_summary) reports custody diamonds and the arena's open flags with no chip figure, the arena ledger kinds are labelled Diamond Arena Buy-In / Cash-Out, no wallet surface pairs the arena with chips or a diamonds-to-chips conversion, and the database guard that refuses a chip wallet on the diamonds club (poker_arena_membership_guard, 20260908152822) stays in the migrations - Dan, 2026-09-13: "NO ARENA CHIPS, DIAMOND ARENA IS DIAMONDS ONLY NO CHIPS EVER", said twice, answering my own proposal of an arena-chips plate.

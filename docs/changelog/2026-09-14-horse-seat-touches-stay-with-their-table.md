@@ -1,0 +1,7 @@
+# Horse Seat Touches Stay With Their Table
+
+Horse hand reviews accumulate per horse and table, then flush asynchronously. The telemetry writer matched only the horse. If the fleet manager had already observed that horse at a different table, a delayed old-table touch reset the current session's hand count and start time while leaving its table identity unchanged. A departed horse with no current table could also accumulate old-table hands.
+
+The writer now requires the touch's table to match the currently observed table. Only matching touches add hands or advance the clock; the fleet manager retains table identity and session-transition authority. Current-table updates preserve their prior behavior, including out-of-order hand timestamps. No historical telemetry, seat, policy, balance, or ledger row is rewritten by the migration.
+
+Native PostgreSQL 17 reproduces the exact live defect: a prior-table touch changes seven current-session hands to two, and a departed horse changes seven to nine. The correction leaves both complete rows unchanged and preserves the matching seven-plus-two result. The required CI fixture also covers mixed-table batches in both orders, nullable clocks, absent identities, rollback after a malformed later row, caller permissions, concurrent increments, migration replay and definition-drift refusal. This is a telemetry attribution correction; financial acceptance and full horse-engine qualification remain separate.

@@ -282,7 +282,7 @@ function fixture(
   engine.adoptMovedPresence = () => {};
   engine.restoreSitOutsFromSeats = () => {};
   engine.evictExpiredSitOuts = async () => {};
-  engine.announcePendingSeatMoves = async () => {};
+  engine.announcePendingSeatMoves = async () => true;
   engine.persistPresenceForRestart = async () => {};
   engine.awaitNextHandRest = async () => {};
   engine.broadcastCurrentState = async () => {};

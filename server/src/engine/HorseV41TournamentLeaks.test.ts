@@ -1,13 +1,6 @@
-/**
- * V41 (2026-09-05) - THE TOURNAMENT LANE GETS A LEAK PROFILE
- *
- * 66% of horse seat-hands are tournaments. The self-tuner is cash-only, so
- * the 61,955 tournament review rows written in the week to 2026-09-05
- * (23,921 tagged) reached nothing. The tuner now writes the tournament-format
- * share of a horse's tags (leaksTournament / leaksHandsTournament, from
- * fn_horse_tournament_leaks) and the ICM premium reads it.
- */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { performance } from 'node:perf_hooks';
+/** Tournament review proposals remain diagnostic, separate from structural ICM. */
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   HorseLogic,
   resolveHorseStyle,
@@ -103,17 +96,6 @@ function bubbleFacingJam(): { hero: SeatPlayer; gs: HorseGameStateV2 } {
   return { hero, gs };
 }
 
-function foldRate(mods: HorseProfileMods, opts: Record<string, unknown> = {}, trials = 80): number {
-  let folds = 0;
-  for (let t = 1; t <= trials; t++) {
-    seedFastRandom(t * 104729 + 7);
-    HorseMind.reset();
-    const { hero, gs } = bubbleFacingJam();
-    if (HorseLogic.decide(hero, gs, 'balanced', mods, opts).action === 'fold') folds++;
-  }
-  return folds / trials;
-}
-
 const TAGGED: HorseProfileMods = {
   leaksTournament: { preflop_stackoff: 7, coldcall_stackoff: 5 },
   leaksHandsTournament: 100,
@@ -143,7 +125,7 @@ describe('V41 tournament leak profile', () => {
     expect(tourneyLeakPremium(mods)).toBe(0);
   });
 
-  it('the premium is capped at 0.03 and zero under the tagged bar', () => {
+  it('the unapplied premium proposal is capped at 0.03 and zero under the tagged bar', () => {
     expect(
       tourneyLeakPremium({ leaksTournament: { preflop_stackoff: 9 }, leaksHandsTournament: 100 })
     ).toBeCloseTo(0.0225, 5);
@@ -156,32 +138,38 @@ describe('V41 tournament leak profile', () => {
     expect(tourneyLeakPremium(undefined)).toBe(0);
   });
 
-  it('a tagged horse folds the bubble call-off at least as often as a clean one, and the receipt fires', () => {
-    const clean = foldRate({});
-    const tagged = foldRate({
-      leaksTournament: { preflop_stackoff: 40 },
-      leaksHandsTournament: 100,
-    });
-    expect(tagged).toBeGreaterThanOrEqual(clean);
-    enableBrainTelemetry();
-    const { hero, gs } = bubbleFacingJam();
-    HorseLogic.decide(hero, gs, 'balanced', TAGGED, { telemetry: true });
-    const fires = Object.fromEntries(drainFires().map((r) => [r.feature, r.fires]));
-    expect(fires.v41_tourney_leak_read ?? 0).toBeGreaterThan(0);
+  it('does not add an observational survival premium to paired tournament decisions', () => {
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+    try {
+      for (let t = 1; t <= 80; t++) {
+        const play = (mods: HorseProfileMods, opts = {}) => {
+          seedFastRandom(t * 104729 + 7);
+          HorseMind.reset();
+          const { hero, gs } = bubbleFacingJam();
+          return HorseLogic.decide(hero, gs, 'balanced', mods, opts);
+        };
+        const clean = play({});
+        expect(play(TAGGED)).toEqual(clean);
+        expect(play(TAGGED, { v41Leaks: false })).toEqual(clean);
+      }
+    } finally {
+      clock.mockRestore();
+    }
   });
 
-  it('the receipt never fires at a cash table, and the flag switches it off', () => {
+  it('records ignored historical reports in either format, never an applied ICM receipt', () => {
     enableBrainTelemetry();
-    const { hero, gs } = bubbleFacingJam();
-    (gs as { gameMode: string }).gameMode = 'cash';
-    (gs as { format: string }).format = 'cash';
-    (gs as { tournament?: unknown }).tournament = undefined;
-    HorseLogic.decide(hero, gs, 'balanced', TAGGED, { telemetry: true });
-    const cash = Object.fromEntries(drainFires().map((r) => [r.feature, r.fires]));
-    expect(cash.v41_tourney_leak_read ?? 0).toBe(0);
-    const t = bubbleFacingJam();
-    HorseLogic.decide(t.hero, t.gs, 'balanced', TAGGED, { telemetry: true, v41Leaks: false });
-    const off = Object.fromEntries(drainFires().map((r) => [r.feature, r.fires]));
-    expect(off.v41_tourney_leak_read ?? 0).toBe(0);
+    for (const cash of [false, true]) {
+      const { hero, gs } = bubbleFacingJam();
+      if (cash) {
+        (gs as { gameMode: string }).gameMode = 'cash';
+        (gs as { format: string }).format = 'cash';
+        (gs as { tournament?: unknown }).tournament = undefined;
+      }
+      HorseLogic.decide(hero, gs, 'balanced', TAGGED, { telemetry: true });
+      const fires = Object.fromEntries(drainFires().map((r) => [r.feature, r.fires]));
+      expect(fires.phase14_review_signal_ignored).toBe(1);
+      expect(fires.v41_tourney_leak_read).toBeUndefined();
+    }
   });
 });

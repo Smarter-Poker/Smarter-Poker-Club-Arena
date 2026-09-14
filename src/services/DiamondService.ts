@@ -25,6 +25,43 @@ export interface DiamondPackage {
   bestValue?: boolean;
 }
 
+/**
+ * THE DIAMOND ARENA IS DIAMONDS ONLY. NO CHIPS, EVER. (Dan, 2026-09-13.)
+ * Nothing in this shape is a chip, and nothing in the wallet may draw one for
+ * the arena. tests/the-diamond-arena-is-diamonds-only.law.test.ts pins it.
+ */
+export interface DiamondArenaInfo {
+  clubId: string;
+  name: string;
+  slug: string | null;
+  cashGamesEnabled: boolean;
+  tournamentsEnabled: boolean;
+}
+
+/** One read of the diamond wallet: `fn_diamond_wallet_summary`. */
+export interface DiamondWalletSummary {
+  /** profiles.diamonds - custody is already outside it. */
+  onHand: number;
+  /** Purchased diamonds inside the refund window; cannot be sent. */
+  collateral: number;
+  /** on_hand - collateral: what send_wallet_diamond_transfer will allow. */
+  sendable: number;
+  /** Open poker_diamond_custody balance: at a seat or in a tournament entry. */
+  inArena: number;
+  arenaSeats: number;
+  arenaEntries: number;
+  /** null if the platform diamonds club is not configured. */
+  arena: DiamondArenaInfo | null;
+  lifetimeEarned: number;
+  lifetimeSpent: number;
+  readAt: string;
+}
+
+export interface DiamondLifetimeStats {
+  lifetimeEarned: number;
+  lifetimeSpent: number;
+}
+
 export interface DiamondWallet {
   balance: number;
   lifetimeEarned: number;
@@ -124,32 +161,85 @@ export const DiamondService = {
   },
 
   /**
-   * Lifetime earned / spent from `diamond_transactions`, the one ledger that
-   * records diamonds. Sign decides the bucket: a positive row is money in, a
-   * negative row is money out. Best-effort: a failed read reports zeros.
+   * Lifetime earned / spent, summed IN SQL over the whole `diamond_transactions`
+   * ledger by `fn_diamond_lifetime_totals` (migration 20260913171905,
+   * SECURITY INVOKER so RLS still scopes it to the caller).
+   *
+   * Until 2026-09-13 this read up to 5,000 rows into the browser and added them
+   * up here, and a failed read returned `{ 0, 0 }` - a figure indistinguishable
+   * from a brand-new account, presented as a lifetime. CLAUDE.md 10.86: "I could
+   * not tell" is its own outcome. So a failed read now returns `null`, and the
+   * surface says Unavailable and offers a retry instead of printing a zero.
    */
-  async getLifetimeStats(
-    userId: string
-  ): Promise<{ lifetimeEarned: number; lifetimeSpent: number }> {
+  async getLifetimeStats(userId: string): Promise<DiamondLifetimeStats | null> {
     try {
-      const { data, error } = await supabase
-        .from('diamond_transactions')
-        .select('amount')
-        .eq('user_id', userId)
-        .limit(5000);
+      const { data, error } = await supabase.rpc('fn_diamond_lifetime_totals', {
+        p_user_id: userId,
+      });
       if (error) throw error;
-      let lifetimeEarned = 0;
-      let lifetimeSpent = 0;
-      for (const row of data || []) {
-        const n = Number(row.amount || 0);
-        if (!Number.isFinite(n)) continue;
-        if (n > 0) lifetimeEarned += n;
-        else lifetimeSpent += -n;
+      // RETURNS TABLE: one row, or none if the function somehow yields nothing.
+      const row = (Array.isArray(data) ? data[0] : data) as
+        | { lifetime_earned: number | string; lifetime_spent: number | string }
+        | undefined;
+      if (!row) throw new Error('fn_diamond_lifetime_totals returned no row');
+      const lifetimeEarned = Number(row.lifetime_earned);
+      const lifetimeSpent = Number(row.lifetime_spent);
+      if (!Number.isFinite(lifetimeEarned) || !Number.isFinite(lifetimeSpent)) {
+        throw new Error('fn_diamond_lifetime_totals returned a non-numeric total');
       }
       return { lifetimeEarned, lifetimeSpent };
     } catch (err) {
       reportError(err, 'DiamondService.getLifetimeStats', { userId });
-      return { lifetimeEarned: 0, lifetimeSpent: 0 };
+      return null;
+    }
+  },
+
+  /**
+   * The whole diamond picture in one RPC, own-user only (the function pins
+   * the caller to auth.uid()). `null` means the read failed: the surface says
+   * Unavailable and offers a retry rather than printing zeros (10.86).
+   */
+  async getWalletSummary(): Promise<DiamondWalletSummary | null> {
+    try {
+      const { data, error } = await supabase.rpc('fn_diamond_wallet_summary');
+      if (error) throw error;
+      const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+      if (!row || typeof row !== 'object') {
+        throw new Error('fn_diamond_wallet_summary returned nothing');
+      }
+      const num = (v: unknown) => {
+        const n = Number(v);
+        if (!Number.isFinite(n)) {
+          throw new Error('fn_diamond_wallet_summary returned a non-numeric figure');
+        }
+        return n;
+      };
+      const arenaRaw = row.arena as Record<string, unknown> | null | undefined;
+      const arena: DiamondArenaInfo | null =
+        arenaRaw && typeof arenaRaw === 'object' && typeof arenaRaw.club_id === 'string'
+          ? {
+              clubId: arenaRaw.club_id,
+              name: String(arenaRaw.name || 'Diamond Arena'),
+              slug: typeof arenaRaw.slug === 'string' ? arenaRaw.slug : null,
+              cashGamesEnabled: arenaRaw.cash_games_enabled === true,
+              tournamentsEnabled: arenaRaw.tournaments_enabled === true,
+            }
+          : null;
+      return {
+        onHand: num(row.on_hand),
+        collateral: num(row.collateral),
+        sendable: num(row.sendable),
+        inArena: num(row.in_arena),
+        arenaSeats: num(row.arena_seats),
+        arenaEntries: num(row.arena_entries),
+        arena,
+        lifetimeEarned: num(row.lifetime_earned),
+        lifetimeSpent: num(row.lifetime_spent),
+        readAt: String(row.read_at || ''),
+      };
+    } catch (err) {
+      reportError(err, 'DiamondService.getWalletSummary');
+      return null;
     }
   },
 

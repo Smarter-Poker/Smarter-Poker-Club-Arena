@@ -78,6 +78,7 @@ import { rankOverlayAnnouncements, type OverlayCandidate } from '../../utils/ove
    type-only import, so this root-mounted ticker does not pull the whole
    lobby view-model into the entry bundle every player downloads. */
 import { lateRegEndMs } from '../lobby/lateRegWindow';
+import { isInsideLastCall, MAX_LEAD_MS, UPCOMING_ROW_LIMIT } from './tickerLeadWindow';
 import type { LobbyTournamentRow } from '../lobby/lobbyEntries';
 import {
   guaranteeItem,
@@ -96,8 +97,6 @@ import { useTopChromeOffset } from './useTopChromeOffset';
 import { useRailSilence } from './useRailSilence';
 import { TickerRail } from './TickerRail';
 
-/** How far ahead an event counts as "about to start". */
-const LEAD_MS = 5 * 60 * 1000;
 /** How often we ask the database. The countdown itself ticks locally. */
 const POLL_MS = 30_000;
 /** How long a cached club-membership list is trusted. */
@@ -107,6 +106,15 @@ const LEAVE_MS = 240;
 
 interface Scope {
   clubIds: string[];
+  /**
+   * club id -> club name, for the clubs this player belongs to.
+   *
+   * Read once per scope (five-minute TTL) rather than per poll: the feed is
+   * scoped to every club the player is in, so an announcement can be about a
+   * club other than the one whose rail is being painted, and the player has no
+   * way to tell which. Names are what tells them.
+   */
+  clubNames: Record<string, string>;
   fetchedAt: number;
   userId: string | null;
 }
@@ -145,6 +153,11 @@ function TickerHost() {
   const [tickerScopeRevision, setTickerScopeRevision] = useState(0);
   const [viewerRevision, setViewerRevision] = useState(0);
   const scopeEpochRef = useRef(0);
+  /**
+   * The club whose rail this is - the one whose colours and source switches
+   * are painting the strip. An announcement about any OTHER club is named.
+   */
+  const railClubIdRef = useRef<string | null>(null);
   /** (reason, scope) pairs already reported this mount. See warnOnce below. */
   const warnedScopesRef = useRef<Set<string>>(new Set());
 
@@ -267,6 +280,10 @@ function TickerHost() {
             warnOnce(`table:${tableMatch[1]}`, 'unresolvedSegment', tableMatch[1]);
           }
         }
+        /* Whatever the route resolved to is the club this rail belongs to.
+           Recorded before the settings call so the feed can tell an
+           announcement about HERE from one about somewhere else. */
+        railClubIdRef.current = clubUuid;
         const next = await tickerManagementService.get(unionUuid ? null : clubUuid, unionUuid);
         if (!cancelled && epoch === scopeEpochRef.current) setManagedTicker(next);
       } catch (error) {
@@ -362,7 +379,7 @@ function TickerHost() {
       return cached;
     }
     if (!uid) {
-      scopeRef.current = { clubIds: [], fetchedAt: Date.now(), userId: null };
+      scopeRef.current = { clubIds: [], clubNames: {}, fetchedAt: Date.now(), userId: null };
       return scopeRef.current;
     }
     try {
@@ -376,7 +393,33 @@ function TickerHost() {
         return null;
       }
       const ids = (data || []).map((r: { club_id: string }) => r.club_id).filter(Boolean);
-      scopeRef.current = { clubIds: ids, fetchedAt: Date.now(), userId: uid };
+
+      /* The names, once per scope rather than once per poll. The feed covers
+         every club this player belongs to, so an announcement can be about a
+         club other than the one whose rail is being painted - and without a
+         name the player cannot tell. A failed read is not fatal: the line
+         simply does not say where, which is what it did before. */
+      let clubNames: Record<string, string> = {};
+      if (ids.length > 0) {
+        const { data: named, error: nameError } = await supabase
+          .from('clubs')
+          .select('id,name')
+          .in('id', ids);
+        if (nameError) {
+          reportError(nameError, 'TournamentStartingTicker.loadScopeNames');
+        } else {
+          clubNames = Object.fromEntries(
+            (named || [])
+              .filter((row: { id?: string; name?: string }) => row?.id && row?.name)
+              .map((row: { id: string; name: string }) => [row.id, row.name])
+          );
+        }
+        if (epoch !== scopeEpochRef.current || (readLocalSession()?.userId || null) !== uid) {
+          return null;
+        }
+      }
+
+      scopeRef.current = { clubIds: ids, clubNames, fetchedAt: Date.now(), userId: uid };
       return scopeRef.current;
     } catch (e) {
       reportError(e, 'TournamentStartingTicker.loadScope');
@@ -415,7 +458,7 @@ function TickerHost() {
           return;
         }
         const nowIso = new Date().toISOString();
-        const horizonIso = new Date(Date.now() + LEAD_MS).toISOString();
+        const horizonIso = new Date(Date.now() + MAX_LEAD_MS).toISOString();
 
         /* DB LOAD PASS 2026-08-24: the player's own registrations used to be
            fetched AFTER the upcoming-events query, filtered by the ids it
@@ -468,7 +511,12 @@ function TickerHost() {
               .gte('start_time', nowIso)
               .lte('start_time', horizonIso)
               .order('start_time', { ascending: true })
-              .limit(5)
+              /* NOT five. The horizon covers the longest rung of the lead
+                 ladder and the per-stake filter runs on the client, so asking
+                 for five soonest-first lets cheap events that will be filtered
+                 out take every slot from a major that would have survived.
+                 See UPCOMING_ROW_LIMIT. */
+              .limit(UPCOMING_ROW_LIMIT)
           : Promise.resolve({ data: [], error: null } as const);
 
         /* ── OVERLAY ANNOUNCEMENTS (Dan 2026-08-26) ──────────────────────────
@@ -551,17 +599,29 @@ function TickerHost() {
           failedKinds.add('starting_soon');
         } else {
           for (const t of (upcomingRes.data || []) as Record<string, unknown>[]) {
+            const eventClubId = (t.club_id as string) || null;
             const upcoming: UpcomingTournament = {
               id: String(t.id),
               name: String(t.name || 'Tournament'),
               startsAt: new Date(String(t.start_time)).getTime(),
-              clubId: (t.club_id as string) || null,
+              clubId: eventClubId,
               buyIn: Number(t.buy_in_amount) || 0,
               buyInFee: Number(t.buy_in_fee) || 0,
               registered: Number(t.current_players) || 0,
               isRegistered: myRegs.has(String(t.id)),
+              /* Named only when it is somewhere else. Naming the club a player
+                 is already standing in would be noise on every line. */
+              foreignClubName:
+                eventClubId && railClubIdRef.current && eventClubId !== railClubIdRef.current
+                  ? scope.clubNames[eventClubId] || null
+                  : null,
             };
             if (!Number.isFinite(upcoming.startsAt)) continue;
+            /* The query horizon is the LONGEST rung on the ladder so one read
+               serves every stake; each event is then held to its own last
+               call, so a 2-chip turbo is still a five-minute event. */
+            if (!isInsideLastCall(upcoming.startsAt, upcoming.buyIn + upcoming.buyInFee, current))
+              continue;
             next.push(startingSoonItem(upcoming));
           }
         }

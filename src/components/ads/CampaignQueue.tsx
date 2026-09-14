@@ -19,8 +19,12 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { AdCampaignService, formatDollars } from '../../services/AdCampaignService';
-import type { AdCampaign, AdRateCard } from '../../services/AdCampaignService';
+import { AdCampaignService, billingLabel, formatDollars } from '../../services/AdCampaignService';
+import type {
+  AdCampaign,
+  AdRateCard,
+  SponsorAdvertiserRow,
+} from '../../services/AdCampaignService';
 import type { AdSlot } from '../../services/AdService';
 import { AD_SURFACE_RATIO } from './HouseAdRotator';
 import { confirmDialog } from '../common/confirmDialog';
@@ -68,10 +72,20 @@ export default function CampaignQueue() {
   const [sponsor, setSponsor] = useState(EMPTY_SPONSOR);
   const [sponsorBusy, setSponsorBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [sponsors, setSponsors] = useState<SponsorAdvertiserRow[]>([]);
+  const [handoffEmail, setHandoffEmail] = useState<Record<string, string>>({});
+  const [handoffBusy, setHandoffBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
       setCampaigns(await AdCampaignService.list(null));
+      /* The sponsor roster is a second read with the same shape as the rate
+         card: losing it loses the hand-off panel, never the queue. */
+      try {
+        setSponsors(await AdCampaignService.sponsorAdvertisers());
+      } catch {
+        setSponsors([]);
+      }
       /* The rate card names each surface and the exact creative size it takes.
          A failure here loses the labels, not the queue, so it does not clear
          the campaigns or raise. */
@@ -124,6 +138,74 @@ export default function CampaignQueue() {
       );
       return;
     }
+    await load();
+  };
+
+  /* An offline fact, recorded: somebody sent the invoice, somebody saw it
+     paid. No chips and no diamonds move. 'none' is the undo for a slip. */
+  const bill = async (c: AdCampaign, mark: 'invoiced' | 'paid' | 'none') => {
+    const label: Record<typeof mark, string> = {
+      invoiced: `Record The ${formatDollars(c.quotedCents ?? 0)} Invoice To ${c.clubName} As Sent?`,
+      paid: `Record ${formatDollars(c.quotedCents ?? 0)} From ${c.clubName} As Paid?`,
+      none: `Clear The Billing Marks On ${c.clubName}'s Flight? The Quote Stays.`,
+    };
+    const ok = await confirmDialog({
+      title: mark === 'none' ? 'Clear Billing Marks?' : 'Record It?',
+      message: label[mark],
+      confirmText: mark === 'none' ? 'Clear' : 'Record',
+      cancelText: 'Back',
+      variant: mark === 'none' ? 'danger' : 'default',
+    });
+    if (!ok) return;
+    setBusyId(c.id);
+    setError(null);
+    const res = await AdCampaignService.bill(c.id, mark);
+    setBusyId(null);
+    if (!res.ok) {
+      const why: Record<string, string> = {
+        not_platform_admin: 'Only Smarter.Poker Staff Can Record Billing',
+        not_a_sponsor_flight: 'Only A Sponsor Flight Is Invoiced. A Club Paid In Diamonds.',
+        not_approved: 'An Invoice Is For An Approved Flight. Approve It First.',
+      };
+      setError(why[res.reason ?? ''] ?? `Could Not Record It: ${res.reason ?? 'Unknown'}`);
+      return;
+    }
+    await load();
+  };
+
+  /* A sponsor opened over the phone becomes one that logs in. */
+  const handoff = async (a: SponsorAdvertiserRow) => {
+    const email = (handoffEmail[a.id] ?? a.contactEmail ?? '').trim();
+    if (!email) {
+      setError('Type The E-Mail Of The Account That Will Own This Sponsor.');
+      return;
+    }
+    const ok = await confirmDialog({
+      title: 'Hand This Sponsor To An Account?',
+      message: `${a.name} Becomes Owned By ${email}. That Account Sees Every Flight Booked For It, Its Quotes And Its Invoices, And Can Book Its Own. This Is Not Undone From Here.`,
+      confirmText: 'Hand It Off',
+      cancelText: 'Back',
+    });
+    if (!ok) return;
+    setHandoffBusy(a.id);
+    setError(null);
+    setNotice(null);
+    const res = await AdCampaignService.advertiserHandoff(a.id, email);
+    setHandoffBusy(null);
+    if (!res.ok) {
+      const why: Record<string, string> = {
+        not_platform_admin: 'Only Smarter.Poker Staff Can Hand Off A Sponsor',
+        bad_email: 'That Is Not An E-Mail Address',
+        not_a_sponsor: 'That Advertiser Is Not A Sponsor',
+        already_handed_off: 'That Sponsor Already Has An Account',
+        no_account_with_that_email: 'No Smarter.Poker Account Has That E-Mail. They Sign Up First.',
+        account_already_has_a_sponsor:
+          'That Account Already Owns A Sponsor. One Sponsor Per Account.',
+      };
+      setError(why[res.reason ?? ''] ?? `Could Not Hand It Off: ${res.reason ?? 'Unknown'}`);
+      return;
+    }
+    setNotice(`${a.name} Is Now Owned By ${email}.`);
     await load();
   };
 
@@ -429,6 +511,7 @@ export default function CampaignQueue() {
                   <th>State</th>
                   <th>Flight</th>
                   <th>Diamonds</th>
+                  <th>Billing</th>
                   <th>People</th>
                   <th>Shown</th>
                   <th>Seen</th>
@@ -453,6 +536,39 @@ export default function CampaignQueue() {
                         ? ` (${c.diamondsRefunded.toLocaleString()} Back)`
                         : ''}
                     </td>
+                    <td>
+                      {c.clubId == null && c.status === 'approved' ? (
+                        <span className="campaign-queue__billing">
+                          <span>{billingLabel(c)}</span>
+                          {c.paidAt == null ? (
+                            <button
+                              type="button"
+                              className="admin-btn admin-btn-success admin-btn-sm"
+                              disabled={busyId === c.id}
+                              onClick={() =>
+                                void bill(c, c.invoicedAt == null ? 'invoiced' : 'paid')
+                              }
+                            >
+                              {c.invoicedAt == null ? 'Invoice Sent' : 'Paid'}
+                            </button>
+                          ) : null}
+                          {c.invoicedAt != null ? (
+                            <button
+                              type="button"
+                              className="admin-btn admin-btn-ghost admin-btn-sm"
+                              disabled={busyId === c.id}
+                              onClick={() => void bill(c, 'none')}
+                            >
+                              Clear
+                            </button>
+                          ) : null}
+                        </span>
+                      ) : c.clubId == null ? (
+                        billingLabel(c)
+                      ) : (
+                        'Diamonds'
+                      )}
+                    </td>
                     <td>{c.viewers.toLocaleString()}</td>
                     <td>{c.impressions.toLocaleString()}</td>
                     <td>{c.viewable.toLocaleString()}</td>
@@ -462,6 +578,65 @@ export default function CampaignQueue() {
               </tbody>
             </table>
           ) : null}
+        </div>
+      ) : null}
+
+      {sponsors.length > 0 ? (
+        <div className="campaign-queue__roster">
+          <h3 className="campaign-queue__roster-title">Sponsors</h3>
+          <p className="campaign-queue__roster-hint">
+            A Sponsor Opened Over The Phone Has No Login. Hand It To The Account That Will Own It
+            And That Person Sees Every Flight, Quote And Invoice On Their Own Advertise Page.
+          </p>
+          <table className="campaign-queue__table">
+            <thead>
+              <tr>
+                <th>Sponsor</th>
+                <th>Contact</th>
+                <th>Owner</th>
+                <th>Flights</th>
+                <th>Unpaid</th>
+                <th>Hand Off</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sponsors.map((a) => (
+                <tr key={a.id}>
+                  <td>{a.name}</td>
+                  <td>{a.contactEmail ?? ''}</td>
+                  <td>{a.selfServe ? (a.ownerEmail ?? 'Logs In') : 'Phone'}</td>
+                  <td>{a.flights.toLocaleString()}</td>
+                  <td>{a.unpaidCents > 0 ? formatDollars(a.unpaidCents) : ''}</td>
+                  <td>
+                    {a.selfServe ? (
+                      ''
+                    ) : (
+                      <span className="campaign-queue__handoff">
+                        <input
+                          className="admin-input"
+                          type="email"
+                          value={handoffEmail[a.id] ?? a.contactEmail ?? ''}
+                          onChange={(e) =>
+                            setHandoffEmail((m) => ({ ...m, [a.id]: e.target.value }))
+                          }
+                          placeholder="Account E-Mail"
+                          disabled={handoffBusy === a.id}
+                        />
+                        <button
+                          type="button"
+                          className="admin-btn admin-btn-sm"
+                          disabled={handoffBusy === a.id}
+                          onClick={() => void handoff(a)}
+                        >
+                          Hand Off
+                        </button>
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       ) : null}
     </div>

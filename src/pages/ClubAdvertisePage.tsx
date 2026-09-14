@@ -46,7 +46,12 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { formatDate } from '../utils/format';
-import { AdCampaignService, POSTER_SHAPE, formatDollars } from '../services/AdCampaignService';
+import {
+  AdCampaignService,
+  POSTER_SHAPE,
+  billingLabel,
+  formatDollars,
+} from '../services/AdCampaignService';
 import type {
   AdCampaign,
   AdCampaignDay,
@@ -862,8 +867,7 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
                       c.quotedCents != null ? (
                         <>
                           {' '}
-                          {'·'} {formatDollars(c.quotedCents)}
-                          {c.status === 'approved' ? ' Invoiced' : ' Quoted'}
+                          {'·'} {formatDollars(c.quotedCents)} {billingLabel(c)}
                         </>
                       ) : null
                     ) : (

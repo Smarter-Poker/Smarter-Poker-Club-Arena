@@ -248,3 +248,55 @@ describe("the ad popup carries the sponsor's door (2026-09-13)", () => {
     expect(read('tests/unit/everyRouteIsReachableLaw.test.ts')).not.toMatch(/^\s+advertise:/m);
   });
 });
+
+describe("a sponsor's flight is billed, and a phone sponsor can log in (2026-09-14)", () => {
+  const BILLED = read('supabase/migrations/20260914004548_a_sponsors_flight_is_billed.sql');
+
+  it('the marks are an offline fact recorded by staff, on approved sponsor flights only', () => {
+    expect(BILLED).toMatch(/add column if not exists invoiced_at timestamptz/);
+    expect(BILLED).toMatch(/add column if not exists paid_at timestamptz/);
+    expect(BILLED).toMatch(/if p_mark not in \('invoiced', 'paid', 'none'\) then/);
+    expect(BILLED).toMatch(
+      /if v_c\.club_id is not null or v_c\.quoted_cents is null then[\s\S]*?not_a_sponsor_flight/
+    );
+    expect(BILLED).toMatch(/if v_c\.status <> 'approved' then[\s\S]*?not_approved/);
+    // Paid never without invoiced; the migration asserts it.
+    expect(BILLED).toMatch(/a flight is paid without being invoiced/);
+    // No chips and no diamonds: the function touches ad_campaign only.
+    const fn = BILLED.slice(
+      BILLED.indexOf('function public.fn_sponsor_campaign_bill'),
+      BILLED.indexOf('revoke all on function public.fn_sponsor_campaign_bill')
+    );
+    expect(fn).not.toMatch(/diamond|chip_balance|fn_credit|fn_add_chips/);
+    // Both lists return the marks.
+    expect(
+      BILLED.match(/quoted_cents integer, invoiced_at timestamptz, paid_at timestamptz/g)?.length
+    ).toBe(2);
+  });
+
+  it('the hand-off finds the account by e-mail and refuses a second sponsor per account', () => {
+    expect(BILLED).toMatch(
+      /select u\.id into v_owner from auth\.users u where lower\(u\.email\) = v_email/
+    );
+    expect(BILLED).toMatch(/no_account_with_that_email/);
+    expect(BILLED).toMatch(/account_already_has_a_sponsor/);
+    expect(BILLED).toMatch(/already_handed_off/);
+    expect(BILLED).toMatch(/self_serve\s+= true/);
+  });
+
+  it('the sponsor reads the same words staff wrote, and staff act from the reviewed table and the roster', () => {
+    expect(SERVICE).toMatch(/export function billingLabel\(/);
+    expect(SERVICE).toMatch(/if \(c\.paidAt\) return 'Paid';/);
+    expect(SERVICE).toMatch(/if \(c\.invoicedAt\) return 'Invoice Sent';/);
+    expect(SERVICE).toMatch(/if \(c\.status === 'approved'\) return 'To Be Invoiced';/);
+    expect(PAGE).toMatch(/\{formatDollars\(c\.quotedCents\)\} \{billingLabel\(c\)\}/);
+    expect(QUEUE).toMatch(/void bill\(c, c\.invoicedAt == null \? 'invoiced' : 'paid'\)/);
+    expect(QUEUE).toMatch(/void bill\(c, 'none'\)/);
+    expect(SERVICE).toMatch(/rpc\('fn_sponsor_campaign_bill'/);
+    expect(QUEUE).toMatch(/Hand Off/);
+    expect(SERVICE).toMatch(/rpc\('fn_sponsor_advertiser_handoff'/);
+    expect(SERVICE).toMatch(/rpc\('fn_sponsor_advertiser_list'/);
+    // The hand-off's e-mail falls back to the contact e-mail staff typed on the phone.
+    expect(QUEUE).toMatch(/handoffEmail\[a\.id\] \?\? a\.contactEmail \?\? ''/);
+  });
+});

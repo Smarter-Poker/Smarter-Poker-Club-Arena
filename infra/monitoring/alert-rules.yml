@@ -179,7 +179,7 @@ groups:
           component: cron
         annotations:
           summary: '{{ $value }} cron job(s) have logged success for 24h while skipping all their work'
-          description: 'SELECT job_name, result FROM cron_execution_log WHERE status = ''success'' AND result ? ''skipped'' ORDER BY started_at DESC. A kill switch left off, or a handler that reads one it should not. Staleness alerts cannot see this: the job is being dispatched and is answering.'
+          description: "SELECT job_name, result FROM cron_execution_log WHERE status = 'success' AND result ? 'skipped' ORDER BY started_at DESC. A kill switch left off, or a handler that reads one it should not. Staleness alerts cannot see this: the job is being dispatched and is answering."
           runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
 
       - alert: OpenClawFleetLongSilence
@@ -1161,11 +1161,10 @@ groups:
   #     one said how much memory it used. poker_engine_process_rss_bytes and
   #     its neighbours (server/src/observability/engineInstruments.ts) are
   #     the fix for that; these rules read them.
-  # The V8 heap was NOT the growth (400-800 MB across GC cycles while RSS
-  # climbed); glibc's main arena was. Hence
-  # poker_engine_native_main_arena_bytes beside the heap gauges: when
-  # EngineProcessMemoryHigh fires, that series says whether it is JavaScript
-  # or native memory, which is the first question and used to need an SSH.
+  # Main-isolate V8 usage, whole-process RSS and [heap] virtual extent are
+  # separate observations. Their correlation may guide an investigation but
+  # cannot attribute RSS to TLS, a thread or a particular native allocator.
+  # poker_engine_native_main_arena_bytes is virtual extent, not resident bytes.
   #
   # No maintenance-break guard on any of these: the break parks tables and
   # does not change the process's weight, and the restart inside it LOWERS
@@ -1188,17 +1187,16 @@ groups:
           severity: critical
           component: engine
         annotations:
-          summary: 'engine-01 has {{ $value | humanize1024 }}B available - the kernel OOM-killer takes the engine next'
+          summary: 'engine-01 has {{ $value | humanize1024 }}B available - the host is at elevated OOM risk'
           description: |
             MemAvailable on the engine host has been under 256 MiB for two
             minutes. On 2026-09-12 06:21:57 UTC this ended with the kernel
             killing the engine process (no SIGTERM, no drainHands, every
             table lost mid-hand). Read poker_engine_process_rss_bytes: if
-            the engine is the weight, poker_engine_native_main_arena_bytes
-            versus poker_engine_heap_used_bytes says whether the growth is
-            native (TLS/connection state, the 2026-09-14 finding) or the V8
-            heap. A restart inside the next :55 break clears it; an OOM kill
-            does not wait for one.
+            the engine is the weight, compare whole-process RSS, main-isolate
+            V8 usage and worker activity. poker_engine_native_main_arena_bytes
+            is [heap] virtual extent, not resident memory or a TLS diagnosis.
+            Follow the maintenance-break runbook; OOM recovery has no drain.
           runbook: 'docs/runbooks/engine-memory.md'
 
       # The exact number the release train's on-host build refuses below.
@@ -1240,12 +1238,12 @@ groups:
           description: |
             The engine process has weighed more than 1.6 GiB for fifteen
             minutes. Compare poker_engine_heap_used_bytes (V8) with
-            poker_engine_native_main_arena_bytes (glibc brk, native memory on
-            the main thread): on 2026-09-14 the heap was flat at 400-800 MB
-            while the arena climbed 378 to 501 MB in an hour, tracking
-            HTTPS connection churn to Supabase (3,800 TIME-WAIT sockets in
-            one storm). poker_engine_threads rising with it means worker
-            isolates; poker_engine_external_bytes rising means Buffers.
+            poker_engine_native_main_arena_bytes ([heap] virtual extent, not
+            RSS). The incident recorded a 400-800 MB main-isolate heap band
+            and a 378 to 501 MB heap-region change alongside connection churn.
+            This does not establish the native allocation cause. Thread and
+            external-memory growth require worker/libuv/V8 and Buffer/C++
+            ownership investigation; neither series alone identifies a leak.
           runbook: 'docs/runbooks/engine-memory.md'
 
   # ── BOUNDED TOURNAMENT WORK LANES (2026-09-07) ────────────────────────

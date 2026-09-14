@@ -1,76 +1,41 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  ONE BOUNDED HTTP CLIENT POOL FOR THE WHOLE PROCESS (2026-09-14)
- * ═══════════════════════════════════════════════════════════════════════════════
+ * BOUNDED HTTP CONNECTIONS IN THE MAIN ENGINE ISOLATE (2026-09-14)
  *
- * Every Supabase call the engine makes goes through Node's global `fetch`, and
- * Node's fetch goes through ONE process-wide undici `Agent` that nothing here
- * had ever configured. Its defaults, read from the running engine:
+ * The incident report recorded the default fetch Agent with no per-origin
+ * connection cap and a four-second keep-alive. In one network-namespace sample
+ * it counted 240 established HTTPS connections and 1,674 TIME-WAIT sockets;
+ * a tournament re-admission storm had 3,800 TIME-WAIT sockets. These observations
+ * indicate connection churn. A TIME-WAIT snapshot alone does not measure the
+ * TLS handshake rate or establish that every request opened a new connection.
  *
- *   connections      : unlimited per origin
- *   keepAliveTimeout : 4 seconds
+ * Reported process RSS rose while the main isolate's V8 heap remained in a
+ * 400-800 MB band, and the [heap] region grew around the storm. TLS allocation
+ * and allocator fragmentation are plausible contributors, not established causes.
+ * The virtual extent of [heap] is not resident memory or allocation ownership.
+ * A connection ceiling does not establish a ceiling on native RSS or queued
+ * request memory; assess workload, worker heaps, connection churn and RSS
+ * across comparable post-release periods before attributing an improvement.
  *
- * So a socket that has carried a request sits idle for four seconds and is
- * closed, and the next request to the same origin opens a new one: a fresh
- * TCP connect and a full TLS handshake. Measured inside the engine container
- * on 2026-09-14 10:33 UTC, in an ordinary minute: 240 HTTPS connections open
- * to the Supabase API and 1,674 in TIME-WAIT - roughly twenty-eight new TLS
- * sessions a second, all day - and 3,800 in TIME-WAIT during one tournament
- * re-admission storm at 10:07, when every manager asked the database the same
- * question at once and there was no ceiling on how many sockets that could
- * open.
+ * This installs one Agent with connections=128 per origin and a 30-second
+ * keep-alive, overridable by ENGINE_HTTP_MAX_CONNECTIONS / ENGINE_HTTP_KEEPALIVE_MS.
+ * Excess requests queue in undici; the Supabase wrapper's per-attempt deadline
+ * covers that wait and the response-body drain. Other fetch callers retain their
+ * own cancellation contracts. Worker isolates and other origins have separate
+ * pools; this is not a whole-process connection or memory ceiling.
  *
- * Why this is a MEMORY bug and not only a network one. TLS state is allocated
- * by OpenSSL, in native memory, on the main thread, in glibc's main arena -
- * the `[heap]` (brk) region. That arena cannot give a page back to the kernel
- * while anything above it is still in use, so a storm that opens thousands of
- * sessions at once ratchets the arena to its high-water mark and the mark
- * stays. Read on the box the same morning: the V8 heap sat between 400 and
- * 800 MB across GC cycles while the process climbed past 2 GB, and the delta
- * was the arena - 378 MB at boot+60m, 501 MB at boot+90m, +111 MB inside the
- * seven minutes of the 10:07 storm, flat in quiet minutes. The engine host
- * has 3.8 GB, the release train builds the next image on the same host and
- * refuses below 1.125 GiB free, and it was refused 11 of 14 times overnight.
- * On 2026-09-12 06:21:57 UTC the kernel OOM-killed the engine outright.
+ * The constructor comes from the runtime's existing Agent to avoid mixing fetch
+ * and dispatcher versions. The registry symbol and constructor name are runtime
+ * implementation details: validate actual fetch behavior in the pinned Node image.
+ * Touching Headers initializes the lazy default; the writable registry slot is
+ * then replaced. A different constructor or failed assignment is reported and
+ * leaves the existing dispatcher in place. Installation is the first index import.
  *
- * The fix is the ceiling the default never had. This installs one Agent with
- *
- *   connections      : ENGINE_HTTP_MAX_CONNECTIONS   (default 128 per origin)
- *   keepAliveTimeout : ENGINE_HTTP_KEEPALIVE_MS      (default 30 000)
- *
- * The cap bounds how many TLS sessions can exist at once, which bounds the
- * arena's high-water mark; requests past it queue inside undici, in order,
- * and still honour the per-attempt deadline the Supabase client wrapper sets
- * (services/supabase/client.ts). The keep-alive stops the churn: a socket
- * reused thirty seconds later costs nothing, one re-opened four seconds later
- * costs a handshake. Cloudflare, in front of Supabase, sends no
- * `Keep-Alive: timeout=` hint and was measured holding an idle connection
- * open well past this value, so the longer idle is safe on their side; the
- * engine is the side that was closing.
- *
- * WHY THE BUNDLED CONSTRUCTOR AND NOT `import { Agent } from 'undici'`. Node
- * 22 ships undici 6.28 inside the binary and its fetch dispatches through the
- * Dispatcher it finds at `globalThis[Symbol.for('undici.globalDispatcher.1')]`.
- * An npm `undici` would be a second copy with its own version; the handler
- * protocol between fetch and Agent changed across majors, and a fetch from
- * one version driving an Agent from another is the kind of thing that works
- * until the next `npm update`. The default dispatcher IS an Agent, so its
- * constructor is the very class Node's fetch was written against. Same code,
- * same protocol, no new dependency.
- *
- * Node registers that default lazily, the first time its undici module loads
- * (any fetch(), or touching `Headers`). This touches `Headers` first so the
- * slot is populated, then replaces it. undici defines the slot writable, so a
- * plain assignment is the sanctioned `setGlobalDispatcher`.
- *
- * Everything here is reported, not assumed: `httpDispatcherReport()` says
- * whether the bound went in and with what, and /health publishes it as
- * `httpDispatcher`. A boot where it did not go in still runs - on the
- * unbounded default - and says so. Never a silent fall-back (CLAUDE.md 10.86).
+ * httpDispatcherReport() records the install result. It is not a live socket
+ * count, memory proof, or guarantee against a later dispatcher replacement.
  */
 
 export interface HttpDispatcherReport {
-  /** True when the global dispatcher is the bounded Agent installed here. */
+  /** True when the last installation successfully selected the bounded Agent. */
   bounded: boolean;
   connectionsPerOrigin: number | null;
   keepAliveTimeoutMs: number | null;
@@ -78,7 +43,7 @@ export interface HttpDispatcherReport {
   reason: string | null;
 }
 
-/** undici's own registry key for the process-wide dispatcher (stable since v5). */
+/** Dispatcher registry key used by the pinned Node/undici runtime. */
 export const GLOBAL_DISPATCHER_SYMBOL = Symbol.for('undici.globalDispatcher.1');
 
 export const DEFAULT_MAX_CONNECTIONS_PER_ORIGIN = 128;

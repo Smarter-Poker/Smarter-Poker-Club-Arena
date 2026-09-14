@@ -801,9 +801,9 @@ rpcErrorsTotalAlwaysOn.inc(0, { method: 'action' });
 /* ── THE PROCESS'S OWN MEMORY (2026-09-14) ────────────────────────────────
    See observability/processMemory.ts for why these exist. Always-on, bounded
    cardinality (no labels), refreshed at scrape time from one cached sample.
-   `poker_engine_native_main_arena_bytes` is the one no Node default metric
-   set carries and the one that moved: glibc's brk arena, i.e. native memory
-   allocated on the main thread. -1 where /proc is unreadable, never absent. */
+   `poker_engine_native_main_arena_bytes` retains its public name but measures
+   only the current [heap] virtual extent, not RSS or allocation ownership.
+   -1 where /proc is unreadable, never absent. */
 export const processRssBytes = alwaysOnRegistry.gauge(
   'poker_engine_process_rss_bytes',
   'Resident set size of the engine process (every isolate, every arena)'
@@ -826,7 +826,7 @@ export const processArrayBuffersBytes = alwaysOnRegistry.gauge(
 );
 export const processNativeMainArenaBytes = alwaysOnRegistry.gauge(
   'poker_engine_native_main_arena_bytes',
-  'Extent of the glibc main arena ([heap], brk): native memory allocated on the main thread, its high-water mark; -1 when /proc is unreadable'
+  'Current [heap] virtual mapping extent, not RSS or allocation ownership; -1 when /proc is unreadable'
 );
 export const processRssAnonBytes = alwaysOnRegistry.gauge(
   'poker_engine_rss_anon_bytes',

@@ -1,17 +1,10 @@
 /**
- * LAW: the engine opens a bounded number of connections, and keeps them.
+ * LAW: the engine caps main-isolate connections and reuses idle sockets.
  *
- * Node's global fetch dispatched every Supabase call through an undici Agent
- * with no connection cap and a four-second keep-alive. Measured on the engine
- * on 2026-09-14: 240 HTTPS connections open and 1,674 in TIME-WAIT in an
- * ordinary minute, 3,800 in TIME-WAIT during one tournament re-admission
- * storm. Each is a TLS session allocated in glibc's main arena on the main
- * thread, and that arena keeps its high-water mark: the process climbed past
- * 2 GB with the V8 heap flat at 400-800 MB, the on-host image build was
- * refused 11 of 14 times overnight for lack of memory, and on 2026-09-12 the
- * kernel OOM-killed the engine. services/httpDispatcher.ts installs the
- * ceiling; this law keeps it installed, first, honest about failure, and
- * effective - the last part measured against a real socket, not a mock.
+ * The incident recorded an uncapped default pool, connection churn and rising
+ * RSS. TLS allocation is a hypothesis for the growth, not an established cause.
+ * These tests establish pool behavior against a real loopback origin; they do
+ * not prove the production allocator cause or bound whole-process memory.
  */
 import { describe, it, expect, afterAll } from 'vitest';
 import { createServer, type Server } from 'node:http';
@@ -189,7 +182,7 @@ describe('on this runtime the bound is real', () => {
     const ambientCtor = ambient?.constructor as { name?: string } | undefined;
     expect(
       ambientCtor?.name,
-      `ambient global dispatcher is ${ambientCtor?.name}: ${String(ambientCtor).slice(0, 400)}`
+      `ambient global dispatcher is ${ambientCtor?.name}: ${String(ambientCtor).slice(0, 400)}` // window-ok: truncate only the assertion diagnostic, never the source being asserted
     ).toBe('Agent');
     const r = installBoundedHttpDispatcher({});
     installed.push(G[GLOBAL_DISPATCHER_SYMBOL]);

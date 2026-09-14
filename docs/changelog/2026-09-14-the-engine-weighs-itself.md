@@ -1,4 +1,4 @@
-# The engine weighs itself, and stops opening a TLS session per request
+# The engine reports memory and caps main-isolate HTTP connections
 
 2026-09-14. Engine only; no client change, no migration.
 
@@ -30,45 +30,32 @@ Three facts, none of which the platform could see:
    the growth is the engine, a worker or the page cache. Every number above
    came from an SSH session.
 
-## Where the growth was
+## Observations And Working Hypothesis
 
-Not the V8 heap. Across the readings the main isolate's `heapUsed` sat between
-400 and 800 MB and returned to the same band after every GC while RSS climbed.
-The delta was glibc's **main arena** - the `[heap]` (brk) mapping in
-`/proc/self/smaps`, which is native memory allocated on the main thread and
-which V8 never uses: 378 MB at boot+60m, 501 MB at boot+90m, **+111 MB inside
-the seven minutes of the 10:07 UTC tournament re-admission storm**, flat in
-quiet minutes. The 64 MB-aligned secondary arenas (worker threads) held a
-further ~155 MB and did not move.
+The incident author reported main-isolate `heapUsed` in a 400-800 MB band
+while whole-process RSS grew, and `[heap]` measurements increasing from
+378 MB to 501 MB, including +111 MB around the 10:07 UTC tournament storm.
+These are reported observations, not an allocation profile identifying TLS
+or excluding other native allocations and worker-isolate heaps.
 
-What allocates natively, on the main thread, in bursts that track tournament
-storms? The engine's HTTPS traffic. Every Supabase call goes through Node's
-global `fetch`, and Node's fetch goes through one process-wide undici `Agent`
-that nothing had ever configured. Its defaults: **no per-origin connection cap
-and a four-second keep-alive**. So an idle socket was closed after four
-seconds and the next request opened a new one with a full TLS handshake, and
-a storm opened as many at once as there were callers. Measured inside the
-engine's network namespace at 10:33 UTC, an ordinary minute: **240 HTTPS
-connections established and 1,674 in TIME-WAIT** - about twenty-eight new TLS
-sessions a second, all day. During the 10:07 storm: 3,800 in TIME-WAIT.
+The default fetch pool was reported as uncapped with a four-second keep-alive.
+A 10:33 UTC network-namespace snapshot counted 240 established HTTPS sockets
+and 1,674 TIME-WAIT sockets; the storm had 3,800 TIME-WAIT sockets. These counts
+indicate churn, but one snapshot does not measure TLS handshakes per second,
+prove that nearly every request opened a connection, or establish an all-day
+rate. TIME-WAIT is historical TCP state, not live userspace TLS allocation.
 
-OpenSSL allocates every session's state in native memory through malloc on
-the thread that opened it, i.e. the main arena. glibc can only return the top
-of that arena to the kernel, so a burst that opens thousands of sessions at
-once ratchets the arena to its high-water mark and the mark stays after the
-sockets are gone. That is the shape in the readings: steps during storms,
-never a decline.
+TLS allocation and glibc fragmentation are plausible contributors to RSS
+growth. `[heap]` virtual extent, RSS and heap usage are different measurements;
+correlation with a storm cannot establish the allocation cause. glibc can
+release whole free pages with madvise as well as shrink the top of a heap,
+so extent is neither a historical maximum nor a substitute for resident size.
+A flatter post-release graph would support the hypothesis, not prove it.
 
-**How proven is this.** The pool defaults, the connection counts, the arena
-growth and its timing against the storm are all measured on the live engine
-and written above. The link from "thousands of TLS sessions in the main
-arena" to "the arena's high-water mark ratchets" is the documented behaviour
-of glibc malloc and OpenSSL, not a measurement of this process - a heap
-profile that would prove it directly costs a full-heap pause, and one such
-probe on 2026-09-14 (`Runtime.queryObjects`, 10:07:09 UTC) fenced ~750
-tournament managers for the length of the pause. So: strongly indicated, and
-the metrics below are what turn "indicated" into "watched". If the arena keeps
-climbing on the bounded pool, the runbook says what to read next.
+The investigation's inspector `Runtime.queryObjects` probe paused live work
+and fenced roughly 750 managers according to the incident report. Never repeat
+that probe on the live engine. Use published measurements and representative
+replica validation; this change does not claim a complete memory-leak repair.
 
 ## What changed
 
@@ -76,21 +63,22 @@ climbing on the bounded pool, the runbook says what to read next.
 
 Eight always-on gauges on `/metrics`, refreshed from one five-second-cached
 sample of `process.memoryUsage()`, `/proc/self/status` and the `[heap]` line
-of `/proc/self/maps` (the mapping's extent, which for the brk arena is its
-high-water mark; `smaps` would give per-mapping RSS but walks the page tables
-of a 25 GB address space on the main thread, so it is not read). Reads only;
-no allocation profile, no heap walk.
+of `/proc/self/maps` (current virtual extent, not per-mapping RSS or native
+allocation ownership). No inspector API, allocation profile or smaps read is
+used. These reads are synchronous: the five-second cache bounds frequency,
+not duration, and Node documents that memoryUsage() may iterate pages.
+Sampler latency and event-loop impact need representative replica measurement.
 
-| series                                 | what it is                                       |
-| -------------------------------------- | ------------------------------------------------ |
-| `poker_engine_process_rss_bytes`       | the whole process, every isolate and arena       |
-| `poker_engine_heap_used_bytes`         | V8 main isolate, in use                          |
-| `poker_engine_heap_total_bytes`        | V8 main isolate, committed                       |
-| `poker_engine_external_bytes`          | Buffers and bound C++ objects V8 accounts for    |
-| `poker_engine_array_buffers_bytes`     | ArrayBuffer backing stores                       |
-| `poker_engine_native_main_arena_bytes` | glibc main arena (`[heap]`): native, main thread |
-| `poker_engine_rss_anon_bytes`          | anonymous RSS                                    |
-| `poker_engine_threads`                 | OS threads (worker isolates, libuv, V8 helpers)  |
+| series                                 | what it is                                            |
+| -------------------------------------- | ----------------------------------------------------- |
+| `poker_engine_process_rss_bytes`       | the whole process, every isolate and arena            |
+| `poker_engine_heap_used_bytes`         | V8 main isolate, in use                               |
+| `poker_engine_heap_total_bytes`        | V8 main isolate, committed                            |
+| `poker_engine_external_bytes`          | Buffers and bound C++ objects V8 accounts for         |
+| `poker_engine_array_buffers_bytes`     | ArrayBuffer backing stores                            |
+| `poker_engine_native_main_arena_bytes` | current `[heap]` virtual extent; not RSS or ownership |
+| `poker_engine_rss_anon_bytes`          | anonymous RSS                                         |
+| `poker_engine_threads`                 | OS threads (worker isolates, libuv, V8 helpers)       |
 
 The `/proc` series are `-1` where `/proc` is unreadable, never absent. They
 are published from the first scrape (the always-on registry, per the law
@@ -99,7 +87,7 @@ megabytes as `memory`.
 
 ### The fetch pool is bounded (`server/src/services/httpDispatcher.ts`)
 
-One undici `Agent` for the process, built from Node's own bundled constructor
+One undici `Agent` for the main engine isolate, built from Node's existing constructor
 (the same class Node's fetch was written against; no npm `undici`, no second
 copy with a different handler protocol), installed by the first import of
 `server/src/index.ts`:
@@ -107,13 +95,14 @@ copy with a different handler protocol), installed by the first import of
     connections      : ENGINE_HTTP_MAX_CONNECTIONS   default 128 per origin
     keepAliveTimeout : ENGINE_HTTP_KEEPALIVE_MS      default 30 000
 
-The cap bounds how many TLS sessions can exist at once, which bounds the
-arena's high-water mark; requests beyond it queue in order inside undici and
-still honour the per-attempt deadline in `services/supabase/client.ts`. The
-keep-alive ends the churn. Cloudflare, in front of Supabase, sends no
-`Keep-Alive: timeout=` hint (so undici's own option governs) and was measured
-holding an idle connection open for at least 150 s, so the longer idle is safe
-on their side; the engine was the side closing.
+The cap limits connections per origin in this isolate. Queued Supabase calls
+remain subject to the existing per-attempt deadline, including body drain.
+It does not bound queued request memory, other origins, workers or native RSS.
+The longer keep-alive is intended to reduce churn; the incident reported an
+idle upstream connection surviving at least 150 seconds without a keep-alive
+hint. Confirm actual socket reuse and memory behavior under comparable workload.
+The global symbol and constructor-name check depend on runtime implementation
+details, so exact production Node-image qualification remains necessary.
 
 The outcome is reported, never assumed: `/health.httpDispatcher` reads
 `{ bounded, connectionsPerOrigin, keepAliveTimeoutMs, reason }`. A runtime
@@ -174,9 +163,10 @@ The existing "Engine memory (engine-01)" panel is host percent and stays.
    `curl -s localhost:9090/api/v1/rules | grep -c EngineHostNearOOM` must be
    non-zero (CLAUDE.md 10.84: a rule is live when Prometheus says so).
 3. Then the number to watch is `poker_engine_native_main_arena_bytes` across
-   a :00 thaw and a tournament re-admission storm. Flat means the mechanism
-   above was the cause. Climbing means it was not the only one, and the
-   runbook's next steps apply.
+   a :00 thaw and a tournament re-admission storm alongside RSS, worker activity,
+   request deadlines and connection churn. Compare similar workload periods.
+   A flat virtual extent is not proof of the TLS hypothesis or a memory fix;
+   continued RSS growth requires further investigation on a representative replica.
 
 ## The incident this investigation caused
 
@@ -190,5 +180,5 @@ fell from 1696 to 974 before the fleet re-adopted. No tournament was
 cancelled, no money moved wrongly, and the recovery was the ordinary restart
 path (seven `atomic_finish_refused` alerts, as on any restart), but real
 players saw their tables restart. I stopped invasive probes at that point, and
-the sampler above is the replacement: reads only, never a heap walk, and the
-runbook says so in bold.
+the sampler avoids those invasive APIs. Its cached synchronous reads still
+need latency qualification; read-only does not mean unable to pause live work.

@@ -57,32 +57,40 @@ box answers the first question without Grafana.
 
 Then decide which of three things is growing:
 
-1. **`poker_engine_native_main_arena_bytes` climbing while `heap_used` is
-   flat.** Native memory on the main thread: TLS sessions, serializer
-   buffers, anything malloc'd that is not a V8 page. This was the 2026-09-14
-   finding (arena 378 -> 501 MB in an hour, +111 MB in the seven minutes of a
-   tournament re-admission storm, heap flat at 400-800 MB). The cause was the
-   process-wide fetch pool: no connection cap and a 4 s keep-alive, so the
-   engine opened ~28 new TLS sessions a second in a quiet minute and
-   thousands at once in a storm, and glibc's arena kept the high-water mark.
-   `server/src/services/httpDispatcher.ts` bounds the pool;
-   `/health.httpDispatcher` must read `bounded: true`. If it reads `false`,
-   the `reason` says why and the process is running on the unbounded
-   default - that is the fault. Confirm churn on the box (read-only):
+1. **`poker_engine_native_main_arena_bytes` climbing while main-isolate
+   `heap_used` is flat.** This series is the current virtual extent of the
+   Linux `[heap]` mapping. It is not resident memory, allocated native bytes,
+   a historical maximum or proof of a particular thread's allocations.
+   Compare whole-process RSS and anonymous RSS separately, including worker
+   activity. The incident recorded 378 -> 501 MB and a +111 MB change around
+   a tournament storm alongside connection churn; TLS allocation/fragmentation
+   is a hypothesis, not a measured allocation profile or established cause.
+   A flat extent after release would support further investigation, not prove
+   the hypothesis. No live heap traversal is justified to settle it.
+
+   `server/src/services/httpDispatcher.ts` caps connections per origin in the
+   main engine isolate. `/health.httpDispatcher` reports installation, not live
+   socket counts or a process memory ceiling. Other origins, workers and queued
+   request bodies remain separate sources of memory. If `bounded` is false,
+   inspect `reason`. Read connection counts in the engine network namespace:
 
    ```bash
    PID=$(docker inspect -f '{{.State.Pid}}' club-arena-engine)
    nsenter -t "$PID" -n ss -tan | awk '{print $1}' | sort | uniq -c
    ```
 
-   Hundreds of `ESTAB` to :443 and thousands of `TIME-WAIT` means the bound
-   is not in effect.
+   This command aggregates TCP states across destinations. Inspect the relevant
+   peer/origin before comparing counts with a per-origin cap. TIME-WAIT is
+   historical TCP state, not a count of live TLS allocations or a direct
+   handshake-rate measurement. Compare trends under similar table/tournament
+   workloads; do not infer installation failure from these totals alone.
 
 2. **`poker_engine_heap_used_bytes` climbing across GC cycles.** A JavaScript
    retention: a Map that is only ever added to, listeners never removed,
    closed tables still referenced. Correlate with `poker_engine_active_tables`
    and the tournament counts; a heap that tracks table count is a working
-   set, a heap that grows while table count is flat is a leak. Do NOT take a
+   set; growth at flat table count warrants retention investigation but alone
+   does not prove a leak. Do NOT take a
    heap snapshot or run `Runtime.queryObjects` on the live engine: a
    full-heap walk pauses the process long enough to miss lease renewals
    (measured 2026-09-14 10:07 UTC: one probe fenced ~750 tournament
@@ -91,7 +99,9 @@ Then decide which of three things is growing:
 3. **`poker_engine_threads` or `poker_engine_external_bytes` climbing.**
    Worker isolates being created and not terminated, or Buffers held. Each
    worker isolate is ~440 MB heapTotal on this engine; a thread count that
-   steps up on every restart of a worker is the signature.
+   steps up on every restart of a worker warrants lifecycle investigation;
+   threads also include libuv and V8 helpers. External memory includes C++
+   objects as well as Buffers.
 
 ## What Clears It
 
@@ -112,7 +122,8 @@ Then decide which of three things is growing:
 - A cron that restarts the engine when memory is high. That is a repair job
   (CLAUDE.md 10.12); the hourly break already restarts it, and the cause is
   what has to be fixed.
-- `--max-old-space-size`. The V8 heap was not the growth.
+- `--max-old-space-size` alone does not cap native or whole-process RSS.
+  The recorded main-isolate heap band does not exclude worker heap growth.
 
 ## History
 
@@ -123,3 +134,18 @@ Then decide which of three things is growing:
 - 2026-09-14: the eight memory gauges, the `/health.memory` and
   `/health.httpDispatcher` blocks, the three alerts, and the bounded fetch
   pool were added together. `docs/changelog/2026-09-14-the-engine-weighs-itself.md`.
+
+## Measurement Cost And Interpretation
+
+The sampler avoids inspector APIs, heap snapshots, `Runtime.queryObjects` and
+`smaps`. Its synchronous `process.memoryUsage()`, status and maps reads are
+cached for five seconds. This bounds sample frequency, not latency. Node 22
+warns that `memoryUsage()` can iterate pages and may be slow; `memoryUsage.rss()`
+is faster for an RSS-only reader. Establish sampler latency and event-loop
+impact on a representative replica, and use already-published health/metrics
+for production observation. Never call a live heap traversal harmless because
+it is read-only.
+
+Sources: [Node 22 memory usage](https://nodejs.org/docs/latest-v22.x/api/process.html#processmemoryusage),
+[Linux maps semantics](https://man7.org/linux/man-pages/man5/proc_pid_maps.5.html),
+[glibc heap page release](https://man7.org/linux/man-pages/man3/malloc_trim.3.html).

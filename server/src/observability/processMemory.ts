@@ -1,32 +1,17 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  PROCESS MEMORY, AS NUMBERS AN ALERT CAN READ (2026-09-14)
- * ═══════════════════════════════════════════════════════════════════════════════
+ * PROCESS MEMORY OBSERVATIONS (2026-09-14)
  *
- * The engine exported 1,134 lines of /metrics and not one of them said how
- * much memory the process was using. So this was found by hand, on the box:
+ * The incident recorded engine RSS growth and refused on-host image builds.
+ * Main-isolate V8 usage, whole-process RSS and the [heap] virtual mapping are
+ * separate measurements. Their correlation can guide investigation but cannot
+ * identify a specific native allocator, thread or allocation owner.
  *
- *   - the release train failed eleven of fourteen engine deploys overnight on
- *     `insufficient memory headroom for the bounded engine build`, because the
- *     image is built on the same 3.8 GB host the engine runs on;
- *   - the engine that came up at 08:56 UTC was at 1.64 GB after one hour and
- *     2.1 GB after ninety minutes; the build needs 1.125 GiB free;
- *   - the only series that showed any of it was node_exporter's
- *     `node_memory_MemAvailable_bytes`, which cannot say whether the growth is
- *     the engine, a worker, or the page cache.
- *
- * Read on the box, the growth was NOT the V8 heap: main-isolate heapUsed sat
- * between 400 and 800 MB across GC cycles while RSS climbed, and the delta
- * landed in glibc's main arena (`[heap]`, the brk region: +111 MB in seven
- * minutes during one tournament re-admission storm, flat in quiet minutes).
- * That is the number nothing published. It is published here, beside the V8
- * numbers, so the next reading is a graph rather than an SSH session.
- *
- * Everything below is a read: `process.memoryUsage()` and two small
- * `/proc/self` files (status, maps - never smaps, which walks page tables).
- * No allocation profile, no heap walk - a full-heap traversal on this
- * process pauses it long enough to miss lease renewals (measured 2026-09-14:
- * one `Runtime.queryObjects` fenced ~750 tournament managers).
+ * The sampler reads process.memoryUsage(), /proc/self/status and /proc/self/maps.
+ * It never invokes inspector APIs, queryObjects, heap snapshots or smaps.
+ * These synchronous reads are cached for five seconds; that limits frequency,
+ * not worst-case duration. Node documents that memoryUsage() can iterate pages.
+ * Measure sampler and event-loop latency on a representative replica before
+ * claiming a cost bound; never use a live heap traversal to investigate it.
  */
 
 import { readFileSync } from 'node:fs';
@@ -41,14 +26,11 @@ export interface ProcessMemorySample {
   externalBytes: number;
   arrayBuffersBytes: number;
   /**
-   * glibc's MAIN arena - the `[heap]` (brk) mapping in /proc/self/maps. Native
-   * allocations made on the main thread live here: TLS state for every HTTPS
-   * connection, serializer buffers, everything malloc'd that is not a V8 page.
-   * V8 never uses brk, so this number is exactly "native, main thread". It is
-   * the mapping's extent, which for the brk arena is its high-water mark:
-   * glibc only ever gives the TOP of this region back, so the extent and the
-   * resident size move together (measured 2026-09-14: 378 -> 501 MB in an
-   * hour, both readings). -1 when /proc is not readable (macOS, a sandbox).
+   * Virtual extent of the Linux [heap] mapping, commonly the brk heap.
+   * This is not per-mapping RSS, allocated bytes, a historical maximum, or
+   * proof of main-thread/TLS ownership. It can shrink and resident pages
+   * can change without a matching extent change. -1 when unavailable.
+   * The public metric name is retained for compatibility.
    */
   nativeMainArenaBytes: number;
   /** Anonymous RSS (everything that is not file-backed). -1 when unreadable. */
@@ -73,15 +55,9 @@ function readProcStatus(): { rssAnon: number; threads: number } {
 }
 
 /**
- * The extent of the `[heap]` mapping, from /proc/self/maps.
- *
- * NOT /proc/self/smaps. smaps reports per-mapping RSS by walking the page
- * tables of every mapping, and this process maps ~25 GB of virtual space
- * across a few thousand VMAs (V8 code ranges, worker isolates, arenas): tens
- * of milliseconds, on the main thread, every scrape. maps is the VMA list
- * alone - one line per mapping, no page walk - and for the brk arena its
- * extent is the number that matters (see the field's doc above). Only ever
- * read at scrape time (every 15 s) or on a /health read, never on a hot path.
+ * Current [heap] virtual mapping extent from the VMA list in /proc/self/maps.
+ * Avoid smaps and its per-mapping page accounting. The whole-process RSS
+ * series must be read separately; this extent cannot stand in for RSS.
  */
 function readMainArenaBytes(): number {
   try {

@@ -3424,13 +3424,13 @@ export class GameServer {
       // next image on this same 3.8 GB host and refuses below 1.125 GiB free;
       // it was refused 11 of 14 times overnight and nothing here could say
       // whether the engine was the reason. Megabytes, rounded; nulls where
-      // /proc is unreadable. `nativeMainArenaMb` is glibc's brk arena, the
-      // number that actually moved (see observability/processMemory.ts).
+      // /proc is unreadable. `nativeMainArenaMb` is [heap] virtual extent,
+      // not resident memory or TLS attribution (observability/processMemory.ts).
       memory: processMemoryHealth(),
       // Whether the process-wide fetch pool is bounded, and to what. The
-      // unbounded default (no connection cap, 4 s keep-alive) is what fed the
-      // arena above; a boot that could not install the bound says so here
-      // rather than silently running on the default (services/httpDispatcher.ts).
+      // connection cap and longer keep-alive address measured churn; their
+      // effect on memory remains to be established. Failed installation is
+      // visible here (services/httpDispatcher.ts).
       httpDispatcher: httpDispatcherReport(),
       // The one process-wide FIFO that owns live HorseLogic state. Queue depth
       // and phase distinguish worker pressure/failure from main-loop pressure;

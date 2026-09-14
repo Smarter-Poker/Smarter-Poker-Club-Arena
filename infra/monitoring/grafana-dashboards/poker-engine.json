@@ -82,14 +82,14 @@
     {
       "id": 6,
       "title": "Engine process memory (what the engine itself weighs)",
-      "description": "Added 2026-09-14. The host panel above cannot say whether growth is the engine, a worker or the page cache; these can. rss is the whole process. heap used/total is the V8 main isolate. native main arena is glibc's brk region: native memory on the main thread (TLS sessions, serializer buffers). On 2026-09-14 the heap was flat at 400-800 MB while rss passed 2 GB; the arena was the delta. See docs/runbooks/engine-memory.md.",
+      "description": "Added 2026-09-14. The host panel above cannot say whether growth is the engine, a worker or the page cache; these can. rss is the whole process. heap used/total is the V8 main isolate. The legacy native-main-arena series is current [heap] virtual extent, not resident memory or allocation ownership. The incident recorded RSS growth with a stable main-isolate heap band; TLS allocation is a hypothesis, not established by this graph. See docs/runbooks/engine-memory.md.",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
       "targets": [
         { "expr": "poker_engine_process_rss_bytes", "legendFormat": "rss" },
         { "expr": "poker_engine_heap_used_bytes", "legendFormat": "heap used" },
         { "expr": "poker_engine_heap_total_bytes", "legendFormat": "heap total" },
-        { "expr": "poker_engine_native_main_arena_bytes", "legendFormat": "native main arena" },
+        { "expr": "poker_engine_native_main_arena_bytes", "legendFormat": "heap virtual extent" },
         { "expr": "poker_engine_external_bytes", "legendFormat": "external" }
       ],
       "fieldConfig": { "defaults": { "unit": "bytes", "min": 0 } }

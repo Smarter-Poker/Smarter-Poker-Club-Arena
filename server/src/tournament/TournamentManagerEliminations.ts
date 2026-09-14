@@ -5089,6 +5089,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           {
             tournament_id: this.tournamentId,
             winner_id: winnerId,
+            // The durable inbox must retain the cause after this container's
+            // logs are gone; reportError alone does not preserve it there.
+            error: settlementErr instanceof Error ? settlementErr.message : String(settlementErr),
+            error_name: settlementErr instanceof Error ? settlementErr.name : typeof settlementErr,
             outcome_unknown: outcomeUnknown,
             proven_refusal: provenRefusal,
           }

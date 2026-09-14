@@ -293,29 +293,30 @@ native Linux amd64 Docker runner with repository read permission and no secrets.
 Do not use a privileged production runner or a workflow-dispatch workaround.
 
 ```bash
-bash operations/release/fixture/build-image.sh club-arena-component-fixture:ci
-bash operations/release/fixture/smoke-image.sh club-arena-component-fixture:ci
+python3 operations/release/ci/fixture-smoke.py . "$RUNNER_TEMP/fixture-smoke-evidence" "$(git rev-parse HEAD)"
 ```
 
 The build refuses untracked/missing runtime sources and a dirty fixture tree.
 It labels the image with the exact checked-out commit and never pushes. The
 smoke uses the local immutable image ID and a fresh internal Docker network
-with no egress or published ports. Only the fixture and its separate refusal
-probe peer join that network. It checks seven real extensions,
+with no egress or published ports. Only the fixture, its separate refusal
+probe peer and the later service-catalog capture join that network. It checks seven real extensions,
 GoTrue migrations/users/TOTP to AAL2, PostgREST authentication/RLS, a causal
 Realtime database event, separate-user credential denial and read-only SQL,
 and Chromium fetching the authenticated native endpoint. It creates no trace,
 video, external fixture or credentials artifact. Output is bounded status,
 version/count facts; raw logs and session values stay in disposable memory.
 Readiness is bounded; failed services, browsers and assertions are never retried.
-The enclosing script removes both exact containers and their network, then
+The enclosing script removes all three exact containers and their network, then
 verifies absence even on failure. No success statement is printed until that
-cleanup succeeds. The outer runner also removes the exact image and requires all four cleanup observations.
+cleanup succeeds. The outer runner also removes the exact image and requires all five cleanup observations.
 
 For a runner-owned timeout cleanup, set `FIXTURE_SMOKE_CONTAINER` to exactly
 `ca-fixture-smoke-` followed by 32 lowercase hexadecimal characters. Without the
-override the script generates a UUID hex suffix. The peer/network names append
-`-peer`/`-network`. Occupied names are refused before cleanup is armed, so the
+override the script generates a UUID hex suffix. The peer, catalog-capture and network names append
+`-peer`, `-preimage` and `-network`. The smoke script also requires an absolute,
+absent `FIXTURE_SERVICE_PREIMAGE_PATH`; the outer driver creates this private
+output location outside the uploaded evidence directory. Occupied names are refused before cleanup is armed, so the
 script cannot remove a pre-existing resource.
 Image labels `com.smarter-poker.control-revision` and
 `com.smarter-poker.source-revision` both bind the reviewed checkout revision.
@@ -442,6 +443,35 @@ The original isolated bootstrap identity installs the genuine extension only int
 
 The fixture builds pg-safeupdate1.4 at upstream commit104f78d27b607076b49f22927ba33828fd0a98a0 against its pinned PostgreSQL17.11 ABI in CI. The archive is checksum-pinned; no SQL shim supplies its parser hook. The original bootstrap configures the initially unused authenticator role before any API connection, matching the captured `session_preload_libraries=safeupdate` setting. No existing live session is counted as fresh.
 
-Native smoke uses a new authenticator connection and the actual PostgREST14.5 process. The ordinary session verifies the registered boolean, superuser-settable safeupdate setting and actual hook behavior. PostgreSQL protects the preload-list setting from ordinary reads; both SQL identities and an invoker HTTP RPC must receive42501 when attempting to read it. No monitoring grant or definer function is added to make that observation pass. Unqualified UPDATE, DELETE and modifying CTEs must return21000; ordinary disabling must return42501. Filtered SQL writes roll back. Filtered authenticated HTTP writes commit only two disposable probe rows, which are restored and checked before both probe objects are dropped. Driver cleanup still verifies container, peer, network and image removal. Auth/MFA and separate Realtime/RLS checks remain required.
+Native smoke uses a new authenticator connection and the actual PostgREST14.5 process. The ordinary session verifies the registered boolean, superuser-settable safeupdate setting and actual hook behavior. PostgreSQL protects the preload-list setting from ordinary reads; both SQL identities and an invoker HTTP RPC must receive42501 when attempting to read it. No monitoring grant or definer function is added to make that observation pass. Unqualified UPDATE, DELETE and modifying CTEs must return21000; ordinary disabling must return42501. Filtered SQL writes roll back. Filtered authenticated HTTP writes commit only two disposable probe rows, which are restored and checked before all three probe objects are dropped. Driver cleanup verifies the service, peer and catalog-capture containers, network and image removal. Auth/MFA and separate Realtime/RLS checks remain required.
 
 This is accidental whole-table-operation protection, not authorization against a caller supplying a broad WHERE condition. It does not qualify production binary identity, the full role graph, full application data or the production pre-request function. That exact function and its dependencies remain separate full-schema inputs; the smoke does not replace it with a fixture stub. Primary protocol reference: https://docs.postgrest.org/en/v14/integrations/pg-safeupdate.html.
+
+## Post-service catalog preimage
+
+The same native image runs `fixture-server preimage` in a fresh isolated container.
+This command accepts no archives or other arguments. It executes the full fixture's
+original bootstrap, genuine Auth migrations, genuine Realtime migrations and seed,
+exact service ledgers and managed-role checks. It stops before application-schema
+restore, user signup, servers, gateways, actors or engine startup. The synthetic
+smoke schema is never substituted for this service preimage.
+
+The original bootstrap identity captures roles (including unconnected builtin
+roles), membership grantors and options, database-scoped role settings, default
+ACLs, schema ownership/ACLs and extensions in one read-only repeatable snapshot.
+The only permitted other database client is this invocation's known idle application
+connection. Unknown or competing clients refuse capture. No passwords, application
+rows, tenant rows or vault data are selected. Reviewed configuration values remain
+literal; other values are represented only by comparison hashes.
+
+The container stays alive until its owner copies the catalog out of temporary
+storage, then closes its connections and services normally. The outer driver
+validates the exact metadata shape, bounded regular file, counts and SHA-256 before
+copying `native-service-preimage.json` into the evidence directory. Unvalidated
+bytes and runtime logs are never uploaded. Missing proof, copy failure, timeout,
+shutdown failure or leftover owned resources prevents a passing receipt.
+
+This is a disposable service preimage, not a full role-graph installer, effective
+application privilege proof or production certificate. A future reviewed installer
+must reassert its exact preimage and preserve the separate commit, observer and
+ordinary-role behavior checks before full-schema qualification.

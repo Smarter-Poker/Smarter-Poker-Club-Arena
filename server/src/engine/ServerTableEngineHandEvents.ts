@@ -986,7 +986,11 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           if (hasWinners && Array.isArray(state.pots)) {
             this.currentHandPots = state.pots.map((p, index) => ({
               index,
-              amount: Number(p?.amount) || 0,
+              // Cents, not floats: the live pot is a running float sum
+              // (0.1 + 0.2 territory) and this value is persisted verbatim
+              // to hand_history.pots. Measured 2026-09-13: 30 of 307 RIT
+              // pot rows in one day read like 66.46000000000001.
+              amount: Math.round((Number(p?.amount) || 0) * 100) / 100,
               eligible: Array.isArray(p?.eligiblePlayers)
                 ? p.eligiblePlayers.map((u) => String(u ?? '')).filter(Boolean)
                 : [],

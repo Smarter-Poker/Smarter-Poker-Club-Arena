@@ -1,0 +1,25 @@
+{
+  "_owner": "Horse Brain Phase 14 durable journal work",
+  "_comment": "Isolated queue; no live producer, scheduling, source watermark or policy activation.",
+  "functions": [
+    "fn_queue_horse_adaptive_batch",
+    "fn_claim_horse_adaptive_batch",
+    "fn_finish_horse_adaptive_batch"
+  ],
+  "tables": ["horse_adaptive_journal_work"],
+  "columns": {
+    "horse_adaptive_journal_work": [
+      "batch_key",
+      "batch_digest",
+      "observations",
+      "payload",
+      "state",
+      "attempts",
+      "lease_token",
+      "lease_until",
+      "available_at",
+      "created_at",
+      "completed_at"
+    ]
+  }
+}

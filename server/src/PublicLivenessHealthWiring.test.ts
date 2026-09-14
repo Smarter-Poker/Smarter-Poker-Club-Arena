@@ -3,10 +3,49 @@ import { GameServer } from './GameServer.js';
 import { createRouter } from './router.js';
 import { mockRes, parseJson } from './handlers/_testHelpers.js';
 import type { IncomingMessage } from 'node:http';
+import {
+  __resetEngineAlerts,
+  __setEngineAlertJournal,
+  raiseEngineAlert,
+} from './services/engineAlerts.js';
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  __resetEngineAlerts();
+});
 
 describe('public progress is bounded inside the real health snapshot', () => {
+  it('exposes delivery storage failure without changing gameplay liveness or publishing event payloads', async () => {
+    const server = new GameServer();
+    const before = server.getStatus();
+    __setEngineAlertJournal({
+      load: async () => {
+        throw new Error('journal read failed');
+      },
+      save: async () => {},
+    });
+    await raiseEngineAlert({
+      alertname: 'PrivatePayload',
+      component: 'test',
+      severity: 'warning',
+      summary: 'private incident details',
+    });
+    const after = server.getStatus();
+    expect(after.alertDelivery).toMatchObject({
+      loaded: false,
+      active: 0,
+      unpersistedObservations: 1,
+      error: 'journal read failed',
+      lastAttemptAt: null,
+      lastAcknowledgedAt: null,
+    });
+    expect(after.status).toBe(before.status);
+    expect(after.liveness).toBe(before.liveness);
+    expect(JSON.stringify(after.alertDelivery)).not.toMatch(
+      /PrivatePayload|private incident details/
+    );
+  });
+
   it('keeps default probes compact and binds requested tables to the same status snapshot', async () => {
     const server = new GameServer();
     const tableId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';

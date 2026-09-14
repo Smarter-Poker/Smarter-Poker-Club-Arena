@@ -1,3 +1,4 @@
+import { horseAdaptiveJournalWorker } from './services/HorseAdaptiveJournalWorker.js';
 import { bindToProcessRoot } from './services/supabase/dataActorContext.js';
 /**
  * GameServer — server-side game orchestration.
@@ -178,7 +179,11 @@ import {
   type TournamentManagerWakeReceipt,
 } from './tournament/TournamentManagerWakeProtocol.js';
 import { isMaintenanceFrozen } from './maintenance/freezeState.js';
-import { raiseEngineAlert, resolveEngineAlert } from './services/engineAlerts.js';
+import {
+  raiseEngineAlert,
+  resolveEngineAlert,
+  engineAlertDeliveryHealth,
+} from './services/engineAlerts.js';
 import { MaintenanceBreak } from './maintenance/MaintenanceBreak.js';
 import { createSupabaseMaintenanceBreakStore } from './maintenance/maintenanceBreakStore.js';
 import { StatsHealthMonitor } from './observability/StatsHealthMonitor.js';
@@ -1536,6 +1541,24 @@ export class GameServer {
     })();
     this.tournamentManagerRetirementOperations.set(manager, operation);
     return operation;
+  }
+
+  /**
+   * Discovery must keep admitting unrelated events while an exact manager
+   * drains its accepted work. Retain its slot and lease until physical stop
+   * completes; coalesce repeated board passes into that one tracked drain.
+   */
+  private retireTournamentManagerInDiscovery(
+    tournamentId: string,
+    manager: TournamentManager,
+    errorContext: string
+  ): void {
+    if (this.tournamentManagerRetirementOperations.has(manager)) return;
+    this.launchDiscoveryJob(
+      this.stopTournamentManagerIfOwned(tournamentId, manager, errorContext),
+      errorContext,
+      { tournamentId }
+    );
   }
 
   private async awaitTournamentManagerLeaseRelease(tournamentId: string): Promise<void> {
@@ -3386,6 +3409,7 @@ export class GameServer {
       // and phase distinguish worker pressure/failure from main-loop pressure;
       // solver store counts prove the worker reached an authoritative READY.
       liveHorseDecision,
+      adaptiveJournalWorker: horseAdaptiveJournalWorker.status(),
       // HTTP and WebSocket handlers are reachable before the leader boot has
       // finished. This is the exact admission gate they await before any table
       // lookup, lease claim or dealer construction is allowed to begin.
@@ -3421,6 +3445,8 @@ export class GameServer {
       // The stats pipeline: index lag, trigger gaps, the money repair cursor
       // and the last witness audit. null until the first read completes.
       stats: this.statsHealth.publish(),
+      // Delivery failures remain inspectable even when the receiver or Sentry is unavailable.
+      alertDelivery: engineAlertDeliveryHealth(),
       // THE CLUSTER CONTROLLER'S LAST PASS (2026-09-05). On 2026-09-04 its
       // latch stalled for eleven minutes with no log line; the only witness
       // was cash_cluster_events read by hand. `lastPassAt` ageing while the
@@ -5969,7 +5995,7 @@ export class GameServer {
             if (held && !held.isRunning()) {
               // A finished or dead manager still owning the map slot IS the
               // bug: the start gate at the top of this loop skips it forever.
-              await this.stopTournamentManagerIfOwned(
+              this.retireTournamentManagerInDiscovery(
                 id,
                 held,
                 'GameServer.seat_first_stalled_manager_stop_failed'
@@ -6044,7 +6070,7 @@ export class GameServer {
         // Clean up completed tournaments
         for (const [id, tm] of this.tournamentEngines) {
           if (!tm.isRunning()) {
-            await this.stopTournamentManagerIfOwned(
+            this.retireTournamentManagerInDiscovery(
               id,
               tm,
               'GameServer.tournament_completed_cleanup_failed'
@@ -6100,7 +6126,7 @@ export class GameServer {
                 ),
                 'GameServer.completing_manager_overstayed'
               );
-              await this.stopTournamentManagerIfOwned(
+              this.retireTournamentManagerInDiscovery(
                 String(stuck.id),
                 lingering,
                 'GameServer.completing_manager_stop_failed'
@@ -6592,7 +6618,7 @@ export class GameServer {
           );
           const idleNeverDealtTm = this.tournamentEngines.get(t.id);
           if (idleNeverDealtTm) {
-            await this.stopTournamentManagerIfOwned(
+            this.retireTournamentManagerInDiscovery(
               String(t.id),
               idleNeverDealtTm,
               'GameServer.never_dealt_stop_engine'

@@ -500,16 +500,24 @@ export class TableBalancer {
           (a.playerCount === 0 ? 1 : 0) - (b.playerCount === 0 ? 1 : 0) ||
           a.playerCount - b.playerCount
       );
-      const target = targets.find((t) => t.playerCount < t.maxSeats && t.playerCount > 0);
-      if (!target) break;
-
       const sourceHops =
         sourceBB === null ? null : hopsToBigBlind(sourceRing, sourceBB, player.seat);
-      const { seat: toSeat } = this.findOpenSeat(target, {
-        bbSeat: destinationBB.get(target.tableId) ?? null,
-        sourceHops,
-      });
-      if (toSeat === -1) continue;
+      let target: BalancerTable | undefined;
+      let toSeat = -1;
+      for (const candidate of targets) {
+        if (!(candidate.playerCount > 0 && candidate.playerCount < candidate.maxSeats)) continue;
+        const choice = this.findOpenSeat(candidate, {
+          bbSeat: destinationBB.get(candidate.tableId) ?? null,
+          sourceHops,
+        });
+        // Roster reservations can occupy every otherwise empty chair. Try
+        // the next destination before advancing to another source player.
+        if (choice.seat === -1) continue;
+        target = candidate;
+        toSeat = choice.seat;
+        break;
+      }
+      if (!target) break;
 
       moves.push({
         playerId: player.userId,

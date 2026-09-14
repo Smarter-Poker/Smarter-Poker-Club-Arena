@@ -1,0 +1,7 @@
+# Build Genuine Fixture Database Providers
+
+The disposable CI fixture image now builds PostGIS 3.3.7, pg_net 0.19.5, HTTP SQL extension 1.6 from upstream 1.6.1, Vault 0.3.1, and plpgsql_check SQL extension 2.7 from upstream 2.7.11. Immutable upstream archive checksums and the existing dated Debian/PostgreSQL 17.11 base bind the build inputs. The runtime receives the compiled libraries and SQL files; compilers stay in an intermediate image stage.
+
+Build checks verify each declared extension version, installed SQL, library presence and resolved runtime dependencies. The build manifests every installed provider file, directory and symlink. The final runtime refuses existing-file collisions, verifies the complete copied payload and all symlink targets, and checks dynamic dependencies for every shipped ELF library and executable. Separate provenance records the builder packages, final runtime packages, full payload digests and actual dependency-check inventory. The plpgsql_check library uses the versioned filename from the accepted Supabase packaging convention.
+
+This change makes genuine providers available to later fixture qualification. It does not activate extensions, change service roles or preload lists, execute provider behavior tests, load the application schema, or qualify production binary parity. Existing required CI and native fixture checks still apply; provider-specific native behavior and cleanup remain separate requirements.

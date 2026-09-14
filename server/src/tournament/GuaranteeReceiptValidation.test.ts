@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
+import { readTournamentPrizePool } from './tournamentPrizeContract.js';
 const source = readFileSync('src/tournament/TournamentManagerBase.ts', 'utf8');
 const ast = ts.createSourceFile('manager.ts', source, ts.ScriptTarget.Latest, true);
 const manager = ast.statements.find(
@@ -17,10 +18,17 @@ const compiled = ts.transpileModule(
 ).outputText;
 async function run(prize_pool: unknown) {
   const report = vi.fn();
-  const Subject = new Function('supabase', 'reportError', 'console', compiled)(
+  const Subject = new Function(
+    'supabase',
+    'reportError',
+    'console',
+    'readTournamentPrizePool',
+    compiled
+  )(
     { rpc: async () => ({ data: { ok: true, prize_pool, overlay: 0 }, error: null }) },
     report,
-    { log: vi.fn() }
+    { log: vi.fn() },
+    readTournamentPrizePool
   );
   const subject = Object.assign(new Subject(), {
     tournamentId: 'event',

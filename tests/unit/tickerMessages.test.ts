@@ -117,6 +117,19 @@ describe('the buy-in is what the player pays', () => {
     expect(line).toMatch(/Free Buy/i);
   });
 
+  it('does not put a field name in front of a label that is already a sentence', () => {
+    /* From the photograph of 2026-09-13: the live rail read "Buy-In Free Buy".
+       `formatBuyInShort` returns the house label at zero and this line used to
+       prefix it unconditionally. A price gets a field name; a label does not. */
+    const free = renderTickerItem(startingSoonItem(upcoming({ buyIn: 0, buyInFee: 0 })), NOW);
+    expect(free).not.toMatch(/Buy-In Free/i);
+    expect(free).toContain('Free Buy');
+    // ...and a real price still keeps its field name.
+    expect(renderTickerItem(startingSoonItem(upcoming({ buyIn: 9, buyInFee: 2 })), NOW)).toContain(
+      'Buy-In 11'
+    );
+  });
+
   it('shouts the game variant, as the house rule requires', () => {
     expect(renderTickerItem(startingSoonItem(upcoming()), NOW)).toContain('NLH');
   });

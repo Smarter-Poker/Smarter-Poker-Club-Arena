@@ -6,6 +6,7 @@ import { sliceBetween } from './helpers/sourceWindow';
 const ROOT = resolve(__dirname, '..');
 const PAGE = readFileSync(resolve(ROOT, 'src/pages/PlayerWalletPage.tsx'), 'utf8');
 const CSS = readFileSync(resolve(ROOT, 'src/pages/PlayerWalletPage.css'), 'utf8');
+const LEDGER = readFileSync(resolve(ROOT, 'src/hooks/useDiamondLedger.ts'), 'utf8');
 const HEADER = readFileSync(resolve(ROOT, 'src/components/navigation/GlobalHeader.tsx'), 'utf8');
 const MEMBERSHIP = readFileSync(resolve(ROOT, 'src/pages/marketplace/MembershipTab.tsx'), 'utf8');
 const STORE = readFileSync(resolve(ROOT, 'src/pages/marketplace/StoreTab.tsx'), 'utf8');
@@ -66,9 +67,14 @@ describe('wallets can send, receive and earn - wired to the real doors', () => {
 
   it('receives: player id, profile link and every credit in the diamond ledger', () => {
     expect(PAGE).toContain('navigator.clipboard.writeText(text)');
-    expect(PAGE).toContain(".from('diamond_transactions')");
-    expect(PAGE).toContain(".gt('amount', 0)");
-    expect(PAGE).toContain("select('id, type, transaction_type, amount, description, created_at')");
+    // The read moved into useDiamondLedger on 2026-09-05 (see the pagination
+    // suite below); the pin moved with it rather than being dropped.
+    expect(LEDGER).toContain(".from('diamond_transactions')");
+    expect(LEDGER).toContain(".gt('amount', 0)");
+    expect(LEDGER).toContain(
+      "select('id, type, transaction_type, amount, description, created_at')"
+    );
+    expect(PAGE).toContain("useDiamondLedger(user?.id, 'in', isMounted)");
   });
 
   it('earns: the daily login claim and the rewards progress read', () => {
@@ -108,6 +114,159 @@ describe('one sub-read must not zero the whole wallet', () => {
     // player agents for, exactly as PLAYER sums their club memberships.
     expect(SERVICE).toContain('const businessTotal = (agentRes.data || []).reduce(');
     expect(SERVICE).toContain('num(r.agent_wallet_balance)');
+  });
+});
+
+describe('the ledger has no floor, and a send leaves a record', () => {
+  /*
+   * Dan, 2026-09-05, on the two remaining wallet gaps: "1, GO AHEAD AND DO
+   * THIS ... 3, GO AHEAD AND BUILD THIS."
+   *
+   * 1 was the Receive pane's hard `.limit(25)`: it read the newest 25 credits,
+   * stopped, and said nothing about stopping. Measured on production the day
+   * it was fixed - 645 players hold diamond credits, 6 hold more than 25, and
+   * the longest ledger is 390. That player could reach 25 of their 390.
+   *
+   * 3 was the Send pane: a completed transfer left no trace a player could go
+   * back to. The toast expires, Receive filters to credits (`amount > 0`), and
+   * the Ledger tab reads the CHIP tables - so a sent diamond appeared on no
+   * surface in this wallet at all.
+   */
+
+  it('pages the ledger instead of capping it', () => {
+    /* Against the CODE, not the file: the doc comment names `.limit(25)` in
+       the course of explaining why it is gone, and a bare toContain on the
+       whole file matches that sentence and passes whatever the code does.
+       That is the same false positive the route gate produced on comment
+       prose, so it gets the same answer - blank the comments first. */
+    const code = LEDGER.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    expect(code).not.toContain('.limit(');
+    expect(LEDGER).toContain('.range(from, from + DIAMOND_LEDGER_PAGE - 1)');
+    // A short page is the end. The button is offered only while it is not.
+    expect(LEDGER).toContain('setHasMore(page.length === DIAMOND_LEDGER_PAGE)');
+    expect(PAGE).toContain('Load Older Diamonds');
+    expect(PAGE).toContain('Load Older Sends');
+  });
+
+  it('orders by a UNIQUE key, or a page seam serves one row twice and skips another', () => {
+    // Not defensive: production holds 8 groups of credits written at an
+    // identical created_at, the largest 29 rows - bigger than a whole page.
+    // `id` is a uuid in a unique index, so it makes the ordering total.
+    expect(LEDGER).toMatch(
+      /\.order\('created_at', \{ ascending: false \}\)\s*\n?\s*\.order\('id', \{ ascending: false \}\)/
+    );
+  });
+
+  it('continues from the rows on screen, never from a page counter', () => {
+    // `refresh` prepends arriving rows, so the Nth page stops beginning at
+    // N * pageSize and a counter re-serves a row that has shifted down.
+    expect(LEDGER).toContain("const from = mode === 'more' ? rowsRef.current.length : 0");
+  });
+
+  it('a refresh MERGES, so an arriving diamond cannot collapse a paged list', () => {
+    // Re-reading as a reset would drop a player who had paged to 100 rows back
+    // to 25 the moment a credit landed - worse than the cap it replaces.
+    expect(LEDGER).toContain(
+      "const merged = mode === 'refresh' ? [...fresh, ...base] : [...base, ...fresh]"
+    );
+    // And it must not re-offer Load More to someone already holding every row.
+    expect(LEDGER).toContain("if (mode !== 'refresh') setHasMore(");
+    expect(PAGE).toContain("void loadIncoming('refresh')");
+  });
+
+  it('a failed LATER page keeps the pages already read', () => {
+    expect(LEDGER).toMatch(
+      /if \(mode === 'reset'\) \{\s*rowsRef\.current = \[\];\s*setRows\(\[\]\)/
+    );
+    expect(PAGE).toContain('Could Not Load Older Diamonds');
+    expect(PAGE).toContain('Could Not Load Older Sends');
+  });
+
+  it('the send side is read by KIND, because a refund of a gift is positive', () => {
+    // `amount < 0` would hide diamond_gift_refund, which is the one row a
+    // sender most needs to see: the transfer failed and their diamonds came
+    // back. The kinds are read from the transfer route, not guessed.
+    expect(LEDGER).toContain(
+      "const SENT_KINDS = ['diamond_gift_sent', 'live_gift_sent', 'diamond_gift_refund']"
+    );
+    expect(LEDGER).toContain('transaction_type.in.(${list}),type.in.(${list})');
+    expect(PAGE).toContain("useDiamondLedger(user?.id, 'out', isMounted)");
+  });
+
+  it('a completed send refreshes its own record', () => {
+    // The whole of gap 3 in one assertion: the transfer succeeded, so the
+    // record of it appears without the player reloading anything.
+    const sendHandler = sliceBetween(PAGE, "'/api/store/diamond-transfer'", 'catch (err)');
+    expect(sendHandler).toContain("void loadSent('refresh')");
+  });
+
+  it('renders the sign from the ROW, so a refund is not drawn as an outgoing', () => {
+    expect(PAGE).toContain("{row.amount < 0 ? '-' : '+'}");
+    expect(PAGE).toContain('fmtNum(Math.abs(row.amount))');
+    expect(CSS).toContain('.incoming-row__amount.is-outgoing');
+  });
+});
+
+describe('the readout sits IN the machined bay, not under the plate', () => {
+  /*
+   * Dan, 2026-09-05, looking at the shipped page: "why would all the fields
+   * that are supposed to have the totals in be empty and it listed below it?"
+   *
+   * He was right, and the assertions above did not catch it. Every plate is
+   * drawn with an empty machined bay across its lower half, and the figures
+   * rendered in a block BELOW the whole image - so the bay the artwork exists
+   * to fill was blank on all four plates while the totals sat underneath them.
+   * This suite asserted the VALUES EXISTED and never that they were inside the
+   * plate, so it stayed green through the entire thing.
+   *
+   * The slot was then MEASURED from the shipped artwork rather than guessed:
+   * sampling luminance down the centre of each 1088x548 plate and walking out
+   * to the lit machined frame gives top 51.3-52.0%, bottom 92.3-93.2%, sides
+   * 3.8-6.1%. The inset pinned below clears the tightest of the four.
+   */
+  it('wraps the art in a frame, because the insets must resolve against the ARTWORK', () => {
+    // Measured against the article they would also span the footer, and drift
+    // by its height, which differs per plate.
+    expect(PAGE).toContain('wallet-plate__frame');
+    expect(CSS).toMatch(/\.wallet-plate__frame \{[^}]*position: relative/s);
+  });
+
+  it('positions the readout into the measured slot', () => {
+    expect(CSS).toMatch(/\.wallet-plate__readout \{[^}]*position: absolute/s);
+    expect(CSS).toMatch(/\.wallet-plate__readout \{[^}]*inset: 53% 7\.5% 8\.5%/s);
+  });
+
+  it('the readout is a CHILD of the frame, not a sibling of it', () => {
+    // The whole bug in one assertion: a sibling stacks below the art.
+    expect(PAGE.indexOf('wallet-plate__readout')).toBeGreaterThan(
+      PAGE.indexOf('wallet-plate__frame')
+    );
+  });
+
+  it('sizes the bay type against the PLATE, so a two-up grid cannot overflow it', () => {
+    // cqw, not vw: the plate narrows on a tablet while the viewport does not.
+    expect(CSS).toContain('container-type: inline-size');
+    expect(CSS).toMatch(/\.wallet-plate__readout \.wallet-plate__value \{[^}]*cqw/s);
+  });
+
+  it('keeps a legibility floor, because three stats in the bay measured 6.4px', () => {
+    // Why the bay carries ONE figure: with Available/Locked/Total in it, the
+    // labels computed to 6.4-7.5px at every width tested. A readout nobody can
+    // read is not a readout.
+    expect(CSS).toMatch(/\.wallet-plate__readout \.wallet-plate__value \{[^}]*clamp\(1rem/s);
+    expect(CSS).toMatch(/\.wallet-plate__readout \.wallet-plate__label \{[^}]*clamp\(0\.5rem/s);
+  });
+
+  it('no media query re-pins the bay type to a fixed size', () => {
+    // A fixed rem inside a media query beats the clamp and pushes the figures
+    // back out of the bay. Exactly such a rule existed, and was deleted.
+    expect(CSS).not.toMatch(/@media[^{]*\{[^@]*\.wallet-plate__value \{\s*font-size: 1\.15rem/s);
+  });
+
+  it('still announces every figure, even though the bay shows one', () => {
+    expect(PAGE).toMatch(
+      /aria-label=\{`\$\{config\.label\} Wallet:[^`]*Available[^`]*Locked[^`]*Total/s
+    );
   });
 });
 

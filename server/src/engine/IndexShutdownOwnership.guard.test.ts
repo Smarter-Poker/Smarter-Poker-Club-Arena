@@ -36,6 +36,7 @@ describe('process shutdown has one ownership certificate', () => {
       'HorseLeague',
       'HorseDailyAudit',
       'BrainTelemetryFlush',
+      'HorseAdaptiveJournalWorker',
       'HorseDataLedgerSync',
       'HorseLaneLoader',
       'GtoAggregationDriver',

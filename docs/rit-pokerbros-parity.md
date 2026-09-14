@@ -325,6 +325,28 @@ add per-board award persistence: it exists. Use `winners_by_board`.**
   2026-08-30 decision was full 5-card boards for every run, stacked. Kept as
   is — see the divergence list in §2b.
 
+## 2f. Round 6 (2026-09-13) — the line-by-line re-read
+
+Eight days after round 5 the feature was verified live (`aa6b6387a` is an
+ancestor of the running engine; 285 of 285 multi-board hands in 24h conserve
+money per board) and re-read line by line, engine and client. Findings and
+fixes are in `docs/changelog/2026-09-13-run-it-twice-round-three-engine.md`
+and `...-client.md`. The ones that touch this spec:
+
+- **Pot rows during the ship are the GROSS rows** (§2e finding 2, completed).
+  The rows come from `rit_result.pots` now, so a raked pot no longer drops
+  by the rake at the first ship and a side pot keeps its own row.
+- **A heads-up TABLE never offers the question.** Dan's rule named it; the
+  code enforced only the tournament half of it. A two-way all-in on a full
+  ring is the ordinary case and is untouched.
+- **The expiry names the one silent seat** ("Name Did Not Answer In Time"),
+  the way a decliner is named.
+- **A horse's answer latency is spread across the window**, not a 1-4s band.
+- **The record keeps the pot axis**: `winners_by_board[].pots` says which pot
+  each board share came out of, and every hand-history surface shows it.
+- **`hand_history.pots` amounts are cents-exact** (PR #4485): the capture
+  stored the live float sum verbatim.
+
 ## 3. Explicitly out of scope
 
 - No PokerBros assets, artwork or text is copied; visual layout is our own.

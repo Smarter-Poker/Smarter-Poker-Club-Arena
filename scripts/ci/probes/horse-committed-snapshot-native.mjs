@@ -60,9 +60,15 @@ try {
   await c.connect();
   await writer.connect();
   await c.query(
-    'CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role; CREATE TABLE hand_history(id uuid PRIMARY KEY,created_at timestamptz NOT NULL,players jsonb,actions jsonb,hole_cards jsonb); CREATE INDEX roster ON hand_history USING gin(players jsonb_path_ops); GRANT SELECT ON hand_history TO service_role;'
+    "CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role; CREATE TABLE hand_history(table_id uuid NOT NULL DEFAULT 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',hand_number bigint GENERATED ALWAYS AS IDENTITY (START WITH 1000000),id uuid PRIMARY KEY,created_at timestamptz NOT NULL,players jsonb,actions jsonb,hole_cards jsonb); CREATE INDEX roster ON hand_history USING gin(players jsonb_path_ops); GRANT SELECT ON hand_history TO service_role; CREATE TABLE hand_atomic_commits(hand_id uuid UNIQUE NOT NULL,table_id uuid NOT NULL,hand_number bigint UNIQUE NOT NULL,payload_hash text NOT NULL); GRANT SELECT ON hand_atomic_commits TO service_role;"
   );
   await c.query(readFileSync(root + '/' + migration, 'utf8'));
+  await c.query(
+    readFileSync(
+      root + '/supabase/migrations/20260913195856_require_atomic_horse_observation_sources.sql',
+      'utf8'
+    )
+  );
   const fn = 'public.fn_horse_committed_observation_snapshot($1::uuid,$2::bigint,$3::bigint)';
   const now = Number(
     (await c.query('SELECT floor(extract(epoch FROM clock_timestamp())*1000)::bigint n')).rows[0].n
@@ -72,9 +78,9 @@ try {
     created = through - 1000;
   const params = [actor, from, through];
   const get = async () => (await c.query('SELECT ' + fn + ' AS value', params)).rows[0].value;
-  const insert = async (n, actions = [], user = actor, client = c) =>
-    client.query(
-      'INSERT INTO hand_history VALUES($1,to_timestamp($2::double precision/1000),$3::jsonb,$4::jsonb,$5::jsonb)',
+  const insert = async (n, actions = [], user = actor, client = c) => {
+    await client.query(
+      'INSERT INTO hand_history(id,created_at,players,actions,hole_cards) VALUES($1,to_timestamp($2::double precision/1000),$3::jsonb,$4::jsonb,$5::jsonb)',
       [
         id(n),
         created,
@@ -83,6 +89,11 @@ try {
         JSON.stringify(['As', 'Ah']),
       ]
     );
+    await client.query(
+      "INSERT INTO hand_atomic_commits SELECT id,table_id,hand_number,repeat('a',64) FROM hand_history WHERE id=$1",
+      [id(n)]
+    );
+  };
   await c.query('SET ROLE service_role');
   assert.equal((await get()).handCount, 0);
   await c.query('RESET ROLE');
@@ -112,6 +123,42 @@ try {
   ).rows[0];
   assert.equal(meta.provolatile, 's');
   assert.equal(meta.prosecdef, false);
+  await insert(1);
+  await c.query('DELETE FROM hand_atomic_commits WHERE hand_id=$1', [id(1)]);
+  assert.equal((await get()).reason, 'atomic_receipt_missing');
+  await insert(2);
+  const partial = await get();
+  assert.equal(partial.reason, 'atomic_receipt_missing');
+  assert.deepEqual(partial.hands, []);
+  await c.query(
+    "INSERT INTO hand_atomic_commits SELECT id,$1,hand_number,repeat('a',64) FROM hand_history WHERE id=$2",
+    [other, id(1)]
+  );
+  assert.equal((await get()).reason, 'atomic_receipt_missing');
+  await c.query(
+    'UPDATE hand_atomic_commits a SET table_id=h.table_id,hand_number=99999999 FROM hand_history h WHERE a.hand_id=h.id AND h.id=$1',
+    [id(1)]
+  );
+  assert.equal((await get()).reason, 'atomic_receipt_missing');
+  await c.query(
+    'UPDATE hand_atomic_commits a SET hand_number=h.hand_number FROM hand_history h WHERE a.hand_id=h.id AND h.id=$1',
+    [id(1)]
+  );
+  const exact = await get();
+  assert.equal(exact.status, 'snapshot');
+  assert.equal(exact.handCount, 2);
+  assert.equal(exact.acceptance, 'atomic_hand_receipts');
+  assert.ok(
+    exact.hands.every(
+      (h) =>
+        h.acceptance.kind === 'atomic_hand_receipt' && h.acceptance.payloadHash === 'a'.repeat(64)
+    )
+  );
+  results.push({
+    case: 'missing, wrong-table and wrong-number atomic receipts refuse entire source; matching receipt metadata binds each returned hand',
+    passed: true,
+  });
+  await c.query('TRUNCATE hand_history,hand_atomic_commits');
   for (let n = 0; n < 512; n++)
     await insert(n, [{ action: 'bb', cards: ['As'], secret: 'private' }]);
   await insert(9999, [], other);
@@ -134,7 +181,7 @@ try {
     overflow: 513,
     privateTopLevelFieldsRemoved: true,
   });
-  await c.query('TRUNCATE hand_history');
+  await c.query('TRUNCATE hand_history,hand_atomic_commits');
   await insert(1);
   await c.query(
     "UPDATE hand_history SET created_at=to_timestamp($1::double precision/1000)+interval '1 microsecond' WHERE id=$2",
@@ -149,19 +196,19 @@ try {
   );
   assert.equal((await get()).handCount, 0);
   results.push({ case: 'one microsecond above the exclusive lower bound', passed: true });
-  await c.query('TRUNCATE hand_history');
+  await c.query('TRUNCATE hand_history,hand_atomic_commits');
   await insert(1, [{ action: 'bb', oversized: 'x'.repeat(1_048_577) }]);
   assert.equal((await get()).reason, 'invalid_or_oversized_hand');
-  await c.query('TRUNCATE hand_history');
+  await c.query('TRUNCATE hand_history,hand_atomic_commits');
   for (let n = 0; n < 9; n++) await insert(n, [{ action: 'bb', payload: 'x'.repeat(1_000_000) }]);
   const bytes = await get();
   assert.equal(bytes.reason, 'byte_budget_exceeded');
   assert.deepEqual(bytes.hands, []);
-  await c.query('TRUNCATE hand_history');
+  await c.query('TRUNCATE hand_history,hand_atomic_commits');
   await insert(1, null);
   assert.equal((await get()).reason, 'invalid_or_oversized_hand');
   results.push({ case: 'row, whole-response and malformed payload budgets', passed: true });
-  await c.query('TRUNCATE hand_history');
+  await c.query('TRUNCATE hand_history,hand_atomic_commits');
   for (let n = 0; n < 5; n++)
     await insert(
       n,
@@ -183,7 +230,7 @@ try {
     accepted: 20000,
     rejected: 20001,
   });
-  await c.query('TRUNCATE hand_history');
+  await c.query('TRUNCATE hand_history,hand_atomic_commits');
   await insert(1);
   await writer.query('BEGIN');
   await insert(2, [], actor, writer);
@@ -211,7 +258,7 @@ try {
   assert.equal(during.handCount, 1);
   assert.equal(after.handCount, 2);
   results.push({ case: 'late commit during stable statement', before: 1, during: 1, nextRead: 2 });
-  await c.query('TRUNCATE hand_history');
+  await c.query('TRUNCATE hand_history,hand_atomic_commits');
   const { HandController } = await import(
     pathToFileURL(root + '/server/dist/engine/HandController.js')
   );

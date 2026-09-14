@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/horse-trigger-audit; applied 20260913172658, name 20260913171624_horse_profile_authority_is_server_only. Live invoker guard and enabled profiles trigger verified September 13, 2026.",
+  "functions": ["fn_guard_horse_profile_authority"]
+}

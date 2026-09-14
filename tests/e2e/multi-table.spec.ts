@@ -387,26 +387,31 @@ test.describe('LIVE E2E — the multi-table tab bar, beat by beat', () => {
     expect(read.w / read.h, 'card box must be 5:7 like the art').toBeCloseTo(5 / 7, 3);
   });
 
-  test('reduced motion is honoured across the multi-table surface', async ({ browser }) => {
-    const ctx = await browser.newContext({ reducedMotion: 'reduce' });
-    const page = await ctx.newPage();
-    await loadLiveCss(page);
-    await mountTabBar(page);
-    const b = await beat(
-      page,
-      `$('timerBar').classList.add('table-tab-bar__timer-bar--urgent');
+  test.describe('with reduced motion', () => {
+    // Configure the fixture before the inherited beforeEach loads the bundle.
+    // A second manual context loaded every sheet twice inside the same 30s
+    // budget, and its page did not belong to Playwright's trace lifecycle.
+    test.use({ contextOptions: { reducedMotion: 'reduce' } });
+
+    test('reduced motion is honoured across the multi-table surface', async ({ page }) => {
+      expect(
+        await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)
+      ).toBe(true);
+      const b = await beat(
+        page,
+        `$('timerBar').classList.add('table-tab-bar__timer-bar--urgent');
        $('tabIdle').classList.add('table-tab-bar__tab--won');
        const c=document.createElement('span');c.className='table-tab-bar__action-chip';
        c.textContent='Call';$('tabTurn').appendChild(c);`
-    );
-    for (const name of ['timerBarUrgent', 'tabResultWon', 'actionChipIn']) {
-      if (name in b) {
-        expect(
-          b[name],
-          `${name} must be flattened under prefers-reduced-motion`
-        ).toBeLessThanOrEqual(1);
+      );
+      for (const name of ['timerBarUrgent', 'tabResultWon', 'actionChipIn']) {
+        if (name in b) {
+          expect(
+            b[name],
+            `${name} must be flattened under prefers-reduced-motion`
+          ).toBeLessThanOrEqual(1);
+        }
       }
-    }
-    await ctx.close();
+    });
   });
 });

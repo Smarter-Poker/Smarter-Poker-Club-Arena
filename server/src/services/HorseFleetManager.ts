@@ -3900,40 +3900,49 @@ export class HorseFleetManager {
     } catch (err: any) {
       reportError(err, 'HorseFleet.seedAllTables_error');
     } finally {
-      /* THE CADENCE IS THE FEATURE. "Every 30 seconds" was the claim in start()
+      // Logging can throw EPIPE/EAGAIN. Neither a diagnostic nor a failed
+      // heartbeat may leave the overlap guard permanently held. Keep the
+      // final write owned until it settles, then release on every exit path.
+      try {
+        /* THE CADENCE IS THE FEATURE. "Every 30 seconds" was the claim in start()
          and 47 minutes was the measurement (2026-09-02, engine log: cycle
          began 18:08:35, "Seated 80" at 18:55:53) - one waitlist query per
          table, sequentially, for 1,131 tables, on a saturated database. The
          floor decayed for the whole gap and every hand-packed table drained
          with nothing refilling it. A slow cycle is a bug in its own right, so
          it announces itself. */
-      const cycleSeconds = Math.round((Date.now() - cycleStartedAt) / 1000);
-      /* 18.4 on the same line every cycle: how many cluster tables were left
+        const cycleSeconds = Math.round((Date.now() - cycleStartedAt) / 1000);
+        /* 18.4 on the same line every cycle: how many cluster tables were left
          alone because their game is switched off, and whether the switch was
          actually read. A read failure is the one case where a disabled game
          may have been seeded, so it is named rather than folded into zero. */
-      const disabledNote =
-        beat.disabledGamesReadFailed > 0
-          ? '; disabled games: READ FAILED, none skipped (fail open)'
-          : `; ${beat.disabledGameTables} table(s) of disabled games skipped`;
-      if (this.overrunTicks > 0 || cycleSeconds > 60) {
-        console.warn(
-          `[HorseFleet] Seeding cycle took ${cycleSeconds}s and ${this.overrunTicks} 30s tick(s) ` +
-            'were dropped while it ran - the floor was not refilled for that long' +
-            disabledNote
-        );
-      } else {
-        console.log(`[HorseFleet] Seeding cycle took ${cycleSeconds}s${disabledNote}`);
-      }
-      /* THE PULSE, ONCE, ON EVERY EXIT PATH (Phase 3 contract section 2).
+        const disabledNote =
+          beat.disabledGamesReadFailed > 0
+            ? '; disabled games: READ FAILED, none skipped (fail open)'
+            : `; ${beat.disabledGameTables} table(s) of disabled games skipped`;
+        if (this.overrunTicks > 0 || cycleSeconds > 60) {
+          console.warn(
+            `[HorseFleet] Seeding cycle took ${cycleSeconds}s and ${this.overrunTicks} 30s tick(s) ` +
+              'were dropped while it ran - the floor was not refilled for that long' +
+              disabledNote
+          );
+        } else {
+          console.log(`[HorseFleet] Seeding cycle took ${cycleSeconds}s${disabledNote}`);
+        }
+      } finally {
+        try {
+          /* THE PULSE, ONCE, ON EVERY EXIT PATH (Phase 3 contract section 2).
          In `finally` deliberately: the early returns above are the cycles the
          console most needs to see, and a cycle that seated nobody because an
          operator switched the fleet off must not look like a cycle that
          seated nobody because the engine fell over. Never throws - see
          publishFleetState - so it cannot replace a real error with its own. */
-      await this.publishFleetState(beat, Date.now() - cycleStartedAt);
-      this.overrunTicks = 0;
-      this.seeding = false;
+          await this.publishFleetState(beat, Date.now() - cycleStartedAt);
+        } finally {
+          this.overrunTicks = 0;
+          this.seeding = false;
+        }
+      }
     }
   }
 

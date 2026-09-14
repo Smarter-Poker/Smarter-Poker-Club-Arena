@@ -1,0 +1,7 @@
+# Bind CI validation to the actual merge base
+
+The PR event and Actions API recorded base33b6cb3 while the actual synthetic merge0a991b7 used the later protected-main parent500afdb. Requiring those two base identities to be equal refused the native image producer before its build. Qualification now records both identities, requires the recorded base to be an ancestor of the actual merge parent, and requires that parent to remain contained in fetched main. The consumer independently checks the exact merge parents and forward base relation through the real GitHub API. Source head, workflow, run attempt, artifact ID/digest and qualification-only authority remain mandatory.
+
+A separate client CI build completed Vite but failed its final provenance stamp because main advanced by one commit. A validated PR merge now retains its actual ancestry counters and an explicit validationOnly marker. The build can complete for CI, while both publisher gates reject the marker and keep their existing exact-source, clean-tree, complete-history and zero-ahead/behind requirements. Production build contexts keep the original stale-source refusal. Invalid PR workflow/source/base identity fails closed.
+
+The correction passes real-Git forward/rewind counterexamples and controlled artifact cases; the historical merge and ten-commit forward relation were also checked with actual GitHub metadata. The original sources fail their respective forward-merge regressions. Native image import and production publication remain separately required.

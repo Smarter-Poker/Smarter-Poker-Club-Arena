@@ -412,8 +412,9 @@ describe('the engine host re-reads the config and announces every single run', (
    */
   it('a heads-up table format is refused at configure time, by the seat count', () => {
     expect(BASE).toContain("import { HEADS_UP_SEATS } from '../config/headsUpSpec.js';");
-    expect(BASE).toContain(
-      'Number(this.tableInfo.max_players) > 0 && Number(this.tableInfo.max_players) <= HEADS_UP_SEATS;'
+    // Whitespace-insensitive: Prettier wraps this line at the width it likes.
+    expect(BASE.replace(/\s+/g, ' ')).toContain(
+      'const ritIsHeadsUpTable = Number(this.tableInfo.max_players) > 0 && Number(this.tableInfo.max_players) <= HEADS_UP_SEATS;'
     );
     expect(BASE).toContain('!ritIsTournament &&\n      !ritIsHeadsUpTable &&');
   });

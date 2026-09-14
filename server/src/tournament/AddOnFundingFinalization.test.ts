@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
+import { readTournamentPrizePool } from './tournamentPrizeContract.js';
 
 // Execute the production close method with only its infrastructure dependencies
 // replaced. Funding, finalization and the durable receipt now belong to the one
@@ -53,8 +54,9 @@ function fixture(failFirst = false) {
     'reportError',
     'isMaintenanceFrozen',
     'console',
+    'readTournamentPrizePool',
     compiled
-  )({ from, rpc }, reportError, () => false, { log: vi.fn() });
+  )({ from, rpc }, reportError, () => false, { log: vi.fn() }, readTournamentPrizePool);
   const lifecycle = {};
   const subject = Object.assign(new Subject(), {
     tournamentId: 'addon-test',
@@ -74,6 +76,20 @@ function fixture(failFirst = false) {
 }
 
 describe('add-on completion funds before finalizing', () => {
+  it.each([null, false, '', ' ', -1, 0.001, '0x64', '1e2', Number.MAX_VALUE])(
+    'does not resume the add-on tail from malformed pool %s',
+    async (prize_pool) => {
+      const f = fixture();
+      f.rpc.mockResolvedValueOnce({ data: { ok: true, prize_pool } as any, error: null });
+      await expect(f.subject.finalizeAfterAddOn()).resolves.toBe(false);
+      expect(f.subject.prizePoolFinalized).toBe(false);
+      expect(f.subject.tournamentCache.prize_pool).toBe(60);
+      expect(f.subject.reconcileTournamentEntryWindow).not.toHaveBeenCalled();
+      expect(f.subject.finishAddOnTail).not.toHaveBeenCalled();
+      expect(f.subject.requestAddOnDeadlineRetry).toHaveBeenCalledWith(5000);
+    }
+  );
+
   it('adopts only the atomic close receipt before running the idempotent tail', async () => {
     const f = fixture();
 

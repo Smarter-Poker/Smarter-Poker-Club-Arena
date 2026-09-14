@@ -5,18 +5,20 @@
 # Prometheus, the stack could not have notified anyone of anything — which is
 # why ten tables frozen for 18 minutes were reported by a player, not an alert.
 #
-# Delivery is email via Resend SMTP. Slack was the obvious choice and was
+# Operational failures and recoveries go to the durable Codex inbox.
+# Email remains a secondary channel via Resend SMTP. Slack was the obvious choice and was
 # attempted first, but SLACK_ALERT_URL in the monitoring .env is truncated
 # (44 chars) and invalid — Slack answers posts to it with its documentation
 # homepage. Resend is already this platform's transactional email provider.
 # Both secrets are mounted as files; neither appears in this YAML.
 #
 # Routing:
+#   all operational severities → durable Codex inbox, including recovery
 #   critical → email immediately, repeat hourly until resolved ("players
 #              cannot play" conditions)
 #   warning  → email grouped, repeat every 12h so infra noise (CPU, memory)
 #              can never bury a critical
-#   info     → suppressed; visible in the AlertManager UI for triage
+#   info     → Codex inbox, with no secondary email
 
 global:
   resolve_timeout: 5m
@@ -33,22 +35,24 @@ route:
   group_interval: 5m
   repeat_interval: 1h
   routes:
-    # ── THE 3AM PAGER (2026-09-04; the horse fleet joined it 2026-09-11) ──
-    # Six rules carried `page: sms` when this route was written, chosen by
-    # Dan. On 2026-09-11 he added a seventh subject in his own words - "I
-    # SHOULD GET PUSH NOTIFICATIONS OR TEXT IF ANYTHING INSIDE THE HORSES IS
-    # FAILING OR THEY CAN'T PLAY" - and the `horse-fleet` group in
-    # alert-rules.yml carries the label on nine rules for it. The route needs
-    # no change for that: it matches the LABEL, never a list of names, and
-    # the World Hub's pager endpoint does the same (its own test pins the
-    # label filter, not an allowlist). The comment said the list was pinned
-    # by `tests/the-pager-list-is-exactly-six.test.ts`; no such file exists in
-    # either repo, and a claim like that is read as current by every agent
-    # after it (CLAUDE.md 10.86). They post to
-    # the World Hub, which texts the phone deploy-monitor.js already pages.
-    # `continue: true` so the same alert also lands in the critical email.
-    # repeat_interval 4h: an unresolved incident re-pages every four hours,
-    # not every hour - the estate has already had one SMS storm.
+    # Every non-canary fault reaches the durable incident inbox. Legacy
+    # page=sms labels retain their priority route; that endpoint now records
+    # to Codex instead of texting a handset. Email routing remains secondary.
+    - matchers:
+        - severity!="canary"
+        - page!="sms"
+      receiver: codex-inbox
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 4h
+      continue: true
+
+    # Legacy priority route. On 2026-09-13 Dan explicitly replaced all
+    # operational texts, including recovery notices, with investigation in
+    # Codex task 01a09b86-5ba8-7290-8657-1041f13dd3ca. Retain the historical
+    # label and receiver names for deployment compatibility; they authorize
+    # no SMS. World Hub acknowledges only after committing every event to
+    # the service-only inbox. See docs/runbooks/operational-alert-intake.md.
     - matchers:
         - page="sms"
       receiver: pager-sms
@@ -93,12 +97,23 @@ receivers:
 
   # World Hub route pages/api/internal/alertmanager-page.js. Bearer is
   # CRON_SECRET, read from a file mounted beside resend_key so the secret is
-  # never in this file. send_resolved closes the loop with a RESOLVED text.
+  # never in this file. send_resolved preserves recovery evidence in the
+  # inbox; neither failures nor recoveries are sent by SMS.
   - name: pager-sms
     webhook_configs:
       - url: https://smarter.poker/api/internal/alertmanager-page
         send_resolved: true
-        max_alerts: 10
+        max_alerts: 0
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /etc/alertmanager/cron_secret
+
+  - name: codex-inbox
+    webhook_configs:
+      - url: https://smarter.poker/api/internal/alertmanager-page
+        send_resolved: true
+        max_alerts: 0
         http_config:
           authorization:
             type: Bearer

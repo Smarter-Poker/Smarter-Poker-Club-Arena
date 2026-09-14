@@ -31,6 +31,25 @@ Phases 1-3 of 8 are merged (squash `c22a3bb00`) and live; phase 4 is the club
 dashboard, and it starts on a fresh branch off `main`. The plan is
 [`docs/club-operations/OPERATIONS-UPGRADE-PLAN.md`](./docs/club-operations/OPERATIONS-UPGRADE-PLAN.md).
 
+## ↗ REDESIGNING A PAGE, POPUP, CARD OR BUTTON? READ `.claude/skills/club-arena-console/SKILL.md`
+
+Every visual surface in Club Arena is rebuilt on Dan's approved master art -
+you do not style it, you print live text into zones measured on a render he
+signed off. The standard is **#ClubArenaConsole**, and it lives in the repo so
+every agent, on every account and in every tool, works from the same one:
+
+[`.claude/skills/club-arena-console/SKILL.md`](./.claude/skills/club-arena-console/SKILL.md)
+
+It carries Dan's rulings verbatim, the console kit and its zone constants, the
+art-surgery techniques for deriving new art from a master, the headless render
+harness that produces the before/after he reviews, twelve traps that have each
+cost hours, and the definition of done. Read it in full before touching a
+surface, and pass it to any subagent you spawn. If you find yourself writing
+`border-radius` or a gradient to make something look like a control, you have
+already gone wrong: the control is painted in the art.
+
+---
+
 ## ↗ START HERE: `AGENT-PLAYBOOK.md`
 
 **Before this file, before anything: read [`AGENT-PLAYBOOK.md`](./AGENT-PLAYBOOK.md).**

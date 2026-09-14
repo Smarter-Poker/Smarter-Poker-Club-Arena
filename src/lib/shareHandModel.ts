@@ -284,8 +284,9 @@ export function shareableFromModel(
     player.isHero = p.userId === meta.heroUserId;
     player.isWinner = p.won > 0;
     if (p.mucked && reachedShowdown.has(p.userId)) player.mucked = true;
-    /* What they were PAID, which is not the sum of the per-board shares:
-       those are pre-rake and this is what left the pot. Both travel. */
+    /* What they were PAID. The per-board rows beside it are the record's
+       breakdown (post-rake since 2026-09-04); on a raked run-it-twice hand
+       the two agree, on older links they may not. Both travel. */
     if (p.won > 0) player.won = p.won;
     const high = highRow(p.userId);
     if (high?.handName) player.handName = high.handName;
@@ -317,6 +318,11 @@ export function shareableFromModel(
         board: r.boardIndex + 1,
         low: r.low || undefined,
         hand: r.handName || undefined,
+        /* The pot axis travels only when it says more than "the main pot",
+           so an ordinary link is byte-identical to before. */
+        ...(r.potSlices && (r.potSlices.length > 1 || r.potSlices.some((s) => s.index > 0))
+          ? { pots: r.potSlices.map((s) => ({ index: s.index, amount: s.amount })) }
+          : {}),
       }))
     : model.players
         .filter((p) => p.won > 0)
@@ -437,9 +443,11 @@ export function replayFromShareable(hand: ShareableHand): ReplayModel {
    *
    * v4 puts the payment on the player (`won`, post-rake, the record's own
    * `winners[].amount`) and keeps `hand.winners` for the record's per-board
-   * and per-half BREAKDOWN, which is pre-rake. Reading the breakdown as the
-   * payment credited the winner of a raked run-it-twice hand with the rake as
-   * well - 52.24 where the pot paid 49.74 on production #6421788.
+   * and per-half BREAKDOWN. That breakdown was pre-rake when this was written
+   * (reading it as the payment credited the winner of a raked run-it-twice
+   * hand with the rake as well - 52.24 where the pot paid 49.74 on production
+   * #6421788) and has been post-rake since the 2026-09-04 engine fix; the
+   * separation stands either way, because a link may be older than the fix.
    *
    * A v1-v3 payload has no `won` on any player, and there its `winners` list
    * IS the payment; that is the fallback, so an old link still pays correctly.
@@ -468,6 +476,7 @@ export function replayFromShareable(hand: ShareableHand): ReplayModel {
         amount: w.amount,
         handName: w.hand,
         low: w.low === true,
+        ...(Array.isArray(w.pots) && w.pots.length ? { pots: w.pots } : {}),
       }))
     : null;
 

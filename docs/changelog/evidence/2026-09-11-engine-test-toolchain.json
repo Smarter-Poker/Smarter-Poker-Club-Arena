@@ -1,0 +1,565 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-09-11T18:59:54.311792+00:00",
+  "base_sha": "669df6af0c5b704d857018ba950fc280eee47560",
+  "scope": "server development toolchain only; held source candidate",
+  "source_sha256": {
+    "server/package.json": "94b0f9b4278e729233acde5df07acf4da7c0eb73d12d0d2bfb38aa6e6899a09a",
+    "server/package-lock.json": "bcd158c91f5a6305d02e9ab0fb03bdecd325f9fd860432d2f3c43570aa79cbe8",
+    "server/src/GameServerRealtimeOwnership.test.ts": "23a3d5cd59d35509c69b999ffc449c7c0adddfe2de204aa1d4fe883a45438283",
+    "server/src/engine/ChipContinuity.law.test.ts": "9a749c337416f656db04d97794b16523afa8cdb812dabe077a641b145858c3e8",
+    "server/src/services/aFinalizedPoolIsNotFilled.test.ts": "a51ddeb58476044de25668236522352e8e91f8b1186093074fea8c63ec16d7b4",
+    "server/src/services/seatFirstSeatPrecheck.test.ts": "2bdadf63d309872467f4d97ccf8994ad23304ea6fd3550b560c7272ebab47c4f",
+    "server/src/services/supabase/BBJPayoutOriginalPool.test.ts": "85d62e6e063512a68a7fb59809e7bcefd235bc5b6cc84562684f15c0ee3b19c8",
+    "docs/changelog/2026-09-11-engine-test-toolchain.md": "fb5ba63eca34791b943635ac9e8fcc4b6925b0f03836a8e157e51d626cc64222"
+  },
+  "unchanged_config_sha256": "51a735efccc984b4b4b64f9f6436f4615cf037f940d3d714aa6057e72af04686",
+  "runtime_packages": {
+    "count": 49,
+    "before_identity_sha256": "bf22253aca505d4cf21bfe673fa5e6d827bf413cd4ca3dba80749a4a07a7ea54",
+    "after_identity_sha256": "bf22253aca505d4cf21bfe673fa5e6d827bf413cd4ca3dba80749a4a07a7ea54",
+    "identical": true
+  },
+  "lock_version_changes": [
+    {
+      "path": "node_modules/@esbuild/aix-ppc64",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/@esbuild/android-arm",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/@esbuild/android-arm64",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/@esbuild/android-x64",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/@esbuild/darwin-arm64",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/@esbuild/darwin-x64",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/@esbuild/freebsd-arm64",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/@esbuild/freebsd-x64",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/@esbuild/linux-arm",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/@esbuild/linux-arm64",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/@esbuild/linux-ia32",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/@esbuild/linux-loong64",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/@esbuild/linux-mips64el",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/@esbuild/linux-ppc64",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/@esbuild/linux-riscv64",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/@esbuild/linux-s390x",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/@esbuild/linux-x64",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/@esbuild/netbsd-arm64",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/@esbuild/netbsd-x64",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/@esbuild/openbsd-arm64",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/@esbuild/openbsd-x64",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/@esbuild/openharmony-arm64",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/@esbuild/sunos-x64",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/@esbuild/win32-arm64",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/@esbuild/win32-ia32",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/@esbuild/win32-x64",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/@jridgewell/sourcemap-codec",
+      "from": "1.5.5",
+      "to": "1.6.0"
+    },
+    {
+      "path": "node_modules/@standard-schema/spec",
+      "from": null,
+      "to": "1.1.0"
+    },
+    {
+      "path": "node_modules/@types/chai",
+      "from": null,
+      "to": "5.2.3"
+    },
+    {
+      "path": "node_modules/@types/deep-eql",
+      "from": null,
+      "to": "4.0.2"
+    },
+    {
+      "path": "node_modules/@vitest/expect",
+      "from": "2.1.9",
+      "to": "4.1.11"
+    },
+    {
+      "path": "node_modules/@vitest/mocker",
+      "from": "2.1.9",
+      "to": "4.1.11"
+    },
+    {
+      "path": "node_modules/@vitest/pretty-format",
+      "from": "2.1.9",
+      "to": "4.1.11"
+    },
+    {
+      "path": "node_modules/@vitest/runner",
+      "from": "2.1.9",
+      "to": "4.1.11"
+    },
+    {
+      "path": "node_modules/@vitest/snapshot",
+      "from": "2.1.9",
+      "to": "4.1.11"
+    },
+    {
+      "path": "node_modules/@vitest/spy",
+      "from": "2.1.9",
+      "to": "4.1.11"
+    },
+    {
+      "path": "node_modules/@vitest/utils",
+      "from": "2.1.9",
+      "to": "4.1.11"
+    },
+    {
+      "path": "node_modules/cac",
+      "from": "6.7.14",
+      "to": null
+    },
+    {
+      "path": "node_modules/chai",
+      "from": "5.3.3",
+      "to": "6.2.2"
+    },
+    {
+      "path": "node_modules/check-error",
+      "from": "2.1.3",
+      "to": null
+    },
+    {
+      "path": "node_modules/convert-source-map",
+      "from": null,
+      "to": "2.0.0"
+    },
+    {
+      "path": "node_modules/deep-eql",
+      "from": "5.0.2",
+      "to": null
+    },
+    {
+      "path": "node_modules/es-module-lexer",
+      "from": "1.7.0",
+      "to": "2.3.2"
+    },
+    {
+      "path": "node_modules/esbuild",
+      "from": "0.27.3",
+      "to": "0.28.2"
+    },
+    {
+      "path": "node_modules/fdir",
+      "from": null,
+      "to": "6.5.0"
+    },
+    {
+      "path": "node_modules/get-tsconfig",
+      "from": "4.13.6",
+      "to": null
+    },
+    {
+      "path": "node_modules/loupe",
+      "from": "3.2.1",
+      "to": null
+    },
+    {
+      "path": "node_modules/nanoid",
+      "from": "3.3.11",
+      "to": "3.3.19"
+    },
+    {
+      "path": "node_modules/obug",
+      "from": null,
+      "to": "2.2.1"
+    },
+    {
+      "path": "node_modules/pathe",
+      "from": "1.1.2",
+      "to": "2.0.3"
+    },
+    {
+      "path": "node_modules/pathval",
+      "from": "2.0.1",
+      "to": null
+    },
+    {
+      "path": "node_modules/picomatch",
+      "from": null,
+      "to": "4.0.7"
+    },
+    {
+      "path": "node_modules/postcss",
+      "from": "8.5.9",
+      "to": "8.5.28"
+    },
+    {
+      "path": "node_modules/resolve-pkg-maps",
+      "from": "1.0.0",
+      "to": null
+    },
+    {
+      "path": "node_modules/std-env",
+      "from": "3.10.0",
+      "to": "4.2.0"
+    },
+    {
+      "path": "node_modules/tinyexec",
+      "from": "0.3.2",
+      "to": "1.3.1"
+    },
+    {
+      "path": "node_modules/tinyglobby",
+      "from": null,
+      "to": "0.2.17"
+    },
+    {
+      "path": "node_modules/tinypool",
+      "from": "1.1.1",
+      "to": null
+    },
+    {
+      "path": "node_modules/tinyrainbow",
+      "from": "1.2.0",
+      "to": "3.1.1"
+    },
+    {
+      "path": "node_modules/tinyspy",
+      "from": "3.0.2",
+      "to": null
+    },
+    {
+      "path": "node_modules/tsx",
+      "from": "4.21.0",
+      "to": "4.23.13"
+    },
+    {
+      "path": "node_modules/vite",
+      "from": "5.4.21",
+      "to": "6.4.3"
+    },
+    {
+      "path": "node_modules/vite-node",
+      "from": "2.1.9",
+      "to": null
+    },
+    {
+      "path": "node_modules/vite/node_modules/@esbuild/aix-ppc64",
+      "from": "0.21.5",
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vite/node_modules/@esbuild/android-arm",
+      "from": "0.21.5",
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vite/node_modules/@esbuild/android-arm64",
+      "from": "0.21.5",
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vite/node_modules/@esbuild/android-x64",
+      "from": "0.21.5",
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vite/node_modules/@esbuild/darwin-arm64",
+      "from": "0.21.5",
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vite/node_modules/@esbuild/darwin-x64",
+      "from": "0.21.5",
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vite/node_modules/@esbuild/freebsd-arm64",
+      "from": "0.21.5",
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vite/node_modules/@esbuild/freebsd-x64",
+      "from": "0.21.5",
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vite/node_modules/@esbuild/linux-arm",
+      "from": "0.21.5",
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vite/node_modules/@esbuild/linux-arm64",
+      "from": "0.21.5",
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vite/node_modules/@esbuild/linux-ia32",
+      "from": "0.21.5",
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vite/node_modules/@esbuild/linux-loong64",
+      "from": "0.21.5",
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vite/node_modules/@esbuild/linux-mips64el",
+      "from": "0.21.5",
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vite/node_modules/@esbuild/linux-ppc64",
+      "from": "0.21.5",
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vite/node_modules/@esbuild/linux-riscv64",
+      "from": "0.21.5",
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vite/node_modules/@esbuild/linux-s390x",
+      "from": "0.21.5",
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vite/node_modules/@esbuild/linux-x64",
+      "from": "0.21.5",
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vite/node_modules/@esbuild/netbsd-arm64",
+      "from": null,
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vite/node_modules/@esbuild/netbsd-x64",
+      "from": "0.21.5",
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vite/node_modules/@esbuild/openbsd-arm64",
+      "from": null,
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vite/node_modules/@esbuild/openbsd-x64",
+      "from": "0.21.5",
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vite/node_modules/@esbuild/openharmony-arm64",
+      "from": null,
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vite/node_modules/@esbuild/sunos-x64",
+      "from": "0.21.5",
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vite/node_modules/@esbuild/win32-arm64",
+      "from": "0.21.5",
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vite/node_modules/@esbuild/win32-ia32",
+      "from": "0.21.5",
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vite/node_modules/@esbuild/win32-x64",
+      "from": "0.21.5",
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vite/node_modules/esbuild",
+      "from": "0.21.5",
+      "to": "0.25.12"
+    },
+    {
+      "path": "node_modules/vitest",
+      "from": "2.1.9",
+      "to": "4.1.11"
+    }
+  ],
+  "environment": {
+    "node": "22.23.2",
+    "platform": "macOS arm64",
+    "lock_generated_by_npm": "11.16.0",
+    "fresh_ci_verified_npm": "10.9.8",
+    "linux_image_built": false,
+    "production_changed": false
+  },
+  "validation": {
+    "server_suite": {
+      "files_passed": 688,
+      "files_skipped": 1,
+      "tests_passed": 9799,
+      "tests_skipped": 145,
+      "tests_failed": 0,
+      "duration_seconds": 28.63
+    },
+    "build": "passed",
+    "native_checks": {
+      "old": {
+        "samples": [
+          0.6011037519201636, 0.44829055899754167, 0.8524657934904099, 0.6697340414393693,
+          0.17481389874592423, 0.5265925421845168, 0.2732279943302274, 0.6247446539346129,
+          0.8654746483080089, 0.4723170551005751
+        ],
+        "environment": "node",
+        "api": false,
+        "ui": false,
+        "browser": false
+      },
+      "new": {
+        "samples": [
+          0.6011037519201636, 0.44829055899754167, 0.8524657934904099, 0.6697340414393693,
+          0.17481389874592423, 0.5265925421845168, 0.2732279943302274, 0.6247446539346129,
+          0.8654746483080089, 0.4723170551005751
+        ],
+        "environment": "node",
+        "api": false,
+        "ui": false,
+        "browser": false
+      },
+      "negative_control": {
+        "exit_code": 1,
+        "source_sha256": "fb90a11c7b32c7af3a2bab840b1b71d2dcfc42b1fd750fe054d1e61a852c7156",
+        "temporary_file_removed": true
+      }
+    },
+    "fresh_production_install": "passed",
+    "production_tools_absent": {
+      "vitest": true,
+      "vite": true,
+      "tsx": true,
+      "esbuild": true,
+      "nanoid": true,
+      "postcss": true,
+      "@vitest/ui": true,
+      "@vitest/browser-playwright": true
+    },
+    "audit_vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 0
+    }
+  },
+  "local_evidence_sha256": {
+    "work/test-toolchain/npm-ci-final.log": "9b5aab76ab13ad855cf20d5cc24edb9c0d19d0dfcea02936de9dd9113dd2a9bd",
+    "work/test-toolchain/lock-update-npm11.log": "b125771fda8addd462adfe7f7b03299feb35e28badbb2d16ae8589e371216f8f",
+    "work/test-toolchain/transitive-update.log": "5beb774d10ca57f7a95f2dcd27384fc573ac7d476a0f5dfb2bc065daca2874a6",
+    "work/test-toolchain/tsx-update.log": "d8b962e93ee5225d03053ecd4baff2abad9b54715467a7d72591bc07aabc9cea",
+    "work/test-toolchain/server-suite-final.log": "4a67a64d0d39ecaf5524704e6b7f40293ea5cf0f82e1a3efbace2429c1321af7",
+    "work/test-toolchain/server-suite-final.json": "03a4c0e442bc7e09976c5eb0f40b1588f4be844d86e4456e6443e9676602956d",
+    "work/test-toolchain/build-final.log": "7596c34c89803bc9373c4905acc118b580004f7a9d6bd035d0814132300415e9",
+    "work/test-toolchain/audit-final.json": "ab03e34a6983763c587272b6f2b2cb32115c7c2d2338c363d2351dd9e846a60d",
+    "work/test-toolchain/production-ci.log": "4b762e0eb439e3458a77ece1cb1ae9177025868795d4f3f28c5ad2a24324e2de",
+    "work/test-toolchain/native-checks.py": "4b1002bf636aa3d2316bd8e48920402fd712e089b788a640759cf24052b07992",
+    "work/test-toolchain/native-checks.json": "61cf28e0f673a496ed65a3ff567954be81ac939b992e6b83f0ce991916f77193",
+    "work/test-toolchain/negative-control.log": "a23b4335c36b3a9efaf23e458542197d29fea1ed3189adb07515dd6b6aae8a93"
+  },
+  "remaining_limits": [
+    "No Linux image/host install/production certification in this workstream.",
+    "Existing skipped145 Postgres tests remain skipped; no assertions or skips removed."
+  ]
+}

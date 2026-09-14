@@ -26,7 +26,7 @@
  * existed. The per-pass tally is also folded into /metrics
  * (poker_seat_first_precheck_total) so the saving is visible without log access.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -337,7 +337,7 @@ describe('topUpWithHorses - the pre-check in front of the RPC', () => {
   const T = 'aaaaaaaa-0000-4000-8000-000000000001';
   const TABLE = 'bbbbbbbb-0000-4000-8000-000000000001';
   let svc: TournamentRecurringService;
-  let logSpy: ReturnType<typeof vi.spyOn>;
+  let logSpy: MockInstance<typeof console.log>;
 
   function seatRows(rows: Array<{ user_id: string; seat_number: number }>): void {
     tableResults = {

@@ -29,6 +29,10 @@ import type { TournamentGameVariant } from '../config/tournamentVariants';
 import { reportError } from '../utils/errorReporter';
 import { computePlacePrize } from '../lib/payoutMath';
 import { UNIT_CENTS_ASSET_NOT_READ } from '../../server/src/tournament/tournamentUnit';
+import {
+  mysteryBountyCreationOptions,
+  mysteryBountyCreationColumns,
+} from '../../server/src/domain/mysteryBountyCreation';
 import { gameManagementService } from './GameManagementService';
 import { PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
 import { uuid } from '../utils/uuid';
@@ -135,6 +139,38 @@ export function registerReasonText(reason: string | undefined): string {
 
 function unregisterReasonText(reason: string | undefined): string {
   return UNREGISTER_REASON_TEXT[reason ?? ''] ?? `Could not unregister (${reason ?? 'unknown'})`;
+}
+
+/**
+ * The seat-first purchase (`fn_take_seat_and_buy_in`, heads-up and spins)
+ * answers the same refusals as the lobby register door plus its own seat
+ * reasons. Diamond Phase 8: a Diamond seat purchase answers with the Diamond
+ * reasons above, and `insufficient_diamonds` must be read before the bare
+ * chip `insufficient` so a Diamond player is not told they lack chips.
+ */
+export function seatFirstBuyInReasonIsKnown(reason: string | undefined): boolean {
+  return /seat_taken|insufficient|already_started|game_already_started|tournament_full|not_a_seat_first_game|table_limit_reached|FOUR TABLE LIMIT|diamond_tournaments_not_open|diamond_debt_requires_settlement/.test(
+    reason ?? ''
+  );
+}
+
+export function seatFirstBuyInRefusalText(reason: string | undefined): string {
+  const r = reason ?? '';
+  if (/seat_taken/.test(r)) return 'That Seat Was Just Taken';
+  if (/insufficient_diamonds/.test(r)) return REGISTER_REASON_TEXT.insufficient_diamonds;
+  if (/diamond_tournaments_not_open/.test(r))
+    return REGISTER_REASON_TEXT.diamond_tournaments_not_open;
+  if (/diamond_debt_requires_settlement/.test(r)) {
+    return REGISTER_REASON_TEXT.diamond_debt_requires_settlement;
+  }
+  if (/insufficient/.test(r)) return 'Not Enough Chips For This Buy In';
+  if (/already_started|game_already_started/.test(r)) return 'This Game Has Already Started';
+  if (/tournament_full/.test(r)) return 'This Game Is Full';
+  if (/not_a_seat_first_game/.test(r)) return 'Seats Are Not For Sale At This Table';
+  if (/table_limit_reached|FOUR TABLE LIMIT/.test(r)) {
+    return 'You Are Already In Four Games, Leave One To Join Another';
+  }
+  return 'Could Not Take That Seat, Please Try Again';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -578,11 +614,7 @@ export interface TournamentConfig {
   /** Mystery bounty advertised range, as MULTIPLIERS of the bounty head. */
   mysteryBountyMin?: number;
   mysteryBountyMax?: number;
-  /**
-   * MYSTERY BOUNTY OPTIONS (Dan section 72). Applied by
-   * `fn_apply_mystery_bounty_config` immediately after creation, not by
-   * `fn_create_tournament` — see the note at the call site.
-   */
+  /** Mystery options commit with the original creation transaction. */
   /** Which tier ladder. 'jackpot' is top-heavy, 'balanced' is flat. */
   mysteryBountyProfile?: 'balanced' | 'classic' | 'jackpot';
   /** When the chests open. */
@@ -706,7 +738,7 @@ class TournamentService {
     const { data: clubTournaments, error } = await supabase
       .from('tournaments')
       .select(
-        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_started_at, addon_period_ends_at, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats'
+        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_started_at, addon_period_ends_at, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, mystery_bounty_profile, mystery_bounty_activation, mystery_bounty_activation_value, mystery_bounty_pool_percent, mystery_bounty_regular_pool_percent, mystery_bounty_top_percent, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats'
       )
       .eq('club_id', resolvedId)
       // Lobby fix 2026-08-15: this query had NO status filter, so every
@@ -833,7 +865,7 @@ class TournamentService {
           const { data: xmttData, error: xmttErr } = await supabase
             .from('tournaments')
             .select(
-              'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_started_at, addon_period_ends_at, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats'
+              'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_started_at, addon_period_ends_at, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, mystery_bounty_profile, mystery_bounty_activation, mystery_bounty_activation_value, mystery_bounty_pool_percent, mystery_bounty_regular_pool_percent, mystery_bounty_top_percent, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats'
             )
             .eq('union_id', unionClub.union_id)
             // 2026-08-19: dropped `.eq('is_xmtt', true)`. Under the union
@@ -889,7 +921,7 @@ class TournamentService {
     const { data, error } = await supabase
       .from('tournaments')
       .select(
-        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, prize_pool_finalized, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_started_at, addon_period_ends_at, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats'
+        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, prize_pool_finalized, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_started_at, addon_period_ends_at, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, mystery_bounty_profile, mystery_bounty_activation, mystery_bounty_activation_value, mystery_bounty_pool_percent, mystery_bounty_regular_pool_percent, mystery_bounty_top_percent, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats'
       )
       .eq('id', tournamentId)
       .maybeSingle();
@@ -1016,6 +1048,7 @@ class TournamentService {
     if (config.isMultiDay !== undefined) p.isMultiDay = config.isMultiDay;
     if (config.isMultiDay && config.totalDays !== undefined) p.totalDays = config.totalDays;
     if (config.type === 'mystery_bounty') {
+      Object.assign(p, mysteryBountyCreationOptions(config));
       if (config.mysteryBountyMin !== undefined) p.mysteryBountyMin = config.mysteryBountyMin;
       if (config.mysteryBountyMax !== undefined) p.mysteryBountyMax = config.mysteryBountyMax;
     }
@@ -1278,6 +1311,7 @@ class TournamentService {
       success?: boolean;
       error?: string;
       tournament_id?: string;
+      mystery_config?: Record<string, unknown>;
     } | null;
     if (!result?.success) {
       throw new Error(
@@ -1285,37 +1319,26 @@ class TournamentService {
       );
     }
 
-    // MYSTERY BOUNTY OPTIONS (Dan section 72). A second call rather than more
-    // keys on `fn_create_tournament`, which is a 15KB SECURITY DEFINER
-    // function this change has no other reason to touch — and rewriting one
-    // from a dashboard dump to add six columns is how a creation path acquires
-    // a silent regression.
-    //
-    // A failure here is deliberately NOT fatal. The tournament exists and is
-    // valid; it simply runs on the defaults (classic ladder, chests open at
-    // the money, pool split 50/50), which is what most clubs pick anyway. The
-    // alternative — throwing — would leave a paid-for, correctly created event
-    // behind an error message saying it failed.
-    if (config.type === 'mystery_bounty' && result.tournament_id) {
-      const mysteryConfig: Record<string, unknown> = {
-        profile: config.mysteryBountyProfile ?? 'classic',
-        activation: config.mysteryBountyActivation ?? 'at_the_money',
-        activationValue: config.mysteryBountyActivationValue ?? null,
-        topPercent: config.mysteryBountyTopPercent ?? 20,
-        poolPercent: config.mysteryBountyPoolPercent ?? 50,
-        regularPoolPercent: 100 - (config.mysteryBountyPoolPercent ?? 50),
-      };
-      const { data: cfgResult, error: cfgError } = await supabase.rpc(
-        'fn_apply_mystery_bounty_config',
-        { p_tournament_id: result.tournament_id, p_config: mysteryConfig }
-      );
-      const cfg = cfgResult as { ok?: boolean; reason?: string } | null;
-      if (cfgError || !cfg?.ok) {
-        console.warn(
-          `[TournamentService] mystery bounty options not applied (${cfgError?.message ?? cfg?.reason ?? 'unknown'}); the event runs on the defaults`
+    if (config.type === 'mystery_bounty') {
+      const expected = mysteryBountyCreationColumns(config);
+      if (
+        !result.mystery_config ||
+        Object.entries(expected).some(([key, value]) => result.mystery_config?.[key] !== value)
+      ) {
+        reportError(
+          new Error('Mystery creation receipt did not match selected options'),
+          'TournamentService.mystery_creation_receipt_invalid',
+          { tournamentId: result.tournament_id }
+        );
+        throw new Error(
+          'The tournament was created, but its mystery options could not be confirmed. Refresh the lobby before creating another tournament.'
         );
       }
     }
+
+    // The original RPC now commits the selected mystery terms atomically.
+    // A failed config write rolls back that creation; there is no second request
+    // that can silently substitute defaults or race the first registration.
 
     // ROUND 8 (2026-08-29): this refetch discarded its error and returned
     // `data` bare, so a transient failure returned null from a method typed

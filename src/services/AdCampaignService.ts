@@ -37,6 +37,8 @@ export interface AdRateCard {
   isOpen: boolean;
   label: string;
   blurb: string;
+  /** What an outside sponsor is invoiced per day, US cents. 0 = not for sale to a sponsor. */
+  sponsorCentsPerDay: number;
 }
 
 export type CampaignStatus = 'submitted' | 'approved' | 'rejected' | 'cancelled';
@@ -67,6 +69,8 @@ export interface AdCampaign {
   viewable: number;
   clicks: number;
   viewers: number;
+  /** The price a sponsor was shown when they booked, US cents. Null on a club flight. */
+  quotedCents: number | null;
 }
 
 export interface SubmitCampaignInput {
@@ -194,7 +198,13 @@ function mapCampaign(r: Record<string, unknown>): AdCampaign {
     viewable: Number(r.viewable ?? 0),
     clicks: Number(r.clicks ?? 0),
     viewers: Number(r.viewers ?? 0),
+    quotedCents: r.quoted_cents == null ? null : Number(r.quoted_cents),
   };
+}
+
+/** Whole dollars for a forward-facing page: $10, never $10.00. */
+export function formatDollars(cents: number): string {
+  return `$${Math.floor(cents / 100).toLocaleString()}`;
 }
 
 export const AdCampaignService = {
@@ -203,7 +213,7 @@ export const AdCampaignService = {
     const { data, error } = await supabase
       .from('ad_rate_card')
       .select(
-        'slot, diamonds_per_day, min_days, max_days, creative_width, creative_height, max_bytes, is_open, label, blurb'
+        'slot, diamonds_per_day, min_days, max_days, creative_width, creative_height, max_bytes, is_open, label, blurb, sponsor_cents_per_day'
       )
       .order('is_open', { ascending: false })
       .order('diamonds_per_day', { ascending: false });
@@ -222,6 +232,7 @@ export const AdCampaignService = {
       isOpen: Boolean(r.is_open),
       label: String(r.label),
       blurb: String(r.blurb ?? ''),
+      sponsorCentsPerDay: Number(r.sponsor_cents_per_day ?? 0),
     }));
   },
 

@@ -25,6 +25,7 @@
 import { describe, expect, it } from 'vitest';
 import { formatPopupText } from '../../src/utils/popupStyle';
 import { titleCase } from '../../src/utils/titleCase';
+import { renderTickerItem, startingSoonItem } from '../../src/components/tournament/tickerMessages';
 
 describe('titleCase no longer cuts a word at its first ASCII letter', () => {
   it('is the regression, verbatim', () => {
@@ -85,5 +86,46 @@ describe('what this fix does NOT claim', () => {
        whose own language it is, and never worse for anybody else. */
     const cased = formatPopupText('izmir turnuvası');
     expect(cased).toMatch(/^[Iİ]zmir Turnuvası$/);
+  });
+});
+
+describe('and the whole rail pipeline, not just the transform', () => {
+  /* The two functions above are shared utilities. What a player actually sees
+     is a tournament name that has been through formatGameTitle AND
+     formatPopupText on its way into a ticker item, so the guarantee is only
+     real if it survives the composition. Fixing a helper and never checking
+     its consumer is how the "Starts In0:19" defect shipped. */
+  const NOW = 1_800_000_000_000;
+
+  const named = (name: string) =>
+    renderTickerItem(
+      startingSoonItem({
+        id: 't1',
+        name,
+        startsAt: NOW + 210_000,
+        clubId: 'club-1',
+        buyIn: 9,
+        buyInFee: 2,
+        registered: 24,
+        isRegistered: false,
+      }),
+      NOW
+    );
+
+  it('carries an accented club name onto the bar intact', () => {
+    expect(named('événement du soir')).toContain('Événement Du Soir');
+    expect(named('événement du soir')).not.toContain('éVéNement');
+  });
+
+  it('capitalises a German name the rail used to leave lower case', () => {
+    expect(named('über montag')).toContain('Über Montag');
+  });
+
+  it('still shouts the variant acronym beside a non-ASCII word', () => {
+    /* formatGameTitle runs first and only uppercases known variants; every
+       other token passes through untouched, which is what keeps it safe. */
+    const line = named('über montag nlh');
+    expect(line).toContain('NLH');
+    expect(line).toContain('Über Montag');
   });
 });

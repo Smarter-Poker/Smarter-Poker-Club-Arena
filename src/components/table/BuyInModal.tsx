@@ -25,6 +25,7 @@ import { useFitText } from '../lobby/game-cards/useFitText';
 import { moneyExact } from '../../utils/buyIn';
 import './BuyInModal.css';
 import { reportError } from '../../utils/errorReporter';
+import DiamondsToChipsButton from '../games/DiamondsToChipsButton';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -56,6 +57,12 @@ export interface BuyInModalProps {
   cashoutRestriction?: number;
   /** Takes the player to the cashier. Without it the "Top Up Account" button is not rendered. */
   onTopUp?: () => void;
+  /**
+   * The club whose host runs the Diamond Games (Dan 2026-09-10). Omitted, the
+   * diamonds-to-chips door is not offered.
+   */
+  diamondGamesClubId?: string | null;
+  onPlayDiamonds?: (path: string) => void;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -94,6 +101,8 @@ export function BuyInModal({
   countdown,
   cashoutRestriction,
   onTopUp,
+  diamondGamesClubId,
+  onPlayDiamonds,
   onRetryBalance,
 }: BuyInModalProps) {
   // State
@@ -421,6 +430,16 @@ export function BuyInModal({
                 </button>
               )}
             </div>
+            {!recovery && !hasEnoughBalance && balanceKnown && onPlayDiamonds && (
+              <div className="buy-in-modal__diamonds-door">
+                <DiamondsToChipsButton
+                  clubId={diamondGamesClubId}
+                  enabled={isOpen && !isProcessing}
+                  size="compact"
+                  onGo={onPlayDiamonds}
+                />
+              </div>
+            )}
           </div>
 
           {/* ── Deck: the four bays, the two plates, the chip ──────────── */}

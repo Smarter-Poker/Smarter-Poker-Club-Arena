@@ -1,3 +1,17 @@
+## 2026-09-14: Rake attribution retries survive current-source lock failures
+
+**Files:** scripts/ci/test-rake-attribution-alert.py, required accounting CI step, docs/changelog/2026-09-14-rake-alert-native-lock-regression.md.
+**What existed:** received deadlock alert6548 was repaired by a later attribution sweep. Published retry restoration had a 35-assertion native proof with injected SQLSTATEs but no required real two-session deadlock regression of the current Diamond-composed authority.
+**What changed:** execute the actual tracked preimage, guarded retry restoration and current insertion in an isolated PostgreSQL17 cluster. Real deadlock and timeout boundaries prove retry, one settlement credit, failed-attempt rollback, bounded exhaustion, permanent refusal, exact replay and service-only access. Financial callees are explicit local transaction recorders; accounting formulas and Diamond behavior remain outside this narrow fixture.
+**Verified:** current body matches production0e7baa1bfeb2a2d0fed749a52f32d520; historical24-chip settlement has all3players attributed. No production writes or new migration. Protected CI and publication remain separate.
+
+## 2026-09-14: Settled bounty replay precedes pending payment order
+
+**Files:** migration20260914122903; captured native replay fixture and runner; bounty recipient/order audit.
+**What existed:** fn_collect_bounty checked the PKO watermark before the exact settled receipt, rejecting retries of 1,129 currently complete receipts once later hands paid.
+**What changed:** moved the original pending-order block after exact settled-marker replay. No new payment, head, generation, lane, denomination or privilege behavior; metadata and body guards protect the replacement.
+**Verified:** 103 native assertions including 20 original rejection witnesses and five concurrent repaired retries; 664 engine accounting cases/38 files; server TypeScript/build pass. Applied once as history20260914123347; exact postimage/metadata verified12:34:09UTC. Original funding/provider, historical missing heads and cross-table causal order remain open. See docs/changelog/2026-09-14-settled-bounty-replay.md.
+
 ## 2026-09-14: Spin prize audits recognize matching posted correction funding
 
 **Files:** migration20260914120920; native spin-prize-overlay fixture/runner; required accounting CI step.

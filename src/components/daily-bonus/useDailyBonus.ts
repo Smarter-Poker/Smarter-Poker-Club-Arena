@@ -108,6 +108,7 @@ export function applyClaim(
     caps,
     shield,
     boost,
+    bonus_spins_held: (prev.bonus_spins_held ?? 0) + (granted.kind === 'free_spin' ? 1 : 0),
   };
 }
 

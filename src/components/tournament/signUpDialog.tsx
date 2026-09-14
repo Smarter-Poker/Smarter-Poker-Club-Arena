@@ -76,12 +76,14 @@
  *      the real gate.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { useInRouterContext, useNavigate } from 'react-router-dom';
 import './signUpDialog.css';
 import { WalletService } from '../../services/WalletService';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { formatBuyIn, money, totalBuyIn } from '../../utils/buyIn';
 import { reportError } from '../../utils/errorReporter';
+const DiamondsToChipsButton = lazy(() => import('../games/DiamondsToChipsButton'));
 
 export interface SignUpDialogOptions {
   /** Tournament name, shown as its own row. */
@@ -148,6 +150,48 @@ function formatStart(iso?: string | null): string {
     minute: '2-digit',
     second: '2-digit',
   });
+}
+
+/**
+ * The way out of an empty wallet, which needs the router to take it.
+ * SignUpHost itself must NOT ask for the router: it is mounted once at the app
+ * root and is rendered on its own by tests that have no Router around it, and
+ * useNavigate throws there. Asking for it here keeps that dependency inside the
+ * one branch that only ever renders inside the running app, and outside a
+ * router the door simply is not offered, because there is nowhere to go.
+ */
+function SignUpDiamondsDoor({
+  clubId,
+  onGo,
+}: {
+  clubId: string | null;
+  onGo: (path: string) => void;
+}) {
+  const inRouter = useInRouterContext();
+  if (!inRouter) return null;
+  return <SignUpDiamondsDoorRouted clubId={clubId} onGo={onGo} />;
+}
+
+function SignUpDiamondsDoorRouted({
+  clubId,
+  onGo,
+}: {
+  clubId: string | null;
+  onGo: (path: string) => void;
+}) {
+  const navigate = useNavigate();
+  return (
+    <Suspense fallback={null}>
+      <DiamondsToChipsButton
+        clubId={clubId}
+        size="compact"
+        onGo={(path) => {
+          onGo(path);
+          navigate(path);
+        }}
+      />
+    </Suspense>
+  );
 }
 
 /** Mount ONCE at the app root, beside ConfirmHost. */
@@ -432,6 +476,14 @@ export function SignUpHost() {
             <p className="signup-note signup-note--error" role="alert">
               Insufficient Balance. Please Add Chips Via Your Cashier.
             </p>
+          )}
+          {short && (
+            <SignUpDiamondsDoor
+              clubId={clubId}
+              onGo={() => {
+                settle(id, false);
+              }}
+            />
           )}
           {/* Only true for a scheduled event you are entering BEFORE the off.
               A late registration cannot be unregistered, and an SNG or Spin has

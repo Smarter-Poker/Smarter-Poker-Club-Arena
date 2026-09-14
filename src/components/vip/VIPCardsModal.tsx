@@ -17,6 +17,7 @@ import {
   loadFeaturePricing,
 } from '../../services/VIPService';
 import type { VipStatus } from '../../utils/vipStatus';
+import { SpadeConsole, type ConsoleInk } from '../console/SpadeConsole';
 import './VIPCardsModal.css';
 
 interface VIPInfoModalProps {
@@ -133,113 +134,143 @@ export function VIPCardsModal({ isOpen, onClose, vipStatus }: VIPInfoModalProps)
 
   if (!isOpen) return null;
 
+  const pill = isLifetime ? 'Lifetime' : isVIP ? 'Active' : 'Pay Per Use';
+  const pillInk: ConsoleInk = isLifetime ? 'gold' : 'blue';
+
+  /* ONE CONSOLE, ONE CREST (#ClubArenaConsole). The chassis is the spade
+     master wearing the VIP crest; every word on it is printed on the black
+     glass in the master's own inks. A member sees a page of content and one
+     way out, so the foot is the flat cap and CLOSE is a lit word. A
+     non-member sees a message and two actions, so the foot carries the two
+     painted plates: Close on steel, Join on the blue glass. */
   return (
     <div className="vip-modal-overlay" onClick={onClose}>
-      <div className="vip-modal" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="vip-modal__header">
-          <h2>{isLifetime ? 'Lifetime VIP' : 'VIP'}</h2>
-          <button
-            type="button"
-            className="vip-modal__close"
-            onClick={onClose}
-            aria-label="Close VIP Benefits"
-          >
-            ×
-          </button>
-        </div>
-
-        {/* Status */}
-        <div className="vip-modal__status-section">
+      <div
+        className="vipc"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="vip-modal-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <SpadeConsole
+          crest="vip"
+          eyebrow="Club Arena Membership"
+          title={isLifetime ? 'Lifetime VIP' : 'VIP'}
+          titleId="vip-modal-title"
+          pill={pill}
+          pillInk={pillInk}
+          foot="foot"
+          className="vipc__console"
+        >
+          {/* Status */}
           {isVIP ? (
-            <div className="vip-status-active">
-              <span className="vip-crown"></span>
-              <span>{isLifetime ? 'Lifetime Membership Active' : 'Membership Active'}</span>
-              <span className="vip-sub">
+            <div className="vipc__status">
+              <p className={`vipc__status-line sc-ink--${isLifetime ? 'gold' : 'blue'}`}>
+                {isLifetime ? 'Lifetime Membership Active' : 'Membership Active'}
+              </p>
+              <p className="sc-copy sc-copy--center">
                 {isLifetime
                   ? 'Unlimited Digital Club Arena Benefits Active'
                   : 'Included With Club Arena Membership'}
-              </span>
+              </p>
             </div>
           ) : (
-            <div className="vip-status-inactive">
-              <span> Pay Per Feature</span>
-              <span className="vip-sub">Or Join Club Arena For A Membership</span>
+            <div className="vipc__status">
+              <p className="vipc__status-line sc-ink--silver">Pay Per Feature</p>
+              <p className="sc-copy sc-copy--center">Or Join Club Arena For A Membership</p>
             </div>
           )}
-        </div>
 
-        {/* Features Table */}
-        <div className="vip-modal__features">
-          <table>
-            <thead>
-              <tr>
-                <th>Feature</th>
-                <th>VIP</th>
-                <th>Diamond Cost</th>
-              </tr>
-            </thead>
-            <tbody>
-              {FEATURES.map((feature, i) => {
-                const pricing = FEATURE_PRICING[feature.key as keyof typeof FEATURE_PRICING];
-                const vipFree = 'vipFree' in feature && feature.vipFree;
-                const vipValue = 'vipValue' in feature ? feature.vipValue : null;
-                const lifetimeValue = feature.lifetimeValue;
-                /**
-                 * A price is a promise. Print one only for something the server
-                 * has a price row for; otherwise say so. `auto_time_bank` was
-                 * advertised at 5 diamonds while fn_purchase_feature answered
-                 * "unknown feature" for it, so the row quoted a charge that
-                 * could never be made.
-                 */
-                const sellable = isPurchasable(feature.key);
-                return (
-                  <tr
-                    key={feature.key}
-                    style={{
-                      opacity: visibleItems.has(i) ? 1 : 0,
-                      transform: visibleItems.has(i) ? 'translateY(0)' : 'translateY(8px)',
-                      transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                    }}
+          {/* Features: rows on the glass, an engraved rule between each. */}
+          <div className="vipc__table" role="table" aria-label="VIP Features">
+            <div className="vipc__row vipc__row--head" role="row">
+              <span className="sc-label sc-ink--blue" role="columnheader">
+                Feature
+              </span>
+              <span className="sc-label sc-ink--blue vipc__cell--end" role="columnheader">
+                VIP
+              </span>
+              <span className="sc-label sc-ink--blue vipc__cell--end" role="columnheader">
+                Diamond Cost
+              </span>
+            </div>
+            {FEATURES.map((feature, i) => {
+              const pricing = FEATURE_PRICING[feature.key as keyof typeof FEATURE_PRICING];
+              const vipFree = 'vipFree' in feature && feature.vipFree;
+              const vipValue = 'vipValue' in feature ? feature.vipValue : null;
+              const lifetimeValue = feature.lifetimeValue;
+              /**
+               * A price is a promise. Print one only for something the server
+               * has a price row for; otherwise say so. `auto_time_bank` was
+               * advertised at 5 diamonds while fn_purchase_feature answered
+               * "unknown feature" for it, so the row quoted a charge that
+               * could never be made.
+               */
+              const sellable = isPurchasable(feature.key);
+              return (
+                <div
+                  key={feature.key}
+                  role="row"
+                  className="vipc__row"
+                  style={{
+                    opacity: visibleItems.has(i) ? 1 : 0,
+                    transform: visibleItems.has(i) ? 'translateY(0)' : 'translateY(8px)',
+                    transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                  }}
+                >
+                  <span className="vipc__feature sc-ink--silver" role="cell">
+                    {feature.label}
+                  </span>
+                  <span
+                    className={`vipc__value vipc__cell--end ${isLifetime ? 'sc-ink--gold' : 'sc-ink--blue'}`}
+                    role="cell"
                   >
-                    <td className="feature-name">{feature.label}</td>
-                    <td className="feature-vip">
-                      {isLifetime ? lifetimeValue : vipFree ? 'Free' : vipValue || ''}
-                    </td>
-                    <td className="feature-cost" data-pricing-revision={pricingRevision}>
-                      {!pricing
-                        ? '-'
-                        : !sellable
-                          ? 'Not For Sale'
-                          : `${pricing.cost.toLocaleString()} / ${pricing.usageType
-                              .split('_')
-                              .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-                              .join(' ')}`}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {isLifetime && (
-          <section className="vip-modal__status-section" aria-label="Lifetime Digital Collection">
-            <strong>Lifetime Digital Collection</strong>
-            <span>All Cataloged Table Skins And Backgrounds</span>
-            <span>All Cataloged Card Backs And Dealer Buttons</span>
-            <span>All VIP Avatars, Frames, And Auras</span>
-          </section>
-        )}
-
-        {/* CTA */}
-        {!isVIP && (
-          <div className="vip-modal__cta">
-            <a href="/hub/vip-membership" className="vip-upgrade-btn">
-              Join Club Arena For A Membership
-            </a>
+                    {isLifetime ? lifetimeValue : vipFree ? 'Free' : vipValue || ''}
+                  </span>
+                  <span
+                    className="vipc__value vipc__cell--end sc-ink--muted"
+                    role="cell"
+                    data-pricing-revision={pricingRevision}
+                  >
+                    {!pricing
+                      ? '-'
+                      : !sellable
+                        ? 'Not For Sale'
+                        : `${pricing.cost.toLocaleString()} / ${pricing.usageType
+                            .split('_')
+                            .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+                            .join(' ')}`}
+                  </span>
+                </div>
+              );
+            })}
           </div>
-        )}
+
+          {isLifetime && (
+            <section className="vipc__collection" aria-label="Lifetime Digital Collection">
+              <strong className="sc-label sc-ink--gold">Lifetime Digital Collection</strong>
+              <span className="sc-copy">All Cataloged Table Skins And Backgrounds</span>
+              <span className="sc-copy">All Cataloged Card Backs And Dealer Buttons</span>
+              <span className="sc-copy">All VIP Avatars, Frames, And Auras</span>
+            </section>
+          )}
+
+          <div className="vipc__actions">
+            <button
+              type="button"
+              className="vipc-word sc-ink--silver"
+              onClick={onClose}
+              aria-label="Close VIP Benefits"
+            >
+              Close
+            </button>
+            {!isVIP && (
+              <a href="/hub/vip-membership" className="vipc-word sc-ink--white">
+                Join Club Arena For A Membership
+              </a>
+            )}
+          </div>
+        </SpadeConsole>
       </div>
     </div>
   );

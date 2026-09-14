@@ -50,7 +50,20 @@ const WRITER = 'server/src/services/supabase/bbj.ts';
 
 /** The reason strings the engine can write, read from the engine itself. */
 function enginesReasons(): string[] {
-  const src = read(ENGINE_RULES);
+  /* COMMENTS STRIPPED FIRST, and that is not tidiness. This scanned the raw
+     file, so the comment explaining why `mini_loser_below_bar` had been
+     DELETED - which quotes `reason: 'mini_loser_below_bar'` in order to
+     explain it - was counted as a live gate. The law then demanded a label for
+     a reason nothing could emit, the panel grew one, and both halves agreed
+     about a gate that did not exist. It was green for the wrong reason from
+     the day it was written, and I only found it by reading my own diff and
+     noticing the expected list already held a value I had not added.
+
+     Same lesson as the mini-surface law: a check that reads prose as code
+     reports on prose. */
+  const src = read(ENGINE_RULES)
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
   const out = new Set<string>();
   for (const m of src.matchAll(/reason:\s*'([a-z0-9_]+)'/g)) {
     const r = m[1];
@@ -209,6 +222,25 @@ describe('the near-miss log has a reader', () => {
     const title = /bbj-admin__misses-title">([^<]+)</.exec(head)?.[1] ?? '';
     expect(title).toBeTruthy();
     expect(title).not.toMatch(/has not paid|hasn't paid|not paying|overdue/i);
+  });
+
+  it('every refusal the mini payout can return has a label', () => {
+    /* A `mini_refused:<reason>` row is the one entry on this panel that is an
+       incident - a hand that cleared the bar and was turned away. Rendering
+       its reason as raw snake_case puts `no_mini_amount_for_tier` in front of
+       an operator on the row that matters most. These five are the complete
+       set fn_bbj_mini_payout can return, read from the live function on
+       2026-09-12; a sixth added there without a label here fails this. */
+    const panel = read(PANEL);
+    for (const reason of [
+      'reserve_at_floor',
+      'mini_disabled_for_club',
+      'mini_disabled_for_tier',
+      'no_mini_amount_for_tier',
+      'pool_not_found',
+    ]) {
+      expect(panel, `${reason} needs a label`).toMatch(new RegExp(`\\b${reason}:\\s*'`));
+    }
   });
 
   it('the fiction in the creating migration is not a source of labels', () => {

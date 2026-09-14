@@ -857,6 +857,7 @@ export abstract class ServerTableEngineBase {
       (this.engineLeaseTournamentId ?? '').toLowerCase() !==
         (authority.scope === 'tournament' ? authority.tournamentId : '').toLowerCase() ||
       this.engineLeaseAuthorityExpired ||
+      !this.hasCurrentEngineLeaseAuthority() ||
       !Number.isFinite(authority.proofDeadlineMonotonicMs) ||
       leaseMonotonicNow() >= authority.proofDeadlineMonotonicMs
     ) {

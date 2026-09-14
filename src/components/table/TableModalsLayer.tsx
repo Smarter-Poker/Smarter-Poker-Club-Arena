@@ -197,6 +197,15 @@ export interface TableModalsLayerProps {
   onCloseWaitList: () => void;
   /** Sends the player to the cashier from a buy-in they cannot afford. */
   onTopUpAccount?: () => void;
+  /**
+   * The club whose host runs the Diamond Games (Dan 2026-09-10: "when a player
+   * is out of chips or doesn't have enough to rebuy into a tournament or rebuy
+   * into a cash game, they be prompted to play diamonds to chips"). The club
+   * the player entered through, never the union: they are a member of that one.
+   */
+  diamondGamesClubId?: string | null;
+  /** Leave for the games. TablePage decides what leaving a table means. */
+  onPlayDiamonds?: (path: string) => void;
   /** Surfaced when leaving the wait list is refused — the player is still queued. */
   onWaitListError?: (message: string) => void;
 
@@ -560,6 +569,8 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     onCloseWaitList,
     onWaitListError,
     onTopUpAccount,
+    diamondGamesClubId,
+    onPlayDiamonds,
     // Insurance
     showInsurance,
     insuranceOffer,
@@ -1147,6 +1158,8 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         bigBlind={safeBB(blinds)}
         countdown={undefined}
         onTopUp={onTopUpAccount}
+        diamondGamesClubId={diamondGamesClubId}
+        onPlayDiamonds={onPlayDiamonds}
       />
 
       {/* Buy-In Modal */}
@@ -1171,6 +1184,8 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         cashoutRestriction={
           arenaAsset === 'chips' && cashoutMinBuyIn > 0 ? cashoutMinBuyIn : undefined
         }
+        diamondGamesClubId={diamondGamesClubId}
+        onPlayDiamonds={onPlayDiamonds}
         countdown={buyInSecondsLeft ?? undefined}
         onTopUp={onTopUpAccount}
       />
@@ -1294,6 +1309,8 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
           timeRemaining={addOnPeriod.timeRemaining}
           onAccept={onAddOnAccept}
           onDecline={onAddOnDecline}
+          diamondGamesClubId={diamondGamesClubId}
+          onPlayDiamonds={onPlayDiamonds}
         />
       )}
 
@@ -1308,6 +1325,8 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
           onConfirm={onConfirmRebuy}
           onClose={onCloseRebuyModal}
           isProcessing={rebuyProcessing}
+          diamondGamesClubId={diamondGamesClubId}
+          onPlayDiamonds={onPlayDiamonds}
         />
       )}
 

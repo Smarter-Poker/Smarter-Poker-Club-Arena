@@ -38,6 +38,7 @@ import {
 } from './CardImage';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../common/Toast';
+import { SpadeConsole } from '../console/SpadeConsole';
 import './ControlThemeTokens.css';
 import './ThemeSettingsModal.css';
 import { reportError } from '../../utils/errorReporter';
@@ -780,7 +781,10 @@ export function ThemeSettingsModal({
           'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]'
         ) || []
       );
-    focusable()[0]?.focus();
+    // The purchase prompt's Buy plate is painted second (the steel Cancel
+    // plate comes first in the master) but it is what the player came for, so
+    // it takes first focus, exactly as the upgrade button did before.
+    (activeDialog?.querySelector<HTMLElement>('#theme-purchase-buy') ?? focusable()[0])?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         if (purchaseBusyRef.current) return;
@@ -1903,6 +1907,40 @@ export function ThemeSettingsModal({
     setAssetSearch('');
   };
 
+  const gameTypeLabel = GAME_TYPE_LABELS[gameType] ?? gameType;
+  const linkWord =
+    saving || modeSaving
+      ? 'Applying...'
+      : appearanceRealtime.state === 'error'
+        ? 'Reconnect'
+        : studioSyncing
+          ? checkoutBalanceSyncing
+            ? 'Balance Sync'
+            : 'Linking...'
+          : studioNeedsAttention
+            ? 'Review Sync'
+            : 'Table Art Live';
+  const linkInk =
+    appearanceRealtime.state === 'error'
+      ? 'sc-ink--red'
+      : saving || modeSaving || studioSyncing
+        ? 'sc-ink--blue'
+        : studioNeedsAttention
+          ? 'sc-ink--gold'
+          : 'sc-ink--green';
+
+  /* ONE CONSOLE (#ClubArenaConsole, 2026-09-13). The studio is Dan's spade
+     master: the title in the header well, the game type it applies to in the
+     painted pill slot, and everything else printed on the black glass between
+     the rails - the link status, the game-type select, the interface mode and
+     preview switch as lit words, the live gameplay preview, the selection
+     ledger as label/value rows, the five tabs as lit words, the catalog tiles
+     (still the real artwork - Dan 2026-08-18) with their names as lit words,
+     the three saved looks as rows, and the two painted plates in the foot:
+     Restore Defaults on steel, Done on the blue glass. Every handler, guard,
+     timer, subscription and pinned literal above is exactly as it was; only
+     the picture changed. The purchase prompt is a second, smaller console
+     under the diamond crest. */
   return (
     <div
       className="theme-modal-overlay"
@@ -1918,433 +1956,493 @@ export function ThemeSettingsModal({
         aria-labelledby="theme-studio-title"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="theme-modal__header">
-          <div>
-            <span className="theme-modal__eyebrow">PLAYER TABLE STUDIO</span>
-            <h3 id="theme-studio-title" className="theme-modal__title">
-              Make The Table Yours
-            </h3>
-          </div>
-          <button
-            className="theme-modal__close"
-            onClick={() => {
-              if (!purchaseBusyRef.current) onClose();
-            }}
-            disabled={purchaseBusy}
-            aria-label="Close Table Studio"
-          >
-            ×
-          </button>
-        </div>
-
-        <div className="theme-modal__studio-bar">
-          <div className="theme-modal__game-type">
-            <label className="theme-modal__game-label" htmlFor="theme-game-type">
-              Apply To
-            </label>
-            <select
-              id="theme-game-type"
-              className="theme-modal__game-select"
-              value={gameType}
-              onChange={(e) => {
-                gameTypeRef.current = e.target.value;
-                setGameType(e.target.value);
+        <SpadeConsole
+          eyebrow="Player Table Studio"
+          title="Make The Table Yours"
+          titleId="theme-studio-title"
+          pill={gameTypeLabel}
+          pillInk="blue"
+          plates={{
+            secondary: {
+              label: 'Restore Defaults',
+              ink: 'silver',
+              onClick: handleReset,
+              disabled: themeLoadState !== 'ready' || purchaseBusy,
+            },
+            primary: {
+              /* Every tile auto-saves through the ordered writer. Done closes
+                 the studio; it must not launch a redundant full-row write that
+                 can race the final tap the player just made. */
+              label: saving || modeSaving ? 'Saving...' : 'Done',
+              ink: 'white',
+              onClick: () => {
+                if (!purchaseBusyRef.current) onClose();
+              },
+              disabled: saving || modeSaving || purchaseBusy,
+            },
+          }}
+          className="tsc__console"
+        >
+          {/* Header row on the glass: the close word first in the DOM (focus
+              lands on it when the studio opens, as it did on the X), the
+              table-art link beside it. */}
+          <div className="tsc__toprow">
+            <button
+              type="button"
+              className="theme-modal__close tsc-word sc-ink--muted"
+              onClick={() => {
+                if (!purchaseBusyRef.current) onClose();
               }}
+              disabled={purchaseBusy}
+              aria-label="Close Table Studio"
             >
-              {GAME_TYPES.map((gt) => (
-                <option key={gt} value={gt}>
-                  {GAME_TYPE_LABELS[gt] ?? gt}
-                </option>
-              ))}
-            </select>
+              Close
+            </button>
+            <div
+              className={`theme-modal__live-link theme-modal__live-link--${appearanceRealtime.state} ${studioNeedsAttention ? 'theme-modal__live-link--attention' : ''}`}
+              aria-live="polite"
+            >
+              <small className="tsc__label sc-ink--blue">Table Art Link</small>
+              <strong className={`tsc__linkword ${linkInk}`}>{linkWord}</strong>
+              {appearanceRealtime.state === 'error' && (
+                <button
+                  type="button"
+                  className="tsc-word tsc-word--small sc-ink--white"
+                  onClick={appearanceRealtime.retry}
+                >
+                  Retry
+                </button>
+              )}
+            </div>
           </div>
-          <div
-            className={`theme-modal__live-link theme-modal__live-link--${appearanceRealtime.state} ${studioNeedsAttention ? 'theme-modal__live-link--attention' : ''}`}
-            aria-live="polite"
-          >
-            <span className="theme-modal__live-signal" aria-hidden="true">
-              <i />
-              <i />
-              <i />
-            </span>
-            <span className="theme-modal__live-copy">
-              <small>Table Art Link</small>
-              <strong>
-                {saving || modeSaving
-                  ? 'Applying...'
-                  : appearanceRealtime.state === 'error'
-                    ? 'Reconnect'
-                    : studioSyncing
-                      ? checkoutBalanceSyncing
-                        ? 'Balance Sync'
-                        : 'Linking...'
-                      : studioNeedsAttention
-                        ? 'Review Sync'
-                        : 'Table Art Live'}
-              </strong>
-            </span>
-            {appearanceRealtime.state === 'error' && (
-              <button type="button" onClick={appearanceRealtime.retry}>
-                Retry
-              </button>
-            )}
-          </div>
-        </div>
 
-        <div className="theme-modal__workspace">
-          <aside className="theme-modal__visual-rail" aria-label="Live Table Design Preview">
-            <fieldset className="theme-modal__mode" aria-label="Club Arena Appearance Mode">
-              <legend>Interface</legend>
-              <div className="theme-modal__mode-options">
-                {(['light', 'dark'] as const).map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    className={`theme-modal__mode-option ${uiMode === mode ? 'theme-modal__mode-option--active' : ''}`}
-                    aria-pressed={uiMode === mode}
-                    disabled={modeSaving}
-                    onClick={() => void handleUiModeChange(mode)}
-                  >
-                    <span
-                      className={`theme-modal__mode-icon theme-modal__mode-icon--${mode}`}
-                      aria-hidden="true"
-                    />
-                    {mode === 'light' ? 'Light' : 'Dark'}
-                  </button>
-                ))}
+          <div className="tsc__workspace">
+            <aside className="tsc__rail" aria-label="Live Table Design Preview">
+              <div className="tsc__row">
+                <label className="tsc__label sc-ink--blue" htmlFor="theme-game-type">
+                  Apply To
+                </label>
+                <select
+                  id="theme-game-type"
+                  className="theme-modal__game-select"
+                  value={gameType}
+                  onChange={(e) => {
+                    gameTypeRef.current = e.target.value;
+                    setGameType(e.target.value);
+                  }}
+                >
+                  {GAME_TYPES.map((gt) => (
+                    <option key={gt} value={gt}>
+                      {GAME_TYPE_LABELS[gt] ?? gt}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <span className="theme-modal__mode-note">
+
+              <fieldset
+                className="theme-modal__mode tsc__row"
+                aria-label="Club Arena Appearance Mode"
+              >
+                <legend className="tsc__label sc-ink--blue">Interface</legend>
+                <div className="tsc__words">
+                  {(['light', 'dark'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      className={`theme-modal__mode-option tsc-word ${uiMode === mode ? 'sc-ink--white' : 'sc-ink--muted'}`}
+                      aria-pressed={uiMode === mode}
+                      disabled={modeSaving}
+                      onClick={() => void handleUiModeChange(mode)}
+                    >
+                      {mode === 'light' ? 'Light' : 'Dark'}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+              <span className="tsc__note">
                 Changes Menus And Controls. Your Table Design Stays Yours.
               </span>
-            </fieldset>
 
-            <div className="theme-modal__preview-shell">
-              <div className="theme-modal__preview-switch" aria-label="Preview Table State">
-                <button
-                  type="button"
-                  className={!previewFinalTable ? 'active' : ''}
-                  aria-pressed={!previewFinalTable}
-                  onClick={() => setPreviewFinalTable(false)}
-                >
-                  Standard
-                </button>
-                <button
-                  type="button"
-                  className={previewFinalTable ? 'active' : ''}
-                  aria-pressed={previewFinalTable}
-                  onClick={() => setPreviewFinalTable(true)}
-                >
-                  Final Table
-                </button>
+              <div className="tsc__row" role="group" aria-label="Preview Table State">
+                <span className="tsc__label sc-ink--blue">Preview</span>
+                <div className="tsc__words">
+                  <button
+                    type="button"
+                    className={`tsc-word ${!previewFinalTable ? 'sc-ink--white' : 'sc-ink--muted'}`}
+                    aria-pressed={!previewFinalTable}
+                    onClick={() => setPreviewFinalTable(false)}
+                  >
+                    Standard
+                  </button>
+                  <button
+                    type="button"
+                    className={`tsc-word ${previewFinalTable ? 'sc-ink--white' : 'sc-ink--muted'}`}
+                    aria-pressed={previewFinalTable}
+                    onClick={() => setPreviewFinalTable(true)}
+                  >
+                    Final Table
+                  </button>
+                </div>
               </div>
-              <div className="theme-modal__live-preview">
-                <TableStudioGameplayPreview
-                  selection={selection}
-                  avatarUrls={previewAvatars}
-                  finalTable={previewFinalTable}
-                />
+
+              <div className="theme-modal__preview-shell">
+                <div className="theme-modal__live-preview">
+                  <TableStudioGameplayPreview
+                    selection={selection}
+                    avatarUrls={previewAvatars}
+                    finalTable={previewFinalTable}
+                  />
+                </div>
                 <div className="theme-modal__live-caption">
-                  <span>{previewFinalTable ? 'AUTOMATIC MTT EVENT' : 'LIVE GAMEPLAY PREVIEW'}</span>
-                  <strong>
-                    {selectedCardName} · {GAME_TYPE_LABELS[gameType] ?? gameType}
+                  <span className="tsc__label sc-ink--blue">
+                    {previewFinalTable ? 'Automatic MTT Event' : 'Live Gameplay Preview'}
+                  </span>
+                  <strong className="tsc__caption sc-ink--silver">
+                    {selectedCardName} · {gameTypeLabel}
                   </strong>
                 </div>
               </div>
-            </div>
 
-            <div className="theme-modal__selection-ledger" aria-label="Current Table Configuration">
-              {[
-                ['Table', selectedTableName],
-                ['Background', selectedBackgroundName],
-                ['Buttons', selectedButtonName],
-                ['Card Back', selectedCardName],
-              ].map(([label, value]) => (
-                <div className="theme-modal__selection-item" key={label}>
-                  <span>{label}</span>
-                  <strong>{value}</strong>
-                </div>
-              ))}
-            </div>
-          </aside>
-
-          <section className="theme-modal__catalog" data-theme-tab={activeTab}>
-            {/* Tab Bar */}
-            <div
-              className="theme-modal__tabs"
-              role="tablist"
-              aria-label="Table Customization Categories"
-            >
-              {TABS.map((tab) => (
-                <button
-                  key={tab.key}
-                  id={`theme-tab-${tab.key}`}
-                  className={`theme-modal__tab ${activeTab === tab.key ? 'theme-modal__tab--active' : ''}`}
-                  onClick={() => activateTab(tab.key)}
-                  onKeyDown={(event) => {
-                    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-                    event.preventDefault();
-                    const current = TABS.findIndex((item) => item.key === tab.key);
-                    const next =
-                      event.key === 'Home'
-                        ? 0
-                        : event.key === 'End'
-                          ? TABS.length - 1
-                          : (current + (event.key === 'ArrowRight' ? 1 : -1) + TABS.length) %
-                            TABS.length;
-                    activateTab(TABS[next].key);
-                    document.getElementById(`theme-tab-${TABS[next].key}`)?.focus();
-                  }}
-                  role="tab"
-                  aria-selected={activeTab === tab.key}
-                  aria-controls="theme-studio-catalog-panel"
-                  tabIndex={activeTab === tab.key ? 0 : -1}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            <div
-              id="theme-studio-catalog-panel"
-              className="theme-modal__catalog-scroll"
-              role="tabpanel"
-              aria-labelledby={`theme-tab-${activeTab}`}
-            >
-              {activeTab === 'background' && (
-                <div className="theme-modal__background-groups" aria-label="Background Categories">
-                  {(
-                    [
-                      ['places-rooms', 'Places & Rooms'],
-                      ['skins', 'Skins'],
-                    ] as const
-                  ).map(([group, label]) => (
-                    <button
-                      key={group}
-                      type="button"
-                      className={`theme-modal__background-group ${backgroundGroup === group ? 'theme-modal__background-group--active' : ''}`}
-                      aria-pressed={backgroundGroup === group}
-                      onClick={() => setBackgroundGroup(group)}
-                    >
-                      {label}
-                      <span>
-                        {
-                          THEME_ASSETS.background.filter((asset) =>
-                            group === 'skins'
-                              ? BACKGROUND_SKIN_IDS.has(asset.id)
-                              : !BACKGROUND_SKIN_IDS.has(asset.id)
-                          ).length
-                        }
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <div className="theme-modal__discovery">
-                <label>
-                  <span className="sr-only">
-                    Search {TABS.find((tab) => tab.key === activeTab)?.label}
-                  </span>
-                  <input
-                    type="search"
-                    value={assetSearch}
-                    onChange={(event) => setAssetSearch(event.target.value)}
-                    placeholder={`Search ${TABS.find((tab) => tab.key === activeTab)?.label}`}
-                  />
-                </label>
-                <div className="theme-modal__filters" aria-label="Filter Customization Choices">
-                  {(['all', 'free', 'vip', 'favorites', 'recent'] as const).map((filter) => (
-                    <button
-                      type="button"
-                      key={filter}
-                      className={assetFilter === filter ? 'active' : ''}
-                      aria-pressed={assetFilter === filter}
-                      onClick={() => setAssetFilter(filter)}
-                    >
-                      {filter === 'all' ? 'All' : filter[0].toUpperCase() + filter.slice(1)}
-                    </button>
-                  ))}
-                </div>
+              <div className="tsc__ledger" aria-label="Current Table Configuration">
+                {[
+                  ['Table', selectedTableName],
+                  ['Background', selectedBackgroundName],
+                  ['Buttons', selectedButtonName],
+                  ['Card Back', selectedCardName],
+                ].map(([label, value]) => (
+                  <div className="tsc__row" key={label}>
+                    <span className="tsc__label sc-ink--blue">{label}</span>
+                    <strong className="tsc__value sc-ink--silver">{value}</strong>
+                  </div>
+                ))}
               </div>
+            </aside>
 
-              <div className="theme-modal__section-heading">
-                <div>
-                  <strong>{TABS.find((tab) => tab.key === activeTab)?.label}</strong>
-                  <span>{TAB_DESCRIPTIONS[activeTab]}</span>
-                </div>
-                <span className="theme-modal__count">{currentAssets.length} Choices</span>
-              </div>
-
-              {themeLoadState === 'loading' && (
-                <div className="theme-modal__state" role="status">
-                  <strong>Loading Your Saved Design</strong>
-                  <span>Choices Unlock When Your Current Table Is Ready.</span>
-                </div>
-              )}
-              {themeLoadState === 'error' && (
-                <div className="theme-modal__state theme-modal__state--error" role="alert">
-                  <div>
-                    <strong>Your Saved Design Could Not Be Loaded</strong>
-                    <span>Choices Stay Locked So An Older Design Is Not Overwritten.</span>
-                  </div>
-                  <button type="button" onClick={() => setThemeLoadRevision((value) => value + 1)}>
-                    Try Again
-                  </button>
-                </div>
-              )}
-              {!isVip && ownershipState === 'loading' && (
-                <div className="theme-modal__state" role="status">
-                  <strong>Checking Your Purchases And Rewards</strong>
-                  <span>Owned Designs Unlock As Soon As Entitlements Are Confirmed.</span>
-                </div>
-              )}
-              {!isVip && ownershipState === 'error' && (
-                <div className="theme-modal__state theme-modal__state--error" role="alert">
-                  <div>
-                    <strong>Purchases Could Not Be Verified</strong>
-                    <span>Premium Designs Stay Locked Until The Check Succeeds.</span>
-                  </div>
-                  <button type="button" onClick={() => setOwnershipRevision((value) => value + 1)}>
-                    Try Again
-                  </button>
-                </div>
-              )}
-              {pricingState === 'error' && (
-                <div className="theme-modal__state theme-modal__state--error" role="alert">
-                  <div>
-                    <strong>Purchase Prices Could Not Be Loaded</strong>
-                    <span>Owned And Free Designs Still Work. Paid Designs Stay Unavailable.</span>
-                  </div>
-                  <button type="button" onClick={() => setPricingRevision((value) => value + 1)}>
-                    Try Again
-                  </button>
-                </div>
-              )}
-              {userId && entitlementRealtimeState === 'error' && (
-                <div className="theme-modal__state theme-modal__state--error" role="alert">
-                  <div>
-                    <strong>Live Unlock Updates Are Disconnected</strong>
-                    <span>
-                      Your Purchases Stay Safe. Reconnect To Receive Other-Device Unlocks.
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOwnershipRevision((value) => value + 1);
-                      setEntitlementRealtimeRevision((value) => value + 1);
-                    }}
-                  >
-                    Reconnect
-                  </button>
-                </div>
-              )}
-
-              {/* Asset Grid */}
+            <section className="tsc__catalog" data-theme-tab={activeTab}>
+              {/* Tab Bar */}
               <div
-                className={`theme-modal__grid${themeLoadState !== 'ready' ? ' theme-modal__grid--loading' : ''}`}
-                aria-busy={
-                  themeLoadState === 'loading' ||
-                  ownershipState === 'idle' ||
-                  ownershipState === 'loading' ||
-                  pricingState === 'loading'
-                }
+                className="theme-modal__tabs"
+                role="tablist"
+                aria-label="Table Customization Categories"
               >
-                {currentAssets.length === 0 && (
-                  <div className="theme-modal__empty">
-                    <strong>No Matching Designs</strong>
-                    <span>Try Another Search Or Filter.</span>
+                {TABS.map((tab) => (
+                  <button
+                    key={tab.key}
+                    id={`theme-tab-${tab.key}`}
+                    className={`theme-modal__tab ${activeTab === tab.key ? 'theme-modal__tab--active sc-ink--white' : 'sc-ink--muted'}`}
+                    onClick={() => activateTab(tab.key)}
+                    onKeyDown={(event) => {
+                      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+                      event.preventDefault();
+                      const current = TABS.findIndex((item) => item.key === tab.key);
+                      const next =
+                        event.key === 'Home'
+                          ? 0
+                          : event.key === 'End'
+                            ? TABS.length - 1
+                            : (current + (event.key === 'ArrowRight' ? 1 : -1) + TABS.length) %
+                              TABS.length;
+                      activateTab(TABS[next].key);
+                      document.getElementById(`theme-tab-${TABS[next].key}`)?.focus();
+                    }}
+                    role="tab"
+                    aria-selected={activeTab === tab.key}
+                    aria-controls="theme-studio-catalog-panel"
+                    tabIndex={activeTab === tab.key ? 0 : -1}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              <div
+                id="theme-studio-catalog-panel"
+                className="tsc__panel"
+                role="tabpanel"
+                aria-labelledby={`theme-tab-${activeTab}`}
+              >
+                {activeTab === 'background' && (
+                  <div className="tsc__row tsc__row--groups" aria-label="Background Categories">
+                    {(
+                      [
+                        ['places-rooms', 'Places & Rooms'],
+                        ['skins', 'Skins'],
+                      ] as const
+                    ).map(([group, label]) => (
+                      <button
+                        key={group}
+                        type="button"
+                        className={`tsc-word tsc-word--group ${backgroundGroup === group ? 'sc-ink--white' : 'sc-ink--muted'}`}
+                        aria-pressed={backgroundGroup === group}
+                        onClick={() => setBackgroundGroup(group)}
+                      >
+                        {label}
+                        <span className="tsc__count sc-ink--blue">
+                          {
+                            THEME_ASSETS.background.filter((asset) =>
+                              group === 'skins'
+                                ? BACKGROUND_SKIN_IDS.has(asset.id)
+                                : !BACKGROUND_SKIN_IDS.has(asset.id)
+                            ).length
+                          }
+                        </span>
+                      </button>
+                    ))}
                   </div>
                 )}
-                {currentAssets.map((asset) => {
-                  const isSelected = currentSelected === asset.id;
-                  const explicitKey = `${TAB_TO_FIELD[activeTab]}:${asset.id}`;
-                  const isExplicitlyOwned =
-                    ownedThemeAssets.includes(explicitKey) ||
-                    (activeTab === 'cards' &&
-                      isCardBackUnlocked(asset.id, { owned: ownedCardBacks }));
-                  const ownershipPending = asset.vipOnly && !isVip && ownershipState === 'loading';
-                  const ownershipUnavailable =
-                    asset.vipOnly && !isVip && ownershipState === 'error';
-                  const isLocked = !canAccessAsset(
-                    activeTab,
-                    asset.id,
-                    isVip,
-                    asset.vipOnly,
-                    ownedCardBacks,
-                    ownedThemeAssets
-                  );
-                  const assetStatus = isSelected
-                    ? 'Selected'
-                    : asset.vipOnly
-                      ? isExplicitlyOwned
-                        ? 'Owned'
-                        : isVip
-                          ? 'VIP Included'
-                          : 'Premium'
-                      : 'Included';
 
-                  return (
-                    <div className="theme-asset-wrap" key={asset.id}>
+                <div className="tsc__discovery">
+                  <label className="tsc__search">
+                    <span className="sr-only">
+                      Search {TABS.find((tab) => tab.key === activeTab)?.label}
+                    </span>
+                    <input
+                      type="search"
+                      className="theme-modal__search"
+                      value={assetSearch}
+                      onChange={(event) => setAssetSearch(event.target.value)}
+                      placeholder={`Search ${TABS.find((tab) => tab.key === activeTab)?.label}`}
+                    />
+                  </label>
+                  <div className="theme-modal__filters" aria-label="Filter Customization Choices">
+                    {(['all', 'free', 'vip', 'favorites', 'recent'] as const).map((filter) => (
                       <button
                         type="button"
-                        className={`theme-asset ${isSelected ? 'theme-asset--selected' : ''} ${isLocked ? 'theme-asset--locked' : ''}`}
-                        onClick={() => handleAssetSelect(activeTab, asset.id, asset.vipOnly)}
-                        disabled={
-                          themeLoadState !== 'ready' || ownershipPending || ownershipUnavailable
-                        }
-                        aria-pressed={isSelected}
-                        aria-label={`${asset.name}${ownershipPending ? ', Checking Ownership' : ownershipUnavailable ? ', Ownership Unavailable' : isLocked ? ', Purchase Or VIP Required' : ''}`}
+                        key={filter}
+                        className={`tsc-word tsc-word--small ${assetFilter === filter ? 'sc-ink--white' : 'sc-ink--muted'}`}
+                        aria-pressed={assetFilter === filter}
+                        onClick={() => setAssetFilter(filter)}
                       >
-                        <div className={`theme-asset__preview theme-asset__preview--${activeTab}`}>
-                          {/* ── Dan 2026-08-18: show the actual thing, not a colour ──
+                        {filter === 'all' ? 'All' : filter[0].toUpperCase() + filter.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="tsc__row tsc__row--heading">
+                  <div className="tsc__stack">
+                    <strong className="tsc__section-name sc-ink--silver">
+                      {TABS.find((tab) => tab.key === activeTab)?.label}
+                    </strong>
+                    <span className="tsc__note">{TAB_DESCRIPTIONS[activeTab]}</span>
+                  </div>
+                  <span className="tsc__count sc-ink--blue">{currentAssets.length} Choices</span>
+                </div>
+
+                {themeLoadState === 'loading' && (
+                  <div className="tsc__state" role="status">
+                    <strong className="tsc__state-title sc-ink--silver">
+                      Loading Your Saved Design
+                    </strong>
+                    <span className="tsc__note">
+                      Choices Unlock When Your Current Table Is Ready.
+                    </span>
+                  </div>
+                )}
+                {themeLoadState === 'error' && (
+                  <div className="tsc__state" role="alert">
+                    <div className="tsc__stack">
+                      <strong className="tsc__state-title sc-ink--red">
+                        Your Saved Design Could Not Be Loaded
+                      </strong>
+                      <span className="tsc__note">
+                        Choices Stay Locked So An Older Design Is Not Overwritten.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="tsc-word sc-ink--white"
+                      onClick={() => setThemeLoadRevision((value) => value + 1)}
+                    >
+                      Try Again
+                    </button>
+                  </div>
+                )}
+                {!isVip && ownershipState === 'loading' && (
+                  <div className="tsc__state" role="status">
+                    <strong className="tsc__state-title sc-ink--silver">
+                      Checking Your Purchases And Rewards
+                    </strong>
+                    <span className="tsc__note">
+                      Owned Designs Unlock As Soon As Entitlements Are Confirmed.
+                    </span>
+                  </div>
+                )}
+                {!isVip && ownershipState === 'error' && (
+                  <div className="tsc__state" role="alert">
+                    <div className="tsc__stack">
+                      <strong className="tsc__state-title sc-ink--red">
+                        Purchases Could Not Be Verified
+                      </strong>
+                      <span className="tsc__note">
+                        Premium Designs Stay Locked Until The Check Succeeds.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="tsc-word sc-ink--white"
+                      onClick={() => setOwnershipRevision((value) => value + 1)}
+                    >
+                      Try Again
+                    </button>
+                  </div>
+                )}
+                {pricingState === 'error' && (
+                  <div className="tsc__state" role="alert">
+                    <div className="tsc__stack">
+                      <strong className="tsc__state-title sc-ink--red">
+                        Purchase Prices Could Not Be Loaded
+                      </strong>
+                      <span className="tsc__note">
+                        Owned And Free Designs Still Work. Paid Designs Stay Unavailable.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="tsc-word sc-ink--white"
+                      onClick={() => setPricingRevision((value) => value + 1)}
+                    >
+                      Try Again
+                    </button>
+                  </div>
+                )}
+                {userId && entitlementRealtimeState === 'error' && (
+                  <div className="tsc__state" role="alert">
+                    <div className="tsc__stack">
+                      <strong className="tsc__state-title sc-ink--red">
+                        Live Unlock Updates Are Disconnected
+                      </strong>
+                      <span className="tsc__note">
+                        Your Purchases Stay Safe. Reconnect To Receive Other-Device Unlocks.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="tsc-word sc-ink--white"
+                      onClick={() => {
+                        setOwnershipRevision((value) => value + 1);
+                        setEntitlementRealtimeRevision((value) => value + 1);
+                      }}
+                    >
+                      Reconnect
+                    </button>
+                  </div>
+                )}
+
+                {/* Asset Grid */}
+                <div
+                  className={`theme-modal__grid${themeLoadState !== 'ready' ? ' theme-modal__grid--loading' : ''}`}
+                  aria-busy={
+                    themeLoadState === 'loading' ||
+                    ownershipState === 'idle' ||
+                    ownershipState === 'loading' ||
+                    pricingState === 'loading'
+                  }
+                >
+                  {currentAssets.length === 0 && (
+                    <div className="tsc__state tsc__state--empty">
+                      <strong className="tsc__state-title sc-ink--silver">
+                        No Matching Designs
+                      </strong>
+                      <span className="tsc__note">Try Another Search Or Filter.</span>
+                    </div>
+                  )}
+                  {currentAssets.map((asset) => {
+                    const isSelected = currentSelected === asset.id;
+                    const explicitKey = `${TAB_TO_FIELD[activeTab]}:${asset.id}`;
+                    const isExplicitlyOwned =
+                      ownedThemeAssets.includes(explicitKey) ||
+                      (activeTab === 'cards' &&
+                        isCardBackUnlocked(asset.id, { owned: ownedCardBacks }));
+                    const ownershipPending =
+                      asset.vipOnly && !isVip && ownershipState === 'loading';
+                    const ownershipUnavailable =
+                      asset.vipOnly && !isVip && ownershipState === 'error';
+                    const isLocked = !canAccessAsset(
+                      activeTab,
+                      asset.id,
+                      isVip,
+                      asset.vipOnly,
+                      ownedCardBacks,
+                      ownedThemeAssets
+                    );
+                    const assetStatus = isSelected
+                      ? 'Selected'
+                      : asset.vipOnly
+                        ? isExplicitlyOwned
+                          ? 'Owned'
+                          : isVip
+                            ? 'VIP Included'
+                            : 'Premium'
+                        : 'Included';
+                    const isFavorite = collections.favorites.includes(`${activeTab}:${asset.id}`);
+
+                    return (
+                      <div className="theme-asset-wrap" key={asset.id}>
+                        <button
+                          type="button"
+                          className={`theme-asset ${isSelected ? 'theme-asset--selected' : ''} ${isLocked ? 'theme-asset--locked' : ''}`}
+                          onClick={() => handleAssetSelect(activeTab, asset.id, asset.vipOnly)}
+                          disabled={
+                            themeLoadState !== 'ready' || ownershipPending || ownershipUnavailable
+                          }
+                          aria-pressed={isSelected}
+                          aria-label={`${asset.name}${ownershipPending ? ', Checking Ownership' : ownershipUnavailable ? ', Ownership Unavailable' : isLocked ? ', Purchase Or VIP Required' : ''}`}
+                        >
+                          <div
+                            className={`theme-asset__preview theme-asset__preview--${activeTab}`}
+                          >
+                            {/* ── Dan 2026-08-18: show the actual thing, not a colour ──
                       Every tab used to render `background: asset.thumbnail`,
                       a hand-written gradient that (in its own words)
                       "approximates each composite's palette" - so you picked a
                       table by looking at a colour smear. Each tab now renders
                       the real asset; the gradient survives only as a fallback
                       where no real asset exists for that id. */}
-                          {renderAssetPreview(activeTab, asset)}
-                          {ownershipPending || ownershipUnavailable ? (
-                            <div className="theme-asset__lock theme-asset__lock--checking">
-                              <span className="theme-asset__lock-icon">
-                                {ownershipPending ? 'Checking' : 'Unavailable'}
+                            {renderAssetPreview(activeTab, asset)}
+                            {ownershipPending || ownershipUnavailable ? (
+                              <div className="theme-asset__lock theme-asset__lock--checking">
+                                <span className="theme-asset__lock-icon sc-ink--muted">
+                                  {ownershipPending ? 'Checking' : 'Unavailable'}
+                                </span>
+                              </div>
+                            ) : isLocked ? (
+                              <div className="theme-asset__lock">
+                                <span className="theme-asset__lock-icon sc-ink--gold">
+                                  {pricingState === 'ready'
+                                    ? `${assetPrices[storefrontFeature(activeTab, asset.id)] ?? '-'} ◆`
+                                    : 'Unavailable'}
+                                </span>
+                              </div>
+                            ) : null}
+                            {isSelected && !isLocked && (
+                              <div className="theme-asset__check sc-ink--white">✓</div>
+                            )}
+                          </div>
+                          <span className="theme-asset__caption">
+                            <span
+                              className={`theme-asset__name ${isSelected ? 'sc-ink--white' : isLocked ? 'sc-ink--muted' : 'sc-ink--silver'}`}
+                            >
+                              {asset.name}
+                            </span>
+                            {!isLocked && !ownershipPending && !ownershipUnavailable && (
+                              <span
+                                className={`theme-asset__tier-badge${isSelected ? ' theme-asset__tier-badge--selected sc-ink--green' : ' sc-ink--blue'}`}
+                              >
+                                {assetStatus}
                               </span>
-                            </div>
-                          ) : isLocked ? (
-                            <div className="theme-asset__lock">
-                              <span className="theme-asset__lock-icon">
-                                {pricingState === 'ready'
-                                  ? `${assetPrices[storefrontFeature(activeTab, asset.id)] ?? '-'} ◆`
-                                  : 'Unavailable'}
-                              </span>
-                            </div>
-                          ) : null}
-                          {isSelected && !isLocked && <div className="theme-asset__check">✓</div>}
-                        </div>
-                        <span className="theme-asset__name">{asset.name}</span>
-                        {!isLocked && !ownershipPending && !ownershipUnavailable && (
-                          <span
-                            className={`theme-asset__tier-badge${isSelected ? ' theme-asset__tier-badge--selected' : ''}`}
-                          >
-                            {assetStatus}
+                            )}
                           </span>
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        className={`theme-asset__favorite ${collections.favorites.includes(`${activeTab}:${asset.id}`) ? 'active' : ''}`}
-                        aria-label={`${collections.favorites.includes(`${activeTab}:${asset.id}`) ? 'Remove' : 'Add'} ${asset.name} ${collections.favorites.includes(`${activeTab}:${asset.id}`) ? 'From' : 'To'} Favorites`}
-                        aria-pressed={collections.favorites.includes(`${activeTab}:${asset.id}`)}
-                        title={
-                          collections.favorites.includes(`${activeTab}:${asset.id}`)
-                            ? 'Remove From Favorites'
-                            : 'Add To Favorites'
-                        }
-                        onClick={() => toggleFavorite(activeTab, asset.id)}
-                      >
-                        {/* "Favorite", not "Save" (Dan 2026-08-28): "INSIDE THE THEME
+                        </button>
+                        <button
+                          type="button"
+                          className={`theme-asset__favorite ${isFavorite ? 'active sc-ink--gold' : 'sc-ink--muted'}`}
+                          aria-label={`${isFavorite ? 'Remove' : 'Add'} ${asset.name} ${isFavorite ? 'From' : 'To'} Favorites`}
+                          aria-pressed={isFavorite}
+                          title={isFavorite ? 'Remove From Favorites' : 'Add To Favorites'}
+                          onClick={() => toggleFavorite(activeTab, asset.id)}
+                        >
+                          {/* "Favorite", not "Save" (Dan 2026-08-28): "INSIDE THE THEME
                       SETTINGS YOU SHOULDN'T HAVE TO CLICK SAVE ON EACH ONE, IT
                       SHOULD AUTO SAVE WHEN YOU CLICK ON ONE AND THE CHECK MARK
                       APPEARS."
@@ -2365,167 +2463,171 @@ export function ThemeSettingsModal({
                       contradiction without touching a working save path. The
                       note under the grid already warns that favourites stay on
                       this device. */}
-                        <span aria-hidden="true">
-                          {collections.favorites.includes(`${activeTab}:${asset.id}`) ? '★' : '☆'}
-                        </span>
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <section className="theme-modal__loadouts" aria-labelledby="theme-loadout-title">
-                <div className="theme-modal__loadout-header">
-                  <div>
-                    <span>SAVED LOOKS</span>
-                    <strong id="theme-loadout-title">My Looks</strong>
-                    <small>Keep Three Complete Designs Ready To Deal.</small>
-                  </div>
-                  <button
-                    type="button"
-                    className="theme-modal__randomize"
-                    disabled={themeLoadState !== 'ready'}
-                    onClick={randomizeAccessibleLook}
-                  >
-                    Shuffle Look
-                  </button>
-                </div>
-
-                <div className="theme-modal__loadout-rack" role="list">
-                  {[0, 1, 2].map((slot) => {
-                    const stored = collections.loadouts[slot];
-                    const look = savedLoadouts[slot];
-                    const tableName = look
-                      ? TABLE_ASSETS.find((asset) => asset.id === look.table_id)?.name || 'Table'
-                      : '';
-                    const backgroundName = look
-                      ? BACKGROUND_ASSETS.find((asset) => asset.id === look.background_id)?.name ||
-                        'Room'
-                      : '';
-                    return (
-                      <div
-                        key={slot}
-                        role="listitem"
-                        className={`theme-modal__loadout${look ? '' : ' theme-modal__loadout--empty'}`}
-                      >
-                        <div className="theme-loadout__slotline">
-                          <span>LOOK {String(slot + 1).padStart(2, '0')}</span>
-                          <b>{look ? 'READY' : 'OPEN SLOT'}</b>
-                        </div>
-                        {look ? (
-                          <>
-                            {renderLoadoutPreview(look)}
-                            <label className="theme-loadout__name">
-                              <span className="sr-only">Name For Look {slot + 1}</span>
-                              <input
-                                key={`${slot}:${stored?.name || ''}`}
-                                defaultValue={stored?.name || `Look ${slot + 1}`}
-                                maxLength={32}
-                                onBlur={(event) => renameLoadout(slot, event.currentTarget.value)}
-                                onKeyDown={(event) => {
-                                  if (event.key === 'Enter') event.currentTarget.blur();
-                                }}
-                              />
-                            </label>
-                            <span className="theme-loadout__summary">
-                              {tableName} · {backgroundName}
-                            </span>
-                            {pendingLoadoutClear === slot ? (
-                              <div className="theme-loadout__confirm" role="alert">
-                                <span>Clear This Look?</span>
-                                <button type="button" onClick={() => setPendingLoadoutClear(null)}>
-                                  Keep
-                                </button>
-                                <button type="button" onClick={() => clearLoadout(slot)}>
-                                  Clear
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="theme-loadout__actions">
-                                <button
-                                  type="button"
-                                  className="theme-loadout__equip"
-                                  onClick={() => applyLoadout(slot)}
-                                  disabled={themeLoadState !== 'ready'}
-                                >
-                                  Equip
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => saveLoadout(slot)}
-                                  disabled={themeLoadState !== 'ready'}
-                                >
-                                  Update
-                                </button>
-                                <button type="button" onClick={() => setPendingLoadoutClear(slot)}>
-                                  Clear
-                                </button>
-                              </div>
-                            )}
-                          </>
-                        ) : (
-                          <button
-                            type="button"
-                            className="theme-loadout__empty-action"
-                            onClick={() => saveLoadout(slot)}
-                            disabled={themeLoadState !== 'ready'}
-                          >
-                            <span aria-hidden="true">+</span>
-                            <strong>Save Current Look</strong>
-                            <small>Table · Room · Buttons · Cards</small>
-                          </button>
-                        )}
+                          <span aria-hidden="true">{isFavorite ? '★' : '☆'}</span>
+                        </button>
                       </div>
                     );
                   })}
                 </div>
 
-                <div
-                  className={`theme-modal__loadout-sync theme-modal__loadout-sync--${collectionStatus}`}
-                  aria-live="polite"
-                >
-                  <span>
-                    {userId
-                      ? collectionNeedsAttention
-                        ? 'Cloud Sync Needs Attention. Your Looks Are Safe On This Device.'
-                        : collectionSyncing
-                          ? 'Syncing Favorites And Looks...'
-                          : 'Favorites And Looks Sync Across Your Devices.'
-                      : 'Sign In To Sync Favorites And Looks.'}
-                  </span>
-                  {userId && collectionNeedsAttention && (
-                    <button type="button" onClick={collections.retrySync}>
-                      Retry Sync
+                <section className="theme-modal__loadouts" aria-labelledby="theme-loadout-title">
+                  <div className="tsc__row tsc__row--heading">
+                    <div className="tsc__stack">
+                      <span className="tsc__label sc-ink--blue">Saved Looks</span>
+                      <strong id="theme-loadout-title" className="tsc__section-name sc-ink--silver">
+                        My Looks
+                      </strong>
+                      <small className="tsc__note">
+                        Keep Three Complete Designs Ready To Deal.
+                      </small>
+                    </div>
+                    <button
+                      type="button"
+                      className="tsc-word sc-ink--gold"
+                      disabled={themeLoadState !== 'ready'}
+                      onClick={randomizeAccessibleLook}
+                    >
+                      Shuffle Look
                     </button>
-                  )}
-                </div>
-              </section>
-            </div>
+                  </div>
 
-            {/* Footer */}
-            <div className="theme-modal__footer">
-              <button
-                className="theme-modal__btn theme-modal__btn--reset"
-                onClick={handleReset}
-                disabled={themeLoadState !== 'ready' || purchaseBusy}
-              >
-                Restore Defaults
-              </button>
-              <button
-                className="theme-modal__btn theme-modal__btn--save"
-                /* Every tile auto-saves through the ordered writer. Done closes
-               the studio; it must not launch a redundant full-row write that
-               can race the final tap the player just made. */
-                onClick={() => {
-                  if (!purchaseBusyRef.current) onClose();
-                }}
-                disabled={saving || modeSaving || purchaseBusy}
-              >
-                {saving || modeSaving ? 'Saving...' : 'Done'}
-              </button>
-            </div>
-          </section>
-        </div>
+                  <div className="theme-modal__loadout-rack" role="list">
+                    {[0, 1, 2].map((slot) => {
+                      const stored = collections.loadouts[slot];
+                      const look = savedLoadouts[slot];
+                      const tableName = look
+                        ? TABLE_ASSETS.find((asset) => asset.id === look.table_id)?.name || 'Table'
+                        : '';
+                      const backgroundName = look
+                        ? BACKGROUND_ASSETS.find((asset) => asset.id === look.background_id)
+                            ?.name || 'Room'
+                        : '';
+                      return (
+                        <div
+                          key={slot}
+                          role="listitem"
+                          className={`theme-modal__loadout${look ? '' : ' theme-modal__loadout--empty'}`}
+                        >
+                          <div className="tsc__row tsc__row--slotline">
+                            <span className="tsc__label sc-ink--blue">
+                              Look {String(slot + 1).padStart(2, '0')}
+                            </span>
+                            <b className={`tsc__count ${look ? 'sc-ink--green' : 'sc-ink--muted'}`}>
+                              {look ? 'Ready' : 'Open Slot'}
+                            </b>
+                          </div>
+                          {look ? (
+                            <>
+                              {renderLoadoutPreview(look)}
+                              <label className="theme-loadout__name">
+                                <span className="sr-only">Name For Look {slot + 1}</span>
+                                <input
+                                  key={`${slot}:${stored?.name || ''}`}
+                                  defaultValue={stored?.name || `Look ${slot + 1}`}
+                                  maxLength={32}
+                                  onBlur={(event) => renameLoadout(slot, event.currentTarget.value)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === 'Enter') event.currentTarget.blur();
+                                  }}
+                                />
+                              </label>
+                              <span className="tsc__note">
+                                {tableName} · {backgroundName}
+                              </span>
+                              {pendingLoadoutClear === slot ? (
+                                <div className="tsc__row tsc__row--actions" role="alert">
+                                  <span className="tsc__value sc-ink--gold">Clear This Look?</span>
+                                  <div className="tsc__words">
+                                    <button
+                                      type="button"
+                                      className="tsc-word tsc-word--small sc-ink--silver"
+                                      onClick={() => setPendingLoadoutClear(null)}
+                                    >
+                                      Keep
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="tsc-word tsc-word--small sc-ink--red"
+                                      onClick={() => clearLoadout(slot)}
+                                    >
+                                      Clear
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="tsc__row tsc__row--actions">
+                                  <button
+                                    type="button"
+                                    className="tsc-word tsc-word--small sc-ink--white"
+                                    onClick={() => applyLoadout(slot)}
+                                    disabled={themeLoadState !== 'ready'}
+                                  >
+                                    Equip
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="tsc-word tsc-word--small sc-ink--blue"
+                                    onClick={() => saveLoadout(slot)}
+                                    disabled={themeLoadState !== 'ready'}
+                                  >
+                                    Update
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="tsc-word tsc-word--small sc-ink--red"
+                                    onClick={() => setPendingLoadoutClear(slot)}
+                                  >
+                                    Clear
+                                  </button>
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              className="theme-loadout__empty-action"
+                              onClick={() => saveLoadout(slot)}
+                              disabled={themeLoadState !== 'ready'}
+                            >
+                              <strong className="tsc__value sc-ink--white">
+                                Save Current Look
+                              </strong>
+                              <small className="tsc__note">Table · Room · Buttons · Cards</small>
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div
+                    className={`tsc__row tsc__row--sync theme-modal__loadout-sync--${collectionStatus}`}
+                    aria-live="polite"
+                  >
+                    <span className="tsc__note">
+                      {userId
+                        ? collectionNeedsAttention
+                          ? 'Cloud Sync Needs Attention. Your Looks Are Safe On This Device.'
+                          : collectionSyncing
+                            ? 'Syncing Favorites And Looks...'
+                            : 'Favorites And Looks Sync Across Your Devices.'
+                        : 'Sign In To Sync Favorites And Looks.'}
+                    </span>
+                    {userId && collectionNeedsAttention && (
+                      <button
+                        type="button"
+                        className="tsc-word tsc-word--small sc-ink--white"
+                        onClick={collections.retrySync}
+                      >
+                        Retry Sync
+                      </button>
+                    )}
+                  </div>
+                </section>
+              </div>
+            </section>
+          </div>
+        </SpadeConsole>
 
         {pendingAssetPurchase && !diamondStoreOpen && (
           <div
@@ -2543,50 +2645,59 @@ export function ThemeSettingsModal({
               aria-describedby="theme-purchase-description"
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="theme-vip-prompt__icon" aria-hidden="true">
-                ◆
-              </div>
-              <h4 id="theme-purchase-title" className="theme-vip-prompt__title">
-                Unlock {pendingAssetPurchase.name}
-              </h4>
-              <p id="theme-purchase-description" className="theme-vip-prompt__text">
-                Purchase This Design For {pendingAssetPurchase.price.toLocaleString()} Diamonds. It
-                Will Unlock Permanently And Apply To The Live Table Immediately.
-              </p>
-              <div className="theme-purchase-balance" aria-live="polite">
-                <span>{checkoutBalanceSyncing ? 'Syncing Your Balance' : 'Your Balance'}</span>
-                <strong>{diamonds.toLocaleString()} ◆</strong>
-              </div>
-              <div className="theme-vip-prompt__actions">
-                <button
-                  type="button"
-                  className="theme-vip-prompt__btn theme-vip-prompt__btn--upgrade"
-                  disabled={purchaseBusy || checkoutBalanceSyncing}
-                  onClick={() => {
-                    if (diamonds < pendingAssetPurchase.price) {
-                      openDiamondStoreForPending();
-                      return;
-                    }
-                    void handleAssetPurchase();
-                  }}
-                >
-                  {purchaseBusy
-                    ? 'Processing...'
-                    : checkoutBalanceSyncing
-                      ? 'Syncing Diamond Balance...'
-                      : diamonds < pendingAssetPurchase.price
-                        ? `Add ${(pendingAssetPurchase.price - diamonds).toLocaleString()} Diamonds`
-                        : `Buy For ${pendingAssetPurchase.price.toLocaleString()} ◆`}
-                </button>
-                <button
-                  type="button"
-                  className="theme-vip-prompt__btn theme-vip-prompt__btn--cancel"
-                  disabled={purchaseBusy}
-                  onClick={cancelPendingAssetPurchase}
-                >
-                  Cancel
-                </button>
-              </div>
+              {/* A message and two actions: the console with the diamond
+                  crest. Focus lands on the Buy plate (#theme-purchase-buy), as
+                  it did on the upgrade button, even though the steel plate
+                  comes first in the DOM. */}
+              <SpadeConsole
+                eyebrow="Table Studio"
+                title={`Unlock ${pendingAssetPurchase.name}`}
+                titleId="theme-purchase-title"
+                crest="diamond"
+                pill={`${pendingAssetPurchase.price.toLocaleString()} ◆`}
+                pillInk="gold"
+                plates={{
+                  secondary: {
+                    label: 'Cancel',
+                    ink: 'silver',
+                    disabled: purchaseBusy,
+                    onClick: cancelPendingAssetPurchase,
+                  },
+                  primary: {
+                    label: purchaseBusy
+                      ? 'Processing...'
+                      : checkoutBalanceSyncing
+                        ? 'Syncing Diamond Balance...'
+                        : diamonds < pendingAssetPurchase.price
+                          ? `Add ${(pendingAssetPurchase.price - diamonds).toLocaleString()} Diamonds`
+                          : `Buy For ${pendingAssetPurchase.price.toLocaleString()} ◆`,
+                    ink: diamonds < pendingAssetPurchase.price ? 'gold' : 'white',
+                    disabled: purchaseBusy || checkoutBalanceSyncing,
+                    id: 'theme-purchase-buy',
+                    onClick: () => {
+                      if (diamonds < pendingAssetPurchase.price) {
+                        openDiamondStoreForPending();
+                        return;
+                      }
+                      void handleAssetPurchase();
+                    },
+                  },
+                }}
+                className="tsc__console"
+              >
+                <p id="theme-purchase-description" className="sc-copy tsc__copy">
+                  Purchase This Design For {pendingAssetPurchase.price.toLocaleString()} Diamonds.
+                  It Will Unlock Permanently And Apply To The Live Table Immediately.
+                </p>
+                <div className="tsc__row" aria-live="polite">
+                  <span className="tsc__label sc-ink--blue">
+                    {checkoutBalanceSyncing ? 'Syncing Your Balance' : 'Your Balance'}
+                  </span>
+                  <strong className="tsc__value sc-ink--silver">
+                    {diamonds.toLocaleString()} ◆
+                  </strong>
+                </div>
+              </SpadeConsole>
             </div>
           </div>
         )}

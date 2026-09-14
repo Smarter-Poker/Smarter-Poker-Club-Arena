@@ -10,6 +10,7 @@
     "fn_accounting_transfer_document_on_insert",
     "fn_deliver_accounting_invoice",
     "fn_invoice_accounting_ledger_transfer",
+    "fn_process_credit_invoice_payment",
     "fn_union_accounting_run_at"
   ],
   "tables": [
@@ -23,6 +24,11 @@
       "source_ledger_id",
       "source_credit_invoice_id",
       "source_credit_payment_id"
+    ],
+    "credit_payments": [
+      "operation_id",
+      "payer_user_id",
+      "payment_reference"
     ]
   }
 }

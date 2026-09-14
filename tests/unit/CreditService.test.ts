@@ -78,10 +78,50 @@ vi.mock('../../src/services/SettlementService', () => ({
 // ─── Import AFTER mocks ──────────────────────────────────────────────────
 
 import { CreditService } from '../../src/services/CreditService';
+import { supabase } from '../../src/lib/supabase';
 
 describe('CreditService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  describe('payment receipts', () => {
+    it('submits the preserved operation identity and returns only the confirmed amount', async () => {
+      vi.mocked(supabase.rpc).mockResolvedValueOnce({
+        data: {
+          ok: true,
+          amount: 12.34,
+          payment: { id: 'receipt', transaction_id: 'operation', created_at: '2026-09-14T09:00Z' },
+        },
+        error: null,
+      } as any);
+      const receipt = await CreditService.processPayment('invoice', 12.34, 'wallet', {
+        operationId: 'operation',
+      });
+      expect(supabase.rpc).toHaveBeenCalledWith('fn_process_credit_invoice_payment', {
+        p_invoice_id: 'invoice',
+        p_amount: 12.34,
+        p_method: 'wallet',
+        p_operation_id: 'operation',
+        p_reference: null,
+      });
+      expect(receipt).toMatchObject({ id: 'receipt', amount: 12.34, transactionId: 'operation' });
+    });
+    it('does not substitute the requested amount for an incomplete receipt', async () => {
+      vi.mocked(supabase.rpc).mockResolvedValueOnce({ data: { ok: true }, error: null } as any);
+      await expect(CreditService.processPayment('invoice', 12.34, 'wallet')).rejects.toThrow(
+        'receipt is incomplete'
+      );
+    });
+    it.each([NaN, Infinity, -1, 0, 1.001])(
+      'refuses an invalid payment amount %s before sending it',
+      async (amount) => {
+        await expect(CreditService.processPayment('invoice', amount, 'wallet')).rejects.toThrow(
+          'positive amount'
+        );
+        expect(supabase.rpc).not.toHaveBeenCalled();
+      }
+    );
   });
 
   // ─────────────────────────────────────────────────────────────────────────

@@ -159,6 +159,25 @@ const TX_TYPES: Record<string, { icon: string; label: string; color: string }> =
   diamond_reward: { icon: 'gem', label: 'Diamond Reward', color: '#22c55e' },
   diamond_refund: { icon: 'gem', label: 'Diamond Refund', color: '#94a3b8' },
 
+  /* ── ADDED 2026-09-13, read from the writers and the live ledger ──────────
+     THE DIAMOND ARENA IS DIAMONDS ONLY. A buy-in moves diamonds into custody
+     (fn_poker_diamond_buyin writes `arena_deposit`), a cash-out moves them
+     back (`arena_withdraw`). Neither is a chip and neither is labelled as one.
+     The rest are the highest-volume kinds of the last 30 days that had no
+     label and fell through to the humaniser (daily_challenge_claim alone is
+     55,183 of the 57,000 rows written in that window). */
+  arena_deposit: { icon: 'gem', label: 'Diamond Arena Buy-In', color: '#00d4ff' },
+  arena_withdraw: { icon: 'gem', label: 'Diamond Arena Cash-Out', color: '#22c55e' },
+  debt_settlement: { icon: 'settings', label: 'Owed Diamonds Settled', color: '#94a3b8' },
+  daily_challenge_claim: { icon: 'gem', label: 'Daily Challenge', color: '#22c55e' },
+  daily_challenge_reroll: { icon: 'refresh', label: 'Challenge Reroll', color: '#ef4444' },
+  daily_mission_milestone: { icon: 'gem', label: 'Mission Milestone', color: '#22c55e' },
+  plinko_drop: { icon: 'gem', label: 'Plinko Drop', color: '#ef4444' },
+  crash_bet: { icon: 'gem', label: 'Crash Bet', color: '#ef4444' },
+  wheel_spin: { icon: 'gem', label: 'Wheel Spin', color: '#ef4444' },
+  wheel_prize: { icon: 'gem', label: 'Wheel Prize', color: '#22c55e' },
+  transfer: { icon: 'gem', label: 'Transfer', color: '#94a3b8' },
+
   /* ── ADDED 2026-08-25, from the live `diamond_transactions` table ──────────
      Every type below occurs in production and had NO entry, so all of them fell
      through to the grey "Adjustment" fallback — the exact complaint this file's

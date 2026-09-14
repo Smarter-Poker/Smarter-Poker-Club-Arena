@@ -35,10 +35,9 @@
  * (MustMoveLobbyModal.css says what that is and what it is not yet).
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect } from 'react';
 import {
   cancelSeatChange,
-  fetchCashGameLobby,
   isMainOne,
   joinCashGame,
   joinGameRefusalText,
@@ -49,13 +48,13 @@ import {
   seatChangeOutcomeText,
   seatChangeRefusalText,
   waitlistedText,
-  type CashGameLobby,
   type LobbyTable,
 } from '../../services/cashGameLobby';
 import { formatChips } from '../../lib/utils';
 import { CASH_TEMPLATES } from '../../config/cashGames';
 import { useToast } from '../common/Toast';
-import { isGameGone, lobbyReadErrorText } from './mustMoveLobbyCopy';
+import { lobbyReadErrorText } from './mustMoveLobbyCopy';
+import { useCashGameLobby } from './useCashGameLobby';
 import './TournamentLobbyModal.css';
 import './MustMoveLobbyModal.css';
 
@@ -92,35 +91,14 @@ export function MustMoveLobbyModal({
   onGoToTable,
 }: MustMoveLobbyModalProps) {
   const toast = useToast();
-  const [lobby, setLobby] = useState<CashGameLobby | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const mountedRef = useRef(true);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
-
-  const load = useCallback(async () => {
-    if (!gameId) return;
-    try {
-      const data = await fetchCashGameLobby(gameId);
-      if (!mountedRef.current) return;
-      setLobby(data);
-      setError(null);
-    } catch (err) {
-      if (!mountedRef.current) return;
-      setError(lobbyReadErrorText(err));
-      /* A game that no longer exists has no tables, no list and no seat to
-         show; figures from its last read would be a lobby for a ghost. Any
-         other failure keeps the last read on screen under the notice - the
-         poll is still running and the next tick may answer. */
-      if (isGameGone(err)) setLobby(null);
-    }
-  }, [gameId]);
+  const {
+    lobby,
+    error: readError,
+    busy,
+    load,
+    beginAction,
+  } = useCashGameLobby(gameId, isOpen, MUST_MOVE_LOBBY_POLL_MS);
+  const error = readError ? lobbyReadErrorText(readError) : null;
 
   // Escape closes, same as every other overlay at the table.
   useEffect(() => {
@@ -132,14 +110,6 @@ export function MustMoveLobbyModal({
     return () => window.removeEventListener('keydown', onKey);
   }, [isOpen, onClose]);
 
-  // Read on open, then every tick while open. Nothing runs while closed.
-  useEffect(() => {
-    if (!isOpen || !gameId) return;
-    void load();
-    const id = window.setInterval(() => void load(), MUST_MOVE_LOBBY_POLL_MS);
-    return () => window.clearInterval(id);
-  }, [isOpen, gameId, load]);
-
   const tableById = new Map<string, LobbyTable>();
   for (const t of lobby?.tables ?? []) tableById.set(t.id, t);
   const labelFor = (id: string | null | undefined): string | null => {
@@ -149,32 +119,36 @@ export function MustMoveLobbyModal({
   };
 
   const request = async (toTableId: string | null) => {
-    if (!gameId || busy) return;
-    setBusy(true);
+    if (!gameId) return;
+    const action = beginAction();
+    if (!action) return;
     try {
       const r = await requestSeatChange(gameId, toTableId);
+      if (!action.isCurrent()) return;
       toast.success(
         seatChangeOutcomeText(r, labelFor(r.to_table_id) ?? (toTableId ? null : 'Any Table'))
       );
       await load();
     } catch (err) {
-      toast.warning(seatChangeRefusalText(err));
+      if (action.isCurrent()) toast.warning(seatChangeRefusalText(err));
     } finally {
-      if (mountedRef.current) setBusy(false);
+      action.finish();
     }
   };
 
   const cancel = async () => {
-    if (!gameId || busy) return;
-    setBusy(true);
+    if (!gameId) return;
+    const action = beginAction();
+    if (!action) return;
     try {
       const r = await cancelSeatChange(gameId);
+      if (!action.isCurrent()) return;
       toast.info(r.cancelled > 0 ? 'Seat Change Request Cancelled.' : 'Nothing To Cancel.');
       await load();
     } catch (err) {
-      toast.warning(seatChangeRefusalText(err));
+      if (action.isCurrent()) toast.warning(seatChangeRefusalText(err));
     } finally {
-      if (mountedRef.current) setBusy(false);
+      action.finish();
     }
   };
 
@@ -186,10 +160,12 @@ export function MustMoveLobbyModal({
    * belongs. The buy-in stays the table's own door once we arrive.
    */
   const join = async () => {
-    if (!gameId || busy) return;
-    setBusy(true);
+    if (!gameId) return;
+    const action = beginAction();
+    if (!action) return;
     try {
       const r = await joinCashGame(gameId);
+      if (!action.isCurrent()) return;
       if (r.action === 'waitlisted') {
         toast.info(waitlistedText(r));
         await load();
@@ -212,9 +188,9 @@ export function MustMoveLobbyModal({
         await load();
       }
     } catch (err) {
-      toast.warning(joinGameRefusalText(err));
+      if (action.isCurrent()) toast.warning(joinGameRefusalText(err));
     } finally {
-      if (mountedRef.current) setBusy(false);
+      action.finish();
     }
   };
 

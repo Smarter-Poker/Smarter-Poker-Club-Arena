@@ -1,0 +1,103 @@
+{
+  "observed_at": "2026-09-14T10:39:00Z",
+  "columns": [
+    {
+      "column_name": "is_mystery_bounty",
+      "data_type": "boolean",
+      "udt_name": "bool",
+      "is_nullable": "YES",
+      "column_default": "false",
+      "numeric_precision": null,
+      "numeric_scale": null
+    },
+    {
+      "column_name": "mystery_bounty_activation",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": "'at_the_money'::text",
+      "numeric_precision": null,
+      "numeric_scale": null
+    },
+    {
+      "column_name": "mystery_bounty_activation_value",
+      "data_type": "numeric",
+      "udt_name": "numeric",
+      "is_nullable": "YES",
+      "column_default": null,
+      "numeric_precision": null,
+      "numeric_scale": null
+    },
+    {
+      "column_name": "mystery_bounty_profile",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": "'classic'::text",
+      "numeric_precision": null,
+      "numeric_scale": null
+    },
+    {
+      "column_name": "mystery_bounty_top_percent",
+      "data_type": "numeric",
+      "udt_name": "numeric",
+      "is_nullable": "NO",
+      "column_default": "20",
+      "numeric_precision": null,
+      "numeric_scale": null
+    },
+    {
+      "column_name": "mystery_bounty_regular_pool_percent",
+      "data_type": "numeric",
+      "udt_name": "numeric",
+      "is_nullable": "NO",
+      "column_default": "50",
+      "numeric_precision": null,
+      "numeric_scale": null
+    },
+    {
+      "column_name": "mystery_bounty_pool_percent",
+      "data_type": "numeric",
+      "udt_name": "numeric",
+      "is_nullable": "NO",
+      "column_default": "50",
+      "numeric_precision": null,
+      "numeric_scale": null
+    },
+    {
+      "column_name": "mystery_bounty_stage",
+      "data_type": "text",
+      "udt_name": "text",
+      "is_nullable": "NO",
+      "column_default": "'pending'::text",
+      "numeric_precision": null,
+      "numeric_scale": null
+    }
+  ],
+  "checks": [
+    {
+      "conname": "tournaments_mystery_activation_chk",
+      "definition": "CHECK ((mystery_bounty_activation = ANY (ARRAY['at_the_money'::text, 'percent_field'::text, 'player_count'::text])))"
+    },
+    {
+      "conname": "tournaments_mystery_activation_generation_nonnegative",
+      "definition": "CHECK ((mystery_bounty_activation_generation >= 0))"
+    },
+    {
+      "conname": "tournaments_mystery_profile_chk",
+      "definition": "CHECK ((mystery_bounty_profile = ANY (ARRAY['balanced'::text, 'classic'::text, 'jackpot'::text])))"
+    },
+    {
+      "conname": "tournaments_mystery_stage_chk",
+      "definition": "CHECK ((mystery_bounty_stage = ANY (ARRAY['pending'::text, 'active'::text, 'complete'::text])))"
+    },
+    {
+      "conname": "tournaments_never_pko_and_mystery",
+      "definition": "CHECK ((NOT (COALESCE(is_pko, false) AND COALESCE(is_mystery_bounty, false))))"
+    },
+    {
+      "conname": "tournaments_no_pko_mystery_hybrid",
+      "definition": "CHECK ((NOT (COALESCE(is_pko, false) AND COALESCE(is_mystery_bounty, false))))"
+    }
+  ]
+}

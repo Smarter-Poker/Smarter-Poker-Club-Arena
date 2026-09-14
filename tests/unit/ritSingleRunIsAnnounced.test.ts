@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceMethod } from '../helpers/sourceWindow';
 
 /**
  * Dan 2026-08-23: "I just tried to run it twice, and it did not run a second
@@ -91,5 +92,28 @@ describe('a Run It Twice offer that ends in one board says so', () => {
       expect(m, m).not.toMatch(/—/);
       expect(m, m).not.toMatch(/\b(a|an|the|in|on|of|to)\b [a-z]/);
     }
+  });
+});
+
+describe('the expiry names the one seat that held things up (2026-09-13)', () => {
+  it('the host forwards a single silent player by id, and the collective line otherwise', () => {
+    /* BOUNDED BY THE METHOD (2026-09-14). This was `+ 1200`, and documenting
+       the forwarder pushed the very call this test exists for past the end of
+       the window - the test went red while the rule it guards was untouched.
+       A byte count fails the other way too, passing once the code it watched
+       slides out of view. `sliceMethod` grows with the method. */
+    const fn = sliceMethod(RUNOUT, 'protected wireRunItTwiceEvents(): void {');
+    expect(fn).toContain(
+      /* PIN MOVED 2026-09-14, not weakened. The seat-naming rule this test was
+         written for is intact; what changed is that it now composes with the
+         stale-timeout guard, so BOTH notices carry the hand they are about.
+         Naming the silent seat on the wrong hand would have been the same
+         defect wearing a friendlier sentence. */
+      "this.emitRitSingleRun('no_answer', silent[0] as string, declinedHand)"
+    );
+    expect(fn).toContain("else this.emitRitSingleRun('no_agreement', undefined, declinedHand);");
+    // and the stale-timeout guard stands in front of both
+    expect(fn).toMatch(/declinedHand !== this\.handCount\) return;/);
+    expect(RUNOUT).toContain("| 'no_answer'");
   });
 });

@@ -2680,6 +2680,20 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     let pendingRemainingLedger: HorseDecision['remainingVariantPolicy'];
     let pendingJointLedger: HorseDecision['jointPolicy'];
 
+    const retireUtility = (ledger: HorseDecision['tournamentUtility']): void => {
+      if (ledger?.executionStatus === 'pending') {
+        ledger.executedAction = null;
+        ledger.executedAmount = null;
+        ledger.executionStatus = 'not_executed';
+        noteFire('phase7_utility_not_executed');
+      }
+    };
+    const retirePostflop = (ledger: HorseDecision['tournamentPostflop']): void => {
+      if (ledger?.executionStatus === 'pending') {
+        ledger.executionStatus = 'not_executed';
+        noteFire('phase8_execution_not_executed');
+      }
+    };
     const retirePlo4 = (ledger: HorseDecision['plo4Policy']): void => {
       if (ledger?.executionStatus === 'pending') {
         ledger.executionStatus = 'not_executed';
@@ -2708,20 +2722,25 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       }
     };
     const markPendingUtilityNotExecuted = (): void => {
+      retireUtility(pendingUtilityLedger);
+      retirePostflop(pendingPostflopLedger);
       retirePlo4(pendingPlo4Ledger);
       retireOmaha(pendingOmahaLedger);
       retireRemaining(pendingRemainingLedger);
       retireJoint(pendingJointLedger);
-      if (pendingPostflopLedger?.executionStatus === 'pending') {
-        pendingPostflopLedger.executionStatus = 'not_executed';
-        noteFire('phase8_execution_not_executed');
-      }
-      if (!pendingUtilityLedger || pendingUtilityLedger.executionStatus !== 'pending') return;
-      pendingUtilityLedger.executedAction = null;
-      pendingUtilityLedger.executedAmount = null;
-      pendingUtilityLedger.executionStatus = 'not_executed';
-      noteFire('phase7_utility_not_executed');
     };
+    const retireDecision = (decision: HorseDecision): void => {
+      retireUtility(decision.tournamentUtility);
+      retirePostflop(decision.tournamentPostflop);
+      retirePlo4(decision.plo4Policy);
+      retireOmaha(decision.omahaVariantPolicy);
+      retireRemaining(decision.remainingVariantPolicy);
+      retireJoint(decision.jointPolicy);
+    };
+    // Cancellation clears the action timer, so no future fence check can
+    // retire an already-returned decision. The turn owns its receipts until
+    // cancellation or until the executor explicitly takes ownership below.
+    abortController.signal.addEventListener('abort', markPendingUtilityNotExecuted, { once: true });
 
     /* WHY the fence refused, not merely that it did.
        Six stages guard on this, and until 2026-09-11 every one of them
@@ -3211,14 +3230,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                   deepResult.fence !== fence ||
                   !fenceIsCurrent('deep_result')
                 ) {
-                  retirePlo4(deepResult.decision.plo4Policy);
-                  retireOmaha(deepResult.decision.omahaVariantPolicy);
-                  retireRemaining(deepResult.decision.remainingVariantPolicy);
-                  retireJoint(deepResult.decision.jointPolicy);
-                  if (deepResult.decision.tournamentPostflop?.executionStatus === 'pending') {
-                    deepResult.decision.tournamentPostflop.executionStatus = 'not_executed';
-                    noteFire('phase8_execution_not_executed');
-                  }
+                  retireDecision(deepResult.decision);
                   return;
                 }
                 const verdict = ServerTableEngineTurns.secondLookVerdict(
@@ -3227,14 +3239,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                 );
                 if (verdict) {
                   noteFire('v44_second_look_flipped');
-                  retirePlo4(pendingPlo4Ledger);
-                  retireOmaha(pendingOmahaLedger);
-                  retireRemaining(pendingRemainingLedger);
-                  retireJoint(pendingJointLedger);
-                  if (pendingPostflopLedger?.executionStatus === 'pending') {
-                    pendingPostflopLedger.executionStatus = 'not_executed';
-                    noteFire('phase8_execution_not_executed');
-                  }
+                  markPendingUtilityNotExecuted();
                   decision = {
                     // The deep replay owns the Phase 7 utility receipt too.
                     // Keeping the fast object while changing only its action
@@ -3252,14 +3257,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                   pendingRemainingLedger = decision.remainingVariantPolicy;
                   pendingJointLedger = decision.jointPolicy;
                 } else {
-                  retirePlo4(deepResult.decision.plo4Policy);
-                  retireOmaha(deepResult.decision.omahaVariantPolicy);
-                  retireRemaining(deepResult.decision.remainingVariantPolicy);
-                  retireJoint(deepResult.decision.jointPolicy);
-                  if (deepResult.decision.tournamentPostflop?.executionStatus === 'pending') {
-                    deepResult.decision.tournamentPostflop.executionStatus = 'not_executed';
-                    noteFire('phase8_execution_not_executed');
-                  }
+                  retireDecision(deepResult.decision);
                 }
               })
               .catch((error) => {
@@ -3303,6 +3301,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           // The action is now authoritative. Cancel a queued/running deep read
           // before it can race the mutation below; this also retires the local
           // turn token so no later continuation can become current again.
+          abortController.signal.removeEventListener('abort', markPendingUtilityNotExecuted);
           this.cancelHorseDecisionWork();
 
           // Verify it's still this player's turn (timer might have expired)

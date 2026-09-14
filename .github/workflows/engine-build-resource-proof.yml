@@ -12,6 +12,7 @@ on:
       - server/scripts/engine-image-ci-qualification.py
       - tests/operations/engine-image-ci-bundle.test.py
       - tests/operations/produce-engine-image-ci.test.py
+      - tests/operations/engine-image-source-ancestry.test.py
       - tests/operations/engine-image-ci-qualification.test.py
       - tests/operations/engine-image-archive.test.py
       - tests/operations/engine-build-resource-proof.py
@@ -57,7 +58,9 @@ jobs:
       - name: Verify exact production producer identity and artifact refusal
         run: python3 tests/operations/engine-image-ci-bundle.test.py
       - name: Verify producer orchestration and provisional artifact refusal
-        run: python3 tests/operations/produce-engine-image-ci.test.py
+        run: |
+          python3 tests/operations/produce-engine-image-ci.test.py
+          python3 tests/operations/engine-image-source-ancestry.test.py
       - name: Verify qualification separation, custody and provenance refusals
         run: python3 tests/operations/engine-image-ci-qualification.test.py
       - name: Produce one real image and complete its native matrix

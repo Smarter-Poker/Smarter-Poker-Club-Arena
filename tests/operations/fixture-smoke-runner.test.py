@@ -85,6 +85,15 @@ PROVIDER_SEMANTICS = {
     **{key: False for key in ('production_binary_parity', 'complete_catalog_parity',
         'actual_login_and_default_acl_tests', 'post_alignment_services', 'full_schema_ready', 'funded_or_production_complete')},
 }
+POST_ALIGNMENT_AUTH = dict(scope='native-post-alignment-auth', status='passed',
+    database='club_arena_qualification', postmaster_started_at='2026-09-14 00:00:00.123456+00',
+    aligned_catalog_sha256='d'*64, provider_build_sha256='e'*64, provider_catalog_sha256='f'*64,
+    fresh_application_client=True, auth_role='supabase_auth_admin', genuine_users=3,
+    signed_in_sessions=3, persisted_aal1_sessions=2, persisted_aal2_sessions=1,
+    persisted_verified_totp_factors=1, application_owner_boundary=True, auth_helper_boundary=True,
+    genuine_migration_set=True, retries=0, post_alignment_auth=True, post_alignment_services=False,
+    full_schema_ready=False, production_or_funded=False, fixture_resources_closed=True)
+
 SMOKE = '\n'.join(map(json.dumps, RECORDS)) + '\nNative service smoke and container/network cleanup passed (not a product certificate).\n'
 
 
@@ -279,6 +288,8 @@ class RunnerTests(unittest.TestCase):
                         result += json.dumps(ROLE_FAULTS) + '\n' + json.dumps(ROLE_ACCESS) + '\n'
                     if fault != 'missing-provider-proof':
                         result += json.dumps(PROVIDER_SEMANTICS) + '\n'
+                    if fault != 'missing-auth-proof':
+                        result += json.dumps(POST_ALIGNMENT_AUTH) + '\n'
                     return result if fault == 'missing-preimage-proof' else result + json.dumps(proof) + '\n'
                 if args[:3] == ['docker', 'container', 'ls']:
                     owned = args[-1].removeprefix('name=^/').removesuffix('$')
@@ -312,6 +323,14 @@ class RunnerTests(unittest.TestCase):
         code, receipt, _ = self.exercise()
         self.assertEqual(code, 0)
         self.assertEqual(receipt['provider_semantics'], PROVIDER_SEMANTICS)
+
+    def test_post_alignment_auth_is_mandatory_after_provider_success(self):
+        code, receipt, _ = self.exercise('missing-auth-proof')
+        self.assertEqual(code, 1)
+        self.assertTrue(all(receipt['cleanup'].values()))
+        code, receipt, _ = self.exercise()
+        self.assertEqual(code, 0)
+        self.assertEqual(receipt['post_alignment_auth'], POST_ALIGNMENT_AUTH)
 
     def test_provider_failure_survives_controller_and_cannot_admit_fixture(self):
         code, receipt, calls = self.exercise('native-provider-stage')
@@ -573,6 +592,37 @@ class PreimageTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.validate(c)
 
+
+class AttachedAuthReceiptTests(unittest.TestCase):
+    def check(self, output, alignment=ROLE_ALIGNMENT, providers=PROVIDER_SEMANTICS):
+        return m.post_alignment_auth_record(output, alignment, providers)
+
+    def test_exact_auth_proof_keeps_larger_scope_unqualified(self):
+        self.assertEqual(self.check(json.dumps(POST_ALIGNMENT_AUTH)), POST_ALIGNMENT_AUTH)
+        self.assertFalse(POST_ALIGNMENT_AUTH['full_schema_ready'])
+
+    def test_refuses_missing_duplicate_or_extra_credential_fields(self):
+        row = json.dumps(POST_ALIGNMENT_AUTH)
+        for output in ['', row+'\n'+row, row[:-1]+', "status":"passed"}',
+                       json.dumps(dict(POST_ALIGNMENT_AUTH, access_token='PRIVATE'))]:
+            with self.subTest(output_shape=len(output)), self.assertRaises(RuntimeError):
+                self.check(output)
+
+    def test_refuses_every_incomplete_or_overclaimed_observation(self):
+        for key, original in POST_ALIGNMENT_AUTH.items():
+            if key == 'postmaster_started_at': changed = 'PRIVATE'
+            elif isinstance(original, bool): changed = not original
+            elif isinstance(original, int): changed = original + 1
+            else: changed = 'wrong'
+            with self.subTest(key=key), self.assertRaises(RuntimeError):
+                self.check(json.dumps(dict(POST_ALIGNMENT_AUTH, **{key:changed})))
+
+    def test_refuses_other_role_or_provider_instance_evidence(self):
+        for alignment, providers in [(dict(ROLE_ALIGNMENT, aligned_catalog_sha256='a'*64), PROVIDER_SEMANTICS),
+                                     (ROLE_ALIGNMENT, dict(PROVIDER_SEMANTICS, build_sha256='a'*64)),
+                                     (ROLE_ALIGNMENT, dict(PROVIDER_SEMANTICS, catalog_sha256='a'*64))]:
+            with self.assertRaises(RuntimeError):
+                self.check(json.dumps(POST_ALIGNMENT_AUTH), alignment, providers)
 
 if __name__ == '__main__':
     unittest.main()

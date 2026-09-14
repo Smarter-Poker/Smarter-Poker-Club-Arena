@@ -241,8 +241,15 @@ export class HandController {
       // rule it already applied to every other amount on the hand. The ante is
       // rounded to the table's own unit below and the boundary refuses a row
       // whose ante could not be whole, so neither half can produce a fraction.
+      /* A DIAMOND TOURNAMENT HAND IS A TOURNAMENT HAND (Phase 8, 2026-09-14).
+         `config.isTournament` was refused here from Phase 6 until the
+         tournament money doors existed. They do now - the entry is custody
+         and the database pays the places from it - and a tournament hand
+         already arrives with the deductions this guard refuses set to
+         nothing: rakeConfig is zero and the BBJ fee off for every tournament
+         table, so the same checks below hold it to the same rule. What a
+         tournament hand deals is tournament chips, whole by construction. */
       if (
-        config.isTournament ||
         /* 2026-09-12: the nine games the chip cash screen offers, not the one
            this arena opened with. Every place a pot is divided was already
            made unit-aware while it was NLH only, the hi-lo split included, so
@@ -254,7 +261,7 @@ export class HandController {
         config.rakeConfig.cap !== 0 ||
         config.bbjConfig?.enabled
       ) {
-        throw new Error('Diamond Cash Certification Requires A Supported Game With No Deductions');
+        throw new Error('Diamond Certification Requires A Supported Game With No Deductions');
       }
     }
     this.config = config;
@@ -2829,24 +2836,40 @@ export class HandController {
         ? (() => {
             const byKey = new Map<
               string,
-              { board: 1 | 2 | 3; userId: string; amount: number; handName?: string; low?: boolean }
+              {
+                board: 1 | 2 | 3;
+                userId: string;
+                amount: number;
+                handName?: string;
+                low?: boolean;
+                pots: Array<{ index: number; amount: number }>;
+              }
             >();
             for (const a of scaledPerPot) {
               const board = ((a.board ?? 1) as 1 | 2 | 3) || 1;
               const low = a.low === true;
               const key = `${board}|${a.userId}|${low ? 'lo' : 'hi'}`;
               const existing = byKey.get(key);
-              if (existing) existing.amount = Math.round((existing.amount + a.amount) * 100) / 100;
-              else
+              /* THE POT AXIS SURVIVES THE MERGE (2026-09-13): the row is one
+                 per (board, winner, half), and the slices say which pot each
+                 cent came from. Before this the merge summed the axis away. */
+              const slice = { index: Number(a.potIndex) || 0, amount: a.amount };
+              if (existing) {
+                existing.amount = Math.round((existing.amount + a.amount) * 100) / 100;
+                existing.pots.push(slice);
+              } else
                 byKey.set(key, {
                   board,
                   userId: a.userId,
                   amount: a.amount,
                   handName: a.hand?.name,
                   ...(low ? { low: true } : {}),
+                  pots: [slice],
                 });
             }
-            return [...byKey.values()].sort((x, y) => x.board - y.board);
+            return [...byKey.values()]
+              .map((row) => ({ ...row, pots: row.pots.sort((x, y) => x.index - y.index) }))
+              .sort((x, y) => x.board - y.board);
           })()
         : undefined;
 

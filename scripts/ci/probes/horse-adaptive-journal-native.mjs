@@ -900,6 +900,27 @@ try {
     })
   );
   results.push(
+    await exerciseIsolatedWorker({
+      root,
+      Client,
+      options,
+      c,
+      actor,
+      work: await bridge('HorseAdaptiveJournalWork'),
+      capture: await bridge('HorseObservationCapture'),
+      snapshot: {
+        ...source,
+        source: {
+          ...source.source,
+          sourceDigest: hash('real witnessed worker with journal backlog'),
+        },
+      },
+      sliced: true,
+      witnessed: true,
+      backlog: 16,
+    })
+  );
+  results.push(
     ...(await exerciseCaptureEvidence({
       root,
       c,

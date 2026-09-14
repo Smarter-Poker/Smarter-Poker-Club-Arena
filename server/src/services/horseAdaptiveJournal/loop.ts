@@ -24,6 +24,10 @@ type Dependencies = {
   queueHealth?: (health: JournalQueueHealth) => void;
 };
 
+/** Bound acquisition starvation in turns, not wall time: RPC timeouts and
+ * independent failure backoff still apply. Keep journal work the majority. */
+export const CAPTURE_FAIRNESS_JOURNAL_TURNS = 8;
+
 /** A single serial consumer. One claim and at most one bounded prune per
  * cycle; never imports this loop into the table's action or decision worker. */
 export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Promise<void> {
@@ -32,6 +36,8 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
   let failures = 0;
   let captureFailures = 0;
   let captureNext = false;
+  let captureFromBacklog = false;
+  let journalTurns = 0;
   let pruneCapturesNext = false;
   while (!signal.aborted) {
     d.started();
@@ -39,6 +45,7 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
       // Acquisition has up to three bounded RPCs. Keep maintenance/health in
       // ordinary journal cycles so this cycle remains below the watchdog.
       captureNext = false;
+      journalTurns = 0;
       let capture: ObservationCaptureResult;
       try {
         capture = await d.processCapture();
@@ -54,7 +61,7 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
       );
       captureFailures = healthy ? 0 : Math.min(captureFailures + 1, 6);
       const delay = healthy
-        ? capture.status === 'idle'
+        ? capture.status === 'idle' && !captureFromBacklog
           ? 5000
           : 1000
         : Math.min(60000, 1000 * 2 ** captureFailures);
@@ -103,7 +110,11 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
       d.queueHealth?.(health);
     }
     d.completed(Object.freeze({ work: result.status, retention }));
-    captureNext = result.status === 'idle' && Boolean(d.processCapture);
+    if (d.processCapture) journalTurns = Math.min(journalTurns + 1, CAPTURE_FAIRNESS_JOURNAL_TURNS);
+    captureFromBacklog = result.status !== 'idle';
+    captureNext =
+      Boolean(d.processCapture) &&
+      (result.status === 'idle' || journalTurns >= CAPTURE_FAIRNESS_JOURNAL_TURNS);
     const healthy = result.status === 'completed' || result.status === 'idle';
     failures = healthy ? 0 : Math.min(failures + 1, 6);
     const delay = healthy

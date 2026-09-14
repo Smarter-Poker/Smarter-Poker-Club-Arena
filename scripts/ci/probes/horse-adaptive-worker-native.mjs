@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { Worker } from 'node:worker_threads';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as wait } from 'node:timers/promises';
@@ -18,6 +18,7 @@ export async function exerciseIsolatedWorker({
   actor,
   sliced = false,
   witnessed = false,
+  backlog = 0,
 }) {
   const connection = new Client(options);
   await connection.connect();
@@ -113,7 +114,7 @@ export async function exerciseIsolatedWorker({
     return child;
   });
   const until = async (predicate) => {
-    const deadline = Date.now() + (sliced ? 30000 : 15000);
+    const deadline = Date.now() + (sliced || backlog ? 30000 : 15000);
     while (!predicate()) {
       if (Date.now() > deadline)
         throw Error('native worker deadline: ' + JSON.stringify(owner.status()));
@@ -121,6 +122,7 @@ export async function exerciseIsolatedWorker({
     }
   };
   let tickCount = 0;
+  let pendingAtFirstCapture = null;
   const timer = setInterval(() => tickCount++, 10);
   try {
     await c.query('TRUNCATE horse_adaptive_journal_work');
@@ -154,12 +156,26 @@ export async function exerciseIsolatedWorker({
     );
     const queued = await work.enqueueAdaptiveJournalWork(snapshot);
     assert.equal(queued.status, 'durable');
+    // Distinct batch identities deliberately replay the same immutable public
+    // facts. This tests queue pressure, not extra hands or learning samples.
+    for (let i = 0; i < backlog; i++) {
+      const extra = await work.enqueueAdaptiveJournalWork({
+        ...snapshot,
+        source: {
+          ...snapshot.source,
+          sourceDigest: createHash('sha256')
+            .update(snapshot.source.sourceDigest + ':backlog:' + i)
+            .digest('hex'),
+        },
+      });
+      assert.equal(extra.status, 'durable');
+    }
     owner.start();
     await until(
       () => owner.status().completed === 1 && owner.status().queueHealth.status === 'snapshot'
     );
     const first = owner.status();
-    assert.equal(first.queueHealth.unfinished, 0);
+    assert.equal(first.queueHealth.unfinished, backlog);
     assert.equal(first.phase, 'ready');
     assert.equal(first.captureQueueHealth.status, 'snapshot');
     assert.ok(tickCount > 0);
@@ -188,13 +204,24 @@ export async function exerciseIsolatedWorker({
       ).rows[0];
       assert.equal(partial.state, 'queued');
       assert.equal(partial.segments, 1);
+      if (backlog) {
+        pendingAtFirstCapture = Number(
+          (
+            await c.query(
+              "SELECT count(*) n FROM horse_adaptive_journal_work WHERE state<>'completed'"
+            )
+          ).rows[0].n
+        );
+        assert.ok(pendingAtFirstCapture > 0, 'acquisition starved until the journal drained');
+        assert.ok(owner.status().completed <= 8, 'acquisition exceeded its journal-turn budget');
+      }
       await children[0].terminate();
       await until(() => children.length === 2 && owner.status().phase === 'ready');
     }
     await until(() =>
       sliced
-        ? owner.status().capturesRecovered === 1 && owner.status().completed === 3
-        : owner.status().capturesAdmitted === 1 && owner.status().completed === 2
+        ? owner.status().capturesRecovered === 1 && owner.status().completed === 3 + backlog
+        : owner.status().capturesAdmitted === 1 && owner.status().completed === 2 + backlog
     );
     const acquired = (
       await c.query('SELECT * FROM horse_observation_capture_work WHERE request_key=$1', [
@@ -247,6 +274,8 @@ export async function exerciseIsolatedWorker({
       capturesRecovered: owner.status().capturesRecovered,
       captureSlicesContinued: owner.status().captureSlicesContinued,
       sliced,
+      initialBacklog: backlog,
+      pendingAtFirstCapture,
       sourceWitnessesRecorded: witnessed,
       restartedBetweenSlices: sliced,
       durableRequestResumedWithoutSourcePayload: true,

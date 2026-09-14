@@ -3,6 +3,65 @@ import { runJournalLoop } from './loop.js';
 import type { ObservationCaptureResult } from '../HorseObservationCapture.js';
 const empty = () => ({ status: 'pruned' as const, completedWork: 0, batches: 0, observations: 0 });
 describe('isolated acquisition scheduling', () => {
+  it.each(['idle', 'deferred'] as const)(
+    'a fair %s acquisition preserves journal progress and bounded waits',
+    async (status) => {
+      const stop = new AbortController(),
+        waits: number[] = [],
+        work = vi.fn(async () => ({ status: 'completed' as const, batchKey: 'a'.repeat(64) }));
+      let turns = 0;
+      await runJournalLoop(stop.signal, {
+        processWork: work,
+        processCapture: async () =>
+          status === 'idle'
+            ? { status }
+            : { status, requestKey: 'b'.repeat(64), reason: 'queue_full' },
+        prune: async () => empty(),
+        now: () => 0,
+        started: vi.fn(),
+        completed: vi.fn(),
+        wait: async (ms) => {
+          waits.push(ms);
+          if (++turns === 20) stop.abort();
+        },
+      });
+      expect(work).toHaveBeenCalledTimes(18);
+      expect(waits[8]).toBe(status === 'idle' ? 1000 : 2000);
+      expect(waits[17]).toBe(status === 'idle' ? 1000 : 4000);
+    }
+  );
+  it.each(['completed', 'deferred', 'quarantined'] as const)(
+    'reaches pending acquisition while journal work stays continuously %s',
+    async (status) => {
+      const stop = new AbortController(),
+        events: string[] = [],
+        delays: number[] = [];
+      let turns = 0;
+      await runJournalLoop(stop.signal, {
+        processWork: async () => {
+          events.push('journal');
+          return { status, batchKey: 'a'.repeat(64) };
+        },
+        processCapture: async () => {
+          events.push('capture');
+          return { status: 'admitted', requestKey: 'b'.repeat(64) };
+        },
+        prune: async () => empty(),
+        now: () => 0,
+        started: vi.fn(),
+        completed: vi.fn(),
+        wait: async (ms) => {
+          delays.push(ms);
+          if (++turns === 20) stop.abort();
+        },
+      });
+      expect(events.indexOf('capture')).toBeGreaterThan(0);
+      expect(events.indexOf('capture')).toBeLessThanOrEqual(8);
+      expect(events.filter((e) => e === 'capture')).toHaveLength(2);
+      expect(events.filter((e) => e === 'journal')).toHaveLength(18);
+      expect(Math.max(...delays)).toBeLessThanOrEqual(60000);
+    }
+  );
   it.each(['refined', 'continued', 'captured'] as const)(
     'treats %s as progress without error backoff or journal completion',
     async (status) => {
@@ -25,7 +84,7 @@ describe('isolated acquisition scheduling', () => {
       expect(cycles[1]).toEqual({ work: 'skipped', retention: 'skipped', acquisition: status });
     }
   );
-  it('drains journal work before acquisition and never combines source I/O with maintenance', async () => {
+  it('prioritizes journal work between idle acquisitions and never combines source I/O with maintenance', async () => {
     const stop = new AbortController(),
       events: string[] = [],
       cycles: unknown[] = [],

@@ -26,6 +26,45 @@ afterEach(async () => {
 });
 const ready = (c: Child) => c.emit('message', { type: 'READY' });
 describe('journal worker lifecycle owner', () => {
+  it('keeps discovery separate from capture and journal completions and strips malformed discovery data', () => {
+    service.start();
+    ready(children[0]);
+    for (const discovery of [
+      { version: 1, status: 'idle', retainedGaps: 0 },
+      { version: 1, status: 'idle', privateCards: ['As', 'Ad'] },
+    ]) {
+      children[0].emit('message', { type: 'CYCLE_STARTED' });
+      children[0].emit('message', {
+        type: 'CYCLE_COMPLETED',
+        work: 'skipped',
+        retention: 'skipped',
+        discovery,
+      });
+    }
+    expect(service.status()).toMatchObject({
+      phase: 'ready',
+      cycles: 2,
+      completed: 0,
+      capturesAdmitted: 0,
+      lastDiscovery: { status: 'unknown' },
+      uncertain: 1,
+      discoveryReceivedAt: Date.now(),
+    });
+    expect(JSON.stringify(service.status())).not.toContain('privateCards');
+  });
+  it('rejects discovery mislabeled as journal completion', () => {
+    service.start();
+    ready(children[0]);
+    children[0].emit('message', { type: 'CYCLE_STARTED' });
+    children[0].emit('message', {
+      type: 'CYCLE_COMPLETED',
+      work: 'completed',
+      retention: 'skipped',
+      discovery: { version: 1, status: 'idle' },
+    });
+    expect(service.status().completed).toBe(0);
+    expect(service.status().phase).not.toBe('ready');
+  });
   it('counts source admissions separately from journal completions and retains explicit gaps', () => {
     service.start();
     ready(children[0]);

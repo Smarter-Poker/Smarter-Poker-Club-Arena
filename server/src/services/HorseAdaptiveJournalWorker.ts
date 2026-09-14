@@ -1,5 +1,10 @@
 import { Worker } from 'node:worker_threads';
 import {
+  parseDiscoveryReceipt,
+  unknownDiscovery,
+  type DiscoveryReceipt,
+} from './horseAdaptiveJournal/discoveryReceipt.js';
+import {
   parseCaptureQueueHealth,
   type CaptureQueueHealth,
 } from './horseAdaptiveJournal/captureHealth.js';
@@ -34,6 +39,8 @@ export type JournalWorkerStatus = Readonly<{
   capturesRecovered: number;
   captureGaps: number;
   lastCapture: string | null;
+  lastDiscovery: DiscoveryReceipt;
+  discoveryReceivedAt: number | null;
   quarantined: number;
   uncertain: number;
   restarts: number;
@@ -71,8 +78,9 @@ const captureStates = new Set([
 ]);
 
 /** Explicit lifecycle ownership for one separate journal worker. Starting this
- * service does not discover observations, claim completeness or activate a
- * policy. Its bootstrap owner must stop it before releasing that ownership. */
+ * service discovers retained public actors and journals qualified observations;
+ * it does not claim complete source coverage or activate a policy. Its bootstrap
+ * owner must stop it before releasing that ownership. */
 export class HorseAdaptiveJournalWorker {
   private desired = false;
   private owner: Owner | null = null;
@@ -90,6 +98,8 @@ export class HorseAdaptiveJournalWorker {
     capturesRecovered: 0,
     captureGaps: 0,
     lastCapture: null,
+    lastDiscovery: unknownDiscovery(),
+    discoveryReceivedAt: null,
     quarantined: 0,
     uncertain: 0,
     restarts: 0,
@@ -152,6 +162,8 @@ export class HorseAdaptiveJournalWorker {
       queueHealthReceivedAt: null,
       captureQueueHealth: Object.freeze({ status: 'unknown' }),
       captureQueueHealthReceivedAt: null,
+      lastDiscovery: unknownDiscovery(),
+      discoveryReceivedAt: null,
     });
     let child: Child;
     try {
@@ -249,12 +261,14 @@ export class HorseAdaptiveJournalWorker {
       workStates.has(r.work) &&
       typeof r.retention === 'string' &&
       retentionStates.has(r.retention) &&
-      (r.acquisition === undefined
-        ? r.work !== 'skipped'
-        : r.work === 'skipped' &&
-          r.retention === 'skipped' &&
-          typeof r.acquisition === 'string' &&
-          captureStates.has(r.acquisition))
+      (r.discovery !== undefined
+        ? r.work === 'skipped' && r.retention === 'skipped' && r.acquisition === undefined
+        : r.acquisition === undefined
+          ? r.work !== 'skipped'
+          : r.work === 'skipped' &&
+            r.retention === 'skipped' &&
+            typeof r.acquisition === 'string' &&
+            captureStates.has(r.acquisition))
     ) {
       owner.activeAt = null;
       this.update({
@@ -267,11 +281,21 @@ export class HorseAdaptiveJournalWorker {
         capturesRecovered: this.summary.capturesRecovered + (r.acquisition === 'captured' ? 1 : 0),
         captureGaps: this.summary.captureGaps + (r.acquisition === 'gap' ? 1 : 0),
         lastCapture: typeof r.acquisition === 'string' ? r.acquisition : this.summary.lastCapture,
+        lastDiscovery:
+          r.discovery !== undefined
+            ? parseDiscoveryReceipt(r.discovery)
+            : this.summary.lastDiscovery,
+        discoveryReceivedAt:
+          r.discovery !== undefined ? Date.now() : this.summary.discoveryReceivedAt,
         quarantined: this.summary.quarantined + (r.work === 'quarantined' ? 1 : 0),
         uncertain:
           this.summary.uncertain +
           (['unavailable', 'deferred', 'unknown', 'lease_lost'].includes(r.work) ||
-          ['unavailable', 'deferred', 'unknown', 'lease_lost'].includes(String(r.acquisition))
+          ['unavailable', 'deferred', 'unknown', 'lease_lost'].includes(String(r.acquisition)) ||
+          (r.discovery !== undefined &&
+            ['unavailable', 'deferred', 'unknown'].includes(
+              parseDiscoveryReceipt(r.discovery).status
+            ))
             ? 1
             : 0),
         lastWork: r.work,

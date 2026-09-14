@@ -72,5 +72,29 @@ describe.each(['plo4', 'plo5', 'plo6', 'plo8'] as const)(
       expect(hc.getState().currentBet).toBe(7);
       expect(hc.getState().players.find((p) => p.seat === 4)!.stack).toBe(93);
     });
+    it('observes the committed record before advancing, and an observer cannot veto the action', () => {
+      const hc = hand();
+      let observed = 0;
+      const records: Array<Readonly<import('../types.js').ActionRecord>> = [];
+      const seats: Array<number | null> = [];
+      const latest: Array<Readonly<import('../types.js').ActionRecord> | undefined> = [];
+      const observer = (record: Readonly<import('../types.js').ActionRecord>) => {
+        observed++;
+        records.push(record);
+        seats.push(hc.getState().currentPlayerSeat);
+        latest.push(hc.getState().actionHistory.at(-1));
+        throw new Error('receipt consumer failed');
+      };
+      expect(hc.performAction(4, 'raise', 7.01, 'horse_policy', observer)).toBe(false);
+      expect(observed).toBe(0);
+      expect(hc.performAction(4, 'all_in', undefined, 'horse_policy', observer)).toBe(true);
+      expect(observed).toBe(1);
+      expect(records[0]).toMatchObject({ seat: 4, action: 'raise', amount: 7, stage: 'preflop' });
+      expect(Object.isFrozen(records[0])).toBe(true);
+      expect(seats).toEqual([4]);
+      expect(latest[0]).toBe(records[0]);
+      expect(hc.getState().currentPlayerSeat).not.toBe(4);
+      expect(hc.getState().players.find((p) => p.seat === 4)!.stack).toBe(93);
+    });
   }
 );

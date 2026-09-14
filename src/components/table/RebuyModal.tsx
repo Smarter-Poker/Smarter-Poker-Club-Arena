@@ -5,6 +5,9 @@ import { soundService } from '../../services/SoundService';
 // This file used to define its own money() that FORCED two decimals.
 import { money, moneyExact } from '../../utils/buyIn';
 import { SpadeConsole, type ConsoleBay } from '../console/SpadeConsole';
+/* The inks (sc-ink--*) print here on their own; the class must resolve on
+   this route by contract (classNamesResolve), not by chunk luck. */
+import '../console/SpadeConsole.css';
 import './RebuyModal.css';
 
 interface RebuyModalProps {

@@ -257,10 +257,12 @@ takes two, at its own smaller base, and only when the two-line face renders
 larger. Never shorten a label the tests read to dodge this; never wrap on the
 spade, shark or riveted plates - Dan approved those on one line.
 
-Mind percentage padding on a plate. `.sc-plate` is absolutely positioned, so
-`padding: 0 4%` resolves against the FOOT, not the plate: 30px off a 123px
-plate at 375px. The four-bay family pads in `cqw` for that reason; a new
-family with narrow plates should too.
+The plate pads in `cqw`, never a percentage. `.sc-plate` is absolutely
+positioned, so `padding: 0 4%` resolved against the FOOT, not the plate: 30px
+off a 123px plate at 375px (found 2026-09-14; the kit now pads `0 1cqw`). The
+well is 70% of what is left on the spade, 84% on the riveted (short of its
+rivets), 92% on the four-bay deck (its zones already sit inside the face) -
+measure a new family's face before choosing its figure.
 
 `useFitText` verifies its own result. Rendered width is not proportional to
 font-size (hinting and per-glyph letter-spacing both round), so a ratio from one

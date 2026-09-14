@@ -1,5 +1,5 @@
 import { Fragment } from 'react';
-import type { ButtonHTMLAttributes, CSSProperties, ReactNode, Ref } from 'react';
+import type { ButtonHTMLAttributes, CSSProperties, HTMLAttributes, ReactNode, Ref } from 'react';
 import { useFitText } from '../lobby/game-cards/useFitText';
 import './SpadeConsole.css';
 
@@ -255,6 +255,7 @@ export function ZoneText({
   headroom = 1,
   wrapBelow,
   style,
+  attrs,
 }: {
   text: string;
   className?: string;
@@ -280,10 +281,17 @@ export function ZoneText({
    */
   wrapBelow?: number;
   style?: CSSProperties;
+  /** Attributes for the zone element itself: a role, an aria-label. */
+  attrs?: HTMLAttributes<HTMLElement>;
 }) {
   const ref = useFitText<HTMLSpanElement>(text, headroom, minRatio, { wrapBelow });
   return (
-    <Tag className={`sc-zone ${className}`.trim()} id={id} style={style}>
+    <Tag
+      {...attrs}
+      className={`sc-zone ${className} ${attrs?.className ?? ''}`.trim()}
+      id={id}
+      style={style}
+    >
       <span ref={ref}>{text}</span>
     </Tag>
   );
@@ -296,6 +304,7 @@ export function SpadeConsole({
   subtitle,
   pill,
   pillInk = 'blue',
+  pillAttrs,
   crest = 'spade',
   family = 'spade',
   foot,
@@ -313,6 +322,9 @@ export function SpadeConsole({
   /** The word printed in the header's painted pill slot. */
   pill?: string;
   pillInk?: ConsoleInk;
+  /** Attributes for the pill's zone: a timer's role and aria-label, a class
+      a test reads. The pill stays one fitted line whatever it carries. */
+  pillAttrs?: HTMLAttributes<HTMLElement>;
   /** Which emblem the head wears. Same structure, different dress. */
   crest?: ConsoleCrest;
   /** Which approved master the frame is cut from. 'shark' carries ONE plate. */
@@ -375,6 +387,7 @@ export function SpadeConsole({
           <ZoneText
             text={pill}
             className={`sc__pill sc-ink--${pillInk}`}
+            attrs={pillAttrs}
             style={zonePct(Z.pill, W, TOP_H)}
           />
         )}

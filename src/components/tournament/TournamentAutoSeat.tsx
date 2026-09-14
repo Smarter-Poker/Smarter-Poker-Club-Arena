@@ -81,9 +81,9 @@ export default function TournamentAutoSeat() {
   const auth = useRef<{ seen: boolean; userId: string | null }>({ seen: false, userId: null });
   const [pollEpoch, setPollEpoch] = useState(0);
   const [blocked, setBlocked] = useState<SeatNotice | null>(null);
-  const [blindingOff, setBlindingOff] = useState<
-    (SeatNotice & { chips: number; capBlocked?: boolean }) | null
-  >(null);
+  const [warnings, setWarnings] = useState<
+    (SeatNotice & { chips: number; capBlocked?: boolean })[]
+  >([]);
 
   const owns = useCallback(
     (scope: AutoSeatScope) =>
@@ -130,7 +130,7 @@ export default function TournamentAutoSeat() {
         };
       }
       setBlocked(null);
-      setBlindingOff(null);
+      setWarnings([]);
       if (notify) setPollEpoch((n) => n + 1);
     },
     [invalidate]
@@ -164,10 +164,12 @@ export default function TournamentAutoSeat() {
       if (payload.status === 'cap_blocked') {
         setBlocked({ scope, tableId: payload.tableId, name: pending.name });
         if (pending.navigateOnOpen) {
-          setBlindingOff((notice) =>
-            notice?.scope === scope && notice.tableId === payload.tableId
-              ? { ...notice, capBlocked: true }
-              : notice
+          setWarnings((notices) =>
+            notices.map((notice) =>
+              notice.scope === scope && notice.tableId === payload.tableId
+                ? { ...notice, capBlocked: true }
+                : notice
+            )
           );
         }
         return; // Keep it unconfirmed; the next owned poll may retry.
@@ -179,8 +181,8 @@ export default function TournamentAutoSeat() {
         notice?.scope === scope && notice.tableId === payload.tableId ? null : notice
       );
       if (pending.navigateOnOpen) {
-        setBlindingOff((notice) =>
-          notice?.scope === scope && notice.tableId === payload.tableId ? null : notice
+        setWarnings((notices) =>
+          notices.filter((notice) => notice.scope !== scope || notice.tableId !== payload.tableId)
         );
         committedNavigate.current(`/table/${payload.tableId}`);
       }
@@ -234,22 +236,52 @@ export default function TournamentAutoSeat() {
             tournament_id?: string | null;
             status?: string;
           } | null;
-          if (!t?.tournament_id) continue;
-          const tableId = (row.table_id as string) || t.id || '';
+          const tableId = (row.table_id as string) || t?.id || '';
+          if (!tableId) continue;
           if (
-            !tableId ||
-            (t.status && ['closed', 'completed', 'cancelled', 'finished'].includes(t.status))
-          )
-            continue;
-          const name = t.name || 'Your Tournament';
-          const away = Boolean(row.is_sitting_out) || Boolean(row.is_away);
-          if (away && !scope.warned.has(tableId)) {
-            remember(scope.warned, tableId, scope.warnedKey);
-            setBlindingOff({ scope, tableId, name, chips: Number(row.stack) || 0 });
-          } else if (!away && scope.warned.delete(tableId)) {
-            storeSet(scope.warnedKey, scope.warned);
-            setBlindingOff((notice) =>
+            t &&
+            (t.tournament_id === null ||
+              (t.status && ['closed', 'completed', 'cancelled', 'finished'].includes(t.status)))
+          ) {
+            // Positive returned evidence retires only this table's notices and
+            // attempt. Missing rows or missing join data are not absence proof.
+            scope.pending.delete(tableId);
+            if (scope.warned.delete(tableId)) storeSet(scope.warnedKey, scope.warned);
+            setWarnings((notices) =>
+              notices.filter((notice) => notice.scope !== scope || notice.tableId !== tableId)
+            );
+            setBlocked((notice) =>
               notice?.scope === scope && notice.tableId === tableId ? null : notice
+            );
+            continue;
+          }
+          if (!t?.tournament_id) continue;
+          const name = t.name || 'Your Tournament';
+          setBlocked((notice) =>
+            notice?.scope === scope && notice.tableId === tableId ? { ...notice, name } : notice
+          );
+          const away = Boolean(row.is_sitting_out) || Boolean(row.is_away);
+          if (away) {
+            const enqueue = !scope.warned.has(tableId);
+            if (enqueue) remember(scope.warned, tableId, scope.warnedKey);
+            setWarnings((notices) => {
+              const existing = notices.findIndex(
+                (notice) => notice.scope === scope && notice.tableId === tableId
+              );
+              const observed = { scope, tableId, name, chips: Number(row.stack) || 0 };
+              if (existing >= 0) {
+                return notices.map((notice, index) =>
+                  index === existing ? { ...notice, ...observed } : notice
+                );
+              }
+              // A dismissed continuous away episode stays dismissed. Queued
+              // items retain their order and remain reachable after dismissal.
+              return enqueue ? [...notices, observed] : notices;
+            });
+          } else {
+            if (scope.warned.delete(tableId)) storeSet(scope.warnedKey, scope.warned);
+            setWarnings((notices) =>
+              notices.filter((notice) => notice.scope !== scope || notice.tableId !== tableId)
             );
           }
           if (scope.seen.has(tableId)) continue;
@@ -304,7 +336,8 @@ export default function TournamentAutoSeat() {
     if (!owns(notice.scope)) return;
     requestOpen(notice.scope, notice.tableId, notice.name, true);
   };
-  if (blindingOff && owns(blindingOff.scope)) {
+  const blindingOff = warnings.find((notice) => owns(notice.scope));
+  if (blindingOff) {
     return (
       <div className="tas-overlay" role="dialog" aria-label="You Are Being Blinded Off">
         <div className="tas-panel tas-panel--urgent">
@@ -323,7 +356,18 @@ export default function TournamentAutoSeat() {
             </p>
           )}
           <div className="tas-actions">
-            <button className="tas-later" onClick={() => setBlindingOff(null)}>
+            <button
+              className="tas-later"
+              onClick={() => {
+                if (!owns(blindingOff.scope)) return;
+                setWarnings((notices) =>
+                  notices.filter(
+                    (notice) =>
+                      notice.scope !== blindingOff.scope || notice.tableId !== blindingOff.tableId
+                  )
+                );
+              }}
+            >
               Dismiss
             </button>
             <button className="tas-go" onClick={() => takeSeat(blindingOff)}>

@@ -25,7 +25,7 @@
 -- WHY A DAILY ROLLUP AND NOT EVENTS. An impression happens whenever a
 -- tournament is inside its last call, on every seated player. An event row per
 -- impression would out-write hand_history for a number that is only ever read
--- as a ratio. This is the same shape as ca_card_slide_usage_daily, for the same
+-- as a ratio. This is the same shape as public.card_slide_usage, for the same
 -- reason, and the client batches into it at most once a minute per tab.
 --
 -- COUNTERS ARE ADDITIVE. A retry double-counts at worst, which is the right

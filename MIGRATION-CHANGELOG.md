@@ -1,3 +1,11 @@
+## 2026-09-14: Scheduled MTT starts do not wait for unrelated funding
+
+**Files/lines:** server/src/GameServer.ts original2442/7626; server/src/tournament/ScheduledStartDiscoveryIsolation.test.ts; server/src/tournament/SpinStartsInOneSecondAndPlaysInFull.test.ts original99.
+**What existed:** broad discovery awaited pre-start top-ups and every past-start funding operation before its next board read, blocking otherwise eligible scheduled starts.
+**What changed:** supervised five-second due-event discovery uses the unchanged coalesced admission/lease/launch authority, keyset-complete reads, oldest-first ordering, maintenance/lifecycle fences and retained actual-operation capacity. It does not fund entrants or release pending work. The existing Spin cadence assertion includes the new five-second sleep.
+**Why:** a retained operation for one tournament must not prevent another funded field from reaching its own launch authority.
+**Verified:** YES, actual old-loop counterexample plus12new cases; affected engine suites5,409/359PASS, zero skips. **TypeScript:** PASS. No SQL or production event mutation. Source/served/real first-hand acceptance remains open. See docs/changelog/2026-09-14-mtt-scheduled-start-isolation.md.
+
 ## 2026-09-14: Keep MTT paid depth out of seat-first requests
 
 **File/lines:** server/src/services/TournamentRecurringService.ts original3381/4264; new SeatFirstCallerContract.test.ts and private fixture/runner.
@@ -17376,3 +17384,7 @@ Hand-for-hand retains synchronized/add-on break pauses, preserves their budgets 
 **Why:** Establish current concurrent conservation and immutable replay without treating historical wrapper evidence as current or leaving temporary schema changes behind. Three960fixture events remain as approved; no production or resource-cleanup actions.
 
 **TypeScript:** Not applicable, native SQL/Python rehearsal and evidence only. Full terminal and production gates remain open.
+
+## 2026-09-14: Qualify scheduled discovery under full CI initialization
+
+**Files:** server/src/engine/DirectEngineRecovery.guard.test.ts original176; server/src/tournament/ScheduledStartDiscoveryIsolation.test.ts. **Before:**shutdown inventory countedfourjobs; discovery case included pre-test import diagnostics. **After:**assert five supervised loops and scheduled-loop lifecycle fence; clear import-time error history before each operation. **Why:**actualCI34795506067 failed these two cases. **Verified:**87/7PASS with servicekeyunset and originalwarningretained inlog; **TypeScript:**PASS. No runtimebehavior orauthority changed; fullCI remainsrequired.

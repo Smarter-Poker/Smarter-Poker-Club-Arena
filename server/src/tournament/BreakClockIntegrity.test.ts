@@ -107,7 +107,10 @@ describe('DEFECT 1 - the level clock neither ticks nor advances during a break',
     const breakBranch = methodBody(tail, 'if (this.isOnBreak())');
     expect(breakBranch).toMatch(/this\.savedBlindTimerRemaining\s*=\s*this\.levelDurationMs\(/);
     expect(breakBranch).not.toContain('this.startBlindTimer(');
-    const liveBranch = methodBody(tail, 'else');
+    const maintenanceBranch = methodBody(tail, 'else if (isMaintenanceFrozen())');
+    expect(maintenanceBranch).toContain('this.scheduleBlindLevelWake(blindStructure, 1000)');
+    expect(maintenanceBranch).not.toContain('this.startBlindTimer(');
+    const liveBranch = methodBody(tail, 'else {');
     expect(liveBranch).toMatch(
       /this\.startBlindTimer\(\s*blindStructure,\s*this\.levelDurationMs\(level\)\s*-\s*\(Date\.now\(\)\s*-\s*levelStartedAt\)\s*\);/
     );

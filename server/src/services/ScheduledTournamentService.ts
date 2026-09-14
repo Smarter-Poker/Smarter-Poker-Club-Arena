@@ -1,3 +1,4 @@
+import { validateMttBlindStructure } from '../domain/tournamentBlindContract.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * SCHEDULED TOURNAMENT SERVICE — data-driven recurring MTT spawner (2026-08-22)
@@ -1167,6 +1168,7 @@ export class ScheduledTournamentService {
 
     const maxRebuysRaw = Number(cfg.maxRebuys);
     const maxReentriesRaw = Number(cfg.maxReentries);
+    if (!isSng && !isSpin) validateMttBlindStructure(blinds, cfg.startingStack ?? 10000);
 
     const row: Record<string, unknown> = {
       club_id: schedule.club_id,

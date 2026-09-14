@@ -474,7 +474,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     players: SeatedPlayer[],
     persistenceGeneration: number
   ): Promise<void> {
-    const wholeSettlement = this.settleCompletedHand(event, players, persistenceGeneration);
+    const wholeSettlement = this.observeSettlementAwait(
+      'hand_complete',
+      persistenceGeneration,
+      this.handCount,
+      () => this.settleCompletedHand(event, players, persistenceGeneration)
+    );
     /* CHAIN, NEVER OVERWRITE (chip standard 2026-09-04). settleCompletedHand
        runs synchronously to completion on the common path - its only awaits
        are the insurance-shortfall alerts - so by the time it returns it has
@@ -1449,7 +1454,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // this method and every post-hand task are done reading this hand's
     // capture fields.
     const priorBarrier = this.postHandTasksPromise;
-    const postTasks = this.postHandTasks(players, persistenceGeneration).catch((err) => {
+    const postTasks = this.observeSettlementAwait(
+      'post_hand',
+      persistenceGeneration,
+      this.handCount,
+      () => this.postHandTasks(players, persistenceGeneration)
+    ).catch((err) => {
       this.finishTerminalBoundaryPersistence(persistenceGeneration, false);
       reportError(err, `ServerTableEngine.${this.tableId}.posthand_error`);
       // A rejected settlement is not a completed hand. Publish the terminal
@@ -1770,7 +1780,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           for (;;) {
             attempts++;
             try {
-              await fn();
+              await this.observeSettlementAwait(
+                'step:' + stepName,
+                persistenceGeneration,
+                snap.handNumber,
+                fn
+              );
               if (attempts > 1) outcome = 'retried';
               break;
             } catch (err) {
@@ -2234,7 +2249,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                   : null,
             }
           : undefined;
-        const commitAuthoritativeHand = () =>
+        const commitAuthoritativeHand = (observeCommitProgress?: (detail: string) => void) =>
           logHandHistory({
             tableId: this.tableId,
             handId: v_handId,
@@ -2349,6 +2364,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             buttonSeat: snap.dealerSeat,
             showdownReveal,
             atomicCommit: {
+              observeCommitProgress,
               /* Rounded, as the writer this replaced did (services/supabase/
                  tables.ts `rounded()`); the replacement dropped it and these
                  two fields are the source of the non-cent rows in
@@ -2382,7 +2398,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           if (!this.hasCurrentEngineLeaseAuthority()) {
             throw new Error('atomic hand commit refused (lease_proof_expired)');
           }
-          result = await commitAuthoritativeHand();
+          result = await this.observeSettlementAwait(
+            'hand_history_write',
+            persistenceGeneration,
+            snap.handNumber,
+            commitAuthoritativeHand
+          );
           if (!result.settlementCommitted || !result.handId) {
             throw new Error('atomic hand commit refused (missing_commit_receipt)');
           }
@@ -2615,7 +2636,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       while (!obligationsApplied && mayStillDrain()) {
         attempt++;
         try {
-          const outcome = await processHandPostCommitObligations(v_handHistoryId);
+          const outcome = await this.observeSettlementAwait(
+            'post_commit_obligations',
+            persistenceGeneration,
+            snap.handNumber,
+            () => processHandPostCommitObligations(v_handHistoryId!)
+          );
           if (outcome.ok !== true) {
             throw new Error(`post-commit obligations refused (${outcome.reason ?? 'unknown'})`);
           }

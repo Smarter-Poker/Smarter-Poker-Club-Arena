@@ -5,10 +5,15 @@ import { spawnSync } from 'node:child_process';
 import { test, expect } from 'vitest';
 const gate = path.resolve(__dirname, '../../scripts/ci/check-migrations-applied.mjs');
 function cli(dir: string, command: string, args: string[]) {
+  // Git hooks export the invoking repository's GIT_DIR and related state.
+  // These subprocesses belong exclusively to disposable fixture repositories.
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))
+  );
   return spawnSync(command, args, {
     cwd: dir,
     encoding: 'utf8',
-    env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', HUSKY: '0' },
+    env: { ...env, GIT_CONFIG_NOSYSTEM: '1', HUSKY: '0' },
   });
 }
 function git(dir: string, args: string[]) {

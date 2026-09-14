@@ -347,6 +347,29 @@ and `...-client.md`. The ones that touch this spec:
 - **`hand_history.pots` amounts are cents-exact** (PR #4485): the capture
   stored the live float sum verbatim.
 
+## 2g. Round 7 (2026-09-14) — the wait, the record, the sound
+
+`docs/changelog/2026-09-14-run-it-twice-round-four.md`. The ones that touch
+this spec:
+
+- **The consent panel is heard.** It opened silently; a player on another
+  table found out when the clock was half gone. It plays the same attention
+  cue as "your turn" and the insurance offer, for the all-in seats only.
+- **The host's wait listens instead of polling.** One event ends it - the
+  engine now emits on every way an offer can end, the chooser's "1"
+  included - and one safety timeout remains as the net. The settlement no
+  longer starts up to 250 ms after the last consent.
+- **The record names the hand that won the money.** `winners[].hand` on a
+  multi-board hand read the board-one showdown row; a flush on run two was
+  recorded as a pair. It reads the player's largest per-run share now.
+- **`pot_distributed` is exact per pot.** The per-winner share was a
+  proportional estimate from whole-hand totals; it reads the per-pot award
+  slices now, in cents that sum to the pot.
+- **The replay names each run's made hand on the streets after the runs
+  diverge** ("Run 1 Four Of A Kind · Run 2 Three Of A Kind"), not board one's.
+- **The timeout is driven through the host end to end** in a test, on an
+  injected clock.
+
 ## 3. Explicitly out of scope
 
 - No PokerBros assets, artwork or text is copied; visual layout is our own.

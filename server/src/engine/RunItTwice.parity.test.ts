@@ -184,6 +184,7 @@ describe('per-run pot awards - the split-pot ship sequence', () => {
       potIndex: number;
       amount: number;
       userId: string;
+      hand?: { name: string };
     }>;
     expect(awards.length, 'per-(run, pot) awards must exist on a RIT hand').toBeGreaterThan(0);
 
@@ -206,6 +207,20 @@ describe('per-run pot awards - the split-pot ship sequence', () => {
         .reduce((s, a) => s + Math.round(a.amount * 100), 0);
       expect(displayCents, `display shares for ${w.userId} must equal their credit`).toBe(
         Math.round(w.amount * 100)
+      );
+    }
+
+    // THE HAND THAT WON THE MONEY (2026-09-14): winners[].hand names the hand
+    // behind the player's largest share, whichever run it came from - not the
+    // showdown row, which is evaluated on board one only. A player who lost
+    // board one with a pair and took board two with a flush is a flush.
+    for (const w of credits as Array<{ userId: string; hand?: { name: string } }>) {
+      const largest = awards
+        .filter((a) => a.userId === w.userId && a.hand)
+        .sort((x, y) => y.amount - x.amount)[0];
+      if (!largest) continue;
+      expect(w.hand?.name, `winners[].hand for ${w.userId} names the run that paid`).toBe(
+        largest.hand!.name
       );
     }
 

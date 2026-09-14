@@ -999,9 +999,36 @@ export function buildReplay(input: ReplayInput): ReplayModel {
     const streetBoard = board.slice(0, street.boardTo);
     const madeHands: Array<{ userId: string; name: string }> = [];
     if (streetBoard.length >= 3) {
+      /* EVERY RUN, ONCE THE RUNS DIFFER (2026-09-14). A run-it-twice hand
+         shares board one up to the all-in and then deals the rest of each
+         run separately. On the streets after that point a seat's "made hand"
+         evaluated against board one alone is a half-truth: the seat is drawing
+         to two rivers, and the frame is showing both. So on a street where an
+         extra board has diverged from board one, the label names each run -
+         "Run 1 Two Pair · Run 2 Flush" - in the same shape the showdown frame
+         already uses (HandReplay.perRunHandLabel). Streets the runs still
+         share keep the single name; the runs are the same board there. */
+      const runBoards = boards
+        .map((b) => b.slice(0, street.boardTo))
+        .filter((b) => b.length === streetBoard.length);
+      const diverged =
+        runBoards.length > 1 &&
+        runBoards
+          .slice(1)
+          .some((b) => b.map(cardKey).join(',') !== streetBoard.map(cardKey).join(','));
       for (const uid of contenders) {
         const hole = knownHole(uid);
         if (!hole) continue;
+        if (diverged) {
+          const perRun = runBoards
+            .map((rb, run) => {
+              const made = bestFive(hole, rb, input.gameVariant);
+              return made ? `Run ${run + 1} ${titleCase(made.name)}` : null;
+            })
+            .filter((s): s is string => s !== null);
+          if (perRun.length > 0) madeHands.push({ userId: uid, name: perRun.join(' · ') });
+          continue;
+        }
         const made = bestFive(hole, streetBoard, input.gameVariant);
         if (made) madeHands.push({ userId: uid, name: titleCase(made.name) });
       }

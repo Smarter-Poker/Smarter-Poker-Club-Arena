@@ -1,3 +1,10 @@
+## 2026-09-14: Independent PKO tables preserve head order
+
+**Files:** migration20260914123818; captured independent-PKO native fixture/runner; associated changelog.
+**What existed:** the global deal-number cutoff rejected independent tables' valid bounty claims and pending collections.24of43 measured historical order refusals have no later shared table/player at claim time.
+**What changed:** both original authorities require an exact private disjointness proof before admitting a lower hand. Shared or unknown dependencies retain order refusal; all original financial and generation rules remain. No historical row repair.
+**Verified:** 97 native assertions plus three source guards, predicate ACL/private-access checks and migration replay;664engine accounting cases/38files; server TypeScript/build pass. Installed history20260914124651; exact three-function postimages and metadata verified12:47:13UTC. Source CI and actual live execution remain separate. See docs/changelog/2026-09-14-independent-pko-tables.md for scope and limits.
+
 ## 2026-09-14: Settled bounty replay precedes pending payment order
 
 **Files:** migration20260914122903; captured native replay fixture and runner; bounty recipient/order audit.

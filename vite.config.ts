@@ -197,6 +197,12 @@ export default defineConfig({
       // At the Vite build root it was ignored and the cap never took effect.
       maxParallelFileOps,
       output: {
+        // Let Rollup combine small automatic chunks while preserving the
+        // side effects of each entry. Each separately compressed tiny chunk
+        // otherwise repeats import names and gzip headers. This is measured
+        // before minification; the initial-load and total-size gates still
+        // apply to the final output. Application manual chunks remain absent.
+        experimentalMinChunkSize: 4096,
         // 2026-04-15 cache-bust: append a build-time tag to every emitted
         // file's name so that v5-broken immutable caches on users' browsers
         // are bypassed. Vite's default content hash alone can't help here

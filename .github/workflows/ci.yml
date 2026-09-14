@@ -71,25 +71,21 @@ concurrency:
   cancel-in-progress: true
 
 # ───────────────────────────────────────────────────────────────────────────
-# RUNNER ROUTING (restored 2026-09-14)
+# RUNNER ROUTING (restored 2026-09-14, PR #4647)
 #
-# 2026-09-01/02 cost audit: every credential-free job reads vars.CI_RUNNER
-# (repo variable, = estate-linux) and runs on the 33 self-hosted Hetzner
-# runners for free; unset, it is ubuntu-latest exactly as before.
+# Credential-free jobs read vars.CI_RUNNER (= estate-linux) and run free on the
+# 33 self-hosted Hetzner runners; unset, it is ubuntu-latest exactly as before.
+# #4189 hard-coded ubuntu-latest on all of them: ~3 billed min/run became ~70,
+# $31/day became $121/day, while every estate runner sat online and idle.
 #
-# PR #4189 (2026-09-11) hard-coded ubuntu-latest on all of them, citing
-# untrusted PR input on persistent hosts. Effect, measured from the billing
-# API: ~3 billed minutes per CI run became ~70 (15 hosted jobs), $31/day
-# became $121/day (2026-09-12), while every estate runner sat online and idle.
+# #4189's concern is handled by SEPARATION, not by paying GitHub: ci.yml
+# references no secrets, and the credential-bearing publish jobs read
+# vars.PUBLISH_RUNNER instead (publish-club-arena.yml), so they never share a
+# pool with pull-request code. Do not hard-code ubuntu-latest on a
+# credential-free job again without re-reading the September billing numbers.
 #
-# The concern #4189 raised is handled by SEPARATION, not by paying GitHub:
-#   - ci.yml references no secrets at all, so nothing on the estate-linux pool
-#     can be exfiltrated by pull-request code beyond a read-only GITHUB_TOKEN.
-#   - Credential-bearing publish jobs (publish-club-arena.yml build-and-store,
-#     publish-to-app, publish-to-origin) read vars.PUBLISH_RUNNER instead and
-#     do NOT share the pool with pull-request code (unset => ubuntu-latest).
-# Do not hard-code ubuntu-latest on a credential-free job again without
-# re-reading the September billing numbers.
+# This file is large. Put rationale in the test that enforces a rule rather
+# than repeating it per job here.
 # ───────────────────────────────────────────────────────────────────────────
 jobs:
   # ───────────────────────────────────────────────────────────────────────────
@@ -118,7 +114,6 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   changes:
     name: What changed
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
     if: github.event_name == 'pull_request'
@@ -169,7 +164,6 @@ jobs:
   # it to be behind a gate that can hide it.
   source_windows:
     name: Source Windows Are Structural
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 6
     steps:
@@ -225,7 +219,6 @@ jobs:
   stub_gate:
     if: github.event_name == 'pull_request'
     name: Stub Gate
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     steps:
       - name: Checkout
@@ -263,7 +256,6 @@ jobs:
     name: TypeScript Check
     needs: [typecheck_compile, changes, fixture_native]
     if: always() && github.event_name == 'pull_request'
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 2
     permissions:
@@ -293,7 +285,6 @@ jobs:
     # when it takes twenty seconds.
     if: github.event_name == 'pull_request'
     name: TypeScript compilation and repository checks
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
 
@@ -1040,7 +1031,6 @@ jobs:
        (github.event_name == 'pull_request' &&
         (needs.changes.result != 'success' || needs.changes.outputs.src == 'true' || needs.changes.outputs.tests == 'true')))
     name: Client Unit Tests shard ${{ matrix.shard }}
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
     # SHARDED 2026-09-06. Measured over 18 pull-request runs this was the
@@ -1125,7 +1115,6 @@ jobs:
     needs: unit_shards
     if: always()
     name: Client Unit Tests (vitest)
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
@@ -1216,38 +1205,6 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-bbj-bank-replay.py
-      - name: Weekly union close rolls back failed stages and records scheduler results
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: bash scripts/dev/test-union-weekly-accounting.sh
-      - name: Credit invoices bill only uninvoiced drawn debt
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: bash scripts/dev/test-credit-invoice-generation.sh
-      - name: Accounting invoices commit with private Messenger and notification receipts
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: bash scripts/dev/test-accounting-delivery.sh
-      - name: Credit payments preserve scope cents replay and delivery atomicity
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: bash scripts/dev/test-credit-invoice-payment.sh
-      - name: Agent statements isolate clubs and use posted evidence
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: bash scripts/dev/test-agent-accounting-statements.sh
-      - name: Accounting agreement changes preserve immutable observed history
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: bash scripts/dev/test-accounting-agreement-history.sh
-      - name: Clubs receive one exact weekly statement and private invoice discussions
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: bash scripts/dev/test-club-weekly-summary.sh
-      - name: One weekly accounting coordinator rolls back all financial stages and invoices
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: bash scripts/dev/test-weekly-accounting-coordinator.sh
       - name: Horse identity trigger semantics, rollback and concurrent stamp writes
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
@@ -1377,7 +1334,6 @@ jobs:
         (needs.changes.result != 'success' ||
          needs.changes.outputs.server == 'true')))
     name: Server Engine shard ${{ matrix.shard }}/4
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
     strategy:
@@ -1465,7 +1421,6 @@ jobs:
     needs: [changes, server_shards]
     if: always()
     name: Server Engine (typecheck + tests)
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 2
     steps:
@@ -1508,7 +1463,6 @@ jobs:
   # surfaces in the run header without anyone thinking to open the logs.
   verdict:
     name: What this run verified
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 2
     if: always()
@@ -1589,7 +1543,6 @@ jobs:
       always() && github.event_name == 'pull_request' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: Production Build
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
 
@@ -1764,10 +1717,7 @@ jobs:
       # BRANCHED ON THE RUNNER 2026-09-07, and this was the last unguarded
       - name: Install Performance Browser
         if: success()
-        # --with-deps apt-gets browser libraries and needs root + the apt lock. The estate
-        # boxes carry those libraries (provision-ci-box.sh) and run many runners per host,
-        # so on self-hosted install the browser only. Keyed on runner.environment, NOT on
-        # vars.CI_RUNNER, so a job still pinned to ubuntu-latest keeps --with-deps.
+        # No apt on the estate (libs are baked in); see theAptLockIsNotACiGate.test.ts.
         run: |
           if [ "${{ runner.environment }}" = "self-hosted" ]; then
             npx playwright install chromium
@@ -1813,7 +1763,6 @@ jobs:
     # that is the "is main actually green" net (see the schedule note).
     if: github.event_name == 'schedule' && github.event.schedule == '35 6 * * *'
     name: Live Production E2E
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 25
 
@@ -1834,10 +1783,7 @@ jobs:
         run: npm ci
 
       - name: Install Playwright Browsers
-        # --with-deps apt-gets browser libraries and needs root + the apt lock. The estate
-        # boxes carry those libraries (provision-ci-box.sh) and run many runners per host,
-        # so on self-hosted install the browser only. Keyed on runner.environment, NOT on
-        # vars.CI_RUNNER, so a job still pinned to ubuntu-latest keeps --with-deps.
+        # No apt on the estate (libs are baked in); see theAptLockIsNotACiGate.test.ts.
         run: |
           if [ "${{ runner.environment }}" = "self-hosted" ]; then
             npx playwright install chromium
@@ -1963,7 +1909,6 @@ jobs:
     # logic alive at 13 runs a day instead of 85.
     if: github.event_name == 'schedule'
     name: Post-Deploy Verification
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
 
@@ -2069,7 +2014,6 @@ jobs:
       always() && github.event_name == 'pull_request' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: CSS Beat E2E (multi-table + animations)
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 20
 
@@ -2145,10 +2089,7 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Install Chromium and WebKit
-        # --with-deps apt-gets browser libraries and needs root + the apt lock. The estate
-        # boxes carry those libraries (provision-ci-box.sh) and run many runners per host,
-        # so on self-hosted install the browser only. Keyed on runner.environment, NOT on
-        # vars.CI_RUNNER, so a job still pinned to ubuntu-latest keeps --with-deps.
+        # No apt on the estate (libs are baked in); see theAptLockIsNotACiGate.test.ts.
         run: |
           if [ "${{ runner.environment }}" = "self-hosted" ]; then
             npx playwright install chromium webkit

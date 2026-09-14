@@ -11,6 +11,7 @@ import { exerciseQueueHealth } from './horse-adaptive-queue-health-native.mjs';
 import { exerciseObservationCapture } from './horse-observation-capture-native.mjs';
 import { exerciseCaptureSlices } from './horse-capture-slices-native.mjs';
 import { exerciseSourceWitnesses } from './horse-source-witness-native.mjs';
+import { exerciseCaptureEvidence } from './horse-capture-evidence-native.mjs';
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const { Client } = createRequire(root + '/server/package.json')('pg');
 const pg = process.env.HORSE_PROOF_PG_BIN,
@@ -288,6 +289,9 @@ try {
                   p.p_reason,
                   p.p_source_witness,
                 ];
+              } else if (name === 'fn_horse_observation_capture_evidence') {
+                query = 'SELECT fn_horse_observation_capture_evidence($1,$2,$3,$4,$5) value';
+                params = [p.p_actor, p.p_from_ms, p.p_through_ms, p.p_after_from_ms, p.p_revision];
               } else if (name === 'fn_prune_horse_observation_captures') {
                 query = 'SELECT fn_prune_horse_observation_captures() value';
                 params = [];
@@ -894,6 +898,21 @@ try {
       sliced: true,
       witnessed: true,
     })
+  );
+  results.push(
+    ...(await exerciseCaptureEvidence({
+      root,
+      c,
+      otherConnection,
+      actor,
+      source,
+      readSource,
+      journal,
+      capture: await bridge('HorseObservationCapture'),
+      witness: await bridge('HorseObservationSourceWitness'),
+      evidence: await bridge('HorseCaptureEvidence'),
+      calls,
+    }))
   );
   proof = { results, sourceCalls: calls, productionPostgrestVerified: false };
 } finally {

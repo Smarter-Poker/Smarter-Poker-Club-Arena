@@ -244,19 +244,27 @@ export async function savePresenceAtPark(params: {
  */
 export async function loadPresenceFromPark(
   tableId: string,
-  nowMs: number = Date.now()
+  nowMs: number = Date.now(),
+  maintenanceIntervalId: string | null = null
 ): Promise<Record<string, DisconnectStateEntry> | null> {
   try {
     const { data, error } = await supabase
       .from('engine_presence_parked')
-      .select('disconnect_states, parked_at')
+      .select('disconnect_states, parked_at, engine_instance')
       .eq('table_id', tableId)
       .maybeSingle();
-    if (error || !data) return null;
+    if (maintenanceIntervalId) {
+      if (error) throw error;
+      if (!data || !String(data.engine_instance).endsWith(`:maintenance:${maintenanceIntervalId}`)) {
+        throw new Error('Owned maintenance presence interval does not match');
+      }
+    } else if (error || !data) return null;
     const parkedAt = Date.parse(String(data.parked_at));
-    if (!Number.isFinite(parkedAt) || nowMs - parkedAt > PARKED_PRESENCE_FRESH_MS) return null;
+    if (maintenanceIntervalId && !Number.isFinite(parkedAt)) throw new Error('Owned maintenance presence timestamp is invalid');
+    if (!Number.isFinite(parkedAt) || (!maintenanceIntervalId && nowMs - parkedAt > PARKED_PRESENCE_FRESH_MS)) return null;
     return (data.disconnect_states as Record<string, DisconnectStateEntry>) ?? null;
   } catch (e) {
+    if (maintenanceIntervalId) throw e;
     console.warn(`[loadPresenceFromPark] Exception:`, e);
     return null;
   }

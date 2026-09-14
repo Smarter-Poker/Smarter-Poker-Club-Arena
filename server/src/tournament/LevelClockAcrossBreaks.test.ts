@@ -63,8 +63,8 @@ function methodBody(src: string, signature: string): string {
 }
 
 describe('the blind clock survives a synchronized break', () => {
-  const resume = methodBody(BASE, 'async resumeFromBreak()');
-  const pause = methodBody(BASE, 'async pauseForBreak(');
+  const resume = methodBody(BASE, 'private async commitOwnBreakResume()');
+  const pause = methodBody(BASE, 'private async pauseForBreakOnce(');
 
   it('DEFECT 1 - resumeFromBreak always re-arms a level timer, even with nothing saved', () => {
     // The old code was `if (this.savedBlindTimerRemaining > 0) { ...arm... }`
@@ -72,17 +72,22 @@ describe('the blind clock survives a synchronized break', () => {
     expect(resume).not.toMatch(
       /if\s*\(\s*this\.savedBlindTimerRemaining\s*>\s*0\s*\)\s*\{[^}]*setTimeout/
     );
-    expect(resume).toMatch(/this\.startBlindTimer\(/);
+    expect(resume).toMatch(/this\.armBlindTimerFromAnchor\(/);
   });
 
-  it('DEFECT 2 - resumeFromBreak goes through startBlindTimer, not a hand-rolled setTimeout', () => {
-    // startBlindTimer back-dates blindTimerStartedAt against the override so
-    // the NEXT pauseForBreak measures the true remaining time.
+  it('DEFECT 2 - resume persists one exact anchor then arms it without a second write', () => {
+    // The atomic persisted anchor uses the saved remainder. The no-write armer
+    // consumes response latency, so the next pause measures true remaining time.
     expect(resume).not.toMatch(/setTimeout\(/);
-    // The saved remaining must reach startBlindTimer as its override argument,
-    // whether passed directly or via a local captured before the reset below.
+    // Both the durable state and timer use the same immutable resumed anchor.
     expect(resume).toMatch(/this\.savedBlindTimerRemaining/);
-    expect(resume).toMatch(/this\.startBlindTimer\([^)]+,[^)]+\)/);
+    expect(resume).toContain('this.clearPersistedBreak(anchor, true)');
+    expect(resume).toContain(
+      'this.armBlindTimerFromAnchor(blindStructure, anchor, this.tournamentClockNow())'
+    );
+    expect(resume.indexOf('this.clearPersistedBreak(anchor, true)')).toBeLessThan(
+      resume.indexOf('this.armBlindTimerFromAnchor(')
+    );
   });
 
   it('DEFECT 3 - resumeFromBreak clears the saved remaining so it cannot be re-used', () => {
@@ -107,7 +112,7 @@ describe('the blind clock survives a synchronized break', () => {
 });
 
 describe('levels advance past structure break rows without stalling', () => {
-  const advance = methodBody(BASE, 'protected async advanceBlindLevel(');
+  const advance = methodBody(BASE, 'private async advanceBlindLevelOnce(');
 
   it('DEFECT 4 - an isBreak row no longer early-returns before the level bookkeeping', () => {
     // Every default structure carries isBreak rows (hyperTurbo indices 7, 13,

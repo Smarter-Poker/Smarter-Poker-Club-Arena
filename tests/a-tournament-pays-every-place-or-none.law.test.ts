@@ -133,8 +133,11 @@ const REPRICE = sliceMethod(
 const ENGINE_BASE = stripTsComments(
   readFileSync(join(ROOT, 'server/src/tournament/TournamentManagerBase.ts'), 'utf8')
 );
-const FINALIZE_AFTER_ADD_ON = sliceMethod(ENGINE_BASE, 'finalizeAfterAddOn(): Promise<boolean>');
-const OPEN_ADD_ON = sliceMethod(ENGINE_BASE, 'triggerAddOnPeriod(): Promise<void>');
+const FINALIZE_AFTER_ADD_ON = sliceMethod(
+  ENGINE_BASE,
+  'finalizeAfterAddOnOnce(): Promise<boolean>'
+);
+const OPEN_ADD_ON = sliceMethod(ENGINE_BASE, 'triggerAddOnPeriodOnce(): Promise<void>');
 const TABLE_PAGE = stripTsComments(readFileSync(join(ROOT, 'src/pages/TablePage.tsx'), 'utf8'));
 const ADD_ON_PRESENTER = TABLE_PAGE.slice(
   TABLE_PAGE.indexOf('const presentAddOnOffer = async'),
@@ -168,6 +171,14 @@ const RECOGNIZED_PAYOUT_SOURCES = [
 ];
 
 describe('a tournament pays every place or none', () => {
+  it('the public add-on entrypoints use the checked production implementations', () => {
+    expect(sliceMethod(ENGINE_BASE, 'finalizeAfterAddOn(): Promise<boolean>')).toContain(
+      'this.finalizeAfterAddOnOnce()'
+    );
+    expect(sliceMethod(ENGINE_BASE, 'triggerAddOnPeriod(): Promise<void>')).toContain(
+      'this.triggerAddOnPeriodOnce()'
+    );
+  });
   it('has exactly one reserved Stage-A migration carrying the rolling contract', () => {
     expect(migrationFiles).toHaveLength(1);
     expect(migration).toBeTruthy();

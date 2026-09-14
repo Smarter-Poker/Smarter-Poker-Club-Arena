@@ -63,12 +63,20 @@ describe('one tournament lifecycle generation owns every continuation', () => {
     // The add-on CAS is not detached: its caller awaits this whole method. It
     // therefore owns an explicit generation token across both the possibly
     // committed write response and the authoritative read-back.
-    const trigger = sliceMethod(BASE, 'triggerAddOnPeriod(): Promise<void>');
+    expect(sliceMethod(BASE, 'triggerAddOnPeriod(): Promise<void>')).toContain(
+      'this.triggerAddOnPeriodOnce()'
+    );
+    const trigger = sliceMethod(BASE, 'triggerAddOnPeriodOnce(): Promise<void>');
     const token = trigger.indexOf('const lifecycle = this.captureLifecycleToken()');
     const mutationAt = trigger.indexOf('addon_period_triggered: true', token);
     const writeReceipt = trigger.indexOf('.select(projection)', mutationAt);
     const readBack = trigger.indexOf('.select(projection)', writeReceipt + 1);
-    const fence = trigger.indexOf('if (!this.lifecycleIsCurrent(lifecycle)) return;', readBack);
+    const fenceOffset = trigger
+      .slice(readBack)
+      .search(
+        /if \(!this\.lifecycleIsCurrent\(lifecycle\)(?: \|\| this\.operationFinancialHeld\(\))?\) return;/
+      );
+    const fence = fenceOffset < 0 ? -1 : readBack + fenceOffset;
     expect(token).toBeGreaterThanOrEqual(0);
     expect(mutationAt).toBeGreaterThan(token);
     expect(writeReceipt).toBeGreaterThan(mutationAt);

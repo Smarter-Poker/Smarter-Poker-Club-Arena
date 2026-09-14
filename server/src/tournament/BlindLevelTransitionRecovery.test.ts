@@ -25,6 +25,9 @@ afterEach(() => {
 function manager(row: Record<string, any>, tableIds: string[]) {
   const state: any = Object.assign(Object.create(TournamentManagerBase.prototype), {
     tournamentId: 'level-restart',
+    operationHold: null,
+    operationWork: new Map(),
+    operationWorkFailed: new Set(),
     tournamentCache: structuredClone(row),
     running: true,
     currentLevel: row.current_level,

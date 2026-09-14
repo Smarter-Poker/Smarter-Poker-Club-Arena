@@ -249,7 +249,10 @@ describe('rebuys and add-ons actually happen', () => {
   });
 
   it('the durable window queues bounded scheduler work instead of running a field loop inline', () => {
-    const trigger = sliceMethod(code(BASE), 'triggerAddOnPeriod(): Promise<void>');
+    expect(sliceMethod(code(BASE), 'triggerAddOnPeriod(): Promise<void>')).toContain(
+      'this.triggerAddOnPeriodOnce()'
+    );
+    const trigger = sliceMethod(code(BASE), 'triggerAddOnPeriodOnce(): Promise<void>');
     const durableProof = trigger.indexOf('durableWindowProven = true');
     const wake = trigger.indexOf('this.requestEliminationSweep()', durableProof);
     const retry = trigger.indexOf('this.scheduleAddOnRetry()', wake);

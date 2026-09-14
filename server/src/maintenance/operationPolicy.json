@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "releasePolicy": "prelaunch_serial",
+  "maximumActiveReleases": 1,
+  "platformHourlyPause": false,
+  "lastHandNoticeMs": 120000,
+  "normalTargetMs": 300000,
+  "plannedHoldMs": 1800000,
+  "recoveryReserveMs": 600000,
+  "forwardWorkMs": 1200000,
+  "postResumeObservationMs": 600000,
+  "qualificationMs": 86400000,
+  "deadlineAction": "RECOVERY_REQUIRED",
+  "reopeningAuthority": "durable_release_and_thaw",
+  "activationRequires": [
+    "database",
+    "engine",
+    "client",
+    "controller",
+    "host_cutover",
+    "retained_recovery"
+  ]
+}

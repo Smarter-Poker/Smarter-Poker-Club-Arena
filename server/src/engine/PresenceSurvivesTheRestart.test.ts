@@ -123,7 +123,9 @@ describe('the break writes the FSM, the boot reads it', () => {
     const base = readFileSync(resolve(__dirname, 'ServerTableEngineBase.ts'), 'utf8');
     // The block that runs only when checkCrashRecovery found nothing.
     const noCrash = sliceBlockAfter(base, 'if (!recovered) {');
-    expect(noCrash).toMatch(/loadPresenceFromPark\(this\.tableId\)/);
+    expect(noCrash).toMatch(
+      /loadPresenceFromPark\(\s*this\.tableId,\s*Date\.now\(\),\s*this\.maintenanceOperationInterval\s*\)/
+    );
     expect(noCrash).toMatch(/restoreFsmStates\(this\.tableId, parked\)/);
     const dealing = readFileSync(resolve(__dirname, 'ServerTableEngineDealing.ts'), 'utf8');
     // The gate that parks the loop for the break.
@@ -143,5 +145,105 @@ describe('the break writes the FSM, the boot reads it', () => {
     // ...and it persists BEFORE it waits on the gate, or the process may be
     // gone before the write.
     expect(park.indexOf('persistPresenceForRestart')).toBeLessThan(park.indexOf('awaitPauseGate'));
+  });
+});
+
+describe('owned operation presence and the actual engine drain', () => {
+  const interval = 'a0000000-0000-4000-8000-000000000001';
+  beforeEach(() => {
+    vi.useFakeTimers();
+    savePresenceAtPark.mockReset().mockResolvedValue(true);
+  });
+  afterEach(() => vi.useRealTimers());
+  async function parkedEngine() {
+    const engine = new ServerTableEngine(TABLE) as any;
+    engine.running = true;
+    engine.pauseForMaintenance(1800000, interval);
+    await engine.maintenancePresenceTail;
+    const parked = engine.awaitPauseGate() as Promise<void>;
+    return { engine, parked };
+  }
+  it('does not erase the old parked FSM before an adopted engine has restored it', async () => {
+    const engine = new ServerTableEngine(TABLE) as any;
+    engine.pauseForMaintenance(1800000, interval);
+    await Promise.resolve();
+    expect(savePresenceAtPark).not.toHaveBeenCalled();
+    engine.running = true;
+    await engine.persistPresenceForRestart('parked');
+    expect(savePresenceAtPark.mock.calls[0][0].engineInstance).toContain(
+      `:maintenance:${interval}`
+    );
+  });
+  it('serializes announcement and park writes and blocks readiness through a failed write', async () => {
+    let finish!: (saved: boolean) => void;
+    savePresenceAtPark.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    const engine = new ServerTableEngine(TABLE) as any;
+    engine.running = true;
+    engine.pauseForMaintenance(1800000, interval);
+    await Promise.resolve();
+    const second = engine.persistPresenceForRestart('parked');
+    const parked = engine.awaitPauseGate();
+    expect(savePresenceAtPark).toHaveBeenCalledTimes(1);
+    expect(engine.isMaintenanceDrained()).toBe(false);
+    finish(true);
+    savePresenceAtPark.mockResolvedValueOnce(false);
+    await second;
+    expect(engine.isMaintenanceDrained()).toBe(false);
+    engine.retryMaintenancePresence();
+    await engine.maintenancePresenceTail;
+    expect(engine.isMaintenanceDrained()).toBe(true);
+    engine.resumeFromMaintenance();
+    await parked;
+  });
+  it('waits for both active and queued seat boundaries, including terminal rejection', async () => {
+    const { engine, parked } = await parkedEngine();
+    expect(engine.isMaintenanceDrained()).toBe(true);
+    const first = await engine.acquireSeatBoundary();
+    const second = engine.acquireSeatBoundary();
+    expect(engine.isMaintenanceDrained()).toBe(false);
+    first();
+    first();
+    const releaseSecond = await second;
+    expect(engine.isMaintenanceDrained()).toBe(false);
+    const third = engine.acquireSeatBoundary();
+    const rejected = expect(third).rejects.toThrow('Table Engine Is Stopping');
+    engine.terminal = true;
+    releaseSecond();
+    await rejected;
+    expect(engine.seatBoundaryPending).toBe(0);
+    engine.resumeFromMaintenance();
+    await parked;
+  });
+  it.each(['settlement', 'posthand', 'terminal', 'action', 'move'])(
+    'refuses a parked engine with pending %s work',
+    async (kind) => {
+      const { engine, parked } = await parkedEngine();
+      const pending = Promise.resolve();
+      if (kind === 'settlement') engine.settlementInFlight.add(pending);
+      if (kind === 'posthand') engine.postHandTasksPromise = pending;
+      if (kind === 'terminal') engine.terminalBoundaryPendingGenerations.add(1);
+      if (kind === 'action') engine.actionLock = true;
+      if (kind === 'move') engine.tournamentMoveOperations.add(pending);
+      expect(engine.isMaintenanceDrained()).toBe(false);
+      engine.resumeFromMaintenance();
+      await parked;
+    }
+  );
+  it('does not self-release at thirty minutes and preserves an independent tournament pause', async () => {
+    const { engine, parked } = await parkedEngine();
+    await vi.advanceTimersByTimeAsync(1800001);
+    expect(engine.isMaintenancePaused()).toBe(true);
+    expect(engine.isParkedBetweenHands()).toBe(true);
+    engine.pauseAfterHand(120000, { untilResumed: true });
+    engine.resumeFromMaintenance();
+    expect(engine.isParkedBetweenHands()).toBe(true);
+    engine.resumeDealing();
+    await parked;
+    expect(engine.isParkedBetweenHands()).toBe(false);
   });
 });

@@ -17,11 +17,15 @@ const signatures = [
   'protected levelDurationMs(',
   'protected resolveBlindLevel(',
   'protected async advanceBlindLevel(',
+  'private async advanceBlindLevelOnce(',
+  'private operationClockHeld(',
+  'private operationFinancialHeld(',
+  'private async trackOperationWork<T>(',
 ];
 if (source.includes('protected rawLevelDurationMs('))
   signatures.push('protected rawLevelDurationMs(');
 const methods = signatures.map((signature) =>
-  sliceMethod(source, signature).replace(/^protected\s+/, '')
+  sliceMethod(source, signature).replace(/^(?:protected|private)\s+/, '')
 );
 const runtime = ts.transpileModule('return { ' + methods.join(',\n') + ' };', {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
@@ -56,6 +60,9 @@ function manager(
       dependencies.tableStateHub,
       dependencies.reportError
     ),
+    operationHold: null,
+    operationWork: new Map(),
+    operationWorkFailed: new Set(),
     tournamentCache: { accelerated_mtt: accelerated, variant: spin ? 'spin' : 'mtt' },
     isLateRegClosed: () => closed,
     capLevelToTournamentChips: (level: unknown) => level,

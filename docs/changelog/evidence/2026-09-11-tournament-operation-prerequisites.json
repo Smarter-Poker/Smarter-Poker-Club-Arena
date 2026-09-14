@@ -1,0 +1,40 @@
+{
+  "source": "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-pipeline-maintenance",
+  "purpose": "Exact reviewed server operation-maintenance prerequisite snapshot. Manager integration is a separate commit. Source-only; activation remains gated.",
+  "files": {
+    "server/src/maintenance/OperationMaintenanceRuntime.ts": "0b709bffc6619c91beb95f8d460684d07b9505ef50ab873ad6a854eb5e44ab9d",
+    "server/src/maintenance/OperationMaintenanceRuntime.test.ts": "5c94efdeb6b12b93a25a1423b8c438597fb1b7dbbdfbd4e3049a24ce6544c1af",
+    "server/src/maintenance/operationMaintenanceStore.ts": "22cd590efb134f8863d097393ef4f76fcfa8798f77ad19f1bb0d6733741a4e26",
+    "server/src/maintenance/operationMaintenanceStore.test.ts": "732e34675b4c97dc702946de3ad422c128f95010b62d8f14e50ca9a2e5673d28",
+    "server/src/maintenance/operationPolicy.json": "1fed78c7afc00a220839dd198f2a362befe0fbe9655b2574d9d037d2864b2bda",
+    "server/src/maintenance/operationPolicy.ts": "38bc21a332746cc2d01afacff45dc158c348fc1bcf48d2f2652b29311a10d0b9",
+    "server/src/maintenance/operationPolicy.test.ts": "93a444d79911c350d2713f02cf23094a70b4f7d68c08680380ef0a7c15c7e3a4",
+    "server/src/maintenance/freezeState.ts": "da4cb636ca1385f0f75aecfb22fdfcc9b5004a6b7b6510b5155f86be3f51ade8",
+    "server/src/maintenance/certifiedGlobalFreeze.test.ts": "dc37f79b8a23bd8205773d961a47534d602bd77344191c45f797459ba0a70d03",
+    "server/src/maintenance/MaintenanceBreak.ts": "99f4594af9f12fcb8c6f3c59fd67876e10e00ae44e7f66cb30226729336c2505",
+    "server/src/maintenance/maintenanceBreakStore.ts": "9c50a61275c714d1056aa6cbb4f079cfcce47383423a30376d89fb858e1a534f",
+    "server/src/engine/ServerTableEngineBase.ts": "aa9f290656da8dffaa9e9290cd41dcae1eca404df40eb685460b1f47671cdc92",
+    "server/src/engine/PresenceSurvivesTheRestart.test.ts": "d002ce364008e209c4075859849b984b059493c29a3100a8586b0db142d3c327",
+    "server/src/services/supabase/snapshots.ts": "a2ee3228c14a0673f0bb11f62142189062d32dde1ceb1e72d59005b35baf4e4f",
+    "server/src/services/supabase/OperationPresenceRestore.test.ts": "ece480d4bfc35d5e0bd678d10beae78a6ec439eb0846ec94c366d308ed26aa0f"
+  },
+  "integration_note": "ServerTableEngineBase uses only the reviewed donor operation-maintenance diff on 7867126a, preserving newer integration telemetry. Donor hashes describe the copied source before normal commit formatting; files records exact committed snapshot bytes. Manager integration is a separate subsequent commit.",
+  "donor_input_files": {
+    "server/src/maintenance/OperationMaintenanceRuntime.ts": "0b709bffc6619c91beb95f8d460684d07b9505ef50ab873ad6a854eb5e44ab9d",
+    "server/src/maintenance/OperationMaintenanceRuntime.test.ts": "5c94efdeb6b12b93a25a1423b8c438597fb1b7dbbdfbd4e3049a24ce6544c1af",
+    "server/src/maintenance/operationMaintenanceStore.ts": "22cd590efb134f8863d097393ef4f76fcfa8798f77ad19f1bb0d6733741a4e26",
+    "server/src/maintenance/operationMaintenanceStore.test.ts": "732e34675b4c97dc702946de3ad422c128f95010b62d8f14e50ca9a2e5673d28",
+    "server/src/maintenance/operationPolicy.json": "1fed78c7afc00a220839dd198f2a362befe0fbe9655b2574d9d037d2864b2bda",
+    "server/src/maintenance/operationPolicy.ts": "38bc21a332746cc2d01afacff45dc158c348fc1bcf48d2f2652b29311a10d0b9",
+    "server/src/maintenance/operationPolicy.test.ts": "93a444d79911c350d2713f02cf23094a70b4f7d68c08680380ef0a7c15c7e3a4",
+    "server/src/maintenance/freezeState.ts": "da4cb636ca1385f0f75aecfb22fdfcc9b5004a6b7b6510b5155f86be3f51ade8",
+    "server/src/maintenance/certifiedGlobalFreeze.test.ts": "dc37f79b8a23bd8205773d961a47534d602bd77344191c45f797459ba0a70d03",
+    "server/src/maintenance/MaintenanceBreak.ts": "99f4594af9f12fcb8c6f3c59fd67876e10e00ae44e7f66cb30226729336c2505",
+    "server/src/maintenance/maintenanceBreakStore.ts": "9c50a61275c714d1056aa6cbb4f079cfcce47383423a30376d89fb858e1a534f",
+    "server/src/engine/ServerTableEngineBase.ts": "170af20dc6262998cce26bcf047156571e2618b9563f6f39a179dcf0d96258ed",
+    "server/src/engine/PresenceSurvivesTheRestart.test.ts": "d002ce364008e209c4075859849b984b059493c29a3100a8586b0db142d3c327",
+    "server/src/services/supabase/snapshots.ts": "a2ee3228c14a0673f0bb11f62142189062d32dde1ceb1e72d59005b35baf4e4f",
+    "server/src/services/supabase/OperationPresenceRestore.test.ts": "ece480d4bfc35d5e0bd678d10beae78a6ec439eb0846ec94c366d308ed26aa0f"
+  },
+  "baseline_commit": "a4c3897ef1"
+}

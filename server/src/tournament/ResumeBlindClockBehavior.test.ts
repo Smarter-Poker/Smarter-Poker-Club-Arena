@@ -18,7 +18,15 @@ const methods = [
   'protected suspendLevelClock(',
   'protected async waitForMaintenanceThaw(',
   'async resumeFromBreak()',
+  'private async resumeFromBreakOnce(',
+  'private async commitOwnBreakResume(',
+  'private armBlindTimerFromAnchor(',
   'private async beginAddOnBreak(',
+  'private async beginAddOnBreakOnce(',
+  'private operationClockHeld(',
+  'private operationFinancialHeld(',
+  'private async trackOperationWork<',
+  'private tournamentClockNow(',
 ].map((signature) => sliceMethod(source, signature).replace(/^(protected|private)\s+/, ''));
 
 /** A numeric static as the source declares it, so the harness runs on the real value. */
@@ -90,6 +98,9 @@ function harness(
   const state: any = {
     ...actual,
     tournamentId: 'clock-restart',
+    operationHold: null,
+    operationWork: new Map(),
+    operationWorkFailed: new Set(),
     tournamentCache: tournament,
     running: true,
     currentLevel: 0,
@@ -110,12 +121,20 @@ function harness(
     scheduleAddOnRetry: vi.fn(),
     reconcileTournamentEntryWindow: vi.fn(async () => {}),
     assertLifecycleCurrent: vi.fn(),
-    clearPersistedBreak: vi.fn(async () => {
+    clearPersistedBreak: vi.fn(async (anchor?: number) => {
       tournament.on_break = false;
+      if (anchor !== undefined) {
+        const patch = { level_started_at: new Date(anchor).toISOString() };
+        Object.assign(tournament, patch);
+        writes.push(patch);
+      }
     }),
     trackLifecycleJob: (promise: Promise<unknown>) => promise,
     advanceBlindLevel: vi.fn(async () => {}),
     advanceHandForHandBarrier: vi.fn(),
+    isOnBreak() {
+      return this.onBreak || this.addOnBreakActive;
+    },
     broadcast: vi.fn(async () => {}),
     setLifecycleTimeout: (callback: () => unknown, delay: number) => {
       const timer = { callback, delay, unref: () => {} };

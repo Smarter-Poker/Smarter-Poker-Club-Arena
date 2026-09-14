@@ -25,19 +25,63 @@
 
 let frozen = false;
 const thawListeners = new Set<() => void>();
+let certifiedGlobalRelease: { receiptId: string; releaseAt: number; now: () => number } | null =
+  null;
+const resumedOperationTables = new Set<string>();
 
 export function setMaintenanceFrozen(value: boolean): void {
   const thawing = frozen && !value;
+  if (!value || !frozen) resumedOperationTables.clear();
   frozen = value;
-  if (!thawing) return;
-  const due = [...thawListeners];
-  thawListeners.clear();
-  for (const listener of due) listener();
+  certifiedGlobalRelease = null;
+  if (thawing) {
+    const due = [...thawListeners];
+    thawListeners.clear();
+    for (const listener of due) listener();
+  }
+}
+
+/** Only the owned wave actuator calls this at the physical table resume.
+ * Global sweeps remain held until the complete operation is acknowledged. */
+export function markOperationTableResumed(tableId: string): void {
+  if (frozen) resumedOperationTables.add(tableId);
+}
+
+export function isMaintenanceFrozenForTable(tableId: string): boolean {
+  return isMaintenanceFrozen() && !resumedOperationTables.has(tableId);
 }
 
 /** True from the :53 announcement until the :00 resume. */
 export function isMaintenanceFrozen(): boolean {
+  if (
+    frozen &&
+    certifiedGlobalRelease &&
+    certifiedGlobalRelease.now() >= certifiedGlobalRelease.releaseAt
+  ) {
+    // Realize the same edge as the explicit callback, including exactly-once
+    // owed work. Later timer/readback calls cannot fire this edge again.
+    setMaintenanceFrozen(false);
+  }
   return frozen;
+}
+
+/** Only an owned, parsed database all-target certificate installs this boundary.
+ * Every sweep checks it synchronously; timer callbacks are only readback work.
+ * Missing/unknown transport responses never call this function. */
+export function certifyOperationGlobalRelease(
+  receiptId: string,
+  releaseAt: number,
+  now: () => number
+): void {
+  if (!receiptId || !Number.isFinite(releaseAt) || !Number.isFinite(now()))
+    throw new Error('maintenance_global_release_certificate_invalid');
+  if (
+    certifiedGlobalRelease &&
+    (certifiedGlobalRelease.receiptId !== receiptId ||
+      certifiedGlobalRelease.releaseAt !== releaseAt)
+  )
+    throw new Error('maintenance_global_release_certificate_changed');
+  certifiedGlobalRelease = { receiptId, releaseAt, now };
 }
 
 /**
@@ -64,7 +108,7 @@ export function onNextMaintenanceThaw(listener: () => void, signal?: AbortSignal
   };
   if (!active) return cancel;
   signal?.addEventListener('abort', cancel, { once: true });
-  if (frozen) thawListeners.add(deliver);
+  if (isMaintenanceFrozen()) thawListeners.add(deliver);
   else queueMicrotask(deliver);
   return cancel;
 }

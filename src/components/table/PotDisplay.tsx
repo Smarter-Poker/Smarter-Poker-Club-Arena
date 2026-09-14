@@ -37,7 +37,7 @@
 import React, { useMemo, memo, useState, useEffect, useRef } from 'react';
 import { AnimatedNumber } from '../common/AnimatedNumber';
 import { soundService } from '../../services/SoundService';
-import { visualChipStacks } from '../../lib/chipDenominations';
+import { visualChipStacks, type ChipDenomination } from '../../lib/chipDenominations';
 import { formatTableChips } from '../../utils/format';
 import './PotDisplay.css';
 
@@ -199,13 +199,29 @@ function PotChipPile({ amount, size }: { amount: number; size: 'pot' | 'street' 
 
   if (stacks.length === 0) return null;
 
-  // Flatten the stacks to render multiple chips in one column, highest denom on bottom
-  const flattenedChips: { denom: any; partial: boolean }[] = [];
+  // One column, highest denomination on the bottom. `stacks` is already
+  // highest-first and the column is reversed in CSS, so DOM order IS the
+  // ladder - see the tower note in PotDisplay.css.
+  //
+  // `truncated` / `count` ride along per disc for the same reason they do on
+  // the seat chips: a group clamped for height prints its REAL number beside
+  // the tower, so a pot of 60,000 (twelve orange 5,000s, because Dan's ladder
+  // has nothing between 5,000 and 100,000) still adds up to 60,000 on screen.
+  const flattenedChips: {
+    denom: ChipDenomination;
+    partial: boolean;
+    isTopInDenom: boolean;
+    truncated: boolean;
+    count: number;
+  }[] = [];
   stacks.forEach((stack) => {
     for (let i = 0; i < stack.drawn; i++) {
       flattenedChips.push({
         denom: stack.denom,
         partial: stack.partial,
+        isTopInDenom: i === stack.drawn - 1,
+        truncated: stack.truncated,
+        count: stack.count,
       });
     }
   });
@@ -225,7 +241,17 @@ function PotChipPile({ amount, size }: { amount: number; size: 'pot' | 'street' 
                 transform: `translateX(${Math.sin(index * 23.45) * 1.5}px)`,
               } as React.CSSProperties
             }
-          />
+          >
+            {/* Multiplication sign, not a lowercase 'x' - check-title-case.mjs
+                rejects the letter on a forward-facing surface, and "twelve of
+                these" was never the letter anyway. */}
+            {chip.truncated && chip.isTopInDenom && (
+              <span className="pot-display__pile-multi">
+                {'\u00d7'}
+                {chip.count.toLocaleString()}
+              </span>
+            )}
+          </span>
         ))}
       </div>
     </div>

@@ -318,15 +318,18 @@
    returns groups highest-denomination first, so the ladder comes out of DOM
    order for free. */
 .pot-display__pile {
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
   pointer-events: none;
 }
 
 /* Groups butt into each other with the same slice as the chips inside them, so
    two denominations meet with no seam and the pile reads as one tower. */
 .pot-display__pile-stack + .pot-display__pile-stack {
-  margin-top: 0;
+  margin-bottom: var(--cp-chip-overlap, -18px);
 }
 
 /* The collected pot: floats just below the POT pill, centred on it, and out of
@@ -354,9 +357,13 @@
 }
 
 .pot-display__pile-stack {
-  grid-area: 1 / 1;
-  display: grid;
-  place-items: center;
+  /* relative so a clamped group's "x12" badge can hang beside the tower
+     without joining the column-reverse flow. */
+  position: relative;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  transform-origin: bottom center;
   animation: pdPileIn 0.3s var(--pd-ease-spring) calc(var(--pile-group, 0) * 45ms) backwards;
 }
 
@@ -377,7 +384,11 @@
      derived and the two can never drift apart. */
   width: var(--cp-chip-size, 24px);
   height: var(--cp-chip-size, 24px);
-  grid-area: 1 / 1;
+  /* Never let the column squash a disc into an oval - Dan 2026-09-04,
+     "chips are circles". */
+  flex: 0 0 auto;
+  /* The "x12" badge for a clamped group hangs off its top chip. */
+  position: relative;
   border-radius: 50%;
   box-sizing: border-box;
   border: 1.5px solid rgba(255, 255, 255, 0.4);
@@ -399,7 +410,36 @@
     inset 0 -2px 3px rgba(0, 0, 0, 0.25);
 }
 
-/* .pot-display__pile-chip:first-of-type { margin-top: 0; } */
+/* ── THE SLICE, ACTUALLY APPLIED (Dan 2026-09-14) ─────────────────────────
+   "BOMB POTS CHIPS DON'T UPDATE TO DISPLAY THE ACTUAL AMOUNT IN THE POTS...
+    IT SHOULD SHOW MULTIPLE CHIPS AS WELL."
+
+   The pot drew ONE disc for every amount. Not because the breakdown was
+   wrong - chipDenominations.ts had always returned the right ladder, the DOM
+   had always held every disc, and tests/chips-on-the-felt.test.tsx had been
+   green on all of it the whole time - but because every disc was painted in
+   the SAME PLACE. #771 moved this pile from a column to `display: grid` with
+   `grid-area: 1 / 1` on the stack AND on every chip, which is the CSS for
+   "put all of these in one cell", and the only offset left was an inline
+   translateX of at most 1.5px. Ten chips landed inside a 3px band and the
+   player saw the LAST one: the lowest denomination in the pot, alone.
+
+   That is exactly the report. A 30 pot is a green 25 and a red 5, and it
+   showed one red chip. A 74 pot is 2 green, 4 red, 4 white, and it showed
+   one white chip. Nothing about it was specific to bomb pots - a bomb pot is
+   simply the first pot of a hand that is already big and already mixed, so
+   it is where a single wrong-coloured disc is impossible to miss. Every
+   single-denomination pot (three white 1s, three red 5s) had been drawing
+   one disc too, and looked close enough to right to survive.
+
+   The overlap is --cp-chip-overlap (slice - size, both from the one chip
+   token), so each disc below the top one leaves exactly --cp-chip-slice
+   showing and the pot's tower is spaced identically to the seat's. A jsdom
+   test cannot see this - there is no layout - so the guard for it reads this
+   stylesheet: see "the pot's chips are not all painted in one place". */
+.pot-display__pile-chip + .pot-display__pile-chip {
+  margin-bottom: var(--cp-chip-overlap, -18px);
+}
 
 /* A sub-1 pot that no chip on Dan's ladder can represent (a lone 0.35 of
    blinds before anyone calls). Dan 2026-09-04: chips are circles, on every

@@ -219,6 +219,82 @@ describe('the pot', () => {
     const { container } = render(<PotDisplay mainPot={0} />);
     expect(container.querySelectorAll('.pot-display__pile-chip')).toHaveLength(0);
   });
+
+  it('prints the true count for a pot stack clamped to fit', () => {
+    // AMBIGUITY 2 in chipDenominations.ts: nothing exists between the orange
+    // 5,000 and the blue 100,000, so 60,000 really is twelve orange chips.
+    // The tower is capped at ten discs; the badge is how it stays honest
+    // about the two it is not drawing. The seat chips have had this since
+    // 2026-08-23 - the pot had the STYLESHEET for it and rendered no badge.
+    const { container } = render(<PotDisplay mainPot={60000} />);
+    expect(container.querySelectorAll(POT_CHIP).length).toBeLessThan(12);
+    expect(container.querySelector('.pot-display__pile-multi')?.textContent).toBe('\u00d712');
+  });
+
+  it('does not print a count for a stack it draws in full', () => {
+    const { container } = render(<PotDisplay mainPot={21} />);
+    expect(container.querySelector('.pot-display__pile-multi')).toBeNull();
+  });
+});
+
+// ============================================================================
+// THE POT'S CHIPS ARE NOT ALL PAINTED IN ONE PLACE
+// ============================================================================
+
+describe('the pot pile is a tower, not a heap', () => {
+  /**
+   * Dan 2026-09-14: "BOMB POTS CHIPS DON'T UPDATE TO DISPLAY THE ACTUAL
+   * AMOUNT IN THE POTS... IT SHOULD SHOW MULTIPLE CHIPS AS WELL."
+   *
+   * Every test above this one was GREEN while the pot drew a single disc for
+   * any amount, because every one of them asks the DOM what is there and the
+   * DOM was always right. The discs were all painted in the SAME CELL: #771
+   * put `display: grid` on the pile and `grid-area: 1 / 1` on the stack AND
+   * on each chip, so ten chips landed inside a 3px band and a player saw the
+   * last one - the LOWEST denomination in the pot, on its own. A 30 pot
+   * (green 25 + red 5) showed one red chip; a 74 pot (2 green, 4 red, 4
+   * white) showed one white chip.
+   *
+   * jsdom does not lay out CSS, so this reads the stylesheet, exactly as the
+   * sub-1 oval-disc guard above does. It is the only layer that can fail
+   * here: the arithmetic has its own suite, and the markup has the ones above.
+   */
+  const potCss = readSrc('src/components/table/PotDisplay.css');
+  const seatCss = readSrc('src/components/table/ChipPhysics.css');
+
+  /** The declaration block of `selector`, matched as a WHOLE selector. */
+  const rule = (css: string, selector: string) => {
+    const m = css.match(
+      new RegExp(
+        `(?:^|\\})\\s*${selector.replace(/[.+\-*\\/[\]{}()?^$|]/g, '\\$&')}\\s*\\{([^}]*)\\}`,
+        'm'
+      )
+    );
+    expect(m, `${selector} rule missing`).not.toBeNull();
+    return m![1];
+  };
+
+  it('spaces the discs by the shared chip slice, so every one of them shows', () => {
+    const stacked = rule(potCss, '.pot-display__pile-chip + .pot-display__pile-chip');
+    expect(stacked).toMatch(/margin-bottom:\s*var\(--cp-chip-overlap/);
+  });
+
+  it('uses the same overlap token the seat chips do, so the two cannot drift', () => {
+    // --cp-chip-overlap is `slice - size`, both derived from the ONE chip
+    // token in TableVisualHotfix.css. A pot that spaced itself by a number of
+    // its own would read differently from the bet that just swept into it.
+    const seat = rule(seatCss, '.cp-chip + .cp-chip');
+    expect(seat).toMatch(/margin-bottom:\s*var\(--cp-chip-overlap/);
+  });
+
+  it('never puts the discs back in one grid cell', () => {
+    // The exact shape of the regression. `grid-area: 1 / 1` on a chip or on
+    // the stack means "every one of you occupies this single cell".
+    expect(rule(potCss, '.pot-display__pile-chip')).not.toMatch(/grid-area/);
+    expect(rule(potCss, '.pot-display__pile-stack')).not.toMatch(/grid-area/);
+    expect(rule(potCss, '.pot-display__pile-stack')).toMatch(/flex-direction:\s*column-reverse/);
+    expect(rule(potCss, '.pot-display__pile')).toMatch(/flex-direction:\s*column-reverse/);
+  });
 });
 
 // ============================================================================

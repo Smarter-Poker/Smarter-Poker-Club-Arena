@@ -9,3 +9,5 @@ Ten actual-method counterexamples failed before this change. The new suite cover
 All **5,709 service/tournament tests across366files** pass with zero failures/skips. Server TypeScript passes. These are local engine tests with mocked transport; they do not prove deployment, all production races or whole-fleet recovery. No SQL or live event mutation is included.
 
 G8's separately owned Manager0059 source at317d4b83 was inspected and retains the same missing row gate. This change is confined to the row-adoption decision and preserves the existing diagnostic, epoch, pending-operation and lease machinery. Its independent publication/integration status must be retained in the program handoff.
+
+Current-main composition with merged R27: all5,735service/tournament tests across367files and serverTypeScript pass. The only manual merge conflict was the appended audit register; both R27 and R28 evidence were retained. This does not establish serving or whole-fleet recovery.

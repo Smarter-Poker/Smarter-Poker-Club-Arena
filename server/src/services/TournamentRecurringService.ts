@@ -37,7 +37,6 @@ import { BOOKING_COUNTS_WITHIN_MS } from './HorseGameLoad.js';
 import { bankrollPolicyFor, canEnterTournament } from './HorseBankroll.js';
 import { bankrollEvent } from './HorseBankrollTelemetry.js';
 import { buildLadder } from '../tournament/blindLadder.js';
-import { mttBountyAmount } from '../tournament/mttBountyAllocation.js';
 import {
   MTT_BLIND_PRESETS,
   mttSpeedColumns,
@@ -115,7 +114,6 @@ interface TournamentConfig {
   payoutStructure: any[];
   payoutPercent?: 10 | 15 | 20;
   bountyPercent?: number;
-  bountyAmount?: number;
   /**
    * ROLLOUT 2026-08-15 (Dan: "enable on a few recurring formats first").
    * Rebuys / re-entries / add-ons had NEVER been offered: 0 of 8,210
@@ -186,7 +184,6 @@ interface XMTTConfig {
   payoutStructure: any[];
   payoutPercent?: 10 | 15 | 20;
   bountyPercent?: number;
-  bountyAmount?: number;
   /**
    * ROLLOUT 2026-08-15 (Dan: "enable on a few recurring formats first").
    * Rebuys / re-entries / add-ons had NEVER been offered: 0 of 8,210
@@ -3788,10 +3785,17 @@ export class TournamentRecurringService {
         config.type === 'bounty' ||
         config.type === 'progressive_bounty' ||
         config.type === 'mystery_bounty';
-      // Whole-chip entry prices can fund fractional bounties. Use the same
-      // cent allocation as scheduled MTTs without changing a booked head.
+      const bountyPercent = config.bountyPercent || 30;
+      // WHOLE CHIPS (Dan 2026-08-20): "Sit and Go and any tournament buy-ins
+      // must never be decimal buy-ins, whole numbers only." `split` is the
+      // authoritative whole-dollar price this row is created at - a rebuy or an
+      // add-on costs the SAME snapped total, not the raw (possibly off-ladder)
+      // config value. The bounty is a whole cut of that total; it used to be
+      // round(buyIn * pct) / 100, which produced 4.5 on a 15 buy-in.
       const split = buyInFor(config.buyIn);
-      const bountyAmount = isBountyType ? mttBountyAmount(split, config) : 0;
+      const bountyAmount = isBountyType
+        ? Math.min(split.prize, Math.max(0, Math.round((split.total * bountyPercent) / 100)))
+        : 0;
       // MYSTERY RANGE 2026-08-21 (Dan: "make sure that this is fully added to
       // the mystery bounty tournaments"). These columns were advertising a
       // range the draw could not produce.
@@ -4025,9 +4029,18 @@ export class TournamentRecurringService {
         config.type === 'progressive_bounty' ||
         config.type === 'mystery_bounty';
 
-      // Share scheduled/XMTT bounty arithmetic; entry pricing remains unchanged.
+      // Calculate bounty amount using configurable bountyPercent
+      // Round 40 RE-RUN: Math.round (not Math.trunc) for IEEE 754 drift safety —
+      // mirrors the same fix applied to the other bounty-config branch in this file.
+      const bountyPercent = config.bountyPercent || 30;
+      // WHOLE CHIPS (Dan 2026-08-20) - mirrors the XMTT branch above. `split`
+      // is the snapped whole-dollar price the row is actually created at, so
+      // the bounty, the rebuy and the add-on all key off it rather than off the
+      // raw config value.
       const split = buyInFor(config.buyIn);
-      const bountyAmount = isBountyType ? mttBountyAmount(split, config) : 0;
+      const bountyAmount = isBountyType
+        ? Math.min(split.prize, Math.max(0, Math.round((split.total * bountyPercent) / 100)))
+        : 0;
       // Mystery bounty range: min = base bounty, max = 10x base
       // MYSTERY RANGE 2026-08-21 (Dan: "make sure that this is fully added to
       // the mystery bounty tournaments"). These columns were advertising a

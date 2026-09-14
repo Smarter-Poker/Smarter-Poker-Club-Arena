@@ -32,7 +32,6 @@
  */
 
 import { supabase } from './supabase.js';
-import { recordHorseTunerUpdate } from './HorseTunerAtomicWrite.js';
 import { reportError } from './errorReporter.js';
 import { claimNightlyJob } from '../benchmark/HorseLeague.js';
 import type { HorseProfileMods, LeakFamily } from '../engine/HorseLogic.js';
@@ -690,7 +689,6 @@ export async function runSelfTune(
 
     // Horses + their current profiles.
     const horses = new Map<string, HorseProfileMods & { style?: unknown }>();
-    const expectedProfiles = new Map<string, unknown>();
     {
       let cursor: string | null = null;
       for (;;) {
@@ -715,8 +713,7 @@ export async function runSelfTune(
           // hashing the user id — silently erasing an authored personality,
           // permanently. No string rows exist in production today; this keeps
           // it that way if any are ever re-seeded.
-          const raw = JSON.parse(JSON.stringify(row.horse_profile ?? null));
-          expectedProfiles.set(row.id, raw);
+          const raw = row.horse_profile;
           const p: Record<string, unknown> =
             typeof raw === 'string'
               ? { style: raw }
@@ -1070,24 +1067,32 @@ export async function runSelfTune(
         leaksChanged;
 
       try {
-        const newProfile = {
-          ...(prevMods as object),
-          ...mods,
-          leaks: leakProfile,
-          leaksHands,
-          leaksOmaha: familyProfile.leaksOmaha,
-          leaksHandsOmaha: familyProfile.leaksHandsOmaha,
-          leaksHoldem: familyProfile.leaksHoldem,
-          leaksHandsHoldem: familyProfile.leaksHandsHoldem,
-          leaksTournament: familyProfile.leaksTournament,
-          leaksHandsTournament: familyProfile.leaksHandsTournament,
-        };
-        const written = await recordHorseTunerUpdate({
-          horseId,
-          runDate: date,
-          expectedProfile: expectedProfiles.get(horseId),
-          nextProfile: changed ? newProfile : expectedProfiles.get(horseId),
-          audit: {
+        if (changed) {
+          const newProfile = {
+            ...(prevMods as object),
+            ...mods,
+            leaks: leakProfile,
+            leaksHands,
+            leaksOmaha: familyProfile.leaksOmaha,
+            leaksHandsOmaha: familyProfile.leaksHandsOmaha,
+            leaksHoldem: familyProfile.leaksHoldem,
+            leaksHandsHoldem: familyProfile.leaksHandsHoldem,
+            leaksTournament: familyProfile.leaksTournament,
+            leaksHandsTournament: familyProfile.leaksHandsTournament,
+          };
+          const { error: upErr } = await supabase
+            .from('profiles')
+            .update({ horse_profile: newProfile })
+            .eq('id', horseId)
+            .eq('is_horse', true);
+          if (!shouldContinue()) return { studied: stats.size, tuned };
+          if (upErr) throw new Error(upErr.message);
+          tuned++;
+        }
+        const { error: logErr } = await supabase.from('horse_self_tune_log').upsert(
+          {
+            horse_id: horseId,
+            run_date: date,
             hands: s.hands,
             stats: {
               ...statSnapshot(s),
@@ -1106,25 +1111,22 @@ export async function runSelfTune(
               // where this horse's frequencies came from: play rows or the stream
               study_source: fromPlayRows.has(horseId) ? 1 : 0,
             },
-            modsBefore: {
+            mods_before: {
               tightness: prevMods.tightness ?? 1,
               aggression: prevMods.aggression ?? 1,
               bluffFreq: prevMods.bluffFreq ?? 1,
             },
-            modsAfter: {
+            mods_after: {
               tightness: mods.tightness,
               aggression: mods.aggression,
               bluffFreq: mods.bluffFreq,
             },
             reasons,
           },
-        });
+          { onConflict: 'horse_id,run_date' }
+        );
         if (!shouldContinue()) return { studied: stats.size, tuned };
-        if (written.status !== 'recorded')
-          throw new Error(
-            `atomic tuner write ${written.status}${written.status === 'unavailable' ? ': ' + written.reason : ''}`
-          );
-        if (written.changed && !written.replayed) tuned++;
+        if (logErr) throw new Error(logErr.message);
       } catch (err) {
         reportError(err, 'HorseSelfTuner.write');
       }

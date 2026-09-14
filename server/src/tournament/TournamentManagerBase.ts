@@ -1,3 +1,4 @@
+import { LifecycleDiagnostics } from '../services/LifecycleDiagnostics.js';
 import {
   continueBookedSpinBlinds,
   readFundedSpinDraw,
@@ -210,6 +211,73 @@ export abstract class TournamentManagerBase {
   private readonly tableEngineRecoveryAttempts = new Map<string, number>();
   /** Scheduler runs are separate because a finish can initiate stop from inside one. */
   private readonly eliminationSchedulerJobs = new Set<Promise<void>>();
+  private readonly managerLifecycleDiagnostics = new LifecycleDiagnostics();
+  private leaseReleaseDiagnostic: Readonly<{
+    diagnosticOnly: true;
+    managerInstanceId: string;
+    tournamentId: string;
+    leaseGeneration: string;
+    observedAtMs: number;
+    status: 'confirmed' | 'uncertain' | 'unknown';
+    attempts: number | null;
+    releasedCount: number | null;
+  }> | null = null;
+
+  /** Retain this exact object before release awaits; never look up a replacement. */
+  captureLeaseReleaseDiagnosticObserver(tournamentId: string, leaseGeneration: string) {
+    if (tournamentId !== this.tournamentId || leaseGeneration !== this.tournamentLeaseGeneration) {
+      return null;
+    }
+    const managerInstanceId = this.managerLifecycleDiagnostics.instanceId;
+    return (outcome: unknown) => {
+      if (leaseGeneration !== this.tournamentLeaseGeneration) return null;
+      const result =
+        outcome && typeof outcome === 'object' ? (outcome as Record<string, unknown>) : {};
+      const attempts =
+        typeof result.attempts === 'number' &&
+        Number.isSafeInteger(result.attempts) &&
+        result.attempts >= 0 &&
+        result.attempts <= 2
+          ? result.attempts
+          : null;
+      // This observer is for one exact claim. Never allocate a batch deletion
+      // count to an individual manager or retain raw RPC details/errors.
+      const releasedCount =
+        result.releasedCount === 0 || result.releasedCount === 1 ? result.releasedCount : null;
+      const status =
+        attempts === null
+          ? 'unknown'
+          : result.status === 'confirmed' && releasedCount !== null && attempts > 0
+            ? 'confirmed'
+            : result.status === 'uncertain'
+              ? 'uncertain'
+              : 'unknown';
+      this.leaseReleaseDiagnostic = Object.freeze({
+        diagnosticOnly: true as const,
+        managerInstanceId,
+        tournamentId,
+        leaseGeneration,
+        observedAtMs: Date.now(),
+        status,
+        attempts,
+        releasedCount: status === 'confirmed' ? releasedCount : null,
+      });
+      this.managerLifecycleDiagnostics.record('lease_release_observed', {
+        attempt: attempts ?? undefined,
+        leaseStatus: status,
+        releasedCount: this.leaseReleaseDiagnostic.releasedCount,
+      });
+      return this.leaseReleaseDiagnostic;
+    };
+  }
+
+  getLeaseReleaseDiagnosticSnapshot() {
+    return Object.freeze({
+      ...this.managerLifecycleDiagnostics.snapshot(),
+      leaseRelease: this.leaseReleaseDiagnostic ?? ('unobserved-owner-boundary' as const),
+    });
+  }
+
   protected blindTimer: NodeJS.Timeout | null = null;
   /** Removes this manager from the one process-wide elimination scheduler. */
   protected eliminationSchedulerUnregister: (() => void) | null = null;
@@ -6101,6 +6169,20 @@ export abstract class TournamentManagerBase {
     level: any;
   } | null = null;
   private blindTransitionInFlight = false;
+  private blindClockNeedsThawResync = false;
+
+  /** A local wake must never rewrite the durable level clock. */
+  private scheduleBlindLevelWake(blindStructure: any[], delayMs: number): void {
+    if (this.blindTimer) this.clearLifecycleTimeout(this.blindTimer);
+    this.blindTimer = this.setLifecycleTimeout(() => {
+      this.blindTimer = null;
+      return this.advanceBlindLevel(blindStructure).catch((err: unknown) => {
+        console.warn(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] advanceBlindLevel threw: ${(err as Error)?.message ?? err}`
+        );
+      });
+    }, delayMs);
+  }
 
   protected startBlindTimer(blindStructure: any[], remainingOverrideMs?: number): void {
     if (blindStructure.length === 0) return;
@@ -6126,17 +6208,7 @@ export abstract class TournamentManagerBase {
         : durationMs;
     // Back-date the in-memory start so break pause/resume math stays correct
     if (!pending) this.blindTimerStartedAt = Date.now() - (durationMs - armMs);
-    this.blindTimer = this.setLifecycleTimeout(() => {
-      this.blindTimer = null;
-      // Without the catch, a throw inside advanceBlindLevel becomes an
-      // unhandled rejection AND the level silently fails to advance with no
-      // trace of why.
-      return this.advanceBlindLevel(blindStructure).catch((err: unknown) => {
-        console.warn(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] advanceBlindLevel threw: ${(err as Error)?.message ?? err}`
-        );
-      });
-    }, armMs);
+    this.scheduleBlindLevelWake(blindStructure, armMs);
     // A retry is still the previous published level. Never overwrite a possibly
     // committed new level's anchor with the old level's one-second retry clock.
     if (pending) return;
@@ -6178,6 +6250,7 @@ export abstract class TournamentManagerBase {
     if (!this.lifecycleIsCurrent(lifecycle) || this.blindTransitionInFlight) return;
     this.blindTransitionInFlight = true;
     let committed: { level: any; startedAt: number } | null = null;
+    let deferredWakeMs: number | undefined;
     try {
       /**
        * ═══════════════════════════════════════════════════════════════════
@@ -6224,6 +6297,57 @@ export abstract class TournamentManagerBase {
           `[Tournament:${this.tournamentId.slice(0, 8)}] Level was due during a break - holding it until play resumes`
         );
         return;
+      }
+
+      // Seat-first games can have on_break=false throughout the platform
+      // maintenance hold. Sending their due level every second only reaches
+      // the database's deliberate `paused` refusal. Keep one local wake and
+      // no database request until thaw; the pending publication stays exact.
+      if (isMaintenanceFrozen()) {
+        this.blindClockNeedsThawResync = true;
+        deferredWakeMs = 1000;
+        return;
+      }
+      if (this.blindClockNeedsThawResync) {
+        const { data: clock, error: clockError } = await supabase
+          .from('tournaments')
+          .select('id,status,current_level,level_started_at')
+          .eq('id', this.tournamentId)
+          .maybeSingle();
+        if (!this.lifecycleIsCurrent(lifecycle)) return;
+        if (this.isOnBreak() || isMaintenanceFrozen()) return;
+        const anchor =
+          typeof clock?.level_started_at === 'string' ? Date.parse(clock.level_started_at) : NaN;
+        const previous = this.pendingBlindTransition?.previousLevel ?? this.currentLevel;
+        const pendingCommitted =
+          this.pendingBlindTransition &&
+          clock?.current_level === this.pendingBlindTransition.nextLevel;
+        if (
+          clockError ||
+          clock?.id !== this.tournamentId ||
+          clock.status !== 'RUNNING' ||
+          !Number.isFinite(anchor) ||
+          (clock.current_level !== previous && !pendingCommitted)
+        ) {
+          throw new Error('Blind clock after maintenance has no matching durable anchor');
+        }
+        this.blindClockNeedsThawResync = false;
+        if (!pendingCommitted) {
+          // The thaw owns the time credit. A level that expired while frozen
+          // may still have playable time left; do not advance it immediately
+          // or let startBlindTimer persist an invented replacement anchor.
+          const current = this.resolveBlindLevel(blindStructure, previous) || blindStructure[0];
+          const duration = this.levelDurationMs(current);
+          const remaining = Math.min(duration, duration - (Date.now() - anchor));
+          this.blindTimerStartedAt = anchor;
+          if (this.tournamentCache) this.tournamentCache.level_started_at = clock.level_started_at;
+          if (remaining > 1000) {
+            deferredWakeMs = remaining;
+            return;
+          }
+        }
+        // A possible lost commit still goes through the unchanged fenced
+        // publication RPC. The read never authorizes a level or announcement.
       }
 
       const prevLevel = this.pendingBlindTransition?.previousLevel ?? this.currentLevel;
@@ -6458,12 +6582,18 @@ export abstract class TournamentManagerBase {
           // A notification failure cannot consume the only next-level wake.
           if (this.isOnBreak()) {
             this.savedBlindTimerRemaining = this.levelDurationMs(level);
+          } else if (isMaintenanceFrozen()) {
+            this.blindClockNeedsThawResync = true;
+            this.scheduleBlindLevelWake(blindStructure, 1000);
           } else {
             this.startBlindTimer(
               blindStructure,
               this.levelDurationMs(level) - (Date.now() - levelStartedAt)
             );
           }
+        } else if (deferredWakeMs !== undefined || this.blindClockNeedsThawResync) {
+          if (this.isOnBreak()) this.savedBlindTimerRemaining = 1000;
+          else this.scheduleBlindLevelWake(blindStructure, deferredWakeMs ?? 1000);
         } else if (this.pendingBlindTransition) {
           if (this.isOnBreak()) this.savedBlindTimerRemaining = 1000;
           else this.startBlindTimer(blindStructure, 1000);

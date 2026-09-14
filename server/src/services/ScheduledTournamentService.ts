@@ -1,3 +1,4 @@
+import { validateMttBlindStructure } from '../domain/tournamentBlindContract.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * SCHEDULED TOURNAMENT SERVICE — data-driven recurring MTT spawner (2026-08-22)
@@ -37,6 +38,7 @@ import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
 import { buyInFor, freeBuyColumns, rakeRateFor, wholeChips } from '../config/buyIn.js';
 import { mttBountyAmount } from '../tournament/mttBountyAllocation.js';
+import { mysteryBountyCreationColumns } from '../domain/mysteryBountyCreation.js';
 import { TournamentRecurringService, MTT_PUBLISH_LEAD_MS } from './TournamentRecurringService.js';
 import {
   MTT_BLIND_PRESETS,
@@ -1166,6 +1168,7 @@ export class ScheduledTournamentService {
 
     const maxRebuysRaw = Number(cfg.maxRebuys);
     const maxReentriesRaw = Number(cfg.maxReentries);
+    if (!isSng && !isSpin) validateMttBlindStructure(blinds, cfg.startingStack ?? 10000);
 
     const row: Record<string, unknown> = {
       club_id: schedule.club_id,
@@ -1196,6 +1199,7 @@ export class ScheduledTournamentService {
       is_bounty: isBountyType,
       is_pko: type === 'progressive_bounty',
       is_mystery_bounty: type === 'mystery_bounty',
+      ...(type === 'mystery_bounty' ? mysteryBountyCreationColumns(cfg) : {}),
       bounty_amount: bountyAmount,
       mystery_bounty_min: mysteryMin,
       mystery_bounty_max: mysteryMax,
@@ -1382,6 +1386,12 @@ export class ScheduledTournamentService {
     'is_mystery_bounty',
     'mystery_bounty_min',
     'mystery_bounty_max',
+    'mystery_bounty_profile',
+    'mystery_bounty_activation',
+    'mystery_bounty_activation_value',
+    'mystery_bounty_pool_percent',
+    'mystery_bounty_regular_pool_percent',
+    'mystery_bounty_top_percent',
     'spin_type',
     'satellite_target_id',
     'satellite_seats',

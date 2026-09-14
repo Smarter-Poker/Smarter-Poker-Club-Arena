@@ -283,6 +283,9 @@ jobs:
       - name: Protected merge queue handles concurrent PR changes
         run: node --test tests/operations/queue-pr.test.mjs
 
+      - name: Post-deploy verdict distinguishes an unstarted publisher
+        run: node --test tests/operations/post-deploy-origin-verdict.test.mjs
+
       # 2026-09-01 (cost audit): cache the installed tree, skip npm ci on a
       # hit. `nm-lite` is deliberately a DIFFERENT key from the full-install
       # jobs: this install runs --ignore-scripts, and a scripts-less tree must
@@ -1147,6 +1150,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-tournament-incident-identity.py
+      - name: Exclusive waitlist offers respect concurrent table and player claims
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-waitlist-offer-concurrency.py
       - name: New seat occupants cannot inherit another player's sit-out state
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

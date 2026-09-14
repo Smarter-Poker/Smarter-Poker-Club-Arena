@@ -98,7 +98,13 @@ describe('LAW: the next hand deals two seconds after completion (Dan 2026-09-07)
   });
 
   it('the roster, the leave sweep and the hand number are read together, under the rest', () => {
-    expect(DEALING).toMatch(/this\.seatedPlayers = await this\.prepareNextHand\(\);/);
+    // The roster is prepared once under the rest, then adopted only while
+    // this engine still owns its table. The local value lets replacement
+    // occupancies retire their old mirrors without admitting a retired read.
+    expect(DEALING).toMatch(
+      /const (\w+) = await this\.prepareNextHand\(\);\s*if \(!this\.lifecycleCanMutate\(\)\) return;\s*this\.seatedPlayers = \1;/
+    );
+    expect(DEALING.match(/await this\.prepareNextHand\(\)/g)).toHaveLength(1);
     const prep = DEALING.slice(DEALING.indexOf('protected async prepareNextHand('));
     const body = prep.slice(0, prep.indexOf('return this.readNextHandInputs();'));
     // the leave sweep races the roster read only when no add-on is pending

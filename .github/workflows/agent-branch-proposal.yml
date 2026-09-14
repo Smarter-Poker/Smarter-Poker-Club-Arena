@@ -21,7 +21,8 @@ permissions:
 jobs:
   signal:
     name: Ask trusted main to propose this branch
-    runs-on: ubuntu-latest
+    # An inert read-only signal; trusted default-branch code validates the event.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 2
     steps:
       - name: Record the proposal signal

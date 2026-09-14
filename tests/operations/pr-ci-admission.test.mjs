@@ -265,11 +265,16 @@ for (const name of [
     const runner = source.match(/^ {4}runs-on: (.+)$/m)?.[1];
     assert.equal(
       runner,
-      name === 'accounting_postgres' ? 'ubuntu-latest' : "${{ vars.CI_RUNNER || 'ubuntu-latest' }}"
+      name === 'accounting_postgres'
+        ? "${{ vars.ACCOUNTING_RUNNER || 'ubuntu-latest' }}"
+        : "${{ vars.CI_RUNNER || 'ubuntu-latest' }}"
     );
     assert.doesNotMatch(source, /secrets\./);
     assert.match(source, /permissions:\n      contents: read\n      pull-requests: read/);
-    const gate = source.slice(start, source.indexOf('- name: Setup Node'));
+    const remainder = source.slice(start);
+    const nextStep = remainder.indexOf('\n      - ', 1);
+    assert.ok(nextStep > 0);
+    const gate = remainder.slice(0, nextStep);
     assert.match(gate, /working-directory: \./);
     assert.match(gate, /run: node scripts\/ci\/admit-current-pr-ci\.mjs/);
     assert.doesNotMatch(gate, /continue-on-error|\bif:|\|\| true|\bwrite\b/);

@@ -41,6 +41,12 @@ on:
     # that can answer "is the branch we deploy from actually passing".
     - cron: '35 6 * * *'
 
+# The estate shares each 16-core host across many runners. Vitest otherwise
+# starts ~15 workers per server shard; measured fan-out saturated those hosts.
+# This applies to every child suite, even without a host service drop-in.
+env:
+  VITEST_MAX_WORKERS: '2'
+
 # Only duplicate events for the same PR head may cancel one another. GitHub
 # does not guarantee event ordering: a delayed old-head event can otherwise
 # cancel current required checks before current-head admission can reject it.
@@ -299,6 +305,9 @@ jobs:
 
       - name: Mac dependency policy keeps Linux enforcement
         run: node --test tests/operations/local-dependency-policy.test.mjs
+
+      - name: Optional image tools never install dependencies on the Mac
+        run: node --experimental-vm-modules --test tests/operations/sharp-loader-mac-policy.test.mjs
 
       - name: Protected merge queue handles concurrent PR changes
         run: node --test tests/operations/queue-pr.test.mjs
@@ -1126,7 +1135,8 @@ jobs:
         (needs.changes.result != 'success' ||
          needs.changes.outputs.server == 'true')))
     name: Accounting transactions (PostgreSQL 17)
-    runs-on: ubuntu-latest
+    # Qualified EU CI hosts already provide PG17; the origin host is excluded.
+    runs-on: ${{ vars.ACCOUNTING_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -1142,16 +1152,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/ci/admit-current-pr-ci.mjs
 
-      - name: Setup Node 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: server/package-lock.json
-      - name: Install server test dependencies
-        working-directory: server
-        run: npm ci
       - name: Install PostgreSQL 17 tools without a default database service
+        if: runner.environment == 'github-hosted'
         shell: bash
         run: |
           set -euo pipefail
@@ -1176,6 +1178,17 @@ jobs:
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
           sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17
+      - name: Require the installed PostgreSQL 17 toolchain
+        run: bash scripts/ci/verify-postgres17-tools.sh
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - name: Install server test dependencies
+        working-directory: server
+        run: npm ci
       - name: Spin prize audits require matching posted correction funding
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

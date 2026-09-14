@@ -18,6 +18,14 @@ export async function loadSharp() {
   try {
     return (await import('sharp')).default;
   } catch {
+    // Local worktrees may read existing tools, but must never install or copy
+    // dependencies. This also covers the temp-prefix path outside the tree.
+    if (process.platform === 'darwin') {
+      console.warn(
+        '[sharp-loader] sharp unavailable on this Mac; dependency installation belongs in CI.'
+      );
+      return null;
+    }
     console.warn('[sharp-loader] sharp not installed — installing into a temp prefix...');
     try {
       const tmp = path.join(os.tmpdir(), 'ca-webp-sharp');

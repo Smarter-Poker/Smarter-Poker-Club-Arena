@@ -1,0 +1,10 @@
+{
+  "url": "https://ca-static.smarter.poker/build-info.json",
+  "observed_at_unix": 1789159573.2677839,
+  "response": {
+    "ca_sha": "11a37306788567e9b60d6ac1ab32455b865de5c1",
+    "built_at": "2026-09-11T20:32:33Z",
+    "built_by": "publish-club-arena.yml",
+    "run_id": "34644486325"
+  }
+}

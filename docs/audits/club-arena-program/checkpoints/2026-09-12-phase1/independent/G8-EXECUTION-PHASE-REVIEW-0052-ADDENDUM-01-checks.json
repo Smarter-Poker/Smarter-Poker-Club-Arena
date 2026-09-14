@@ -1,0 +1,3237 @@
+{
+  "checks": [
+    {
+      "check": "Accepted reference conn/ALL_312_INTEGRATION05_KEYS.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference conn/AUTHORITY_ATTACHMENTS.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference conn/DELIVERY_UNIT_INDEX.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference conn/EFFECTIVE_STATUS_QUALIFICATIONS.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference conn/FINITE_AUTHORITY_REMAINDER.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference conn/HANDOFF.md",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference conn/INPUT_REFERENCES.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference conn/PLACEMENTS.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference conn/PLAN.md",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference conn/PRESERVED_BASELINE_STATUS_ADDENDUM.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference conn/PRESERVED_CONTROL_PROVENANCE.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference conn/PRESERVED_INTEGRATION05_QUALIFICATIONS.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference conn/PRESERVED_ORIGINAL_REQUIREMENTS.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference conn/VERIFICATION.json",
+      "pass": true
+    },
+    {
+      "check": "conn intake not foundation acceptance",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference dia/BASELINE-MAP-UNCHANGED.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference dia/HANDOFF.md",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference dia/INPUT-MANIFEST.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference dia/OBSERVATION-REGISTER.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference dia/PEER-REUSE-JOIN.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference dia/PLACEMENT-REVIEW.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference dia/VERIFICATION.json",
+      "pass": true
+    },
+    {
+      "check": "dia intake not foundation acceptance",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference ui/SOURCE-RANGES.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference ui/PLACEMENT-ADDENDUM.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference ui/SCOPE-CLOSURE.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference ui/OBSERVATIONS.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference ui/VERIFICATION.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference ui/PREVIOUS-HASHES.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference ui/BOUNDED-EXCERPTS-2.txt",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference ui/RECEIPT-LOOKUP.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference ui/HANDOFF.md",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference ui/BOUNDED-EXCERPTS-0.txt",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference ui/BOUNDED-EXCERPTS-1.txt",
+      "pass": true
+    },
+    {
+      "check": "ui intake not foundation acceptance",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference g4/CANDIDATE_CHALLENGE.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference g4/DEDUPE_AND_OWNER_CARRY_FORWARD.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference g4/DELIVERY_UNITS.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference g4/FIRST_REPAIRS_PRESERVED.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference g4/INPUT_MANIFEST.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference g4/LATER_TRIVIA_DELIVERY_OVERLAY.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference g4/NEXT_ELIGIBLE_WORK_QUEUE.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference g4/OBSERVATION_PLACEMENT_299.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference g4/POLICY_AND_PROOF_BOUNDARIES.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference g4/PRIMARY_CAUSE_PLACEMENT_67.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference g4/RETIREMENT_AND_DOMAIN_DISPOSITION.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference g4/REVIEW.md",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference g4/SAFEGUARDS_AND_ORIGINAL_REQUIREMENTS.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference g4/SUPPLEMENTAL_PLACEMENT_40.json",
+      "pass": true
+    },
+    {
+      "check": "Accepted reference g4/VERIFICATION.json",
+      "pass": true
+    },
+    {
+      "check": "g4 intake not foundation acceptance",
+      "pass": true
+    },
+    {
+      "check": "18 finite units",
+      "pass": true
+    },
+    {
+      "check": "DU-JACKPOT existing milestone",
+      "pass": true
+    },
+    {
+      "check": "DU-RESERVE existing milestone",
+      "pass": true
+    },
+    {
+      "check": "DU-CREATE existing milestone",
+      "pass": true
+    },
+    {
+      "check": "PRIMARY_CAUSE_PLACEMENT_67.json unique exact count",
+      "pass": true
+    },
+    {
+      "check": "PRIMARY_CAUSE_PLACEMENT_67.json unit rows lossless",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C05",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C06",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C07",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C08",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C09",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C10",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C11",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C12",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C13",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C14",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C15",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C16",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C17",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C18",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C19",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C20",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C21",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C22",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C23",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C24",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C25",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C26",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C27",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C28",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C29",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C30",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C31",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C32",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C33",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C34",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C35",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C36",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C37",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C38",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C39",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C40",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C41",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C42",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C43",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C44",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C45",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C46",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C47",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C48",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C49",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C50",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C51",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C52",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C53",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C54",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C55",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C56",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C57",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C58",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C59",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C60",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C61",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C62",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C63",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C64",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C65",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C66",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-C67",
+      "pass": true
+    },
+    {
+      "check": "SUPPLEMENTAL_PLACEMENT_40.json unique exact count",
+      "pass": true
+    },
+    {
+      "check": "SUPPLEMENTAL_PLACEMENT_40.json unit rows lossless",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S05",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S06",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S07",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S08",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S09",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S10",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S11",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S12",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S13",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S14",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S15",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S16",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S17",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S18",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S19",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S20",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S21",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S22",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S23",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S24",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S25",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S26",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S27",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S28",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S29",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S30",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S31",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S32",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S33",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S34",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S35",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S36",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S37",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S38",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S39",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G4-S40",
+      "pass": true
+    },
+    {
+      "check": "OBSERVATION_PLACEMENT_299.json unique exact count",
+      "pass": true
+    },
+    {
+      "check": "OBSERVATION_PLACEMENT_299.json unit rows lossless",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent BOUND-Q02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent RUN-Q05",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent RPT-Q01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent RPT-Q02 / CORE-OBS-035 retained-source reconstruction family",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent APP-Q01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent APP-Q02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent APP-Q03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent APP-Q04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent APP-O01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent APP-O02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent APP-O03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent APP-O04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent APP-O05",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent APP-O06",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent APP-O07",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent APP-O08",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent APP-O09",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent APP-O10",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent APP-O11",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent APP-O12",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent APP-O13",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent APP-O14",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent APP-O15",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent APP-O16",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent APP-O17",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent CHANNEL-Q01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent CHANNEL-Q02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent CHANNEL-Q03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent CHANNEL-Q04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent CHANNEL-Q05",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-CORE-Q01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-CORE-Q02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-CORE-Q03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G7-Q01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G7-Q02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G7-Q03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G7-Q04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G7-Q05",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G7-Q06",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G8-Q01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G8-Q02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G8-Q03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G9-Q01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G9-Q02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G9-Q03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G9-Q04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HIST-6-O01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HIST-6-O02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HIST-6-O03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HIST-6-O04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HIST-6-O05",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HIST-6-O06",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HIST-6-O07",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HIST-6-O08",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HIST-6-O09",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HIST-6-O10",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HIST-6-O11",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HIST-6-O12",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HIST-6-O13",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HIST-6-O14",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HIST-6-O15",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HIST-6-O16",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HIST-6-O17",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HIST-6-O18",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HIST-6-O19",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HIST-6-O20",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HIST-6-O21",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HIST-6-O22",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-INNER-O01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-INNER-O02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-INNER-O03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-INNER-O04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-INNER-O05",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-INNER-O06",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-INNER-O07",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-INNER-O08",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-INNER-O09",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent G5-LIFECYCLE-AUDIT-0001-F25",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent STABLE-Q06",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O05",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O06",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O07",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O08",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O09",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O10",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O11",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O12",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O13",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O14",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O15",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O16",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O17",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O18",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O19",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O20",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O21",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O22",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O23",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O24",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O25",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O26",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-LOWER-O27",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent STABLE-Q01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent STABLE-Q02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-O01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-O02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-O03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-O04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-O05",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-O06",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-O07",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-O08",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-O09",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-O10",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-O11",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-O12",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-O13",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-O14",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-O15",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-O16",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-O17",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-O18",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-O19",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-SEAT-O01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-SEAT-O02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-SEAT-O03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-SEAT-O04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-SEAT-O05",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-SEAT-O06",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-ADMISSION-O01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-ADMISSION-O02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-ADMISSION-O03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-ADMISSION-O04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-ADMISSION-O05",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-ADMISSION-O06",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-ADMISSION-O07",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-ADMISSION-O08",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-ADMISSION-O09",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-ADMISSION-O10",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-ADMISSION-O11",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-ADMISSION-O12",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-ADMISSION-O13",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-ADMISSION-O14",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-PROFILE-O01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-PROFILE-O02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-PROFILE-O03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-MONEY-O01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-MONEY-O02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-MONEY-O03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-MONEY-O04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-MONEY-O05",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-MONEY-O06",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-MONEY-O07",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-RPC-Q01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-RPC-Q02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-RPC-Q03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-RPC-Q04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent HORSE-RPC-Q05",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent INS-Q01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent INS-Q02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent INS-Q03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent INS-Q04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent LEASE-Q01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent LEASE-Q02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-BOOT-01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-BOOT-02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-BOOT-03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-BOOT-04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-BOOT-05",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-Q01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-Q02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-Q03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-Q04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-Q05",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-Q06",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-Q07",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent DISPATCH-O01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent DISPATCH-O02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent DISPATCH-O03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent DISPATCH-O04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent DISPATCH-O05",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent DISPATCH-O06",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-05",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-06",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-07",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-08",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-09",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-10",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-11",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-12",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-13",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-14",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-15",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-16",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-17",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-18",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-19",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-20",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-21",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-22",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-23",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-24",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-25",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-26",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-27",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-28",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-29",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-30",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-31",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-32",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-33",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-34",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-35",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ROOT-HTTP-36",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent REST-Q01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent REST-Q02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent REST-Q03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent FAULT-Q01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent TIMEBANK-Q01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent ADM-Q01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent REST-Q04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent REST-Q05",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent REST-Q06",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent REST-Q07",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SEAT-Q01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SEAT-Q02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SEAT-Q03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent WAITLIST-Q01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent WAITLIST-Q02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SEAT-META-Q01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SEAT-META-Q02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent NEXT-01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent NEXT-02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent NEXT-03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent NEXT-04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent NEXT-05",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent NEXT-06",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent CORE-OBS-028 / G7-Q01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent RUN-Q01 / INS-Q01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent RUN-Q06",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent RUN-Q07",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent Inherited releaseBustedSeat stale reflection",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent PF-01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent PF-02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent PF-03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent PF-04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent PF-05",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent CORE052/CORE056",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent BOUND-Q03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent RUN-Q01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent RUN-Q02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent RUN-Q03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent RUN-Q04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SPIN-LOW-O01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SPIN-LOW-O02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SPIN-LOW-O03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SPIN-LOW-O04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SPIN-LOW-O05",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SPIN-SQL-O01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SPIN-SQL-O02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SPIN-SQL-O03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SPIN-SQL-O04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SPIN-SQL-O05",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SPIN-SQL-O06",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SPIN-SQL-O07",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SPIN-SQL-O08",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SPIN-SQL-O09",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SPIN-ACT-O01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SPIN-ACT-O02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SPIN-ACT-O03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SPIN-ACT-O04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SPIN-ACT-O05",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SPIN-ACT-O06",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SPIN-ACT-O07",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SPIN-ACT-O08",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent SPIN-ACT-O09",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent CONN-S04-004",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent CONN-S04-005",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent STABLE-Q03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent STABLE-Q04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent STABLE-Q05",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent STABLE-Q07",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent STABLE-Q08",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent STABLE-Q09",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent STABLE-Q10",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent STABLE-LOWER-O01",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent STABLE-LOWER-O02",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent STABLE-LOWER-O03",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent STABLE-LOWER-O04",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent STABLE-LOWER-O05",
+      "pass": true
+    },
+    {
+      "check": "G4 home consistent STABLE-LOWER-O06",
+      "pass": true
+    },
+    {
+      "check": "44 repair16question7historical",
+      "pass": true
+    },
+    {
+      "check": "G4-C48 corrected home",
+      "pass": true
+    },
+    {
+      "check": "G4-C54 corrected home",
+      "pass": true
+    },
+    {
+      "check": "G4-C55 corrected home",
+      "pass": true
+    },
+    {
+      "check": "G4-C56 corrected home",
+      "pass": true
+    },
+    {
+      "check": "G4-C67 corrected home",
+      "pass": true
+    },
+    {
+      "check": "All prior28G4 primary omitted homes supplied",
+      "pass": true
+    },
+    {
+      "check": "236 unique Connected placements",
+      "pass": true
+    },
+    {
+      "check": "312 unique source+id keys",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 737",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 738",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 739",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 740",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 741",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 742",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 743",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 744",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 745",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 746",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 747",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 748",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 749",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 750",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 751",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 752",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 753",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 754",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 755",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 756",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 757",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 758",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 759",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 760",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 761",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 762",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 763",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 764",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 765",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 766",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 767",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 768",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 769",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 770",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 771",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 772",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 773",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 774",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 775",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 776",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 777",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 778",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 779",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 780",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 781",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 782",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 783",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 784",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 785",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 786",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 787",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 788",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 789",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 790",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 791",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 792",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 793",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 794",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 795",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 796",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 797",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 798",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 799",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 800",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 801",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 802",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 803",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 804",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 805",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 806",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 807",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 808",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 809",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 810",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 811",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 812",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 813",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 814",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 815",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 816",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 817",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 818",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 819",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 820",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 821",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 822",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 823",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 824",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 825",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 826",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 827",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 828",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 829",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 830",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 831",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 832",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 833",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 834",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 835",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 836",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 837",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 838",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 839",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 840",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 841",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 842",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 843",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 844",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 845",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 846",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 847",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 848",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 849",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 850",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 851",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 852",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 853",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 854",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 855",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 856",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 857",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 858",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 859",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 860",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 861",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 862",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 863",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 864",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 865",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 866",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 867",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 868",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 869",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 870",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 871",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 872",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 873",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 874",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 875",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 876",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 877",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 878",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 879",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 880",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 881",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 882",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 883",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 884",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 885",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 886",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 887",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 888",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 889",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 890",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 891",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 892",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 893",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 894",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 895",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 896",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 897",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 898",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 899",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 900",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 901",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 902",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 903",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 904",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 905",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 906",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 907",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 908",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 909",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 910",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 911",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 912",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 913",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 914",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 915",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 916",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 917",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 918",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 919",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 920",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 921",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 922",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 923",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 924",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 925",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 926",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 927",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 928",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 929",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 930",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 931",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 932",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 933",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 934",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 935",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 936",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 937",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 938",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 939",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 940",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 941",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 942",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 943",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 944",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 945",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 946",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 947",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 948",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 949",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 950",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 951",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 952",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 953",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 954",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 955",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 956",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 957",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 958",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 959",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 960",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 961",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 962",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 963",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 964",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 965",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 966",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 967",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 968",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 969",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 970",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 971",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 972",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 973",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 974",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 975",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 976",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 977",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 978",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 979",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 980",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 981",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 982",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 983",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 984",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 985",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 986",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 987",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 988",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 989",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 990",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 991",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 992",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 993",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 994",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 995",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 996",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 997",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 998",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 999",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1000",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1001",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1002",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1003",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1004",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1005",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1006",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1007",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1008",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1009",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1010",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1011",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1012",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1013",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1014",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1015",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1016",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1017",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1018",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1019",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1020",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1021",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1022",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1023",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1024",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1025",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1026",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1027",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1028",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1029",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1030",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1031",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1032",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1033",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1034",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1035",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1036",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1037",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1038",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1039",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1040",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1041",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1042",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1043",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1044",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1045",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1046",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1047",
+      "pass": true
+    },
+    {
+      "check": "Connected key linked 1048",
+      "pass": true
+    },
+    {
+      "check": "Connected homes valid",
+      "pass": true
+    },
+    {
+      "check": "26 additive unique records",
+      "pass": true
+    },
+    {
+      "check": "Diamond44/14 preserved",
+      "pass": true
+    },
+    {
+      "check": "Diamond additive homes valid",
+      "pass": true
+    },
+    {
+      "check": "Ten UI placements distinct",
+      "pass": true
+    },
+    {
+      "check": "UI homes valid",
+      "pass": true
+    },
+    {
+      "check": "Three scope gaps closed",
+      "pass": true
+    }
+  ],
+  "references": {
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/acceptance/connected-placement0016-intake.json": "a12b68c2e5c7fffc24be45bb336f267c2dc0dc1aeb6309bdbc42c01451374e86",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/outputs/connected-audit/baseline-placement-0016/ALL_312_INTEGRATION05_KEYS.json": "1d35fdbf83da30b9bfc2204bb6b126c0e6e1bf242b818b7c92f3fa47d3625617",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/outputs/connected-audit/baseline-placement-0016/AUTHORITY_ATTACHMENTS.json": "d60e3364010406366961c9304f3158f8bfe9a81bb3ceb178933466881ee0e7a5",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/outputs/connected-audit/baseline-placement-0016/DELIVERY_UNIT_INDEX.json": "befd55de28ba01a53b449df20a83cab05e84d644881556453f3edf2c03292b92",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/outputs/connected-audit/baseline-placement-0016/EFFECTIVE_STATUS_QUALIFICATIONS.json": "f25ac5e9384dbc8b19db547ba89967270018ffa11a5cda641a2d8cedac31e0b1",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/outputs/connected-audit/baseline-placement-0016/FINITE_AUTHORITY_REMAINDER.json": "b17a27e5a932d05a2b1104cc5329cb433493dcf2f63b5a4c61fdfd93d2891675",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/outputs/connected-audit/baseline-placement-0016/HANDOFF.md": "69526a3d626c644afb59e7bcd3fc7ce44bd84c0391670a84f05ab943b4c6d219",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/outputs/connected-audit/baseline-placement-0016/INPUT_REFERENCES.json": "7f5194a412d3586abf111dc98cdc72163dc7229ab4f6470ba75df6dc2a5d8987",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/outputs/connected-audit/baseline-placement-0016/PLACEMENTS.json": "966d41cab5710b3d65937d1f0fac16ca892734e7a86a91cc6a732054bc9c4c2c",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/outputs/connected-audit/baseline-placement-0016/PLAN.md": "faf4ab5e07c8e92a65960799a5a197b703fb1a9e111256b67cb3ee3c139275ba",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/outputs/connected-audit/baseline-placement-0016/PRESERVED_BASELINE_STATUS_ADDENDUM.json": "5836fa5f5831fb43d2fe73f13dfe60cac30e8faf01d5e80f5cf714979ac4ef9b",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/outputs/connected-audit/baseline-placement-0016/PRESERVED_CONTROL_PROVENANCE.json": "d86aceea4ff26cf86006e847d06f2cc3eb0ba060ce2e10fb7967f72a5d6e9d74",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/outputs/connected-audit/baseline-placement-0016/PRESERVED_INTEGRATION05_QUALIFICATIONS.json": "3deedb8b372a86962d994be6454680d5fa4bdea45f8bc7c131aa68393ff17cd3",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/outputs/connected-audit/baseline-placement-0016/PRESERVED_ORIGINAL_REQUIREMENTS.json": "0830e021d8b8a70fc0c0dc3db8e64c131095da234f9e6fb0df35496f5d3c6e01",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-connected-service-recovery/outputs/connected-audit/baseline-placement-0016/VERIFICATION.json": "09c05b3c146f0563ca08544afd68d6186e8ed9c4e7437ad20c9b0dc291615c1f",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/acceptance/diamond-additive-placement-intake.json": "8e7a484958616670328530c60c999685ab5f9db92739cf6f9ad9d3f09b7286fb",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-durability-evidence/outputs/G5-DIAMOND-ADDITIVE-PLACEMENT-0001/BASELINE-MAP-UNCHANGED.json": "86c5c1145e63a0533acb5842bf7fce91b3fc69c26998ad8233134a1a814a670d",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-durability-evidence/outputs/G5-DIAMOND-ADDITIVE-PLACEMENT-0001/HANDOFF.md": "b891b9da205c9ee17f78f07e1943e8dba0e4e31990d878b90827911107bcbd0c",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-durability-evidence/outputs/G5-DIAMOND-ADDITIVE-PLACEMENT-0001/INPUT-MANIFEST.json": "349c6ec1d44d29af599f12350ef32187891242f256efb0636cabe65feb5f9999",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-durability-evidence/outputs/G5-DIAMOND-ADDITIVE-PLACEMENT-0001/OBSERVATION-REGISTER.json": "a9b72f9e2a996abb03a15fee5c591216467cbe4d3ac011450706bae8bb2c09c5",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-durability-evidence/outputs/G5-DIAMOND-ADDITIVE-PLACEMENT-0001/PEER-REUSE-JOIN.json": "6c0247a701491ba2b18d01d7c09adf1555f0484d2b00798596f24487dc095015",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-durability-evidence/outputs/G5-DIAMOND-ADDITIVE-PLACEMENT-0001/PLACEMENT-REVIEW.json": "0b24a0c8bf311d2487a37bbb99f020535548e34fc93bb7abc9f4fde1029b3f41",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-durability-evidence/outputs/G5-DIAMOND-ADDITIVE-PLACEMENT-0001/VERIFICATION.json": "c0b40e89b6d6be8e4a66bb0be318ebff2705f53f9782cacadff7b03471b0b8bb",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/acceptance/commerce-ui3-intake.json": "a4de24ac183a974820f908519f710ed965ca680eb64741aae9c58f492e2bea8e",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-backlog-reconciliation/outputs/commerce-ui-0001/SOURCE-RANGES.json": "63f8bd5827791e782de3917da584514f81b9a34ffaa9544d23ece37531b03892",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-backlog-reconciliation/outputs/commerce-ui-0001/PLACEMENT-ADDENDUM.json": "d1deac3fa8d46de717370a8f8bc78c6cfdfb4ed2aae5adc22208337d0fd315fd",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-backlog-reconciliation/outputs/commerce-ui-0001/SCOPE-CLOSURE.json": "3da7342be9f17fcdefb9b8eaf77fe0d6408b6f389919cafd2962e4344a8a40cb",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-backlog-reconciliation/outputs/commerce-ui-0001/OBSERVATIONS.json": "60b126d44c5a1f622d3fec72a97190385523dcee3a24643d4b652c7decf37e6c",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-backlog-reconciliation/outputs/commerce-ui-0001/VERIFICATION.json": "b9cd9780a80e1f54445a38beb681bc78986ee05734f36266499850e0f141b293",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-backlog-reconciliation/outputs/commerce-ui-0001/PREVIOUS-HASHES.json": "6c51d4600461155531e4946b74125e38ba831cd7c1d8b17da35cd2e60f7d3eda",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-backlog-reconciliation/outputs/commerce-ui-0001/BOUNDED-EXCERPTS-2.txt": "a4bfd1f2882866e428dee46f9c089a17027e9d011847564a05578fb838e3b1f1",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-backlog-reconciliation/outputs/commerce-ui-0001/RECEIPT-LOOKUP.json": "cbee51cd7a28128a5995c0824aca306a966a856d21672c6972e9cdf63a5fae19",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-backlog-reconciliation/outputs/commerce-ui-0001/HANDOFF.md": "f067d08d6a31cc0040d9c362462c8b193017d30fb51832ef970c800380384069",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-backlog-reconciliation/outputs/commerce-ui-0001/BOUNDED-EXCERPTS-0.txt": "0413aaf4b95d9f46fe8df8c7809197c232d57392c7dd13745b205b92c252f791",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/club-arena-backlog-reconciliation/outputs/commerce-ui-0001/BOUNDED-EXCERPTS-1.txt": "92cd2e97cbaf2c69c730359efbefc99efd1b15c93964eb774f52ee797b805b93",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/g8/acceptance/g4-delivery-placement-intake.json": "a1db0b6fc97dcffb7a9fe641bbc80b295e2e3f529094831b2ccf5895a18bb87e",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/CANDIDATE_CHALLENGE.json": "8931b251cb035756a0f3cf46ee51008764e38576fd0c6a2366668ba3dcaaf09d",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/DEDUPE_AND_OWNER_CARRY_FORWARD.json": "3d243cd3a1159f38cd1c70e5be0863e5b1e30fb823f5af827d7697a344203091",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/DELIVERY_UNITS.json": "902bdd26c3a526e5294f22e03b3afd24e2f48cf07a8b10383f24d06c7f8a2ebb",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/FIRST_REPAIRS_PRESERVED.json": "4a9db91afe6ec6e86b2e9fd4179b65a3e5dd12e559c57ac354c449f29a0582f4",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/INPUT_MANIFEST.json": "de16d84850b47755040a60d22a8b18e03ee4458fcb656d5f9b7cb5bf802303ba",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/LATER_TRIVIA_DELIVERY_OVERLAY.json": "da7fc797dd7d51559590805daec222e9e8048fa0d5657b7a9753e3c13af68a7e",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/NEXT_ELIGIBLE_WORK_QUEUE.json": "f5d6d739512e6c396875d01db3950cb79c9a11d53a708dab8712b0674c151a6a",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/OBSERVATION_PLACEMENT_299.json": "aa9746e75466c1e046fbb711b96d324456d7c601184de98a705c3915e0fef82d",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/POLICY_AND_PROOF_BOUNDARIES.json": "cc845ce6430a24556b0be553b5e10fa9526ae26651936269ae9d59cfcc8450b3",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/PRIMARY_CAUSE_PLACEMENT_67.json": "dc4f4a59aef79a72b0d312099cdd4979a74fecd9245baa19aee0412e68b1f971",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/RETIREMENT_AND_DOMAIN_DISPOSITION.json": "f91353b615caad48bac85338e087b7e50e173dc6a11ddfd4432fb146cd762db8",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/REVIEW.md": "061c466975606d1939c4ebb88260ff394ae373e7fadc81016b798f9f8def519a",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/SAFEGUARDS_AND_ORIGINAL_REQUIREMENTS.json": "c34df6f751d3854e89baa911dbe31fa9c05916a775a2cb25b58273b07ce65d9a",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/SUPPLEMENTAL_PLACEMENT_40.json": "0e585b87a24f80a0e3884916618c3213c982c24df5ba7a621af5010db7be9e6c",
+    "/Users/smarter.poker/Documents/Codex/2026-09-11/you-are-the-program-overseer-for-2/work/foundation-contract-review/source-audit/delivery-placement-review-0001/VERIFICATION.json": "f4dc7652e36e4d4357db3e005655ed2aa129cfc81f062083ee6376024885a0f4"
+  }
+}

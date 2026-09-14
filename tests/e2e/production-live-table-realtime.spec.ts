@@ -11,6 +11,7 @@ import {
   CASH_TABLE_CARD_SELECTOR,
   collectVisibleCashCandidates,
 } from './support/cashTableCandidates';
+import { createProgressSilenceGuard } from './support/progressSilence';
 
 const CERTIFICATION_ENABLED = process.env.LIVE_TABLE_REALTIME_CERTIFICATION === '1';
 const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
@@ -18,7 +19,7 @@ const UNION_ID = process.env.E2E_UNION_ID || 'fade0000-0000-0000-0000-0000000000
 const CLUB_LOBBY = `clubs/${CLUB_ID}`;
 const PROJECT_NAME = 'webkit-live-table-realtime';
 const ENGINE_HEALTH_URL = process.env.ENGINE_HEALTH_URL || 'https://engine.smarter.poker/health';
-const EXPECTED_ENGINE_SHA = (process.env.EXPECTED_ENGINE_SHA || '').trim().toLowerCase();
+const EXPECTED_ENGINE_SHA = (process.env.EXPECTED_ENGINE_SHA || '').trim();
 const CONNECT_DEADLINE_MS = 12_000;
 const MAX_GAMEPLAY_SILENCE_MS = 45_000;
 const CAUSAL_HAND_TIMEOUT_MS = 90_000;
@@ -48,6 +49,7 @@ interface EngineTableLiveness {
 
 interface EngineHealth {
   version: string;
+  releaseSha: string | null;
   liveness: string;
   activeTables: number;
   stalledTableCount: number;
@@ -81,7 +83,7 @@ function requireCertificationConfiguration(testInfo: TestInfo, browserName: stri
   if (!process.env.SP_EMAIL || !process.env.SP_PASS) {
     throw new Error('SP_EMAIL and SP_PASS must identify the isolated production E2E account');
   }
-  if (!/^[0-9a-f]{7,40}$/.test(EXPECTED_ENGINE_SHA)) {
+  if (!/^[0-9a-f]{40}$/.test(EXPECTED_ENGINE_SHA)) {
     throw new Error(
       'EXPECTED_ENGINE_SHA must name the exact Club Arena commit the production engine should serve'
     );
@@ -98,17 +100,23 @@ function requireCertificationConfiguration(testInfo: TestInfo, browserName: stri
   }
 }
 
-function engineVersionMatchesExpected(observed: string): boolean {
-  const normalized = observed.trim().toLowerCase();
-  return (
-    /^[0-9a-f]{7,40}$/.test(normalized) &&
-    (EXPECTED_ENGINE_SHA.startsWith(normalized) || normalized.startsWith(EXPECTED_ENGINE_SHA))
-  );
-}
+type LivenessScope = { tableIds: string[] } | { gameFormat: (typeof TOURNAMENT_FORMATS)[number] };
 
-async function readEngineHealth(request: APIRequestContext): Promise<EngineHealth> {
-  const separator = ENGINE_HEALTH_URL.includes('?') ? '&' : '?';
-  const response = await request.get(`${ENGINE_HEALTH_URL}${separator}cb=${Date.now()}`, {
+async function readEngineHealth(
+  request: APIRequestContext,
+  scope: LivenessScope
+): Promise<EngineHealth> {
+  const url = new URL(ENGINE_HEALTH_URL);
+  url.searchParams.set('cb', String(Date.now()));
+  if ('tableIds' in scope) {
+    expect(scope.tableIds.length).toBeGreaterThan(0);
+    expect(scope.tableIds.length).toBeLessThanOrEqual(32);
+    url.searchParams.set('liveness_table_ids', scope.tableIds.join(','));
+  } else {
+    url.searchParams.set('liveness_format', scope.gameFormat);
+    url.searchParams.set('liveness_club_ids', [CLUB_ID, UNION_ID].join(','));
+  }
+  const response = await request.get(url.toString(), {
     timeout: 15_000,
     headers: { 'cache-control': 'no-store' },
   });
@@ -118,10 +126,15 @@ async function readEngineHealth(request: APIRequestContext): Promise<EngineHealt
   expect(health.stalledTableCount, 'production had stalled tables before observation').toBe(0);
   expect(health.deadStalledCount, 'production had dead stalled tables before observation').toBe(0);
   expect(health.wholeFleetStalled, 'production reported the whole fleet stalled').toBe(false);
+  const observedReleaseSha = String(health.releaseSha || '').trim();
   expect(
-    engineVersionMatchesExpected(String(health.version || '')),
-    `engine version ${health.version || '(missing)'} did not match ${EXPECTED_ENGINE_SHA}`
-  ).toBe(true);
+    observedReleaseSha,
+    'the production engine did not expose one full lowercase releaseSha'
+  ).toMatch(/^[0-9a-f]{40}$/);
+  expect(
+    observedReleaseSha,
+    `engine releaseSha ${observedReleaseSha || '(missing)'} did not exactly match ${EXPECTED_ENGINE_SHA}`
+  ).toBe(EXPECTED_ENGINE_SHA);
   if (health.maintenance?.active) {
     throw new Error(
       `production engine is in scheduled maintenance (${health.maintenance.phase || 'unknown phase'}); ` +
@@ -131,6 +144,40 @@ async function readEngineHealth(request: APIRequestContext): Promise<EngineHealt
   expect(Array.isArray(health.tableLiveness), 'engine health omitted per-table liveness').toBe(
     true
   );
+  expect(
+    health.tableLiveness.length,
+    'scoped health exceeded its public response bound'
+  ).toBeLessThanOrEqual(32);
+  expect(
+    new Set(health.tableLiveness.map((t) => t.tableId)).size,
+    'duplicate table progress evidence'
+  ).toBe(health.tableLiveness.length);
+  for (const table of health.tableLiveness) {
+    expect(table.tableId, 'progress evidence omitted a table UUID').toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+    );
+    for (const count of [table.seated, table.dealable, table.handCount]) {
+      expect(Number.isSafeInteger(count), 'progress evidence omitted an integer counter').toBe(
+        true
+      );
+      expect(count).toBeGreaterThanOrEqual(0);
+    }
+    expect(
+      Number.isFinite(table.msSinceProgress),
+      'progress evidence omitted its inactivity clock'
+    ).toBe(true);
+    expect(table.msSinceProgress).toBeGreaterThanOrEqual(0);
+    expect(typeof table.paused).toBe('boolean');
+    expect(typeof table.loopPhase).toBe('string');
+    if ('tableIds' in scope)
+      expect(scope.tableIds, 'health returned an unrequested table').toContain(table.tableId);
+    else {
+      expect(table.gameFormat).toBe(scope.gameFormat);
+      expect([CLUB_ID, UNION_ID], 'health returned an out-of-scope tournament').toContain(
+        table.clubId
+      );
+    }
+  }
   return health;
 }
 
@@ -214,10 +261,13 @@ async function selectOccupiedRunningCashTable(
     }
     const candidates = await visibleRunningCashCandidates(page);
     if (candidates.length === 0) continue;
-    const health = await readEngineHealth(request);
-    for (const candidate of candidates) {
-      const table = healthyRunningTable(health, candidate.id, candidate.gameFormat);
-      if (table) return { candidate, health, table };
+    for (let offset = 0; offset < candidates.length; offset += 32) {
+      const batch = candidates.slice(offset, offset + 32);
+      const health = await readEngineHealth(request, { tableIds: batch.map((c) => c.id) });
+      for (const candidate of batch) {
+        const table = healthyRunningTable(health, candidate.id, candidate.gameFormat);
+        if (table) return { candidate, health, table };
+      }
     }
   }
 
@@ -234,21 +284,28 @@ async function proveTableProgressedBeforeNavigation(
 ): Promise<PreNavigationEngineEvidence> {
   let after = before;
   let afterTable = beforeTable;
+  const continuouslyActive = createProgressSilenceGuard(MAX_GAMEPLAY_SILENCE_MS);
   await expect
     .poll(
       async () => {
-        after = await readEngineHealth(request);
+        after = await readEngineHealth(request, { tableIds: [candidate.id] });
+        if (
+          !continuouslyActive(after.tableLiveness.find((table) => table.tableId === candidate.id))
+        )
+          return -1;
         const current = healthyRunningTable(after, candidate.id, candidate.gameFormat);
         if (!current) return -1;
         afterTable = current;
         return current.handCount;
       },
       {
-        timeout: MAX_GAMEPLAY_SILENCE_MS,
+        // A live hand can keep progressing beyond the 45s inactivity limit.
+        // Wait for the next deal using the same full-hand bound as the socket proof.
+        timeout: CAUSAL_HAND_TIMEOUT_MS,
         intervals: [2_000, 3_000, 5_000, 5_000],
         message:
-          `table ${candidate.name} existed before observation but did not complete another hand ` +
-          `inside ${MAX_GAMEPLAY_SILENCE_MS}ms`,
+          `table ${candidate.name} (${candidate.id}) existed before observation but did not start its next hand ` +
+          `inside ${CAUSAL_HAND_TIMEOUT_MS}ms`,
       }
     )
     .toBeGreaterThan(beforeTable.handCount);
@@ -257,7 +314,7 @@ async function proveTableProgressedBeforeNavigation(
 
 /**
  * Pick only from tables that were live before the browser existed, then wait
- * for one of those exact tables to finish another hand. Selecting the first
+ * for one of those exact tables to start its next hand. Selecting the first
  * table that progresses avoids making a natural table close look like a
  * transport failure while retaining the pre-navigation proof.
  */
@@ -265,7 +322,7 @@ async function selectProgressingTournamentTable(
   request: APIRequestContext,
   gameFormat: (typeof TOURNAMENT_FORMATS)[number]
 ): Promise<{ candidate: RunningTableCandidate; evidence: PreNavigationEngineEvidence }> {
-  const before = await readEngineHealth(request);
+  const before = await readEngineHealth(request, { gameFormat });
   /* The live SNG board is presently heads-up, so two seats is a real SNG,
      not an unstable fallback. Spins and MTTs retain a three-player floor to
      avoid selecting a table already on its terminal heads-up hand. */
@@ -297,11 +354,18 @@ async function selectProgressingTournamentTable(
   let after = before;
   let beforeTable: EngineTableLiveness | null = null;
   let afterTable: EngineTableLiveness | null = null;
+  const continuouslyActive = createProgressSilenceGuard(MAX_GAMEPLAY_SILENCE_MS);
   await expect
     .poll(
       async () => {
-        after = await readEngineHealth(request);
+        after = await readEngineHealth(request, { tableIds: baselines.map((t) => t.tableId) });
         for (const baseline of baselines) {
+          if (
+            !continuouslyActive(
+              after.tableLiveness.find((table) => table.tableId === baseline.tableId)
+            )
+          )
+            continue;
           const current = healthyRunningTable(after, baseline.tableId, gameFormat);
           if (current && current.handCount > baseline.handCount) {
             beforeTable = baseline;
@@ -312,11 +376,11 @@ async function selectProgressingTournamentTable(
         return false;
       },
       {
-        timeout: MAX_GAMEPLAY_SILENCE_MS,
+        timeout: CAUSAL_HAND_TIMEOUT_MS,
         intervals: [2_000, 3_000, 5_000, 5_000],
         message:
           `none of ${baselines.length} already-running ${gameFormat.toUpperCase()} tables ` +
-          `completed another hand inside ${MAX_GAMEPLAY_SILENCE_MS}ms`,
+          `started their next hand inside ${CAUSAL_HAND_TIMEOUT_MS}ms`,
       }
     )
     .toBe(true);
@@ -349,6 +413,7 @@ function compactHealthEvidence(
 ): Record<string, unknown> {
   return {
     version: health.version,
+    releaseSha: health.releaseSha,
     liveness: health.liveness,
     activeTables: health.activeTables,
     stalledTableCount: health.stalledTableCount,
@@ -750,6 +815,22 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
     const journal = new EngineSocketJournal(page);
     const selected = await selectOccupiedRunningCashTable(page, request);
     const { candidate } = selected;
+    // Keep the exact table identity even when the next-hand proof times out.
+    await testInfo.attach('cash-selected-before-progress', {
+      body: Buffer.from(
+        JSON.stringify(
+          {
+            selectedAt: new Date().toISOString(),
+            expectedVersion: EXPECTED_ENGINE_SHA,
+            candidate,
+            health: compactHealthEvidence(selected.health, selected.table),
+          },
+          null,
+          2
+        )
+      ),
+      contentType: 'application/json',
+    });
     const engineBeforeNavigation = await proveTableProgressedBeforeNavigation(
       request,
       candidate,

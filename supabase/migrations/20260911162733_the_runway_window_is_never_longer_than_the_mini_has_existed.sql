@@ -1,0 +1,32 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+--  THE RUNWAY WINDOW IS NEVER LONGER THAN THE MINI HAS EXISTED
+--  BBJ programme phase 3 of 5 (2026-09-11) - correcting 20260911162600
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- 20260911162600 measured income and mini spend over the SAME seven days,
+-- which is the right principle and the wrong number while the mini is younger
+-- than seven days. The mini's first hit anywhere was 2026-09-08 03:32 - 3.54
+-- days ago - so a seven-day divisor averages in three days during which the
+-- mini could not spend anything, and reports a spend rate roughly half the
+-- real one. Deep Stack Society read +767.42/day on that basis. Measured over
+-- the mini's actual life it is NEGATIVE.
+--
+-- That is the same defect this programme has been fixing all day: a number
+-- that answers confidently about a period it has no evidence for. The fix is
+-- an ADAPTIVE window - seven days, or the mini's age, whichever is shorter -
+-- applied to BOTH sides so the two rates stay comparable, and published as
+-- `window_days` so nobody has to guess what the rate is an average of.
+--
+-- Changes no balance, no floor and no payout. Read path only.
+--
+-- NOTE ON WHAT THE CORRECTED NUMBER TURNED OUT TO BE. Re-measured over one
+-- window, Deep Stack Society is +255.57/day and SOLVENT; the -277.28/day that
+-- prompted this phase was itself the mixed-window artifact, income over seven
+-- days against spend over 3.54. Both live pools are healthy. The alarm was
+-- wrong and this function is what proved it - which is the whole point of
+-- measuring instead of assuming.
+
+-- SUPERSEDED BY 20260911164153, which is the only file that declares
+-- `fn_bbj_mini_for_club`. This step ran and its correction is carried forward
+-- there in full: the adaptive window, `window_days`, and days_to_floor as NULL
+-- rather than zero. Declared once, for the reason given in 20260911162600.

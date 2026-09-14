@@ -52,6 +52,7 @@ interface CompletedHandObservationPayload {
   generation: number;
   fence: string;
   handKey: string;
+  committedHandId?: string;
   actions: unknown;
   bigBlind: number;
   showdown: unknown;
@@ -74,6 +75,8 @@ vi.mock('../../engine/horseDecision/index.js', () => ({
 
 import { logHandHistory, buildHandHistoryTiers } from './handHistory.js';
 import { persistedKnockoutEvidence } from '../../tournament/bountyAttributionGate.js';
+import type { HorsePublicActionNode } from '../../engine/HorsePublicActionNode.js';
+import { captureHandSeatGenerations } from '../../engine/handSeatGeneration.js';
 
 const GLOBAL_HAND = 1_400_001;
 const historyId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -116,6 +119,66 @@ const atomicParams = (handNumber = GLOBAL_HAND + 500) => ({
     leaseGeneration,
   },
 });
+
+function identityParams() {
+  const userId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  const publicNode: HorsePublicActionNode = Object.freeze({
+    version: 1,
+    status: 'captured',
+    variant: 'nlh',
+    mode: 'cash',
+    asset: 'chips',
+    chipUnit: 0.01,
+    street: 'flop',
+    dealerSeat: 2,
+    actorSeat: 1,
+    smallBlind: 1,
+    bigBlind: 2,
+    ante: 0,
+    anteType: 'per_player',
+    allInOrFold: false,
+    bombPot: false,
+    boardCount: 1,
+    boards: Object.freeze(['AsKd7c']),
+    pot: 20,
+    currentBet: 0,
+    toCall: 0,
+    structure: 'no_limit',
+    minRaiseTo: 2,
+    maxRaiseTo: 100,
+    fixedBetSize: null,
+    wagersCapped: false,
+    legalActions: Object.freeze(['fold', 'check', 'bet', 'all_in'] as const),
+    seats: Object.freeze([
+      Object.freeze([1, 100, 0, 10, 0, 0, 0] as const),
+      Object.freeze([2, 100, 0, 10, 0, 0, 0] as const),
+    ]),
+  });
+  return {
+    ...atomicParams(),
+    handId: historyId,
+    seatGenerations: captureHandSeatGenerations([
+      {
+        user_id: userId,
+        seat_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        seat_joined_at: '2026-09-12T10:00:00.123456+00:00',
+      },
+    ]),
+    actions: [
+      { seat: 1, userId, stage: 'flop', action: 'rit_board_2:AsKd7c' },
+      { seat: 1, userId, stage: 'flop', action: 'check', publicNode, origin: 'forced' as const },
+      {
+        seat: 1,
+        userId,
+        stage: 'flop',
+        action: 'bet',
+        amount: 20,
+        publicNode,
+        origin: 'player' as const,
+      },
+    ],
+  };
+}
 
 const obligationsParams = (handNumber = GLOBAL_HAND + 600) => {
   const input = atomicParams(handNumber);
@@ -205,6 +268,138 @@ beforeEach(() => {
 });
 
 describe('logHandHistory - worker-owned completed-hand observation', () => {
+  it('preserves action-node metadata in the accepted row and worker payload without adding player cards', async () => {
+    acceptAtomicHand();
+    const publicNode = Object.freeze({
+      version: 1 as const,
+      status: 'unavailable' as const,
+      reason: 'private_discard_choice' as const,
+    });
+    const input = atomicParams(GLOBAL_HAND + 810);
+    const actions = input.actions.map((action) => ({
+      ...action,
+      publicNode,
+      origin: 'forced' as const,
+    }));
+    await logHandHistory({ ...input, actions });
+    const persisted = (rpcCalls[0].args.p_hand_row as Record<string, unknown>).actions;
+    expect(persisted).toEqual(
+      actions.map((action) => ({
+        ...action,
+        observationIdentity: {
+          version: 1,
+          status: 'unavailable',
+          reason: 'missing_hand_identity',
+        },
+      }))
+    );
+    expect(mockObserveCompletedHand.mock.calls[0][0].actions).toEqual(persisted);
+    expect(JSON.stringify(mockObserveCompletedHand.mock.calls[0][0].actions)).not.toMatch(
+      /hole_cards|username|private-name/
+    );
+  });
+
+  it('persists original action ordinals and sends the same bound identities after acceptance', async () => {
+    const input = identityParams();
+    acceptAtomicHand();
+    await logHandHistory(input);
+    const actions = (rpcCalls[0].args.p_hand_row as Record<string, any>).actions;
+    expect(actions[0]).not.toHaveProperty('observationIdentity');
+    expect(actions[1].observationIdentity).toMatchObject({
+      status: 'unavailable',
+      reason: 'non_voluntary_origin',
+    });
+    expect(actions[2].observationIdentity).toMatchObject({
+      status: 'bound',
+      handId: historyId,
+      observationId: `${historyId}:2`,
+      actionOrdinal: 2,
+      sessionKey: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+    expect(mockObserveCompletedHand.mock.calls[0][0].actions).toEqual(actions);
+    expect(mockObserveCompletedHand.mock.calls[0][0].committedHandId).toBe(historyId);
+    const serialized = JSON.stringify(actions);
+    expect(serialized).not.toMatch(/seat_joined_at|seat_id|username|hole_cards/);
+    // Re-entry with a different worker/lease fence must not mint new evidence.
+    acceptAtomicHand();
+    input.atomicCommit.leaseGeneration = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    await logHandHistory(input);
+    expect((rpcCalls[1].args.p_hand_row as Record<string, any>).actions).toEqual(actions);
+    expect(mockObserveCompletedHand.mock.calls[1][0].committedHandId).toBe(historyId);
+    expect(mockObserveCompletedHand.mock.calls[1][0].fence).not.toBe(
+      mockObserveCompletedHand.mock.calls[0][0].fence
+    );
+  });
+
+  it('keeps identities stable through lost-receipt retry and does not observe a pending hand', async () => {
+    vi.useFakeTimers();
+    try {
+      const input = identityParams();
+      atomicRpcResults = [
+        { data: null, error: { message: 'response lost after commit' } },
+        {
+          data: { success: true, atomic_hand_commit: true, history_id: historyId, replay: true },
+          error: null,
+        },
+      ];
+      const pending = logHandHistory(input);
+      await vi.advanceTimersByTimeAsync(0);
+      const acceptedActions = structuredClone(
+        (rpcCalls[0].args.p_hand_row as Record<string, any>).actions
+      );
+      expect(mockObserveCompletedHand).not.toHaveBeenCalled();
+      input.seatGenerations.clear();
+      input.actions[2].amount = 999;
+      await vi.advanceTimersByTimeAsync(250);
+      await expect(pending).resolves.toMatchObject({ settlementCommitted: true });
+      expect(rpcCalls).toHaveLength(2);
+      expect((rpcCalls[1].args.p_hand_row as Record<string, any>).actions).toEqual(acceptedActions);
+      expect(mockObserveCompletedHand).toHaveBeenCalledTimes(1);
+      expect(mockObserveCompletedHand.mock.calls[0][0].actions).toEqual(acceptedActions);
+      expect(mockObserveCompletedHand.mock.calls[0][0].committedHandId).toBe(historyId);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('never observes bound identities from a rejected or mismatched atomic receipt', async () => {
+    const input = identityParams();
+    atomicRpcResults = [
+      {
+        data: {
+          success: true,
+          atomic_hand_commit: true,
+          history_id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        },
+        error: null,
+      },
+    ];
+    await expect(logHandHistory(input)).rejects.toThrow('receipt_identity_mismatch');
+    expect(mockObserveCompletedHand).not.toHaveBeenCalled();
+    expect(mockWakeHandProjection).not.toHaveBeenCalled();
+  });
+
+  it('overwrites supplied lineage and strips it from historical actions without a captured node', async () => {
+    const input = identityParams();
+    const observationIdentity = {
+      version: 1 as const,
+      status: 'bound' as const,
+      handId: 'forged-hand',
+      observationId: 'forged-observation',
+      actionOrdinal: 999,
+      sessionKey: 'forged-session',
+    };
+    acceptAtomicHand();
+    await logHandHistory({
+      ...input,
+      actions: input.actions.map((a) => ({ ...a, observationIdentity })),
+    });
+    const actions = (rpcCalls[0].args.p_hand_row as Record<string, any>).actions;
+    expect(actions[0]).not.toHaveProperty('observationIdentity');
+    expect(actions[2].observationIdentity.observationId).toBe(`${historyId}:2`);
+    expect(JSON.stringify(actions)).not.toContain('forged');
+  });
+
   it('sends the exact immutable hand payload and accepted authority fence', async () => {
     acceptAtomicHand();
     const showdownReveal = [
@@ -220,6 +415,7 @@ describe('logHandHistory - worker-owned completed-hand observation', () => {
       generation: input.handNumber,
       fence: `${input.tableId}:${input.handNumber}:${leaseGeneration}:observe`,
       handKey: `${input.tableId}:${input.handNumber}`,
+      committedHandId: historyId,
       actions: input.actions,
       bigBlind: input.bigBlind,
       showdown: showdownReveal,
@@ -316,6 +512,7 @@ describe('logHandHistory - accepted-hand transaction', () => {
       generation: input.handNumber,
       fence: `${input.tableId}:${input.handNumber}:${leaseGeneration}:observe`,
       handKey: `${input.tableId}:${input.handNumber}`,
+      committedHandId: historyId,
       actions: input.actions,
       bigBlind: input.bigBlind,
       showdown: null,
@@ -372,6 +569,7 @@ describe('logHandHistory - accepted-hand transaction', () => {
     );
     expect(rpcCalls).toHaveLength(0);
     expect(mockWakeHandProjection).not.toHaveBeenCalled();
+    expect(mockObserveCompletedHand).not.toHaveBeenCalled();
   });
 
   it('does not accept an ordinary hand receipt for the obligations-aware door', async () => {

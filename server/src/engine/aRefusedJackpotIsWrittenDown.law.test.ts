@@ -37,6 +37,41 @@ const here = new URL('.', import.meta.url).pathname;
 const settlement = readFileSync(join(here, 'ServerTableEngineSettlement.ts'), 'utf8');
 const bbjService = readFileSync(join(here, '..', 'services', 'supabase', 'bbj.ts'), 'utf8');
 
+/* THE MINI'S BRANCH IS A SECOND WRITER OF THE SAME ROW (phase 3, 2026-09-11).
+   Every slice below keys on the FIRST `if (nearMiss.nearMiss) {` and the FIRST
+   `type: 'bbj_near_miss'`, which is the MAIN block - so when settlement grew a
+   mini near-miss branch, the new recorder and the new emit were covered by
+   nothing at all, and the marker these laws key on stopped being unique. */
+describe("the mini's near miss is written down on the same terms as the main's", () => {
+  const miniBranch = () => {
+    const at = settlement.indexOf('if (miniNearMiss.nearMiss) {');
+    expect(at, 'settlement records a mini near miss').toBeGreaterThan(0);
+    return settlement.slice(at, settlement.indexOf('} catch (nmErr)', at));
+  };
+
+  it('records it, with the gate that refused it', () => {
+    expect(miniBranch()).toMatch(/void recordBBJNearMiss\(\{/);
+    expect(miniBranch()).toMatch(/reason: miniNearMiss\.reason,/);
+  });
+
+  it('cannot break settlement: fire-and-forget, like the main', () => {
+    expect(miniBranch()).toMatch(/\}\)\.catch\(\(\) => undefined\);/);
+  });
+
+  it('its reason is prefixed so one table can carry both jackpots', () => {
+    const rake = readFileSync(join(here, '..', 'config', 'RakeConfig.ts'), 'utf8');
+    for (const r of ['mini_not_enough_players', 'mini_pot_too_small', 'mini_winner_not_quads']) {
+      expect(rake, `${r} must be a mini reason`).toContain(r);
+    }
+  });
+
+  it('one hand yields ONE near miss: the mini defers to the main', () => {
+    // the MAIN bar is inside the MINI bar, so both fired for the same hand
+    expect(settlement).toMatch(/let mainNearMissReported = false;/);
+    expect(settlement).toMatch(/const miniNearMiss = mainNearMissReported/);
+  });
+});
+
 describe('the near miss reaches a table, not just a console', () => {
   it('settlement imports the recorder and calls it where the near miss is detected', () => {
     expect(settlement).toMatch(/\brecordBBJNearMiss\b/);
@@ -98,7 +133,13 @@ describe('a refused MINI is written down too (2026-09-09)', () => {
   );
 
   it('a skipped mini reaches bbj_near_misses with the refusal reason', () => {
-    expect(miniStep).toMatch(/if \(outcome\.status === 'skipped'\) \{/);
+    /* MOVED 2026-09-11 (rule 8: a pin follows its mechanism in the same
+       commit, it is never weakened). This pinned the literal
+       `if (outcome.status === 'skipped') {`. That predicate grew a second
+       term - see the `already_paid` test below - so the pin is on the
+       predicate's MEANING: a skipped mini is what reaches the recorder. */
+    expect(miniStep).toMatch(/outcome\.status === 'skipped'/);
+    expect(miniStep).toMatch(/if \(refused\) \{/);
     expect(miniStep).toMatch(/void recordBBJNearMiss\(\{/);
     expect(miniStep).toMatch(/reason: `mini_refused:\$\{outcome\.reason \|\| 'unspecified'\}`/);
   });
@@ -110,6 +151,16 @@ describe('a refused MINI is written down too (2026-09-09)', () => {
     expect(miniStep.indexOf('mini jackpot not paid for hand')).toBeLessThan(
       miniStep.indexOf("outcome.status === 'skipped'")
     );
+  });
+
+  it('a REPLAY is not recorded as refused either (2026-09-11)', () => {
+    /* `already_paid` is settlement running twice for one hand and the
+       idempotency key doing its job. It came back through this branch and was
+       written down as `mini_refused:already_paid` - the one instrument built
+       to answer "why did the mini not pay" reporting a mini that DID pay. The
+       test above excluded `queued` for exactly this reason and the other
+       not-a-refusal beside it was left in. */
+    expect(miniStep).toMatch(/outcome\.reason !== 'already_paid'/);
   });
 
   it('cannot break settlement', () => {

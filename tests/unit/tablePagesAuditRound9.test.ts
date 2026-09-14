@@ -24,10 +24,12 @@
  * Windows are structure-bounded (tests/helpers/sourceWindow.ts).
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { act, renderHook } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { sliceBlockAfter, sliceEnclosingBlock } from '../helpers/sourceWindow';
+import { useTournamentRebalance } from '../../src/hooks/useTournamentRebalance';
 
 const root = join(__dirname, '..', '..');
 const TABLE_PAGE = readFileSync(join(root, 'src', 'pages', 'TablePage.tsx'), 'utf8');
@@ -108,9 +110,33 @@ describe('round 9: a paid entrant is never demoted to spectator by a timeout', (
 });
 
 describe('round 9: rebalance and bounty reads take their fallbacks on resolved errors', () => {
-  it('a failed rebalance read reaches the catch that refreshes the seats', () => {
-    const block = sliceEnclosingBlock(TABLE_PAGE, 'error: rebalanceErr', 0, 2);
-    expect(block).toContain('if (rebalanceErr) throw rebalanceErr');
+  it('a failed rebalance read reaches the catch that refreshes the seats', async () => {
+    const error = new Error('roster unavailable');
+    const refresh = vi.fn();
+    const report = vi.fn();
+    const navigate = vi.fn();
+    const view = renderHook(() =>
+      useTournamentRebalance({
+        tableId: 'source',
+        userId: 'player',
+        routeTableId: 'source',
+        subscribeAuth: () => () => {},
+        readRoster: async () => ({ data: { table_id: 'destination' }, error }),
+        refresh,
+        report,
+        navigate,
+      })
+    );
+    try {
+      await act(async () => {
+        await view.result.current('tournament', () => true);
+      });
+      expect(report).toHaveBeenCalledExactlyOnceWith(error);
+      expect(refresh).toHaveBeenCalledOnce();
+      expect(navigate).not.toHaveBeenCalled();
+    } finally {
+      view.unmount();
+    }
   });
 
   it('a failed bounty read keeps the map the table already has', () => {

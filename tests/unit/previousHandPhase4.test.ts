@@ -404,3 +404,51 @@ describe('there is one replayer', () => {
     expect(src).toContain('export interface ReplaySource');
   });
 });
+
+/**
+ * THE POT AXIS TRAVELS (2026-09-13). A per-board share paid out of the main
+ * pot AND a side pot carries its slices through the link; a main-pot-only
+ * share carries nothing extra, so an ordinary link is byte-identical.
+ */
+describe('share link v4 carries which pot each board share came out of', () => {
+  it('a two-pot share survives encode -> URL -> decode -> rebuild', () => {
+    const input = ritHiLoInput({
+      winnersByBoard: [
+        {
+          board: 1,
+          userId: HERO,
+          amount: 1.0,
+          handName: 'Flush, Ace High',
+          pots: [
+            { index: 0, amount: 0.8 },
+            { index: 1, amount: 0.2 },
+          ],
+        },
+        { board: 1, userId: VILLAIN, amount: 1.05, handName: 'Seven Six Low', low: true },
+        { board: 2, userId: HERO, amount: 1.05, handName: 'Straight, Six High' },
+        { board: 2, userId: VILLAIN, amount: 1.0, handName: 'Six Five Low', low: true },
+      ],
+    });
+    const { model, decoded, rebuilt } = roundTrip(input);
+    const before = model.showdown.find((r) => r.boardIndex === 0 && r.userId === HERO && !r.low)!;
+    expect(before.potSlices).toEqual([
+      { index: 0, amount: 0.8 },
+      { index: 1, amount: 0.2 },
+    ]);
+    const wire = decoded.winners.find((w) => w.board === 1 && !w.low)!;
+    expect(wire.pots).toEqual([
+      { index: 0, amount: 0.8 },
+      { index: 1, amount: 0.2 },
+    ]);
+    // A main-pot-only share carries no axis on the wire.
+    expect(decoded.winners.find((w) => w.board === 2 && !w.low)!.pots).toBeUndefined();
+    const after = rebuilt.showdown.find(
+      (r) => r.boardIndex === 0 && r.userId === shareUserId(1) && !r.low
+    );
+    expect(after?.potSlices).toEqual([
+      { index: 0, amount: 0.8 },
+      { index: 1, amount: 0.2 },
+    ]);
+    expect(after?.potLabel).toBe('Main + Side 1 pots');
+  });
+});

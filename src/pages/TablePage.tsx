@@ -1,4 +1,5 @@
 import { uuid } from '../utils/uuid';
+import { isUUID } from '../utils/clubIdResolver';
 import { TableLoadFailureOverlay } from '../components/table/TableLoadFailureOverlay';
 
 /**
@@ -91,6 +92,7 @@ function sameStamps(a: Map<string, number>, b: Map<string, number>): boolean {
 }
 import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { TableRouteBoundary } from '../components/table/TableRouteBoundary';
 import { withClubContext } from '../utils/clubScopedPath';
 import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cachedIdentity';
 import { formatGameTitle } from '../utils/formatGameTitle';
@@ -179,6 +181,8 @@ import { reconcileHeroSeatFromEngine, MAX_SUPPORTED_SEATS } from '../lib/heroSea
 import { gameCode } from '../utils/gameCode';
 import { masterBus } from '../core/MasterBus';
 import { watchBbjPool } from '../lib/bbjPoolFeed';
+import { watchBbjMini, miniPlateAmount, type BbjMiniSnapshot } from '../lib/bbjMiniFeed';
+import { isBbjPlateShown } from '../components/table/bbjPlateVisibility';
 import { watchBbjHits } from '../lib/bbjHitFeed';
 import {
   useMasterBusSubscription,
@@ -216,7 +220,7 @@ import TimebankCounter from '../components/table/TimebankCounter';
 // Dan 2026-08-21, item 3: buy more time banks with diamonds (1/10/25/100/500).
 import TimeBankStoreModal from '../components/table/TimeBankStoreModal';
 import { sessionStatsService } from '../services/SessionStatsService';
-import { parseTableArenaIdentity } from '../../server/src/domain/ArenaContext';
+import { parseTableArenaIdentity, seatCanAddFunds } from '../../server/src/domain/ArenaContext';
 import { readTableFundingBalance } from '../services/TableFundingService';
 import { soundService, haptic } from '../services/SoundService';
 import {
@@ -847,6 +851,10 @@ import { HAND_HISTORY_PAGE, prependHand, shouldRefetchHandHistory } from '../lib
 import { useUserStore } from '../stores/useUserStore';
 import { resolveLobbyClubId, resolveLobbyClubIdSync } from '../utils/clubQuickLink';
 import { relayTournamentEvent } from '../services/tournamentEventBridge';
+import {
+  useTournamentRebalance,
+  type TournamentRebalanceOptions,
+} from '../hooks/useTournamentRebalance';
 import { publicOrigin } from '../lib/appBase';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1468,7 +1476,15 @@ function warmSeatsToPlayers(
   return players;
 }
 
-export default function TablePage({
+export default function TablePage(props: TablePageProps = {}) {
+  return (
+    <TableRouteBoundary embeddedTableId={props.embeddedTableId}>
+      {(tableId) => <LiveTablePage {...props} embeddedTableId={tableId} />}
+    </TableRouteBoundary>
+  );
+}
+
+function LiveTablePage({
   embeddedTableId,
   onTableInfoUpdate,
   isMultiTable = false,
@@ -1479,7 +1495,10 @@ export default function TablePage({
   const addScreenIcon = useButtonImage('icon-addscreen');
   const timebankIconPage = useButtonImage('icon-timebank');
   const { tableId: routeTableId } = useParams<{ tableId: string }>();
-  const tableId = embeddedTableId || routeTableId;
+  const requestedTableId = embeddedTableId || routeTableId;
+  // Every table effect receives a database ID or no scope. A URL segment
+  // such as "demo" must never start seat, jackpot or hole-card queries.
+  const tableId = requestedTableId && isUUID(requestedTableId) ? requestedTableId : undefined;
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
@@ -4643,7 +4662,14 @@ export default function TablePage({
         void handleSitOut();
         break;
       case 'REBUY':
-        if (tableState.arenaAsset !== 'chips') break;
+        /* THE TAB BAR'S TOP UP ITEM WAS DEAD AT A DIAMOND SEAT (2026-09-12).
+           This refused every non-chip asset, and `createDefaultMenuSections`
+           renders the item unconditionally because the tab bar does not know
+           the arena - so a Diamond cash player tapped Top Up and nothing
+           happened at all: no sheet, no refusal, no error. The seat's own
+           control had already learned that a Diamond cash seat HAS a funded
+           top-up writer; this had not. Both read the one rule now. */
+        if (!seatCanAddFunds(tableState.arenaAsset, tableState.isTournament)) break;
         if (tableState.isTournament) {
           handleTournamentRebuy();
         } else {
@@ -5396,6 +5422,25 @@ export default function TablePage({
     sides: SidePot[];
     retired: number[];
   } | null>(null);
+  /**
+   * THE ROWS A MULTI-BOARD HAND PLAYED FOR, GROSS (2026-09-13).
+   *
+   * `state.pots` is only ever assigned by the single-board settlement, so on a
+   * run-it-twice hand the snapshot never carries a pot partition: the felt
+   * shows one running total all hand and, at POT_WIN, `potShipView` had to
+   * reconstruct rows from the award groups - which are NET shares. A 6.76 pot
+   * raked to 6.05 read 6.76 all hand and 6.05 the instant the ship started,
+   * and a three-way all-in with a side pot froze as one merged row instead of
+   * the main row and the side row the reference holds up (20.32 / 1.95).
+   *
+   * `rit_result` already carries the live pots the boards were evaluated
+   * against, gross, with each pot's eligible players. Stamped with the hand
+   * so a late event cannot dress the next hand's ship in this one's rows.
+   */
+  const ritGrossPotsRef = useRef<{
+    handNumber: number;
+    pots: Array<{ amount: number; eligiblePlayers: string[] }>;
+  } | null>(null);
   // Reveal timeline: how many cards of each RIT board are face up right now.
   // rit_result arrives with the full boards; the reference client deals them
   // street by street (flop → pause → turn → pause → river, board by board),
@@ -5533,6 +5578,7 @@ export default function TablePage({
     }
     setRitFeltBanner(null);
     setPotShipView(null);
+    ritGrossPotsRef.current = null;
     /* THE TAB PILL (Dan 2026-09-04): "RUN IT / 0s Left" stayed red in the
        multi-table strip for the rest of the session. The deadline was set on
        rit_offer and cleared by ONE effect keyed on showRIT changing - but the
@@ -6256,6 +6302,9 @@ export default function TablePage({
 
   // Resolved pool id — the last-5-jackpots modal reads its history from this.
   const [bbjPoolId, setBbjPoolId] = useState<string | null>(null);
+  /* THE MINI (Dan 2026-09-11). One feed per club (lib/bbjMiniFeed), the flat
+     amount per stakes tier and whether each can pay right now. */
+  const [bbjMini, setBbjMini] = useState<BbjMiniSnapshot | null>(null);
   // (tableSessionDate removed 2026-08-26 — item 5 dropped the date from the
   // felt masthead, and nothing else read it.)
 
@@ -7449,19 +7498,29 @@ export default function TablePage({
   /** The hand in which the engine last answered "already at the maximum" to
    *  an automatic top-up; no retry until the hand number changes. */
   const autoTopUpRefusedForHandRef = useRef<number | null>(null);
+  /* The cashier is offered to a seat that has a funded top-up writer behind it:
+     every chip seat, and a Diamond CASH seat. A Diamond tournament seat has no
+     such writer (prize escrow is a later phase and the custody door refuses a
+     tournament table), so it is not offered a control that cannot work. */
+  const canTopUpSeat = seatCanAddFunds(tableState.arenaAsset, tableState.isTournament);
   const handleAddChips = async (
     amount: number,
     opId?: string,
     opts?: { source?: 'manual' | 'auto' }
   ): Promise<boolean> => {
-    if (tableStateRef.current.arenaAsset !== 'chips') return false;
+    /* A Diamond seat tops up too, through the same engine call. What differs is
+       the door underneath it (fn_poker_diamond_top_up, whole units, the seat's
+       own custody row) and the word for what moved. */
+    const topUpAsset = tableStateRef.current.arenaAsset;
+    if (topUpAsset !== 'chips' && topUpAsset !== 'diamonds') return false;
+    const topUpUnits = topUpAsset === 'diamonds' ? 'Diamonds' : 'Chips';
     if (!userId || userId === 'guest' || !tableId) {
       reportError(
         new Error('Cannot add chips: not authenticated'),
         'TablePage.Cannot_add_chips_not_authenticated'
       );
       if (typeof window !== 'undefined') {
-        toast.error('Sign in to add chips at this table.');
+        toast.error(`Sign in to add ${topUpUnits.toLowerCase()} at this table.`);
       }
       return false;
     }
@@ -7501,10 +7560,10 @@ export default function TablePage({
              to a double top-up. Say which case this is. */
           if (res.code === 'TRANSPORT') {
             toast.error(
-              'The Connection Dropped Before The Table Answered. Your Chips May Have Been Added. Check Your Stack Before Trying Again.'
+              `The Connection Dropped Before The Table Answered. Your ${topUpUnits} May Have Been Added. Check Your Stack Before Trying Again.`
             );
           } else {
-            toast.error(res.error || 'Unable To Add Chips - Your Wallet Was Not Charged.');
+            toast.error(res.error || `Unable To Add ${topUpUnits} - Your Wallet Was Not Charged.`);
           }
         }
         return false;
@@ -7520,7 +7579,7 @@ export default function TablePage({
       if (typeof window !== 'undefined') {
         if (applied < amount) {
           toast.info(
-            `Added ${applied.toLocaleString()} Chips. That Is This Table's Maximum Top-Up Right Now.`
+            `Added ${applied.toLocaleString()} ${topUpUnits}. That Is This Table's Maximum Top-Up Right Now.`
           );
         }
         if (res.queued) {
@@ -7528,12 +7587,31 @@ export default function TablePage({
              against the stack after the pot, and the difference comes back.
              Say so now, in the amount that was taken, so the later
              "Add-On Adjusted" notice (add_on_adjusted frame) is a resolution
-             of something the player was told to expect, not a surprise. */
+             of something the player was told to expect, not a surprise.
+
+             AND A DIAMOND QUEUE IS A DIFFERENT PROMISE (2026-09-12). The chip
+             sentence says the difference RETURNS to your wallet, because the
+             chips were taken when you tapped. A Diamond seat cannot take them
+             then - the seat-keeps-custody constraint forbids the intermediate
+             state - so nothing has been taken yet and there is nothing to
+             return. Saying otherwise would be the more comfortable sentence
+             and the false one. */
           toast.info(
-            `${applied.toFixed(2)} Lands When This Hand Ends. If The Pot Puts You Over The Table Maximum, The Difference Returns To Your Wallet.`
+            topUpAsset === 'diamonds'
+              ? `${applied.toLocaleString()} ${applied === 1 ? 'Diamond Lands' : 'Diamonds Land'} When This Hand Ends, And Are Taken Then. Keep Them Settled Until It Does.`
+              : `${applied.toFixed(2)} Lands When This Hand Ends. If The Pot Puts You Over The Table Maximum, The Difference Returns To Your Wallet.`
           );
         }
       }
+      /* NOTHING MOVED, SO NOTHING IS COUNTED (2026-09-12). Everything below
+         records a debit that has happened: the local balance, the session
+         buy-in total, the rebuy count, the peak stack and the CHIPS_ADDED bus
+         event. A queued DIAMOND top-up has not happened - it is an intent the
+         engine will act on when the hand ends - so counting it here would show
+         the player a balance they still have and a session P/L built on a
+         purchase nobody made. The landing broadcasts the real stack and the
+         balance is re-read from it. */
+      if (res.queued && topUpAsset === 'diamonds') return true;
       // Engine ack'd the single debit -- reflect it locally + in session trackers.
       /* A local delta on an UNKNOWN balance would invent a number. Stay
          unknown until a real read lands (see the accountBalance decl). */
@@ -7569,6 +7647,14 @@ export default function TablePage({
     }
   };
 
+  /* The bust rebuy is a `useCallback` with its own dependency list, and
+     `handleAddChips` is a plain function re-created every render, so reading
+     it through the closure there would pin whichever copy existed when that
+     callback was last built. Same pattern as `refreshPersistedAddOnOfferRef`
+     above: the ref is always the current one. */
+  const handleAddChipsRef = useRef(handleAddChips);
+  handleAddChipsRef.current = handleAddChips;
+
   /* CHIP CONTINUITY (2026-09-04): there is no partial cash-out at a cash
      table. handleWithdrawChips, GameServerAPI.removeChips and the engine's
      POST /withdrawchips are gone. Chips leave the table only when the player
@@ -7598,8 +7684,15 @@ export default function TablePage({
      the two de-duplicate on the hit's own identity. */
   useEffect(() => {
     if (!tableId) return;
+    /* A different club's mini must never render under this one's heading.
+       `watchBbjMini` replays immediately only for a club it has already
+       cached, so the previous club's figures would otherwise stay on screen
+       until the new RPC answered. Clear first; show nothing, not the wrong
+       number. */
+    setBbjMini(null);
     let cancelled = false;
     let stopPool: (() => void) | null = null;
+    let stopMini: (() => void) | null = null;
     let stopHits: (() => void) | null = null;
     let watchedPoolId: string | null = null;
 
@@ -7623,12 +7716,17 @@ export default function TablePage({
           stopHits = watchBbjHits(snap.poolId);
         }
       });
+      stopMini = watchBbjMini(actualClubId, (snap) => {
+        if (cancelled || !isMounted.current) return;
+        setBbjMini(snap);
+      });
     };
 
     start().catch((e) => reportError(e, 'TablePage.bbj_feed_start_failed', { tableId }));
     return () => {
       cancelled = true;
       if (stopPool) stopPool();
+      if (stopMini) stopMini();
       if (stopHits) stopHits();
     };
   }, [tableId]);
@@ -8634,7 +8732,16 @@ export default function TablePage({
   // in rebuy mode). The existing `atomic_table_rebuy` RPC tops up the seat.
   useEffect(() => {
     if (!tableId || !userId || tableState.heroSeat <= 0) return;
-    if (tableState.isTournament || tableState.arenaAsset !== 'chips') return; // Diamond re-entry uses a new custody occupancy.
+    /* A FELTED DIAMOND SEAT IS PROMPTED TOO (2026-09-12). This returned for
+       every non-chip asset, on a note saying Diamond re-entry needs a new
+       custody occupancy. That was true when it was written and is not true
+       now: `fn_poker_diamond_top_up` reserves into the SAME custody row the
+       seat already holds, and it accepts an expected stack of zero, so a
+       busted Diamond seat re-enters through the door that already exists.
+       Without this the player sat at zero until the sit-out sweep cashed them
+       out, with no prompt and no way back in but standing up. */
+    if (!seatCanAddFunds(tableState.arenaAsset, tableState.isTournament)) return;
+    if (tableState.isTournament) return;
     const heroPlayer = tableState.players[tableState.heroSeat - 1];
     if (!heroPlayer) return;
     const stack = heroPlayer.stack ?? 0;
@@ -9026,15 +9133,45 @@ export default function TablePage({
 
   const confirmBustRebuy = useCallback(
     async (requested: number) => {
-      if (tableStateRef.current.arenaAsset !== 'chips' || !tableId || !userId) return;
+      const bustAsset = tableStateRef.current.arenaAsset;
+      if (!seatCanAddFunds(bustAsset, tableStateRef.current.isTournament)) return;
+      if (!tableId || !userId) return;
       /* TO THE CENT (2026-09-08 sweep). This lands as a table_pending_addons
          row, and the post-commit obligation check refuses a receipt whose
          applied + refunded (both ROUND(..., 2)) differ from the row's
          `amount` - so an unrounded float here is a table that never deals
-         again. BuyInModal already rounds; this is the guard at the wire. */
-      const amount = Math.round(requested * 100) / 100;
+         again. BuyInModal already rounds; this is the guard at the wire.
+
+         AND TO THE WHOLE DIAMOND (2026-09-12), for the reason the automatic
+         top-up floors too: the custody door reserves whole units and floors
+         anything else, so asking for a fraction reports one number and moves
+         another. */
+      const amount =
+        bustAsset === 'diamonds' ? Math.floor(requested) : Math.round(requested * 100) / 100;
       if (!(amount > 0)) return;
       setBustRebuyProcessing(true);
+      /* A DIAMOND SEAT REBUYS THROUGH ITS OWN DOOR. `atomic_table_rebuy`
+         debits `club_members.chip_balance`, and a Diamond entitlement has no
+         row in that table, so the chip RPC below cannot serve this seat. The
+         engine's add-on path does: it reaches `fn_poker_diamond_top_up`, which
+         raises the same custody the seat is bound to and the stack with it.
+         The player is felted, so the hand is over and the door's
+         between-hands rule is already satisfied. */
+      if (bustAsset === 'diamonds') {
+        try {
+          if (!bustRebuyKeyRef.current || bustRebuyKeyRef.current.amount !== amount) {
+            bustRebuyKeyRef.current = { amount, key: crypto.randomUUID() };
+          }
+          const landed = await handleAddChipsRef.current(amount, bustRebuyKeyRef.current.key);
+          if (!landed) return;
+          bustRebuyKeyRef.current = null;
+          setBustRebuyOpen(false);
+          bustPromptFiredRef.current = true;
+        } finally {
+          setBustRebuyProcessing(false);
+        }
+        return;
+      }
       try {
         if (!bustRebuyKeyRef.current || bustRebuyKeyRef.current.amount !== amount) {
           bustRebuyKeyRef.current = { amount, key: crypto.randomUUID() };
@@ -10113,7 +10250,7 @@ export default function TablePage({
   // FIX-232: Polls at 0s/2s/5s intervals but STOPS once cards are received (Bug #7).
   // FIX-232: Uses cardsPreSortRef to avoid stale closure (Bug #6).
   useEffect(() => {
-    if (!tableId || !userId) return;
+    if (!tableId || !userId || userId === 'guest') return;
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -10818,7 +10955,12 @@ export default function TablePage({
             ? `Running It Once. ${name} Chose One Board.`
             : reason === 'player_declined'
               ? `Running It Once. ${name} Declined.`
-              : 'Running It Once. Not Everyone Agreed In Time.';
+              : /* 2026-09-13: the engine's expiry now says which ONE seat was
+                   still silent when the clock ran out, the way it names a
+                   decliner. Two or more silent seats keep the collective line. */
+                reason === 'no_answer' && name
+                ? `Running It Once. ${name} Did Not Answer In Time.`
+                : 'Running It Once. Not Everyone Agreed In Time.';
         // Felt strip, not a toast — the reference rides the rejection over
         // the table and leaves it up through the start of the single runout.
         // (resetRitPanelState above cleared the waiting strip; this replaces
@@ -10867,6 +11009,24 @@ export default function TablePage({
           : [];
         const distribution = (handState.distribution as Record<string, number>) || {};
         const pots = (handState.pots as Array<{ amount: number }>) || [];
+        /* Gross rows for the ship (see ritGrossPotsRef). Kept even when the
+           boards below cannot be presented: the pot still ships, and its rows
+           should still be the ones the hand played for. */
+        {
+          const rows = Array.isArray(handState.pots)
+            ? (handState.pots as Array<Record<string, unknown>>)
+                .map((p) => ({
+                  amount: Math.round((Number(p?.amount) || 0) * 100) / 100,
+                  eligiblePlayers: Array.isArray(p?.eligiblePlayers)
+                    ? (p.eligiblePlayers as unknown[]).map((u) => String(u ?? '')).filter(Boolean)
+                    : [],
+                }))
+                .filter((p) => p.amount > 0)
+            : [];
+          ritGrossPotsRef.current = rows.length
+            ? { handNumber: Number(handState.hand_number) || 0, pots: rows }
+            : null;
+        }
         if (boards.length < 2) {
           // Not presentable as a multi-board runout. Say so once — a RIT hand
           // that reaches here with fewer than two usable boards is a payload
@@ -11144,13 +11304,16 @@ export default function TablePage({
       if (eventType === 'bbj_near_miss') {
         const nmUser = handState.user_id as string;
         const nmMessage = handState.message as string;
+        /* WHICH JACKPOT NEARLY PAID (phase 3, 2026-09-11). The engine prefixes
+           every mini reason `mini_`, and the rest of the table sees a rewritten
+           headline rather than the personal one - so a MINI near miss was being
+           announced to everyone under the MAIN jackpot's name. */
+        const nmReason = String(handState.reason || '');
+        const nmLabel = nmReason.startsWith('mini_') ? 'Mini Bad Beat:' : 'Bad Beat Jackpot:';
         if (nmMessage) {
           // The player who held the hand gets the personal framing; the rest
           // of the table sees it happened (jackpot awareness) without noise.
-          toast.info(
-            nmUser === userId ? nmMessage : nmMessage.replace('So close!', 'Bad Beat Jackpot:'),
-            4000
-          );
+          toast.info(nmUser === userId ? nmMessage : nmMessage.replace('So close!', nmLabel), 4000);
         }
         return;
       }
@@ -11203,7 +11366,12 @@ export default function TablePage({
         ) {
           return;
         }
-        toast.info('Bad Beat Jackpot Hit. Your Share Is Being Paid And Will Land Shortly.', 6000);
+        toast.info(
+          handState.kind === 'mini'
+            ? 'Mini Bad Beat Jackpot Hit. Your Share Is Being Paid And Will Land Shortly.'
+            : 'Bad Beat Jackpot Hit. Your Share Is Being Paid And Will Land Shortly.',
+          6000
+        );
         return;
       }
 
@@ -11223,10 +11391,11 @@ export default function TablePage({
           return;
         }
         const late = Number(handState.totalPayout);
+        const paidLabel = handState.kind === 'mini' ? 'Mini Bad Beat Jackpot' : 'Bad Beat Jackpot';
         toast.success(
           Number.isFinite(late) && late > 0
-            ? `Bad Beat Jackpot Paid. $${money(late)} Has Been Shared Out.`
-            : 'Bad Beat Jackpot Paid. Your Share Has Landed.',
+            ? `${paidLabel} Paid. ${money(late)} Has Been Shared Out.`
+            : `${paidLabel} Paid. Your Share Has Landed.`,
           6000
         );
         return;
@@ -11359,20 +11528,21 @@ export default function TablePage({
             }, 4500);
           }
 
-          // Phase E: Notify all table players via in-app Notifications tab
-          if (userId && userId !== 'guest') {
-            notificationService
-              .create({
-                userId,
-                type: 'bonus',
-                title: 'Bad Beat Jackpot Hit!',
-                message: `The BBJ paid out a total of $${totalPayout.toLocaleString()} at ${tableState.tableName}!`,
-                metadata: { tableId: tableId || '', totalPayout },
-              })
-              .catch(() => {
-                /* non-critical */
-              });
-          }
+          /* THE ENGINE WRITES THE NOTIFICATION, AND ONLY THE ENGINE (2026-09-11).
+             A client-side `notificationService.create` used to fire here, so
+             every seated player received TWO rows for one jackpot - and the
+             client's was the wrong one twice over. It was titled "Bad Beat
+             Jackpot Hit!" with no knowledge of `kind`, so every MINI announced
+             itself as the main jackpot; and it reported the table TOTAL rather
+             than the reader's own share, so a player owed 12.40 was told the
+             jackpot paid 4,075.
+             `processBBJPayout` (server/src/services/supabase/bbj.ts) already
+             inserts one row per recipient, naming the right jackpot, carrying
+             that recipient's own share and whether it is credited or pending,
+             with `kind` in the metadata. It reaches players who were dealt in
+             and have already closed the tab, which a browser never could.
+             A duplicate written from the only place that cannot see the whole
+             payout is not a second safety net, it is a second answer. */
 
           // Clear the hit ref
           bbjHitDataRef.current = null;
@@ -11559,6 +11729,14 @@ export default function TablePage({
       // unfixed when that one was corrected. Toggling Auto Top Up from the
       // multi-table tab bar flipped against the value captured at
       // registration and stopped responding after the first press.
+      /* AND IT TOGGLED A SETTING NOTHING WOULD READ (2026-09-12). The
+         automatic top-up runs only for a seat with a funded writer in a CASH
+         game, and this item is rendered by a tab bar that does not know the
+         arena, so at a Diamond tournament seat it switched on a behaviour that
+         could never happen. `tableStateRef`, not the closure: this callback is
+         registered once and the asset lands asynchronously after it. */
+      const auto = tableStateRef.current;
+      if (!seatCanAddFunds(auto.arenaAsset, auto.isTournament) || auto.isTournament) return;
       setIsAutoRebuyEnabled((prev) => !prev);
     } else if (event.action === 'TOGGLE_SOUNDS') {
       /* Fixed 2026-08-28: this wrote 'table_sound_muted' — a key NOTHING
@@ -11618,6 +11796,29 @@ export default function TablePage({
      and never got an answer. They are different sentences to the player and
      only one of them is worth a retry button. null = loaded, or still trying. */
   const [tableLoadFailure, setTableLoadFailure] = useState<'missing' | 'unreachable' | null>(null);
+
+  const subscribeRebalanceAuth = useCallback<TournamentRebalanceOptions['subscribeAuth']>(
+    (listener) => masterBus.subscribe('AUTH_STATE_CHANGED', (event) => listener(event.payload)),
+    []
+  );
+  const handleTournamentRebalance = useTournamentRebalance({
+    tableId,
+    userId,
+    routeTableId,
+    embeddedTableId,
+    subscribeAuth: subscribeRebalanceAuth,
+    readRoster: (tournamentId, playerId) =>
+      supabase
+        .from('tournament_players')
+        .select('table_id')
+        .eq('tournament_id', tournamentId)
+        .eq('user_id', playerId)
+        .maybeSingle(),
+    onTableInfoUpdate,
+    navigate,
+    refresh: () => setTableState((prev) => ({ ...prev, refreshTrigger: Date.now() })),
+    report: (error) => reportError(error, 'TablePage.Error_checking_player_table_during_rebal'),
+  });
 
   // Load table info from Supabase on mount
   useEffect(() => {
@@ -12962,6 +13163,12 @@ export default function TablePage({
             )
             .on('broadcast', { event: 'tournament_event' }, (payload: any) => {
               const data = payload.payload;
+              if (data?.type === 'table_rebalance') {
+                // The production hook owns read/publication authority. The
+                // enclosing subscription supplies its own retained-binding guard.
+                void handleTournamentRebalance(table.tournament_id, () => isMounted);
+                return;
+              }
               /* Relay the breaks onto MasterBus. TournamentClock (rendered on
                  this page during an MTT) subscribes to BREAK_START /
                  TOURNAMENT_BREAK there and nothing had ever emitted them, so
@@ -13439,48 +13646,6 @@ export default function TablePage({
                   });
                   goToLobbyWithResult(1, prize, 7000);
                 }
-              } else if (data?.type === 'table_rebalance') {
-                // Players moved between tables — check if current user was moved
-                console.debug('[TablePage] Table rebalance detected');
-                (async () => {
-                  try {
-                    // BUG-G FIX: Use table.tournament_id (closure-safe local)
-                    // instead of stale tableState.tournamentId
-                    if (userId && table.tournament_id) {
-                      /* ROUND 9 (2026-08-29): a resolved error here meant the
-                         player who had just been MOVED by a rebalance was
-                         neither redirected NOR refreshed - null fell through
-                         both branches while the catch (which refreshes) only
-                         sees throws. A resolved error now takes the same
-                         refresh fallback a thrown one always did. */
-                      const { data: playerData, error: rebalanceErr } = await supabase
-                        .from('tournament_players')
-                        .select('table_id')
-                        .eq('tournament_id', table.tournament_id)
-                        .eq('user_id', userId)
-                        .maybeSingle();
-                      if (rebalanceErr) throw rebalanceErr;
-
-                      if (playerData?.table_id && playerData.table_id !== tableId) {
-                        // Current user was moved to a different table — redirect
-                        console.debug(
-                          `[TablePage] User moved from ${tableId} to ${playerData.table_id}`
-                        );
-                        navigate(`/table/${playerData.table_id}`); // FIX: was /clubs/:clubId/table/:tableId which is not a defined route
-                      } else if (playerData?.table_id === tableId) {
-                        // User stayed at this table — just refresh seats
-                        setTableState((prev) => ({ ...prev, refreshTrigger: Date.now() }));
-                      }
-                    } else {
-                      // Not a tournament or no user — just refresh
-                      setTableState((prev) => ({ ...prev, refreshTrigger: Date.now() }));
-                    }
-                  } catch (err) {
-                    reportError(err, 'TablePage.Error_checking_player_table_during_rebal');
-                    // Fallback: just refresh seats
-                    setTableState((prev) => ({ ...prev, refreshTrigger: Date.now() }));
-                  }
-                })();
               } else if (data?.type === 'late_reg_closed') {
                 // Late registration window has closed
                 setTableState((prev) => ({
@@ -17115,6 +17280,8 @@ export default function TablePage({
             user_id: string;
             amount: number;
             hand_name?: string;
+            /** 2026-09-13: the low half's row on a hi-lo board (the wire carries it now). */
+            low?: boolean;
           }>) || [];
         const boardHandNames: [string, string, string] | null =
           winnersByBoard.length > 0
@@ -17136,12 +17303,26 @@ export default function TablePage({
           winnersByBoard.length > 0
             ? (() => {
                 const byBoard: Array<Record<string, string>> = [];
+                /* A SCOOP HAS TWO ROWS (2026-09-13). On a hi-lo board a player
+                   who takes both halves has a high row and a low row; the low
+                   arrives second and used to overwrite the seat's name with
+                   "Low: 8-6-4-3-2". The seat names the high hand when the
+                   player made one, the low only when that is all they won. */
+                const lowOnly: Array<Record<string, string>> = [];
                 for (const wb of winnersByBoard) {
                   const idx = (Number(wb.board) || 1) - 1;
-                  if (idx < 0) continue;
-                  if (!byBoard[idx]) byBoard[idx] = {};
-                  if (wb.hand_name && wb.user_id) byBoard[idx][wb.user_id] = wb.hand_name;
+                  if (idx < 0 || !wb.hand_name || !wb.user_id) continue;
+                  const target = wb.low === true ? lowOnly : byBoard;
+                  if (!target[idx]) target[idx] = {};
+                  target[idx][wb.user_id] = wb.hand_name;
                 }
+                lowOnly.forEach((names, idx) => {
+                  if (!names) return;
+                  if (!byBoard[idx]) byBoard[idx] = {};
+                  for (const [uid, name] of Object.entries(names)) {
+                    if (!byBoard[idx][uid]) byBoard[idx][uid] = name;
+                  }
+                });
                 return byBoard;
               })()
             : null;
@@ -17836,6 +18017,18 @@ export default function TablePage({
             if (sequenced) {
               const snapSides = tableStateRef.current.sidePots ?? [];
               const snapMain = tableStateRef.current.pot;
+              /* THE ROWS THE HAND PLAYED FOR (2026-09-13). On a multi-board
+                 hand the snapshot never carries a pot partition (see
+                 ritGrossPotsRef), so the rows come from rit_result: gross, one
+                 per pot, with the eligible players named. The reference holds
+                 20.32 / 1.95 up through the whole sequence; these are those. */
+              const ritRows =
+                ritGrossPotsRef.current &&
+                (ritGrossPotsRef.current.handNumber === 0 ||
+                  ritGrossPotsRef.current.handNumber ===
+                    (Number((evt.data as any).hand_number) || ritGrossPotsRef.current.handNumber))
+                  ? ritGrossPotsRef.current.pots
+                  : null;
               // Prefer the live snapshot's pot rows (they carry the true
               // pre-rake contested amounts and their own ids). If the snapshot
               // has already been zeroed, fall back to reconstructing one row
@@ -17845,7 +18038,18 @@ export default function TablePage({
               const haveSnapRows = snapMain > 0 || snapSides.length > 0;
               let main = snapMain > 0 ? snapMain : potAmount;
               let sides: SidePot[] = snapSides;
-              if (!haveSnapRows) {
+              if (ritRows && ritRows.length > 0) {
+                const nameOf = (uid: string) =>
+                  tableStateRef.current.players.find((p) => p?.id === uid)?.name;
+                main = ritRows[0].amount;
+                sides = ritRows.slice(1).map<SidePot>((p, i) => ({
+                  id: `rit-pot-${i + 1}`,
+                  amount: p.amount,
+                  eligiblePlayers: p.eligiblePlayers
+                    .map(nameOf)
+                    .filter((n): n is string => typeof n === 'string'),
+                }));
+              } else if (!haveSnapRows) {
                 const byPot = new Map<number, number>();
                 for (const g of awardGroups) {
                   const total = g.floats.reduce((s, f) => s + (f.amount || 0), 0);
@@ -21860,7 +22064,12 @@ export default function TablePage({
       // real cap without charging the wallet.
       if (
         isAutoRebuyEnabled &&
-        tableState.arenaAsset === 'chips' &&
+        /* A CASH SEAT WITH A FUNDED WRITER, WHICHEVER ASSET FUNDS IT
+           (2026-09-12). This read `=== 'chips'`, so a Diamond cash seat could
+           switch Auto Top Up on and never be topped up. The effect already
+           runs ONLY between hands, which is exactly the window
+           `fn_poker_diamond_top_up` requires, so nothing else had to move. */
+        seatCanAddFunds(tableState.arenaAsset, tableState.isTournament) &&
         !tableState.isTournament &&
         !autoTopUpInFlightRef.current
       ) {
@@ -21880,9 +22089,19 @@ export default function TablePage({
         ) {
           /* TO THE CENT (2026-09-09): a float subtraction goes to
              `atomic_table_addon`, which stores it verbatim, and a non-cent
-             row can never be resolved against the post-commit obligation. */
+             row can never be resolved against the post-commit obligation.
+
+             AND TO THE WHOLE DIAMOND (2026-09-12). A Diamond does not divide:
+             the custody door reserves whole units and floors anything else, so
+             asking for a fraction would report one number and move another.
+             The shortfall is floored instead, and a shortfall under one
+             Diamond simply waits for the next hand. The chip arithmetic is
+             untouched. */
+          const shortfall = Math.min(maxBuyIn - currentStack, accountBalance ?? 0);
           const topUpAmount =
-            Math.round(Math.min(maxBuyIn - currentStack, accountBalance ?? 0) * 100) / 100;
+            tableState.arenaAsset === 'diamonds'
+              ? Math.floor(shortfall)
+              : Math.round(shortfall * 100) / 100;
           if (topUpAmount > 0) {
             autoTopUpInFlightRef.current = true;
             /* THE KEY IS DISCRIMINATED BY THE HAND, NOT BY THE AMOUNT
@@ -21918,7 +22137,14 @@ export default function TablePage({
                   const alreadyAnnounced =
                     r?.queued === true || (r ? r.applied < topUpAmount : false);
                   if (!alreadyAnnounced) {
-                    toast?.success?.(`Auto Top Up: Added ${landed.toFixed(2)} Chips`);
+                    /* The word for what moved, and the singular when one
+                       Diamond moved. A Diamond stack is an integer everywhere
+                       it is stored, so it is not printed to two decimals. */
+                    toast?.success?.(
+                      tableState.arenaAsset === 'diamonds'
+                        ? `Auto Top Up: Added ${landed} ${landed === 1 ? 'Diamond' : 'Diamonds'}`
+                        : `Auto Top Up: Added ${landed.toFixed(2)} Chips`
+                    );
                   }
                 }
               })
@@ -21941,6 +22167,7 @@ export default function TablePage({
     standUpNextBB,
     tableState.blinds,
     tableState.isTournament,
+    tableState.arenaAsset,
     tableState.handNumber,
     accountBalance,
     tableId,
@@ -22035,6 +22262,21 @@ export default function TablePage({
          scaler, so the --sp-hero-clear bottom reserve is dead space for them.
          CSS collapses it via [data-hero='false'] (see TablePage.css). */
       data-hero={tableState.players.some((p) => p?.isHero) ? 'true' : 'false'}
+      /* THE MINI ROW UNDER THE JACKPOT PLATE (Dan 2026-09-11). "1" exactly
+         when TableModalsLayer draws .bbj-mini-plate - the plate is on this
+         table and the mini can pay at these stakes - so BadBeatJackpot.css can
+         grow the felt's top reserve (--sp-bbj-h) by the row's height. Same
+         condition, one helper, no second copy. */
+      data-bbj-mini={
+        isBbjPlateShown({
+          gameType: tableState.gameType,
+          isTournament: tableState.isTournament,
+          tournamentId: tableState.tournamentId,
+          maxPlayers: Number(tableState.maxPlayers) || 0,
+        }) && miniPlateAmount(bbjMini, safeBB(tableState.blinds)) !== null
+          ? '1'
+          : '0'
+      }
       /* ── HOW MANY CHAIRS THIS TABLE HAS (Dan 2026-09-05) ──────────────────
          "THE 6 HANDED TABLE SHOULDN'T BE AS TALL AS THE 9 HANDED TABLE, IT
          SHOULD BE SHORTER SO THE AVATARS AT THE TOP DON'T HAVE TO BE SHRUNK
@@ -22281,7 +22523,7 @@ export default function TablePage({
               />
             </svg>
           </button>
-          {tableState.arenaAsset === 'chips' && (
+          {canTopUpSeat && (
             <button
               className="header-btn add-chips-icon"
               onClick={() => {
@@ -22354,23 +22596,14 @@ export default function TablePage({
                         badge: standUpNextBB ? 'ON' : undefined,
                         onClick: () => setStandUpNextBB(!standUpNextBB),
                       },
-                      ...(tableState.arenaAsset !== 'chips'
-                        ? []
-                        : tableState.isTournament
-                          ? [
-                              {
-                                id: 'rebuy',
-                                label: 'Rebuy',
-                                icon: <RebuyIcon />,
-                                onClick: handleTournamentRebuy,
-                              },
-                              {
-                                id: 'addon',
-                                label: 'Add-On',
-                                icon: <AddOnIcon />,
-                                onClick: handleTournamentAddOn,
-                              },
-                            ]
+                      /* A Diamond cash seat tops up; a Diamond tournament does
+                         not, because tournament funding is a later phase and
+                         the custody door refuses a tournament table outright.
+                         Offering the control there would promise a seat
+                         something no writer can give it. */
+                      ...(tableState.arenaAsset === 'diamonds'
+                        ? !canTopUpSeat
+                          ? []
                           : [
                               {
                                 id: 'rebuy',
@@ -22378,7 +22611,32 @@ export default function TablePage({
                                 icon: <RebuyIcon />,
                                 onClick: () => setShowCashier(true),
                               },
-                            ]),
+                            ]
+                        : tableState.arenaAsset !== 'chips'
+                          ? []
+                          : tableState.isTournament
+                            ? [
+                                {
+                                  id: 'rebuy',
+                                  label: 'Rebuy',
+                                  icon: <RebuyIcon />,
+                                  onClick: handleTournamentRebuy,
+                                },
+                                {
+                                  id: 'addon',
+                                  label: 'Add-On',
+                                  icon: <AddOnIcon />,
+                                  onClick: handleTournamentAddOn,
+                                },
+                              ]
+                            : [
+                                {
+                                  id: 'rebuy',
+                                  label: 'Top Up',
+                                  icon: <RebuyIcon />,
+                                  onClick: () => setShowCashier(true),
+                                },
+                              ]),
                       ...(tableState.arenaAsset === 'chips'
                         ? [
                             {
@@ -24968,6 +25226,13 @@ export default function TablePage({
                         pot={tableState.pot}
                         bigBlind={bb}
                         smallBlind={safeSB(tableState.blinds, bb / 2)}
+                        /* A Diamond does not divide, and the engine refuses a
+                           fractional one outright, so every preset has to land
+                           on a whole Diamond. Both the indivisible unit and
+                           the denomination the derived sizings snap to are one
+                           Diamond; a chip table keeps the cent and the small
+                           blind it has always had. */
+                        unit={tableState.arenaAsset === 'diamonds' ? 1 : 0.01}
                         /* Multiplier presets are multiples of the bet being
                            faced, not of the blind — without this they all
                            clamped to minRaise and 2X/3X/4X/5X produced the
@@ -25312,7 +25577,7 @@ export default function TablePage({
                 <span className="menu-item-arrow">›</span>
               </button>
             )}
-            {tableState.arenaAsset === 'chips' && (
+            {canTopUpSeat && (
               <button
                 className="menu-item"
                 onClick={() => {
@@ -25830,6 +26095,7 @@ export default function TablePage({
         showBBJ={showBBJ}
         bbjAmount={bbjAmount}
         bbjPoolId={bbjPoolId}
+        bbjMini={bbjMini}
         bbjHeroName={tableState.players.find((p) => p && p.id === userId)?.name || null}
         showBBJCelebration={showBBJCelebration}
         bbjCelebrationData={bbjCelebrationData}

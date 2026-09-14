@@ -1,3 +1,47 @@
+## 2026-09-14: Keep MTT paid depth out of seat-first requests
+
+**File/lines:** server/src/services/TournamentRecurringService.ts original3381/4264; new SeatFirstCallerContract.test.ts and private fixture/runner.
+**What existed:** PR4533 added payout_percent to heads-up and satellite-headsup RPC payloads; current atomic creator refuses that unknown key, preventing creation.
+**What changed:** omit MTT paid-depth metadata for these two seat-first paths; preserve fieldSNG/MTT/XMTT settings, fixed prizes, target and all authority checks. Database contract remains unchanged.
+**Why:** actual served SEAT_FIRST_CREATE_UNKNOWN_CONFIG_KEY traced to this task's earlier caller regression; permissive mocks missed the installed request boundary.
+**Verified:** YES; eight original failures;39focused/2files, full5,350/350, nativeeightgroups/12actualcaller payloads pass. **TypeScript:** PASS through server build. Private cluster removed; no SQL applied. RequiredCI/served creation remains open. See docs/changelog/2026-09-14-seat-first-creator-contract.md.
+
+## 2026-09-13: Reach the recorded launch proof for a played MTT
+
+The engine can now route a previously played, finalized MTT through the existing launch begin/complete authorities and normal resume before the fresh-field minimum gate. It preserves the precise first-hand timestamp, current levels, stacks and pool. A fresh short field still refuses; Spin retains its separate path. No live status or player state was manually changed.
+
+Migration20260913201839 grants the engine service read access to the unchanged proof body27037b1d61898aef22fd476a44667cc9. Applied at20:24UTC as history20260913202413; service access and browser denial verified. Native12groups, focused48/3, full tournament1,926/154 and TypeScript pass. Engine/live recovery acceptance remains open. See docs/changelog/2026-09-13-mtt-played-launch-recovery.md.
+
+## 2026-09-13: Publish tournament blinds atomically
+
+The engine replaces per-table blind fan-out with one generation-fenced database transaction and a strict receipt. New table births inherit the committed parent snapshot; restart uses the same amounts. A fresh level starts on database time after successful field writes; replay keeps an intervening break shift. Financial contracts and historical rows are unchanged.
+
+The initial combined DDL deadlocked and rolled back completely. Separate additive schema and trigger/authority transactions applied at20:10UTC as history20260913201030 and20260913201037 (repository20260913195404 and20260913200859). Installed function hashes and service-only access match. Full suites5,171/340, final affected tests100/4, native33groups and server typecheck pass. Source-guarded add-on pause refinement20260913201306 applied as history20260913201436; current publication source ea893550ec280993c522bb8dfb78fcd3. Engine publication remains open. See docs/changelog/2026-09-13-mtt-atomic-blind-publication.md for behavior, exact proof limits and rollback compatibility.
+
+## 2026-09-13: Creation retains the actual paid-depth selection
+
+The outer database creator read the wrong event-ID key and swallowed failed contract writes. Source-guarded migration20260913194154 now validates the delegated receipt and atomically persists selected paid depth;31 native wrapper groups pass, with explicit stand-ins and rollback evidence. Applied at19:42UTC as database history20260913194226; source fingerprint b6335e81d6629f8971d2fa378aebe6b1, unchanged authorization metadata and unauthenticated refusal verified. No historical funded events changed.
+
+The engine configuration writers and repeat copier retain paid depth. TournamentService transmits the setting and CreateTournamentModal exposes the supported10/15/20choices. Its previous one-million-capacity projection generated150,000places and4,688,898bytes; creation is now bounded and final prizes remain database-owned. Service/structure suites3,251/186, focused client116/4, rendered form4cases, both typechecks pass. See `docs/changelog/2026-09-13-mtt-creation-keeps-paid-depth.md` for files, before/after behavior and exact proof limits. Source publication remains separate.
+
+## 2026-09-13: Observe progress for each MTT and acknowledge lifecycle changes
+
+Club Arena engine repairs merged in PR4503 (scheduler retirement), PR4512 (break acknowledgment and structure metadata), PR4520 (acknowledged blind transitions) and PR4522 (strict final prize receipts). The final prize suite passes 1,890 tests / 153 files with server typechecking. See `docs/audits/2026-09-13-mtt-engine-blueprint.md` for root causes, exact limits and native evidence. No funded historical contract was changed.
+
+`server/src/services/TournamentMetrics.ts` now combines strict, lifecycle-fenced count reads with the new service-only `fn_tournament_progress_metrics`. `infra/monitoring/tournament-rules.yml` adds individually stalled MTT and overdue-break alerts. Previously, healthy cash activity and renewing manager leases concealed silent MTTs. Migration `20260913184615_tournament_progress_is_measured_per_event.sql` was applied via Supabase at 19:34 UTC, recorded as version 20260913193457; ACL and definition fingerprint match. The schema manifest, runtime regression suite and private native probe are included. All 3,225 service tests / 185 files, 23 native groups, server typechecking, monitoring drift and nine-rule Prometheus parsing pass. Engine and loaded-rule publication remain separate. See `docs/changelog/2026-09-13-mtt-progress-monitoring.md`.
+
+## 2026-09-12: Enforce the tournament variant catalogue
+
+Applied `20260912044409_remaining_tournament_variant_allowlist.sql` through the Supabase migration tool. The governed creator now accepts the existing eight tournament games and four Spin games, with normalized names. Exact source and metadata guards preserve authorization and financial formulas. Native PostgreSQL passed 47 launch cases, idempotence and source-drift rejection; production source fingerprints and authentication refusal match. No historical rows changed. See `docs/horse-brain-phase12-round1.md`. Engine policy release remains separate.
+
+## 2026-09-11: Certificate Repair Retains Current Jackpot Authority
+
+Merge current main 575b9763 without reviving the retired promo-rain control or owner probe. Jackpot reads now belong to the current account and club generation; old replies cannot expose operator facts, settle a newer page or release its pending request. Keep current mini/settlement rules, Diamond feed suppression, Daily Bonus diagnostics and guest card-recovery protection. Fifteen focused client files pass 176 tests, eight engine files pass 126 tests, and both application type checks pass. This is local source integration; protected CI, publication and the production certificate remain separate.
+
+## 2026-09-11: Mobile Cash View Clearance And Jackpot Initial Layout
+
+Keep mobile cash View actions inside the measured header, selector, sort-bar and footer clearance using the actual scrollport. Preserve jackpot child reads across routine refreshes and expose terminal first-layout readiness for owner controls, mini feed, recent hits and analytics before the unchanged bottom geometry check. Actual CSS WebKit/Chromium tests pass at 375px and 390px, and thirteen component/feed tests cover delayed, empty, failed and stale reads. No schema or money-path change; local browser fixtures do not certify production gameplay.
+
 ## 2026-09-10: Restore Bounded Rake Attribution Retries
 
 Prepare an exact-source guarded restoration of the committed attribution retry loop while preserving settlement lane exclusion and function metadata. Thirty-five native rollback assertions passed; the tracked composer reproduces the executed proof exactly. See docs/changelog/2026-09-10-rake-attribution-retry-restoration.md for scope and limits. Application remains separate from source publication.

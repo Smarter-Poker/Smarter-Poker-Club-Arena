@@ -32,6 +32,7 @@ export type BuyInRefusal =
   | 'nit_game'
   | 'no_wallet'
   | 'frozen'
+  | 'already_in_game'
   | 'refused';
 
 /**
@@ -54,6 +55,17 @@ export function classifyBuyInRefusal(message: string | null | undefined): BuyInR
   if (m.includes('VPIP_BARRED')) return 'vpip_barred';
   if (m.includes('NIT_GAME')) return 'nit_game';
   if (m.includes('No club wallet resolves')) return 'no_wallet';
+  /* TWO TOKENS THAT EXISTED AND NEVER MATCHED (2026-09-11). `frozen` was
+     declared here from the first version and no branch produced it, so the
+     three PLATFORM_FROZEN refusals in a day read as the catch-all `refused`
+     - the one refusal that is not a defect at all (a seat asked for inside
+     the maintenance break, which is the freeze working). `ALREADY_IN_GAME`
+     is the must-move rule's own door (one seat per game): nine a day, and
+     they are the fleet racing a seat change, not a broken gate. Both are
+     read from the live Postgres error log; an unrecognised message is still
+     `refused`, never a silence. */
+  if (m.includes('PLATFORM_FROZEN')) return 'frozen';
+  if (m.includes('ALREADY_IN_GAME')) return 'already_in_game';
   return 'refused';
 }
 

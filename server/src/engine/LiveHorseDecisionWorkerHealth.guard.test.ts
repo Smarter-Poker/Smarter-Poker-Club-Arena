@@ -21,7 +21,7 @@ const alertRules = readFileSync(
 
 describe('live horse compute health has one authority', () => {
   it('does not report the idle main-thread governor as live horse capacity', () => {
-    const health = sliceMethod(gameServer, 'getStatus()');
+    const health = sliceMethod(gameServer, '\n  getStatus(');
     expect(health).toContain('equityGovernor: liveHorseDecision.governor');
     expect(health).toContain('mainEventLoopGovernor: equityGovernor.snapshot()');
     expect(health).not.toContain('equityGovernor: equityGovernor.snapshot()');
@@ -73,7 +73,7 @@ describe('live horse compute health has one authority', () => {
   });
 
   it('cannot publish status ok before dealer readiness or outside worker ready', () => {
-    const health = sliceMethod(gameServer, 'getStatus()');
+    const health = sliceMethod(gameServer, '\n  getStatus(');
     expect(health).toContain('this.dealerPrerequisitesReady &&');
     expect(health).toContain("liveHorseDecision.phase === 'ready'");
   });

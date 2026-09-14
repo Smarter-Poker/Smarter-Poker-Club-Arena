@@ -15,7 +15,7 @@ So write your own file instead. Name it after your branch or worktree:
 {
   "_owner": "fix/seat-exit-repair-arm",
   "tables": ["ca_engine_deploy_attempts"],
-  "functions": ["fn_ca_engine_deploy_truth_watch"],
+  "functions": ["fn_ca_record_engine_deploy_attempt"],
   "removedFunctions": ["legacy_repair_writer"],
   "columns": { "tables": ["no_rathole"] },
 }

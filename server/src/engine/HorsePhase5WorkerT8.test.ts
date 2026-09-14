@@ -6,7 +6,7 @@ import type {
 } from './horseDecision/index.js';
 import type { HorseGameStateV2 } from './HorseLogic.js';
 import { HorseLogic } from './HorseLogic.js';
-import { restoreFastRandom, saveFastRandom } from './HorseEval.js';
+import { restoreFastRandom, saveFastRandom, seedFastRandom } from './HorseEval.js';
 import {
   HorseDecisionWorkerRuntime,
   type HorseDecisionWorkerDependencies,
@@ -178,6 +178,38 @@ function workerHarness() {
 }
 
 describe('Phase 5 live worker catastrophe corpus', () => {
+  it('keeps the original T8 catastrophe folded in Phase13 shadow and offline candidates', () => {
+    const r = t8Snapshot(true);
+    Object.assign(r.gameState, {
+      dealtSeatIds: r.gameState.players.map((p) => p.seat),
+      chipUnit: 0.01,
+      asset: 'chips',
+      bbjConfig: null,
+    });
+    for (const phase13Joint of ['shadow', 'candidate'] as const)
+      for (let seed = 13001; seed < 13025; seed++) {
+        seedFastRandom(seed);
+        const decision = HorseLogic.decide(
+          r.player,
+          r.gameState,
+          'balanced',
+          {},
+          {
+            mind: false,
+            telemetry: false,
+            v20Multiway: true,
+            phase13Joint,
+            phase13EvidenceMode: true,
+          }
+        );
+        expect(
+          decision.action,
+          JSON.stringify({ seed, mode: phase13Joint, receipt: decision.jointPolicy })
+        ).toBe('fold');
+        expect(decision.jointPolicy?.fired).toBe(true);
+        expect(decision.jointPolicy?.proposalAction).toBe('fold');
+      }
+  });
   it('carries the reported T8o multiway all-in state through the worker and folds it', async () => {
     const enabled = workerHarness();
     enabled.runtime.receive(t8Snapshot(true));

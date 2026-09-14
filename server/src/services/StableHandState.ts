@@ -92,6 +92,9 @@ export interface StateRow {
   two_hour_window: Record<string, number>;
   session_start_balance: number | null;
   counters_reset_on: string;
+  /** Sent on every row: the column's default fires on INSERT only, so the
+   *  conflict path left it at the moment the row was created. */
+  updated_at: string;
 }
 
 /**
@@ -188,6 +191,14 @@ export function foldMutations(
       two_hour_window: window,
       session_start_balance: st.sessionStartBalance,
       counters_reset_on: todayKey,
+      /* A DEFAULT FIRES ON INSERT, NEVER ON THE CONFLICT PATH (2026-09-11).
+         `updated_at` is `DEFAULT now() NOT NULL`, and every write here after
+         the first for a horse is an UPDATE, so the column held the moment the
+         row was created and answered "this horse's counters have not been
+         touched since 09-04" for a fleet writing them every thirty seconds.
+         The one question the column exists to answer was the one it could not
+         answer. Sent explicitly, like every other value in the row. */
+      updated_at: new Date().toISOString(),
     });
   }
   return { rows, next: touched, skippedUntagged };

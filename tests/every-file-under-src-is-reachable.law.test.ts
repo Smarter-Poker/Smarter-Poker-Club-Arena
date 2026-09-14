@@ -54,8 +54,6 @@ const RETAINED: Record<string, string> = {
   'src/components/agent/AgentHierarchyTree.css': 'imported only by another retained file',
   'src/components/agent/AgentHierarchyTree.tsx': 'imported only by another retained file',
   'src/components/agent/index.ts': 'read by path: tests/the-last-wrong-account-path.law.test.ts',
-  'src/components/bbj/BBJTicker.css': 'imported only by another retained file',
-  'src/components/bbj/BBJTicker.tsx': 'read by path: tests/unit/discardedErrorReadRatchet.test.ts',
   'src/components/club/TableOperationsPanel.tsx':
     'read by path: tests/unit/managedGameLifecycleAuthority.test.ts',
   'src/components/customization/index.ts':
@@ -143,8 +141,6 @@ const RETAINED: Record<string, string> = {
   'src/constants/timing.ts': 'imported only by another retained file',
   'src/core/AntiGravityBoot.tsx': 'read by path: tests/unit/AntiGravityBoot.test.ts',
   'src/core/SupabaseIntegration.ts': 'read by path: tests/unit/SupabaseIntegration.test.ts',
-  'src/hooks/useHandReplayModel.ts':
-    'read by path: tests/previous-hand-shows-this-tables-hands.law.test.ts',
   'src/i18n/index.ts': 'read by path: scripts/ci/check-title-case.mjs',
   'src/lib/diamondArenaIdentity.ts': 'read by path: tests/poker-arena-access.test.ts',
   'src/pages/ClubDetailPage.module.css': 'imported only by another retained file',

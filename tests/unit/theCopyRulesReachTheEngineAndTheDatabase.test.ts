@@ -183,6 +183,7 @@ describe('the live source still obeys both rules after the widening', () => {
 describe('the two gaps in how work reaches production', () => {
   const CI = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8');
   const DEPLOY = readFileSync(join(ROOT, '.github/workflows/auto-deploy-hetzner.yml'), 'utf8');
+  const STAGE = readFileSync(join(ROOT, '.github/workflows/stage-engine-release.yml'), 'utf8');
 
   it('a run that verified nothing says so out loud', () => {
     // A skipped job and a passing job are identical in `gh run list`, in the
@@ -194,7 +195,9 @@ describe('the two gaps in how work reaches production', () => {
     expect(CI).toContain('::warning title=NO TESTS RAN::');
     // It must not be able to hide behind a skipped dependency.
     expect(CI).toMatch(/verdict:[\s\S]{0,400}if: always\(\)/);
-    expect(CI).toContain('needs: [changes, stub_gate, typecheck, unit, server]');
+    expect(CI).toContain(
+      'needs: [changes, stub_gate, typecheck, typecheck_compile, fixture_native, unit, server]'
+    );
   });
 
   it('and something actually verifies main on a schedule', () => {
@@ -203,7 +206,7 @@ describe('the two gaps in how work reaches production', () => {
     // Both suites must run unconditionally on that schedule - change
     // detection is meaningless when the question is about the whole branch.
     const jobs = parseWorkflow(CI).jobs;
-    for (const name of ['unit_shards', 'server', 'accounting_postgres']) {
+    for (const name of ['unit_shards', 'server_shards', 'accounting_postgres']) {
       expect(jobs[name].if, name + ' must verify the scheduled branch').toContain(
         "github.event_name == 'schedule' ||"
       );
@@ -212,9 +215,11 @@ describe('the two gaps in how work reaches production', () => {
 
   it('the required server check cannot pass without real accounting transaction tests', () => {
     const jobs = parseWorkflow(CI).jobs;
-    expect(jobs.server.needs).toContain('accounting_postgres');
-    expect(jobs.accounting_postgres.if).toBe(jobs.server.if);
-    expect(jobs.server.steps).toContainEqual(
+    expect(jobs.server.needs).toContain('server_shards');
+    expect(jobs.server.if).toBe('always()');
+    expect(jobs.server_shards.needs).toContain('accounting_postgres');
+    expect(jobs.accounting_postgres.if).toBe(jobs.server_shards.if);
+    expect(jobs.server_shards.steps).toContainEqual(
       expect.objectContaining({
         if: "needs.accounting_postgres.result != 'success'",
         run: expect.stringContaining('exit 1'),
@@ -228,29 +233,22 @@ describe('the two gaps in how work reaches production', () => {
     );
   });
 
-  it('the deploy window cannot be closed by a dropped cron tick, because there is none', () => {
-    // One tick per hour (2026-09-02; it was three), and GitHub delivered 3 of
-    // ~19 of them on 2026-09-10. Since then there is no tick to drop: every
-    // engine push starts its own deploy run, which waits in its break gate for
-    // the next :55, and a run that cannot ship hands the train on itself.
-    // See deployAndPublishAreHonest for the full pin.
-    expect(DEPLOY).not.toMatch(/^\s*- cron:/m);
-    expect(DEPLOY).toMatch(/^\s{2}push:\s*\n\s{4}branches: \[main\]/m);
+  it('the deploy is entered by an exact-SHA event, never a dropped cron tick', () => {
+    const triggers = DEPLOY.slice(DEPLOY.indexOf('\non:'), DEPLOY.indexOf('\nconcurrency:'));
+    expect(triggers).toContain('types: [deploy-club-arena-engine]');
+    expect(triggers).not.toMatch(/^\s{2}schedule:/m);
+    expect(STAGE).toContain('-f event_type=deploy-club-arena-engine');
+    expect(STAGE).toContain('-F "client_payload[ref_sha]=$REF_SHA"');
+    expect(STAGE).toContain(
+      'actions/workflows/auto-deploy-hetzner.yml/runs?event=repository_dispatch'
+    );
   });
 
-  it('a deploy that shipped nothing is a warning, not a notice', () => {
-    // A notice does not surface in the run header. This run finishes GREEN
-    // having deployed nothing, which is the whole reason the annotation exists.
-    // Was OUTSIDE THE RESTART WINDOW, which no longer exists: every hour is a
-    // window now. The run that ships nothing is the one whose break never
-    // opened, and it must still annotate rather than finish quietly green.
-    expect(DEPLOY).toContain('::warning title=BREAK NEVER OPENED::');
-    // Asserted on the annotation, not the step name. Workflow step names are
-    // developer-facing and this file uses em dashes in dozens of them; the
-    // copy rules are about pages and sub pages, and pretending otherwise here
-    // would make this test fail for a reason that is not a defect.
-    expect(DEPLOY).toContain('::warning title=DID NOT DEPLOY::');
-    expect(DEPLOY).toMatch(/DID NOT DEPLOY .{0,3} this run shipped nothing/);
+  it('a durable deploy cannot report green without an exact release receipt', () => {
+    expect(DEPLOY).toContain('could not reattach to the durable Hetzner release transaction');
+    expect(DEPLOY).toContain('case "$RESULT" in sealed|already-released)');
+    expect(DEPLOY).toContain('echo \'completed=true\' >> "$GITHUB_OUTPUT"');
+    expect(DEPLOY).not.toContain('::warning title=DID NOT DEPLOY::');
   });
 });
 

@@ -7,15 +7,14 @@
 #   3. Introduce client-side PIN-gate storage (Phase 3.6 server-side only)
 #   4. Use raw supabase.auth.getUser() outside src/lib/authUtils.ts
 #
-# Bypass with `git push --no-verify` only in genuine emergencies.
+# There is no bypass. A refusal must be fixed at its source.
 
 set -e
 
 # ── One working tree per agent (rule 1a) ────────────────────────────────────
 # Runs FIRST, for the same reason it runs first on pre-commit: if this push
 # should not be coming from this tree at all, none of the content checks below
-# matter. git-safe-push.sh and the World Hub sync export AGENT_SHARED_CLONE_OK=1
-# because they legitimately push from the one-and-only tree; CI is exempt too.
+# matter. No publisher or agent pushes from the shared clone.
 #
 # Added 2026-08-23. Commit-only enforcement missed the shape that actually
 # loses work: an agent edits in the shared clone, never commits there, and the
@@ -26,12 +25,36 @@ bash "$(git rev-parse --show-toplevel)/scripts/guard-shared-clone.sh" push
 # Autopilot squash-merges the instant the required checks pass. A push after
 # that lands on a closed pull request, changes nothing, and EXITS 0 - which is
 # how World Hub #1387 shipped one of its three commits and nobody noticed for
-# hours. Runs early and costs one HTTP request; fails open on any doubt.
+# hours. The actual remote destination is checked inside the ref loop below.
 # Warns, never blocks. The disk filling is the one failure on this machine
 # that presents as somebody else's bug (see scripts/worktree-pressure.sh).
 bash "$(git rev-parse --show-toplevel)/scripts/worktree-pressure.sh" || true
 
-bash "$(git rev-parse --show-toplevel)/scripts/guard-merged-branch.sh"
+# ── THE CLONE YOU ARE NOT PUSHING FROM IS THE ONE THAT ROTS (2026-09-12) ────
+#
+# Every guard in this hook protects the tree being pushed. Nothing protected
+# ~/Documents/club-arena, because `guard-shared-clone.sh` above forbids pushing
+# from it - so the canonical clone, the one every Cowork agent is pointed at
+# and reads CLAUDE.md and .claude/skills/ out of, is the single tree no
+# pre-push check ever looked at.
+#
+# On 2026-09-12 it was 759 commits and six days behind origin/main. A commit
+# made directly on local `main` on 2026-09-06 was never pushed, so every
+# `git pull --ff-only` after it refused, and the estate runs that as
+# `pull -q --ff-only`. Three agents read that tree, believed it was production,
+# and were wrong: the deploy-hetzner skill on disk still named the TURN server
+# as the engine, and CLAUDE.md 10.82 still documented a guard bypass that had
+# been deleted.
+#
+# `agent-workspace.sh` had already hit this on 2026-09-11 at 624 commits and
+# worked around it. Nobody measured it, so it kept drifting.
+#
+# ADVISORY, never blocking. A stale clone somewhere else on the machine is not
+# a reason to refuse THIS push from a fresh worktree, and
+# tests/unit/doctrineIsReadFromMain.test.ts is explicit that a freshness guard
+# which can wedge every push is worse than the staleness. --quiet prints
+# nothing when every clone is current, and skips the worktree census.
+bash "$(git rev-parse --show-toplevel)/scripts/check-checkout-freshness.sh" --quiet || true
 
 REMOTE="$1"
 URL="$2"
@@ -60,11 +83,41 @@ FAIL=0
 # node's DIRECTORY goes on PATH rather than resolving a single binary, so that
 # child processes inherit it too - npx is itself a node script and fails its
 # own shebang with `env: node: No such file or directory` otherwise.
-if ! command -v node >/dev/null 2>&1; then
+# THE SAME BUG THEN HAPPENED TO `gh` (2026-09-12), because this repair named
+# ONE tool instead of the set the guards need.
+#
+# `scripts/guard-merged-branch.sh` was rewritten to fail CLOSED on a missing
+# `gh` - correctly: a guard that waves a push through when it cannot reach
+# GitHub is how three commits were lost on World Hub #1387. But `gh` lives in
+# /opt/homebrew/bin, which is NOT on a non-interactive PATH on this Mac, and
+# the node repair above only reached that directory when node was ALSO
+# missing. Every agent that follows CLAUDE.md 11.0 and puts nvm's node on PATH
+# therefore satisfies the node check, never triggers the repair, and gets:
+#
+#     [merged-branch guard] BLOCKED: GitHub CLI is required to verify
+#     destination branch '<branch>'.
+#
+# on a push that was never wrong. Reproduced 2026-09-12:
+#
+#     $ env -i PATH="$HOME/.nvm/versions/node/v24.15.0/bin:/usr/bin:/bin" bash
+#     $ command -v node   ->  .../v24.15.0/bin/node     (repair skipped)
+#     $ command -v gh     ->  (nothing)                 (guard fails closed)
+#
+# The docs said "`gh` is not installed" for days, which is the RIGHT
+# OBSERVATION with the WRONG CAUSE: it is installed (v2.86.0, authenticated),
+# it is simply not on this PATH. So repair the whole SET, and let
+# `tests/the-docs-describe-this-environment.law.test.ts` fail if a guard ever
+# starts requiring a tool that is not in this list.
+# APPENDED, not prepended. Prepending /opt/homebrew/bin to find `gh` would
+# also put Homebrew's node ahead of the nvm node the agent deliberately chose,
+# silently changing which runtime runs the checks below. Appending finds the
+# missing tool and leaves every tool that already resolved exactly where it was.
+for TOOL in node gh; do
+  command -v "$TOOL" >/dev/null 2>&1 && continue
   for d in /opt/homebrew/bin /usr/local/bin; do
-    [ -x "$d/node" ] && PATH="$d:$PATH" && export PATH && break
+    [ -x "$d/$TOOL" ] && PATH="$PATH:$d" && export PATH && break
   done
-fi
+done
 if ! command -v node >/dev/null 2>&1; then
   echo "[club-arena pre-push] BLOCKED: node was not found on PATH, so the"
   echo "  JavaScript checks below cannot run. This is NOT a content failure."
@@ -73,12 +126,30 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
+# The user prohibits Mac dependency installs and copies. A partial shared
+# install is not a source-code verdict. Keep all dependency-free guards here;
+# required PR CI and the publisher still compile/test their exact installed tree.
+# A complete Mac install and every non-Mac host retain the local gates as well.
+CA_TREE_TOP="$(git rev-parse --show-toplevel)"
+CLIENT_DEPENDENCY_MODE=$(node "$CA_TREE_TOP/scripts/local-dependency-policy.mjs" "$CA_TREE_TOP")
+SERVER_DEPENDENCY_MODE=local
+if [ -f "$CA_TREE_TOP/server/package.json" ]; then
+  SERVER_DEPENDENCY_MODE=$(node "$CA_TREE_TOP/scripts/local-dependency-policy.mjs" "$CA_TREE_TOP/server")
+fi
+
 # Get the range of commits being pushed
 while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   # Skip deletions
   if [ "$LOCAL_SHA" = "0000000000000000000000000000000000000000" ]; then
     continue
   fi
+
+  case "$REMOTE_REF" in
+    refs/heads/*)
+      bash "$(git rev-parse --show-toplevel)/scripts/guard-merged-branch.sh" \
+        "${REMOTE_REF#refs/heads/}" "$REMOTE" "$URL"
+      ;;
+  esac
 
   if [ "$REMOTE_SHA" = "0000000000000000000000000000000000000000" ]; then
     # ─────────────────────────────────────────────────────────────────────
@@ -140,10 +211,8 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
     # suggests nothing, and points at no file. It cost a real debugging cycle
     # to trace to this line.
     #
-    # The danger is not the wasted time. The obvious way out of an
-    # inscrutable pre-push failure is --no-verify, and every rule below this
-    # point exists because something was lost. A guard whose failure mode
-    # invites its own bypass is worse than no guard.
+    # The danger is not the wasted time. An inscrutable pre-push failure makes
+    # the actual repair unclear, so this guard names the missing authority.
     #
     # So: fetch it, and if it still is not here, check against main instead.
     # Never die, and never silently check nothing.
@@ -193,9 +262,8 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   # That matters more than the lost minutes. Check 4's own comment promises
   # "this gate only fires on files you actually touch, so they are a to-do,
   # not a wall" - and autopilot merges main into every open branch on a timer,
-  # so the wall builds itself. An inscrutable block invites --no-verify, and
-  # --no-verify switches off the merge-conflict-marker check too: the one
-  # guard here that has actually caught a production break.
+  # so the wall builds itself. The list is narrowed to the branch-owned diff;
+  # mandatory checks remain active for every push.
   #
   # So drop anything whose content matches origin/main. This only ever NARROWS,
   # never skips: if main is not fetched, the list is left exactly as computed.
@@ -269,20 +337,19 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
           git log --oneline --max-count=15 "$LOCAL_SHA..$REMOTE_SHA" 2>/dev/null | sed 's/^/    /'
           echo ""
           echo "  This is how four production-serving commits were lost on 2026-08-21."
-          echo "  Almost always the fix is to REBASE ONTO them rather than over them:"
+          echo "  Preserve the work on a feature branch and merge current main into it:"
           echo ""
-          echo "      git pull --rebase $REMOTE main && git push"
+          echo "      git fetch $REMOTE main"
+          echo "      git switch <feature-branch>"
+          echo "      git merge $REMOTE/main"
+          echo "      git push $REMOTE <feature-branch>"
           echo ""
           echo "  If you are deliberately reverting, revert with a commit - that keeps"
           echo "  the history and is reviewable. A rewind leaves no trace of what went."
           echo ""
-          echo "  Genuine emergency override:  CA_ALLOW_MAIN_REWIND=1 git push ..."
+          echo "  There is no local bypass. GitHub rulesets also reject this operation."
           echo ""
-          if [ "${CA_ALLOW_MAIN_REWIND:-0}" = "1" ]; then
-            echo "  [CA_ALLOW_MAIN_REWIND=1 set - allowing this rewind]"
-          else
-            FAIL=1
-          fi
+          FAIL=1
         fi
       fi
       ;;
@@ -387,6 +454,19 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
     fi
   fi
 
+  # A trigger on a money table declares itself in the migration that creates
+  # it. UndeclaredTriggerOnAMoneyTable is critical and pages by SMS; it read 76
+  # on 2026-09-12 having read 74 ninety minutes before, so it is saturated and
+  # one more makes no visible difference. Enforced where the trigger is written.
+  if [ -f scripts/ci/check-money-trigger-declared.mjs ]; then
+    MTD_BASE=$(git merge-base HEAD origin/main 2>/dev/null || echo "HEAD~1")
+    if ! MONEY_TRIGGER_BASE="$MTD_BASE" node scripts/ci/check-money-trigger-with-recovery.mjs "$MTD_BASE"; then
+      echo "[club-arena pre-push] BLOCKED: an undeclared trigger on a money table."
+      echo "                      Declare it in the same migration. See above."
+      FAIL=1
+    fi
+  fi
+
   # NO BAND-AIDS (10.12). A repair, back-pay, re-drive, catch-up, backfill or
   # heal path is not a fix; it is the defect happening for ever with paperwork.
   if [ -f scripts/ci/check-no-new-band-aids.mjs ]; then
@@ -417,11 +497,12 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   #
   #    It SKIPS, loudly, when a worktree has no node_modules — same reasoning
   #    as the formatter in .husky/pre-commit: a gate people wait on is a gate
-  #    people --no-verify past, and --no-verify also disables the rewind guard
-  #    in check 5, which must never be skipped.
+  #    developers stop trusting. The rewind guard must never be skipped.
   if echo "$FILES" | grep -qE '^src/.*\.tsx?$'; then
     TSC="$(git rev-parse --show-toplevel)/node_modules/.bin/tsc"
-    if [ -x "$TSC" ]; then
+    if [ "$CLIENT_DEPENDENCY_MODE" = ci ]; then
+      echo "[club-arena pre-push] local typecheck not run: Mac dependencies are incomplete. Required CI must pass."
+    elif [ -x "$TSC" ]; then
       echo "[club-arena pre-push] type-checking src/ ..."
       if ! "$TSC" --noEmit; then
         echo ""
@@ -488,9 +569,7 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   # validateBearer() from src/lib/auth", but `src/lib/auth/` has never existed
   # in this repo's history and `validateBearer` has never been defined
   # anywhere. Phase 6 Rule 4 named a migration target that was never built, so
-  # the only way past this gate was --no-verify — which also switches off the
-  # merge-conflict-marker check in the same hook, the one guard here that has
-  # actually caught a production break (f490f61bf).
+  # the gate itself had to be corrected before it could enforce the real rule.
   #
   # The canonical module is src/lib/authUtils.ts, and the helper is
   # readLocalSession(): it parses the shared 'smarter-poker-auth' JWT, honours
@@ -547,20 +626,35 @@ done
 # Autofix:  node scripts/ci/check-title-case.mjs --fix
 #           node scripts/ci/check-ui-text.mjs --fix
 # ─────────────────────────────────────────────────────────────────────────────
-if [ -f scripts/ci/check-title-case.mjs ]; then
-  if ! node scripts/ci/check-title-case.mjs; then
+# These three parse TypeScript, so they need the `typescript` package. A
+# worktree with no node_modules cannot run them, and until 2026-09-12 that was
+# not a skip: node exited ERR_MODULE_NOT_FOUND, the `if !` caught it as a
+# failure, and the push was BLOCKED with an error naming a missing package
+# rather than a missing rule. When agent trees were purged of node_modules that
+# evening - correctly, since `npm ci` in a worktree belongs in CI - every agent
+# could still commit and none could push.
+#
+# Same rule as the type check above and the formatter in pre-commit: SKIP, and
+# say so, because a gate people cannot satisfy is a gate they route around. CI
+# runs all three as required checks, so nothing merges uncased either way.
+copy_case_guard() {
+  guard="$1"
+  [ -f "$guard" ] || return 0
+  if ! node -e 'require("typescript")' >/dev/null 2>&1; then
+    echo "[club-arena pre-push] local TypeScript unavailable - $(basename "$guard") must run in CI."
+    return 0
+  fi
+  if ! node "$guard"; then
     FAIL=1
   fi
-fi
+}
+
+copy_case_guard scripts/ci/check-title-case.mjs
 
 # The third surface of the same rule: text painted from a string ATTRIBUTE or
 # from a string literal inside a JSX EXPRESSION. Autofix:
 #   node scripts/ci/check-painted-text-case.mjs --fix
-if [ -f scripts/ci/check-painted-text-case.mjs ]; then
-  if ! node scripts/ci/check-painted-text-case.mjs; then
-    FAIL=1
-  fi
-fi
+copy_case_guard scripts/ci/check-painted-text-case.mjs
 
 # The other half of the same rule. check-title-case.mjs inspects JsxText only
 # and states in its own header that expression values "are cased at their
@@ -568,11 +662,7 @@ fi
 # copy from a config registry through {item.label}, so 55 menu strings sat
 # uncased for months in the gap between the two. Autofix:
 #   node scripts/ci/check-nav-title-case.mjs --fix
-if [ -f scripts/ci/check-nav-title-case.mjs ]; then
-  if ! node scripts/ci/check-nav-title-case.mjs; then
-    FAIL=1
-  fi
-fi
+copy_case_guard scripts/ci/check-nav-title-case.mjs
 
 # Protected work must not be orphaned from main.
 # Two of the 2026-08-21 throwables regressions were stale bundles (now covered
@@ -647,9 +737,8 @@ fi
 # related` on the files you actually touched is about four seconds, and it
 # would have caught all four incidents above - three of them changed a test
 # file (run directly), the fourth changed ActionPanel.tsx (found by related).
-# A gate people wait minutes for is a gate people start bypassing.
-#
-# Emergency bypass:  CA_SKIP_TESTS=1 git push
+# The targeted gate is mandatory. Missing dependencies are a refusal, not an
+# environment-variable escape hatch.
 # ═════════════════════════════════════════════════════════════════════════════
 # 2026-08-23: gated on a LOCAL vitest. This hook ran in NONE of the 38 agent
 # worktrees whose core.hooksPath pointed at the gitignored .husky/_ (see
@@ -668,7 +757,9 @@ fi
 # tree is broken and starts reinstalling, which is how it becomes a loop.
 #
 # Probe first, so the diagnosis arrives before the confusion does.
-bash "$(git rev-parse --show-toplevel)/scripts/check-node-modules.sh" --check || true
+if [ "$CLIENT_DEPENDENCY_MODE" = local ]; then
+  bash "$CA_TREE_TOP/scripts/check-node-modules.sh" --check
+fi
 
 VITEST="$(git rev-parse --show-toplevel)/node_modules/.bin/vitest"
 
@@ -678,80 +769,24 @@ VITEST="$(git rev-parse --show-toplevel)/node_modules/.bin/vitest"
 # stops a red test blocking the World Hub bundle was a printed sentence in the
 # 124 of 162 trees that had no server/node_modules.
 #
-# The first attempt at repairing it carried four defects worth recording,
-# because each is a shape that recurs:
-#
-#   - it copied with `cp -R src dst` while `dst` might already exist, which
-#     nests into node_modules/node_modules and leaves a tree that every later
-#     `[ -e ]` check calls "provisioned" forever. Copy to a temp and rename.
-#   - it refused when run IN the main clone, which is where git-safe-push.sh
-#     and the World Hub sync push from. A guard that can brick the deploy path
-#     is worse than the hole it closes. That case now advises `npm ci` and
-#     does not block.
-#   - it had no CI exemption, unlike every other guard in this file.
-#   - it read `[ -z "$CA_SKIP_TESTS" ]`, so CA_SKIP_TESTS=0 SKIPPED the gate —
-#     the opposite of what the message it prints says. Compare to "1".
-CA_IN_CI=0
-[ -n "${CI:-}" ] && CA_IN_CI=1
-[ -n "${GITHUB_ACTIONS:-}" ] && CA_IN_CI=1
-
-CA_TESTS_ON=1
-[ "${CA_SKIP_TESTS:-0}" = "1" ] && CA_TESTS_ON=0
-[ "$CA_IN_CI" = "1" ] && CA_TESTS_ON=0
-
-CA_ROOT_MAIN="$HOME/Documents/club-arena"
+# Dependencies are prepared by the workspace/bootstrap path. This hook never
+# copies or repairs a dependency tree while a push is in progress.
 CA_TREE_TOP="$(git rev-parse --show-toplevel)"
 
-# Same repository only. A second full clone of this remote exists on this
-# machine and its node_modules answers to a different package-lock.
-ca_same_repo() {
-  [ -d "$CA_ROOT_MAIN/.git" ] || [ -f "$CA_ROOT_MAIN/.git" ] || return 1
-  [ "$(git -C "$CA_ROOT_MAIN" rev-parse --git-common-dir 2>/dev/null)" = "$(git rev-parse --git-common-dir 2>/dev/null)" ]
-}
-
-# Clone one package root's deps in, atomically. Never copies onto an existing
-# directory, so a gutted or half-copied tree is replaced rather than nested.
-ca_provision() {
-  src="$1"; dst="$2"
-  [ -d "$src" ] || return 1
-  rm -rf "$dst.provision.$$" 2>/dev/null
-  if cp -Rc "$src" "$dst.provision.$$" 2>/dev/null || cp -R "$src" "$dst.provision.$$" 2>/dev/null; then
-    rm -rf "$dst" 2>/dev/null
-    mv "$dst.provision.$$" "$dst" 2>/dev/null && return 0
-  fi
-  rm -rf "$dst.provision.$$" 2>/dev/null
-  return 1
-}
-
-if [ "$CA_TESTS_ON" = "1" ] && [ -f package.json ] && [ ! -x "$VITEST" ]; then
-  if [ "$CA_TREE_TOP" = "$CA_ROOT_MAIN" ]; then
-    echo ""
-    echo "[club-arena pre-push] this clone's node_modules is missing or gutted, so the"
-    echo "                      test gate cannot run. NOT refusing: git-safe-push.sh and"
-    echo "                      the World Hub sync push from here, and bricking that is"
-    echo "                      worse than the gate being down for one push."
-    echo "                      Repair it:  (cd $CA_ROOT_MAIN && npm ci)"
-    echo ""
-  elif ca_same_repo && ca_provision "$CA_ROOT_MAIN/node_modules" "$CA_TREE_TOP/node_modules"; then
-    echo "[club-arena pre-push] no local vitest - provisioned from the main clone so the gate can run."
-  fi
-fi
-
-if [ "$CA_TESTS_ON" = "1" ] && [ -f package.json ] && [ ! -x "$VITEST" ] \
-   && [ "$CA_TREE_TOP" != "$CA_ROOT_MAIN" ]; then
+if [ "$CLIENT_DEPENDENCY_MODE" = local ] && [ -f package.json ] && [ ! -x "$VITEST" ]; then
   echo ""
   echo "[club-arena pre-push] REFUSING: no vitest in this tree and it could not be"
   echo "                      provisioned, so the test gate cannot run. Pushing now"
   echo "                      would put an ungated commit on a branch CI publishes"
   echo "                      from."
-  echo "                      Fix:  bash scripts/agent-workspace.sh <you> <slug>"
-  echo "                      or:   npm ci"
-  echo "                      Deliberate override: CA_SKIP_TESTS=1"
+  echo "                      Fix the workspace dependency installation, then retry."
   echo ""
   exit 1
 fi
 
-if [ "$CA_TESTS_ON" = "1" ] && [ -f package.json ] && [ -x "$VITEST" ]; then
+if [ "$CLIENT_DEPENDENCY_MODE" = ci ]; then
+  echo "[club-arena pre-push] local client tests not run: Mac dependencies are incomplete. Required CI must pass."
+elif [ -f package.json ] && [ -x "$VITEST" ]; then
   CHANGED_TESTS=""
   CHANGED_SRC=""
   for f in $FILES; do
@@ -840,7 +875,7 @@ fi
 # Provisioning is necessary and it is not sufficient; this is the part that
 # enforces.
 SERVER_VITEST="$CA_TREE_TOP/server/node_modules/.bin/vitest"
-if [ "$CA_TESTS_ON" = "1" ] && [ -f server/package.json ]; then
+if [ -f server/package.json ]; then
   SRV_TESTS=""
   SRV_SRC=""
   for f in $FILES; do
@@ -856,20 +891,14 @@ if [ "$CA_TESTS_ON" = "1" ] && [ -f server/package.json ]; then
     esac
   done
 
-  if [ -n "$SRV_TESTS$SRV_SRC" ]; then
-    if [ ! -x "$SERVER_VITEST" ] && ca_same_repo; then
-      ca_provision "$CA_ROOT_MAIN/server/node_modules" "$CA_TREE_TOP/server/node_modules" \
-        && echo "[club-arena pre-push] provisioned server deps so the engine gate can run."
-    fi
-  fi
-
-  if [ -n "$SRV_TESTS$SRV_SRC" ] && [ ! -x "$SERVER_VITEST" ]; then
+  if [ -n "$SRV_TESTS$SRV_SRC" ] && [ "$SERVER_DEPENDENCY_MODE" = ci ]; then
+    echo "[club-arena pre-push] local server tests not run: Mac dependencies are incomplete. Required CI must pass."
+  elif [ -n "$SRV_TESTS$SRV_SRC" ] && [ ! -x "$SERVER_VITEST" ]; then
     echo ""
     echo "[club-arena pre-push] REFUSING: you changed server/** and there is no vitest"
     echo "                      in server/, so the ENGINE gate cannot run. This is the"
     echo "                      code that deals real hands."
-    echo "                      Fix:  (cd server && npm ci)"
-    echo "                      Deliberate override: CA_SKIP_TESTS=1"
+    echo "                      Fix the server dependency installation, then retry."
     echo ""
     FAIL=1
   elif [ -n "$SRV_TESTS" ]; then
@@ -884,7 +913,7 @@ if [ "$CA_TESTS_ON" = "1" ] && [ -f server/package.json ]; then
     fi
   fi
 
-  if [ -n "$SRV_SRC" ] && [ -x "$SERVER_VITEST" ]; then
+  if [ "$SERVER_DEPENDENCY_MODE" = local ] && [ -n "$SRV_SRC" ] && [ -x "$SERVER_VITEST" ]; then
     echo "[club-arena pre-push] running the server tests that cover your changes..."
     if ! ( cd server && "$SERVER_VITEST" related --run $SRV_SRC ); then
       echo ""
@@ -898,7 +927,7 @@ fi
 
 if [ "$FAIL" -ne 0 ]; then
   echo ""
-  echo "[club-arena pre-push] FAILED — fix the issues above or use --no-verify if certain."
+  echo "[club-arena pre-push] FAILED — fix the issues above; release checks have no bypass."
   exit 1
 fi
 

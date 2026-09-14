@@ -23,6 +23,11 @@
  */
 
 import type { Card } from '../types.js';
+import {
+  CONTINUATION_POLICY,
+  continuationStrength,
+  type TournamentContinuationStreet,
+} from './HorseTournamentContinuation.js';
 import { scoreFiveCards } from './HorseFiveCardScore.js';
 import { SUITS, RANKS, RANK_VALUES } from './PokerEngine.js';
 import {
@@ -807,16 +812,35 @@ export interface OmahaNutStatus {
   higherFlushRanks: number;
   /** made straight only: no two hole cards make a bigger straight here */
   straightIsNut: boolean;
+  /** three or more of one suit on the board, so SOMEBODY can hold a flush.
+   *  Omaha plays exactly two hole cards, so three of a suit on the board is
+   *  the threshold - the same bar the NLH status uses. */
+  flushPossible: boolean;
 }
 
-const NO_NUT_STATUS: OmahaNutStatus = { category: 0, higherFlushRanks: 0, straightIsNut: true };
+const NO_NUT_STATUS: OmahaNutStatus = {
+  category: 0,
+  higherFlushRanks: 0,
+  straightIsNut: true,
+  flushPossible: false,
+};
 
 export function omahaNutStatus(hole: Card[], board: Card[]): OmahaNutStatus {
   if (!hole || hole.length < 2 || !board || board.length < 3) return NO_NUT_STATUS;
   try {
     const score = scoreOmahaHiPartial(hole, board);
     const cat = Math.floor(score / 0x100000);
-    const out: OmahaNutStatus = { category: cat, higherFlushRanks: 0, straightIsNut: true };
+    const out: OmahaNutStatus = {
+      category: cat,
+      higherFlushRanks: 0,
+      straightIsNut: true,
+      flushPossible: false,
+    };
+    // Computed for every category, not just the branch that reads it: a field
+    // named flushPossible that is only true sometimes is a field that lies.
+    const boardSuitCounts = new Map<string, number>();
+    for (const c of board) boardSuitCounts.set(c.suit, (boardSuitCounts.get(c.suit) ?? 0) + 1);
+    for (const n of boardSuitCounts.values()) if (n >= 3) out.flushPossible = true;
 
     if (cat === 6) {
       // The flush suit: >= 3 on the board (Omaha uses exactly 3 board cards)
@@ -2107,6 +2131,7 @@ export function equitySampleSizeOfLastCall(): number {
 
 /** One range-conditioned showdown sampled inside the canonical equity pass. */
 export interface HorseEquityOutcomeSample {
+  continuationStreets?: TournamentContinuationStreet[];
   heroHigh: number;
   opponentHigh: number[];
   /** Opponent strength at the decision point, before sampled future cards. */
@@ -2123,6 +2148,7 @@ export interface HorseEquityOutcomeSample {
  * that from one scalar equity.
  */
 export interface HorseEquityOutcomeCollector {
+  captureContinuation?: boolean;
   maxSamples: number;
   samples: HorseEquityOutcomeSample[];
 }
@@ -2148,7 +2174,10 @@ export function simulateEquity(
   // V12: board-contact conditioning per opponent (NLH family only).
   oppReads?: Array<OppPostflopRead | null>,
   // Phase 7: bounded raw showdown outcomes from this same conditioned pass.
-  outcomeOut?: HorseEquityOutcomeCollector
+  outcomeOut?: HorseEquityOutcomeCollector,
+  // A hero's known discard stays out of every future board and opponent hand.
+  // Callers may provide only cards already known to that decision's owner.
+  knownDeadCards: readonly Card[] = []
 ): number {
   // V3 perf: banded Omaha sampling adds rejection-scoring cost; trim the
   // iteration count to stay inside the per-decision millisecond budget.
@@ -2198,6 +2227,7 @@ export function simulateEquity(
   const known = new Set<string>();
   for (const c of holeCards) known.add(cardKey(c));
   for (const c of boardCards) known.add(cardKey(c));
+  for (const c of knownDeadCards) known.add(cardKey(c));
 
   const base = vi.isShortDeck ? SHORT_DECK_CARDS : FULL_DECK;
   const deck = base.filter((c) => !known.has(cardKey(c)));
@@ -2300,6 +2330,28 @@ export function simulateEquity(
     const opponentHigh: number[] = [];
     const opponentDecisionStrength: number[] = [];
     const opponentLow: Array<number | null> = [];
+    const continuationStreets: TournamentContinuationStreet[] = [];
+    if (
+      outcomeOut?.captureContinuation &&
+      !vi.isOmaha &&
+      !vi.isShortDeck &&
+      holeCards.length === 2 &&
+      boardCards.length >= 3 &&
+      outcomeOut.samples.length <
+        Math.min(outcomeOut.maxSamples, CONTINUATION_POLICY.maxOutcomeSamples)
+    ) {
+      for (let size = boardCards.length; size <= 5; size++) {
+        const publicBoard = board.slice(0, size);
+        continuationStreets.push({
+          street: size === 3 ? 'flop' : size === 4 ? 'turn' : 'river',
+          heroStrength: continuationStrength(
+            connectsBoard(holeCards, publicBoard, false),
+            holdemPreflopScore(holeCards[0], holeCards[1], false)
+          ),
+          opponentStrength: [],
+        });
+      }
+    }
 
     for (let o = 0; o < numOpponents; o++) {
       const windowStart = dealIdx;
@@ -2535,6 +2587,15 @@ export function simulateEquity(
       if (outcomeOut) {
         opponentHigh.push(oppHi);
         opponentDecisionStrength.push(decisionStrength(oppCards));
+        for (const next of continuationStreets) {
+          const size = next.street === 'flop' ? 3 : next.street === 'turn' ? 4 : 5;
+          next.opponentStrength.push(
+            continuationStrength(
+              connectsBoard(oppCards, board.slice(0, size), false),
+              holdemPreflopScore(oppCards[0], oppCards[1], false)
+            )
+          );
+        }
       }
 
       if (vi.isHiLo) {
@@ -2565,6 +2626,7 @@ export function simulateEquity(
         opponentDecisionStrength,
         heroLow: heroLow === Infinity ? null : heroLow,
         opponentLow,
+        ...(continuationStreets.length > 0 ? { continuationStreets } : {}),
       });
     }
 

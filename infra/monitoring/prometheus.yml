@@ -24,7 +24,7 @@ rule_files:
   # 2026-08-15: alerts on the supervisor itself. Layered recovery makes outages
   # shorter and also quieter — these rules stop self-healing from becoming
   # self-concealing.
-  - /etc/prometheus/supervisor-rules.yml
+  - /etc/prometheus/recovery-rules.yml
   # 2026-08-31 — tournament health. Until the gauges behind these existed,
   # /metrics carried 895 poker_* series and none mentioned a tournament, so a
   # tournament could fail for hours with every dashboard green.
@@ -80,6 +80,18 @@ scrape_configs:
   # shared secret on the relay and the one in the engine's .env drifted apart,
   # which is a silent failure: the engine would hand players credentials
   # coturn rejects and voice would die looking like a network fault.
+  # 2026-09-11. PagerDeliveryFailing and CriticalEmailDeliveryFailing were
+  # added earlier the same day to watch the pager itself, and they read
+  # alertmanager_notifications_failed_total - which Prometheus was not
+  # scraping, because Alertmanager was configured as an alert DESTINATION and
+  # never as a scrape TARGET. Two alerts written to catch a silent pager, both
+  # silent for the same reason as everything else found that day.
+  - job_name: alertmanager
+    static_configs:
+      - targets: [alertmanager:9093]
+        labels:
+          host: engine-01
+
   - job_name: turn_relay
     static_configs:
       - targets: ['178.156.160.206:9100']

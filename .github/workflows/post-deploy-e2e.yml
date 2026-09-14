@@ -1,4 +1,5 @@
 name: Post-Deploy E2E (production)
+run-name: Post-Deploy E2E ${{ github.event.client_payload.engine_sha || github.sha }}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # THE TIER THAT DID NOT EXIST (Dan 2026-08-29)
@@ -18,8 +19,8 @@ name: Post-Deploy E2E (production)
 #    right place for strict: a red run names the route and the offending
 #    element without blocking anyone's merge."
 #
-# This is that job. It runs AFTER the World Hub sync publishes, against the
-# real deployed bundle, signed in.
+# This is that job. It runs AFTER Club Arena publishes to its Hetzner origin,
+# against the real deployed bundle through the public rewrite, signed in.
 #
 # WHY IT DOES NOT GATE A MERGE, and why that is not a weakness: by the time it
 # runs, the code is already on main and already published. Blocking is not
@@ -42,69 +43,116 @@ on:
     # refuses any workflow_run listener whose name no workflow carries.
     workflows: ['Publish Club Arena']
     types: [completed]
-  workflow_dispatch:
-
-# One at a time, and the NEWEST wins: an older run is measuring a bundle that is
-# no longer serving, so finishing it would report a verdict about the past.
-#
-# 2026-08-29, the first real run of this workflow was CANCELLED here, and that
-# exposed the flaw in its first design. It used to WAIT (up to ten minutes) for
-# production to serve its own commit's sha before testing anything. On a repo
-# where merges land every few minutes, every run spent its life in that wait
-# and was cancelled by the next one before reaching a single spec. A job that
-# always cancels is a job that never runs, which is precisely the "a guard with
-# nowhere to run becomes a comment" failure this workflow was built to end.
-#
-# The fix is to stop pinning to a sha. The question this job answers is "is
-# PRODUCTION healthy right now", not "is commit abc123 healthy". The specs
-# below check routes, layout and touch targets on the live site, and any deploy
-# that reaches production is a fair subject. So it tests whatever is serving
-# when it starts, names that sha in the summary, and finishes in about three
-# minutes instead of thirteen.
-#
-# GitHub evaluates concurrency BEFORE the job-level `if`. That means a failed
-# or cancelled Build for World Hub Sync still starts this workflow, takes the
-# concurrency lock, cancels a genuine manual/production run, and only THEN
-# skips its own job. Give those no-op invocations a unique group. Successful
-# deploys and manual runs continue sharing the production group. A running
-# authenticated suite is allowed to finish; GitHub keeps only the newest
-# pending run, so deploy bursts still converge without starving the guard or
-# overlapping its stateful two-account checks.
-concurrency:
-  group: >-
-    post-deploy-e2e-${{
-      github.event_name == 'workflow_run' &&
-      github.event.workflow_run.conclusion != 'success' &&
-      format('noop-{0}', github.run_id) ||
-      'production'
-    }}
-  cancel-in-progress: false
+  schedule:
+    - cron: '35 6 * * *'
+  repository_dispatch:
+    types: [run-post-deploy-e2e]
 
 jobs:
+  publication-gate:
+    name: Confirm The Hetzner Web Publish Reached Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      should_run: ${{ steps.origin.outputs.should_run }}
+      engine_trigger_sha: ${{ steps.origin.outputs.engine_trigger_sha }}
+    steps:
+      # workflow_run.conclusion covers the whole publisher, including the
+      # optional Capgo job. A Capgo failure after a verified web publish must
+      # never suppress web E2E, so read the exact origin job and its proof step.
+      - name: Read The Origin Job Verdict
+        id: origin
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id || '' }}
+          ENGINE_TRIGGER_SHA: ${{ github.event.client_payload.engine_sha || '' }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = repository_dispatch ]; then
+            [[ "$ENGINE_TRIGGER_SHA" =~ ^[0-9a-f]{40}$ ]] \
+              || { echo '::error::An engine-triggered production certificate requires one full lowercase engine SHA.'; exit 1; }
+            echo "engine_trigger_sha=$ENGINE_TRIGGER_SHA" >> "$GITHUB_OUTPUT"
+            echo 'should_run=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo 'engine_trigger_sha=' >> "$GITHUB_OUTPUT"
+          if [ "$EVENT_NAME" = schedule ]; then
+            echo 'should_run=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [ "$EVENT_NAME" = workflow_run ] \
+            || { echo "::error::Unsupported production certification event: $EVENT_NAME"; exit 1; }
+          [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]] \
+            || { echo '::error::The source workflow run id is malformed.'; exit 1; }
+          JOBS_JSON="$(mktemp)"
+          trap 'rm -f -- "$JOBS_JSON"' EXIT
+          timeout 30s gh api \
+            "repos/${{ github.repository }}/actions/runs/$SOURCE_RUN_ID/jobs?filter=latest&per_page=100" \
+            > "$JOBS_JSON"
+          node - "$JOBS_JSON" "$GITHUB_OUTPUT" <<'NODE'
+          const fs = require('node:fs');
+          const [file, output] = process.argv.slice(2);
+          const payload = JSON.parse(fs.readFileSync(file, 'utf8'));
+          if (!Array.isArray(payload.jobs)) throw new Error('The source jobs response is malformed.');
+          const jobs = payload.jobs.filter((entry) => entry?.name === 'publish-to-origin');
+          if (jobs.length !== 1) {
+            throw new Error(`Expected one latest publish-to-origin job, received ${jobs.length}.`);
+          }
+          const origin = jobs[0];
+          const verdicts = (origin.steps ?? []).filter(
+            (entry) => entry?.name === 'Stand down if the origin already serves a newer bundle'
+          );
+          const publishes = (origin.steps ?? []).filter(
+            (entry) => entry?.name === 'Publish through the host-owned immutable transaction'
+          );
+          const proofs = (origin.steps ?? []).filter(
+            (entry) => entry?.name === 'Verify the origin serves this bundle'
+          );
+          if (verdicts.length !== 1 || publishes.length !== 1 || proofs.length !== 1) {
+            throw new Error('The origin job is missing one of its release-verdict steps.');
+          }
+          const originSucceeded =
+            origin.status === 'completed' &&
+            origin.conclusion === 'success';
+          const publishProved =
+            proofs[0].status === 'completed' &&
+            proofs[0].conclusion === 'success';
+          const safeStanddown =
+            verdicts[0].status === 'completed' &&
+            verdicts[0].conclusion === 'success' &&
+            publishes[0].status === 'completed' &&
+            publishes[0].conclusion === 'skipped' &&
+            proofs[0].status === 'completed' &&
+            proofs[0].conclusion === 'skipped';
+          if (!originSucceeded || (!publishProved && !safeStanddown)) {
+            throw new Error(
+              'The source run neither proved a Hetzner web publish nor completed a safe forward stand-down.'
+            );
+          }
+          fs.appendFileSync(output, 'should_run=true\n');
+          NODE
+
   production-e2e:
-    # Only when the publish actually succeeded. A failed sync means production
-    # is still serving the previous bundle, and testing that proves nothing
-    # about this commit.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+    needs: publication-gate
+    # A verified publish and a safe forward stand-down both certify the live
+    # player route. A failed/skipped origin job makes the gate red, never green
+    # without executing the browser suite. Optional downstream failures cannot
+    # hide a successful web release.
+    if: needs.publication-gate.outputs.should_run == 'true'
     name: Specs that need a real deployed page
-    # OFFLOADED 2026-09-02. Measured at ~29 minutes a run and firing on every
-    # publish, this was the single largest remaining GitHub-billed job on the
-    # repo - more than half the residual bill on its own. It tests LIVE
-    # production over the public internet, so where it runs changes nothing
-    # about what it proves. The estate box carries the chromium+webkit system
-    # libraries permanently and caches the browser binaries between runs.
-    #
-    # WHY THIS ONE AND NOT CSS Beat E2E. The first attempt routed both. CSS
-    # Beat E2E is a REQUIRED merge check, and on the 4-core box, under four
-    # concurrent heavy jobs, a browser-flow spec timed out waiting 20s for a
-    # control - the same suite is 3/3 green on hosted runners at ~10.5 minutes.
-    # A cost saving that turns a green merge gate red is not a saving. This job
-    # is not a merge gate, so a load-induced slowdown here costs minutes, never
-    # a merge. CSS Beat E2E follows once the box has the headroom (or a second
-    # box) to run browser flows without contention.
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # This trusted workflow can receive production database credentials. Run it
+    # on a fresh hosted image, never on a persistent runner that has executed
+    # pull-request code.
+    runs-on: ubuntu-latest
+    # Serialize only jobs that will really touch the shared production test
+    # accounts. Gate-only no-op runs never occupy this lock.
+    concurrency:
+      group: post-deploy-e2e-production
+      cancel-in-progress: false
     # Cashier plus six isolated stateful groups and the 138-test responsive
     # sweep take 20-24 minutes when production is under normal publish load.
     # The old 20-minute ceiling cancelled the honesty/report steps just as the
@@ -124,6 +172,38 @@ jobs:
           # serving, which is usually an ancestor of this run's commit and is
           # absent from the default shallow clone.
           fetch-depth: 0
+          # blob:none keeps every one of the 7,223 commits and drops the blobs of old
+          # revisions. Measured 2026-09-13, three runs each: 33-35s / 531MB against
+          # 36-43s / 766MB, for identical ancestry. Nothing in this repo's workflows
+          # reads a historical file version - they ask merge-base, rev-list, log and
+          # cat-file -e, which are all commit-graph work - so those blobs were paid
+          # for on every run and never read.
+          filter: blob:none
+
+      - name: Resolve the exact protected-main engine component
+        id: engine
+        env:
+          ENGINE_TRIGGER_SHA: ${{ needs.publication-gate.outputs.engine_trigger_sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          MAIN_SHA="$(git rev-parse --verify 'origin/main^{commit}')"
+          if [ -n "$ENGINE_TRIGGER_SHA" ]; then
+            # Certify the immutable release that requested this run. A newer
+            # unshipped merge cannot substitute a different release identity.
+            ENGINE_SHA="$ENGINE_TRIGGER_SHA"
+          else
+            ENGINE_SHA="$(git log "$MAIN_SHA" -1 --format=%H -- \
+              'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**')"
+          fi
+          [[ "$ENGINE_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo '::error::Could not resolve one exact engine-runtime commit from protected main.'; exit 1; }
+          git cat-file -e "$ENGINE_SHA^{commit}" \
+            || { echo '::error::The requested engine commit is unavailable.'; exit 1; }
+          git merge-base --is-ancestor "$ENGINE_SHA" "$MAIN_SHA" \
+            || { echo '::error::The requested engine commit is outside protected main.'; exit 1; }
+          echo "sha=$ENGINE_SHA" >> "$GITHUB_OUTPUT"
+          echo "Exact protected-main engine component: \`$ENGINE_SHA\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -134,52 +214,68 @@ jobs:
       - name: Install Dependencies
         run: npm ci --ignore-scripts
 
-      # See the note in ci.yml: apt-get on every run is correct for a throwaway
-      # hosted image and pure waste on a box where the libraries are permanent.
-      # Keyed on runner.environment since 2026-09-07, not on vars.CI_RUNNER.
-      # The old condition was right, but only by coincidence: this workflow has
-      # one job and it routes on that same variable, so "the variable is set"
-      # happened to mean "this job is on the box". Nothing holds those two
-      # facts together - add a second job here, or pin this one back to
-      # ubuntu-latest for an afternoon, and the condition starts skipping
-      # --with-deps on a hosted image that has no browser libraries at all,
-      # which is a browser that cannot start rather than a browser that is
-      # slow. runner.environment answers the question actually being asked.
-      - name: Install Chromium and WebKit
-        run: |
-          if [ "${{ runner.environment }}" = "self-hosted" ]; then
-            npx playwright install chromium webkit
-          else
-            npx playwright install chromium webkit --with-deps
-          fi
+      # Production credentials are confined to this trusted default-branch
+      # workflow. Pull-request CI validates committed source and never receives
+      # them; every successful publish runs this read-only production audit.
+      # Keep this chip-safety proof in its own first step. A failure in another
+      # catalogue audit must not prevent the FK question from being asked.
+      - name: Prove every club foreign key remains deletable
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/check-club-fk-indexes.mjs
 
-      # Production must be reachable and serving a bundle before any of this
-      # means anything. This is a readiness check, NOT a sha match: see the
-      # note on `concurrency` above for why waiting for this commit's own sha
-      # made the job cancel itself out of existence.
+      - name: Audit the remaining live schema from trusted code
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/check-phantom-tables.mjs
+          node scripts/ci/check-phantom-columns.mjs
+          node scripts/ci/check-embed-relationships.mjs
+
+      # The live-table suite already requires this exact engine. Check that
+      # prerequisite before creating a production account or spending the full
+      # browser budget on a release which cannot pass. Keep the preceding
+      # read-only schema/FK audits and the later in-suite identity checks.
+      - name: Require the exact engine before opening production browser fixtures
+        env:
+          EXPECTED_ENGINE_SHA: ${{ steps.engine.outputs.sha }}
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 20 -H 'Cache-Control: no-cache' \
+            "https://engine.smarter.poker/health?certificate=$GITHUB_RUN_ID" \
+            | node scripts/ci/production-e2e-provenance.mjs engine-ready "$EXPECTED_ENGINE_SHA"
+
+      - name: Install Chromium and WebKit
+        run: npx playwright install chromium webkit --with-deps
+
+      # Production must be reachable and serving one exact repository commit
+      # before any browser assertion can carry a verdict.
       - name: Confirm production is serving, and record what we are testing
         id: live
         run: |
+          set -euo pipefail
           for i in $(seq 1 10); do
-            LIVE=$(curl -fsS "https://smarter.poker/hub/club-arena/build-info.json?cb=$RANDOM" \
-              | sed -n 's/.*"ca_sha": *"\([a-f0-9]*\)".*/\1/p') || true
-            if [ -n "$LIVE" ]; then
-              echo "sha=$LIVE" >> $GITHUB_OUTPUT
-              echo "ready=true" >> $GITHUB_OUTPUT
-              echo "### Post-deploy E2E" >> $GITHUB_STEP_SUMMARY
-              echo "Testing production as it is serving right now: \`$LIVE\`" >> $GITHUB_STEP_SUMMARY
-              if [ "$LIVE" = "${{ github.event.workflow_run.head_sha || github.sha }}" ]; then
-                echo "(that is this run's own commit)" >> $GITHUB_STEP_SUMMARY
-              else
-                echo "(a newer deploy has overtaken this run's commit - testing what players actually have)" >> $GITHUB_STEP_SUMMARY
+            BODY=''
+            if BODY=$(curl -fsS --max-time 20 -H 'Cache-Control: no-cache' \
+              "https://smarter.poker/hub/club-arena/build-info.json?cb=$RANDOM"); then
+              if LIVE=$(printf '%s' "$BODY" \
+                | node scripts/ci/production-e2e-provenance.mjs build-info); then
+                [[ "$LIVE" =~ ^[0-9a-f]{40}$ ]]
+                echo "sha=$LIVE" >> "$GITHUB_OUTPUT"
+                echo "ready=true" >> "$GITHUB_OUTPUT"
+                echo "### Post-deploy E2E" >> "$GITHUB_STEP_SUMMARY"
+                echo "Testing production as it is serving right now: \`$LIVE\`" >> "$GITHUB_STEP_SUMMARY"
+                exit 0
               fi
-              exit 0
             fi
-            echo "  attempt $i: build-info.json not readable yet"
+            echo "  attempt $i: build-info.json did not contain one exact Club Arena SHA"
             sleep 10
           done
-          echo "ready=false" >> $GITHUB_OUTPUT
-          echo "::error::production did not serve a readable build-info.json - the site may be down."
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+          echo "::error::production did not serve one valid full build-info.json SHA."
           exit 1
 
       # ───────────────────────────────────────────────────────────────────
@@ -202,27 +298,27 @@ jobs:
       # ignore, which is how it becomes a comment again.
       #
       # So: when production is serving an ANCESTOR of this checkout, take the
-      # specs from that ancestor too. Test what players have, with the
-      # assertions that belong to it. If the deployed sha is not an ancestor
-      # (a force-push, or production somehow ahead) do NOT guess - keep the
-      # checkout and say so loudly in the summary, so the drift is visible
-      # rather than silently absorbed.
+      # specs from that ancestor too. Unknown and divergent provenance fail
+      # closed because a mismatched assertion set cannot produce a verdict.
       # ───────────────────────────────────────────────────────────────────
       - name: Take the specs from the commit production is actually serving
         if: steps.live.outputs.ready == 'true'
         id: align
         run: |
+          set -euo pipefail
           LIVE='${{ steps.live.outputs.sha }}'
           HERE=$(git rev-parse HEAD)
-          if [ "$LIVE" = "$HERE" ]; then
+          [[ "$LIVE" =~ ^[0-9a-f]{40}$ ]] && [[ "$HERE" =~ ^[0-9a-f]{40}$ ]]
+          if ! git cat-file -e "$LIVE^{commit}" 2>/dev/null; then
+            git fetch --no-tags origin "$LIVE" --depth=1
+          fi
+          RELATION=$(node scripts/ci/production-e2e-provenance.mjs lineage "$LIVE" "$HERE")
+          if [ "$RELATION" = same ]; then
             echo "specs=$HERE" >> $GITHUB_OUTPUT
             echo "The specs and the deployed bundle are the same commit (\`$HERE\`)." >> $GITHUB_STEP_SUMMARY
             exit 0
           fi
-          if ! git cat-file -e "$LIVE^{commit}" 2>/dev/null; then
-            git fetch --no-tags origin "$LIVE" --depth=1 2>/dev/null || true
-          fi
-          if git merge-base --is-ancestor "$LIVE" "$HERE" 2>/dev/null; then
+          if [ "$RELATION" = ancestor ]; then
             # ASSERTIONS from the deployed commit; HARNESS from this one.
             #
             # Swapping tests/e2e wholesale would also drag global-setup.ts and
@@ -232,14 +328,19 @@ jobs:
             # exactly the runs where production is behind. A fix that disables
             # itself under the condition it was written for is worse than none.
             git checkout "$LIVE" -- tests/e2e
-            git checkout "$HERE" -- tests/e2e/global-setup.ts tests/e2e/support
+            # Authentication and exact cross-artifact provenance are harness
+            # authority, not page-version assertions. Never let deploy lag
+            # roll either guard back to an older, weaker implementation.
+            git checkout "$HERE" -- \
+              tests/e2e/global-setup.ts \
+              tests/e2e/production-live-table-realtime.spec.ts \
+              tests/e2e/support
             echo "specs=$LIVE" >> $GITHUB_OUTPUT
             echo "Production is serving \`$LIVE\`, an ancestor of this run's \`$HERE\`." >> $GITHUB_STEP_SUMMARY
-            echo "Specs taken from \`$LIVE\` so the assertions match the bundle; global-setup and support/ kept at \`$HERE\`." >> $GITHUB_STEP_SUMMARY
+            echo "Page assertions taken from \`$LIVE\`; auth, exact engine provenance, and support harnesses kept at \`$HERE\`." >> $GITHUB_STEP_SUMMARY
           else
-            echo "specs=$HERE" >> $GITHUB_OUTPUT
-            echo "::warning::deployed sha $LIVE is NOT an ancestor of $HERE - specs left at $HERE and may not match the bundle."
-            echo "**Drift, not reconciled.** Production serves \`$LIVE\`, which is not an ancestor of this run's \`$HERE\`. The specs below are from \`$HERE\` and a failure may mean only that they do not match the deployed bundle." >> $GITHUB_STEP_SUMMARY
+            echo "::error::Unexpected provenance relation '$RELATION'."
+            exit 1
           fi
 
       # A standing shared login is eventually changed, disabled, left behind a
@@ -328,7 +429,7 @@ jobs:
           # a frontend-only green during that gap is not release proof.
           LIVE_TABLE_REALTIME_CERTIFICATION: '1'
           ENGINE_HEALTH_URL: https://engine.smarter.poker/health
-          EXPECTED_ENGINE_SHA: ${{ steps.live.outputs.sha }}
+          EXPECTED_ENGINE_SHA: ${{ steps.engine.outputs.sha }}
         # Every spec the css-beats gate cannot take, named explicitly for the
         # same reason that gate names its own: a spec not named in a job runs
         # in no job. If you add a spec that needs a login or a live URL, add it
@@ -450,6 +551,7 @@ jobs:
             tests/e2e/mobile-input-zoom.spec.ts \
             tests/e2e/mobile-chrome-occlusion.spec.ts \
             tests/e2e/showdown-beats.spec.ts \
+            tests/e2e/live-css-loader.spec.ts \
             tests/e2e/card-squeeze-visual-regression.spec.ts \
             tests/e2e/card-squeeze-mobile.spec.ts \
             tests/e2e/river-squeeze-interactive.spec.ts \
@@ -458,6 +560,7 @@ jobs:
             tests/e2e/footer-route.spec.ts \
             tests/e2e/mobile-lobby-chrome.spec.ts \
             tests/e2e/header-portrait-frame.spec.ts \
+            tests/e2e/production-csp-violations.spec.ts \
             tests/e2e/routes \
             --reporter=line,json --workers=2 --retries=0
           sweep_rc=$?; [ $sweep_rc -ne 0 ] && rc=$sweep_rc
@@ -494,6 +597,27 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: node scripts/ci/production-e2e-account.mjs cleanup
+
+      # The suite runs against an unversioned public route for long enough that
+      # another legitimate publisher may advance `current` while browsers are
+      # still running. A green result assembled across two bundles certifies
+      # neither one, so the exact SHA recorded before the first browser must
+      # still be live after fixture cleanup. There is deliberately no retry: a
+      # changed or unreadable final document is a non-verdict, not eventual
+      # success for the release this run claims to have tested.
+      - name: Prove production stayed on one exact release during certification
+        if: always() && steps.live.outputs.ready == 'true'
+        env:
+          EXPECTED_LIVE_SHA: ${{ steps.live.outputs.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_LIVE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          BODY="$(curl -fsS --max-time 20 -H 'Cache-Control: no-cache' \
+            "https://smarter.poker/hub/club-arena/build-info.json?final=$RANDOM")"
+          FINAL_SHA="$(printf '%s' "$BODY" \
+            | node scripts/ci/production-e2e-provenance.mjs unchanged "$EXPECTED_LIVE_SHA")"
+          [ "$FINAL_SHA" = "$EXPECTED_LIVE_SHA" ]
+          echo "Production stayed on \`$FINAL_SHA\` for the complete browser certificate." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the report when something is wrong on production
         # `failure()` is false when GitHub cancels a job at its time limit. The

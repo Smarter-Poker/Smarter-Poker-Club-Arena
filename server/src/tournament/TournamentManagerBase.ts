@@ -64,7 +64,9 @@ import {
   lastPlayableIndex,
 } from './blindEscalation.js';
 import { observedStepRatio } from './blindLadder.js';
-import { isSpinTournament } from './payoutStructure.js';
+import { isSpinTournament, parsePayoutStructure } from './payoutStructure.js';
+import { readTournamentPrizePool } from './tournamentPrizeContract.js';
+import { readPlayedMttLaunchProof } from './playedMttLaunchRecovery.js';
 import { secureRandomInt } from '../engine/CryptoRandom.js';
 import {
   DEFAULT_TOP_BOUNTY_PERCENT,
@@ -78,6 +80,11 @@ import {
   type MysteryBountyActivationMode,
   type MysteryBountyStage,
 } from './mysteryBountyActivation.js';
+import {
+  UNIT_CENTS_ASSET_NOT_READ,
+  tournamentUnitCents,
+  type TournamentUnitClubRow,
+} from './tournamentUnit.js';
 import { applySpinDrawPatch } from './spinDrawSync.js';
 import { proveSpinDrawWithParking } from './spinLaunchParking.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
@@ -364,6 +371,8 @@ export abstract class TournamentManagerBase {
    * resumeFromBreak (this one is over).
    */
   protected breakCountdownStarted: boolean = false;
+  private breakResumePersisting = false;
+  private breakResumeRetryTimer: ReturnType<typeof setTimeout> | null = null;
   // Hand-for-hand sync
   protected handForHandRePauseTimer: NodeJS.Timeout | null = null;
   // Late reg finalization
@@ -440,6 +449,14 @@ export abstract class TournamentManagerBase {
   protected spinRevealEmittedTableIds = new Set<string>();
   // Tournament metadata cache
   protected tournamentCache: any = null;
+  /**
+   * The three club columns the unit rule joins (`fn_ca_tournament_unit_cents`
+   * on the SQL side, `tournamentUnitCents` here), read once alongside the
+   * tournament row. Three states, each with its own name (CLAUDE.md 10.86):
+   * `undefined` - not read yet, or the read failed; `null` - read, and the
+   * tournament has no club; a row - read. See `tournamentUnit()`.
+   */
+  protected tournamentClub: TournamentUnitClubRow | null | undefined = undefined;
   // FIX 151: ChipRaceEngine for denomination removal on level-up
   protected chipRaceEngine: ChipRaceEngine = new ChipRaceEngine((event) => {
     console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] ChipRace: ${event.type}`);
@@ -636,6 +653,26 @@ export abstract class TournamentManagerBase {
     if (this.tournamentLeaseAuthorityIsCurrent()) return true;
     this.expireTournamentLeaseAuthority();
     return false;
+  }
+
+  /**
+   * True when this generation stood down on its own - it finished, its start
+   * or resume failed, or it was stopped - while its lease was still its own.
+   * GameServer's renewal pass still fences and retires such a manager, but it
+   * is not a lost lease and must not be charged to the RUNNING re-adoption
+   * budget (2026-09-11, performOwnedEngineLeaseProofRenewal).
+   *
+   * Read-only on purpose. isRunning() and hasCurrentTournamentLeaseAuthority()
+   * expire a lapsed proof while they read it, and expiry fences the manager,
+   * which sets the very flag read here. A manager in the between-hands
+   * shutdown drain is not running but still depends on its lease, so it has
+   * not stood down until the final shutdown fence.
+   */
+  stoodDownWithItsLeaseIntact(): boolean {
+    return (
+      !this.tournamentLeaseAuthorityExpired &&
+      (this.stopFenceApplied || (!this.running && !this.shutdownDrainFenceApplied))
+    );
   }
 
   /** Invalidate all async work synchronously before physical teardown awaits. */
@@ -1138,6 +1175,8 @@ export abstract class TournamentManagerBase {
     for (const timer of this.lifecycleIntervals) clearInterval(timer);
     this.lifecycleTimeouts.clear();
     this.lifecycleIntervals.clear();
+    this.breakResumeRetryTimer = null;
+    this.pendingBlindTransition = null;
   }
 
   /**
@@ -1483,6 +1522,12 @@ export abstract class TournamentManagerBase {
      * Every path now leaves a usable remaining time, and resumeFromBreak arms
      * unconditionally.
      */
+    if (this.pendingBlindTransition) {
+      if (this.blindTimer) this.clearLifecycleTimeout(this.blindTimer);
+      this.blindTimer = null;
+      this.savedBlindTimerRemaining = 1000;
+      return;
+    }
     const structureAtPause = this.tournamentCache?.blind_structure || [];
     // resolveBlindLevel, not a clamped index: a tournament past the end of its
     // structure is playing a DERIVED level, and clamping here would measure the
@@ -1765,29 +1810,67 @@ export abstract class TournamentManagerBase {
   }
 
   /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  WHAT UNIT DOES THIS TOURNAMENT PAY IN? (DIAMOND PHASE 8, 2026-09-14)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * Read the tournament's club - the same three columns
+   * `fn_ca_tournament_unit_cents` joins - so this manager can price a place in
+   * the unit the database will settle it in. Best effort, and stated as such:
+   * a read that fails leaves `tournamentClub` undefined and is reported, and
+   * `tournamentUnit()` answers null rather than a guess. Nothing here blocks a
+   * tournament from starting; the database ladder, not this cache, is the
+   * authority on what is paid (`fn_settle_tournament_places` stamps
+   * `tournament_players.prize` from its own unit-aware ladder).
+   */
+  protected async readTournamentClub(clubId: unknown): Promise<void> {
+    if (clubId == null) {
+      this.tournamentClub = null;
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('clubs')
+        .select('asset,is_platform,union_id')
+        .eq('id', clubId)
+        .maybeSingle();
+      if (error) throw error;
+      this.tournamentClub = (data as TournamentUnitClubRow | null) ?? null;
+    } catch (err) {
+      this.tournamentClub = undefined;
+      reportError(err, 'TournamentManagerBase.readTournamentClub');
+    }
+  }
+
+  /**
+   * The smallest amount this tournament can pay, in cents, or null when the
+   * club could not be read. Null is a distinct answer, not a cent: a caller
+   * that needs a number and gets null passes the named admission
+   * `UNIT_CENTS_ASSET_NOT_READ` and says so where it does.
+   */
+  protected tournamentUnit(): number | null {
+    return this.tournamentClub === undefined ? null : tournamentUnitCents(this.tournamentClub);
+  }
+
+  /**
    * Clear the persisted break flags. Split out of resumeFromBreak because a
    * tournament that ENDS on a break has to come off it too, and that path does
    * not resume anything.
    */
   protected async clearPersistedBreak(): Promise<void> {
-    try {
-      await supabase
-        .from('tournaments')
-        .update({ on_break: false, break_ends_at: null })
-        .eq('id', this.tournamentId);
-    } catch (err) {
-      reportError(err, 'TournamentManagerBase.resumeFromBreak_persist');
-    }
+    const { error } = await supabase
+      .from('tournaments')
+      .update({ on_break: false, break_ends_at: null })
+      .eq('id', this.tournamentId);
+    // PostgREST reports rejected writes as a result, not a thrown exception.
+    // The caller must retain its pause (or fail adoption) until acknowledged.
+    if (error) throw error;
   }
 
   /**
    * How often resumeFromBreak looks at the maintenance freeze again while it
-   * waits for the thaw, and the longest it waits before resuming anyway.
-   *
-   * The ceiling is for a freeze that never lifts, not for a slow thaw.
-   * Measured over the 177 breaks in engine_maintenance_break_log from
-   * 2026-09-02 to 2026-09-10, the thaw finished p50 3.2s, p99 13.0s and at
-   * worst 26.6s after the break's end; 90s is well clear of all of them.
+   * waits for the thaw, and when a slow thaw becomes reportable. Elapsed
+   * time cannot authorize releasing the break before the thaw commits.
    */
   static readonly MAINTENANCE_THAW_POLL_MS = 250;
   static readonly MAINTENANCE_THAW_WAIT_CEILING_MS = 90_000;
@@ -1797,24 +1880,25 @@ export abstract class TournamentManagerBase {
    * does only once the thaw has finished. Returns early when this lifecycle
    * ends (stop() drains this very job, so a shutdown or a lost lease must not
    * sit here until the ceiling) or when another caller has already taken this
-   * tournament off its break. Past the ceiling it reports, naming the event,
-   * and returns so the caller resumes.
+   * tournament off its break. Past the ceiling it reports once and retains
+   * the paused clock until the freeze actually lifts.
    */
   protected async waitForMaintenanceThaw(lifecycle: TournamentLifecycleToken): Promise<void> {
     const startedAt = Date.now();
+    let reportedSlowThaw = false;
     while (isMaintenanceFrozen() && this.onBreak && this.lifecycleIsCurrent(lifecycle)) {
       const waitedMs = Date.now() - startedAt;
-      if (waitedMs >= TournamentManagerBase.MAINTENANCE_THAW_WAIT_CEILING_MS) {
+      if (!reportedSlowThaw && waitedMs >= TournamentManagerBase.MAINTENANCE_THAW_WAIT_CEILING_MS) {
+        reportedSlowThaw = true;
         reportError(
           new Error(
             `[Tournament:${this.tournamentId}] its break ended but the maintenance freeze was ` +
-              `still on ${Math.round(waitedMs / 1000)}s later; resuming without the thaw, so ` +
-              'its level_started_at may be credited for the break twice'
+              `still on ${Math.round(waitedMs / 1000)}s later; retaining the paused clock ` +
+              'until the maintenance thaw commits'
           ),
           'TournamentManagerBase.resumeFromBreak_thaw_wait_ceiling',
           { tournamentId: this.tournamentId }
         );
-        return;
       }
       await new Promise<void>((resolve) => {
         const poll = setTimeout(resolve, TournamentManagerBase.MAINTENANCE_THAW_POLL_MS);
@@ -1826,6 +1910,8 @@ export abstract class TournamentManagerBase {
   /** Resume from synchronized break: restart blind timer with remaining time */
   async resumeFromBreak(): Promise<void> {
     if (!this.onBreak) return;
+    const lifecycle = this.running ? this.captureLifecycleToken() : null;
+    if (this.running && !lifecycle) return;
     /**
      * A RUNNING TOURNAMENT COMES OFF ITS BREAK AFTER THE THAW (2026-09-10).
      *
@@ -1856,14 +1942,10 @@ export abstract class TournamentManagerBase {
      * does not wait at all: it only has flags to clear, exactly as before.
      */
     if (this.running && isMaintenanceFrozen()) {
-      const lifecycle = this.captureLifecycleToken();
       if (lifecycle) await this.waitForMaintenanceThaw(lifecycle);
       // Everything the wait may have changed is read again.
       if (!this.onBreak || !lifecycle || !this.lifecycleIsCurrent(lifecycle)) return;
     }
-    this.onBreak = false;
-    this.breakCountdownStarted = false;
-
     /**
      * A TOURNAMENT THAT ENDS ON A BREAK STILL HAS TO COME OFF IT (2026-08-25).
      *
@@ -1879,12 +1961,37 @@ export abstract class TournamentManagerBase {
      * broadcasting, un-pausing engines, re-arming the level clock — is skipped
      * when the tournament is no longer running.
      */
-    await this.clearPersistedBreak();
+    // Keep the hold throughout persistence. Concurrent deadline/adoption calls
+    // must not release twice while the durable clear is still in flight.
+    if (this.breakResumePersisting) return;
+    this.breakResumePersisting = true;
+    try {
+      await this.clearPersistedBreak();
+    } catch (error) {
+      reportError(error, 'TournamentManagerBase.resumeFromBreak_persist');
+      if (lifecycle && this.lifecycleIsCurrent(lifecycle) && !this.breakResumeRetryTimer) {
+        this.breakResumeRetryTimer = this.setLifecycleTimeout(() => {
+          this.breakResumeRetryTimer = null;
+          return this.resumeFromBreak();
+        }, 1_000);
+      }
+      return;
+    } finally {
+      this.breakResumePersisting = false;
+    }
+    if (lifecycle && !this.lifecycleIsCurrent(lifecycle)) return;
+    if (this.breakResumeRetryTimer) {
+      this.clearLifecycleTimeout(this.breakResumeRetryTimer);
+      this.breakResumeRetryTimer = null;
+    }
+    this.onBreak = false;
+    this.breakCountdownStarted = false;
     if (!this.running) return;
 
     console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] BREAK ENDED - resuming play`);
 
     await this.broadcast('break_ended', { level: this.currentLevel });
+    if (!lifecycle || !this.lifecycleIsCurrent(lifecycle)) return;
 
     /* Undo the pause taken in pauseForBreak only when no durable add-on break
        is still holding it. This is the exact Free Buy boundary: the :55
@@ -1945,10 +2052,15 @@ export abstract class TournamentManagerBase {
     if (this.pendingAddOnPeriod && !this.addOnPeriodTriggered) {
       this.pendingAddOnPeriod = false;
       await this.triggerAddOnPeriod();
+      if (!this.lifecycleIsCurrent(lifecycle)) return;
     }
     // Tables may all have parked during the break. Recheck after any deferred
     // add-on has acquired its own hold; no new table completion edge is due.
     this.advanceHandForHandBarrier();
+    // Consolidation or elimination may have yielded while every table was
+    // parked. A field split into single-player tables cannot deal the next
+    // hand that would otherwise wake this work; the break end is that edge.
+    this.requestEliminationSweep('break_ended');
   }
 
   /**
@@ -2195,8 +2307,12 @@ export abstract class TournamentManagerBase {
       return false;
     }
 
-    const finalPool = Number(result.prize_pool);
-    if (!Number.isFinite(finalPool) || !Array.isArray(result.payout_structure)) {
+    const finalPool = readTournamentPrizePool(result.prize_pool);
+    if (
+      finalPool === null ||
+      !Array.isArray(result.payout_structure) ||
+      !parsePayoutStructure(result.payout_structure)
+    ) {
       reportError(
         new Error('entry-window authority returned an unreadable final pool or payout structure'),
         'Tournament.entry_window_close_result_unreadable'
@@ -2336,7 +2452,12 @@ export abstract class TournamentManagerBase {
         // knockouts. fn_mystery_bounty_seed subtracts this before checking
         // the inventory sum; not subtracting it here is what refused every
         // seed this platform has ever attempted. See mysteryPoolCents.
-        poolCentsFromNumeric(fresh.bounty_pool_paid ?? 0)
+        poolCentsFromNumeric(fresh.bounty_pool_paid ?? 0),
+        // This manager has not read the tournament's club, so it cannot say
+        // whether the event pays in cents or in whole Diamonds. The named
+        // constant is that admission; it is a cent because every tournament
+        // that can currently exist is a chip tournament. See tournamentUnit.ts.
+        UNIT_CENTS_ASSET_NOT_READ
       );
     } catch (err) {
       // A bounty pool that is not a whole number of cents means something
@@ -2368,6 +2489,44 @@ export abstract class TournamentManagerBase {
       mysteryPoolCents: poolCents,
     });
     if (!decision.activate) return;
+
+    /* A BUST BELONGS TO THE PHASE ITS HAND WAS PLAYED IN (2026-09-11,
+       20260911094503). A head earned before this moment but not yet
+       recorded is owed from the regular half, and fn_mystery_bounty_seed
+       keeps it out of the chests: seeded without it, the inventory would be
+       larger than the pool the seed accepts and it would refuse with
+       inventory_mismatch until the claim backlog cleared. Read the same
+       figure the seed reads, and build the inventory the seed will accept.
+       Unknown is not zero - an unreadable figure waits for the next pass. */
+    const { data: unrecordedRaw, error: unrecordedErr } = await supabase.rpc(
+      'fn_mystery_bounty_unrecorded_head_cents',
+      { p_tournament_id: this.tournamentId }
+    );
+    const unrecordedCents =
+      unrecordedRaw === null || unrecordedRaw === undefined ? Number.NaN : Number(unrecordedRaw);
+    if (unrecordedErr || !Number.isSafeInteger(unrecordedCents) || unrecordedCents < 0) {
+      reportError(
+        unrecordedErr ??
+          new Error(`unrecorded head figure is not whole cents: ${String(unrecordedRaw)}`),
+        'Tournament.mystery_bounty_unrecorded_heads_unreadable'
+      );
+      return;
+    }
+    if (unrecordedCents > 0) {
+      try {
+        poolCents = mysteryPoolCents(
+          poolCentsFromNumeric(fresh.bounty_pool),
+          fresh.mystery_bounty_pool_percent,
+          fresh.mystery_bounty_regular_pool_percent,
+          poolCentsFromNumeric(fresh.bounty_pool_paid ?? 0) + unrecordedCents,
+          // Same admission as the seed above: the club was never read here.
+          UNIT_CENTS_ASSET_NOT_READ
+        );
+      } catch (err) {
+        reportError(err, 'Tournament.mystery_bounty_pool_not_in_cents');
+        return;
+      }
+    }
 
     this.mysteryBountySeeding = true;
     try {
@@ -3133,6 +3292,64 @@ export abstract class TournamentManagerBase {
     }
   }
 
+  /** Resume a dealt MTT whose original launch did not finish recording. */
+  private async resumePlayedMttLaunch(
+    lifecycle: TournamentLifecycleToken,
+    tournament: any
+  ): Promise<boolean> {
+    if (
+      tournament.status !== 'REGISTERING' ||
+      tournament.prize_pool_finalized !== true ||
+      !['MTT', 'SATELLITE'].includes(String(tournament.tournament_type).toUpperCase()) ||
+      !(Number(tournament.max_players) > 2) ||
+      isSpinTournament(tournament)
+    )
+      return false;
+
+    // NULL asks the existing proof to report the precise first-hand anchor.
+    // It remains a refusal until the same authority accepts that exact value.
+    const { data: anchor, error: anchorError } = await supabase.rpc(
+      'fn_prove_played_launch_recovery',
+      { p_tournament_id: this.tournamentId, p_started_at: null }
+    );
+    this.assertLifecycleCurrent(lifecycle);
+    if (anchorError) throw new Error(`Played MTT proof unreadable: ${anchorError.message}`);
+    if (anchor?.ok === false && anchor.reason === 'no_hand_was_dealt') return false;
+    const firstHandAt = anchor?.first_hand_at;
+    if (
+      anchor?.ok !== false ||
+      anchor.reason !== 'the_receipt_is_not_the_deal_that_happened' ||
+      typeof firstHandAt !== 'string' ||
+      !Number.isFinite(Date.parse(firstHandAt))
+    ) {
+      throw new Error('Played MTT first-hand anchor was not proven');
+    }
+    const { data: proof, error: proofError } = await supabase.rpc(
+      'fn_prove_played_launch_recovery',
+      { p_tournament_id: this.tournamentId, p_started_at: firstHandAt }
+    );
+    this.assertLifecycleCurrent(lifecycle);
+    if (proofError) throw new Error(`Played MTT proof unreadable: ${proofError.message}`);
+    readPlayedMttLaunchProof(proof, firstHandAt);
+
+    // Preserve PostgreSQL microseconds: converting this anchor through a JS
+    // Date would make the receipt differ from the hand the SQL proof checks.
+    const claim = await this.beginTournamentLaunch(lifecycle, nodeCrypto.randomUUID(), firstHandAt);
+    this.assertLifecycleCurrent(lifecycle);
+    if (!claim) throw new Error('Played MTT launch claim was not confirmed');
+    if (
+      !claim.completed &&
+      !(await this.completeTournamentLaunch(lifecycle, claim.launchId, claim.startedAtIso))
+    ) {
+      throw new Error('Played MTT launch completion was not confirmed');
+    }
+    this.assertLifecycleCurrent(lifecycle);
+    // Join this lifecycle directly. Public resume() would join start()'s own
+    // pending operation, and fresh setup would reset a field that already played.
+    await this.resumeLifecycle(lifecycle);
+    return true;
+  }
+
   private async startLifecycle(lifecycle: TournamentLifecycleToken): Promise<void> {
     console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] Starting...`);
 
@@ -3158,11 +3375,15 @@ export abstract class TournamentManagerBase {
       }
 
       this.tournamentCache = tournament;
+      await this.readTournamentClub(tournament.club_id);
+      this.assertLifecycleCurrent(lifecycle);
 
       this.prizePoolFinalized = tournament.prize_pool_finalized || false;
       this.tournamentEntryWindowClosed = this.prizePoolFinalized;
       this.tournamentEntryCloseAnnounced = false;
       this.tournamentEntryRepricePending = false;
+      if (await this.resumePlayedMttLaunch(lifecycle, tournament)) return;
+      this.assertLifecycleCurrent(lifecycle);
       // Adopt whatever the row says the mystery phase is. A redeploy
       // mid-tournament must not re-seed an inventory that already exists.
       this.mysteryBountyStage =
@@ -3697,7 +3918,9 @@ export abstract class TournamentManagerBase {
         // RUNNING because the blinds, payout display and reveal anchor are
         // required by every engine/client copy.
         const spinPresentationPatch = {
-          is_premium_spin: spinMultiplier >= 100,
+          // is_premium_spin belongs to the funded entry contract, not the
+          // drawn multiplier. Changing it after a 100x draw is rejected by
+          // the immutable economic-contract guard and prevents RUNNING.
           blind_structure: spinBlinds,
           payout_structure: fundedSpin.payouts,
           /* THE ONE NUMBER DAN ASKS ABOUT, WRITTEN DOWN (2026-08-31 audit).
@@ -4305,6 +4528,8 @@ export abstract class TournamentManagerBase {
       }
 
       this.tournamentCache = tournament;
+      await this.readTournamentClub(tournament.club_id);
+      this.assertLifecycleCurrent(lifecycle);
       this.prizePoolFinalized = tournament.prize_pool_finalized || false;
       this.tournamentEntryWindowClosed = this.prizePoolFinalized;
       this.tournamentEntryCloseAnnounced = false;
@@ -4383,8 +4608,8 @@ export abstract class TournamentManagerBase {
         // An interrupted or failed level fan-out can leave tables on different
         // blinds. Restore every row from the durable tournament level before
         // admitting any dealer; a failed correction must not start a split field.
-        const restoredLevel = this.resolveBlindLevel(
-          tournament.blind_structure || [],
+        const restoredLevel = this.resolveCommittedBlindLevel(
+          tournament,
           tournament.current_level || 0
         );
         if (restoredLevel) {
@@ -5467,27 +5692,13 @@ export abstract class TournamentManagerBase {
 
     for (let i = alreadyHave; i < alreadyHave + tablesToCreate; i++) {
       const blindStructure = tournament.blind_structure || [];
-      /**
-       * THE LEVEL THIS TABLE IS BEING BORN INTO, NOT LEVEL ONE (2026-09-01).
-       *
-       * This loop runs whenever a tournament needs MORE tables than it has --
-       * late registration, a rebalance -- which by definition happens after
-       * the clock has started. It stamped `stakes` from blindStructure[0]
-       * regardless, so a table created at level 8 advertised the level 1
-       * blinds for the rest of its life. 197 tables across 60 tournaments in
-       * the last three days were created after their tournament started, and
-       * every one of them carries level 1.
-       *
-       * `stakes` is a display string (the lobby reads it; the engine takes its
-       * blinds from the tournament level, never from this row), and the lobby
-       * shows buy-in rather than stakes on a tournament row -- so this is a
-       * lie that is currently hard to see rather than one anybody has
-       * complained about. It is still a lie, and it is the last place in this
-       * file that reached into the structure by index instead of asking
-       * resolveBlindLevel, which is the closing hazard Phase 2.3 went through
-       * the rest of the file to remove.
-       */
-      const firstLevel = this.resolveBlindLevel(blindStructure, this.currentLevel) ||
+      // Recovery uses the committed snapshot when present. The insertion
+      // trigger also serializes with a concurrent level publication and copies
+      // its final blinds, even if this manager prepared the table earlier.
+      const firstLevel = this.resolveCommittedBlindLevel(
+        tournament,
+        tournament.current_level ?? this.currentLevel
+      ) ||
         blindStructure[0] || { smallBlind: 10, bigBlind: 20 };
 
       const { data: table, error } = await supabase
@@ -5781,6 +5992,30 @@ export abstract class TournamentManagerBase {
     return this.capLevelToTournamentChips(escalated);
   }
 
+  /** Keep the committed field snapshot through recovery and later table births. */
+  protected resolveCommittedBlindLevel(tournament: any, index: number): any {
+    const derived = this.resolveBlindLevel(tournament.blind_structure || [], index);
+    const state = tournament.blind_level_state;
+    if (state == null) return derived; // Existing events are adopted on their next transition.
+    const amounts = [state.small_blind, state.big_blind, state.ante];
+    if (
+      state.index !== index ||
+      !amounts.every(
+        (n) => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 10_000_000
+      ) ||
+      state.big_blind <= 0 ||
+      state.small_blind > state.big_blind
+    ) {
+      throw new Error('Committed tournament blind snapshot is invalid');
+    }
+    return {
+      ...derived,
+      smallBlind: state.small_blind,
+      bigBlind: state.big_blind,
+      ante: state.ante,
+    };
+  }
+
   /**
    * ═══════════════════════════════════════════════════════════════════════════
    *  NO BLIND MAY EXCEED THE CHIPS THAT EXIST (2026-08-31)
@@ -5860,6 +6095,13 @@ export abstract class TournamentManagerBase {
   protected rebuysGrantedForChipCap = 0;
   protected addonsGrantedForChipCap = 0;
 
+  private pendingBlindTransition: {
+    previousLevel: number;
+    nextLevel: number;
+    level: any;
+  } | null = null;
+  private blindTransitionInFlight = false;
+
   protected startBlindTimer(blindStructure: any[], remainingOverrideMs?: number): void {
     if (blindStructure.length === 0) return;
     // Never leave two level clocks running for the same tournament. Callers
@@ -5876,13 +6118,16 @@ export abstract class TournamentManagerBase {
     const currentLevelData =
       this.resolveBlindLevel(blindStructure, this.currentLevel) || blindStructure[0];
     const durationMs = this.levelDurationMs(currentLevelData);
-    const armMs =
-      remainingOverrideMs !== undefined
+    const pending = this.pendingBlindTransition;
+    const armMs = pending
+      ? 1000
+      : remainingOverrideMs !== undefined
         ? Math.min(Math.max(1000, remainingOverrideMs), durationMs)
         : durationMs;
     // Back-date the in-memory start so break pause/resume math stays correct
-    this.blindTimerStartedAt = Date.now() - (durationMs - armMs);
+    if (!pending) this.blindTimerStartedAt = Date.now() - (durationMs - armMs);
     this.blindTimer = this.setLifecycleTimeout(() => {
+      this.blindTimer = null;
       // Without the catch, a throw inside advanceBlindLevel becomes an
       // unhandled rejection AND the level silently fails to advance with no
       // trace of why.
@@ -5892,6 +6137,9 @@ export abstract class TournamentManagerBase {
         );
       });
     }, armMs);
+    // A retry is still the previous published level. Never overwrite a possibly
+    // committed new level's anchor with the old level's one-second retry clock.
+    if (pending) return;
     // Persist the level clock (wall-clock start of THIS level's remaining
     // window) so a restart resumes the level mid-flight. Detached from the
     // caller, but still drained by this exact lifecycle before replacement.
@@ -5927,293 +6175,298 @@ export abstract class TournamentManagerBase {
    */
   protected async advanceBlindLevel(blindStructure: any[]): Promise<void> {
     const lifecycle = this.lifecycleEpoch.current();
-    {
-      {
-        if (!this.lifecycleIsCurrent(lifecycle)) return;
-
-        /**
-         * ═══════════════════════════════════════════════════════════════════
-         *  NO LEVEL ADVANCES DURING A BREAK (2026-08-25)
-         * ═══════════════════════════════════════════════════════════════════
-         *
-         * A break is supposed to stop the level clock, and the only mechanism
-         * that did so was pauseForBreak clearing `blindTimer`. That covers a
-         * timer already armed. It does NOT cover a timer armed AFTER the break
-         * began — and the tail of this very method arms one unconditionally.
-         *
-         * suspendLevelClock already documents the window: `blindTimer is
-         * legitimately null for seconds at a time: advanceBlindLevel consumes
-         * it on fire and does not re-arm until it has awaited a blind write per
-         * table, the current_level persist, the level_up broadcast and possibly
-         * a prize-pool finalization. A :55 break inside that window is exactly
-         * the case that killed the clock.` That fix taught suspendLevelClock to
-         * save a full level rather than 0. It left the other half open: the
-         * in-flight transition then went on to arm a LIVE full-length timer,
-         * which ran through the entire break.
-         *
-         * A break is five minutes plus up to two minutes of last-hand grace.
-         * Every turbo, hyper-turbo and Spin level is shorter than that, so the
-         * armed timer FIRES mid-break: the blinds jump while the field is
-         * behind the break overlay, this method arms yet another timer, and the
-         * level can advance TWICE inside one break. resumeFromBreak then hands
-         * the level that just advanced the full duration saved at :55, so the
-         * clock is reset on top of it.
-         *
-         * Two guards, one at each end:
-         *
-         *   HERE — a level that comes due during a break is not advanced. It is
-         *   owed, so 1 s is handed to resumeFromBreak (startBlindTimer clamps
-         *   the override to at least 1000 ms) and the level goes up the instant
-         *   play resumes, rather than during the break or not at all.
-         *
-         *   AT THE TAIL — if a break began while this transition was in flight,
-         *   the next level's full duration is handed to resumeFromBreak instead
-         *   of being armed as a live timer.
-         */
-        if (this.isOnBreak()) {
-          this.savedBlindTimerRemaining = 1000;
-          console.log(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Level was due during a break - holding it until play resumes`
-          );
-          return;
-        }
-
-        const prevLevel = this.currentLevel;
-        this.currentLevel++;
-
-        /**
-         * ═══════════════════════════════════════════════════════════════════
-         *  STRUCTURE BREAK ROWS ARE STEPPED OVER, NOT SAT ON (2026-08-23)
-         * ═══════════════════════════════════════════════════════════════════
-         *
-         * Dan: breaks are the :55 of the hour and nothing else.
-         *
-         * Every default structure nonetheless carries isBreak rows — hyperTurbo
-         * at indices 7, 13, 19 and 25, turbo and the rest on the same cadence —
-         * and this used to be handled further down as:
-         *
-         *     if (level.isBreak) { this.startBlindTimer(blindStructure); return; }
-         *
-         * which was the worst of both worlds. It armed a timer for the break
-         * row's five minutes and returned, so for those five minutes: no table
-         * was paused and no break screen was shown (players simply kept
-         * playing), the blinds stayed at the PREVIOUS level, `current_level`
-         * was never persisted — so the SQL late-registration gate read a stale
-         * level for the whole window — and the late-reg close and add-on
-         * trigger below were skipped entirely. A break row sitting on the
-         * cutoff level could swallow the add-on window for good.
-         *
-         * Break rows are now consumed with no time cost: step past them to the
-         * next playable level and run one complete transition. This runs
-         * BEFORE the auto-escalation check so that walking off the end through
-         * trailing break rows escalates normally instead of clamping.
-         */
-        while (
-          this.currentLevel < blindStructure.length &&
-          blindStructure[this.currentLevel]?.isBreak
-        ) {
-          this.currentLevel++;
-        }
-
-        /**
-         * PAST THE END OF THE STRUCTURE, THE LEVEL IS DERIVED (2026-08-27).
-         *
-         * This used to compute the escalated level here and then
-         * `blindStructure.push(autoLevel)` it onto the cached array — which
-         * moved the very anchor the escalation factor is measured from, so
-         * after a restart the blinds went up 32x, then 1024x, then clamped at
-         * ten million within three levels. resolveBlindLevel carries the whole
-         * derivation and the full defect note; the array is never mutated
-         * again, which is what makes the answer identical across restarts.
-         */
-        const level = this.resolveBlindLevel(blindStructure, this.currentLevel);
-        if (!level) return;
-        if (level.autoEscalated === true) {
-          console.log(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Auto-escalated blinds (level ${this.currentLevel}, structure has ${blindStructure.length}): ${level.smallBlind}/${level.bigBlind} ante ${level.ante}`
-          );
-        }
-
+    if (!this.lifecycleIsCurrent(lifecycle) || this.blindTransitionInFlight) return;
+    this.blindTransitionInFlight = true;
+    let committed: { level: any; startedAt: number } | null = null;
+    try {
+      /**
+       * ═══════════════════════════════════════════════════════════════════
+       *  NO LEVEL ADVANCES DURING A BREAK (2026-08-25)
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * A break is supposed to stop the level clock, and the only mechanism
+       * that did so was pauseForBreak clearing `blindTimer`. That covers a
+       * timer already armed. It does NOT cover a timer armed AFTER the break
+       * began — and the tail of this very method arms one unconditionally.
+       *
+       * suspendLevelClock already documents the window: `blindTimer is
+       * legitimately null for seconds at a time: advanceBlindLevel consumes
+       * it on fire and does not re-arm until it has awaited a blind write per
+       * table, the current_level persist, the level_up broadcast and possibly
+       * a prize-pool finalization. A :55 break inside that window is exactly
+       * the case that killed the clock.` That fix taught suspendLevelClock to
+       * save a full level rather than 0. It left the other half open: the
+       * in-flight transition then went on to arm a LIVE full-length timer,
+       * which ran through the entire break.
+       *
+       * A break is five minutes plus up to two minutes of last-hand grace.
+       * Every turbo, hyper-turbo and Spin level is shorter than that, so the
+       * armed timer FIRES mid-break: the blinds jump while the field is
+       * behind the break overlay, this method arms yet another timer, and the
+       * level can advance TWICE inside one break. resumeFromBreak then hands
+       * the level that just advanced the full duration saved at :55, so the
+       * clock is reset on top of it.
+       *
+       * Two guards, one at each end:
+       *
+       *   HERE — a level that comes due during a break is not advanced. It is
+       *   owed, so 1 s is handed to resumeFromBreak (startBlindTimer clamps
+       *   the override to at least 1000 ms) and the level goes up the instant
+       *   play resumes, rather than during the break or not at all.
+       *
+       *   AT THE TAIL — if a break began while this transition was in flight,
+       *   the next level's full duration is handed to resumeFromBreak instead
+       *   of being armed as a live timer.
+       */
+      if (this.isOnBreak()) {
+        this.savedBlindTimerRemaining = 1000;
         console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Level ${this.currentLevel}: ${level.smallBlind}/${level.bigBlind} ante ${level.ante || 0}`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Level was due during a break - holding it until play resumes`
         );
+        return;
+      }
 
-        for (const tableId of this.tableEngines.keys()) {
-          // FIX: Clamp values before DB write to prevent numeric field overflow
-          const MAX_DB_BLIND = 10_000_000;
-          const safeSmallBlind = Math.min(level.smallBlind || 0, MAX_DB_BLIND);
-          const safeBigBlind = Math.min(level.bigBlind || 0, MAX_DB_BLIND);
-          const safeAnte = Math.min(level.ante || 0, MAX_DB_BLIND);
-          const { error: blindErr } = await supabase
-            .from('tables')
-            .update({
-              small_blind: safeSmallBlind,
-              big_blind: safeBigBlind,
-              ante: safeAnte,
-              /**
-               * KEEP `stakes` HONEST (2026-08-23).
-               *
-               * createTablesAndSeatPlayers writes `stakes` once, as the level-1
-               * blinds, and this update never touched it — so the denormalised
-               * string stayed frozen at the opening level for the life of the
-               * tournament while the numeric columns advanced beside it.
-               * Measured on "Prime Time Main Event (NLH) - Table 4": stakes
-               * '25/50' against small_blind 750 / big_blind 1500. Every reader
-               * that trusts `stakes` (the table masthead, the lobby rows, and
-               * therefore every seat's BB depth badge) was reporting the wrong
-               * level's blinds, and stack depths thirty times too deep.
-               */
-              stakes: `${safeSmallBlind}/${safeBigBlind}`,
-            })
-            .eq('id', tableId);
-          if (!this.lifecycleIsCurrent(lifecycle)) return;
-          if (blindErr) {
-            const blindMsg = blindErr.message?.includes('<!DOCTYPE html>')
-              ? 'Cloudflare/Supabase HTML Error (502/504)'
-              : blindErr.message || JSON.stringify(blindErr) || 'Unknown error';
-            reportError(
-              new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Blind update failed for table ${tableId.slice(0, 8)}: ${blindMsg}`
-              ),
-              `Tournament.${this.tournamentId.slice(0, 8)}.blind_update_failed_for_table`
-            );
-          }
+      const prevLevel = this.pendingBlindTransition?.previousLevel ?? this.currentLevel;
+      let nextLevel = this.pendingBlindTransition?.nextLevel ?? this.currentLevel + 1;
 
-          // Phase X5 (2026-04-28): emit level_up discrete event so clients
-          // can trigger the level-up popup + sound + haptic per Bible V8 §5
-          // (UI/Popup/Animation/Sound/Haptic Doctrine). Without this, clients
-          // must infer level escalation from a state-snapshot diff, which
-          // violates Law 1.16 Real-Time Delivery.
-          try {
-            tableStateHub.emitEvent(tableId, {
-              type: 'level_up',
-              table_id: tableId,
-              tournament_id: this.tournamentId,
-              new_level: this.currentLevel,
-              previous_level: prevLevel,
-              small_blind: level.smallBlind,
-              big_blind: level.bigBlind,
-              ante: level.ante || 0,
-              duration_minutes: this.levelDurationMs(level) / 60000,
-              timestamp: Date.now(),
-            });
-          } catch {
-            /* hub broadcast failure is non-fatal */
-          }
+      /**
+       * ═══════════════════════════════════════════════════════════════════
+       *  STRUCTURE BREAK ROWS ARE STEPPED OVER, NOT SAT ON (2026-08-23)
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * Dan: breaks are the :55 of the hour and nothing else.
+       *
+       * Every default structure nonetheless carries isBreak rows — hyperTurbo
+       * at indices 7, 13, 19 and 25, turbo and the rest on the same cadence —
+       * and this used to be handled further down as:
+       *
+       *     if (level.isBreak) { this.startBlindTimer(blindStructure); return; }
+       *
+       * which was the worst of both worlds. It armed a timer for the break
+       * row's five minutes and returned, so for those five minutes: no table
+       * was paused and no break screen was shown (players simply kept
+       * playing), the blinds stayed at the PREVIOUS level, `current_level`
+       * was never persisted — so the SQL late-registration gate read a stale
+       * level for the whole window — and the late-reg close and add-on
+       * trigger below were skipped entirely. A break row sitting on the
+       * cutoff level could swallow the add-on window for good.
+       *
+       * Break rows are now consumed with no time cost: step past them to the
+       * next playable level and run one complete transition. This runs
+       * BEFORE the auto-escalation check so that walking off the end through
+       * trailing break rows escalates normally instead of clamping.
+       */
+      while (nextLevel < blindStructure.length && blindStructure[nextLevel]?.isBreak) {
+        nextLevel++;
+      }
+
+      /**
+       * PAST THE END OF THE STRUCTURE, THE LEVEL IS DERIVED (2026-08-27).
+       *
+       * This used to compute the escalated level here and then
+       * `blindStructure.push(autoLevel)` it onto the cached array — which
+       * moved the very anchor the escalation factor is measured from, so
+       * after a restart the blinds went up 32x, then 1024x, then clamped at
+       * ten million within three levels. resolveBlindLevel carries the whole
+       * derivation and the full defect note; the array is never mutated
+       * again, which is what makes the answer identical across restarts.
+       */
+      const resolved =
+        this.pendingBlindTransition?.level ?? this.resolveBlindLevel(blindStructure, nextLevel);
+      if (!resolved) throw new Error('Next blind level is missing');
+      const level = {
+        ...resolved,
+        smallBlind: Math.min(resolved.smallBlind ?? 0, 10_000_000),
+        bigBlind: Math.min(resolved.bigBlind ?? 0, 10_000_000),
+        ante: Math.min(resolved.ante ?? 0, 10_000_000),
+      };
+      this.pendingBlindTransition ??= {
+        previousLevel: prevLevel,
+        nextLevel,
+        level,
+      };
+      if (level.autoEscalated === true) {
+        console.log(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Auto-escalated blinds (level ${nextLevel}, structure has ${blindStructure.length}): ${level.smallBlind}/${level.bigBlind} ante ${level.ante}`
+        );
+      }
+
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] Level ${nextLevel}: ${level.smallBlind}/${level.bigBlind} ante ${level.ante || 0}`
+      );
+
+      // One fenced transaction commits the entire field and its clock. The
+      // returned anchor is authoritative on retry, including a maintenance
+      // shift applied after a committed response was lost.
+      const generation = this.getTournamentLeaseGeneration();
+      if (!generation) throw new Error('Blind publication requires the active tournament lease');
+      const smallBlind = Math.min(level.smallBlind ?? 0, 10_000_000);
+      const bigBlind = Math.min(level.bigBlind ?? 0, 10_000_000);
+      const ante = Math.min(level.ante ?? 0, 10_000_000);
+      const { data: receipt, error: levelErr } = await supabase.rpc(
+        'fn_publish_tournament_blind_level',
+        {
+          p_tournament_id: this.tournamentId,
+          p_lease_generation: generation,
+          p_previous_level: prevLevel,
+          p_next_level: nextLevel,
+          p_small_blind: smallBlind,
+          p_big_blind: bigBlind,
+          p_ante: ante,
         }
+      );
+      if (!this.lifecycleIsCurrent(lifecycle)) return;
+      if (levelErr) throw new Error(`Blind publication failed: ${levelErr.message}`);
+      const state = receipt?.blind_level_state;
+      const levelStartedAt =
+        typeof receipt?.level_started_at === 'string' ? Date.parse(receipt.level_started_at) : NaN;
+      if (
+        receipt?.ok !== true ||
+        receipt.tournament_id !== this.tournamentId ||
+        receipt.current_level !== nextLevel ||
+        state?.index !== nextLevel ||
+        state.small_blind !== smallBlind ||
+        state.big_blind !== bigBlind ||
+        state.ante !== ante ||
+        !Number.isFinite(levelStartedAt)
+      )
+        throw new Error('Blind publication did not return a matching committed level');
+      this.currentLevel = nextLevel;
+      this.blindTimerStartedAt = levelStartedAt;
+      if (this.tournamentCache) {
+        this.tournamentCache.current_level = nextLevel;
+        this.tournamentCache.blind_level_state = state;
+        this.tournamentCache.level_started_at = new Date(levelStartedAt).toISOString();
+      }
+      this.pendingBlindTransition = null;
+      committed = { level, startedAt: levelStartedAt };
+      // Announce only after every table and the tournament accepted this level.
+      for (const tableId of this.tableEngines.keys()) {
+        // Phase X5 (2026-04-28): emit level_up discrete event so clients
+        // can trigger the level-up popup + sound + haptic per Bible V8 §5
+        // (UI/Popup/Animation/Sound/Haptic Doctrine). Without this, clients
+        // must infer level escalation from a state-snapshot diff, which
+        // violates Law 1.16 Real-Time Delivery.
+        try {
+          tableStateHub.emitEvent(tableId, {
+            type: 'level_up',
+            table_id: tableId,
+            tournament_id: this.tournamentId,
+            new_level: this.currentLevel,
+            previous_level: prevLevel,
+            small_blind: level.smallBlind,
+            big_blind: level.bigBlind,
+            ante: level.ante || 0,
+            duration_minutes: this.levelDurationMs(level) / 60000,
+            timestamp: Date.now(),
+          });
+        } catch {
+          /* hub broadcast failure is non-fatal */
+        }
+      }
 
-        // Publish the new level and its clock anchor together. A replacement
-        // manager must never time this level from the previous level's start.
-        const levelStartedAt = Date.now();
-        this.blindTimerStartedAt = levelStartedAt;
-        const { error: levelErr } = await supabase
-          .from('tournaments')
-          .update({
-            current_level: this.currentLevel,
-            level_started_at: new Date(levelStartedAt).toISOString(),
-          })
-          .eq('id', this.tournamentId);
-        if (!this.lifecycleIsCurrent(lifecycle)) return;
-        if (levelErr)
-          reportError(
-            new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Level persist failed: ${levelErr.message}`
-            ),
-            `Tournament.${this.tournamentId.slice(0, 8)}.level_persist_failed`
-          );
-
-        // FIX-B (chip race) 2026-07-19 — DISABLED. Two independent audits found
-        // this block actively corrupts chip integrity and it has no purpose in a
-        // digital engine (stacks are exact integers; there are no physical chips
-        // to "color up"). The prior logic (a) triggered on `smallBlind >
-        // prevSmallBlind`, i.e. almost EVERY level, treating the small blind as a
-        // chip denomination (it is not) and running `stack % smallBlind` which
-        // mints/destroys chips each level; and (b) wrote the raced stack back
-        // scoped ONLY by user_id (not table_id), overwriting the SAME user's
-        // stack at any other cash/tournament table — cross-table chip corruption.
-        // Re-enable only behind a real denomination-removal schedule + a
-        // table-scoped write-back + a chips-in-play conservation assertion.
-        const CHIP_RACE_ENABLED = false;
-        const prevLevelData =
-          this.resolveBlindLevel(blindStructure, prevLevel) || blindStructure[0];
-        const prevSmallBlind = prevLevelData?.smallBlind || level.smallBlind;
-        if (CHIP_RACE_ENABLED && level.smallBlind > prevSmallBlind) {
-          try {
-            // Gather all tournament player stacks across all tables
-            const playerStacks = new Map<string, number>();
-            for (const tableId of this.tableEngines.keys()) {
-              const { data: seats } = await supabase
+      // FIX-B (chip race) 2026-07-19 — DISABLED. Two independent audits found
+      // this block actively corrupts chip integrity and it has no purpose in a
+      // digital engine (stacks are exact integers; there are no physical chips
+      // to "color up"). The prior logic (a) triggered on `smallBlind >
+      // prevSmallBlind`, i.e. almost EVERY level, treating the small blind as a
+      // chip denomination (it is not) and running `stack % smallBlind` which
+      // mints/destroys chips each level; and (b) wrote the raced stack back
+      // scoped ONLY by user_id (not table_id), overwriting the SAME user's
+      // stack at any other cash/tournament table — cross-table chip corruption.
+      // Re-enable only behind a real denomination-removal schedule + a
+      // table-scoped write-back + a chips-in-play conservation assertion.
+      const CHIP_RACE_ENABLED = false;
+      const prevLevelData = this.resolveBlindLevel(blindStructure, prevLevel) || blindStructure[0];
+      const prevSmallBlind = prevLevelData?.smallBlind || level.smallBlind;
+      if (CHIP_RACE_ENABLED && level.smallBlind > prevSmallBlind) {
+        try {
+          // Gather all tournament player stacks across all tables
+          const playerStacks = new Map<string, number>();
+          for (const tableId of this.tableEngines.keys()) {
+            const { data: seats } = await supabase
+              .from('table_seats')
+              .select('user_id, stack')
+              .eq('table_id', tableId)
+              .is('left_at', null);
+            if (!this.lifecycleIsCurrent(lifecycle)) return;
+            for (const seat of seats || []) {
+              if (seat.stack > 0) playerStacks.set(seat.user_id, seat.stack);
+            }
+          }
+          if (playerStacks.size >= 2) {
+            const result = this.chipRaceEngine.executeChipRace(
+              this.tournamentId,
+              playerStacks,
+              prevSmallBlind,
+              level.smallBlind
+            );
+            console.log(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Chip race: removed ${prevSmallBlind} denomination, ${result.totalNewChipsDistributed} chips redistributed to ${result.players.filter((p) => p.chipsAwarded > 0).length} players`
+            );
+            // Update table_seats with new stacks after chip race
+            for (const [userId, newStack] of playerStacks) {
+              await supabase
                 .from('table_seats')
-                .select('user_id, stack')
-                .eq('table_id', tableId)
+                .update({ stack: newStack })
+                .eq('user_id', userId)
                 .is('left_at', null);
               if (!this.lifecycleIsCurrent(lifecycle)) return;
-              for (const seat of seats || []) {
-                if (seat.stack > 0) playerStacks.set(seat.user_id, seat.stack);
-              }
             }
-            if (playerStacks.size >= 2) {
-              const result = this.chipRaceEngine.executeChipRace(
-                this.tournamentId,
-                playerStacks,
-                prevSmallBlind,
-                level.smallBlind
-              );
-              console.log(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Chip race: removed ${prevSmallBlind} denomination, ${result.totalNewChipsDistributed} chips redistributed to ${result.players.filter((p) => p.chipsAwarded > 0).length} players`
-              );
-              // Update table_seats with new stacks after chip race
-              for (const [userId, newStack] of playerStacks) {
-                await supabase
-                  .from('table_seats')
-                  .update({ stack: newStack })
-                  .eq('user_id', userId)
-                  .is('left_at', null);
-                if (!this.lifecycleIsCurrent(lifecycle)) return;
-              }
-              await this.broadcast('chip_race', {
-                removedDenomination: prevSmallBlind,
-                newSmallestDenomination: level.smallBlind,
-                playersAffected: result.players.filter((p) => p.chipsAwarded > 0).length,
-              });
-              if (!this.lifecycleIsCurrent(lifecycle)) return;
-            }
-          } catch (crErr) {
-            reportError(crErr, `Tournament.${this.tournamentId.slice(0, 8)}.chip_race_error`);
+            await this.broadcast('chip_race', {
+              removedDenomination: prevSmallBlind,
+              newSmallestDenomination: level.smallBlind,
+              playersAffected: result.players.filter((p) => p.chipsAwarded > 0).length,
+            });
+            if (!this.lifecycleIsCurrent(lifecycle)) return;
           }
+        } catch (crErr) {
+          reportError(crErr, `Tournament.${this.tournamentId.slice(0, 8)}.chip_race_error`);
         }
+      }
 
-        // Broadcast level_up event to all table pages
-        await this.broadcast('level_up', {
-          level: this.currentLevel,
-          blinds: `${level.smallBlind}/${level.bigBlind}`,
-          smallBlind: level.smallBlind,
-          bigBlind: level.bigBlind,
-          ante: level.ante || 0,
-        });
-        if (!this.lifecycleIsCurrent(lifecycle)) return;
+      // Broadcast level_up event to all table pages
+      await this.broadcast('level_up', {
+        level: this.currentLevel,
+        blinds: `${level.smallBlind}/${level.bigBlind}`,
+        smallBlind: level.smallBlind,
+        bigBlind: level.bigBlind,
+        ante: level.ante || 0,
+      });
+      if (!this.lifecycleIsCurrent(lifecycle)) return;
 
-        // Entry closure is one database decision for level and minute windows.
-        // On a level event this call observes the current_level write above;
-        // on a minutes-only event it simply confirms the still-open window and
-        // leaves the one DB-relative lifecycle timer armed.
-        await this.reconcileTournamentEntryWindow('engine.level_change');
-        if (!this.lifecycleIsCurrent(lifecycle)) return;
-
-        // Schedule the next level (waits the new level's duration, then
-        // advances) — unless a break began while this transition was in flight,
-        // in which case the clock belongs to resumeFromBreak. Arming a live
-        // timer here is what let a level advance during a break; see the guard
-        // at the top of this method for the full defect.
-        if (this.isOnBreak()) {
-          this.savedBlindTimerRemaining = this.levelDurationMs(level);
-        } else {
-          // Persistence and broadcasts may take time. Keep the durable anchor
-          // so an uninterrupted manager and its replacement share one clock.
-          this.startBlindTimer(
-            blindStructure,
-            this.levelDurationMs(level) - (Date.now() - levelStartedAt)
-          );
+      // Entry closure is one database decision for level and minute windows.
+      // On a level event this call observes the current_level write above;
+      // on a minutes-only event it simply confirms the still-open window and
+      // leaves the one DB-relative lifecycle timer armed.
+      await this.reconcileTournamentEntryWindow('engine.level_change');
+      if (!this.lifecycleIsCurrent(lifecycle)) return;
+    } catch (error) {
+      if (!this.lifecycleIsCurrent(lifecycle)) return;
+      reportError(error, 'Tournament.blind_transition_failed', {
+        tournamentId: this.tournamentId,
+        pendingLevel: this.pendingBlindTransition?.nextLevel ?? null,
+      });
+      // Entry reconciliation normally owns its retries. If a later side effect
+      // unexpectedly throws after publication, the durable wake still drives it.
+      if (committed) this.requestUrgentEliminationSweepAfter(1000);
+    } finally {
+      this.blindTransitionInFlight = false;
+      if (this.lifecycleIsCurrent(lifecycle)) {
+        if (committed) {
+          const { level, startedAt: levelStartedAt } = committed;
+          // A notification failure cannot consume the only next-level wake.
+          if (this.isOnBreak()) {
+            this.savedBlindTimerRemaining = this.levelDurationMs(level);
+          } else {
+            this.startBlindTimer(
+              blindStructure,
+              this.levelDurationMs(level) - (Date.now() - levelStartedAt)
+            );
+          }
+        } else if (this.pendingBlindTransition) {
+          if (this.isOnBreak()) this.savedBlindTimerRemaining = 1000;
+          else this.startBlindTimer(blindStructure, 1000);
         }
       }
     }
@@ -7185,16 +7438,8 @@ export abstract class TournamentManagerBase {
         );
         return null;
       }
-      const rawPool = res.prize_pool;
-      const pool = Number(res.prize_pool);
-      if (
-        (typeof rawPool !== 'number' && typeof rawPool !== 'string') ||
-        (typeof rawPool === 'string' && !/^[0-9]+(?:[.][0-9]+)?$/.test(rawPool)) ||
-        !Number.isFinite(pool) ||
-        pool < 0 ||
-        !Number.isSafeInteger(Math.round(pool * 100)) ||
-        Math.round(pool * 100) / 100 !== pool
-      ) {
+      const pool = readTournamentPrizePool(res.prize_pool);
+      if (pool === null) {
         reportError(
           new Error(
             `[Tournament:${this.tournamentId.slice(0, 8)}] fn_apply_prize_guarantee returned no readable prize_pool (${JSON.stringify(data ?? null).slice(0, 160)})`
@@ -7267,8 +7512,8 @@ export abstract class TournamentManagerBase {
         return false;
       }
 
-      const finalPool = Number(result.prize_pool);
-      if (!Number.isFinite(finalPool)) {
+      const finalPool = readTournamentPrizePool(result.prize_pool);
+      if (finalPool === null) {
         this.prizePoolFinalized = false;
         reportError(
           new Error(

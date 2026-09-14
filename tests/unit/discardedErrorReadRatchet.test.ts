@@ -85,7 +85,17 @@ const BASELINE = new Map<string, number>([
   ['src/services/CreditRequestService.ts', 4],
   ['src/services/ChipFlowService.ts', 4],
   ['src/pages/HomePage.tsx', 1],
-  ['src/pages/BadBeatJackpotPage.tsx', 4],
+  /* 4 -> 2 on 2026-09-11: removing the promo-rain control took two discarded
+     reads with it (the owner probe and the rain handler's catch). The ratchet
+     asked for this in the same commit, which is the point of it. */
+  /* ZERO SINCE 2026-09-11 (was 2). Both were the reads that resolve which
+     pool this page is about, and both discarded errors turned "could not ask"
+     into "this club has no jackpot" - one on the render path, where the
+     "Could Not Load The Jackpot" screen the file already contained was
+     therefore unreachable, and one on the realtime path, where it built a
+     subscription filter a union club's rows never match. The entry stays at 0
+     rather than being deleted so a reintroduction is a diff on this line. */
+  ['src/pages/BadBeatJackpotPage.tsx', 0],
   ['src/components/social/PlayerActivityFeed.tsx', 4],
   ['src/components/agent/ChipTransferModal.tsx', 2],
   ['src/components/agent/AgentScoreCard.tsx', 4],
@@ -140,7 +150,6 @@ const BASELINE = new Map<string, number>([
   ['src/components/social/FriendListPanel.tsx', 1],
   ['src/components/gameplay/PlayerNotesPanel.tsx', 1],
   ['src/components/common/UnionSkinGuard.tsx', 2],
-  ['src/components/bbj/BBJTicker.tsx', 2],
   ['src/components/agent/PlayerInviteModal.tsx', 2],
   ['src/components/agent/AgentPromoPanel.tsx', 2],
   ['src/components/agent/AgentAnalyticsDashboard.tsx', 1],

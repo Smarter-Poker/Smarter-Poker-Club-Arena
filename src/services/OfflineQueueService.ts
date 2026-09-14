@@ -271,44 +271,87 @@ export const OfflineQueueService = {
     });
   },
 
+  /**
+   * ───────────────────────────────────────────────────────────────────────────
+   * `db.transaction()` THROWS. IT DOES NOT CALL `onerror`.
+   *
+   * Every reader below already says, in its own `onerror`, that a failure here
+   * is not worth a rejection: an empty queue reads as zero, a failed delete is
+   * retried next pass. But `IDBDatabase.transaction()` raises
+   * `InvalidStateError` SYNCHRONOUSLY the moment the connection is closing -
+   * before any request object exists to carry an `onerror` - and a throw inside
+   * a `new Promise` executor rejects that promise. These executors never took a
+   * `reject`, which made the rejection look impossible while guaranteeing that
+   * when it happened nothing was there to catch it.
+   *
+   * The connection closes on tab teardown, on a `versionchange` from a second
+   * tab, and on any browser-initiated eviction. OfflineQueueBadge polls
+   * `getCount()` on a 2000ms interval and does not await it in a try, so once
+   * that state was entered every tick became an unhandled rejection, forever.
+   * horse_bug_reports took 2,844 of them across two sessions (2026-04-02 and
+   * 2026-08-29) - one every two seconds, for as long as the tab stayed open -
+   * plus one extra critical row apiece, because the reporter that received the
+   * DOMException threw while normalising it (src/utils/errorReporter.ts).
+   *
+   * So the try/catch is the same decision `onerror` already made, applied to
+   * the one failure that arrives by a different route.
+   * ───────────────────────────────────────────────────────────────────────────
+   */
+
   getAll(): Promise<QueuedMutation[]> {
     return new Promise((resolve) => {
       if (!this.db) return resolve([]);
-      const tx = this.db.transaction(STORE_NAME, 'readonly');
-      const store = tx.objectStore(STORE_NAME);
-      const req = store.index('createdAt').getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => resolve([]);
+      try {
+        const tx = this.db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.index('createdAt').getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => resolve([]);
+      } catch {
+        resolve([]);
+      }
     });
   },
 
   getCount(): Promise<number> {
     return new Promise((resolve) => {
       if (!this.db) return resolve(0);
-      const tx = this.db.transaction(STORE_NAME, 'readonly');
-      const req = tx.objectStore(STORE_NAME).count();
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => resolve(0);
+      try {
+        const tx = this.db.transaction(STORE_NAME, 'readonly');
+        const req = tx.objectStore(STORE_NAME).count();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(0);
+      } catch {
+        resolve(0);
+      }
     });
   },
 
   remove(id: string): Promise<void> {
     return new Promise((resolve) => {
       if (!this.db) return resolve();
-      const tx = this.db.transaction(STORE_NAME, 'readwrite');
-      tx.objectStore(STORE_NAME).delete(id);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => resolve();
+      try {
+        const tx = this.db.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).delete(id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      } catch {
+        resolve();
+      }
     });
   },
 
   update(mutation: QueuedMutation): Promise<void> {
     return new Promise((resolve) => {
       if (!this.db) return resolve();
-      const tx = this.db.transaction(STORE_NAME, 'readwrite');
-      tx.objectStore(STORE_NAME).put(mutation);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => resolve();
+      try {
+        const tx = this.db.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).put(mutation);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      } catch {
+        resolve();
+      }
     });
   },
 
@@ -318,10 +361,14 @@ export const OfflineQueueService = {
   clearAll(): Promise<void> {
     return new Promise((resolve) => {
       if (!this.db) return resolve();
-      const tx = this.db.transaction(STORE_NAME, 'readwrite');
-      tx.objectStore(STORE_NAME).clear();
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => resolve();
+      try {
+        const tx = this.db.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).clear();
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      } catch {
+        resolve();
+      }
     });
   },
 };

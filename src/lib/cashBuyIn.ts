@@ -170,6 +170,44 @@ export function cashBuyInRefusalText(raw: unknown): string | null {
       ? `Your Stack Cannot Go Above The Table Maximum Of ${max[1]}`
       : 'Your Stack Cannot Go Above The Table Maximum';
   }
+  /* ─── THE DIAMOND REFUSALS (2026-09-12) ──────────────────────────────────
+     Every one of these reached the player as the caller's generic fallback,
+     which is "Buy-in failed. Please check your balance and try again." Three
+     of them have nothing to do with a balance, and one of them is a table that
+     is not open yet - so the arena told a waitlisted player who arrived on
+     time that they were short of Diamonds.
+
+     The refusal names are the SQL exception names raised by
+     `fn_poker_diamond_buyin` and the custody functions under it. They are
+     matched on the name rather than on prose, because the prose is a sentence
+     written for a log and these are sentences written for a player. */
+  if (/insufficient_settled_diamonds/.test(m))
+    return 'Your Settled Diamonds Do Not Cover This Buy In. Diamonds Settle Before They Can Be Staked.';
+  if (/diamond_cash_not_open/.test(m)) return 'Diamond Cash Games Are Not Open Yet';
+  if (/diamond_plain_cash_table_required|diamond_cash_table_required/.test(m))
+    return 'This Table Is Not Set Up For Diamond Play';
+  if (
+    /diamond_cash_requires_whole_amounts|invalid_diamond_cash_purchase|invalid_diamond_table_buy_in/.test(
+      m
+    )
+  )
+    return 'A Diamond Buy In Must Be A Whole Number Of Diamonds';
+  if (/diamond_debt_requires_settlement/.test(m))
+    return 'Settle Your Outstanding Diamonds Before Taking A Seat';
+  if (/diamond_custody_requires_settlement/.test(m))
+    return 'Your Last Seat Has Not Finished Settling Yet. Try Again In A Moment.';
+  if (/diamond_purchase_arena_mismatch/.test(m))
+    return 'That Purchase Belongs To A Different Arena';
+  if (/diamond_seat_custody_binding_failed|diamond_target_closed/.test(m))
+    return 'That Seat Could Not Be Held. Try Again.';
+  if (/diamond_arena_policy_missing/.test(m)) return 'The Arena Is Not Accepting Seats Right Now';
+  /* The top-up door, which the cashier reaches through the same translator. */
+  if (/diamond_top_up_exceeds_max_buy_in/.test(m))
+    return 'That Would Put You Over This Table Maximum';
+  if (/diamond_top_up_requires_a_live_seat/.test(m)) return 'You Are Not Seated At This Table';
+  if (/diamond_top_up_stale_seat|diamond_top_up_custody_mismatch/.test(m))
+    return 'The Seat Changed While That Was In Flight. Try Again.';
+
   if (/VIP_ONLY/.test(m)) return 'This Table Is Open To VIP Members Only';
   if (/IS_TEMPLATE/.test(m)) return 'This Is A Saved Table Template, Not A Live Game';
   if (/^SEAT_RESERVED:/.test(m))

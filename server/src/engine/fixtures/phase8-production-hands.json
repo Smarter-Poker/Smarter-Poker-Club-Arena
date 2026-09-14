@@ -1,0 +1,777 @@
+[
+  {
+    "reviewId": 399521,
+    "variant": "nlh",
+    "format": "tournament",
+    "bigBlind": 50,
+    "heroSeat": 8,
+    "netBB": -600,
+    "holeCards": [
+      {
+        "rank": "A",
+        "suit": "clubs"
+      },
+      {
+        "rank": "A",
+        "suit": "diamonds"
+      }
+    ],
+    "board": [
+      {
+        "rank": "3",
+        "suit": "clubs"
+      },
+      {
+        "rank": "5",
+        "suit": "spades"
+      },
+      {
+        "rank": "J",
+        "suit": "diamonds"
+      },
+      {
+        "rank": "T",
+        "suit": "spades"
+      },
+      {
+        "rank": "8",
+        "suit": "hearts"
+      }
+    ],
+    "actions": [
+      {
+        "seat": 3,
+        "stage": "preflop",
+        "action": "sb",
+        "amount": 25,
+        "dead": false
+      },
+      {
+        "seat": 4,
+        "stage": "preflop",
+        "action": "bb",
+        "amount": 50,
+        "dead": false
+      },
+      {
+        "seat": 5,
+        "stage": "preflop",
+        "action": "raise",
+        "amount": 139,
+        "isFullRaise": true
+      },
+      {
+        "seat": 6,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 7,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 8,
+        "stage": "preflop",
+        "action": "raise",
+        "amount": 585,
+        "isFullRaise": true
+      },
+      {
+        "seat": 9,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 1,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 2,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 3,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 4,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 5,
+        "stage": "preflop",
+        "action": "call",
+        "amount": 446
+      },
+      {
+        "seat": 5,
+        "stage": "flop",
+        "action": "check",
+        "amount": 0
+      },
+      {
+        "seat": 8,
+        "stage": "flop",
+        "action": "bet",
+        "amount": 1788,
+        "isFullRaise": true
+      },
+      {
+        "seat": 5,
+        "stage": "flop",
+        "action": "call",
+        "amount": 1788
+      },
+      {
+        "seat": 5,
+        "stage": "turn",
+        "action": "check",
+        "amount": 0
+      },
+      {
+        "seat": 8,
+        "stage": "turn",
+        "action": "bet",
+        "amount": 5068,
+        "isFullRaise": true
+      },
+      {
+        "seat": 5,
+        "stage": "turn",
+        "action": "raise",
+        "amount": 18616,
+        "isFullRaise": true
+      },
+      {
+        "seat": 8,
+        "stage": "turn",
+        "action": "all_in",
+        "amount": 27627,
+        "isFullRaise": false
+      },
+      {
+        "seat": 5,
+        "stage": "turn",
+        "action": "all_in",
+        "amount": 27627
+      }
+    ]
+  },
+  {
+    "reviewId": 399839,
+    "variant": "nlh",
+    "format": "tournament",
+    "bigBlind": 50,
+    "heroSeat": 9,
+    "netBB": -594.48,
+    "holeCards": [
+      {
+        "rank": "A",
+        "suit": "diamonds"
+      },
+      {
+        "rank": "A",
+        "suit": "clubs"
+      }
+    ],
+    "board": [
+      {
+        "rank": "3",
+        "suit": "spades"
+      },
+      {
+        "rank": "9",
+        "suit": "diamonds"
+      },
+      {
+        "rank": "6",
+        "suit": "hearts"
+      },
+      {
+        "rank": "Q",
+        "suit": "clubs"
+      },
+      {
+        "rank": "2",
+        "suit": "hearts"
+      }
+    ],
+    "actions": [
+      {
+        "seat": 3,
+        "stage": "preflop",
+        "action": "sb",
+        "amount": 25,
+        "dead": false
+      },
+      {
+        "seat": 4,
+        "stage": "preflop",
+        "action": "bb",
+        "amount": 50,
+        "dead": false
+      },
+      {
+        "seat": 5,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 6,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 7,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 8,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 9,
+        "stage": "preflop",
+        "action": "raise",
+        "amount": 117,
+        "isFullRaise": true
+      },
+      {
+        "seat": 1,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 2,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 3,
+        "stage": "preflop",
+        "action": "call",
+        "amount": 92
+      },
+      {
+        "seat": 4,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 3,
+        "stage": "flop",
+        "action": "check",
+        "amount": 0
+      },
+      {
+        "seat": 9,
+        "stage": "flop",
+        "action": "bet",
+        "amount": 348,
+        "isFullRaise": true
+      },
+      {
+        "seat": 3,
+        "stage": "flop",
+        "action": "raise",
+        "amount": 1040,
+        "isFullRaise": true
+      },
+      {
+        "seat": 9,
+        "stage": "flop",
+        "action": "call",
+        "amount": 692
+      },
+      {
+        "seat": 3,
+        "stage": "turn",
+        "action": "check",
+        "amount": 0
+      },
+      {
+        "seat": 9,
+        "stage": "turn",
+        "action": "bet",
+        "amount": 2927,
+        "isFullRaise": true
+      },
+      {
+        "seat": 3,
+        "stage": "turn",
+        "action": "raise",
+        "amount": 10840,
+        "isFullRaise": true
+      },
+      {
+        "seat": 9,
+        "stage": "turn",
+        "action": "call",
+        "amount": 7913
+      },
+      {
+        "seat": 3,
+        "stage": "river",
+        "action": "all_in",
+        "amount": 18272,
+        "isFullRaise": true
+      },
+      {
+        "seat": 9,
+        "stage": "river",
+        "action": "all_in",
+        "amount": 17727
+      },
+      {
+        "seat": 3,
+        "stage": "showdown",
+        "action": "return",
+        "amount": 545
+      }
+    ]
+  },
+  {
+    "reviewId": 400340,
+    "variant": "nlh",
+    "format": "tournament",
+    "bigBlind": 60,
+    "heroSeat": 2,
+    "netBB": -487.43,
+    "holeCards": [
+      {
+        "rank": "A",
+        "suit": "diamonds"
+      },
+      {
+        "rank": "A",
+        "suit": "spades"
+      }
+    ],
+    "board": [
+      {
+        "rank": "4",
+        "suit": "diamonds"
+      },
+      {
+        "rank": "7",
+        "suit": "spades"
+      },
+      {
+        "rank": "8",
+        "suit": "hearts"
+      },
+      {
+        "rank": "J",
+        "suit": "hearts"
+      },
+      {
+        "rank": "5",
+        "suit": "clubs"
+      }
+    ],
+    "actions": [
+      {
+        "seat": 6,
+        "stage": "preflop",
+        "action": "sb",
+        "amount": 30,
+        "dead": false
+      },
+      {
+        "seat": 7,
+        "stage": "preflop",
+        "action": "bb",
+        "amount": 60,
+        "dead": false
+      },
+      {
+        "seat": 8,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 1,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 2,
+        "stage": "preflop",
+        "action": "raise",
+        "amount": 209,
+        "isFullRaise": true
+      },
+      {
+        "seat": 3,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 4,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 5,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 6,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 7,
+        "stage": "preflop",
+        "action": "call",
+        "amount": 149
+      },
+      {
+        "seat": 7,
+        "stage": "flop",
+        "action": "check",
+        "amount": 0
+      },
+      {
+        "seat": 2,
+        "stage": "flop",
+        "action": "bet",
+        "amount": 524,
+        "isFullRaise": true
+      },
+      {
+        "seat": 7,
+        "stage": "flop",
+        "action": "call",
+        "amount": 524
+      },
+      {
+        "seat": 7,
+        "stage": "turn",
+        "action": "bet",
+        "amount": 1218,
+        "isFullRaise": true
+      },
+      {
+        "seat": 2,
+        "stage": "turn",
+        "action": "raise",
+        "amount": 5077,
+        "isFullRaise": true
+      },
+      {
+        "seat": 7,
+        "stage": "turn",
+        "action": "raise",
+        "amount": 13844,
+        "isFullRaise": true
+      },
+      {
+        "seat": 2,
+        "stage": "turn",
+        "action": "call",
+        "amount": 8767
+      },
+      {
+        "seat": 7,
+        "stage": "river",
+        "action": "all_in",
+        "amount": 14669,
+        "isFullRaise": true
+      },
+      {
+        "seat": 2,
+        "stage": "river",
+        "action": "all_in",
+        "amount": 16078,
+        "isFullRaise": false
+      },
+      {
+        "seat": 2,
+        "stage": "showdown",
+        "action": "return",
+        "amount": 1409
+      }
+    ]
+  },
+  {
+    "reviewId": 400615,
+    "variant": "nlh",
+    "format": "tournament",
+    "bigBlind": 80,
+    "heroSeat": 8,
+    "netBB": -470.66,
+    "holeCards": [
+      {
+        "rank": "J",
+        "suit": "clubs"
+      },
+      {
+        "rank": "J",
+        "suit": "hearts"
+      }
+    ],
+    "board": [
+      {
+        "rank": "3",
+        "suit": "hearts"
+      },
+      {
+        "rank": "4",
+        "suit": "clubs"
+      },
+      {
+        "rank": "A",
+        "suit": "diamonds"
+      },
+      {
+        "rank": "4",
+        "suit": "hearts"
+      },
+      {
+        "rank": "5",
+        "suit": "diamonds"
+      }
+    ],
+    "actions": [
+      {
+        "seat": 1,
+        "stage": "preflop",
+        "action": "ante",
+        "amount": 10,
+        "dead": true
+      },
+      {
+        "seat": 2,
+        "stage": "preflop",
+        "action": "ante",
+        "amount": 10,
+        "dead": true
+      },
+      {
+        "seat": 3,
+        "stage": "preflop",
+        "action": "ante",
+        "amount": 10,
+        "dead": true
+      },
+      {
+        "seat": 4,
+        "stage": "preflop",
+        "action": "ante",
+        "amount": 10,
+        "dead": true
+      },
+      {
+        "seat": 5,
+        "stage": "preflop",
+        "action": "sb",
+        "amount": 40,
+        "dead": false
+      },
+      {
+        "seat": 5,
+        "stage": "preflop",
+        "action": "ante",
+        "amount": 10,
+        "dead": true
+      },
+      {
+        "seat": 6,
+        "stage": "preflop",
+        "action": "bb",
+        "amount": 80,
+        "dead": false
+      },
+      {
+        "seat": 6,
+        "stage": "preflop",
+        "action": "ante",
+        "amount": 10,
+        "dead": true
+      },
+      {
+        "seat": 7,
+        "stage": "preflop",
+        "action": "ante",
+        "amount": 10,
+        "dead": true
+      },
+      {
+        "seat": 8,
+        "stage": "preflop",
+        "action": "ante",
+        "amount": 10,
+        "dead": true
+      },
+      {
+        "seat": 9,
+        "stage": "preflop",
+        "action": "ante",
+        "amount": 10,
+        "dead": true
+      },
+      {
+        "seat": 7,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 8,
+        "stage": "preflop",
+        "action": "raise",
+        "amount": 191,
+        "isFullRaise": true
+      },
+      {
+        "seat": 9,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 1,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 2,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 3,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 4,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 5,
+        "stage": "preflop",
+        "action": "fold",
+        "amount": 0
+      },
+      {
+        "seat": 6,
+        "stage": "preflop",
+        "action": "call",
+        "amount": 111
+      },
+      {
+        "seat": 6,
+        "stage": "flop",
+        "action": "check",
+        "amount": 0
+      },
+      {
+        "seat": 8,
+        "stage": "flop",
+        "action": "bet",
+        "amount": 368,
+        "isFullRaise": true
+      },
+      {
+        "seat": 6,
+        "stage": "flop",
+        "action": "raise",
+        "amount": 1078,
+        "isFullRaise": true
+      },
+      {
+        "seat": 8,
+        "stage": "flop",
+        "action": "raise",
+        "amount": 4319,
+        "isFullRaise": true
+      },
+      {
+        "seat": 6,
+        "stage": "flop",
+        "action": "call",
+        "amount": 3241
+      },
+      {
+        "seat": 6,
+        "stage": "turn",
+        "action": "check",
+        "amount": 0
+      },
+      {
+        "seat": 8,
+        "stage": "turn",
+        "action": "bet",
+        "amount": 6552,
+        "isFullRaise": true
+      },
+      {
+        "seat": 6,
+        "stage": "turn",
+        "action": "call",
+        "amount": 6552
+      },
+      {
+        "seat": 6,
+        "stage": "river",
+        "action": "check",
+        "amount": 0
+      },
+      {
+        "seat": 8,
+        "stage": "river",
+        "action": "bet",
+        "amount": 17541,
+        "isFullRaise": true
+      },
+      {
+        "seat": 6,
+        "stage": "river",
+        "action": "all_in",
+        "amount": 26581,
+        "isFullRaise": false
+      },
+      {
+        "seat": 8,
+        "stage": "river",
+        "action": "call",
+        "amount": 9040
+      }
+    ]
+  }
+]

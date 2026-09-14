@@ -153,15 +153,14 @@ beforeAll(async () => {
     hub: { subscribe: vi.fn(), unsubscribe: vi.fn(), resync: vi.fn() } as never,
     tableExists: (id: string) => id === TABLE,
     verifyToken: async () => verdict,
-    authorizeViewer: async () => ({ allowed: true, reason: 'club_member', clubId: 'c1' }),
+    authorizeConnection: async () => ({
+      allowed: true,
+      reason: 'club_member',
+      clubId: 'c1',
+      banned: false,
+      ipRestricted: false,
+    }),
   } as never);
-  (server as unknown as { isBannedFromTable: unknown }).isBannedFromTable = vi
-    .fn()
-    .mockResolvedValue(false);
-  (server as unknown as { isIpConflict: unknown }).isIpConflict = vi.fn().mockResolvedValue(false);
-  (server as unknown as { isRestrictedObserver: unknown }).isRestrictedObserver = vi
-    .fn()
-    .mockResolvedValue(false);
   (server as unknown as { logConnectionAudit: unknown }).logConnectionAudit = vi.fn();
   server.attach(http);
   await new Promise<void>((r) => http.listen(0, '127.0.0.1', r));

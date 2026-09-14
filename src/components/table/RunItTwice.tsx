@@ -283,21 +283,15 @@ export function RunItTwicePrompt({
  * multi-board surface is the felt itself (TablePage ritBoardsView).
  */
 // ═══════════════════════════════════════════════════════════════════════════════
-// RESULT OVERLAY (2026-08-18)
+// THE RESULT ON THE WIRE (2026-08-18; overlay retired 2026-09-13)
 //
-// The engine's rit_result event carried the boards and the per-player payout
-// for every run-it-twice hand, and the client THREW IT AWAY (the handler was
-// a stub) - players watched the pot ship with no runout cards shown at all,
-// because RIT boards never enter the engine's community-card state either.
-// This overlay is the only place a human sees the extra boards.
+// The engine's rit_result event carries the boards, the per-board awards and
+// the payouts. Every board is drawn ON THE FELT by TablePage's ritBoardsView,
+// revealed street by street with the pot shipping run by run. A popup overlay
+// (RunItTwiceResult) once rendered the same data; it had no caller for weeks
+// and still divided the GROSS pot by the run count - the exact defect the
+// felt's law test pins against - so it was removed rather than left as a trap.
 // ═══════════════════════════════════════════════════════════════════════════════
-
-/** Engine card strings look like 'Ahearts' / '10diamonds'. */
-export function parseRitCard(raw: string): Card | null {
-  const m = /^(10|[2-9]|[TJQKA])(hearts|diamonds|clubs|spades)$/.exec(raw);
-  if (!m) return null;
-  return { rank: m[1] === '10' ? 'T' : m[1], suit: m[2][0] as Card['suit'] };
-}
 
 export interface RitResultData {
   runs: number;
@@ -332,121 +326,6 @@ export interface RitResultData {
    * this — the felt dims the shared prefix on runs 2+.
    */
   baseBoardCount?: number;
-}
-
-export interface RunItTwiceResultProps {
-  isOpen: boolean;
-  data: RitResultData | null;
-  /** Resolve a userId to a display name (falls back to 'Player'). */
-  resolveName: (userId: string) => string;
-  onClose: () => void;
-  currency?: string;
-}
-
-export function RunItTwiceResult({
-  isOpen,
-  data,
-  resolveName,
-  onClose,
-  currency = '',
-}: RunItTwiceResultProps) {
-  if (!isOpen || !data) return null;
-  const payouts = Object.entries(data.distribution)
-    .filter(([, amt]) => amt > 0)
-    .sort((x, y) => y[1] - x[1]);
-
-  return (
-    <div className="rit-result__overlay" onClick={onClose} role="dialog" aria-label="Run It Result">
-      <div className="rit-result" onClick={(e) => e.stopPropagation()}>
-        <div className="rit-board__header">
-          <span className="rit-board__badge">
-            Ran It {data.runs === 3 ? 'Three Times' : 'Twice'}
-          </span>
-          <span className="rit-board__pot">
-            Pot: {currency}
-            {data.potTotal.toLocaleString()}
-          </span>
-        </div>
-
-        {data.boards.map((board, bi) => {
-          /* ANIMATION AUDIT 2026-08-20 — per-board equity.
-             The overlay showed the boards and it showed the payouts, but
-             nothing connected the two: a player saw five cards, then a number,
-             and had to work out for themselves which run earned what. That is
-             the one question run-it-twice creates and the only place it can be
-             answered.
-             Every run is worth an equal slice of the pot by definition, so the
-             share is derived, not guessed — and when a board is split it is
-             divided again among that board's winners. Rounded down per winner
-             so the displayed parts can never sum to more than the pot. */
-          const runs = data.runs || data.boards.length || 1;
-          const boardValue = Math.floor(data.potTotal / runs);
-          const winners = data.perBoardWinners?.[bi] ?? [];
-          const perWinner =
-            winners.length > 1 ? Math.floor(boardValue / winners.length) : boardValue;
-          const sharePct = data.potTotal > 0 ? Math.round((boardValue / data.potTotal) * 100) : 0;
-
-          return (
-            <div key={`b-${bi}`} className="rit-board__run">
-              <span className="rit-board__run-label">Run {bi + 1}</span>
-              {winners.length > 0 && (
-                <span className="rit-result__board-winner">
-                  {winners.map(resolveName).join(' & ')}
-                </span>
-              )}
-              <span
-                className="rit-result__board-equity"
-                title={
-                  winners.length > 1
-                    ? `This Run Was Worth ${sharePct}% Of The Pot, Split ${winners.length} Ways`
-                    : `This Run Was Worth ${sharePct}% Of The Pot`
-                }
-              >
-                {currency}
-                {perWinner.toLocaleString()}
-                {winners.length > 1 ? ` Each` : ''}
-                <span className="rit-result__board-pct">{sharePct}%</span>
-              </span>
-              <div className="rit-board__cards">
-                {board.map((raw, ci) => {
-                  const card = parseRitCard(raw);
-                  /* ANIMATION AUDIT 2026-08-19: all 10-15 cards used to appear
-                     in one frame. Each card now flips in with a stagger — board
-                     1 first, board 2 after it, so the runs read as separate
-                     deals (see .rit-board__card animation in RunItTwice.css). */
-                  return card ? (
-                    <span
-                      key={`c-${bi}-${ci}`}
-                      className="rit-board__card"
-                      style={{ animationDelay: `${bi * 900 + ci * 140}ms` } as React.CSSProperties}
-                    >
-                      <CardImage card={toCardImage(card)} size="xs" />
-                    </span>
-                  ) : null;
-                })}
-              </div>
-            </div>
-          );
-        })}
-
-        <div className="rit-result__payouts">
-          {payouts.map(([uid, amt]) => (
-            <div key={uid} className="rit-result__payout">
-              <span className="rit-result__name">{resolveName(uid)}</span>
-              <span className="rit-result__amount">
-                +{currency}
-                {amt.toLocaleString()}
-              </span>
-            </div>
-          ))}
-        </div>
-
-        <button className="rit-result__close" onClick={onClose}>
-          OK
-        </button>
-      </div>
-    </div>
-  );
 }
 
 export default RunItTwicePrompt;

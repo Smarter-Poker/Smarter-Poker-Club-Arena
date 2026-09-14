@@ -1,0 +1,25 @@
+{
+  "read_only_checked_at": "2026-09-11T05:46:44Z",
+  "project_id": "kuklfnapbkmacvwxktbh",
+  "claim_prosrc_md5": "930e4b70fa3580c010abe99e23181598",
+  "close_prosrc_md5": "5f1b3b29c972620ca06143a2f58444c9",
+  "round3_prosrc_md5": "5234e460b1ea1f666fbc6bac7a9a1b17",
+  "atomic_credit_prosrc_md5": "be06a409371e63480439da6c5dfd3821",
+  "capture_column_installed": false,
+  "source_bank_relation_installed": false,
+  "wallet_pointer_fk_found": false,
+  "maturity_rule": "inclusive period_end closes at following UTC midnight; statement_timestamp reference",
+  "preserved_catalogue_source_commit": "f39368fefe22b4385e9e89e5350bb671c587fb4a",
+  "complete_duplicate_payer_repair": false,
+  "complete_duplicate_payer_candidate": true,
+  "production_applied": false,
+  "entrypoint": "00-apply-legacy-repair.sql",
+  "full_capture_payer_pin": "c12f993244b1f6b01dd950a8e8fee2b0de07ffef",
+  "current_proof_groups": {
+    "duplicate": 19,
+    "first_install_partial": 2,
+    "first_install_all": 1
+  },
+  "rolling_limit": "40P01 abort requires caller retry; both victims conserve and retry zero",
+  "first_install_overlap_proved": true
+}

@@ -12,6 +12,7 @@ import { isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { getPriority } from 'node:os';
 
 import { runMatchup } from './HorseLeague.js';
+import { runTournamentLeague } from './HorseTournamentLeague.js';
 import { scoreSolverAgreement } from './HorseSolverAgreement.js';
 import { scoreGtoV31Agreement } from './HorseSolverAgreementV31.js';
 import { gtoChartCount } from '../engine/GtoCharts.js';
@@ -20,6 +21,7 @@ import { gtoPostflopV31Count, gtoPostflopV31Dataset } from '../engine/GtoPostflo
 import { loadGtoCharts } from '../services/GtoChartLoader.js';
 import { loadGtoPostflop } from '../services/GtoPostflopLoader.js';
 import { loadGtoPostflopV31 } from '../services/GtoPostflopV31Loader.js';
+import { prepareTournamentFutureHandFacts } from '../engine/HorseTournamentFutureHand.js';
 import type {
   HorseLeagueComputeRequest,
   HorseLeagueComputeResponse,
@@ -60,6 +62,10 @@ if (runtimeAvailable) {
       // to an empty solver store while the live brain has a hydrated one.
       await Promise.all([loadGtoCharts(), loadGtoPostflop(), loadGtoPostflopV31()]);
     }
+    // This child owns the benchmark decisions. Preparing in its parent does
+    // not populate this process's cache. Match live decision-worker startup
+    // before READY, including offline fixtures that skip solver hydration.
+    prepareTournamentFutureHandFacts();
     send({
       type: 'READY',
       executionNice: getPriority(0),
@@ -89,6 +95,25 @@ if (runtimeAvailable) {
     activeJobId = message.jobId;
     try {
       await ready;
+      if (message.type === 'RUN_TOURNAMENT') {
+        if (process.env.EQUITY_GOVERNOR !== 'off')
+          throw new Error('Tournament evidence requires a fixed equity sample budget');
+        if (
+          message.request.evidenceMode === 'promotion' &&
+          (options.hydrateSolverStores === false ||
+            gtoChartCount() === 0 ||
+            gtoPostflopCount() === 0 ||
+            (gtoPostflopV31Count() > 0 && !gtoPostflopV31Dataset()))
+        ) {
+          throw new Error('Tournament promotion requires hydrated, identified solver stores');
+        }
+        const result = await runTournamentLeague(message.request, () => {
+          send({ type: 'HEARTBEAT', jobId: message.jobId });
+          return !cancelled.has(message.jobId);
+        });
+        send({ type: 'TOURNAMENT_RESULT', jobId: message.jobId, result });
+        return;
+      }
       if (message.type === 'SCORE_SOLVER_AGREEMENT') {
         const result = scoreSolverAgreement(message.maxSpots);
         send({ type: 'AGREEMENT_RESULT', jobId: message.jobId, result });

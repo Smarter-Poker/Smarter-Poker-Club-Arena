@@ -1,0 +1,131 @@
+{
+  "date_utc": "2026-09-10",
+  "programme": "Club Arena Twelve-Phase Audit",
+  "phase": 3,
+  "of": 12,
+  "status": "in_progress",
+  "reviewed_root": "b3f5251b0c64bc828bb08127d07d9a66d10033c0",
+  "source_register": "docs/audits/2026-09-09-phase3-progress.json",
+  "original_controls": 58,
+  "verified_ids": ["T12", "K02", "K11", "S09"],
+  "verified_count": 4,
+  "open_count": 54,
+  "phase_4_started": false,
+  "inventory_entries_are_not_reviewed_lines": true,
+  "review_scope": "Read-only root source/evidence review. No production mutation, engine/host action, historical payment or World Hub inspection. Existing tests are supporting evidence, not full-flow certification.",
+  "integration_verdict": "No release-blocking conflict found between root per-pot bounty/terminal-witness changes and ce30b96ed/bac1d6d12. This verdict covers inspected source intersections, not full B02/T08 acceptance.",
+  "integration_evidence": [
+    "Current terminal finish checks durable winner(position1) before descending nonnull elimination_sequence and refuses unreadable/missing evidence.",
+    "ce30b96ed adds one sweep mutation grace and adoption wake; it preserves the final-witness path.",
+    "ServerTableEngineSettlement.ts passes frozen perPotAwards only for tournament hands to logHandHistory.",
+    "handHistory.ts stores per-pot awards in the same row sent to insertHandHistoryRow with atomicCommit; aggregate winners are unchanged.",
+    "knockoutAttribution.ts uses exact pot evidence, refusing malformed/ineligible/duplicate exact records rather than substituting aggregate awards.",
+    "bac1d6d12 changes 30 lock calls through G/B/T helpers; it does not replace fn_exact_tournament_knockout_claimants."
+  ],
+  "test_evidence_limit": "Coordinator reported normal hook affected server 3052 passed and 145 skipped at b3f5251b0. This reviewer did not independently rerun those tests.",
+  "release_gate": "Publication is independent of all 54 remaining controls. Current branch/PR CI and exact main/source adoption must pass. Later CI source-pin/history failures are under separate focused review, so this document does not assert current required CI passed.",
+  "external_owner": "Existing release coordinator owns engine release seal and Stage-B activation/retirement. Read-only current function/ACL/body witnesses, operation receipts, heartbeat/source ancestry and deployment logs can be inspected now; no force restart or independent cutover.",
+  "newer_historical_release_evidence": "docs/audits/2026-09-10-realtime-acceptance-follow-through.md records 86aab0e engine adoption, 07:56:56 release seal, 08:00 thaw, and bounded zero stalls/blocked settlements at 08:12. This supersedes older incident observations only for that window and does not prove adoption of the current audit branch.",
+  "closure_order": "Run low-dependency native HU and live adoption checks while clock, source capture, payer and satellite lanes continue. Then compose shared entry/prize/bounty/cancellation/movement lifecycles using the exact current owners. Reuse unchanged evidence and add only cases needed to close each stated limit.",
+  "groups": [
+    {
+      "group": "Entry Lifecycle",
+      "ids": ["T01", "T02", "T04", "T05", "T06", "BX13"],
+      "existing": "Real prestart funding/refund and purchase fixtures; local obsolete-intent refusal; fee display corrections.",
+      "remaining": "Extend actual installed entry/refund/purchase calls to union wallets, approved promotional provenance, late-entry seating and full auth. Observe cutoff versus bust/re-entry/finalization overlaps, both winners, rollback after last receipt, exact replay and changed-payload refusal. Verify the fee matrix for every offered amount/provenance.",
+      "dependencies": [
+        "Current installed entry/seat/launch trigger closure",
+        "Approved fee and promotional contracts"
+      ]
+    },
+    {
+      "group": "Prize Funding And Closeout",
+      "ids": ["T03", "T07", "T09", "T10", "T11", "AX11"],
+      "existing": "Installed reserved-place-pool reprice proof and manager Bubble Promise reserve correction.",
+      "remaining": "Execute one funded lifecycle from entries plus approved overlay/reserve through final ladder, early minimum cash, incremental final obligations and terminal closeout. Independently total source debits, fee/bounty/prize escrow, already-paid amounts, bubble reserve and unpaid obligations; inject last-receipt failure and delayed/duplicate settlement. Show display history survives escrow closeout.",
+      "dependencies": [
+        "Entry Lifecycle",
+        "Approved guarantee funding policy",
+        "Current terminal/places authority and external Stage-B rollout evidence"
+      ]
+    },
+    {
+      "group": "Rank And Movement",
+      "ids": ["T08", "K08", "K09", "K10", "BX11", "BX12", "BX14"],
+      "existing": "Installed move authority and resolver; durable terminal witness; current main knockout ownership fixes.",
+      "remaining": "Compose authoritative accepted hands, same-hand and cross-table busts, versioned hand-for-hand epoch, table break/final-table moves and reconnect. Reverse callback order; repeat/delay completion; overlap moving with blind posting and elimination. Verify one seat, exact transferred stack, stable forced bets and durable rank. Resolve historical ambiguous move outcomes only from authoritative receipts.",
+      "dependencies": [
+        "Current accepted-hand/knockout bodies",
+        "Existing external Stage-B move/terminal release owner",
+        "Atomic clock/membership boundary"
+      ]
+    },
+    {
+      "group": "Clocks And Pauses",
+      "ids": ["K01", "K03", "K04", "K05", "K06", "K07", "K12", "BX08"],
+      "existing": "K02 snapshots separately closed; UTC cadence fixes; actual pause ownership/deal-loop behavior; atomic clock design only.",
+      "remaining": "Complete durable clock RPC, initialization/adoption, all-table fanout, activation/membership fencing and independently owned pause intervals. Run actual lease/freeze/capacity/launch/terminal composition with last-table rollback, stale lease after waits, response replay after thaw, delayed countdown, DST/UTC conversion and :53/:55/:00 long-hand overlap. Account separately for every time bank, offer/rebuy/add-on/registration deadline.",
+      "dependencies": [
+        "Clock protocol implementation",
+        "All actual table/parent/maintenance writer lock graph",
+        "Normal engine adoption"
+      ]
+    },
+    {
+      "group": "Heads-Up Lifecycle",
+      "ids": ["S01", "S02", "S03", "S04", "S05", "S12", "AX08"],
+      "existing": "Real first-deal tests; approved short-format blind matrix correction prepared; native launch/refund lane active.",
+      "remaining": "Run actual funded seat/launch/unregister calls and complete settlement for exactly two seats, NLH/PLO4, 300 Turbo/1000 Deep Stack. Observe final-seat/start/refund overlap and late receipt failure with actual money/seat/readiness triggers. Verify button/action order, simultaneous bustout policy, time banks, prize/fee escrow closure and history. No unsupported 6/9-max SNGs.",
+      "dependencies": [
+        "Current lease-generation launch receipt and trigger closure",
+        "Reviewed short-format resolver release",
+        "Approved Heads-Up payout rules"
+      ]
+    },
+    {
+      "group": "Spin Draw Recovery And Exposure",
+      "ids": ["S06", "S07", "S08", "S10", "AX09"],
+      "existing": "Atomic draw/funding receipt; all 16 approved tier/stack cases separately close S09; actual reveal/deal hold correction.",
+      "remaining": "Compose funded entrants, one immutable draw/version, reveal and first timer through failure after draw/before reveal, engine replacement, missed/duplicate delivery and hostile reconnect. Independently reconcile reserve contributions/draws and peak approved exposure across all tiers. Verify all participants consume the same stored result and live engine/client adoption.",
+      "dependencies": [
+        "Actual entry/launch trigger composition",
+        "Approved reserve exposure/funding policy",
+        "Normal client and engine adoption"
+      ]
+    },
+    {
+      "group": "Cancellation",
+      "ids": ["S11", "B12", "AX07", "AX10"],
+      "existing": "Prior isolated cancellation/entry evidence retained with scope limits.",
+      "remaining": "Run actual cancellation before draw, racing draw, after reveal and after play with partially paid places/bounties, overlay and satellite transfer. Bind the versioned approved contract to remaining entitlement; prove no second refund, reserve release or repayment, full rollback and exact replay under concurrent calls.",
+      "dependencies": [
+        "Approved pre/post-draw and already-paid cancellation contracts",
+        "Prize and satellite authority composition",
+        "External Stage-B cutover and guard retirement owner"
+      ]
+    },
+    {
+      "group": "Bounty Lifecycle",
+      "ids": ["B01", "B02", "B03", "B04", "B05", "B06"],
+      "existing": "Exact per-pot awards retained in accepted-hand history; installed claimant reader; mystery event ownership and activation guards.",
+      "remaining": "Compose accepted pot/half evidence with actual ordinary/PKO/mystery obligations and payment. Cover side pots, tied winners, split variants, own-bounty terminal policy, cutoff activation, complete funded inventory, without-replacement entitlement and duplicate/out-of-order animation. Sum entry splits, carried bounties, inventory, paid rewards and unpaid debt; prove no redraw or repayment on retry.",
+      "dependencies": [
+        "Current exact accepted-hand and claimant source adoption",
+        "Approved PKO final own-bounty and mystery inventory contracts",
+        "Prize funding and terminal composition"
+      ]
+    },
+    {
+      "group": "Satellites And Offered Equal-Prize Formats",
+      "ids": ["B07", "B08", "B09", "B10", "B11"],
+      "existing": "Atomic satellite seat/cash proofs; exact-K core and explicit qualifier UI lanes in progress.",
+      "remaining": "Finish exact-K durable cohort/receipt/recovery and authenticated qualifier reload. Compose target capacity/closure/entry races with funded source-to-target transfer, duplicate treatment, valid unregister, cancelled target, short fields and leftover/guaranteed value. Verify only offered deals/shootout/phased/equal-prize features against their approved contracts; do not invent tickets or tied cutoff priority.",
+      "dependencies": [
+        "Current final deferred placeless-elimination guard",
+        "Exact-K core plus UI integration",
+        "Approved duplicate/leftover/tied-cutoff contracts",
+        "Current external Stage-B terminal wrapper"
+      ]
+    }
+  ]
+}

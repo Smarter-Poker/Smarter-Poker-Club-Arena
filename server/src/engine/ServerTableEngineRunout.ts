@@ -1419,12 +1419,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   /**
    * HORSE RIT RESPONSES 2026-08-18: schedule horse answers to a live offer.
    *
-   * - A horse CHOOSER picks the board count after ~1.2-2.4s: mostly 2, a
-   *   third of hands 3 (varied deterministically by hand number - no
-   *   Math.random in the engine's decision paths).
-   * - Horse RESPONDERS accept after ~2.5-4s. Accepting before the chooser
+   * - A horse CHOOSER picks the board count: mostly 2, a third of hands 3
+   *   (varied deterministically by hand number - no Math.random in the
+   *   engine's decision paths).
+   * - Horse RESPONDERS accept or decline. Accepting before the chooser
    *   has decided is safe: the consent-race fix in RunItTwiceEngine records
    *   the accept and completes only once the chooser picks.
+   * - WHEN they answer is horseRitThinkMs: spread across the human window,
+   *   not a fixed band (see that method for why).
    * - Every callback re-checks the offer is still pending and the hand is
    *   still the same one (watchdog force-completion, 10-minute void).
    */
@@ -1449,14 +1451,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         this.horseRitVerdict(chooserPlayerId) === 'once'
           ? (1 as const)
           : ((this.handCount % 3 === 0 ? 3 : 2) as 2 | 3);
-      respond(1200 + (this.handCount % 5) * 240, () => {
+      respond(this.horseRitThinkMs(chooserPlayerId, 'chooser'), () => {
         this.respondToRIT(chooserPlayerId, undefined, runs);
       });
     }
     for (const pid of allPlayerIds) {
       if (pid === chooserPlayerId || !horseIds.has(pid)) continue;
       const answer = this.horseRitVerdict(pid) === 'once' ? 'decline' : 'accept';
-      respond(2500 + ((pid.charCodeAt(0) + this.handCount) % 4) * 400, () => {
+      respond(this.horseRitThinkMs(pid, 'responder'), () => {
         this.respondToRIT(pid, answer);
       });
     }
@@ -1503,6 +1505,44 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * anything a human gets. It is the horse's input device choosing between
    * two answers a human chooses between, instead of being wired to one.
    */
+  /**
+   * ── AND A HORSE THAT ALWAYS ANSWERS IN THREE SECONDS IS NOT ONE EITHER ──
+   *
+   * The verdict above stopped the ANSWER being a tell on 2026-08-31. The
+   * LATENCY still was: a horse chooser picked inside 1.2-2.2s and a horse
+   * responder inside 2.5-3.7s, every hand, against a 25-second window that
+   * humans use all of - a tap in two seconds, a think at eight, the odd
+   * answer as the clock runs down. Section 10.5 says timing is part of the
+   * treatment; a seat that never takes longer than four seconds to decide
+   * whether to run it twice is wearing the same sign the always-yes seat
+   * wore.
+   *
+   * Deterministic in (player, hand), like the verdict, so a replayed hand
+   * answers at the same moment and the distribution is testable:
+   *   - the bulk lands between ~1.5s and ~9s,
+   *   - about one hand in six is a long think of ~10-19s,
+   *   - never later than 20s of the 25s window (autoDeclineTimeout in
+   *     ServerTableEngineBase), so a horse's answer can never be the one
+   *     the DeadlineScheduler discards.
+   * Responders sit a little later than the chooser on average, because a
+   * responder is reading a question the chooser has just asked.
+   */
+  protected horseRitThinkMs(playerId: string, role: 'chooser' | 'responder'): number {
+    let h = 0;
+    for (let i = 0; i < playerId.length; i++) {
+      h = (h * 33 + playerId.charCodeAt(i) + 7) % 1000003;
+    }
+    const mixed = (h + this.handCount * 131 + (role === 'responder' ? 17 : 0)) % 1000;
+    const longThink = mixed % 6 === 0;
+    const base = role === 'responder' ? 1500 : 1200;
+    if (longThink) {
+      // 10s .. 19s
+      return 10_000 + Math.floor((mixed / 1000) * 9_000);
+    }
+    // base .. base + 7.5s
+    return base + Math.floor((mixed / 1000) * 7_500);
+  }
+
   protected horseRitVerdict(playerId: string): 'once' | 'multi' {
     let h = 0;
     for (let i = 0; i < playerId.length; i++) {
@@ -1606,7 +1646,16 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     this.runItTwiceEngine.addEventListener((event) => {
       if (event.type !== 'RIT_DECLINED') return;
       if ((event as Record<string, unknown>).reason !== 'timeout') return;
-      this.emitRitSingleRun('no_agreement');
+      /* NAME THE SEAT THAT HELD THINGS UP (2026-09-13). The engine's expiry
+         now lists who had not answered when the clock ran out. When that is
+         exactly one player the felt can say so, the way it already names a
+         decliner; two or more silent seats keep the collective line. */
+      const unanswered = (event as Record<string, unknown>).unanswered;
+      const silent = Array.isArray(unanswered)
+        ? unanswered.filter((id) => typeof id === 'string')
+        : [];
+      if (silent.length === 1) this.emitRitSingleRun('no_answer', silent[0] as string);
+      else this.emitRitSingleRun('no_agreement');
     });
   }
 
@@ -1638,6 +1687,8 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       | 'chooser_chose_one'
       | 'player_declined'
       | 'no_agreement'
+      /** 2026-09-13: the window closed with exactly ONE seat still silent; player_id names it. */
+      | 'no_answer'
       | 'no_consent_recorded'
       | 'deck_too_short',
     playerId?: string
@@ -1936,7 +1987,9 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
      */
     this.currentHandPots = pots.map((p, index) => ({
       index,
-      amount: Number(p?.amount) || 0,
+      // Cents, not floats - same rule as the WINNERS capture. This record is
+      // what hand_history.pots is written from.
+      amount: Math.round((Number(p?.amount) || 0) * 100) / 100,
       eligible: Array.isArray(p?.eligiblePlayers)
         ? p.eligiblePlayers.map((u) => String(u ?? '')).filter(Boolean)
         : [],
@@ -1993,13 +2046,33 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
      * Conservation is exact by construction: a pot's slices sum to
      * `base * runs + remainder`, which is the pot, to the cent.
      */
+    /**
+     * ── AND THE SLICE IS A WHOLE UNIT OF WHATEVER IS ON THE TABLE (2026-09-12) ──
+     *
+     * The rule above was written in integer CENTS, which is the indivisible
+     * unit of a chip and half of a Diamond. A five Diamond pot over two runs is
+     * 250 cents a board, which is two and a half Diamonds, and every Diamond
+     * guard refuses a fractional amount outright - which is why run it twice
+     * was CLOSED for Diamond rather than merely untested.
+     *
+     * The unit is now read from the table: one cent for chips, one hundred for
+     * a Diamond, the same `unitCents` HandController's own payout math uses.
+     * The stated rule does not change and neither does the chip arithmetic -
+     * unitCents is 1 there, so `units === cents` by construction. Only what the
+     * rule counts in changes.
+     */
+    const unitCents = this.tableInfo?.arena?.asset === 'diamonds' ? 100 : 1;
     const potSlicesByBoard: Array<typeof pots> = Array.from({ length: runs }, () => []);
     for (const p of pots) {
       const cents = Math.round((Number(p.amount) || 0) * 100);
-      const base = Math.floor(cents / runs);
-      const remainder = cents - base * runs;
+      const units = Math.round(cents / unitCents);
+      const base = Math.floor(units / runs);
+      const remainder = units - base * runs;
       for (let b = 0; b < runs; b++) {
-        potSlicesByBoard[b].push({ ...p, amount: (base + (b < remainder ? 1 : 0)) / 100 });
+        potSlicesByBoard[b].push({
+          ...p,
+          amount: ((base + (b < remainder ? 1 : 0)) * unitCents) / 100,
+        });
       }
     }
 
@@ -2017,7 +2090,13 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         potSlicesByBoard[boardIdx],
         variant,
         dealerSeat,
-        perPotOut
+        perPotOut,
+        /* No eligibility-fallback collector here; the slice below is the unit
+           this board may chop a tie in, and for a Diamond that is one Diamond,
+           not one cent. Without it a two-way tie on a Diamond board pays .50
+           and the accepted-hand guard refuses the whole hand. */
+        undefined,
+        unitCents / 100
       );
       perBoardWinners.push([...new Set(boardWinnersFull.map((w) => w.userId))]);
       for (const w of boardWinnersFull) {
@@ -2078,7 +2157,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
      */
     const ritIsTournamentHand =
       !!this.tableInfo?.tournament_id || this.tableInfo?.game_type === 'tournament';
-    if (ritIsTournamentHand && totalDistribution.size > 0) {
+    /* A DIAMOND TAKES THE SAME BACKSTOP (2026-09-12), and for the same reason a
+       tournament chip does: the stack it lands in is an integer everywhere it
+       is stored, and the accepted-hand guard refuses a fraction rather than
+       flooring it. The slicing and the tie-chop above already work in whole
+       Diamonds, so this should never have anything to do - which is exactly
+       what defense in depth means here. */
+    const ritNeedsWholeUnits = ritIsTournamentHand || this.tableInfo?.arena?.asset === 'diamonds';
+    if (ritNeedsWholeUnits && totalDistribution.size > 0) {
       const seatOf = new Map<string, number>();
       for (const p of state.players) seatOf.set(p.user_id, p.seat);
       const maxSeat = Math.max(...state.players.map((p) => p.seat), dealerSeat ?? 0) + 1;
@@ -2124,7 +2210,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // any drift into the largest share, and since the credited totals are
     // integers (odd-chip block above) every "+N" float and run label lands
     // on a whole number.
-    if (ritIsTournamentHand) {
+    if (ritNeedsWholeUnits) {
       for (const a of this.currentHandPerPotAwards) a.amount = Math.round(a.amount);
     }
     // EXACTNESS PASS 2026-08-26: per-player penny repair. Each display share
@@ -2164,19 +2250,33 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     {
       const byRunWinner = new Map<
         string,
-        { board: number; userId: string; amount: number; handName?: string; low?: boolean }
+        {
+          board: number;
+          userId: string;
+          amount: number;
+          handName?: string;
+          low?: boolean;
+          pots: Array<{ index: number; amount: number }>;
+        }
       >();
       for (const a of this.currentHandPerPotAwards) {
         // One entry per (run, winner, half): a PLO8 scoop on a run is two.
         const low = a.low === true;
         const key = `${a.board ?? 1}|${a.userId}|${low ? 'lo' : 'hi'}`;
         const existing = byRunWinner.get(key);
+        /* THE POT AXIS SURVIVES THE MERGE (2026-09-13). A three-way all-in
+           that runs it twice pays each board out of a main pot AND a side
+           pot; the row is per (run, winner, half), so the merge used to sum
+           the pot axis away and the record could say who won which board
+           but never which pot. The slices keep it, main pot first. */
+        const slice = { index: Number(a.potIndex) || 0, amount: a.amount };
         if (existing) {
           // To the cent, as the single-board sibling does
           // (HandController, currentHandWinners): this accumulator is
           // written verbatim into hand_history.winners_by_board (jsonb,
           // no scale).
           existing.amount = Math.round((existing.amount + a.amount) * 100) / 100;
+          existing.pots.push(slice);
         } else {
           byRunWinner.set(key, {
             board: a.board ?? 1,
@@ -2184,10 +2284,13 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
             amount: a.amount,
             handName: a.hand?.name,
             ...(low ? { low: true } : {}),
+            pots: [slice],
           });
         }
       }
-      this.currentHandWinnersByBoard = [...byRunWinner.values()].sort((x, y) => x.board - y.board);
+      this.currentHandWinnersByBoard = [...byRunWinner.values()]
+        .map((row) => ({ ...row, pots: row.pots.sort((x, y) => x.index - y.index) }))
+        .sort((x, y) => x.board - y.board);
     }
 
     // Apply distributions to player stacks

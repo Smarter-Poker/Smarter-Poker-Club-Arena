@@ -214,13 +214,20 @@ groups:
       # duration rather than lowering the rate - a quiet night is long and
       # shallow, an outage is deep, and the rate is the half that overlaps.
       - alert: EngineFleetThroughputCollapsed
+        # A table with old timing samples is not necessarily able to deal.
+        # On 2026-09-13 poker_active_tables retained 574 historical samples
+        # while the liveness snapshot had only 15 dealable tables. Dividing
+        # current hands by those historical tables falsely diagnosed slow
+        # dealing. Use the existing live liveness denominator, averaged over
+        # the same five-minute interval as hands, and its current fleet-size
+        # gate. HorseFleetCollapsed independently covers too few live tables.
         expr: |
           (
             sum(increase(poker_hands_dealt_total[5m])) / 5
             /
-            clamp_min(sum(poker_active_tables), 1)
+            clamp_min(sum(avg_over_time(poker_dealable_tables[5m])), 1)
           ) < 1.0
-          and sum(poker_active_tables) > 20
+          and sum(poker_dealable_tables) > 20
           # `unless on()`, not a bare `unless`: this expression aggregates its
           # left side away from {job, instance}, and `unless` matches on the
           # EXACT label set - so a plain one finds no matching series and
@@ -234,14 +241,14 @@ groups:
         annotations:
           summary: 'Fleet is dealing under 1 hand per table per minute for 40 minutes'
           description: |
-            The engine is alive and tables are seated, but each one is dealing
-            at roughly half the rate a healthy fleet sustains. Measured median
-            is 2.1 hands per table per minute; this fires under 1.0.
+            The engine has more than 20 tables able to deal, but its five-minute
+            hands per dealable table per minute have stayed under 1.0.
+            The denominator is live dealable capacity averaged over those same
+            five minutes; historical timing samples do not count as live tables.
 
-            Look at the event loop first: poker_event_loop_delay_p50_ms and
-            poker_equity_governor_scale. A saturated single thread produces
-            exactly this shape - normal table count, collapsed per-table rate -
-            because every timer in the process runs late.
+            Compare event-loop delay and equity-governor scale with individual
+            table liveness before attributing the cause. Too few tables able
+            to deal is reported separately by HorseFleetCollapsed.
           runbook: 'docs/changelog/2026-09-07-the-core-the-break-and-the-metric-that-was-reading-one-table.md'
 
       # ── EVERY RESTART IS ANNOUNCED, OR IT IS AN INCIDENT (2026-09-05) ────
@@ -351,9 +358,9 @@ groups:
             array from /api/cron/club-stats-maintenance. Found 17 hours behind
             on 2026-09-03 with nothing watching.
 
-      # A hand with no ca_hand_player_stat row 90 s after it was written means
-      # trg_ca_stats_live_from_hand raised and swallowed it. The page is no
-      # longer live until this returns to 0.
+      # A missing stat row after the grace proves delayed publication.
+      # Atomic hands skip the inline trigger and use the projection outbox;
+      # this aggregate alone cannot identify which writer is responsible.
       - alert: StatsLiveTriggerMissingHands
         expr: poker_stats_recent_hands_without_stat > 0
         for: 3m
@@ -363,9 +370,13 @@ groups:
         annotations:
           summary: '{{ $value }} recent hand(s) have no stat row'
           description: |
-            The live stats trigger is failing inside the hand insert (it WARNs
-            and lets the hand land). Read the Postgres log for
-            "trg_ca_stats_live_from_hand:".
+            Accepted atomic hands publish stats through hand_projection_outbox;
+            their inline stats trigger intentionally skips that work. Match each
+            missing hand to its atomic receipt and outbox row, then inspect
+            projection progress and the active drain. For hands outside that
+            path, inspect trg_ca_stats_live_from_hand warnings. A maintenance
+            run can clear the gap temporarily; verify the writer before closing
+            the incident.
 
       # Zero is the only healthy number. A disagreement is a recording defect
       # in the engine (button_seat or the showdown roster) or a failed writer.

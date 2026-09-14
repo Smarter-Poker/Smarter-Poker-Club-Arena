@@ -41,6 +41,13 @@ jobs:
           # Ancestry cannot be computed on a shallow clone, and the dropped
           # commits are by definition not reachable from the new tip.
           fetch-depth: 0
+          # blob:none keeps every one of the 7,223 commits and drops the blobs of old
+          # revisions. Measured 2026-09-13, three runs each: 33-35s / 531MB against
+          # 36-43s / 766MB, for identical ancestry. Nothing in this repo's workflows
+          # reads a historical file version - they ask merge-base, rev-list, log and
+          # cat-file -e, which are all commit-graph work - so those blobs were paid
+          # for on every run and never read.
+          filter: blob:none
 
       - name: Was anything dropped from main?
         id: check
@@ -123,11 +130,14 @@ jobs:
               'running code main no longer has, and the next sync will delete it.',
               '',
               '### Recovering',
-              'The objects usually still exist. From a clone that has them:',
+              'The objects usually still exist. Preserve them on a recovery branch,',
+              'then merge current main and restore the work with a reviewed PR:',
               '```bash',
               `git branch recover/dropped ${BEFORE}`,
-              'git pull --rebase origin main   # replays the dropped work on top',
-              'git push origin main',
+              'git switch recover/dropped',
+              'git fetch origin main',
+              'git merge origin/main',
+              'git push origin recover/dropped',
               '```',
             ].join('\n');
 

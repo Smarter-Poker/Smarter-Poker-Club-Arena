@@ -66,14 +66,20 @@ export function canHoldAgentWallet(role: unknown): boolean {
  * not listed: every role has one and the component renders it unconditionally
  * above these.
  *
- * `standalone` — the club is NOT in a union, so it keeps its own rake and gets
+ * `standalone` - the club is NOT in a union, so it keeps its own rake and gets
  * a Rake Treasury row. A club inside a union sends its rake to the union's
  * treasury, which is union money and must never appear on a club surface.
+ *
+ * `chipWallet` - false inside an arena that holds no chips at all. Every row
+ * below is a CHIP ledger, so in Diamond Arena there is not a role that may see
+ * one: the component's always-on Diamonds row is the whole wallet. This is the
+ * server's own `capabilities.chipWallet`, never a guess from the route.
  */
 export function clubWalletRows(
   role: unknown,
-  opts: { standalone?: boolean; spinsActive?: boolean } = {}
+  opts: { standalone?: boolean; spinsActive?: boolean; chipWallet?: boolean } = {}
 ): WalletRowKey[] {
+  if (opts.chipWallet === false) return [];
   const r = normaliseRole(role);
   const rows: WalletRowKey[] = [];
 
@@ -120,7 +126,11 @@ export function clubWalletRows(
  * fuller wallet panel shows, but it must never add one that `clubWalletRows`
  * would withhold from the viewer.
  */
-export function clubLobbyWalletRows(role: unknown): WalletRowKey[] {
+export function clubLobbyWalletRows(
+  role: unknown,
+  opts: { chipWallet?: boolean } = {}
+): WalletRowKey[] {
+  if (opts.chipWallet === false) return [];
   const r = normaliseRole(role);
 
   // Dan 2026-09-02: an owner or co-owner plays out of a player wallet, so the

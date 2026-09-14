@@ -67,3 +67,123 @@ describe('the journal is never refused by the freeze', () => {
     expect((sql.match(/^COMMIT;$/gm) || []).length).toBe(1);
   });
 });
+
+/**
+ * LAW 3 - THE LIVE PAYOUT CHECKS THE FREEZE TOO (2026-09-11).
+ *
+ * LAW 2 above pinned the REPAIR sweep. The live path was never pinned, and it
+ * never checked: `processBBJPayout` went straight to the RPC whatever the
+ * clock said.
+ *
+ * The freeze guard looked like the backstop and is not, for us. This law's own
+ * header records why in the other direction - `bbj_pools` sits OUTSIDE the
+ * guard, which is how 104 bank moves kept their write and lost their journal
+ * leg at :55. The engine's half is worse: `fn_refuse_while_frozen` returns
+ * early for any caller whose `request.jwt.claims.role` is `service_role`, and
+ * the engine holds SUPABASE_SERVICE_ROLE_KEY, so the guard on `table_seats`
+ * and `club_members` - the two tables the payout credits - never fires for the
+ * engine at all. On this path the engine is the only thing that can honour
+ * Dan's "NO CHIP MOVEMENTS".
+ *
+ * A deferred jackpot is not a lost one: the write-ahead claim is a RECORD
+ * rather than a chip movement, it survives the :57 restart, and the reconciler
+ * pays it at the thaw against an RPC that is idempotent on (pool, table, hand).
+ */
+describe('LAW 3: the live jackpot payout defers to the break', () => {
+  const SRC = resolve(HERE, '..', 'server/src/services/supabase/bbj.ts');
+  const RECON = resolve(HERE, '..', 'server/src/services/FeeReconciler.ts');
+  const payout = readFileSync(SRC, 'utf8');
+  const reconciler = readFileSync(RECON, 'utf8');
+  /* On the CODE. Both files explain in prose what the freeze guard does NOT
+     do, and asserting on raw text would make the explanation illegal. */
+  const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  it('processBBJPayout asks before it pays', () => {
+    const code = strip(payout);
+    expect(code).toMatch(
+      /import \{ isMaintenanceFrozen \} from '\.\.\/\.\.\/maintenance\/freezeState\.js';/
+    );
+    expect(code).toMatch(/if \(isMaintenanceFrozen\(\)\) \{/);
+  });
+
+  it('the write-ahead claim comes FIRST, then the gate, then the attempt loop', () => {
+    /* Both orderings matter and the first cut of this law pinned only one.
+       gate < loop is what stops the RPC. claim < gate is what stops the
+       jackpot being LOST: deferring before the intent is on disk would leave
+       a hit that was detected, announced to the table, and recorded nowhere -
+       the exact defect the queue was built for. */
+    const code = strip(payout);
+    const claim = code.indexOf("bbjPayoutQueue!.claim(params, 'write-ahead:");
+    const gate = code.indexOf('if (isMaintenanceFrozen()) {');
+    const loop = code.indexOf('for (let attempt = 1; attempt <= BBJ_PAYOUT_ATTEMPTS; attempt++)');
+    expect(claim, 'the write-ahead claim must exist').toBeGreaterThan(-1);
+    expect(gate).toBeGreaterThan(-1);
+    expect(loop).toBeGreaterThan(-1);
+    expect(claim).toBeLessThan(gate);
+    expect(gate).toBeLessThan(loop);
+  });
+
+  it('a deferral that could not be recorded is loud', () => {
+    /* The one way this gate could lose a jackpot: the durable write fails
+       while the flag is set - Postgres unreachable, which is the outage shape
+       the queue exists for. The first cut called `claim` and threw the answer
+       away, making this the only `queued` return in the module that could
+       leave nothing behind. */
+    const code = strip(payout);
+    const block = code.slice(
+      code.indexOf('if (isMaintenanceFrozen()) {'),
+      code.indexOf('for (let attempt = 1; attempt <= BBJ_PAYOUT_ATTEMPTS; attempt++)')
+    );
+    expect(block).toMatch(/const deferralRecorded =/);
+    expect(block).toMatch(/if \(!deferralRecorded\)/);
+    // and the alarm carries the whole parameter set, like the exhausted path
+    expect(block).toMatch(
+      /raiseFinancialAlert\(\s*'critical',\s*'processBBJPayout\.frozen_without_a_claim'/
+    );
+    expect(block).toMatch(/\.\.\.params,/);
+  });
+
+  it('it defers rather than failing: queued, with the claim still written', () => {
+    const code = strip(payout);
+    const block = code.slice(
+      code.indexOf('if (isMaintenanceFrozen()) {'),
+      code.indexOf('for (let attempt = 1; attempt <= BBJ_PAYOUT_ATTEMPTS; attempt++)')
+    );
+    /* The durable record is not a chip movement, so it is still written - and
+       written with the DEFERRAL's reason, which refreshes the open row's note
+       from "not yet attempted" to "deferred for the break". An operator
+       reading the queue during a break should see why a jackpot is sitting
+       there rather than a stale note that makes it look stuck. */
+    expect(block).toMatch(/bbjPayoutQueue!\.claim\(params, `deferred: \$\{reason\}`\)/);
+    expect(block).toMatch(/return \{ status: 'queued'/);
+    /* An ORDINARY break raises nothing: the alert is reachable only through
+       `if (!deferralRecorded)`, so it cannot fire on a break whose queue write
+       landed. An alarm that fires every hour is one that gets muted (10.84). */
+    expect(block).toMatch(/if \(!deferralRecorded\)[\s\S]*?raiseFinancialAlert/);
+  });
+
+  it('the reconciler defers EVERY kind, not just the jackpot', () => {
+    const code = strip(reconciler);
+    expect(code).toMatch(
+      /import \{ isMaintenanceFrozen \} from '\.\.\/maintenance\/freezeState\.js';/
+    );
+    /* The first cut gated only `row.kind === 'bbj_payout'`, which left the
+       rake branch calling atomic_distribute_rake and the fall-through calling
+       logBBJCollection straight through the break - two thirds of the money
+       still moving, inside a check whose whole purpose is that a caller which
+       forgets to gate the cycle cannot slip money past it. */
+    expect(code).not.toMatch(/row\.kind === 'bbj_payout' && isMaintenanceFrozen\(\)/);
+    const loop = code.slice(code.indexOf('for (const row of rows) {'));
+    const gate = loop.indexOf('if (isMaintenanceFrozen()) {');
+    expect(gate).toBeGreaterThan(-1);
+    // FIRST in the body, so a deferred row costs no reads either
+    expect(gate).toBeLessThan(loop.indexOf("row.kind === 'bbj_payout'"));
+    expect(gate).toBeLessThan(loop.indexOf('hand_history'));
+    expect(loop.slice(gate)).toMatch(
+      /if \(isMaintenanceFrozen\(\)\) \{\s+summary\.deferredFrozen\+\+;\s+continue;\s+\}/
+    );
+    /* deferred is its own outcome: folding it into resolved or stillFailing
+       would be a signal answering when it deliberately did not look (10.86) */
+    expect(code).toMatch(/deferredFrozen: number;/);
+  });
+});

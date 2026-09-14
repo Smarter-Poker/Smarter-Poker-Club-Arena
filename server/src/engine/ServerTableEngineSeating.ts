@@ -14,6 +14,7 @@ import type { SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { pushFinancialUpdate } from '../services/financialPush.js';
 import { randomUUID } from 'node:crypto';
+import { v5 as uuidv5 } from 'uuid';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { leaveLabel } from './ChipContinuity.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
@@ -71,9 +72,6 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
      */
     opId?: string
   ): Promise<{ success: boolean; error?: string; queued?: boolean; applied?: number }> {
-    if (this.tableInfo?.arena?.asset === 'diamonds') {
-      return { success: false, error: 'Diamond Add-Ons Are Not Available Yet' };
-    }
     if (isMaintenanceFrozen()) {
       return { success: false, error: 'Scheduled maintenance is in progress' };
     }
@@ -83,6 +81,15 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
 
     const maxBuyIn = this.getMaxBuyIn();
     const midHand = !!this.handController;
+
+    // A Diamond CASH seat tops up through custody. A Diamond TOURNAMENT seat
+    // has no top-up (seatCanAddFunds says so, the custody door refuses a
+    // tournament table, and a tournament rebuy is the manager's own door), so
+    // it takes the chip tournament path below and is refused there exactly as
+    // a chip tournament seat is: a tournament table has no buy-in headroom.
+    if (this.tableInfo?.arena?.asset === 'diamonds' && !this.isTournamentTable()) {
+      return this.addDiamonds(userId, amount, maxBuyIn, midHand, player, opId);
+    }
 
     // Effective current chips for the cap: include already-queued (already-
     // debited) pending add-ons so we never exceed the ceiling.
@@ -206,6 +213,181 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     return { success: true, applied };
   }
 
+  /**
+   * A Diamond seat tops up from the custody row it sat with.
+   *
+   * There is no chip wallet on this side of the arena and no pending add-on
+   * ledger. A Diamond seat's stack and its custody balance are held equal by a
+   * deferred constraint, so the two only ever move together, inside
+   * `fn_poker_diamond_top_up`. That makes this a BETWEEN-HANDS operation: mid
+   * hand the engine owns the live stack and the row on disk is the hand's
+   * opening stack, which the accepted-hand settler checks before it pays
+   * anyone. Raising that row under a dealt hand would stop the hand, so the
+   * door refuses instead, and refuses again on its own side if the stack it was
+   * handed is not the stack it finds.
+   *
+   * Whole units only. The request id is derived from the caller's attempt id,
+   * so a lost response retries the same reservation rather than buying a second
+   * one.
+   */
+  protected async addDiamonds(
+    userId: string,
+    amount: number,
+    maxBuyIn: number,
+    midHand: boolean,
+    player: SeatedPlayer,
+    opId?: string
+  ): Promise<{ success: boolean; error?: string; queued?: boolean; applied?: number }> {
+    if (midHand) {
+      /* AN INTENT, NOT A DEBIT (2026-09-12). See `diamondTopUpIntents` on the
+         base for why this arena cannot take the money now and land it later:
+         the deferred seat-keeps-custody trigger requires a Diamond seat's
+         stack to EQUAL its custody balance at every commit, so the chip lane's
+         two steps have no ordering this arena permits. Nothing moves here. The
+         whole top-up happens between hands, in the one transaction that is
+         allowed, through the door that is already certified. */
+      const requested = Math.floor(amount);
+      if (!(requested >= 1)) {
+        return { success: false, error: 'Diamond Top Ups Are Whole Diamonds' };
+      }
+      const stack = Number(player.stack || 0);
+      if (!Number.isSafeInteger(stack) || stack < 0) {
+        return { success: false, error: 'Diamond Top Ups Require A Whole Stack' };
+      }
+      /* The headroom is measured against the stack AND everything already
+         intended for this seat, so three taps during one hand cannot promise
+         more than the table can hold. It is measured again at landing, because
+         the pot moves the stack in between. */
+      const intended = [...this.diamondTopUpIntents.values()]
+        .filter((intent) => intent.userId === userId)
+        .reduce((sum, intent) => sum + intent.amount, 0);
+      const headroom = Math.max(0, Math.floor(maxBuyIn) - stack - intended);
+      const applied = Math.min(requested, headroom);
+      if (applied < 1) {
+        return { success: false, error: 'Already at the maximum buy-in for this table' };
+      }
+      const requestId = uuidv5(
+        `diamond-top-up:${this.tableId}:${userId}:${opId || randomUUID()}`,
+        uuidv5.URL
+      );
+      /* Keyed by request id: the same tap retried overwrites itself, two
+         genuine taps both count, and the SQL door de-duplicates a replay of
+         the landing on the same id. */
+      this.diamondTopUpIntents.set(requestId, { userId, amount: applied });
+      this.pendingAddOnSweepNeeded = true;
+      return { success: true, queued: true, applied };
+    }
+    const stack = Number(player.stack || 0);
+    if (!Number.isSafeInteger(stack) || stack < 0) {
+      return { success: false, error: 'Diamond Top Ups Require A Whole Stack' };
+    }
+    const headroom = Math.max(0, Math.floor(maxBuyIn) - stack);
+    const applied = Math.min(Math.floor(amount), headroom);
+    if (applied < 1) {
+      return { success: false, error: 'Already at the maximum buy-in for this table' };
+    }
+    const requestId = uuidv5(
+      `diamond-top-up:${this.tableId}:${userId}:${opId || randomUUID()}`,
+      uuidv5.URL
+    );
+    let lastError: { message?: string } | null = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const { data, error } = await supabase.rpc('fn_poker_diamond_top_up', {
+        p_user_id: userId,
+        p_table_id: this.tableId,
+        p_amount: applied,
+        p_expected_stack: stack,
+        p_request_id: requestId,
+      });
+      if (!error) {
+        /* The seat row and its custody moved together in that transaction, so
+           the in-memory copy is the only one still behind. Take the number the
+           database wrote rather than the one we asked for. */
+        const written = Number((data as { stack?: number } | null)?.stack);
+        player.stack = Number.isSafeInteger(written) ? written : stack + applied;
+        this.broadcastCurrentState();
+        return { success: true, applied };
+      }
+      lastError = error;
+      const message = String(error.message || '');
+      /* A verdict is not a transport failure; asking twice only repeats it. */
+      if (/insufficient|stale_seat|exceeds_max_buy_in|not_open|required|mismatch/i.test(message)) {
+        break;
+      }
+      if (attempt === 1) await new Promise((r) => setTimeout(r, 250));
+    }
+    const message = String(lastError?.message || '');
+    reportError(lastError, `ServerTableEngine.${this.tableId}.diamond_top_up_failed`, {
+      userId,
+      amount: applied,
+      requestId,
+    });
+    if (/insufficient_settled_diamonds/i.test(message)) {
+      return { success: false, error: 'Not Enough Settled Diamonds' };
+    }
+    if (/diamond_top_up_exceeds_max_buy_in/i.test(message)) {
+      return { success: false, error: 'Already at the maximum buy-in for this table' };
+    }
+    if (/diamond_top_up_stale_seat/i.test(message)) {
+      return { success: false, error: 'The Seat Changed, Try Again' };
+    }
+    return { success: false, error: 'Diamond Top Up Failed' };
+  }
+
+  /**
+   * Land every mid-hand Diamond intent, now that the hand is over.
+   *
+   * Each one goes through `fn_poker_diamond_top_up` on its own request id, so
+   * the door's own idempotency covers a replay of this sweep, and each is
+   * re-measured against the stack AS IT IS NOW - the pot moved it while the
+   * intent waited, which is the whole reason the amount could not be fixed at
+   * request time.
+   *
+   * An intent that can no longer be honoured is DROPPED rather than retried
+   * forever: the seat is gone, the seat is full, or the player spent those
+   * Diamonds elsewhere. Nothing was taken, so dropping it costs nobody
+   * anything, and a queue that never empties is how a table stops dealing.
+   * This is the opposite of the chip rule one method below, and deliberately
+   * so: an unresolved chip row is money already taken and must be left open.
+   */
+  protected async applyDiamondTopUpIntents(players: SeatedPlayer[]): Promise<void> {
+    if (this.diamondTopUpIntents.size === 0) return;
+    if (this.handController) return;
+    const maxBuyIn = Math.floor(this.getMaxBuyIn());
+    for (const [requestId, intent] of [...this.diamondTopUpIntents]) {
+      const player = players.find((p) => p.user_id === intent.userId);
+      const stack = Number(player?.stack ?? 0);
+      if (!player || !Number.isSafeInteger(stack) || stack < 0) {
+        this.diamondTopUpIntents.delete(requestId);
+        continue;
+      }
+      const applied = Math.min(intent.amount, Math.max(0, maxBuyIn - stack));
+      if (applied < 1) {
+        this.diamondTopUpIntents.delete(requestId);
+        continue;
+      }
+      const { data, error } = await supabase.rpc('fn_poker_diamond_top_up', {
+        p_user_id: intent.userId,
+        p_table_id: this.tableId,
+        p_amount: applied,
+        p_expected_stack: stack,
+        p_request_id: requestId,
+      });
+      this.diamondTopUpIntents.delete(requestId);
+      if (error) {
+        reportError(error, `ServerTableEngine.${this.tableId}.diamond_intent_failed`, {
+          userId: intent.userId,
+          amount: applied,
+          requestId,
+        });
+        continue;
+      }
+      const written = Number((data as { stack?: number } | null)?.stack);
+      player.stack = Number.isSafeInteger(written) ? written : stack + applied;
+      this.broadcastCurrentState();
+    }
+  }
+
   /*
    * CHIP CONTINUITY (Operation Table Stakes, Slice 0, 2026-09-04): there is
    * no partial cash-out. `withdrawChips`, `POST /withdrawchips` and the SQL
@@ -236,7 +418,14 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    * next engine start) picks it up. Nothing is dropped on the floor.
    */
   protected async processPendingAddOns(players: SeatedPlayer[]): Promise<void> {
-    if (this.tableInfo?.arena?.asset === 'diamonds') return;
+    if (this.tableInfo?.arena?.asset === 'diamonds' && !this.isTournamentTable()) {
+      /* This used to return here and nothing else, because a Diamond seat had
+         no mid-hand lane at all. It has one now, and it is an INTENT lane: no
+         `table_pending_addons` row was ever written, so there is nothing for
+         the chip resolver below to resolve and everything for this to do. */
+      await this.applyDiamondTopUpIntents(players);
+      return;
+    }
     if (!this.pendingAddOnSweepNeeded && this.pendingAddOns.size === 0) return;
 
     const authority = this.getEngineLeaseAuthority();
@@ -1082,7 +1271,13 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
           if (enginePlayer && !enginePlayer.is_folded && !enginePlayer.is_all_in) {
             let folded = false;
             try {
-              folded = this.handController?.performAction(enginePlayer.seat, 'fold') === true;
+              folded =
+                this.handController?.performAction(
+                  enginePlayer.seat,
+                  'fold',
+                  undefined,
+                  'forced'
+                ) === true;
               if (folded) {
                 console.log(
                   `[ServerTableEngine:${this.tableId}] Tournament player ${userId} auto-folded on leave`
@@ -1240,7 +1435,9 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
           // moment action reaches them.
           let folded = false;
           try {
-            folded = this.handController?.performAction(enginePlayer.seat, 'fold') === true;
+            folded =
+              this.handController?.performAction(enginePlayer.seat, 'fold', undefined, 'forced') ===
+              true;
             if (folded) {
               console.log(
                 `[ServerTableEngine:${this.tableId}] Player ${userId} auto-folded on leave`

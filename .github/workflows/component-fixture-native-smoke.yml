@@ -1,0 +1,66 @@
+name: Component fixture native smoke
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        required: true
+        type: string
+    outputs:
+      native_verified:
+        description: True only after native assertions and all cleanup pass
+        value: ${{ jobs.native-smoke.outputs.native_verified }}
+      source_sha:
+        description: Exact source verified by the native driver
+        value: ${{ jobs.native-smoke.outputs.source_sha }}
+permissions:
+  contents: read
+concurrency:
+  group: fixture-native-${{ github.event.pull_request.number }}-${{ inputs.source_sha }}
+  cancel-in-progress: false
+jobs:
+  native-smoke:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    outputs:
+      native_verified: ${{ steps.smoke.outputs.native_verified }}
+      source_sha: ${{ steps.smoke.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.23.2'
+      - name: Install locked fixture test dependencies on the disposable CI runner
+        run: npm ci --prefix operations/release/fixture --ignore-scripts --no-audit --no-fund
+      - name: Check financial route and fixture ownership boundaries
+        run: |
+          node --test operations/release/fixture/actors.test.mjs operations/release/fixture/financial-route-phase.test.mjs tests/operations/financial-checkpoint-observer.test.mjs tests/operations/financial-topup-verifier.test.mjs tests/operations/financial-insurance-verifier.test.mjs tests/operations/fixture-runtime-files.test.mjs tests/operations/financial-route-suite.test.mjs tests/operations/component-source-contract.test.mjs tests/operations/fixture-seed.test.mjs
+          node --test tests/operations/fixture-auth-bootstrap.test.mjs tests/operations/fixture-service-role-boundary.test.mjs tests/operations/fixture-cron-provider.test.mjs tests/operations/fixture-safeupdate-provider.test.mjs
+          node --test tests/operations/fixture-supervisor.test.mjs tests/operations/fixture-database-owner.test.mjs tests/operations/fixture-auth.test.mjs tests/operations/fixture-post-alignment-auth.test.mjs tests/operations/fixture-gateway.native.test.mjs tests/operations/fixture-realtime-launcher.test.mjs tests/operations/fixture-realtime-listener.test.mjs
+          node --test tests/operations/fixture-native-diagnostics.test.mjs tests/operations/fixture-service-preimage.test.mjs tests/operations/fixture-role-alignment.test.mjs tests/operations/fixture-role-alignment-render.test.mjs tests/operations/fixture-role-native.test.mjs tests/operations/fixture-role-native-oid.test.mjs tests/operations/provider-semantics-lifecycle.test.mjs
+          python3 tests/operations/native-component-semantics.test.py
+          python3 tests/operations/fixture-smoke-runner.test.py
+          python3 tests/operations/fixture-smoke-lifecycle.test.py
+          python3 tests/operations/fixture-native-diagnostics.test.py
+      - name: Build exact committed fixture and smoke native services
+        id: smoke
+        env:
+          FIXTURE_SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          python3 operations/release/ci/fixture-smoke.py . "$RUNNER_TEMP/fixture-smoke-evidence" "$FIXTURE_SOURCE_SHA"
+          echo "native_verified=true" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$FIXTURE_SOURCE_SHA" >> "$GITHUB_OUTPUT"
+      - name: Preserve sanitized native smoke and cleanup observations
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: draft-native-fixture-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/fixture-smoke-evidence/native-smoke-receipt.json
+            ${{ runner.temp }}/fixture-smoke-evidence/native-service-preimage.json
+            ${{ runner.temp }}/fixture-smoke-evidence/native-build.log
+          if-no-files-found: error
+          retention-days: 7

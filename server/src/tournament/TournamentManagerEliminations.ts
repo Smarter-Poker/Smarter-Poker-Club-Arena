@@ -34,6 +34,7 @@ import {
   eliminationSweepsInflight,
 } from '../observability/engineInstruments.js';
 import { computePlacePrize, prizePoolAvailableToPlaces } from './payoutMath.js';
+import { UNIT_CENTS_ASSET_NOT_READ } from './tournamentUnit.js';
 import { resolvePayoutStructure, parsePayoutStructure } from './payoutStructure.js';
 import type { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import type { VerifiedTournamentCompletionReceipt } from './completionSettlementReceipt.js';
@@ -54,6 +55,7 @@ import {
   SatelliteSettlementRefusedError,
 } from './satelliteSettlementRpc.js';
 import { horseRebuyAllowance } from '../services/FreeBuy.js';
+import { bindLatestKnockoutCandidates, knockoutCandidateReadIsComplete } from './bustOrder.js';
 
 interface FinalTableDealConsensus {
   reviewId: string | null;
@@ -148,6 +150,39 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    */
   private readonly bustRefusalStreak = new Map<string, number>();
 
+  /**
+   * ═════════════════════════════════════════════════════════════════════════
+   *  THE UNIT THIS MANAGER PRICES PLACES IN - ONE ANSWER, TWO CALL SITES
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * Both places this file prices a finishing position - `eliminatePlayer` for
+   * places 2..N and the late-registration reprice for all of them - ask here
+   * rather than each naming a unit of their own. That is the shape the rest of
+   * Phase 8 was about: the ladder rule had four spellings and nothing held
+   * them together, so the unit gets one spelling from the start.
+   *
+   * DIAMOND-AWARE SINCE 2026-09-14. The 2026-09-13 note here held this at the
+   * chip unit because `fn_prepare_tournament_place_obligations` priced the
+   * ladder to the cent and demanded `tournament_players.prize` agree with it.
+   * Read again against the live estate before the payout migration: that
+   * function has no caller in the database or in this engine (it belongs to
+   * the ruling path the server does not call). The path the engine DOES call
+   * - fn_complete_tournament_terminal -> fn_settle_tournament_places - derives
+   * its ladder from fn_ca_tournament_place_amounts, which knows the unit, and
+   * stamps `tournament_players.prize` from that ladder in the same
+   * transaction; it never compares the engine's provisional figure with its
+   * own until the event is COMPLETED and the stamp is its own. So the number
+   * computed here is presentation, and the only wrong thing it can do is show
+   * a Diamond finisher 122.10 for a bust the database will settle at 122.
+   *
+   * The unit comes from the club read beside the tournament row
+   * (`readTournamentClub`). When that read failed, the named admission is
+   * passed and the failure was already reported there - never a bare cent.
+   */
+  private placeLadderUnitCents(): number {
+    return this.tournamentUnit() ?? UNIT_CENTS_ASSET_NOT_READ;
+  }
+
   override requestEliminationSweep(
     reason?: string,
     durableWakeId?: number,
@@ -197,30 +232,56 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     if (now - this.lastChipCapRefreshAt < 60_000) return;
     this.lastChipCapRefreshAt = now;
 
+    /**
+     * THREE COUNTS, ONE ROUND TRIP (2026-09-11).
+     *
+     * These were three awaited reads in a row at the head of every full
+     * sweep. The once-a-minute throttle is per manager, and in a backlog a
+     * manager is admitted far less often than once a minute - after the 06:57
+     * boot on 2026-09-11 the scheduler held 553 of 597 managers in its queue
+     * and its oldest entry waited up to 24 minutes - so in practice every
+     * sweep paid all three trips, each one also waiting out a main event-loop
+     * delay that read 142 ms p50 at 07:22 and 490 ms at 07:51, before it
+     * looked at a single bust. The counts are independent high-water marks, so
+     * they are read together; each one still only ever raises its mark, and a
+     * failed one still leaves its previous value in place.
+     */
     try {
-      const { count: entrants, error: entrantsErr } = await supabase
-        .from('tournament_players')
-        .select('*', { count: 'exact', head: true })
-        .eq('tournament_id', this.tournamentId);
-      if (!entrantsErr && typeof entrants === 'number' && entrants > this.entrantCountForChipCap) {
+      const [entrantsRead, rebuysRead, addonsRead] = await Promise.allSettled([
+        supabase
+          .from('tournament_players')
+          .select('*', { count: 'exact', head: true })
+          .eq('tournament_id', this.tournamentId),
+        supabase
+          .from('wallet_transactions')
+          .select('*', { count: 'exact', head: true })
+          .eq('related_entity_id', this.tournamentId)
+          .eq('category', 'rebuy'),
+        supabase
+          .from('wallet_transactions')
+          .select('*', { count: 'exact', head: true })
+          .eq('related_entity_id', this.tournamentId)
+          .eq('category', 'addon'),
+      ]);
+      const settledCount = (read: typeof entrantsRead): number | null => {
+        if (read.status === 'rejected') {
+          reportError(read.reason, 'Tournament.refresh_chip_cap_inputs');
+          return null;
+        }
+        const { count, error } = read.value;
+        return !error && typeof count === 'number' ? count : null;
+      };
+
+      const entrants = settledCount(entrantsRead);
+      if (entrants !== null && entrants > this.entrantCountForChipCap) {
         this.entrantCountForChipCap = entrants;
       }
-
-      const { count: rebuys, error: rebuysErr } = await supabase
-        .from('wallet_transactions')
-        .select('*', { count: 'exact', head: true })
-        .eq('related_entity_id', this.tournamentId)
-        .eq('category', 'rebuy');
-      if (!rebuysErr && typeof rebuys === 'number' && rebuys > this.rebuysGrantedForChipCap) {
+      const rebuys = settledCount(rebuysRead);
+      if (rebuys !== null && rebuys > this.rebuysGrantedForChipCap) {
         this.rebuysGrantedForChipCap = rebuys;
       }
-
-      const { count: addons, error: addonsErr } = await supabase
-        .from('wallet_transactions')
-        .select('*', { count: 'exact', head: true })
-        .eq('related_entity_id', this.tournamentId)
-        .eq('category', 'addon');
-      if (!addonsErr && typeof addons === 'number' && addons > this.addonsGrantedForChipCap) {
+      const addons = settledCount(addonsRead);
+      if (addons !== null && addons > this.addonsGrantedForChipCap) {
         this.addonsGrantedForChipCap = addons;
       }
     } catch (err) {
@@ -500,29 +561,20 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
          * defence in depth against corruption; it is not a delayed-credit gate.
          */
         if (busted && busted.length > 0) {
-          const { count: liveCount, error: liveErr } = await supabase
-            .from('tournament_players')
-            .select('*', { count: 'exact', head: true })
-            .eq('tournament_id', this.tournamentId)
-            .eq('status', 'playing');
-          if (sweepStopped()) return;
-          if (
-            !liveErr &&
-            typeof liveCount === 'number' &&
-            liveCount > 0 &&
-            busted.length >= liveCount
-          ) {
-            reportError(
-              new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] all ${liveCount} live player(s) read 0 chips - uncredited stacks, not a bust. Eliminating nobody this sweep.`
-              ),
-              'Tournament.zero_chip_field_refused'
-            );
-            return; // the finally block clears isProcessingEliminations
-          }
-        }
-
-        if (busted && busted.length > 0) {
+          /**
+           * ONE QUESTION, ONE ROUND TRIP (2026-09-11).
+           *
+           * This guard and the ladder seed below each read the same
+           * `status='playing'` count, back to back, with nothing written in
+           * between. A sweep is a chain of awaited PostgREST calls, and on
+           * 2026-09-11 each link cost the network trip plus a main event-loop
+           * delay of 142 ms p50 at 07:22 and 490 ms at 07:51; a sweep with a
+           * bust to record spent its whole 5 s budget on reads before its first
+           * elimination 161 times in the 38 minutes after the 06:57 boot. So
+           * the count is read once and answers both questions. A failed read
+           * now defers the batch instead of skipping the guard and reading
+           * again - the fail-closed direction the second read already took.
+           */
           // Get current remaining count BEFORE processing any eliminations
           const { count: playingCount, error: playingErr } = await supabase
             .from('tournament_players')
@@ -530,6 +582,20 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             .eq('tournament_id', this.tournamentId)
             .eq('status', 'playing');
           if (sweepStopped()) return;
+          if (
+            !playingErr &&
+            typeof playingCount === 'number' &&
+            playingCount > 0 &&
+            busted.length >= playingCount
+          ) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] all ${playingCount} live player(s) read 0 chips - uncredited stacks, not a bust. Eliminating nobody this sweep.`
+              ),
+              'Tournament.zero_chip_field_refused'
+            );
+            return; // the finally block clears isProcessingEliminations
+          }
 
           // PAYOUT-INTEGRITY 2026-08-20: finishing positions are derived from
           // this count, and a wrong count produces COLLIDING positions (see
@@ -613,34 +679,45 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             const userIds = busted
               .slice(offset, offset + bustOrderLookupSize)
               .map((player) => player.user_id);
-            const { data: bustHands, error: bustHandsErr } = await supabase
+            // Every generation of these players, not only the pending ones: the
+            // order must come from the generation the door binds, which is the
+            // LATEST whatever its state (bustOrder.ts). Keeping the earliest
+            // pending hand ranked a player by an orphan the 2026-09-08/09 rebuy
+            // chain left behind, a day before the bust the door records.
+            // PostgREST truncates a response at its row cap without saying so,
+            // so the exact match count comes back with the rows and a short
+            // read is an unreadable order (knockoutCandidateReadIsComplete).
+            // Forty players would need more than 25 generations each to reach
+            // the default cap of 1000.
+            const {
+              data: bustHands,
+              error: bustHandsErr,
+              count: bustHandsCount,
+            } = await supabase
               .from('tournament_knockout_candidates')
-              .select('eliminated_user_id, hand_number, stack_before')
+              .select('id, eliminated_user_id, hand_number, stack_before, state', {
+                count: 'exact',
+              })
               .eq('tournament_id', this.tournamentId)
-              .eq('state', 'pending')
-              .in('eliminated_user_id', userIds);
+              .in('eliminated_user_id', userIds)
+              .order('hand_number', { ascending: false });
             if (sweepStopped()) return;
-            if (bustHandsErr) {
-              reportError(bustHandsErr, 'Tournament.bust_order_unreadable');
+            if (bustHandsErr || !knockoutCandidateReadIsComplete(bustHands, bustHandsCount)) {
+              reportError(
+                bustHandsErr ??
+                  new Error(
+                    `[Tournament:${this.tournamentId.slice(0, 8)}] knockout generations read ${bustHands?.length ?? 0} of ${bustHandsCount ?? 'an unknown number of'} rows; the bust order is not known`
+                  ),
+                'Tournament.bust_order_unreadable'
+              );
               this.requestUrgentEliminationSweepAfter(
                 TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
               );
               return;
             }
-            for (const row of bustHands ?? []) {
-              const uid = String((row as { eliminated_user_id?: unknown }).eliminated_user_id);
-              const hand = Number((row as { hand_number?: unknown }).hand_number);
-              const stackBefore = Number((row as { stack_before?: unknown }).stack_before);
-              if (!uid || !Number.isFinite(hand) || !Number.isFinite(stackBefore)) continue;
-              const seen = bustHandNumbers.get(uid);
-              if (
-                seen === undefined ||
-                hand < seen ||
-                (hand === seen && stackBefore < (bustStartingStacks.get(uid) ?? Number.MAX_VALUE))
-              ) {
-                bustHandNumbers.set(uid, hand);
-                bustStartingStacks.set(uid, stackBefore);
-              }
+            for (const [uid, bust] of bindLatestKnockoutCandidates(bustHands ?? [])) {
+              bustHandNumbers.set(uid, bust.handNumber);
+              bustStartingStacks.set(uid, bust.stackBefore);
             }
           }
 
@@ -772,6 +849,12 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
            * gives the smaller starting stack the worse finishing place. A
            * refusal may rotate only an otherwise exact tie; it can never let a
            * later hand pass an earlier one. Missing evidence sorts last.
+           *
+           * The place handed out in this order is PROVISIONAL (2026-09-11).
+           * Hand number is the deal order, which the PKO watermark needs; the
+           * finish, fn_settle_tournament_places, ranks every bust by the
+           * COMMIT time of its hand before it pays, and for busts at different
+           * tables the two orders can disagree (bustOrder.ts).
            */
           let bustedOrdered = [...busted].sort(compareBusted);
 
@@ -871,12 +954,28 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
            *     a failed query into "every place is free", which is the
            *     collision this block exists to prevent. An unreadable list is
            *     UNKNOWN — defer the eliminations to the next sweep.
+           *
+           * The two ladder inputs are independent reads, so they share one
+           * round trip (2026-09-11, see ONE QUESTION, ONE ROUND TRIP above).
+           * Both are still checked, in the same order, before anybody is
+           * placed; sequential reads were never a consistent snapshot either.
            */
-          const { data: takenRows, error: takenErr } = await supabase
-            .from('tournament_players')
-            .select('position')
-            .eq('tournament_id', this.tournamentId)
-            .not('position', 'is', null);
+          const [takenRead, unplacedRead] = await Promise.all([
+            supabase
+              .from('tournament_players')
+              .select('position')
+              .eq('tournament_id', this.tournamentId)
+              .not('position', 'is', null),
+            // Players who hold no finishing place yet. Monotonic, and immune to
+            // the late-reg promotion that made `playingCount` drift.
+            supabase
+              .from('tournament_players')
+              .select('*', { count: 'exact', head: true })
+              .eq('tournament_id', this.tournamentId)
+              .is('position', null),
+          ]);
+          const { data: takenRows, error: takenErr } = takenRead;
+          const { count: unplacedCount, error: unplacedErr } = unplacedRead;
           if (sweepStopped()) return;
 
           if (takenErr || !takenRows) {
@@ -894,15 +993,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               .map((r) => Number((r as { position: unknown }).position))
               .filter((n) => Number.isFinite(n))
           );
-
-          // Players who hold no finishing place yet. Monotonic, and immune to
-          // the late-reg promotion that made `playingCount` drift.
-          const { count: unplacedCount, error: unplacedErr } = await supabase
-            .from('tournament_players')
-            .select('*', { count: 'exact', head: true })
-            .eq('tournament_id', this.tournamentId)
-            .is('position', null);
-          if (sweepStopped()) return;
 
           if (unplacedErr || unplacedCount === null || unplacedCount === undefined) {
             reportError(
@@ -938,10 +1028,22 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
              */
             if (this.eliminationWorkBudgetExpired()) {
               if (committedThisPass > 0 || !this.grantEliminationMutationGrace()) {
+                /* A BACKLOG ENDS THE ASSIGNMENT PASS, NEVER THE SWEEP
+                   (2026-09-12, drift incident 7ab0dcbe). This is the same class
+                   as the `bustBatchHasMore` return fixed below: returning here
+                   left eliminationSweepCursor at stage 1, so finishStage,
+                   addOnStage and balanceStage - the ONLY caller of
+                   checkTableBalance - were unreachable for as long as the work
+                   budget kept expiring mid-batch, which on a large backlog is
+                   every pass. Ending the LOOP instead leaves the rest of the
+                   sweep and the cursor exactly where completedStage(2) expects
+                   them; the unresolved-bust retry still re-drives the players
+                   this pass did not reach. */
+                bustBatchHasMore = true;
                 this.requestUrgentEliminationSweepAfter(
                   TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
                 );
-                return;
+                break;
               }
               reportError(
                 new Error(
@@ -1017,12 +1119,44 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                * player, and after that this pass records the rest of the field
                * and says out loud who it could not record. Skipping is the
                * lesser harm and it is bounded: hand order is preserved for
-               * everyone the door accepts, the blocked player keeps their
-               * chronological `eliminated_at` when they are finally recorded,
-               * and fn_normalize_tournament_final_standings re-derives every
-               * finishing place from that chronology before the event pays.
+               * everyone the door accepts, the blocked player is stamped with
+               * the commit time of the hand that busted them when they are
+               * finally recorded, and fn_settle_tournament_places - the
+               * engine's terminal cash authority - ranks every bust by that
+               * hand's commit time before it pays, not by when it was recorded
+               * (20260911062048). A skipped player recorded late therefore
+               * finishes where they busted - in a cash ladder; a satellite or
+               * a final-table deal still pays the recording order
+               * (bustOrder.ts). For the two refusals that can never clear by
+               * themselves - `unresolved_knockout_generation_chain`, and
+               * `knockout_bust_time_unproven` for a generation the player
+               * played on from - the door also writes one critical
+               * financial_alerts row per player
+               * (`knockout_door.payout_blocked_by_unrecordable_bust`), so the
+               * stuck event reaches the money board and not only this log
+               * line.
                */
-              if (streak < TournamentManagerBase.BUST_REFUSAL_SKIP_AFTER) return;
+              if (streak < TournamentManagerBase.BUST_REFUSAL_SKIP_AFTER) {
+                /* A REFUSAL ENDS THE ASSIGNMENT PASS, NEVER THE SWEEP
+                   (2026-09-12, drift incident 7ab0dcbe). The abort itself is
+                   deliberate and stays: takenPositions is stale the moment the
+                   door refuses, so no further place may be handed out from this
+                   snapshot. What was wrong was returning from the SWEEP -
+                   eliminationSweepCursor stayed at stage 1, balanceStage never
+                   ran, and one player the door would not accept stopped the
+                   whole field consolidating until its tables drained to one
+                   player each and could no longer deal. All 10 RUNNING events
+                   with a >20 zero-chip backlog were stuck this way; event
+                   05e104c7 dealt 22 hands in 12 minutes while resolving 0
+                   busts. The already-armed unresolved-bust retry rebuilds the
+                   ladder from persisted positions before it writes anybody
+                   else. */
+                bustBatchHasMore = true;
+                this.requestUrgentEliminationSweepAfter(
+                  TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+                );
+                break;
+              }
               reportError(
                 new Error(
                   `[Tournament:${this.tournamentId.slice(0, 8)}] the knockout door has refused ${refusedId.slice(0, 8)} ${streak} times running; recording the rest of the field and leaving that bust for the door to accept. The event no longer waits on one player it cannot record.`
@@ -1042,8 +1176,23 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         }
 
         if (bustBatchHasMore) {
+          /* A BACKLOG IS NOT A REASON TO SKIP THE REST OF THE SWEEP (2026-09-12,
+             drift incident 7ab0dcbe). This `return` left eliminationSweepCursor
+             at stage 1, so every later stage was unreachable for as long as more
+             than SWEEP_MUTATION_BATCH_SIZE zero-chip players existed - including
+             balanceStage, the ONLY caller of checkTableBalance. On a 200 runner
+             field that is the whole event, and it is self-reinforcing: no
+             consolidation means tables drain to one player, a table of one
+             cannot deal, and the busts that caused the backlog are never
+             recorded. Afternoon Free Buy 94b24ce3 wrote 200 seat rows for 199
+             players and NOT ONE balancer move, stopped dealing at 22:09Z on 23
+             tables holding one player each, and left 151 players unranked and
+             250.90 in escrow payable to nobody. Platform-wide when this was
+             found: 45 events in that state, 243 unranked players, 5,430.90
+             pinned. The backlog still re-arms the next sweep - it just no
+             longer holds the cursor hostage, so the remaining busts are taken
+             one batch per full cycle while the field actually consolidates. */
           this.requestEliminationSweep();
-          return;
         }
 
         if (completedStage(2)) return;
@@ -1261,6 +1410,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         if (!isMaintenanceFrozen()) {
           await this.checkTableBalance();
           if (sweepStopped()) return;
+          // Balancing can yield after an admitted move/read consumes the
+          // budget. Its void helper has not proved the stage complete; keep
+          // this cursor so the next admission finishes consolidating tables.
+          if (this.eliminationWorkBudgetExpired()) return;
 
           // The old five-second manager interval also happened to poll final
           // table deal votes. Preserve the feature's intended ten-second
@@ -1500,6 +1653,18 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
       }
     } finally {
+      // Helpers may yield inside a stage after a slow RPC consumes the work
+      // budget. They have not reached completedStage(), so the cursor and its
+      // causal wake still belong to this manager. Preserve that continuation
+      // without rearming a stopped or replaced lifecycle.
+      if (
+        !completedWholeSweep &&
+        !budgetRequeued &&
+        !sweepStopped() &&
+        this.eliminationWorkBudgetExpired()
+      ) {
+        this.requestEliminationSweep();
+      }
       if (completedWholeSweep && this.running && !signal.aborted) {
         try {
           await acknowledgeCapturedWakes();
@@ -2109,7 +2274,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           );
           return false;
         }
-        prize = computePlacePrize(ladderPool, payouts, position);
+        prize = computePlacePrize(ladderPool, payouts, position, this.placeLadderUnitCents());
       }
     }
 
@@ -3576,7 +3741,12 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     for (const player of eliminated) {
       const payoutEntry = payouts.find((p: any) => Number(p.place) === Number(player.position));
       const correctPrize = payoutEntry
-        ? computePlacePrize(ladderPool, payouts, Number(player.position))
+        ? computePlacePrize(
+            ladderPool,
+            payouts,
+            Number(player.position),
+            this.placeLadderUnitCents()
+          )
         : 0;
 
       /**
@@ -4871,7 +5041,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           reportError(alertErr, 'Tournament.atomic_satellite_finish_alert_failed');
         }
         if (provenRefusal) releaseFinishGuard();
-        if (!provenRefusal) await this.stopAndWait();
+        if (!provenRefusal) {
+          this.fenceUnknownTerminalOutcome(
+            'Tournament.atomic_satellite_finish_manager_stop_failed'
+          );
+        }
         return;
       }
 
@@ -4915,6 +5089,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           {
             tournament_id: this.tournamentId,
             winner_id: winnerId,
+            // The durable inbox must retain the cause after this container's
+            // logs are gone; reportError alone does not preserve it there.
+            error: settlementErr instanceof Error ? settlementErr.message : String(settlementErr),
+            error_name: settlementErr instanceof Error ? settlementErr.name : typeof settlementErr,
             outcome_unknown: outcomeUnknown,
             proven_refusal: provenRefusal,
           }

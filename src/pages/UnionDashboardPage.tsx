@@ -14,6 +14,7 @@ import { supabase } from '../lib/supabase';
 import { unionApi } from '../services/UnionApiService';
 import { masterBus } from '../core/MasterBus';
 import { watchBbjPool } from '../lib/bbjPoolFeed';
+import { setBbjUnionMiniEnabled, setBbjUnionMiniFloor } from '../lib/bbjMiniFeed';
 import { useAuthUser } from '../hooks/useAuthUser';
 import './AdminDashboardPage.css';
 import { confirmDialog } from '../components/common/confirmDialog';
@@ -158,6 +159,41 @@ interface SettlementPeriod {
   club_id?: string;
 }
 
+/**
+ * WHY THE MINI REFUSED, IN WORDS AN OPERATOR CAN ACT ON.
+ *
+ * The two union mini RPCs return a `reason` rather than throwing, and a reason
+ * nobody translates is a reason nobody reads: `floor_below_one_payout` on a
+ * screen is not an instruction. Every value either function can return has a
+ * sentence here - the default is the LAST resort, not the usual path, because
+ * a generic "could not be saved" is how an operator learns to stop trying.
+ */
+function miniRefusalText(reason: string, minimum?: number): string {
+  switch (reason) {
+    case 'not_a_union_operator':
+      return 'Only A Union Owner Or Appointed Administrator Can Change This.';
+    case 'not_signed_in':
+      return 'You Are Signed Out. Sign In Again To Change This.';
+    case 'union_not_found':
+      return 'That Union No Longer Exists.';
+    case 'pool_not_found':
+      return 'This Union Has No Active Jackpot Pool Yet.';
+    case 'union_and_enabled_required':
+    case 'union_and_floor_required':
+      return 'That Request Was Incomplete. Nothing Changed.';
+    case 'floor_cannot_be_negative':
+      return 'A Reserve Floor Cannot Be Negative.';
+    case 'floor_below_one_payout':
+      return minimum === undefined
+        ? 'The Floor Must Cover At Least One Mini Payout At The Largest Stakes.'
+        : `The Floor Must Be At Least ${fmt(minimum)}, Which Covers One Mini Payout At The Largest Stakes.`;
+    case 'request_failed':
+      return 'That Could Not Reach The Server. Nothing Changed.';
+    default:
+      return 'The Mini Jackpot Setting Could Not Be Saved. Nothing Changed.';
+  }
+}
+
 export default function UnionDashboardPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -260,8 +296,15 @@ export default function UnionDashboardPage() {
     hit_count: number;
     last_hit_at: string | null;
     last_hit_amount: number;
+    /* The mini's two controls. They live on the pool row, and until 2026-09-11
+       there was no way for a UNION to reach either of them: both setters were
+       keyed on a club and both refuse a club inside a union. */
+    mini_enabled: boolean;
+    mini_reserve_floor: number;
   } | null>(null);
   const [bbjFundAmount, setBbjFundAmount] = useState('');
+  /** The floor an operator is typing. Null means "showing the stored value". */
+  const [miniFloorDraft, setMiniFloorDraft] = useState<string | null>(null);
   const [spinReserveForm, setSpinReserveForm] = useState({ amount: '', from: 'promo_wallet' });
   const [recentPeriods, setRecentPeriods] = useState<SettlementPeriod[]>([]);
   /** Weekly union<->club player win/loss settlements (union_pnl_settlements). */
@@ -551,7 +594,7 @@ export default function UnionDashboardPage() {
     const { data: poolRow } = await supabase
       .from('bbj_pools')
       .select(
-        'id, main_balance, backup_balance, promo_balance, total_contributed, total_paid_out, hit_count, last_hit_at, last_hit_amount'
+        'id, main_balance, backup_balance, promo_balance, total_contributed, total_paid_out, hit_count, last_hit_at, last_hit_amount, mini_enabled, mini_reserve_floor'
       )
       .eq('union_id', uid)
       .eq('status', 'active')
@@ -1324,7 +1367,10 @@ export default function UnionDashboardPage() {
                     <div className="admin-stat-value" style={{ color: '#4599FF' }}>
                       {fmt(bbjPool?.backup_balance ?? 0)}
                     </div>
-                    <div className="admin-stat-label">Backup Jackpot ›</div>
+                    {/* 2026-09-11: this bank is what the Mini Jackpot pays from
+                        (fn_bbj_mini_payout debits backup_balance), and the tile
+                        never said so. */}
+                    <div className="admin-stat-label">Backup Jackpot - Funds The Mini ›</div>
                   </button>
                   {/* Spin reserve. It is NOT a send source - the pool is priced on
                     being net-neutral over volume, and a manual withdrawal would
@@ -2021,6 +2067,130 @@ export default function UnionDashboardPage() {
                       Fund Jackpot
                     </button>
                   </div>
+                </div>
+              )}
+
+              {/* ══════════════════════════════════════════════════════════════
+                  THE UNION'S MINI JACKPOT (2026-09-11)
+
+                  Phase 3 gave the mini a switch and a reserve floor, both keyed
+                  on a CLUB, and both refuse a club inside a union - correctly,
+                  because one member club must not decide what every table under
+                  the union pays. The union was then given nothing to follow
+                  that sentence to, and the larger pool on this platform is a
+                  union pool: nobody could turn this mini off and nobody could
+                  move its floor.
+
+                  It sits beside Fund BBJ Pool because it is the same money -
+                  the mini is paid out of backup_balance - and behind the same
+                  gate: this whole page refuses a viewer who is not the union's
+                  owner or an appointed admin, and the two RPCs check
+                  fn_is_union_operator again regardless of what the browser
+                  believes. ══════════════════════════════════════════════ */}
+              {bbjPool && (
+                <div
+                  className="admin-card"
+                  style={{ padding: '16px', marginBottom: '16px', borderLeft: '3px solid #4599FF' }}
+                >
+                  <h3 className="admin-card-title" style={{ color: '#4599FF' }}>
+                    Mini Jackpot
+                  </h3>
+                  <p style={{ fontSize: '12px', color: '#888', margin: '0 0 8px' }}>
+                    {/* No possessive apostrophe in this copy on purpose: the
+                        Title Case guard treats an HTML entity as a word
+                        boundary, so "Union&rsquo;s" is rewritten to
+                        "Union&rsquo;S" by its own --fix. Reworded rather than
+                        exempted - never fix a message by disabling the
+                        transform (CLAUDE.md section 5 rule 7). */}
+                    A Second, Smaller Jackpot For The Bad Beats The Main Rule Turns Away. It Pays A
+                    Flat Amount Set By The Stakes, Out Of The Backup Pool This Union Shares, And No
+                    Extra Fee Is Taken For It. Every Club In This Union Has One Switch And One
+                    Reserve Floor Between Them. Backup Pool: {fmt(bbjPool.backup_balance)}.
+                  </p>
+                  <div
+                    style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}
+                  >
+                    <button
+                      className="admin-btn"
+                      style={{
+                        background: bbjPool.mini_enabled ? '#4599FF' : '#333',
+                        color: bbjPool.mini_enabled ? '#000' : '#ccc',
+                      }}
+                      disabled={processing}
+                      aria-pressed={bbjPool.mini_enabled}
+                      aria-label={
+                        bbjPool.mini_enabled
+                          ? 'Turn The Mini Jackpot Off For This Union'
+                          : 'Turn The Mini Jackpot On For This Union'
+                      }
+                      onClick={async () => {
+                        setProcessing(true);
+                        setError(null);
+                        try {
+                          /* The button reflects what the DATABASE says after
+                             the write, never what was clicked. An optimistic
+                             flip the server then refused would leave an
+                             operator believing they had switched off a jackpot
+                             that kept paying. */
+                          const res = await setBbjUnionMiniEnabled(unionId!, !bbjPool.mini_enabled);
+                          if (!res.ok) {
+                            setError(miniRefusalText(res.reason));
+                            return;
+                          }
+                          setSuccess(res.enabled ? 'Mini Jackpot Is On' : 'Mini Jackpot Is Off');
+                          loadDashboard(unionId);
+                        } finally {
+                          setProcessing(false);
+                        }
+                      }}
+                    >
+                      {bbjPool.mini_enabled ? 'ON' : 'OFF'}
+                    </button>
+                    <input
+                      className="admin-input"
+                      style={{ flex: '0 0 170px' }}
+                      type="number"
+                      min="0"
+                      aria-label="Reserve Floor"
+                      placeholder="Reserve Floor"
+                      value={miniFloorDraft ?? String(bbjPool.mini_reserve_floor ?? '')}
+                      onChange={(e) => setMiniFloorDraft(e.target.value)}
+                    />
+                    <button
+                      className="admin-btn admin-btn-primary"
+                      style={{ background: '#4599FF', color: '#000' }}
+                      disabled={processing || miniFloorDraft === null}
+                      onClick={async () => {
+                        if (miniFloorDraft === null) return;
+                        const next = Number(miniFloorDraft);
+                        if (!Number.isFinite(next)) {
+                          setError('That Is Not A Number.');
+                          return;
+                        }
+                        setProcessing(true);
+                        setError(null);
+                        try {
+                          const res = await setBbjUnionMiniFloor(unionId!, next);
+                          if (!res.ok) {
+                            setError(miniRefusalText(res.reason, res.minimum));
+                            return;
+                          }
+                          setMiniFloorDraft(null);
+                          setSuccess('Reserve Floor Saved');
+                          loadDashboard(unionId);
+                        } finally {
+                          setProcessing(false);
+                        }
+                      }}
+                    >
+                      Save Floor
+                    </button>
+                  </div>
+                  <p style={{ fontSize: '11px', color: '#666', margin: '8px 0 0' }}>
+                    The Reserve Floor Is What Stays In The Backup Pool. A Mini That Would Take It
+                    Below That Is Not Paid, So The Floor Cannot Be Set Under One Payout At The
+                    Largest Stakes.
+                  </p>
                 </div>
               )}
 

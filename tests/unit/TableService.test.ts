@@ -25,7 +25,7 @@ vi.mock('../../src/lib/supabase', () => {
   };
   return {
     supabase: {
-      from: () => buildChain(),
+      from: vi.fn(() => buildChain()),
       rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
     },
     subscribeToTable: vi.fn(() => vi.fn()),
@@ -68,10 +68,28 @@ vi.mock('../../src/services/WalletService', () => ({
 // ─── Import AFTER mocks ──────────────────────────────────────────────────
 
 import { tableService } from '../../src/services/TableService';
+import { supabase } from '../../src/lib/supabase';
 
 describe('TableService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  describe('getSeatedPlayers', () => {
+    it.each(['demo', 'nonexistent-table-id', '', 'undefined', 'id.eq.secret,club_id.not.is.null'])(
+      'does not query seats for an invalid table ID: %s',
+      async (tableId) => {
+        expect(await tableService.getSeatedPlayers(tableId)).toEqual([]);
+        expect(supabase.from).not.toHaveBeenCalled();
+      }
+    );
+
+    it('still reads the seats of a valid table ID', async () => {
+      expect(await tableService.getSeatedPlayers('11111111-2222-4333-8444-555555555555')).toEqual(
+        []
+      );
+      expect(supabase.from).toHaveBeenCalledExactlyOnceWith('table_seats');
+    });
   });
 
   // ─────────────────────────────────────────────────────────────────────────

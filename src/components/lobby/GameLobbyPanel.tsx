@@ -52,6 +52,10 @@ export interface GameLobbyPanelProps {
   busy: boolean;
   onClose: () => void;
   onJoinTable: (tableId: string) => void;
+  /** Why no seat can be taken on this whole board; see LobbyRowContext. */
+  seatsClosedLabel?: string;
+  /** Why no tournament can be entered on this whole board; see LobbyRowContext. */
+  registrationClosedLabel?: string;
   onWaitlistToggle: (tableId: string, joining: boolean) => void;
   onRegister: (t: LobbyTournamentRow) => void;
   onUnregister: (t: LobbyTournamentRow) => void;
@@ -111,6 +115,8 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
     busy,
     onClose,
     onJoinTable,
+    seatsClosedLabel,
+    registrationClosedLabel,
     onWaitlistToggle,
     onRegister,
     onUnregister,
@@ -372,6 +378,24 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
           run: () => onWaitlistToggle(entry.id, false),
           needsAuth: true,
         };
+      /* THE CLOSED GATE COMES BEFORE THE QUEUE (2026-09-12). This tested
+         `full` first, so the one board that could still offer an action while
+         the arena was closed was a board with no seats on it: a full table
+         offered Join Waitlist, and the queue's entire purpose is to lead to a
+         buy-in the door would then refuse. The hold it promises is sixty
+         seconds long, so the player is not queuing for later, they are queuing
+         to be handed a seat they cannot take. Leaving a queue stays available
+         above, because a player already on one must always be able to get off.
+
+         The arena's ladder is listed while funded play is closed and the
+         buy-in door refuses every seat. Offering the action here would send
+         the player to a panel whose only outcome is an error. */
+      if (seatsClosedLabel)
+        return {
+          label: seatsClosedLabel,
+          kind: 'disabled' as const,
+          note: 'The Tables Are Listed So You Can Watch. Seats Open Later.',
+        };
       if (full)
         return {
           label: 'Join Waitlist',
@@ -466,6 +490,15 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
     if (st === 'completed' || st === 'closed')
       return { label: 'Registration Closed', kind: 'disabled' as const };
     if (st === 'running') return { label: 'Registration Closed', kind: 'disabled' as const };
+    /* The whole board's door is shut (Diamond Phase 8): the event is listed
+       so it can be read, and every registration door refuses until the
+       arena's tournament switch is on. Say so rather than offer the button. */
+    if (registrationClosedLabel)
+      return {
+        label: registrationClosedLabel,
+        kind: 'disabled' as const,
+        note: 'Tournaments Are Listed So You Can Read Them. Registration Opens Later.',
+      };
     const full = entry.capacity > 0 && entry.players >= entry.capacity;
     if (full) return { label: 'Tournament Full', kind: 'disabled' as const };
     if (st === 'late_reg')
@@ -482,6 +515,8 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
       needsAuth: true,
     };
   }, [
+    seatsClosedLabel,
+    registrationClosedLabel,
     entry,
     isCash,
     seated,

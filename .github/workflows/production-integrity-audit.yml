@@ -1,0 +1,579 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# PRODUCTION INTEGRITY AUDIT — independent, read-only release evidence.
+#
+# Every other gate in this repo answers "did it merge". None of them answer
+# "did it ship", and those are different questions with the same green tick.
+# Three separate incidents in this repo were merges that never published:
+# a sync push rejected for touching a workflow file, a `cancel-in-progress`
+# that killed every build before its sync step, and a bundle built from a stale
+# tree. In all three, main moved, agents reported success, and users kept
+# seeing the previous build for hours.
+#
+# This workflow reads production and reports through Actions plus one durable
+# GitHub issue. It cannot dispatch releases, retry failed jobs, toggle
+# workflows, open pull requests, or mutate production. Release failures are
+# corrected through reviewed source changes and the single owning Club Arena
+# Hetzner workflows.
+# ─────────────────────────────────────────────────────────────────────────────
+name: Production Integrity Audit
+
+on:
+  schedule:
+    - cron: '19 * * * *'
+  repository_dispatch:
+    types: [audit-production-integrity]
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+  issues: write
+
+concurrency:
+  group: production-integrity-audit
+  cancel-in-progress: false
+
+jobs:
+  client_release:
+    name: Production is serving main
+    # STAYS ON GITHUB'S POOL, deliberately (2026-09-03). The publisher runs on
+    # the estate's own box. If that box dies, this is the job that has to say
+    # so, and it cannot say so from the box that died. The two jobs below are
+    # heavier and are not the alarm: they run on the box, and a dead box just
+    # queues them.
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout main with full history
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          # Full history is required: the script asks `git merge-base
+          # --is-ancestor` to tell publish LAG (an older commit that is still
+          # on main, which fixes itself) from a REWIND (a commit that is not on
+          # main at all, which never will). A shallow clone answers "not an
+          # ancestor" for both and would cry wolf on every normal deploy.
+          fetch-depth: 0
+          # blob:none keeps every one of the 7,223 commits and drops the blobs of old
+          # revisions. Measured 2026-09-13, three runs each: 33-35s / 531MB against
+          # 36-43s / 766MB, for identical ancestry. Nothing in this repo's workflows
+          # reads a historical file version - they ask merge-base, rev-list, log and
+          # cat-file -e, which are all commit-graph work - so those blobs were paid
+          # for on every run and never read.
+          filter: blob:none
+
+      - name: Compare production against main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: bash .github/scripts/audit-publish-provenance.sh
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # THE SAME QUESTION, ASKED OF THE ENGINE.
+  #
+  # The job above asks whether the CLIENT bundle is main. Nothing asked it of
+  # the ENGINE, and the engine is where the money is.
+  #
+  # The exact-SHA release owner fails any unshipped path except proof that the
+  # same immutable release is already sealed and public. This independent job
+  # still asks production directly; a workflow conclusion is not served-state
+  # evidence.
+  #
+  # Separate job, not a step, so an engine problem and a bundle problem cannot
+  # mask each other in the log or in the summary.
+  # ───────────────────────────────────────────────────────────────────────────
+  engine:
+    name: The engine is running main
+    # Runs independently of the deployment owner and has no release authority.
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout main with full history
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          # `git merge-base --is-ancestor` needs real history on both sides: the
+          # question is whether the engine is at OR AHEAD OF the newest
+          # engine-affecting commit, and a shallow clone cannot answer it.
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: Compare the engine against main
+        env:
+          ENGINE_URL: https://engine.smarter.poker
+        run: bash .github/scripts/audit-engine-provenance.sh
+
+      # The origin's Caddyfile lives in infra/ca-origin/ but NOTHING deploys
+      # it: writing /etc/caddy and reloading Caddy needs root, and there is
+      # deliberately no root key in CI. So the box and the repo can drift the
+      # moment either is edited, and until 2026-09-03 nothing would have
+      # noticed - the 404-cached-for-a-year bug lived there unseen.
+      #
+      # Comparing the file byte-for-byte would need that same root access and
+      # would fail on a comment while passing a config that serves the wrong
+      # thing. This asserts the four things the config EXISTS to produce, from
+      # outside, over the path a player actually takes. Every check is a bug
+      # that was real.
+      - name: The origin still behaves the way its config says
+        if: always()
+        run: bash .github/scripts/origin-contract.sh
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # IS ANYTHING RED ON MAIN THAT NOBODY IS LOOKING AT?
+  #
+  # CLAUDE.md 10.83 has described this detector since 2026-09-06 and Club Arena
+  # DID NOT HAVE IT - the section documents the World Hub's copy, and every
+  # agent reading Club Arena's CLAUDE.md has been told a guard was watching this
+  # repo when nothing was. Measured the day this job was added, three workflows
+  # were failing on Club Arena's `main` with no open issue naming any of them:
+  #
+  #   CI - Build & Type Safety                     1.4h, last green 11:00:19Z
+  #   Applied Migrations Are Recorded              1.0h, no green in the window
+  #   Deploy Monitoring (on infra/monitoring)      0.3h, no green in the window
+  #
+  # The third is the one that matters, and it is the argument for this job in a
+  # single line: `check-alert-rules-match.mjs` could not read the running rules
+  # off engine-01 and REFUSED TO PASS - doing exactly what 10.84 designed it to
+  # do - and the refusal reached nobody. A check behaving perfectly is still
+  # worthless if its result has no reader.
+  #
+  # Not in the ruleset, so a red run here blocks no merge. The job writes one
+  # durable issue for a silently red workflow and otherwise has no mutation
+  # authority. It never retries, repairs, dispatches, or touches production.
+  #
+  # ubuntu-latest ON PURPOSE, like the alarm job at the top of this file. The
+  # alarm must not share a failure domain with the boxes it watches, and `gh`
+  # is preinstalled there - a self-hosted runner without `gh` would give this
+  # repo a detector whose alarm silently fails, which is the 10.83 bug wearing
+  # a fresh coat.
+  # ── A GUARD WITH NO READER IS NOT A GUARD (2026-09-06) ──────────────────
+  # Three checks in scripts/ci/ asked production a question and were wired to
+  # NOTHING - they matched only themselves in a grep of .github, .husky and
+  # package.json:
+  #
+  #   check-realtime-publication      (merged in #3375, this same session)
+  #   check-bbj-functions-match-production   (the production BBJ function set is rebuildable from this repo)
+  #   check-cosmetic-catalog-drift           (the price list vs the trigger)
+  #
+  # That is CLAUDE.md 10.86 rule 3 - "a guard must have a reader, and you must
+  # name them" - and the first of the three was written by the agent quoting
+  # that rule, which is how easy it is to do.
+  #
+  # The realtime and cosmetics detectors ask the LIVE database. The BBJ guard
+  # is different: it proves the watched production function names can be
+  # rebuilt from tracked migrations and prints fingerprints for a separately
+  # witnessed comparison. It must never be reported as a live comparison.
+  # They run HERE, not in ci.yml, so pull-request checks do not depend on
+  # production being reachable. ubuntu-latest keeps the live readers outside
+  # the failure domain they inspect.
+  #
+  # Each detector records its exit code so all three can run. The final verdict
+  # carries every failure or unknown into the native Actions conclusion; this
+  # audit has no issue-writing or repair side channel.
+  live_drift:
+    name: Live drift and BBJ rebuild coverage remain clean
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Every subscription can actually fire
+        id: realtime
+        env:
+          SUPABASE_DB_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set +e
+          node scripts/ci/check-realtime-publication.mjs 2>&1 | tee /tmp/drift-realtime.log
+          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Every watched BBJ money function can be rebuilt from the repo
+        id: bbj
+        run: |
+          set +e
+          node scripts/ci/check-bbj-functions-match-production.mjs 2>&1 | tee /tmp/drift-bbj.log
+          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: The price list in the code and in the database agree
+        id: cosmetics
+        env:
+          SUPABASE_URL: https://kuklfnapbkmacvwxktbh.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set +e
+          node scripts/ci/check-cosmetic-catalog-drift.mjs 2>&1 | tee /tmp/drift-cosmetics.log
+          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Carry the live-drift verdict
+        if: always()
+        env:
+          RT: ${{ steps.realtime.outputs.code }}
+          BBJ: ${{ steps.bbj.outputs.code }}
+          COS: ${{ steps.cosmetics.outputs.code }}
+        run: |
+          set -euo pipefail
+          for code in "$RT" "$BBJ" "$COS"; do
+            [[ "$code" =~ ^[0-9]+$ ]] || {
+              echo "::error::A live-drift detector produced no trustworthy verdict."
+              exit 1
+            }
+          done
+          if [ "$RT" = 0 ] && [ "$BBJ" = 0 ] && [ "$COS" = 0 ]; then
+            echo 'All live-drift readers and repository rebuild guards returned clean evidence.'
+            exit 0
+          fi
+          echo "::error title=INTEGRITY DRIFT OR UNKNOWN::realtime=$RT bbj_rebuild=$BBJ cosmetics=$COS. Read the detector logs; no repair was attempted."
+          exit 1
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # IS THE PIPELINE GETTING WORSE? (2026-09-12)
+  #
+  # The `engine:` job above answers "is production running main" as a BOOLEAN,
+  # and it had been answering "no" continuously since 2026-09-11 00:25 - issue
+  # #4219 was open the whole time. So when production went from one release
+  # behind to FOURTEEN releases and four and a half hours behind, nothing
+  # anywhere changed state and there was no new signal to notice. A chronic
+  # alarm that never clears is the same blind spot as no alarm.
+  #
+  # This reads the pipeline's own append-only ledger and asks the question the
+  # boolean cannot: are commits being offered to production faster than
+  # production is taking them, and is the release lane itself the reason.
+  # Read-only. No dispatch, retry, repair, or mutation authority.
+  #
+  # It is a JOB OF ITS OWN rather than a step inside `engine:` because
+  # `engine:` is the CREDENTIAL-FREE provenance observer - it carries no
+  # GH_TOKEN and no DATABASE_URL, and
+  # `tests/engine-watchdog-asks-production.test.ts` has enforced exactly that
+  # since the watchdog was retired. A database reader belongs beside
+  # `live_drift` and `chip_conservation`, which is where every other read-only
+  # DATABASE_URL job in this workflow already lives.
+  # ─────────────────────────────────────────────────────────────────────────────
+  engine_deploy_starvation:
+    name: The engine pipeline is not starving
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Read the deploy attempt ledger
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          npm install pg@8 --no-save --ignore-scripts --no-audit --no-fund >/dev/null 2>&1 || true
+          node .github/scripts/check-engine-deploy-starvation.mjs
+
+  # Chip and diamond conservation is a production invariant, not merely a
+  # property of code on a pull request. This independent reader is read-only
+  # and fails closed when the database, credential, or pg runtime is missing;
+  # an unavailable live answer must never become a green SKIP.
+  chip_conservation:
+    name: Live chip and diamond supply still conserves
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install the pinned database client
+        run: npm ci --ignore-scripts --prefer-offline --no-audit --no-fund
+
+      - name: Prove conservation from production read-only state
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          REQUIRE_LIVE: '1'
+        run: node scripts/ci/check-chip-conservation.mjs
+
+  main_is_green:
+    name: Nothing is silently red on main
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Any workflow red on main past the threshold, with nobody watching
+        id: main-green
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          # PIPESTATUS[0], not the pipeline's code - `tee` always succeeds, and
+          # reading the pipeline's status here would report every run as clean.
+          set +e
+          node scripts/ci/check-main-is-green.mjs 2>&1 | tee /tmp/main-green.log
+          code=${PIPESTATUS[0]}
+          set -e
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "check-main-is-green exited ${code}"
+          if [ "$code" = "3" ]; then
+            echo "::warning title=Main is green?::COULD NOT TELL - see the log. No issue was raised and none was closed."
+          fi
+
+      - name: Raise the durable alarm for a silently red main
+        if: always() && steps.main-green.outputs.code == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          TITLE="A workflow has been failing on main with nobody watching"
+          LABEL="main-health-reader"
+          OWNER_MARKER='<!-- club-arena:production-integrity-main-health:v1 -->'
+          BODY="$RUNNER_TEMP/main-health-body.md"
+
+          # The label is part of the ownership identity. Read it first so the
+          # 15-minute audit does not rewrite label metadata on every alarm.
+          LABELS="$(gh label list --repo "$GITHUB_REPOSITORY" --search "$LABEL" \
+            --limit 100 --json name)"
+          if ! jq -e --arg label "$LABEL" 'any(.[]; .name == $label)' \
+            <<<"$LABELS" >/dev/null; then
+            gh label create "$LABEL" --repo "$GITHUB_REPOSITORY" \
+              --color B60205 \
+              --description "A durable reader for a failing workflow on main" >/dev/null
+          fi
+
+          owned_issue_number() {
+            gh issue list --repo "$GITHUB_REPOSITORY" --state open --label "$LABEL" \
+              --limit 100 --json number,title,body,labels | \
+              jq -r --arg title "$TITLE" --arg marker "$OWNER_MARKER" --arg label "$LABEL" '
+                [.[]
+                  | select(.title == $title)
+                  | select((.body // "") | contains($marker))
+                  | select(any(.labels[]?; .name == $label))
+                  | .number]
+                | if length == 0 then ""
+                  elif length == 1 then (.[0] | tostring)
+                  else error("multiple exact production-integrity main-health issues")
+                  end
+              '
+          }
+
+          {
+            echo "$OWNER_MARKER"
+            echo
+            echo 'One or more workflows have been red on `main` past the threshold and have no current issue naming them.'
+            echo
+            echo '```'
+            cat /tmp/main-green.log
+            echo '```'
+            echo
+            echo 'Reader workflow: `Production Integrity Audit`.'
+            echo 'Detector: `scripts/ci/check-main-is-green.mjs`. This issue closes only after the detector reports that every latest workflow verdict is green.'
+          } > "$BODY"
+          EXISTING="$(owned_issue_number)"
+          if [ -n "$EXISTING" ]; then
+            gh issue edit "$EXISTING" --repo "$GITHUB_REPOSITORY" --body-file "$BODY"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" \
+              --label "$LABEL" --body-file "$BODY"
+          fi
+
+      - name: Close the alarm only when every latest verdict is green
+        if: always() && steps.main-green.outputs.code == '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          grep -Fq "OK - every workflow's latest VERDICT on main is green." /tmp/main-green.log \
+            || { echo 'At least one failure is fresh or already tracked; retaining the alarm.'; exit 0; }
+          TITLE="A workflow has been failing on main with nobody watching"
+          LABEL="main-health-reader"
+          OWNER_MARKER='<!-- club-arena:production-integrity-main-health:v1 -->'
+
+          # Green runs are read-only unless the exact owned issue exists. A
+          # missing ownership label means there cannot be such an issue, so do
+          # not create a label merely to discover that there is nothing to close.
+          LABELS="$(gh label list --repo "$GITHUB_REPOSITORY" --search "$LABEL" \
+            --limit 100 --json name)"
+          if ! jq -e --arg label "$LABEL" 'any(.[]; .name == $label)' \
+            <<<"$LABELS" >/dev/null; then
+            echo 'The owned main-health label does not exist; there is no owned issue to close.'
+            exit 0
+          fi
+
+          owned_issue_number() {
+            gh issue list --repo "$GITHUB_REPOSITORY" --state open --label "$LABEL" \
+              --limit 100 --json number,title,body,labels | \
+              jq -r --arg title "$TITLE" --arg marker "$OWNER_MARKER" --arg label "$LABEL" '
+                [.[]
+                  | select(.title == $title)
+                  | select((.body // "") | contains($marker))
+                  | select(any(.labels[]?; .name == $label))
+                  | .number]
+                | if length == 0 then ""
+                  elif length == 1 then (.[0] | tostring)
+                  else error("multiple exact production-integrity main-health issues")
+                  end
+              '
+          }
+
+          EXISTING="$(owned_issue_number)"
+          if [ -n "$EXISTING" ]; then
+            gh issue close "$EXISTING" --repo "$GITHUB_REPOSITORY" \
+              --comment "Every workflow's latest verdict on main is green again."
+          fi
+
+      - name: Carry the main-health verdict
+        if: always()
+        env:
+          CODE: ${{ steps.main-green.outputs.code }}
+        run: |
+          [[ "$CODE" =~ ^[0-9]+$ ]] || { echo '::error::Main-health verdict is missing.'; exit 1; }
+          exit "$CODE"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # IS SOMEBODY STOPPING EVERY TABLE ON THE FELT WITH A SCHEMA CHANGE?
+  #
+  # On 2026-09-06 the fleet went from ~450 hands a minute to 6 between 16:04
+  # and 16:08. The engine was alive, leader and dealing; the database was idle
+  # with no lock waits; the engine log held 970 lines of
+  # `deal_step_timeout: load_seats exceeded 20s`. Nothing was broken.
+  #
+  # `ca_ddl_events` had the answer: 133 reload-triggering DDL statements in the
+  # single minute 16:14, applied through the pooler as one long script. ONE
+  # PostgREST schema-cache reload takes ~28 seconds on this database, and
+  # Postgres coalesces the reload NOTIFYs inside ONE transaction and not across
+  # many - which is exactly why CLAUDE.md section 2 rule 1 says a change goes in
+  # as one transaction.
+  #
+  # THE RULE WAS ALREADY WRITTEN. Nothing measured it, so nobody knew it was
+  # being broken and the agent running the script could not see what it was
+  # doing to the felt. This job is the reader that was missing (10.86 rule 3).
+  #
+  # It REPORTS and never gates: these statements do not go through a pull
+  # request at all, so there is nothing to block. A red run here is picked up by
+  # `check-main-is-green` in this same workflow.
+  #
+  # ubuntu-latest for the same reason as the jobs above - the alarm must not
+  # share a failure domain with the boxes it watches.
+  ddl_reload_storms:
+    name: No schema-reload storm is stalling the fleet
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Exit 2 is "COULD NOT TELL" and must not read as either outcome: a
+      # missing key or an unreadable answer is reported, never coerced into
+      # "no storm" (10.86 rules 1 and 2).
+      - name: Distinct reload-triggering DDL per minute, against a derived threshold
+        env:
+          SUPABASE_URL: https://kuklfnapbkmacvwxktbh.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set +e
+          node scripts/ci/check-ddl-reload-storms.mjs 2>&1 | tee /tmp/ddl-storms.log
+          code=${PIPESTATUS[0]}
+          set -e
+          echo "check-ddl-reload-storms exited ${code}"
+          if [ "$code" = "2" ]; then
+            echo "::warning title=DDL reload storms::COULD NOT TELL - see the log. Not reported as clean."
+          fi
+          exit "$code"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # IS THE SAME CHECK RED ON EVERY BRANCH AT ONCE?
+  #
+  # On 2026-09-07 twelve consecutive `CI - Build & Type Safety` runs failed,
+  # each a different agent on an unrelated branch, for hours. One missing index
+  # on a brand-new table turned `Supabase Invariants - A Club Stays Deletable`
+  # red across the whole estate, and nobody could merge anything.
+  #
+  # Every gate behaved correctly and said so on each pull request. What was
+  # missing is that nothing looks ACROSS pull requests: each agent saw one red
+  # check on their own branch and went hunting in their own diff.
+  #
+  # `main_is_green` above cannot see this - the failure never touched `main`.
+  # It lived in production database state that the pull-request checks read, so
+  # `main` stayed green the whole time nothing could land.
+  #
+  # It REPORTS and never gates: the branches are already blocked, and a
+  # thirteenth red check would help nobody.
+  #
+  # ubuntu-latest for the same reason as the jobs above - the alarm must not
+  # share a failure domain with the boxes it watches.
+  open_prs_are_green:
+    name: No single check is blocking every branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Exit 2 is "COULD NOT TELL" - an unreadable answer or a request budget
+      # spent before the window was fully read. Never folded into "nothing is
+      # estate-wide" (10.86 rules 1 and 2).
+      - name: Failing checks, grouped across every fresh pull request
+        id: open-prs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          # PIPESTATUS[0], not the pipeline's code - `tee` always succeeds.
+          set +e
+          node scripts/ci/check-open-prs-are-green.mjs 2>&1 | tee /tmp/open-prs.log
+          code=${PIPESTATUS[0]}
+          set -e
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "check-open-prs-are-green exited ${code}"
+          if [ "$code" = "2" ]; then
+            echo "::warning title=Open pull requests::COULD NOT TELL - see the log. Not reported as clean."
+          fi
+
+      # The detector always finishes so it can publish its code. This final
+      # step makes the native job conclusion the only durable verdict.
+      - name: Carry the verdict
+        if: always()
+        env:
+          CODE: ${{ steps.open-prs.outputs.code }}
+        run: |
+          [[ "$CODE" =~ ^[0-9]+$ ]] || { echo '::error::Open-PR verdict is missing.'; exit 1; }
+          exit "$CODE"

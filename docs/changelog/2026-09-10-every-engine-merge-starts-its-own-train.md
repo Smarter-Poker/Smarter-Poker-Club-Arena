@@ -1,5 +1,12 @@
 # Every engine merge starts its own deploy; nothing has to notice one is missing
 
+> **SUPERSEDED / HISTORICAL: DO NOT IMPLEMENT THIS RELEASE DESIGN.** This file
+> records the intermediate 2026-09-10 design. The current authority is
+> `stage-engine-release.yml` (detect an engine-affecting main change and emit
+> one exact-SHA event) followed by `auto-deploy-hetzner.yml` (the single receiver
+> and durable host transaction). The in-workflow hand-on, watchdog dispatch,
+> `DEPLOY_RETRY_LIMIT`, and cancelled-run retry described below are retired.
+
 **Dan, 2026-09-10:** "i do not want any watch dogs, i want hard coded fixes that
 solve this problem and prevent it from breaking or regressing, i want any and
 all pushes to be published in the order that they come in! ... don't just agree
@@ -103,7 +110,11 @@ The one stall nothing inside a workflow can fix is a run whose runner dies so
 hard that its `always()` steps never execute; the watchdog's alarm (report only)
 names that one.
 
-## Follow-up, 2026-09-11: the web publisher hands itself on too
+## Historical Follow-Up, 2026-09-11: The Web Publisher Hands Itself On Too (Retired)
+
+> This intermediate design is retired by the current exact-SHA authority named
+> at the top of this file. The text below is retained only as incident history;
+> none of its self-dispatch or watchdog paths may be restored.
 
 `publish-club-arena.yml` already published on every push and always publishes
 the TIP of main (a replaced run is carried by the run that replaced it), and it

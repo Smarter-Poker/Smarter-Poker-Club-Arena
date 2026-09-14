@@ -101,6 +101,8 @@ import {
 import { headsUpButtonSeat } from './headsUpButton.js';
 import type { StateMachine } from './StateMachine.js';
 import type { TableStatus } from '../types.js';
+import { assertDiamondTable } from '../domain/DiamondCashBoundary.js';
+import { HEADS_UP_SEATS } from '../config/headsUpSpec.js';
 
 export type EngineLeaseAuthority =
   | {
@@ -605,6 +607,45 @@ export abstract class ServerTableEngineBase {
   // If a player wins a pot and their stack + add-on exceeds max buy-in,
   // the add-on is reduced or canceled. Map<userId, requestedAmount>.
   protected pendingAddOns: Map<string, number> = new Map();
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  MID-HAND DIAMOND TOP-UPS ARE AN INTENT, NOT A DEBIT
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * The chip lane takes the money at request time and lands the chips at the
+   * end of the hand, through the durable `table_pending_addons` ledger. A
+   * Diamond seat cannot do that, and the reason is a constraint rather than a
+   * preference: the deferred trigger `zzz_diamond_seat_keeps_custody` requires
+   * a Diamond seat's `stack` to EQUAL its custody balance at every COMMIT. A
+   * reservation made now and applied later is a committed state where the two
+   * disagree, so there is no ordering of the chip lane's two steps that this
+   * arena permits.
+   *
+   * The alternative to a debit is an INTENT: nothing moves until the hand
+   * ends, and then the whole top-up happens in the one transaction the
+   * constraint does allow, through `fn_poker_diamond_top_up` - the door that
+   * already exists and is already certified.
+   *
+   * WHAT THE PLAYER GIVES UP, stated plainly because they are told it too: the
+   * chip lane guarantees the money is committed the moment they tap. This
+   * guarantees only that it will be attempted the moment the hand ends, so a
+   * player who spends those Diamonds elsewhere in the intervening thirty
+   * seconds gets an honest refusal instead. That is a narrower promise, and it
+   * is the widest one this constraint leaves; the chip lane's promise is not
+   * as wide as it looks either, since it re-sizes at landing and refunds the
+   * difference when the pot has moved the stack.
+   *
+   * KEYED BY REQUEST ID, not by user, so a retry of the same tap overwrites
+   * itself and two genuine taps both count. The id is the same uuidv5 the
+   * between-hands path derives, so the SQL door de-duplicates a replay of the
+   * landing itself.
+   *
+   * MEMORY ONLY, deliberately. An intent lost to an engine restart costs the
+   * player nothing, because nothing was taken; a DEBIT lost to a restart is
+   * the failure mode the durable chip ledger exists to prevent. There is
+   * nothing here worth making durable.
+   */
+  protected diamondTopUpIntents: Map<string, { userId: string; amount: number }> = new Map();
   /**
    * A2: does the durable `table_pending_addons` ledger need a sweep?
    *
@@ -1166,6 +1207,8 @@ export abstract class ServerTableEngineBase {
     handName?: string;
     /** HI-LO: the low half's entry (2026-09-04). */
     low?: boolean;
+    /** Per-pot slices of this share, main pot first (2026-09-13). */
+    pots?: Array<{ index: number; amount: number }>;
   }> = [];
   /**
    * SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): the unmerged per-pot(-half)
@@ -1825,9 +1868,20 @@ export abstract class ServerTableEngineBase {
       // fire-and-forget, the UI write must never affect gameplay.
       if (event.type === 'PLAYER_SAT_OUT' || event.type === 'PLAYER_SAT_BACK') {
         const sittingOut = event.type === 'PLAYER_SAT_OUT';
-        const occupancyId = this.seatedPlayers.find(
-          (p) => p.user_id === event.playerId
-        )?.occupancy_id;
+        const satPlayer = this.seatedPlayers.find((p) => p.user_id === event.playerId);
+        const occupancyId = satPlayer?.occupancy_id;
+        /* A horse the strike ladder sat out has lost its seat: nothing on the
+           platform sits a horse back in (sitBack is POST /sitout only), so a
+           cash seat is evicted after 2 orbits / 5 minutes and a tournament
+           seat is blinded off. Counted fleet-wide so it can page (Dan
+           2026-09-11). Twelve were parked this way at 14:55 UTC that day. */
+        if (sittingOut && event.reason === 'forced' && satPlayer?.is_horse) {
+          try {
+            EngineMetrics.horseForcedSitOutsTotal.inc(1, { format: this.tableFormat() });
+          } catch {
+            /* metrics must never affect gameplay */
+          }
+        }
         if (!occupancyId) return;
         void Promise.resolve(
           supabase
@@ -2254,8 +2308,24 @@ export abstract class ServerTableEngineBase {
     // impossible rather than merely unlikely.)
     const ritIsTournament =
       !!this.tableInfo.tournament_id || this.tableInfo.game_type === 'tournament';
+    /**
+     * HEADS-UP TABLE GATE (2026-09-13). The ruling quoted above names three
+     * places run-it-twice never goes - MTT, Spins, HEADS UP - and for eighteen
+     * days the code enforced two of them. Every heads-up TABLE on the platform
+     * happens to be a tournament (the 2-seat heads-up SNG shapes in
+     * TournamentRecurringService), so the tournament gate covered it by
+     * accident; the first 2-seat cash table would have offered the question.
+     *
+     * A heads-up table is a table FORMAT: two seats. It is not a two-way
+     * all-in on a full ring - that is the ordinary run-it-twice hand, and the
+     * reference recordings that shaped this feature are exactly that.
+     */
+    const ritIsHeadsUpTable =
+      Number(this.tableInfo.max_players) > 0 &&
+      Number(this.tableInfo.max_players) <= HEADS_UP_SEATS;
     const ritEnabled =
       !ritIsTournament &&
+      !ritIsHeadsUpTable &&
       (((this.tableInfo.run_it_twice ?? true) && (this.tableInfo.allow_run_it_twice ?? true)) ||
         (this.tableInfo.run_it_twice_enabled ?? false));
     // ALL-CASH INSURANCE 2026-08-26 (Dan): insurance is a CASH feature.
@@ -3667,7 +3737,62 @@ export abstract class ServerTableEngineBase {
       msg.includes('supabase_timeout') ||
       msg.includes('This operation was aborted') ||
       msg.includes('The operation was aborted') ||
-      msg.includes('deal_step_timeout')
+      msg.includes('deal_step_timeout') ||
+      /* A SERIALIZATION FAILURE IS THE DATABASE BLINKING, BY DEFINITION
+         (2026-09-12).
+         Every entry above is a TRANSPORT failure. The one error Postgres
+         itself defines as "this conflicted, run it again" was missing, so the
+         question in this method's own title was answered "the code is wrong"
+         for the textbook case of the database blinking.
+         `smarter_private.f06_try_lane` raises exactly this when it cannot take
+         the shared `ca:tournament-terminal-settlement:v1` lock, and it spells
+         the remedy into the message:
+             RAISE EXCEPTION 'F06_RETRY_CANONICAL_LANE' USING ERRCODE='40001'
+         Nothing has been written when it fires - the lock is taken before the
+         work - and the caller sees `atomic_hand_rolled_back`, so a retry
+         re-runs a transaction that committed nothing.
+         Measured on production 2026-09-12: 412 hands in two hours whose
+         history was never written, 820 alerts in all, because the engine
+         treated an explicit request to retry as a terminal refusal. */
+      msg.includes('F06_RETRY_CANONICAL_LANE') ||
+      /^40001$/.test(String((err as { code?: unknown })?.code ?? '')) ||
+      msg.includes('could not serialize access') ||
+      msg.includes('deadlock detected')
+    );
+  }
+
+  /**
+   * Did the database roll the WHOLE hand back and ask to be run again?
+   *
+   * `fn_ca_commit_hand_settlement` answers a refusal with a reason, and two of
+   * those reasons mean "this transaction wrote nothing":
+   * `atomic_hand_rolled_back` (the accepted-hand core's own
+   * `EXCEPTION WHEN OTHERS`) and `rolled_back` (the stack core's). They reach
+   * the engine as `atomic hand commit refused (<reason>): <sqlerrm>`, and
+   * `insertHandHistoryRow` throws them without a retry because every string
+   * containing "atomic hand commit refused" is treated as deterministic.
+   *
+   * Most of them ARE deterministic and must stay terminal - a conservation
+   * violation, a negative stack, a constraint, a missing column. What
+   * separates the rest is the SQLERRM the reason carries, so this asks BOTH
+   * questions: the database said it rolled back, AND the cause is the one
+   * Postgres defines as "this conflicted, run it again". Only then is another
+   * attempt a re-run of a transaction that committed nothing.
+   *
+   * Measured on production 2026-09-12, 10:00-11:35 UTC: 1,021 of 1,023
+   * semantic refusals were exactly this pair - `atomic_hand_rolled_back` or
+   * `rolled_back`, carrying `F06_RETRY_CANONICAL_LANE`. Not one carried a
+   * rounding, denomination, pot-total or seat-set reason.
+   */
+  protected static isRolledBackSerializationRefusal(err: unknown): boolean {
+    const msg =
+      err instanceof Error
+        ? err.message
+        : (err as { message?: string })?.message ||
+          (typeof err === 'object' && err !== null ? JSON.stringify(err) : String(err));
+    return (
+      /atomic hand commit refused \((?:atomic_hand_)?rolled_back\)/.test(msg) &&
+      ServerTableEngineBase.isTransientDbError(err)
     );
   }
 
@@ -3992,6 +4117,17 @@ export abstract class ServerTableEngineBase {
    */
   humansSeated(): number {
     return this.seatedPlayers.filter((p) => !p.is_horse && p.stack > 0).length;
+  }
+
+  /**
+   * Horses currently seated with chips, the twin of humansSeated() for the
+   * fleet gauges (`poker_horses_seated`, `poker_tables_with_horses` in
+   * GameServer.getPrometheusMetrics). Identification only (CLAUDE.md 10.5):
+   * it counts, it decides nothing. Dan 2026-09-11: the page for "the horses
+   * can't play" needs the number of horses playing to exist as a series.
+   */
+  horsesSeated(): number {
+    return this.seatedPlayers.filter((p) => p.is_horse === true && p.stack > 0).length;
   }
 
   /**
@@ -4864,6 +5000,53 @@ export abstract class ServerTableEngineBase {
     );
   }
 
+  /**
+   * A by-design pause that has TAKEN EFFECT - the question the table watchdog
+   * and GameServer's zombie reaper ask before they stand down (2026-09-11).
+   *
+   * isPausedByDesign() goes true the moment an authority raises its flag, and
+   * for what it was written for that is right: a parked table is not a stall.
+   * But almost every authority is a "stop at the next hand boundary" fence,
+   * raised on tables still playing a hand: the maintenance break at :53
+   * (maintenancePaused, on EVERY table), the tournament's own synchronized
+   * break at :55 and hand-for-hand (pauseAfterHand -> handForHandPaused, on
+   * every table of the event), and a deal hold. None of them stops the turn
+   * clock. Until the hand lands the table is PLAYING, and a hand that froze is
+   * exactly as dead under one of those flags as without it.
+   *
+   * Both readers took the flag for the fact. The watchdog stood down for every
+   * table still mid-hand when a flag went up, so a hand that lost its clock in
+   * the last-hand window could not be rescued; the reaper exempted it for
+   * MAX_HEALTHY_PAUSE_MS - ten minutes, longer than the whole break - so it
+   * could not be reaped either. It never parked, and one table that never
+   * parks keeps readyForRestart shut. On 2026-09-11 build 404948b3 froze
+   * tournament tables mid-hand (#4225) and held 514, 526 and 523 of them
+   * unparked through three countdowns: no certificate, no restart, and no way
+   * for the fix to ship without an owner-approved exception.
+   *
+   * So: between hands every authority means what it says. Mid-hand, only a
+   * fence a REBUILD WOULD LOSE still holds the table - the final-table deal,
+   * the terminal closeout and an FSM 'paused' lock live on this engine alone.
+   * The others survive a rebuild: MaintenanceBreak.adopt() parks every engine
+   * created during the break, and TournamentManagerBase.
+   * prepareManagedTableEngineForPlay() re-applies the tournament break, the
+   * add-on break and hand-for-hand to a replacement before admitting it. So a
+   * frozen hand under them is worked by the watchdog and reaped on its usual
+   * clock, and its replacement arrives parked - the certificate is earned,
+   * not waived.
+   *
+   * (First draft counted every non-maintenance authority at once, mid-hand
+   * too. Review caught it: the :55 tournament break raises handForHandPaused
+   * on every MTT table, so from :55 - the only minutes readyForRestart can
+   * open - the draft shielded a frozen MTT hand again.)
+   */
+  isParkedByDesign(): boolean {
+    if (this.isBetweenHands()) return this.isPausedByDesign();
+    return (
+      this.finalTableDealPaused || this.terminalCloseoutPaused || this.tableFSM.state === 'paused'
+    );
+  }
+
   /** Ms spent in the current by-design pause; 0 when not paused. */
   msPaused(): number {
     return this.pausedSinceMs === 0 ? 0 : Date.now() - this.pausedSinceMs;
@@ -5596,6 +5779,37 @@ export abstract class ServerTableEngineBase {
         )
         .eq('id', this.tableId)
         .maybeSingle();
+      /* A DIAMOND TABLE'S RULES DO NOT LEAVE THE BOUNDARY UNDER IT (2026-09-11,
+         restated 2026-09-12 when straddles and run it twice were admitted).
+
+         Everything below re-reads the row roughly once a minute and applies
+         it, which is right for a chip club: the rules follow the row. For an
+         arena table it was a hole, because admission is the only OTHER place
+         the Diamond boundary is checked, so a column flipped afterwards was
+         honoured here whatever it said.
+
+         The fix is not to freeze an arena table. A staff door may legitimately
+         turn straddles or run it twice on for a table that is already running,
+         and both are inside the boundary now, so the refreshed row SHOULD be
+         applied and the table picks the change up without a restart. What must
+         never be applied is a row the boundary would no longer admit - rake, a
+         jackpot percentage, insurance, a bomb pot, a variant, or a run-it
+         column that has gone unset. Those are refused here and the table keeps
+         dealing under the rules its players sat down to, with the refusal
+         recorded rather than silently swallowed. */
+      if (tableRow && this.tableInfo && (this.tableInfo as any).arena?.asset === 'diamonds') {
+        try {
+          // The boundary of the table's own kind: a tournament table is held
+          // to the tournament boundary, a cash table to the cash one.
+          assertDiamondTable(tableRow as unknown as Record<string, unknown>);
+        } catch (error) {
+          console.error(
+            `[refreshRakeConfig] Diamond table ${this.tableId} rules changed to something the ` +
+              `arena boundary refuses; keeping the admitted rules. ${String(error)}`
+          );
+          return;
+        }
+      }
       if (tableRow && this.tableInfo) {
         this.tableInfo.rake_percent = tableRow.rake_percent ?? undefined;
         this.tableInfo.rake_cap_bb = tableRow.rake_cap_bb ?? undefined;
@@ -6336,6 +6550,95 @@ export abstract class ServerTableEngineBase {
    * stays bounded by in-flight writers, not by table lifetime.
    */
   private entryHoldWriteChains: Map<string, Promise<void>> = new Map();
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  A TABLE THAT CANNOT DEAL HOLDS NOBODY FOR A BLIND
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Waiting for the big blind exists so a newcomer cannot enter behind the
+   * blinds and take the button for free. It is a rule about a hand that is
+   * being dealt. On a table that is NOT dealing it is a deadlock, and on
+   * 2026-09-11 it was holding seven live must-move tables shut:
+   *
+   *   tbl      | seated | waiting | active | oldest | hands in 30m
+   *   2755c54c |      6 |       5 |      1 |  94min |            0
+   *   1c45cada |      6 |       5 |      1 |  94min |            0
+   *   9e851fff |      6 |       5 |      1 |  94min |            0
+   *   1dc09e13 |      4 |       3 |      1 |  94min |            0
+   *   e670d636 |      4 |       3 |      1 |  34min |            0
+   *   5fceabfd |      2 |       1 |      1 |   7min |            0
+   *   140532e7 |      2 |       1 |      1 |   6min |            0
+   *
+   * Every one of the 129 open cluster tables that was seated-but-not-dealing
+   * was a table with a waiter on it, and no other table was stuck: the
+   * correlation was exact. The cycle is closed and cannot break itself -
+   * `activePlayers` excludes a waiter, so the deal gate sees one player and
+   * sleeps; no deal means the big blind never moves; the big blind never
+   * moving means the natural release at the top of the loop never fires. The
+   * only other way out is the player tapping "post to enter", and these were
+   * horses, which never tap. Six funded seats sat at a dead table for an hour
+   * and a half while the floor showed the game as running.
+   *
+   * So: while the table cannot deal, nobody waits. There is no blind in
+   * flight to dodge, the next deal is the table's first hand and its blinds
+   * post by position - which is exactly what the dealing loop already says
+   * about its own first iteration. The released seat is NOT seeded into
+   * `dealtInUserIds`: it has never been dealt a hand here, so "a new player
+   * never gets the button" still holds on the hand it enters.
+   *
+   * THIS IS NOT THE FREE RELEASE DAN REVERSED, and the difference is the
+   * whole point. Dan 2026-08-26, binding: "Every single player needs to
+   * either wait for the BB or post when entering a cash game... no free hands
+   * or coming in behind the blinds" - which killed a release that let a
+   * waiter in on the NEXT TICK of a running table, behind blinds that had
+   * already been posted. Nothing here runs at a running table. The gate above
+   * this call has already decided the table cannot deal, so there are no
+   * blinds to come in behind and no hand to come in behind it: every seat
+   * enters on the same hand and that hand posts its blinds by position,
+   * identical to six players opening a brand-new table, which this engine
+   * already deals without making anyone wait. `EntryPostingAndButton` still
+   * owns the running-table rule and is untouched.
+   *
+   * Only when the release actually starts the game. If the table would still
+   * be short with everyone let in, the hold costs nothing and stays - it is
+   * still a real hold for whenever the table fills.
+   *
+   * @returns how many seats were released, for the caller to log.
+   */
+  protected releaseWaitersNoBlindCanReach(): number {
+    if (this.isTournamentTable()) return 0;
+    if (this.waitingForBB.size === 0) return 0;
+
+    // The deal gate's own predicate, minus the one exclusion under test.
+    const dealableIgnoringTheWait = this.seatedPlayers.filter(
+      (p) =>
+        p.stack > 0 &&
+        !this.disconnectEngine.isSittingOut(this.tableId, p.user_id) &&
+        !this.isHeldForSwap(p.user_id)
+    );
+    if (dealableIgnoringTheWait.length < this.minPlayersToDeal()) return 0;
+
+    let released = 0;
+    for (const p of dealableIgnoringTheWait) {
+      if (!this.waitingForBB.has(p.user_id)) continue;
+      this.waitingForBB.delete(p.user_id);
+      // Same write as the natural big-blind release: the seat owes nothing
+      // from here, so a standing post agreement goes with the hold rather
+      // than surviving to bill a second blind.
+      this.postBBWhenClear.delete(p.user_id);
+      this.postingBBToEnter.delete(p.user_id);
+      this.persistEntryHold(p.user_id, { hold: null, agreed: false });
+      released += 1;
+    }
+    if (released > 0) {
+      console.log(
+        `[ServerTableEngine:${this.tableId}] released ${released} seat(s) held for a big blind that could not arrive: ` +
+          `${dealableIgnoringTheWait.length} funded seat(s) and nothing being dealt`
+      );
+    }
+    return released;
+  }
 
   protected persistEntryHold(
     userId: string,

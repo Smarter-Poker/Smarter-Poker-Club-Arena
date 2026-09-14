@@ -2,7 +2,9 @@
 -- start_time is deliberately one hour old: it is the expired human fill
 -- window, never the instant either game began. The first Spin and Heads-Up
 -- Sit & Go must refund; the second pair has immutable completed launch
--- receipts and must refuse without moving money. The third pair keeps both
+-- receipts and must refuse without moving money. Two scheduled MTTs then
+-- prove that durable started_at and completed-launch evidence close the same
+-- door even while status and the future schedule still look open. The third pair keeps both
 -- launch receipt and started_at absent but has persisted hand history; that
 -- irreversible play evidence must close both refund doors too.
 BEGIN;
@@ -94,7 +96,36 @@ INSERT INTO public.tournaments(
     'a1200000-0000-4000-8000-000000000001','NLH','sng','SNG',
     1,0,1000,clock_timestamp()+interval '1 day',NULL,'REGISTERING',
     0,2,2,2,1,0,0,0,false,0,0,false
+  ),
+  (
+    'a1400000-0000-4000-8000-000000000007',
+    'Scheduled MTT Started At Refusal',
+    'a1200000-0000-4000-8000-000000000001','NLH','nlh','MTT',
+    1,0,1000,clock_timestamp()+interval '1 day',clock_timestamp(),'REGISTERING',
+    1,100,2,9,1,1,0,0,false,0,0,false
+  ),
+  (
+    'a1400000-0000-4000-8000-000000000008',
+    'Scheduled MTT Completed Launch Refusal',
+    'a1200000-0000-4000-8000-000000000001','NLH','nlh','MTT',
+    1,0,1000,clock_timestamp()+interval '1 day',NULL,'REGISTERING',
+    1,100,2,9,1,1,0,0,false,0,0,false
   );
+
+INSERT INTO public.tournament_players(
+  id,tournament_id,user_id,username,chips,status,club_id,
+  is_satellite_qualifier
+) VALUES
+  ('a1900000-0000-4000-8000-000000000007',
+   'a1400000-0000-4000-8000-000000000007',
+   'a1100000-0000-4000-8000-000000000001',
+   'Seat First Unregister Probe',1000,'registered',
+   'a1200000-0000-4000-8000-000000000001',false),
+  ('a1900000-0000-4000-8000-000000000008',
+   'a1400000-0000-4000-8000-000000000008',
+   'a1100000-0000-4000-8000-000000000001',
+   'Seat First Unregister Probe',1000,'registered',
+   'a1200000-0000-4000-8000-000000000001',false);
 
 INSERT INTO public.tables(
   id,club_id,name,game_type,game_variant,max_players,current_players,
@@ -245,7 +276,9 @@ INSERT INTO public.tournament_launch_receipts(
   ('a1400000-0000-4000-8000-000000000003',
    'a1700000-0000-4000-8000-000000000003',now(),now(),now()),
   ('a1400000-0000-4000-8000-000000000004',
-   'a1700000-0000-4000-8000-000000000004',now(),now(),now());
+   'a1700000-0000-4000-8000-000000000004',now(),now(),now()),
+  ('a1400000-0000-4000-8000-000000000008',
+   'a1700000-0000-4000-8000-000000000008',now(),now(),now());
 SET LOCAL session_replication_role=origin;
 
 SET LOCAL ROLE authenticated;
@@ -255,7 +288,13 @@ INSERT INTO seat_first_probe_results(phase,value) VALUES
     'a1600000-0000-4000-8000-000000000003')),
   ('heads_up_after_launch_refusal',public.fn_unregister_from_tournament(
     'a1400000-0000-4000-8000-000000000004',
-    'a1600000-0000-4000-8000-000000000004'));
+    'a1600000-0000-4000-8000-000000000004')),
+  ('scheduled_after_started_at_refusal',public.fn_unregister_from_tournament(
+    'a1400000-0000-4000-8000-000000000007',
+    'a1600000-0000-4000-8000-000000000007')),
+  ('scheduled_after_launch_refusal',public.fn_unregister_from_tournament(
+    'a1400000-0000-4000-8000-000000000008',
+    'a1600000-0000-4000-8000-000000000008'));
 RESET ROLE;
 
 DO $actual_start_refusal_proof$
@@ -264,15 +303,25 @@ DECLARE
                   WHERE phase='spin_after_launch_refusal');
   v_heads_up jsonb:=(SELECT value FROM seat_first_probe_results
                       WHERE phase='heads_up_after_launch_refusal');
+  v_scheduled_started_at jsonb:=(SELECT value FROM seat_first_probe_results
+                      WHERE phase='scheduled_after_started_at_refusal');
+  v_scheduled_launch jsonb:=(SELECT value FROM seat_first_probe_results
+                      WHERE phase='scheduled_after_launch_refusal');
 BEGIN
   IF COALESCE((v_spin->>'ok')::boolean,true)
      OR v_spin->>'reason' IS DISTINCT FROM 'tournament_started'
      OR COALESCE((v_heads_up->>'ok')::boolean,true)
      OR v_heads_up->>'reason' IS DISTINCT FROM 'tournament_started'
+     OR COALESCE((v_scheduled_started_at->>'ok')::boolean,true)
+     OR v_scheduled_started_at->>'reason' IS DISTINCT FROM 'tournament_started'
+     OR COALESCE((v_scheduled_launch->>'ok')::boolean,true)
+     OR v_scheduled_launch->>'reason' IS DISTINCT FROM 'tournament_started'
      OR (SELECT count(*) FROM public.tournament_players p
           WHERE p.tournament_id IN (
             'a1400000-0000-4000-8000-000000000003',
-            'a1400000-0000-4000-8000-000000000004'))<>2
+            'a1400000-0000-4000-8000-000000000004',
+            'a1400000-0000-4000-8000-000000000007',
+            'a1400000-0000-4000-8000-000000000008'))<>4
      OR (SELECT count(*) FROM public.table_seats s
           WHERE s.table_id IN (
             'a1500000-0000-4000-8000-000000000003',
@@ -282,18 +331,20 @@ BEGIN
        SELECT 1 FROM public.tournament_unregistration_receipts r
         WHERE r.request_id IN (
           'a1600000-0000-4000-8000-000000000003',
-          'a1600000-0000-4000-8000-000000000004'))
+          'a1600000-0000-4000-8000-000000000004',
+          'a1600000-0000-4000-8000-000000000007',
+          'a1600000-0000-4000-8000-000000000008'))
      OR (SELECT chip_balance FROM public.club_members
           WHERE club_id='a1200000-0000-4000-8000-000000000001'
             AND user_id='a1100000-0000-4000-8000-000000000001')
           IS DISTINCT FROM 98 THEN
     RAISE EXCEPTION
-      'FAIL completed launch truth did not close both refund doors: Spin %, Heads-Up %',
-      v_spin,v_heads_up;
+      'FAIL durable actual-start truth did not close every refund door: Spin %, Heads-Up %, scheduled started_at %, scheduled launch %',
+      v_spin,v_heads_up,v_scheduled_started_at,v_scheduled_launch;
   END IF;
 
   RAISE NOTICE
-    'AUDIT_TEST_PASS: Spin and Heads-Up SNG separately refunded after their fill-window deadlines while still unstarted; both separately refused after immutable launch completion; wallet-origin chips returned only to the exact source wallet; all probe work rolls back';
+    'AUDIT_TEST_PASS: Spin and Heads-Up SNG separately refunded after their fill-window deadlines while still unstarted; seat-first and scheduled tournaments refused after durable started_at or immutable launch completion; wallet-origin chips returned only to the exact source wallet; all probe work rolls back';
 END;
 $actual_start_refusal_proof$;
 

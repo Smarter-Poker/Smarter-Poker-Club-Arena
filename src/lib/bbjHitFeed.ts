@@ -54,6 +54,7 @@
 import { supabase } from './supabase';
 import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
+import { refreshBbjMini } from './bbjMiniFeed';
 
 /** The shape of the row Realtime hands us. Every field is optional on the wire. */
 interface BbjWinnerRow {
@@ -114,12 +115,32 @@ async function announce(row: BbjWinnerRow, poolId: string): Promise<void> {
      except here what gets muted is the real jackpot.
 
      A mini is not hidden: it gets the full celebration AT ITS OWN TABLE from
-     the engine's `bbj_hit` event, it appears in the ticker, and it is listed
-     and badged on the Previous Winners page. It just does not interrupt
-     everybody else.
+     the engine's `bbj_hit` event, the table plate names what it pays at these
+     stakes, the rules panel and the info modal carry its own qualifying bar,
+     and it is listed and badged on the Previous Winners page. It just does not
+     interrupt everybody else.
+
+     CORRECTED 2026-09-11: this list used to include "it appears in the
+     ticker". `BBJTicker` was mounted on no page - the reachability law
+     allowlisted it as read only by a test - so one of the three compensations
+     offered here for not announcing a mini platform-wide did not exist. The
+     surfaces named above are the ones that actually render, checked file by
+     file rather than remembered.
+
+     AND THE FILE IS GONE (2026-09-12, phase 4). A component that exists,
+     renders nowhere, and sits on an allowlist is one every reader has to
+     re-check; this claim is the proof, because it was written on the strength
+     of a surface that had not existed for weeks. Deleted rather than mounted:
+     mounting it would have added a second live subscription to the same
+     jackpot number, which is how one screen ends up showing two figures.
 
      A row with no `kind` is a main jackpot - every row written before today. */
-  if ((row.kind || 'main') !== 'main') return;
+  if ((row.kind || 'main') !== 'main') {
+    /* A mini just left the reserve: every surface showing "what the mini pays
+       here" re-reads now rather than in up to a minute (lib/bbjMiniFeed). */
+    refreshBbjMini();
+    return;
+  }
 
   /* THE HIT IS REAL BEFORE ANY OF THIS RUNS. The row only exists because the
      payout transaction committed, so nothing below may decide not to announce

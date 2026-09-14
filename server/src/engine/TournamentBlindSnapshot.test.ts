@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { HandController } from './HandController.js';
+import * as tournamentContext from '../services/TournamentBrainContext.js';
 
 const { loadTable, loadSeatedPlayers } = vi.hoisted(() => ({
   loadTable: vi.fn(),
@@ -80,6 +81,33 @@ function fixture(count = 3) {
 }
 
 describe('tournament levels belong to the hand that was created with them', () => {
+  it('binds the observation cache reader to the dealt tournament before table reassignment', async () => {
+    const read = vi.spyOn(tournamentContext, 'getTournamentBrainContextSnapshot').mockReturnValue({
+      context: null,
+      status: 'warming',
+      issues: ['warming'],
+      ageMs: null,
+    });
+    const { engine, deal } = fixture();
+    const hand = await deal();
+    expect(read).not.toHaveBeenCalled();
+    engine.tableInfo.tournament_id = 'a-later-table-assignment';
+    const actions: any[] = [];
+    hand.onEvent((event) => {
+      if (event.type === 'PLAYER_ACTION') actions.push(event);
+    });
+    hand.start();
+    expect(hand.performAction(hand.getState().currentPlayerSeat, 'call', undefined, 'player')).toBe(
+      true
+    );
+    expect(read).toHaveBeenCalledWith('tournament-level-boundary');
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(actions[0].publicNode).toMatchObject({
+      status: 'captured',
+      tournamentStage: { status: 'unavailable', reason: 'context_warming' },
+    });
+  });
+
   it('keeps an active hand at its old stakes and gives the next hand the new blinds and ante', async () => {
     const { engine, deal } = fixture();
     await engine.readNextHandInputs();

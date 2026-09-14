@@ -120,6 +120,26 @@ the fence working rather than a gap. `fn_bbj_arm_drill` refuses:
 | `pool_is_empty_nothing_to_pay`       | a pool with nothing in it cannot demonstrate a payout                                                     |
 | `already_armed`                      | one live arm per table, enforced by a partial unique index                                                |
 | `not_platform_admin`                 | `fn_is_platform_admin()`                                                                                  |
+| `unknown_drill_kind`                 | `p_kind` is neither `main` nor `mini`                                                                     |
+
+A **mini** arm (`p_kind => 'mini'`) is refused for four more reasons, and every
+one of them is a question `fn_bbj_mini_payout` would have asked afterwards. The
+arm asks them FIRST so an arm cannot fire into a refusal - burning the one arm
+you get and paying nothing:
+
+| refusal                                   | why                                                                                    |
+| ----------------------------------------- | -------------------------------------------------------------------------------------- |
+| `variant_is_not_eligible_for_the_jackpot` | PLO6 and Short Deck are not in `bbj_qualifying_hands` as eligible, so they get no mini |
+| `mini_is_off_for_this_pool`               | `bbj_pools.mini_enabled` is false                                                      |
+| `mini_disabled_for_this_tier`             | this table's stakes tier is switched off in `bbj_mini_tiers`                           |
+| `no_stakes_tier_for_this_big_blind`       | the table's big blind falls outside every row of `bbj_stakes_tiers`                    |
+| `reserve_cannot_cover_a_mini_payout`      | backup minus the **parked** reserve minus this tier's amount would break the floor     |
+
+Note what a mini arm does NOT check: the 1,000.00 ceiling. That ceiling exists
+so a MAIN drill cannot pay a large share of a pool; a mini pays a flat tier
+amount (250 to 1,500) that the tier table already bounds. So a pool whose main
+balance is far above the ceiling can still be drilled for a mini - which is
+usually the only way to drill anything on a club that has been running a while.
 
 So a drill needs its own club with its own small pool. That is a one-time
 setup and it is Dan's to approve, because it funds a pool:
@@ -143,10 +163,19 @@ pool.
 As a platform admin:
 
 ```sql
+-- the MAIN jackpot: a share of the pool
 select public.fn_bbj_arm_drill('<table uuid>', 'phase 4 drill');
+
+-- the MINI jackpot: this table's flat tier amount out of the backup reserve
+select public.fn_bbj_arm_drill('<table uuid>', 'mini drill', 'mini');
 ```
 
-`{"ok": true, ...}` means the next showdown at that table is the drill. Anything
+`p_kind` defaults to `'main'`, so the two-argument call above means exactly
+what it has always meant.
+
+`{"ok": true, ...}` means the next showdown at that table is the drill. The
+answer names the `bank` it is armed against (`main` or `backup`), the `balance`
+of THAT bank, the `kind`, and for a mini the `tierId` it will pay. Anything
 else is a refusal and says which one. An `info` row lands in `financial_alerts`
 saying in words that a drill is armed and that the chips are real.
 
@@ -155,6 +184,10 @@ Check what is armed at any time:
 ```sql
 select * from public.fn_bbj_drill_arms();
 ```
+
+`kind` tells a mini arm from a main one, and `pool_balance_at_arm` is the
+balance of the bank that arm was armed against - the main pool for a main arm,
+the backup reserve for a mini.
 
 ## What to watch, and what each surface proves
 
@@ -195,7 +228,17 @@ means a recipient had no club wallet and their share is held for them
 
 `poker_bbj_drills_fired_total` is counted separately from
 `poker_bbj_hits_detected_total`, so **detected minus drills** is the number of
-genuine bad beats this platform has ruled. Both the arming and the firing leave
+genuine bad beats this platform has ruled.
+
+The mini has its own pair, and the subtraction must be done WITHIN a family:
+
+    genuine main bad beats = poker_bbj_hits_detected_total      - poker_bbj_drills_fired_total
+    genuine minis          = poker_bbj_mini_hits_detected_total - poker_bbj_mini_drills_fired_total
+
+Never across one. The first cut of the mini drill incremented the MAIN's
+`drills_fired` while incrementing the MINI's `hits_detected`, which made the
+first line under-count by one per mini drill and go negative in any window
+where minis were drilled and no main jackpot hit. Both the arming and the firing leave
 a `financial_alerts` row, and `bbj_drill_arms` records who armed it, when, and
 which hand consumed it. A drill is a real jackpot at a drill club - the history
 is true - and these are how anyone reading it later knows why it happened.

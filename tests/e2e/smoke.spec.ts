@@ -85,6 +85,40 @@ test.describe('Club Arena — Smoke Tests', () => {
     await assertRendered(page, '/cashier');
   });
 
+  test('Daily Bonus status returns a successful JSON object', async ({ page }, testInfo) => {
+    test.skip(
+      process.env.E2E_REQUIRE_AUTH !== '1',
+      'requires the isolated authenticated certificate account'
+    );
+    const statusResponse = page
+      .waitForResponse(
+        (response) => new URL(response.url()).pathname === '/rest/v1/rpc/fn_ca_daily_bonus_status',
+        { timeout: 15000 }
+      )
+      .catch(() => null);
+    await page.goto(url('/bonuses'), { waitUntil: 'domcontentloaded' });
+    expect(page.url()).not.toContain('/auth');
+    await expect(page.locator('#root')).toBeAttached();
+    const response = await statusResponse;
+    const body: unknown = response ? await response.json().catch(() => undefined) : undefined;
+    const metadata = {
+      httpStatus: response?.status() ?? null,
+      contentType: response?.headers()['content-type'] ?? null,
+      bodyKind: body === null ? 'null' : Array.isArray(body) ? 'array' : typeof body,
+    };
+    // Diagnostic evidence deliberately excludes response contents and credentials.
+    await testInfo.attach('daily-bonus-status-response', {
+      body: Buffer.from(JSON.stringify(metadata)),
+      contentType: 'application/json',
+    });
+    expect(response, 'the authenticated bonus page must read its status RPC').not.toBeNull();
+    expect(metadata.httpStatus).toBeGreaterThanOrEqual(200);
+    expect(metadata.httpStatus).toBeLessThan(300);
+    expect(metadata.contentType).toContain('application/json');
+    expect(metadata.bodyKind).toBe('object');
+    expect(page.url()).not.toContain('/auth');
+  });
+
   test('No console errors on critical pages', async ({ page }) => {
     const consoleErrors: string[] = [];
     page.on('console', (msg: any) => {

@@ -1,0 +1,1208 @@
+[
+  {
+    "evidence_id": "G5-UNION-FLOOR-0001",
+    "primary_home": "DU-CREDIT",
+    "basis": "Exact root contract and original accepted cause disposition",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "SESSION-SUMMARY-O01",
+    "primary_home": "DU-REPORT",
+    "basis": "Derivative session identity/merge/account rendering; financial outcome remains original authority",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "SESSION-SUMMARY-O02",
+    "primary_home": "DU-REPORT",
+    "basis": "Derivative session identity/merge/account rendering; financial outcome remains original authority",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "SESSION-SUMMARY-O03",
+    "primary_home": "DU-REPORT",
+    "basis": "Derivative session identity/merge/account rendering; financial outcome remains original authority",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "SESSION-SUMMARY-O04",
+    "primary_home": "DU-REPORT",
+    "basis": "Derivative session identity/merge/account rendering; financial outcome remains original authority",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "SESSION-SUMMARY-O05",
+    "primary_home": "DU-REPORT",
+    "basis": "Derivative session identity/merge/account rendering; financial outcome remains original authority",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "SEAT-PRESENCE-O01",
+    "primary_home": "DU-REPORT",
+    "basis": "Derivative presence scope; never proof of accepted occupancy, movement or money",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "SEAT-PRESENCE-O02",
+    "primary_home": "DU-REPORT",
+    "basis": "Derivative presence scope; never proof of accepted occupancy, movement or money",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "SEAT-PRESENCE-O03",
+    "primary_home": "DU-REPORT",
+    "basis": "Derivative presence scope; never proof of accepted occupancy, movement or money",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "H15-O01",
+    "primary_home": "DU-REPORT",
+    "basis": "Retained technical/domain source qualification; actual paid consumer joins elsewhere, no general scan/strategy prerequisite",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "H15-O02",
+    "primary_home": "DU-REPORT",
+    "basis": "Retained technical/domain source qualification; actual paid consumer joins elsewhere, no general scan/strategy prerequisite",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "H15-Q01",
+    "primary_home": "DU-REPORT",
+    "basis": "Retained technical/domain source qualification; actual paid consumer joins elsewhere, no general scan/strategy prerequisite",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "H15-Q02",
+    "primary_home": "DU-REPORT",
+    "basis": "Retained technical/domain source qualification; actual paid consumer joins elsewhere, no general scan/strategy prerequisite",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "H15-Q03",
+    "primary_home": "DU-REPORT",
+    "basis": "Retained technical/domain source qualification; actual paid consumer joins elsewhere, no general scan/strategy prerequisite",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "H15-Q04",
+    "primary_home": "DU-REPORT",
+    "basis": "Retained technical/domain source qualification; actual paid consumer joins elsewhere, no general scan/strategy prerequisite",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "H15-Q05",
+    "primary_home": "DU-REPORT",
+    "basis": "Retained technical/domain source qualification; actual paid consumer joins elsewhere, no general scan/strategy prerequisite",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "H15-Q06",
+    "primary_home": "DU-REPORT",
+    "basis": "Retained technical/domain source qualification; actual paid consumer joins elsewhere, no general scan/strategy prerequisite",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "H15-Q07",
+    "primary_home": "DU-REPORT",
+    "basis": "Retained technical/domain source qualification; actual paid consumer joins elsewhere, no general scan/strategy prerequisite",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "H15-Q08",
+    "primary_home": "DU-SCOPE",
+    "basis": "Retained technical/domain source qualification; actual paid consumer joins elsewhere, no general scan/strategy prerequisite",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "H15-Q09",
+    "primary_home": "DU-REPORT",
+    "basis": "Retained technical/domain source qualification; actual paid consumer joins elsewhere, no general scan/strategy prerequisite",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "H15-Q10",
+    "primary_home": "DU-REPORT",
+    "basis": "Retained technical/domain source qualification; actual paid consumer joins elsewhere, no general scan/strategy prerequisite",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "H57-AUTH-Q01",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Account-generation and transport qualification consumed by exact financial callers; timeout never proves rollback",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "H57-AUTH-Q02",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Account-generation and transport qualification consumed by exact financial callers; timeout never proves rollback",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "H57-AUTH-Q03",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Account-generation and transport qualification consumed by exact financial callers; timeout never proves rollback",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "H57-AUTH-Q04",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Account-generation and transport qualification consumed by exact financial callers; timeout never proves rollback",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "H57-AUTH-Q05",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Account-generation and transport qualification consumed by exact financial callers; timeout never proves rollback",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "H57-AUTH-Q06",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Account-generation and transport qualification consumed by exact financial callers; timeout never proves rollback",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "H57-TRANSPORT-Q01",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Account-generation and transport qualification consumed by exact financial callers; timeout never proves rollback",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "H57-TRANSPORT-Q02",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Account-generation and transport qualification consumed by exact financial callers; timeout never proves rollback",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "H57-TRANSPORT-Q03",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Account-generation and transport qualification consumed by exact financial callers; timeout never proves rollback",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "H57-TRANSPORT-Q04",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Account-generation and transport qualification consumed by exact financial callers; timeout never proves rollback",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "H57-TRANSPORT-Q05",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Account-generation and transport qualification consumed by exact financial callers; timeout never proves rollback",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "SW-HG-O01",
+    "primary_home": "DU-REPORT",
+    "basis": "Checker assurance correction, not a business-money operation",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "SW-HG-O02",
+    "primary_home": "DU-REPORT",
+    "basis": "Checker assurance correction, not a business-money operation",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "SW-HG-O03",
+    "primary_home": "DU-SCOPE",
+    "basis": "Home Games configuration/RSVP/reservation authority only; no canonical Club Arena custody or MTT correctness claim",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "SW-HG-O04",
+    "primary_home": "DU-CREATE",
+    "basis": "Home Games configuration/RSVP/reservation authority only; no canonical Club Arena custody or MTT correctness claim",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "SW-HG-O05",
+    "primary_home": "DU-CREATE",
+    "basis": "Home Games configuration/RSVP/reservation authority only; no canonical Club Arena custody or MTT correctness claim",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "SW-HG-O06",
+    "primary_home": "DU-CREATE",
+    "basis": "Home Games configuration/RSVP/reservation authority only; no canonical Club Arena custody or MTT correctness claim",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "SW-HG-O07",
+    "primary_home": "DU-CREATE",
+    "basis": "Home Games configuration/RSVP/reservation authority only; no canonical Club Arena custody or MTT correctness claim",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "SW-HG-O08",
+    "primary_home": "DU-CREATE",
+    "basis": "Home Games configuration/RSVP/reservation authority only; no canonical Club Arena custody or MTT correctness claim",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "SW-HG-O09",
+    "primary_home": "DU-SCOPE",
+    "basis": "Home Games configuration/RSVP/reservation authority only; no canonical Club Arena custody or MTT correctness claim",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "SW-HG-O10",
+    "primary_home": "DU-CREATE",
+    "basis": "Home Games configuration/RSVP/reservation authority only; no canonical Club Arena custody or MTT correctness claim",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "SW-HG-O11",
+    "primary_home": "DU-SCOPE",
+    "basis": "Home Games configuration/RSVP/reservation authority only; no canonical Club Arena custody or MTT correctness claim",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "SW-HG-A02-O01",
+    "primary_home": "DU-CREATE",
+    "basis": "Home Games configuration/RSVP/reservation authority only; no canonical Club Arena custody or MTT correctness claim",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "SW-HG-A02-O02",
+    "primary_home": "DU-CREATE",
+    "basis": "Home Games configuration/RSVP/reservation authority only; no canonical Club Arena custody or MTT correctness claim",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "SW-HG-A02-O03",
+    "primary_home": "DU-SCOPE",
+    "basis": "Home Games configuration/RSVP/reservation authority only; no canonical Club Arena custody or MTT correctness claim",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "SW-HG-A02-O04",
+    "primary_home": "DU-CREATE",
+    "basis": "Home Games configuration/RSVP/reservation authority only; no canonical Club Arena custody or MTT correctness claim",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G4-AUTH-O01",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact RG/KYC/VIP authority and consumer applicability; source safeguard/policy/refusal statuses retained, no provider activation",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "G4-AUTH-O02",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact RG/KYC/VIP authority and consumer applicability; source safeguard/policy/refusal statuses retained, no provider activation",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "G4-AUTH-O03",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact RG/KYC/VIP authority and consumer applicability; source safeguard/policy/refusal statuses retained, no provider activation",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "G4-AUTH-O04",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact RG/KYC/VIP authority and consumer applicability; source safeguard/policy/refusal statuses retained, no provider activation",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "G4-AUTH-O05",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact RG/KYC/VIP authority and consumer applicability; source safeguard/policy/refusal statuses retained, no provider activation",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "G4-AUTH-O06",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact RG/KYC/VIP authority and consumer applicability; source safeguard/policy/refusal statuses retained, no provider activation",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "G4-AUTH-O07",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact RG/KYC/VIP authority and consumer applicability; source safeguard/policy/refusal statuses retained, no provider activation",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "G4-AUTH-O08",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact RG/KYC/VIP authority and consumer applicability; source safeguard/policy/refusal statuses retained, no provider activation",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "G4-AUTH-O09",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact RG/KYC/VIP authority and consumer applicability; source safeguard/policy/refusal statuses retained, no provider activation",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "G4-AUTH-O10",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact RG/KYC/VIP authority and consumer applicability; source safeguard/policy/refusal statuses retained, no provider activation",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "G4-AUTH-O11",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact RG/KYC/VIP authority and consumer applicability; source safeguard/policy/refusal statuses retained, no provider activation",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "G4-AUTH-O12",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact RG/KYC/VIP authority and consumer applicability; source safeguard/policy/refusal statuses retained, no provider activation",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "G4-AUTH-O13",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact RG/KYC/VIP authority and consumer applicability; source safeguard/policy/refusal statuses retained, no provider activation",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "G4-AUTH-O14",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact RG/KYC/VIP authority and consumer applicability; source safeguard/policy/refusal statuses retained, no provider activation",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "G4-AUTH-O15",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact RG/KYC/VIP authority and consumer applicability; source safeguard/policy/refusal statuses retained, no provider activation",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "G4-AUTH-O16",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact RG/KYC/VIP authority and consumer applicability; source safeguard/policy/refusal statuses retained, no provider activation",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "COMMERCE-SOURCE-01",
+    "primary_home": "DU-REPLAY",
+    "basis": "Support exact existing nine-helper commerce contracts and independent0050 qualifications; no duplicate source repair",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "COMMERCE-SOURCE-02",
+    "primary_home": "DU-INTENT",
+    "basis": "Support exact existing nine-helper commerce contracts and independent0050 qualifications; no duplicate source repair",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "COMMERCE-SOURCE-03",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Support exact existing nine-helper commerce contracts and independent0050 qualifications; no duplicate source repair",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "COMMERCE-SOURCE-04",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Support exact existing nine-helper commerce contracts and independent0050 qualifications; no duplicate source repair",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "COMMERCE-SOURCE-05",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Support exact existing nine-helper commerce contracts and independent0050 qualifications; no duplicate source repair",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "COMMERCE-SOURCE-06",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Support exact existing nine-helper commerce contracts and independent0050 qualifications; no duplicate source repair",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "COMMERCE-SOURCE-07",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Support exact existing nine-helper commerce contracts and independent0050 qualifications; no duplicate source repair",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "COMMERCE-SOURCE-08",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Support exact existing nine-helper commerce contracts and independent0050 qualifications; no duplicate source repair",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "COMMERCE-SOURCE-09",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Support exact existing nine-helper commerce contracts and independent0050 qualifications; no duplicate source repair",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S01",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S02",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S03",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S04",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S05",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S06",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-O01",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-AUTHORITY-GAP01",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S07",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S08",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S09",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S10",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-O02",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-J01",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S11",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S12",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S13",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S14",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S15",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-AUTHORITY-GAP02",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S16",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S17",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S18",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S19",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-Q03",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-AUTHORITY-GAP03",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S20",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S21",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-AUTHORITY-GAP04",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "GIFT-QUAL-06",
+    "primary_home": "DU-REPLAY",
+    "basis": "Exact Diamond additive placement with original14 cause groups and qualifiers",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "GIFT-QUAL-07",
+    "primary_home": "DU-JOURNAL",
+    "basis": "Exact Diamond additive placement with original14 cause groups and qualifiers",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "PROMO-QUAL-01",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Exact Diamond additive placement with original14 cause groups and qualifiers",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "PROMO-QUAL-02",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Exact Diamond additive placement with original14 cause groups and qualifiers",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "PROMO-QUAL-03",
+    "primary_home": "DU-JOURNAL",
+    "basis": "Exact Diamond additive placement with original14 cause groups and qualifiers",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "OTP-QUAL-01",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact Diamond additive placement with original14 cause groups and qualifiers",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "OTP-QUAL-02",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact Diamond additive placement with original14 cause groups and qualifiers",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "OBS-QUAL-01",
+    "primary_home": "DU-REPORT",
+    "basis": "Exact Diamond additive placement with original14 cause groups and qualifiers",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "OBS-QUAL-02",
+    "primary_home": "DU-REPORT",
+    "basis": "Exact Diamond additive placement with original14 cause groups and qualifiers",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "OBS-QUAL-03",
+    "primary_home": "DU-REPORT",
+    "basis": "Exact Diamond additive placement with original14 cause groups and qualifiers",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "OBS-QUAL-04",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact Diamond additive placement with original14 cause groups and qualifiers",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "OBS-QUAL-05",
+    "primary_home": "DU-REPORT",
+    "basis": "Exact Diamond additive placement with original14 cause groups and qualifiers",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "PR1605-QUAL-01",
+    "primary_home": "DU-REPORT",
+    "basis": "Exact Diamond additive placement with original14 cause groups and qualifiers",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "PR1605-QUAL-02",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Exact Diamond additive placement with original14 cause groups and qualifiers",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "PR1605-QUAL-03",
+    "primary_home": "DU-REPORT",
+    "basis": "Exact Diamond additive placement with original14 cause groups and qualifiers",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-QUAL-01",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact Diamond additive placement with original14 cause groups and qualifiers",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-QUAL-02",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Exact Diamond additive placement with original14 cause groups and qualifiers",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-QUAL-03",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Exact Diamond additive placement with original14 cause groups and qualifiers",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "EXEC-QUAL-01",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact Diamond additive placement with original14 cause groups and qualifiers",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "EXEC-QUAL-02",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact Diamond additive placement with original14 cause groups and qualifiers",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "RECOVERY-QUAL-01",
+    "primary_home": "DU-REPORT",
+    "basis": "Exact Diamond additive placement with original14 cause groups and qualifiers",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "COMMERCE-UI-01",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact bounded checkout consumer placement; no full-file or incident claim",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "COMMERCE-UI-02",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Exact bounded checkout consumer placement; no full-file or incident claim",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "COMMERCE-UI-03",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact bounded checkout consumer placement; no full-file or incident claim",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "COMMERCE-UI-04",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact bounded checkout consumer placement; no full-file or incident claim",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "COMMERCE-UI-05",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Exact bounded checkout consumer placement; no full-file or incident claim",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "COMMERCE-UI-06",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Exact bounded checkout consumer placement; no full-file or incident claim",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "COMMERCE-UI-07",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Exact bounded checkout consumer placement; no full-file or incident claim",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "COMMERCE-UI-08",
+    "primary_home": "DU-REPORT",
+    "basis": "Exact bounded checkout consumer placement; no full-file or incident claim",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "COMMERCE-UI-09",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact bounded checkout consumer placement; no full-file or incident claim",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "COMMERCE-UI-10",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Exact bounded checkout consumer placement; no full-file or incident claim",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S22",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S23",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S24",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-Q04",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S25",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S26",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S27",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S28",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-AUTHORITY-GAP05",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-S29",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-P03",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "TRAINING-LIFE-AUTHORITY-GAP06",
+    "primary_home": "DU-BENEFIT",
+    "basis": "Original signed/served/first-result/completion and existing Diamond G06/G12 outcome contract; all closed authority gaps and observed domain policy preserved",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "G57-Q01",
+    "primary_home": "DU-SCOPE",
+    "basis": "Existing commission scope/period/source/immutability contracts; later full58/59 and root peer closures supersede historical unread wording",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "G57-Q02",
+    "primary_home": "DU-JOURNAL",
+    "basis": "Existing commission scope/period/source/immutability contracts; later full58/59 and root peer closures supersede historical unread wording",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "G57-Q03",
+    "primary_home": "DU-REPLAY",
+    "basis": "Existing commission scope/period/source/immutability contracts; later full58/59 and root peer closures supersede historical unread wording",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "G57-Q04",
+    "primary_home": "DU-REPORT",
+    "basis": "Existing commission scope/period/source/immutability contracts; later full58/59 and root peer closures supersede historical unread wording",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "G57-Q05",
+    "primary_home": "DU-REPORT",
+    "basis": "Existing commission scope/period/source/immutability contracts; later full58/59 and root peer closures supersede historical unread wording",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "G58-Q01",
+    "primary_home": "DU-JOURNAL",
+    "basis": "Existing commission scope/period/source/immutability contracts; later full58/59 and root peer closures supersede historical unread wording",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "G58-Q02",
+    "primary_home": "DU-SCOPE",
+    "basis": "Existing commission scope/period/source/immutability contracts; later full58/59 and root peer closures supersede historical unread wording",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "G59-Q01",
+    "primary_home": "DU-SCOPE",
+    "basis": "Existing commission scope/period/source/immutability contracts; later full58/59 and root peer closures supersede historical unread wording",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "WH-O01",
+    "primary_home": "DU-REPORT",
+    "basis": "Exact shared completeness/deadline evidence retained; unrelated extraction, alert/content and collusion domain proof remains with its owner",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "WH-Q02",
+    "primary_home": "DU-REPORT",
+    "basis": "Exact shared completeness/deadline evidence retained; unrelated extraction, alert/content and collusion domain proof remains with its owner",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "WH-Q03",
+    "primary_home": "DU-REPORT",
+    "basis": "Exact shared completeness/deadline evidence retained; unrelated extraction, alert/content and collusion domain proof remains with its owner",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "WH-Q04",
+    "primary_home": "DU-REPORT",
+    "basis": "Exact shared completeness/deadline evidence retained; unrelated extraction, alert/content and collusion domain proof remains with its owner",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "WH-Q05",
+    "primary_home": "DU-REPORT",
+    "basis": "Exact shared completeness/deadline evidence retained; unrelated extraction, alert/content and collusion domain proof remains with its owner",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "WH-Q06",
+    "primary_home": "DU-REPORT",
+    "basis": "Exact shared completeness/deadline evidence retained; unrelated extraction, alert/content and collusion domain proof remains with its owner",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "WH-S01",
+    "primary_home": "DU-REPLAY",
+    "basis": "Exact shared completeness/deadline evidence retained; unrelated extraction, alert/content and collusion domain proof remains with its owner",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "WH-S02",
+    "primary_home": "DU-REPORT",
+    "basis": "Exact shared completeness/deadline evidence retained; unrelated extraction, alert/content and collusion domain proof remains with its owner",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "WH-S03",
+    "primary_home": "DU-REPORT",
+    "basis": "Exact shared completeness/deadline evidence retained; unrelated extraction, alert/content and collusion domain proof remains with its owner",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "WH-S04",
+    "primary_home": "DU-REPORT",
+    "basis": "Exact shared completeness/deadline evidence retained; unrelated extraction, alert/content and collusion domain proof remains with its owner",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-01",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-02",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-03",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-04",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-05",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-06",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-07",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-08",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-09",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-10",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-11",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-12",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-13",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-14",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-15",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-16",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-17",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-18",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-19",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-20",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-21",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-22",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-23",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-24",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-25",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-26",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-27",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-28",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-29",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-30",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-31",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-32",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "G5-S07S11-FILE-33",
+    "primary_home": "DU-REPORT",
+    "basis": "Full-file source-assessment provenance supports the existing44 Diamond findings/14 groups; not a new report defect, payer or duplicate audit",
+    "later_domain_or_inventory_support_only": true
+  },
+  {
+    "evidence_id": "BUS-Q01",
+    "primary_home": "DU-MTT",
+    "basis": "Exact root contract and original accepted cause disposition",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "BUS-Q02",
+    "primary_home": "DU-MTT",
+    "basis": "Exact root contract and original accepted cause disposition",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "APP-BOOT-Q01",
+    "primary_home": "DU-IDENTITY",
+    "basis": "Exact root contract and original accepted cause disposition",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "APP-BOOT-Q02",
+    "primary_home": "DU-REPLAY",
+    "basis": "Exact root contract and original accepted cause disposition",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "APP-BOOT-O03",
+    "primary_home": "DU-REPORT",
+    "basis": "Exact root contract and original accepted cause disposition",
+    "later_domain_or_inventory_support_only": false
+  },
+  {
+    "evidence_id": "G8-TOURNAMENT-ENTRY-007",
+    "primary_home": "DU-CASH",
+    "basis": "Exact root contract and original accepted cause disposition",
+    "later_domain_or_inventory_support_only": false
+  }
+]

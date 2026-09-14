@@ -35,7 +35,7 @@ export interface MigrationFile {
 let namesCache: string[] | null = null;
 let corpusCache: MigrationFile[] | null = null;
 
-/** Every migration file name, ascending - which is version order. */
+/** Every applied migration file name, ascending - which is version order. */
 export const migrationNames = (): string[] =>
   (namesCache ??= readdirSync(MIGRATIONS_DIR)
     .filter((name) => name.endsWith('.sql'))

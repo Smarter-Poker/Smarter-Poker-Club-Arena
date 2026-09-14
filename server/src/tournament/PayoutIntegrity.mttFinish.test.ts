@@ -28,6 +28,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { computePlacePrize } from './payoutMath.js';
+import { CHIP_UNIT_CENTS } from './tournamentUnit.js';
 import { sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
@@ -37,9 +38,22 @@ const RECOVERY = read('src/tournament/tournamentRecovery.ts');
 const ATOMIC_ELIMINATION = read(
   '../supabase/migrations/20260908042000_bounty_elimination_outbox_is_atomic_and_recoverable.sql'
 );
-const migrationNames = fs
-  .readdirSync(path.join(process.cwd(), '..', 'supabase', 'migrations'))
-  .filter((name) => name.endsWith('.sql'));
+const migrationDirectory = path.join(process.cwd(), '..', 'supabase', 'migrations');
+const allMigrationNames = fs.readdirSync(migrationDirectory);
+const migrationNames = allMigrationNames.filter((name) => name.endsWith('.sql'));
+const stagedOrPromotedMigration = (logicalName: string): string => {
+  if (!/^[a-z0-9_]+$/.test(logicalName)) {
+    throw new Error(`invalid staged-or-promoted migration name: ${logicalName}`);
+  }
+  const exactName = new RegExp(`^[0-9]{14}_${logicalName}\\.sql(?:\\.pending)?$`);
+  const matches = allMigrationNames.filter((name) => exactName.test(name));
+  if (matches.length !== 1) {
+    throw new Error(
+      `expected exactly one staged-or-promoted ${logicalName} migration; found ${matches.length}`
+    );
+  }
+  return read(`../supabase/migrations/${matches[0]}`);
+};
 const terminalSettlementName = migrationNames.find((name) =>
   name.includes('non_satellite_terminal_settlement_commits_one_stored_receipt')
 );
@@ -47,13 +61,7 @@ if (!terminalSettlementName) {
   throw new Error('current tournament terminal settlement migration is missing');
 }
 const TERMINAL_SETTLEMENT = read(`../supabase/migrations/${terminalSettlementName}`);
-const seatExitSettlementName = migrationNames.find((name) =>
-  name.includes('tournament_seat_exits_stay_inside_tournament_authority')
-);
-if (!seatExitSettlementName) {
-  throw new Error('current tournament seat-exit authority migration is missing');
-}
-const SEAT_EXIT_SETTLEMENT = read(`../supabase/migrations/${seatExitSettlementName}`);
+const SEAT_EXIT_SETTLEMENT = stagedOrPromotedMigration('stage_b_current_postimage_contraction');
 
 /** Strip line and block comments so a guard cannot pass on a mention in prose. */
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
@@ -88,7 +96,12 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** What every place, paid together, actually disburses. */
 const totalPaid = (pool: number, payouts: Array<{ place?: number; percentage?: number }>) =>
-  round2(payouts.reduce((sum, p) => sum + computePlacePrize(pool, payouts, Number(p.place)), 0));
+  round2(
+    payouts.reduce(
+      (sum, p) => sum + computePlacePrize(pool, payouts, Number(p.place), CHIP_UNIT_CENTS),
+      0
+    )
+  );
 
 describe('the places sum to the pool, whatever the structure', () => {
   it('pays 483.00 out of a 483.00 pool on the 9-place structure', () => {
@@ -97,8 +110,8 @@ describe('the places sum to the pool, whatever the structure', () => {
     // from fn_tournament_payout_reconcile, which implements the residual rule.
     expect(totalPaid(483, NINE_PLACE)).toBe(483);
     // And the adjustment lands on the SMALLEST prize, never a headline one.
-    expect(computePlacePrize(483, NINE_PLACE, 1)).toBe(144.9);
-    expect(computePlacePrize(483, NINE_PLACE, 9)).toBe(12.07);
+    expect(computePlacePrize(483, NINE_PLACE, 1, CHIP_UNIT_CENTS)).toBe(144.9);
+    expect(computePlacePrize(483, NINE_PLACE, 9, CHIP_UNIT_CENTS)).toBe(12.07);
   });
 
   it('holds across a matrix of pools and structures', () => {
@@ -138,8 +151,8 @@ describe('a malformed structure degrades, it never overpays', () => {
       { place: 1, percentage: 50 },
       { place: 2, percentage: 50 },
     ];
-    expect(computePlacePrize(100, dupe, 1)).toBe(50);
-    expect(computePlacePrize(100, dupe, 2)).toBe(50);
+    expect(computePlacePrize(100, dupe, 1, CHIP_UNIT_CENTS)).toBe(50);
+    expect(computePlacePrize(100, dupe, 2, CHIP_UNIT_CENTS)).toBe(50);
   });
 
   it('a non-numeric place does not switch the residual rule off', () => {
@@ -151,14 +164,14 @@ describe('a malformed structure degrades, it never overpays', () => {
     // coerces; a non-numeric string is what actually produces the NaN.)
     const junk = [...NINE_PLACE, { place: '2nd' as unknown as number, percentage: 0 }];
     const paid = round2(
-      NINE_PLACE.reduce((sum, p) => sum + computePlacePrize(483, junk, p.place), 0)
+      NINE_PLACE.reduce((sum, p) => sum + computePlacePrize(483, junk, p.place, CHIP_UNIT_CENTS), 0)
     );
     // 483.01 under independent rounding; 483.00 once the residual rule is
     // reachable again. The 9-place structure is used deliberately — a
     // two-place structure happens to round to the pool either way, so it
     // cannot tell the two rules apart (an early sabotage run proved that).
     expect(paid).toBe(483);
-    expect(computePlacePrize(483, junk, 9)).toBe(12.07);
+    expect(computePlacePrize(483, junk, 9, CHIP_UNIT_CENTS)).toBe(12.07);
   });
 
   it('a negative percentage never pays a negative prize, at any place', () => {
@@ -166,17 +179,17 @@ describe('a malformed structure degrades, it never overpays', () => {
       { place: 1, percentage: 120 },
       { place: 2, percentage: -20 },
     ];
-    expect(computePlacePrize(100, bad, 1)).toBeGreaterThanOrEqual(0);
-    expect(computePlacePrize(100, bad, 2)).toBeGreaterThanOrEqual(0);
+    expect(computePlacePrize(100, bad, 1, CHIP_UNIT_CENTS)).toBeGreaterThanOrEqual(0);
+    expect(computePlacePrize(100, bad, 2, CHIP_UNIT_CENTS)).toBeGreaterThanOrEqual(0);
     expect(totalPaid(100, bad)).toBeLessThanOrEqual(100);
   });
 
   it('an unpaid place, an empty structure and a dead pool all pay nothing', () => {
-    expect(computePlacePrize(100, NINE_PLACE, 10)).toBe(0);
-    expect(computePlacePrize(100, [], 1)).toBe(0);
-    expect(computePlacePrize(0, NINE_PLACE, 1)).toBe(0);
-    expect(computePlacePrize(-5, NINE_PLACE, 1)).toBe(0);
-    expect(computePlacePrize(100, NINE_PLACE, NaN)).toBe(0);
+    expect(computePlacePrize(100, NINE_PLACE, 10, CHIP_UNIT_CENTS)).toBe(0);
+    expect(computePlacePrize(100, [], 1, CHIP_UNIT_CENTS)).toBe(0);
+    expect(computePlacePrize(0, NINE_PLACE, 1, CHIP_UNIT_CENTS)).toBe(0);
+    expect(computePlacePrize(-5, NINE_PLACE, 1, CHIP_UNIT_CENTS)).toBe(0);
+    expect(computePlacePrize(100, NINE_PLACE, NaN, CHIP_UNIT_CENTS)).toBe(0);
   });
 });
 

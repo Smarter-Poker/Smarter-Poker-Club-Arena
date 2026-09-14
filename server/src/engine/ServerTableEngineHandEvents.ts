@@ -585,13 +585,16 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
            */
           const stage = event.stage ?? hcState?.stage ?? 'preflop';
           const actingPlayer = hcState?.players.find((p) => p.seat === event.seat);
+          const actorId = event.record?.userId ?? actingPlayer?.user_id ?? '';
           this.currentHandActions.push({
             seat: event.seat,
-            userId: actingPlayer?.user_id ?? '', // Bible V8 §2.5
+            userId: actorId, // Bible V8 §2.5
             action: event.action,
             amount: event.amount,
-            timestamp: Date.now(), // Bible V8 §2.5
+            timestamp: event.record?.timestamp ?? Date.now(), // Bible V8 §2.5
             stage,
+            ...(event.publicNode ? { publicNode: event.publicNode } : {}),
+            ...(event.origin ? { origin: event.origin } : {}),
             // V12.3: carry isFullRaise into hand_history. HandController
             // records it on its own actionHistory (a short all-in is NOT a
             // raise, TDA 44) but it was dropped here, so every consumer of the
@@ -601,7 +604,11 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
             // boot replay every all-in counted as NEITHER aggression NOR
             // passivity, biasing hydrated reads passive for anyone who shoves
             // and hiding all-in 3-bets from the anti-exploit pair counters.
-            isFullRaise: hcState?.actionHistory[hcState.actionHistory.length - 1]?.isFullRaise,
+            // An absent flag on an accepted check/call/discard is also final;
+            // do not fill it from the controller's most recent raise.
+            isFullRaise: event.record
+              ? event.record.isFullRaise
+              : hcState?.actionHistory[hcState.actionHistory.length - 1]?.isFullRaise,
           });
 
           // ── ADDITIVE event-sourcing shadow (#1): record PlayerActed ──
@@ -616,8 +623,12 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           // Bible V8 §4.15: When a bet or raise occurs, invalidate all auto_check pre-actions
           // (they're no longer valid because there's now a bet to face)
           if (event.action === 'bet' || event.action === 'raise' || event.action === 'all_in') {
-            const actingPlayer = this.seatedPlayers.find((p) => p.seat_number === event.seat);
-            this.preActionEngine.onBetPlaced(this.tableId, actingPlayer?.user_id || '');
+            this.preActionEngine.onBetPlaced(
+              this.tableId,
+              event.record?.userId ??
+                this.seatedPlayers.find((p) => p.seat_number === event.seat)?.user_id ??
+                ''
+            );
           }
 
           // 2026-04-14 USER FEEDBACK FIX: emit a discrete player_action event so
@@ -632,11 +643,11 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
             table_id: this.tableId,
             hand_number: this.handCount,
             seat: event.seat,
-            user_id: actingPlayer?.user_id ?? '',
+            user_id: actorId,
             action: event.action,
             amount: event.amount ?? 0,
             stage,
-            timestamp: Date.now(),
+            timestamp: event.record?.timestamp ?? Date.now(),
           });
         }
         this.broadcastCurrentState();
@@ -975,7 +986,11 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           if (hasWinners && Array.isArray(state.pots)) {
             this.currentHandPots = state.pots.map((p, index) => ({
               index,
-              amount: Number(p?.amount) || 0,
+              // Cents, not floats: the live pot is a running float sum
+              // (0.1 + 0.2 territory) and this value is persisted verbatim
+              // to hand_history.pots. Measured 2026-09-13: 30 of 307 RIT
+              // pot rows in one day read like 66.46000000000001.
+              amount: Math.round((Number(p?.amount) || 0) * 100) / 100,
               eligible: Array.isArray(p?.eligiblePlayers)
                 ? p.eligiblePlayers.map((u) => String(u ?? '')).filter(Boolean)
                 : [],
@@ -1265,6 +1280,12 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
               user_id: w.userId,
               amount: w.amount,
               hand_name: w.handName,
+              /* 2026-09-13: the half and the per-pot slices ride the wire
+                 too, so the felt and the record read the same row. */
+              ...(w.low ? { low: true } : {}),
+              ...(w.pots
+                ? { pots: w.pots.map((p) => ({ index: p.index, amount: p.amount })) }
+                : {}),
             })),
             // SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): the UNMERGED award
             // groups, one per (board, pot, hi/lo half), in award order — main

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Ticker Rail - visual harness</title>
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Roboto+Condensed:wght@400;500;600;700&display=swap"
+    />
+    <style>
+      /* The felt this strip has to survive on: the house ground is solid black
+         (Dan 2026-08-30) and the rail is a fixed strip over it. */
+      body { margin: 0; background: #000; min-height: 100vh; }
+      .harness-felt {
+        position: absolute;
+        inset: 120px 0 0;
+        background: radial-gradient(ellipse at 50% 30%, #0d5c2f 0%, #06280f 70%, #000 100%);
+      }
+      .harness-label {
+        position: absolute;
+        left: 12px;
+        font: 600 11px/1 'Roboto Condensed', sans-serif;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: #7f8c9b;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="harness-felt"></div>
+    <div id="root"></div>
+    <script type="module" src="/tests/visual/ticker-rail.tsx"></script>
+  </body>
+</html>

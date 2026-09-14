@@ -33,6 +33,14 @@
  * the inputs.
  */
 
+/**
+ * The one unit floor, imported rather than written a second time. recoveryFee
+ * is a dependency-free leaf, so this adds no cycle to a module that had no
+ * imports at all; writing the floor out again here would recreate exactly the
+ * drift this Phase 8 work exists to remove.
+ */
+import { unitFloorCents } from './recoveryFee.js';
+
 export type MysteryBountyActivationMode = 'at_the_money' | 'percent_field' | 'player_count';
 
 export type MysteryBountyStage = 'pending' | 'active' | 'complete';
@@ -213,7 +221,35 @@ export function mysteryPoolCents(
    * reproduces the old arithmetic exactly, which is what the unit tests
    * written before this parameter existed still assert.
    */
-  alreadyPaidCents: number = 0
+  alreadyPaidCents: number = 0,
+  /**
+   * ═══ 2026-09-12: THE SMALLEST AMOUNT THIS TOURNAMENT CAN PAY ════════════
+   *
+   * One cent for a chip tournament, which is every tournament that has ever
+   * run: `Math.floor(x / 1) * 1` is `x`, so the chip half is unchanged BY
+   * CONSTRUCTION rather than by inspection, exactly as passing 0 for
+   * alreadyPaidCents above reproduces the older arithmetic.
+   *
+   * One hundred for a Diamond tournament, because a Diamond does not divide.
+   * The comment below says the regular half keeps the odd cent; at a Diamond
+   * unit it keeps the odd Diamond, for precisely the same reason. The mystery
+   * half is committed to a fixed inventory up front, so a fraction there
+   * leaves the event unable to reconcile, and a fraction of a Diamond is not
+   * an amount any door in this estate will accept.
+   *
+   * ─── IT IS REQUIRED, AND ITS CALLERS NOW SAY SO (2026-09-13) ────────────
+   *
+   * This read "NO CALLER PASSES THIS YET", and that was true because the
+   * parameter defaulted to 1 - so `TournamentManagerBase`'s two seed sites
+   * received a cent without ever having read a club, indistinguishable from
+   * having read one. That is CLAUDE.md 10.86 rule 1 in a parameter default.
+   *
+   * There is no default now. Both callers pass `UNIT_CENTS_ASSET_NOT_READ`
+   * from `tournamentUnit.ts`, which is the same cent and says which of the two
+   * things it means. When the Diamond tournament door opens, the surfaces that
+   * have to learn their asset are found by grepping that name.
+   */
+  unitCents: number
 ): number {
   if (!Number.isInteger(bountyPoolCents) || bountyPoolCents <= 0) return 0;
   const m = Math.max(0, Number(mysteryPercent ?? 50) || 0);
@@ -224,8 +260,11 @@ export function mysteryPoolCents(
   // knockout against a pool that is checked for exhaustion on every payment,
   // whereas the mystery half is committed to a fixed inventory up front and
   // an extra cent there would leave the event unable to reconcile.
-  const half = Math.floor((bountyPoolCents * m) / total);
+  const half = unitFloorCents(Math.floor((bountyPoolCents * m) / total), unitCents);
   const paid = Math.max(0, Math.round(Number(alreadyPaidCents) || 0));
-  // The same GREATEST(0, ...) the seed applies, in the same order.
-  return Math.max(0, Math.min(half, bountyPoolCents - paid));
+  // The same GREATEST(0, ...) the seed applies, in the same order. The cap is
+  // floored to the unit too: a pool that has already paid part of itself out
+  // need not leave a whole unit behind, and a cap that is not on the grid is
+  // not a cap the inventory can be built against.
+  return unitFloorCents(Math.max(0, Math.min(half, bountyPoolCents - paid)), unitCents);
 }

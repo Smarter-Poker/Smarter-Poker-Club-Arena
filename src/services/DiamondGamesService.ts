@@ -880,12 +880,30 @@ const DiamondGamesService = {
     });
     if (error) throw error;
     const raw = rec(data);
+    // An unreadable reply is not a refusal. Throw so both consoles retain the
+    // current intent key and reconcile it through the same idempotent door.
+    const unknown = () => new Error('The Funding Response Could Not Be Verified');
+    if (typeof raw.ok !== 'boolean') throw unknown();
+    if (!raw.ok) {
+      if (typeof raw.error !== 'string' || !raw.error.trim()) throw unknown();
+      return { ok: false, error: raw.error };
+    }
+    const balance = (value: unknown): number => {
+      if (
+        (typeof value !== 'number' && typeof value !== 'string') ||
+        (typeof value === 'string' && !value.trim())
+      )
+        throw unknown();
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed) || parsed < 0) throw unknown();
+      return parsed;
+    };
+    if (typeof raw.replayed !== 'boolean') throw unknown();
     return {
-      ok: Boolean(raw.ok),
-      error: raw.error ? String(raw.error) : undefined,
-      replayed: Boolean(raw.replayed),
-      promo_chips: raw.promo_chips === undefined ? undefined : Number(raw.promo_chips),
-      bank_chips: raw.bank_chips === undefined ? undefined : Number(raw.bank_chips),
+      ok: true,
+      replayed: raw.replayed,
+      promo_chips: balance(raw.promo_chips),
+      bank_chips: balance(raw.bank_chips),
     };
   },
 

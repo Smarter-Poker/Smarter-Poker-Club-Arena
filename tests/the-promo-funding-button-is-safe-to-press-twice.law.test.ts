@@ -40,38 +40,14 @@
  *     over numbers that were never rechecked. The console rereads instead.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'fs';
+import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { latestDeclaring, latestNamed, functionBody } from './helpers/migrations';
 
-const DIR = resolve(__dirname, '..', 'supabase/migrations');
 const SRC = resolve(__dirname, '..', 'src');
-const files = readdirSync(DIR);
-
-function latest(fragment: string): { name: string; sql: string } {
-  const name = files
-    .filter((f) => f.includes(fragment))
-    .sort()
-    .pop();
-  expect(name, `no migration named like ${fragment}`).toBeTruthy();
-  return { name: name as string, sql: readFileSync(resolve(DIR, name as string), 'utf8') };
-}
-
-function body(sql: string, fn: string): string {
-  const open = Math.max(
-    sql.lastIndexOf(`CREATE OR REPLACE FUNCTION public.${fn}(`),
-    sql.lastIndexOf(`CREATE FUNCTION public.${fn}(`)
-  );
-  expect(open, `${fn} has moved or gone`).toBeGreaterThan(-1);
-  const start = sql.indexOf('$function$', open);
-  const end = sql.indexOf('$function$', start + 10);
-  expect(end).toBeGreaterThan(start);
-  return sql.slice(start, end);
-}
-
 const src = (p: string) => readFileSync(resolve(SRC, p), 'utf8');
-
-const twice = latest('the_promo_funding_button_is_safe_to_press_twice');
-const FUND = body(twice.sql, 'fn_diamond_game_fund_promo');
+const twice = latestDeclaring('fn_diamond_game_fund_promo');
+const FUND = functionBody(twice.sql, 'fn_diamond_game_fund_promo');
 
 const PAGES = [
   'pages/club/ClubDiamondGamesOperationsPage.tsx',
@@ -80,8 +56,10 @@ const PAGES = [
 
 describe('the key comes from the caller', () => {
   it('the door takes p_key and the keyless one is dropped', () => {
-    expect(twice.sql).toContain('p_key     text');
-    expect(twice.sql).toContain(
+    expect(twice.sql).toMatch(/p_key\s+text/);
+    // The DROP is immutable historical DDL; the live body above is resolved
+    // by declaration so a later rewrite cannot leave this law testing history.
+    expect(latestNamed('the_promo_funding_button_is_safe_to_press_twice').sql).toContain(
       'DROP FUNCTION IF EXISTS public.fn_diamond_game_fund_promo(uuid, numeric);'
     );
   });
@@ -107,6 +85,23 @@ describe('the replay guard', () => {
     const guard = FUND.indexOf('WHERE l.idempotency_key = v_key');
     expect(lock).toBeGreaterThan(-1);
     expect(guard).toBeGreaterThan(lock);
+  });
+
+  it('requires the same actor, host and amount before acknowledging a replay', () => {
+    const guard = FUND.slice(
+      FUND.indexOf('SELECT l.* INTO v_previous'),
+      FUND.indexOf("'ok', true, 'replayed', true")
+    );
+    for (const rule of [
+      'v_previous.performed_by IS DISTINCT FROM v_user',
+      'v_previous.from_entity_id IS DISTINCT FROM v_source',
+      'v_previous.to_entity_id IS DISTINCT FROM v_host',
+      "v_previous.to_type IS DISTINCT FROM 'promo_wallet'",
+      "v_previous.category IS DISTINCT FROM 'treasury_transfer'",
+      'v_previous.amount IS DISTINCT FROM p_amount',
+    ])
+      expect(guard).toContain(rule);
+    expect(guard).toContain("'ok', false");
   });
 
   it('answers a replay with the balances, not an error', () => {

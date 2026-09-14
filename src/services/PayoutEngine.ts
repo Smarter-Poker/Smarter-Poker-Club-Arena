@@ -13,6 +13,7 @@
 
 import { PAYOUT_STRUCTURES } from '../config/blindStructures';
 import { computePlacePrize } from '../lib/payoutMath';
+import { UNIT_CENTS_ASSET_NOT_READ } from '../../server/src/tournament/tournamentUnit';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -256,10 +257,17 @@ class PayoutEngineClass {
      * There is one rule now, shared with the engine byte for byte. It already
      * guarantees the places sum to the pool and never exceed it, so the
      * shave-first-place fallback has nothing left to do and is gone with it.
+     *
+     * 2026-09-13: the unit is stated rather than defaulted, for the reason in
+     * server/src/tournament/tournamentUnit.ts. This method is handed a
+     * structure and a pool with no tournament and no club behind them, so it
+     * cannot read an asset; UNIT_CENTS_ASSET_NOT_READ is that admission
+     * spelled out, and is a cent because every tournament that can currently
+     * exist is a chip tournament.
      */
     return payouts.map((p) => ({
       ...p,
-      amount: computePlacePrize(prizePool, payouts, p.place),
+      amount: computePlacePrize(prizePool, payouts, p.place, UNIT_CENTS_ASSET_NOT_READ),
     }));
   }
 

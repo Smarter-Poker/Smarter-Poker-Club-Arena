@@ -21,8 +21,14 @@
 # up running something other than what this repo declares, the job goes red and
 # says which alerts differ.
 #
-# The manual path still exists for a box that has fallen over - run it with
-# workflow_dispatch, or `bash infra/monitoring/deploy.sh` as root on the host.
+# Recovery dispatches execute only this reviewed default-branch definition and
+# must name the current protected-main commit. A push run converges on current
+# main when it starts; if main advances again, the run may continue only when
+# the complete monitoring payload is byte-identical. A newer monitoring change
+# creates its own run and supersedes the older payload. The host also
+# compare-and-swaps its fsynced release receipt, so a delayed runner cannot
+# overwrite newer monitoring bytes after its checkout was authorized. Direct
+# host mutation is not a release path.
 name: Deploy Monitoring (on infra/monitoring changes)
 
 on:
@@ -32,7 +38,8 @@ on:
       - 'infra/monitoring/**'
       - 'server/scripts/install-caddy-websocket-log-redaction.sh'
       - '.github/workflows/deploy-monitoring.yml'
-  workflow_dispatch:
+  repository_dispatch:
+    types: [deploy-club-arena-monitoring]
 
 # One at a time. Two deploys racing would leave the symlinks half-swapped.
 concurrency:
@@ -43,47 +50,97 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
     env:
       SSH_USER: root
       HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
     steps:
+      - name: Resolve current protected main
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_SHA: ${{ github.event.client_payload.ref_sha || '' }}
+        run: |
+          set -euo pipefail
+          TIP="$(timeout 30s gh api 'repos/${{ github.repository }}/commits/main' --jq .sha)"
+          [[ "$TIP" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo '::error::Could not resolve one full current-main SHA.'; exit 1; }
+          if [ "$GITHUB_EVENT_NAME" = repository_dispatch ]; then
+            [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]] \
+              || { echo '::error::A recovery event requires one lowercase full ref_sha.'; exit 1; }
+            [ "$REQUESTED_SHA" = "$TIP" ] \
+              || { echo "::error::Recovery requested $REQUESTED_SHA, but protected main is $TIP."; exit 1; }
+          fi
+          echo "sha=$TIP" >> "$GITHUB_OUTPUT"
+          echo "DEPLOY_CONTROL_SHA=$TIP" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.target.outputs.sha }}
+          fetch-depth: 0
+          # blob:none keeps every one of the 7,223 commits and drops the blobs of old
+          # revisions. Measured 2026-09-13, three runs each: 33-35s / 531MB against
+          # 36-43s / 766MB, for identical ancestry. Nothing in this repo's workflows
+          # reads a historical file version - they ask merge-base, rev-list, log and
+          # cat-file -e, which are all commit-graph work - so those blobs were paid
+          # for on every run and never read.
+          filter: blob:none
+
+      - name: Authorize the current Club Arena monitoring payload
+        run: |
+          set -euo pipefail
+          if [[ ! "$DEPLOY_CONTROL_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::A full lowercase ref_sha is required."
+            exit 1
+          fi
+          test "$(git rev-parse HEAD)" = "$DEPLOY_CONTROL_SHA" \
+            || { echo "::error::Checkout does not match the authorized commit."; exit 1; }
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          MAIN_SHA="$(git rev-parse --verify 'origin/main^{commit}')"
+          git merge-base --is-ancestor "$DEPLOY_CONTROL_SHA" "$MAIN_SHA" \
+            || { echo '::error::Monitoring request is not contained in protected main.'; exit 1; }
+          if [ "$DEPLOY_CONTROL_SHA" != "$MAIN_SHA" ]; then
+            git diff --quiet "$DEPLOY_CONTROL_SHA" "$MAIN_SHA" -- \
+              infra/monitoring server/scripts/install-caddy-websocket-log-redaction.sh \
+              || { echo "::error::A newer protected-main commit changed the monitoring payload; its owning run must deploy it."; exit 1; }
+            echo "Protected main advanced to $MAIN_SHA without changing the monitoring payload; this run remains authoritative."
+          fi
+          echo "Authorized Club Arena monitoring payload from: $DEPLOY_CONTROL_SHA"
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      # Same key handling as auto-deploy-hetzner.yml, for the same reasons -
-      # both secret names are accepted because the two repos disagreed on it,
-      # and the host key is PINNED rather than scanned: ssh-keyscan opens five
+      # Same Club Arena-owned key as auto-deploy-hetzner.yml. The host key is
+      # PINNED rather than scanned: ssh-keyscan opens five
       # parallel probes, four of which disconnect pre-auth, and fail2ban counts
       # those as four failures and bans the runner for 24 hours.
       - name: Setup SSH key
         env:
-          SSH_KEY_CANONICAL: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          SSH_KEY_LEGACY: ${{ secrets.HETZNER_SSH_KEY }}
+          SSH_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          SSH_HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}
         run: |
           set -euo pipefail
+          [[ "$HETZNER_HOST" =~ ^[A-Za-z0-9.-]+$ ]] \
+            || { echo "::error::HETZNER_HOST is empty or malformed."; exit 1; }
+          [[ "$SSH_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]] \
+            || { echo "::error::SSH_USER is malformed."; exit 1; }
+          [ -n "$SSH_KEY" ] && [ -n "$SSH_HOST_KEY" ] \
+            || { echo "::error::Hetzner SSH credentials are incomplete."; exit 1; }
+          umask 077
           mkdir -p ~/.ssh
-          if [ -n "$SSH_KEY_CANONICAL" ]; then
-            printf '%s\n' "$SSH_KEY_CANONICAL" > ~/.ssh/id_deploy
-          elif [ -n "$SSH_KEY_LEGACY" ]; then
-            echo "::warning::Falling back to HETZNER_SSH_KEY."
-            printf '%s\n' "$SSH_KEY_LEGACY" > ~/.ssh/id_deploy
-          else
-            echo "::error::Neither HETZNER_SSH_PRIVATE_KEY nor HETZNER_SSH_KEY is set."
-            exit 1
-          fi
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
           ssh-keygen -y -f ~/.ssh/id_deploy > /dev/null \
             || { echo "::error::The Hetzner deploy key is not a valid private key."; exit 1; }
-          echo "${{ secrets.HETZNER_HOST_KEY }}" > ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
-          test -s ~/.ssh/known_hosts \
-            || { echo "::error::HETZNER_HOST_KEY is empty or unset - every ssh below would fail."; exit 1; }
-          printf '#!/bin/bash\nexec ssh -i ~/.ssh/id_deploy -o BatchMode=yes -o ConnectTimeout=20 "%s@%s" "$@"\n' \
+          printf '%s\n' "$SSH_HOST_KEY" > ~/.ssh/hetzner_known_hosts
+          chmod 600 ~/.ssh/hetzner_known_hosts
+          ssh-keygen -l -f ~/.ssh/hetzner_known_hosts > /dev/null \
+            || { echo "::error::HETZNER_HOST_KEY is not a valid pinned host key."; exit 1; }
+          printf '#!/bin/bash\nexec ssh -i "$HOME/.ssh/id_deploy" -o "UserKnownHostsFile=$HOME/.ssh/hetzner_known_hosts" -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=20 "%s@%s" "$@"\n' \
             "$SSH_USER" "$HETZNER_HOST" > ~/hssh
-          chmod +x ~/hssh
+          chmod 700 ~/hssh
           # PLAIN `ssh root@host` MUST USE THE SAME KEY (2026-09-06).
           # check-alert-rules-match.mjs execs `ssh $ENGINE_MONITORING_SSH`
           # with no -i, so on the first run of this workflow the verify step
@@ -94,10 +151,13 @@ jobs:
             echo "Host $HETZNER_HOST"
             echo "  User $SSH_USER"
             echo "  IdentityFile ~/.ssh/id_deploy"
+            echo "  UserKnownHostsFile ~/.ssh/hetzner_known_hosts"
+            echo "  GlobalKnownHostsFile /dev/null"
+            echo "  StrictHostKeyChecking yes"
             echo "  IdentitiesOnly yes"
             echo "  BatchMode yes"
             echo "  ConnectTimeout 20"
-          } >> ~/.ssh/config
+          } > ~/.ssh/config
           chmod 600 ~/.ssh/config
 
       # WHAT IS RUNNING BEFORE WE TOUCH IT. If the box is running rules this
@@ -129,14 +189,51 @@ jobs:
             for (const r of g.rules) if (r.type === 'alerting') running.add(r.name);
           }
           const orphans = [...running].filter((a) => !declared.has(a)).sort();
+          // These are the exact alerts formerly owned by the retired periodic
+          // engine supervisor. They may disappear in this one migration only
+          // when the repository carries the complete read-only successor
+          // contract. Never widen this to a prefix: every other orphan remains
+          // an undeclared live rule and must stop the deployment.
+          const retiredSupervisorAlerts = new Set([
+            'EngineSupervisorStale',
+            'EngineSupervisorMetricsMissing',
+            'EngineFlappingUnderSupervisor',
+            'EngineRecoveredUnexpectedly',
+            'EngineBootChurn',
+            'EngineCrashLooping',
+            'EngineNotServingOnHost',
+            'EngineContainerNotRunning',
+          ]);
+          const successorPath = path.join(MON, 'recovery-rules.yml');
+          const successor = fs.existsSync(successorPath)
+            ? fs.readFileSync(successorPath, 'utf8').replace(/^\s*#[^\n]*$/gm, '')
+            : '';
+          const retirementAuthorized =
+            !fs.existsSync(path.join(MON, 'supervisor-rules.yml')) &&
+            files.includes('recovery-rules.yml') &&
+            /^\s*-\s*name:\s*club-arena-recovery\s*$/m.test(successor) &&
+            /^\s*-\s*alert:\s*RecoveryStackDegraded\s*$/m.test(successor) &&
+            /^\s*-\s*alert:\s*RecoveryStackUnverified\s*$/m.test(successor) &&
+            successor.includes('club_arena_recovery_stack_failures') &&
+            successor.includes('club_arena_recovery_stack_last_verified_timestamp_seconds');
+          const intentionalRetirements = orphans.filter(
+            (alert) => retirementAuthorized && retiredSupervisorAlerts.has(alert)
+          );
+          const unexpectedOrphans = orphans.filter(
+            (alert) => !retirementAuthorized || !retiredSupervisorAlerts.has(alert)
+          );
           console.log(`running ${running.size}, declared ${declared.size}`);
-          if (orphans.length) {
+          if (intentionalRetirements.length) {
+            console.log('Retiring the exact legacy supervisor alerts under the declared recovery contract:');
+            for (const a of intentionalRetirements) console.log(`  ${a}`);
+          }
+          if (unexpectedOrphans.length) {
             console.error('::error::These alerts are running on the box and are NOT in this repo.');
             console.error('Deploying would delete them. Bring them in here first.');
-            for (const a of orphans) console.error(`  ${a}`);
+            for (const a of unexpectedOrphans) console.error(`  ${a}`);
             process.exit(1);
           }
-          console.log('No orphans - every running alert is declared here. Safe to deploy.');
+          console.log('No unexpected orphans - every other running alert is declared here. Safe to deploy.');
           EOF
 
       # THE SAME HAZARD, FOR THE ROUTING. deploy.sh symlinks alertmanager.yml
@@ -183,7 +280,28 @@ jobs:
       - name: Ship monitoring config and the Caddy safety installer to the box
         run: |
           set -euo pipefail
-          echo "${{ github.sha }} ${{ github.ref_name }} $(date -u +%Y-%m-%dT%H:%M:%SZ)" > infra/monitoring/.deployed-from
+          LIVE_RECEIPT="$(~/hssh 'if [ -f /opt/smarter-poker-monitoring/.club-arena-monitoring-release ]; then cat /opt/smarter-poker-monitoring/.club-arena-monitoring-release; else printf "%s\n" absent; fi')"
+          LIVE_SHA="$(printf '%s\n' "$LIVE_RECEIPT" | sed -n 's/^sha=//p')"
+          if [ "$LIVE_RECEIPT" = absent ]; then
+            LIVE_SHA=none
+          else
+            [ "$(printf '%s\n' "$LIVE_RECEIPT" | sed -n 's/^schema=//p')" = club-arena-monitoring-release-v1 ]
+            [[ "$LIVE_SHA" =~ ^[0-9a-f]{40}$ ]]
+            [ "$(printf '%s\n' "$LIVE_RECEIPT" | grep -c '^sha=')" -eq 1 ]
+            git cat-file -e "$LIVE_SHA^{commit}"
+            git merge-base --is-ancestor "$LIVE_SHA" "$DEPLOY_CONTROL_SHA" \
+              || { echo "::error::The live monitoring release is not an ancestor of this request."; exit 1; }
+          fi
+
+          MANIFEST=infra/monitoring/.club-arena-monitoring-payload.sha256
+          git ls-tree -r --name-only "$DEPLOY_CONTROL_SHA" -- \
+            infra/monitoring server/scripts/install-caddy-websocket-log-redaction.sh \
+            | LC_ALL=C sort \
+            | while IFS= read -r path; do sha256sum "$path"; done > "$MANIFEST"
+          test -s "$MANIFEST"
+          PAYLOAD_SHA="$(sha256sum "$MANIFEST" | cut -d' ' -f1)"
+          printf 'schema=club-arena-monitoring-release-v1\nsha=%s\nprevious=%s\npayload=%s\n' \
+            "$DEPLOY_CONTROL_SHA" "$LIVE_SHA" "$PAYLOAD_SHA" > infra/monitoring/.deployed-from
           # Staged, then copied IN PLACE. docker-compose.yml bind-mounts the
           # rule files one by one, and a bind mount of a file follows the
           # inode: a file that is unlinked and recreated (tar's default) is a
@@ -195,35 +313,37 @@ jobs:
           ~/hssh "mkdir -p /opt/smarter-poker-monitoring-src/infra/monitoring \
             /opt/smarter-poker-monitoring-src/server/scripts \
             && cp -R /opt/smarter-poker-monitoring-src.incoming/infra/monitoring/. /opt/smarter-poker-monitoring-src/infra/monitoring/ \
+            && rm -f -- /opt/smarter-poker-monitoring-src/infra/monitoring/supervisor-rules.yml \
             && cp /opt/smarter-poker-monitoring-src.incoming/server/scripts/install-caddy-websocket-log-redaction.sh /opt/smarter-poker-monitoring-src/server/scripts/ \
             && chmod +x /opt/smarter-poker-monitoring-src/server/scripts/install-caddy-websocket-log-redaction.sh \
             && rm -rf /opt/smarter-poker-monitoring-src.incoming \
             && test -f /opt/smarter-poker-monitoring-src/infra/monitoring/prometheus.yml \
             && test -x /opt/smarter-poker-monitoring-src/server/scripts/install-caddy-websocket-log-redaction.sh \
+            && test -s /opt/smarter-poker-monitoring-src/infra/monitoring/.club-arena-monitoring-payload.sha256 \
             && cat /opt/smarter-poker-monitoring-src/infra/monitoring/.deployed-from"
       - name: Deploy
         run: |
           set -euo pipefail
           # No pipe on this line: a pipe would report the pager's exit, not the deploy's.
-          ~/hssh "MONITORING_SRC_FROM_CHECKOUT=1 bash /opt/smarter-poker-monitoring-src/infra/monitoring/deploy.sh" 2>&1
+          ~/hssh "MONITORING_SRC_FROM_CHECKOUT=1 DEPLOY_CONTROL_SHA='$DEPLOY_CONTROL_SHA' bash /opt/smarter-poker-monitoring-src/infra/monitoring/deploy.sh" 2>&1
 
       # VERIFY BY READING. A green deploy step is not a loaded rule - the same
       # lesson as "a green deploy run is not a deployment" one layer down.
       - name: The box is running what this repo declares
         env:
-          ENGINE_MONITORING_SSH: ${{ env.SSH_USER }}@${{ secrets.HETZNER_HOST }}
+          ENGINE_MONITORING_SSH: ${{ env.SSH_USER }}@${{ env.HETZNER_HOST }}
         run: |
           set -euo pipefail
           # Prometheus reloads asynchronously after the symlinks swap.
           sleep 20
-          if ! node scripts/ci/check-alert-rules-match.mjs; then
-            # A file bind mount follows the inode Docker resolved when the
-            # container started. If an older/manual deployment replaced that
-            # inode, /-/reload can truthfully return 200 while Prometheus keeps
-            # reading the detached file. Recreate only Prometheus to rebind the
-            # shipped rule files, then require the same read-back proof again.
-            echo "::warning::Prometheus accepted the reload but did not load the shipped rules; rebinding its file mounts."
-            ~/hssh "cd /opt/smarter-poker-monitoring && docker compose up -d --force-recreate prometheus"
-            sleep 15
-            node scripts/ci/check-alert-rules-match.mjs
-          fi
+          node scripts/ci/check-alert-rules-match.mjs
+
+      - name: Remove Hetzner SSH credentials
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -f -- \
+            "$HOME/.ssh/id_deploy" \
+            "$HOME/.ssh/hetzner_known_hosts" \
+            "$HOME/.ssh/config" \
+            "$HOME/hssh"

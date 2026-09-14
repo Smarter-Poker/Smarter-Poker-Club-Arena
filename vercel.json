@@ -235,10 +235,6 @@
     "frontend": {
       "routePrefix": "/",
       "framework": "vite"
-    },
-    "sentry-autofix": {
-      "entrypoint": "services/sentry-autofix",
-      "routePrefix": "/_/sentry-autofix"
     }
   }
 }

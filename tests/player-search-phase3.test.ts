@@ -76,6 +76,6 @@ describe('global locator and observer experience', () => {
     expect(stateHandler).toContain('authorizeTableViewer(tableId, auth.userId)');
     expect(stateHandler).toContain('CLUB_MEMBERSHIP_REQUIRED');
     expect(stateHandler).toContain('OBSERVERS_RESTRICTED');
-    expect(socketServer.match(/this\.authorizeViewer\(tableId,/g)).toHaveLength(2);
+    expect(socketServer.match(/this\.authorizeConnection\(tableId,/g)).toHaveLength(2);
   });
 });

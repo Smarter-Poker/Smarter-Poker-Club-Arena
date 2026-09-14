@@ -19,7 +19,7 @@
 --    MAINTENANCE_RELEASE_CERTIFICATE_CALLER_REQUIRED (signup_errors id 9318,
 --    2026-09-10 03:06 UTC). Body otherwise identical to 20260910034411.
 --
--- 3. fn_spin_expire_unfilled: `spin_multiplier IS NOT NULL` -> 
+-- 3. fn_spin_expire_unfilled: `spin_multiplier IS NOT NULL` ->
 --    `COALESCE(spin_multiplier, 0) > 0`. tournaments.spin_multiplier has
 --    DEFAULT 0 and the seat-first creator omits the column, so the sweep read
 --    every undrawn Spin as drawn and expired NOTHING since 2026-09-08: a

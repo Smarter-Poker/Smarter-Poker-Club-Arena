@@ -2,12 +2,15 @@ import { performance } from 'node:perf_hooks';
 
 import { HorseLogic } from '../HorseLogic.js';
 import { HorseMind } from '../HorseMind.js';
+import { prepareTournamentFutureHandFacts } from '../HorseTournamentFutureHand.js';
 import type { CapturedHorseMindDecision, HorseMindDecisionEffect } from '../HorseMind.js';
 import { restoreFastRandom, saveFastRandom } from '../HorseEval.js';
 import { equityGovernor } from '../EquityLoadGovernor.js';
 import { bettingStructureFor } from '../BettingStructure.js';
 import { calculateContestablePot } from '../PokerEngine.js';
 import { horseVariantRulesFor, isKnownVariant } from '../VariantRules.js';
+import { buildJointCardLayout, type JointCardLayoutInput } from '../multiway/JointCardLayout.js';
+import { validateDealtSeatCensus } from '../multiway/DealtSeatCensus.js';
 import { buildTournamentMState, TOURNAMENT_CONTEXT_INCOMPLETE } from '../HorseTournamentPreflop.js';
 import { noteDecisionMs, noteFire } from '../BrainTelemetry.js';
 import { gtoChartCount } from '../GtoCharts.js';
@@ -55,7 +58,7 @@ import type {
   CommitDecisionEffectsRequest,
   HorseDecisionStatusRequest,
 } from './protocol.js';
-import { buildHorseDecisionKey } from './protocol.js';
+import { buildHorseDecisionKey, validatedHorsePolicySamplingKey } from './protocol.js';
 
 export interface HorseDecisionWorkerDependencies {
   startServices(): Promise<HorseDecisionWorkerReadiness>;
@@ -111,6 +114,10 @@ async function startOwnedServices(): Promise<HorseDecisionWorkerReadiness> {
       loadGtoPostflop(),
       loadGtoPostflopV31(),
     ]);
+
+    // The fixed rollout population belongs to this worker. Prepare its card
+    // facts before READY so the first eligible decisions pay no scoring cost.
+    prepareTournamentFutureHandFacts();
 
     // Periodic refresh begins only after the first authoritative load. The
     // loader start functions are idempotent and own unref'd timers.
@@ -179,6 +186,14 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
   now: () => performance.now(),
 };
 
+/**
+ * Resolve on a later event-loop turn (setImmediate's check phase), never inside
+ * the macrotask that queued it. See HorseDecisionWorkerRuntime.receive.
+ */
+function nextEventLoopTurn(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
 function asMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -207,7 +222,9 @@ export class HorseDecisionWorkerRuntime {
   private readyPromise: Promise<HorseDecisionWorkerReadiness> | null = null;
   constructor(
     private readonly send: (message: HorseDecisionWorkerResponse) => void,
-    private readonly deps: HorseDecisionWorkerDependencies = defaultHorseDecisionWorkerDependencies
+    private readonly deps: HorseDecisionWorkerDependencies = defaultHorseDecisionWorkerDependencies,
+    /** Test seam; production always yields to a real event-loop turn. */
+    private readonly turnEventLoop: () => Promise<void> = nextEventLoopTurn
   ) {}
 
   start(): Promise<HorseDecisionWorkerReadiness> {
@@ -266,7 +283,31 @@ export class HorseDecisionWorkerRuntime {
       return;
     }
     this.pendingRequestIds.add(message.requestId);
-    this.operation = this.operation.then(() => this.execute(message));
+    /*
+     * ONE JOB PER EVENT-LOOP TURN (2026-09-11)
+     *
+     * The client now posts several jobs ahead of the one running (client.ts,
+     * "ONE LANE, NOT ONE MESSAGE AT A TIME"). Node hands a port's queued
+     * messages to JS back to back - up to max(queued, 1000) per wake-up,
+     * draining microtasks after each - so chaining execute() straight onto
+     * this promise would run a whole window of synchronous HorseLogic without
+     * a single event-loop turn in between. The governor's one-second sampler,
+     * the mind-persistence and telemetry flush timers and every CANCEL would
+     * wait behind it, and under a standing backlog the port need never empty.
+     * Each job therefore starts on its own turn, after timers and newly
+     * arrived messages have run - exactly the rhythm this worker had when the
+     * client posted one job at a time. FIFO is unchanged: the chain is still
+     * the only execution lane. The yield can never reject the chain.
+     */
+    this.operation = this.operation
+      .then(async () => {
+        try {
+          await this.turnEventLoop();
+        } catch {
+          /* a failed yield must never stall or reject the only lane */
+        }
+      })
+      .then(() => this.execute(message));
   }
 
   /** Test seam and graceful-worker close join. */
@@ -344,9 +385,19 @@ export class HorseDecisionWorkerRuntime {
     if (
       (request.type === 'DECIDE_FAST' || request.type === 'DECIDE_DEEP') &&
       request.opts &&
-      ('gtoV31DatasetChecksum' in request.opts || 'onGtoV31Decision' in request.opts)
+      ('gtoV31DatasetChecksum' in request.opts ||
+        'onGtoV31Decision' in request.opts ||
+        request.opts.phase8Postflop === 'candidate' ||
+        request.opts.phase10Plo4 === 'candidate' ||
+        request.opts.phase11Omaha === 'candidate' ||
+        request.opts.phase12Remaining === 'candidate' ||
+        'phase12EvidenceMode' in request.opts ||
+        request.opts.phase13Joint === 'candidate' ||
+        'phase13EvidenceMode' in request.opts ||
+        'phase11EvidenceMode' in request.opts ||
+        'phase10EvidenceMode' in request.opts)
     ) {
-      throw new Error('offline V31 candidate controls are forbidden in live decision requests');
+      throw new Error('offline candidate controls are forbidden in live decision requests');
     }
     if (request.type === 'DECIDE_FAST' || request.type === 'DECIDE_DEEP') {
       this.assertCanonicalDecisionSnapshot(request);
@@ -368,11 +419,20 @@ export class HorseDecisionWorkerRuntime {
       if (!Array.isArray(request.cards) || request.cards.length !== 3) {
         throw new Error('pineapple discard requires exactly three cards');
       }
-      if (!Array.isArray(request.communityCards) || request.communityCards.length > 5) {
-        throw new Error('pineapple discard communityCards must contain at most five cards');
+      if (!Array.isArray(request.communityCards) || request.communityCards.length !== 3) {
+        throw new Error('pineapple discard requires the exact three-card flop');
       }
-      if (typeof request.gameVariant !== 'string' || request.gameVariant.length === 0) {
-        throw new Error('pineapple discard gameVariant must be non-empty');
+      if (request.gameVariant !== 'pineapple') {
+        throw new Error('pineapple discard requires the canonical pineapple variant');
+      }
+      const ranks = new Set(['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']);
+      const suits = new Set(['clubs', 'diamonds', 'hearts', 'spades']);
+      const known = [...request.cards, ...request.communityCards];
+      if (
+        known.some((card) => !card || !ranks.has(card.rank) || !suits.has(card.suit)) ||
+        new Set(known.map((card) => `${card.rank}:${card.suit}`)).size !== known.length
+      ) {
+        throw new Error('pineapple discard requires six distinct physical cards');
       }
     }
   }
@@ -419,6 +479,14 @@ export class HorseDecisionWorkerRuntime {
       }
     }
     const publicHero = gs.players.find((seat) => seat.seat === gs.heroSeat);
+    if (gs.dealtSeatIds !== undefined)
+      validateDealtSeatCensus(gs.players, request.player.seat, gs.dealtSeatIds);
+    if (
+      (gs.chipUnit !== undefined || gs.asset !== undefined) &&
+      (!['chips', 'diamonds'].includes(gs.asset ?? '') ||
+        gs.chipUnit !== (gs.asset === 'diamonds' || gs.gameMode === 'tournament' ? 1 : 0.01))
+    )
+      throw new Error('horse state settlement chip rules are invalid');
     if (!publicHero || publicHero.user_id !== request.player.user_id) {
       throw new Error('horse state must include the same public hero identity');
     }
@@ -438,7 +506,15 @@ export class HorseDecisionWorkerRuntime {
     ) {
       throw new Error('horse state public hero does not match the private decision player');
     }
-    if (gs.players.some((seat) => !Array.isArray(seat.cards) || seat.cards.length !== 0)) {
+    if (
+      gs.players.some(
+        (seat) =>
+          !Array.isArray(seat.cards) ||
+          seat.cards.length !== 0 ||
+          (seat.knownDeadCards !== undefined &&
+            (!Array.isArray(seat.knownDeadCards) || seat.knownDeadCards.length !== 0))
+      )
+    ) {
       throw new Error('horse state contains private seat cards');
     }
     if (!isKnownVariant(gs.gameVariant)) throw new Error('horse state gameVariant is unknown');
@@ -492,6 +568,51 @@ export class HorseDecisionWorkerRuntime {
     }
     const validRanks = new Set(['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']);
     const validSuits = new Set(['clubs', 'diamonds', 'hearts', 'spades']);
+    const knownDead = request.player.knownDeadCards ?? [];
+    if (
+      !Array.isArray(knownDead) ||
+      !Array.isArray(gs.communityCards) ||
+      knownDead.length !== (pineapplePostDiscard ? 1 : 0)
+    ) {
+      throw new Error('horse state known discard or physical cards are invalid');
+    }
+    const physicalKnown = [...request.player.cards, ...knownDead, ...gs.communityCards];
+    if (
+      physicalKnown.some(
+        (card) => !card || !validRanks.has(card.rank) || !validSuits.has(card.suit)
+      ) ||
+      new Set(physicalKnown.map((card) => `${card.rank}:${card.suit}`)).size !==
+        physicalKnown.length
+    ) {
+      throw new Error('horse state known discard or physical cards are invalid');
+    }
+    const boardPresent = (board: unknown) =>
+      board !== undefined && (!Array.isArray(board) || board.length > 0);
+    const secondBoard = boardPresent(gs.communityCards2);
+    const thirdBoard = boardPresent(gs.communityCards3);
+    if (gs.boardCount !== undefined && ![1, 2, 3].includes(gs.boardCount))
+      throw new Error('joint_cards_invalid_board_count');
+    if ((gs.boardCount ?? 1) > 1 || secondBoard || thirdBoard) {
+      const boardCount = gs.boardCount ?? (thirdBoard ? 3 : 2);
+      if ((boardCount < 3 && thirdBoard) || (boardCount < 2 && secondBoard))
+        throw new Error('joint_cards_invalid_board_count');
+      // A betting decision uses distinct bomb boards. Shared-prefix all-in
+      // runouts have no remaining betting decision and belong to settlement.
+      buildJointCardLayout({
+        variant: gs.gameVariant,
+        stage: gs.stage as JointCardLayoutInput['stage'],
+        heroCards: request.player.cards,
+        knownDeadCards: knownDead,
+        dealtSeats: validateDealtSeatCensus(gs.players, request.player.seat, gs.dealtSeatIds)
+          .length,
+        boards: [
+          gs.communityCards,
+          gs.communityCards2!,
+          ...(boardCount === 3 ? [gs.communityCards3!] : []),
+        ],
+        layout: 'independent',
+      });
+    }
     if (
       request.player.cards.some(
         (card) => !card || !validRanks.has(card.rank) || !validSuits.has(card.suit)
@@ -912,7 +1033,10 @@ export class HorseDecisionWorkerRuntime {
 
   private executeFast(request: FastHorseDecisionRequest): void {
     const canonicalRng = this.deps.saveRng();
-    const rngBefore = this.requestRngSeed(request, 'fast');
+    const rngBefore = this.requestRngSeed(
+      { ...request, decisionKey: validatedHorsePolicySamplingKey(request) },
+      'fast'
+    );
     this.deps.restoreRng(rngBefore);
     const startedAt = this.deps.now();
     let captured: CapturedHorseMindDecision<ReturnType<typeof HorseLogic.decide>>;

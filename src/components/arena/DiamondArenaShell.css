@@ -11,11 +11,45 @@
 .diamond-arena-shell {
   background: #000;
   color: #e4e7ec;
-  padding: 16px 16px 32px;
+}
+
+/* The shell borrows .club-home for the black stage and the bottom-nav
+   clearance only. That class also carries the chip lobby's desktop grid (rail
+   column plus machine column, one viewport-high row) and its mobile full-bleed
+   offset (width 100vw, margin-left calc(50% - 50vw)), which the unified mobile
+   lobby resets for itself. Inherited here, the placeholder's four lines were
+   auto-placed across the desktop grid, and on any viewport at or under 900px
+   with a classic scrollbar the shell sat 4px off-canvas with no gutter at all
+   (authenticated Diamond routes, 2026-09-11). One column and one gutter at
+   every width; the double class outranks every .club-home rule. */
+.club-home.diamond-arena-shell {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  align-items: stretch;
+  gap: 12px;
+  width: 100%;
+  max-width: 100%;
+  margin-left: 0;
+  padding: 12px 16px calc(var(--bottom-nav-clearance, 86px) + 12px);
+}
+
+@media (max-width: 900px) {
+  .club-home.diamond-arena-shell {
+    width: 100%;
+    max-width: 100%;
+    margin-left: 0;
+    padding: 10px 12px calc(var(--bottom-nav-clearance, 74px) + 12px);
+  }
 }
 .diamond-arena-shell nav {
   margin-bottom: 4px;
+}
+/* The closed-games line above the shared lobby. It is a notice, not a lobby
+   row, so it stays quiet and does not take a game card's width. */
+.diamond-arena-notice {
+  margin: 0;
+  padding: 8px 16px;
+  color: #e4e7ec;
+  text-align: center;
+  font-size: 0.95rem;
 }

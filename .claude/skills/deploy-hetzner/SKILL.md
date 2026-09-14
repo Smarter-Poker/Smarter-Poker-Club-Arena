@@ -1,162 +1,182 @@
 ---
 name: deploy-hetzner
 description: >
-  Deploy the Club Arena poker engine server to Hetzner VPS via SSH + Docker.
-  Use when the user says "deploy", "push to server", "deploy to hetzner",
-  "deploy engine", "update VPS", "restart server", "ship it", "deploy to production",
-  "push server changes", or anything about getting code changes onto the live
-  engine.smarter.poker server. Also triggers on "hetzner", "VPS deploy", "docker deploy",
-  or "server deploy". Use this even if the user just says "deploy" with no qualifier —
-  Club Arena's server deployment always means Hetzner.
-version: 2.0.0
+  Dispatch and certify the Club Arena poker engine using the repository-owned,
+  exact-SHA sealed Hetzner workflow. Use for engine deploy, restart, ship, or
+  production-release requests. Never deploy through World Hub, raw docker, or
+  direct SSH.
+version: 3.0.0
 ---
 
-# Deploy to Hetzner VPS — Club Arena Engine
+# Club Arena Sealed Hetzner Engine Release
 
-The engine runs at `engine.smarter.poker` and serves all real-time poker game
-logic. **You do not deploy it by hand.** A merge to `main` that touches
-`server/**` is the deploy; the workflow builds, tests, seals and cuts over
-inside the next hourly `:55` maintenance break. This file says how to get a
-change onto that train, how to see that it shipped, and what the box looks
-like when you need to read it — and why every manual `docker run` you might
-remember from v1 of this skill is now actively undone by the host.
+## You almost certainly do not have to do anything
 
-Rewritten 2026-09-10 after an incident where v1's IP (`178.156.160.206`)
-turned out to be a dead host and its "one-liner" would have been reverted by
-the supervisor within sixty seconds.
+A merge to `main` that touches `server/**` deploys itself:
 
-## Infrastructure (verified 2026-09-10)
-
-| Component          | Detail                                                                                            |
-| ------------------ | ------------------------------------------------------------------------------------------------- |
-| VPS IP             | `5.161.252.33` (hostname `club-arena-engine`; host clock is America/Chicago)                      |
-| SSH user           | `root` — key auth; the Mac Studio's `~/.ssh` already holds it                                     |
-| Repo on VPS        | `/opt/club-arena` — reset to the EXACT deployed commit by the workflow                            |
-| Container          | `club-arena-engine`, image `club-arena-engine:<full git sha>`                                     |
-| Port               | `8080` (Caddy fronts it as `https://engine.smarter.poker`)                                        |
-| Env file           | `/opt/club-arena/server/.env`                                                                     |
-| Run-spec           | `server/scripts/engine-up.sh` — the ONLY definition of the run flags                              |
-| Release seal       | `/var/lib/club-arena/engine-release-seal.json` (root-owned; the authority)                        |
-| Supervisor         | `club-arena-supervisor.timer` every 60 s → `engine-supervisor.sh`                                 |
-| Self-heal          | `sp-autoheal` restarts the container when Docker's healthcheck says unhealthy                     |
-| Health URL         | `https://engine.smarter.poker/health` — **CDN-cached; never use it to verify a deploy**           |
-| Engine log archive | `/var/log/club-arena-engine/engine-<archived>-started<...>-<sha>.log.gz`, one per container       |
-| Metrics            | Prometheus on the box at `localhost:9090` (`poker_*`, `process_cpu_seconds_total`, node exporter) |
-
-## How a deploy actually happens
-
-1. Your change is merged to `main` and touches `server/**`. (Docs-only or
-   migration-only commits do not deploy anything.)
-2. `.github/workflows/auto-deploy-hetzner.yml` runs on a `:35` cron tick (or
-   is dispatched by `publish-watchdog` if GitHub drops the tick). It checks
-   out that exact sha, runs the server tests, builds
-   `club-arena-engine:<sha>`, and waits in the break gate.
-3. At `:53` the engine announces the break; at `:55` it parks every table;
-   the workflow cuts over using `engine-up.sh`; the sealed desired image ID
-   moves only after the database witness confirms the new build is serving.
-4. If nothing new is on `main`, the window costs one HTTP request and the
-   engine does not restart. Merged engine code therefore waits **at most one
-   hour** to ship, by design.
-
-There is no faster path. A `workflow_dispatch` of the same workflow still
-waits for the `:55` break — that is the point.
-
-## Pre-merge checklist
-
-1. `npx tsc --noEmit` at the repo root — zero errors.
-2. Server tests pass locally for what you touched; the workflow will run them
-   again and refuse to deploy on red.
-3. If the change needs a database migration, **apply the migration first**
-   (Supabase MCP `apply_migration`, one transaction) and confirm every RPC the
-   new code calls exists in production:
-
-   ```sql
-   select p.proname, pg_get_function_identity_arguments(p.oid)
-   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where n.nspname = 'public' and p.proname in ('fn_your_new_rpc', ...);
-   ```
-
-   On 2026-09-09 an engine change shipped whose migration was never applied;
-   the engine called a function that did not exist for eight hours and the
-   whole fleet wound down every hour. PostgREST answers a missing or
-   mis-signatured function with 404 `PGRST202` — grep edge logs for it after
-   any deploy that added an RPC.
-
-## Verifying a deploy shipped (VIA THE DATABASE, never the health endpoint)
-
-```sql
--- the running build: engine_leader.engine_version is the short sha
-select instance_id, engine_version, acquired_at, heartbeat_at from engine_leader;
-
--- the restart dip and the rehydration ramp, minute by minute
-select date_trunc('minute', created_at) m, count(*) hands, count(distinct table_id) tables
-from hand_history where created_at > now() - interval '20 minutes' group by 1 order by 1;
+```
+push to main -> stage-engine-release.yml (detect + dispatch the exact SHA)
+             -> auto-deploy-hetzner.yml  (test, build, wait for the :55 break,
+                                          cut over, prove, seal)
 ```
 
-A healthy cutover shows hands dropping to ~0 for the `:55–:00` break and
-climbing back past the pre-break rate within three minutes. Then confirm on
-the box:
+If the change is merged, the release is already in flight or already done.
+**Read the state before you act.** Dispatching a second run for a SHA that is
+already moving does not make it faster.
+
+## The hosts, verified 2026-09-12 by SSH
+
+| What            | Address           | Hostname            |
+| --------------- | ----------------- | ------------------- |
+| **The engine**  | `5.161.252.33`    | `club-arena-engine` |
+| The TURN server | `178.156.160.206` | `club-arena-turn`   |
+
+`178.156.160.206` is **not** the engine. It runs no engine container and has no
+`/opt/club-arena`. Version 2.0 of this file and every version before it named it
+as the deploy target, and an agent following those instructions would have
+`ssh`ed into the voice relay and built nothing.
+
+The working key on Dan's Mac is at `~/.ssh/hetzner_ed25519`. Use it with
+`-o IdentitiesOnly=yes`; the other `hetzner_*` keys on that machine are all
+rejected. **Read-only inspection only.** Never put key material in this or any
+other file.
+
+## Credential boundary
+
+The workflow reads only these Club Arena repository secrets:
+
+- `HETZNER_SSH_PRIVATE_KEY`
+- `HETZNER_HOST`
+- `HETZNER_HOST_KEY`
+- `DATABASE_URL` (append-only deployment receipt only)
+
+Never read, copy, print, or store their values in a workstation `.env`,
+Markdown, another repository, or a command. There is no legacy key alias, World
+Hub fallback, password path, or local SSH-key fallback. CLAUDE.md 10.84: an
+agent may say which credential is wrong and where it lives. An agent never
+sets one.
+
+## There is exactly one way the container is started
+
+`server/scripts/engine-up.sh` is, in its own words, "THE single source of truth
+for how the Club Arena engine container is run". Everything that starts the
+engine goes through it: the release transaction, the supervisor, and recovery.
+
+A hand-rolled `docker run` is not a shortcut, it is a different engine. It
+silently drops:
+
+- `--label autoheal=true` - `sp-autoheal` restarts the engine when Docker marks
+  it unhealthy, and it finds the container by that label. Without it, an
+  unhealthy engine stays unhealthy.
+- `--label sp.role=engine` - the release transaction refuses to cut over when it
+  finds an engine container it does not manage ("an unmanaged engine container
+  is running on this host").
+- `--label sp.release.sha=<sha>` - this is what every proof reads to decide what
+  production is running. An unlabelled container cannot be verified at all.
+- `--log-opt max-size=50m --log-opt max-file=5` - unbounded `json-file` logs
+  fill the disk.
+- the health check timings (`20s`/`15s`/`300s`/3), tuned so a saturated event
+  loop is not mistaken for a dead engine.
+- the `flock` on `/var/lock/club-arena-engine-up.lock`, which is what stops two
+  concurrent starts racing on the container name.
+
+So: **never `docker build`, `docker run`, `docker stop`, `git pull` in
+`/opt/club-arena`, or `docker image prune` on that box.** Those five commands
+were the body of version 2.0 of this file.
+
+## Image tags
+
+| Tag                              | Meaning                                                        |
+| -------------------------------- | -------------------------------------------------------------- |
+| `club-arena-engine:<40-hex sha>` | **Immutable.** The tag IS the commit. Built once               |
+| `club-arena-engine:current`      | What the seal says production should be running                |
+| `club-arena-engine:previous`     | The rollback source the transaction proves before it cuts over |
+| `...:<sha>-candidate-<n>`        | Build scratch; `retain-engine-images.sh` removes these         |
+
+`retain-engine-images.sh` keeps the sealed, running and leased images plus five
+recent rollback tags. Do not prune by hand: you would be deleting the image the
+next rollback needs.
+
+## Verify before you act
 
 ```bash
-ssh root@5.161.252.33 "docker ps --format '{{.Image}} {{.Status}}' | grep club-arena-engine"
+# What does production actually serve? (cache-busted; the CDN lies)
+curl -s "https://engine.smarter.poker/health?nocache=$(date +%s%N)" |
+  python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("releaseSha"), d.get("instanceId"), d.get("liveness"))'
+
+# What does main require?
+git -C ~/Documents/club-arena fetch --no-tags origin main
+git -C ~/Documents/club-arena log origin/main -1 --format=%H -- \
+  'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**'
+
+# What did the pipeline itself say about every recent attempt?
+#   SELECT at, target_sha, shipped, reason FROM ca_engine_deploy_attempts
+#   ORDER BY at DESC LIMIT 20;   -- Supabase MCP, read-only
 ```
 
-The image tag IS the commit sha. A green workflow run is **not** a deployment
-— the run reports SUCCESS with a step named "DID NOT DEPLOY" when the build
-missed its window. Check the tag.
+The ledger is the answer to "why is production behind", and it is almost always
+already written down. On 2026-09-12 fourteen consecutive rows said so while an
+investigation went looking at the engine.
 
-## Reading the box during an incident
+Read-only inspection on the box, when the ledger is not enough:
 
 ```bash
-# what is running and for how long
-ssh root@5.161.252.33 "docker ps --format '{{.Names}} {{.Image}} {{.Status}}'; uptime"
-
-# why the container last restarted (autoheal / supervisor / deploy)
-ssh root@5.161.252.33 "docker logs --since 2h sp-autoheal 2>&1 | tail; \
-  journalctl -u club-arena-supervisor --since '2 hours ago' --no-pager | grep -v -E 'Starting|Finished|Deactivated|Consumed' | tail -20"
-
-# the current engine log, and the previous container's archived log
-ssh root@5.161.252.33 "docker logs --timestamps --since 30m club-arena-engine 2>&1 | grep -v TurnFSM | tail -200"
-ssh root@5.161.252.33 "ls -t /var/log/club-arena-engine/*.log.gz | head -3"
-
-# event-loop lag and CPU for the last three hours (Prometheus on the box)
-ssh root@5.161.252.33 "curl -s 'http://localhost:9090/api/v1/query?query=poker_event_loop_delay_p99_ms'"
+SSH="ssh -i ~/.ssh/hetzner_ed25519 -o IdentitiesOnly=yes root@5.161.252.33"
+$SSH 'systemctl list-units "club-arena-engine-release*" --all --no-legend'
+$SSH 'journalctl -u "club-arena-engine-release-v1@<run-id>-1.service" --no-pager -o cat | tail -40'
+$SSH 'tail -c 4000 /var/lib/club-arena/engine-release-audit.jsonl'
+$SSH '/usr/local/lib/club-arena/engine-control/engine-release-seal.py get desired-sha'
 ```
 
-`journalctl --since` takes **Chicago** local time on this host, not UTC.
+## Dispatch, only when the automatic path did not run
 
-Together with `docs/runbooks/tables-say-reconnecting.md`, which is the
-first-four-minutes runbook for a "Reconnecting To The Table" page.
+The signal is one repository dispatch carrying one full lowercase SHA. `gh` is
+**not installed on Dan's Mac** (AGENT-PLAYBOOK section 8b), so use `curl`:
 
-## What NOT to do (and why the host will undo it anyway)
+```bash
+TARGET_SHA=<exact-merged-sha>
+curl -sS -X POST \
+  -H "Authorization: Bearer $GITHUB_TOKEN" \
+  -H 'Accept: application/vnd.github+json' \
+  https://api.github.com/repos/Smarter-Poker/Smarter-Poker-Club-Arena/dispatches \
+  -d "{\"event_type\":\"deploy-club-arena-engine\",\"client_payload\":{\"ref_sha\":\"$TARGET_SHA\"}}"
+```
 
-- **Do not `docker build` / `docker run` / `docker restart` the engine by
-  hand.** The supervisor compares the running image ID against the sealed
-  desired image every 60 s and restores the sealed release when they differ.
-  A hand-started container lives for at most one supervisor tick; a hand
-  `docker stop` is recorded as a manual stop that `--restart always` ignores,
-  and the supervisor brings the sealed release back. Neither leaves you where
-  you think you are.
-- **Do not `git pull` / `git reset` in `/opt/club-arena` on the box.** The
-  workflow resets it to the exact deployed commit ("BUILD WHAT YOU TAG");
-  anything you do there is overwritten on the next cutover and, until then,
-  makes the tree disagree with the image.
-- **Do not `docker image prune`.** The sealed last-known-good image is the
-  rollback; v1 of this skill deleted it.
-- **Do not restart outside the `:55` break** unless the runbook says the
-  engine is dead (Dan, 2026-08-31, binding). Every restart reconnects every
-  socket and rehydrates ~400 tables.
+The workflow exposes no force input and no maintenance bypass, deliberately.
+The target must be the newest engine-affecting commit on protected main, or
+preflight refuses it.
 
-## Rollback
+## What "deployed" means
 
-Rollback is a forward merge. Revert the offending commit on `main`; the next
-`:55` window ships the revert. If the engine is down and cannot wait,
-`engine-supervisor.sh` already restores the sealed last-known-good release on
-its own — read its journal before doing anything, because it has probably
-already done the thing you were about to do.
+The run is complete only when all of the following are true:
 
-## Post-deploy record
+1. `ca_engine_deploy_attempts` has a row for this SHA with `shipped = true`.
+2. A cache-busted `https://engine.smarter.poker/health` reports that exact
+   `releaseSha`, `running: true`, and `liveness: "ok"`.
+3. The sealed instance is stable, tables are dealable, and hands advance.
 
-Note the deploy in the changelog for the change (`docs/changelog/…`) with the
-sha and the window it shipped in. `MIGRATION-CHANGELOG.md` is frozen history;
-do not append to it.
+A green workflow is not evidence and neither is a merged pull request.
+AGENT-PLAYBOOK section 7: a green tick answers "did it merge"; only production
+answers "did it ship".
+
+## When it does not ship
+
+The run annotates **NOT DEPLOYED** with the reason, and the ledger records which
+half of the pipeline stopped:
+
+| Reason in the ledger                                                           | What happened                                                                        |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| `stood down before cutover; protected main had moved to <sha>`                 | Superseded. The named successor owns the next break. Nothing is wrong with your code |
+| `the durable Hetzner release transaction did not complete; ...`                | The release tried and stopped. Read the unit journal                                 |
+| `the release sealed but production identity could not be independently proved` | It cut over and the proof failed. Look at the engine                                 |
+| `production already proved this exact release`                                 | Already live                                                                         |
+
+**Fix forward.** The host transaction restores the previously sealed image by
+itself when a cutover cannot be proved; there is no operator rollback input and
+you must never improvise one by re-pointing `:current` by hand. Push the fix and
+let the same lane carry it.
+
+If several consecutive attempts ship nothing, the hourly
+`production-integrity-audit.yml` raises **ENGINE DEPLOY STARVATION** and says
+whether the release lane or the code is at fault. Read that before re-pushing
+the same commit.

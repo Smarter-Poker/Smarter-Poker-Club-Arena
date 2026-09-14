@@ -9,6 +9,8 @@ export interface ArenaAccessContext {
   member: boolean;
   automaticMembership: boolean;
   cashGamesEnabled?: boolean;
+  /** Diamond Phase 8: the tournament switch, read beside the cash one. */
+  tournamentsEnabled?: boolean;
   role: string | null;
   capabilities: {
     join: boolean;
@@ -28,6 +30,41 @@ export function parseArenaIdentity(value: unknown): ArenaIdentity {
   if (row.asset === 'chips' && row.is_platform === false)
     return { id: row.id, kind: 'chip_club', asset: 'chips' };
   throw new Error('Invalid Arena Asset Or Structure');
+}
+
+/**
+ * WHETHER A SEAT HAS A FUNDED TOP-UP WRITER BEHIND IT.
+ *
+ * Every chip seat does. `atomic_table_addon` debits `club_members.chip_balance`
+ * and either applies to the seat or queues a durable row for the end of the
+ * hand, and a chip tournament seat rebuys through its own door.
+ *
+ * A Diamond CASH seat does as of 2026-09-12: `fn_poker_diamond_top_up` reserves
+ * settled Diamonds into the same custody row the seat is bound to and raises
+ * `table_seats.stack` in the same transaction, which is the only shape the
+ * deferred seat-keeps-custody constraint allows.
+ *
+ * A Diamond TOURNAMENT seat does NOT. Prize escrow is a later phase and the
+ * custody door refuses a tournament table, so offering it a control that
+ * cannot work is worse than not offering one.
+ *
+ * This lives in the shared contract rather than in the table page because
+ * THREE controls ask exactly this question and they had drifted apart: the
+ * seat's own Top Up button learned about Diamond cash on 2026-09-12, while the
+ * multi-table tab bar's menu item and the automatic top-up both still refused
+ * every non-chip asset. At a Diamond table the tab bar's item therefore did
+ * nothing at all, and its Auto Top Up item toggled state that the automatic
+ * top-up then ignored. One rule, read from one place, cannot drift again.
+ *
+ * Auto top-up asks a NARROWER question and composes it from this one: a cash
+ * game with a funded writer, which is this predicate and `!isTournament`.
+ */
+export function seatCanAddFunds(
+  asset: ArenaIdentity['asset'] | null | undefined,
+  isTournament: boolean
+): boolean {
+  if (asset === 'chips') return true;
+  return asset === 'diamonds' && !isTournament;
 }
 
 export function assertChipFundingArena(arena: ArenaIdentity): void {

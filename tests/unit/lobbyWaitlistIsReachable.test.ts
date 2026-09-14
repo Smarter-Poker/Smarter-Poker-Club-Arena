@@ -57,12 +57,29 @@ describe('a full cash table offers the waitlist', () => {
     // Join Table must be gated on the table NOT being full. Since the
     // 2026-09-09 must-move audit it is also gated on the table not being
     // CLOSED - a cluster table the controller closed cannot be joined either -
-    // so the pin asserts the full-gate as a substring of whatever guards
-    // precede it, and asserts the closed-gate separately rather than pinning
-    // one exact spelling of the whole condition.
-    expect(tsx).toContain('!full && ctx.onJoinTable && (');
-    expect(tsx).toMatch(/\{!closed && !full && ctx\.onJoinTable && \(/);
-    expect(tsx).toMatch(/\{!closed && full && ctx\.onWaitlistToggle && \(/);
+    // and since 2026-09-11 on the board not being a closed arena, whose
+    // buy-in door refuses every seat while its ladder is listed. Three gates
+    // now, and a fourth is likely, so the pin asserts that each required gate
+    // is PRESENT ahead of the handler rather than pinning one exact spelling
+    // of the whole condition, which is what went red when the third arrived.
+    expect(tsx).toContain('!full && ctx.onJoinTable');
+    expect(tsx).toMatch(/\{!closed && !full && ctx\.onJoinTable/);
+    /* THE FOURTH GATE ARRIVED ON 2026-09-12, exactly as the note above said
+       one would, and this line went red for precisely the reason that note was
+       written: it pinned one exact spelling of the whole condition rather than
+       asserting the gates. A full table in a CLOSED arena was the one board
+       that could still offer an action, and the action it offered was a queue
+       whose only outcome is a buy-in the door refuses, on a hold that lasts
+       sixty seconds. `waiting` is in the condition so that LEAVING a queue
+       stays reachable: a player already on one must always be able to get off.
+
+       Asserted as a set of gates on the line that carries them, so a fifth
+       gate joins it and a reorder does not break it. */
+    const waitlistLine =
+      tsx.split('\n').find((line) => line.includes('ctx.onWaitlistToggle &&')) ?? '';
+    expect(waitlistLine, 'the waitlist action is not rendered at all').not.toBe('');
+    for (const gate of ['!closed', 'full', 'ctx.onWaitlistToggle', 'seatsClosedLabel', 'waiting'])
+      expect(waitlistLine, `the waitlist action lost its ${gate} gate`).toContain(gate);
   });
 
   it('is wired from the page, with the count in the memo signature', () => {

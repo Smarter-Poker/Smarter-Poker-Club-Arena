@@ -11,6 +11,7 @@
 import { noteFire } from './BrainTelemetry.js';
 import { resolvePersona, wantsStraddle } from './HorsePersona.js';
 import { HandController } from './HandController.js';
+import { getTournamentBrainContextSnapshot } from '../services/TournamentBrainContext.js';
 import { captureHandSeatGenerations } from './handSeatGeneration.js';
 import { ShadowRecorder } from './eventlog/ShadowRecorder.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
@@ -27,7 +28,11 @@ import {
   readClubChipBalances,
 } from '../services/supabase.js';
 import { cashMinBuyIn } from '../config/cashBuyIn.js';
-import { atRebuyStopLoss, horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
+import {
+  atRebuyStopLoss,
+  horseRebuyAmount,
+  rebuyStopLossReached,
+} from '../services/HorseRebuyPolicy.js';
 import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { holeCardCount, deckSizeFor, maxSeatsFor } from './VariantRules.js';
@@ -795,6 +800,16 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             this.tableFSM.transition('waiting');
           }
           this.setLoopPhase('idle_not_enough_players');
+          /* NOBODY WAITS FOR A BLIND THAT CANNOT ARRIVE (2026-09-11).
+             `activePlayers` above excludes a player waiting for the big
+             blind, so a table whose seats are mostly waiters reads as short
+             and sleeps here - and sleeping is what stops the big blind that
+             would have released them. Seven live must-move tables were shut
+             that way, one for an hour and a half with six funded seats on it.
+             See releaseWaitersNoBlindCanReach: it fires only when letting
+             everyone in actually starts the game, and the released seat is
+             still not a veteran, so the button rule is untouched. */
+          this.releaseWaitersNoBlindCanReach();
           // MUST-MOVE (Slice 2; moved here 2026-09-05): a table with no hand
           // to finish is at a hand boundary all the time, so every pending
           // move lands now, announced or not. This used to run in the
@@ -2555,7 +2570,17 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       this.currentHandVariant = config.gameVariant;
 
       this.currentHandSeatGenerations = captureHandSeatGenerations(players);
-      this.handController = new HandController(config, hcPlayers, dealerSeat);
+      // Bind the tournament identity to this hand. Each accepted action reads
+      // only the existing cache; later table reassignment cannot change it.
+      const observationTournamentId = this.tableInfo?.tournament_id;
+      this.handController = new HandController(
+        config,
+        hcPlayers,
+        dealerSeat,
+        config.isTournament && observationTournamentId
+          ? () => getTournamentBrainContextSnapshot(observationTournamentId)
+          : undefined
+      );
       // chip-std Lane F (2026-09-02): the stacks this hand was dealt from. The
       // tournament persist gate in postHandTasks holds the settled stacks of
       // these exact players to this exact total.
@@ -2777,7 +2802,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         try {
           applied = this.handController.performAction(
             dcPlayer.seat,
-            disconnectAction.action as any
+            disconnectAction.action as any,
+            undefined,
+            'forced'
           );
         } catch (err) {
           reportError(err, 'ServerTableEngine.' + this.tableId + '.disconnect_autoaction_threw');
@@ -3164,7 +3191,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
    * HORSES ARE PLAYERS (CLAUDE.md 10.5), and this is one of the two places
    * where the horse's INPUT DEVICE legitimately differs: a horse has no member
    * wallet, it is funded from the club treasury by autoRebuyHorse, and its
-   * stop-loss is two rebuys. So "can afford" is asked of the treasury path for
+   * stop-loss is its temperament's (HorseRebuyPolicy: a nit stops at two
+   * buy-ins committed, standard at three, a gambler at four). So "can afford"
+   * is asked of the treasury path for
    * a horse and of club_members.chip_balance for a human. What must not differ
    * — and does not — is the outcome: a seat that cannot fund a rebuy gets no
    * pause and is stood up, whichever kind of player is in it.
@@ -3181,11 +3210,16 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     // A table we cannot price is not a table anyone is stood up from.
     if (!Number.isFinite(minBuyIn) || minBuyIn <= 0) return true;
 
-    // A horse below its stop-loss still has a funding route (the treasury), so
-    // it is owed the window. recoverBustedSeatedHorses does the actual attempt.
+    // A horse inside its stop-loss still has a funding route (the treasury),
+    // so it is owed the window. Settlement step 5 does the actual attempt.
+    // The stop-loss is the temperament's (HorseRebuyPolicy), the same figure
+    // that decides the reload itself - this used to hard-code `< 2`, which
+    // held the felt for a nit that was leaving and did not hold it for a
+    // gambler that was reloading (2026-09-09).
     const horses = busted.filter((p) => p.is_horse);
     for (const horse of horses) {
-      if ((this.horseRebuys.get(horse.user_id) || 0) < 2) return true;
+      if (!rebuyStopLossReached(horse.user_id, this.horseRebuys.get(horse.user_id) || 0))
+        return true;
     }
 
     const humans = busted.filter((p) => !p.is_horse);
@@ -3380,6 +3414,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // horse ends up disciplined on one code path and not the other.
       const rebuyAmount = await horseRebuyAmount({
         clubId: this.tableInfo?.club_id || '',
+        tableId: this.tableId,
         userId: horse.user_id,
         bigBlind: Number(this.tableInfo?.big_blind) || 0,
         minBuyIn: this.tableInfo?.min_buy_in as number | null | undefined,

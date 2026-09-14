@@ -86,6 +86,9 @@ export interface SeatPlayer {
    * BBA and dead blinds remain shared dead money and never populate this field. */
   individualAnteInvested?: number;
   cards: Card[];
+  /** Decision-player copy only: this player's own known Pineapple discard.
+   * Never serialize it on public seats or store it on authoritative players. */
+  knownDeadCards?: Card[];
   is_folded: boolean;
   is_all_in: boolean;
   is_sitting_out: boolean;
@@ -522,6 +525,15 @@ export interface HandStateBroadcast {
   action_history: ActionRecord[];
 }
 
+/** Authored by the final engine executor, never inferred from player identity. */
+export type AcceptedActionOrigin =
+  | 'player'
+  | 'pre_action'
+  | 'horse_policy'
+  | 'horse_fallback'
+  | 'forced'
+  | 'unknown';
+
 export interface ActionRecord {
   seat: number;
   userId: string;
@@ -531,6 +543,10 @@ export interface ActionRecord {
   stage: HandStage;
   /** Bible V8 §4.14: Short all-in (less than a full raise) does NOT reopen betting */
   isFullRaise?: boolean;
+  /** Accepted-hand learning metadata, omitted from controller/UI history. */
+  publicNode?: import('./engine/HorsePublicActionNode.js').HorsePublicActionNode;
+  /** Durable history only; unknown/forced/fallback actions cannot train a voluntary model. */
+  origin?: AcceptedActionOrigin;
 }
 
 export type HandEvent =
@@ -582,6 +598,10 @@ export type HandEvent =
       action: ActionType;
       amount: number;
       stage?: HandStage;
+      /** Accepted immutable history; late consumers must not read a later action. */
+      record?: Readonly<ActionRecord>;
+      publicNode?: import('./engine/HorsePublicActionNode.js').HorsePublicActionNode;
+      origin?: AcceptedActionOrigin;
     }
   | { type: 'POT_UPDATE'; pot: number; pots: Pot[] }
   | { type: 'TURN_CHANGE'; seat: number; availableActions: ActionType[] }
@@ -618,6 +638,14 @@ export type HandEvent =
          * half - `winners` merges the halves and names only the high hand.
          */
         low?: boolean;
+        /**
+         * WHICH POT EACH CENT OF THIS SHARE CAME FROM (2026-09-13). One entry
+         * per pot index this (board, winner, half) was paid out of, main pot
+         * first; the amounts sum to `amount`. A run-it-twice hand with a side
+         * pot could say who won which board and which pot, never both at once.
+         * Absent on rows older than the field.
+         */
+        pots?: Array<{ index: number; amount: number }>;
       }>;
       /**
        * SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): the unmerged per-pot(-half)
@@ -867,6 +895,16 @@ export interface HorseTournamentUtilityCandidateLedger {
   sidePotCount: number;
   /** Maximum absolute chip-conservation error over this action's outcomes. */
   stackConservationError: number;
+  /** Phase 8 sampled continuation facts; resource units never added to payout. */
+  continuation?: {
+    shortStackCollisionProbability: number;
+    futureHands?: number;
+    futureForcedPaid?: number;
+    futureLevelUtilityEnvelope?: number;
+    expectedRetainedStackBb: number;
+    expectedCoveredStacks: number;
+    noFullBlindRaiseProbability: number;
+  };
 }
 
 /**
@@ -876,8 +914,8 @@ export interface HorseTournamentUtilityCandidateLedger {
  */
 export interface HorseTournamentUtilityLedger {
   schemaVersion: 1;
-  model: 'horse-tournament-utility-phase7-round1';
-  outcomeModel: 'conditioned_showdown_samples';
+  model: 'horse-tournament-utility-phase7-round1' | 'horse-tournament-utility-phase8-round1';
+  outcomeModel: 'conditioned_showdown_samples' | 'conditioned_public_street_continuation';
   objective: HorseTournamentUtilityObjective;
   utilityUnit: 'total_funded_pool_pct';
   chipEvUnit: 'tournament_chips';
@@ -914,6 +952,14 @@ export interface HorseTournamentUtilityLedger {
 }
 
 export interface HorseDecision {
+  /** Existing catastrophe owner rejected this committed continuation. An
+   * uncalibrated later joint proposal cannot reopen its rejected call-off. */
+  continuationGuard?: 'multiway_commitment_floor' | 'dominated_commitment_floor';
+  plo4Policy?: import('./engine/plo4/Plo4LivePolicy.js').Plo4LiveReceipt;
+  omahaVariantPolicy?: import('./engine/omaha/OmahaVariantLivePolicy.js').OmahaVariantReceipt;
+  remainingVariantPolicy?: import('./engine/remainingVariants/RemainingVariantLivePolicy.js').RemainingVariantReceipt;
+  jointPolicy?: import('./engine/multiway/JointLivePolicy.js').JointPolicyReceipt;
+  tournamentPostflop?: import('./engine/HorseTournamentPostflop.js').HorseTournamentPostflopLedger;
   action: ActionType;
   amount?: number;
   thinkTime: number;

@@ -47,14 +47,19 @@ import DepositWithdrawModal from '../components/wallet/DepositWithdrawModal';
 import DisputeSubmitModal from '../components/wallet/DisputeSubmitModal';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import ChipStatement from '../components/wallet/ChipStatement';
-import { DiamondService } from '../services/DiamondService';
+import { DiamondService, type DiamondLifetimeStats } from '../services/DiamondService';
 import { storeFetch } from './marketplace/marketplaceShared';
-import { diamondTxLabel } from '../components/wallet/DiamondWalletModal';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { formatPopupText } from '../utils/popupStyle';
 import { mediaUrl } from '../utils/mediaBase';
 import { reportError } from '../utils/errorReporter';
 import { useRealtimeFinancials } from '../hooks/useRealtimeFinancials';
+import {
+  useDiamondLedger,
+  DIAMOND_LEDGER_PAGE,
+  type DiamondLedgerRow,
+} from '../hooks/useDiamondLedger';
+import { uuid } from '../utils/uuid';
 import './PlayerWalletPage.css';
 import { publicOrigin } from '../lib/appBase';
 
@@ -80,8 +85,14 @@ const PLATE = {
   BUSINESS: `${PLATE_ROOT}/wallet-agent-wallet-square-v1.webp`,
 } as const;
 
-/** The World Hub transfer route refuses anything under this. Mirror it here. */
-const MIN_DIAMOND_SEND = 10;
+/**
+ * The floor is ONE diamond. This was 10, with a comment claiming the World Hub
+ * route refused less; read on 2026-09-13, `send_wallet_diamond_transfer`
+ * (the RPC behind /api/store/diamond-transfer since #1696) refuses only
+ * `p_amount <= 0`, and the anti-farming cap governs the rest. Ten was an
+ * invention that refused sends the platform allows.
+ */
+const MIN_DIAMOND_SEND = 1;
 
 /**
  * In-page messages are not toasts, so `formatPopupText` (which the Toast layer
@@ -235,15 +246,50 @@ function WalletPlate({
       className={`wallet-plate ${config.cssClass}`}
       aria-label={`${config.label} Wallet: ${fmtNum(available)} Available, ${fmtNum(locked)} Locked, ${fmtNum(total)} Total`}
     >
-      <img
-        className="wallet-plate__art"
-        src={config.plate}
-        alt=""
-        aria-hidden="true"
-        loading="lazy"
-        decoding="async"
-      />
-      <div className="wallet-plate__bay">
+      {/* THE READOUT SITS IN THE PLATE, NOT UNDER IT.
+          Every plate is drawn with an empty machined bay across its lower half,
+          and the figures used to render BELOW the whole image - so the bay the
+          artwork exists to fill was blank on all four plates.
+          The frame is what makes the fix correct rather than approximate: the
+          readout is absolutely positioned, so its insets must resolve against
+          the ARTWORK's box. Measured against the article they would also span
+          the footer, and drift by the footer's height, which differs per plate. */}
+      <div className="wallet-plate__frame">
+        <img
+          className="wallet-plate__art"
+          src={config.plate}
+          alt=""
+          aria-hidden="true"
+          loading="lazy"
+          decoding="async"
+        />
+        {/* ONE headline figure, because three will not fit LEGIBLY.
+            Measured at four widths with all three in the bay: the figures fit
+            without clipping, but the labels computed to 6.4-7.5px. A readout
+            nobody can read is not a readout, and shrinking type until it fits
+            is how the bay ended up ignored in the first place.
+            So the bay carries the number the plate is FOR - the total - at
+            ~20px with an 8px label, and Available/Locked keep their room in the
+            footer. The article's aria-label still announces all three, so
+            nothing is lost to a screen reader. */}
+        <div className="wallet-plate__readout">
+          <div className="wallet-plate__stat wide">
+            <span className="wallet-plate__value total">{fmtNum(animatedTotal)}</span>
+            {/* "Balance", never "Total Balance". tests/wallet-display-ledger,
+                under "wallet separation and honest labels", pins that this page
+                does not call a sum a Total Balance - the wallets are separate
+                and not all of a total is playable. This figure is one wallet's
+                own available + locked, and the plate already carries the
+                wallet's NAME in its artwork, so "Balance" is both accurate and
+                the plainer read. */}
+            <span className="wallet-plate__label">Balance</span>
+          </div>
+          <div className="wallet-plate__meter" aria-hidden="true">
+            <div className="wallet-plate__meter-fill" style={{ width: `${sharePct}%` }} />
+          </div>
+        </div>
+      </div>
+      <div className="wallet-plate__footer">
         <div className="wallet-plate__row">
           <div className="wallet-plate__stat">
             <span className="wallet-plate__value available">{fmtNum(animatedAvail)}</span>
@@ -253,13 +299,6 @@ function WalletPlate({
             <span className="wallet-plate__value locked">{fmtNum(animatedLocked)}</span>
             <span className="wallet-plate__label">Locked</span>
           </div>
-          <div className="wallet-plate__stat">
-            <span className="wallet-plate__value total">{fmtNum(animatedTotal)}</span>
-            <span className="wallet-plate__label">Total</span>
-          </div>
-        </div>
-        <div className="wallet-plate__meter" aria-hidden="true">
-          <div className="wallet-plate__meter-fill" style={{ width: `${sharePct}%` }} />
         </div>
         <div className="wallet-plate__desc">{config.description}</div>
       </div>
@@ -271,23 +310,31 @@ function DiamondPlate({ diamonds, onBuy }: { diamonds: number; onBuy: () => void
   const animated = useAnimatedNumber(diamonds);
   return (
     <article className="wallet-plate diamonds" aria-label={`Diamonds: ${fmtNum(diamonds)}`}>
-      <img
-        className="wallet-plate__art"
-        src={PLATE.DIAMONDS}
-        alt=""
-        aria-hidden="true"
-        decoding="async"
-      />
-      <div className="wallet-plate__bay">
-        <div className="wallet-plate__row">
-          <div className="wallet-plate__stat wide">
-            <span className="wallet-plate__value diamond">{fmtNum(animated)}</span>
-            <span className="wallet-plate__label">Diamonds On Hand</span>
+      <div className="wallet-plate__frame">
+        <img
+          className="wallet-plate__art"
+          src={PLATE.DIAMONDS}
+          alt=""
+          aria-hidden="true"
+          decoding="async"
+        />
+        {/* The count belongs in the bay the artwork was drawn around. The CTA
+            does not: a control inside the plate reads as part of the picture,
+            and at 375px the bay is about 66px tall - a tappable 44px target
+            plus the readout does not fit it honestly. */}
+        <div className="wallet-plate__readout">
+          <div className="wallet-plate__row">
+            <div className="wallet-plate__stat wide">
+              <span className="wallet-plate__value diamond">{fmtNum(animated)}</span>
+              <span className="wallet-plate__label">Diamonds On Hand</span>
+            </div>
           </div>
-          <button type="button" className="wallet-plate__cta" onClick={onBuy}>
-            Buy Diamonds
-          </button>
         </div>
+      </div>
+      <div className="wallet-plate__footer">
+        <button type="button" className="wallet-plate__cta" onClick={onBuy}>
+          Buy Diamonds
+        </button>
         <div className="wallet-plate__desc">
           Spend On VIP, Table Perks, Throwables And Club Shop Items. Send To Friends From The Send
           Tab.
@@ -306,21 +353,22 @@ interface FriendOption {
   name: string;
 }
 
-interface IncomingRow {
-  id: string;
-  label: string;
-  description: string;
-  amount: number;
-  createdAt: string;
-}
+/* The Receive and Send ledgers are one query in two directions; the paging,
+   the unique-key tiebreaker and the merge-on-refresh live in the hook. */
 
 interface RewardsProgress {
   earnedToday: number;
   dailyCap: number;
   dailyRemaining: number;
   loginStreak: number;
+  /** `null` when the route could not read the ledger: unknown, not "no". */
+  loginClaimedToday: boolean | null;
+  /** What the next claim pays, from the catalog's streak rule. */
+  nextLoginReward: number;
   multiplier: number;
   isVip: boolean;
+  /** The route degraded somewhere; some figures above are floors, not facts. */
+  partial: boolean;
 }
 
 interface DailyClaimResponse {
@@ -413,21 +461,48 @@ export default function PlayerWalletPage() {
   const [sendAmount, setSendAmount] = useState('');
   const [isSending, setIsSending] = useState(false);
   const sendInFlightRef = useRef(false);
+  /**
+   * ONE KEY PER SEND INTENT. /api/store/diamond-transfer REFUSES a request
+   * without `X-Idempotency-Key` (400 "Invalid Transfer Request"), which is
+   * what every send from this page got between #1696 (2026-09-09) and today:
+   * storeFetch never sent one. The key is minted on the press, reused by a
+   * retry of the same intent (the route answers 503 "Retry With The Same
+   * Request ID" when a receipt is unconfirmed), cleared on success, and
+   * rotated only after a `definitive` refusal - the StoreTab pattern.
+   */
+  const sendKeyRef = useRef<string | null>(null);
 
   // ── Receive ──
-  const [incoming, setIncoming] = useState<IncomingRow[] | null>(null);
-  const [incomingError, setIncomingError] = useState(false);
+  const {
+    rows: incoming,
+    error: incomingError,
+    hasMore: incomingHasMore,
+    loadingMore: incomingLoadingMore,
+    load: loadIncoming,
+  } = useDiamondLedger(user?.id, 'in', isMounted);
   const [copied, setCopied] = useState<'id' | 'link' | null>(null);
+
+  /* ── The send side of the same ledger ──
+     A completed transfer used to leave no trace a player could see: the toast
+     is gone in seconds, Receive filters to credits, and the Ledger tab reads
+     the CHIP tables, so a sent diamond appeared on no surface in the wallet.
+     This is the record, and the send handler refreshes it on success. */
+  const {
+    rows: sent,
+    error: sentError,
+    hasMore: sentHasMore,
+    loadingMore: sentLoadingMore,
+    load: loadSent,
+  } = useDiamondLedger(user?.id, 'out', isMounted);
 
   // ── Earn ──
   const [progress, setProgress] = useState<RewardsProgress | null>(null);
   const [progressError, setProgressError] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [claimedToday, setClaimedToday] = useState(false);
-  const [lifetime, setLifetime] = useState<{
-    lifetimeEarned: number;
-    lifetimeSpent: number;
-  } | null>(null);
+  /* Three outcomes, three shapes: `undefined` still reading, `null` the read
+     failed (10.86: never a zero that means "unknown"), an object the truth. */
+  const [lifetime, setLifetime] = useState<DiamondLifetimeStats | null | undefined>(undefined);
 
   // Auto-dismiss messages after 8s
   useEffect(() => {
@@ -556,10 +631,13 @@ export default function PlayerWalletPage() {
       });
       return;
     }
+    /* Before `setIsTransferring(true)`, not inside the try: a `return` there
+       skipped the reset at the bottom and left the button on "Transferring..."
+       for the life of the page. */
+    if (!user?.id) return;
     setIsTransferring(true);
     setMessage(null);
     try {
-      if (!user?.id) return;
       // 2026-08-27: internalTransfer NEVER throws - it returns false on the
       // store mutex skip, on insufficient balance, and on every RPC failure
       // (the store swallows those into reportError). This success message used
@@ -661,8 +739,27 @@ export default function PlayerWalletPage() {
   }, [user?.id, isMounted]);
 
   useEffect(() => {
-    if (activeTab === 'send' && friends === null) void loadFriends();
+    // The Receive pane needs the list too: it names who each gift came from.
+    if ((activeTab === 'send' || activeTab === 'receive') && friends === null) void loadFriends();
   }, [activeTab, friends, loadFriends]);
+
+  /* WHO THE GIFT WAS WITH. `send_wallet_diamond_transfer` writes a generic
+     description ("Diamonds Sent To A Friend") and puts the other player's id
+     in metadata; the hook surfaces that id and this page, which already holds
+     the friend list, turns it into a name. A friend since unfriended, or a
+     row with no counterparty, keeps the ledger's own line. */
+  const friendNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const f of friends || []) m.set(f.id, f.name);
+    return m;
+  }, [friends]);
+  const describeRow = useCallback(
+    (row: DiamondLedgerRow, verb: 'Sent To' | 'Received From') => {
+      const name = row.counterpartyId ? friendNameById.get(row.counterpartyId) : undefined;
+      return name ? `${verb} ${name}` : formatPopupText(row.description || row.label);
+    },
+    [friendNameById]
+  );
 
   const handleSendDiamonds = async () => {
     if (!user?.id) return;
@@ -673,7 +770,7 @@ export default function PlayerWalletPage() {
       return;
     }
     if (!Number.isFinite(amount) || amount < MIN_DIAMOND_SEND) {
-      toast.error(`Minimum Send Is ${MIN_DIAMOND_SEND} Diamonds`);
+      toast.error('Enter A Whole Number Of Diamonds');
       return;
     }
     if (amount > diamonds) {
@@ -690,31 +787,42 @@ export default function PlayerWalletPage() {
     if (!ok) return;
     sendInFlightRef.current = true;
     setIsSending(true);
+    if (!sendKeyRef.current) sendKeyRef.current = uuid();
     try {
+      /* The route returns the transfer row itself (`send_wallet_diamond_transfer`):
+         { success, amount, recipient_id, request_id, ... }. */
       const data = await storeFetch<{
         success: true;
-        transferred: number;
-        newBalance?: number;
-        recipientName?: string;
-      }>('/api/store/diamond-transfer', { body: { recipientId, amount } });
+        amount?: number;
+        recipient_id?: string;
+      }>('/api/store/diamond-transfer', {
+        body: { recipientId, amount },
+        idempotencyKey: sendKeyRef.current,
+      });
+      sendKeyRef.current = null;
       toast.success(
-        `Sent ${fmtNum(data.transferred || amount)} Diamonds To ${data.recipientName || friend?.name || 'Your Friend'}`
+        `Sent ${fmtNum(Number(data.amount) || amount)} Diamonds To ${friend?.name || 'Your Friend'}`
       );
       if (isMounted.current) setSendAmount('');
+      /* THE SEND CONFIRMS ITSELF. The toast is gone in seconds and the credit
+         landed in someone else's ledger, so without this the player has no
+         standing evidence the transfer happened. `refresh` merges the new row
+         in at the top rather than resetting, so a player who had paged back
+         through their sends keeps their place. */
+      void loadSent('refresh');
       loadDiamonds(user.id, { force: true });
       masterBus.emit('BALANCE_UPDATED', { source: 'diamond_gift_sent', userId: user.id });
-      if (typeof data.newBalance === 'number') {
-        masterBus.emit('DIAMOND_BALANCE_CHANGED', {
-          newBalance: data.newBalance,
-          delta: -amount,
-          source: 'diamond_gift_sent',
-        });
-      }
     } catch (err) {
-      // storeFetch throws with the server's own sentence (friend-only, account
-      // age, cooldown, 30-day cap). That sentence IS the explanation; show it.
-      const text =
-        err instanceof Error && err.message ? err.message : 'Send Failed. Please Try Again';
+      /* storeFetch throws with the server's own sentence (friend-only, the
+         anti-farming cap, refund collateral). That sentence IS the
+         explanation; show it. A DEFINITIVE refusal (400/401/403/404/422)
+         finishes this attempt, so the next press is a new intent with a new
+         key. Anything else - a 5xx, a 503 "Transfer Not Yet Confirmed", a
+         dropped connection - may be a transfer that COMMITTED and lost its
+         receipt, so the key is kept and the same press replays it. */
+      const e = err as Error & { definitive?: boolean };
+      if (e?.definitive) sendKeyRef.current = null;
+      const text = e instanceof Error && e.message ? e.message : 'Send Failed. Please Try Again';
       toast.error(formatPopupText(text));
     } finally {
       sendInFlightRef.current = false;
@@ -723,51 +831,24 @@ export default function PlayerWalletPage() {
   };
 
   // ═══════════════════ RECEIVE ═══════════════════
-  const loadIncoming = useCallback(async () => {
-    if (!user?.id) return;
-    try {
-      const { data, error } = await supabase
-        .from('diamond_transactions')
-        /* `type` AND `transaction_type`: the older rows carry their kind in
-           `type` (signup_bonus, reconciliation), the newer in
-           `transaction_type`. Reading one column blanks half the ledger. */
-        .select('id, type, transaction_type, amount, description, created_at')
-        .eq('user_id', user.id)
-        .gt('amount', 0)
-        .order('created_at', { ascending: false })
-        .limit(25);
-      if (error) throw error;
-      const rows: IncomingRow[] = (data || []).map((tx) => {
-        const kind = (tx.transaction_type as string | null) || (tx.type as string | null);
-        return {
-          id: String(tx.id),
-          label: diamondTxLabel(kind),
-          description: String(tx.description || ''),
-          amount: Number(tx.amount) || 0,
-          createdAt: String(tx.created_at),
-        };
-      });
-      if (isMounted.current) {
-        setIncoming(rows);
-        setIncomingError(false);
-      }
-    } catch (err) {
-      reportError(err, 'PlayerWalletPage.loadIncoming');
-      if (isMounted.current) {
-        setIncoming([]);
-        setIncomingError(true);
-      }
-    }
-  }, [user?.id, isMounted]);
+
+  /* The Send pane's own record, loaded when the pane opens. */
+  useEffect(() => {
+    if (activeTab === 'send' && sent === null) void loadSent('reset');
+  }, [activeTab, sent, loadSent]);
 
   useEffect(() => {
-    if (activeTab === 'receive' && incoming === null) void loadIncoming();
+    if (activeTab === 'receive' && incoming === null) void loadIncoming('reset');
   }, [activeTab, incoming, loadIncoming]);
 
   // A credit that lands while the pane is open should appear without a reload.
   useEffect(() => {
     if (activeTab !== 'receive' || !user?.id) return;
-    return masterBus.subscribeDebounced('BALANCE_UPDATED', () => void loadIncoming(), 1500);
+    return masterBus.subscribeDebounced(
+      'BALANCE_UPDATED',
+      () => void loadIncoming('refresh'),
+      1500
+    );
   }, [activeTab, user?.id, loadIncoming]);
 
   const profileLink = useMemo(() => {
@@ -806,23 +887,50 @@ export default function PlayerWalletPage() {
           dailyCap: Number(data.dailyCap) || 0,
           dailyRemaining: Number(data.dailyRemaining) || 0,
           loginStreak: Number(data.loginStreak) || 0,
+          loginClaimedToday:
+            typeof data.loginClaimedToday === 'boolean' ? data.loginClaimedToday : null,
+          nextLoginReward: Number(data.nextLoginReward) || 0,
           multiplier: Number(data.multiplier) || 1,
           isVip: Boolean(data.isVip),
+          partial: Boolean(data.partial),
         });
+        /* The route knows whether today is claimed; the button should not
+           wait for a click to find out. `true` only - `null` (could not tell)
+           leaves the button live, because refusing a claim on a read failure
+           would cost a real player a real payout. */
+        if (data.loginClaimedToday === true) setClaimedToday(true);
         setProgressError(false);
       }
     } catch (err) {
       reportError(err, 'PlayerWalletPage.loadProgress');
       if (isMounted.current) setProgressError(true);
     }
-    DiamondService.getLifetimeStats(user.id).then((stats) => {
-      if (isMounted.current) setLifetime(stats);
-    });
+  }, [user?.id, isMounted]);
+
+  const loadLifetime = useCallback(async () => {
+    if (!user?.id) return;
+    setLifetime(undefined);
+    const stats = await DiamondService.getLifetimeStats(user.id);
+    if (isMounted.current) setLifetime(stats);
   }, [user?.id, isMounted]);
 
   useEffect(() => {
     if (activeTab === 'earn' && progress === null && !progressError) void loadProgress();
   }, [activeTab, progress, progressError, loadProgress]);
+
+  useEffect(() => {
+    if (activeTab === 'earn' && lifetime === undefined) void loadLifetime();
+    // `lifetime` is deliberately not a dependency: it is reset to undefined by
+    // loadLifetime itself, and re-running on every settle would loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, loadLifetime]);
+
+  /* A claim, a gift or a purchase changes the lifetime figures; re-sum them
+     while the pane is open rather than serving the number from before. */
+  useEffect(() => {
+    if (activeTab !== 'earn' || !user?.id) return;
+    return masterBus.subscribeDebounced('BALANCE_UPDATED', () => void loadLifetime(), 1500);
+  }, [activeTab, user?.id, loadLifetime]);
 
   const handleClaimDaily = async () => {
     if (!user?.id || claiming) return;
@@ -1060,8 +1168,7 @@ export default function PlayerWalletPage() {
                 Send Diamonds To A Friend
               </h3>
               <p className="vault-panel__sub">
-                Diamonds Move Instantly To Any Accepted Friend. Minimum {MIN_DIAMOND_SEND}. Gifts
-                Cannot Be Reversed.
+                Diamonds Move Instantly To Any Accepted Friend. Gifts Cannot Be Reversed.
               </p>
               <div className="vault-form">
                 <label className="vault-field">
@@ -1095,6 +1202,7 @@ export default function PlayerWalletPage() {
                     type="number"
                     inputMode="numeric"
                     min={MIN_DIAMOND_SEND}
+                    max={Math.max(MIN_DIAMOND_SEND, diamonds)}
                     step={1}
                     placeholder={`${MIN_DIAMOND_SEND}`}
                     value={sendAmount}
@@ -1212,6 +1320,96 @@ export default function PlayerWalletPage() {
                 </div>
               </div>
             </section>
+
+            {/* THE SEND CONFIRMS ITSELF.
+                A completed transfer used to leave no trace the player could
+                go back to: the toast expires, the Receive pane filters to
+                credits, and the Ledger tab reads the CHIP tables, so a sent
+                diamond appeared on no surface in this wallet. */}
+            <section className="vault-panel" aria-labelledby="sent-title">
+              <h3 id="sent-title" className="vault-panel__title">
+                Diamonds You Have Sent
+              </h3>
+              <p className="vault-panel__sub">
+                Every Gift You Have Sent, Newest First. A Refund Appears Here Too, Because A
+                Returned Gift Is Part Of The Same Story.
+              </p>
+              {sent === null && <div className="vault-empty">Loading Your Sends...</div>}
+              {sent !== null && sentError && sent.length === 0 && (
+                <div className="vault-empty" role="alert">
+                  Could Not Load Your Sends.{' '}
+                  <button
+                    type="button"
+                    className="vault-link"
+                    onClick={() => void loadSent('reset')}
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+              {sent !== null && !sentError && sent.length === 0 && (
+                <div className="vault-empty">
+                  You Have Not Sent Any Diamonds Yet. Pick A Friend Above.
+                </div>
+              )}
+              {sent !== null && sent.length > 0 && (
+                <ul className="incoming-list">
+                  {sent.map((row) => (
+                    <li key={row.id} className="incoming-row">
+                      <div className="incoming-row__body">
+                        <span className="incoming-row__label">{formatPopupText(row.label)}</span>
+                        <span className="incoming-row__desc">{describeRow(row, 'Sent To')}</span>
+                      </div>
+                      <div className="incoming-row__side">
+                        {/* The sign comes from the ROW, not from the pane. A
+                            refund sits in this list and is a credit; printing
+                            a bare minus on everything here would tell a player
+                            their returned diamonds had left again. */}
+                        <span
+                          className={`incoming-row__amount${row.amount < 0 ? ' is-outgoing' : ''}`}
+                        >
+                          {row.amount < 0 ? '-' : '+'}
+                          {fmtNum(Math.abs(row.amount))}
+                        </span>
+                        <time className="incoming-row__time" dateTime={row.createdAt}>
+                          {new Date(row.createdAt).toLocaleDateString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </time>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {sent !== null && sentError && sent.length > 0 && (
+                <div className="vault-empty" role="alert">
+                  Could Not Load Older Sends.{' '}
+                  <button
+                    type="button"
+                    className="vault-link"
+                    onClick={() => void loadSent('more')}
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+              {sent !== null && sent.length > 0 && sentHasMore && !sentError && (
+                <button
+                  type="button"
+                  className="vault-btn vault-btn--wide"
+                  onClick={() => void loadSent('more')}
+                  disabled={sentLoadingMore}
+                >
+                  {sentLoadingMore ? 'Loading...' : 'Load Older Sends'}
+                </button>
+              )}
+              {sent !== null && sent.length > DIAMOND_LEDGER_PAGE && !sentHasMore && !sentError && (
+                <p className="vault-panel__sub">
+                  That Is Every Diamond You Have Sent. {fmtNum(sent.length)} Entries.
+                </p>
+              )}
+            </section>
           </div>
         )}
 
@@ -1282,10 +1480,15 @@ export default function PlayerWalletPage() {
                 Every Credit That Landed In Your Diamond Ledger, Newest First.
               </p>
               {incoming === null && <div className="vault-empty">Loading Your Ledger...</div>}
-              {incoming !== null && incomingError && (
+              {/* The FIRST read failed, so there is nothing to show. */}
+              {incoming !== null && incomingError && incoming.length === 0 && (
                 <div className="vault-empty" role="alert">
                   Could Not Load Incoming Diamonds.{' '}
-                  <button type="button" className="vault-link" onClick={() => void loadIncoming()}>
+                  <button
+                    type="button"
+                    className="vault-link"
+                    onClick={() => void loadIncoming('reset')}
+                  >
                     Retry
                   </button>
                 </div>
@@ -1302,7 +1505,7 @@ export default function PlayerWalletPage() {
                       <div className="incoming-row__body">
                         <span className="incoming-row__label">{formatPopupText(row.label)}</span>
                         <span className="incoming-row__desc">
-                          {formatPopupText(row.description || row.label)}
+                          {describeRow(row, 'Received From')}
                         </span>
                       </div>
                       <div className="incoming-row__side">
@@ -1318,6 +1521,40 @@ export default function PlayerWalletPage() {
                   ))}
                 </ul>
               )}
+              {/* A LATER page failed. The pages already read stay on screen. */}
+              {incoming !== null && incomingError && incoming.length > 0 && (
+                <div className="vault-empty" role="alert">
+                  Could Not Load Older Diamonds.{' '}
+                  <button
+                    type="button"
+                    className="vault-link"
+                    onClick={() => void loadIncoming('more')}
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+              {incoming !== null && incoming.length > 0 && incomingHasMore && !incomingError && (
+                <button
+                  type="button"
+                  className="vault-btn vault-btn--wide"
+                  onClick={() => void loadIncoming('more')}
+                  disabled={incomingLoadingMore}
+                >
+                  {incomingLoadingMore ? 'Loading...' : 'Load Older Diamonds'}
+                </button>
+              )}
+              {/* Say the ledger has ended, rather than just running out of
+                  button. Before this the pane simply stopped at 25 rows and a
+                  player could not tell a full ledger from a truncated one. */}
+              {incoming !== null &&
+                incoming.length > DIAMOND_LEDGER_PAGE &&
+                !incomingHasMore &&
+                !incomingError && (
+                  <p className="vault-panel__sub">
+                    That Is Every Diamond You Have Received. {fmtNum(incoming.length)} Credits.
+                  </p>
+                )}
             </section>
           </div>
         )}
@@ -1331,7 +1568,19 @@ export default function PlayerWalletPage() {
               </h3>
               <p className="vault-panel__sub">
                 Claim Once A Day. The Payout Climbs With Your Streak, Up To 25 Diamonds.
+                {progress && progress.nextLoginReward > 0 && !claimedToday
+                  ? ` Your Next Claim Pays ${fmtNum(progress.nextLoginReward)}.`
+                  : ''}
+                {progress && claimedToday && progress.nextLoginReward > 0
+                  ? ` Tomorrow Pays ${fmtNum(progress.nextLoginReward)}.`
+                  : ''}
               </p>
+              {progress?.partial && (
+                <p className="vault-panel__sub" role="status">
+                  Some Of These Figures Could Not Be Read Just Now And May Be Low. The Claim Itself
+                  Is Unaffected.
+                </p>
+              )}
               <dl className="earn-stats">
                 <div className="earn-stat">
                   <dt>Streak</dt>
@@ -1427,18 +1676,36 @@ export default function PlayerWalletPage() {
                 <div className="earn-stat">
                   <dt>Earned</dt>
                   <dd className="positive">
-                    {lifetime ? fmtNum(lifetime.lifetimeEarned) : 'Checking'}
+                    {lifetime
+                      ? fmtNum(lifetime.lifetimeEarned)
+                      : lifetime === null
+                        ? 'Unavailable'
+                        : 'Checking'}
                   </dd>
                 </div>
                 <div className="earn-stat">
                   <dt>Spent</dt>
-                  <dd>{lifetime ? fmtNum(lifetime.lifetimeSpent) : 'Checking'}</dd>
+                  <dd>
+                    {lifetime
+                      ? fmtNum(lifetime.lifetimeSpent)
+                      : lifetime === null
+                        ? 'Unavailable'
+                        : 'Checking'}
+                  </dd>
                 </div>
                 <div className="earn-stat">
                   <dt>On Hand</dt>
                   <dd className="diamond">{fmtNum(diamonds)}</dd>
                 </div>
               </dl>
+              {lifetime === null && (
+                <p className="vault-form__hint" role="alert">
+                  Your Lifetime Totals Could Not Be Read.{' '}
+                  <button type="button" className="vault-link" onClick={() => void loadLifetime()}>
+                    Retry
+                  </button>
+                </p>
+              )}
             </section>
 
             <section className="vault-panel span2" aria-labelledby="earn-more-title">

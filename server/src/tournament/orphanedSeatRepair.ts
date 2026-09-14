@@ -360,7 +360,11 @@ export const SEATLESS_RESEAT_REASON = 'rostered_without_a_chair';
 export function describeUnmovableOrphans(
   tables: OrphanTableRow[],
   liveSeats: OrphanSeatRow[]
-): { duplicateSeat: string[]; noChips: string[] } {
+): {
+  duplicateSeat: string[];
+  noChips: string[];
+  ambiguousClosedSources: { userId: string; sources: OrphanSeatRow[] }[];
+} {
   const openIds = new Set((tables ?? []).filter((t) => isOpenTable(t)).map((t) => String(t.id)));
   const knownTableIds = new Set((tables ?? []).map((t) => String(t.id)));
   const seatedOnOpenFelt = new Set(
@@ -369,6 +373,7 @@ export function describeUnmovableOrphans(
 
   const duplicateSeat: string[] = [];
   const noChips: string[] = [];
+  const positiveClosedSources = new Map<string, OrphanSeatRow[]>();
   for (const seat of liveSeats ?? []) {
     const tableId = String(seat.table_id ?? '');
     if (!knownTableIds.has(tableId) || openIds.has(tableId)) continue;
@@ -377,7 +382,25 @@ export function describeUnmovableOrphans(
       if (!duplicateSeat.includes(userId)) duplicateSeat.push(userId);
       continue;
     }
-    if (toStack(seat.stack) <= 0 && !noChips.includes(userId)) noChips.push(userId);
+    if (toStack(seat.stack) <= 0) {
+      if (!noChips.includes(userId)) noChips.push(userId);
+    } else {
+      const sources = positiveClosedSources.get(userId) ?? [];
+      // Preserve observed source identity and stack; never combine or select one.
+      sources.push({ ...seat });
+      positiveClosedSources.set(userId, sources);
+    }
   }
-  return { duplicateSeat, noChips };
+  const ambiguousClosedSources = [...positiveClosedSources]
+    .filter(([, sources]) => sources.length > 1)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([userId, sources]) => ({
+      userId,
+      sources: sources.sort(
+        (a, b) =>
+          String(a.table_id).localeCompare(String(b.table_id)) ||
+          Number(a.seat_number ?? 0) - Number(b.seat_number ?? 0)
+      ),
+    }));
+  return { duplicateSeat, noChips, ambiguousClosedSources };
 }

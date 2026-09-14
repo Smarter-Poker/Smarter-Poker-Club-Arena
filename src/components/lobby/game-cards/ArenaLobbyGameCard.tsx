@@ -50,6 +50,18 @@ export function arenaGameCardActionsForEntry(
     /* GATE 6 (OPORD 1.4 s2.9): a must-move game is JOIN GAME / VIEW GAME -
        the platform picks the table. A single manual table keeps its words. */
     const game = Boolean(entry.game);
+    /* The board is visible but no seat can be taken: the same shape the closed
+       branch above uses, because a button that always fails is worse than a
+       button that says so. Watching is still offered. */
+    if (ctx.seatsClosedLabel) {
+      return {
+        primaryLabel: ctx.seatsClosedLabel,
+        primaryTone: 'neutral',
+        primaryDisabled: true,
+        secondaryLabel: game ? 'View Game' : 'View Table',
+        onSecondary: () => ctx.onViewTable?.(entry),
+      };
+    }
     return {
       primaryLabel: game ? 'Join Game' : 'Join Table',
       primaryTone: 'blue',
@@ -107,6 +119,17 @@ export function arenaGameCardActionsForEntry(
     };
   }
   const full = entry.capacity > 0 && entry.players >= entry.capacity;
+  /* The whole board's door is shut (Diamond Phase 8): the event is listed,
+     its Details still open, and the primary says what is true. */
+  if (ctx.registrationClosedLabel && !running) {
+    return {
+      primaryLabel: ctx.registrationClosedLabel,
+      primaryTone: 'neutral',
+      primaryDisabled: true,
+      secondaryLabel: 'Details',
+      onSecondary: () => ctx.onViewTable?.(entry),
+    };
+  }
   const registrationClosed = running || full;
   return {
     primaryLabel: registrationClosed
@@ -151,12 +174,10 @@ export const ArenaLobbyGameCard = memo(function ArenaLobbyGameCard({
   entry,
   ctx,
   selected,
-  onSelect,
 }: {
   entry: LobbyEntry;
   ctx: LobbyRowContext;
   selected?: boolean;
-  onSelect?: (entry: LobbyEntry) => void;
 }) {
   const data = useMemo(() => {
     const normalized = arenaGameCardDataFromEntry(entry);
@@ -239,8 +260,9 @@ export const ArenaLobbyGameCard = memo(function ArenaLobbyGameCard({
         if (entry.kind === 'cash') warmTable(entry.id);
       }}
       onFocus={() => {
+        // Button focus precedes its click. Opening the details panel here
+        // intercepts View/Join before the selected action can run.
         if (entry.kind === 'cash') warmTable(entry.id);
-        onSelect?.(entry);
       }}
     >
       <ArenaGameCard data={data.card} actions={actions} presentation="mobile" selected={selected} />

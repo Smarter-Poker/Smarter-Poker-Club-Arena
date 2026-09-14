@@ -12,6 +12,43 @@ is the platform failing to do that and something else tidying up afterwards.
 > better instrumented. It closes when the live path cannot produce the wrong
 > outcome and the job is **deleted**.
 
+## 2026-09-10 control-plane retirement and fee boundary
+
+The 60-second `club-arena-supervisor.service` / `.timer` mutator is retired.
+The installer disables, stops, removes, reloads, and proves both units absent.
+Its historical `engine-supervisor.sh` filename remains only because release-v1
+freezes that generation entrypoint; the executable now refuses every call
+unless the release transaction or its ExecStopPost recovery supplies all three
+causal authorities (force desired, exact health, and caller-held engine lock)
+plus an absolute deadline. Sampling counters, cache-tag reconciliation,
+heartbeat metrics, and autonomous container mutation are gone. The monitoring
+rule file is consequently `recovery-rules.yml` and observes the daily read-only
+recovery audit rather than a mutating heartbeat.
+
+Two watcher-shaped surfaces are explicitly **not closed** by that change:
+
+- `sp-autoheal` still watches Docker health and restarts an unhealthy engine.
+  Plain Docker does not act on an unhealthy healthcheck, so deleting autoheal
+  before a separately audited, causal process-failure owner lands would remove
+  the only recovery for a live-but-wedged process. It remains a named blocker,
+  not a claimed retirement.
+- GameServer's `FeeReconciler` mixes a legitimate durable obligation drain with
+  historical scans, audits, and repair calls. In particular, a BBJ payout is
+  persisted to `pending_fee_distributions` before its first delivery attempt;
+  deleting the drain can strand a real jackpot obligation. The safe split is:
+  keep an atomic claim-and-deliver outbox worker, wake it from the write that
+  creates an obligation, retry only within that causal chain, and perform one
+  bounded startup drain for crash recovery; move read-only audits out of that
+  worker; then remove the five-minute interval and the hourly/30-minute repair
+  scans only after the accepted-hand post-commit envelope is proven universal
+  and the old backlog is zero. No fee/tournament runtime was changed in this
+  control-plane pass.
+
+`scripts/ci/band-aid.allowlist.json` has no supervisor exemption to delete. Its
+BBJ repair entries remain because those database repair functions and schedules
+were not safely retired in this pass; removing only their CI names would hide
+debt rather than remove it.
+
 ---
 
 ## What this costs today, measured
@@ -570,3 +607,74 @@ leaderboard settlement on its published cadence.
 Each item is finished when the live path cannot produce the wrong outcome, a
 test pins the cause, the damage is settled through the platform's own idempotent
 path, **and the job is gone from `cron.job`**.
+
+## 2026-09-12 the BBJ promo sweep, and why it is listed here without being a band-aid
+
+The phase 2 BBJ sweep flagged that `fn_sweep_bbj_promo` "moves money
+continuously with no cron row in this repo and no entry in
+`docs/BAND-AIDS-REGISTER.md`". This is that entry, and it is deliberately a
+**NOT-A-BAND-AID** row: the point of writing it down is that the next agent
+stops re-discovering it and reaching the wrong conclusion.
+
+**What it does.** `bbj_record_contribution` accrues the 25% promo slice into
+`bbj_pools.promo_balance` on every contribution - 46,814 of them in 24 hours -
+and **`fn_sweep_bbj_promo_all()`** moves the accrued amount to
+`union_wallets.promo_wallet`, or to `clubs.promo_balance` for a club with no
+union. Measured 2026-09-12: 1,791 sweeps in seven days moving **24,965.28**,
+one per five-minute boundary, the `:00` run absent each hour because the
+platform is frozen for the maintenance break.
+
+> **CORRECTED 2026-09-12, ninety minutes after this row was written.** The
+> first version of this entry, and the production comments that went with it,
+> named the per-club `fn_sweep_bbj_promo(uuid)` as the driver. It is not.
+> `smarter-poker-workers/src/routes/bbj-detect.ts` step 6 calls
+> `fn_sweep_bbj_promo_all`, and nothing in that repo calls the per-club one.
+> I had measured that _something_ swept every five minutes and assigned the
+> role by inference. Worse, I recorded here that the workers repo "isn't
+> mounted in this session" - it is on this machine at
+> `~/Documents/smarter-poker-workers`, and one `grep` settles it. Migration
+> `20260912005352` corrects both comments.
+
+**Why it is not a band-aid.** It repairs nothing and compensates for nothing.
+It is the transfer itself, batched, and the batching is the design rather than
+a tidy-up: crediting one `union_wallets` row inline on 46,814 contributions a
+day is a lock-contention problem, not a correctness improvement. CLAUDE.md
+10.12's own carve-out is "a job whose schedule IS the product", and this is one.
+If a future change makes the inline credit cheap, the staging slot and the
+sweep both go - but that is an optimisation, not a debt being repaid.
+
+**What WAS wrong, and is fixed (migration `20260912003749`).** Nothing in this
+repo could see it. No `cron.job` row names it, no trigger fires it, and no
+TypeScript in Club Arena or the World Hub calls it. **The driver is a third
+repo**: Open Claw dispatches `/api/cron/bbj-detect` on `*/5`, and
+`scripts/openclaw-cron-dispatcher.py` line 1022 records that the route now
+lives in the workers repo as `src/routes/bbj-detect`. So an agent auditing
+Club Arena finds a `SECURITY DEFINER` function that moves real money, finds no
+caller anywhere it can see, and concludes it is dead. That happened during this
+very audit, from `promo_balance = 0.00` on every pool - the zero is the sweep
+working, not the slice being banked inline. The function now names its driver
+in its own `COMMENT`.
+
+**And the trap that came with it.** `fn_sweep_bbj_promo_all`'s original comment
+ended by telling the next agent to schedule it. That was wrong in the opposite
+direction from how I first read it: the function **is already driven**, from
+the workers repo, so the sentence invites a _second_ driver onto the same
+staging slot - `_all` looping every pool `FOR UPDATE` against the live run five
+minutes later, racing over the promo slice of every raked hand on the platform.
+It now states that it is the live driver, names the route, and says never to
+add a second one. The migration asserts that no `cron.job` has acquired either
+sweep, because the real driver is outside this database.
+
+**The one genuinely open item.** `fn_bbj_promo_bank_check` reads whether the
+swept slice arrived, and **nothing calls it** - not `cron.job`, not either repo
+here, and **not the workers repo, now actually checked** rather than asserted:
+it appears nowhere under `~/Documents/smarter-poker-workers`. It is a guard
+with no reader (CLAUDE.md 10.86 rule 3), so a stalled sweep raises nothing on
+its own; the visible symptom would be `bbj_pools.promo_balance` climbing
+instead of sitting near zero. It is NOT given a scheduler here, because 10.12
+forbids shipping a job as the answer and 10.85 puts scheduled work in Open Claw
+rather than wherever an agent finds convenient. **Root fix:** the workers
+repo's `bbj-detect` route, which already runs every five minutes and already
+calls `fn_sweep_bbj_promo_all` at step 6, reads the check in the same pass and
+raises on a non-zero answer. That is one edit in the repo that already owns the
+schedule, and it adds no new scheduled job anywhere.

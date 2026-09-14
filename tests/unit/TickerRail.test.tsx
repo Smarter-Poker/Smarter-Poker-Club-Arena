@@ -106,9 +106,19 @@ describe('the flag is legible, whatever colour the club picked', () => {
     }
   });
 
-  it('names the news on the chip', () => {
+  it('names the news on the chip, in both lengths', () => {
+    /* Both forms ship and the stylesheet shows one. On a 375px viewport the
+       full flag took 185 pixels - half the screen - to say the least
+       surprising thing on the bar. */
     const { rail } = mount([soon]);
-    expect(rail.querySelector('.mtt-ticker__flag')?.textContent).toBe('STARTING SOON');
+    expect(rail.querySelector('.mtt-ticker__flag-full')?.textContent).toBe('STARTING SOON');
+    expect(rail.querySelector('.mtt-ticker__flag-short')?.textContent).toBe('SOON');
+  });
+
+  it('hides one of the two flag forms at every width', () => {
+    expect(sliceCssRule(CSS, '.mtt-ticker__flag-short')).toContain('display: none');
+    expect(CSS).toContain('.mtt-ticker__flag-full');
+    expect(CSS).toMatch(/max-width: 560px/);
   });
 });
 
@@ -125,7 +135,7 @@ describe('colour says what kind of news this is', () => {
     const { rail } = mount([overlay]);
     expect(rail.dataset.tone).toBe('money');
     expect(rail.style.getPropertyValue('--ticker-accent').trim()).toBe(TONE_ACCENT.money);
-    expect(rail.querySelector('.mtt-ticker__flag')?.textContent).toBe('OVERLAY');
+    expect(rail.querySelector('.mtt-ticker__flag-full')?.textContent).toBe('OVERLAY');
   });
 });
 
@@ -293,7 +303,9 @@ describe('the stylesheet keeps the promises the render depends on', () => {
   });
 
   it('paints the flag from the derived pair, never from a literal accent', () => {
-    const flag = sliceCssRule(CSS, '.mtt-ticker__flag');
+    /* Braced anchor: `.mtt-ticker__flag::after` (the gloss) is declared above
+       the rule itself, and an unbraced needle matches the pseudo-element. */
+    const flag = sliceCssRule(CSS, '.mtt-ticker__flag {');
     expect(flag).toContain('var(--ticker-flag-bg');
     expect(flag).toContain('var(--ticker-flag-ink');
   });
@@ -323,5 +335,176 @@ describe('the stylesheet keeps the promises the render depends on', () => {
 
   it('gives every number on the rail tabular figures', () => {
     expect(sliceCssRule(CSS, '.mtt-ticker {')).toContain('font-variant-numeric: tabular-nums');
+  });
+});
+
+describe('the photograph of 2026-09-13', () => {
+  /* Dan sent a picture of the live rail. It read, verbatim:
+       "Starts In0:19"                          - a space had been eaten
+       "$100 Freeroll - 12:00 PM StartREGISTER" - the label sat on the message
+       "Buy-In Free Buy"                        - a field name on a label
+     All three had shipped, all three were invisible to a suite that asserted
+     text content, and all three are pinned below by the STRUCTURE that caused
+     them rather than by the string they produced. */
+
+  it('keeps the clock INSIDE its field, which is what saves the space', () => {
+    /* THE CAUSE. The three pieces of a field used to be sibling spans, and
+       `.mtt-ticker__item` is inline-flex, so each was a flex item and its own
+       trailing whitespace was trimmed at the line-box edge. `textContent`
+       cannot see that - it concatenates either way - so the assertion has to
+       be about the boxes, not the text. */
+    const { rail } = mount([soon]);
+    const clock = rail.querySelector('.mtt-ticker__clock') as HTMLElement;
+    expect(clock).toBeTruthy();
+    expect(clock.parentElement).toHaveClass('mtt-ticker__field');
+    // And the space the author wrote is still in the field's own text.
+    expect(clock.parentElement?.textContent).toMatch(/Starts In 3:30$/);
+  });
+
+  it('declares a field as inline, so its contents are not flex items', () => {
+    expect(sliceCssRule(CSS, '.mtt-ticker__field')).toContain('display: inline');
+    // The item above it stays a flex row - that is what lays the pips out.
+    expect(sliceCssRule(CSS, '.mtt-ticker__item')).toContain('inline-flex');
+  });
+
+  it('seats the call to action beside the message, never over it', () => {
+    /* A scrim cannot fix an overlap: the text is still there and still
+       moving. As a flex sibling the viewport is simply narrower. */
+    const { rail } = mount([soon]);
+    const cta = rail.querySelector('.mtt-ticker__cta') as HTMLElement;
+    const viewport = rail.querySelector('.mtt-ticker__viewport') as HTMLElement;
+    expect(cta.parentElement).toBe(viewport.parentElement);
+    const rule = sliceCssRule(CSS, '.mtt-ticker__cta');
+    expect(rule).not.toContain('position: absolute');
+    expect(rule).toContain('flex: 0 0 auto');
+  });
+});
+
+describe('#SMARTERCASINOREALISM - the rail is a made object', () => {
+  /* docs/laws.d/realism-is-one-vocabulary is binding: the palette and the
+     three light effects are declared once on :root in club-engine.css, and a
+     surface that wants material reaches for --realism-* rather than inventing
+     another palette. Every var carries a literal fallback, which that law
+     requires too. */
+
+  it('is built from the three light effects, not from private shadows', () => {
+    const rule = sliceCssRule(CSS, '.mtt-ticker {');
+    expect(rule).toContain('--realism-bevel');
+    expect(rule).toContain('--realism-cavity');
+    expect(rule).toContain('--realism-lift');
+  });
+
+  it('has an edge of gunmetal rather than an outline of cyan', () => {
+    expect(sliceCssRule(CSS, '.mtt-ticker {')).toContain('--realism-gunmetal');
+  });
+
+  it('carries a specular line, the way a milled button does', () => {
+    const spec = sliceCssRule(CSS, '.mtt-ticker::after');
+    expect(spec).toContain('height: 1px');
+    expect(spec).toContain('linear-gradient');
+  });
+
+  it("keeps the club's colour on the face and the material off it", () => {
+    /* Material is light, not hue. The operator still owns the gradient; the
+       accent reaches the material as one variable and the stylesheet decides
+       where it lands. An inline box-shadow would beat the stylesheet, which is
+       exactly how the designed gradient was lost for three weeks. */
+    const RAIL = readFileSync(
+      resolve(__dirname, '../../src/components/tournament/TickerRail.tsx'),
+      'utf8'
+    );
+    expect(RAIL).toContain("'--ticker-glow'");
+    expect(RAIL).not.toMatch(/boxShadow:/);
+    expect(RAIL).toContain('railBackground(appearance.backgroundColor)');
+    expect(sliceCssRule(CSS, '.mtt-ticker__flag {')).toContain('--ticker-flag-bg');
+  });
+
+  it('gives every realism token a literal fallback', () => {
+    const used = [...CSS.matchAll(/var\(--realism-[a-z-]+[^)]*\)/g)].map((m) => m[0]);
+    expect(used.length).toBeGreaterThan(8);
+    for (const v of used) {
+      expect(v, `${v} has no fallback`).toContain(',');
+    }
+  });
+
+  it('still adds no hover rule, because that law outranks this one', () => {
+    expect(CSS).not.toContain(':hover');
+  });
+});
+
+describe('what the harness showed, on a screen', () => {
+  it('offers no button when there is nowhere to go', () => {
+    /* The CLUB UPDATE line was offering "REGISTER" on an operator's own
+       message - a promise of a door that does not exist. */
+    const { rail } = mount([operatorItem('custom_messages', 0, 'Freeroll At 8 PM')]);
+    expect(rail.querySelector('.mtt-ticker__cta')).toBeNull();
+  });
+
+  it('still offers one when there is', () => {
+    expect(mount([soon]).rail.querySelector('.mtt-ticker__cta')?.textContent).toBe('REGISTER');
+    const table = tableOpeningItem('tbl1', 'Table 4', 'plo4', NOW);
+    expect(mount([table]).rail.querySelector('.mtt-ticker__cta')?.textContent).toBe('OPEN');
+  });
+
+  it('drains across the item own window, not a hard-coded five minutes', () => {
+    /* A registration closing in 4:12 drew a nearly-full bar and a start in
+       0:19 drew a stub, because everything was scaled to 300 seconds. */
+    const soonRail = mount([soon]).rail;
+    const drain = soonRail.querySelector('.mtt-ticker__drain') as HTMLElement;
+    // 210s left of a 300s window.
+    expect(Math.round(parseFloat(drain.style.width))).toBe(70);
+  });
+
+  it('draws no drain for an announcement that is not counting anything', () => {
+    const { rail } = mount([operatorItem('maintenance', 0, 'Back At 3 AM')]);
+    expect(rail.querySelector('.mtt-ticker__drain')).toBeNull();
+  });
+
+  it('marks the end of a copy so a wrapped loop does not read as one sentence', () => {
+    /* On a phone the second copy followed the first with only padding between
+       them: "…, All Members Welcome      Freeroll At 8 PM". */
+    expect(sliceCssRule(CSS, '.mtt-ticker__msg::after')).toContain('content:');
+    expect(CSS).toContain(".mtt-ticker[data-static='true'] .mtt-ticker__msg::after");
+  });
+});
+
+describe('the Phase 1 audit', () => {
+  it('leaves no copy-pip under reduced motion, where there is no second copy', () => {
+    /* The pip separates two copies of a looping lane. Reduced motion hides the
+       second copy and truncates the first, so the pip would sit after an
+       ellipsis as a mark with nothing on the other side of it. */
+    const RM = CSS.slice(CSS.indexOf('@media (prefers-reduced-motion: reduce)'));
+    expect(RM).toContain('.mtt-ticker__msg::after');
+    expect(RM.slice(RM.indexOf('.mtt-ticker__msg::after'))).toMatch(/display: none/);
+  });
+
+  it('never abbreviates a POTENTIAL overlay into a claim of certainty', () => {
+    const potential = overlayItem({
+      id: 'o2',
+      name: 'Midweek Major',
+      tier: 'potential',
+      overlay: 3000,
+      guarantee: 10000,
+      prizePool: 4000,
+      entered: 20,
+      entriesToClose: 15,
+      startsAt: NOW + 600_000,
+    });
+    expect(potential.flag).toBe('POTENTIAL OVERLAY');
+    expect(potential.flagShort).not.toBe('OVERLAY');
+  });
+
+  it('gives every announcement a short flag, for the phone', () => {
+    const all = [
+      soon,
+      overlay,
+      tableOpeningItem('tbl1', 'Table 4', 'plo4', NOW),
+      operatorItem('maintenance', 0, 'Back At 3 AM'),
+      operatorItem('custom_messages', 0, 'Welcome'),
+    ];
+    for (const entry of all) {
+      expect(entry.flagShort, entry.flag).toBeTruthy();
+      expect(entry.flagShort.length, entry.flag).toBeLessThanOrEqual(entry.flag.length);
+    }
   });
 });

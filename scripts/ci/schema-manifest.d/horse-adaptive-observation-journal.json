@@ -1,0 +1,36 @@
+{
+  "_owner": "Horse Brain Phase 14 immutable observation journal",
+  "_comment": "Migration 20260913170729. Isolated service-only evidence storage; no live decision caller or activation.",
+  "functions": [
+    "fn_append_horse_adaptive_observations",
+    "fn_horse_adaptive_journal_snapshot",
+    "fn_horse_adaptive_journal_batch"
+  ],
+  "tables": ["horse_adaptive_observation_journal", "horse_adaptive_observation_batches"],
+  "columns": {
+    "horse_adaptive_observation_journal": [
+      "observation_id",
+      "hand_id",
+      "actor_key",
+      "session_key",
+      "observed_at_ms",
+      "partition",
+      "scope_key",
+      "origin",
+      "payload",
+      "recorded_at"
+    ],
+    "horse_adaptive_observation_batches": [
+      "batch_key",
+      "batch_digest",
+      "actor_key",
+      "source_digest",
+      "from_ms",
+      "through_ms",
+      "observation_count",
+      "rejected",
+      "canonical_payload",
+      "recorded_at"
+    ]
+  }
+}

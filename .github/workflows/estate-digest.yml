@@ -21,7 +21,8 @@ on:
   schedule:
     # 11:07 UTC = 6:07am Chicago - on Dan's desk before the day starts.
     - cron: '7 11 * * *'
-  workflow_dispatch:
+  repository_dispatch:
+    types: [run-estate-digest]
 
 permissions:
   contents: read
@@ -47,8 +48,7 @@ jobs:
 
       - name: Mint a GitHub App installation token
         id: app-token
-        if: vars.AUTOPILOT_APP_ID != ''
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ vars.AUTOPILOT_APP_ID }}
           private-key: ${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}
@@ -59,9 +59,9 @@ jobs:
         env:
           # Cross-repo reads on the App token (World Hub is a separate private
           # repo); issue writes on GITHUB_TOKEN, the same split as the
-          # watchdogs, because the App deliberately has no issues scope.
-          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GH_PAT || secrets.GITHUB_TOKEN }}
-          GH_TOKEN_ISSUES: ${{ secrets.GITHUB_TOKEN }}
+          # read-only audits, because the App deliberately has no issues scope.
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN_ISSUES: ${{ github.token }}
           REPO: ${{ github.repository }}
           WH_REPO: Smarter-Poker/Smarter-Poker-World-Hub
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

@@ -28,6 +28,7 @@ import { supabase, getAuthUser } from '../lib/supabase';
 import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { masterBus } from '../core/MasterBus';
 import { watchBbjPool } from '../lib/bbjPoolFeed';
+import { watchBbjMini, type BbjMiniSnapshot } from '../lib/bbjMiniFeed';
 import { watchBbjHits } from '../lib/bbjHitFeed';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { useCoalescedRefresh } from '../hooks/useCoalescedRefresh';
@@ -111,7 +112,6 @@ import {
 import { useUserStore } from '../stores/useUserStore';
 import ClubLobbyCommandTop from '../components/lobby/ClubLobbyCommandTop';
 import MaintenanceBreakBanner from '../components/common/MaintenanceBreakBanner';
-import HouseAdCard from '../components/ads/HouseAdCard';
 import HouseAdRotator from '../components/ads/HouseAdRotator';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
 import { ClubIdentityCard } from '../components/club-buttons';
@@ -633,6 +633,8 @@ function tournamentOpenFirst(
  */
 import PageErrorBoundary from '../components/common/PageErrorBoundary';
 import ArenaAccessBoundary from '../components/arena/ArenaAccessBoundary';
+import { useArenaAccess } from '../components/arena/arenaAccess';
+import { useDiamondFreerollCountdown } from '../hooks/useNextDiamondFreeroll';
 import { publicOrigin } from '../lib/appBase';
 
 export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: string } = {}) {
@@ -656,6 +658,29 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
   const { clubId: routeClubId } = useParams<{ clubId: string }>();
   const clubId = clubIdOverride || routeClubId;
+  /* The server-verified arena entitlement, published by ArenaAccessBoundary.
+     Diamond Arena is one open club: membership is a platform entitlement with
+     no `club_members` row and no chip ledger, so the two membership checks in
+     loadClubData below would evict every Diamond player, and the chip club's
+     Bad Beat Jackpot has no Diamond counterpart to show. Null on every chip
+     route, which leaves those paths exactly as they were. */
+  const arenaAccess = useArenaAccess();
+  const isAutomaticArena = arenaAccess?.automaticMembership === true;
+  const automaticMembershipRef = useRef(isAutomaticArena);
+  automaticMembershipRef.current = isAutomaticArena;
+  /* Dan 2026-09-11: "HAVE IT SAY JUST 'ACTIVE' AND THE NUMBER UNDER IT. AND
+     THE FREE ROLL STARTS CLOCK." The arena has no membership to count and no
+     level to climb, so its identity rail carries those two figures instead.
+     The countdown reads nothing at all on a chip club: `null` is the "already
+     know the time" seam, so the hook issues no query there. */
+  const arenaFreeroll = useDiamondFreerollCountdown(isAutomaticArena ? undefined : null);
+  /* Undefined for every chip club, so their cards are untouched. */
+  const arenaSeatsClosedLabel =
+    isAutomaticArena && arenaAccess?.cashGamesEnabled !== true ? 'Not Open Yet' : undefined;
+  /* Diamond Phase 8: the arena's tournaments have their own switch, read from
+     the same server entitlement, and the same label while it is off. */
+  const arenaRegistrationClosedLabel =
+    isAutomaticArena && arenaAccess?.tournamentsEnabled !== true ? 'Not Open Yet' : undefined;
   useVisibilityRefresh(() => loadClubData());
   const navigate = useAppNavigate();
   const isMountedRef = useIsMounted();
@@ -726,6 +751,21 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   // Tapping the lobby jackpot opens the SAME view as tapping it at a table:
   // last 5 hits, qualifying hands per game, payout % per stakes (Dan 2026-08-18).
   const [bbjPoolId, setBbjPoolId] = useState<string | null>(null);
+  /* THE MINI ON THE LOBBY TILE (Dan 2026-09-09: "seen and discoverable like
+     the BBJ currently is"). The range the mini pays across this club's
+     stakes, from the one feed per club (lib/bbjMiniFeed). */
+  const [lobbyMini, setLobbyMini] = useState<BbjMiniSnapshot | null>(null);
+  /* "Mini 250 - 1,500": the range across the tiers that can pay right now.
+     Nothing when the mini is off or every tier is paused at the reserve floor
+     - a line that promised a paused mini would be a lie about money. */
+  const lobbyMiniLine = useMemo(() => {
+    if (!lobbyMini || !lobbyMini.enabled) return null;
+    const payable = lobbyMini.tiers.filter((t) => t.enabled && t.payable).map((t) => t.amount);
+    if (payable.length === 0) return null;
+    const lo = Math.trunc(Math.min(...payable)).toLocaleString('en-US');
+    const hi = Math.trunc(Math.max(...payable)).toLocaleString('en-US');
+    return lo === hi ? `Mini ${lo}` : `Mini ${lo} - ${hi}`;
+  }, [lobbyMini]);
   const [showBBJInfo, setShowBBJInfo] = useState(false);
   // Dan 2026-08-23: the Club Bank row opens the Club Bank Cashier - send outs
   // to agent wallets, the full chip ledger, and (standalone clubs only) the
@@ -1067,6 +1107,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     /* The jackpot feeds are ref-counted per club and per pool, so a table open
        in another tab-panel shares these rather than opening a second of each. */
     let stopBbjPool: (() => void) | null = null;
+    let stopBbjMini: (() => void) | null = null;
+    /* Same rule as every other mini subscriber: never carry the previous
+       club's payable range onto this club's tile. */
+    setLobbyMini(null);
     let stopBbjHits: (() => void) | null = null;
     let watchedBbjPoolId: string | null = null;
 
@@ -1076,8 +1120,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       playingRefreshTimer = null;
       occupancyTimer = null;
       stopBbjPool?.();
+      stopBbjMini?.();
       stopBbjHits?.();
       stopBbjPool = null;
+      stopBbjMini = null;
       stopBbjHits = null;
       watchedBbjPoolId = null;
     };
@@ -1340,15 +1386,26 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          about a jackpot by watching a counter, or not at all. One
          `bbj_winners` INSERT per hit, straight to BBJ_HIT_GLOBAL, which
          BBJHitAnnouncer already owns (lib/bbjHitFeed). */
-      stopBbjPool = watchBbjPool(resolvedId, (snap) => {
-        if (!isCurrent()) return;
-        setJackpotAmount(snap.mainBalance);
-        if (snap.poolId && snap.poolId !== watchedBbjPoolId) {
-          watchedBbjPoolId = snap.poolId;
-          if (stopBbjHits) stopBbjHits();
-          stopBbjHits = watchBbjHits(snap.poolId);
-        }
-      });
+      /* The jackpot is a chip pool banked by chip rake, and a Diamond hand
+         pays neither: the arena has no pool to watch, its strip does not
+         render, and these two feeds were only asking the database a question
+         with no answer. One of them came back as a statement timeout and a
+         500 on the live arena lobby. Both are chip club feeds now. */
+      if (!automaticMembershipRef.current) {
+        stopBbjPool = watchBbjPool(resolvedId, (snap) => {
+          if (!isCurrent()) return;
+          setJackpotAmount(snap.mainBalance);
+          if (snap.poolId && snap.poolId !== watchedBbjPoolId) {
+            watchedBbjPoolId = snap.poolId;
+            if (stopBbjHits) stopBbjHits();
+            stopBbjHits = watchBbjHits(snap.poolId);
+          }
+        });
+        stopBbjMini = watchBbjMini(resolvedId, (snap) => {
+          if (!isCurrent()) return;
+          setLobbyMini(snap);
+        });
+      }
 
       /**
        * A DROPPED SOCKET USED TO MEAN A STALE LOBBY UNTIL THE NEXT RELOAD.
@@ -1904,13 +1961,18 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     [memberRefresh]
   );
 
+  /* An arena whose membership the server grants automatically has no
+     `club_members` rows to watch, and subscribing to them there opened a
+     realtime channel that failed on every arena load: CHANNEL_ERROR on
+     club-members-diamond-arena. Nothing was listening for an answer; the rail
+     shows who is playing, not who is a member. */
   useMasterBusChannel({
     channelName: clubId ? `club-members-${clubId}` : null,
     table: 'club_members',
     filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
     event: '*',
     onPayload: handleMemberUpdate,
-    enabled: !!resolvedClubId,
+    enabled: !!resolvedClubId && !isAutomaticArena,
   });
 
   useMasterBusChannel({
@@ -2184,7 +2246,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 localSession = { userId: authRes.data.user.id } as any;
               }
             }
-            if (localSession?.userId) {
+            if (automaticMembershipRef.current) {
+              /* An arena whose membership the server grants automatically has
+                 no `club_members` row to read and no invite page to be sent
+                 to, and ArenaAccessBoundary verified the entitlement before
+                 this page mounted. Guarding only the eviction was not enough:
+                 the read itself dereferenced `home.club.id`, and the fast-path
+                 payload carries no club row for the arena, so every arena load
+                 threw here and lost the fast path with it. */
+            } else if (localSession?.userId) {
               const { data: memStat, error: memErr } = await supabase
                 .from('club_members')
                 .select('status')
@@ -2356,12 +2426,19 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
            state that nothing in this file ever read - DynamicWallet fetches
            its own - so every club load paid for a DiamondService round trip
            whose answer went straight into the bin. */
-        const memberResult = await supabase
-          .from('club_members')
-          .select('role, status')
-          .eq('club_id', resolvedId)
-          .eq('user_id', authUser.id)
-          .maybeSingle();
+        /* Skipped outright for an automatic-membership arena: there is no
+           `club_members` row to find, the entitlement is already verified, and
+           this read re-runs on every refocus, every realtime resubscribe and a
+           90 second interval. A resolved empty answer keeps the branches below
+           on their existing paths without a round trip. */
+        const memberResult = automaticMembershipRef.current
+          ? { data: null, error: null }
+          : await supabase
+              .from('club_members')
+              .select('role, status')
+              .eq('club_id', resolvedId)
+              .eq('user_id', authUser.id)
+              .maybeSingle();
 
         /* Same rule as the fast path above: eviction requires PROOF, never a
            failed read. `memberResult.error` was discarded here, so any
@@ -2379,8 +2456,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             clubId: resolvedId,
           });
         } else if (
-          !memberResult.data ||
-          !['active', 'approved'].includes((memberResult.data as any).status)
+          !automaticMembershipRef.current &&
+          (!memberResult.data ||
+            !['active', 'approved'].includes((memberResult.data as any).status))
         ) {
           if (getIsMounted && !getIsMounted()) return;
           bounceToInvite();
@@ -2761,6 +2839,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         clubTournamentQuery,
         (async () => {
           try {
+            /* The third jackpot read. An arena pays no rake and banks no
+               pool, so this one asks for a row that cannot exist there;
+               the other two were closed on 2026-09-11 and this one was
+               missed because it is inlined in a Promise.all rather than
+               named like the feeds. */
+            if (automaticMembershipRef.current) return { data: null, error: null };
             // BUGFIX: resolve the CORRECT BBJ pool. Union clubs contribute to the
             // UNION pool (that's the one that grows); a club-level pool row may exist
             // but is stale. Fetch by union_id when in a union, else club_id.
@@ -2888,9 +2972,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
       // BBJ jackpot. Number() is load-bearing, not cosmetic: main_balance is
       // numeric(14,2) and arrives as the STRING "10500.67". Assigning it raw
-      // put a string into a number-typed state, which then failed BBJTicker's
-      // `typeof poolAmount === 'number'` ownership check and left the ticker
-      // and the page disagreeing about who owns the value.
+      // put a string into a number-typed state, which failed a `typeof
+      // poolAmount === 'number'` ownership check downstream and left two
+      // surfaces disagreeing about who owned the value. The component that
+      // check lived in (BBJTicker) was deleted on 2026-09-12 for being mounted
+      // nowhere; the coercion stays, because every reader of this state still
+      // expects a number and the string is what the database actually sends.
       if (bbjResult?.data && !(bbjResult as any).error) {
         if (Array.isArray(bbjResult.data)) {
           let sum = 0;
@@ -4098,6 +4185,11 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         );
       },
       onJoinTable: (e) => handleJoinTable(e.id),
+      /* Diamond Arena's ladder is listed while funded play is closed, and the
+         buy-in door refuses every seat until it opens. Say so on the card
+         rather than offering a Join that the server will reject. */
+      seatsClosedLabel: arenaSeatsClosedLabel,
+      registrationClosedLabel: arenaRegistrationClosedLabel,
       /* A full table's primary action is the waitlist, not a join that cannot
          succeed. The page already owns this flow for the panel; the card runs
          the same one rather than inventing a second. */
@@ -4588,6 +4680,16 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             playerId={currentUser?.player_number}
             level={clubLevel?.level}
             playersPlaying={playersPlaying}
+            arenaStats={
+              isAutomaticArena
+                ? {
+                    activeCount: playersPlaying,
+                    freerollText: arenaFreeroll.text,
+                    freerollTitle: arenaFreeroll.title,
+                    freerollImminent: arenaFreeroll.imminent,
+                  }
+                : null
+            }
             onCopyClubId={() => {
               navigator.clipboard.writeText(club.club_id.toString());
               toast.success('Club ID Copied');
@@ -4656,35 +4758,41 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               }
             }}
           />
-
-          <button
-            type="button"
-            className="lobby-bbj"
-            onClick={() => {
-              haptic.medium();
-              setShowBBJInfo(true);
-            }}
-            aria-label={`Bad Beat Jackpot: ${
-              jackpotAmount > 0
-                ? jackpotAmount.toLocaleString('en-US', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })
-                : 'No Pool'
-            }`}
-          >
-            <ClubBBJShell className="lobby-bbj__shell" />
-            <span className="lobby-bbj__label">Bad Beat Jackpot</span>
-            <strong className="lobby-bbj__amount">
-              {jackpotAmount > 0
-                ? jackpotAmount.toLocaleString('en-US', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })
-                : '-'}
-            </strong>
-          </button>
-
+          {/* The Bad Beat Jackpot is a chip pool banked by chip rake. Diamond
+              hands carry neither, both being refused at admission and at
+              settlement, so this strip has nothing to read in the arena and
+              painted a bare dash there. Phase 9 decides Diamond fee
+              destinations; until it does, the honest surface is no strip. */}
+          {!isAutomaticArena && (
+            <button
+              type="button"
+              className="lobby-bbj"
+              onClick={() => {
+                haptic.medium();
+                setShowBBJInfo(true);
+              }}
+              aria-label={`Bad Beat Jackpot: ${
+                jackpotAmount > 0
+                  ? jackpotAmount.toLocaleString('en-US', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })
+                  : 'No Pool'
+              }`}
+            >
+              <ClubBBJShell className="lobby-bbj__shell" />
+              <span className="lobby-bbj__label">Bad Beat Jackpot</span>
+              <strong className="lobby-bbj__amount">
+                {jackpotAmount > 0
+                  ? jackpotAmount.toLocaleString('en-US', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })
+                  : '-'}
+              </strong>
+              {lobbyMiniLine && <span className="lobby-bbj__mini">{lobbyMiniLine}</span>}
+            </button>
+          )}
           {/* ── Wallet ──
               WALLET SEPARATION LAW (Dan 2026-08-20): this is a CLUB screen, so
               it renders CLUB money. The variant used to become 'union' whenever
@@ -5373,10 +5481,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                         one where the club genuinely has nothing running and the
                         player has nothing to tap, which is the entire
                         justification for the slot: it fills space that is dead,
-                        rather than displacing something somebody came for. */}
-                      <HouseAdCard
+                        rather than displacing something somebody came for.
+
+                        A picture, since 2026-09-13 - the 3:4 poster, fluid and
+                        contained, the same standard as every other surface.
+                        The text card that stood here is gone from the codebase. */}
+                      <HouseAdRotator
                         slot="empty_state"
                         clubId={resolvedClubId}
+                        className="ad-rotator--poster"
                         onNavigate={(path) => {
                           haptic.selection();
                           navigate(path);
@@ -5497,6 +5610,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           busy={actionBusy || waitlistActionBusy || isRegisteringMtt || deletingTableId !== null}
           onClose={() => setPanelOpen(false)}
           onJoinTable={handleJoinTable}
+          seatsClosedLabel={arenaSeatsClosedLabel}
+          registrationClosedLabel={arenaRegistrationClosedLabel}
           onWaitlistToggle={handleWaitlistToggle}
           onRegister={handleRegister}
           onUnregister={handleUnregister}

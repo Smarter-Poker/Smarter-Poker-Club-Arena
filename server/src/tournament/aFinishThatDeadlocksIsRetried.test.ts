@@ -118,16 +118,14 @@ describe('a manager past the grace is the thing that is stuck', () => {
       SERVER,
       'managerHasOverstayed(dwell.seenAt.get(String(stuck.id)), Date.now())'
     );
-    expect(loop).toContain('await this.stopTournamentManagerIfOwned(');
+    expect(loop).toContain('this.retireTournamentManagerInDiscovery(');
     expect(loop).toContain("'GameServer.completing_manager_stop_failed'");
     expect(loop).toContain(
       "await recoverStuckCompletingTournaments('discovery-watchdog', stuck.id);"
     );
-    // The awaited identity-CAS teardown happens BEFORE the has() test that
-    // gates recovery, so a replacement can never be deleted by the stale
-    // watchdog continuation and recovery still enters through the ordinary
-    // managerless door.
-    expect(loop.indexOf('await this.stopTournamentManagerIfOwned(')).toBeLessThan(
+    // Schedule the exact identity-CAS teardown while retaining ownership.
+    // Recovery only enters on a pass that observes its completed release.
+    expect(loop.indexOf('this.retireTournamentManagerInDiscovery(')).toBeLessThan(
       loop.indexOf('if (!this.tournamentEngines.has(stuck.id))')
     );
   });

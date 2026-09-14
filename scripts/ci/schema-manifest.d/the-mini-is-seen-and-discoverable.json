@@ -1,0 +1,5 @@
+{
+  "_owner": "feat/the-mini-is-seen. BBJ programme phase 2 of 5. Applied to production 2026-09-11 as 20260911133435 (fn_bbj_mini_for_club, fn_bbj_hand_detail says which jackpot, fn_bbj_analytics gains the mini columns), 20260911133927 (fn_bbj_recent_hits gains p_kind) and 20260911140154 (bbj_pools.mini_enabled + fn_bbj_set_club_mini_enabled, the club's own on/off switch).",
+  "functions": ["fn_bbj_mini_for_club", "fn_bbj_set_club_mini_enabled"],
+  "columns": { "bbj_pools": ["mini_enabled"] }
+}

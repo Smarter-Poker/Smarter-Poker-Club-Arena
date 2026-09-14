@@ -26,6 +26,9 @@ import {
 } from './RunItTwice';
 import BadBeatJackpot from './BadBeatJackpot';
 import { getBBJQualifyingInfo, getBBJPayoutPercentForBB } from '../../config/RakeConfig';
+import { getBBJMiniQualifyingInfo } from '../../config/bbjMini';
+import { isBbjPlateShown } from './bbjPlateVisibility';
+import { miniPlateAmount, miniTierForBB, type BbjMiniSnapshot } from '../../lib/bbjMiniFeed';
 import BBJInfoModal from '../bbj/BBJInfoModal';
 import { BBJCelebration } from './BBJCelebration';
 import { ThrowableSelector } from './ThrowableSelector';
@@ -263,6 +266,12 @@ export interface TableModalsLayerProps {
   bbjPoolId?: string | null;
   /** Hero's display name, so their own payout row is highlighted. */
   bbjHeroName?: string | null;
+  /**
+   * The mini jackpot for this club (lib/bbjMiniFeed), so the plate can show
+   * the flat amount for these stakes and the popup can show the mini's own
+   * tabs. Null until the feed has answered.
+   */
+  bbjMini?: BbjMiniSnapshot | null;
   showBBJCelebration: boolean;
   bbjCelebrationData: {
     totalPayout: number;
@@ -603,6 +612,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     bbjAmount,
     bbjPoolId,
     bbjHeroName,
+    bbjMini = null,
     showBBJCelebration,
     bbjCelebrationData,
     onBBJCelebrationComplete,
@@ -742,6 +752,15 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
 
   // Per-variant BBJ qualifying rule for the table widget (2026-08-18).
   const bbjInfo = getBBJQualifyingInfo(gameType);
+  /* THE MINI FOR THESE STAKES (Dan 2026-09-11). The tier is looked up by big
+     blind exactly as the payout RPC will look it up, and a tier that cannot
+     pay right now (reserve at its floor, disabled) shows nothing rather than a
+     promise the engine would refuse. */
+  const bbjMiniTier = bbjMini && bbjMini.enabled ? miniTierForBB(bbjMini, safeBB(blinds)) : null;
+  /* The SAME decision TablePage stamps `data-bbj-mini` from, so the felt's
+     reserved height and the row that fills it can never disagree. */
+  const bbjMiniAmount = miniPlateAmount(bbjMini, safeBB(blinds));
+  const bbjMiniInfo = getBBJMiniQualifyingInfo(gameType);
   // Tapping the jackpot banner opens the last-5-jackpots view (Dan, 2026-08-18).
   const [showBBJDetails, setShowBBJDetails] = React.useState(false);
   // Phase 2 2026-08-22: the deeper analytics panel behind RealTimeResultPanel's
@@ -967,23 +986,18 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
       {/* Bad Beat Jackpot Display — per-variant qualifying rule (2026-08-18).
           Hidden entirely for variants the server never pays (PLO6, Short Deck),
           and never displayed during MTT, Spins, or Heads-Up games. */}
-      {bbjInfo.eligible &&
-        !isTournament &&
-        !tournamentId &&
-        maxPlayers > 2 &&
-        gameType !== 'heads_up' &&
-        gameType !== 'hu' &&
-        gameType !== 'spin' &&
-        gameType !== 'spins' && (
-          <BadBeatJackpot
-            amount={bbjAmount}
-            qualifyingHand={bbjInfo.shortLabel}
-            subText={bbjInfo.subLabel}
-            payoutPercent={getBBJPayoutPercentForBB(safeBB(blinds))}
-            isHit={showBBJ}
-            onOpenDetails={() => setShowBBJDetails(true)}
-          />
-        )}
+      {isBbjPlateShown({ gameType, isTournament, tournamentId, maxPlayers }) && (
+        <BadBeatJackpot
+          amount={bbjAmount}
+          qualifyingHand={bbjInfo.shortLabel}
+          subText={bbjInfo.subLabel}
+          payoutPercent={getBBJPayoutPercentForBB(safeBB(blinds))}
+          isHit={showBBJ}
+          onOpenDetails={() => setShowBBJDetails(true)}
+          miniAmount={bbjMiniAmount}
+          miniQualifyingHand={bbjMiniInfo.eligible ? bbjMiniInfo.shortLabel : null}
+        />
+      )}
 
       {/* Last 5 jackpots + what this table pays */}
       <BBJInfoModal
@@ -995,6 +1009,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         bigBlind={safeBB(blinds)}
         currentUserName={bbjHeroName}
         currentUserId={userId}
+        mini={bbjMini}
       />
 
       {/* BBJ Celebration Overlay */}
@@ -1102,7 +1117,15 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
 
       {/* Cashier Modal */}
       <CashierModal
-        isOpen={showCashier && arenaAsset === 'chips'}
+        /* Diamond seats top up through the same cashier. The door underneath is
+           not the same one: a Diamond amount is reserved into the seat's own
+           custody row by fn_poker_diamond_top_up, which is why every number
+           this modal offers there is whole. */
+        isOpen={
+          showCashier && (arenaAsset === 'chips' || (arenaAsset === 'diamonds' && !isTournament))
+        }
+        wholeUnits={arenaAsset === 'diamonds'}
+        currency={arenaAsset === 'diamonds' ? 'Diamonds' : undefined}
         onClose={onCloseCashier}
         // Passed straight through. Wrapping these in `async (a) => { await f(a) }`
         // is what threw the success flag away originally.
@@ -1113,7 +1136,12 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         maxStack={maxBuyIn}
       />
       <BuyInModal
-        isOpen={bustRebuyOpen && arenaAsset === 'chips'}
+        /* A Diamond cash seat is felted the same way and re-enters through
+           `fn_poker_diamond_top_up`, so the prompt is no longer chip-only.
+           `currency` is what makes the slider, the cap and the balance read in
+           whole Diamonds, exactly as the ordinary buy-in sheet does. */
+        isOpen={bustRebuyOpen && (arenaAsset === 'chips' || arenaAsset === 'diamonds')}
+        currency={arenaAsset === 'diamonds' ? 'diamonds' : ''}
         onClose={onCancelBustRebuy}
         onConfirm={async (amount: number) => {
           await onConfirmBustRebuy(amount);

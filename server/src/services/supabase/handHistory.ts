@@ -16,6 +16,7 @@ import { recordHorseHandReviews } from '../HorseHandReview.js';
 import { readScopeOf } from '../../engine/HorseMind.js';
 import { getLiveHorseDecisionWorker } from '../../engine/horseDecision/index.js';
 import { wakeHandProjection } from './handProjection.js';
+import { bindHorseObservationIdentity } from '../../engine/HorseObservationIdentity.js';
 
 export interface AtomicHandCommitInput {
   stacks: Array<{
@@ -238,6 +239,8 @@ export async function logHandHistory(params: {
     handName?: string;
     /** HI-LO: the entry for the low half. See HandEvent WINNERS.winnersByBoard. */
     low?: boolean;
+    /** Per-pot slices of this share (2026-09-13). See HandEvent WINNERS.winnersByBoard. */
+    pots?: Array<{ index: number; amount: number }>;
   }[];
   /**
    * POT-LEVEL SETTLEMENT (Dan section 29, 2026-08-25).
@@ -310,6 +313,11 @@ export async function logHandHistory(params: {
    * (CLAUDE.md 10.12): the hand carries one identity from settlement onward.
    */
   handId?: string;
+  /** The dealt hand's frozen generations, copied before settlement's first await. */
+  seatGenerations?: ReadonlyMap<
+    string,
+    import('../../engine/handSeatGeneration.js').HandSeatGeneration
+  >;
   players: { userId: string; username: string; seat: number; stack: number; cards: string[] }[];
   actions: {
     seat: number;
@@ -318,6 +326,9 @@ export async function logHandHistory(params: {
     amount?: number;
     timestamp?: number;
     stage: string;
+    publicNode?: import('../../engine/HorsePublicActionNode.js').HorsePublicActionNode;
+    origin?: import('../../types.js').AcceptedActionOrigin;
+    observationIdentity?: import('../../engine/HorseObservationIdentity.js').HorseObservationIdentity;
   }[];
   showdownResults?: {
     userId: string;
@@ -427,6 +438,24 @@ export async function logHandHistory(params: {
   const holeCardsPayload = Object.keys(holeCardsByUser).length > 0 ? holeCardsByUser : null;
   const boardPayload = params.communityCards?.length ? params.communityCards : null;
 
+  // Recompute at the sole accepted producer. Supplied identity is never trusted.
+  // Preserve ordinals in the full list, including forced/discard/pseudo-actions.
+  // Older actions stay unannotated; a later receipt UUID cannot retroactively
+  // supply lineage that was absent from the durable transaction's payload.
+  const acceptedActions = params.actions.map((action, actionOrdinal) => {
+    const { observationIdentity: _suppliedIdentity, ...record } = action;
+    return action.publicNode
+      ? {
+          ...record,
+          observationIdentity: bindHorseObservationIdentity(action, actionOrdinal, {
+            handId: params.handId,
+            tableId: params.tableId,
+            seatGenerations: params.seatGenerations,
+          }),
+        }
+      : record;
+  });
+
   const row = {
     // See `handId` on the params above. Omitted entirely when the caller did
     // not mint one, so the column keeps its gen_random_uuid() default and
@@ -486,7 +515,7 @@ export async function logHandHistory(params: {
         }))
       : null,
     players: params.players,
-    actions: params.actions,
+    actions: acceptedActions,
     hole_cards: holeCardsPayload,
     board: boardPayload,
     button_seat: params.buttonSeat ?? null,
@@ -518,8 +547,8 @@ export async function logHandHistory(params: {
   const inserted = await insertHandHistoryRow(row, bombUnits, params.atomicCommit);
   const handId = inserted.id;
 
-  // V28 AUDIT FIX (2026-08-29): observe regardless of whether the history row
-  // landed. ROOT-CAUSE CAPACITY FIX (2026-09-08): HorseMind now lives beside
+  // Observe only after the authoritative transaction accepts the hand above.
+  // ROOT-CAUSE CAPACITY FIX (2026-09-08): HorseMind now lives beside
   // HorseLogic in the sole worker FIFO. Enqueueing establishes the ordering:
   // this observation is ahead of every decision the table can request next.
   // Waiting for its ACK here would instead hold this table's settlement behind
@@ -537,7 +566,8 @@ export async function logHandHistory(params: {
         'observe',
       ].join(':'),
       handKey,
-      actions: params.actions,
+      committedHandId: handId,
+      actions: acceptedActions,
       bigBlind: params.bigBlind,
       showdown: params.showdownReveal ?? null,
       // V45: the hand's scope - card family and how many were dealt in.

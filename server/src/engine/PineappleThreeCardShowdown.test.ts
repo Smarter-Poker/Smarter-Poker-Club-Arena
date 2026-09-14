@@ -91,6 +91,23 @@ function prepareWorkerResult(hc: HandController, cardIndex = 2) {
 }
 
 describe('pineapple: nobody reaches showdown holding three cards', () => {
+  it("retains only each seat's own forced discard privately for later decisions", () => {
+    const { hc, st } = dealt();
+    const snapshot = prepareWorkerResult(hc, 1);
+    hc.dealNextStreet();
+    for (const player of snapshot.players) {
+      const returned = hc.getPineappleKnownDeadCards(player.seat);
+      expect(returned).toEqual([player.cards[1]]);
+      returned[0].rank = returned[0].rank === 'A' ? 'K' : 'A';
+      returned.push(player.cards[0]);
+      expect(hc.getPineappleKnownDeadCards(player.seat)).toEqual([player.cards[1]]);
+    }
+    expect(hc.getPineappleKnownDeadCards(99)).toEqual([]);
+    expect(st().players.every((p: SeatPlayer) => p.knownDeadCards === undefined)).toBe(true);
+    const nextHand = new HandController(mkConfig({ handNumber: 2 }), mkPlayers(3), 1);
+    expect(nextHand.getPineappleKnownDeadCards(1)).toEqual([]);
+  });
+
   it('deals three to start (otherwise the rest of this file proves nothing)', () => {
     const { st } = dealt();
     expect(holdings(st)).toEqual([3, 3, 3]);

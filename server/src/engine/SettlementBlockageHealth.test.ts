@@ -144,9 +144,23 @@ describe('blocked settlement telemetry', () => {
       expect(settlementHealthSnapshot(observation(age)).settlementStatus).toBe('ok');
     }
     expect(settlementHealthSnapshot(observation(30_000)).blockedSettlementCount).toBe(1);
-    expect(settlementPrometheusLines(observation(null))).toContain(
-      'poker_table_settlement_age_ms{table_id="t"} 0'
-    );
+
+    /* A TABLE THAT IS NOT SETTLING IS NOT A SAMPLE (2026-09-11). This used to
+       assert the zero line, one per table, and that is what it cost: 1,363
+       samples on engine-01 and every one of them read 0, rendered on the
+       authoritative event loop every fifteen seconds. The continuous clock is
+       still published - as the fleet maximum, which is always present and is
+       what a reader of this gauge was ever going to aggregate anyway - and the
+       per-table line survives for a table that really is settling. */
+    const quiet = settlementPrometheusLines(observation(null));
+    expect(quiet).not.toContain('poker_table_settlement_age_ms{table_id="t"} 0');
+    expect(quiet).toContain('poker_settlement_age_max_ms 0');
+    expect(quiet).toContain('poker_settlements_in_flight 0');
+
+    const settling = settlementPrometheusLines(observation(12_000));
+    expect(settling).toContain('poker_table_settlement_age_ms{table_id="t"} 12000');
+    expect(settling).toContain('poker_settlement_age_max_ms 12000');
+    expect(settling).toContain('poker_settlements_in_flight 1');
   });
 });
 

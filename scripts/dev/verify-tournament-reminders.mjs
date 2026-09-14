@@ -12,11 +12,16 @@ let checks = 0;
 const check = (condition, message) => { assert.ok(condition, message); checks++; };
 const q = async (sql, params = []) => (await a.query(sql, params)).rows;
 const count = async (table) => Number((await q(`SELECT count(*) n FROM ${table}`))[0].n);
-const reset = () => q('TRUNCATE push_outbox, tournament_reminder_receipts, tournament_players, tournaments, table_seats');
+const reset = () => q('TRUNCATE push_outbox, tournament_reminder_receipts, tournament_players, tournaments, table_seats, push_subscriptions, profiles');
 const seed = async (minutes = 10, opts = {}) => {
   const t = randomUUID(), u = randomUUID();
   await q("INSERT INTO tournaments VALUES($1, 'Fixture Tournament', $2, now()+make_interval(mins=>$3), $4)", [t, opts.status || 'REGISTERING', minutes, opts.game || 'nlhe']);
   await q("INSERT INTO tournament_players VALUES($1,$2,$3,'registered',$4,false)", [randomUUID(), t, u, opts.legacy || false]);
+  // Every registrant is a player with a roster row, and by default one that can
+  // be reached. `device: false` is the recipient with no device; `horse: true`
+  // is the recipient the reachability predicate must NOT care about.
+  await q('INSERT INTO profiles(id, is_horse) VALUES($1,$2)', [u, opts.horse === true]);
+  if (opts.device !== false) await q('INSERT INTO push_subscriptions(user_id, endpoint) VALUES($1,$2)', [u, `fixture:${u}`]);
   return { t, u };
 };
 const prepare = async (limit = 300) => (await q('SELECT prepare_tournament_reminders($1) result', [limit]))[0].result;
@@ -27,6 +32,9 @@ try {
     CREATE TABLE tournament_players(id uuid PRIMARY KEY, tournament_id uuid REFERENCES tournaments(id), user_id uuid,
       status text, push_15m_sent boolean DEFAULT false, push_2m_sent boolean DEFAULT false, UNIQUE(tournament_id,user_id));
     CREATE TABLE table_seats(id uuid DEFAULT gen_random_uuid(), user_id uuid, left_at timestamptz);
+    CREATE TABLE profiles(id uuid PRIMARY KEY, is_horse boolean NOT NULL DEFAULT false);
+    CREATE TABLE push_subscriptions(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid,
+      endpoint text, is_active boolean NOT NULL DEFAULT true, created_at timestamptz DEFAULT now());
     CREATE TABLE push_outbox(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), recipient_user_id uuid, title text NOT NULL,
       body text NOT NULL, url text, event text, related_entity_id uuid, tag text, status text DEFAULT 'pending',
       attempts integer DEFAULT 0, created_at timestamptz DEFAULT now(), claimed_at timestamptz, sent_at timestamptz, failure_reason text);
@@ -47,6 +55,11 @@ try {
   const migration = readFileSync(new URL('../../supabase/migrations/20260909195446_tournament_reminders_own_durable_receipts_without_player_writes.sql', import.meta.url), 'utf8');
   await q(migration);
   check((await q('SELECT outcome FROM tournament_reminder_receipts WHERE tournament_id=$1', [legacy.t]))[0]?.outcome === 'legacy', 'Existing sent flags import exactly once');
+  // The reachability migration goes on top, so every check below this line runs
+  // against the definitions production will actually execute - not a superseded
+  // pair that happens to still be the newest file this harness knew about.
+  await q(readFileSync(new URL('../../supabase/migrations/20260912050723_a_tournament_reminder_needs_a_device_to_reach.sql', import.meta.url), 'utf8'));
+  check(Number((await q("SELECT count(*) n FROM pg_indexes WHERE indexname='push_subscriptions_user_active_idx'"))[0].n) === 1, 'The migration declares the partial index its predicate rides on');
   await b.query('BEGIN'); await b.query('SELECT * FROM tournament_players WHERE tournament_id=$1 FOR UPDATE', [locked.t]);
   await q("SET statement_timeout='150ms'");
   check((await prepare()).queued === 1, 'Reminder generation must not wait for a locked player');
@@ -72,6 +85,37 @@ try {
   check((await q('SELECT outcome FROM tournament_reminder_receipts'))[0].outcome === 'seated', 'Seat suppression is durable');
   await q('DELETE FROM table_seats');
   check((await prepare()).queued === 0, 'Standing up does not resurrect a suppressed stage');
+  /* ─── A REMINDER NEEDS A DEVICE TO REACH (2026-09-12) ───────────────────────
+     15,900 reminders in seven days, 935 recipients, none of them holding a push
+     subscription, none delivered. The enqueue never asked whether there was
+     anywhere to send one. These checks EXECUTE the fixed routines rather than
+     reading them, and the last two are the ones that matter: the gate is about
+     a device, never about what kind of player owns it (CLAUDE.md 10.5). */
+  await reset(); const noDevice = await seed(10, { device: false });
+  // `accounted` counts loop iterations and `queued` counts rows that survived the
+  // trigger, so the pair separates the two halves of the fix: accounted === 0
+  // proves the CANDIDATE predicate excluded them, queued === 0 proves the table
+  // would have refused them anyway. Asserting only `queued` cannot tell the
+  // difference - measured: deleting the candidate predicate leaves queued at 0
+  // because the backstop catches it, and the check goes green over the defect.
+  const unreachable = await prepare();
+  check(unreachable.accounted === 0, 'A registrant with no device is not even a candidate');
+  check(unreachable.queued === 0, 'and no row reaches the queue for them');
+  check(await count('tournament_reminder_receipts') === 0, 'Refusing an unreachable registrant claims no receipt');
+  await q('INSERT INTO push_subscriptions(user_id, endpoint) VALUES($1,$2)', [noDevice.u, 'enrolled-late']);
+  check((await prepare()).queued === 1, 'Enrolling a device inside the window still earns the reminder');
+  await reset(); const retired = await seed(10, { device: false });
+  await q('INSERT INTO push_subscriptions(user_id, endpoint, is_active) VALUES($1,$2,false)', [retired.u, 'retired-endpoint']);
+  check((await prepare()).queued === 0, 'A retired subscription is not a device');
+  await reset(); const horse = await seed(10, { horse: true });
+  check((await q('SELECT is_horse FROM profiles WHERE id=$1', [horse.u]))[0].is_horse === true, 'Fixture: this reachable registrant is a horse');
+  check((await prepare()).queued === 1, 'A horse with a device is queued exactly like anybody else');
+  await reset(); await seed(10, { device: false, horse: false });
+  check((await prepare()).queued === 0, 'A human with no device is refused by the very same predicate');
+  await reset(); const direct = await seed(10, { device: false });
+  await q("INSERT INTO push_outbox(recipient_user_id,title,body,url,event) VALUES($1,'Direct','Direct',$2,'tournament_reminder_15m')", [direct.u, `/tournaments/${direct.t}`]);
+  check(await count('push_outbox') === 0, 'Any caller inserting an undeliverable reminder is refused at the table');
+  check(await count('tournament_reminder_receipts') === 0, 'and that refusal claims no receipt either');
   await reset(); await seed(20); await seed(-1); await seed(10,{game:'spin'}); await seed(10,{status:'RUNNING'});
   check((await prepare()).queued === 0, 'Future, elapsed, spin and running events are ineligible');
   await reset(); const lateSeat = await seed(); await prepare();

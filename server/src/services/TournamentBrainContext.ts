@@ -35,6 +35,8 @@ import {
   type TournamentContextStatus,
 } from '../engine/HorseTournamentPreflop.js';
 import { selectInChunks } from './supabase/chunkedIn.js';
+import { recoveryFeeCents, tournamentFeeRatio, unitFloorCents } from '../tournament/recoveryFee.js';
+import { UNIT_CENTS_ASSET_NOT_READ, normalizeUnitCents } from '../tournament/tournamentUnit.js';
 import { horseRebuyAllowance } from './FreeBuy.js';
 
 export type TournamentFormat = 'mtt' | 'sng' | 'spin' | 'hu_sng';
@@ -213,6 +215,25 @@ export interface TournamentRowLite {
   addon_levels?: number | null;
   addon_period_started_at?: string | null;
   addon_period_ends_at?: string | null;
+  /**
+   * ═════════════════════════════════════════════════════════════════════════
+   *  THE SMALLEST AMOUNT THIS TOURNAMENT CAN PAY, IN CENTS (2026-09-12)
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * One cent for a chip tournament, which is every tournament that has ever
+   * run, and which is why every reader of this field defaults to 1 when it is
+   * absent. One hundred for a Diamond tournament, because a Diamond does not
+   * divide.
+   *
+   * NO SELECT POPULATES THIS YET, and that is deliberate rather than
+   * forgotten. It is `fn_ca_tournament_unit_cents` on the SQL side, and
+   * reading it here means joining clubs into the tournament read, which
+   * belongs with the work that opens the Diamond tournament door rather than
+   * with the arithmetic. The arithmetic is correct for both denominations
+   * now; the field is the one wire left to connect, and the quote is already
+   * waiting for it.
+   */
+  unit_cents?: number | null;
   addon_period_triggered?: boolean | null;
   prize_pool_finalized?: boolean | null;
   on_break?: boolean | null;
@@ -574,6 +595,7 @@ export function deriveContext(
     addOnTakenByUser?: Record<string, boolean>;
     rebuyAffordableByUser?: Record<string, boolean>;
     addOnAffordableByUser?: Record<string, boolean>;
+    pendingRecoveryPlayers?: number;
   } = {}
 ): TournamentBrainContext {
   const type = (row.tournament_type || '').toUpperCase();
@@ -819,8 +841,18 @@ export function deriveContext(
   if (!status) contextIssues.push('tournament_status_missing');
   if (!gameVariant) contextIssues.push('game_variant_missing');
   if (!(playersLeft > 0) || entrants < playersLeft) contextIssues.push('player_population_invalid');
+  if (Math.max(0, Math.floor(Number(playerOptions.pendingRecoveryPlayers) || 0)) > 0) {
+    // A player with a durable, unexpired recovery prompt is not eliminated,
+    // but has no positive stack that an ICM calculation can price yet. Keep
+    // the lifecycle count honest and fail closed until accept/decline/expiry
+    // turns that pending option into a positive stack or a completed bust.
+    contextIssues.push('live_field_recovery_pending');
+  }
   if (spotsPaid <= 0) contextIssues.push('payout_or_ticket_structure_missing');
   if (allLive.length === 0) contextIssues.push('live_stack_distribution_missing');
+  if (allLive.length !== playersLeft) {
+    contextIssues.push('live_field_stack_cardinality_mismatch');
+  }
   if (
     !blindState.levelIndexValid ||
     blindState.currentSmallBlind <= 0 ||
@@ -1179,6 +1211,7 @@ interface TournamentPlayerContextRow {
   current_bounty: number | null;
   rebuys?: number | null;
   add_on?: boolean | null;
+  rebuy_prompt_until?: string | null;
 }
 
 interface TournamentFundingRow {
@@ -1213,15 +1246,47 @@ function tournamentPurchaseQuote(row: TournamentRowLite): TournamentPurchaseQuot
   let recoveryPrizeContributionCents: number | null = null;
   let recoveryBountyContributionCents: number | null = null;
   if (recoveryCostCents !== null) {
-    const feeRatio = buyIn + buyInFee > 0 && buyInFee > 0 ? buyInFee / (buyIn + buyInFee) : 0.1;
-    const feeCents = Math.min(
-      Math.trunc(recoveryUnits * feeRatio * 100 + 0.000001),
-      Math.trunc(recoveryUnits * 0.1 * 100 + 0.000001)
-    );
+    const feeRatio = tournamentFeeRatio(buyIn, buyInFee);
+    /**
+     * The recovery fee is the ratio, capped at ten percent, truncated DOWN to
+     * the smallest amount this tournament can pay. It used to truncate to a
+     * cent, because a cent was hard-coded as that smallest amount; a 10
+     * Diamond rebuy at a 10/110 ratio then produced a 0.90 fee and dropped
+     * 9.10 Diamonds into the prize pool, which is not an amount this estate
+     * can pay, store or reserve.
+     *
+     * This is not a new rake rate. It is the same ratio, the same cap and the
+     * same downward truncation, told what a unit is instead of assuming one.
+     * `Math.floor(x / 1) * 1` is `x`, so the chip quote is unchanged by
+     * construction rather than by inspection.
+     *
+     * The cap is floored too: a cap that is not on the grid is not a cap the
+     * fee can honour. Mirrors fn_ca_recovery_fee_cents.
+     */
+    /**
+     * ONE RULE FOR THE UNIT TOO (2026-09-13). This normalisation was written
+     * out here - `Number.isSafeInteger(...) && ... >= 1 ? ... : 1` - which made
+     * it a FOURTH spelling of the unit rule beside `computePlacePrize`'s,
+     * `unitFloorCents`'s and the SQL's, in exactly the shape this phase spent
+     * two migrations collapsing. It reads `tournamentUnit.ts` now.
+     *
+     * An ABSENT `unit_cents` is not the same thing as a chip tournament, so it
+     * is named rather than folded into the normaliser's fallback: no select
+     * populates the column yet, which the recovery-fee changelog records as
+     * "the one wire left" and leaves to the work that opens the Diamond
+     * tournament door, because reading it means joining clubs into the
+     * tournament read.
+     */
+    const unitCents =
+      row.unit_cents == null ? UNIT_CENTS_ASSET_NOT_READ : normalizeUnitCents(row.unit_cents);
+    const floorToUnit = (cents: number) => unitFloorCents(cents, unitCents);
+    const feeCents = recoveryFeeCents(recoveryCostCents, feeRatio, unitCents);
     const netCents = Math.max(0, recoveryCostCents - feeCents);
+    // The head is floored to the same unit, so what is left for the prize is
+    // whole by construction rather than by luck.
     const bountyHeadCents =
       row.is_bounty === true || row.is_pko === true || row.is_mystery_bounty === true
-        ? Math.min(netCents, Math.round((finite(row.bounty_amount) ?? 0) * 100))
+        ? floorToUnit(Math.min(netCents, Math.round((finite(row.bounty_amount) ?? 0) * 100)))
         : 0;
     recoveryBountyContributionCents = bountyHeadCents;
     recoveryPrizeContributionCents = netCents - bountyHeadCents;
@@ -1320,7 +1385,8 @@ async function readTournamentPlayerContext(tournamentId: string): Promise<{
   error: { message: string } | null;
 }> {
   const PAGE = 1_000;
-  const columns = 'user_id, club_id, chips, status, current_bounty, rebuys, add_on';
+  const columns =
+    'user_id, club_id, chips, status, current_bounty, rebuys, add_on, rebuy_prompt_until';
   const first = await supabase
     .from('tournament_players')
     .select(columns, { count: 'exact' })
@@ -1467,7 +1533,9 @@ async function refresh(tournamentId: string, e: CacheEntry, generation: number):
     const horseRebuyCapByUser: Record<string, number> = {};
     const addOnTakenByUser: Record<string, boolean> = {};
     const entrants = rows.length;
+    const observedAtMs = Date.now();
     let playersLeft = 0;
+    let pendingRecoveryPlayers = 0;
     let chipSum = 0;
     const liveStacks: number[] = [];
     for (const row of rows) {
@@ -1494,14 +1562,30 @@ async function refresh(tournamentId: string, e: CacheEntry, generation: number):
       ) {
         continue;
       }
-      playersLeft += 1;
       const chips = Number(row.chips) || 0;
-      chipSum += chips;
-      if (chips > 0) {
-        liveStacks.push(chips);
-        if (typeof row.user_id === 'string' && row.user_id) {
-          stackByUser[row.user_id] = chips;
+      // The atomic hand settlement writes the busted stack before the
+      // elimination sweep advances tournament_players.status. Under load that
+      // status hand-off can lag for many sweeps, so `status = playing` alone is
+      // not proof that a player still belongs in the active ICM stack vector.
+      // An unexpired database-owned recovery prompt is different: that player
+      // is not eliminated yet, so preserve the lifecycle count and mark the
+      // context incomplete below. Once the prompt expires, the zero stack is a
+      // completed bust for decision purposes even if the status sweep lags.
+      if (chips <= 0) {
+        const promptUntilMs = row.rebuy_prompt_until
+          ? Date.parse(row.rebuy_prompt_until)
+          : Number.NaN;
+        if (Number.isFinite(promptUntilMs) && promptUntilMs > observedAtMs) {
+          playersLeft += 1;
+          pendingRecoveryPlayers += 1;
         }
+        continue;
+      }
+      playersLeft += 1;
+      chipSum += chips;
+      liveStacks.push(chips);
+      if (typeof row.user_id === 'string' && row.user_id) {
+        stackByUser[row.user_id] = chips;
       }
 
       // tournament_players.current_bounty is stored in whole currency units;
@@ -1525,7 +1609,7 @@ async function refresh(tournamentId: string, e: CacheEntry, generation: number):
       liveBounties,
       0,
       bountyByUser,
-      Date.now(),
+      observedAtMs,
       fidelity,
       {
         stackByUser,
@@ -1534,6 +1618,7 @@ async function refresh(tournamentId: string, e: CacheEntry, generation: number):
         addOnTakenByUser,
         rebuyAffordableByUser: fundingRes.rebuyAffordableByUser,
         addOnAffordableByUser: fundingRes.addOnAffordableByUser,
+        pendingRecoveryPlayers,
       }
     );
     if (e.generation !== generation) return;

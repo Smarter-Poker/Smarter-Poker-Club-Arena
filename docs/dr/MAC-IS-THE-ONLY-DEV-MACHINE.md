@@ -13,7 +13,7 @@ a lot of finished work existed on its disk and nowhere else.
 | ---------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | Canonical clones (`club-arena`, `Smarter-Poker-World-Hub`) | Re-clonable from GitHub | unchanged (fine)                                                                                                   |
 | Agent worktrees with **unpushed commits**                  | Gone if the disk died   | **85 pushed to `origin` under `rescue/<name>` — every 2+-commit branch; single-commit remainder is one loop away** |
-| Uncommitted edits in worktrees                             | Gone                    | snapshotted to `refs/wip/*` (existing tooling)                                                                     |
+| Uncommitted edits in worktrees                             | Gone                    | isolated worktrees plus explicit commit-and-push discipline; no background snapshotter or recovery reconciler      |
 | Engine secret backup (`.dr-backups/`)                      | Mac-local               | still Mac-local — see below                                                                                        |
 | Keychain credentials (GitHub, Hetzner, DR passphrase)      | Mac-local               | still Mac-local — see below                                                                                        |
 
@@ -38,10 +38,8 @@ done
 ```
 
 The push is **by ref, without a checkout**, so the commit objects are durable
-on GitHub. Nothing auto-merges: these are
-parked branches, not pull requests (`report-stuck-prs.sh` only auto-opens PRs
-for `agent/*` branches under a day old, by design — an old branch gets
-_reported_, never merged).
+on GitHub. Nothing auto-merges: these are parked branches, not pull requests.
+The event-driven proposal workflow intentionally excludes `rescue/*`.
 
 To see what is parked and mine it later:
 

@@ -49,7 +49,13 @@ describe('an agent can declare a schema change without touching a shared file', 
 
   it('carries column declarations through the same overlay', () => {
     const merged = loadColumnsManifest(root);
+    const fragments = readFragments(root);
+    const removedTables = new Set(fragments.flatMap(({ data }) => data.removedTables ?? []));
     expect(Object.keys(merged.columns).length).toBeGreaterThan(0);
+    for (const table of removedTables) {
+      expect(merged.columns).not.toHaveProperty(table);
+    }
+    expect(merged.removedByFragments).toBe(removedTables.size);
   });
 
   it('refuses a fragment it cannot understand, instead of ignoring it', () => {
@@ -72,20 +78,20 @@ describe('the CI gates read the overlay, not the raw base file', () => {
   ]) {
     it(`${script} loads through schema-manifest.mjs`, () => {
       const src = read(script);
-      expect(src).toContain("from './schema-manifest.mjs'");
+      expect(src).toMatch(/\bfrom\s+(['"])\.\/schema-manifest\.mjs\1/);
       expect(src).not.toMatch(/JSON\.parse\(\s*readFileSync\(\s*MANIFEST/);
     });
   }
 });
 
-describe('fragments are temporary, and a lying one is found', () => {
+describe('the schema audit is read-only, and a lying fragment is found', () => {
   const wf = read('.github/workflows/schema-manifest-refresh.yml');
 
-  it('the nightly refresh absorbs and retires them', () => {
+  it('regenerates only in the disposable checkout and refuses unreviewed drift', () => {
     expect(wf).toContain('node scripts/ci/prune-schema-fragments.mjs');
-    // Deletions have to be staged, or an absorbed fragment survives the refresh
-    // and the directory grows forever.
-    expect(wf).toContain('git add -A scripts/ci/');
+    expect(wf).toContain('git diff --quiet -- scripts/ci/');
+    expect(wf).toContain('this audit cannot mutate source');
+    expect(wf).not.toMatch(/git\s+(?:add|commit|push)\b|gh\s+pr\s+create/);
   });
 
   it('a fragment production cannot corroborate eventually goes red', () => {

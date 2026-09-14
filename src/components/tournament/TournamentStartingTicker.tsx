@@ -62,7 +62,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
-import { reportError } from '../../utils/errorReporter';
+import { reportError, reportWarning } from '../../utils/errorReporter';
 import { busToast, type BusPayloadMap } from '../../core/MasterBus';
 import { useTableSettings } from '../../hooks/useTableSettings';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
@@ -72,12 +72,13 @@ import {
   tickerManagementService,
   type ManagedTickerSettings,
 } from '../../services/TickerManagementService';
-import { resolveClubUUID } from '../../utils/clubIdResolver';
+import { isUUID, resolveClubUUID } from '../../utils/clubIdResolver';
 import { rankOverlayAnnouncements, type OverlayCandidate } from '../../utils/overlayAnnouncements';
 /* The value comes from the small extracted module and the row shape is a
    type-only import, so this root-mounted ticker does not pull the whole
    lobby view-model into the entry bundle every player downloads. */
 import { lateRegEndMs } from '../lobby/lateRegWindow';
+import { isInsideLastCall, MAX_LEAD_MS } from './tickerLeadWindow';
 import type { LobbyTournamentRow } from '../lobby/lobbyEntries';
 import {
   guaranteeItem,
@@ -93,6 +94,7 @@ import {
 } from './tickerMessages';
 import { dismissItem, readDismissed } from './tickerDismissals';
 import { useTopChromeOffset } from './useTopChromeOffset';
+import { useRailSilence } from './useRailSilence';
 import { TickerRail } from './TickerRail';
 
 /** How far ahead an event counts as "about to start". */
@@ -106,11 +108,40 @@ const LEAVE_MS = 240;
 
 interface Scope {
   clubIds: string[];
+  /**
+   * club id -> club name, for the clubs this player belongs to.
+   *
+   * Read once per scope (five-minute TTL) rather than per poll: the feed is
+   * scoped to every club the player is in, so an announcement can be about a
+   * club other than the one whose rail is being painted, and the player has no
+   * way to tell which. Names are what tells them.
+   */
+  clubNames: Record<string, string>;
   fetchedAt: number;
   userId: string | null;
 }
 
-export function TournamentStartingTicker() {
+/**
+ * ── THE HOST: EVERYTHING THAT COSTS SOMETHING ─────────────────────────────
+ *
+ * Mounted only by the gate at the foot of this file, and only on a route where
+ * the bar can actually appear. That sentence was not true until 2026-09-13.
+ *
+ * THE POLL HAD NO ROUTE GUARD. `onTickerRoute` gated the settings read and the
+ * render; the FEED effect - four to five Supabase queries every thirty seconds
+ * - was never gated by it at all. A player sitting on the cashier, the
+ * leaderboard, their profile or the club list had a browser fetching
+ * tournaments, registrations, overlay candidates and table openings twice a
+ * minute, for a strip that cannot render on any of those routes. It predates
+ * this programme and it survived the load pass, because that pass gated each
+ * query on its SOURCE and never asked whether the component should be running
+ * at all.
+ *
+ * A hook cannot be called conditionally, so the only way to not pay for one is
+ * to not mount the thing that calls it. That is why this file has two
+ * components now.
+ */
+function TickerHost() {
   const navigate = useNavigate();
   const location = useLocation();
   /* Dan 2026-08-28: "add a toggle in the table settings, and in the Club
@@ -119,12 +150,18 @@ export function TournamentStartingTicker() {
      SETTINGS_CHANGED bus), so flipping the toggle anywhere kills or revives
      this bar live, no reload. Hook called unconditionally, above every
      early return - hook order must stay stable. */
-  const { settings: tickerSettings } = useTableSettings();
   const [managedTicker, setManagedTicker] =
     useState<ManagedTickerSettings>(DEFAULT_TICKER_SETTINGS);
   const [tickerScopeRevision, setTickerScopeRevision] = useState(0);
   const [viewerRevision, setViewerRevision] = useState(0);
   const scopeEpochRef = useRef(0);
+  /**
+   * The club whose rail this is - the one whose colours and source switches
+   * are painting the strip. An announcement about any OTHER club is named.
+   */
+  const railClubIdRef = useRef<string | null>(null);
+  /** (reason, scope) pairs already reported this mount. See warnOnce below. */
+  const warnedScopesRef = useRef<Set<string>>(new Set());
 
   /* The live ticker belongs on active tables and inside a club's live lobby.
      The club route matters: its desktop reference reserves this exact strip
@@ -160,6 +197,24 @@ export function TournamentStartingTicker() {
     let pending = false;
     const epoch = scopeEpochRef.current;
 
+    /* OBSERVABLE ONCE, NOT ONCE EVERY THIRTY SECONDS. This effect re-polls on
+       a 30s tick, so anything it reports on a scope it cannot resolve repeats
+       for as long as the player sits there - which is precisely how the rail's
+       last reporting bug turned one wrong route into 243 database rows. Each
+       distinct (scope, reason) speaks once per mount. console.warn is the
+       right level and the right channel: HorseBugReporter patches
+       console.error only, so a warning can never be persisted as a bug. */
+    const warnOnce = (scope: string, reason: string, segment: string) => {
+      const key = `${reason}:${scope}`;
+      if (warnedScopesRef.current.has(key)) return;
+      warnedScopesRef.current.add(key);
+      const what =
+        reason === 'unresolvedSegment'
+          ? `Route segment "${segment}" is not an id, so the ticker is using platform defaults.`
+          : `No readable row for "${segment}", so the ticker is using platform defaults.`;
+      reportWarning(what, 'TournamentStartingTicker.unscopedTicker', { scope, reason });
+    };
+
     const loadManaged = async () => {
       if (cancelled || document.hidden || epoch !== scopeEpochRef.current) return;
       if (inFlight) {
@@ -174,24 +229,63 @@ export function TournamentStartingTicker() {
         const clubMatch = location.pathname.match(/^\/clubs\/([^/]+)/);
         const tableMatch = location.pathname.match(/^\/table\/([^/]+)/);
         if (clubMatch) {
-          clubUuid = await resolveClubUUID(clubMatch[1]);
-          const { data, error } = await supabase
-            .from('clubs')
-            .select('union_id')
-            .eq('id', clubUuid)
-            .maybeSingle();
-          if (error) throw error;
-          unionUuid = data?.union_id || null;
+          /* A ROUTE SEGMENT IS NOT AN ID UNTIL SOMETHING SAYS IT IS.
+             resolveClubUUID's documented contract is that it returns its INPUT
+             when it cannot resolve one ("Fallback: return as-is (will fail
+             downstream, but that's the existing behavior)"), so a slug nobody
+             owns arrives here as a slug. Feeding that to .eq('id', ...) is the
+             same 22P02 the table branch below used to raise, from the branch
+             that looks guarded. Check the value that is about to be used, not
+             the function that produced it. */
+          const resolved = await resolveClubUUID(clubMatch[1]);
+          if (isUUID(resolved)) {
+            clubUuid = resolved;
+            const { data, error } = await supabase
+              .from('clubs')
+              .select('union_id')
+              .eq('id', clubUuid)
+              .maybeSingle();
+            if (error) throw error;
+            if (!data) warnOnce(`club:${clubUuid}`, 'noSuchClub', clubMatch[1]);
+            unionUuid = data?.union_id || null;
+          } else {
+            warnOnce(`club:${clubMatch[1]}`, 'unresolvedSegment', clubMatch[1]);
+          }
         } else if (tableMatch) {
-          const { data, error } = await supabase
-            .from('tables')
-            .select('club_id,union_id')
-            .eq('id', tableMatch[1])
-            .maybeSingle();
-          if (error) throw error;
-          clubUuid = data?.club_id || null;
-          unionUuid = data?.union_id || null;
+          /* THE ASYMMETRY THAT COST 243 ROWS (fixed 2026-09-12). This branch
+             put the raw path segment straight into a uuid column, so every
+             /table/<not-a-uuid> raised Postgres 22P02, the catch below called
+             reportError, HorseBugReporter's console.error hook filed it as a
+             tournament_bug (the CONTEXT LABEL contains "Tournament"), and the
+             production E2E route specs re-ran it on every deploy for ten days.
+             A segment that cannot be a uuid is not a table: fall to defaults
+             without the round trip and without filing anything. Fail at the
+             boundary once, not once per poll in Postgres. */
+          if (isUUID(tableMatch[1])) {
+            const { data, error } = await supabase
+              .from('tables')
+              .select('club_id,union_id')
+              .eq('id', tableMatch[1])
+              .maybeSingle();
+            if (error) throw error;
+            /* .maybeSingle() answers {data: null, error: null} for a well-formed
+               uuid with no row a viewer may read - no row, no error, no report,
+               and the rail silently served platform defaults instead of the
+               club's own settings. That is a DIFFERENT defect from the 22P02
+               flood and it was found beside it; it is a warning rather than an
+               error because RLS makes it reachable without anything being
+               broken. warnOnce keeps it from becoming the next flood. */
+            if (!data) warnOnce(`table:${tableMatch[1]}`, 'noSuchTable', tableMatch[1]);
+            clubUuid = data?.club_id || null;
+            unionUuid = data?.union_id || null;
+          } else {
+            warnOnce(`table:${tableMatch[1]}`, 'unresolvedSegment', tableMatch[1]);
+          }
         }
+        /* Whatever the route resolved to is the club this rail belongs to.
+           Recorded before the settings call so the feed can tell an
+           announcement about HERE from one about somewhere else. */
+        railClubIdRef.current = clubUuid;
         const next = await tickerManagementService.get(unionUuid ? null : clubUuid, unionUuid);
         if (!cancelled && epoch === scopeEpochRef.current) setManagedTicker(next);
       } catch (error) {
@@ -230,6 +324,11 @@ export function TournamentStartingTicker() {
   const itemsRef = useRef(items);
 
   const headerBottom = useTopChromeOffset(location.pathname);
+  /* The two states in which this bar must say nothing: a player who asked to be
+     stopped, and a house that is closed. See useRailSilence - both were
+     invisible to this component until 2026-09-13, and the first one needed a
+     database policy before it could even be asked honestly. */
+  const silence = useRailSilence();
   const tickerRef = useRef<HTMLDivElement | null>(null);
 
   /* ── WHOSE CLUBS, AND FOR HOW LONG ────────────────────────────────────────
@@ -282,7 +381,7 @@ export function TournamentStartingTicker() {
       return cached;
     }
     if (!uid) {
-      scopeRef.current = { clubIds: [], fetchedAt: Date.now(), userId: null };
+      scopeRef.current = { clubIds: [], clubNames: {}, fetchedAt: Date.now(), userId: null };
       return scopeRef.current;
     }
     try {
@@ -296,7 +395,33 @@ export function TournamentStartingTicker() {
         return null;
       }
       const ids = (data || []).map((r: { club_id: string }) => r.club_id).filter(Boolean);
-      scopeRef.current = { clubIds: ids, fetchedAt: Date.now(), userId: uid };
+
+      /* The names, once per scope rather than once per poll. The feed covers
+         every club this player belongs to, so an announcement can be about a
+         club other than the one whose rail is being painted - and without a
+         name the player cannot tell. A failed read is not fatal: the line
+         simply does not say where, which is what it did before. */
+      let clubNames: Record<string, string> = {};
+      if (ids.length > 0) {
+        const { data: named, error: nameError } = await supabase
+          .from('clubs')
+          .select('id,name')
+          .in('id', ids);
+        if (nameError) {
+          reportError(nameError, 'TournamentStartingTicker.loadScopeNames');
+        } else {
+          clubNames = Object.fromEntries(
+            (named || [])
+              .filter((row: { id?: string; name?: string }) => row?.id && row?.name)
+              .map((row: { id: string; name: string }) => [row.id, row.name])
+          );
+        }
+        if (epoch !== scopeEpochRef.current || (readLocalSession()?.userId || null) !== uid) {
+          return null;
+        }
+      }
+
+      scopeRef.current = { clubIds: ids, clubNames, fetchedAt: Date.now(), userId: uid };
       return scopeRef.current;
     } catch (e) {
       reportError(e, 'TournamentStartingTicker.loadScope');
@@ -310,6 +435,9 @@ export function TournamentStartingTicker() {
 
   // ── Poll for everything the enabled sources need ──
   useEffect(() => {
+    /* A player the rail must not speak to does not need their browser fetching
+       what it would have said. Silence stops the work, not only the paint. */
+    if (silence.silent) return undefined;
     let cancelled = false;
     let inFlight = false;
     let pending = false;
@@ -332,7 +460,7 @@ export function TournamentStartingTicker() {
           return;
         }
         const nowIso = new Date().toISOString();
-        const horizonIso = new Date(Date.now() + LEAD_MS).toISOString();
+        const horizonIso = new Date(Date.now() + MAX_LEAD_MS).toISOString();
 
         /* DB LOAD PASS 2026-08-24: the player's own registrations used to be
            fetched AFTER the upcoming-events query, filtered by the ids it
@@ -468,17 +596,29 @@ export function TournamentStartingTicker() {
           failedKinds.add('starting_soon');
         } else {
           for (const t of (upcomingRes.data || []) as Record<string, unknown>[]) {
+            const eventClubId = (t.club_id as string) || null;
             const upcoming: UpcomingTournament = {
               id: String(t.id),
               name: String(t.name || 'Tournament'),
               startsAt: new Date(String(t.start_time)).getTime(),
-              clubId: (t.club_id as string) || null,
+              clubId: eventClubId,
               buyIn: Number(t.buy_in_amount) || 0,
               buyInFee: Number(t.buy_in_fee) || 0,
               registered: Number(t.current_players) || 0,
               isRegistered: myRegs.has(String(t.id)),
+              /* Named only when it is somewhere else. Naming the club a player
+                 is already standing in would be noise on every line. */
+              foreignClubName:
+                eventClubId && railClubIdRef.current && eventClubId !== railClubIdRef.current
+                  ? scope.clubNames[eventClubId] || null
+                  : null,
             };
             if (!Number.isFinite(upcoming.startsAt)) continue;
+            /* The query horizon is the LONGEST rung on the ladder so one read
+               serves every stake; each event is then held to its own last
+               call, so a 2-chip turbo is still a five-minute event. */
+            if (!isInsideLastCall(upcoming.startsAt, upcoming.buyIn + upcoming.buyInFee, current))
+              continue;
             next.push(startingSoonItem(upcoming));
           }
         }
@@ -621,6 +761,7 @@ export function TournamentStartingTicker() {
   }, [
     loadScope,
     viewerRevision,
+    silence.silent,
     sources.starting_soon,
     sources.overlays,
     sources.registration_closing,
@@ -747,11 +888,7 @@ export function TournamentStartingTicker() {
      One boolean, computed above every early return, because two things need
      the same answer: the render, and the effect that publishes this strip's
      height for the table tab bar to start under. */
-  const barVisible =
-    lane.length > 0 &&
-    onTickerRoute &&
-    tickerSettings.showTicker !== false &&
-    managedTicker.enabled;
+  const barVisible = lane.length > 0 && onTickerRoute && managedTicker.enabled && !silence.silent;
 
   /* The strip retracts rather than vanishing. `leaving` keeps it mounted for
      one animation, and nothing can be clicked while it plays. */
@@ -849,3 +986,38 @@ export function TournamentStartingTicker() {
 }
 
 export default TournamentStartingTicker;
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE GATE - the only part of this that runs on every route
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Two cheap questions, both answered from memory: is this a route the bar can
+ * appear on, and has the player switched it off? Neither touches the network.
+ *
+ * Everything else - the membership scope, the feed poll, the managed settings,
+ * the responsible-gaming read, the maintenance-break state, the one-second tick
+ * and the chrome measurement - lives in the host above and is not mounted until
+ * both answers are yes.
+ *
+ * Dan 2026-08-28: "add a toggle in the table settings, and in the Club Arena
+ * settings, to turn the ticker on or off." useTableSettings is the shared store
+ * both surfaces write (localStorage + SETTINGS_CHANGED bus), so flipping the
+ * toggle anywhere unmounts or remounts the whole host live, with no reload -
+ * and it stops the polling now, which it never used to.
+ */
+export function TournamentStartingTicker() {
+  const location = useLocation();
+  const { settings: tickerSettings } = useTableSettings();
+
+  /* The live ticker belongs on active tables and inside a club's live lobby.
+     The club route matters: its desktop reference reserves this exact strip
+     below the global header, and suppressing it there left no ticker band at
+     all. Other Club Arena pages remain quiet. */
+  const atLiveTable = location.pathname.startsWith('/table');
+  const atClubLobby = /^\/clubs\/[^/]+(?:\/lobby)?\/?$/.test(location.pathname);
+  if (!(atLiveTable || atClubLobby)) return null;
+  if (tickerSettings.showTicker === false) return null;
+
+  return <TickerHost />;
+}

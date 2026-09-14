@@ -1,0 +1,11 @@
+# All-in classification with an already matched wager
+
+The observation qualifier used the actor's remaining call price to decide whether an all-in opened a bet or raised. That is wrong when the big blind exercises its option after callers match the blind: the actor owes zero, but a street wager already exists. The qualifier now checks the existing current bet after first preserving the short/all-in call classification. This changes observation labels, not controller legality, sizing, execution or monetary settlement.
+
+Nine actual-controller cash cases reproduced bet instead of raise in the old source. Regression coverage now includes all nine supported variants in cash and tournament contexts. Compilation and 136 focused tests passed (84 qualifier, 18 scoped model, 34 source reader). Existing faced-bet calls and unopened bomb-pot bets remain checked. The first expanded native fixture accidentally used the physical deck capacity as a launch seat limit; that failure was retained, and the final fixture uses the actual cash seat law and tournament cap.
+
+The independent native comparison covers 249 accepted-action cases across two seats, three seats, each mode's supported seat cap, every dealer position, all nine variants and both cash/tournament contexts. The actual controller raised the current wager from 2 to 4 in every case. Old classification was bet; corrected classification was raise. Source scope, original ordinals, faced-bet flag and JSON retry identity remain unchanged. These fixtures end after the accepted option shove; they are not full settlement or production observation proof.
+
+This is an observation-accuracy correction inside the still-incomplete Phase 14 pipeline. No new adaptive action is enabled. Durable storage, the isolated live reader, counterfactual proposals, independent holdout/shadow gates, activation/rollback and exact release/natural evidence remain required.
+
+Integrated source `2dc56128172c5a3e3b978c9af202e49886e43173`, including the corrected snapshot migration packaging, passed compilation and all 11,274 server tests with 145 existing skips (767 passed files, one skipped file; 68.97 seconds). Both the qualifier source and compiled output match the 249-case native proof. Protected publication and live evidence remain open.

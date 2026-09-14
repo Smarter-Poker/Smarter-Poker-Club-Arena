@@ -1,0 +1,86 @@
+{
+  "captured_at": "2026-09-11T05:50:39.326Z",
+  "outcomes": [
+    {
+      "name": "legacy-only schema has no captured source prerequisites",
+      "pass": true
+    },
+    {
+      "evidence": "same_club_mixed",
+      "result": {
+        "success": true,
+        "total_payout": 15,
+        "periods_claimed": 1
+      },
+      "money": {
+        "treasury": "85.00",
+        "agent": "25.00",
+        "player": "15.00",
+        "receipts": 1,
+        "linked_receipts": 1,
+        "legs": 1,
+        "wallet_rows": 1
+      },
+      "open_period_unchanged": true
+    },
+    {
+      "name": "UI club-scoped claim pays mature period and leaves same-club open period accruing",
+      "pass": true
+    },
+    {
+      "name": "direct low-level close refuses open period before any mutation",
+      "pass": true
+    },
+    {
+      "name": "captured original positive open close rolls back at status fence",
+      "pass": true
+    },
+    {
+      "name": "captured original zero open close rolls back at status fence",
+      "pass": true
+    },
+    {
+      "name": "already-paid history is unchanged by claim and replay",
+      "pass": true
+    },
+    {
+      "name": "UTC maturity and cold scan remain correct after UTC rollover across session timezones",
+      "pass": true
+    },
+    {
+      "name": "final journal failure rolls back the unchanged legacy funding path",
+      "pass": true
+    },
+    {
+      "name": "captured original existing-receipt branch cannot finalize an open period",
+      "pass": true
+    },
+    {
+      "name": "expired historical period remains unchanged on low-level replay",
+      "pass": true
+    }
+  ],
+  "authority": [
+    {
+      "signature": "fn_ca_legacy_period_maturity()",
+      "prosrc_md5": "8ae80ac89843cc1f19f8dfdf03812a0b",
+      "prosecdef": false,
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}"
+    },
+    {
+      "signature": "fn_claim_rakeback(uuid)",
+      "prosrc_md5": "64806f11b46e776083477d4c7dfad971",
+      "prosecdef": true,
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}"
+    },
+    {
+      "signature": "fn_close_settlement_period(uuid)",
+      "prosrc_md5": "075d86f8bdf8050531fc0732dda05a01",
+      "prosecdef": true,
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    }
+  ]
+}

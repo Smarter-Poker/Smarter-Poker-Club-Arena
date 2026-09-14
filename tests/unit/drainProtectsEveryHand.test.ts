@@ -70,7 +70,7 @@ describe('the engine drains itself before stopping', () => {
 });
 
 describe('the deploy gate waits on hands, never on humanity', () => {
-  const wf = () => read('.github/workflows/auto-deploy-hetzner.yml');
+  const transaction = () => read('server/scripts/engine-release-transaction.sh');
 
   it('waits on a declared break, and never on a human count', () => {
     /**
@@ -89,10 +89,10 @@ describe('the deploy gate waits on hands, never on humanity', () => {
      * What this test still protects is the invariant underneath both fixes:
      * the deploy must never decide on WHO is seated.
      */
-    const src = wf();
+    const src = transaction();
     const gate = src.slice(
-      src.indexOf('Wait for the maintenance break'),
-      src.indexOf('Cut over to the new image')
+      src.indexOf('maintenance_certificate()'),
+      src.indexOf('break_proof_seconds()')
     );
     expect(gate).toMatch(/readyForRestart/);
     expect(gate).not.toMatch(/d\.get\("humansSeatedTotal"\)/);

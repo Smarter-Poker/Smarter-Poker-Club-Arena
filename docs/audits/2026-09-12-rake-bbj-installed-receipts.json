@@ -1,0 +1,67 @@
+{
+  "source_merge": "cb8ea26dddfb60cc7f89a1775216b9bb04d5a403",
+  "installed": true,
+  "product_certificate": false,
+  "production_business_function_calls": 0,
+  "production_business_data_writes": 0,
+  "world_hub_writes": 0,
+  "operations": [
+    {
+      "kind": "rake",
+      "function": {
+        "observed_at": "2026-09-12 07:03:25.702795+00",
+        "signature": "fn_agent_downline_rake(uuid,uuid,timestamp with time zone,timestamp with time zone,text,integer)",
+        "function_xmin": "407730806",
+        "owner": "postgres",
+        "prosecdef": true,
+        "provolatile": "s",
+        "proconfig": ["search_path=public"],
+        "raw_acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+        "definition_md5": "21fc983f3a464397bca00b053c4e6ec9",
+        "definition_sha256": "d69f3a111987f2a28389efc069916a31621a96ca91fd634a6adca42187f26c87"
+      },
+      "migration": {
+        "name": "agent_downline_rake_is_scoped_to_overseer_clubs",
+        "version": "20260912070307",
+        "migration_xmin": "407730726"
+      },
+      "statement_sha256": "be0750fd711ffa377090bf711b0d94718989d1a3a3b73094b3503ae703b9972c",
+      "statement_bytes": 5159,
+      "source_file": "20260912070307_agent_downline_rake_is_scoped_to_overseer_clubs.sql",
+      "recorded_statement_matches_source": true,
+      "catalog_and_history_xmin_equal": false
+    },
+    {
+      "kind": "bbj",
+      "function": {
+        "observed_at": "2026-09-12 07:04:11.710174+00",
+        "signature": "fn_bbj_move_between_banks(uuid,text,text,numeric,text,text)",
+        "function_xmin": "407744904",
+        "owner": "postgres",
+        "prosecdef": true,
+        "provolatile": "v",
+        "proconfig": ["search_path=public"],
+        "raw_acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "definition_md5": "65c1a06d2c42a348eadbcc259918a5a9",
+        "definition_sha256": "124fea653182792f0c5e4c097b373e419d0ad8c45023343d24d7782d6ec6d949"
+      },
+      "migration": {
+        "name": "bbj_bank_move_replay_matches_payload",
+        "version": "20260912070357",
+        "migration_xmin": "407744892"
+      },
+      "statement_sha256": "c70c4ee46dab55852206cfa31cc3adcfe721cd2746a79c436cc555fb66ddb6d4",
+      "statement_bytes": 9672,
+      "source_file": "20260912070357_bbj_bank_move_replay_matches_payload.sql",
+      "recorded_statement_matches_source": true,
+      "catalog_and_history_xmin_equal": false
+    }
+  ],
+  "transaction_note": "The function/catalog and migration-history xmin values differ. The sanctioned migration runner succeeded and exact statements/postimages were independently read back; no claim that the history row and final catalog tuple share one database transaction is made.",
+  "recorded_source_native_verification": {
+    "rake_checks_passed": 37,
+    "bbj_cases_passed": 19,
+    "both_clusters_stopped_and_removed": true,
+    "actual_auth_or_product_certificate": false
+  }
+}

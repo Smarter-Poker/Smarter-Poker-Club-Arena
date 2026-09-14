@@ -1,14 +1,23 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const SQL = readFileSync(
-  resolve(
-    process.cwd(),
-    'supabase/migrations/20260909222020_tournament_reseating_uses_one_database_chosen_legal_chair.sql'
-  ),
-  'utf8'
+const migrationsDirectory = resolve(process.cwd(), 'supabase/migrations');
+const contractionFiles = readdirSync(migrationsDirectory).filter(
+  (file) =>
+    file.endsWith('_stage_b_current_postimage_contraction.sql') ||
+    file.endsWith('_stage_b_current_postimage_contraction.sql.pending')
 );
+if (contractionFiles.length !== 1) throw new Error('Stage-B contraction migration is ambiguous');
+const SQL = readFileSync(resolve(migrationsDirectory, contractionFiles[0]), 'utf8');
+const reseatingStart = SQL.indexOf('-- FORWARD-COMPOSED BOUNDARY: DATABASE-CHOSEN RESEAT');
+const reseatingEnd = SQL.indexOf(
+  '-- FORWARD-COMPOSED BOUNDARY: ATOMIC SCHEDULER CAPTURE AND DISABLE',
+  reseatingStart
+);
+expect(reseatingStart, 'database-chosen reseat boundary').toBeGreaterThan(-1);
+expect(reseatingEnd, 'next composed boundary').toBeGreaterThan(reseatingStart);
+const reseating = SQL.slice(reseatingStart, reseatingEnd);
 
 function body(name: string, tag: string): string {
   const start = SQL.indexOf(`CREATE OR REPLACE FUNCTION public.${name}`);
@@ -20,12 +29,13 @@ function body(name: string, tag: string): string {
 
 describe('tournament reseating has one database authority', () => {
   it('keeps the complete DDL and proof in one bounded transaction', () => {
-    expect(SQL.trimStart().indexOf('BEGIN;')).toBeGreaterThan(-1);
+    expect(SQL.match(/^BEGIN;$/gm)).toHaveLength(1);
     expect(SQL.trimEnd().endsWith('COMMIT;')).toBe(true);
     expect(SQL).toContain("SET LOCAL lock_timeout = '10s';");
-    expect(SQL).toContain("SET LOCAL statement_timeout = '60s';");
-    expect(SQL).toContain("SET LOCAL transaction_timeout = '90s';");
-    expect(SQL).toContain('DO $prove_database_owned_tournament_reseating$');
+    expect(SQL).toContain("SET LOCAL statement_timeout = '120s';");
+    expect(SQL).toContain("SET LOCAL transaction_timeout = '150s';");
+    expect(reseating).not.toMatch(/^BEGIN;|^COMMIT;$/m);
+    expect(reseating).toContain('DO $prove_database_owned_tournament_reseating$');
   });
 
   it('locks the tournament root and lets the locked database chooser own the chair', () => {
@@ -114,9 +124,9 @@ describe('played Spin and heads-up reseats preserve accepted stack truth', () =>
   });
 
   it('adds no polling, watcher, reconciler, cron, or fallback writer', () => {
-    expect(SQL).not.toMatch(/setInterval|setTimeout|watcher|reconcil|cron\.schedule/i);
-    expect(SQL).not.toContain('UPDATE public.tournament_players');
-    expect(SQL).not.toContain('INSERT INTO public.table_seats');
-    expect(SQL).not.toContain('UPDATE public.table_seats');
+    expect(reseating).not.toMatch(/setInterval|setTimeout|watcher|reconcil|cron\.schedule/i);
+    expect(reseating).not.toContain('UPDATE public.tournament_players');
+    expect(reseating).not.toContain('INSERT INTO public.table_seats');
+    expect(reseating).not.toContain('UPDATE public.table_seats');
   });
 });

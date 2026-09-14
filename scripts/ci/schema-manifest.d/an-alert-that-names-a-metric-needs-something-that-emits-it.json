@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/a-rule-with-no-producer-is-not-an-alarm. Applied to production as migrations 20260911220400 (idx_ca_settlements_updated_at, CONCURRENTLY) and 20260911220500 (fn_monitoring_health_snapshot, v_openclaw_job_staleness rewritten without its quadratic p90). The function is the database half of the producer for thirteen metric names that fifteen alert and recording rules had been referencing since 2026-09-04 with nothing emitting them. Migration 20260911223800 replaces the function with one that also counts jobs logging success while skipping all their work.",
+  "functions": ["fn_monitoring_health_snapshot"]
+}

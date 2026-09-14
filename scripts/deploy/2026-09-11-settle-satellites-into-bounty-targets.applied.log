@@ -1,0 +1,37 @@
+BEGIN
+SET
+SET
+NOTICE:  RULING settled 165abcf0-3401-4a62-8722-003767ccd458 -> 75.00 to 56dd101e-392b-4811-b662-ae64551770cd (club 2a1132b9-5ba2-42e6-9f01-30a7fcffebe3), 20.00 to 6982b905-d55f-4fb8-b0af-8f24158f2a63 (club 2a1132b9-5ba2-42e6-9f01-30a7fcffebe3), rake 5.00 club_treasury:2a1132b9-5ba2-42e6-9f01-30a7fcffebe3
+NOTICE:  RULING settled 372f3fdc-2900-438c-a471-1c369e28086b -> 75.00 to 7f554d21-df8a-4b3a-9eb4-45a081382e72 (club a41434bb-8d0c-400a-8f0d-e8b3d65afed4), 20.00 to 8f4acae4-1768-426a-bf4b-17d8cad7c02f (club a0000000-0000-0000-0000-000000000001), rake 5.00 union:fade0000-0000-0000-0000-000000000001
+NOTICE:  RULING settled 46d7e8bc-02cd-4657-a3a8-2ccd45954867 -> 75.00 to 3a11dd41-59b5-4cf0-93b3-d07a08c5906d (club 2a1132b9-5ba2-42e6-9f01-30a7fcffebe3), 20.00 to 29c910f7-50f6-440a-b841-711b066b0d0a (club 2a1132b9-5ba2-42e6-9f01-30a7fcffebe3), rake 5.00 club_treasury:2a1132b9-5ba2-42e6-9f01-30a7fcffebe3
+NOTICE:  RULING settled 5a600bc0-9a38-422f-a52d-e89219c9b645 -> 75.00 to 6cd9867c-92f2-495a-8e13-d52df8276de5 (club 2a1132b9-5ba2-42e6-9f01-30a7fcffebe3), 20.00 to 15165d49-c7b3-42bc-b2e9-f46195e151ec (club 2a1132b9-5ba2-42e6-9f01-30a7fcffebe3), rake 5.00 club_treasury:2a1132b9-5ba2-42e6-9f01-30a7fcffebe3
+NOTICE:  RULING settled 78d1b024-9cc6-4378-abe7-04347cb73366 -> 75.00 to 00000000-0000-0000-0000-000000000030 (club a41434bb-8d0c-400a-8f0d-e8b3d65afed4), 20.00 to 036f0b55-c601-4d09-982a-5294cf4ea15d (club a41434bb-8d0c-400a-8f0d-e8b3d65afed4), rake 5.00 union:fade0000-0000-0000-0000-000000000001
+NOTICE:  RULING settled 7f9d37d3-acbe-4aa2-a985-861318717ec0 -> 75.00 to 00000000-0000-0000-0000-000000000004 (club a41434bb-8d0c-400a-8f0d-e8b3d65afed4), 20.00 to 3e509e1c-121c-493d-8da3-cd6e44bd6f2c (club a41434bb-8d0c-400a-8f0d-e8b3d65afed4), rake 5.00 union:fade0000-0000-0000-0000-000000000001
+NOTICE:  RULING settled 9ce2e5a7-c23f-4106-a68b-506c29592214 -> 75.00 to ed8ede33-fd24-4eec-a7d7-3af0478af08c (club a41434bb-8d0c-400a-8f0d-e8b3d65afed4), 20.00 to c51f42ef-b963-402f-a5c7-2095dba45ead (club a41434bb-8d0c-400a-8f0d-e8b3d65afed4), rake 5.00 union:fade0000-0000-0000-0000-000000000001
+NOTICE:  RULING settled 9db7f5e3-8f6a-4d09-a31c-1508dc7c764c -> 75.00 to 62d0cfe7-d505-43e3-ba83-aca280237051 (club 2a1132b9-5ba2-42e6-9f01-30a7fcffebe3), 20.00 to e4d609b4-96aa-4159-bc42-988bc762557e (club 2a1132b9-5ba2-42e6-9f01-30a7fcffebe3), rake 5.00 club_treasury:2a1132b9-5ba2-42e6-9f01-30a7fcffebe3
+NOTICE:  RULING settled af821684-7978-4975-b24e-91deb2cc61a7 -> 75.00 to 13133bc4-9139-4066-8b55-8edd31ef2318 (club 2a1132b9-5ba2-42e6-9f01-30a7fcffebe3), 20.00 to e8b32dc2-6c5b-407e-ab46-451422d0a6c5 (club 2a1132b9-5ba2-42e6-9f01-30a7fcffebe3), rake 5.00 club_treasury:2a1132b9-5ba2-42e6-9f01-30a7fcffebe3
+NOTICE:  RULING settled b1bf0a78-9a15-4d05-8242-bfcaefffd8f2 -> 75.00 to 890b3040-18ae-4cdf-a7c8-c2df3336765b (club a0000000-0000-0000-0000-000000000001), 20.00 to 6162b471-d011-41f7-ad89-9a8d856c9ffb (club a0000000-0000-0000-0000-000000000001), rake 5.00 union:fade0000-0000-0000-0000-000000000001
+NOTICE:  RULING settled b997c079-1d36-4f1e-a0d4-9e44bce79f29 -> 75.00 to 3c6742e8-e4d5-4aaf-b9d2-49d4d39a2a4f (club 2a1132b9-5ba2-42e6-9f01-30a7fcffebe3), 20.00 to ab31057c-5141-4f45-bc31-cfcbc29a38e0 (club 2a1132b9-5ba2-42e6-9f01-30a7fcffebe3), rake 5.00 club_treasury:2a1132b9-5ba2-42e6-9f01-30a7fcffebe3
+NOTICE:  RULING settled b9af829c-9d35-4cfb-aaed-26c1d4410ffa -> 75.00 to d4c7cab4-cff5-464e-a611-e43011838872 (club a0000000-0000-0000-0000-000000000001), 20.00 to a2bd256e-014c-4504-97c7-6bc43242fef1 (club a0000000-0000-0000-0000-000000000001), rake 5.00 union:fade0000-0000-0000-0000-000000000001
+NOTICE:  RULING settled cc8e105a-0444-4609-808d-ac7182ca0958 -> 75.00 to 2d6c5e7a-7352-4d1d-aecf-c5237d626e3d (club a41434bb-8d0c-400a-8f0d-e8b3d65afed4), 20.00 to afa6c823-103c-452d-b6c9-929ad0163dd5 (club a0000000-0000-0000-0000-000000000001), rake 5.00 union:fade0000-0000-0000-0000-000000000001
+NOTICE:  RULING settled d279d771-24ad-48ca-a7be-99844cdeefe9 -> 75.00 to bde32aca-5706-4049-b6a0-433c13321435 (club 2a1132b9-5ba2-42e6-9f01-30a7fcffebe3), 20.00 to 29199f64-bb8e-40ce-994b-651a7af38567 (club 2a1132b9-5ba2-42e6-9f01-30a7fcffebe3), rake 5.00 club_treasury:2a1132b9-5ba2-42e6-9f01-30a7fcffebe3
+NOTICE:  RULING settled fd092efd-e064-4f69-9d3a-128b4f9b6b93 -> 75.00 to f9e96cd6-c8b8-4ddc-aea8-a6a81155158a (club 2a1132b9-5ba2-42e6-9f01-30a7fcffebe3), 20.00 to 6258f768-cb01-4edf-9508-a40fedcdd49e (club 2a1132b9-5ba2-42e6-9f01-30a7fcffebe3), rake 5.00 club_treasury:2a1132b9-5ba2-42e6-9f01-30a7fcffebe3
+NOTICE:  RULING seated 56dd101e-392b-4811-b662-ae64551770cd in 8171f9f6-1243-4d51-ac4b-9acabce110dc (registration 3334e2c9-8b55-477a-a2bc-0f7e73f9188e)
+NOTICE:  RULING seated 7f554d21-df8a-4b3a-9eb4-45a081382e72 in e9541c66-1238-438f-bc7e-c01e45a45f81 (registration 85a8d164-063c-4f23-89c7-bbdd6ff719bd)
+NOTICE:  RULING seated 3a11dd41-59b5-4cf0-93b3-d07a08c5906d in 8171f9f6-1243-4d51-ac4b-9acabce110dc (registration fb074f97-6366-45ba-928b-5f6fa63bd6ea)
+NOTICE:  RULING seated 6cd9867c-92f2-495a-8e13-d52df8276de5 in 8171f9f6-1243-4d51-ac4b-9acabce110dc (registration 88aa0044-2dbf-4bb1-bb5f-2b2fb8350175)
+NOTICE:  RULING seated 00000000-0000-0000-0000-000000000030 in e9541c66-1238-438f-bc7e-c01e45a45f81 (registration 304161e6-5df3-4777-ba94-f662f3789d73)
+NOTICE:  RULING seated 00000000-0000-0000-0000-000000000004 in e9541c66-1238-438f-bc7e-c01e45a45f81 (registration 908f89ad-0ec7-42a5-97c5-25814023c43d)
+NOTICE:  RULING seated ed8ede33-fd24-4eec-a7d7-3af0478af08c in e9541c66-1238-438f-bc7e-c01e45a45f81 (registration 6f39f212-3560-4056-85a8-81e40034efaa)
+NOTICE:  RULING seated 62d0cfe7-d505-43e3-ba83-aca280237051 in 8171f9f6-1243-4d51-ac4b-9acabce110dc (registration fef7d227-309e-4cb9-8ee5-b4c89e0be8e3)
+NOTICE:  RULING seated 13133bc4-9139-4066-8b55-8edd31ef2318 in 8171f9f6-1243-4d51-ac4b-9acabce110dc (registration f386d1e8-d31c-4cd6-9671-db064e752138)
+NOTICE:  RULING seated 890b3040-18ae-4cdf-a7c8-c2df3336765b in e9541c66-1238-438f-bc7e-c01e45a45f81 (registration 34b424fb-6fb8-47bf-8b56-251d3b294523)
+NOTICE:  RULING seated 3c6742e8-e4d5-4aaf-b9d2-49d4d39a2a4f in 8171f9f6-1243-4d51-ac4b-9acabce110dc (registration 23ba5a14-1d61-4e95-9427-3b1c1ed4ece8)
+NOTICE:  RULING seated d4c7cab4-cff5-464e-a611-e43011838872 in e9541c66-1238-438f-bc7e-c01e45a45f81 (registration 0f04e708-a15e-4b98-80ea-13c18d51138d)
+NOTICE:  RULING seated 2d6c5e7a-7352-4d1d-aecf-c5237d626e3d in e9541c66-1238-438f-bc7e-c01e45a45f81 (registration 54e6ec3b-7f47-4417-a997-981c05a26416)
+NOTICE:  RULING seated bde32aca-5706-4049-b6a0-433c13321435 in 8171f9f6-1243-4d51-ac4b-9acabce110dc (registration 91df1ab1-8052-40e8-a832-3f0b4cee8cd4)
+NOTICE:  RULING seated f9e96cd6-c8b8-4ddc-aea8-a6a81155158a in 8171f9f6-1243-4d51-ac4b-9acabce110dc (registration d997b6f5-b029-4748-88e3-05ea76f9b974)
+NOTICE:  RULING cancelled unstarted aa7b7b59-7b9b-42d5-b903-00d8a507be02 : {"ok": true, "status": "CANCELLED", "refunds": [], "success": true, "actor_id": "2d1cd6c3-5700-4af9-a271-d4863fdab20d", "settled_at": "2026-09-11T12:11:03.052081+00:00", "fees_reversed": 0, "fully_settled": true, "tournament_id": "aa7b7b59-7b9b-42d5-b903-00d8a507be02", "refunded_count": 0, "ticket_returns": [], "total_refunded": 0, "receipt_version": 2, "refund_line_count": 0, "source_seat_count": 0, "closed_table_count": 1, "released_seat_count": 0, "source_player_count": 0, "ticket_return_count": 0, "total_ticket_returned": 0}
+NOTICE:  RULING done: settled 15, seated 15, cancelled 1, still in play 0
+DO
+COMMIT

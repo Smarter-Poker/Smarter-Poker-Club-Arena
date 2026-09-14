@@ -46,6 +46,10 @@ interface AdRow {
      user agent to a third party chosen by whoever typed it in - the database
      carries the same CHECK, so this field cannot hold anything else. */
   image_url?: string | null;
+  /* The 3:4 picture the full-screen popup shows when the advert is tapped
+     (Dan 2026-09-13). Same-origin, same CHECK. Falls back to the surface
+     creative when empty. */
+  poster_url?: string | null;
   /* Two campaigns sharing a key are variants of one test. The weighted draw
      already splits traffic between them; this is what lets a report say so. */
   experiment_key?: string | null;
@@ -200,6 +204,7 @@ const EMPTY_FORM = {
   cta_label: '',
   weight: '100',
   image_url: '',
+  poster_url: '',
   experiment_key: '',
   slot: 'lobby_strip' as string,
   audience: 'all' as string,
@@ -353,6 +358,7 @@ export default function HouseAdsPage() {
           {
             id: editingId,
             image_url: form.image_url.trim() || null,
+            poster_url: form.poster_url.trim() || null,
             experiment_key: form.experiment_key.trim() || null,
             category: form.category,
             headline: form.headline,
@@ -379,6 +385,7 @@ export default function HouseAdsPage() {
             cta_label: form.cta_label,
             weight: form.weight,
             image_url: form.image_url.trim() || null,
+            poster_url: form.poster_url.trim() || null,
             experiment_key: form.experiment_key.trim() || null,
             slot: form.slot,
             audience: form.audience,
@@ -607,6 +614,7 @@ export default function HouseAdsPage() {
       cta_label: ad.cta_label || '',
       weight: String(ad.weight ?? 100),
       image_url: ad.image_url || '',
+      poster_url: ad.poster_url || '',
       experiment_key: ad.experiment_key || '',
       slot: 'lobby_strip',
       audience: 'all',
@@ -872,6 +880,22 @@ export default function HouseAdsPage() {
                 <div className="admin-text-secondary" style={{ fontSize: 11, marginTop: 4 }}>
                   A Path On This Site Only. An Outside Address Sends Player Device Details To
                   Somebody Else.
+                </div>
+              </div>
+              <div>
+                <label className="admin-label" htmlFor="ad-poster">
+                  Poster Path (Optional)
+                </label>
+                <input
+                  id="ad-poster"
+                  className="admin-input"
+                  placeholder="/hub/club-arena/assets/ads/spins-jackpot-poster-v1.webp"
+                  value={form.poster_url}
+                  onChange={(e) => setForm((f) => ({ ...f, poster_url: e.target.value }))}
+                />
+                <div className="admin-text-secondary" style={{ fontSize: 11, marginTop: 4 }}>
+                  The 3 By 4 Picture Shown Full Screen When The Advert Is Tapped (1080 By 1440).
+                  Same Rule: A Path On This Site Only. Empty Means The Surface Picture Is Used.
                 </div>
               </div>
               <div>

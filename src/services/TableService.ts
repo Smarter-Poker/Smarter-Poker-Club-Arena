@@ -526,6 +526,7 @@ class TableService {
   }
 
   async getSeatedPlayers(tableId: string) {
+    if (!isUUID(tableId)) return [];
     /* is_horse / horse_profile are NOT in this profiles read (Dan 2026-09-03).
        `authenticated` has no column grant on either - deliberately, per the
        platform lockdown and the "a horse is named only to those entitled" law

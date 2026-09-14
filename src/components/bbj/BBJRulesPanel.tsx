@@ -22,6 +22,13 @@ import {
   getBBJPayoutPercentForBB,
   getBBJQualifyingInfo,
 } from '../../config/RakeConfig';
+import {
+  getBBJMiniQualifyingInfo,
+  BBJ_MINI_SPLIT,
+  BBJ_MINI_SPLIT_PERCENT,
+} from '../../config/bbjMini';
+import { BBJ_MAIN_SPLIT } from '../../config/RakeConfig';
+import type { BbjMiniSnapshot } from '../../lib/bbjMiniFeed';
 import './BBJRulesPanel.css';
 
 /** Stakes tiers as the SERVER pays them (server/src/config/RakeConfig.ts). */
@@ -40,6 +47,9 @@ const VARIANT_ROWS: Array<{ key: string; games: string }> = [
   { key: 'plo4', games: 'PLO4 / FLO4' },
   { key: 'plo8', games: 'PLO8 (Hi-Lo)' },
   { key: 'plo5', games: 'PLO5 / FLO5' },
+  /* Live variants that this table omitted entirely until 2026-09-11: a
+     Pineapple or FLO8 player found no row describing their own game. */
+  { key: 'pineapple', games: 'Pineapple' },
   { key: 'plo6', games: 'PLO6' },
   { key: 'short_deck', games: 'Short Deck' },
 ];
@@ -63,15 +73,25 @@ const VARIANT_ROWS: Array<{ key: string; games: string }> = [
 export interface BBJRulesPanelProps {
   /** Live main pool, so the payout table can show real chip figures. */
   poolAmount?: number;
+  /**
+   * The mini jackpot (lib/bbjMiniFeed). When given, the panel gains a third
+   * tab, "Mini Jackpot": its bar per game and its flat amount per stakes.
+   * Dan 2026-09-09: the mini is seen and discoverable wherever the main is.
+   */
+  mini?: BbjMiniSnapshot | null;
 }
 
 function chips(n: number): string {
   return Math.round(n).toLocaleString('en-US');
 }
 
-export function BBJRulesPanel({ poolAmount = 0 }: BBJRulesPanelProps) {
-  const [tab, setTab] = useState<'qualifying' | 'payout'>('qualifying');
+type RulesTab = 'qualifying' | 'payout' | 'mini';
+
+export function BBJRulesPanel({ poolAmount = 0, mini = null }: BBJRulesPanelProps) {
+  const [tab, setTab] = useState<RulesTab>('qualifying');
   const active = tab;
+  const tabs: RulesTab[] = mini ? ['qualifying', 'payout', 'mini'] : ['qualifying', 'payout'];
+  const miniTiers = mini ? [...mini.tiers].sort((a, b) => a.maxBB - b.maxBB) : [];
 
   return (
     <div className="bbj-rules">
@@ -83,12 +103,19 @@ export function BBJRulesPanel({ poolAmount = 0 }: BBJRulesPanelProps) {
           onKeyDown={(e) => {
             // Half a tablist is worse than none: a reader announced "tab 1 of 2"
             // and the arrow keys did nothing.
-            if (e.key === 'ArrowLeft' || e.key === 'Home') {
+            const i = tabs.indexOf(tab);
+            if (e.key === 'ArrowLeft') {
               e.preventDefault();
-              setTab('qualifying');
-            } else if (e.key === 'ArrowRight' || e.key === 'End') {
+              setTab(tabs[(i - 1 + tabs.length) % tabs.length]);
+            } else if (e.key === 'ArrowRight') {
               e.preventDefault();
-              setTab('payout');
+              setTab(tabs[(i + 1) % tabs.length]);
+            } else if (e.key === 'Home') {
+              e.preventDefault();
+              setTab(tabs[0]);
+            } else if (e.key === 'End') {
+              e.preventDefault();
+              setTab(tabs[tabs.length - 1]);
             }
           }}
         >
@@ -114,8 +141,120 @@ export function BBJRulesPanel({ poolAmount = 0 }: BBJRulesPanelProps) {
           >
             What It Pays
           </button>
+          {mini && (
+            <button
+              role="tab"
+              id="bbj-rules-tab-mini"
+              aria-selected={tab === 'mini'}
+              aria-controls="bbj-rules-panel"
+              tabIndex={tab === 'mini' ? 0 : -1}
+              className={`bbj-rules__tab${tab === 'mini' ? ' is-active' : ''}`}
+              onClick={() => setTab('mini')}
+            >
+              Mini Jackpot
+            </button>
+          )}
         </div>
       }
+
+      {active === 'mini' && mini && (
+        <div
+          className="bbj-rules__body"
+          id="bbj-rules-panel"
+          role="tabpanel"
+          aria-labelledby="bbj-rules-tab-mini"
+          tabIndex={0}
+        >
+          <p className="bbj-rules__note">
+            {/* THE BAR IS PER GAME SINCE 2026-09-12, so this cannot say "any
+                quads in Omaha" any more: PLO5/FLO5 is Quad Tens or better and
+                Pineapple is Quad Deuces. A blanket sentence here would be a
+                money rule misstated to the player on the page whose whole job
+                is to state it. The per-game bars are in the table underneath,
+                which reads them from the variant. */}
+            The Mini Jackpot Pays A Flat Amount, By The Stakes You Were Playing, For The Bad Beats
+            The Main Rule Turns Away. The Losing Hand Bar Depends On The Game And Is Listed Below:
+            Aces Full Or Better In Hold’em, Quad Tens Or Better In PLO5 And FLO5, Quad Deuces In
+            Pineapple, And Any Quads In The Other Omaha Games. The Winner Must Still Hold Quads Or
+            Better; The Same Pot, Player And Board Conditions Apply. It Is Paid From The Backup Pool
+            And Pauses While That Reserve Is At Its Floor. One Hand Pays One Jackpot, Never Both.
+          </p>
+
+          <table className="bbj-rules__table">
+            <thead>
+              <tr>
+                <th>Game</th>
+                <th>Losing Hand Must Be</th>
+              </tr>
+            </thead>
+            <tbody>
+              {VARIANT_ROWS.map((row) => {
+                const info = getBBJMiniQualifyingInfo(row.key);
+                return (
+                  <tr key={row.key} className={info.eligible ? '' : 'is-ineligible'}>
+                    <td>{row.games}</td>
+                    <td>{info.eligible ? info.shortLabel : 'Mini Not Available'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          {!mini.enabled ? (
+            <p className="bbj-rules__note">The Mini Jackpot Is Switched Off For This Jackpot.</p>
+          ) : (
+            <table className="bbj-rules__table">
+              <thead>
+                <tr>
+                  <th>Stakes</th>
+                  <th>Mini Pays</th>
+                  <th>Right Now</th>
+                </tr>
+              </thead>
+              <tbody>
+                {miniTiers.map((t) => (
+                  <tr key={t.tierId} className={t.enabled ? '' : 'is-ineligible'}>
+                    <td>
+                      <span className="bbj-rules__tier">{t.label}</span>
+                      <span className="bbj-rules__blinds">{t.blindRange}</span>
+                    </td>
+                    <td className="bbj-rules__money">
+                      {chips(t.amount)}
+                      <span className="bbj-rules__money-sub">
+                        Bad Beat {chips(t.amount * BBJ_MINI_SPLIT.loser)}
+                      </span>
+                    </td>
+                    <td className="bbj-rules__pct">
+                      {t.enabled ? (t.payable ? 'Pays' : 'Paused') : 'Off'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          <ul className="bbj-rules__list">
+            {/* The percentages come from the same constant as the figure in
+                the table above (`chips(t.amount * BBJ_MINI_SPLIT.loser)`).
+                They were typed here as "50% ... 25% ... 25%", so retuning the
+                split would have left this line describing the old one while
+                the money beside it moved. */}
+            <li>
+              Split Like The Main Jackpot: {BBJ_MINI_SPLIT_PERCENT.loser} To The Bad-Beat Hand,{' '}
+              {BBJ_MINI_SPLIT_PERCENT.winner} To The Hand That Won, {BBJ_MINI_SPLIT_PERCENT.table}{' '}
+              Between Everyone Else Dealt In
+            </li>
+            <li>
+              Reserve Floor: {chips(mini.reserveFloor)} Chips Stay In The Backup Pool; A Mini That
+              Would Take It Below That Is Not Paid
+            </li>
+            <li>
+              Last 30 Days: {mini.hits30d.toLocaleString('en-US')} Mini{' '}
+              {mini.hits30d === 1 ? 'Jackpot' : 'Jackpots'}, {chips(mini.paid30d)} Chips Paid
+            </li>
+          </ul>
+        </div>
+      )}
 
       {active === 'qualifying' && (
         <div
@@ -150,7 +289,15 @@ export function BBJRulesPanel({ poolAmount = 0 }: BBJRulesPanelProps) {
           <ul className="bbj-rules__list">
             <li>Drop Collected On Every Flop With {BBJ_RULES.minPlayersDealt}+ Players Dealt In</li>
             <li>Minimum Pot To Win The Jackpot: {BBJ_RULES.minPotBB} Big Blinds</li>
-            <li>Minimum Players Dealt In: {BBJ_RULES.minPlayersDealt}</li>
+            <li>
+              Minimum Players Dealt In: {BBJ_RULES.minPlayersDealt}
+              {/* The mini has its own floor since phase 3. It ships equal to the
+                  main's, so this says nothing extra until somebody sets it -
+                  and says the right thing the moment they do, rather than
+                  printing the main's number for both jackpots. */}
+              {BBJ_RULES.miniMinPlayersDealt !== BBJ_RULES.minPlayersDealt &&
+                ` (Mini: ${BBJ_RULES.miniMinPlayersDealt})`}
+            </li>
             {BBJ_RULES.requireBothHoleCards && (
               <li>
                 Both Hole Cards Must Play (In Omaha Games, Exactly Two) - For Both The Losing And
@@ -200,7 +347,12 @@ export function BBJRulesPanel({ poolAmount = 0 }: BBJRulesPanelProps) {
                     {poolAmount > 0 && (
                       <td className="bbj-rules__money">
                         {chips(total)}
-                        <span className="bbj-rules__money-sub">Bad Beat {chips(total * 0.5)}</span>
+                        {/* The MAIN's split, from the constant rather than a
+                            bare 0.5 - the same reasoning as the mini's row
+                            above it. */}
+                        <span className="bbj-rules__money-sub">
+                          Bad Beat {chips(total * BBJ_MAIN_SPLIT.loser)}
+                        </span>
                       </td>
                     )}
                   </tr>

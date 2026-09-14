@@ -1,0 +1,172 @@
+"""Execute the real smoke shell with a disposable Docker protocol simulator.
+
+This checks copy/ack/shutdown ordering and owned cleanup, never native services.
+"""
+import json
+import importlib.util
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+
+ROOT = Path(__file__).resolve().parents[2]
+spec = importlib.util.spec_from_file_location('smoke_driver', ROOT / 'operations/release/ci/fixture-smoke.py')
+driver = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(driver)
+DOCKER = r'''
+import json, os, sys
+from pathlib import Path
+a = sys.argv[1:]
+p = Path(os.environ['SIM_STATE'])
+s = json.loads(p.read_text())
+s['calls'].append(a)
+fault = os.environ['SIM_FAULT']
+def end(output='', code=0, newline=True):
+    p.write_text(json.dumps(s))
+    sys.stdout.write(output + ('\n' if newline else ''))
+    sys.exit(code)
+if a[:2] == ['image', 'inspect']:
+    if fault == 'image-identity': end('PRIVATE IMAGE ERROR', 7)
+    end('sha256:' + 'b' * 64 if a[3] == '{{.Id}}' else os.environ['SIM_HEAD'])
+if a[:2] == ['container', 'ls']: end('\n'.join(s['containers']))
+if a[:2] == ['container', 'inspect']: end('{}', 0 if a[-1] in s['containers'] else 1)
+if a[:2] == ['network', 'ls']: end('\n'.join(s['networks']))
+if a[:2] == ['network', 'create']:
+    s['networks'].append(a[-1]); end('network-id')
+if a[:2] == ['network', 'inspect']:
+    end('true' if '--format' in a else '{}', 0 if a[-1] in s['networks'] else 1)
+if a[:2] == ['network', 'rm']:
+    s['networks'].remove(a[-1]); end()
+if a[0] == 'run':
+    name = a[a.index('--name') + 1]
+    phase = 'preimage-start' if name.endswith('-preimage') else 'peer' if name.endswith('-peer') else 'services-start'
+    if fault == phase: end('PRIVATE DOCKER ERROR', 7)
+    s['containers'][name] = {'running': '--detach' in a, 'exit': 0}
+    if fault == 'preimage-ready' and name.endswith('-preimage'):
+        s['containers'][name].update(running=False, exit=1)
+    end('container-id')
+if a[0] == 'exec':
+    name = next(n for n in s['containers'] if n in a)
+    if any('readFixtureServicePreimage' in arg for arg in a):
+        assert s['containers'][name]['running'], 'tmpfs already gone'
+        if fault == 'copy': end('partial private bytes', 7)
+        if fault == 'copy-empty': end('', newline=False)
+        if fault == 'copy-oversize': end('x' * (1024 * 1024 + 1))
+        if fault == 'copy-destination': Path(os.environ['SIM_OUTPUT']).write_text('preserve other owner')
+        s['copied'] = True
+        end('{"fixture_metadata": true}')
+    if 'test' in a and fault == 'preimage-ready' and name.endswith('-preimage'): end('', 1)
+    if '--oracle' in a and fault == 'oracle': end('PRIVATE ORACLE ERROR', 7)
+    if 'touch' in a:
+        assert s['copied'] and s['containers'][name]['running']
+        assert Path(os.environ['SIM_OUTPUT']).read_bytes() == b'{"fixture_metadata": true}\n'
+        if fault == 'preimage-ack': end('PRIVATE ACK ERROR', 7)
+        s['containers'][name].update(running=False, exit=7 if os.environ['SIM_FAULT'] == 'shutdown' else 0)
+    end()
+if a[0] == 'wait':
+    s['containers'][a[1]]['running'] = False; end('0')
+if a[0] == 'logs':
+    if fault == 'preimage-ready' and a[1].endswith('-preimage'):
+        end('PRIVATE SERVICE TOKEN\n' + json.dumps(dict(status='failed', stage='fixture-preimage-package', error='AssertionError')))
+    end()
+if a[0] == 'inspect':
+    item = s['containers'][a[-1]]
+    end(str(item['running']).lower() if 'Running' in a[2] else str(item['exit']))
+if a[:2] == ['rm', '--force']:
+    if fault == 'cleanup' and a[-1].endswith('-peer'): end('PRIVATE CLEANUP ERROR', 7)
+    del s['containers'][a[-1]]; end()
+end('unsupported simulated Docker command', 90)
+'''
+
+
+class LifecycleTests(unittest.TestCase):
+    def exercise(self, fault=''):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bindir = root / 'bin'
+            bindir.mkdir()
+            docker = bindir / 'docker'
+            docker.write_text('#!' + sys.executable + '\n' + DOCKER)
+            docker.chmod(0o700)
+            uname = bindir / 'uname'
+            uname.write_text('#!/bin/sh\nif [ "$1" = -s ]; then echo Linux; else echo x86_64; fi\n')
+            uname.chmod(0o700)
+            state = root / 'state.json'
+            state.write_text(json.dumps(dict(containers={}, networks=[], calls=[], copied=False)))
+            head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+            output = root / 'preimage.json'
+            env = {**os.environ, 'PATH': str(bindir) + os.pathsep + os.environ['PATH'],
+                   'SIM_STATE': str(state), 'SIM_HEAD': head, 'SIM_FAULT': fault,
+                   'SIM_OUTPUT': str(output),
+                   'FIXTURE_SMOKE_CONTAINER': 'ca-fixture-smoke-' + 'a' * 32,
+                   'FIXTURE_SERVICE_PREIMAGE_PATH': str(output)}
+            result = subprocess.run(['bash', 'operations/release/fixture/smoke-image.sh',
+                                     'sha256:' + 'b' * 64], cwd=ROOT, env=env,
+                                    capture_output=True, text=True, timeout=15)
+            observed = json.loads(state.read_text())
+            if fault == 'cleanup':
+                self.assertEqual(list(observed['containers']), [env['FIXTURE_SMOKE_CONTAINER'] + '-peer'])
+            else:
+                self.assertEqual(observed['containers'], {}, result.stderr)
+            self.assertEqual(observed['networks'], [], result.stderr)
+            if fault == 'copy-destination': self.assertEqual(output.read_text(), 'preserve other owner')
+            self.assertFalse(any(c[0] == 'cp' for c in observed['calls']))
+            return result, observed
+
+    def test_copy_completes_while_tmpfs_is_live_before_ack_and_shutdown(self):
+        result, state = self.exercise()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = state['calls']
+        copy_index = next(i for i, c in enumerate(calls) if any('readFixtureServicePreimage' in a for a in c))
+        ack_index = next(i for i, c in enumerate(calls) if 'touch' in c)
+        cleanup_index = next(i for i, c in enumerate(calls) if c[:2] == ['rm', '--force'])
+        self.assertLess(copy_index, ack_index)
+        self.assertLess(ack_index, cleanup_index)
+        self.assertIn('cleanup passed (not a product certificate)', result.stdout)
+
+    def test_copy_failure_never_acknowledges_or_claims_success(self):
+        result, state = self.exercise('copy')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any('touch' in c for c in state['calls']))
+        self.assertNotIn('cleanup passed', result.stdout)
+
+    def test_failed_service_shutdown_cannot_be_reported_as_capture_success(self):
+        result, state = self.exercise('shutdown')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue(state['copied'])
+        self.assertNotIn('cleanup passed', result.stdout)
+
+    def test_empty_oversized_or_occupied_destination_never_acknowledges(self):
+        for fault in ['copy-empty', 'copy-oversize', 'copy-destination']:
+            with self.subTest(fault=fault):
+                result, state = self.exercise(fault)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(any('touch' in c for c in state['calls']))
+                self.assertIn(dict(stage='smoke-shell-preimage-copy', category='Error', exit_code=1),
+                              driver.native_failures(result.stdout + '\n' + result.stderr))
+                self.assertNotIn('cleanup passed', result.stdout)
+
+    def test_actual_shell_failures_retain_only_fixed_stage_and_exit(self):
+        for fault, step, code in [('image-identity', 'image-identity', 7),
+                                  ('services-start', 'services-start', 7), ('peer', 'peer', 7),
+                                  ('oracle', 'oracle', 7), ('preimage-start', 'preimage-start', 7),
+                                  ('preimage-ready', 'preimage-ready', 1),
+                                  ('copy', 'preimage-copy', 7), ('preimage-ack', 'preimage-ack', 7),
+                                  ('shutdown', 'preimage-shutdown', 1), ('cleanup', 'cleanup', 1)]:
+            with self.subTest(fault=fault):
+                result, state = self.exercise(fault)
+                self.assertEqual(result.returncode, code, result.stderr)
+                records = driver.native_failures(result.stdout + '\n' + result.stderr)
+                self.assertIn(dict(stage='smoke-shell-' + step, category='Error', exit_code=code), records)
+                if fault == 'preimage-ready':
+                    self.assertIn(dict(stage='fixture-preimage-package', category='AssertionError'), records)
+                if fault in {'image-identity', 'services-start', 'peer', 'oracle'}:
+                    self.assertFalse(any(c[0] == 'run' and c[-1] == 'preimage' for c in state['calls']))
+                self.assertNotIn('PRIVATE', json.dumps(records))
+                self.assertNotIn('cleanup passed', result.stdout)
+
+
+if __name__ == '__main__':
+    unittest.main()

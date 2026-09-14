@@ -20,37 +20,20 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { loadLiveCss as loadLiveCssShared, skipUnlessLiveCss } from './lib/live-css';
 
 /** CI runs these beats against THIS COMMIT's own build served locally
  *  (ARENA_BASE_URL); a bare local run still defaults to production. */
 const ARENA = process.env.ARENA_BASE_URL || 'https://smarter.poker/hub/club-arena';
 
-/** Stylesheets that carry the gameplay animations. Resolved from the live index. */
+/**
+ * The shipped-CSS loader lives in tests/e2e/lib/live-css.ts. This file used
+ * to hold its own copy, which could not tell an unreadable bundle from a
+ * bundle with no animations - see the header there.
+ */
 async function loadLiveCss(page: Page) {
-  await page.goto(`${ARENA}/index.html`, { waitUntil: 'domcontentloaded' });
-  await page.evaluate(async (arenaBase: string) => {
-    const base = arenaBase;
-    // The component stylesheets are lazy chunks, so they are NOT linked from
-    // index.html. Discover them from the module graph the entry advertises.
-    const html = await fetch(base + 'index.html').then((r) => r.text());
-    const entry = html.match(/assets\/index-[A-Za-z0-9_-]+\.js/)?.[0];
-    const js = entry ? await fetch(base + entry).then((r) => r.text()) : '';
-    const names = new Set<string>();
-    for (const m of js.matchAll(/assets\/[A-Za-z0-9_.-]+\.css/g)) names.add(m[0]);
-    for (const m of html.matchAll(/assets\/[A-Za-z0-9_.-]+\.css/g)) names.add(m[0]);
-    document.body.innerHTML = '';
-    for (const n of names) {
-      try {
-        const css = await fetch(base + n).then((r) => r.text());
-        const s = document.createElement('style');
-        s.textContent = css;
-        document.head.appendChild(s);
-      } catch {
-        /* a chunk that 404s is not this test's problem */
-      }
-    }
-    document.documentElement.style.setProperty('--animation-speed', '1');
-  }, `${ARENA}/`);
+  const load = await loadLiveCssShared(page, ARENA, { animationSpeed: '1' });
+  skipUnlessLiveCss(load, ARENA);
 }
 
 /** Build the table DOM exactly as the real components render it. */
@@ -558,20 +541,24 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
     ).toBeUndefined();
   });
 
-  test('reduced motion is honoured — every animation collapses', async ({ browser }) => {
-    const ctx = await browser.newContext({ reducedMotion: 'reduce' });
-    const page = await ctx.newPage();
-    await loadLiveCss(page);
-    await mountTable(page);
-    const b = await beat(
-      page,
-      `$('cards').classList.add('seat__cards--dealing');
+  test.describe('with reduced motion', () => {
+    // The inherited fixture loads the complete CSS bundle and mounts the table.
+    // Configure that context before setup so it does the work exactly once.
+    test.use({ contextOptions: { reducedMotion: 'reduce' } });
+
+    test('reduced motion is honoured — every animation collapses', async ({ page }) => {
+      expect(
+        await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)
+      ).toBe(true);
+      const b = await beat(
+        page,
+        `$('cards').classList.add('seat__cards--dealing');
        $('seat').classList.add('seat--winner','seat--winner-pop');`
-    );
-    for (const [name, ms] of Object.entries(b)) {
-      expect(ms, `${name} must be flattened under prefers-reduced-motion`).toBeLessThanOrEqual(1);
-    }
-    await ctx.close();
+      );
+      for (const [name, ms] of Object.entries(b)) {
+        expect(ms, `${name} must be flattened under prefers-reduced-motion`).toBeLessThanOrEqual(1);
+      }
+    });
   });
 });
 

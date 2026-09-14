@@ -122,7 +122,6 @@ const BASELINE = new Map<string, number>([
   ['src/utils/settlementLock.ts', 2],
   ['src/stores/useHeaderDataStore.ts', 2],
   ['src/services/WalletService.ts', 2],
-  ['src/services/WaitlistService.ts', 1],
   ['src/services/TournamentTimerService.ts', 2],
   ['src/services/ThrowableService.ts', 0],
   ['src/services/ReferralService.ts', 1],

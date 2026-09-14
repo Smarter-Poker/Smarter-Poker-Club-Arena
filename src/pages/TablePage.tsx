@@ -21839,9 +21839,15 @@ function LiveTablePage({
 
   // Handle opening waitlist modal and loading data
   const handleOpenWaitlist = useCallback(() => {
+    // A Must-Move game's entry queue belongs to the whole game. The legacy
+    // table list is read-only here and cannot join that queue.
+    if (tableState.clusterId) {
+      setShowMustMoveLobby(true);
+      return;
+    }
     loadWaitlist();
     setShowWaitList(true);
-  }, [loadWaitlist]);
+  }, [loadWaitlist, tableState.clusterId]);
 
   /**
    * ── IS THERE ACTUALLY A SEAT AT THIS TABLE? (Dan 2026-09-07, item 9) ──────

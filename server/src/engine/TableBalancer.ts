@@ -913,7 +913,10 @@ export function planOnlineGeometry(
       const chairs: { tableId: string; seat: number }[] = [];
       const finalRosters = tables
         .filter((_, i) => i !== broken)
-        .map((t) => ({ tableId: t.tableId, players: t.players.map((p) => ({ ...p })) }));
+        .map((t) => ({
+          tableId: t.tableId,
+          players: t.players.map((p) => ({ ...p })),
+        }));
       const destinations = new Map(finalRosters.map((t) => [t.tableId, t]));
       for (const t of activeTables)
         for (let seat = 1; seat <= t.maxSeats; seat++) {
@@ -958,6 +961,24 @@ export function planOnlineGeometry(
       const low = Math.floor(users.size / tables.length),
         high = Math.ceil(users.size / tables.length);
       if (low < 2) throw Error('next_hand_roster_unknown');
+      // The validated original rosters already achieve the floor/ceil target.
+      // Zero moves is the unique minimum; it needs no target DP or random draw.
+      if (tables.every((t) => t.players.length >= low && t.players.length <= high)) {
+        return {
+          status: 'planned',
+          policy: profile.policy,
+          originalPlanId: profile.originalPlanId,
+          rosterVersion: profile.rosterVersion,
+          moves: [],
+          finalRosters: tables.map((t) => ({
+            tableId: t.tableId,
+            players: t.players,
+          })),
+          objective: [0, 0, 0, 0],
+          equallyRankedPlans: 1,
+          consumedDraws: [],
+        };
+      }
       const targets: number[] = [];
       const solveTargets = () => {
         const excess = tables.map((t, i) => Math.max(0, t.players.length - targets[i]));

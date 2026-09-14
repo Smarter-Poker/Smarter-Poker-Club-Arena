@@ -136,7 +136,10 @@ test('random rejection exhaustion defers without returning partial assignments',
     { ...breakProfile(ts), randomDraws: Array(100001).fill(4294967295) },
     'a'
   );
-  expect(result).toEqual({ status: 'pending', reason: 'search_budget_exhausted' });
+  expect(result).toEqual({
+    status: 'pending',
+    reason: 'search_budget_exhausted',
+  });
 });
 
 test('three-to-two transition follows actual previous BB and missing history refuses', () => {
@@ -146,7 +149,10 @@ test('three-to-two transition follows actual previous BB and missing history ref
 });
 
 function breakProfile(tables: BalancerTable[]): OnlineGeometryProfile {
-  return { ...profile(tables), activeTableIds: tables.slice(1).map((t) => t.tableId) };
+  return {
+    ...profile(tables),
+    activeTableIds: tables.slice(1).map((t) => t.tableId),
+  };
 }
 
 test('0111 precision counterexample defers outside documented aggregate-safe domain', () => {
@@ -167,7 +173,10 @@ test('0111 precision counterexample defers outside documented aggregate-safe dom
     status: 'pending',
     reason: 'aggregate_history_out_of_domain',
   });
-  cfg.priorMoveCounts = { ...profile(ts).priorMoveCounts, a2: Number.MAX_SAFE_INTEGER };
+  cfg.priorMoveCounts = {
+    ...profile(ts).priorMoveCounts,
+    a2: Number.MAX_SAFE_INTEGER,
+  };
   expect(planOnlineGeometry(ts, cfg).status).toBe('planned');
 });
 test('0111 prior BB must belong to configured domain, vacant seat remains valid', () => {
@@ -250,3 +259,43 @@ test('nonzero ceil remainder retains every minimum target alternative', () => {
   expect(r.finalRosters.filter((t) => t.players.length === 5)).toHaveLength(2);
   expect(r.equallyRankedPlans).toBeGreaterThan(1);
 });
+
+for (const highTables of [1, 500, 1000, 1500, 1999]) {
+  test(`balanced mixed 2000-table field with ${highTables} high targets needs no search`, () => {
+    const ts = Array.from({ length: 2000 }, (_, i) =>
+      table(
+        `mixed${i}:`,
+        Array.from({ length: i < highTables ? 6 : 5 }, (_, j) => j + 1),
+        9,
+        1,
+        [9]
+      )
+    );
+    const before = JSON.stringify(ts);
+    const p = { ...profile(ts), randomDraws: [] };
+    const result = planOnlineGeometry(ts, p);
+    expect(result.status).toBe('planned');
+    if (result.status !== 'planned') return;
+    expect(result.objective).toEqual([0, 0, 0, 0]);
+    expect(result.moves).toEqual([]);
+    expect(result.equallyRankedPlans).toBe(1);
+    expect(result.consumedDraws).toEqual([]);
+    expect(
+      result.finalRosters.map((t) => ({
+        tableId: t.tableId,
+        players: t.players,
+      }))
+    ).toEqual(
+      [...ts]
+        .sort((a, b) => a.tableId.localeCompare(b.tableId))
+        .map((t) => ({ tableId: t.tableId, players: t.players }))
+    );
+    result.finalRosters[0].players[0].stack = 1;
+    expect(JSON.stringify(ts)).toBe(before);
+    const invalid = { ...p, activeTableIds: p.activeTableIds.slice(1) };
+    expect(planOnlineGeometry(ts, invalid)).toEqual({
+      status: 'pending',
+      reason: 'active_set_mismatch',
+    });
+  });
+}

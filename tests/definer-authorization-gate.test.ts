@@ -61,6 +61,39 @@ $function$;
 `;
 
 describe('the checker catches the shape that shipped', () => {
+  it('applies a multi-function revoke to every signature, including multi-argument functions', () => {
+    const sql = `REVOKE ALL ON FUNCTION public.first(uuid,text), public.second(), public.third(text,uuid,numeric) FROM PUBLIC,anon,authenticated;
+      GRANT EXECUTE ON FUNCTION public.first(uuid,text), public.second(), public.third(text,uuid,numeric) TO service_role;`;
+    for (const name of ['first', 'second', 'third']) {
+      expect(effectiveGrants(sql, name)).toEqual({
+        public: false,
+        anon: false,
+        authenticated: false,
+      });
+    }
+    expect(effectiveGrants(sql, 'unmentioned')).toEqual({
+      public: true,
+      anon: true,
+      authenticated: true,
+    });
+  });
+
+  it('detects a reopened second function and reads only recipient roles, not schema qualifiers', () => {
+    const sql = `REVOKE ALL ON FUNCTION public.first(), public.second(uuid,text) FROM PUBLIC,anon,authenticated;
+      GRANT EXECUTE ON FUNCTION public.first(), public.second(uuid,text) TO authenticated;`;
+    expect(effectiveGrants(sql, 'second')).toEqual({
+      public: false,
+      anon: false,
+      authenticated: true,
+    });
+    const onlyAnon = `REVOKE EXECUTE ON FUNCTION public.first(), public.second(uuid,text) FROM anon;`;
+    expect(effectiveGrants(onlyAnon, 'first')).toEqual({
+      public: true,
+      anon: false,
+      authenticated: true,
+    });
+  });
+
   it('flags a DEFINER writer with no grant statement at all', () => {
     // Silence is not safety. Postgres grants EXECUTE to PUBLIC by default and
     // every browser role inherits it, which is how most of the nineteen got there.

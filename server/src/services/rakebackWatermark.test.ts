@@ -53,6 +53,8 @@ interface Scenario {
   stateReadFails?: boolean;
   fetchError?: { message: string } | null;
   dataset?: RakeRow[];
+  ledger?: Array<{ id: string; hand_id: string; player_id: string; weighted_rake_credit: number }>;
+  ledgerError?: { message: string };
 }
 
 // vi.hoisted: supabase.ts calls reportError at module scope when the service
@@ -237,6 +239,13 @@ function install(s: Scenario) {
       if (rec.table === 'rake_records') {
         if (s.fetchError) return { data: null, error: s.fetchError };
         return { data: applyCursor(dataset, rec), error: null };
+      }
+      if (rec.table === 'rake_attributions') {
+        const after = rec.ops.find(([n, a]) => n === 'gt' && a[0] === 'id')?.[1][1];
+        return {
+          data: (s.ledger ?? []).filter((r) => !after || r.id > String(after)),
+          error: s.ledgerError ?? null,
+        };
       }
       return { data: [], error: null };
     },
@@ -553,9 +562,33 @@ describe('rakeback attribution failures retain the source page', () => {
     install({
       settlerState: { high_water_mark: ts(100), high_water_mark_id: uid(0) },
       dataset: [creditedRow()],
+      ledger: [{ id: uid(100), hand_id: uid(77), player_id: uid(42), weighted_rake_credit: 1 }],
     });
     mockRpc.mockImplementation(async (name, args) => success(name, args));
   });
+
+  it.each(['missing', 'partial', 'failed'])(
+    'holds the cursor and makes no financial call for %s ledger evidence',
+    async (kind) => {
+      install({
+        settlerState: { high_water_mark: ts(100), high_water_mark_id: uid(0) },
+        dataset: [creditedRow()],
+        ledger:
+          kind === 'partial'
+            ? [{ id: uid(100), hand_id: uid(77), player_id: uid(42), weighted_rake_credit: 0.5 }]
+            : [],
+        ledgerError: kind === 'failed' ? { message: 'timeout' } : undefined,
+      });
+      expect(await run()).toBe('halted');
+      expect(mockRpc).not.toHaveBeenCalled();
+      expect(settlerUpserts()).toHaveLength(0);
+      expect(
+        mockReportError.mock.calls.some(
+          (call) => call[1] === 'RakebackSettler.ledger_incomplete_holds_cursor'
+        )
+      ).toBe(true);
+    }
+  );
 
   for (const rpc of ['fn_credit_agent_commissions_batch', 'fn_apply_rakeback_player_stats_batch']) {
     it.each([

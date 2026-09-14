@@ -101,6 +101,18 @@ describe('NotificationService', () => {
   });
 
   describe('groupNotifications', () => {
+    it('keeps every invoice individually visible even with matching titles', () => {
+      const invoices = ['first', 'second', 'third'].map((id) => ({
+        id,
+        userId: 'recipient',
+        type: 'accounting_invoice' as const,
+        title: 'Weekly Accounting Invoice',
+        message: 'Transfer Recorded',
+        isRead: false,
+        createdAt: '2026-09-14T09:00:00Z',
+      }));
+      expect(notificationService.groupNotifications(invoices)).toEqual(invoices);
+    });
     it('should have groupNotifications method', () => {
       expect(typeof notificationService.groupNotifications).toBe('function');
     });
@@ -109,5 +121,19 @@ describe('NotificationService', () => {
       const grouped = notificationService.groupNotifications([]);
       expect(grouped).toBeDefined();
     });
+  });
+
+  it('opens the actual Hub Messenger conversation for an accounting invoice', () => {
+    expect(
+      notificationService.getDeepLinkUrl('accounting_invoice', {
+        conversation_id: 'a83d4cdf-e3ce-41d4-888d-1a3749d9291b',
+      })
+    ).toBe('/hub/messenger?conversation=a83d4cdf-e3ce-41d4-888d-1a3749d9291b');
+    expect(
+      notificationService.getDeepLinkUrl('accounting_invoice', {
+        conversationId: 'conversation&another=value',
+      })
+    ).toBe('/hub/messenger?conversation=conversation%26another%3Dvalue');
+    expect(notificationService.getDeepLinkUrl('accounting_invoice', {})).toBeUndefined();
   });
 });

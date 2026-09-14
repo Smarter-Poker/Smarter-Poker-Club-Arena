@@ -92,17 +92,29 @@ import {
   type TickerItem,
   type UpcomingTournament,
 } from './tickerMessages';
-import { dismissItem, readDismissed } from './tickerDismissals';
+import { dismissItem, onDismissedElsewhere, readDismissed } from './tickerDismissals';
+import { tickerTelemetry } from '../../services/TickerTelemetry';
+import { announce as announceToChime } from './tickerChime';
 import { useTopChromeOffset } from './useTopChromeOffset';
 import { useRailSilence } from './useRailSilence';
 import { TickerRail } from './TickerRail';
 
-/** How far ahead an event counts as "about to start". */
-const LEAD_MS = 5 * 60 * 1000;
+/* `LEAD_MS = 5 minutes` used to live here and was the ONE horizon for every
+   event on the rail. It has been `leadMsFor(totalBuyIn)` since 2026-09-13 - a
+   $200 major is announced fifteen minutes out, a $2 turbo five - and the
+   constant survived the change unreferenced. Removed 2026-09-14 rather than
+   left next to its replacement, where it reads like a second opinion. */
 /** How often we ask the database. The countdown itself ticks locally. */
 const POLL_MS = 30_000;
 /** How long a cached club-membership list is trusted. */
 const SCOPE_TTL_MS = 5 * 60_000;
+/**
+ * How often the HOST re-evaluates - expiry and the spoken line, not the digits.
+ *
+ * The visible countdown is TickerClock's own interval. This used to be 1000ms
+ * and it re-ran the lane memo and rebuilt every announcement on every tick.
+ */
+const CONTAINER_TICK_MS = 5_000;
 /** How long the exit animation runs before the strip is unmounted. */
 const LEAVE_MS = 240;
 
@@ -810,12 +822,21 @@ function TickerHost() {
     itemsRef.current = items;
   }, [items]);
 
+  /* ── THE CONTAINER NO LONGER KEEPS A CLOCK ────────────────────────────────
+     `now` here does two jobs and neither of them is the countdown: it expires
+     announcements whose window has closed, and it feeds the spoken line, which
+     is rounded to the MINUTE precisely so a screen reader is not told the news
+     sixty times a minute.
+     The visible digits moved into TickerClock, which owns its own second, so
+     this no longer has to run at 1Hz to keep four characters current - it was
+     re-running the lane memo and rebuilding every field of every announcement
+     on a thread that is also running a live poker table. Five seconds is ample
+     for an expiry whose shortest window is thirty seconds of grace. */
   useEffect(() => {
     if (!hasClock && lane.length === 0) return undefined;
     const tick = setInterval(() => {
-      const currentNow = Date.now();
-      setNow(currentNow);
-    }, 1000);
+      setNow(Date.now());
+    }, CONTAINER_TICK_MS);
     return () => clearInterval(tick);
   }, [hasClock, lane.length]);
 
@@ -831,6 +852,18 @@ function TickerHost() {
       ),
     [items, sources.starting_soon]
   );
+  /* AND THE SECOND 1Hz LOOP (2026-09-14). This one renders nothing, which is
+     why it survived the first pass - it just walked every announcement once a
+     second, for every registered player, to catch two thresholds.
+
+     Five seconds is enough for both, because neither threshold is exact and
+     both already know it: the five minute toast fires on the first reading at
+     or under 300s and is suppressed below 120s, the ninety second toast fires
+     at or under 90s and is suppressed below 10s. Those suppression guards were
+     written for a tab that came back from the background having missed the
+     moment entirely, and a four second late reading is well inside what they
+     already tolerate. The player is told "starts in 5 minutes" at 4:56, which
+     is what "5 minutes" meant anyway. */
   useEffect(() => {
     if (upcomingForToasts.length === 0) return undefined;
     const tick = setInterval(() => {
@@ -858,11 +891,17 @@ function TickerHost() {
         }
         if (changed) notifiedRef.current[entry.id] = state;
       });
-    }, 1000);
+    }, CONTAINER_TICK_MS);
     return () => clearInterval(tick);
   }, [upcomingForToasts.length]);
 
+  /* A dismissal in another tab lands here too. Players multi-table on this
+     platform, and closing an announcement on one felt used to leave it on
+     every other one. */
+  useEffect(() => onDismissedElsewhere(setDismissed), []);
+
   const dismiss = useCallback((entry: TickerItem) => {
+    tickerTelemetry.dismissed(entry.kind);
     setDismissed(dismissItem(entry.id, entry.kind));
   }, []);
 
@@ -877,6 +916,7 @@ function TickerHost() {
          list with "+ CREATE TOURNAMENT" on it. `/tournaments/:id` is
          TournamentDetails, which owns the Register button, and no club id is
          involved, so there is no union surface left to leak. */
+      tickerTelemetry.opened(entry.kind);
       if (entry.tournamentId) navigate(`/tournaments/${entry.tournamentId}`);
       else if (entry.tableId) navigate(`/table/${entry.tableId}`);
       else navigate('/tournaments');
@@ -960,6 +1000,28 @@ function TickerHost() {
       clear();
     };
   }, [barVisible, headerBottom]);
+
+  /* ── AN IMPRESSION IS THE ITEM THAT OWNED THE BAR ────────────────────────
+     Counted once per tab, from an EFFECT rather than the render body: the
+     strip repaints every second while a clock is running, and a side effect in
+     a render is double-invoked under StrictMode. The seen-set inside
+     tickerTelemetry makes it idempotent either way, but "idempotent so it does
+     not matter where it lives" is how a render body collects side effects.
+
+     Keyed on the id, so a lane that keeps the same top announcement across a
+     poll counts once and a handover counts the new one. */
+  const speakingId = barVisible && lane.length > 0 ? lane[0].id : null;
+  const speakingKind = barVisible && lane.length > 0 ? lane[0].kind : null;
+  useEffect(() => {
+    if (!speakingId || !speakingKind) return;
+    tickerTelemetry.shown(speakingKind, speakingId);
+    /* Same effect, same key, deliberately: both of these care about exactly
+       one thing - a NEW announcement is now the one being made. The chime is
+       far stricter about what it does with that than telemetry is; see
+       tickerChime.ts, which stays silent for everything except an overlay
+       guarantee arriving after the tab has already shown something else. */
+    announceToChime(speakingKind, speakingId);
+  }, [speakingId, speakingKind]);
 
   if (!mounted || lane.length === 0) return null;
 

@@ -5,7 +5,11 @@
     "horse_observation_discovery_segments",
     "horse_observation_discovery_members"
   ],
-  "functions": ["fn_discover_horse_observation_requests", "fn_prune_horse_observation_discovery"],
+  "functions": [
+    "fn_discover_horse_observation_requests",
+    "fn_prune_horse_observation_discovery",
+    "fn_horse_discovery_state"
+  ],
   "columns": {
     "horse_observation_discovery_epochs": [
       "epoch_key",

@@ -64,143 +64,193 @@ export default function PlayerNotesPanel({
   const [saving, setSaving] = useState(false);
   /** In-flight latch for the paid tag purchase — see toggleTag. */
   const tagPurchaseRef = useRef(false);
+  const accountRequestRef = useRef(0);
+  const tagPurchaseRequestRef = useRef(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [isVIP, setIsVIP] = useState(false);
   const navigate = useNavigate();
   const toast = useToast();
   const { style: staggerStyle } = useStaggerAnimation(notes.length);
+  const activeScope = `${user?.id || 'anonymous'}:${targetUserId || 'library'}`;
+  const activeScopeRef = useRef(activeScope);
+  const [stateScope, setStateScope] = useState(activeScope);
+
+  // Auth and target changes can replace this panel without unmounting it.
+  // Move the authority ref during render so late continuations are stale even
+  // before passive-effect cleanup runs.
+  if (activeScopeRef.current !== activeScope) {
+    activeScopeRef.current = activeScope;
+    accountRequestRef.current += 1;
+    tagPurchaseRequestRef.current += 1;
+    tagPurchaseRef.current = false;
+  }
+
+  const stateBelongsToActiveScope = stateScope === activeScope;
+  const visibleNotes = stateBelongsToActiveScope ? notes : [];
+  const visibleCurrentNote = stateBelongsToActiveScope ? currentNote : '';
+  const visibleSelectedTags = stateBelongsToActiveScope ? selectedTags : [];
+  const visibleSelectedColor = stateBelongsToActiveScope ? selectedColor : 'none';
+  const visibleIsVIP = stateBelongsToActiveScope && isVIP;
+  const visibleLoading = !stateBelongsToActiveScope || loading;
+  const visibleLoadFailed = stateBelongsToActiveScope && noteLoadFailed;
 
   useEffect(() => {
-    if (!user?.id) return undefined;
-    /* THE NOTE ON SCREEN IS THE NOTE ON THIS PLAYER (2026-09-10). The load
-       wrote state only inside `if (data)`, so switching to a player with no
-       saved note kept the PREVIOUS player's text, tags and colour on screen -
-       and saveNote then upserted them against the new target_user_id. The
-       form is reset the moment the target changes, and a read that resolves
-       after the target has moved on is dropped. */
-    let cancelled = false;
-    if (targetUserId) {
-      loadSingleNote(() => cancelled);
-    } else {
-      loadAllNotes();
-    }
-    // Check VIP status for tag gating
-    vipService
-      .checkVIPStatus(user.id)
-      .then((status) => {
-        if (!cancelled) setIsVIP(status.isVIP);
-      })
-      .catch((e) => console.warn('[PlayerNotesPanel] Failed to check VIP status:', e));
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.id, targetUserId]);
+    let mounted = true;
+    const requestedUserId = user?.id;
+    const requestedTargetUserId = targetUserId;
+    const requestedScope = activeScope;
+    const requestId = ++accountRequestRef.current;
+    const isCurrent = () =>
+      mounted &&
+      activeScopeRef.current === requestedScope &&
+      accountRequestRef.current === requestId;
 
-  const loadSingleNote = async (isCancelled: () => boolean) => {
-    setLoading(true);
-    setNoteLoadFailed(false);
+    setStateScope(requestedScope);
+    setNotes([]);
     setCurrentNote('');
     setSelectedTags([]);
     setSelectedColor('none');
-    const { data, error } = await supabase
-      .from('player_notes')
-      .select('id, user_id, target_user_id, notes, color_label, tags')
-      .eq('user_id', user?.id)
-      .eq('target_user_id', targetUserId)
-      .maybeSingle();
-    if (isCancelled()) return;
+    setSearchQuery('');
+    setIsVIP(false);
+    setSaving(false);
+    setNoteLoadFailed(false);
+    setLoading(!!requestedUserId);
+    tagPurchaseRef.current = false;
 
-    /* A FAILED READ IS NOT "NO NOTE ON THIS PLAYER" (2026-08-29). Only `data`
-       was destructured, and a Supabase builder resolves with {data: null,
-       error} rather than rejecting, so a failure left the panel showing an
-       empty note -- and the player, believing they had never written one,
-       types a fresh one over the top of the note they already had. The sibling
-       loadAllNotes twenty lines below already destructures `error`. */
-    if (error) {
-      reportError(error, 'PlayerNotesPanel.loadSingleNote');
-      setNoteLoadFailed(true);
-      toast.error('Your Note On This Player Could Not Be Loaded');
+    if (!requestedUserId) {
+      setLoading(false);
+      return () => {
+        mounted = false;
+      };
     }
 
-    if (data) {
-      setCurrentNote(data.notes || '');
-      setSelectedTags(data.tags || []);
-      setSelectedColor(data.color_label || 'none');
-    }
-    setLoading(false);
-  };
+    const loadSingleNote = async () => {
+      const { data, error } = await supabase
+        .from('player_notes')
+        .select('id, user_id, target_user_id, notes, color_label, tags')
+        .eq('user_id', requestedUserId)
+        .eq('target_user_id', requestedTargetUserId)
+        .maybeSingle();
 
-  const loadAllNotes = async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('player_notes')
-      .select('id, target_user_id, notes, tags, color_label, updated_at')
-      .eq('user_id', user?.id)
-      .order('updated_at', { ascending: false });
-
-    if (!error && data) {
-      // Batch-fetch target profiles separately (safe, no FK hint)
-      const tIds = [...new Set(data.map((n: any) => n.target_user_id).filter(Boolean))];
-      const pMap: Record<string, NameableProfile & { avatar_url?: string }> = {};
-      if (tIds.length > 0) {
-        try {
-          const { data: profs } = await supabase
-            .from('profiles')
-            .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
-            .in('id', tIds);
-          if (profs) for (const p of profs) pMap[p.id] = p;
-        } catch (e) {
-          reportError(e, 'PlayerNotesPanel.Set');
-          /* non-critical */
-        }
+      if (!isCurrent()) return;
+      if (error) {
+        reportError(error, 'PlayerNotesPanel.loadSingleNote');
+        setNoteLoadFailed(true);
+        setLoading(false);
+        toast.error('Your Note On This Player Could Not Be Loaded');
+        return;
       }
-      const mapped: PlayerNote[] = data.map((n: any) => ({
-        id: n.id,
-        targetUserId: n.target_user_id,
-        targetName: playerDisplayName(pMap[n.target_user_id]),
-        targetAvatar: pMap[n.target_user_id]?.avatar_url,
-        note: n.notes,
-        tags: n.tags || [],
-        color: n.color_label || '#6b7280',
-        lastUpdated: n.updated_at,
-      }));
-      setNotes(mapped);
-      // Stagger entrance is now handled by useStaggerAnimation hook
-    }
-    setLoading(false);
-  };
+      if (data) {
+        setCurrentNote(data.notes || '');
+        setSelectedTags(data.tags || []);
+        setSelectedColor(data.color_label || 'none');
+      }
+      setLoading(false);
+    };
+
+    const loadAllNotes = async () => {
+      const { data, error } = await supabase
+        .from('player_notes')
+        .select('id, target_user_id, notes, tags, color_label, updated_at')
+        .eq('user_id', requestedUserId)
+        .order('updated_at', { ascending: false });
+
+      if (!isCurrent()) return;
+      if (error) {
+        reportError(error, 'PlayerNotesPanel.loadAllNotes');
+        setNoteLoadFailed(true);
+        setLoading(false);
+        return;
+      }
+      if (data) {
+        const tIds = [...new Set(data.map((n: any) => n.target_user_id).filter(Boolean))];
+        const pMap: Record<string, NameableProfile & { avatar_url?: string }> = {};
+        if (tIds.length > 0) {
+          try {
+            const { data: profs } = await supabase
+              .from('profiles')
+              .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
+              .in('id', tIds);
+            if (!isCurrent()) return;
+            if (profs) for (const p of profs) pMap[p.id] = p;
+          } catch (error) {
+            if (!isCurrent()) return;
+            reportError(error, 'PlayerNotesPanel.Set');
+          }
+        }
+        const mapped: PlayerNote[] = data.map((note: any) => ({
+          id: note.id,
+          targetUserId: note.target_user_id,
+          targetName: playerDisplayName(pMap[note.target_user_id]),
+          targetAvatar: pMap[note.target_user_id]?.avatar_url,
+          note: note.notes,
+          tags: note.tags || [],
+          color: note.color_label || '#6b7280',
+          lastUpdated: note.updated_at,
+        }));
+        if (isCurrent()) setNotes(mapped);
+      }
+      if (isCurrent()) setLoading(false);
+    };
+
+    void (requestedTargetUserId ? loadSingleNote() : loadAllNotes());
+    void vipService
+      .checkVIPStatus(requestedUserId)
+      .then((status) => {
+        if (isCurrent()) setIsVIP(status.isVIP);
+      })
+      .catch((error) => {
+        if (isCurrent()) {
+          console.warn('[PlayerNotesPanel] Failed To Check VIP Status:', error);
+        }
+      });
+
+    return () => {
+      mounted = false;
+      if (accountRequestRef.current === requestId) accountRequestRef.current += 1;
+    };
+  }, [activeScope, targetUserId, toast, user?.id]);
 
   const saveNote = async () => {
-    if (!user?.id || !targetUserId || !currentNote.trim()) return;
-    if (noteLoadFailed) {
+    const requestedUserId = user?.id;
+    const requestedScope = activeScope;
+    const note = visibleCurrentNote.trim();
+    if (!requestedUserId || !targetUserId || !note || !stateBelongsToActiveScope || visibleLoading)
+      return;
+    if (visibleLoadFailed) {
       toast.error('Your Existing Note Could Not Be Read. Reopen The Panel Before Saving.');
       return;
     }
+    const requestId = ++accountRequestRef.current;
+    const isCurrent = () =>
+      activeScopeRef.current === requestedScope && accountRequestRef.current === requestId;
     setSaving(true);
 
     const { error } = await supabase.from('player_notes').upsert(
       {
-        user_id: user.id,
+        user_id: requestedUserId,
         target_user_id: targetUserId,
-        notes: currentNote.trim(),
-        tags: selectedTags,
-        color_label: selectedColor,
+        notes: note,
+        tags: visibleSelectedTags,
+        color_label: visibleSelectedColor,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'user_id,target_user_id' }
     );
 
+    if (!isCurrent()) return;
     setSaving(false);
     if (error) {
-      toast.error('Failed to save note');
+      toast.error('Failed To Save Note');
       return;
     }
     onClose?.();
   };
 
   const toggleTag = async (tag: string) => {
+    if (!stateBelongsToActiveScope || visibleLoading || visibleLoadFailed) return;
     // Removing a tag is always free
-    if (selectedTags.includes(tag)) {
+    if (visibleSelectedTags.includes(tag)) {
       setSelectedTags((prev) => prev.filter((t) => t !== tag));
       return;
     }
@@ -218,12 +268,18 @@ export default function PlayerNotesPanel({
      * inside one commit both passed the `includes` test above (state had not
      * committed) and both charged.
      */
-    if (!isVIP) {
-      if (!user?.id) return;
+    if (!visibleIsVIP) {
+      const requestedUserId = user?.id;
+      const requestedScope = activeScope;
+      if (!requestedUserId) return;
       if (tagPurchaseRef.current) return;
       tagPurchaseRef.current = true;
+      const requestId = ++tagPurchaseRequestRef.current;
+      const isCurrent = () =>
+        activeScopeRef.current === requestedScope && tagPurchaseRequestRef.current === requestId;
       try {
-        const result = await vipService.purchaseFeature(user.id, 'tag_pack');
+        const result = await vipService.purchaseFeature(requestedUserId, 'tag_pack');
+        if (!isCurrent()) return;
         if (!result.success && !result.alreadyOwned) {
           showDiamondTopUp(toast, navigate, {
             feature: 'Player Tag',
@@ -232,22 +288,29 @@ export default function PlayerNotesPanel({
           return;
         }
       } finally {
-        tagPurchaseRef.current = false;
+        if (isCurrent()) tagPurchaseRef.current = false;
       }
     }
 
+    if (activeScopeRef.current !== activeScope) return;
     setSelectedTags((prev) => (prev.includes(tag) ? prev : [...prev, tag]));
   };
 
   const deleteNote = async (noteId: string) => {
+    const requestedUserId = user?.id;
+    const requestedScope = activeScope;
+    if (!requestedUserId || !stateBelongsToActiveScope) return;
+    const requestId = ++accountRequestRef.current;
     // SECURITY: Scope to current user to prevent deleting other users' notes
     const { error } = await supabase
       .from('player_notes')
       .delete()
       .eq('id', noteId)
-      .eq('user_id', user?.id || '');
+      .eq('user_id', requestedUserId);
+    if (activeScopeRef.current !== requestedScope || accountRequestRef.current !== requestId)
+      return;
     if (error) {
-      toast.error('Failed to delete note');
+      toast.error('Failed To Delete Note');
       return;
     }
     setNotes((prev) => prev.filter((n) => n.id !== noteId));
@@ -262,7 +325,7 @@ export default function PlayerNotesPanel({
     });
   };
 
-  const filteredNotes = notes.filter(
+  const filteredNotes = visibleNotes.filter(
     (n) =>
       n.targetName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       n.note.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -272,7 +335,12 @@ export default function PlayerNotesPanel({
   // Single note editor mode
   if (targetUserId) {
     const saveLabel = saving ? 'Saving...' : 'Save Note';
-    const saveDisabled = saving || !currentNote.trim();
+    const saveDisabled =
+      saving ||
+      visibleLoading ||
+      visibleLoadFailed ||
+      !visibleCurrentNote.trim() ||
+      !stateBelongsToActiveScope;
     const body = (
       <>
         <label className={styles.srOnly} htmlFor="player-note-input">
@@ -282,16 +350,23 @@ export default function PlayerNotesPanel({
           id="player-note-input"
           className={styles.noteInput}
           placeholder="Add Notes About This Player..."
-          value={currentNote}
+          value={visibleCurrentNote}
           onChange={(e) => setCurrentNote(e.target.value)}
           rows={compact ? 3 : 5}
+          disabled={visibleLoading || visibleLoadFailed}
         />
+
+        {visibleLoadFailed && (
+          <div className={`${styles.empty} sc-ink--red`} role="alert">
+            Player Note Could Not Be Loaded. Close And Try Again.
+          </div>
+        )}
 
         <div className={styles.section}>
           <span className={`${styles.sectionTitle} sc-label sc-ink--blue`}>Tags</span>
           <div className={styles.tags} role="group" aria-label="Player Tags">
             {PRESET_TAGS.map((tag) => {
-              const on = selectedTags.includes(tag);
+              const on = visibleSelectedTags.includes(tag);
               return (
                 <button
                   key={tag}
@@ -299,6 +374,7 @@ export default function PlayerNotesPanel({
                   className={`${styles.word} ${styles.tag} ${on ? `${styles.selected} sc-ink--white` : 'sc-ink--muted'}`}
                   aria-pressed={on}
                   onClick={() => toggleTag(tag)}
+                  disabled={!stateBelongsToActiveScope || visibleLoading || visibleLoadFailed}
                 >
                   {tag}
                 </button>
@@ -314,12 +390,13 @@ export default function PlayerNotesPanel({
               <button
                 key={color.value}
                 type="button"
-                className={`${styles.colorBtn} ${selectedColor === color.value ? styles.selected : ''}`}
+                className={`${styles.colorBtn} ${visibleSelectedColor === color.value ? styles.selected : ''}`}
                 style={{ backgroundColor: color.hex }}
                 onClick={() => setSelectedColor(color.value)}
                 title={color.name}
                 aria-label={color.name}
-                aria-pressed={selectedColor === color.value}
+                aria-pressed={visibleSelectedColor === color.value}
+                disabled={!stateBelongsToActiveScope || visibleLoading || visibleLoadFailed}
               />
             ))}
           </div>
@@ -335,8 +412,8 @@ export default function PlayerNotesPanel({
           className={`${styles.console} ${compact ? styles.compact : ''}`}
           eyebrow="Player Notes"
           title={targetName || 'Player'}
-          pill={loading ? 'Reading' : noteLoadFailed ? 'Unread' : 'Note'}
-          pillInk={noteLoadFailed ? 'red' : 'blue'}
+          pill={visibleLoading ? 'Reading' : visibleLoadFailed ? 'Unread' : 'Note'}
+          pillInk={visibleLoadFailed ? 'red' : 'blue'}
           plates={{
             secondary: { label: 'Cancel', onClick: onClose },
             primary: { label: saveLabel, ink: 'white', onClick: saveNote, disabled: saveDisabled },
@@ -351,8 +428,8 @@ export default function PlayerNotesPanel({
         className={`${styles.console} ${compact ? styles.compact : ''}`}
         eyebrow="Player Notes"
         title={targetName || 'Player'}
-        pill={loading ? 'Reading' : noteLoadFailed ? 'Unread' : 'Note'}
-        pillInk={noteLoadFailed ? 'red' : 'blue'}
+        pill={visibleLoading ? 'Reading' : visibleLoadFailed ? 'Unread' : 'Note'}
+        pillInk={visibleLoadFailed ? 'red' : 'blue'}
         foot="foot"
       >
         {body}
@@ -383,11 +460,16 @@ export default function PlayerNotesPanel({
         placeholder="Search Notes..."
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
+        disabled={visibleLoading || visibleLoadFailed}
       />
 
       <div className={styles.notesList}>
-        {loading ? (
+        {visibleLoading ? (
           <div className={`${styles.empty} sc-ink--muted`}>Loading Notes...</div>
+        ) : visibleLoadFailed ? (
+          <div className={`${styles.empty} sc-ink--red`} role="alert">
+            Player Notes Could Not Be Loaded. Close And Try Again.
+          </div>
         ) : filteredNotes.length === 0 ? (
           <div className={`${styles.empty} sc-ink--muted`}>
             {searchQuery ? 'No Matching Notes' : 'No Notes Yet'}

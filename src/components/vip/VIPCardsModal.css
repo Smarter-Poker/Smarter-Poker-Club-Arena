@@ -121,10 +121,26 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Lifetime ownership is a compact engraved ledger, not another floating card. */
+.vipc__collection {
+  display: grid;
+  gap: 1.5cqw;
+  padding-top: 2.6cqw;
+  border-top: var(--vipc-rule);
+  box-shadow: var(--vipc-rule-lit);
+}
+
+.vipc__collection .sc-label {
+  margin-bottom: 0.5cqw;
+}
+
 /* ── The lit word: CLOSE, for a member with nothing to buy ──────────────── */
 
 .vipc__actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: 1.2cqw 3cqw;
+  align-items: center;
   justify-content: center;
   padding-top: 2.6cqw;
   border-top: var(--vipc-rule);
@@ -132,6 +148,9 @@
 }
 
 .vipc-word {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   appearance: none;
   margin: 0;
   padding: 1.6cqw 4cqw;
@@ -144,6 +163,7 @@
     sans-serif;
   letter-spacing: 0.14em;
   text-transform: uppercase;
+  text-decoration: none;
   white-space: nowrap;
   cursor: pointer;
   touch-action: manipulation;

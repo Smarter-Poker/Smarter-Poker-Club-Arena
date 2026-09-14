@@ -55,6 +55,7 @@ import type { DisconnectFsmEntry } from './DisconnectEngine.js';
 export interface CarriedTimeBank {
   remainingSeconds: number;
   usesRemaining: number;
+  unlimitedActivations: boolean;
   /** ServerTableEngineBase.timeBankMeta, so VIP quota accounting continues. */
   initialSeconds: number;
   baseSeconds: number;

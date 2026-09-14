@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { sliceCall, sliceMethod } from '../testHelpers/sourceWindow.js';
+import { sliceCall, sliceMethod, sliceStatement } from '../testHelpers/sourceWindow.js';
 
 const read = (file: string): string => readFileSync(path.join(process.cwd(), file), 'utf8');
 const base = read('src/engine/ServerTableEngineBase.ts');
@@ -64,9 +64,10 @@ describe('every live dealer carries and re-checks distributed authority', () => 
     expect(horseActionTimer).toContain("if (!fenceIsCurrent('commit')) return;");
 
     const timer = sliceMethod(turns, '  protected startTurnTimer(');
-    expect(timer).toMatch(
-      /this\.preciseTimer\.startTimer[\s\S]{0,220}!this\.lifecycleCanMutate\(\)/
-    );
+    const expiryResolver = sliceStatement(timer, 'const resolveTurnExpiry =');
+    expect(expiryResolver).toContain('if (!this.lifecycleCanMutate() || !this.handController)');
+    const preciseTimerArm = sliceCall(timer, 'this.preciseTimer.startTimer(');
+    expect(preciseTimerArm).toContain('resolveTurnExpiry();');
     const bankExpiry = timer.slice(
       timer.indexOf('Time bank itself expired'),
       timer.indexOf('const tbState = this.handController.getState()')

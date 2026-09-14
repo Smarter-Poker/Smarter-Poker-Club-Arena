@@ -45,6 +45,7 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceCall, sliceMethod, sliceStatement } from './helpers/sourceWindow';
 
 const ROOT = join(__dirname, '..');
 
@@ -69,9 +70,9 @@ function stripComments(src: string): string {
     .replace(/(^|[^:])\/\/[^\n]*/g, (_m, p1) => p1);
 }
 
-/** A write to table_seats that sets `stack`. The chain between `.from(
- *  'table_seats')` and the mutation is short in every real call site, so a
- *  600-char window catches the write without spanning unrelated statements. */
+/** A write to table_seats that sets `stack`. Each scan is bounded by the
+ *  complete chained statement and the complete mutation call, so adding fields
+ *  or comments can neither blind this law nor make it read the next statement. */
 function seatStackWrites(dir: string): string[] {
   const hits: string[] = [];
   for (const file of sourceFiles(join(ROOT, dir))) {
@@ -79,10 +80,10 @@ function seatStackWrites(dir: string): string[] {
     const from = /\.from\s*\(\s*['"`]table_seats['"`]\s*\)/g;
     let m: RegExpExecArray | null;
     while ((m = from.exec(src))) {
-      const window = src.slice(m.index, m.index + 600);
+      const window = sliceStatement(src.slice(m.index), m[0]);
       const write = /\.(update|insert|upsert)\s*\(\s*[[{]/.exec(window);
       if (!write) continue;
-      const payload = window.slice(write.index, write.index + 400);
+      const payload = sliceCall(window.slice(write.index), write[0]);
       if (/[{,[]\s*stack\s*:/.test(payload) || /\bstack\s*:\s*\w/.test(payload)) {
         hits.push(`${file.replace(ROOT + '/', '')}:${src.slice(0, m.index).split('\n').length}`);
       }
@@ -110,12 +111,7 @@ describe('a browser never writes a seat stack', () => {
 
   it('funds a horse through the atomic treasury door, keyed for idempotency', () => {
     const wallets = readFileSync(join(ROOT, 'server/src/services/supabase/wallets.ts'), 'utf8');
-    const fn = wallets.slice(wallets.indexOf('export async function autoRebuyHorse'));
-    expect(
-      fn.length,
-      'autoRebuyHorse has gone from server/src/services/supabase/wallets.ts'
-    ).toBeGreaterThan(0);
-    const body = fn.slice(0, 4000);
+    const body = sliceMethod(wallets, 'autoRebuyHorse(');
     expect(
       body,
       'the horse rebuy must go through the atomic treasury RPC, not a table write'

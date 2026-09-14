@@ -1455,6 +1455,9 @@ jobs:
         if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci
 
+      - name: Verify production minifier execution and hidden maps
+        run: node --test tests/operations/client-chunk-execution.test.mjs
+
       # 2026-09-04: the optimized rasters are content-addressed, so this is
       # keyed on the media that feeds them plus the script that encodes them.
       # When no image changed the key HITS and nothing is re-saved, so this

@@ -29,4 +29,4 @@ export const TABLE_AVATAR_SELECT = `avatar_url:${TABLE_AVATAR_COLUMN}` as const;
  * saying so.
  */
 export const SEATED_PROFILE_SELECT =
-  `id, display_name, username, is_horse, horse_profile, ${TABLE_AVATAR_SELECT}, use_real_name, equipped_frame, equipped_aura` as const;
+  `id, display_name, username, alias, first_name, last_name, full_name, is_horse, horse_profile, ${TABLE_AVATAR_SELECT}, use_real_name, equipped_frame, equipped_aura` as const;

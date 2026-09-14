@@ -49,6 +49,8 @@ export type SeatMoveReason = 'must_move' | 'break' | 'seat_change' | 'balance';
 export interface PendingSeatMove {
   move_id: string;
   player_id: string;
+  /** Original stay selected by the planner, never the user's replacement seat. */
+  source_occupancy_id: string;
   to_table_id: string;
   to_table_name: string | null;
   to_role: string | null;
@@ -154,6 +156,10 @@ export async function pendingSeatMoves(tableId: string): Promise<PendingSeatMove
     throw new Error(error.message || 'Seat move enumeration failed');
   }
   if (!Array.isArray(data)) throw new Error('Seat move enumeration was not confirmed');
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (data.some((m) => !m || !uuid.test(m.source_occupancy_id ?? ''))) {
+    throw new Error('Seat move original occupancy was not confirmed');
+  }
   return data as PendingSeatMove[];
 }
 
@@ -256,6 +262,7 @@ export async function executePendingSeatMoves(
       res.from_table_id === tableId &&
       typeof res.source_occupancy_id === 'string' &&
       uuid.test(res.source_occupancy_id) &&
+      res.source_occupancy_id === m.source_occupancy_id &&
       Number.isInteger(res.source_seat_number);
     if (res.ok === true) {
       if (

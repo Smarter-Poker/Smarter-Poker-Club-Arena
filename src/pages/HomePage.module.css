@@ -1142,24 +1142,42 @@
   background: transparent;
 }
 
-/* Tile label overlay — visible when tile image loads or as fallback */
+.tileImageNative {
+  object-fit: contain;
+}
+
+/* Live copy prints into the dark leather footer painted into the portal art. */
 .tileLabel {
   position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 8px 6px 6px;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
-  border-radius: 0 0 10px 10px;
-  font-size: 9px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.9);
-  text-transform: uppercase;
-  letter-spacing: 1.5px;
+  right: 9%;
+  bottom: 3.8%;
+  left: 9%;
+  display: grid;
+  gap: 1px;
+  color: #f4f7fb;
   text-align: center;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  text-shadow:
+    0 1px 0 #050607,
+    0 0 8px rgb(0 212 255 / 42%);
   z-index: 3;
   pointer-events: none;
+}
+
+.tileLabel strong {
+  font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;
+  font-size: clamp(8px, 0.82vw, 11px);
+  line-height: 1;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.tileLabel small {
+  color: #45adff;
+  font-size: clamp(6px, 0.56vw, 8px);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

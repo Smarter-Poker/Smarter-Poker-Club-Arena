@@ -3151,6 +3151,17 @@ export abstract class ServerTableEngineBase {
     for (const uid of this.heldForSwap) {
       if (!liveHeld.has(uid)) this.heldForSwap.delete(uid);
     }
+    // The database keeps ready_at through a restart or a lost executor reply.
+    // Rebuild the hold for the original stay before the partner can move it.
+    for (const m of pending) {
+      if (m.ready_at == null) continue;
+      const current = this.seatedPlayers.find((p) => p.user_id === m.player_id);
+      if (current?.occupancy_id === m.source_occupancy_id) {
+        this.heldForSwap.add(m.player_id);
+      } else {
+        this.heldForSwap.delete(m.player_id);
+      }
+    }
   }
 
   /**
@@ -3172,10 +3183,10 @@ export abstract class ServerTableEngineBase {
    * enumeration nobody could read must never be mistaken for an empty one, and
    * a throw cannot be ignored by accident the way a value can.
    *
-   * At these two call sites the correct response to "I could not tell" is to
-   * CHANGE NOTHING - do not prune, do not release a swap hold, do not announce
-   * - and then carry on. A notice that could not be read must never stop a
-   * table dealing, and an unread list must never look like an empty one. So
+   * At these two call sites "I could not tell" must CHANGE NOTHING: do not
+   * prune, release a swap hold, or announce. The pre-deal caller also defers
+   * the deal: after restart or a lost executor reply a durable ready_at can
+   * exist without a local hold. An unread list is never an empty one. So
    * the throw is translated here, once, and reported: everything above this
    * line keeps main's contract, everything below it keeps this lane's
    * invariant.
@@ -3189,15 +3200,22 @@ export abstract class ServerTableEngineBase {
     }
   }
 
-  protected async announcePendingSeatMoves(): Promise<void> {
-    if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return;
+  protected async announcePendingSeatMoves(): Promise<boolean> {
+    if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return true;
+    if (!this.lifecycleCanMutate()) return false;
     const pending = await this.readPendingSeatMoves();
-    // A read that failed says nothing about what is pending: announce nothing,
-    // release nothing. The next hand asks again.
-    if (pending === null) return;
+    // A fresh engine has no local swap holds. Unknown durable readiness must
+    // defer its next deal too, rather than move a player out of a live hand.
+    if (!this.lifecycleCanMutate() || pending === null) return false;
     this.reconcileSeatMoveHolds(pending);
     const fresh: string[] = [];
     for (const m of pending) {
+      if (
+        !this.seatedPlayers.some(
+          (p) => p.user_id === m.player_id && p.occupancy_id === m.source_occupancy_id
+        )
+      )
+        continue;
       /* PRESENCE FOLLOWS THE PLAYER (2026-09-05). Stamped here, once per
          hand, for EVERY pending move rather than only for the ones this
          engine executes - because a SWAP is landed by the OTHER table's
@@ -3222,6 +3240,7 @@ export abstract class ServerTableEngineBase {
       });
     }
     if (fresh.length > 0) await announceSeatMoves(fresh);
+    return this.lifecycleCanMutate();
   }
 
   /**
@@ -6530,8 +6549,8 @@ export abstract class ServerTableEngineBase {
    * authoritative for the running process; this column is only ever read by
    * `restoreEntryHoldsFromSeats()` on boot.
    *
-   * Scoped to the live seat (`left_at IS NULL`) so it can never resurrect state
-   * onto a historical row for a player who has since left and come back.
+   * Scoped to the original occupancy and the live seat (`left_at IS NULL`),
+   * so neither a historical row nor a replacement stay can receive it.
    */
   /**
    * WRITE ORDER IS THE STATE (2026-08-30). persistEntryHold is fire-and-forget
@@ -6645,6 +6664,10 @@ export abstract class ServerTableEngineBase {
     state: { hold: 'waiting' | 'posting' | null; agreed?: boolean }
   ): void {
     if (this.isTournamentTable()) return;
+    // Capture the stay when the decision is made. A queued write can start
+    // after this user leaves and returns to the same table.
+    const occupancyId = this.seatedPlayers.find((p) => p.user_id === userId)?.occupancy_id;
+    if (!occupancyId) return;
     const patch: Record<string, unknown> = { entry_hold: state.hold };
     if (state.agreed !== undefined) patch.entry_post_agreed = state.agreed;
     /* Promise.resolve() around the builder, deliberately. A PostgREST query
@@ -6662,6 +6685,7 @@ export abstract class ServerTableEngineBase {
             .update(patch)
             .eq('table_id', this.tableId)
             .eq('user_id', userId)
+            .eq('occupancy_id', occupancyId)
             .is('left_at', null)
         )
       )

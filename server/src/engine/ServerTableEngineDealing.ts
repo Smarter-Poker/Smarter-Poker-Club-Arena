@@ -268,14 +268,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
         // Bible V8 §4.2: Detect new joiners. Any userId that appears in
         // seatedPlayers but wasn't known before is a new player. After the
-        // first dealingLoop iteration every such player is registered — which
-        // since 2026-08-25 no longer means "wait for the big blind". Cash entry
-        // is free and the release a few lines below happens on this same tick.
-        // The set now exists only so the two positional hold-outs (never dealt
-        // into the small blind, never handed the button on your first hand) get
-        // a chance to look at the seat before the deal. On the very first
-        // iteration — cold start OR crash recovery — all seated players are
-        // treated as the initial roster and none of that applies.
+        // first dealingLoop iteration a cash entrant waits for the big blind
+        // or posts to enter. Automatic moves carry their own paid-entry
+        // marker. On boot, restore outstanding entry holds before seeding
+        // button eligibility for players who were already playing.
         // A SEAT CHANGED (2026-09-05): an arrival or a departure seen in the
         // rows this iteration wakes the game's ClusterController tick.
         let rosterChanged = false;
@@ -868,11 +864,16 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // so the notice only ever speaks of a hand that is about to be dealt
         // (2026-09-05: it used to run at load_seats, on idle iterations too).
         // Bounded like every other step.
-        await this.withStepBudget(
+        const movesKnown = await this.withStepBudget(
           'announce_seat_moves',
           ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
           this.announcePendingSeatMoves()
         );
+        if (!movesKnown) {
+          if (!this.lifecycleCanMutate()) return;
+          await this.sleep(3000);
+          continue;
+        }
         if (this.terminalCloseoutPaused || this.tournamentMovePauseOwners.size > 0) {
           await this.awaitPauseGate();
           if (!this.running) break;
@@ -1648,9 +1649,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               current.seat_number === p.seat_number &&
               current.occupancy_id === p.occupancy_id
           ) &&
-          (this.isTournamentTable() || !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
+          (this.isTournamentTable() ||
+            (!this.disconnectEngine.isSittingOut(this.tableId, p.user_id) &&
+              !this.waitingForBB.has(p.user_id) &&
+              !this.isHeldForSwap(p.user_id)))
       );
-      if (players.length < 2) return;
+      if (players.length < this.minPlayersToDeal()) return;
       if (!this.tableInfo) return;
 
       // GLOBAL HAND NUMBER (2026-08-18). Allocated from the database sequence at

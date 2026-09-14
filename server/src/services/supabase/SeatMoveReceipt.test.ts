@@ -12,6 +12,7 @@ const id = '66666666-6666-4666-8666-666666666666';
 const candidate: PendingSeatMove = {
   move_id: id,
   player_id: player,
+  source_occupancy_id: sourceOccupancy,
   to_table_id: destination,
   to_table_name: null,
   to_role: null,
@@ -54,6 +55,7 @@ describe('verified original seat move outcomes', () => {
     { ...receipt, from_table_id: destination },
     { ...receipt, to_table_id: table },
     { ...receipt, source_occupancy_id: undefined },
+    { ...receipt, source_occupancy_id: player },
     { ...receipt, destination_occupancy_id: sourceOccupancy },
     { ...receipt, stack: '25' },
     { ...receipt, stack: NaN },
@@ -128,5 +130,12 @@ describe('verified original seat move outcomes', () => {
     await expect(pendingSeatMoves(table)).rejects.toThrow();
     mock.rpc.mockResolvedValue({ data: [], error: null });
     expect(await pendingSeatMoves(table)).toEqual([]);
+    mock.rpc.mockResolvedValue({
+      data: [{ ...candidate, source_occupancy_id: null }],
+      error: null,
+    });
+    await expect(pendingSeatMoves(table)).rejects.toThrow('original occupancy');
+    mock.rpc.mockResolvedValue({ data: [candidate], error: null });
+    expect(await pendingSeatMoves(table)).toEqual([candidate]);
   });
 });

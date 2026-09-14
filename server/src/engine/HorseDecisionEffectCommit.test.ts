@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { FastHorseDecisionResult } from './horseDecision/protocol.js';
 
 const decisionWorker = vi.hoisted(() => {
   const commitDecisionEffects = vi.fn(async (authority: { generation: number; fence: string }) => ({
@@ -7,26 +8,28 @@ const decisionWorker = vi.hoisted(() => {
     ...authority,
     operation: 'COMMIT_DECISION_EFFECTS' as const,
   }));
-  const decideFast = vi.fn(async (snapshot: { generation: number; fence: string }) => ({
-    type: 'FAST_RESULT' as const,
-    requestId: 1,
-    generation: snapshot.generation,
-    fence: snapshot.fence,
-    decision: { action: 'bet' as const, amount: 20, thinkTime: 1 },
-    rngBefore: 11,
-    rngAfter: 22,
-    computeMs: 2,
-    governorScale: 1,
-    effects: [
-      {
-        type: 'raise_plan' as const,
-        handKey: 'table:hand',
-        userId: 'horse-1',
-        street: 'flop',
-        plan: 'foldToRaise' as const,
-      },
-    ],
-  }));
+  const decideFast = vi.fn(
+    async (snapshot: { generation: number; fence: string }): Promise<FastHorseDecisionResult> => ({
+      type: 'FAST_RESULT' as const,
+      requestId: 1,
+      generation: snapshot.generation,
+      fence: snapshot.fence,
+      decision: { action: 'bet' as const, amount: 20, thinkTime: 1 },
+      rngBefore: 11,
+      rngAfter: 22,
+      computeMs: 2,
+      governorScale: 1,
+      effects: [
+        {
+          type: 'raise_plan' as const,
+          handKey: 'table:hand',
+          userId: 'horse-1',
+          street: 'flop',
+          plan: 'foldToRaise' as const,
+        },
+      ],
+    })
+  );
   const worker = {
     decideFast,
     decideDeep: vi.fn(),
@@ -46,9 +49,13 @@ vi.mock('./horseDecision/index.js', async () => {
   };
 });
 
+import { HandController } from './HandController.js';
+import type { HandConfig, SeatPlayer } from '../types.js';
 import { ServerTableEngine } from './ServerTableEngine.js';
 import { ServerTableEngineTurns } from './ServerTableEngineTurns.js';
 import { HorseDecisionAbortedError, HorseDecisionExpiredError } from './horseDecision/index.js';
+import { drainFires, enableBrainTelemetry } from './BrainTelemetry.js';
+import { createHorseExecutionWitness } from './HorseExecutionWitness.js';
 
 const TABLE = 'fafafafa-fafa-fafa-fafa-fafafafafafa';
 
@@ -138,7 +145,21 @@ function harness(intendedActionAccepted: boolean) {
       noFlopNoDrop: true,
       playerCountCaps: [{ players: 2, cap: 2.5 }],
     }),
-    performAction,
+    performAction: (...args: any[]) => {
+      const applied = performAction(...args.slice(0, 4));
+      if (applied) {
+        const [seat, action, amount, , onAccepted] = args;
+        onAccepted?.({
+          seat,
+          userId: player.user_id,
+          action,
+          amount: action === 'all_in' ? enginePlayer.stack + enginePlayer.bet : (amount ?? 0),
+          stage: state.stage,
+          timestamp: Date.now(),
+        });
+      }
+      return applied;
+    },
   };
   engine.disconnectEngine = { isSittingOut: () => false, recordPlayerActed: vi.fn() };
   engine.timeBankEngine = {
@@ -166,6 +187,110 @@ afterEach(() => {
 });
 
 describe('authoritative horse action effect commit', () => {
+  it.each(['plo4', 'plo5', 'plo6', 'plo8', 'flh', 'flo8'] as const)(
+    'reconciles the actual %s controller clamp through the scheduled executor',
+    async (variant) => {
+      const { engine, player, enginePlayer } = harness(true);
+      const hc = new HandController(
+        {
+          tableId: TABLE,
+          handNumber: 12,
+          gameVariant: variant,
+          smallBlind: 1,
+          bigBlind: 2,
+          rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
+        } as HandConfig,
+        [1, 2, 3, 4].map((seat) => ({
+          ...enginePlayer,
+          seat,
+          cards: [],
+          user_id: seat === 1 ? player.user_id : `opponent-${seat}`,
+        })) as SeatPlayer[],
+        2
+      );
+      hc.start();
+      engine.handController = hc;
+      engine.tableInfo.game_variant = variant;
+      const policies = {
+        tournamentUtility: {
+          selectedAction: 'all_in',
+          selectedAmount: null,
+          executionStatus: 'pending',
+        },
+        tournamentPostflop: {
+          applied: false,
+          baselineAction: 'all_in',
+          baselineAmount: null,
+          executionStatus: 'pending',
+        },
+        plo4Policy: { finalAction: 'all_in', finalAmount: null, executionStatus: 'pending' },
+        omahaVariantPolicy: {
+          variant,
+          finalAction: 'all_in',
+          finalAmount: null,
+          executionStatus: 'pending',
+        },
+        remainingVariantPolicy: {
+          variant,
+          finalAction: 'all_in',
+          finalAmount: null,
+          executionStatus: 'pending',
+        },
+        jointPolicy: {
+          variant,
+          finalAction: 'all_in',
+          finalAmount: null,
+          executionStatus: 'pending',
+        },
+      };
+      let witness: ReturnType<typeof createHorseExecutionWitness> | undefined;
+      decisionWorker.decideFast.mockImplementationOnce(async (snapshot: any) => {
+        const decision = { action: 'all_in' as const, thinkTime: 1, ...policies } as any;
+        witness = createHorseExecutionWitness(snapshot, decision, {
+          requestId: 1,
+          lane: 'fast',
+          computeMs: 2,
+          governorScale: 1,
+        });
+        return {
+          type: 'FAST_RESULT',
+          requestId: 1,
+          generation: snapshot.generation,
+          fence: snapshot.fence,
+          decision: { ...decision, executionWitness: witness },
+          rngBefore: 11,
+          rngAfter: 22,
+          computeMs: 2,
+          governorScale: 1,
+          effects: [],
+        };
+      });
+      const state = hc.getState();
+      expect(state.currentPlayerSeat).toBe(1);
+      engine.scheduleHorseAction(player, 1, state.players.find((p) => p.seat === 1)!, state);
+      await vi.advanceTimersByTimeAsync(300);
+      const expectedAmount = variant.startsWith('plo') ? 7 : 4;
+      expect(witness).toMatchObject({
+        executionStatus: 'coerced',
+        executedAction: 'raise',
+        executedAmount: expectedAmount,
+      });
+      expect(witness?.acceptedActions).toEqual([
+        {
+          intended: true,
+          record: { seat: 1, action: 'raise', amount: expectedAmount, stage: 'preflop' },
+        },
+      ]);
+      for (const receipt of Object.values(policies)) {
+        expect(receipt).toMatchObject({
+          executionStatus: 'coerced',
+          executedAction: 'raise',
+          executedAmount: expectedAmount,
+        });
+      }
+      expect(hc.getState().players.find((p) => p.seat === 1)!.stack).toBe(100 - expectedAmount);
+    }
+  );
   it('keeps a disconnected all-in seat as a live pot contender', () => {
     const { engine, player, enginePlayer, state } = harness(true);
     state.players[1].is_all_in = true;
@@ -727,28 +852,68 @@ describe('Phase 11 authoritative execution receipts', () => {
   });
 });
 
-describe('Phase13 deep and coerced execution reconciliation', () => {
+describe.each([
+  'tournamentUtility',
+  'tournamentPostflop',
+  'plo4Policy',
+  'omahaVariantPolicy',
+  'remainingVariantPolicy',
+  'jointPolicy',
+  'executionWitness',
+] as const)('%s deep and cancelled execution reconciliation', (policyKey) => {
+  beforeEach(() => {
+    enableBrainTelemetry();
+    drainFires();
+  });
   const ledger = (action = 'call', amount: number | null = 20) => ({
     variant: 'nlh',
+    selectedAction: action,
+    selectedAmount: amount,
+    baselineAction: action,
+    baselineAmount: amount,
+    applied: false,
     finalAction: action,
     finalAmount: amount,
     executedAction: null,
     executedAmount: null,
     executionStatus: 'pending',
   });
-  const response = (snapshot: any, receipt: any, action: any, amount: number | undefined = 20) => ({
-    type: 'FAST_RESULT' as const,
-    requestId: 81,
-    generation: snapshot.generation,
-    fence: snapshot.fence,
-    decision: { action, amount, thinkTime: 1000, jointPolicy: receipt },
-    rngBefore: 11,
-    rngAfter: 22,
-    computeMs: 2,
-    governorScale: 1,
-    effects: [],
-  });
-  it.each(['accepted', 'unchanged', 'generation', 'fence', 'after_commit'] as const)(
+  const response = (
+    snapshot: any,
+    receipt: any,
+    action: any,
+    amount: number | undefined = action === 'call' || action === 'bet' ? 20 : undefined,
+    lane: 'fast' | 'deep' = 'fast'
+  ) => {
+    if (policyKey === 'executionWitness') {
+      Object.assign(
+        receipt,
+        createHorseExecutionWitness(
+          snapshot,
+          { action, amount, thinkTime: 1000 },
+          {
+            requestId: 81,
+            lane,
+            computeMs: 2,
+            governorScale: 1,
+          }
+        )
+      );
+    }
+    return {
+      type: 'FAST_RESULT' as const,
+      requestId: 81,
+      generation: snapshot.generation,
+      fence: snapshot.fence,
+      decision: { action, amount, thinkTime: 1000, [policyKey]: receipt },
+      rngBefore: 11,
+      rngAfter: 22,
+      computeMs: 2,
+      governorScale: 1,
+      effects: [],
+    };
+  };
+  it.each(['accepted', 'unchanged', 'generation', 'fence', 'after_commit', 'cancelled'] as const)(
     'reconciles the actual scheduled deep result: %s',
     async (mode) => {
       const { engine, player, enginePlayer, state, performAction } = harness(true);
@@ -779,21 +944,40 @@ describe('Phase13 deep and coerced execution reconciliation', () => {
       await vi.advanceTimersByTimeAsync(100);
       expect(decisionWorker.worker.decideDeep).toHaveBeenCalledOnce();
       if (mode === 'after_commit') await vi.advanceTimersByTimeAsync(1000);
+      if (mode === 'cancelled') engine.cancelHorseDecisionWork();
       const result = response(
         deepSnapshot,
         deep,
         mode === 'unchanged' ? 'call' : 'fold',
-        mode === 'unchanged' ? 20 : undefined
+        mode === 'unchanged' ? 20 : undefined,
+        'deep'
       );
       if (mode === 'generation') result.generation += 1;
       if (mode === 'fence') result.fence = 'retired';
       release({ ...result, type: 'DEEP_RESULT' });
       await vi.advanceTimersByTimeAsync(1100);
-      expect(fast.executionStatus).toBe(mode === 'accepted' ? 'not_executed' : 'intended');
+      expect(fast.executionStatus).toBe(
+        mode === 'accepted' || mode === 'cancelled' ? 'not_executed' : 'intended'
+      );
       expect(deep.executionStatus).toBe(mode === 'accepted' ? 'intended' : 'not_executed');
-      expect(performAction).toHaveBeenCalledOnce();
-      expect(performAction.mock.calls[0][1]).toBe(mode === 'accepted' ? 'fold' : 'call');
+      if (mode === 'cancelled') expect(performAction).not.toHaveBeenCalled();
+      else {
+        expect(performAction).toHaveBeenCalledOnce();
+        expect(performAction.mock.calls[0][1]).toBe(mode === 'accepted' ? 'fold' : 'call');
+      }
       expect(mode === 'accepted' ? fast.executedAction : deep.executedAction).toBeNull();
+      const retirementFeature = {
+        tournamentUtility: 'phase7_utility_not_executed',
+        tournamentPostflop: 'phase8_execution_not_executed',
+        plo4Policy: 'phase10_execution_not_executed',
+        omahaVariantPolicy: 'phase11_execution_not_executed',
+        remainingVariantPolicy: 'phase12_execution_not_executed',
+        jointPolicy: 'phase13_execution_not_executed',
+        executionWitness: 'phase15_execution_not_executed',
+      }[policyKey];
+      expect(drainFires().find(({ feature }) => feature === retirementFeature)?.fires).toBe(
+        mode === 'cancelled' ? 2 : 1
+      );
     }
   );
   it.each(['coerced', 'rejected'] as const)(
@@ -814,6 +998,24 @@ describe('Phase13 deep and coerced execution reconciliation', () => {
       expect(receipt.executedAction).toBe(mode === 'coerced' ? 'all_in' : null);
     }
   );
+  it('retires a cancelled turn immediately even though its action timer never runs', async () => {
+    const { engine, player, enginePlayer, state, performAction } = harness(true);
+    const receipt = ledger('bet', 20);
+    decisionWorker.decideFast.mockImplementationOnce(async (s: any) => response(s, receipt, 'bet'));
+    engine.scheduleHorseAction(player, 1, enginePlayer, state);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(receipt.executionStatus).toBe('pending');
+    engine.cancelHorseDecisionWork();
+    expect(engine.horseActionTimer).toBeNull();
+    expect(receipt.executionStatus).toBe('not_executed');
+    expect(receipt.executedAction).toBeNull();
+    expect(receipt.executedAmount).toBeNull();
+    engine.cancelHorseDecisionWork();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(receipt.executionStatus).toBe('not_executed');
+    expect(performAction).not.toHaveBeenCalled();
+    expect(decisionWorker.commitDecisionEffects).not.toHaveBeenCalled();
+  });
 });
 
 // Each phase reconciles through the same real scheduled action boundary.

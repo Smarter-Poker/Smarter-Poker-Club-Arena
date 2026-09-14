@@ -1491,6 +1491,9 @@ export class GameServer {
     if (existing) return existing;
 
     const leaseGeneration = releaseLease ? manager.getTournamentLeaseGeneration() : null;
+    const observeLeaseRelease = leaseGeneration
+      ? manager.captureLeaseReleaseDiagnosticObserver(tournamentId, leaseGeneration)
+      : null;
     let resolveReleaseBarrier: (confirmed: boolean) => void = () => undefined;
     const releaseBarrier = leaseGeneration
       ? new Promise<boolean>((resolve) => {
@@ -1516,6 +1519,12 @@ export class GameServer {
         if (stopped && leaseGeneration) {
           this.tournamentManagerPendingLeaseReleases.set(tournamentId, leaseGeneration);
           const release = await releaseTournaments([{ tournamentId, leaseGeneration }]);
+          const releaseDiagnostic = observeLeaseRelease?.(release);
+          if (releaseDiagnostic) {
+            // The host-owned Docker log supplies container/process custody.
+            // This bounded record is an observation, never release authority.
+            console.info('[tournament-manager-release]', JSON.stringify(releaseDiagnostic));
+          }
           if (release.status !== 'confirmed') {
             throw new Error(
               `Tournament lease release was not confirmed for ${tournamentId}/${leaseGeneration}: ` +
@@ -4078,6 +4087,7 @@ export class GameServer {
         handCount: engine.getHandCount(),
         msSinceProgress: engine.msSinceProgress(),
         settlementAgeMs: engine.settlementAgeMs(),
+        settlementAwaits: engine.settlementAwaits(),
         // 2026-08-22: where the dealing loop actually is, e.g. `load_seats+96s`.
         // /health could say a table had made no progress for 96 seconds but not
         // what it was doing for those 96 seconds, so a fleet-wide stall showed up

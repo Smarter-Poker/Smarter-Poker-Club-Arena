@@ -12,6 +12,10 @@
 **What changed:** bounded keyset enumeration with the existing fetchAllRows reader, complete/valid-board checks, oldest-first admission with deterministic ties and null starts last, lifecycle checks after reading and after staggering. Existing coalesced admission, retry capacity, owner/provider and financial contracts are unchanged.
 **Verified:** YES. Ten pre-fix actual-method counterexamples;5,747engine tests/369files andserverTypeScript pass. Final focused71tests/5files cover the bounded ceiling and final-page retirement. Read-only production pagination11:17 returned1000+298rows and included the excluded event. This is reader evidence, not deployment or tournament recovery certification. No production write/DDL.
 
+## 2026-09-14: Current status gates tournament resume
+
+**Files/lines:** TournamentManagerBase original4578–4585; ResumeCurrentStatus.test.ts; BlindLevelTransitionRecovery.test.ts original373. **What existed:** resume discarded a read error and ignored the current event status/identity, so stale discovery restarted an already completed satellite and repeatedly attempted rejected blinds. **What changed:** require an error-free exact RUNNING row before gameplay setup; let the existing GameServer owner retire the non-running manager. **Why:** discovery is a candidate snapshot, not current gameplay authority. **Verified:** YES, actual live trace and10old-method failures, 5,709engine tests/366files pass; unchanged exact-manager cleanup exercised. **TypeScript:** serverPASS. No SQL, manual production mutation or deployed/full-fleet acceptance claimed. See docs/changelog/2026-09-14-mtt-resume-current-status.md.
+
 ## 2026-09-14: New MTT structures must describe playable levels
 
 **Files:** server/src/domain/tournamentBlindContract.ts; server/src/services/ScheduledTournamentService.ts:1166; server/src/services/TournamentRecurringService.ts:3783 and4019; src/services/TournamentService.ts:850 and1029; migration20260914005233.

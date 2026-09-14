@@ -1,0 +1,9 @@
+# Bind engine image artifacts to their CI producer
+
+The current engine publisher builds new images on the production host. Its 1 GiB builder plus 256 MiB reserve has refused releases when the live workload leaves less available memory. Moving compilation into CI needs an image handoff that verifies both the bytes and the producer; an image label or a descriptor bundled with an archive cannot authenticate itself.
+
+This change adds the handoff component. It packages an already normalized engine archive with every runtime file hash, verifies those hashes against the independent full TypeScript reference, and hardlinks the existing canonical archive into a new owned bundle without another full image copy. It refuses existing output directories, altered archives, mismatched runtime files, unsafe paths and symlinks. It starts no compiler or Docker daemon itself.
+
+The admission command takes expected values from the current workflow's successful producer outputs and independent preflight/Git identities, outside the downloaded bundle. It reads authenticated GitHub metadata for the exact repository, workflow, run, attempt, artifact and successful producer job, then rechecks the received files. Wrong attempts, cross-run artifacts, expired artifacts, duplicate or skipped producers, changed bytes and missing metadata fail. This is a hard file-integrity check even if an artifact download action only warns about its own digest mismatch.
+
+This patch does not change the active publisher or enable production import. The existing release request, freshness, image lease, lock, maintenance certificate, cutover, recovery and final proof rules remain prerequisites for later integration. Native producer-to-consumer delivery and host Docker/containerd resource qualification remain open. An accepted bundle does not authorize deployment or claim that host import is qualified.

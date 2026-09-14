@@ -32,6 +32,13 @@
  */
 
 import { supabase } from './supabase.js';
+import { recordHorseTunerUpdate } from './HorseTunerAtomicWrite.js';
+import {
+  completeHorseTunerStudy,
+  prepareHorseTunerStudy,
+  readRecordedHorseTunes,
+  TUNER_STUDY_MAX_HORSES,
+} from './HorseTunerStudyCompletion.js';
 import { reportError } from './errorReporter.js';
 import { claimNightlyJob } from '../benchmark/HorseLeague.js';
 import type { HorseProfileMods, LeakFamily } from '../engine/HorseLogic.js';
@@ -445,15 +452,15 @@ const lifecycleIsCurrent = (generation: number): boolean =>
 async function alreadyTunedToday(date: string): Promise<boolean> {
   try {
     const { data, error } = await supabase
-      .from('horse_self_tune_log')
-      .select('horse_id')
+      .from('horse_tuner_study_completions')
+      .select('run_date')
       .eq('run_date', date)
       .limit(1);
     if (error) throw new Error(error.message);
     return (data?.length ?? 0) > 0;
   } catch (err) {
-    // A failed lookup must not silently skip the night. The audit rows upsert
-    // on (horse_id, run_date), so a duplicate run is harmless.
+    // A failed lookup cannot close the day. Per-horse immutable receipts
+    // preserve completed work while a later study resumes the unfinished set.
     reportError(err, 'HorseSelfTuner.alreadyTunedToday');
     return false;
   }
@@ -487,7 +494,7 @@ async function maybeRunSelfTune(generation: number): Promise<void> {
   if (!lifecycleIsCurrent(generation)) return;
   // A returned worker promise is not completion evidence: runSelfTune reports
   // failures and empty studies as { studied: 0, tuned: 0 }. Re-read the
-  // durable log before latching this process, so a failed night remains open
+  // durable whole-study receipt before latching, so a failed night remains open
   // for the stale-claim takeover on the next tick.
   const completed = await alreadyTunedToday(today);
   if (!lifecycleIsCurrent(generation)) return;
@@ -686,9 +693,14 @@ export async function runSelfTune(
   const date = runDate ?? new Date().toISOString().slice(0, 10);
   try {
     const t0 = Date.now();
+    const prior = await readRecordedHorseTunes(date);
+    if (!shouldContinue()) return { studied: 0, tuned: 0 };
+    if (prior.status !== 'snapshot') throw new Error('Tuner progress is unreadable');
+    const recordedHorses = new Set(prior.horseIds);
 
     // Horses + their current profiles.
     const horses = new Map<string, HorseProfileMods & { style?: unknown }>();
+    const expectedProfiles = new Map<string, unknown>();
     {
       let cursor: string | null = null;
       for (;;) {
@@ -713,7 +725,8 @@ export async function runSelfTune(
           // hashing the user id — silently erasing an authored personality,
           // permanently. No string rows exist in production today; this keeps
           // it that way if any are ever re-seeded.
-          const raw = row.horse_profile;
+          const raw = JSON.parse(JSON.stringify(row.horse_profile ?? null));
+          expectedProfiles.set(row.id, raw);
           const p: Record<string, unknown> =
             typeof raw === 'string'
               ? { style: raw }
@@ -730,6 +743,7 @@ export async function runSelfTune(
           });
         }
         cursor = (data[data.length - 1] as { id: string }).id;
+        if (horses.size > TUNER_STUDY_MAX_HORSES) throw new Error('Tuner horse budget exceeded');
         if (data.length < 1000) break;
       }
     }
@@ -990,9 +1004,24 @@ export async function runSelfTune(
 
     // Diagnose + write.
     let tuned = 0;
-    for (const [horseId, s] of stats) {
+    let unfinished = 0;
+    const eligibleHorses = [...stats]
+      .filter(([, s]) => s.hands >= MIN_HANDS_TO_TUNE)
+      .map(([id]) => id);
+    if (stats.size === 0) return { studied: 0, tuned: 0 };
+    const cohort = await prepareHorseTunerStudy(date, stats.size, eligibleHorses);
+    if (!shouldContinue()) return { studied: stats.size, tuned: 0 };
+    if (cohort.status !== 'prepared') throw new Error('Tuner study roster is unconfirmed');
+    for (const horseId of cohort.horseIds) {
       if (!shouldContinue()) return { studied: stats.size, tuned };
-      if (s.hands < MIN_HANDS_TO_TUNE) continue;
+      // This horse already committed its one daily update. Never recompute a
+      // new request from its updated profile after a crash or lost response.
+      if (recordedHorses.has(horseId)) continue;
+      const s = stats.get(horseId);
+      if (!s || s.hands < MIN_HANDS_TO_TUNE || !horses.has(horseId)) {
+        unfinished++;
+        continue;
+      }
       const prevMods = horses.get(horseId) ?? {};
       const rn = realNets.get(horseId);
       const realBB100 =
@@ -1067,32 +1096,24 @@ export async function runSelfTune(
         leaksChanged;
 
       try {
-        if (changed) {
-          const newProfile = {
-            ...(prevMods as object),
-            ...mods,
-            leaks: leakProfile,
-            leaksHands,
-            leaksOmaha: familyProfile.leaksOmaha,
-            leaksHandsOmaha: familyProfile.leaksHandsOmaha,
-            leaksHoldem: familyProfile.leaksHoldem,
-            leaksHandsHoldem: familyProfile.leaksHandsHoldem,
-            leaksTournament: familyProfile.leaksTournament,
-            leaksHandsTournament: familyProfile.leaksHandsTournament,
-          };
-          const { error: upErr } = await supabase
-            .from('profiles')
-            .update({ horse_profile: newProfile })
-            .eq('id', horseId)
-            .eq('is_horse', true);
-          if (!shouldContinue()) return { studied: stats.size, tuned };
-          if (upErr) throw new Error(upErr.message);
-          tuned++;
-        }
-        const { error: logErr } = await supabase.from('horse_self_tune_log').upsert(
-          {
-            horse_id: horseId,
-            run_date: date,
+        const newProfile = {
+          ...(prevMods as object),
+          ...mods,
+          leaks: leakProfile,
+          leaksHands,
+          leaksOmaha: familyProfile.leaksOmaha,
+          leaksHandsOmaha: familyProfile.leaksHandsOmaha,
+          leaksHoldem: familyProfile.leaksHoldem,
+          leaksHandsHoldem: familyProfile.leaksHandsHoldem,
+          leaksTournament: familyProfile.leaksTournament,
+          leaksHandsTournament: familyProfile.leaksHandsTournament,
+        };
+        const written = await recordHorseTunerUpdate({
+          horseId,
+          runDate: date,
+          expectedProfile: expectedProfiles.get(horseId),
+          nextProfile: changed ? newProfile : expectedProfiles.get(horseId),
+          audit: {
             hands: s.hands,
             stats: {
               ...statSnapshot(s),
@@ -1111,28 +1132,40 @@ export async function runSelfTune(
               // where this horse's frequencies came from: play rows or the stream
               study_source: fromPlayRows.has(horseId) ? 1 : 0,
             },
-            mods_before: {
+            modsBefore: {
               tightness: prevMods.tightness ?? 1,
               aggression: prevMods.aggression ?? 1,
               bluffFreq: prevMods.bluffFreq ?? 1,
             },
-            mods_after: {
+            modsAfter: {
               tightness: mods.tightness,
               aggression: mods.aggression,
               bluffFreq: mods.bluffFreq,
             },
             reasons,
           },
-          { onConflict: 'horse_id,run_date' }
-        );
+        });
         if (!shouldContinue()) return { studied: stats.size, tuned };
-        if (logErr) throw new Error(logErr.message);
+        if (written.status !== 'recorded')
+          throw new Error(
+            `atomic tuner write ${written.status}${written.status === 'unavailable' ? ': ' + written.reason : ''}`
+          );
+        if (written.changed && !written.replayed) tuned++;
       } catch (err) {
+        unfinished++;
         reportError(err, 'HorseSelfTuner.write');
       }
     }
 
-    const eligible = [...stats.values()].filter((s) => s.hands >= MIN_HANDS_TO_TUNE).length;
+    const eligible = cohort.horseIds.length;
+    if (shouldContinue() && unfinished === 0 && stats.size > 0) {
+      const completed = await completeHorseTunerStudy(date, cohort.studied, cohort.horseIds);
+      if (!completed)
+        reportError(
+          new Error('Tuner study completion remains unconfirmed'),
+          'HorseSelfTuner.completion'
+        );
+    }
     console.log(
       `[HorseSelfTuner] Studied ${fromPlayRows.size} horses from horse_daily_play (full ${STUDY_WINDOW_DAYS}d) ` +
         `and ${fromStream} from a ${fetched}-hand hand_history stream covering the newest ${coveredHours}h, ` +

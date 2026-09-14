@@ -6,10 +6,12 @@ Synthetic field and tables; maintenance is a fixture boolean and the excluded
 paid-Spin proof is explicitly a refusal stand-in. Not full money/gameplay/RLS.
 """
 from pathlib import Path
-import json, os, shutil, subprocess, tempfile
+import json, os, shutil, subprocess, tempfile, hashlib
 repo=Path(__file__).resolve().parents[2]
 capture=json.loads((repo/'scripts/dev/fixtures/played-mtt-launch/installed.json').read_text())
 migration=next((repo/'supabase/migrations').glob('*_engine_can_read_played_tournament_launch_proof.sql'))
+authority_capture=json.loads((repo/'scripts/dev/fixtures/played-mtt-launch/request-authority.json').read_text())['functions'][0]
+authority_migration=next((repo/'supabase/migrations').glob('*_played_launch_proof_allows_authority_lock.sql'))
 configured=os.environ.get('POKER_AUDIT_PG_BIN') or os.environ.get('PGBIN')
 pg=Path(configured) if configured else Path(subprocess.check_output(['brew','--prefix','postgresql@17'],text=True).strip())/'bin'
 root=Path(tempfile.mkdtemp(prefix='ca-pm-'));cluster=root/'db';sock=root/'s';sock.mkdir()
@@ -81,6 +83,54 @@ with (root/'results.log').open('w') as log:
   reset();q(proof,'permission denied',role=True);q(migration.read_text());q(migration.read_text())
   for role in ['anon','authenticated']:q('SET ROLE '+role+';'+proof,'permission denied')
   check('reviewed read-only proof becomes engine-readable while browser roles remain denied')
+  # Reproduce PostgREST's actual transaction mode: STABLE POST is READ ONLY.
+  # The captured hook is unchanged; auth.role is an explicit verified-claims
+  # fixture. No HTTP provider or JWT verification is substituted as proven.
+  q("CREATE SCHEMA auth; CREATE SCHEMA smarter_private; CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql AS $$SELECT current_setting('request.jwt.claims',true)::jsonb->>'role'$$;")
+  assert hashlib.md5(authority_capture['definition'].split('$function$')[1].encode()).hexdigest()==authority_capture['body_md5']
+  q(authority_capture['definition']+';')
+  q("GRANT USAGE ON SCHEMA smarter_private TO service_role; GRANT EXECUTE ON FUNCTION smarter_private.fn_smarter_data_api_pre_request() TO service_role; GRANT UPDATE ON tournaments TO service_role;")
+  def request_prefix(readonly=True,lease=generation,method='POST'):
+   headers=json.dumps({'x-smarter-data-actor':'tournament-manager','x-smarter-data-protocol':'2','x-smarter-tournament-id':event,'x-smarter-tournament-lease-generation':lease})
+   return ("BEGIN "+('READ ONLY' if readonly else 'READ WRITE')+";SET LOCAL ROLE service_role;SET LOCAL request.jwt.claims='{\"role\":\"service_role\"}';SET LOCAL request.method='"+method+"';SET LOCAL request.path='/rpc/fn_prove_played_launch_recovery';SET LOCAL request.headers='"+headers+"';SELECT smarter_private.fn_smarter_data_api_pre_request();")
+  reset();before=q(preserved)
+  q(request_prefix()+proof+'COMMIT;','cannot execute SELECT FOR KEY SHARE in a read-only transaction')
+  assert q(preserved)==before
+  check('unchanged actual request hook reproduces the live STABLE POST read-only lock failure')
+  metadata="SELECT jsonb_build_array(proowner,proacl,proconfig,prosecdef,provolatile)::text FROM pg_proc WHERE oid='smarter_private.fn_smarter_data_api_pre_request()'::regprocedure;"
+  previous=q(metadata)
+  q(authority_migration.read_text());q(authority_migration.read_text());assert q(metadata)==previous
+  assert q("SELECT provolatile FROM pg_proc WHERE oid='fn_prove_played_launch_recovery(uuid,timestamptz)'::regprocedure;")=='s'
+  anchor=json.loads(q(request_prefix()+proof+'COMMIT;'))
+  assert anchor['reason']=='the_receipt_is_not_the_deal_that_happened'
+  exact=f"SELECT fn_prove_played_launch_recovery('{event}','{first}');"
+  assert json.loads(q(request_prefix()+exact+'COMMIT;'))['ok']
+  assert q(preserved)==before
+  check('repaired read-only POST retains stable proof snapshot, exact anchor, grants, metadata and input rows')
+  q(request_prefix()+"UPDATE tournaments SET current_players=0;COMMIT;",'cannot execute UPDATE in a read-only transaction')
+  assert q(preserved)==before
+  check('read-only admission cannot become a mutation bypass')
+  for readonly in [True,False]:
+   q(request_prefix(readonly,launch)+proof+'COMMIT;','TOURNAMENT_MANAGER_FENCED')
+  q("UPDATE engine_tournament_leases SET heartbeat_at=clock_timestamp()-interval '31 seconds';")
+  for readonly in [True,False]:q(request_prefix(readonly)+proof+'COMMIT;','TOURNAMENT_MANAGER_FENCED')
+  check('wrong and stale generations remain refused in both access modes')
+  reset()
+  for method in ['GET','HEAD']:
+   assert json.loads(q(request_prefix(True,method=method)+exact+'COMMIT;'))['ok']
+  check('existing read-only GET and HEAD authority behavior remains valid')
+  held=subprocess.Popen([str(pg/'psql'),'-X','-qAt','-v','ON_ERROR_STOP=1'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,env=env)
+  try:
+   held.stdin.write(request_prefix(False)+"SELECT 'authority_held';SELECT pg_sleep(1);COMMIT;\n");held.stdin.close()
+   assert any(held.stdout.readline().strip()=='authority_held' for _ in range(3))
+   q("BEGIN;SET LOCAL lock_timeout='100ms';SELECT 1 FROM engine_tournament_leases FOR UPDATE;COMMIT;",'lock timeout')
+   q("UPDATE engine_tournament_leases SET heartbeat_at=clock_timestamp();")
+   assert held.wait(timeout=5)==0,held.stderr.read()
+  finally:
+   if held.poll() is None:held.kill();held.wait(timeout=5)
+  check('read-write request still blocks generation takeover while allowing heartbeat renewal')
+  reset()
+
   before=q(preserved);verified=obtain();assert verified['playing']==2 and verified['dealt_field']==3
   claim=json.loads(q(begin,role=True));assert claim['ok'] and not claim['completed']
   assert json.loads(q(complete,role=True))['ok'];assert q(preserved)==before
@@ -120,5 +170,5 @@ with (root/'results.log').open('w') as log:
  finally:
   if started:subprocess.run([str(pg/'pg_ctl'),'-D',str(cluster),'-m','fast','-w','stop'],stdout=log,stderr=log,check=True,timeout=30)
   shutil.rmtree(cluster,ignore_errors=True)
-(root/'results.json').write_text(json.dumps({'passed':passed,'production_database_used':False,'limits':'Synthetic played field; actual proof and begin/complete authorities and receipt trigger. Maintenance boolean and excluded paid-Spin proof are explicit stand-ins; no money, full trigger graph, HTTP or dealer certification.'},indent=2)+'\n')
+(root/'results.json').write_text(json.dumps({'passed':passed,'production_database_used':False,'limits':'Synthetic played field; actual proof and begin/complete authorities, receipt trigger and request hook. Transaction mode is driven as documented by PostgREST; auth.role is a verified-claims stand-in. Maintenance boolean and excluded paid-Spin proof are explicit stand-ins; no money, full trigger graph, HTTP or dealer certification.'},indent=2)+'\n')
 print(str(len(passed))+' groups passed; evidence: '+str(root/'results.json'))

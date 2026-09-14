@@ -1,6 +1,9 @@
 import { configureFixtureSafeupdate } from './safeupdate-provider.mjs';
+import { qualifyPostAlignmentAuth } from './post-alignment-auth.mjs';
 import { captureFixtureServicePreimage } from './service-preimage.mjs';
 import { alignFixtureRoles } from './role-alignment.mjs';
+import { roleNativePostgresArguments, runRoleNativeFaultPhase, runRoleNativeAccessPhase } from './role-native-entry.mjs';
+import { providerPostgresArguments, prepareProviderKey, providerBuildEvidence, qualifyFixtureProviders } from './provider-semantics.mjs';
 import {
   cronPostgresArguments,
   installFixtureCron,
@@ -483,6 +486,7 @@ async function checkPackage() {
     `${pgBin}/psql`,
     '/usr/local/bin/auth',
     '/usr/local/bin/postgrest',
+    '/usr/local/bin/fixture-provider-getkey',
     '/app/bin/server',
     '/app/bin/migrate',
     '/usr/bin/openssl',
@@ -491,8 +495,16 @@ async function checkPackage() {
     await access(binary, constants.X_OK);
   for (const name of [
     'fixture-server.mjs',
+    'post-alignment-auth.mjs',
     'service-preimage.mjs',
     'role-alignment.mjs',
+    'role-native-entry.mjs',
+    'role-native-protocol.mjs',
+    'role-native-faults.mjs',
+    'role-native-access.mjs',
+    'provider-semantics.mjs',
+    'provider-semantic-sql.mjs',
+    'provider-probe-peer.mjs',
     'role-alignment-render.mjs',
     'role-alignment-installer.sql',
     'role-alignment-native.json',
@@ -573,7 +585,15 @@ function serviceEnvironments(secrets) {
   };
 }
 
-async function start(args, preimageOnly = false, roleAlignment = false) {
+async function start(args, preimageOnly = false, roleAlignment = false, roleNative = false, providerSemantics = false, postAlignmentAuth = false) {
+  // Native qualification stays inside the existing 180s outer preimage limit.
+  // Includes genuine bootstrap, all catalogs and every phase; expiry is failure.
+  const nativeDeadline = performance.now() + 150000;
+  const nativeBudget = () => {
+    const remaining = Math.floor(nativeDeadline - performance.now());
+    assert.ok(remaining > 0, 'FIXTURE_ROLE_NATIVE_TOTAL_DEADLINE');
+    return Math.min(60000, remaining);
+  };
   let inputs;
   let setupStage = 'arguments';
   try {
@@ -600,7 +620,11 @@ async function start(args, preimageOnly = false, roleAlignment = false) {
     throw error;
   }
   const supervisor = new ServiceSupervisor();
-  let db, gateway, actors, bridge;
+  const nativeTimer = roleNative ? setTimeout(() => supervisor.fail('native-role-total-deadline'),
+    Math.max(1, nativeDeadline - performance.now())) : null;
+  nativeTimer?.unref();
+  let db, gateway, actors, bridge, authProof;
+  let startupFailed = false;
   let stage = 'archives';
   const stop = () => supervisor.fail('termination');
   process.once('SIGTERM', stop);
@@ -656,6 +680,13 @@ async function start(args, preimageOnly = false, roleAlignment = false) {
       pgData + '/pg_ident.conf',
       'fixture_users fixture supabase_admin\nfixture_users fixture postgres\n'
     );
+    // Opt-in provider command only. pg_net retries its owned database until
+    // bootstrap creates it; its worker identity is proven after extension install.
+    if (providerSemantics) {
+      stage = 'postgresql-provider-key';
+      await prepareProviderKey();
+    }
+    stage = 'postgresql-start';
     await supervisor.start('postgres', `${pgBin}/postgres`, [
       '-D',
       pgData,
@@ -671,11 +702,12 @@ async function start(args, preimageOnly = false, roleAlignment = false) {
       'max_replication_slots=20',
       '-c',
       'max_wal_senders=20',
-      '-c',
-      'shared_preload_libraries=pg_stat_statements,pg_cron',
+      ...(providerSemantics ? providerPostgresArguments : ['-c', 'shared_preload_libraries=pg_stat_statements,pg_cron']),
+      ...(roleNative ? roleNativePostgresArguments : []),
       ...cronPostgresArguments,
       ...managedPostgresArguments,
     ]);
+    stage = 'postgresql-ready';
     await supervisor.until(async () => {
       try {
         await supervisor.command(`${pgBin}/pg_isready`, [
@@ -700,8 +732,11 @@ async function start(args, preimageOnly = false, roleAlignment = false) {
     db = supervisor.databaseOwner.own(
       new pg.Client({ ...connection, user: 'supabase_admin', database: 'postgres' })
     );
+    stage = 'postgresql-bootstrap-connect';
     await db.connect();
+    stage = 'postgresql-bootstrap-configuration';
     await assertBootstrapPostgresConfiguration(db);
+    stage = 'postgresql-bootstrap-owner';
     await createFixtureApplicationOwner(db);
     await db.query(`CREATE DATABASE ${database} OWNER postgres`);
     await db.query('REVOKE CONNECT ON DATABASE postgres, template1 FROM PUBLIC');
@@ -710,6 +745,7 @@ async function start(args, preimageOnly = false, roleAlignment = false) {
       new pg.Client({ ...connection, user: 'supabase_admin', database })
     );
     await db.connect();
+    stage = 'postgresql-bootstrap-roles';
     await db.query(serviceRoleBootstrapSql(secrets.databasePassword));
     stage = 'postgresql-native-cron-install';
     await installFixtureCron(db);
@@ -760,9 +796,11 @@ async function start(args, preimageOnly = false, roleAlignment = false) {
           Client: pg.Client,
           password: secrets.databasePassword,
           signal: supervisor.abort.signal,
+          ...(roleNative ? { deadlineMs: nativeBudget() } : {}),
         });
         supervisor.assertHealthy();
         process.stdout.write(JSON.stringify(roleProof) + '\n');
+        return roleProof;
       } catch (error) {
         if (error?.proof) process.stdout.write(JSON.stringify(error.proof) + '\n');
         throw error;
@@ -787,7 +825,66 @@ async function start(args, preimageOnly = false, roleAlignment = false) {
       } finally {
         await supervisor.databaseOwner.end(preimageBootstrap);
       }
-      if (roleAlignment) await applyRoleAlignment();
+      if (roleNative) {
+        stage = 'native-role-fault-matrix';
+        await supervisor.databaseOwner.end(db);
+        try {
+          const faultProof = await runRoleNativeFaultPhase({ Client: pg.Client,
+            password: secrets.databasePassword, signal: supervisor.abort.signal, deadlineMs: nativeBudget() });
+          supervisor.assertHealthy();
+          process.stdout.write(JSON.stringify(faultProof) + '\n');
+        } catch (error) {
+          if (error?.proof) process.stdout.write(JSON.stringify(error.proof) + '\n');
+          throw error;
+        }
+        db = supervisor.databaseOwner.own(new pg.Client({ ...connection, database }));
+        await db.connect();
+      }
+      if (roleAlignment) {
+        const roleProof = await applyRoleAlignment();
+        if (roleNative) {
+          stage = 'native-role-access-defaults';
+          try {
+            const accessProof = await runRoleNativeAccessPhase({ Client: pg.Client,
+              password: secrets.databasePassword, signal: supervisor.abort.signal,
+              applicationClient: db, roleProof, deadlineMs: nativeBudget() });
+            supervisor.assertHealthy();
+            process.stdout.write(JSON.stringify(accessProof) + '\n');
+          } catch (error) {
+            if (error?.proof) process.stdout.write(JSON.stringify(error.proof) + '\n');
+            throw error;
+          }
+        }
+        if (providerSemantics) {
+          stage = 'five-provider-semantics';
+          try {
+            const providerProof = await qualifyFixtureProviders({
+              Client: pg.Client, signal: supervisor.abort.signal, roleProof,
+              buildSha256: await providerBuildEvidence(),
+              ...(roleNative ? { deadlineMs: nativeBudget() } : {}),
+            });
+            supervisor.assertHealthy();
+            process.stdout.write(JSON.stringify(providerProof) + '\n');
+            if (postAlignmentAuth) {
+              stage = 'post-alignment-auth';
+              const heldBackendPid = db.processID;
+              // Alignment's installer and all observers have physically closed.
+              // A new application connection now adopts the installed settings.
+              await supervisor.databaseOwner.end(db);
+              db = supervisor.databaseOwner.own(new pg.Client({ ...connection, database,
+                connectionTimeoutMillis: 3000, query_timeout: 5000 }));
+              await db.connect();
+              authProof = await qualifyPostAlignmentAuth({ db, heldBackendPid, supervisor,
+                authEnvironment: env.auth, secrets, roleProof, providerProof,
+                deadlineMs: roleNative ? Math.min(30000, nativeBudget()) : 30000 });
+              supervisor.assertHealthy();
+            }
+          } catch (error) {
+            if (error?.proof) process.stdout.write(JSON.stringify(error.proof) + '\n');
+            throw error;
+          }
+        }
+      }
       // Docker tmpfs disappears on container stop. Keep this exact bootstrap
       // alive until the outer owner copies the catalog, then shut down normally.
       await writeFile(root + '/service-preimage.ready', '', { flag: 'wx', mode: 0o400 });
@@ -979,6 +1076,7 @@ async function start(args, preimageOnly = false, roleAlignment = false) {
     // Private service logs can include synthetic credentials. Public stderr
     // contains the bounded stage only, never child output or raw SQL/errors.
     process.stderr.write(`FIXTURE_FAILED:${stage}\n`);
+    startupFailed = true;
     if (preimageOnly) {
       process.stderr.write(
         JSON.stringify(nativeFailureDiagnostic('fixture-preimage-' + stage, error)) + '\n'
@@ -994,6 +1092,11 @@ async function start(args, preimageOnly = false, roleAlignment = false) {
         bridge,
         supervisor,
       });
+      // No service-phase success leaves the container until its real service
+      // children and database clients have closed. Outer Docker absence is
+      // independently required by the controller before native acceptance.
+      if (!startupFailed && authProof) process.stdout.write(JSON.stringify({ ...authProof,
+        status: 'passed', fixture_resources_closed: true }) + '\n');
     } catch (error) {
       if (preimageOnly) {
         process.stderr.write(
@@ -1002,6 +1105,7 @@ async function start(args, preimageOnly = false, roleAlignment = false) {
       }
       throw error;
     } finally {
+      clearTimeout(nativeTimer);
       process.removeListener('SIGTERM', stop);
       process.removeListener('SIGINT', stop);
     }
@@ -1033,6 +1137,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     if (command === 'start') await start(args);
     else if (command === 'preimage') await start(args, true);
     else if (command === 'align-roles') await start(args, true, true);
+    else if (command === 'qualify-role-boundaries') await start(args, true, true, true);
+    else if (command === 'qualify-providers') await start(args, true, true, false, true);
+    else if (command === 'qualify-role-providers') await start(args, true, true, true, true);
+    else if (command === 'qualify-auth') await start(args, true, true, false, true, true);
+    else if (command === 'qualify-role-providers-auth') await start(args, true, true, true, true, true);
     else {
       assert.equal(args.length, 0);
       if (command === 'capabilities') {

@@ -13,6 +13,10 @@
 **Why:** the displayed late-registration promise must follow the same window as fn_tournament_late_registration_open and fn_close_tournament_entry_window.
 **Verified:** YES. 12 pre-fix counterexamples; 2,047 client tests/129 files and46 existing engine entry-window tests/2 files pass. **TypeScript/build:** full app retains exactly26 identical preexisting native-dependency diagnostics before/after; local production build stops there. Proper-dependency CI and served proof remain open. No SQL or production event writes. See docs/changelog/2026-09-14-mtt-entry-window-projection.md.
 
+## 2026-09-14: Current status gates tournament resume
+
+**Files/lines:** TournamentManagerBase original4578–4585; ResumeCurrentStatus.test.ts; BlindLevelTransitionRecovery.test.ts original373. **What existed:** resume discarded a read error and ignored the current event status/identity, so stale discovery restarted an already completed satellite and repeatedly attempted rejected blinds. **What changed:** require an error-free exact RUNNING row before gameplay setup; let the existing GameServer owner retire the non-running manager. **Why:** discovery is a candidate snapshot, not current gameplay authority. **Verified:** YES, actual live trace and10old-method failures, 5,709engine tests/366files pass; unchanged exact-manager cleanup exercised. **TypeScript:** serverPASS. No SQL, manual production mutation or deployed/full-fleet acceptance claimed. See docs/changelog/2026-09-14-mtt-resume-current-status.md.
+
 ## 2026-09-14: New MTT structures must describe playable levels
 
 **Files:** server/src/domain/tournamentBlindContract.ts; server/src/services/ScheduledTournamentService.ts:1166; server/src/services/TournamentRecurringService.ts:3783 and4019; src/services/TournamentService.ts:850 and1029; migration20260914005233.

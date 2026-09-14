@@ -1154,6 +1154,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-credit-invoice-payment.sh
+      - name: Agent statements isolate clubs and use posted evidence
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/test-agent-accounting-statements.sh
       - name: Horse identity trigger semantics, rollback and concurrent stamp writes
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

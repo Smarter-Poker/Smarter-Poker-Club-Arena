@@ -1,3 +1,10 @@
+## 2026-09-14: Conservation reads posted house corrections
+
+**Files:** migration20260914123403; native conservation fixture and runner; required accounting CI; docs/changelog/2026-09-14-conservation-house-corrections.md.
+**What existed:** two received alerts falsely reported180chips of excess after an authorized house-funded correction. The conservation reader omitted correction-category funding.
+**What changed:** recognize only positive finite posted house corrections to the exact tournament liability, preserving legacy funding deduplication, existing access and every other conservation term. No payment or financial-history change.
+**Verified:** native original counterexample, genuine excess, invalid and foreign funding, transaction visibility, actual excluded-candidate readers and drift/replay protection. Read-only production scope143received tournaments identifies exactly2funded corrections, each projecting from-180to0. Installation and natural-sweep proof remain separate.
+
 ## 2026-09-14: Spin prize audits recognize matching posted correction funding
 
 **Files:** migration20260914120920; native spin-prize-overlay fixture/runner; required accounting CI step.

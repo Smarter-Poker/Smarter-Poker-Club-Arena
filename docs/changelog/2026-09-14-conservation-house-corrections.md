@@ -1,0 +1,11 @@
+# Conservation recognizes a house-funded correction
+
+Two received conservation alerts each report a 180-chip excess after a Sunday Deep Stack winner received an already authorized bubble-protection correction. The actual posted ledger legs transfer 180 from the house to each tournament's prize liability. The conservation reader counts only entries categorized as overlays, so these transfers are invisible because their category is `correction`.
+
+The reader now adds positive, finite, posted house corrections that identify both the exact tournament and its prize-liability destination. Missing or self-referential sources, other source/destination types, pending/reversed entries, and invalid amounts cannot create funding. The combined journal funding still uses the existing maximum against the legacy guarantee table, so two records of one funding are counted once. Overlay and correction queries remain separate to use existing tournament and destination indexes. No index build is needed.
+
+Read-only production checks covered all 143 distinct tournaments in received conservation alerts. Exactly these two have qualifying corrections; both project from -180 to zero. The actual payouts, obligations, funding legs, and separate historical unpaid-winner alerts are retained in the operational investigation evidence. No player receives another payment and no financial history or source-alert flag is rewritten.
+
+Native PostgreSQL 17 checks run the captured production definition and the exact guarded migration. They reproduce the missing funding and exercise real excess, invalid and foreign funding, duplicate side-table evidence, retained legacy and satellite-ticket arithmetic, actual transaction visibility, unchanged service-only access, migration replay and unknown-definition refusal. The actual heads-up candidate reader and backed-payment reader exclude the corrected zero-delta event; an intentionally failing reconciliation fixture ensures that this exclusion does not call a financial reconciliation function. This is evidence about that selection boundary, not general settlement qualification.
+
+Baseline definition: `3a101e8a47822d6b1af6abd274272a36`. Candidate: `435c8f7eabc7d5b78b893885c91c738a`. Publication, installation, live definition parity and the natural conservation sweep must be verified separately before closing the received alerts.

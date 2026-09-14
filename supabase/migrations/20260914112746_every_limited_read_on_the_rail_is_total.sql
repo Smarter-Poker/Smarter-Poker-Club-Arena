@@ -1,72 +1,29 @@
--- 20260914102703_the_rail_asks_the_server_once
+-- 20260914112746_every_limited_read_on_the_rail_is_total
 --
--- FIVE QUERIES, 1,300 ROWS, ONE LINE OF TEXT (2026-09-14)
+-- WHY THIS EXISTS SEPARATELY FROM THE MIGRATION ABOVE IT (2026-09-14)
 --
--- Every thirty seconds, for every seated player, the ticker ran five queries:
--- their registrations (200 rows), upcoming events (25), overlay candidates
--- (25), an operational sweep of `tournaments` (80) and new tables (10). It then
--- threw nearly all of it away, because the bar shows ONE announcement.
+-- 20260914102703 had ALREADY been applied to production when the final sweep
+-- found this, so the fix could not go back into it: a migration that has run is
+-- history. That file carries the corrected function too, so a fresh replay of
+-- the directory is correct on its own and this one is a no-op replace. This file
+-- is the record of what production actually received, and when.
 --
--- Measured for a real three-club member on 2026-09-14, the operational sweep
--- alone MATCHED 1,322 rows and took the 80 most recently `updated_at`. Of those
--- 1,322, the ones that could actually produce a message were:
+-- THE DEFECT. `ORDER BY start_time LIMIT 25` does not name 25 rows when
+-- start_times tie, and they tie constantly. Measured on production: 124 of 136
+-- pre-start MTTs share an exact start_time with another, across 56 distinct
+-- timestamps, 44 of which carry a tie, largest group five. No group is bigger
+-- than the limit today, so the boundary falls INSIDE one - which makes the take
+-- arbitrary there, and arbitrary again on the next poll with nothing underneath
+-- having changed. That is the #4601 crowd-out in a new disguise: an eligible
+-- major dropped in favour of a tied turbo, and a bar whose contents flicker for
+-- no reason a player could name.
 --
---     registration closing   2      (of 1,028 running events)
---     guarantee starting     3
---     result to report      72
+-- Every ORDER BY that feeds a LIMIT now ends on the row id, and so does every
+-- jsonb_agg - whose output order is unspecified even over an ordered subquery.
+-- A trailing id costs nothing and makes each take TOTAL.
 --
--- So the bar was shipping eighty rows chosen by recency and hoping the two that
--- mattered were among them. `tournaments.updated_at` has NO trigger maintaining
--- it, so that ordering is not even reliably recency. This is the same defect
--- fixed for `starting_soon` in #4601 - a major crowded off the rail by turbos -
--- except here it is three sources sharing one budget, at thirteen times the
--- scale, and it has been silent because a bar with nothing on it looks exactly
--- like a bar with nothing to say.
---
--- fn_get_ticker_feed does the filtering where the rows are. One round trip, one
--- row budget PER SOURCE, and the predicates are the real ones rather than a
--- wide slice narrowed in a browser.
---
--- WHAT STAYS IN THE CLIENT, deliberately:
---
---   * all COPY. Composing the sentences in plpgsql would fork tickerMessages.ts
---     into a second implementation that the Title Case and em-dash checks
---     cannot see.
---   * lateRegEndMs(). It parses the blind structure and sums level durations,
---     and it was corrected twice in August. One implementation, in the language
---     that has the tests. This function ships a provable SUPERSET instead (see
---     below) and lets the client do the arithmetic it already does.
---   * rankOverlayAnnouncements(), for the same reason.
---
--- THE SUPERSET ARGUMENT for registration_closing. lateRegEndMs takes the LATER
--- of two candidates, so a row can only produce a message if at least one of:
---
---   minutes: started_at + late_reg_mins is itself inside the five-minute window
---            - computable here exactly;
---   levels:  late_reg_levels > 0 AND current_level < late_reg_levels AND
---            level_started_at IS NOT NULL - the necessary conditions for that
---            candidate to exist at all, plus level_started_at > now() - 12h,
---            which is an upper bound on twelve levels of any real structure.
---
--- If the maximum candidate is the minutes one, branch one matches. If it is the
--- levels one, branch two's conditions hold. So nothing that should speak is
--- excluded, and 1,028 rows become 2.
---
--- SECURITY DEFINER because the club scope is derived from auth.uid() INSIDE.
--- The old client shipped its own club-id list into every filter; a caller can
--- no longer ask about a club it does not belong to, and the list never travels.
---
--- EVERY LIMITED READ ENDS ITS ORDER BY ON t.id (2026-09-14, from the sweep).
--- `ORDER BY start_time LIMIT 25` does not name 25 rows when start_times tie,
--- and they tie constantly: measured on production, 124 of 136 pre-start MTTs
--- share an exact start_time with another, across 56 distinct timestamps, 44 of
--- which carry a tie. No tie group is larger than the limit today, so the limit
--- boundary falls INSIDE a group of up to five - which makes the take arbitrary
--- there, and arbitrary between one poll and the next with nothing underneath
--- having changed. That is the #4601 crowd-out again in a different disguise: an
--- eligible major dropped for a tied turbo. A trailing `t.id` costs nothing and
--- makes every take total. The same applies to each jsonb_agg, whose output
--- order is otherwise unspecified even when the subquery was ordered.
+-- The verification below is the property itself: two identical reads must agree
+-- exactly. With a non-total ordering under a limit they need not.
 --
 -- ONE TRANSACTION, per CLAUDE.md's production DDL policy.
 
@@ -282,18 +239,15 @@ GRANT EXECUTE ON FUNCTION public.fn_get_ticker_feed(jsonb, integer, uuid) TO aut
 
 DO $$
 DECLARE
-  v_uid   uuid;
-  v_feed  jsonb;
-  v_all   jsonb;
+  v_uid uuid;
+  v_a   jsonb;
+  v_b   jsonb;
+  v_off jsonb;
 BEGIN
-  -- A member with live clubs, so the shape is exercised against real rows.
   SELECT cm.user_id INTO v_uid
   FROM public.club_members cm
   WHERE cm.status IN ('active', 'approved')
-  GROUP BY cm.user_id
-  ORDER BY count(*) DESC
-  LIMIT 1;
-
+  GROUP BY cm.user_id ORDER BY count(*) DESC LIMIT 1;
   IF v_uid IS NULL THEN
     RAISE NOTICE 'no club members; behavioural check skipped';
     RETURN;
@@ -302,54 +256,37 @@ BEGIN
   SET LOCAL ROLE authenticated;
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', v_uid, 'role', 'authenticated')::text, true);
-
-  -- Every source OFF: the shape must still be complete and every array empty.
-  v_feed := public.fn_get_ticker_feed('{}'::jsonb, 900000, NULL);
-  -- Every source ON.
-  v_all  := public.fn_get_ticker_feed(
+  v_a := public.fn_get_ticker_feed(
     '{"starting_soon":true,"overlays":true,"registration_closing":true,
-      "guarantees":true,"winner_results":true,"table_openings":true}'::jsonb,
-    900000, NULL);
+      "guarantees":true,"winner_results":true,"table_openings":true}'::jsonb, 900000, NULL);
+  v_b := public.fn_get_ticker_feed(
+    '{"starting_soon":true,"overlays":true,"registration_closing":true,
+      "guarantees":true,"winner_results":true,"table_openings":true}'::jsonb, 900000, NULL);
+  v_off := public.fn_get_ticker_feed('{}'::jsonb, 900000, NULL);
   RESET ROLE;
 
-  IF (v_feed->>'ok')::boolean IS NOT TRUE THEN
-    RAISE EXCEPTION 'VERIFY FAILED: a member could not read the feed: %', v_feed;
+  IF (v_a->>'ok')::boolean IS NOT TRUE THEN
+    RAISE EXCEPTION 'VERIFY FAILED: a member could not read the feed: %', v_a;
   END IF;
 
-  IF NOT (v_feed ? 'upcoming' AND v_feed ? 'overlays' AND v_feed ? 'reg_closing'
-          AND v_feed ? 'guarantees' AND v_feed ? 'results' AND v_feed ? 'table_openings') THEN
-    RAISE EXCEPTION 'VERIFY FAILED: the feed is missing a source array: %', v_feed;
+  -- THE POINT OF THIS MIGRATION: two identical reads must agree exactly.
+  IF v_a->'upcoming' <> v_b->'upcoming'
+     OR v_a->'overlays' <> v_b->'overlays'
+     OR v_a->'reg_closing' <> v_b->'reg_closing'
+     OR v_a->'guarantees' <> v_b->'guarantees'
+     OR v_a->'results' <> v_b->'results'
+     OR v_a->'table_openings' <> v_b->'table_openings' THEN
+    RAISE EXCEPTION 'VERIFY FAILED: two identical reads disagreed, so a take is still arbitrary';
   END IF;
 
-  -- An off switch must mean no rows, not merely no rendering.
-  IF jsonb_array_length(v_feed->'upcoming') <> 0
-     OR jsonb_array_length(v_feed->'overlays') <> 0
-     OR jsonb_array_length(v_feed->'reg_closing') <> 0
-     OR jsonb_array_length(v_feed->'guarantees') <> 0
-     OR jsonb_array_length(v_feed->'results') <> 0
-     OR jsonb_array_length(v_feed->'table_openings') <> 0 THEN
-    RAISE EXCEPTION 'VERIFY FAILED: a source that is switched off returned rows: %', v_feed;
+  IF jsonb_array_length(v_off->'upcoming') <> 0
+     OR jsonb_array_length(v_off->'overlays') <> 0
+     OR jsonb_array_length(v_off->'reg_closing') <> 0
+     OR jsonb_array_length(v_off->'guarantees') <> 0
+     OR jsonb_array_length(v_off->'results') <> 0
+     OR jsonb_array_length(v_off->'table_openings') <> 0 THEN
+    RAISE EXCEPTION 'VERIFY FAILED: a source that is switched off returned rows: %', v_off;
   END IF;
-
-  IF (v_all->>'clubs')::int < 1 THEN
-    RAISE EXCEPTION 'VERIFY FAILED: a club member was scoped to no clubs: %', v_all;
-  END IF;
-
-  -- Every budget is per source. None may exceed its own limit.
-  IF jsonb_array_length(v_all->'upcoming') > 25
-     OR jsonb_array_length(v_all->'overlays') > 25
-     OR jsonb_array_length(v_all->'reg_closing') > 25
-     OR jsonb_array_length(v_all->'guarantees') > 25
-     OR jsonb_array_length(v_all->'results') > 25
-     OR jsonb_array_length(v_all->'table_openings') > 10 THEN
-    RAISE EXCEPTION 'VERIFY FAILED: a source exceeded its row budget: %', v_all;
-  END IF;
-
-  RAISE NOTICE 'VERIFY OK: clubs=% upcoming=% overlays=% closing=% guarantees=% results=% tables=%',
-    v_all->>'clubs',
-    jsonb_array_length(v_all->'upcoming'), jsonb_array_length(v_all->'overlays'),
-    jsonb_array_length(v_all->'reg_closing'), jsonb_array_length(v_all->'guarantees'),
-    jsonb_array_length(v_all->'results'), jsonb_array_length(v_all->'table_openings');
 END $$;
 
 COMMIT;

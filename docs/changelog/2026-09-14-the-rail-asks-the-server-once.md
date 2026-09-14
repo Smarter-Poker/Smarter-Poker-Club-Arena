@@ -128,6 +128,38 @@ if a membership list shows up on the wire. It runs after the deploy rather than
 as a merge gate, which is the correct side of the publish: before it, production
 still has the old code and the spec _should_ be red.
 
+## 5. And the crowd-out again, found in the final sweep
+
+Reviewing the SQL line by line afterwards turned up the same defect class a
+third time, in the code that had just fixed it twice.
+
+Every source read is `ORDER BY <something> LIMIT n`. None of those somethings is
+unique. `ORDER BY start_time LIMIT 25` does not name 25 rows when start_times
+tie — and they tie constantly. Measured on production:
+
+| pre-start MTTs | distinct start times | sharing a start time | largest tie group |
+| -------------- | -------------------- | -------------------- | ----------------- |
+| 136            | 56                   | **124**              | 5                 |
+
+No tie group is larger than the limit today, so the boundary falls _inside_ a
+group of up to five. The take is arbitrary there, and arbitrary again on the
+next poll with nothing underneath having changed: an eligible major dropped in
+favour of a tied turbo, and a bar whose contents flicker for no reason a player
+could name. That is #4601 wearing a different hat, and it is the same reason the
+repo already has a law about paged reads being ordered by something unique —
+scoped to two paged readers, so it never looked at this SQL.
+
+Every `ORDER BY` that feeds a `LIMIT` now ends on the row id, and so does every
+`jsonb_agg`, whose output order is unspecified even over an ordered subquery.
+Twelve clauses, and `tickerServerFeed.test.ts` fails if any of them loses its
+tie-breaker. Applied as a second migration (`20260914112746`) because
+`20260914102703` had already run and a migration that has run is history; the
+original file carries the fix too, so a fresh replay is correct on its own.
+
+The new migration's verification _is_ the property: it reads the feed twice and
+requires the two answers to be byte-identical. With a non-total ordering under a
+limit they need not be.
+
 ---
 
 ## Verified

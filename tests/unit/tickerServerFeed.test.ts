@@ -169,6 +169,33 @@ describe('the SQL and the TypeScript cannot drift apart', () => {
     expect(block).toContain(`LIMIT ${UPCOMING_ROW_LIMIT}`);
   });
 
+  it('ends every limited read on a unique column, so the take is TOTAL', () => {
+    /* `ORDER BY start_time LIMIT 25` does not name 25 rows when start_times
+       tie, and they tie constantly: measured on production, 124 of 136
+       pre-start MTTs share an exact start_time with another. The limit
+       boundary then falls inside a tie group and the take is arbitrary - and
+       arbitrary again on the next poll with nothing underneath having changed.
+       That is the #4601 crowd-out in a new disguise: an eligible major dropped
+       for a tied turbo. Every ORDER BY that feeds a LIMIT, and every
+       jsonb_agg (whose order is unspecified even over an ordered subquery),
+       ends on the id. */
+    /* CODE ONLY. The header of this migration explains the rule in prose and
+       quotes `ORDER BY start_time LIMIT 25` while doing it, and the first
+       version of this test failed on its own comment. */
+    const code = FEED_SQL.split('\n')
+      .filter((line) => !/^\s*--/.test(line))
+      .join('\n');
+    const orderBys = code.match(/ORDER BY [^\n]+/g) ?? [];
+    expect(orderBys.length).toBeGreaterThanOrEqual(10);
+    const untotalled = orderBys.filter(
+      (clause) => !/\b(?:t|tb|x|cm)\.id\b|count\(\*\)/.test(clause)
+    );
+    expect(
+      untotalled,
+      `\nAn ORDER BY without a unique tie-breaker:\n${untotalled.join('\n')}\n`
+    ).toEqual([]);
+  });
+
   it('keeps registration closing to rows that can actually speak', () => {
     /* The superset argument: lateRegEndMs takes the LATER of two candidates,
        so either the minutes one is itself inside the five-minute window, or

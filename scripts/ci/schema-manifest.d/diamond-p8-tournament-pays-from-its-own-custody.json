@@ -1,0 +1,11 @@
+{
+  "_owner": "agent/claude-diamond-phase-8/feature/diamond-tournaments-survey. Phase 8: a Diamond tournament pays from its own custody. Applied to kuklfnapbkmacvwxktbh as 20260914032315 a_diamond_tournament_pays_from_its_own_custody. No new table; the five owner-only settlement steps the chip terminal path calls for a Diamond event.",
+  "tables": [],
+  "functions": [
+    "fn_poker_diamond_tournament_drain",
+    "fn_poker_diamond_tournament_pay",
+    "fn_poker_diamond_tournament_settle_fee",
+    "fn_poker_diamond_tournament_close_custody",
+    "fn_poker_diamond_tournament_open_shadow"
+  ]
+}

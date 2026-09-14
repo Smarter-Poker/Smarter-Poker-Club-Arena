@@ -33,6 +33,12 @@
 
 import { supabase } from './supabase.js';
 import { recordHorseTunerUpdate } from './HorseTunerAtomicWrite.js';
+import {
+  completeHorseTunerStudy,
+  prepareHorseTunerStudy,
+  readRecordedHorseTunes,
+  TUNER_STUDY_MAX_HORSES,
+} from './HorseTunerStudyCompletion.js';
 import { reportError } from './errorReporter.js';
 import { claimNightlyJob } from '../benchmark/HorseLeague.js';
 import type { HorseProfileMods, LeakFamily } from '../engine/HorseLogic.js';
@@ -446,15 +452,15 @@ const lifecycleIsCurrent = (generation: number): boolean =>
 async function alreadyTunedToday(date: string): Promise<boolean> {
   try {
     const { data, error } = await supabase
-      .from('horse_self_tune_log')
-      .select('horse_id')
+      .from('horse_tuner_study_completions')
+      .select('run_date')
       .eq('run_date', date)
       .limit(1);
     if (error) throw new Error(error.message);
     return (data?.length ?? 0) > 0;
   } catch (err) {
-    // A failed lookup must not silently skip the night. The audit rows upsert
-    // on (horse_id, run_date), so a duplicate run is harmless.
+    // A failed lookup cannot close the day. Per-horse immutable receipts
+    // preserve completed work while a later study resumes the unfinished set.
     reportError(err, 'HorseSelfTuner.alreadyTunedToday');
     return false;
   }
@@ -488,7 +494,7 @@ async function maybeRunSelfTune(generation: number): Promise<void> {
   if (!lifecycleIsCurrent(generation)) return;
   // A returned worker promise is not completion evidence: runSelfTune reports
   // failures and empty studies as { studied: 0, tuned: 0 }. Re-read the
-  // durable log before latching this process, so a failed night remains open
+  // durable whole-study receipt before latching, so a failed night remains open
   // for the stale-claim takeover on the next tick.
   const completed = await alreadyTunedToday(today);
   if (!lifecycleIsCurrent(generation)) return;
@@ -687,6 +693,10 @@ export async function runSelfTune(
   const date = runDate ?? new Date().toISOString().slice(0, 10);
   try {
     const t0 = Date.now();
+    const prior = await readRecordedHorseTunes(date);
+    if (!shouldContinue()) return { studied: 0, tuned: 0 };
+    if (prior.status !== 'snapshot') throw new Error('Tuner progress is unreadable');
+    const recordedHorses = new Set(prior.horseIds);
 
     // Horses + their current profiles.
     const horses = new Map<string, HorseProfileMods & { style?: unknown }>();
@@ -733,6 +743,7 @@ export async function runSelfTune(
           });
         }
         cursor = (data[data.length - 1] as { id: string }).id;
+        if (horses.size > TUNER_STUDY_MAX_HORSES) throw new Error('Tuner horse budget exceeded');
         if (data.length < 1000) break;
       }
     }
@@ -993,9 +1004,24 @@ export async function runSelfTune(
 
     // Diagnose + write.
     let tuned = 0;
-    for (const [horseId, s] of stats) {
+    let unfinished = 0;
+    const eligibleHorses = [...stats]
+      .filter(([, s]) => s.hands >= MIN_HANDS_TO_TUNE)
+      .map(([id]) => id);
+    if (stats.size === 0) return { studied: 0, tuned: 0 };
+    const cohort = await prepareHorseTunerStudy(date, stats.size, eligibleHorses);
+    if (!shouldContinue()) return { studied: stats.size, tuned: 0 };
+    if (cohort.status !== 'prepared') throw new Error('Tuner study roster is unconfirmed');
+    for (const horseId of cohort.horseIds) {
       if (!shouldContinue()) return { studied: stats.size, tuned };
-      if (s.hands < MIN_HANDS_TO_TUNE) continue;
+      // This horse already committed its one daily update. Never recompute a
+      // new request from its updated profile after a crash or lost response.
+      if (recordedHorses.has(horseId)) continue;
+      const s = stats.get(horseId);
+      if (!s || s.hands < MIN_HANDS_TO_TUNE || !horses.has(horseId)) {
+        unfinished++;
+        continue;
+      }
       const prevMods = horses.get(horseId) ?? {};
       const rn = realNets.get(horseId);
       const realBB100 =
@@ -1126,11 +1152,20 @@ export async function runSelfTune(
           );
         if (written.changed && !written.replayed) tuned++;
       } catch (err) {
+        unfinished++;
         reportError(err, 'HorseSelfTuner.write');
       }
     }
 
-    const eligible = [...stats.values()].filter((s) => s.hands >= MIN_HANDS_TO_TUNE).length;
+    const eligible = cohort.horseIds.length;
+    if (shouldContinue() && unfinished === 0 && stats.size > 0) {
+      const completed = await completeHorseTunerStudy(date, cohort.studied, cohort.horseIds);
+      if (!completed)
+        reportError(
+          new Error('Tuner study completion remains unconfirmed'),
+          'HorseSelfTuner.completion'
+        );
+    }
     console.log(
       `[HorseSelfTuner] Studied ${fromPlayRows.size} horses from horse_daily_play (full ${STUDY_WINDOW_DAYS}d) ` +
         `and ${fromStream} from a ${fetched}-hand hand_history stream covering the newest ${coveredHours}h, ` +

@@ -126,7 +126,7 @@ describe('the REGISTERING walk', () => {
 
   it('holds one pass for every top-up it makes', () => {
     expect(walk).toContain('const topUpPass = new HorseTopUpPass();');
-    expect((walk.match(/\{ pass: topUpPass \}/g) || []).length).toBe(2);
+    expect((walk.match(/\{ pass: topUpPass(?:, redeemTickets)? \}/g) || []).length).toBe(2);
   });
 
   it('fills beside the walk - bounded, throttled - and waits before it moves on', () => {

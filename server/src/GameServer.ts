@@ -5604,6 +5604,19 @@ export class GameServer {
            goes on deciding starts. The pass waits for all of them after the
            walk, so the next board read sees whatever they seated. */
         const topUpPass = new HorseTopUpPass();
+        // One hint scan per pass, not one request per event. The hint never
+        // authorizes entry; the existing atomic ticket-first horse door does.
+        const ticketEligible = (t: (typeof registering)[number]) =>
+          ['MTT', 'SATELLITE', 'XMTT'].includes(String(t.tournament_type).toUpperCase()) &&
+          t.variant !== 'spin' &&
+          t.variant !== 'sng' &&
+          t.max_players > 2 &&
+          t.prize_pool_finalized !== true &&
+          Date.parse(String(t.start_time)) > registeringReadAt &&
+          Date.parse(String(t.start_time)) - registeringReadAt <= MTT_PRESTART_RAMP_MS;
+        const ticketTargets = registering.some(ticketEligible)
+          ? await this.readPendingSatelliteTicketTargets()
+          : null;
 
         for (const tournament of registering || []) {
           if (!this.directAdmissionIsCurrent(generation)) break;
@@ -5733,12 +5746,14 @@ export class GameServer {
                 prizePool: Number((tournament as { prize_pool?: unknown }).prize_pool) || 0,
                 buyInPrizeShare: Number(tournament.buy_in_amount) || 0,
               });
-              if (rampTarget > 0) {
+              const redeemTickets =
+                ticketEligible(tournament) && ticketTargets?.has(tournament.id) === true;
+              if (rampTarget > 0 || redeemTickets) {
                 this.lastMttRampAt.set(tournament.id, now);
                 const rampAdded = await this.tournamentRecurring.topUpWithHorses(
                   tournament.id,
                   rampTarget,
-                  { pass: topUpPass }
+                  { pass: topUpPass, redeemTickets }
                 );
                 if (rampAdded > 0) {
                   console.log(
@@ -6651,6 +6666,42 @@ export class GameServer {
       await Promise.allSettled([...pastStartTopUps]);
 
       await this.sleep(TOURNAMENT_DISCOVERY_INTERVAL);
+    }
+  }
+
+  private async readPendingSatelliteTicketTargets(): Promise<Set<string> | null> {
+    try {
+      const ticketPage = await fetchAllRows<{ id: string; source_tournament_id: string }>(
+        (cursor, want) => {
+          let query = supabase
+            .from('tournament_tickets')
+            .select('id, source_tournament_id')
+            .eq('status', 'issued')
+            .eq('redemption_mode', 'tournament_entry_only')
+            .is('source_refund_entitlement_id', null)
+            .not('source_tournament_id', 'is', null)
+            .order('id', { ascending: true })
+            .limit(want);
+          if (cursor) query = query.gt('id', cursor);
+          return query;
+        },
+        { label: 'GameServer.satelliteTicketTargets', maxRows: 50_000 }
+      );
+      if (
+        !ticketPage.complete ||
+        ticketPage.rows.some(
+          (row) =>
+            typeof row?.id !== 'string' ||
+            !row.id.trim() ||
+            typeof row.source_tournament_id !== 'string' ||
+            !row.source_tournament_id.trim()
+        )
+      )
+        throw new Error('Satellite ticket target hints are incomplete or malformed');
+      return new Set(ticketPage.rows.map((row) => row.source_tournament_id));
+    } catch (error) {
+      reportError(error, 'GameServer.satellite_ticket_targets_unreadable');
+      return null;
     }
   }
 

@@ -347,6 +347,12 @@ R21 publication update00:43UTC: source b3790ff04e remains retained with no remot
 
 R23 installation01:03UTC: migration20260914005233 recorded as history20260914010322. New source hashes f1f0ec57f980e1df361abacfa9efa030 /79d841121011fb3fc55cb335ad8f3b21 /9b8471c860ac00afa814a6553135c95b match; trigger enabled and declared; existing creator source/owner/grants unchanged. Service access and browser denial verified. No historical tournament row was rewritten. Final native11groups/59vectors,111engine-focused/2files and112client/4files pass; full5421/350 and serverTypeScript retained. ClientTypeScript26diagnostics match the preexisting missing-native-package baseline byte for byte. Source/served acceptance remains open.
 
+## R31: an awarded ticket survives a satisfied funding quota
+
+Both the prestart discovery caller and the recurring service previously stopped before ticket selection when the ordinary horse quota was full. Complete target hints now allow the existing throttled prestart pass to offer a bounded ticket-only recovery allowance through the unchanged atomic entry door, without increasing wallet funding. Malformed hints, maintenance and retired generations refuse new work; unresolved registrations retain lifecycle custody. The actual service and caller reproduced 12 failures on the old source. Affected engine suites pass 5,752 cases/369 files and server TypeScript/build pass.
+
+Read-only September14,11:37 evidence shows217issued direct tickets/16,860 tied to closed-entry targets and five future tickets/100. R31 does not rewrite historical awards. Current union ticket scope predicates are also inconsistent with issuance and require a separate repair. Protected CI, served redemption, exact historical reconciliation and full financial/provider acceptance remain OPEN.
+
 ## R24: due MTTs reach admission independently of unrelated funding
 
 The actual broad discovery method waits for horse top-ups before its next registering board read. A regression holds that real top-up pending and proves a different eligible MTT cannot reach admission through the old pass. The engine now supervises a separate five-second scheduled-start read, ordered by scheduled time, through the unchanged shared admission/lease/launch authority. It retains every pending operation and its capacity, all freeze/lifecycle checks, existing retries and one-minute pre-seat lead. Pagination includes the event beyond the gateway's first1,000rows before choosing the oldest due field.

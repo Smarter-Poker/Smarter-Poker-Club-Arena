@@ -21,6 +21,14 @@
 
 **Files/lines:** TournamentService original1018/1287–1320; ScheduledTournamentService original1200/1382; TournamentRecurringService original3874/4110; shared mystery creation decoder; migration20260914102150; caller/native fixtures. **What existed:** manual creation silently accepted a failed second configuration request; scheduled/recurring/repeat paths lost selected mystery settings. **What changed:** one validated creation contract, same-transaction persistence and exact receipt, six columns on original engine inserts and repeat copies, and a row guard that rejects post-activation settings races. Existing funding, payouts, authority and defaults remain intact. **Why:** selected terms must be durable before players can enter. **Verified:** YES, source reread, 23original counterexamples, 5,614engine/363files, 167client/7files and11native groups pass. **TypeScript:** serverPASS; local application blocked by missing mobile packages, requiredCI pending. Current-main composition: 5,714engine/364files and233client/9files pass; native12groups. Applied once at10:40UTC/history20260914104027; exact bodies, ACL boundaries and enabled declared trigger verified. Full MTT certification remains open. See docs/changelog/2026-09-14-atomic-mystery-creation.md.
 
+## 2026-09-14: Awarded tickets remain eligible after the funding quota
+
+**Files/lines:** server/src/GameServer.ts original5736; server/src/services/TournamentRecurringService.ts original5629/6278; actual caller/service tests and existing wiring guards.
+**What existed:** both discovery and top-up returned before ticket selection when the ordinary funding quota was full.
+**What changed:** one complete ticket-target hint read per existing pass, bounded prestart ticket recovery through the existing atomic horse door, no wallet fallback for hints, strict hint validation and retained lifecycle work.
+**Why:** an already-funded satellite award must not depend on additional ordinary wallet funding.
+**Verified:** YES, source reread, 12 original failures, 5,752 affected engine tests/369 files pass. **TypeScript:** PASS; server build PASS. No schema or historical award mutation. Required CI, served entry and historical reconciliation remain separate. See docs/changelog/2026-09-14-mtt-ticket-recovery-before-start.md.
+
 ## 2026-09-14: Scheduled MTT starts do not wait for unrelated funding
 
 **Files/lines:** server/src/GameServer.ts original2442/7626; server/src/tournament/ScheduledStartDiscoveryIsolation.test.ts; server/src/tournament/SpinStartsInOneSecondAndPlaysInFull.test.ts original99.

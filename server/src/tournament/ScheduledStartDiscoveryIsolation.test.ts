@@ -69,6 +69,7 @@ describe('scheduled starts have an independent bounded discovery path', () => {
     ]);
     Object.assign(server, {
       readSeatFirstPaidSeats: vi.fn(async () => new Map()),
+      readPendingSatelliteTicketTargets: vi.fn(async () => new Set()),
       lastMttRampAt: new Map(),
       registeringButFinalizedReported: new Set(),
       pastStartTopUpClock: new Map(),

@@ -157,6 +157,7 @@ jobs:
           python3 -B tests/operations/engine-image-ci-bundle.test.py
           python3 -B tests/operations/engine-release-image-request.test.py
           python3 -B tests/operations/engine-release-image-result.test.py
+          python3 -B tests/operations/engine-release-image-generation.test.py
 
       - uses: actions/setup-node@v4
         with:

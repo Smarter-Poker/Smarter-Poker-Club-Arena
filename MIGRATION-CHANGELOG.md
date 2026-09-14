@@ -1,3 +1,10 @@
+## 2026-09-14: Concurrent waitlist offers share seat and player claims
+
+**Files:** migration20260914104113; scripts/ci/test-waitlist-offer-concurrency.py and captured native fixtures; required accounting CI step.
+**What existed:** two real PostgreSQL sessions could promise the last chair twice or give one player two automatic holds despite a configured cap of one. Separate queue-row locks did not serialize those allowances.
+**What changed:** the existing table admission key and actual open-seat reader protect capacity; a nonblocking player claim and fresh allowance check protect concurrent automatic offers. Original legacy hold expiry, configured caps, horse eligibility and notification transaction semantics are preserved. Busy claims keep queue entries for the existing callers and sweep.
+**Verified:** 46 native PostgreSQL17 checks pass, including both unchanged-live counterexamples, actual direct-join/sweep callers, rollback, notification failure, pending moves, stale cached counts, legacy holds, ACL and drift refusal. No production financial or notification test was performed. Installation, protected CI and natural production evidence remain separate.
+
 ## 2026-09-14: MTT registration displays use the engine window
 
 **Files/previous lines:** src/utils/tournamentFilters.ts:95; src/components/lobby/lateRegWindow.ts:34; src/pages/tournament/TournamentLobbyPage.tsx:535 and884; the associated lobby/card/detail/ticker query projections.

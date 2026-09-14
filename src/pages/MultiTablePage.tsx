@@ -586,6 +586,97 @@ const dockStateFor = (
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/** A TABLE_SEATED attempt is confirmed only by a committed parent tab. */
+function useTournamentOpenAcknowledgments(
+  userId: string | undefined,
+  tables: readonly TableInstance[]
+) {
+  const owner = useRef<{ userId: string } | null>(null);
+  const committedUser = useRef<string | undefined>(undefined);
+  const auth = useRef<{ seen: boolean; userId?: string }>({ seen: false });
+  const pending = useRef(
+    new Map<
+      string,
+      {
+        owner: { userId: string };
+        tableId: string;
+        userId: string;
+        openAttemptId: string;
+        sourceIsCurrent: () => boolean;
+      }
+    >()
+  );
+  const [revision, setRevision] = useState(0);
+  useLayoutEffect(() => {
+    committedUser.current = userId;
+    if (!owner.current || owner.current.userId !== userId) {
+      pending.current.clear();
+      owner.current =
+        userId && (!auth.current.seen || auth.current.userId === userId) ? { userId } : null;
+    }
+  });
+  useLayoutEffect(() => {
+    let alive = true;
+    const unsubscribe = masterBus.subscribe('AUTH_STATE_CHANGED', ({ payload }) => {
+      if (!alive) return;
+      auth.current = {
+        seen: true,
+        userId: payload.isAuthenticated ? payload.userId || undefined : undefined,
+      };
+      pending.current.clear();
+      const id = committedUser.current;
+      owner.current = id && auth.current.userId === id ? { userId: id } : null;
+    });
+    return () => {
+      alive = false;
+      owner.current = null;
+      pending.current.clear();
+      unsubscribe();
+    };
+  }, []);
+  useLayoutEffect(() => {
+    for (const [key, attempt] of pending.current) {
+      if (
+        attempt.owner !== owner.current ||
+        attempt.userId !== userId ||
+        !attempt.sourceIsCurrent()
+      ) {
+        pending.current.delete(key);
+        continue;
+      }
+      const opened = tables.some(
+        (tab) => tab.id === attempt.tableId && tab.seated === true && !isLobbyTab(tab)
+      );
+      const blocked = !opened && tables.length >= MAX_TABLES && !tables.some(isLobbyTab);
+      if (!opened && !blocked) continue;
+      pending.current.delete(key);
+      masterBus.emit('TOURNAMENT_TABLE_OPEN_RESULT', {
+        userId: attempt.userId,
+        tableId: attempt.tableId,
+        openAttemptId: attempt.openAttemptId,
+        status: opened ? 'opened' : 'cap_blocked',
+      });
+    }
+  }, [tables, userId, revision]);
+  return useCallback((payload: SeatedOpenAttempt, sourceIsCurrent: () => boolean) => {
+    const scope = owner.current;
+    if (!scope || payload.userId !== scope.userId || !payload.openAttemptId || !sourceIsCurrent())
+      return false;
+    // A newer attempt for a table supersedes an earlier uncommitted result.
+    pending.current.set(payload.tableId, {
+      owner: scope,
+      tableId: payload.tableId,
+      userId: scope.userId,
+      openAttemptId: payload.openAttemptId,
+      sourceIsCurrent,
+    });
+    setRevision((n) => n + 1);
+    return true;
+  }, []);
+}
+
+type SeatedOpenAttempt = { tableId: string; userId?: string; openAttemptId?: string };
+
 export default function MultiTablePage() {
   const { user } = useAuthUser();
   /** Roadmap batch 2: multi-table behavior toggles (auto-switch, action
@@ -801,6 +892,7 @@ export default function MultiTablePage() {
   // Type-safe bus handler types (extended beyond base BusPayloadMap)
   interface SeatedPayload {
     tableId: string;
+    openAttemptId?: string;
     tableName?: string;
     seat?: number;
     userId?: string; // FIX: added so we can filter to own events only
@@ -1313,6 +1405,7 @@ export default function MultiTablePage() {
     };
   }, [user?.id, requestSeatResync, toast]);
 
+  const trackTournamentOpenAttempt = useTournamentOpenAcknowledgments(user?.id, tables);
   useMasterBusSubscription('TABLE_SEATED', (payload: SeatedPayload) => {
     const e = payload;
     if (!e.tableId) return;
@@ -1322,6 +1415,12 @@ export default function MultiTablePage() {
     // would spawn a rogue tab on the current user's screen.
     const seatUserId = seatReadScopeRef.current.userId;
     if (!seatUserId || seatUserId !== user?.id || (e.userId && e.userId !== seatUserId)) return;
+    const sourceScope = seatReadScopeRef.current;
+    if (
+      e.openAttemptId &&
+      !trackTournamentOpenAttempt(e, () => seatReadScopeRef.current === sourceScope)
+    )
+      return;
     voluntarilyLeftTablesRef.current.delete(e.tableId);
     requestSeatResync();
 

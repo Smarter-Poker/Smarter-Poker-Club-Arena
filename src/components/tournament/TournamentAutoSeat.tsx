@@ -1,101 +1,49 @@
-import { warmTable } from '../../services/tableWarmup';
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  TOURNAMENT AUTO-SEAT — Dan 2026-08-21, BINDING
- * ═══════════════════════════════════════════════════════════════════════════════
- *
- * "WHEN A PLAYER IS REGISTERED FOR AN MTT, WHEN THE TOURNAMENT STARTS IT MUST
- *  AUTO OPEN A NEW TABLE AND SEAT THE PLAYER DIRECTLY. THIS NEEDS TO BE A 100%
- *  AUTOMATED PROCESS. IF THE USER ALREADY HAS 4 GAMES RUNNING, IT MUST SEND A
- *  LARGE POP UP..."
- *
- * The engine already creates the tournament tables and writes the seats
- * (TournamentManager). What was missing was the last hop: nothing on the
- * player's screen noticed. A registered player sat in the lobby while their
- * tournament dealt without them until they happened to look.
- *
- * This watcher closes that hop. It polls the player's OWN tournament seats
- * (cheap: one indexed query on table_seats every 12s, only while signed
- * in AND only while the tab is visible),
- * and the first time a seat appears at a table it has not already announced:
- *   • emits TABLE_SEATED, which MultiTablePage turns into an open table tab;
- *   • if the player is already at the 4-table cap, MultiTablePage answers with
- *     TABLE_CAP_BLOCKED and this renders the large popup Dan asked for.
- *
- * Deliberately poll-based rather than realtime: seats are written by the
- * engine's service-role connection, and a missed socket frame here means a
- * player misses a tournament they paid for.
- */
-
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
-import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
+import { warmTable } from '../../services/tableWarmup';
 import { reportError } from '../../utils/errorReporter';
 import './TournamentAutoSeat.css';
 
-/**
- * DB LOAD PASS 2026-08-24: was 12s. This component is mounted app-wide for
- * every signed-in user, so that was five joined `table_seats` -> `tables`
- * queries per minute per open tab, forever, whether or not the player has ever
- * registered for a tournament. 45s is still well inside the window that
- * matters — a tournament seat waits minutes, not seconds — and the interval is
- * now torn down entirely while the tab is hidden rather than ticking and
- * returning early.
- */
-// 12s, NOT LONGER. Reverted from 45s on 2026-08-24: that change was made as a
-// database-load optimisation without weighing it against the binding guarantee
-// in this file's header. This poll is the ONLY detection path for auto-seating,
-// and the blinding-off alarm rides it too, so stretching it directly stretches
-// how long a player sits unseated in a tournament they paid for, and how late
-// they are told their chips are leaving. The visibility gate below is where the
-// load saving comes from instead: hidden tabs poll not at all, and check
-// immediately on return.
 const POLL_MS = 12_000;
-/** Seats older than this were not "just started" — do not yank the player. */
 const FRESH_MS = 10 * 60 * 1000;
 const SEEN_KEY = 'ca_tourney_autoseat_seen';
-/**
- * Dan 2026-08-21 (item 4): tables we have already warned the player they are
- * being blinded off at. Separate from SEEN_KEY — that one is "we opened this
- * table for you once", this one is "we told you your chips are draining".
- * Re-armed as soon as the seat stops being away, so a player who sits back
- * down and leaves again is warned again.
- */
 const BLIND_WARNED_KEY = 'ca_tourney_blindoff_warned';
-
-function readSeen(): Set<string> {
+interface AutoSeatScope {
+  userId: string;
+  session: string;
+  alive: boolean;
+  read: number;
+  poll: number;
+  attempt: number;
+  seenKey: string;
+  warnedKey: string;
+  seen: Set<string>;
+  warned: Set<string>;
+  pending: Map<string, { openAttemptId: string; name: string; navigateOnOpen: boolean }>;
+}
+interface SeatNotice {
+  scope: AutoSeatScope;
+  tableId: string;
+  name: string;
+}
+function storeSet(key: string, values: Set<string>) {
   try {
-    return new Set(JSON.parse(sessionStorage.getItem(SEEN_KEY) || '[]') as string[]);
+    sessionStorage.setItem(key, JSON.stringify([...values].slice(-40)));
   } catch {
-    return new Set();
+    /* The current account/session's in-memory state remains authoritative. */
   }
 }
-function writeSeen(s: Set<string>) {
-  try {
-    sessionStorage.setItem(SEEN_KEY, JSON.stringify([...s].slice(-40)));
-  } catch {
-    /* storage full or unavailable — the in-memory copy still guards this tab */
-  }
+function remember(values: Set<string>, tableId: string, key: string) {
+  values.add(tableId);
+  storeSet(key, values);
 }
-
-function readWarned(): Set<string> {
-  try {
-    return new Set(JSON.parse(sessionStorage.getItem(BLIND_WARNED_KEY) || '[]') as string[]);
-  } catch {
-    return new Set();
-  }
-}
-function writeWarned(s: Set<string>) {
-  try {
-    sessionStorage.setItem(BLIND_WARNED_KEY, JSON.stringify([...s].slice(-40)));
-  } catch {
-    /* see writeSeen */
-  }
-}
+// The legacy unscoped buckets are never imported. A fresh watcher or auth session
+// confirms existing parent tabs again; it cannot inherit another actor's suppression.
+// Storage belongs to this account/lifetime and is removed when that scope retires.
 
 /**
  * Dan 2026-08-23: "make the top line two lines. 'Prime Time Main Event (NLH)'
@@ -127,163 +75,268 @@ function renderTwoLineTitle(raw: string): ReactNode {
 export default function TournamentAutoSeat() {
   const { user } = useAuthUser();
   const navigate = useNavigate();
-  const seenRef = useRef<Set<string>>(readSeen());
-  const warnedRef = useRef<Set<string>>(readWarned());
-  const [blocked, setBlocked] = useState<{ tableId: string; name: string } | null>(null);
-  /** Dan 2026-08-21, item 4: the "you are being blinded off" alert. */
-  const [blindingOff, setBlindingOff] = useState<{
-    tableId: string;
-    name: string;
-    chips: number;
-  } | null>(null);
-  const pendingRef = useRef<Map<string, string>>(new Map()); // tableId -> tournament name
+  const current = useRef<AutoSeatScope | null>(null);
+  const committedUser = useRef<string | null>(null);
+  const committedNavigate = useRef(navigate);
+  const auth = useRef<{ seen: boolean; userId: string | null }>({ seen: false, userId: null });
+  const [pollEpoch, setPollEpoch] = useState(0);
+  const [blocked, setBlocked] = useState<SeatNotice | null>(null);
+  const [warnings, setWarnings] = useState<
+    (SeatNotice & { chips: number; capBlocked?: boolean })[]
+  >([]);
 
-  // MultiTablePage answers with this when the player is already at the cap.
-  useMasterBusSubscription('TABLE_CAP_BLOCKED', (payload: { tableId?: string }) => {
-    const tableId = payload?.tableId;
-    if (!tableId) return;
-    const name = pendingRef.current.get(tableId);
-    if (!name) return; // not one of ours — a cash seat hit the cap, not a tournament
-    setBlocked({ tableId, name });
-  });
+  const owns = useCallback(
+    (scope: AutoSeatScope) =>
+      current.current === scope &&
+      scope.alive &&
+      committedUser.current === scope.userId &&
+      (!auth.current.seen || auth.current.userId === scope.userId),
+    []
+  );
 
-  const check = useCallback(async () => {
-    if (!user?.id || document.visibilityState !== 'visible') return;
+  const invalidate = useCallback(() => {
+    const previous = current.current;
+    current.current = null;
+    if (!previous) return;
+    previous.alive = false;
+    previous.read += 1;
+    previous.pending.clear();
     try {
-      /**
-       * One query serves both jobs. The auto-seat half only cares about FRESH
-       * seats (a tournament that just started); the blinding-off half
-       * (Dan 2026-08-21, item 4) cares about seats of ANY age — a player is
-       * usually an hour into a tournament by the time they get blinded off —
-       * so the `joined_at` floor moved out of the query and into the auto-seat
-       * branch that actually needs it.
-       */
-      const { data, error } = await supabase
-        .from('table_seats')
-        .select(
-          'table_id, joined_at, stack, is_sitting_out, is_away, tables:table_id (id, name, tournament_id, status)'
-        )
-        .eq('user_id', user.id)
-        .is('left_at', null)
-        .limit(12);
-      if (error) throw error;
-
-      const freshFloor = Date.now() - FRESH_MS;
-
-      for (const row of data || []) {
-        const t = (Array.isArray(row.tables) ? row.tables[0] : row.tables) as {
-          id?: string;
-          name?: string;
-          tournament_id?: string | null;
-          status?: string;
-        } | null;
-        if (!t?.tournament_id) continue; // cash seat — not our business
-        const tableId = (row.table_id as string) || t.id || '';
-        if (!tableId) continue;
-        if (t.status && ['closed', 'completed', 'cancelled', 'finished'].includes(t.status))
-          continue;
-
-        const name = t.name || 'Your Tournament';
-
-        /**
-         * ── BLINDING OFF (item 4) ────────────────────────────────────────
-         * The engine flags a seat `is_sitting_out` after consecutive timeouts
-         * and `is_away` on a disconnect, and it keeps taking that player's
-         * blinds and antes either way. That flag on a TOURNAMENT seat is the
-         * server's own statement that this player is paying to not be there,
-         * which is exactly the condition Dan described — no client-side
-         * guessing about stack deltas required.
-         *
-         * Warn once per table, and re-arm the moment they are back in, so a
-         * player who sits down and wanders off again is told again.
-         */
-        const away = Boolean(row.is_sitting_out) || Boolean(row.is_away);
-        if (away) {
-          if (!warnedRef.current.has(tableId)) {
-            warnedRef.current.add(tableId);
-            writeWarned(warnedRef.current);
-            const chips = Number(row.stack) || 0;
-            setBlindingOff({ tableId, name, chips });
-            // The phone half is NOT sent from here any more (#1498,
-            // 2026-08-30). It used to call pushNotificationService, whose
-            // transport OneSignal's retirement killed on 2026-08-19, so it had
-            // delivered nothing for eleven days.
-            //
-            // The engine's own flag is the trigger now: trg_notify_blinding_off
-            // fires on table_seats when is_sitting_out or is_away goes true on
-            // a live TOURNAMENT seat, raises the notification server-side, and
-            // the mirror sends the push. That reaches the player whether or not
-            // this component is mounted -- which is the whole point, because
-            // somebody being blinded off is by definition not looking at the
-            // app. This banner is only the half for when they are.
-          }
-        } else if (warnedRef.current.has(tableId)) {
-          warnedRef.current.delete(tableId);
-          writeWarned(warnedRef.current);
-          setBlindingOff((prev) => (prev?.tableId === tableId ? null : prev));
-        }
-
-        // ── AUTO-SEAT (batch 10) — fresh seats only ──────────────────────
-        if (seenRef.current.has(tableId)) continue;
-        const joinedAt = row.joined_at ? new Date(row.joined_at as string).getTime() : 0;
-        if (!joinedAt || joinedAt < freshFloor) continue;
-
-        seenRef.current.add(tableId);
-        writeSeen(seenRef.current);
-        pendingRef.current.set(tableId, name);
-
-        // Hand it to the multi-table layer: it opens a tab when there is room
-        // and replies TABLE_CAP_BLOCKED when there is not.
-        warmTable(tableId);
-        masterBus.emit('TABLE_SEATED', { tableId, seat: 0 });
-      }
-    } catch (e) {
-      reportError(e, 'TournamentAutoSeat.check');
+      sessionStorage.removeItem(previous.seenKey);
+      sessionStorage.removeItem(previous.warnedKey);
+    } catch {
+      /* owned in-memory state is already invalid */
     }
-  }, [user?.id]);
+  }, []);
+
+  const activate = useCallback(
+    (notify = false) => {
+      invalidate();
+      const userId = committedUser.current;
+      if (userId && (!auth.current.seen || auth.current.userId === userId)) {
+        const session = crypto.randomUUID();
+        current.current = {
+          userId,
+          session,
+          alive: true,
+          read: 0,
+          poll: 0,
+          attempt: 0,
+          seen: new Set(),
+          warned: new Set(),
+          pending: new Map(),
+          seenKey: `${SEEN_KEY}:${encodeURIComponent(userId)}:${session}`,
+          warnedKey: `${BLIND_WARNED_KEY}:${encodeURIComponent(userId)}:${session}`,
+        };
+      }
+      setBlocked(null);
+      setWarnings([]);
+      if (notify) setPollEpoch((n) => n + 1);
+    },
+    [invalidate]
+  );
+
+  // A speculative render must not transfer an existing poll or popup to a new actor.
+  useLayoutEffect(() => {
+    committedUser.current = user?.id ?? null;
+    committedNavigate.current = navigate;
+  });
+  useLayoutEffect(() => {
+    activate();
+    return invalidate;
+  }, [user?.id, activate, invalidate]);
+  useLayoutEffect(() => {
+    let alive = true;
+    const unsubscribeAuth = masterBus.subscribe('AUTH_STATE_CHANGED', ({ payload }) => {
+      if (!alive) return;
+      auth.current = {
+        seen: true,
+        userId: payload.isAuthenticated ? payload.userId || null : null,
+      };
+      // Synchronous fencing also handles replacement sessions for the same account.
+      activate(true);
+    });
+    const unsubscribeOpen = masterBus.subscribe('TOURNAMENT_TABLE_OPEN_RESULT', ({ payload }) => {
+      const scope = current.current;
+      if (!alive || !scope || !owns(scope) || payload.userId !== scope.userId) return;
+      const pending = scope.pending.get(payload.tableId);
+      if (!pending || pending.openAttemptId !== payload.openAttemptId) return;
+      if (payload.status === 'cap_blocked') {
+        setBlocked({ scope, tableId: payload.tableId, name: pending.name });
+        if (pending.navigateOnOpen) {
+          setWarnings((notices) =>
+            notices.map((notice) =>
+              notice.scope === scope && notice.tableId === payload.tableId
+                ? { ...notice, capBlocked: true }
+                : notice
+            )
+          );
+        }
+        return; // Keep it unconfirmed; the next owned poll may retry.
+      }
+      if (payload.status !== 'opened') return;
+      scope.pending.delete(payload.tableId);
+      remember(scope.seen, payload.tableId, scope.seenKey);
+      setBlocked((notice) =>
+        notice?.scope === scope && notice.tableId === payload.tableId ? null : notice
+      );
+      if (pending.navigateOnOpen) {
+        setWarnings((notices) =>
+          notices.filter((notice) => notice.scope !== scope || notice.tableId !== payload.tableId)
+        );
+        committedNavigate.current(`/table/${payload.tableId}`);
+      }
+    });
+    return () => {
+      alive = false;
+      unsubscribeAuth();
+      unsubscribeOpen();
+    };
+  }, [activate, owns]);
+
+  const requestOpen = useCallback(
+    (scope: AutoSeatScope, tableId: string, name: string, navigateOnOpen = false) => {
+      if (!owns(scope)) return;
+      const previous = scope.pending.get(tableId);
+      const openAttemptId = `${scope.session}:${++scope.attempt}`;
+      scope.pending.set(tableId, {
+        openAttemptId,
+        name,
+        navigateOnOpen: navigateOnOpen || previous?.navigateOnOpen === true,
+      });
+      warmTable(tableId);
+      if (!owns(scope)) return;
+      masterBus.emit('TABLE_SEATED', { tableId, seat: 0, userId: scope.userId, openAttemptId });
+    },
+    [owns]
+  );
+
+  const check = useCallback(
+    async (scope: AutoSeatScope, poll: number) => {
+      if (!owns(scope) || scope.poll !== poll || document.visibilityState !== 'visible') return;
+      const read = ++scope.read;
+      const isCurrent = () => owns(scope) && scope.poll === poll && scope.read === read;
+      try {
+        const { data, error } = await supabase
+          .from('table_seats')
+          .select(
+            'table_id, joined_at, stack, is_sitting_out, is_away, tables:table_id (id, name, tournament_id, status)'
+          )
+          .eq('user_id', scope.userId)
+          .is('left_at', null)
+          .limit(12);
+        if (!isCurrent()) return;
+        if (error) throw error;
+        const freshFloor = Date.now() - FRESH_MS;
+        for (const row of data || []) {
+          if (!isCurrent()) return;
+          const t = (Array.isArray(row.tables) ? row.tables[0] : row.tables) as {
+            id?: string;
+            name?: string;
+            tournament_id?: string | null;
+            status?: string;
+          } | null;
+          const tableId = (row.table_id as string) || t?.id || '';
+          if (!tableId) continue;
+          if (
+            t &&
+            (t.tournament_id === null ||
+              (t.status && ['closed', 'completed', 'cancelled', 'finished'].includes(t.status)))
+          ) {
+            // Positive returned evidence retires only this table's notices and
+            // attempt. Missing rows or missing join data are not absence proof.
+            scope.pending.delete(tableId);
+            if (scope.warned.delete(tableId)) storeSet(scope.warnedKey, scope.warned);
+            setWarnings((notices) =>
+              notices.filter((notice) => notice.scope !== scope || notice.tableId !== tableId)
+            );
+            setBlocked((notice) =>
+              notice?.scope === scope && notice.tableId === tableId ? null : notice
+            );
+            continue;
+          }
+          if (!t?.tournament_id) continue;
+          const name = t.name || 'Your Tournament';
+          setBlocked((notice) =>
+            notice?.scope === scope && notice.tableId === tableId ? { ...notice, name } : notice
+          );
+          const away = Boolean(row.is_sitting_out) || Boolean(row.is_away);
+          if (away) {
+            const enqueue = !scope.warned.has(tableId);
+            if (enqueue) remember(scope.warned, tableId, scope.warnedKey);
+            setWarnings((notices) => {
+              const existing = notices.findIndex(
+                (notice) => notice.scope === scope && notice.tableId === tableId
+              );
+              const observed = { scope, tableId, name, chips: Number(row.stack) || 0 };
+              if (existing >= 0) {
+                return notices.map((notice, index) =>
+                  index === existing ? { ...notice, ...observed } : notice
+                );
+              }
+              // A dismissed continuous away episode stays dismissed. Queued
+              // items retain their order and remain reachable after dismissal.
+              return enqueue ? [...notices, observed] : notices;
+            });
+          } else {
+            if (scope.warned.delete(tableId)) storeSet(scope.warnedKey, scope.warned);
+            setWarnings((notices) =>
+              notices.filter((notice) => notice.scope !== scope || notice.tableId !== tableId)
+            );
+          }
+          if (scope.seen.has(tableId)) continue;
+          const joinedAt = row.joined_at ? new Date(row.joined_at as string).getTime() : 0;
+          // Freshness limits first discovery, not retries of an unconfirmed
+          // attempt that this current scoped query still confirms as eligible.
+          if (!scope.pending.has(tableId) && (!joinedAt || joinedAt < freshFloor)) continue;
+          requestOpen(scope, tableId, name);
+        }
+      } catch (error) {
+        if (isCurrent()) reportError(error, 'TournamentAutoSeat.check');
+      }
+    },
+    [owns, requestOpen]
+  );
 
   useEffect(() => {
-    if (!user?.id) return undefined;
-
-    /* The interval is created only while the tab is visible and destroyed when
-       it is hidden. Previously it ran forever and `check()` returned early on a
-       hidden tab, which spared the query but still woke the tab on a timer.
-       Becoming visible again checks immediately, so nothing is missed. */
-    let id: ReturnType<typeof setInterval> | null = null;
-    const startPoll = () => {
-      if (id !== null) return;
-      id = setInterval(() => void check(), POLL_MS);
+    const scope = current.current;
+    if (!scope || !owns(scope)) return;
+    const poll = ++scope.poll;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const stop = () => {
+      if (timer !== null) clearInterval(timer);
+      timer = null;
     };
-    const stopPoll = () => {
-      if (id === null) return;
-      clearInterval(id);
-      id = null;
+    const start = () => {
+      if (timer === null) timer = setInterval(() => void check(scope, poll), POLL_MS);
     };
-
-    const onVis = () => {
+    const visibility = () => {
       if (document.hidden) {
-        stopPoll();
+        stop();
+        scope.read += 1;
       } else {
-        void check();
-        startPoll();
+        void check(scope, poll);
+        start();
       }
     };
-
     if (!document.hidden) {
-      void check();
-      startPoll();
+      void check(scope, poll);
+      start();
     }
-    document.addEventListener('visibilitychange', onVis);
+    document.addEventListener('visibilitychange', visibility);
     return () => {
-      stopPoll();
-      document.removeEventListener('visibilitychange', onVis);
+      stop();
+      scope.poll += 1;
+      scope.read += 1;
+      document.removeEventListener('visibilitychange', visibility);
     };
-  }, [user?.id, check]);
+  }, [user?.id, pollEpoch, check, owns]);
 
-  /**
-   * Blinding off takes precedence over the cap popup: one is "your tournament
-   * started", the other is "your chips are leaving right now."
-   */
+  const takeSeat = (notice: SeatNotice) => {
+    if (!owns(notice.scope)) return;
+    requestOpen(notice.scope, notice.tableId, notice.name, true);
+  };
+  const blindingOff = warnings.find((notice) => owns(notice.scope));
   if (blindingOff) {
     return (
       <div className="tas-overlay" role="dialog" aria-label="You Are Being Blinded Off">
@@ -297,23 +350,27 @@ export default function TournamentAutoSeat() {
               : ''}
             . Take Your Seat Now To Stop Losing Chips.
           </p>
+          {blindingOff.capBlocked && (
+            <p className="tas-body" role="status">
+              All Four Table Slots Are Full. Close A Table, Then Select Take My Seat Again.
+            </p>
+          )}
           <div className="tas-actions">
-            <button className="tas-later" onClick={() => setBlindingOff(null)}>
-              Dismiss
-            </button>
             <button
-              className="tas-go"
+              className="tas-later"
               onClick={() => {
-                const id = blindingOff.tableId;
-                setBlindingOff(null);
-                // Open it as a table tab as well as navigating, so the
-                // multi-table layer knows about it — same hop the auto-seat
-                // path uses.
-                warmTable(id);
-                masterBus.emit('TABLE_SEATED', { tableId: id, seat: 0 });
-                navigate(`/table/${id}`);
+                if (!owns(blindingOff.scope)) return;
+                setWarnings((notices) =>
+                  notices.filter(
+                    (notice) =>
+                      notice.scope !== blindingOff.scope || notice.tableId !== blindingOff.tableId
+                  )
+                );
               }}
             >
+              Dismiss
+            </button>
+            <button className="tas-go" onClick={() => takeSeat(blindingOff)}>
               Take My Seat
             </button>
           </div>
@@ -321,9 +378,7 @@ export default function TournamentAutoSeat() {
       </div>
     );
   }
-
-  if (!blocked) return null;
-
+  if (!blocked || !owns(blocked.scope)) return null;
   return (
     <div className="tas-overlay" role="dialog" aria-label="Tournament Started">
       <div className="tas-panel">
@@ -337,14 +392,7 @@ export default function TournamentAutoSeat() {
           <button className="tas-later" onClick={() => setBlocked(null)}>
             Not Now
           </button>
-          <button
-            className="tas-go"
-            onClick={() => {
-              const id = blocked.tableId;
-              setBlocked(null);
-              navigate(`/table/${id}`);
-            }}
-          >
+          <button className="tas-go" onClick={() => takeSeat(blocked)}>
             Take My Seat
           </button>
         </div>

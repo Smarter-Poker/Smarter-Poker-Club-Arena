@@ -36,6 +36,11 @@ export interface DiamondArenaInfo {
   slug: string | null;
   cashGamesEnabled: boolean;
   tournamentsEnabled: boolean;
+  /** Eligible cash tables right now (fn_poker_diamond_buyin's own predicate). */
+  openCashTables: number;
+  /** The smallest seat a player could take, in diamonds; null when none. */
+  minCashBuyIn: number | null;
+  cheapestTable: { id: string; name: string; smallBlind: number; bigBlind: number } | null;
 }
 
 /** One read of the diamond wallet: `fn_diamond_wallet_summary`. */
@@ -223,6 +228,24 @@ export const DiamondService = {
               slug: typeof arenaRaw.slug === 'string' ? arenaRaw.slug : null,
               cashGamesEnabled: arenaRaw.cash_games_enabled === true,
               tournamentsEnabled: arenaRaw.tournaments_enabled === true,
+              openCashTables: Number.isFinite(Number(arenaRaw.open_cash_tables))
+                ? Number(arenaRaw.open_cash_tables)
+                : 0,
+              minCashBuyIn:
+                arenaRaw.min_cash_buy_in == null ||
+                !Number.isFinite(Number(arenaRaw.min_cash_buy_in))
+                  ? null
+                  : Number(arenaRaw.min_cash_buy_in),
+              cheapestTable: (() => {
+                const t = arenaRaw.cheapest_table as Record<string, unknown> | null | undefined;
+                if (!t || typeof t !== 'object' || typeof t.id !== 'string') return null;
+                return {
+                  id: t.id,
+                  name: String(t.name || ''),
+                  smallBlind: Number(t.small_blind) || 0,
+                  bigBlind: Number(t.big_blind) || 0,
+                };
+              })(),
             }
           : null;
       return {

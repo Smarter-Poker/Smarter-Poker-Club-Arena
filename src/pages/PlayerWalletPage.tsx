@@ -53,6 +53,8 @@ import {
   type DiamondWalletSummary,
 } from '../services/DiamondService';
 import { DIAMOND_ARENA_SLUG } from '../lib/constants';
+import { useNextDiamondFreeroll } from '../hooks/useNextDiamondFreeroll';
+import { formatFreerollCountdown } from '../components/club/DiamondArenaCard';
 import { storeFetch } from './marketplace/marketplaceShared';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { formatPopupText } from '../utils/popupStyle';
@@ -192,6 +194,22 @@ function useAnimatedNumber(target: number, duration = 800) {
   return display;
 }
 
+/**
+ * A once-a-second countdown to an epoch instant, formatted like the Diamond
+ * Arena card's freeroll timer. Null when there is nothing to count to, and
+ * "0:00" the moment it arrives (the freeroll hook re-reads then).
+ */
+function useCountdown(target: number | null): string | null {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (target === null) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [target]);
+  if (target === null) return null;
+  return formatFreerollCountdown(Math.max(0, Math.floor((target - now) / 1000)));
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // WALLET CONFIG
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -325,16 +343,34 @@ function WalletPlate({
  * ("..."), failed ("Unavailable" - never a zero that means unknown), known.
  * The arena door tells the truth about the arena: open (sit down), a seat
  * already held (return to it), or closed (no live control, a plain sentence).
+ *
+ * SIT DOWN FROM THE WALLET (phase 3). The door is a funnel, decided by three
+ * facts the summary carries: is the arena open, does the player hold a seat,
+ * and can they afford the cheapest eligible seat (fn_poker_diamond_buyin's
+ * own predicate, so the number is never a seat that function would refuse).
+ *
+ *   seated              -> Return To The Diamond Arena      (the lobby)
+ *   open, can afford    -> Sit Down In The Diamond Arena    (the lobby)
+ *   open, short by N    -> Buy Diamonds To Sit Down, N More (the store,
+ *                          with next=/clubs/diamond-arena so the store offers
+ *                          the way back once the diamonds land)
+ *   closed              -> a sentence, and the next freeroll countdown when
+ *                          one is scheduled (a freeroll costs nothing)
  */
 export function DiamondPlate({
   diamonds,
   summary,
+  nextFreerollAt,
   onBuy,
+  onBuyToSitDown,
   onArena,
 }: {
   diamonds: number;
   summary: DiamondWalletSummary | null | undefined;
+  /** Epoch ms of the next Diamond Arena freeroll, or null when none. */
+  nextFreerollAt: number | null;
   onBuy: () => void;
+  onBuyToSitDown: () => void;
   onArena: () => void;
 }) {
   const animated = useAnimatedNumber(diamonds);
@@ -345,11 +381,17 @@ export function DiamondPlate({
   const arena = summary?.arena ?? null;
   const arenaOpen = Boolean(arena && (arena.cashGamesEnabled || arena.tournamentsEnabled));
   const seated = Boolean(summary && summary.inArena > 0);
+  const minSeat = arena?.minCashBuyIn ?? null;
+  const short =
+    arenaOpen && !seated && minSeat !== null && diamonds < minSeat ? minSeat - diamonds : 0;
   const arenaLabel = seated
     ? 'Return To The Diamond Arena'
-    : arenaOpen
-      ? 'Sit Down In The Diamond Arena'
-      : 'Diamond Arena Opens Soon';
+    : short > 0
+      ? `Buy Diamonds To Sit Down, ${fmtNum(short)} More`
+      : arenaOpen
+        ? 'Sit Down In The Diamond Arena'
+        : 'Diamond Arena Opens Soon';
+  const freerollIn = useCountdown(nextFreerollAt);
   return (
     <article
       className="wallet-plate diamonds"
@@ -393,7 +435,11 @@ export function DiamondPlate({
           </button>
           {arena &&
             (arenaOpen || seated ? (
-              <button type="button" className="wallet-plate__cta" onClick={onArena}>
+              <button
+                type="button"
+                className="wallet-plate__cta"
+                onClick={short > 0 ? onBuyToSitDown : onArena}
+              >
                 {arenaLabel}
               </button>
             ) : (
@@ -404,6 +450,17 @@ export function DiamondPlate({
               </span>
             ))}
         </div>
+        {arena && !arenaOpen && !seated && freerollIn !== null && (
+          <div className="wallet-plate__desc" role="status">
+            Next Diamond Freeroll In {freerollIn}. A Freeroll Costs Nothing To Enter.
+          </div>
+        )}
+        {arena && arenaOpen && minSeat !== null && short === 0 && !seated && (
+          <div className="wallet-plate__desc">
+            The Cheapest Seat Is {fmtNum(minSeat)} Diamonds
+            {arena.cheapestTable ? ` (${arena.cheapestTable.name})` : ''}. You Can Sit Down Now.
+          </div>
+        )}
         <div className="wallet-plate__desc">
           {summary?.collateral
             ? `${fmtNum(summary.collateral)} Bought Recently Are Held Until The Refund Window Closes And Cannot Be Sent. `
@@ -1074,6 +1131,18 @@ export default function PlayerWalletPage() {
   const goBuyDiamonds = () => navigate('/marketplace?tab=diamonds');
   /* The arena is entered as the club it is (CarouselSection does the same). */
   const goDiamondArena = () => navigate(`/clubs/${DIAMOND_ARENA_SLUG}`);
+  /* Short of the cheapest seat: the store, carrying the way back. The
+     marketplace validates `next` with safeInAppRedirect and offers
+     "Continue To The Diamond Arena" once the diamonds land. */
+  const goBuyDiamondsToSitDown = () =>
+    navigate(
+      `/marketplace?tab=diamonds&next=${encodeURIComponent(`/clubs/${DIAMOND_ARENA_SLUG}`)}`
+    );
+  /* The next freeroll is the one free way in; read only while the plates are
+     on screen and the arena is known to exist. */
+  const freeroll = useNextDiamondFreeroll(
+    activeTab === 'overview' && Boolean(walletSummary?.arena)
+  );
 
   const escrow = balances.PLAYER.locked;
 
@@ -1234,7 +1303,9 @@ export default function PlayerWalletPage() {
             <DiamondPlate
               diamonds={diamonds}
               summary={walletSummary}
+              nextFreerollAt={freeroll.startsAt}
               onBuy={goBuyDiamonds}
+              onBuyToSitDown={goBuyDiamondsToSitDown}
               onArena={goDiamondArena}
             />
             {(Object.keys(WALLET_CONFIG) as WalletType[]).map((type) => (

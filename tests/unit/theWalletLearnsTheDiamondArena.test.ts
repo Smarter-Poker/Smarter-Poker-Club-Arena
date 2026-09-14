@@ -51,10 +51,37 @@ describe('DiamondService.getWalletSummary', () => {
         slug: 'diamond-arena',
         cashGamesEnabled: false,
         tournamentsEnabled: false,
+        openCashTables: 0,
+        minCashBuyIn: null,
+        cheapestTable: null,
       },
       lifetimeEarned: 4095,
       lifetimeSpent: 12,
       readAt: '2026-09-13T18:00:00Z',
+    });
+  });
+
+  it('parses the cheapest seat and open-table count when the arena reports them (phase 3)', async () => {
+    rpc.mockResolvedValueOnce({
+      data: {
+        ...payload,
+        arena: {
+          ...payload.arena,
+          open_cash_tables: 17,
+          min_cash_buy_in: '80',
+          cheapest_table: { id: 't-1', name: 'NLH 1/2', small_blind: 1, big_blind: 2 },
+        },
+      },
+      error: null,
+    });
+    const s = await DiamondService.getWalletSummary();
+    expect(s?.arena?.openCashTables).toBe(17);
+    expect(s?.arena?.minCashBuyIn).toBe(80);
+    expect(s?.arena?.cheapestTable).toEqual({
+      id: 't-1',
+      name: 'NLH 1/2',
+      smallBlind: 1,
+      bigBlind: 2,
     });
   });
 
@@ -115,5 +142,66 @@ describe('the summary is wired into the wallet page', () => {
   it('the hook has three outcomes: reading, failed, known', () => {
     expect(hook).toContain('useState<DiamondWalletSummary | null | undefined>(undefined)');
     expect(hook).toContain('if (!isMounted.current || seq !== seqRef.current) return;');
+  });
+});
+
+describe('sit down from the wallet (phase 3)', () => {
+  const read = (p: string) => readFileSync(resolve(process.cwd(), p), 'utf8');
+  const page = read('src/pages/PlayerWalletPage.tsx');
+  const market = read('src/pages/MarketplacePage.tsx');
+  const diamondsTab = read('src/pages/marketplace/DiamondsTab.tsx');
+  const migration = read(
+    'supabase/migrations/20260914101812_the_wallet_knows_the_cheapest_seat_in_the_diamond_arena.sql'
+  );
+
+  it("the cheapest seat comes from the buy-in RPC's own table predicate, never a guess", () => {
+    for (const clause of [
+      "t.game_variant = 'nlh'",
+      't.tournament_id IS NULL',
+      't.cluster_id IS NULL',
+      "t.status IN ('waiting', 'running', 'playing', 'active')",
+      'NOT COALESCE(t.bomb_pot_enabled, false)',
+      'NOT COALESCE(t.straddle_enabled, false)',
+      'ORDER BY t.min_buy_in ASC',
+    ]) {
+      expect(migration).toContain(clause);
+    }
+    // The SQL body reads no chip table or column; the header states the rule.
+    const body = migration.slice(
+      migration.indexOf('CREATE OR REPLACE FUNCTION'),
+      migration.indexOf('COMMENT ON FUNCTION')
+    );
+    expect(body).not.toMatch(/chip/i);
+  });
+
+  it('a short player is sent to the store carrying a validated way back', () => {
+    expect(page).toContain(
+      'navigate(`/marketplace?tab=diamonds&next=${encodeURIComponent(`/clubs/${DIAMOND_ARENA_SLUG}`)}`)'
+    );
+    expect(page).toContain('onClick={short > 0 ? onBuyToSitDown : onArena}');
+    expect(market).toContain("import { safeInAppRedirect } from '../lib/signIn';");
+    expect(market).toContain(
+      "const safe = safeInAppRedirect(nextParam);\n    return safe === '/' ? null : safe;"
+    );
+    expect(diamondsTab).toContain("${nextPath ? `&next=${encodeURIComponent(nextPath)}` : ''}");
+  });
+
+  it('after the purchase lands the store offers the way onward, and only then', () => {
+    expect(market).toContain('if (nextPath) setContinueOffered(true);');
+    expect(market).toContain("{tab === 'diamonds' && continueOffered && nextPath && (");
+    expect(market).toContain("'Continue To The Diamond Arena' : 'Continue'");
+    // The way onward is a navigation, never a window.location write.
+    const onward = market.slice(
+      market.indexOf('const goOnward = () => {'),
+      market.indexOf('const goOnward = () => {') + 300
+    );
+    expect(onward).toContain('navigate(nextPath);');
+    expect(onward).not.toMatch(/window\.location/);
+  });
+
+  it('the freeroll countdown reads only while the plates are on screen and the arena exists', () => {
+    expect(page).toContain(
+      "useNextDiamondFreeroll(activeTab === 'overview' && Boolean(walletSummary?.arena))"
+    );
   });
 });

@@ -78,7 +78,7 @@ import { rankOverlayAnnouncements, type OverlayCandidate } from '../../utils/ove
    type-only import, so this root-mounted ticker does not pull the whole
    lobby view-model into the entry bundle every player downloads. */
 import { lateRegEndMs } from '../lobby/lateRegWindow';
-import { isInsideLastCall, MAX_LEAD_MS } from './tickerLeadWindow';
+import { isInsideLastCall, MAX_LEAD_MS, UPCOMING_ROW_LIMIT } from './tickerLeadWindow';
 import type { LobbyTournamentRow } from '../lobby/lobbyEntries';
 import {
   guaranteeItem,
@@ -97,8 +97,6 @@ import { useTopChromeOffset } from './useTopChromeOffset';
 import { useRailSilence } from './useRailSilence';
 import { TickerRail } from './TickerRail';
 
-/** How far ahead an event counts as "about to start". */
-const LEAD_MS = 5 * 60 * 1000;
 /** How often we ask the database. The countdown itself ticks locally. */
 const POLL_MS = 30_000;
 /** How long a cached club-membership list is trusted. */
@@ -513,7 +511,12 @@ function TickerHost() {
               .gte('start_time', nowIso)
               .lte('start_time', horizonIso)
               .order('start_time', { ascending: true })
-              .limit(5)
+              /* NOT five. The horizon covers the longest rung of the lead
+                 ladder and the per-stake filter runs on the client, so asking
+                 for five soonest-first lets cheap events that will be filtered
+                 out take every slot from a major that would have survived.
+                 See UPCOMING_ROW_LIMIT. */
+              .limit(UPCOMING_ROW_LIMIT)
           : Promise.resolve({ data: [], error: null } as const);
 
         /* ── OVERLAY ANNOUNCEMENTS (Dan 2026-08-26) ──────────────────────────

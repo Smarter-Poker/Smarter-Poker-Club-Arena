@@ -1,3 +1,23 @@
+## 2026-09-14: New MTT structures must describe playable levels
+
+**Files:** server/src/domain/tournamentBlindContract.ts; server/src/services/ScheduledTournamentService.ts:1166; server/src/services/TournamentRecurringService.ts:3783 and4019; src/services/TournamentService.ts:850 and1029; migration20260914005233.
+**What existed:** scheduled creation stored malformed nonempty ladders; the manual creator only checked array length and left speed at its column default. Zero big blinds, invalid durations, decreasing blinds and string break flags were accepted. Manual saved-schedule payloads bypassed the existing create-only partial validation.
+**What changed:** one shared engine/client validator at actual creation and schedule-payload boundaries, plus a common database MTT INSERT/changed-structure trigger. It derives speed from the actual opening clock; format conversions cannot bypass validation. Existing funded shapes, arbitrary operator-selected valid depths and unrelated progress writes are preserved.
+**Verified:** YES. Eight actual scheduled-creator red cases; final111engine-focused/2files,112client/4files,11nativegroups/59sharedvectors, all23captured active MTT shapes, replay/rollback/access/metadata checks. Full engine services+tournament5421/350; serverTypeScriptPASS. ClientTypeScript retains the exact26preexisting native-package diagnostics; no new errors, proper-dependencyCI required.
+**Installation:** applied after the hourlyDDLquiet window at01:03UTC/history20260914010322; all three source hashes, service-only grants, trigger and declaration verified. Both existing creator bodies/authority remain unchanged. ProtectedCI, servedengine/client adoption and full lifecycle acceptance remain separate. See docs/changelog/2026-09-14-mtt-blind-creation-contract.md and scripts/dev/fixtures/mtt-blind-contract/README.md.
+
+## 2026-09-14: Encode the same blind presets with less repeated data
+
+**File/lines:** src/config/blindStructures.ts original23–179; tests/unit/blindPresetEncoding.test.ts and immutable preimage fixture. **What existed:**135literal level objects repeated field names and computed big blinds. **What changed:**compact small-blind/ante tuples reconstruct identical objects, preserving the exported shape, allJSONbytes, duration/break and distinctrowidentity. **Why:** R23required build gate refused2601kBgz at2600; reduce repeated preset data without removing behavior. **Verified:**YES,303checks/10files; isolatedmoduleminified10855→3312bytes/gzip1397→867. **TypeScript:**26byte-identical existing client missing-native-package diagnostics, not a full pass. Full bundle/CI verification remains required; no gate ceiling changed.
+
+## 2026-09-14: Scheduled MTT starts do not wait for unrelated funding
+
+**Files/lines:** server/src/GameServer.ts original2442/7626; server/src/tournament/ScheduledStartDiscoveryIsolation.test.ts; server/src/tournament/SpinStartsInOneSecondAndPlaysInFull.test.ts original99.
+**What existed:** broad discovery awaited pre-start top-ups and every past-start funding operation before its next board read, blocking otherwise eligible scheduled starts.
+**What changed:** supervised five-second due-event discovery uses the unchanged coalesced admission/lease/launch authority, keyset-complete reads, oldest-first ordering, maintenance/lifecycle fences and retained actual-operation capacity. It does not fund entrants or release pending work. The existing Spin cadence assertion includes the new five-second sleep.
+**Why:** a retained operation for one tournament must not prevent another funded field from reaching its own launch authority.
+**Verified:** YES, actual old-loop counterexample plus12new cases; affected engine suites5,409/359PASS, zero skips. **TypeScript:** PASS. No SQL or production event mutation. Source/served/real first-hand acceptance remains open. See docs/changelog/2026-09-14-mtt-scheduled-start-isolation.md.
+
 ## 2026-09-14: Keep MTT paid depth out of seat-first requests
 
 **File/lines:** server/src/services/TournamentRecurringService.ts original3381/4264; new SeatFirstCallerContract.test.ts and private fixture/runner.
@@ -17376,3 +17396,15 @@ Hand-for-hand retains synchronized/add-on break pauses, preserves their budgets 
 **Why:** Establish current concurrent conservation and immutable replay without treating historical wrapper evidence as current or leaving temporary schema changes behind. Three960fixture events remain as approved; no production or resource-cleanup actions.
 
 **TypeScript:** Not applicable, native SQL/Python rehearsal and evidence only. Full terminal and production gates remain open.
+
+## 2026-09-14: Keep blind publication out of the known maintenance freeze
+
+**Files/lines:** server/src/tournament/TournamentManagerBase.ts original6104/6184/6457; BlindLevelTransitionRecovery.test.ts and three existing clock harnesses.
+**What existed:** a due timer on a tournament without its own break flag submitted the atomic level RPC every second during global maintenance. The database refused each write as paused; the caller retried and reported failure.
+**What changed:** one lifecycle-owned local wake, no database work while the known freeze holds, followed by exact durable-clock resynchronization after thaw. Preserve playable remainder, immutable pending request and lost-response replay through the original fenced publisher. Do not persist a replacement clock during the hold.
+**Why:** prevent rejected maintenance writes at their caller without advancing early or dropping the level wake.
+**Verified:** YES; eight original failures,24focused tests and2,211tournament/maintenance tests across167files pass, zero skips. **TypeScript:** PASS. RequiredCI/served proof pending. No SQL or financial authority changed. See docs/changelog/2026-09-14-mtt-blind-maintenance-admission.md; it also records the separately verified prospective Turbo Tuesday schedule corrections.
+
+## 2026-09-14: Qualify scheduled discovery under full CI initialization
+
+**Files:** server/src/engine/DirectEngineRecovery.guard.test.ts original176; server/src/tournament/ScheduledStartDiscoveryIsolation.test.ts. **Before:**shutdown inventory countedfourjobs; discovery case included pre-test import diagnostics. **After:**assert five supervised loops and scheduled-loop lifecycle fence; clear import-time error history before each operation. **Why:**actualCI34795506067 failed these two cases. **Verified:**87/7PASS with servicekeyunset and originalwarningretained inlog; **TypeScript:**PASS. No runtimebehavior orauthority changed; fullCI remainsrequired.

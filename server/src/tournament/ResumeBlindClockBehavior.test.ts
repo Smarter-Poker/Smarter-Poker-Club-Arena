@@ -14,6 +14,7 @@ const restore = sliceBetween(
   "      /* Rebuild the add-on's two non-money timers"
 );
 const methods = [
+  'private scheduleBlindLevelWake(',
   'protected startBlindTimer(',
   'protected suspendLevelClock(',
   'protected async waitForMaintenanceThaw(',

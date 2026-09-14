@@ -1,3 +1,4 @@
+import { validateMttBlindStructure } from '../../server/src/domain/tournamentBlindContract';
 /**
  * ♠ CLUB ARENA — Tournament Service
  * SNGs and MTTs with blind levels and payout structures
@@ -913,6 +914,9 @@ class TournamentService {
    * refused in createTournament's validation).
    */
   buildRpcConfig(config: TournamentConfig): Record<string, unknown> {
+    if (config.type !== 'sng' && config.type !== 'spin' && config.maxPlayers > 2) {
+      validateMttBlindStructure(config.blindStructure, config.startingStack);
+    }
     const clampInt = (v: number, lo: number, hi: number) =>
       Math.min(hi, Math.max(lo, Math.round(Number(v) || 0)));
 
@@ -1092,7 +1096,9 @@ class TournamentService {
     // presets all contain break entries encoded as smallBlind:0/bigBlind:0, so
     // the old check threw "must not decrease" on EVERY tournament created with
     // a break-containing structure — a hard creation blocker.
-    if (config.blindStructure && Array.isArray(config.blindStructure)) {
+    if (config.type !== 'sng' && config.type !== 'spin' && config.maxPlayers > 2) {
+      validateMttBlindStructure(config.blindStructure, config.startingStack);
+    } else if (config.blindStructure && Array.isArray(config.blindStructure)) {
       const isBreakLevel = (l: any): boolean =>
         !!l?.isBreak || (Number(l?.smallBlind) === 0 && Number(l?.bigBlind) === 0);
       let prevPlaying: any = null;

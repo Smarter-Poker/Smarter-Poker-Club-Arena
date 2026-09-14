@@ -1,3 +1,4 @@
+import { validateMttBlindStructure } from '../domain/tournamentBlindContract.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * TOURNAMENT RECURRING SERVICE — 24/7 Automated Tournament Schedule
@@ -3784,6 +3785,7 @@ export class TournamentRecurringService {
       // entrants) and this event needs 56 to cover its guarantee.
       const startTime = new Date(Date.now() + MTT_PUBLISH_LEAD_MS);
       const dbGameType = dbGameTypeFor(config.gameVariant, 'createXMTT');
+      validateMttBlindStructure(config.blindStructure, config.startingStack);
 
       const isBountyType =
         config.type === 'bounty' ||
@@ -4020,6 +4022,7 @@ export class TournamentRecurringService {
       // registration under-funded and paying overlay. See MTT_PUBLISH_LEAD_MS.
       const startTime = new Date(Date.now() + MTT_PUBLISH_LEAD_MS);
       const dbGameType = dbGameTypeFor(config.gameVariant, 'createMTT');
+      validateMttBlindStructure(config.blindStructure, config.startingStack);
 
       const isBountyType =
         config.type === 'bounty' ||

@@ -16,6 +16,10 @@ import { cashoutService, newOpId, CashoutRequest } from '../../services/CashoutS
 import { masterBus } from '../../core/MasterBus';
 import { checkSettlementLock } from '../../utils/settlementLock';
 import { formatRelativeShort as formatTime } from '@/lib/date';
+import { SpadeConsole } from '../console/SpadeConsole';
+/* The inks (sc-ink--*) print here on their own; the class must resolve on
+   this route by contract (classNamesResolve), not by chunk luck. */
+import '../console/SpadeConsole.css';
 import './CashoutRequestModal.css';
 import { reportError } from '../../utils/errorReporter';
 import { fireVibration } from '../../utils/vibrationGate';
@@ -460,161 +464,194 @@ export default function CashoutRequestModal({
 
   if (!isOpen) return null;
 
+  /* #ClubArenaConsole (2026-09-14): the cashout request wears the riveted
+     frame, the money family, beside the table cashier. Re-rendered, not
+     rewritten: the held op id, the synchronous locks, the settlement freeze,
+     the focus trap, the stay-put-while-busy rule (closeIfIdle on the scrim
+     and on the plate) are as they were. The balance prints as the figure on
+     the glass, the amount as numerals over an engraved rule (the art paints
+     no field), the percentages as lit words, the note as a line, pending
+     requests as rows with their step tracker, Close and Request Cashout on
+     the two plates. The strings the tests read are kept: "Amount" as the
+     field's label, "Request Cashout", "25% · 0.31", "Max · 1.25", the error
+     copy, "You Can Cancel". */
+  const maxQuick = cashoutPercentage(currentBalance, 100);
+
   return (
     <div
-      className="modal-overlay"
+      className="cro-overlay"
       onClick={closeIfIdle}
       role="dialog"
       aria-modal="true"
       aria-labelledby="cashout-modal-title"
     >
-      <div className="cashout-modal" ref={modalRef} onClick={(e) => e.stopPropagation()}>
-        {/* Bottom-sheet drag handle */}
-        <div className="cashout-drag-handle" />
-        <div className="modal-header">
-          {/* id added: aria-labelledby="cashout-modal-title" pointed at nothing */}
-          <h2 id="cashout-modal-title">Request Cashout</h2>
-          <button className="close-btn" onClick={closeIfIdle} disabled={isBusy}>
-            ×
-          </button>
-        </div>
-
-        <div className="modal-body">
-          {/* Current Balance */}
-          <div className="balance-display">
-            <span className="label">Available Balance</span>
-            <span className="value">{currentBalance.toLocaleString()} Chips</span>
-          </div>
-
-          {/* LOADING STATE. `loadingPending` was declared, set true, set false,
-              and never read once - so on a slow connection the sheet showed a
-              form with no sign that a request might already be pending, and the
-              row appeared underneath the player's finger a second later. */}
-          {loadingPending && pendingCashouts.length === 0 && (
-            <div className="pending-section" aria-busy="true">
-              <h3>Pending Requests</h3>
-              <div className="pending-loading">Checking For Pending Requests...</div>
+      <div className="cro-dialog sc-dialog" ref={modalRef} onClick={(e) => e.stopPropagation()}>
+        <SpadeConsole
+          family="riveted"
+          eyebrow="Chips Out"
+          title="Cashout"
+          titleId="cashout-modal-title"
+          pill="Chips"
+          pillInk="blue"
+          plates={{
+            secondary: {
+              label: 'Close',
+              'aria-label': 'Close Cashout Request',
+              onClick: closeIfIdle,
+              disabled: isBusy,
+            },
+            primary: {
+              label: isSubmitting ? 'Submitting...' : 'Request Cashout',
+              ink: 'white',
+              onClick: handleSubmit,
+              disabled: isSubmitting || !amount,
+            },
+          }}
+        >
+          <div className="cro-body">
+            {/* Current Balance */}
+            <div className="cro-balance">
+              <span className="sc-label sc-ink--blue">Available Balance</span>
+              <span className="cro-balance__figure">
+                <span className="cro-balance__value sc-ink--silver">
+                  {currentBalance.toLocaleString()}
+                </span>
+                <span className="cro-balance__unit sc-ink--muted">Chips</span>
+              </span>
             </div>
-          )}
 
-          {/* Pending Cashouts */}
-          {pendingCashouts.length > 0 && (
-            <div className="pending-section">
-              <h3>Pending Requests</h3>
-              <div className="pending-list">
-                {pendingCashouts.map((cashout) => (
-                  <div key={cashout.id} className="pending-item">
-                    <div className="pending-info">
-                      <span className="pending-amount">
-                        {cashout.amount.toLocaleString()} Chips
-                      </span>
-                      <span className="pending-time">{formatTime(cashout.createdAt)}</span>
-                    </div>
-                    <CashoutStepTracker status={cashout.status} />
+            {/* New Request Form. It comes first in the DOM so the first focusable
+                thing the sheet lands on is the amount, never a pending
+                request's Cancel; the pending section is shown above it by
+                CSS order. */}
+            {success ? (
+              <p className="sc-copy sc-copy--center sc-ink--green cro-success" role="status">
+                Cashout Request Submitted! Your Agent Has Been Notified.
+              </p>
+            ) : (
+              <div className="cro-form">
+                <div className="cro-field">
+                  <label htmlFor="cashout-amount" className="sc-label sc-ink--blue">
+                    Amount
+                  </label>
+                  <div className="cro-amount">
+                    <input
+                      id="cashout-amount"
+                      className="cro-amount__input sc-ink--silver"
+                      type="number"
+                      placeholder="0"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      max={Math.min(currentBalance, CASHOUT_AMOUNT_LIMIT)}
+                      min={0.01}
+                      step={0.01}
+                      inputMode="decimal"
+                    />
+                    <span className="cro-amount__unit sc-ink--muted">Chips</span>
+                  </div>
+                  <div className="cro-quick" role="group" aria-label="Quick Amounts">
+                    {([25, 50, 100] as const).map((pct) => {
+                      const selected = cashoutPercentage(currentBalance, pct);
+                      return (
+                        <button
+                          key={pct}
+                          type="button"
+                          className={`cro-word ${selected !== null && amount === selected ? 'sc-ink--white' : 'sc-ink--muted'}`}
+                          disabled={selected === null}
+                          onClick={() => {
+                            if (selected !== null) setAmount(selected);
+                          }}
+                        >
+                          {pct}%{selected !== null ? ` · ${selected}` : ''}
+                        </button>
+                      );
+                    })}
                     <button
                       type="button"
-                      className="cancel-btn"
-                      disabled={cancellingId === cashout.id}
-                      onClick={() => handleCancel(cashout.id)}
+                      className={`cro-word ${maxQuick !== null && amount === maxQuick ? 'sc-ink--white' : 'sc-ink--muted'}`}
+                      disabled={maxQuick === null}
+                      onClick={() => {
+                        if (maxQuick !== null) setAmount(maxQuick);
+                      }}
                     >
-                      {cancellingId === cashout.id ? 'Cancelling...' : 'Cancel'}
+                      Max
+                      {maxQuick !== null ? ` · ${maxQuick}` : ''}
                     </button>
                   </div>
-                ))}
-              </div>
-              <div className="pending-note">
-                These Chips Are Locked Until Your Agent Processes The Request Or You Cancel.
-              </div>
-            </div>
-          )}
+                </div>
 
-          {/* New Request Form */}
-          {success ? (
-            <div className="success-message">
-              Cashout Request Submitted! Your Agent Has Been Notified.
-            </div>
-          ) : (
-            <div className="cashout-form">
-              <div className="form-group">
-                <label htmlFor="cashout-amount">Amount</label>
-                <div className="amount-input-wrapper">
-                  <input
-                    id="cashout-amount"
-                    type="number"
-                    placeholder="0"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    max={Math.min(currentBalance, CASHOUT_AMOUNT_LIMIT)}
-                    min={0.01}
-                    step={0.01}
-                    inputMode="decimal"
+                <div className="cro-field">
+                  <label htmlFor="cashout-note" className="sc-label sc-ink--blue">
+                    Note (Optional)
+                  </label>
+                  <textarea
+                    id="cashout-note"
+                    className="cro-textarea sc-ink--silver"
+                    placeholder="Any Message For Your Agent..."
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    rows={2}
                   />
-                  <span className="chip-label">Chips</span>
                 </div>
-                <div className="quick-amounts">
-                  {([25, 50, 100] as const).map((pct) => {
-                    const selected = cashoutPercentage(currentBalance, pct);
-                    return (
-                      <button
-                        key={pct}
-                        type="button"
-                        className="quick-btn"
-                        disabled={selected === null}
-                        onClick={() => {
-                          if (selected !== null) setAmount(selected);
-                        }}
-                      >
-                        {pct}%{selected !== null ? ` · ${selected}` : ''}
-                      </button>
-                    );
-                  })}
-                  <button
-                    type="button"
-                    className="quick-btn"
-                    disabled={cashoutPercentage(currentBalance, 100) === null}
-                    onClick={() => {
-                      const selected = cashoutPercentage(currentBalance, 100);
-                      if (selected !== null) setAmount(selected);
-                    }}
-                  >
-                    Max
-                    {cashoutPercentage(currentBalance, 100) !== null
-                      ? ` · ${cashoutPercentage(currentBalance, 100)}`
-                      : ''}
-                  </button>
+
+                {error && (
+                  <p className="sc-copy sc-copy--center sc-ink--red" role="alert">
+                    {error}
+                  </p>
+                )}
+
+                <p className="sc-copy sc-ink--muted cro-note">
+                  Your Chips Will Be Locked Until Your Agent Approves The Cashout. You Can Cancel
+                  Anytime Before Approval.
+                </p>
+              </div>
+            )}
+
+            {/* LOADING STATE. `loadingPending` was declared, set true, set false,
+                and never read once - so on a slow connection the sheet showed a
+                form with no sign that a request might already be pending, and the
+                row appeared underneath the player's finger a second later. */}
+            {loadingPending && pendingCashouts.length === 0 && (
+              <div className="cro-pending" aria-busy="true">
+                <h3 className="cro-section-title sc-label sc-ink--blue">Pending Requests</h3>
+                <p className="sc-copy sc-ink--muted">Checking For Pending Requests...</p>
+              </div>
+            )}
+
+            {/* Pending Cashouts */}
+            {pendingCashouts.length > 0 && (
+              <div className="cro-pending">
+                <h3 className="cro-section-title sc-label sc-ink--blue">Pending Requests</h3>
+                <div className="cro-pending__list">
+                  {pendingCashouts.map((cashout) => (
+                    <div key={cashout.id} className="cro-pending__item">
+                      <div className="cro-pending__info">
+                        <span className="cro-pending__amount sc-ink--silver">
+                          {cashout.amount.toLocaleString()} Chips
+                        </span>
+                        <span className="cro-pending__time sc-ink--muted">
+                          {formatTime(cashout.createdAt)}
+                        </span>
+                        <button
+                          type="button"
+                          className="cro-word sc-ink--red"
+                          disabled={cancellingId === cashout.id}
+                          onClick={() => handleCancel(cashout.id)}
+                        >
+                          {cancellingId === cashout.id ? 'Cancelling...' : 'Cancel'}
+                        </button>
+                      </div>
+                      <CashoutStepTracker status={cashout.status} />
+                    </div>
+                  ))}
                 </div>
+                <p className="sc-copy sc-ink--muted cro-note">
+                  These Chips Are Locked Until Your Agent Processes The Request Or You Cancel.
+                </p>
               </div>
-
-              <div className="form-group">
-                <label htmlFor="cashout-note">Note (Optional)</label>
-                <textarea
-                  id="cashout-note"
-                  placeholder="Any Message For Your Agent..."
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  rows={2}
-                />
-              </div>
-
-              {error && <div className="error-message">{error}</div>}
-
-              <button
-                className="submit-btn"
-                onClick={handleSubmit}
-                disabled={isSubmitting || !amount}
-              >
-                {isSubmitting ? 'Submitting...' : 'Request Cashout'}
-              </button>
-
-              <div className="info-note">
-                Your Chips Will Be Locked Until Your Agent Approves The Cashout. You Can Cancel
-                Anytime Before Approval.
-              </div>
-            </div>
-          )}
-        </div>
-        {/* Bottom safe area spacer */}
-        <div className="cashout-bottom-spacer" />
+            )}
+          </div>
+        </SpadeConsole>
       </div>
     </div>
   );

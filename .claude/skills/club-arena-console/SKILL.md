@@ -249,13 +249,13 @@ Labels fit the plate's **face** (~70–80 % of the zone), never the whole zone, 
 a long word shrinks before it can touch the chrome rim.
 
 A plate label is one line. The exception is a family whose plates are too
-narrow for its honest labels: the four-bay deck's are a third of the console
-each, and "Buy In With Diamonds" is pinned by tests. That family opts in with
-`plateWrapBelow: 0.72` in the `FAMILY` table (`PlateButton`'s `wrapBelow`,
-`useFitText`'s `wrapBelow`): a label that would shrink under 72% on one line
-takes two, at its own smaller base, and only when the two-line face renders
-larger. Never shorten a label the tests read to dodge this; never wrap on the
-spade, shark or riveted plates - Dan approved those on one line.
+narrow for its honest labels: the four-bay deck's and the riveted frame's are
+a third of the console each, and "Buy In With Diamonds" and "Request Cashout"
+are pinned by tests. Those families opt in with `plateWrapBelow: 0.72` in the
+`FAMILY` table (`PlateButton`'s `wrapBelow`, `useFitText`'s `wrapBelow`): a
+label that would shrink under 72% on one line takes two, at its own smaller
+base, and only when the two-line face renders larger. Never shorten a label
+the tests read to dodge this; the spade and shark plates stay one line.
 
 The plate pads in `cqw`, never a percentage. `.sc-plate` is absolutely
 positioned, so `padding: 0 4%` resolved against the FOOT, not the plate: 30px

@@ -1,486 +1,403 @@
-/**
- * CashoutRequestModal Styles
- */
+/* ═══════════════════════════════════════════════════════════════════════════
+   CASHOUT REQUEST - on the riveted frame (#ClubArenaConsole, 2026-09-14)
 
-.modal-overlay {
+   Chips leave the club here, so the sheet wears the money family: the
+   riveted frame (SpadeConsole family="riveted"), beside the table cashier.
+   The frame is painted; this sheet owns the scrim, the centring, and what
+   prints on the glass: the balance figure, the amount as numerals over an
+   engraved rule (the art paints no field), the lit words, the note line,
+   the pending rows and their step tracker. Every colour is a schema colour.
+   No :hover.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.cro-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
   z-index: 1000;
-  padding: 0;
-}
-
-.cashout-modal {
-  background: linear-gradient(180deg, #1a1a2e 0%, #12122a 100%);
-  border-radius: 24px 24px 0 0;
-  width: 100%;
-  max-width: 480px;
-  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  padding: max(10px, env(safe-area-inset-top)) 8px max(10px, env(safe-area-inset-bottom));
   overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  box-shadow:
-    0 -8px 40px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(255, 255, 255, 0.04),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  animation: cashoutSheetUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  overscroll-behavior: contain;
+  background: rgb(2 4 7 / 88%);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
-@keyframes cashoutSheetUp {
-  from {
-    transform: translateY(100%);
-    opacity: 0.5;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-
-.cashout-drag-handle {
-  display: flex;
-  justify-content: center;
-  padding: 12px 0 4px;
-  cursor: grab;
-}
-
-.cashout-drag-handle::after {
-  content: '';
-  width: 40px;
-  height: 4px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.25);
-}
-
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 20px 24px;
-  border-bottom: 1px solid var(--border, #2a2a4a);
-}
-
-.modal-header h2 {
-  margin: 0;
-  font-size: 1.25rem;
-  color: #fff;
-}
-
-.close-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: none;
-  background: var(--surface-elevated, #2a2a4a);
-  color: #fff;
-  font-size: 1.5rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.2s;
-}
-
-.modal-body {
-  padding: 24px;
-}
-
-/* Balance Display */
-.balance-display {
-  background: linear-gradient(135deg, #1a73e8 0%, #7c3aed 100%);
-  border-radius: 14px;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin-bottom: 24px;
-  box-shadow: 0 8px 24px rgba(124, 58, 237, 0.2);
+.cro-dialog {
   position: relative;
-  overflow: hidden;
+  container-type: inline-size;
+  width: min(100%, 560px);
+  margin: auto;
+  filter: drop-shadow(0 18px 34px rgb(0 0 0 / 85%));
 }
 
-.balance-display::before {
-  content: '';
-  position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: radial-gradient(circle at 30% 50%, rgba(255, 255, 255, 0.08) 0%, transparent 60%);
-  pointer-events: none;
-}
-
-/* Pending Section */
-.pending-section {
-  background: var(--surface-elevated, #2a2a4a);
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 24px;
-}
-
-.pending-section h3 {
-  margin: 0 0 12px 0;
-  font-size: 0.9rem;
-  color: var(--text-secondary, #8a8a9a);
-}
-
-.pending-list {
+.cro-body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 3cqw;
+  padding-top: 1cqw;
 }
 
-.pending-item {
+/* ── The balance figure ───────────────────────────────────────────────── */
+
+.cro-balance {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  background: var(--surface, #1a1a2e);
-  border-radius: 8px;
-  padding: 12px;
-}
-
-.pending-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.pending-amount {
-  font-weight: 600;
-  color: #ffa726;
-}
-
-.pending-time {
-  font-size: 0.75rem;
-  color: var(--text-secondary, #8a8a9a);
-}
-
-/* The pending list's loading row. `loadingPending` existed in the component for
-   months without ever being rendered, so there was no style for this state
-   either. Deliberately quiet: it is a "hold on" line, not a headline. */
-.pending-loading {
-  font-size: 0.8rem;
-  color: var(--text-secondary, #8a8a9a);
+  gap: 1cqw;
   text-align: center;
-  padding: 10px 12px;
-  background: var(--surface, #1a1a2e);
-  border-radius: 8px;
-  animation: cashoutPendingPulse 1.4s ease-in-out infinite;
 }
 
-@keyframes cashoutPendingPulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.55;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .cashout-modal {
-    animation: none;
-  }
-  .pending-loading {
-    animation: none;
-  }
-  .step-dot.active {
-    animation: none;
-  }
-}
-
-.pending-status {
-  font-size: 0.75rem;
-  color: #ffa726;
-}
-
-.pending-item .cancel-btn {
-  padding: 6px 12px;
-  border-radius: 6px;
-  border: 1px solid #ef5350;
-  background: transparent;
-  color: #ef5350;
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.pending-note {
-  margin-top: 12px;
-  font-size: 0.75rem;
-  color: #ffa726;
-  text-align: center;
-  padding: 8px 12px;
-  background: rgba(255, 167, 38, 0.06);
-  border-radius: 8px;
-  border: 1px dashed rgba(255, 167, 38, 0.2);
-}
-
-/* Form */
-.cashout-form {
+.cro-balance__figure {
   display: flex;
-  flex-direction: column;
-  gap: 20px;
+  align-items: baseline;
+  justify-content: center;
+  gap: 1.6cqw;
 }
 
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.cro-balance__value {
+  font:
+    800 11cqw/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
 }
 
-.form-group label {
-  font-size: 0.875rem;
-  color: var(--text-secondary, #8a8a9a);
-}
-
-.amount-input-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--surface-elevated, #2a2a4a);
-  border-radius: 8px;
-  padding: 4px;
-}
-
-.amount-input-wrapper input {
-  flex: 1;
-  background: transparent;
-  border: none;
-  padding: 12px;
-  font-size: 1.25rem;
-  color: #fff;
-  outline: none;
-}
-
-.chip-label {
-  padding: 8px 12px;
-  background: var(--surface, #1a1a2e);
-  border-radius: 6px;
-  font-size: 0.875rem;
-  color: var(--text-secondary, #8a8a9a);
-}
-
-.quick-amounts {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.quick-btn {
-  min-width: 0;
-  padding: 14px 8px;
-  min-height: 48px;
-  border-radius: 12px;
-  border: 1px solid var(--border, #2a2a4a);
-  background: transparent;
-  color: #fff;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.quick-btn:active {
-  background: var(--primary, #667eea);
-  border-color: var(--primary, #667eea);
-}
-
-.cashout-form textarea {
-  background: var(--surface-elevated, #2a2a4a);
-  border: none;
-  border-radius: 8px;
-  padding: 12px;
-  font-size: 16px; /* was 0.9rem; under 16px makes iOS zoom the page on focus */
-  color: #fff;
-  resize: none;
-  outline: none;
-}
-
-.error-message {
-  background: rgba(239, 83, 80, 0.1);
-  border: 1px solid #ef5350;
-  color: #ef5350;
-  border-radius: 8px;
-  padding: 12px;
-  font-size: 0.875rem;
-}
-
-.success-message {
-  background: rgba(0, 200, 83, 0.08);
-  border: 1px solid rgba(0, 200, 83, 0.3);
-  color: #00e676;
-  border-radius: 16px;
-  padding: 32px 24px;
-  font-size: 1rem;
-  text-align: center;
-  animation: successPop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-@keyframes successPop {
-  0% {
-    transform: scale(0.9);
-    opacity: 0;
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-.submit-btn {
-  padding: 18px;
-  min-height: 56px;
-  border-radius: 14px;
-  border: none;
-  background: linear-gradient(135deg, #1a73e8 0%, #7c3aed 100%);
-  color: #fff;
-  font-size: 1.05rem;
+.cro-balance__unit,
+.cro-amount__unit {
+  font-size: 3.4cqw;
   font-weight: 700;
-  cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  box-shadow: 0 4px 20px rgba(124, 58, 237, 0.3);
-  letter-spacing: 0.3px;
-  -webkit-tap-highlight-color: transparent;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
-.submit-btn:active:not(:disabled) {
-  opacity: 0.9;
+/* ── Sections ─────────────────────────────────────────────────────────── */
+
+.cro-section-title {
+  margin: 0;
+  padding-bottom: 1cqw;
+  border-bottom: 1px solid #000;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 8%);
 }
 
-.submit-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+/* Shown above the form, placed after it in the DOM: the sheet's first
+   focusable thing is the amount, never a pending request's Cancel. */
+.cro-pending {
+  order: -1;
+  display: flex;
+  flex-direction: column;
+  gap: 1.6cqw;
 }
 
-/* Safe area spacing for bottom-sheet */
-.cashout-bottom-spacer {
-  height: env(safe-area-inset-bottom, 0);
-  flex-shrink: 0;
+.cro-balance {
+  order: -2;
 }
 
-.info-note {
-  font-size: 0.75rem;
-  color: var(--text-secondary, #8a8a9a);
-  text-align: center;
-  line-height: 1.5;
+.cro-pending__list {
+  display: flex;
+  flex-direction: column;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   CASHOUT STEP TRACKER — 5-step lifecycle visual
-   ═══════════════════════════════════════════════════════════════════ */
+.cro-pending__item {
+  display: flex;
+  flex-direction: column;
+  gap: 1.6cqw;
+  padding: 2cqw 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.cro-pending__item:first-child {
+  padding-top: 0;
+  border-top: 0;
+  box-shadow: none;
+}
+
+.cro-pending__info {
+  display: flex;
+  align-items: baseline;
+  gap: 3cqw;
+}
+
+.cro-pending__amount {
+  font-size: 4cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.cro-pending__time {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 3cqw;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cro-note {
+  font-size: 3.1cqw;
+}
+
+.cro-success {
+  padding: 2cqw 0;
+}
+
+/* ── The step tracker: five stops on an engraved line ────────────────── */
 
 .cashout-step-tracker {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
-  padding: 12px 0;
-  margin: 8px 0;
-  position: relative;
+  width: 100%;
 }
 
 .cashout-step {
+  position: relative;
   display: flex;
+  flex: 1;
   flex-direction: column;
   align-items: center;
-  position: relative;
-  flex: 1;
+  gap: 1cqw;
+  min-width: 0;
 }
 
 .step-dot {
-  width: 24px;
-  height: 24px;
+  display: grid;
+  place-items: center;
+  width: 6cqw;
+  height: 6cqw;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
-  border: 2px solid rgba(255, 255, 255, 0.15);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.4);
-  transition: all 0.3s ease;
-  position: relative;
-  z-index: 2;
+  border: 1px solid #45adff;
+  background: #050507;
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font-size: 2.8cqw;
+  font-weight: 800;
+  box-shadow: inset 0 0.3cqw 0.6cqw rgb(0 0 0 / 80%);
 }
 
 .step-dot.complete {
-  background: #00c853;
-  border-color: #00c853;
-  color: #fff;
-  box-shadow: 0 0 8px rgba(0, 200, 83, 0.3);
+  border-color: #3fb950;
+  background: #3fb950;
+  color: #050507;
+  -webkit-text-fill-color: #050507;
 }
 
 .step-dot.active {
-  background: rgba(255, 167, 38, 0.15);
-  border-color: #ffa726;
-  color: #ffa726;
-  animation: stepPulse 2s ease-in-out infinite;
-  box-shadow: 0 0 12px rgba(255, 167, 38, 0.25);
+  border-color: #45adff;
+  background: #1877f2;
+  color: #f4f7fb;
+  -webkit-text-fill-color: #f4f7fb;
+  box-shadow: 0 0 1.6cqw rgb(69 173 255 / 60%);
 }
 
 .step-dot.rejected {
-  background: rgba(239, 68, 68, 0.15);
-  border-color: #ef4444;
-  color: #ef4444;
-}
-
-@keyframes stepPulse {
-  0%,
-  100% {
-    box-shadow: 0 0 8px rgba(255, 167, 38, 0.2);
-  }
-  50% {
-    box-shadow: 0 0 20px rgba(255, 167, 38, 0.4);
-  }
+  border-color: #ff4757;
+  background: #050507;
+  color: #ff5b6e;
+  -webkit-text-fill-color: #ff5b6e;
 }
 
 .step-label {
-  font-size: 9px;
-  color: rgba(255, 255, 255, 0.3);
-  margin-top: 6px;
+  max-width: 100%;
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  font-size: 2.1cqw;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: 0.06em;
   text-align: center;
   text-transform: uppercase;
-  letter-spacing: 0.3px;
-  font-weight: 500;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
 }
 
-.step-label.complete {
-  color: #00c853;
-}
+.step-label.complete,
 .step-label.active {
-  color: #ffa726;
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
 }
 
 .step-line {
   position: absolute;
-  top: 12px;
-  left: calc(50% + 14px);
-  width: calc(100% - 28px);
-  height: 2px;
-  background: rgba(255, 255, 255, 0.08);
-  z-index: 1;
+  top: 3cqw;
+  left: 50%;
+  width: 100%;
+  height: 1px;
+  background: #000;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 10%);
+  z-index: -1;
 }
 
 .step-line.complete {
-  background: #00c853;
+  background: #3fb950;
+  box-shadow: none;
 }
 
-@media (max-width: 380px) {
-  .step-label {
-    font-size: 7px;
-  }
-  .step-dot {
-    width: 20px;
-    height: 20px;
-    font-size: 8px;
-  }
+/* ── The form: numerals over a rule, lit words, a note line ──────────── */
+
+.cro-form {
+  display: flex;
+  flex-direction: column;
+  gap: 3cqw;
+}
+
+.cro-field {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2cqw;
+}
+
+.cro-amount {
+  display: flex;
+  align-items: baseline;
+  gap: 2cqw;
+  padding-bottom: 1cqw;
+  border-bottom: 1px solid #000;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 12%);
+}
+
+.cro-amount:focus-within {
+  border-bottom-color: #1877f2;
+  box-shadow: 0 1px 0 rgb(69 173 255 / 60%);
+}
+
+.cro-amount__input {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font:
+    800 9cqw/1.1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  outline: none;
+}
+
+.cro-amount__input::placeholder {
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  opacity: 0.6;
+}
+
+.cro-amount__input::-webkit-outer-spin-button,
+.cro-amount__input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.cro-amount__input {
+  -moz-appearance: textfield;
+}
+
+.cro-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6cqw 2.4cqw;
+}
+
+.cro-word {
+  margin: 0;
+  padding: 1.2cqw 0.6cqw;
+  border: 0;
+  background: none;
+  font:
+    800 3.4cqw/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cro-word:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.cro-word:active {
+  filter: brightness(1.3);
+}
+
+.cro-word:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: 0.2cqw;
+}
+
+.cro-textarea {
+  width: 100%;
+  margin: 0;
+  padding: 1.2cqw 0;
+  border: 0;
+  border-bottom: 1px solid #000;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 12%);
+  background: transparent;
+  font:
+    500 3.6cqw/1.4 Inter,
+    system-ui,
+    sans-serif;
+  resize: none;
+  outline: none;
+}
+
+.cro-textarea:focus {
+  border-bottom-color: #1877f2;
+  box-shadow: 0 1px 0 rgb(69 173 255 / 60%);
+}
+
+.cro-textarea::placeholder {
+  color: #9aa5b3;
+  -webkit-text-fill-color: #9aa5b3;
+  opacity: 0.6;
+}
+
+/* The dialog chassis in metallic-popups.css must not repaint the words or
+   the fields. Longhands, at 0,3,0. */
+[role='dialog'] .cro-word.cro-word,
+[aria-modal='true'] .cro-word.cro-word {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+  color: inherit !important;
+  padding: 1.2cqw 0.6cqw !important;
+}
+
+[role='dialog'] .cro-amount__input.cro-amount__input,
+[aria-modal='true'] .cro-amount__input.cro-amount__input,
+[role='dialog'] .cro-textarea.cro-textarea,
+[aria-modal='true'] .cro-textarea.cro-textarea {
+  border-top: 0 !important;
+  border-right: 0 !important;
+  border-left: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+  color: inherit !important;
+  padding-right: 0 !important;
+  padding-left: 0 !important;
+}
+
+[role='dialog'] .cro-amount__input.cro-amount__input,
+[aria-modal='true'] .cro-amount__input.cro-amount__input {
+  border-bottom: 0 !important;
+  padding: 0 !important;
 }

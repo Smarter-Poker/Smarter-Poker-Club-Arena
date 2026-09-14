@@ -185,6 +185,9 @@ const FAMILY = {
     FOOT_H: RIVETED_CONSOLE_FOOT_H,
     zones: RIVETED_CONSOLE_ZONES,
     plates: 2,
+    /* Tall plates (98 of 333) a third of the console wide: a money label
+       ("Request Cashout") wraps to two lines rather than shrinking under 72%. */
+    plateWrapBelow: 0.72,
   },
   fourbay: {
     W: FOURBAY_CONSOLE_W,

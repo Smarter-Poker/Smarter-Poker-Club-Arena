@@ -1,3 +1,11 @@
+## 2026-09-14: New MTT structures must describe playable levels
+
+**Files:** server/src/domain/tournamentBlindContract.ts; server/src/services/ScheduledTournamentService.ts:1166; server/src/services/TournamentRecurringService.ts:3783 and4019; src/services/TournamentService.ts:850 and1029; migration20260914005233.
+**What existed:** scheduled creation stored malformed nonempty ladders; the manual creator only checked array length and left speed at its column default. Zero big blinds, invalid durations, decreasing blinds and string break flags were accepted. Manual saved-schedule payloads bypassed the existing create-only partial validation.
+**What changed:** one shared engine/client validator at actual creation and schedule-payload boundaries, plus a common database MTT INSERT/changed-structure trigger. It derives speed from the actual opening clock; format conversions cannot bypass validation. Existing funded shapes, arbitrary operator-selected valid depths and unrelated progress writes are preserved.
+**Verified:** YES. Eight actual scheduled-creator red cases; final111engine-focused/2files,112client/4files,11nativegroups/59sharedvectors, all23captured active MTT shapes, replay/rollback/access/metadata checks. Full engine services+tournament5421/350; serverTypeScriptPASS. ClientTypeScript proper-dependency acceptance remains separate.
+**Installation:** not applied at this entry; the hourlyDDLquiet window is honored. ProtectedCI, servedengine/client adoption and full lifecycle acceptance remain separate. See docs/changelog/2026-09-14-mtt-blind-creation-contract.md and scripts/dev/fixtures/mtt-blind-contract/README.md.
+
 ## 2026-09-13: Reach the recorded launch proof for a played MTT
 
 The engine can now route a previously played, finalized MTT through the existing launch begin/complete authorities and normal resume before the fresh-field minimum gate. It preserves the precise first-hand timestamp, current levels, stacks and pool. A fresh short field still refuses; Spin retains its separate path. No live status or player state was manually changed.

@@ -1,6 +1,5 @@
--- Exact installed terminal consumers from a read-only catalogue, 2026-09-12.
--- Test preimage only; never deploy this file.
--- fn_ca_tournament_terminal_receipt(uuid,uuid) body_md5=bb4b0e1d1c758943fca29f9a83d064e4
+-- Exact bounded read-only terminal preimages, 2026-09-14; isolated fixture only.
+-- fn_ca_tournament_terminal_receipt(uuid,uuid) body_md5=1299bd56c938864f55c9e53206bc76df
 CREATE OR REPLACE FUNCTION public.fn_ca_tournament_terminal_receipt(p_tournament_id uuid, p_observed_winner_id uuid DEFAULT NULL::uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -399,6 +398,11 @@ BEGIN
     INTO v_bounty_total
     FROM public.wallet_transactions w
    WHERE w.related_entity_id = p_tournament_id AND lower(w.category) = 'bounty';
+  -- DIAMOND PHASE 9: a Diamond bounty is a ledger row, not a wallet row.
+  IF public.fn_poker_diamond_tournament(p_tournament_id) THEN
+    SELECT e.bounty_out INTO v_bounty_total
+      FROM public.fn_poker_diamond_tournament_escrow(p_tournament_id) e;
+  END IF;
   IF v_bounty_total IS DISTINCT FROM v_h.bounty_payout_total
      OR v_bounty_total IS DISTINCT FROM v_h.bounty_pool
      OR EXISTS (
@@ -513,6 +517,11 @@ BEGIN
   SELECT round(COALESCE(sum(rr.rake_amount),0),2) INTO v_rake_total
     FROM public.rake_records rr
    WHERE rr.tournament_id = p_tournament_id AND rr.is_tournament;
+  IF public.fn_poker_diamond_tournament(p_tournament_id) THEN
+    -- DIAMOND PHASE 8: a Diamond event's fee is its fee bank, settled to the house.
+    SELECT e.fee_balance + e.fee_out INTO v_rake_total
+      FROM public.fn_poker_diamond_tournament_escrow(p_tournament_id) e;
+  END IF;
   SELECT rs.* INTO v_r FROM public.tournament_rake_settlements rs
    WHERE rs.tournament_id = p_tournament_id;
   IF v_r.tournament_id IS NULL
@@ -525,7 +534,7 @@ BEGIN
      OR v_r.attributed_users IS NULL OR v_r.attributed_users < 0
      OR v_r.attribution_error IS NOT NULL
      OR lower(v_r.destination) IN ('pending','')
-     OR (v_r.amount > 0 AND v_t.club_id IS NOT NULL
+     OR (v_r.amount > 0 AND v_t.club_id IS NOT NULL AND NOT public.fn_poker_diamond_tournament(p_tournament_id)
          AND (v_r.attributed_users < 1
            OR v_r.destination NOT LIKE 'union:%'
               AND v_r.destination NOT LIKE 'club_treasury:%')) THEN
@@ -582,7 +591,7 @@ BEGIN
 END;
 $function$;
 
--- fn_complete_tournament_terminal_pre_seat_guard(uuid,uuid,text) body_md5=90f7506df2f1a94fe22952714fcd9f85
+-- fn_complete_tournament_terminal_pre_seat_guard(uuid,uuid,text) body_md5=15de38b6e3cf35e21621b240a7a6f51e
 CREATE OR REPLACE FUNCTION public.fn_complete_tournament_terminal_pre_seat_guard(p_tournament_id uuid, p_observed_winner_id uuid, p_settlement_mode text)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -592,6 +601,7 @@ CREATE OR REPLACE FUNCTION public.fn_complete_tournament_terminal_pre_seat_guard
 AS $function$
 DECLARE
   v_mode text := lower(btrim(COALESCE(p_settlement_mode,'')));
+  v_diamond boolean := false;  -- DIAMOND PHASE 8
   v_t record;
   v_e public.tournament_escrow%ROWTYPE;
   v_cash jsonb;
@@ -657,6 +667,7 @@ BEGIN
     RAISE EXCEPTION 'tournament % does not exist', p_tournament_id
       USING ERRCODE = 'P0002';
   END IF;
+  v_diamond := public.fn_poker_diamond_tournament(p_tournament_id);  -- DIAMOND PHASE 8
 
   -- Receipt first is the replay boundary. No money authority appears above it.
   IF EXISTS (
@@ -793,6 +804,11 @@ BEGIN
     FROM public.wallet_transactions w
    WHERE w.related_entity_id = p_tournament_id
      AND lower(w.category) = 'bounty';
+  -- DIAMOND PHASE 9: a Diamond bounty is a ledger row, not a wallet row.
+  IF v_diamond THEN
+    SELECT e.bounty_out INTO v_bounty_before
+      FROM public.fn_poker_diamond_tournament_escrow(p_tournament_id) e;
+  END IF;
   IF EXISTS (
     SELECT 1 FROM public.wallet_transactions w
      WHERE w.related_entity_id = p_tournament_id
@@ -896,6 +912,12 @@ BEGIN
   SELECT round(COALESCE(sum(rr.rake_amount),0),2) INTO v_rake_total
     FROM public.rake_records rr
    WHERE rr.tournament_id = p_tournament_id AND rr.is_tournament;
+  IF v_diamond THEN
+    -- DIAMOND PHASE 8: the fee of a Diamond event is its fee bank (what came
+    -- in as fee, less what was refunded), held in custody until it settles.
+    SELECT e.fee_balance + e.fee_out INTO v_rake_total
+      FROM public.fn_poker_diamond_tournament_escrow(p_tournament_id) e;
+  END IF;
   IF v_rake_total < 0 OR v_rake_total::text IN ('NaN','Infinity','-Infinity')
      OR v_rake_total IS DISTINCT FROM round(v_rake_total,2) THEN
     RAISE EXCEPTION 'tournament % has malformed rake records',p_tournament_id
@@ -912,7 +934,7 @@ BEGIN
        OR v_prior_rake.attributed_users < 0
        OR v_prior_rake.attribution_error IS NOT NULL
        OR lower(v_prior_rake.destination) IN ('pending','')
-       OR (v_prior_rake.amount > 0 AND v_t.club_id IS NOT NULL
+       OR (v_prior_rake.amount > 0 AND v_t.club_id IS NOT NULL AND NOT v_diamond
            AND (v_prior_rake.attributed_users < 1
              OR (v_prior_rake.destination NOT LIKE 'union:%'
                  AND v_prior_rake.destination NOT LIKE 'club_treasury:%'))) THEN
@@ -924,6 +946,12 @@ BEGIN
     v_expected_fee := v_rake_total;
   END IF;
 
+  IF v_diamond THEN
+    -- DIAMOND PHASE 8: the escrow shadow of a Diamond event opens here, from
+    -- its ledger with its exact parts, so every apply below moves it as a chip
+    -- event's evidence moves it and the exact-zero close is the same close.
+    PERFORM public.fn_poker_diamond_tournament_open_shadow(p_tournament_id);
+  END IF;
   SELECT * INTO v_e FROM public.tournament_escrow e
    WHERE e.tournament_id = p_tournament_id FOR UPDATE;
   IF v_e.tournament_id IS NULL
@@ -1188,6 +1216,11 @@ BEGIN
     FROM public.wallet_transactions w
    WHERE w.related_entity_id = p_tournament_id
      AND lower(w.category) = 'bounty';
+  -- DIAMOND PHASE 9: the same reading after the close.
+  IF v_diamond THEN
+    SELECT e.bounty_out INTO v_bounty_total
+      FROM public.fn_poker_diamond_tournament_escrow(p_tournament_id) e;
+  END IF;
   IF v_bounty_total IS DISTINCT FROM v_t.bounty_pool
      OR COALESCE(v_t.bounty_pool_paid,0) IS DISTINCT FROM v_t.bounty_pool
      OR EXISTS (SELECT 1 FROM public.wallet_transactions w
@@ -1271,7 +1304,7 @@ BEGIN
      OR v_rake.attributed_users IS NULL OR v_rake.attributed_users < 0
      OR v_rake.attribution_error IS NOT NULL
      OR lower(v_rake.destination) IN ('pending','')
-     OR (v_rake.amount > 0 AND v_t.club_id IS NOT NULL
+     OR (v_rake.amount > 0 AND v_t.club_id IS NOT NULL AND NOT v_diamond
          AND (v_rake.attributed_users < 1
            OR (v_rake.destination NOT LIKE 'union:%'
                AND v_rake.destination NOT LIKE 'club_treasury:%'))) THEN
@@ -1424,4 +1457,3 @@ BEGIN
     p_tournament_id,p_observed_winner_id);
 END;
 $function$;
-

@@ -366,7 +366,7 @@ BEGIN
 END;
 $function$;
 
--- fn_settle_tournament_rake(uuid,text) body_md5=be08a61e1a867519048c4692b41ab1fd
+-- fn_settle_tournament_rake(uuid,text) body_md5=0e7baa1bfeb2a2d0fed749a52f32d520
 CREATE OR REPLACE FUNCTION public.fn_settle_tournament_rake(p_tournament_id uuid, p_source text DEFAULT 'engine'::text)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -406,6 +406,22 @@ BEGIN
       'settled_at', v_prior.settled_at);
   END IF;
 
+  -- DIAMOND PHASE 8: a Diamond event's fee sits in its custody rows, not in
+  -- rake_records; it goes to the house, and then the emptied custody closes.
+  IF public.fn_poker_diamond_tournament(p_tournament_id) THEN
+    v_res := public.fn_poker_diamond_tournament_settle_fee(p_tournament_id, COALESCE(p_source, 'engine'));
+    v_net := COALESCE((v_res->>'amount')::numeric, 0);
+    UPDATE public.tournament_rake_settlements
+       SET amount = v_net,
+           destination = CASE WHEN v_net > 0 THEN 'diamond_house' ELSE 'none' END,
+           settled_at = now(), attributed_at = now(), attributed_users = 0
+     WHERE tournament_id = p_tournament_id;
+    v_res := public.fn_poker_diamond_tournament_close_custody(p_tournament_id);
+    RETURN jsonb_build_object('ok', true, 'amount', v_net,
+      'destination', CASE WHEN v_net > 0 THEN 'diamond_house' ELSE 'none' END,
+      'attributed', true, 'attributed_users', 0, 'members', 0, 'asset', 'diamonds',
+      'custody_closed', v_res->>'closed', 'custody_still_held', v_res->>'still_held');
+  END IF;
   SELECT round(COALESCE(sum(r.rake_amount), 0), 2) INTO v_net
     FROM public.rake_records r
    WHERE r.tournament_id = p_tournament_id AND r.is_tournament;

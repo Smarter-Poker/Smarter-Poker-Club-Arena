@@ -16,7 +16,7 @@ BEGIN
     RAISE EXCEPTION 'credit_club_rake_to_treasury preimage changed; re-review rake burn migration';
   END IF;
   IF (SELECT md5(prosrc) FROM pg_proc WHERE oid = to_regprocedure('public.fn_settle_tournament_rake(uuid,text)'))
-       IS DISTINCT FROM 'be08a61e1a867519048c4692b41ab1fd' THEN
+       IS DISTINCT FROM '0e7baa1bfeb2a2d0fed749a52f32d520' THEN
     RAISE EXCEPTION 'fn_settle_tournament_rake preimage changed; re-review rake burn migration';
   END IF;
   IF NOT EXISTS (
@@ -421,6 +421,22 @@ BEGIN
       'settled_at', v_prior.settled_at);
   END IF;
 
+  -- DIAMOND PHASE 8: a Diamond event's fee sits in its custody rows, not in
+  -- rake_records; it goes to the house, and then the emptied custody closes.
+  IF public.fn_poker_diamond_tournament(p_tournament_id) THEN
+    v_res := public.fn_poker_diamond_tournament_settle_fee(p_tournament_id, COALESCE(p_source, 'engine'));
+    v_net := COALESCE((v_res->>'amount')::numeric, 0);
+    UPDATE public.tournament_rake_settlements
+       SET amount = v_net,
+           destination = CASE WHEN v_net > 0 THEN 'diamond_house' ELSE 'none' END,
+           settled_at = now(), attributed_at = now(), attributed_users = 0
+     WHERE tournament_id = p_tournament_id;
+    v_res := public.fn_poker_diamond_tournament_close_custody(p_tournament_id);
+    RETURN jsonb_build_object('ok', true, 'amount', v_net,
+      'destination', CASE WHEN v_net > 0 THEN 'diamond_house' ELSE 'none' END,
+      'attributed', true, 'attributed_users', 0, 'members', 0, 'asset', 'diamonds',
+      'custody_closed', v_res->>'closed', 'custody_still_held', v_res->>'still_held');
+  END IF;
   SELECT round(COALESCE(sum(r.rake_amount), 0), 2) INTO v_net
     FROM public.rake_records r
    WHERE r.tournament_id = p_tournament_id AND r.is_tournament;
@@ -594,8 +610,8 @@ DECLARE
   v_new text;
 BEGIN
   FOR r IN SELECT * FROM (VALUES
-    ('public.fn_ca_tournament_terminal_receipt(uuid,uuid)', 'bb4b0e1d1c758943fca29f9a83d064e4', 'v_r'),
-    ('public.fn_complete_tournament_terminal_pre_seat_guard(uuid,uuid,text)', '90f7506df2f1a94fe22952714fcd9f85', 'v_prior_rake')
+    ('public.fn_ca_tournament_terminal_receipt(uuid,uuid)', '1299bd56c938864f55c9e53206bc76df', 'v_r'),
+    ('public.fn_complete_tournament_terminal_pre_seat_guard(uuid,uuid,text)', '15de38b6e3cf35e21621b240a7a6f51e', 'v_prior_rake')
   ) AS targets(signature, body_md5, first_record)
   LOOP
     SELECT pg_get_functiondef(p.oid),p.prosrc INTO v_def,v_body

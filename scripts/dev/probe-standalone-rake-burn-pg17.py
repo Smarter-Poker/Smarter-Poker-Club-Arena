@@ -7,6 +7,7 @@ production certification. Every temporary cluster is stopped and removed.
 """
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -26,7 +27,20 @@ CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
 ALTER TABLE chip_ledger ADD PRIMARY KEY(id);
 ALTER TABLE chip_ledger ADD actor_service text, ADD db_role text;
 ALTER TABLE clubs ADD is_union boolean DEFAULT false;
+ALTER TABLE clubs ADD COLUMN IF NOT EXISTS asset text DEFAULT 'chips', ADD COLUMN IF NOT EXISTS is_platform boolean DEFAULT false;
+
 ALTER TABLE tournaments ADD club_id uuid, ADD name text, ADD current_players integer DEFAULT 2;
+CREATE OR REPLACE FUNCTION public.fn_poker_diamond_tournament(p_tournament_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  SELECT EXISTS (
+    SELECT 1 FROM public.tournaments t JOIN public.clubs c ON c.id = t.club_id
+     WHERE t.id = p_tournament_id AND c.asset = 'diamonds' AND c.is_platform IS TRUE
+       AND c.union_id IS NULL AND t.union_id IS NULL);
+$function$;
 CREATE TABLE profiles(id uuid PRIMARY KEY,username text,full_name text);
 CREATE TABLE unions(id uuid PRIMARY KEY,name text);
 CREATE TABLE ca_mint_policy(id integer,per_operation_cap_chips numeric,rolling_24h_cap_chips numeric);
@@ -148,7 +162,35 @@ with tempfile.TemporaryDirectory(prefix="ca-rake-burn-", dir="/tmp") as temporar
             raise AssertionError("migration admitted a disabled supply register")
         run("ALTER TABLE chip_ledger ENABLE TRIGGER zz_ca_issuance_leg_is_registered")
         checks.append("migration refuses a disabled supply register")
+        # Capture actual compiled preimages, then verify complete terminal
+        # preservation through the migration, including Diamond fee/bounty paths.
+        def function_body(name):
+            result = subprocess.run(args + ["-A", "-t"], input=
+                f"SELECT to_json(prosrc) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='{name}'",
+                text=True, capture_output=True, check=True)
+            return json.loads(result.stdout)
+        terminal_names = ["fn_ca_tournament_terminal_receipt",
+                          "fn_complete_tournament_terminal_pre_seat_guard"]
+        previous_terminal = {name: function_body(name) for name in terminal_names}
+        previous_fee = function_body("fn_settle_tournament_rake")
+        diamond_pattern = r"  -- DIAMOND PHASE 8:.*?\n  END IF;\n(?=  SELECT round\(COALESCE\(sum\(r\.rake_amount\))"
+        previous_diamond = re.search(diamond_pattern, previous_fee, re.S)
+        if previous_diamond is None:
+            raise AssertionError("current Diamond custody preimage is missing")
         run(MIGRATION.read_text())
+        installed_diamond = re.search(diamond_pattern, function_body("fn_settle_tournament_rake"), re.S)
+        if installed_diamond is None or installed_diamond.group(0) != previous_diamond.group(0):
+            raise AssertionError("migration changed the Diamond fee and custody branch")
+        checks.append("current Diamond fee and custody branch preserved exactly")
+        for name, before in previous_terminal.items():
+            installed_body = function_body(name)
+            restored, count = re.subn(
+                r"\n +AND (?:v_r|v_prior_rake|v_rake)\.destination NOT LIKE 'chip_retirement:%'",
+                "", installed_body)
+            expected_count = 1 if name == terminal_names[0] else 2
+            if count != expected_count or restored != before:
+                raise AssertionError("migration changed another current terminal clause: " + name)
+            checks.append(name + " preserves every other current clause including Diamond bounties")
         # Execute the exact installed terminal destination expressions, including
         # their original union and historical treasury alternatives. The full
         # outer terminal transaction remains a separate acceptance requirement.
@@ -159,7 +201,6 @@ with tempfile.TemporaryDirectory(prefix="ca-rake-burn-", dir="/tmp") as temporar
             installed = subprocess.run(args + ["-A", "-t"], input=
                 f"SELECT prosrc FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='{function}'",
                 text=True, capture_output=True, check=True).stdout
-            import re
             for record_name in record_names:
                 predicate = re.search(re.escape(record_name) + r"\.destination NOT LIKE 'union:%'\s+AND "
                     + re.escape(record_name) + r"\.destination NOT LIKE 'club_treasury:%'\s+AND "

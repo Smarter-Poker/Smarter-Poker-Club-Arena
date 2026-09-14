@@ -19,7 +19,13 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { AdCampaignService, billingLabel, formatDollars } from '../../services/AdCampaignService';
+import {
+  AdCampaignService,
+  billingLabel,
+  countriesLabel,
+  formatDollars,
+  parseCountries,
+} from '../../services/AdCampaignService';
 import type {
   AdCampaign,
   AdRateCard,
@@ -59,6 +65,7 @@ const EMPTY_SPONSOR = {
   days: 7,
   contactEmail: '',
   goalImpressions: '',
+  countries: '',
 };
 
 export default function CampaignQueue() {
@@ -234,6 +241,7 @@ export default function CampaignQueue() {
       days: sponsor.days,
       contactEmail: sponsor.contactEmail.trim() || null,
       goalImpressions: sponsor.goalImpressions ? Number(sponsor.goalImpressions) : null,
+      countries: parseCountries(sponsor.countries) ?? null,
     });
     setSponsorBusy(false);
     if (!res.ok) {
@@ -247,6 +255,7 @@ export default function CampaignQueue() {
         poster_not_same_origin: 'The Poster Must Be A Path On This Site, Uploaded First',
         destination_must_be_https: 'The Destination Must Be A Full https Address',
         bad_pacing: 'Pacing Must Be Even Or Asap',
+        bad_countries: 'Countries Are Two-Letter Codes Separated By Commas: US, CA, GB',
       };
       setError(why[res.reason] ?? `Could Not Open It: ${res.reason}`);
       return;
@@ -261,6 +270,7 @@ export default function CampaignQueue() {
   const rest = (campaigns ?? []).filter((c) => c.status !== 'submitted');
   const sponsorReady =
     sponsor.advertiserName.trim().length > 0 &&
+    parseCountries(sponsor.countries) !== undefined &&
     sponsor.headline.trim().length > 0 &&
     sponsor.imageUrl.trim().startsWith('/') &&
     (sponsor.posterUrl.trim() === '' || sponsor.posterUrl.trim().startsWith('/')) &&
@@ -412,6 +422,18 @@ export default function CampaignQueue() {
                   disabled={sponsorBusy}
                 />
               </label>
+              <label className="campaign-queue__field">
+                <span className="admin-label">Countries</span>
+                <input
+                  className="admin-input"
+                  type="text"
+                  maxLength={200}
+                  value={sponsor.countries}
+                  onChange={(e) => setSponsor((s) => ({ ...s, countries: e.target.value }))}
+                  placeholder="Optional. US, CA, GB. Empty Means Everywhere."
+                  disabled={sponsorBusy}
+                />
+              </label>
             </div>
             <div className="campaign-queue__actions">
               <button
@@ -456,6 +478,12 @@ export default function CampaignQueue() {
                     ? `${formatDollars(c.quotedCents ?? 0)} To Invoice`
                     : `${c.diamondsCharged.toLocaleString()} Diamonds`}{' '}
                   {'·'} Opens <code>{c.targetUrl}</code>
+                  {c.countries ? (
+                    <>
+                      {' '}
+                      {'·'} {countriesLabel(c.countries)}
+                    </>
+                  ) : null}
                 </div>
                 <label className="campaign-queue__note">
                   <span className="admin-label">Note To The Club</span>
@@ -522,7 +550,10 @@ export default function CampaignQueue() {
                 {rest.map((c) => (
                   <tr key={c.id}>
                     <td>{c.clubName}</td>
-                    <td>{SLOT_LABEL[c.slot] ?? c.slot}</td>
+                    <td>
+                      {SLOT_LABEL[c.slot] ?? c.slot}
+                      {c.countries ? ` (${countriesLabel(c.countries)})` : ''}
+                    </td>
                     <td>{STATUS_LABEL[c.displayStatus] ?? c.displayStatus}</td>
                     <td>
                       {new Date(c.startsAt).toLocaleDateString()} To{' '}

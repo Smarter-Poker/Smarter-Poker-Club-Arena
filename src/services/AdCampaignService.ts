@@ -74,6 +74,29 @@ export interface AdCampaign {
   /** When staff recorded the sponsor invoice as sent / paid. Null on a club flight. */
   invoicedAt: string | null;
   paidAt: string | null;
+  /** Where the flight may run: ISO 3166-1 alpha-2, upper case. Null means everywhere. */
+  countries: string[] | null;
+}
+
+/**
+ * "us, CA, gb" -> ['CA', 'GB', 'US']; '' -> null (everywhere). Anything that is
+ * not two letters makes the whole list invalid (returns undefined), because a
+ * sponsor who typed "USA" meant something and serving everywhere is the
+ * opposite of it. The database applies the same rule (fn_ad_countries_clean).
+ */
+export function parseCountries(text: string): string[] | null | undefined {
+  const parts = text
+    .split(/[\s,;]+/)
+    .map((x) => x.trim())
+    .filter((x) => x.length > 0);
+  if (parts.length === 0) return null;
+  if (parts.some((x) => !/^[A-Za-z]{2}$/.test(x))) return undefined;
+  return Array.from(new Set(parts.map((x) => x.toUpperCase()))).sort();
+}
+
+/** The list as a sponsor or staff read it: "US, CA Only" or "Everywhere". */
+export function countriesLabel(countries: string[] | null | undefined): string {
+  return countries && countries.length > 0 ? `${countries.join(', ')} Only` : 'Everywhere';
 }
 
 /** A sponsor advertiser as platform staff see it: who owns it and what is owed. */
@@ -113,6 +136,8 @@ export interface SponsorSelfSubmitInput {
   days: number;
   goalImpressions?: number | null;
   pacing?: 'even' | 'asap';
+  /** Null or omitted: everywhere. */
+  countries?: string[] | null;
 }
 
 export interface SponsorAdvertiser {
@@ -151,6 +176,8 @@ export interface SponsorCampaignInput {
   contactEmail?: string | null;
   goalImpressions?: number | null;
   pacing?: 'even' | 'asap';
+  /** Null or omitted: everywhere. */
+  countries?: string[] | null;
 }
 
 export type SponsorCreateResult =
@@ -217,6 +244,7 @@ function mapCampaign(r: Record<string, unknown>): AdCampaign {
     quotedCents: r.quoted_cents == null ? null : Number(r.quoted_cents),
     invoicedAt: r.invoiced_at == null ? null : String(r.invoiced_at),
     paidAt: r.paid_at == null ? null : String(r.paid_at),
+    countries: Array.isArray(r.countries) ? r.countries.map((x) => String(x)) : null,
   };
 }
 
@@ -434,6 +462,7 @@ export const AdCampaignService = {
       p_goal_impressions: input.goalImpressions ?? null,
       p_pacing: input.pacing ?? 'even',
       p_poster_url: input.posterUrl ?? null,
+      p_countries: input.countries ?? null,
     });
     if (error) {
       reportError(error, 'AdCampaignService.createSponsor');
@@ -517,6 +546,7 @@ export const AdCampaignService = {
       p_days: input.days,
       p_goal_impressions: input.goalImpressions ?? null,
       p_pacing: input.pacing ?? 'even',
+      p_countries: input.countries ?? null,
     });
     if (error) {
       reportError(error, 'AdCampaignService.sponsorSubmit');

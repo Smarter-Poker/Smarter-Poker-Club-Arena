@@ -300,3 +300,64 @@ describe("a sponsor's flight is billed, and a phone sponsor can log in (2026-09-
     expect(QUEUE).toMatch(/handoffEmail\[a\.id\] \?\? a\.contactEmail \?\? ''/);
   });
 });
+
+describe('an advert knows where it is (2026-09-14)', () => {
+  const GEO = read('supabase/migrations/20260914011104_an_advert_knows_where_it_is.sql');
+  const ADS = read('src/services/AdService.ts');
+
+  it('a flight carries a country list, null means everywhere, and a bad code refuses the whole list', () => {
+    expect(GEO).toMatch(/add column if not exists countries text\[\]/);
+    expect(GEO).toMatch(
+      /create or replace function public\.fn_ad_countries_clean\(p_countries text\[\]\)/
+    );
+    expect(GEO).toMatch(/btrim\(x\) !~ '\^\[A-Za-z\]\{2\}\$'\) then null/);
+    expect(GEO).toMatch(/add constraint ad_campaign_countries_are_alpha2/);
+    // Both submits refuse, never drop, a bad entry.
+    expect(GEO.match(/'reason', 'bad_countries'/g)?.length).toBe(2);
+    // Every existing flight runs everywhere; the migration asserts it.
+    expect(GEO).toMatch(/an existing flight is gated; every existing flight runs everywhere/);
+    // The client applies the same rule before the round trip.
+    expect(SERVICE).toMatch(
+      /export function parseCountries\(text: string\): string\[\] \| null \| undefined/
+    );
+    expect(SERVICE).toMatch(
+      /if \(parts\.some\(\(x\) => !\/\^\[A-Za-z\]\{2\}\$\/\.test\(x\)\)\) return undefined;/
+    );
+  });
+
+  it('the resolver takes a country and never serves a gated flight to an unknown location', () => {
+    expect(GEO).toMatch(/drop function if exists public\.fn_resolve_ads\(text, uuid, integer\);/);
+    expect(GEO).toMatch(/p_country text default null/);
+    expect(GEO).toMatch(
+      /and \(cam\.id is null or cam\.countries is null\s+or \(v_country is not null and v_country = any\(cam\.countries\)\)\)/
+    );
+    // One overload each, or PostgREST cannot pick.
+    expect(GEO).toMatch(/expected one overload each of five functions/);
+    // Anon can still resolve house ads.
+    expect(GEO).toMatch(
+      /grant execute on function public\.fn_resolve_ads\(text, uuid, integer, text\) to anon, authenticated, service_role;/
+    );
+  });
+
+  it('the client asks the edge once, passes it as a hint, and treats a failure as unknown', () => {
+    expect(ADS).toMatch(/fetch\('\/api\/geo', \{ credentials: 'omit', cache: 'no-store' \}\)/);
+    expect(ADS).toMatch(/p_country: await playerCountry\(\),/);
+    expect(ADS).toMatch(/return \/\^\[A-Z\]\{2\}\$\/\.test\(c\) \? c : null;/);
+    expect(ADS).toMatch(/\} catch \{\s+return null;/);
+  });
+
+  it('a sponsor and staff both write the list, and both read it back', () => {
+    expect(PAGE).toMatch(/countries: parseCountries\(countriesText\) \?\? null,/);
+    expect(PAGE).toMatch(
+      /const countriesOk = sponsorMode \? parseCountries\(countriesText\) !== undefined : true;/
+    );
+    expect(PAGE).toMatch(/Countries \(Optional\)/);
+    expect(PAGE).toMatch(/A Player Whose Location Is Unknown Never Sees A Country-Limited Advert/);
+    expect(QUEUE).toMatch(/countries: parseCountries\(sponsor\.countries\) \?\? null,/);
+    expect(QUEUE).toMatch(/parseCountries\(sponsor\.countries\) !== undefined &&/);
+    expect(SERVICE.match(/p_countries: input\.countries \?\? null,/g)?.length).toBe(2);
+    expect(SERVICE).toMatch(
+      /countries: Array\.isArray\(r\.countries\) \? r\.countries\.map\(\(x\) => String\(x\)\) : null,/
+    );
+  });
+});

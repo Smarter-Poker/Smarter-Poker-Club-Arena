@@ -5,6 +5,13 @@
 **What changed:** execute the actual tracked preimage, guarded retry restoration and current insertion in an isolated PostgreSQL17 cluster. Real deadlock and timeout boundaries prove retry, one settlement credit, failed-attempt rollback, bounded exhaustion, permanent refusal, exact replay and service-only access. Financial callees are explicit local transaction recorders; accounting formulas and Diamond behavior remain outside this narrow fixture.
 **Verified:** current body matches production0e7baa1bfeb2a2d0fed749a52f32d520; historical24-chip settlement has all3players attributed. No production writes or new migration. Protected CI and publication remain separate.
 
+## 2026-09-14: A river shove cannot erase prior side-pot betting in the EV witness
+
+**Files:** migration20260914135120; actual audit native runner and three captured action/stage projections; required accounting CI; equity witness changelog.
+**What existed:** the last all-in on any street let a river shove hide betting after an earlier all-in, creating three observed false missing-equity seats.
+**What changed:** only known river shoves are excluded from that action boundary. Existing facts, other witness checks, captured equity and unknown legacy stage handling are preserved. No money or historical fact writes.
+**Verified:** 30 native PostgreSQL17 checks and a read-only 19-hand production comparison; all five genuine missing seats across four RIT hands remain visible. Required CI, merge and installation remain pending.
+
 ## 2026-09-14: Settled bounty replay precedes pending payment order
 
 **Files:** migration20260914122903; captured native replay fixture and runner; bounty recipient/order audit.

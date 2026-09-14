@@ -1,0 +1,7 @@
+The EV coverage alarm counted three observed early all-in seats as missing equity even though other players continued betting their side pots. Its action scan used the last all-in on any street. A later river shove moved that boundary beyond the continuing betting and made the earlier seat look like an immediate runout.
+
+The guarded database patch excludes known river shoves from that boundary. All other witness sections, the seven-day window, captured equity, legacy unknown-stage handling, grants and original facts are preserved. It never supplies a missing equity value or changes any payment. The separate RIT recording race and durable equity provenance remain separate open work.
+
+Thirty isolated PostgreSQL 17 checks execute the actual full audit and guarded migration. The tracked baseline matches live definition 3b3b9610697ea648ee94808ff7ca91b7 and reproduces all three original counterexamples; the candidate 94b0da0dd3428b42595186266d75ff8b corrects them. Genuine missing runouts on all three pre-river streets, covered hands, legacy spelling/stages, pruned history, mixed populations, service access, browser denial, replay and drift refusal are qualified. A read-only comparison of 19 actual hands removes exactly those three false missing seats while retaining all five genuine missing seats across four RIT hands.
+
+Required CI, merge, guarded production installation and the natural audit's readback are still required. The local proof uses minimal tables and does not claim full engine or financial qualification.

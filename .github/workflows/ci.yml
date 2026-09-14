@@ -1228,6 +1228,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-union-integrity-scope.py
+      - name: Equity witness preserves side-pot betting before river shoves
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-equity-witness-river-boundary.py --output artifacts/equity-witness-river-boundary
       - name: Tournament finish incidents retain their own event identity
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

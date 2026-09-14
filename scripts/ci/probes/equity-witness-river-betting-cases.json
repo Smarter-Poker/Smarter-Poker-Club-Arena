@@ -1,0 +1,292 @@
+[
+  {
+    "hand_id": "b079751d-d12a-4423-a23a-f67e698e337b",
+    "actions": [
+      {
+        "action": "sb",
+        "stage": "preflop"
+      },
+      {
+        "action": "bb",
+        "stage": "preflop"
+      },
+      {
+        "action": "raise",
+        "stage": "preflop"
+      },
+      {
+        "action": "fold",
+        "stage": "preflop"
+      },
+      {
+        "action": "fold",
+        "stage": "preflop"
+      },
+      {
+        "action": "call",
+        "stage": "preflop"
+      },
+      {
+        "action": "raise",
+        "stage": "preflop"
+      },
+      {
+        "action": "fold",
+        "stage": "preflop"
+      },
+      {
+        "action": "call",
+        "stage": "preflop"
+      },
+      {
+        "action": "call",
+        "stage": "preflop"
+      },
+      {
+        "action": "bet",
+        "stage": "flop"
+      },
+      {
+        "action": "call",
+        "stage": "flop"
+      },
+      {
+        "action": "call",
+        "stage": "flop"
+      },
+      {
+        "action": "check",
+        "stage": "turn"
+      },
+      {
+        "action": "check",
+        "stage": "turn"
+      },
+      {
+        "action": "bet",
+        "stage": "turn"
+      },
+      {
+        "action": "call",
+        "stage": "turn"
+      },
+      {
+        "action": "all_in",
+        "stage": "turn"
+      },
+      {
+        "action": "call",
+        "stage": "turn"
+      },
+      {
+        "action": "call",
+        "stage": "turn"
+      },
+      {
+        "action": "check",
+        "stage": "river"
+      },
+      {
+        "action": "bet",
+        "stage": "river"
+      },
+      {
+        "action": "all_in",
+        "stage": "river"
+      },
+      {
+        "action": "return",
+        "stage": "showdown"
+      }
+    ],
+    "streets": ["turn"]
+  },
+  {
+    "hand_id": "608f2089-1065-47bf-ab9d-0ac27816f1ea",
+    "actions": [
+      {
+        "action": "sb",
+        "stage": "preflop"
+      },
+      {
+        "action": "ante",
+        "stage": "preflop"
+      },
+      {
+        "action": "bb",
+        "stage": "preflop"
+      },
+      {
+        "action": "ante",
+        "stage": "preflop"
+      },
+      {
+        "action": "ante",
+        "stage": "preflop"
+      },
+      {
+        "action": "ante",
+        "stage": "preflop"
+      },
+      {
+        "action": "ante",
+        "stage": "preflop"
+      },
+      {
+        "action": "ante",
+        "stage": "preflop"
+      },
+      {
+        "action": "ante",
+        "stage": "preflop"
+      },
+      {
+        "action": "raise",
+        "stage": "preflop"
+      },
+      {
+        "action": "fold",
+        "stage": "preflop"
+      },
+      {
+        "action": "fold",
+        "stage": "preflop"
+      },
+      {
+        "action": "call",
+        "stage": "preflop"
+      },
+      {
+        "action": "fold",
+        "stage": "preflop"
+      },
+      {
+        "action": "call",
+        "stage": "preflop"
+      },
+      {
+        "action": "fold",
+        "stage": "preflop"
+      },
+      {
+        "action": "check",
+        "stage": "flop"
+      },
+      {
+        "action": "check",
+        "stage": "flop"
+      },
+      {
+        "action": "bet",
+        "stage": "flop"
+      },
+      {
+        "action": "call",
+        "stage": "flop"
+      },
+      {
+        "action": "call",
+        "stage": "flop"
+      },
+      {
+        "action": "check",
+        "stage": "turn"
+      },
+      {
+        "action": "check",
+        "stage": "turn"
+      },
+      {
+        "action": "bet",
+        "stage": "turn"
+      },
+      {
+        "action": "call",
+        "stage": "turn"
+      },
+      {
+        "action": "all_in",
+        "stage": "turn"
+      },
+      {
+        "action": "check",
+        "stage": "river"
+      },
+      {
+        "action": "all_in",
+        "stage": "river"
+      },
+      {
+        "action": "all_in",
+        "stage": "river"
+      },
+      {
+        "action": "return",
+        "stage": "showdown"
+      }
+    ],
+    "streets": ["turn"]
+  },
+  {
+    "hand_id": "abe5a95b-3e1d-4d34-8e03-e7ac7155047d",
+    "actions": [
+      {
+        "action": "sb",
+        "stage": "preflop"
+      },
+      {
+        "action": "bb",
+        "stage": "preflop"
+      },
+      {
+        "action": "raise",
+        "stage": "preflop"
+      },
+      {
+        "action": "call",
+        "stage": "preflop"
+      },
+      {
+        "action": "all_in",
+        "stage": "preflop"
+      },
+      {
+        "action": "check",
+        "stage": "flop"
+      },
+      {
+        "action": "bet",
+        "stage": "flop"
+      },
+      {
+        "action": "call",
+        "stage": "flop"
+      },
+      {
+        "action": "check",
+        "stage": "turn"
+      },
+      {
+        "action": "check",
+        "stage": "turn"
+      },
+      {
+        "action": "check",
+        "stage": "river"
+      },
+      {
+        "action": "all_in",
+        "stage": "river"
+      },
+      {
+        "action": "fold",
+        "stage": "river"
+      },
+      {
+        "action": "return",
+        "stage": "showdown"
+      }
+    ],
+    "streets": ["preflop"]
+  }
+]

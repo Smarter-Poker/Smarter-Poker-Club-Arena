@@ -3,6 +3,28 @@ import { runJournalLoop } from './loop.js';
 import type { ObservationCaptureResult } from '../HorseObservationCapture.js';
 const empty = () => ({ status: 'pruned' as const, completedWork: 0, batches: 0, observations: 0 });
 describe('isolated acquisition scheduling', () => {
+  it.each(['refined', 'continued', 'captured'] as const)(
+    'treats %s as progress without error backoff or journal completion',
+    async (status) => {
+      const stop = new AbortController(),
+        delays: number[] = [],
+        cycles: unknown[] = [];
+      await runJournalLoop(stop.signal, {
+        processWork: async () => ({ status: 'idle' }),
+        processCapture: async () => ({ status, requestKey: 'a'.repeat(64) }),
+        prune: async () => empty(),
+        now: () => 0,
+        started: vi.fn(),
+        completed: (c) => cycles.push(c),
+        wait: async (ms) => {
+          delays.push(ms);
+          if (delays.length === 4) stop.abort();
+        },
+      });
+      expect(delays).toEqual([1000, 1000, 1000, 1000]);
+      expect(cycles[1]).toEqual({ work: 'skipped', retention: 'skipped', acquisition: status });
+    }
+  );
   it('drains journal work before acquisition and never combines source I/O with maintenance', async () => {
     const stop = new AbortController(),
       events: string[] = [],

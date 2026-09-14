@@ -24,7 +24,14 @@ const keyOf = (r: CommittedObservationRequest) =>
 const rpc = (name: string, args: Record<string, unknown>) =>
   supabase.rpc(name, args).abortSignal(AbortSignal.timeout(5000));
 const unavailable = (reason: string) => Object.freeze({ status: 'unavailable' as const, reason });
-const gapReasons = new Set(['source_expired', 'source_budget_exceeded', 'invalid_source']);
+const gapReasons = new Set([
+  'source_expired',
+  'source_budget_exceeded',
+  'invalid_source',
+  'segment_budget_exceeded',
+]);
+const count = (v: unknown, min: number, max: number): v is number =>
+  Number.isSafeInteger(v) && (v as number) >= min && (v as number) <= max;
 
 /** Persist the requested scope before any source read. Durable admission is
  * acceptance of work, not observation coverage, journal completion or learning. */
@@ -51,7 +58,7 @@ export async function admitObservationCapture(input: CommittedObservationRequest
       data?.version !== 1 ||
       data.status !== 'durable' ||
       data.requestKey !== requestKey ||
-      !['queued', 'leased', 'admitted', 'gap'].includes(data.state)
+      !['queued', 'leased', 'admitted', 'captured', 'gap'].includes(data.state)
     )
       return Object.freeze({ status: 'unknown' as const, requestKey });
     if (
@@ -65,10 +72,16 @@ export async function admitObservationCapture(input: CommittedObservationRequest
       return Object.freeze({ status: 'unknown' as const, requestKey });
     if (data.state === 'gap' && !gapReasons.has(data.reason))
       return Object.freeze({ status: 'unknown' as const, requestKey });
+    if (
+      data.state === 'captured' &&
+      (!count(data.segments, 2, 2048) ||
+        !count(data.capturedObservations, 0, data.segments * 20000))
+    )
+      return Object.freeze({ status: 'unknown' as const, requestKey });
     return Object.freeze({
       status: 'durable' as const,
       requestKey,
-      state: data.state as 'queued' | 'leased' | 'admitted' | 'gap',
+      state: data.state as 'queued' | 'leased' | 'admitted' | 'captured' | 'gap',
     });
   } catch {
     return Object.freeze({ status: 'unknown' as const, requestKey });
@@ -79,7 +92,15 @@ export type ObservationCaptureResult =
   | Readonly<{ status: 'idle' }>
   | ReturnType<typeof unavailable>
   | Readonly<{
-      status: 'admitted' | 'gap' | 'deferred' | 'lease_lost' | 'unknown';
+      status:
+        | 'admitted'
+        | 'continued'
+        | 'captured'
+        | 'refined'
+        | 'gap'
+        | 'deferred'
+        | 'lease_lost'
+        | 'unknown';
       requestKey: string;
     }>;
 
@@ -110,15 +131,34 @@ export async function processObservationCapture(): Promise<ObservationCaptureRes
   } as CommittedObservationRequest;
   if (!requestValid(request) || keyOf(request) !== claim.requestKey)
     return unavailable('invalid_claim');
+  // Preserve the original request identity; only the claimed bounded slice is
+  // read. Older servers omit BOTH fields and retain the original single read.
+  const sliced = claim.sliceFromMs !== undefined || claim.sliceThroughMs !== undefined;
+  const slice = {
+    ...request,
+    fromMs: sliced ? (claim.sliceFromMs as number) : request.fromMs,
+    throughMs: sliced ? (claim.sliceThroughMs as number) : request.throughMs,
+  };
+  if (!requestValid(slice) || slice.fromMs < request.fromMs || slice.throughMs > request.throughMs)
+    return unavailable('invalid_claim');
   const requestKey = claim.requestKey as string;
-  const result = (status: 'admitted' | 'gap' | 'deferred' | 'lease_lost' | 'unknown') =>
-    Object.freeze({ status, requestKey });
+  const result = (
+    status:
+      | 'admitted'
+      | 'continued'
+      | 'captured'
+      | 'refined'
+      | 'gap'
+      | 'deferred'
+      | 'lease_lost'
+      | 'unknown'
+  ) => Object.freeze({ status, requestKey });
   let payload: string | null = null,
     reason = 'source_unavailable';
   let expected: Readonly<{ batchKey: string; batchDigest: string; observations: number }> | null =
     null;
   try {
-    const source = await readCommittedObservationSnapshot(request);
+    const source = await readCommittedObservationSnapshot(slice);
     if (source.status === 'snapshot') {
       const batch = prepareAdaptiveJournalBatch(source);
       if (batch.status === 'prepared') {
@@ -128,7 +168,9 @@ export async function processObservationCapture(): Promise<ObservationCaptureRes
           batchDigest: batch.batchDigest,
           observations: batch.observations,
         };
-      } else reason = 'invalid_source';
+      } else
+        reason =
+          batch.reason === 'batch_budget_exceeded' ? 'source_budget_exceeded' : 'invalid_source';
     } else if (
       [
         'hand_budget_exceeded',
@@ -153,13 +195,39 @@ export async function processObservationCapture(): Promise<ObservationCaptureRes
     if (error || data?.version !== 1 || data.requestKey !== requestKey) return result('unknown');
     if (data.status === 'lease_lost') return result('lease_lost');
     if (
-      data.status === 'admitted' &&
+      ['admitted', 'continued', 'captured'].includes(data.status) &&
       expected &&
       data.batchKey === expected.batchKey &&
       data.batchDigest === expected.batchDigest &&
       data.observations === expected.observations
+    ) {
+      if (data.status === 'admitted')
+        return slice.fromMs === request.fromMs && slice.throughMs === request.throughMs
+          ? result('admitted')
+          : result('unknown');
+      if (
+        data.sliceFromMs !== slice.fromMs ||
+        data.sliceThroughMs !== slice.throughMs ||
+        data.nextFromMs !== slice.throughMs ||
+        data.nextThroughMs !==
+          Math.min(request.throughMs, slice.throughMs + 2 * (slice.throughMs - slice.fromMs)) ||
+        !count(data.segments, data.status === 'captured' ? 2 : 1, 2048) ||
+        !count(data.capturedObservations, expected.observations, data.segments * 20000)
+      )
+        return result('unknown');
+      if ((data.status === 'captured') !== (slice.throughMs === request.throughMs))
+        return result('unknown');
+      return result(data.status as 'continued' | 'captured');
+    }
+    if (
+      data.status === 'refined' &&
+      payload === null &&
+      reason === 'source_budget_exceeded' &&
+      slice.throughMs - slice.fromMs > 1 &&
+      data.nextFromMs === slice.fromMs &&
+      data.nextThroughMs === slice.fromMs + Math.floor((slice.throughMs - slice.fromMs) / 2)
     )
-      return result('admitted');
+      return result('refined');
     if (
       data.status === 'deferred' &&
       ['source_unavailable', 'queue_full', 'capacity_busy', 'queue_unavailable'].includes(
@@ -180,7 +248,7 @@ export async function processObservationCapture(): Promise<ObservationCaptureRes
   }
 }
 
-/** Only admitted request metadata expires. Unknown requests and gaps persist. */
+/** Only terminal acquisition metadata expires. Unknown requests and gaps persist. */
 export async function pruneObservationCaptures() {
   try {
     const { data, error } = await rpc('fn_prune_horse_observation_captures', {});
@@ -190,10 +258,15 @@ export async function pruneObservationCaptures() {
       data.status !== 'pruned' ||
       !Number.isSafeInteger(data.requests) ||
       data.requests < 0 ||
-      data.requests > 100
+      data.requests > 100 ||
+      (data.sliceReceipts !== undefined && !count(data.sliceReceipts, 0, 1000))
     )
       return Object.freeze({ status: 'unknown' as const });
-    return Object.freeze({ status: 'pruned' as const, requests: data.requests as number });
+    return Object.freeze({
+      status: 'pruned' as const,
+      requests: data.requests as number,
+      ...(data.sliceReceipts === undefined ? {} : { sliceReceipts: data.sliceReceipts as number }),
+    });
   } catch {
     return Object.freeze({ status: 'unknown' as const });
   }

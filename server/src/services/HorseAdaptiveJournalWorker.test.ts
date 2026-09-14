@@ -29,7 +29,7 @@ describe('journal worker lifecycle owner', () => {
   it('counts source admissions separately from journal completions and retains explicit gaps', () => {
     service.start();
     ready(children[0]);
-    for (const acquisition of ['admitted', 'gap', 'unknown']) {
+    for (const acquisition of ['admitted', 'refined', 'continued', 'captured', 'gap', 'unknown']) {
       children[0].emit('message', { type: 'CYCLE_STARTED' });
       children[0].emit('message', {
         type: 'CYCLE_COMPLETED',
@@ -42,6 +42,9 @@ describe('journal worker lifecycle owner', () => {
     expect(service.status()).toMatchObject({
       completed: 0,
       capturesAdmitted: 1,
+      capturesRefined: 1,
+      captureSlicesContinued: 1,
+      capturesRecovered: 1,
       captureGaps: 1,
       uncertain: 1,
       lastCapture: 'unknown',

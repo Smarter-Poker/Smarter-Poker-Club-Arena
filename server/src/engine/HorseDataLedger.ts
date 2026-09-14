@@ -796,7 +796,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'horse_observation_capture_work',
     'minute',
     'HorseObservationCapture via fn_claim_horse_observation_capture; HorseLearningQueueHealth via fn_horse_learning_work_health',
-    'private durable actor/window acquisition requests; fenced queue acknowledgment and retained gaps; not source coverage or model activation',
+    'private durable actor/window acquisition requests; bounded sequential cursor recovery in one queue slot and retained gaps; not source coverage or model activation',
+    'Phase14'
+  ),
+  table(
+    'horse_observation_capture_receipts',
+    'minute',
+    'HorseObservationCapture via fn_finish_horse_observation_capture; fn_prune_horse_observation_captures',
+    'private immutable accepted-slice acknowledgments; exact retry after a newer lease, atomic journal admission and cursor advance; unfinished gap evidence is retained',
     'Phase14'
   ),
   table(

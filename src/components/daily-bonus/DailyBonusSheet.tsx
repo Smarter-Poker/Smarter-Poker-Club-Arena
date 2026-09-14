@@ -40,6 +40,7 @@ import { ThrowableImage } from '../table/ThrowableImage';
 import { triggerHaptic } from '../../services/HapticService';
 import { playPremiumSfx } from '../../utils/playPremiumSfx';
 import { mediaUrl } from '../../utils/mediaBase';
+import { reportError } from '../../utils/errorReporter';
 import {
   dailyBonusService,
   diamondsToCentsLabel,
@@ -76,6 +77,7 @@ const KIND_TITLE: Record<DailyBonusTileKind, string> = {
   mystery: 'Mystery Tile',
   shield: 'Streak Shield',
   boost: 'Mission Boost',
+  free_spin: 'Bonus Spin',
 };
 
 /** The painted renders already in the kit; the throwable is a 3D render from storage. */
@@ -87,6 +89,7 @@ const ICON_SRC = {
   /* The shield that protects a Daily Missions streak protects this one too:
      one render for one idea, wherever a streak is kept. */
   shield: mediaUrl('images/challenges/daily-missions-streak-freeze-v1.webp'),
+  free_spin: mediaUrl('images/diamond-icon.png'),
 } as const;
 
 /** The throwable tile shows the classic: the tomato render every table throws. */
@@ -152,6 +155,8 @@ function offered(tile: DailyBonusTile): { figure: string; sub: string } {
       return { figure: `×${tile.quantity}`, sub: 'Covers One Missed Day' };
     case 'boost':
       return { figure: '2×', sub: 'Double Daily Mission Diamonds' };
+    case 'free_spin':
+      return { figure: '×1', sub: '100 Diamond Value. Claim Before You Spin' };
     default:
       return { figure: `×${tile.quantity}`, sub: 'Yours For 7 Days' };
   }
@@ -168,6 +173,8 @@ function granted(g: DailyBonusGranted): { figure: string; sub: string } {
       return { figure: `×${g.quantity}`, sub: 'Held For 30 Days' };
     case 'boost':
       return { figure: `${g.factor ?? 2}×`, sub: 'Boost Is Running' };
+    case 'free_spin':
+      return { figure: '×1', sub: '100 Diamond Bonus Spin Claimed' };
     default:
       return { figure: `×${g.quantity}`, sub: 'Yours For 7 Days' };
   }
@@ -320,6 +327,27 @@ export default function DailyBonusSheet({
   const closeRef = useRef<HTMLButtonElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
   const burstTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [spinClubs, setSpinClubs] = useState<Array<{ id: string; name: string }> | null>(null);
+  const [choosingSpinClub, setChoosingSpinClub] = useState(false);
+  const [spinClubsError, setSpinClubsError] = useState(false);
+  const chooseSpinClub = async () => {
+    setChoosingSpinClub(true);
+    setSpinClubsError(false);
+    try {
+      const { ClubsService } = await import('../../services/ClubsService');
+      const memberships = await ClubsService.getUserMemberships();
+      setSpinClubs(
+        memberships
+          .filter((m) => m.club && m.club.id !== m.club.union_id)
+          .map((m) => ({ id: m.club.id, name: m.club.name }))
+      );
+    } catch (err) {
+      reportError(err, 'DailyBonusSheet.chooseSpinClub');
+      setSpinClubsError(true);
+    } finally {
+      setChoosingSpinClub(false);
+    }
+  };
 
   useEffect(() => {
     return () => {
@@ -526,6 +554,56 @@ export default function DailyBonusSheet({
         </div>
 
         <dl className="dbs__notes">
+          <div className="dbs__note">
+            <dt className="sc-label sc-ink--blue">Bonus Spin</dt>
+            <dd className="sc-copy">
+              Every Tenth Streak Day Adds One 100 Diamond Bonus Spin. Claim It Here, Then Use It In
+              Your Club. Your Welcome Spin Stays Separate.
+            </dd>
+          </div>
+          {((status.bonus_spins_held ?? 0) > 0 ||
+            status.tiles.some(
+              (t) => t.claimed && t.granted?.kind === 'free_spin' && t.granted.ticket_id
+            )) && (
+            <div className="dbs__note">
+              <dt className="sc-label sc-ink--gold">Claimed Spins</dt>
+              <dd className="sc-copy">
+                <button
+                  type="button"
+                  className="dbs-word sc-ink--gold"
+                  disabled={choosingSpinClub}
+                  onClick={() => void chooseSpinClub()}
+                >
+                  {choosingSpinClub
+                    ? 'Loading Clubs'
+                    : spinClubsError
+                      ? 'Retry Clubs'
+                      : 'Use Bonus Spin'}
+                </button>
+                {spinClubsError && <p role="alert">Your Clubs Could Not Be Loaded. Try Again.</p>}
+                {spinClubs?.map((club) => (
+                  <p key={club.id}>
+                    <a
+                      className="dbs-word sc-ink--blue"
+                      href={`${import.meta.env.BASE_URL}clubs/${club.id}/wheel?spin=daily-bonus`}
+                    >
+                      {club.name}
+                    </a>
+                  </p>
+                ))}
+                {spinClubs?.length === 0 && (
+                  <p>
+                    <a
+                      className="dbs-word sc-ink--blue"
+                      href={`${import.meta.env.BASE_URL}clubs-list`}
+                    >
+                      Join A Club To Use Your Spin
+                    </a>
+                  </p>
+                )}
+              </dd>
+            </div>
+          )}
           <div className="dbs__note">
             <dt className="sc-label sc-ink--blue">Streak</dt>
             <dd className="sc-copy">

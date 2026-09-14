@@ -8,7 +8,7 @@ Donkey Crossing and Mines join Plinko and Crash. All four scenes render actual T
 
 The internal target is 80% expected return, charged once per entry/stopping strategy. No return percentage is presented in player or operator UI. Mines uses the inverse probability of surviving the chosen number of tiles. Crossing and Crash use the same 48-bit survival boundary. Plinko keeps its audited full tables; a board is refused if its maximum batch prize cannot be covered. Independent sealed rounding preserves fractional-cent expected value for small entries.
 
-Player diamond entries go to the current host owner's diamond wallet. Chip prizes debit the **BBJ-funded Promo Wallet first**, then the **Union Main Bank** for a shortfall, or the **Club Main Bank** for a standalone club. No minting or change to that existing payout order is introduced. Accepted liabilities are reserved across all four games, and the actual wallet rows reject withdrawals that would consume those reservations.
+Player diamond entries go to the current host owner's diamond wallet. Chip prizes debit the **BBJ-funded Promo Wallet first**, then the **Union Main Bank** for a shortfall, or the **Club Main Bank** for a standalone club. Chip prizes are never minted; their existing payout order is unchanged. Accepted liabilities are reserved across all four games, and the actual wallet rows reject withdrawals that would consume those reservations.
 
 The owner agreement is an immutable, versioned receipt. Only the current wallet owner can accept; an administrator cannot sign for the owner. A new owner must accept again. New game doors begin closed, and all four bonus game admissions require the owner's agreement. The agreement also states the owner's diamond obligations for future item/VIP wheel rewards. Installation does not create owner consent or award items.
 
@@ -20,9 +20,17 @@ The first footer cell is Diamond Spins and links to the wheel. The other five pa
 
 The earning guide reads the existing catalog and current allowance (110 regular / 150 VIP daily activity diamonds). Qualified 500-diamond referrals have a separate uncapped daily ledger; other referral awards retain their existing caps. Qualification and the existing monthly referral limit remain with the referral service.
 
+## Claimed Daily Bonus And Welcome Spins
+
+Every tenth Daily Bonus streak day adds one claimable 100-diamond spin without replacing the existing seven-day reward cycle or milestone chests. The player must claim it first, then choose one of their clubs. At redemption the canonical Smarter.Poker Mint pays exactly 100 diamonds to the current host owner; the player pays zero. Mint limits and freezes still apply. The club or union funds every prize through the existing wallets. Mint-funded entries are excluded from the player's diamond-spending total.
+
+Tickets are private, tied to the saved reward claim, and redeemed once. Durable requests preserve the ticket, commitment and seed across lost responses and reloads. The same recovery now protects paid and welcome spins. A new member's separate one-time 100-diamond welcome spin per club or union remains intact. Free modes require an explicit tap and cannot start an automatic run.
+
+The installed forward migration was read back byte-for-byte. Fourteen function definitions matched the locally tested database. Live self-aborting probes passed for both host types: claim gating, canonical Mint and diamond journals, exactly-once entry, player cost zero, owner intake 100, unchanged welcome eligibility, and Promo-funded chip settlement. Local three-request contention produced one Mint operation and one spin. Real-component browser testing verified claim, club selection, interrupted-response recovery, fairness verification and subsequent welcome redemption.
+
 ## Verification Before Release
 
-- Fresh local PostgreSQL installation of both migrations; sealed boards, request identity, compare-and-swap moves, exactly-once settlement, reserve release, both game reports, and earning cap checks.
+- Fresh local PostgreSQL installations of the game and Daily Bonus migrations; sealed boards, request identity, compare-and-swap moves, exactly-once settlement, reserve release, both game reports, and earning cap checks.
 - Actual two-connection wallet contention: the second game waited for the wallet row and could not reserve cover already promised to the first game.
 - Browser playthroughs of all six Plinko allocations, 25+25 Double Down, lost-response/reload recovery without a second charge, Crash cashout, and both new games' final reveals.
 - 5,000 single-diamond Plinko drops settled atomically in the maximum Double Down entry.
@@ -37,6 +45,8 @@ The live proof exposed and repaired two inherited integration boundaries: the pr
 Protected CI, publisher completion, and public-route verification must be recorded separately. Database and local evidence are not a frontend release claim.
 
 The first protected CI run exposed two migration-checker errors: session-local `pg_temp` patch helpers were treated as persistent objects, and the checker ignored a later retirement migration already on main. The checker now excludes only explicit temporary-schema objects and follows later drops, recreations and column renames in migration order. The live catalog confirmed the old free-spin functions were retired and `welcome_spin_enabled` replaced `free_spin_enabled`; no missing object was added to the manifest to silence the check. All 26 branch migrations pass, with 79 parser, command-line and manifest regression checks covering the failure and negative controls.
+
+The production build also caught eager game-door imports. Those buttons now load on demand, reducing initial download from 311 to 298 KiB gzipped and removing all nine unexpected entry modules. A paired main build measured 296 KiB initial / 2,527 KiB total; the games measured 298 / 2,725 KiB. Source maps contain one shared Three.js renderer and one copy of each existing vendor. The total ceiling accounts for the requested new 3D surface at 2,800 KiB gzip / 10,000 KiB raw; the 320 KiB first-load limit and entry-module gate are unchanged. All 309 affected UI checks pass.
 
 ## Next Wheel Phase
 

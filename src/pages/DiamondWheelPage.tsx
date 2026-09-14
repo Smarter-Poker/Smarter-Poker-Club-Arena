@@ -33,7 +33,7 @@ import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { useIsMounted } from '../hooks/useIsMounted';
@@ -45,6 +45,7 @@ import { DeckConsole } from '../components/console/DeckConsole';
 import { useMeasuredWidth } from '../hooks/useMeasuredWidth';
 import DiamondWheelService, {
   type WheelWelcomeState,
+  type WheelDailyBonusState,
   type WheelSegment,
   type WheelSpinResult,
   type WheelState,
@@ -64,6 +65,14 @@ import { soundService } from '../services/SoundService';
 import FloorFeed from '../components/games/FloorFeed';
 import { useGameFloor } from '../hooks/useGameFloor';
 import styles from './diamondGames.module.css';
+import {
+  assertWheelReceipt,
+  clearWheelPending,
+  readWheelPending,
+  saveWheelPending,
+  type WheelPendingSpin,
+  type WheelSpinMode,
+} from '../utils/wheelPendingSpin';
 
 function odds(probability: number): string {
   if (probability <= 0) return '';
@@ -127,7 +136,11 @@ const AUTO_PAUSE_MS = 1200;
 export default function DiamondWheelPage() {
   const { clubId: routeClubId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const requestedBonus = searchParams.get('spin') === 'daily-bonus';
   const { user } = useAuthUser();
+  const scopeRef = useRef('');
+  scopeRef.current = `${user?.id ?? ''}:${routeClubId ?? ''}`;
   const toast = useToast();
   const isMountedRef = useIsMounted();
   const live = useCallback(() => isMountedRef.current, [isMountedRef]);
@@ -136,11 +149,17 @@ export default function DiamondWheelPage() {
   const [state, setState] = useState<WheelState | null>(null);
   const [welcome, setWelcome] = useState<WheelWelcomeState | null>(null);
   /** The welcome spin is on offer: the plates, the odds and the next spin are welcome. */
-  const [welcomeMode, setWelcomeMode] = useState(false);
+  const [mode, setMode] = useState<WheelSpinMode>('paid');
+  const welcomeMode = mode === 'welcome';
+  const dailyBonusMode = mode === 'daily_bonus';
+  const freeMode = mode !== 'paid';
+  const [dailyBonus, setDailyBonus] = useState<WheelDailyBonusState | null>(null);
+  const [dailyBonusError, setDailyBonusError] = useState(false);
+  const [recovery, setRecovery] = useState<WheelPendingSpin | null>(null);
   /* The face on the rim. It lags the offer by one spin on purpose: after the
      welcome spin lands, the prize it landed on stays under the pointer until
      the next spin starts, and only then does the paid table come round. */
-  const [face, setFace] = useState<'paid' | 'welcome'>('paid');
+  const [face, setFace] = useState<WheelSpinMode>('paid');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [commit, setCommit] = useState<{ id: string; hash: string } | null>(null);
@@ -164,8 +183,9 @@ export default function DiamondWheelPage() {
 
   const loadState = useCallback(
     async (uuid: string) => {
+      const scope = scopeRef.current;
       const next = await DiamondWheelService.getState(uuid);
-      if (!live()) return next;
+      if (!live() || scopeRef.current !== scope) return next;
       setState(next);
       setWaitSeconds(next.player?.seconds_until_next ?? 0);
       return next;
@@ -175,9 +195,10 @@ export default function DiamondWheelPage() {
 
   const loadWelcome = useCallback(
     async (uuid: string) => {
+      const scope = scopeRef.current;
       try {
         const next = await DiamondWheelService.welcomeState(uuid);
-        if (live()) setWelcome(next);
+        if (live() && scopeRef.current === scope) setWelcome(next);
         return next;
       } catch (err) {
         reportError(err, 'DiamondWheelPage.welcome');
@@ -187,14 +208,38 @@ export default function DiamondWheelPage() {
     [live]
   );
 
+  const loadDailyBonus = useCallback(
+    async (uuid: string) => {
+      const scope = scopeRef.current;
+      try {
+        const next = await DiamondWheelService.dailyBonusState(uuid);
+        if (live() && scopeRef.current === scope) {
+          setDailyBonus(next);
+          setDailyBonusError(false);
+        }
+        return next;
+      } catch (err) {
+        reportError(err, 'DiamondWheelPage.dailyBonus');
+        if (live() && scopeRef.current === scope) {
+          setDailyBonus(null);
+          setDailyBonusError(true);
+        }
+        return null;
+      }
+    },
+    [live]
+  );
+
   const freshCommit = useCallback(async () => {
+    const scope = scopeRef.current;
     const c = await DiamondWheelService.commit();
-    if (!live()) return;
+    if (!live() || scopeRef.current !== scope) return;
     setCommit(c.ok ? { id: c.commit_id, hash: c.server_seed_hash } : null);
   }, [live]);
 
   const loadHistory = useCallback(
     async (uuid: string) => {
+      const scope = scopeRef.current;
       try {
         /* ONE HISTORY (2026-09-11). The welcome spin is a row in wheel_spins
            like any other and carries its own `welcome` flag, so fn_wheel_history
@@ -203,7 +248,7 @@ export default function DiamondWheelPage() {
            since the welcome spin moved onto the real wheel, so the second read
            was a round trip for an empty array on every load. */
         const spins = await DiamondWheelService.history(uuid, 25);
-        if (live()) setHistory(spins);
+        if (live() && scopeRef.current === scope) setHistory(spins);
       } catch (err) {
         reportError(err, 'DiamondWheelPage.history');
       }
@@ -214,20 +259,42 @@ export default function DiamondWheelPage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!routeClubId) return;
+      if (!routeClubId || !user?.id) return;
       setLoading(true);
+      busyRef.current = false;
       setLoadError(null);
       try {
         const uuid = await resolveClubUUID(routeClubId);
         if (cancelled || !live()) return;
         setClubUuid(uuid);
-        const [next, onTheHouse] = await Promise.all([loadState(uuid), loadWelcome(uuid)]);
+        const saved = readWheelPending(user.id, uuid);
+        setRecovery(saved);
+        setAutoRun(null);
+        setAutoSize(0);
+        setPending(null);
+        setSpinning(false);
+        setLastResult(null);
+        const [next, onTheHouse, bonus] = await Promise.all([
+          loadState(uuid),
+          loadWelcome(uuid),
+          loadDailyBonus(uuid),
+        ]);
         if (cancelled || !live()) return;
-        if (next.available && onTheHouse?.available) {
-          setWelcomeMode(true);
-          setFace('welcome');
-        }
-        if (next.available) await freshCommit();
+        const initialMode =
+          saved?.mode ??
+          (requestedBonus
+            ? 'daily_bonus'
+            : next.available && onTheHouse?.available
+              ? 'welcome'
+              : (bonus?.ticket_count ?? 0) > 0
+                ? 'daily_bonus'
+                : 'paid');
+        setMode(initialMode);
+        setFace(initialMode);
+        if (saved) {
+          setCommit({ id: saved.commitId, hash: saved.commitHash });
+          setClientSeed(saved.clientSeed);
+        } else if (next.available) await freshCommit();
         void loadHistory(uuid);
       } catch (err) {
         reportError(err, 'DiamondWheelPage.load');
@@ -239,7 +306,17 @@ export default function DiamondWheelPage() {
     return () => {
       cancelled = true;
     };
-  }, [routeClubId, live, loadState, loadWelcome, freshCommit, loadHistory]);
+  }, [
+    routeClubId,
+    user?.id,
+    requestedBonus,
+    live,
+    loadState,
+    loadWelcome,
+    loadDailyBonus,
+    freshCommit,
+    loadHistory,
+  ]);
 
   useEffect(() => {
     if (waitSeconds <= 0) return;
@@ -250,20 +327,39 @@ export default function DiamondWheelPage() {
   const segments: WheelSegment[] = state?.segments ?? [];
   const welcomeSegments: WheelSegment[] = welcome?.segments ?? [];
   /* The odds follow the offer; the rim follows the last spin (see `face`). */
-  const table = welcomeMode ? welcomeSegments : segments;
-  const rim = face === 'welcome' ? welcomeSegments : segments;
+  const table = welcomeMode
+    ? welcomeSegments
+    : dailyBonusMode
+      ? (dailyBonus?.segments ?? segments)
+      : segments;
+  const rim =
+    face === 'welcome'
+      ? welcomeSegments
+      : face === 'daily_bonus'
+        ? (dailyBonus?.segments ?? segments)
+        : segments;
   const cfg = state?.config;
   const player = state?.player;
-  const price = cfg?.spin_price_diamonds ?? 0;
+  const price = freeMode ? 100 : (cfg?.spin_price_diamonds ?? 0);
 
   const blocker = useMemo<string | null>(() => {
     if (!state) return null;
+    if (!user?.id) return 'Sign In To Spin';
+    if (recovery) return null; // Receipt recovery must work even if the host has since closed.
     if (!state.available)
       return state.reason === 'not_configured'
         ? 'The Diamond Wheel Is Not Open Here Yet'
         : 'The Diamond Wheel Is Paused';
     if (state.frozen) return 'The Platform Is In Its Maintenance Break';
     if (player && !player.is_member) return 'Join The Club To Spin';
+    if (dailyBonusMode)
+      return dailyBonusError
+        ? 'Bonus Spins Could Not Be Loaded. Retry Below'
+        : !dailyBonus
+          ? 'Loading Bonus Spins'
+          : !dailyBonus.available
+            ? (dailyBonus.reason ?? 'Bonus Spins Are Unavailable')
+            : null;
     if (welcomeMode) return null; // the house pays: no price, no limit, no purchased-only rule
     if (player && cfg && player.spins_today >= cfg.max_spins_per_player_per_day)
       return 'You Have Reached Today’s Spin Limit';
@@ -273,7 +369,18 @@ export default function DiamondWheelPage() {
         : SHORT_OF_DIAMONDS;
     }
     return null;
-  }, [state, player, cfg, price, welcomeMode]);
+  }, [
+    state,
+    player,
+    cfg,
+    price,
+    welcomeMode,
+    dailyBonusMode,
+    dailyBonus,
+    dailyBonusError,
+    recovery,
+    user?.id,
+  ]);
 
   // The pause between paid spins is the paid wheel's; a spin on the house does not wait for it.
   /** The only blocker a player can do something about, so the plate becomes the door. */
@@ -284,10 +391,10 @@ export default function DiamondWheelPage() {
      costs nothing, so there is no run to make of it: the size cannot be set and
      a run cannot be started while the wheel is on the house. */
   const cycleAuto = useCallback(() => {
-    if (running || spinning || welcomeMode) return;
+    if (running || spinning || freeMode || recovery) return;
     setAutoSize(cycleRunSize);
     triggerHaptic('light');
-  }, [running, spinning, welcomeMode]);
+  }, [running, spinning, freeMode, recovery]);
 
   const endAuto = useCallback(
     (why: string | null) => {
@@ -299,29 +406,55 @@ export default function DiamondWheelPage() {
   );
 
   const startAuto = useCallback(() => {
-    if (!autoSize || running || spinning || welcomeMode) return;
+    if (!autoSize || running || spinning || freeMode || recovery) return;
     triggerHaptic('medium');
     setAutoRun({ total: autoSize, done: 0 });
-  }, [autoSize, running, spinning, welcomeMode]);
+  }, [autoSize, running, spinning, freeMode, recovery]);
 
   const stopAuto = useCallback(() => endAuto('Auto Spin Stopped'), [endAuto]);
   const canSpin = Boolean(
-    clubUuid && commit && !spinning && !blocker && (welcomeMode || waitSeconds <= 0)
+    clubUuid && commit && !spinning && !blocker && (recovery || welcomeMode || waitSeconds <= 0)
   );
 
   const handleSpin = useCallback(async () => {
-    if (!clubUuid || !commit || busyRef.current || spinning) return;
+    if (!user?.id || !clubUuid || !commit || busyRef.current || spinning) return;
+    const scope = scopeRef.current;
     busyRef.current = true;
     setVerdict(null);
     setLastResult(null);
     triggerHaptic('medium');
     try {
-      const seed = clientSeed.trim().slice(0, MAX_CLIENT_SEED) || randomClientSeed();
-      const result = welcomeMode
-        ? await DiamondWheelService.welcomeSpin(clubUuid, commit.id, seed)
-        : await DiamondWheelService.spin(clubUuid, commit.id, seed);
-      if (!live()) return;
+      const attempt: WheelPendingSpin = recovery ?? {
+        userId: user.id,
+        clubId: clubUuid,
+        mode,
+        commitId: commit.id,
+        commitHash: commit.hash,
+        clientSeed: clientSeed.trim().slice(0, MAX_CLIENT_SEED) || randomClientSeed(),
+        ticketId: dailyBonusMode ? (dailyBonus?.ticket_id ?? null) : null,
+      };
+      saveWheelPending(attempt);
+      setRecovery(attempt);
+      const result =
+        attempt.mode === 'daily_bonus'
+          ? await DiamondWheelService.dailyBonusSpin(
+              attempt.clubId,
+              attempt.commitId,
+              attempt.clientSeed,
+              attempt.ticketId!
+            )
+          : attempt.mode === 'welcome'
+            ? await DiamondWheelService.welcomeSpin(
+                attempt.clubId,
+                attempt.commitId,
+                attempt.clientSeed
+              )
+            : await DiamondWheelService.spin(attempt.clubId, attempt.commitId, attempt.clientSeed);
+      if (!live() || scopeRef.current !== scope) return;
       if (!result.ok) {
+        clearWheelPending(attempt);
+        setRecovery(null);
+        void loadDailyBonus(clubUuid);
         toast.error(result.error || 'The Spin Was Refused');
         endAuto(autoRunRef.current ? 'Auto Spin Stopped' : null);
         if (welcomeMode) {
@@ -330,24 +463,27 @@ export default function DiamondWheelPage() {
              the paid wheel back if the welcome spin is no longer on offer. */
           const next = await loadWelcome(clubUuid);
           if (live() && next && !next.available) {
-            setWelcomeMode(false);
+            setMode('paid');
             setFace('paid');
           }
         }
         await freshCommit();
         return;
       }
-      if (!result.welcome) setFace('paid'); // a paid spin turns on the paid table
+      assertWheelReceipt(result, attempt);
+      clearWheelPending(attempt);
+      setRecovery(null);
+      setFace(attempt.mode);
       setPending(result);
       setSpinKey((k) => k + 1);
       setSpinning(true);
     } catch (err) {
       reportError(err, 'DiamondWheelPage.spin');
       endAuto(autoRunRef.current ? 'Auto Spin Stopped' : null);
-      if (live()) toast.error('The Spin Did Not Go Through. Nothing Was Charged');
-      await freshCommit();
+      if (live() && scopeRef.current === scope)
+        toast.error('The Spin Is Not Confirmed. Retry To Recover Its Receipt');
     } finally {
-      busyRef.current = false;
+      if (scopeRef.current === scope) busyRef.current = false;
     }
   }, [
     clubUuid,
@@ -359,6 +495,12 @@ export default function DiamondWheelPage() {
     freshCommit,
     welcomeMode,
     loadWelcome,
+    loadDailyBonus,
+    mode,
+    dailyBonusMode,
+    dailyBonus,
+    recovery,
+    user?.id,
     endAuto,
   ]);
 
@@ -380,15 +522,29 @@ export default function DiamondWheelPage() {
     }
     setClientSeed(randomClientSeed());
     setAutoRun((r) => (r ? { ...r, done: r.done + 1 } : r));
-    if (result.welcome) setWelcomeMode(false); // the welcome spin is spent: the paid wheel returns
+    if (result.welcome || result.daily_bonus) {
+      setMode('paid');
+      setAutoSize(0);
+    }
     if (clubUuid) {
       void loadState(clubUuid).catch((err) => reportError(err, 'DiamondWheelPage.reload'));
       void loadWelcome(clubUuid);
+      void loadDailyBonus(clubUuid);
       void loadHistory(clubUuid);
       if (!result.welcome) void refreshFloor();
     }
     void freshCommit();
-  }, [pending, toast, clubUuid, loadState, loadWelcome, loadHistory, freshCommit, refreshFloor]);
+  }, [
+    pending,
+    toast,
+    clubUuid,
+    loadState,
+    loadWelcome,
+    loadDailyBonus,
+    loadHistory,
+    freshCommit,
+    refreshFloor,
+  ]);
 
   /* The runner. It presses Spin when the page would let a thumb press it: a
      fresh commit in hand, the pause between spins served, nothing blocking. It
@@ -462,31 +618,37 @@ export default function DiamondWheelPage() {
   }
 
   const landingOrd = pending?.outcome.ord ?? null;
-  const spinLabel = autoRun
-    ? `Spin ${Math.min(autoRun.done + 1, autoRun.total)} Of ${autoRun.total}`
-    : spinning
-      ? 'Spinning'
-      : welcomeMode
-        ? 'Welcome Spin'
-        : waitSeconds > 0
-          ? `Ready In ${waitSeconds}s`
-          : autoSize
-            ? `Auto Spin ${autoSize}`
-            : `Spin ${price.toLocaleString()}`;
+  const spinLabel = recovery
+    ? 'Recover Spin'
+    : dailyBonusMode && !spinning
+      ? 'Use Bonus Spin'
+      : autoRun
+        ? `Spin ${Math.min(autoRun.done + 1, autoRun.total)} Of ${autoRun.total}`
+        : spinning
+          ? 'Spinning'
+          : welcomeMode
+            ? 'Welcome Spin'
+            : waitSeconds > 0
+              ? `Ready In ${waitSeconds}s`
+              : autoSize
+                ? `Auto Spin ${autoSize}`
+                : `Spin ${price.toLocaleString()}`;
   /* The run plate, the same one Plinko and Crash carry. The Odds plate it
      replaces was a scroll shortcut to a console that sits immediately below
      this one, and the wheel is the only one of the three that had it; the run
      is the control the other two put here and the wheel had nowhere. */
   const autoLabel = running ? 'Stop' : autoSize ? `Run ${autoSize}` : 'Run Off';
-  const pill = state.frozen
-    ? 'Break'
-    : state.available
-      ? welcomeMode
-        ? 'Welcome'
-        : 'Open'
-      : state.reason === 'not_configured'
-        ? 'Closed'
-        : 'Paused';
+  const pill = dailyBonusMode
+    ? 'Bonus Spin'
+    : state.frozen
+      ? 'Break'
+      : state.available
+        ? welcomeMode
+          ? 'Welcome'
+          : 'Open'
+        : state.reason === 'not_configured'
+          ? 'Closed'
+          : 'Paused';
   const pillInk = state.frozen
     ? 'gold'
     : state.available
@@ -542,8 +704,8 @@ export default function DiamondWheelPage() {
         bays={[
           { label: 'Diamonds', value: compactChips(player?.diamonds ?? 0), ink: 'blue' },
           { label: 'Chips', value: compactChips(player?.member_chips ?? 0), ink: 'silver' },
-          welcomeMode
-            ? { label: 'Spin', value: 'Welcome', ink: 'gold' }
+          freeMode
+            ? { label: 'Spin', value: welcomeMode ? 'Welcome' : 'Bonus', ink: 'gold' }
             : { label: 'Spin', value: compactChips(price), ink: 'silver' },
           {
             label: 'Today',
@@ -554,7 +716,7 @@ export default function DiamondWheelPage() {
         secondary={
           running
             ? { label: autoLabel, ink: 'red', onClick: stopAuto }
-            : welcomeMode
+            : freeMode || recovery
               ? {
                   label: 'Odds',
                   onClick: () =>
@@ -572,16 +734,76 @@ export default function DiamondWheelPage() {
             ? { label: 'Get Diamonds', ink: 'gold', onClick: () => navigate(BUY_DIAMONDS) }
             : running
               ? { label: spinLabel, ink: 'gold', disabled: true }
-              : autoSize && !welcomeMode
+              : autoSize && !freeMode && !recovery
                 ? { label: spinLabel, ink: 'gold', onClick: startAuto, disabled: !canSpin }
                 : {
                     label: spinLabel,
-                    ink: welcomeMode ? 'gold' : 'white',
+                    ink: freeMode ? 'gold' : 'white',
                     onClick: handleSpin,
                     disabled: !canSpin,
                   }
         }
       >
+        <nav aria-label="Spin Entry" className={styles.rows}>
+          <button
+            type="button"
+            className={styles.back}
+            disabled={spinning || running || Boolean(recovery)}
+            aria-pressed={mode === 'paid'}
+            onClick={() => {
+              setMode('paid');
+              setAutoSize(0);
+            }}
+          >
+            Paid Spin
+          </button>
+          {welcome?.available && (
+            <button
+              type="button"
+              className={styles.back}
+              disabled={spinning || running || Boolean(recovery)}
+              aria-pressed={welcomeMode}
+              onClick={() => {
+                setMode('welcome');
+                setAutoSize(0);
+              }}
+            >
+              Welcome Spin
+            </button>
+          )}
+          {(dailyBonus?.ticket_count ?? 0) > 0 && (
+            <button
+              type="button"
+              className={styles.back}
+              disabled={spinning || running || Boolean(recovery)}
+              aria-pressed={dailyBonusMode}
+              onClick={() => {
+                setMode('daily_bonus');
+                setAutoSize(0);
+              }}
+            >
+              Bonus Spins ({dailyBonus?.ticket_count})
+            </button>
+          )}
+          {dailyBonusError && (
+            <button
+              type="button"
+              className={styles.back}
+              disabled={spinning || Boolean(recovery)}
+              onClick={() => clubUuid && void loadDailyBonus(clubUuid)}
+            >
+              Retry Bonus Spins
+            </button>
+          )}
+          <button
+            type="button"
+            className={styles.back}
+            disabled={spinning || Boolean(recovery)}
+            onClick={() => navigate('/bonuses')}
+          >
+            Daily Bonus Rewards
+          </button>
+        </nav>
         <TodayLine
           used={player?.spins_today ?? 0}
           cap={cfg?.max_spins_per_player_per_day ?? 0}
@@ -615,9 +837,13 @@ export default function DiamondWheelPage() {
             <p className={`sc-copy sc-copy--center ${styles.readoutSub}`}>
               {blocker
                 ? blocker
-                : welcomeMode
-                  ? `Your Welcome Spin, On The Club. A ${price.toLocaleString()} Diamond Spin On The Same Wheel, For Nothing, Once.`
-                  : `Every Spin Is ${price.toLocaleString()} Diamonds. Explore The Prizes Below.${welcomeNote}`}
+                : recovery
+                  ? 'Your Previous Spin Needs Its Receipt. Recover It Before Starting Another.'
+                  : dailyBonusMode
+                    ? 'One Claimed Bonus Spin. 100 Diamond Value, No Diamonds Taken From You.'
+                    : welcomeMode
+                      ? `Your Welcome Spin, On The Club. A ${price.toLocaleString()} Diamond Spin On The Same Wheel, For Nothing, Once.`
+                      : `Every Spin Is ${price.toLocaleString()} Diamonds. Explore The Prizes Below.${welcomeNote}`}
             </p>
           )}
         </div>
@@ -625,8 +851,8 @@ export default function DiamondWheelPage() {
 
       <div ref={oddsRef}>
         <SpadeConsole
-          eyebrow={welcomeMode ? 'On The Club' : 'The Prizes'}
-          title={welcomeMode ? 'Welcome Spin Odds' : 'Odds'}
+          eyebrow={freeMode ? 'Your Free Spin' : 'The Prizes'}
+          title={dailyBonusMode ? 'Bonus Spin Prizes' : welcomeMode ? 'Welcome Spin Odds' : 'Odds'}
           foot="foot"
         >
           <div className={styles.rows}>
@@ -660,7 +886,12 @@ export default function DiamondWheelPage() {
                 </div>
               ))}
           </div>
-          {welcomeMode ? (
+          {dailyBonusMode ? (
+            <p className="sc-copy">
+              A Claimed Daily Bonus Gives You One 100 Diamond Spin. Winnings Are Paid By Your Club
+              Or Union.
+            </p>
+          ) : welcomeMode ? (
             <p className="sc-copy">
               Your Welcome Spin Is The Same Wheel, The Same Prizes And The Same Odds As A Paid Spin.
               The Club Takes No Diamonds For It And Pays Whatever It Lands On Out Of Its Promo
@@ -705,7 +936,7 @@ export default function DiamondWheelPage() {
             value={clientSeed}
             maxLength={MAX_CLIENT_SEED}
             onChange={(e) => setClientSeed(e.target.value)}
-            disabled={spinning}
+            disabled={spinning || Boolean(recovery)}
             spellCheck={false}
           />
         </label>
@@ -784,9 +1015,11 @@ export default function DiamondWheelPage() {
                 <span className={`${styles.rowLabel} sc-ink--silver`}>
                   {prizeLabel(h.outcome)}
                   <span className={`${styles.rowMeta} sc-ink--muted`}>
-                    {h.welcome
-                      ? `Welcome Spin, ${historyTime(h.created_at)}`
-                      : historyTime(h.created_at)}
+                    {h.daily_bonus
+                      ? `Daily Bonus Spin, ${historyTime(h.created_at)}`
+                      : h.welcome
+                        ? `Welcome Spin, ${historyTime(h.created_at)}`
+                        : historyTime(h.created_at)}
                   </span>
                 </span>
                 <span

@@ -180,6 +180,16 @@ export interface WheelWelcomePatch {
   welcome_budget_period_days?: number;
 }
 
+export interface WheelDailyBonusState {
+  ok: boolean;
+  available: boolean;
+  reason: string | null;
+  ticket_count: number;
+  ticket_id: string | null;
+  entry_diamonds: number;
+  segments: WheelSegment[];
+}
+
 export interface WheelFairness {
   commit_id: string;
   server_seed_hash: string;
@@ -199,6 +209,11 @@ export interface WheelSpinResult {
   replayed?: boolean;
   /** True for a spin on the house: paid in diamonds, priced at nothing. */
   welcome: boolean;
+  daily_bonus?: boolean;
+  bonus_ticket_id?: string | null;
+  player_cost_diamonds?: number;
+  entry_value_diamonds?: number;
+  entry_funded_by?: string;
   spin_id: string;
   club_id: string;
   host_id: string;
@@ -414,6 +429,11 @@ function normaliseSpin(raw: Record<string, unknown>): WheelSpinResult {
     detail: raw.detail ? String(raw.detail) : undefined,
     replayed: Boolean(raw.replayed),
     welcome: Boolean(raw.welcome),
+    daily_bonus: raw.daily_bonus === true,
+    bonus_ticket_id: typeof raw.bonus_ticket_id === 'string' ? raw.bonus_ticket_id : null,
+    player_cost_diamonds: num(raw.player_cost_diamonds ?? raw.spin_price_diamonds),
+    entry_value_diamonds: num(raw.entry_value_diamonds ?? raw.spin_price_diamonds),
+    entry_funded_by: typeof raw.entry_funded_by === 'string' ? raw.entry_funded_by : undefined,
     spin_id: String(raw.spin_id ?? ''),
     club_id: String(raw.club_id ?? ''),
     host_id: String(raw.host_id ?? ''),
@@ -455,6 +475,21 @@ function normaliseSpin(raw: Record<string, unknown>): WheelSpinResult {
   };
 }
 
+function spinResponse(data: unknown): WheelSpinResult {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('The Spin Receipt Could Not Be Confirmed');
+  }
+  const raw = data as Record<string, unknown>;
+  if (
+    typeof raw.ok !== 'boolean' ||
+    (raw.ok === false && typeof raw.error !== 'string') ||
+    (raw.ok === true && (!raw.spin_id || !raw.fairness || !raw.outcome))
+  ) {
+    throw new Error('The Spin Receipt Could Not Be Confirmed');
+  }
+  return normaliseSpin(raw);
+}
+
 /** Paid and welcome spins in one list, newest first, for the player's own history. */
 
 function normaliseWelcomeState(raw: Record<string, unknown>): WheelWelcomeState {
@@ -490,6 +525,67 @@ function normaliseWelcomeState(raw: Record<string, unknown>): WheelWelcomeState 
 }
 
 const DiamondWheelService = {
+  async dailyBonusState(clubId: string): Promise<WheelDailyBonusState> {
+    const { data, error } = await supabase.rpc('fn_wheel_daily_bonus_state', { p_club_id: clubId });
+    if (error) throw error;
+    if (
+      !data ||
+      data.ok !== true ||
+      typeof data.available !== 'boolean' ||
+      !Number.isInteger(data.ticket_count) ||
+      data.ticket_count < 0 ||
+      data.entry_diamonds !== 100 ||
+      data.funded_by !== 'mint' ||
+      data.claim_required !== true ||
+      (data.ticket_count > 0 && typeof data.ticket_id !== 'string')
+    ) {
+      throw new Error('Bonus Spin Availability Could Not Be Confirmed');
+    }
+    return {
+      ok: true,
+      available: data.available,
+      reason: data.reason ?? null,
+      ticket_count: data.ticket_count,
+      ticket_id: data.ticket_id ?? null,
+      entry_diamonds: 100,
+      segments: Array.isArray(data.segments) ? data.segments.map(normaliseSegment) : [],
+    };
+  },
+
+  async dailyBonusSpin(
+    clubId: string,
+    commitId: string,
+    clientSeed: string,
+    ticketId: string
+  ): Promise<WheelSpinResult> {
+    const { data, error } = await supabase.rpc('fn_wheel_daily_bonus_spin', {
+      p_club_id: clubId,
+      p_commit_id: commitId,
+      p_client_seed: clientSeed,
+      p_ticket_id: ticketId,
+    });
+    if (error) throw error;
+    if (data?.ok === false && typeof data.error === 'string') return normaliseSpin(data);
+    if (
+      data?.ok !== true ||
+      data.daily_bonus !== true ||
+      data.welcome !== false ||
+      data.bonus_ticket_id !== ticketId ||
+      data.club_id !== clubId ||
+      data.fairness?.commit_id !== commitId ||
+      data.fairness?.client_seed !== clientSeed ||
+      data.player_cost_diamonds == null ||
+      Number(data.player_cost_diamonds) !== 0 ||
+      Number(data.entry_value_diamonds) !== 100 ||
+      data.entry_funded_by !== 'mint' ||
+      typeof data.spin_id !== 'string' ||
+      !data.outcome
+    ) {
+      throw new Error('Bonus Spin Receipt Could Not Be Confirmed. Retry The Same Spin');
+    }
+    return normaliseSpin(data);
+  },
+
   /** Everything the wheel screen shows: table, odds, locks, the player's limits. */
   async getState(clubId: string): Promise<WheelState> {
     const { data, error } = await supabase.rpc('fn_wheel_state', { p_club_id: clubId });
@@ -522,7 +618,7 @@ const DiamondWheelService = {
       p_client_seed: clientSeed,
     });
     if (error) throw error;
-    return normaliseSpin((data ?? {}) as Record<string, unknown>);
+    return spinResponse(data);
   },
 
   async history(clubId: string, limit = 25): Promise<WheelSpinResult[]> {
@@ -557,7 +653,7 @@ const DiamondWheelService = {
       p_client_seed: clientSeed,
     });
     if (error) throw error;
-    return normaliseSpin((data ?? {}) as Record<string, unknown>);
+    return spinResponse(data);
   },
 
   /** The operator's switch, budget and window for the welcome spin. The RPC decides who may. */

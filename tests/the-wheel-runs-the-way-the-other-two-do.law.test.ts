@@ -142,16 +142,18 @@ describe('the run stops wherever a thumb would be stopped', () => {
 describe('a welcome spin is never auto-played', () => {
   it('the size cannot be cycled while the wheel is on the house', () => {
     const cycle = WHEEL.slice(WHEEL.indexOf('const cycleAuto'), WHEEL.indexOf('const endAuto'));
-    expect(cycle).toContain('if (running || spinning || welcomeMode) return;');
+    expect(cycle).toContain('if (running || spinning || freeMode || recovery) return;');
   });
 
   it('and a run cannot be started', () => {
     const start = WHEEL.slice(WHEEL.indexOf('const startAuto'), WHEEL.indexOf('const stopAuto'));
-    expect(start).toContain('if (!autoSize || running || spinning || welcomeMode) return;');
+    expect(start).toContain(
+      'if (!autoSize || running || spinning || freeMode || recovery) return;'
+    );
   });
 
   it('the primary plate stays the single welcome spin, never an auto run', () => {
-    expect(WHEEL).toContain('autoSize && !welcomeMode');
+    expect(WHEEL).toContain('autoSize && !freeMode && !recovery');
   });
 
   it('and the Odds plate is what the welcome spin keeps in the run plate seat', () => {
@@ -160,7 +162,7 @@ describe('a welcome spin is never auto-played', () => {
       WHEEL.indexOf('        secondary={'),
       WHEEL.indexOf('        primary={')
     );
-    expect(sec).toContain('welcomeMode');
+    expect(sec).toContain('freeMode');
     expect(sec).toContain("label: 'Odds'");
   });
 });

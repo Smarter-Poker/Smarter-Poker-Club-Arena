@@ -76,13 +76,13 @@
  *      the real gate.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useInRouterContext, useNavigate } from 'react-router-dom';
 import './signUpDialog.css';
 import { WalletService } from '../../services/WalletService';
 import { formatBuyIn, money, totalBuyIn } from '../../utils/buyIn';
 import { reportError } from '../../utils/errorReporter';
-import DiamondsToChipsButton from '../games/DiamondsToChipsButton';
+const DiamondsToChipsButton = lazy(() => import('../games/DiamondsToChipsButton'));
 
 export interface SignUpDialogOptions {
   /** Tournament name, shown as its own row. */
@@ -180,14 +180,16 @@ function SignUpDiamondsDoorRouted({
 }) {
   const navigate = useNavigate();
   return (
-    <DiamondsToChipsButton
-      clubId={clubId}
-      size="compact"
-      onGo={(path) => {
-        onGo(path);
-        navigate(path);
-      }}
-    />
+    <Suspense fallback={null}>
+      <DiamondsToChipsButton
+        clubId={clubId}
+        size="compact"
+        onGo={(path) => {
+          onGo(path);
+          navigate(path);
+        }}
+      />
+    </Suspense>
   );
 }
 

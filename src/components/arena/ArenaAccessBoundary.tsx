@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { getArenaContext } from '../../services/ArenaContextService';
@@ -8,9 +8,10 @@ import DiamondCustodyBalance from './DiamondCustodyBalance';
 import DiamondArenaWallet from './DiamondArenaWallet';
 import PokerArenaNavigation from './PokerArenaNavigation';
 import { SpadeConsole } from '../console/SpadeConsole';
-import DiamondsToChipsButton from '../games/DiamondsToChipsButton';
 import { ArenaAccessProvider } from './arenaAccess';
 import './DiamondArenaShell.css';
+
+const DiamondsToChipsButton = lazy(() => import('../games/DiamondsToChipsButton'));
 
 interface AccessState {
   key: string;
@@ -145,11 +146,13 @@ export default function ArenaAccessBoundary({
         {state.context.cashGamesEnabled !== true && (
           <>
             <p className="diamond-arena-notice">Diamond Games Are Not Open For Play Yet.</p>
-            <DiamondsToChipsButton
-              clubId={key || null}
-              size="compact"
-              onGo={(to) => navigate(to)}
-            />
+            <Suspense fallback={null}>
+              <DiamondsToChipsButton
+                clubId={key || null}
+                size="compact"
+                onGo={(to) => navigate(to)}
+              />
+            </Suspense>
           </>
         )}
         {children}

@@ -21,11 +21,25 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { functionBody as body, latestDeclaring as inForce } from './helpers/migrations';
+import {
+  functionBody as body,
+  latestDeclaring as inForce,
+  migrationFiles,
+  readMigration,
+} from './helpers/migrations';
 
 const ROOT = resolve(__dirname, '..');
 
 const src = (p: string) => readFileSync(resolve(ROOT, p), 'utf8');
+
+// Replacing a reader preserves its existing ACL, view, and indexes. Resolve each
+// independent DDL statement from the ordered history instead of requiring a later
+// function-only migration to redeclare the whole schema.
+function lastDdl(pattern: RegExp): string {
+  const matches = migrationFiles().flatMap((name) => [...readMigration(name).matchAll(pattern)]);
+  if (!matches.length) throw new Error(`No migration matches ${pattern}`);
+  return matches[matches.length - 1][0];
+}
 
 const SPENT = body(inForce('fn_diamond_games_spent_today').sql, 'fn_diamond_games_spent_today');
 const PAGES = [
@@ -47,7 +61,7 @@ describe('the day is one figure, from one definition', () => {
   it('it counts the wheel and the shared book of all four bonus games', () => {
     expect(SPENT).toContain('FROM public.wheel_spins s');
     expect(SPENT).toContain('FROM public.diamond_game_round_book r');
-    const sql = inForce('fn_diamond_games_spent_today').sql;
+    const sql = lastDdl(/CREATE (?:OR REPLACE )?VIEW public\.diamond_game_round_book AS[\s\S]*?;/g);
     for (const table of [
       'plinko_drops',
       'crash_rounds',
@@ -68,6 +82,10 @@ describe('the day is one figure, from one definition', () => {
     expect(SPENT).toContain('NOT COALESCE(s.is_welcome, false)');
   });
 
+  it('a claimed Daily Bonus entry is Mint funded, so it is not player spending', () => {
+    expect(SPENT).toContain('s.bonus_ticket_id IS NULL');
+  });
+
   it('an OPEN crash round counts, which is the opposite of what the P and L does', () => {
     // Deliberate: the operator's profit is not real until the round decides,
     // and the player's money is gone the moment they bet it.
@@ -78,16 +96,22 @@ describe('the day is one figure, from one definition', () => {
   });
 
   it('no browser role may call it, and the per-player day is indexed', () => {
-    const sql = inForce('fn_diamond_games_spent_today').sql;
-    expect(sql).toContain(
-      'REVOKE ALL ON FUNCTION public.fn_diamond_games_spent_today(uuid, uuid) FROM authenticated;'
-    );
+    for (const role of ['PUBLIC', 'anon', 'authenticated']) {
+      const acl = lastDdl(
+        new RegExp(
+          `(?:GRANT|REVOKE)[^;]*ON FUNCTION public\\.fn_diamond_games_spent_today\\(uuid,\\s*uuid\\)[^;]*\\b${role}\\b[^;]*;`,
+          'g'
+        )
+      );
+      expect(acl).toMatch(/^REVOKE ALL/);
+    }
     for (const ix of [
       'wheel_spins_host_user_time',
       'plinko_drops_host_user_time',
       'crash_rounds_host_user_time',
     ]) {
-      expect(sql).toContain(`CREATE INDEX IF NOT EXISTS ${ix}`);
+      const ddl = lastDdl(new RegExp(`(?:CREATE|DROP) INDEX[^;]*\\b${ix}\\b[^;]*;`, 'g'));
+      expect(ddl).toContain(`CREATE INDEX IF NOT EXISTS ${ix}`);
     }
   });
 });

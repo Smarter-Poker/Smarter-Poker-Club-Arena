@@ -1,0 +1,5 @@
+{
+  "_owner": "codex-union-accounting",
+  "functions": ["fn_union_accounting_run_at"],
+  "tables": ["union_accounting_runs"]
+}

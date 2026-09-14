@@ -1,0 +1,66 @@
+# Union accounting audit, 14 September 2026
+
+Status: remediation in progress. This is not a production accounting certification.
+
+## Verified execution
+
+Read directly from production between 10:56 and 11:04 UTC. The run happened at 07:05 UTC, 02:05 Chicago time. The accounting week remains Monday midnight America/Los_Angeles, 07:00 UTC in September.
+
+| Recorded stage | Result |
+| --- | --- |
+| Union to member clubs | 602,996.48 chips, two clubs |
+| Club to agents | 404,548.28 chips, 83 recipients |
+| Agent to players | Zero recipients, zero chips |
+| Union invoices | Two generated and marked delivered |
+
+The 83 commission settlement receipts agree exactly with the corresponding 83 named chip-ledger entries: JAQK 6,070.49; SHARK 398,477.79. This is ledger corroboration, not proof that the underlying entitlement calculation was correct.
+
+Invoices MIDWAY-2026-000005 and MIDWAY-2026-000006 record 33,222.29 and 11,244.03 chips owed to the union. The existing agent-credit invoice generator produced no new debt invoices because all agents have credit_used=0. Credit invoices and commission statements are different accounting documents.
+
+## Findings
+
+1. **Critical: player rakeback is booked to the table's club ID.** The union's table ID resolves to the union house-club ID, while Round 3 joins member clubs. For UTC week September 7-13, 582 pending union-house records total 117,188.36. The daemon reports missing memberships or insufficient house-club treasury. Reassigning by current membership would be unsafe for players in multiple clubs; earning-time provenance is required.
+2. **Critical: partial failure commits money.** The cascade returned success=false after a downstream failure, which commits prior writes. A shortfall could leave earlier recipients paid and later recipients unpaid. Invoice and ECO failures were caught without undoing prior financial stages.
+3. **High: scheduler hides the financial result.** Its IS NOT NULL expression treats a returned failure as true, while pg_cron records only '1 row'. The former three-day cutoff also stops automatic recovery later in the week.
+4. **High: schedule differs from the requested 4 AM Chicago start.** The existing runner fires at :05/:35 with no 4 AM gate. The hourly maintenance window may defer a nominal 04:00 attempt until :05. Period boundaries and payment start must remain separate concepts.
+5. **High: weekly clocks disagree.** The union week starts at midnight Pacific. The engine uses UTC Monday for player periods and credit invoices and resets its weekly gate at UTC midnight. Date-only player periods do not express the union window exactly.
+6. **Critical: commission accrual deduplicates by agent plus hand, although the caller sends an item per contributing player.** Multiple players under the same agent in one hand can lose all but the first contribution. It also walks only one parent and computes that parent's percentage on the remainder. A complete configured hierarchy and unambiguous agreement model are prerequisites for repair.
+7. **High: commission statements are not issued automatically.** The existing agent back office calculates a live report, not an immutable weekly invoice. Its report recomputes rake differently and counts pending player rakeback as if it had been paid.
+8. **High: agent statement authorization and scope are overly broad.** Any-union-overseer checks are not tied to the requested agent's union; calculations are not constrained by club. Player wallet rows can be multiplied by multi-club roster matches.
+9. **High: accruals depend on current relationships and rates.** Current membership/agent status can exclude an existing obligation, and current rates can change an unposted historical entitlement. No correction should invent historical ownership or agreements.
+10. **High: completion checks ignore obligations outside their join.** A zero-recipient Round 3 was accepted even with material unpaid player records. Success must cover expected recipients, source coverage, posted receipts and delivered documents.
+11. **Medium: the agent invoice panel rounds displayed amounts to whole chips.** Ledger cents must remain visible in balances, invoice amounts and payment confirmations.
+12. **Performance: missing supporting indexes.** Database advisors identify uncovered foreign keys on credit payments, settlement invoice periods and related financial tables. These are candidates for measured query-plan work, not grounds to rebuild all indexes indiscriminately.
+
+The union's explicit September 7 clean-data floor is preserved. Earlier excluded weeks must not be paid by an automatic catch-up. Delivered historical invoices and existing payout receipts remain intact.
+
+## First repair
+
+The proposed migration converts downstream cascade refusals into exceptions, serializes a union/period attempt, rejects pending union-house player records, checks actual invoice delivery, and persists each scheduled result. The existing scheduler job gains a 4 AM America/Chicago gate, bounded chronological catch-up from the explicit floor, transaction-scoped locking, and deduplicated financial alerts. A failed union attempt rolls back while its failure record survives. No historical balance is changed by this migration.
+
+Validation: 17 PostgreSQL assertions execute the actual changed cascade and scheduler bodies against isolated fixtures. They cover failure after each stage, shortfalls, failed delivery, orphaned player records, durable failure reporting, duplicate retries, pre-4-AM refusal, Friday and multi-week recovery, daylight saving time and authorization. Financial round helpers are stubbed; this does not establish end-to-end payout correctness.
+
+## Public market comparison
+
+This is a comparison with documented capabilities, not an assertion that a universal poker-club accounting standard exists or that competitors promise perfect automation.
+
+| Capability | Public evidence | Smarter Poker audit status |
+| --- | --- | --- |
+| Union oversight, agent permissions, allocation settings, daily/weekly win-loss controls, fee and P&L drill-down | [ClubGG union back office](https://www.clubgg.com/unions) | Present in parts; financial scope and complete execution need repair |
+| Club-wide exports, downline-only agent data, controlled credit/chip distribution | [PokerBROS FAQ](https://pokerbros.net/en/faq) | Export/report surfaces exist; exact downline and club scoping require audit |
+| Live member ledger, balances and credit options | [Poker Now Clubs](https://www.pokernow.com/clubs-landing) | Ledger exists; reconciliation must connect source, liability and receipt |
+| Summary reports, transaction logs and administrator role management | [Poker Now plans](https://www.pokernow.com/subscription/plus) | Present, but weekly immutable agent documents are missing |
+| Buy-in/cash-out reconciliation, role-based records and exports | [Poker Club Admin](https://www.pokerclubadmin.com/) | Relevant accounting baseline; full equivalence is not yet verified |
+| Weekly union/club export reports, game-type fee breakdown and full player ledger | [GGWeekly](https://ggweekly.com/) | Useful reporting benchmark; third-party report product, not ClubGG's own settlement engine |
+
+Official PPPoker material establishes private clubs and configurable games but did not establish detailed accounting semantics. Its unverified accounting features are not treated as requirements or proof. ClubGG's detailed FAQ pages did not expose readable article bodies to the web reader, so this report uses its official public union page instead.
+
+## Remaining acceptance work
+
+- Reconstruct player earnings using immutable earning-club evidence; reconcile already-paid amounts before any corrective payout.
+- Confirm the hierarchy's percentage semantics, support every configured level, conserve integer cents and snapshot agreements when earnings accrue.
+- Produce immutable club/agent/player statements and corrections from the same posted ledger, including zero-activity statements where required.
+- Complete scoped authorization, source-coverage, replay, interruption, concurrency and failure-injection tests against real financial functions.
+- Verify installed functions, protected release, UI behavior, scheduled outcome and final ledger reconciliation separately.
+
+No claim of full completion, industry parity, exact historical entitlement or permanent freedom from failure is supported yet.

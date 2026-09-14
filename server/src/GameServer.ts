@@ -8426,7 +8426,15 @@ export class GameServer {
     }
     if (!replaced) return false;
     if (!this.running) {
-      await replacement.stop().catch(() => undefined);
+      try {
+        await replacement.stop();
+      } catch (error) {
+        // Shutdown can win while the incumbent is draining. Its replacement
+        // is now the retained map owner: a failed stop must not hide it from
+        // the remaining ownership checks unless physical release is proven.
+        if (!replacement.hasReleasedProcessOwnership()) throw error;
+        reportError(error, 'GameServer.shutdown_replacement_cleanup_failed', { tableId });
+      }
       unregisterOwnedTournamentTableEngine(
         this.tableEngines,
         this.tournamentOwnedTables,

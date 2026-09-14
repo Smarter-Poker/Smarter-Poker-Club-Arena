@@ -43,6 +43,12 @@ import { formatGameTitle } from '../../utils/formatGameTitle';
 // Whole-number tournament money (Dan 2026-08-20).
 import { money } from '../../utils/buyIn';
 import { compactChips } from '../../utils/format';
+import {
+  describeMttStructure,
+  describeStoredMttStructure,
+  mttClockDescription,
+  type MttStructureDescription,
+} from '../../../server/src/tournament/mttStructureDescription';
 import { chipsCompact } from './details/types';
 import { SpadeConsole, type ConsoleInk, type PlateButtonProps } from '../console/SpadeConsole';
 
@@ -58,6 +64,7 @@ interface Tournament {
   startsAt?: string;
   status: 'registering' | 'running' | 'finished' | 'cancelled';
   blindStructure: string;
+  structureFacts?: MttStructureDescription;
   gameType?: string;
   startingChips?: number;
   lateRegMins?: number;
@@ -402,40 +409,19 @@ function TournamentLobbyCardInner({
     }
   };
 
-  const getSpeedTier = (tournament: Tournament): string | null => {
-    // Get blind duration from blind_duration field or infer from blindStructure
-    let blindDuration = tournament.blindDuration;
-
-    if (!blindDuration && tournament.blindStructure) {
-      // Try to parse blindStructure if it's a JSON string
-      try {
-        let structure = tournament.blindStructure;
-        if (typeof structure === 'string') {
-          // Only attempt JSON.parse if it looks like JSON (starts with [ or {)
-          const trimmed = structure.trim();
-          if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
-            structure = JSON.parse(trimmed);
-          } else {
-            return null; // Not parseable JSON — skip silently
-          }
+  const structureFacts =
+    tournament.structureFacts ??
+    (tournament.blindDuration !== undefined
+      ? {
+          ...describeMttStructure(
+            [{ durationMinutes: tournament.blindDuration, bigBlind: 0, isBreak: false }],
+            tournament.startingChips ?? 0
+          ),
+          // A legacy opening-clock prop does not describe every later level.
+          minimumMinutes: null,
+          maximumMinutes: null,
         }
-        if (Array.isArray(structure) && structure.length > 0) {
-          blindDuration = structure[0].durationMinutes || structure[0].duration_minutes;
-        }
-      } catch (e) {
-        reportError(e, 'TournamentLobbyCard.getSpeedTier');
-        // If parsing fails, return no badge (non-critical)
-        return null;
-      }
-    }
-
-    if (!blindDuration) return null;
-
-    if (blindDuration <= 3) return 'Hyper';
-    if (blindDuration <= 5) return 'Turbo';
-    if (blindDuration <= 10) return null; // Regular - no tag needed
-    return 'Deep Stack';
-  };
+      : describeStoredMttStructure(tournament.blindStructure, tournament.startingChips));
 
   const isCountdownCritical = isStartingSoon(msToStart);
 
@@ -466,7 +452,7 @@ function TournamentLobbyCardInner({
   const isSeatFirstCard =
     tournament.type === 'spin' || (tournament.maxPlayers > 0 && tournament.maxPlayers <= 2);
 
-  const speedTier = getSpeedTier(tournament);
+  const speedTier = structureFacts.speed === 'standard' ? null : structureFacts.speedLabel;
   const tags: string[] = [];
   if (tournament.isPinned) tags.push('Pinned');
   if (tournament.isNew) tags.push('New');
@@ -662,6 +648,8 @@ function TournamentLobbyCardInner({
           <span className="sc-label sc-ink--blue">Starting Chips</span>
           <span className={`${styles.value} sc-ink--silver`}>
             {tournament.startingChips ? compactChips(tournament.startingChips) : '-'}
+            {structureFacts.startingDepthBB !== null &&
+              ` · ${structureFacts.startingDepthBB.toLocaleString(undefined, { maximumFractionDigits: 2 })} BB`}
           </span>
         </div>
 
@@ -689,7 +677,16 @@ function TournamentLobbyCardInner({
 
         <div className={styles.row}>
           <span className="sc-label sc-ink--blue">Structure</span>
-          <span className={`${styles.value} sc-ink--silver`}>{tournament.blindStructure}</span>
+          <span className={`${styles.value} sc-ink--silver`}>
+            {structureFacts.speedLabel ?? 'Unconfirmed'}
+          </span>
+        </div>
+
+        <div className={`${styles.row} ${styles.levelRow}`}>
+          <span className="sc-label sc-ink--blue">Levels</span>
+          <span className={`${styles.value} ${styles.levelValue} sc-ink--silver`}>
+            {mttClockDescription(structureFacts)}
+          </span>
         </div>
 
         {hasLateReg && (

@@ -24,6 +24,7 @@ import {
   type TournamentFormInput,
 } from '../../src/lib/tournamentFromTableConfig';
 import { SPIN_TIERS } from '../../src/config/spinSpec';
+import { describeMttStructure } from '../../server/src/tournament/mttStructureDescription';
 
 const base: TournamentFormInput = {
   name: 'Friday Major',
@@ -92,6 +93,32 @@ describe('payouts', () => {
 });
 
 describe('blind structure', () => {
+  it.each(['standard', 'slow'])(
+    'keeps explicit stack and clock independent from the %s ramp name',
+    (blindStructure) => {
+      const input = { ...base, blindStructure, startingChips: 1000, blindsUpMinutes: 3 };
+      const before = JSON.stringify(input);
+      const config = buildTournamentConfig(input, 'nlh');
+      const description = describeMttStructure(
+        config.blindStructure.map((row) => ({
+          durationMinutes: row.durationMinutes,
+          bigBlind: row.bigBlind,
+          isBreak: Boolean(row.isBreak),
+        })),
+        config.startingStack
+      );
+      expect(description).toMatchObject({
+        startingDepthBB: 50,
+        speedLabel: 'Turbo',
+        openingMinutes: 3,
+        minimumMinutes: 3,
+        maximumMinutes: 3,
+      });
+      expect(config.startingStack).toBe(1000);
+      expect(JSON.stringify(input)).toBe(before);
+    }
+  );
+
   it('applies the level length to playing levels and leaves breaks alone', () => {
     const c = buildTournamentConfig({ ...base, blindsUpMinutes: 12 }, 'nlh');
     const playing = c.blindStructure.filter((l) => !l.isBreak);

@@ -1,3 +1,10 @@
+## 2026-09-14: MTT clock speed and starting depth share engine facts
+
+**Files:** server tournament mttStructureDescription/mttStructurePolicy; overview, satellite mapper, tournament lobby page/card and main lobby entries; their focused tests and card clock wrapping.
+**What existed:** conflicting speed labels, long clocks called deep stacks, 180 stored seconds read as 180 minutes, name-derived guesses, and stack/name-derived MTT Format sorting.
+**What changed:** pure engine-owned actual clock and independent BB depth facts, normalized stored units, explicit unknowns and taper disclosure. Creation thresholds and funded rules stay unchanged; manual 1000-chip/3-minute overrides are verified.
+**Verified:** 562 client tests/30 files;126 engine tests/2 files;app and server TypeScript pass. Standalone pure browser helper 1752 bytes, one input/no runtime imports. Full production bundle, protected CI, merge and live UI remain unqualified. No SQL, payment or production change. See docs/changelog/2026-09-14-mtt-structure-facts.md.
+
 ## 2026-09-14: Terminal bounty residual requires complete candidate coverage
 
 **Files:** migration20260914135625; terminal-bounty-candidate-coverage native fixture/runner; accounting CI step; bountyPoolConservation.guard.test.ts.

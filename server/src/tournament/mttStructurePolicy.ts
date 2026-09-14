@@ -1,4 +1,5 @@
 import { buildLadder, type GeneratedBlindLevel } from './blindLadder.js';
+import { mttSpeedForMinutes, type MttClockSpeed } from './mttStructureDescription.js';
 
 /** One engine-owned definition for both scheduled and recurring MTT creators.
  * Existing advertised ladders are preserved; speed and stack depth are separate.
@@ -46,7 +47,7 @@ MTT_BLIND_PRESETS.DEEPSTACK = MTT_BLIND_PRESETS.SLOW;
  * an explicit ladder. Later tapering/acceleration does not relabel the event.
  * Duration precedence and fallback match TournamentManagerBase's clock. */
 export function mttSpeedColumns(structure: readonly unknown[]): {
-  blind_speed: 'standard' | 'slow' | 'turbo' | 'hyper_turbo';
+  blind_speed: MttClockSpeed;
   is_turbo: boolean;
 } {
   const opening = structure.find(
@@ -61,14 +62,7 @@ export function mttSpeedColumns(structure: readonly unknown[]): {
       : Number.isFinite(seconds) && seconds > 0
         ? seconds / 60
         : 10;
-  const speed =
-    openingMinutes <= 2
-      ? 'hyper_turbo'
-      : openingMinutes <= 5
-        ? 'turbo'
-        : openingMinutes >= 12
-          ? 'slow'
-          : 'standard';
+  const speed = mttSpeedForMinutes(openingMinutes)!;
   return { blind_speed: speed, is_turbo: speed === 'turbo' || speed === 'hyper_turbo' };
 }
 

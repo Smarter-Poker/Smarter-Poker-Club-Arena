@@ -14,6 +14,10 @@
  * platform behavior, not new inference.
  */
 
+import {
+  describeStoredMttStructure,
+  type MttStructureDescription,
+} from '../../../server/src/tournament/mttStructureDescription';
 import { FREE_BUY_HELPER, FREE_BUY_LABEL } from '../../utils/freeBuy';
 import { formatGameTitle } from '../../utils/formatGameTitle';
 import { isInLateRegistration, STARTING_SOON_WINDOW_MINUTES } from '../../utils/tournamentFilters';
@@ -190,6 +194,7 @@ export interface LobbyEntry {
   startTime: string | null;
   startValue: number; // ms epoch, Infinity when none — numeric sort key
   speedLabel: string | null;
+  structureFacts?: MttStructureDescription;
   status: LobbyStatusKey;
   statusLabel: string;
   live: boolean;
@@ -793,6 +798,7 @@ function detectTourneyType(name: string): string {
   return 'freezeout';
 }
 
+/** Legacy seat-first naming convention only; MTTs use their recorded clock. */
 export function tournamentSpeed(name: string): string | null {
   const l = (name || '').toLowerCase();
   /* A FEEDER DOES NOT INHERIT ITS TARGET'S SPEED (2026-09-03). This reads the
@@ -810,7 +816,10 @@ export function tournamentSpeed(name: string): string | null {
   return null;
 }
 
-export function tournamentMedallions(t: LobbyTournamentRow): RuleMedallion[] {
+export function tournamentMedallions(
+  t: LobbyTournamentRow,
+  structureFacts?: MttStructureDescription
+): RuleMedallion[] {
   const rules: RuleMedallion[] = [];
   const type = detectTourneyType(t.name);
   const l = (t.name || '').toLowerCase();
@@ -870,10 +879,17 @@ export function tournamentMedallions(t: LobbyTournamentRow): RuleMedallion[] {
   )
     rules.push({ key: 'freezeout', label: 'FREEZEOUT', tip: 'One entry, no rebuys' });
 
-  const speed = tournamentSpeed(t.name);
+  const speed =
+    classifyTournament(t) === 'mtt'
+      ? (
+          structureFacts ??
+          describeStoredMttStructure(parseBlindStructure(t.blind_structure), t.starting_chips)
+        ).speedLabel
+      : tournamentSpeed(t.name);
   if (speed === 'Turbo') rules.push({ key: 'turbo', label: 'TURBO', tip: 'Fast blind levels' });
-  if (speed === 'Hyper')
+  if (speed === 'Hyper' || speed === 'Hyper Turbo')
     rules.push({ key: 'hyper', label: 'HYPER', tip: 'Very fast blind levels' });
+  if (speed === 'Slow') rules.push({ key: 'slow', label: 'SLOW', tip: 'Longer blind levels' });
   if (speed === 'Deepstack')
     rules.push({ key: 'deepstack', label: 'DEEPSTACK', tip: 'Deep starting stacks' });
 
@@ -1241,6 +1257,10 @@ export function tournamentEntry(t: LobbyTournamentRow, kind: 'mtt' | 'spin' | 's
   const st = tournamentStatus(t);
   const total = (Number(t.buy_in_amount) || 0) + (Number(t.buy_in_fee) || 0);
   const startMs = t.start_time ? new Date(t.start_time).getTime() : NaN;
+  const structureFacts =
+    kind === 'mtt'
+      ? describeStoredMttStructure(parseBlindStructure(t.blind_structure), t.starting_chips)
+      : undefined;
   return {
     id: t.id,
     kind,
@@ -1268,8 +1288,8 @@ export function tournamentEntry(t: LobbyTournamentRow, kind: 'mtt' | 'spin' | 's
     capacity: t.max_players || 0,
     startTime: t.start_time || null,
     startValue: Number.isFinite(startMs) ? startMs : Infinity,
-    speedLabel:
-      tournamentSpeed(t.name) || (kind === 'spin' || kind === 'sng' ? 'When Full' : 'Standard'),
+    structureFacts,
+    speedLabel: structureFacts ? structureFacts.speedLabel : tournamentSpeed(t.name) || 'When Full',
     status: st.key,
     statusLabel: st.label,
     /* ITEM E audit, 2026-08-26: derived from the SAME status the surfaces
@@ -1279,7 +1299,7 @@ export function tournamentEntry(t: LobbyTournamentRow, kind: 'mtt' | 'spin' | 's
        REGISTERING for a beat — so the card showed a Running badge with no
        live pip: one card, two claims. One derivation now. */
     live: st.key === 'running' || st.key === 'late_reg',
-    rules: tournamentMedallions(t),
+    rules: tournamentMedallions(t, structureFacts),
     ...lobbyFlags(t),
     clubLabel: null,
     raw: t,
@@ -1414,8 +1434,8 @@ export function seatFirstJoinable(entry: LobbyEntry): boolean {
 export function levelSpeedLabel(t: LobbyTournamentRow): string | null {
   const structure = parseBlindStructure(t.blind_structure);
   if (!structure) return null;
-  const mins = blindLevelMinutes(structure, 1);
-  if (mins <= 0) return null;
+  const mins = describeStoredMttStructure(structure, t.starting_chips).openingMinutes;
+  if (mins === null) return null;
   const rounded = Math.round(mins * 10) / 10;
   /* Just the number. "Levels" used to be in the value and wrapped the well
      onto three lines on a 375px card, under a heading that already said BLIND
@@ -1423,24 +1443,17 @@ export function levelSpeedLabel(t: LobbyTournamentRow): string | null {
   return `${rounded} Min`;
 }
 
-/**
- * Turbo / Standard / Deepstack, measured rather than guessed.
- *
- * A name keyword wins when the creator supplied one. Otherwise the honest
- * signal is how many big blinds the starting stack actually is at level 1 —
- * which is exactly how spinSpec describes its own ladder ("300 chips … over
- * fast", "1000 chips … deep stack"). A Spin at 300 chips into 10/20 is 15bb
- * and plays like a turbo; the same 3-minute levels at 5,000 chips do not.
- */
-/**
- * How many big blinds the starting stack is worth at level 1, or 0 when the
- * row cannot say. Exported so the Format column can SORT on the depth instead
- * of on the word — 'Deepstack' < 'Hyper' < 'Standard' < 'Turbo' is the
- * alphabet, not a speed, and an empty string floated every cash row to the top
- * of the ALL tab (the same defect COL_TSTACK uses Infinity to avoid).
- */
+/** Starting depth in big blinds, or zero when unavailable. MTTs use the
+ * engine's opening playing level. Seat-first legacy display remains separate. */
 export function stackDepthBB(entry: LobbyEntry): number {
   if (entry.kind === 'cash') return 0;
+  if (entry.kind === 'mtt') {
+    const t = entry.raw as LobbyTournamentRow;
+    return (
+      (entry.structureFacts ?? describeStoredMttStructure(t.blind_structure, t.starting_chips))
+        .startingDepthBB ?? 0
+    );
+  }
   const t = entry.raw as LobbyTournamentRow;
   const chips = Number(t.starting_chips) || 0;
   if (chips <= 0) return 0;
@@ -1452,6 +1465,12 @@ export function stackDepthBB(entry: LobbyEntry): number {
 
 export function stackDepthLabel(entry: LobbyEntry): string | null {
   if (entry.kind === 'cash') return null;
+  // MTT clock speed never comes from a title or starting-stack bucket.
+  if (entry.kind === 'mtt') {
+    const t = entry.raw as LobbyTournamentRow;
+    return (entry.structureFacts ?? describeStoredMttStructure(t.blind_structure, t.starting_chips))
+      .speedLabel;
+  }
   const t = entry.raw as LobbyTournamentRow;
   const named = tournamentSpeed(t.name);
   if (named) return named;
@@ -1473,26 +1492,21 @@ export function stackDepthLabel(entry: LobbyEntry): string | null {
   return 'Turbo';
 }
 
-/**
- * The Format column's SORT rank, derived from the SAME label the column
- * renders (ITEM E audit, 2026-08-26). It used to sort on measured depth while
- * rendering the name keyword, so a 60bb "Sunday Turbo" printed Turbo and
- * sorted among the Deepstacks — click the header and the visible order read
- * `Turbo, Deepstack, Standard, Turbo…`, a sort that looks broken because the
- * two derivations disagreed. One derivation now: rank follows the label,
- * fastest first. A row with no label (every cash row) sinks in both
- * directions, as before. Named rows short-circuit before any blind-structure
- * parse, so the comparator's cost is unchanged for them.
- */
+/** Sort the same speed label rendered by the Format column, fastest first.
+ * Unknown and cash rows sink in either direction. MTT clock classification
+ * is independent of the retained legacy seat-first stack labels. */
 export function stackFormatRank(entry: LobbyEntry): number {
   switch (stackDepthLabel(entry)) {
     case 'Hyper':
+    case 'Hyper Turbo':
       return 1;
     case 'Turbo':
       return 2;
     case 'Standard':
+    case 'Regular':
       return 3;
     case 'Deepstack':
+    case 'Slow':
       return 4;
     default:
       return Infinity;

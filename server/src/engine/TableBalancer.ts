@@ -983,6 +983,75 @@ export function planOnlineGeometry(
       const solveTargets = () => {
         const excess = tables.map((t, i) => Math.max(0, t.players.length - targets[i]));
         const deficits = tables.map((t, i) => Math.max(0, targets[i] - t.players.length));
+        const donors = tables.map((_, i) => i).filter((i) => excess[i] > 0);
+        const receivers = tables.map((_, i) => i).filter((i) => deficits[i] > 0);
+        if (donors.length === 1 && receivers.length === 1) {
+          const from = donors[0],
+            to = receivers[0],
+            source = tables[from],
+            destination = tables[to];
+          const sourceByDistance = new Map<number, BalancerPlayer>();
+          for (const player of source.players) {
+            tick();
+            const distance = projectedNaturalBB(
+              source.players.map((p) => p.seat),
+              source.buttonSeat!,
+              player.seat,
+              source.lastBigBlindSeat
+            );
+            sourceByDistance.set(distance, player);
+          }
+          // A unique inverse is essential: otherwise retain exhaustive search.
+          if (sourceByDistance.size === source.players.length) {
+            const free = Array.from({ length: destination.maxSeats }, (_, i) => i + 1).filter(
+              (seat) =>
+                !destination.players.some((p) => p.seat === seat) &&
+                !destination.reservedSeats.includes(seat)
+            );
+            const selected: number[] = [];
+            let foundZero = false;
+            const chairs = (index: number): void => {
+              tick();
+              if (selected.length === deficits[to]) {
+                const finalSeats = [...destination.players.map((p) => p.seat), ...selected];
+                const moves: MoveInstruction[] = [];
+                const used = new Set<string>();
+                for (const seat of selected) {
+                  const distance = projectedNaturalBB(
+                    finalSeats,
+                    destination.buttonSeat!,
+                    seat,
+                    destination.lastBigBlindSeat
+                  );
+                  const player = sourceByDistance.get(distance);
+                  if (!player || used.has(player.userId)) return;
+                  used.add(player.userId);
+                  moves.push({
+                    playerId: player.userId,
+                    fromTableId: source.tableId,
+                    fromSeat: player.seat,
+                    toTableId: destination.tableId,
+                    toSeat: seat,
+                    reason: 'CLUB_ARENA_ONLINE_MTT_V1:balance',
+                  });
+                }
+                foundZero = true;
+                evaluate(moves);
+                return;
+              }
+              for (let i = index; i <= free.length - (deficits[to] - selected.length); i++) {
+                selected.push(free[i]);
+                chairs(i + 1);
+                selected.pop();
+              }
+            };
+            chairs(0);
+            // Sum/max are nonnegative. Once a zero assignment exists, every
+            // positive assignment in this SAME target vector is dominated.
+            // All zero assignments above retain exact prior-history/tie ranking.
+            if (foundZero) return;
+          }
+        }
         const candidates = tables
           .flatMap((t, i) =>
             t.players

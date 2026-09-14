@@ -1,3 +1,4 @@
+import { LifecycleDiagnostics } from '../services/LifecycleDiagnostics.js';
 import {
   continueBookedSpinBlinds,
   readFundedSpinDraw,
@@ -210,6 +211,73 @@ export abstract class TournamentManagerBase {
   private readonly tableEngineRecoveryAttempts = new Map<string, number>();
   /** Scheduler runs are separate because a finish can initiate stop from inside one. */
   private readonly eliminationSchedulerJobs = new Set<Promise<void>>();
+  private readonly managerLifecycleDiagnostics = new LifecycleDiagnostics();
+  private leaseReleaseDiagnostic: Readonly<{
+    diagnosticOnly: true;
+    managerInstanceId: string;
+    tournamentId: string;
+    leaseGeneration: string;
+    observedAtMs: number;
+    status: 'confirmed' | 'uncertain' | 'unknown';
+    attempts: number | null;
+    releasedCount: number | null;
+  }> | null = null;
+
+  /** Retain this exact object before release awaits; never look up a replacement. */
+  captureLeaseReleaseDiagnosticObserver(tournamentId: string, leaseGeneration: string) {
+    if (tournamentId !== this.tournamentId || leaseGeneration !== this.tournamentLeaseGeneration) {
+      return null;
+    }
+    const managerInstanceId = this.managerLifecycleDiagnostics.instanceId;
+    return (outcome: unknown) => {
+      if (leaseGeneration !== this.tournamentLeaseGeneration) return null;
+      const result =
+        outcome && typeof outcome === 'object' ? (outcome as Record<string, unknown>) : {};
+      const attempts =
+        typeof result.attempts === 'number' &&
+        Number.isSafeInteger(result.attempts) &&
+        result.attempts >= 0 &&
+        result.attempts <= 2
+          ? result.attempts
+          : null;
+      // This observer is for one exact claim. Never allocate a batch deletion
+      // count to an individual manager or retain raw RPC details/errors.
+      const releasedCount =
+        result.releasedCount === 0 || result.releasedCount === 1 ? result.releasedCount : null;
+      const status =
+        attempts === null
+          ? 'unknown'
+          : result.status === 'confirmed' && releasedCount !== null && attempts > 0
+            ? 'confirmed'
+            : result.status === 'uncertain'
+              ? 'uncertain'
+              : 'unknown';
+      this.leaseReleaseDiagnostic = Object.freeze({
+        diagnosticOnly: true as const,
+        managerInstanceId,
+        tournamentId,
+        leaseGeneration,
+        observedAtMs: Date.now(),
+        status,
+        attempts,
+        releasedCount: status === 'confirmed' ? releasedCount : null,
+      });
+      this.managerLifecycleDiagnostics.record('lease_release_observed', {
+        attempt: attempts ?? undefined,
+        leaseStatus: status,
+        releasedCount: this.leaseReleaseDiagnostic.releasedCount,
+      });
+      return this.leaseReleaseDiagnostic;
+    };
+  }
+
+  getLeaseReleaseDiagnosticSnapshot() {
+    return Object.freeze({
+      ...this.managerLifecycleDiagnostics.snapshot(),
+      leaseRelease: this.leaseReleaseDiagnostic ?? ('unobserved-owner-boundary' as const),
+    });
+  }
+
   protected blindTimer: NodeJS.Timeout | null = null;
   /** Removes this manager from the one process-wide elimination scheduler. */
   protected eliminationSchedulerUnregister: (() => void) | null = null;

@@ -119,7 +119,7 @@ describe('Club Arena accessibility foundation', () => {
     expect(workspaceSource).toMatch(/retryFetch\([\s\S]*?from\('profiles'\)/);
     expect(workspaceSource).toContain('CLUB_WORKSPACE_READ_TIMEOUT_MS');
     expect(workspaceSource).toContain('.abortSignal(signal)');
-    expect(source).toContain("label: 'Settings'");
+    expect(source).toContain("label: 'Diamond Spins'");
     expect(source).toContain("label: 'Stats'");
     expect(source).toContain("clubRoot ? `${clubRoot}/data` : '/data'");
     expect(source).toContain('aria-label="Poker Arena"');

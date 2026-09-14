@@ -1534,6 +1534,56 @@ ship the plaster and call the defect handled.
 
 ---
 
+## 10.13 ONE DIAMOND IS ONE CENT, ONE CHIP IS ONE DOLLAR, AND THE RATE IS A ROW (Dan, 2026-09-07, BINDING)
+
+**Dan, verbatim: "1 diamond = 1 cent, 1 chip = 1 dollar. So adjust everything
+accordingly."**
+
+So 100 diamonds are one chip. That figure lives in exactly one place:
+`ca_bridge_rate` (id 1, `diamonds_per_chip`, history table written by trigger),
+read through `fn_ca_bridge_rate()`. Nothing else in this repo or this database
+may carry its own diamonds-to-chips number - not a constant in a function, not
+a literal in a component, not a "roughly 100" in a comment that later becomes
+code. Read the row.
+
+### Why it is written down
+
+Until 2026-09-07 the owner bridge `fn_mint_chips_from_diamonds` carried
+`v_chips := v_diamonds * 100` in its body - the rate inverted, ten thousand
+times the ruling. Owner-only, fired three times ever (3 diamonds became 300
+chips on 2026-08-21, inside the acknowledged baseline), corrected forward by
+migration `20260907233813` and nothing clawed back (10.9). A rate typed into a
+function is a rate nobody re-reads; a rate in a row is one the history table
+watches. The Diamond Wheel (`docs/changelog/2026-09-07-diamond-wheel.md`)
+prices every spin from that row and refuses a price that is not a whole
+multiple of it.
+
+### Rules
+
+1. **The rate is `fn_ca_bridge_rate()`.** Any new path that turns diamonds
+   into chips or chips into diamonds reads it, and any conversion that does not
+   land on whole cents is refused, never rounded in the player's favour or the
+   house's.
+2. **Changing the number is Dan's** (10.9: what future events owe is his). An
+   agent may read it, never `UPDATE` it.
+3. **Whole cents only.** A chip amount has two decimals; a diamond amount has
+   none. A path that produces a fractional diamond is a bug.
+4. **A closed-loop exception is a written one.** Player diamond-to-chip
+   conversion was revoked on 2026-08-19 and the Diamond Standard treats the
+   closed loop as a hard property (D5, DR16). The wheel reopens it with dice,
+   under the 20 percent edge and the never-pay-more-than-intake gate pinned by
+   `tests/the-wheel-never-pays-more-than-it-takes-in.law.test.ts`. On
+   2026-09-08 Dan ruled the wheel's open items were the agent's, not his
+   ("NOTHING IS MINE, THESE ARE ALL 100% YOURS"), and asked for two alternates:
+   Diamond Plinko and Diamond Crash (`20260908010241`, pinned by
+   `tests/the-games-never-pay-more-than-they-take-in.law.test.ts`). All three
+   are open on every host, purchased diamonds only, and named as the ONLY
+   exception in `docs/DIAMOND-ACCOUNTING-STANDARD.md` DR16a. Do not add a
+   fourth bridge on the strength of these three: a new game is a new DR16a
+   row, a new law test, and Dan's word.
+
+---
+
 ## 10.87 THE CLONE NOBODY PUSHES FROM IS THE ONE THAT ROTS (2026-09-12, BINDING)
 
 Every guard in `.husky/pre-push` protects the tree being pushed.

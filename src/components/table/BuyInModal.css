@@ -385,3 +385,8 @@
     animation: none;
   }
 }
+
+.buy-in-modal__diamonds-door {
+  grid-column: 1 / -1;
+  min-width: 0;
+}

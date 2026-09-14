@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Private PostgreSQL17 only. No database URL, production row, or provider call.
+set -euo pipefail
+export LC_ALL="${LC_ALL:-en_US.UTF-8}"
+BIN="${POKER_AUDIT_PG_BIN:-/opt/homebrew/opt/postgresql@17/bin}"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+FIX="$ROOT/scripts/dev/fixtures/causal-pko-predecessors"
+MIG="$ROOT/supabase/migrations/20260914133503_pko_heads_follow_accepted_knockout_dependencies.sql"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/ca-pko-causal.XXXXXX")"
+cleanup() { "$BIN/pg_ctl" -D "$TMP/data" -m fast -w stop >/dev/null 2>&1 || true; rm -rf "$TMP"; }
+trap cleanup EXIT
+"$BIN/postgres" --version | grep -q ' 17\.' || { echo 'PostgreSQL17 required' >&2; exit 2; }
+"$BIN/initdb" -D "$TMP/data" -U postgres -A trust --locale=en_US.UTF-8 >"$TMP/initdb.log"
+mkdir "$TMP/sock"
+"$BIN/pg_ctl" -D "$TMP/data" -o "-k $TMP/sock -c listen_addresses='' -p 55442 -c fsync=off" -l "$TMP/pg.log" -w start >/dev/null
+P() { "$BIN/psql" -h "$TMP/sock" -p 55442 -U postgres -d postgres -X -q -v ON_ERROR_STOP=1 "$@"; }
+P -f "$FIX/bootstrap.sql"
+P -f "$FIX/counterexample.sql"
+P -f "$FIX/inverted-hand-counterexample.sql"
+P -f "$FIX/capture-preimage.sql"
+P -f "$MIG"
+P -f "$FIX/helpers.sql"
+for scenario in qualification evidence-matrix pending-snapshot independent-pending multiple-predecessors scope-cost; do
+  P -f "$FIX/$scenario.sql"
+done
+P -f "$FIX/concurrent-setup.sql"
+pids=()
+for i in 1 2 3 4 5; do
+  P -f "$FIX/concurrent-call.sql" >"$TMP/concurrent-$i.log" 2>&1 &
+  pids+=("$!")
+done
+for pid in "${pids[@]}"; do wait "$pid"; done
+cat "$TMP"/concurrent-*.log
+P -f "$FIX/concurrent-verify.sql"
+P -f "$MIG"
+P -Atc "SELECT pg_get_functiondef(oid)||';' FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('fn_claim_bounty_legacy_candidate_20260907','fn_collect_bounty','fn_pko_candidate_accepted_scope_v1','fn_pko_claim_predecessor_status_v1','fn_pko_watermark_admission_status_v1') ORDER BY proname" >"$TMP/postimages.sql"
+for signature in \
+  'public.fn_claim_bounty_legacy_candidate_20260907(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamptz,uuid,jsonb,numeric,boolean)' \
+  'public.fn_collect_bounty(uuid,uuid,uuid,jsonb)' \
+  'public.fn_pko_candidate_accepted_scope_v1(uuid,uuid)' \
+  'public.fn_pko_claim_predecessor_status_v1(uuid,uuid,uuid,uuid,bigint,timestamptz)' \
+  'public.fn_pko_watermark_admission_status_v1(uuid,uuid,uuid,uuid,bigint,timestamptz,jsonb)'; do
+  P -c "SET fixture.drift_target='$signature'" -f - <<'SQL'
+DO $$ BEGIN
+ EXECUTE replace(pg_get_functiondef(current_setting('fixture.drift_target')::regprocedure),
+  'AS $function$','AS $function$'||chr(10)||'-- Unreviewed test drift'||chr(10));
+END $$;
+SQL
+  if P -f "$MIG" >"$TMP/drift-refusal.log" 2>&1; then
+    echo 'FAIL: unreviewed function body accepted' >&2; exit 1
+  fi
+  grep -q 'PKO dependency unreviewed source or metadata' "$TMP/drift-refusal.log"
+  P -f "$TMP/postimages.sql"
+done
+P -c 'GRANT EXECUTE ON FUNCTION public.fn_pko_candidate_accepted_scope_v1(uuid,uuid) TO service_role'
+if P -f "$MIG" >"$TMP/acl-refusal.log" 2>&1; then
+  echo 'FAIL: unexpected private helper grant accepted' >&2; exit 1
+fi
+grep -q 'PKO dependency unreviewed source or metadata' "$TMP/acl-refusal.log"
+P -c 'REVOKE EXECUTE ON FUNCTION public.fn_pko_candidate_accepted_scope_v1(uuid,uuid) FROM service_role'
+for role in anon authenticated service_role; do
+  if P -c "SET ROLE $role" -c 'SELECT public.fn_pko_candidate_accepted_scope_v1(NULL,NULL)' >"$TMP/private-refusal.log" 2>&1; then
+    echo 'FAIL: private helper callable outside original authorities' >&2; exit 1
+  fi
+  grep -q 'permission denied' "$TMP/private-refusal.log"
+done
+P -f "$MIG"
+echo 'PASS: five body guards, metadata guard, migration replay and three private-role refusals'
+echo 'PASS: causal PKO admission, immutable replay and bounded native concurrency'

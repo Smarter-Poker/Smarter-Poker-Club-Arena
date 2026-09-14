@@ -1,3 +1,10 @@
+## 2026-09-14: PKO heads follow accepted knockout dependencies
+
+**Files:** migration20260914133503; private causal-PKO runner/fixtures; required accounting CI step.
+**What existed:** an accepted but unclaimed earlier knockout could be omitted from a later head; reserved hand numbers could also discard correctly ordered payments after a move.
+**What changed:** private accepted-evidence and causal-dependency proofs run before new head capture and pending collection, after immutable replay; complete markers discharge exact ancestors. Independent pending heads commute; shared larger-numbered heads require strictly earlier accepted chronology. No historical resnapshot or compensation.
+**Verified:** 111 private PG17 assertions, source/metadata/private-role guards and migration replay. Captured actual claim/collector/marker with a documented wallet stand-in. Installed history20260914134657; all five exact postimages/metadata read back13:47:07UTC. A read-only check of38 current PLO8 candidates found26 clear and12 correctly waiting for incoming heads, with zero unknown proofs. Full provider, legal-hand, rebuy/Diamond and deployment acceptance remain separate. See docs/changelog/2026-09-14-pko-accepted-predecessor-order.md.
+
 ## 2026-09-14: Independent PKO tables preserve head order
 
 **Files:** migration20260914123818; captured independent-PKO native fixture/runner; associated changelog.

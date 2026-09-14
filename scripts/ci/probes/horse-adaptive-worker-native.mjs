@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { Worker } from 'node:worker_threads';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as wait } from 'node:timers/promises';
@@ -18,6 +18,8 @@ export async function exerciseIsolatedWorker({
   actor,
   sliced = false,
   witnessed = false,
+  backlog = 0,
+  discoveryMode = false,
 }) {
   const connection = new Client(options);
   await connection.connect();
@@ -80,6 +82,12 @@ export async function exerciseIsolatedWorker({
       } else if (name === 'fn_prune_horse_observation_captures') {
         sql = 'SELECT fn_prune_horse_observation_captures() value';
         params = [];
+      } else if (
+        name === 'fn_discover_horse_observation_requests' ||
+        name === 'fn_prune_horse_observation_discovery'
+      ) {
+        sql = 'SELECT ' + name + '() value';
+        params = [];
       } else throw Error('unexpected RPC');
       calls.push(name);
       const result = (await connection.query(sql, params)).rows[0].value;
@@ -113,7 +121,7 @@ export async function exerciseIsolatedWorker({
     return child;
   });
   const until = async (predicate) => {
-    const deadline = Date.now() + (sliced ? 30000 : 15000);
+    const deadline = Date.now() + (discoveryMode ? 45000 : sliced || backlog ? 30000 : 15000);
     while (!predicate()) {
       if (Date.now() > deadline)
         throw Error('native worker deadline: ' + JSON.stringify(owner.status()));
@@ -121,6 +129,7 @@ export async function exerciseIsolatedWorker({
     }
   };
   let tickCount = 0;
+  let pendingAtFirstCapture = null;
   const timer = setInterval(() => tickCount++, 10);
   try {
     await c.query('TRUNCATE horse_adaptive_journal_work');
@@ -132,6 +141,81 @@ export async function exerciseIsolatedWorker({
         ? 'TRUNCATE horse_observation_capture_receipts,horse_observation_capture_work'
         : 'TRUNCATE horse_observation_capture_work'
     );
+    if (discoveryMode) {
+      await c.query(
+        'TRUNCATE horse_observation_discovery_members,horse_observation_discovery_segments,horse_observation_discovery_epochs'
+      );
+      const from = snapshot.source.fromMs + 101,
+        through = snapshot.source.throughMs;
+      const key = createHash('sha256')
+        .update(['horse-discovery-v1', from, through].join('|'))
+        .digest('hex');
+      await c.query(
+        'INSERT INTO horse_observation_discovery_epochs(epoch_key,from_ms,through_ms,cursor_ms,slice_through_ms) VALUES($1,$2,$3,$2,$3)',
+        [key, from, through]
+      );
+      owner.start();
+      await until(() => owner.status().lastDiscovery.status === 'source_recorded');
+      const before = (
+        await c.query('SELECT * FROM horse_observation_discovery_segments WHERE epoch_key=$1', [
+          key,
+        ])
+      ).rows[0];
+      assert.equal(before.source_actors, 2);
+      assert.equal(before.admitted_actors, 0);
+      await children[0].terminate();
+      await until(() => children.length === 2 && owner.status().phase === 'ready');
+      await until(
+        () =>
+          owner.status().lastDiscovery.status === 'discovered' &&
+          owner.status().capturesAdmitted === 2 &&
+          owner.status().completed === 2
+      );
+      const after = (
+        await c.query('SELECT * FROM horse_observation_discovery_segments WHERE epoch_key=$1', [
+          key,
+        ])
+      ).rows[0];
+      for (const field of [
+        'source_digest',
+        'snapshot_id',
+        'read_at_ms',
+        'novel_actors',
+        'actor_digest',
+      ])
+        assert.deepEqual(after[field], before[field]);
+      assert.equal(after.admitted_actors, 2);
+      const requests = (
+        await c.query('SELECT from_ms,through_ms,observations FROM horse_observation_capture_work')
+      ).rows;
+      assert.equal(requests.length, 2);
+      for (const r of requests) {
+        assert.equal(Number(r.from_ms), from);
+        assert.equal(Number(r.through_ms), through);
+        assert.equal(r.observations, 12);
+      }
+      assert.ok(calls.includes('fn_discover_horse_observation_requests'));
+      assert.ok(calls.includes('fn_finish_horse_observation_capture_witness'));
+      assert.equal(owner.status().lastDiscovery.sourceCoverage, 'not_established');
+      await owner.stop();
+      const stoppedCalls = calls.length;
+      await wait(50);
+      assert.equal(calls.length, stoppedCalls);
+      assert.ok(children.every((x) => x.threadId === -1));
+      return {
+        case: 'actual isolated worker discovers two actors from completed controller hands, restarts after freezing the roster, captures24 public observations and finishes both journal batches',
+        passed: true,
+        actors: 2,
+        observations: 24,
+        completed: 2,
+        restarts: owner.status().restarts,
+        sourceCoverage: 'not_established',
+        parentTimerTicks: tickCount,
+        childCount: children.length,
+        childrenStopped: true,
+        productionPostgrestVerified: false,
+      };
+    }
     const acquisition = await capture.admitObservationCapture({
       actorId: actor,
       fromMs: snapshot.source.fromMs + 99,
@@ -154,12 +238,26 @@ export async function exerciseIsolatedWorker({
     );
     const queued = await work.enqueueAdaptiveJournalWork(snapshot);
     assert.equal(queued.status, 'durable');
+    // Distinct batch identities deliberately replay the same immutable public
+    // facts. This tests queue pressure, not extra hands or learning samples.
+    for (let i = 0; i < backlog; i++) {
+      const extra = await work.enqueueAdaptiveJournalWork({
+        ...snapshot,
+        source: {
+          ...snapshot.source,
+          sourceDigest: createHash('sha256')
+            .update(snapshot.source.sourceDigest + ':backlog:' + i)
+            .digest('hex'),
+        },
+      });
+      assert.equal(extra.status, 'durable');
+    }
     owner.start();
     await until(
       () => owner.status().completed === 1 && owner.status().queueHealth.status === 'snapshot'
     );
     const first = owner.status();
-    assert.equal(first.queueHealth.unfinished, 0);
+    assert.equal(first.queueHealth.unfinished, backlog);
     assert.equal(first.phase, 'ready');
     assert.equal(first.captureQueueHealth.status, 'snapshot');
     assert.ok(tickCount > 0);
@@ -188,13 +286,24 @@ export async function exerciseIsolatedWorker({
       ).rows[0];
       assert.equal(partial.state, 'queued');
       assert.equal(partial.segments, 1);
+      if (backlog) {
+        pendingAtFirstCapture = Number(
+          (
+            await c.query(
+              "SELECT count(*) n FROM horse_adaptive_journal_work WHERE state<>'completed'"
+            )
+          ).rows[0].n
+        );
+        assert.ok(pendingAtFirstCapture > 0, 'acquisition starved until the journal drained');
+        assert.ok(owner.status().completed <= 8, 'acquisition exceeded its journal-turn budget');
+      }
       await children[0].terminate();
       await until(() => children.length === 2 && owner.status().phase === 'ready');
     }
     await until(() =>
       sliced
-        ? owner.status().capturesRecovered === 1 && owner.status().completed === 3
-        : owner.status().capturesAdmitted === 1 && owner.status().completed === 2
+        ? owner.status().capturesRecovered === 1 && owner.status().completed === 3 + backlog
+        : owner.status().capturesAdmitted === 1 && owner.status().completed === 2 + backlog
     );
     const acquired = (
       await c.query('SELECT * FROM horse_observation_capture_work WHERE request_key=$1', [
@@ -247,6 +356,8 @@ export async function exerciseIsolatedWorker({
       capturesRecovered: owner.status().capturesRecovered,
       captureSlicesContinued: owner.status().captureSlicesContinued,
       sliced,
+      initialBacklog: backlog,
+      pendingAtFirstCapture,
       sourceWitnessesRecorded: witnessed,
       restartedBetweenSlices: sliced,
       durableRequestResumedWithoutSourcePayload: true,

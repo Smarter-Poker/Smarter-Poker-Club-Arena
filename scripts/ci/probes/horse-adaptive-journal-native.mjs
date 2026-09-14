@@ -11,6 +11,8 @@ import { exerciseQueueHealth } from './horse-adaptive-queue-health-native.mjs';
 import { exerciseObservationCapture } from './horse-observation-capture-native.mjs';
 import { exerciseCaptureSlices } from './horse-capture-slices-native.mjs';
 import { exerciseSourceWitnesses } from './horse-source-witness-native.mjs';
+import { exerciseCaptureEvidence } from './horse-capture-evidence-native.mjs';
+import { exerciseObservationDiscovery } from './horse-observation-discovery-native.mjs';
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const { Client } = createRequire(root + '/server/package.json')('pg');
 const pg = process.env.HORSE_PROOF_PG_BIN,
@@ -198,6 +200,7 @@ try {
       ]
     );
   }
+  const controllerSourceRows = (await c.query('SELECT * FROM hand_history')).rows;
   // The fixture models the authoritative receipt separately from history.
   // First prove that history alone was accepted by the old reader.
   const beforeReceipt = (
@@ -288,8 +291,17 @@ try {
                   p.p_reason,
                   p.p_source_witness,
                 ];
+              } else if (name === 'fn_horse_observation_capture_evidence') {
+                query = 'SELECT fn_horse_observation_capture_evidence($1,$2,$3,$4,$5) value';
+                params = [p.p_actor, p.p_from_ms, p.p_through_ms, p.p_after_from_ms, p.p_revision];
               } else if (name === 'fn_prune_horse_observation_captures') {
                 query = 'SELECT fn_prune_horse_observation_captures() value';
+                params = [];
+              } else if (
+                name === 'fn_discover_horse_observation_requests' ||
+                name === 'fn_prune_horse_observation_discovery'
+              ) {
+                query = 'SELECT ' + name + '() value';
                 params = [];
               } else if (name === 'fn_horse_adaptive_journal_snapshot') {
                 query = 'SELECT public.fn_horse_adaptive_journal_snapshot($1,$2,$3,$4,$5,$6) value';
@@ -893,6 +905,81 @@ try {
       },
       sliced: true,
       witnessed: true,
+    })
+  );
+  results.push(
+    await exerciseIsolatedWorker({
+      root,
+      Client,
+      options,
+      c,
+      actor,
+      work: await bridge('HorseAdaptiveJournalWork'),
+      capture: await bridge('HorseObservationCapture'),
+      snapshot: {
+        ...source,
+        source: {
+          ...source.source,
+          sourceDigest: hash('real witnessed worker with journal backlog'),
+        },
+      },
+      sliced: true,
+      witnessed: true,
+      backlog: 16,
+    })
+  );
+  results.push(
+    ...(await exerciseCaptureEvidence({
+      root,
+      c,
+      otherConnection,
+      actor,
+      source,
+      readSource,
+      journal,
+      capture: await bridge('HorseObservationCapture'),
+      witness: await bridge('HorseObservationSourceWitness'),
+      evidence: await bridge('HorseCaptureEvidence'),
+      calls,
+    }))
+  );
+  results.push(
+    ...(await exerciseObservationDiscovery({
+      root,
+      c,
+      otherConnection,
+      discovery: await bridge('HorseObservationDiscovery'),
+      capture: await bridge('HorseObservationCapture'),
+      work: await bridge('HorseAdaptiveJournalWork'),
+    }))
+  );
+  await c.query('TRUNCATE hand_history,hand_atomic_commits');
+  for (const h of controllerSourceRows)
+    await c.query(
+      'INSERT INTO hand_history(id,table_id,hand_number,created_at,players,actions) OVERRIDING SYSTEM VALUE VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb)',
+      [
+        h.id,
+        h.table_id,
+        h.hand_number,
+        h.created_at,
+        JSON.stringify(h.players),
+        JSON.stringify(h.actions),
+      ]
+    );
+  await c.query(
+    "INSERT INTO hand_atomic_commits SELECT id,table_id,hand_number,repeat('a',64) FROM hand_history"
+  );
+  results.push(
+    await exerciseIsolatedWorker({
+      root,
+      Client,
+      options,
+      c,
+      work: await bridge('HorseAdaptiveJournalWork'),
+      snapshot: source,
+      capture: await bridge('HorseObservationCapture'),
+      actor,
+      discoveryMode: true,
     })
   );
   proof = { results, sourceCalls: calls, productionPostgrestVerified: false };

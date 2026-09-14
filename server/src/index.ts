@@ -39,10 +39,7 @@ import { startHorseSelfTuner, stopHorseSelfTuner } from './services/HorseSelfTun
 import { sweepIncompleteHorses } from './services/HorseOnboarding.js';
 import { startHorseLeague, stopHorseLeague } from './benchmark/HorseLeague.js';
 import { startHorseDailyAudit, stopHorseDailyAudit } from './services/HorseDailyAudit.js';
-import {
-  startBrainTelemetryFlush,
-  stopBrainTelemetryFlush,
-} from './services/BrainTelemetryFlush.js';
+import { startBrainTelemetryFlush } from './services/BrainTelemetryFlush.js';
 import {
   startHorseDataLedgerSync,
   stopHorseDataLedgerSync,
@@ -264,7 +261,8 @@ function stopLeaderOwnedServices(): Promise<void> {
     ['HorseSelfTuner', stopHorseSelfTuner],
     ['HorseLeague', stopHorseLeague],
     ['HorseDailyAudit', stopHorseDailyAudit],
-    ['BrainTelemetryFlush', stopBrainTelemetryFlush],
+    // GameServer stops Horse execution telemetry after its dealers drain;
+    // stopping it at this early producer fence loses their final outcomes.
     ['HorseAdaptiveJournalWorker', () => horseAdaptiveJournalWorker.stop()],
     ['HorseDataLedgerSync', stopHorseDataLedgerSync],
     ['HorseLaneLoader', stopHorseLaneLoader],

@@ -1,0 +1,11 @@
+# Horse Brain Phase15: preserve the final telemetry interval
+
+Normal shutdown waited for a telemetry write already in progress but did not publish the counters accumulated after the last minute tick. The main-process writer also stopped at the initial producer fence while dealers could still finish hands and emit Horse execution outcomes.
+
+The Horse telemetry service now drains the in-flight write, confirms an uncertain retained batch, and publishes the partial interval behind it. It uses at most two existing five-second RPC attempts, with identical bytes for a retained retry. An unconfirmed final batch rejects shutdown instead of reporting success. An expired retained batch keeps its existing explicit gap record. Empty or explicitly disabled services make no writes. A restarted lifecycle takes ownership before further captures.
+
+The main-process Horse execution writer now stops at GameServer's existing post-dealer Horse shutdown boundary, concurrently with the decision worker. The worker already owns its own compute telemetry after draining its accepted FIFO. Both final writes are joined before release, and failures stay in the existing shutdown certificate. The change only moves the Horse telemetry stop; financial writers, dealer logic, worker budgets and other shutdown owners retain their contracts.
+
+The first regression run failed all three missing-final-flush cases and passed four existing cases. Service tests cover the last interval, lost acknowledgement, pending final acknowledgement, restart during a final write, explicit disable and failure. Existing worker-to-shutdown and lifecycle guards cover the actual call path; a worker regression refuses STOPPED after final-write failure. Final integrated build and test counts are recorded in the release evidence.
+
+This repairs normal shutdown loss. Pending batches remain in memory: abrupt process termination can still lose unacknowledged telemetry, and batch receipts remain distinct from a complete durable per-decision ledger. Protected publication and natural shutdown receipts remain required. The first15-phase program is not certified complete.

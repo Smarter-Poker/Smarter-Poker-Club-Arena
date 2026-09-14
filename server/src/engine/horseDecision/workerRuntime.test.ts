@@ -138,6 +138,7 @@ function harness(realDecision = false) {
   let rng = 101;
   let started = 0;
   let stopped = 0;
+  let stopFailure: Error | null = null;
   let now = 10;
   let throwDecision = false;
   const deps: HorseDecisionWorkerDependencies = {
@@ -158,6 +159,7 @@ function harness(realDecision = false) {
     },
     async stopServices() {
       stopped++;
+      if (stopFailure) throw stopFailure;
     },
     decide(_player, _gameState, _style, _mods, opts) {
       decisionOpts.push(opts ?? {});
@@ -231,6 +233,9 @@ function harness(realDecision = false) {
     frozenSnapshots,
     started: () => started,
     stopped: () => stopped,
+    setStopFailure: (error: Error) => {
+      stopFailure = error;
+    },
     rng: () => rng,
     setRng: (value: number) => {
       rng = value;
@@ -1254,6 +1259,20 @@ describe('HorseDecisionWorkerRuntime', () => {
       'STOPPED',
     ]);
     expect(h.observations).toEqual(['table:hand']);
+    expect(h.stopped()).toBe(1);
+  });
+
+  it('does not acknowledge shutdown if a final owned telemetry batch is unconfirmed', async () => {
+    const h = harness();
+    h.setStopFailure(new Error('Horse telemetry batch write unconfirmed'));
+    h.runtime.receive(fastRequest(1));
+    h.runtime.receive({ type: 'SHUTDOWN' });
+    await h.runtime.drain();
+    expect(h.messages.map((message) => message.type)).toEqual(['READY', 'FAST_RESULT', 'ERROR']);
+    expect(h.messages.at(-1)).toMatchObject({
+      requestId: null,
+      message: 'Horse telemetry batch write unconfirmed',
+    });
     expect(h.stopped()).toBe(1);
   });
 

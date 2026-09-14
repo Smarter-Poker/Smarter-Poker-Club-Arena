@@ -83,7 +83,56 @@ export const SHARK_CONSOLE_ZONES = {
   plate: { x: 110, y: 18, width: 512, height: 76 },
 } as const;
 
-export type ConsoleFamily = 'spade' | 'shark';
+/**
+ * THE RIVETED FAMILY. Dan's spade NLH master (game-cards/nlh/spade-nlh-premium-v1,
+ * 729 wide): bolted corners, a wider base that steps out around two plates,
+ * and the spade chip medallion in the bottom rail. Cut at the glass gap
+ * between the header well and the first bay (rows 246-256 are the plain
+ * rail), and again at the gap above the base (row 582). Two plates, like the
+ * spade console, on a heavier frame - for money.
+ */
+export const RIVETED_CONSOLE_W = 729;
+export const RIVETED_CONSOLE_TOP_H = 209;
+export const RIVETED_CONSOLE_FOOT_H = 333;
+export const RIVETED_CONSOLE_ZONES = {
+  eyebrow: { x: 88, y: 72, width: 350, height: 26 },
+  title: { x: 88, y: 100, width: 555, height: 72 },
+  titleBesidePill: { x: 88, y: 100, width: 350, height: 72 },
+  subtitle: { x: 88, y: 168, width: 350, height: 24 },
+  /** The chrome capsule at the right of the well, x 455-645 y 85-145. */
+  pill: { x: 472, y: 97, width: 156, height: 38 },
+  /** The two bolted plates' faces, inside their rims. */
+  plateSecondary: { x: 80, y: 82, width: 235, height: 98 },
+  platePrimary: { x: 380, y: 82, width: 260, height: 98 },
+} as const;
+
+export type ConsoleFamily = 'spade' | 'shark' | 'riveted';
+
+/** Everything that differs between families. Structure varies BETWEEN
+ *  families, never within one - each row here is one approved master. */
+const FAMILY = {
+  spade: {
+    W: SPADE_CONSOLE_W,
+    TOP_H: SPADE_CONSOLE_TOP_H,
+    FOOT_H: SPADE_CONSOLE_PLATES_H,
+    zones: SPADE_CONSOLE_ZONES,
+    plates: 2,
+  },
+  shark: {
+    W: SHARK_CONSOLE_W,
+    TOP_H: SHARK_CONSOLE_TOP_H,
+    FOOT_H: SHARK_CONSOLE_FOOT_H,
+    zones: SHARK_CONSOLE_ZONES,
+    plates: 1,
+  },
+  riveted: {
+    W: RIVETED_CONSOLE_W,
+    TOP_H: RIVETED_CONSOLE_TOP_H,
+    FOOT_H: RIVETED_CONSOLE_FOOT_H,
+    zones: RIVETED_CONSOLE_ZONES,
+    plates: 2,
+  },
+} as const;
 
 export function zonePct(zone: Zone, canvasW: number, canvasH: number): CSSProperties {
   return {
@@ -198,10 +247,11 @@ export function SpadeConsole({
   as?: 'section' | 'div' | 'article';
 } & Record<string, unknown>) {
   const footKind = foot ?? (plates ? 'plates' : 'foot');
-  const shark = family === 'shark';
-  const W = shark ? SHARK_CONSOLE_W : SPADE_CONSOLE_W;
-  const TOP_H = shark ? SHARK_CONSOLE_TOP_H : SPADE_CONSOLE_TOP_H;
-  const Z = shark ? SHARK_CONSOLE_ZONES : SPADE_CONSOLE_ZONES;
+  const F = FAMILY[family];
+  const W = F.W;
+  const TOP_H = F.TOP_H;
+  const Z = F.zones;
+  const onePlate = F.plates === 1;
   return (
     <Tag
       className={`sc sc--${footKind} sc--crest-${crest} sc--family-${family} ${className}`.trim()}
@@ -248,25 +298,27 @@ export function SpadeConsole({
       </div>
       {children !== undefined && children !== null && <div className="sc__body">{children}</div>}
       <div className="sc__foot">
-        {shark && plates?.primary && (
+        {onePlate && plates?.primary && (
           <PlateButton
             zone={SHARK_CONSOLE_ZONES.plate}
-            canvasW={SHARK_CONSOLE_W}
-            canvasH={SHARK_CONSOLE_FOOT_H}
+            canvasW={W}
+            canvasH={F.FOOT_H}
             {...plates.primary}
           />
         )}
-        {!shark && footKind === 'plates' && plates?.secondary && (
+        {!onePlate && footKind === 'plates' && plates?.secondary && (
           <PlateButton
-            zone={SPADE_CONSOLE_ZONES.plateSecondary}
-            canvasH={SPADE_CONSOLE_PLATES_H}
+            zone={(Z as typeof SPADE_CONSOLE_ZONES).plateSecondary}
+            canvasW={W}
+            canvasH={F.FOOT_H}
             {...plates.secondary}
           />
         )}
-        {!shark && footKind === 'plates' && plates?.primary && (
+        {!onePlate && footKind === 'plates' && plates?.primary && (
           <PlateButton
-            zone={SPADE_CONSOLE_ZONES.platePrimary}
-            canvasH={SPADE_CONSOLE_PLATES_H}
+            zone={(Z as typeof SPADE_CONSOLE_ZONES).platePrimary}
+            canvasW={W}
+            canvasH={F.FOOT_H}
             {...plates.primary}
           />
         )}

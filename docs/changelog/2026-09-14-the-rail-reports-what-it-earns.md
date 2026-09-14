@@ -36,7 +36,7 @@ Shape notes, all deliberate:
 - **A daily rollup, not events.** An impression happens whenever a tournament is
   inside its last call, on every seated player. A row per impression would
   out-write `hand_history` for a number only ever read as a ratio. Same shape as
-  `ca_card_slide_usage_daily`, for the same reason.
+  `card_slide_usage`, for the same reason.
 - **Batched, at most once a minute per tab**, flushed on `visibilitychange` and
   `pagehide` so a closing tab does not lose its minute.
 - **Counters are additive** (`ON CONFLICT DO UPDATE SET shown = u.shown + …`). A

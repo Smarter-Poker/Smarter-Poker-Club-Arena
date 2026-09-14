@@ -75,6 +75,44 @@ describe('the Diamond Arena is diamonds only', () => {
     }
   });
 
+  it('where the diamonds go buckets the arena as diamonds and the panel has no chip vocabulary (phase 5)', () => {
+    const migration = read('supabase/migrations/20260914110559_where_the_diamonds_go.sql');
+    const map = migration.slice(
+      migration.indexOf('CREATE OR REPLACE FUNCTION public.fn_diamond_kind_bucket'),
+      migration.indexOf('COMMENT ON FUNCTION public.fn_diamond_kind_bucket')
+    );
+    expect(map.length).toBeGreaterThan(100);
+    // The arena kinds have their own buckets, named as diamonds.
+    expect(map).toMatch(/k = 'arena_deposit'\s+THEN 'arena'/);
+    expect(map).toMatch(/k = 'arena_withdraw'\s+THEN 'arena_cash_outs'/);
+    expect(map).toContain("WHEN 'arena'           THEN 'Diamond Arena Seats'");
+    expect(map).toContain("WHEN 'arena_cash_outs' THEN 'Diamond Arena Cash-Outs'");
+    // Nothing that says "arena" ever lands in the club-chips bucket, and the
+    // only chip bucket is a member-club purchase, named so.
+    for (const line of map.split('\n').filter((l) => /THEN 'club_chips'/.test(l))) {
+      expect(line).not.toMatch(/arena/i);
+    }
+    expect(map).toContain("WHEN 'club_chips'      THEN 'Club Chip Purchases'");
+    // Every label a player reads: Title Case words, no em dash.
+    for (const [, label] of map.matchAll(/THEN '([A-Z][^']*)'/g)) {
+      expect(label).not.toContain('\u2014');
+      for (const word of label.split(/[\s-]+/)) {
+        if (word) expect(word[0], `${label}: ${word}`).toMatch(/[A-Z]/);
+      }
+    }
+    // The panel prints diamonds and nothing else.
+    const panel = read('src/components/wallet/DiamondFlowPanel.tsx');
+    const math = read('src/components/wallet/diamondFlowMath.ts');
+    for (const [name, src] of [
+      ['DiamondFlowPanel', panel],
+      ['diamondFlowMath', math],
+    ] as const) {
+      const code = src.slice(src.indexOf('import '));
+      expect(code, name).not.toMatch(/chip/i);
+    }
+    expect(panel).toContain('{fmt(total)} Diamonds');
+  });
+
   it('the database guard that refuses a chip wallet on the diamonds club is still in the migrations', () => {
     const dir = resolve(process.cwd(), 'supabase/migrations');
     const carriers = readdirSync(dir).filter((f) =>

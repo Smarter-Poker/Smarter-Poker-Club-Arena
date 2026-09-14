@@ -48,6 +48,7 @@ import DisputeSubmitModal from '../components/wallet/DisputeSubmitModal';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import ChipStatement from '../components/wallet/ChipStatement';
 import DiamondArenaStatement from '../components/wallet/DiamondArenaStatement';
+import DiamondFlowPanel from '../components/wallet/DiamondFlowPanel';
 import {
   DiamondService,
   type DiamondLifetimeStats,
@@ -1861,6 +1862,20 @@ export default function PlayerWalletPage() {
                   </button>
                 </p>
               )}
+            </section>
+
+            {/* Phase 5: the split behind Earned and Spent - every diamond by
+                what it bought and by where it came from, summed in SQL over
+                the whole ledger. DIAMONDS ONLY. */}
+            <section className="vault-panel span2" aria-labelledby="flow-title">
+              <h3 id="flow-title" className="vault-panel__title">
+                Where Your Diamonds Go
+              </h3>
+              <p className="vault-panel__sub">
+                Every Diamond You Spent, By What It Bought. Every Diamond You Earned, By Where It
+                Came From. Summed From Your Whole Ledger.
+              </p>
+              <DiamondFlowPanel userId={user?.id} />
             </section>
 
             <section className="vault-panel span2" aria-labelledby="earn-more-title">

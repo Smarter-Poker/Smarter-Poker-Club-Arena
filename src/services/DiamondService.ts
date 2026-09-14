@@ -96,6 +96,31 @@ export interface DiamondLifetimeStats {
   lifetimeSpent: number;
 }
 
+/**
+ * One line of "Where Your Diamonds Go" (`fn_diamond_flow_by_kind`, phase 5):
+ * a spend sink or an earn source, summed in SQL over the whole ledger. The
+ * bucket and label come from `fn_diamond_kind_bucket`, the ONE place a ledger
+ * kind is named, so both wallets bucket identically. DIAMONDS ONLY.
+ */
+export interface DiamondFlowLine {
+  bucket: string;
+  label: string;
+  lifetime: number;
+  lifetimeCount: number;
+  last30: number;
+  last30Count: number;
+}
+
+export interface DiamondFlow {
+  spent: DiamondFlowLine[];
+  earned: DiamondFlowLine[];
+  spentTotal: number;
+  earnedTotal: number;
+  spentLast30: number;
+  earnedLast30: number;
+  readAt: string;
+}
+
 export interface DiamondWallet {
   balance: number;
   lifetimeEarned: number;
@@ -340,6 +365,61 @@ export const DiamondService = {
       };
     } catch (err) {
       reportError(err, 'DiamondService.getArenaStatement');
+      return null;
+    }
+  },
+
+  /**
+   * Where the diamonds go and where they come from: the ledger by bucket,
+   * spent and earned, lifetime and the last 30 days, own-user only. `null`
+   * means the read failed (10.86): the panel says Unavailable and offers a
+   * retry rather than drawing empty bars.
+   */
+  async getDiamondFlow(): Promise<DiamondFlow | null> {
+    try {
+      const { data, error } = await supabase.rpc('fn_diamond_flow_by_kind');
+      if (error) throw error;
+      const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+      if (!row || typeof row !== 'object') {
+        throw new Error('fn_diamond_flow_by_kind returned nothing');
+      }
+      const num = (v: unknown) => {
+        const n = Number(v);
+        if (!Number.isFinite(n)) {
+          throw new Error('fn_diamond_flow_by_kind returned a non-numeric figure');
+        }
+        return n;
+      };
+      const lines = (raw: unknown): DiamondFlowLine[] => {
+        if (!Array.isArray(raw)) {
+          throw new Error('fn_diamond_flow_by_kind returned no bucket list');
+        }
+        return raw.map((l) => {
+          const r = (l && typeof l === 'object' ? l : {}) as Record<string, unknown>;
+          if (typeof r.bucket !== 'string' || typeof r.label !== 'string') {
+            throw new Error('fn_diamond_flow_by_kind returned an unnamed bucket');
+          }
+          return {
+            bucket: r.bucket,
+            label: r.label,
+            lifetime: num(r.lifetime),
+            lifetimeCount: num(r.lifetime_count),
+            last30: num(r.last30),
+            last30Count: num(r.last30_count),
+          };
+        });
+      };
+      return {
+        spent: lines(row.spent),
+        earned: lines(row.earned),
+        spentTotal: num(row.spent_total),
+        earnedTotal: num(row.earned_total),
+        spentLast30: num(row.spent_last30),
+        earnedLast30: num(row.earned_last30),
+        readAt: String(row.read_at || ''),
+      };
+    } catch (err) {
+      reportError(err, 'DiamondService.getDiamondFlow');
       return null;
     }
   },

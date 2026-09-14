@@ -66,9 +66,10 @@ def verify_git_source(identity, run=command):
     current = run(["git", "rev-parse", "origin/main"])
     for sha in (identity["source_sha"], identity["workflow_control_sha"]):
         run(["git", "merge-base", "--is-ancestor", sha, current])
-    latest = run(["git", "log", current, "-1", "--format=%H", "--",
-                  "server/**", ":(exclude)server/**/*.test.ts", ":(exclude)server/sim/**"])
-    require(latest == identity["source_sha"], "STALE_TARGET")
+    # This is the immutable admitted target, not a moving selection of main.
+    # Both source and executor must remain in protected history. The host's
+    # sealed high-water check separately prevents an actual backward cutover.
+    # A later merge must not starve an already tested forward release here.
     tree = run(["git", "rev-parse", identity["source_sha"] + ":server"])
     require(re.fullmatch(r"[0-9a-f]{40}", tree) is not None, "SERVER_TREE")
     return tree

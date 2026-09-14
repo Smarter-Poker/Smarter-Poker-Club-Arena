@@ -215,17 +215,18 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     // that shares no host with pull-request code); jobs without secrets may use
     // the pull-request pool. A job that gains a secret must also change its
     // runs-on, and this test is what makes that pairing mandatory.
-    const runnerOf = (name: string) => {
-      const match = job(publishCode, name).match(/^\s+runs-on:\s*(.+?)\s*$/m);
-      expect(match, `${name} declares runs-on`).not.toBeNull();
-      return match![1];
-    };
     const hosted = /^(ubuntu-latest|\$\{\{ vars\.PUBLISH_RUNNER \|\| 'ubuntu-latest' \}\})$/;
-    const jobs = [...publishCode.matchAll(/^ {2}([A-Za-z0-9_-]+):\s*$/gm)].map((m) => m[1]);
+    // Only keys under `jobs:` are jobs; `on:` has two-space keys of its own.
+    const jobsStart = publishCode.search(/^jobs:\s*$/m);
+    expect(jobsStart, 'publish workflow declares jobs').toBeGreaterThan(-1);
+    const jobsSection = publishCode.slice(jobsStart);
+    const jobs = [...jobsSection.matchAll(/^ {2}([A-Za-z0-9_-]+):\s*$/gm)].map((m) => m[1]);
     expect(jobs.length).toBeGreaterThanOrEqual(4);
     for (const name of jobs) {
-      const body = job(publishCode, name);
-      const runner = runnerOf(name);
+      const body = job(jobsSection, name);
+      const match = body.match(/^\s+runs-on:\s*(.+?)\s*$/m);
+      expect(match, `${name} declares runs-on`).not.toBeNull();
+      const runner = match![1];
       if (/secrets\./.test(body)) {
         expect(runner, `${name} holds a secret and must not read vars.CI_RUNNER`).not.toContain('CI_RUNNER');
         expect(runner, `${name} holds a secret and must run on a hosted or credential-only runner`).toMatch(hosted);

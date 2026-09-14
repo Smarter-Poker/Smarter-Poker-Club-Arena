@@ -583,6 +583,13 @@
   outline-offset: 2px;
 }
 
+/* The Diamond Arena statement (phase 4): the Earn tab's stat rows, stacked. */
+.arena-statement {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 /* Two doors on the diamonds plate: Buy Diamonds and the Diamond Arena. They
    wrap at 375px rather than shrink; a door is a tap target, not a label. */
 .wallet-plate__doors {

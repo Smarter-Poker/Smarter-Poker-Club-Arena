@@ -47,6 +47,7 @@ import DepositWithdrawModal from '../components/wallet/DepositWithdrawModal';
 import DisputeSubmitModal from '../components/wallet/DisputeSubmitModal';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import ChipStatement from '../components/wallet/ChipStatement';
+import DiamondArenaStatement from '../components/wallet/DiamondArenaStatement';
 import {
   DiamondService,
   type DiamondLifetimeStats,
@@ -1923,6 +1924,19 @@ export default function PlayerWalletPage() {
                 Chip Statement
               </h3>
               <ChipStatement scope="player" />
+            </section>
+            {/* Phase 4: the Diamond Arena's own statement - every session,
+                every buy-in and cash-out, and that each one reconciles. Read
+                only; the live paths are atomic. DIAMONDS ONLY. */}
+            <section className="vault-panel" aria-labelledby="arena-statement-title">
+              <h3 id="arena-statement-title" className="vault-panel__title">
+                Diamond Arena Statement
+              </h3>
+              <p className="vault-panel__sub">
+                Every Buy-In And Cash-Out At Your Diamond Arena Seats, And Whether Each One
+                Reconciles With Your Wallet.
+              </p>
+              <DiamondArenaStatement userId={user.id} />
             </section>
           </div>
         )}

@@ -62,6 +62,35 @@ export interface DiamondWalletSummary {
   readAt: string;
 }
 
+/**
+ * A player's Diamond Arena statement (`fn_diamond_arena_reconciliation`,
+ * phase 4). READ ONLY: it reports; the live paths are atomic. DIAMONDS ONLY.
+ */
+export interface DiamondArenaUnmatched {
+  custodyId: string;
+  requestId: string | null;
+  reason:
+    | 'journal_missing'
+    | 'reserve_amount_mismatch'
+    | 'release_amount_mismatch'
+    | 'release_movement_missing'
+    | 'seat_stack_drift'
+    | string;
+}
+
+export interface DiamondArenaStatement {
+  sessions: number;
+  openSessions: number;
+  buyIns: number;
+  cashOuts: number;
+  inPlay: number;
+  /** Cash-outs minus buy-ins over RELEASED sessions only. */
+  netResultSettled: number;
+  unmatched: DiamondArenaUnmatched[];
+  balanced: boolean;
+  readAt: string;
+}
+
 export interface DiamondLifetimeStats {
   lifetimeEarned: number;
   lifetimeSpent: number;
@@ -262,6 +291,55 @@ export const DiamondService = {
       };
     } catch (err) {
       reportError(err, 'DiamondService.getWalletSummary');
+      return null;
+    }
+  },
+
+  /**
+   * The Diamond Arena statement: every session, every movement, and whether
+   * each one reconciles. `null` means the read failed (10.86), never a
+   * statement that claims balance it did not read.
+   */
+  async getArenaStatement(): Promise<DiamondArenaStatement | null> {
+    try {
+      const { data, error } = await supabase.rpc('fn_diamond_arena_reconciliation');
+      if (error) throw error;
+      const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+      if (!row || typeof row !== 'object') {
+        throw new Error('fn_diamond_arena_reconciliation returned nothing');
+      }
+      const num = (v: unknown) => {
+        const n = Number(v);
+        if (!Number.isFinite(n)) {
+          throw new Error('fn_diamond_arena_reconciliation returned a non-numeric figure');
+        }
+        return n;
+      };
+      const rawUnmatched = Array.isArray(row.unmatched) ? row.unmatched : [];
+      const unmatched: DiamondArenaUnmatched[] = rawUnmatched.map((u) => {
+        const r = (u && typeof u === 'object' ? u : {}) as Record<string, unknown>;
+        return {
+          custodyId: String(r.custody_id || ''),
+          requestId: typeof r.request_id === 'string' ? r.request_id : null,
+          reason: String(r.reason || 'unknown'),
+        };
+      });
+      if (row.balanced !== true && row.balanced !== false) {
+        throw new Error('fn_diamond_arena_reconciliation did not say whether it balanced');
+      }
+      return {
+        sessions: num(row.sessions),
+        openSessions: num(row.open_sessions),
+        buyIns: num(row.buy_ins),
+        cashOuts: num(row.cash_outs),
+        inPlay: num(row.in_play),
+        netResultSettled: num(row.net_result_settled),
+        unmatched,
+        balanced: row.balanced,
+        readAt: String(row.read_at || ''),
+      };
+    } catch (err) {
+      reportError(err, 'DiamondService.getArenaStatement');
       return null;
     }
   },

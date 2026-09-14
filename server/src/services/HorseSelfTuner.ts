@@ -10,20 +10,18 @@
  *  1. MEASURE — replay the last 7 days of real CASH hand_history and compute,
  *     per horse: VPIP, PFR, 3-bet rate, fold-to-3-bet, WWSF (won when saw
  *     flop), postflop aggression factor, and approximate net bb/100.
- *  2. DIAGNOSE — compare against winning-player benchmark bands. Too loose,
+ *  2. DIAGNOSE — compare against versioned diagnostic bands. Too loose,
  *     too passive, folding to every 3-bet, never winning without showdown —
  *     each recognized leak maps to a small corrective nudge.
- *  3. ADJUST — merge bounded nudges (±0.02/night, hard caps 0.85–1.18) into
- *     profiles.horse_profile, the exact jsonb resolveHorseStyle already reads
- *     on every live decision. The horse plays differently TOMORROW because of
- *     what it did TODAY — individually, permanently, and auditable in
- *     horse_self_tune_log.
+ *  3. AUDIT — retain bounded proposed nudges and review counts in the atomic
+ *     study record. Frequency/leak diagnostics do not establish counterfactual
+ *     improvement, so they cannot rewrite profiles.horse_profile. Actual
+ *     modifier values stay unchanged. Causal, holdout and shadow qualification
+ *     belong to the separate Phase14 activation control path, still pending.
  *
- * The nudges deliberately move slowly: a leak must persist across nights to
- * move a dial far, and every dial is clamped so no horse can drift outside
- * the "winning player" envelope no matter how unlucky a week gets. When a
- * horse with a big sample is losing badly overall, its dials regress toward
- * neutral instead of chasing noise.
+ * Diagnostic proposals retain the legacy ±0.02/night and 0.85–1.18 bounds.
+ * Those bounds and observed results do not establish winning strength or
+ * authorize activation. Authored profiles and earlier values are preserved.
  *
  * Fail-safe: every DB touch is caught + reported; a failed run retries the
  * next scheduled check. Tournament hands are EXCLUDED from frequency
@@ -32,7 +30,7 @@
  */
 
 import { supabase } from './supabase.js';
-import { recordHorseTunerUpdate } from './HorseTunerAtomicWrite.js';
+import { recordObservationalHorseStudy } from './HorseTunerObservationalAudit.js';
 import {
   completeHorseTunerStudy,
   prepareHorseTunerStudy,
@@ -1002,7 +1000,7 @@ export async function runSelfTune(
       fromStream++;
     }
 
-    // Diagnose + write.
+    // Diagnose + audit. Observational proposals cannot activate profile changes.
     let tuned = 0;
     let unfinished = 0;
     const eligibleHorses = [...stats]
@@ -1047,10 +1045,9 @@ export async function runSelfTune(
           leaksHands: leakHandsByHorse.get(horseId) ?? 0,
         }
       );
-      // V40 (Dan 2026-09-04): the leak profile travels WITH the dials, so
-      // the brain can read its own review verdicts at decision time
-      // (HorseLogic ploStackoffLoad). Counts over the study window plus the
-      // reviewed-hand denominator; rewritten whenever it moves.
+      // Retain the legacy candidate's leak counts and denominators as review
+      // diagnostics. The observational adapter preserves the actual profile;
+      // these new counts do not become decision-time inputs through this study.
       const leakCounts = leaksByHorse.get(horseId) ?? null;
       const leakProfile: Record<string, number> = {};
       if (leakCounts) {
@@ -1108,7 +1105,20 @@ export async function runSelfTune(
           leaksTournament: familyProfile.leaksTournament,
           leaksHandsTournament: familyProfile.leaksHandsTournament,
         };
-        const written = await recordHorseTunerUpdate({
+        const reviewDiagnostics = Object.fromEntries(
+          [
+            ['all', leakProfile],
+            ['omaha', familyProfile.leaksOmaha],
+            ['holdem', familyProfile.leaksHoldem],
+            ['tournament', familyProfile.leaksTournament],
+          ].flatMap(([family, counts]) =>
+            Object.entries(counts as Record<string, number>).map(([key, value]) => [
+              `review_${family}_${key}`,
+              value,
+            ])
+          )
+        );
+        const written = await recordObservationalHorseStudy({
           horseId,
           runDate: date,
           expectedProfile: expectedProfiles.get(horseId),
@@ -1131,6 +1141,11 @@ export async function runSelfTune(
               fleet_p25_bb100: fleetP25 !== null ? round4(fleetP25) : -9999,
               // where this horse's frequencies came from: play rows or the stream
               study_source: fromPlayRows.has(horseId) ? 1 : 0,
+              review_hands: leaksHands,
+              review_hands_omaha: familyProfile.leaksHandsOmaha,
+              review_hands_holdem: familyProfile.leaksHandsHoldem,
+              review_hands_tournament: familyProfile.leaksHandsTournament,
+              ...reviewDiagnostics,
             },
             modsBefore: {
               tightness: prevMods.tightness ?? 1,

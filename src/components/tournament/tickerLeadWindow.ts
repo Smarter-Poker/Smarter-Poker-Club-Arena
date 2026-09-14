@@ -98,5 +98,14 @@ export function isInsideLastCall(startsAtMs: number, totalBuyIn: number, now: nu
  * filter moved to the client and the LIMIT did not follow it. Twenty-five is
  * the same size the overlay query already asks for, it is bounded, and the
  * lane caps at eight on screen regardless.
+ *
+ * ── WHERE THE LIMIT IS APPLIED NOW (2026-09-14) ────────────────────────────
+ *
+ * The read moved into `fn_get_ticker_feed`, so the LIMIT lives in the
+ * migration and this constant no longer reaches it. That is exactly the shape
+ * that produced the bug above - a number in one place and the filter that
+ * depends on it in another - so `tickerServerFeed.test.ts` reads the
+ * migration and fails if the two disagree. The reasoning stays here because
+ * this is where the reasoning is about; the SQL just has to match it.
  */
 export const UPCOMING_ROW_LIMIT = 25;

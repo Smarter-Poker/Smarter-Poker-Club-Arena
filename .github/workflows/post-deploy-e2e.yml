@@ -554,6 +554,16 @@ jobs:
           run_suite daily-missions-settlement.json tests/e2e/daily-missions-database-settlement.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
           daily_missions_settlement_rc=$?; [ $daily_missions_settlement_rc -ne 0 ] && rc=$daily_missions_settlement_rc
 
+          # The ticker's read shape, asserted on TRAFFIC rather than on the DOM.
+          # Until 2026-09-14 the bar sent five queries every thirty seconds, one
+          # of which matched 1,322 rows for a three-club member and took eighty
+          # of them ordered by a column with no trigger maintaining it. This
+          # spec fails if that fingerprint - `tournaments?...club_id=in.(...)` -
+          # comes back, which is a regression nothing else can see: the bar just
+          # quietly stops having anything to say.
+          run_suite ticker-feed.json tests/e2e/ticker-asks-the-server-once.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          ticker_feed_rc=$?; [ $ticker_feed_rc -ne 0 ] && rc=$ticker_feed_rc
+
           # tests/e2e/routes/ (nine files) is named as a DIRECTORY on purpose.
           # The first sweep that wired the orphans missed it entirely by globbing
           # only tests/e2e/*.spec.ts, so nine route suites stayed invisible one

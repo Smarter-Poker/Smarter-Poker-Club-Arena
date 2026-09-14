@@ -28,13 +28,15 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { sliceMethod } from '../helpers/sourceWindow';
+import { sliceMethod, sliceBetween } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../..', p), 'utf8');
 
 const APP = read('src/App.tsx');
 const GUARD = read('src/components/common/UnionSkinGuard.tsx');
 const TICKER = read('src/components/tournament/TournamentStartingTicker.tsx');
+/* The rail's reads live in the feed function since 2026-09-14. */
+const FEED_SQL = read('supabase/migrations/20260914102703_the_rail_asks_the_server_once.sql');
 const TABLE_PAGE = read('src/pages/TablePage.tsx');
 const MULTI = read('src/pages/MultiTablePage.tsx');
 const TRACKER = read('src/components/common/LastClubTracker.tsx');
@@ -100,17 +102,40 @@ describe('the MTT ticker opens the event, not a club list', () => {
   it('the overlay query is scoped to the clubs the player belongs to', () => {
     /* An overlay announcement is an invitation to enter. A player must never
        be shown money they cannot go and win, and the club scope is what
-       guarantees that - the same rule the starting-soon query follows. */
-    const OVERLAY_Q = TICKER.slice(
-      TICKER.indexOf('const overlayPromise ='),
-      // Re-anchored 2026-09-05 with the query gating. The old anchor stopped
-      // existing and `indexOf` returned -1, which silently widened this slice
-      // to the whole file instead of failing.
-      TICKER.indexOf('const wantsTournamentOps =')
+       guarantees that - the same rule the starting-soon query follows.
+
+       THE QUERY MOVED INTO THE DATABASE (2026-09-14). It is a block of
+       fn_get_ticker_feed now, so this reads the migration. The guarantee got
+       STRONGER in the move and this asserts the stronger form: the scope is no
+       longer a club-id list the browser assembles and sends, it is `v_clubs`,
+       built inside a SECURITY DEFINER function from the caller's own
+       auth.uid(). A client cannot ask about a club it does not belong to, so
+       there is no longer a request a union surface could widen. */
+    const OVERLAY_Q = sliceBetween(FEED_SQL, '-- ── OVERLAYS', '-- ── REGISTRATION CLOSING');
+    expect(OVERLAY_Q).toMatch(/t\.club_id = ANY\(v_clubs\)/);
+    expect(OVERLAY_Q).toMatch(/t\.tournament_type = 'MTT'/);
+    expect(OVERLAY_Q).toMatch(/t\.guaranteed_prize > 0/);
+  });
+
+  it('builds that scope from the caller, never from what the caller sent', () => {
+    /* The whole point of the move. If `v_clubs` ever came from a parameter,
+       every scoping guarantee on this rail would be back in the browser. */
+    const SCOPE = sliceBetween(
+      FEED_SQL,
+      'SELECT COALESCE(array_agg(cm.club_id)',
+      'IF array_length'
     );
-    expect(OVERLAY_Q).toMatch(/\.in\('club_id', clubIds\)/);
-    expect(OVERLAY_Q).toMatch(/\.eq\('tournament_type', 'MTT'\)/);
-    expect(OVERLAY_Q).toMatch(/\.gt\('guaranteed_prize', 0\)/);
+    expect(SCOPE).toContain('cm.user_id = v_uid');
+    expect(SCOPE).toContain("cm.status IN ('active', 'approved')");
+    expect(FEED_SQL).toMatch(/v_uid\s+uuid := auth\.uid\(\)/);
+    /* No parameter may name a club scope. p_rail_club_id is which club's rail
+       is being PAINTED - it only ever suppresses a club name from the copy. */
+    const SIGNATURE = sliceBetween(
+      FEED_SQL,
+      'CREATE OR REPLACE FUNCTION public.fn_get_ticker_feed',
+      'RETURNS jsonb'
+    );
+    expect(SIGNATURE).not.toMatch(/p_club_ids|p_clubs\b/);
   });
 
   it('falls back to the GLOBAL lobby, which is never union-scoped', () => {

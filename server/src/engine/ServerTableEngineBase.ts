@@ -102,6 +102,7 @@ import { headsUpButtonSeat } from './headsUpButton.js';
 import type { StateMachine } from './StateMachine.js';
 import type { TableStatus } from '../types.js';
 import { assertDiamondCashTable } from '../domain/DiamondCashBoundary.js';
+import { HEADS_UP_SEATS } from '../config/headsUpSpec.js';
 
 export type EngineLeaseAuthority =
   | {
@@ -1206,6 +1207,8 @@ export abstract class ServerTableEngineBase {
     handName?: string;
     /** HI-LO: the low half's entry (2026-09-04). */
     low?: boolean;
+    /** Per-pot slices of this share, main pot first (2026-09-13). */
+    pots?: Array<{ index: number; amount: number }>;
   }> = [];
   /**
    * SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): the unmerged per-pot(-half)
@@ -2305,8 +2308,24 @@ export abstract class ServerTableEngineBase {
     // impossible rather than merely unlikely.)
     const ritIsTournament =
       !!this.tableInfo.tournament_id || this.tableInfo.game_type === 'tournament';
+    /**
+     * HEADS-UP TABLE GATE (2026-09-13). The ruling quoted above names three
+     * places run-it-twice never goes - MTT, Spins, HEADS UP - and for eighteen
+     * days the code enforced two of them. Every heads-up TABLE on the platform
+     * happens to be a tournament (the 2-seat heads-up SNG shapes in
+     * TournamentRecurringService), so the tournament gate covered it by
+     * accident; the first 2-seat cash table would have offered the question.
+     *
+     * A heads-up table is a table FORMAT: two seats. It is not a two-way
+     * all-in on a full ring - that is the ordinary run-it-twice hand, and the
+     * reference recordings that shaped this feature are exactly that.
+     */
+    const ritIsHeadsUpTable =
+      Number(this.tableInfo.max_players) > 0 &&
+      Number(this.tableInfo.max_players) <= HEADS_UP_SEATS;
     const ritEnabled =
       !ritIsTournament &&
+      !ritIsHeadsUpTable &&
       (((this.tableInfo.run_it_twice ?? true) && (this.tableInfo.allow_run_it_twice ?? true)) ||
         (this.tableInfo.run_it_twice_enabled ?? false));
     // ALL-CASH INSURANCE 2026-08-26 (Dan): insurance is a CASH feature.

@@ -303,7 +303,7 @@ export class RunItTwiceEngine {
           // The host forwards THIS case to the wire (see
           // ServerTableEngineRunout.wireRunItTwiceEvents) — a player decline
           // is already announced by respondToRIT with its own reason.
-          this.decline(tableId, primaryOfferedTo, 'timeout');
+          this.expire(state);
         }
       },
     });
@@ -362,6 +362,37 @@ export class RunItTwiceEngine {
       handId: state.handId,
     });
     return true;
+  }
+
+  /**
+   * THE WINDOW CLOSED, AND THE RECORD SAYS WHO WAS STILL SILENT (2026-09-13).
+   *
+   * This used to be `decline(tableId, primaryOfferedTo, 'timeout')`, which
+   * stamped the FIRST responder in the offer list as `declinedBy` on every
+   * expiry - whoever had actually answered. B accepts in two seconds, C never
+   * answers, and the event blamed B. No consumer read the name yet, which is
+   * the only reason it was harmless; the next one (a hand-history note, an
+   * audit, the felt strip naming who held things up) would have lied.
+   *
+   * An expiry has no decliner. It has the players who had not answered when
+   * the clock ran out: every responder outside `acceptedBy`, and the chooser
+   * if they never picked a count.
+   */
+  private expire(state: RITState): void {
+    if (state.status !== 'offered') return;
+    const unanswered = state.allPlayerIds.filter((id) =>
+      id === state.chooserPlayerId ? !state.chooserDecided : !state.acceptedBy.has(id)
+    );
+    state.status = 'declined';
+    this.scheduler.cancel(state.tableId, RunItTwiceEngine.OFFER_EVENT_ID);
+    this.emitEvent({
+      type: 'RIT_DECLINED',
+      tableId: state.tableId,
+      handId: state.handId,
+      declinedBy: null,
+      unanswered,
+      reason: 'timeout',
+    });
   }
 
   decline(tableId: string, playerId: string, reason: RITDeclineReason = 'player'): void {

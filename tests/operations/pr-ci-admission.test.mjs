@@ -257,12 +257,17 @@ for (const name of [
   'build',
   'css-beats-e2e',
 ]) {
-  test(`${name} admits before dependency setup on a fresh hosted read-only runner`, () => {
+  test(`${name} admits before dependency setup on its declared read-only CI runner`, () => {
     const source = job(name),
       start = source.indexOf('- name: Admit only the current PR head');
     assert.ok(start > source.indexOf('uses: actions/checkout@'));
     assert.ok(start < source.indexOf('- name: Setup Node'));
-    assert.match(source, /runs-on: ubuntu-latest/);
+    const runner = source.match(/^ {4}runs-on: (.+)$/m)?.[1];
+    assert.equal(
+      runner,
+      name === 'accounting_postgres' ? 'ubuntu-latest' : "${{ vars.CI_RUNNER || 'ubuntu-latest' }}"
+    );
+    assert.doesNotMatch(source, /secrets\./);
     assert.match(source, /permissions:\n      contents: read\n      pull-requests: read/);
     const gate = source.slice(start, source.indexOf('- name: Setup Node'));
     assert.match(gate, /working-directory: \./);

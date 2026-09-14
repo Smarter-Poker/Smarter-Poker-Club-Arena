@@ -88,13 +88,13 @@ describe('native publishing requires the exact origin verification', () => {
     expect(eligible(other)).toBe(false);
   });
 
-  it('preserves the proved-tree client-test fast path', () => {
+  it('refuses skipped release tests even when a historical PR tree claimed success', () => {
     expect(
       eligible(target, {
         'needs.client-tests.result': 'skipped',
         'needs.publish-needed.outputs.tests_proven': 'true',
       })
-    ).toBe(true);
+    ).toBe(false);
     expect(
       eligible('', {
         'needs.client-tests.result': 'skipped',

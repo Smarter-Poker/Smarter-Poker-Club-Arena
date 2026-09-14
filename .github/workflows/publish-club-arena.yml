@@ -75,14 +75,14 @@ jobs:
   # A push is new work, and a recovery event carries one explicit
   # protected-main SHA to publish.
   publish-needed:
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see ci.yml RUNNER ROUTING).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # Its output selects the source used by privileged publication jobs.
+    # A fresh runner prevents earlier PR code from substituting that decision.
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
     outputs:
       target_sha: ${{ steps.target.outputs.sha }}
-      tests_proven: ${{ steps.proven.outputs.tests_proven }}
     steps:
       # ═══════════════════════════════════════════════════════════════════════
       # NO COMMIT LEFT BEHIND — publish the TIP OF MAIN, not the commit that
@@ -180,63 +180,13 @@ jobs:
       # EVERY shard, so one red shard still stops the bundle. fail-fast cancels the
       # siblings the moment one fails, which is what a gate wants. Fresh hosted
       # images keep the test and release trust domains isolated.
-      # ── HAS THIS EXACT TREE ALREADY PASSED THE CLIENT SUITE? ──────────────
-      #
-      # The publisher re-runs the whole client suite in four shards on every
-      # merge. On a squash merge the resulting commit usually has the SAME TREE
-      # as the pull request head that CI just proved green - identical bytes,
-      # tested twice, ~2 minutes of shards plus their queue wait on the critical
-      # path between a merge and a player seeing the change.
-      #
-      # "Usually" is not "always", which is why this compares TREE HASHES rather
-      # than trusting the merge. If main moved between the PR's last CI run and
-      # the squash, the trees differ and the shards run exactly as before. This
-      # can only skip when the content is bit-identical to something that
-      # already passed.
-      #
-      # Fails closed: any doubt - no PR found, no green check, an API error -
-      # and tests_proven stays false and the shards run.
-      - name: Has this exact tree already passed the client suite?
-        id: proven
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -uo pipefail
-          SHA="${{ steps.target.outputs.sha }}"
-          echo "tests_proven=false" >> "$GITHUB_OUTPUT"
-
-          TREE=$(timeout 30s gh api "repos/${{ github.repository }}/commits/$SHA" --jq .commit.tree.sha 2>/dev/null || echo "")
-          [ -z "$TREE" ] && { echo "::notice::could not read the target tree - running the shards."; exit 0; }
-
-          PR=$(timeout 30s gh api "repos/${{ github.repository }}/commits/$SHA/pulls" --jq '.[0].number' 2>/dev/null || echo "")
-          [ -z "$PR" ] || [ "$PR" = "null" ] && { echo "::notice::no source pull request for ${SHA:0:7} - running the shards."; exit 0; }
-
-          HEAD=$(timeout 30s gh api "repos/${{ github.repository }}/pulls/$PR" --jq .head.sha 2>/dev/null || echo "")
-          [ -z "$HEAD" ] && { echo "::notice::could not read PR #$PR head - running the shards."; exit 0; }
-
-          HEAD_TREE=$(timeout 30s gh api "repos/${{ github.repository }}/commits/$HEAD" --jq .commit.tree.sha 2>/dev/null || echo "")
-          if [ "$TREE" != "$HEAD_TREE" ]; then
-            echo "::notice::tree ${TREE:0:7} differs from PR #$PR head tree ${HEAD_TREE:0:7} - main moved, running the shards."
-            exit 0
-          fi
-
-          OK=$(timeout 30s gh api "repos/${{ github.repository }}/commits/$HEAD/check-runs?per_page=100" \
-                 --jq '[.check_runs[] | select(.name=="Client Unit Tests (vitest)" and .conclusion=="success")] | length' 2>/dev/null || echo 0)
-          if [ "${OK:-0}" -ge 1 ]; then
-            echo "tests_proven=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::tree $TREE already passed Client Unit Tests on PR #$PR head ${HEAD:0:7} - skipping the shards."
-          else
-            echo "::notice::no green Client Unit Tests on PR #$PR head - running the shards."
-          fi
 
   client-tests:
     needs: publish-needed
-    # Runs unless this exact TREE already passed the same suite on the pull
-    # request head. See "Has this exact tree already passed" above - it compares
-    # tree hashes, not merge lineage, and fails closed.
-    if: needs.publish-needed.outputs.tests_proven != 'true'
-    # Credential-free job: estate runner when vars.CI_RUNNER is set (see ci.yml RUNNER ROUTING).
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # The release suite is authoritative even when PR CI tested identical bytes.
+    # Persistent PR runners cannot attest the execution environment of that check.
+    # Tests use fresh hosted runners, never the PR or credential-bearing pool.
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
@@ -266,7 +216,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: nm-bfwh-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+          key: nm-publish-tests-v2-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.nm-cache.outputs.cache-hit != 'true'
@@ -575,9 +525,7 @@ jobs:
       needs.publish-to-origin.result == 'success' &&
       needs.publish-to-origin.outputs.verified_sha != '' &&
       needs.publish-to-origin.outputs.verified_sha == needs.publish-needed.outputs.target_sha &&
-      (needs.client-tests.result == 'success' ||
-       (needs.client-tests.result == 'skipped' &&
-        needs.publish-needed.outputs.tests_proven == 'true'))
+      needs.client-tests.result == 'success'
     # Carries secrets: stays OFF the shared estate-linux pool that runs pull-request code.
     # vars.PUBLISH_RUNNER (unset today => ubuntu-latest) is the hook for a dedicated,
     # credential-only runner label later.
@@ -664,23 +612,12 @@ jobs:
     # observed by the ancestry check. The final symlink rename is the last
     # mutation, so a crash cannot expose a partial release.
     needs: [publish-needed, build-and-store, client-tests]
-    # MUST be always() with explicit results.
-    #
-    # `client-tests` is now skipped when the target TREE already passed the same
-    # suite on the pull request head. GitHub skips the DEPENDENTS of a skipped
-    # job by default, so without this the publisher would quietly publish
-    # NOTHING on exactly the fast path this change exists to create - the same
-    # shape as the 2026-08-23 incident where a skipped `changes` job took every
-    # required check down with it.
-    #
-    # Run when the build succeeded AND the tests either passed or were provably
-    # unnecessary. A client-tests FAILURE still stops the publish.
+    # Inspect both prerequisites explicitly. A skipped, failed or cancelled
+    # release test matrix cannot publish, regardless of any historical PR check.
     if: >-
       always() &&
       needs.build-and-store.result == 'success' &&
-      (needs.client-tests.result == 'success' ||
-       (needs.client-tests.result == 'skipped' &&
-        needs.publish-needed.outputs.tests_proven == 'true'))
+      needs.client-tests.result == 'success'
     # Carries secrets: stays OFF the shared estate-linux pool that runs pull-request code.
     # vars.PUBLISH_RUNNER (unset today => ubuntu-latest) is the hook for a dedicated,
     # credential-only runner label later.

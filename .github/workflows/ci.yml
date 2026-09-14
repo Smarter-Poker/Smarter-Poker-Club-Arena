@@ -41,33 +41,12 @@ on:
     # that can answer "is the branch we deploy from actually passing".
     - cron: '35 6 * * *'
 
-# ═══════════════════════════════════════════════════════════════════════════
-# THE GROUP IS KEYED ON THE HEAD SHA, NOT THE BRANCH — changed 2026-08-26.
-#
-# It used to be `ci-${{ github.ref }}` with cancel-in-progress, so a new push
-# cancelled the run for the previous sha. That is the normal, sensible setup
-# and it is also how six pull requests ended up permanently unmergeable:
-# #1073, #1083, #1088, #1103, #1117 and #1130 each had CANCELLED as the newest
-# ci.yml conclusion on their HEAD sha. A required check that reports
-# `cancelled` never reports again on its own. Autopilot cannot merge past it,
-# the branch is not conflicted so nothing flags it as stuck, and the pull
-# request simply sits there looking fine. All six were re-run by hand today;
-# without this change the seventh is only a matter of time.
-#
-# Keying the group on the head sha means a cancel can only ever remove a
-# DUPLICATE run of the very same commit — two events for one sha, which is the
-# only case where cancelling was ever safe. A run for the sha the check is
-# actually evaluated against can no longer be killed by a newer push.
-#
-# The cost is that a superseded sha's run finishes instead of dying early.
-# That is a few runner-minutes. The thing it buys is that no pull request can
-# be stranded by a check that will never speak again, which cost six of them.
-# ═══════════════════════════════════════════════════════════════════════════
+# Only duplicate events for the same PR head may cancel one another. GitHub
+# does not guarantee event ordering: a delayed old-head event can otherwise
+# cancel current required checks before current-head admission can reject it.
+# Admission below still rejects superseded work before dependency setup.
 concurrency:
-  # 2026-09-14: keyed on the PR, not the PR+sha. Keyed on the sha, a new push never
-  # cancelled the previous commit's 15-job run; only 2-7 of 100-200 daily runs were
-  # ever cancelled. Now a superseded push is cancelled the moment the next one lands.
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}-${{ github.event.pull_request.head.sha || github.sha }}
   cancel-in-progress: true
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -82,14 +61,12 @@ concurrency:
 # API: ~3 billed minutes per CI run became ~70 (15 hosted jobs), $31/day
 # became $121/day (2026-09-12), while every estate runner sat online and idle.
 #
-# The concern #4189 raised is handled by SEPARATION, not by paying GitHub:
-#   - ci.yml references no secrets at all, so nothing on the estate-linux pool
-#     can be exfiltrated by pull-request code beyond a read-only GITHUB_TOKEN.
-#   - Credential-bearing publish jobs (publish-club-arena.yml build-and-store,
-#     publish-to-app, publish-to-origin) read vars.PUBLISH_RUNNER instead and
-#     do NOT share the pool with pull-request code (unset => ubuntu-latest).
-# Do not hard-code ubuntu-latest on a credential-free job again without
-# re-reading the September billing numbers.
+# PR checks use the read-only estate pool. Read-only credentials do not make
+# its output safe to reuse as production authority: a persistent machine can
+# retain code from a previous job. The publisher therefore resolves its target
+# and runs fresh release tests on isolated hosted runners, even for identical
+# trees. Jobs holding publication credentials use vars.PUBLISH_RUNNER, which
+# must share neither host nor storage with PR runners (unset => ubuntu-latest).
 # ───────────────────────────────────────────────────────────────────────────
 jobs:
   # ───────────────────────────────────────────────────────────────────────────

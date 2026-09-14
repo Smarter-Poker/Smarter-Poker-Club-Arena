@@ -463,7 +463,7 @@ export default function UnionStatementsPage() {
         {board?.union_name && <div className={styles.unionName}>{board.union_name}</div>}
       </div>
 
-      {!loading && board?.union_id === unionId && board?.period_end && (
+      {!loading && unionId && board?.union_id === unionId && board?.period_end && (
         <UnionAccountingRunStatus
           key={`${unionId}:${user.id}:${board.period_end}`}
           unionId={unionId}

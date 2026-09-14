@@ -1301,6 +1301,11 @@ jobs:
           PGBIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/dev/probe-agent-downline-rake-scope-pg17.py
 
+      - name: Rake attribution survives real deadlocks without duplicate settlement
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-rake-attribution-alert.py --output artifacts/rake-attribution-alert
+
       - name: Certified V31 PostgreSQL 17 behavior gate
         if: >-
           github.event_name == 'schedule' ||

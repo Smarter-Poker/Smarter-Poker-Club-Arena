@@ -248,3 +248,116 @@ describe("the ad popup carries the sponsor's door (2026-09-13)", () => {
     expect(read('tests/unit/everyRouteIsReachableLaw.test.ts')).not.toMatch(/^\s+advertise:/m);
   });
 });
+
+describe("a sponsor's flight is billed, and a phone sponsor can log in (2026-09-14)", () => {
+  const BILLED = read('supabase/migrations/20260914004548_a_sponsors_flight_is_billed.sql');
+
+  it('the marks are an offline fact recorded by staff, on approved sponsor flights only', () => {
+    expect(BILLED).toMatch(/add column if not exists invoiced_at timestamptz/);
+    expect(BILLED).toMatch(/add column if not exists paid_at timestamptz/);
+    expect(BILLED).toMatch(/if p_mark not in \('invoiced', 'paid', 'none'\) then/);
+    expect(BILLED).toMatch(
+      /if v_c\.club_id is not null or v_c\.quoted_cents is null then[\s\S]*?not_a_sponsor_flight/
+    );
+    expect(BILLED).toMatch(/if v_c\.status <> 'approved' then[\s\S]*?not_approved/);
+    // Paid never without invoiced; the migration asserts it.
+    expect(BILLED).toMatch(/a flight is paid without being invoiced/);
+    // No chips and no diamonds: the function touches ad_campaign only.
+    const fn = BILLED.slice(
+      BILLED.indexOf('function public.fn_sponsor_campaign_bill'),
+      BILLED.indexOf('revoke all on function public.fn_sponsor_campaign_bill')
+    );
+    expect(fn).not.toMatch(/diamond|chip_balance|fn_credit|fn_add_chips/);
+    // Both lists return the marks.
+    expect(
+      BILLED.match(/quoted_cents integer, invoiced_at timestamptz, paid_at timestamptz/g)?.length
+    ).toBe(2);
+  });
+
+  it('the hand-off finds the account by e-mail and refuses a second sponsor per account', () => {
+    expect(BILLED).toMatch(
+      /select u\.id into v_owner from auth\.users u where lower\(u\.email\) = v_email/
+    );
+    expect(BILLED).toMatch(/no_account_with_that_email/);
+    expect(BILLED).toMatch(/account_already_has_a_sponsor/);
+    expect(BILLED).toMatch(/already_handed_off/);
+    expect(BILLED).toMatch(/self_serve\s+= true/);
+  });
+
+  it('the sponsor reads the same words staff wrote, and staff act from the reviewed table and the roster', () => {
+    expect(SERVICE).toMatch(/export function billingLabel\(/);
+    expect(SERVICE).toMatch(/if \(c\.paidAt\) return 'Paid';/);
+    expect(SERVICE).toMatch(/if \(c\.invoicedAt\) return 'Invoice Sent';/);
+    expect(SERVICE).toMatch(/if \(c\.status === 'approved'\) return 'To Be Invoiced';/);
+    expect(PAGE).toMatch(/\{formatDollars\(c\.quotedCents\)\} \{billingLabel\(c\)\}/);
+    expect(QUEUE).toMatch(/void bill\(c, c\.invoicedAt == null \? 'invoiced' : 'paid'\)/);
+    expect(QUEUE).toMatch(/void bill\(c, 'none'\)/);
+    expect(SERVICE).toMatch(/rpc\('fn_sponsor_campaign_bill'/);
+    expect(QUEUE).toMatch(/Hand Off/);
+    expect(SERVICE).toMatch(/rpc\('fn_sponsor_advertiser_handoff'/);
+    expect(SERVICE).toMatch(/rpc\('fn_sponsor_advertiser_list'/);
+    // The hand-off's e-mail falls back to the contact e-mail staff typed on the phone.
+    expect(QUEUE).toMatch(/handoffEmail\[a\.id\] \?\? a\.contactEmail \?\? ''/);
+  });
+});
+
+describe('an advert knows where it is (2026-09-14)', () => {
+  const GEO = read('supabase/migrations/20260914011104_an_advert_knows_where_it_is.sql');
+  const ADS = read('src/services/AdService.ts');
+
+  it('a flight carries a country list, null means everywhere, and a bad code refuses the whole list', () => {
+    expect(GEO).toMatch(/add column if not exists countries text\[\]/);
+    expect(GEO).toMatch(
+      /create or replace function public\.fn_ad_countries_clean\(p_countries text\[\]\)/
+    );
+    expect(GEO).toMatch(/btrim\(x\) !~ '\^\[A-Za-z\]\{2\}\$'\) then null/);
+    expect(GEO).toMatch(/add constraint ad_campaign_countries_are_alpha2/);
+    // Both submits refuse, never drop, a bad entry.
+    expect(GEO.match(/'reason', 'bad_countries'/g)?.length).toBe(2);
+    // Every existing flight runs everywhere; the migration asserts it.
+    expect(GEO).toMatch(/an existing flight is gated; every existing flight runs everywhere/);
+    // The client applies the same rule before the round trip.
+    expect(SERVICE).toMatch(
+      /export function parseCountries\(text: string\): string\[\] \| null \| undefined/
+    );
+    expect(SERVICE).toMatch(
+      /if \(parts\.some\(\(x\) => !\/\^\[A-Za-z\]\{2\}\$\/\.test\(x\)\)\) return undefined;/
+    );
+  });
+
+  it('the resolver takes a country and never serves a gated flight to an unknown location', () => {
+    expect(GEO).toMatch(/drop function if exists public\.fn_resolve_ads\(text, uuid, integer\);/);
+    expect(GEO).toMatch(/p_country text default null/);
+    expect(GEO).toMatch(
+      /and \(cam\.id is null or cam\.countries is null\s+or \(v_country is not null and v_country = any\(cam\.countries\)\)\)/
+    );
+    // One overload each, or PostgREST cannot pick.
+    expect(GEO).toMatch(/expected one overload each of five functions/);
+    // Anon can still resolve house ads.
+    expect(GEO).toMatch(
+      /grant execute on function public\.fn_resolve_ads\(text, uuid, integer, text\) to anon, authenticated, service_role;/
+    );
+  });
+
+  it('the client asks the edge once, passes it as a hint, and treats a failure as unknown', () => {
+    expect(ADS).toMatch(/fetch\('\/api\/geo', \{ credentials: 'omit', cache: 'no-store' \}\)/);
+    expect(ADS).toMatch(/p_country: await playerCountry\(\),/);
+    expect(ADS).toMatch(/return \/\^\[A-Z\]\{2\}\$\/\.test\(c\) \? c : null;/);
+    expect(ADS).toMatch(/\} catch \{\s+return null;/);
+  });
+
+  it('a sponsor and staff both write the list, and both read it back', () => {
+    expect(PAGE).toMatch(/countries: parseCountries\(countriesText\) \?\? null,/);
+    expect(PAGE).toMatch(
+      /const countriesOk = sponsorMode \? parseCountries\(countriesText\) !== undefined : true;/
+    );
+    expect(PAGE).toMatch(/Countries \(Optional\)/);
+    expect(PAGE).toMatch(/A Player Whose Location Is Unknown Never Sees A Country-Limited Advert/);
+    expect(QUEUE).toMatch(/countries: parseCountries\(sponsor\.countries\) \?\? null,/);
+    expect(QUEUE).toMatch(/parseCountries\(sponsor\.countries\) !== undefined &&/);
+    expect(SERVICE.match(/p_countries: input\.countries \?\? null,/g)?.length).toBe(2);
+    expect(SERVICE).toMatch(
+      /countries: Array\.isArray\(r\.countries\) \? r\.countries\.map\(\(x\) => String\(x\)\) : null,/
+    );
+  });
+});

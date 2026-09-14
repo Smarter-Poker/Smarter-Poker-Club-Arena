@@ -14,13 +14,21 @@ try {
   // dedicated thread. No source payload or service credential crosses IPC.
   const { processAdaptiveJournalWork } = await import('../HorseAdaptiveJournalWork.js');
   const { pruneAdaptiveJournal } = await import('../HorseAdaptiveJournalRetention.js');
-  const { readJournalQueueHealth } = await import('../HorseAdaptiveJournalQueueHealth.js');
+  const { readLearningQueueHealth } = await import('../HorseLearningQueueHealth.js');
+  const { processObservationCapture, pruneObservationCaptures } =
+    await import('../HorseObservationCapture.js');
   if (!stop.signal.aborted) {
     port.postMessage({ type: 'READY' });
     await runJournalLoop(stop.signal, {
       processWork: processAdaptiveJournalWork,
+      processCapture: processObservationCapture,
       prune: pruneAdaptiveJournal,
-      readQueueHealth: readJournalQueueHealth,
+      pruneCaptures: pruneObservationCaptures,
+      readQueueHealth: async () => {
+        const health = await readLearningQueueHealth();
+        port.postMessage({ type: 'CAPTURE_HEALTH', value: { version: 1, ...health.capture } });
+        return health.journal;
+      },
       queueHealth: (health) =>
         port.postMessage({ type: 'QUEUE_HEALTH', value: { version: 1, ...health } }),
       now: Date.now,

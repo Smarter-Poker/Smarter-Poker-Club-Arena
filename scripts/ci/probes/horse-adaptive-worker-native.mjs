@@ -1,12 +1,22 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { randomUUID } from 'node:crypto';
 import { Worker } from 'node:worker_threads';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as wait } from 'node:timers/promises';
 
 /** Real compiled worker and real Supabase HTTP client against a private local
  * PostgreSQL fixture. No worker module or production transport is patched. */
-export async function exerciseIsolatedWorker({ root, Client, options, c, work, snapshot }) {
+export async function exerciseIsolatedWorker({
+  root,
+  Client,
+  options,
+  c,
+  work,
+  snapshot,
+  capture,
+  actor,
+}) {
   const connection = new Client(options);
   await connection.connect();
   await connection.query('SET ROLE service_role');
@@ -41,8 +51,23 @@ export async function exerciseIsolatedWorker({ root, Client, options, c, work, s
       } else if (name === 'fn_horse_adaptive_journal_work_health') {
         sql = 'SELECT fn_horse_adaptive_journal_work_health() value';
         params = [];
+      } else if (name === 'fn_horse_learning_work_health') {
+        sql = 'SELECT fn_horse_learning_work_health() value';
+        params = [];
       } else if (name === 'fn_prune_horse_adaptive_journal') {
         sql = 'SELECT fn_prune_horse_adaptive_journal() value';
+        params = [];
+      } else if (name === 'fn_claim_horse_observation_capture') {
+        sql = 'SELECT fn_claim_horse_observation_capture($1) value';
+        params = [args.p_lease_token];
+      } else if (name === 'fn_horse_committed_observation_snapshot') {
+        sql = 'SELECT fn_horse_committed_observation_snapshot($1,$2,$3) value';
+        params = [args.p_actor, args.p_from_ms, args.p_through_ms];
+      } else if (name === 'fn_finish_horse_observation_capture') {
+        sql = 'SELECT fn_finish_horse_observation_capture($1,$2,$3,$4) value';
+        params = [args.p_request_key, args.p_lease_token, args.p_payload, args.p_reason];
+      } else if (name === 'fn_prune_horse_observation_captures') {
+        sql = 'SELECT fn_prune_horse_observation_captures() value';
         params = [];
       } else throw Error('unexpected RPC');
       calls.push(name);
@@ -88,6 +113,18 @@ export async function exerciseIsolatedWorker({ root, Client, options, c, work, s
   const timer = setInterval(() => tickCount++, 10);
   try {
     await c.query('TRUNCATE horse_adaptive_journal_work');
+    await c.query('TRUNCATE horse_observation_capture_work');
+    const acquisition = await capture.admitObservationCapture({
+      actorId: actor,
+      fromMs: snapshot.source.fromMs + 99,
+      throughMs: snapshot.source.throughMs,
+    });
+    assert.equal(acquisition.status, 'durable');
+    const lostToken = randomUUID();
+    await c.query('SELECT fn_claim_horse_observation_capture($1)', [lostToken]);
+    await c.query(
+      "UPDATE horse_observation_capture_work SET lease_until=clock_timestamp()-interval '1 second'"
+    );
     const queued = await work.enqueueAdaptiveJournalWork(snapshot);
     assert.equal(queued.status, 'durable');
     owner.start();
@@ -97,13 +134,14 @@ export async function exerciseIsolatedWorker({ root, Client, options, c, work, s
     const first = owner.status();
     assert.equal(first.queueHealth.unfinished, 0);
     assert.equal(first.phase, 'ready');
+    assert.equal(first.captureQueueHealth.status, 'snapshot');
     assert.ok(tickCount > 0);
     assert.deepEqual(calls.slice(0, 5), [
       'fn_claim_horse_adaptive_batch',
       'fn_append_horse_adaptive_observations',
       'fn_finish_horse_adaptive_batch',
       'fn_prune_horse_adaptive_journal',
-      'fn_horse_adaptive_journal_work_health',
+      'fn_horse_learning_work_health',
     ]);
     assert.equal(
       (
@@ -113,6 +151,17 @@ export async function exerciseIsolatedWorker({ root, Client, options, c, work, s
       ).rows[0].state,
       'completed'
     );
+    await until(() => owner.status().capturesAdmitted === 1 && owner.status().completed === 2);
+    const acquired = (
+      await c.query(
+        'SELECT state,lease_token,observations FROM horse_observation_capture_work WHERE request_key=$1',
+        [acquisition.requestKey]
+      )
+    ).rows[0];
+    assert.equal(acquired.state, 'admitted');
+    assert.notEqual(acquired.lease_token, lostToken);
+    assert.equal(acquired.observations, 12);
+    assert.ok(calls.includes('fn_horse_committed_observation_snapshot'));
     // Kill the actual isolated runtime, then let the bounded owner recover it.
     await children[0].terminate();
     await until(() => children.length === 2 && owner.status().phase === 'ready');
@@ -127,6 +176,8 @@ export async function exerciseIsolatedWorker({ root, Client, options, c, work, s
       case: 'real isolated worker via unchanged Supabase HTTP client processes durable work and retention, survives actual thread termination, and stops with no later RPC',
       passed: true,
       completed: owner.status().completed,
+      capturesAdmitted: owner.status().capturesAdmitted,
+      durableRequestResumedWithoutSourcePayload: true,
       restarts: owner.status().restarts,
       parentTimerTicks: tickCount,
       productionPostgrestVerified: false,

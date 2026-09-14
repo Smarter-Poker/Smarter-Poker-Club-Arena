@@ -2,12 +2,14 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { setMaintenanceFrozen } from '../maintenance/freezeState.js';
 
 let TournamentManagerBase: (typeof import('./TournamentManagerBase.js'))['TournamentManagerBase'];
+let TournamentManagerEliminations: (typeof import('./TournamentManagerEliminations.js'))['TournamentManagerEliminations'];
 let supabase: (typeof import('../services/supabase.js'))['supabase'];
 let tableStateHub: (typeof import('../transport/TableStateHub.js'))['tableStateHub'];
 
 beforeAll(async () => {
   process.env.SUPABASE_SERVICE_ROLE_KEY ||= 'test-placeholder-key';
   ({ TournamentManagerBase } = await import('./TournamentManagerBase.js'));
+  ({ TournamentManagerEliminations } = await import('./TournamentManagerEliminations.js'));
   ({ supabase } = await import('../services/supabase.js'));
   ({ tableStateHub } = await import('../transport/TableStateHub.js'));
 });
@@ -116,6 +118,90 @@ function fixture() {
 }
 
 describe('durable atomic blind-level transition', () => {
+  const terminalReceipt = {
+    winnerId: 'winner',
+    winnerAmount: 50,
+    dealShares: [{ userId: 'winner', place: 1, amount: 50 }],
+    tableClosure: { closedTableIds: ['table-one', 'table-two'] },
+    sourceCloseout: { sourceTableIds: ['table-one', 'table-two'] },
+  };
+
+  function retainTerminalCleanup(state: any) {
+    Object.setPrototypeOf(state, TournamentManagerEliminations.prototype);
+    state.broadcast = vi.fn().mockResolvedValue(true);
+    state.cleanupCommittedTablesAndManager = vi.fn().mockResolvedValue(false);
+    state.stop = vi.fn();
+  }
+
+  it.each(['cleanupCommittedTournament', 'cleanupCommittedSatellite', 'settleFinalTableDeal'])(
+    '%s retires the blind clock while exact physical cleanup remains pending',
+    async (method) => {
+      const { state, rpc, writes } = fixture();
+      retainTerminalCleanup(state);
+      state.startBlindTimer(structure, 1000);
+      const queuedWake = state.blindTimer;
+      writes.mockClear();
+      await expect(state[method](terminalReceipt)).resolves.toBe(false);
+      expect(state.clearLifecycleTimeout).toHaveBeenCalledWith(queuedWake);
+      expect(state.blindTimer).toBeNull();
+      expect(state.running).toBe(true);
+      expect(state.tableEngines.size).toBe(2);
+      expect(state.stop).not.toHaveBeenCalled();
+
+      // A callback already delivered before clearTimeout cannot restart work;
+      // nor may maintenance or another caller arm this completed level clock.
+      await queuedWake.callback();
+      state.startBlindTimer(structure, 1000);
+      state.scheduleBlindLevelWake(structure, 1000);
+      expect(state.blindTimer).toBeNull();
+      expect(rpc).not.toHaveBeenCalled();
+      expect(writes).not.toHaveBeenCalled();
+      expect(tableStateHub.emitEvent).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(['success', 'refusal'])(
+    'ignores a late blind %s after verified terminal commitment without clearing cleanup ownership',
+    async (result) => {
+      const { state, rpc, publish, writes } = fixture();
+      retainTerminalCleanup(state);
+      let resolve!: (value: unknown) => void;
+      rpc.mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }) as never
+      );
+      const advancing = state.advanceBlindLevel(structure);
+      expect(rpc).toHaveBeenCalledOnce();
+      const args = rpc.mock.calls[0][1];
+      await state.cleanupCommittedTournament(terminalReceipt);
+      resolve(
+        result === 'success'
+          ? publish(args)
+          : { data: { ok: false, reason: 'tournament_not_running' }, error: null }
+      );
+      await advancing;
+      expect(state.currentLevel).toBe(0);
+      expect(state.pendingBlindTransition).toBeNull();
+      expect(state.blindTimer).toBeNull();
+      expect(rpc).toHaveBeenCalledOnce();
+      expect(writes).not.toHaveBeenCalled();
+      expect(tableStateHub.emitEvent).not.toHaveBeenCalled();
+      expect(state.running).toBe(true);
+      expect(state.tableEngines.size).toBe(2);
+      expect(state.stop).not.toHaveBeenCalled();
+    }
+  );
+
+  it('does not retire a live clock from the precommit finish latch alone', async () => {
+    const { state, rpc } = fixture();
+    state.tournamentFinished = true;
+    await state.advanceBlindLevel(structure);
+    expect(rpc).toHaveBeenCalledOnce();
+    expect(state.currentLevel).toBe(1);
+  });
+
   it('holds a due clock locally during maintenance and restores the shifted remaining time', async () => {
     const { row, state, rpc, writes, read } = fixture();
     const originalAnchor = state.blindTimerStartedAt;

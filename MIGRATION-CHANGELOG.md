@@ -6,6 +6,18 @@
 **Verified:** YES. Eight actual scheduled-creator red cases; final111engine-focused/2files,112client/4files,11nativegroups/59sharedvectors, all23captured active MTT shapes, replay/rollback/access/metadata checks. Full engine services+tournament5421/350; serverTypeScriptPASS. ClientTypeScript retains the exact26preexisting native-package diagnostics; no new errors, proper-dependencyCI required.
 **Installation:** applied after the hourlyDDLquiet window at01:03UTC/history20260914010322; all three source hashes, service-only grants, trigger and declaration verified. Both existing creator bodies/authority remain unchanged. ProtectedCI, servedengine/client adoption and full lifecycle acceptance remain separate. See docs/changelog/2026-09-14-mtt-blind-creation-contract.md and scripts/dev/fixtures/mtt-blind-contract/README.md.
 
+## 2026-09-14: Encode the same blind presets with less repeated data
+
+**File/lines:** src/config/blindStructures.ts original23–179; tests/unit/blindPresetEncoding.test.ts and immutable preimage fixture. **What existed:**135literal level objects repeated field names and computed big blinds. **What changed:**compact small-blind/ante tuples reconstruct identical objects, preserving the exported shape, allJSONbytes, duration/break and distinctrowidentity. **Why:** R23required build gate refused2601kBgz at2600; reduce repeated preset data without removing behavior. **Verified:**YES,303checks/10files; isolatedmoduleminified10855→3312bytes/gzip1397→867. **TypeScript:**26byte-identical existing client missing-native-package diagnostics, not a full pass. Full bundle/CI verification remains required; no gate ceiling changed.
+
+## 2026-09-14: Scheduled MTT starts do not wait for unrelated funding
+
+**Files/lines:** server/src/GameServer.ts original2442/7626; server/src/tournament/ScheduledStartDiscoveryIsolation.test.ts; server/src/tournament/SpinStartsInOneSecondAndPlaysInFull.test.ts original99.
+**What existed:** broad discovery awaited pre-start top-ups and every past-start funding operation before its next board read, blocking otherwise eligible scheduled starts.
+**What changed:** supervised five-second due-event discovery uses the unchanged coalesced admission/lease/launch authority, keyset-complete reads, oldest-first ordering, maintenance/lifecycle fences and retained actual-operation capacity. It does not fund entrants or release pending work. The existing Spin cadence assertion includes the new five-second sleep.
+**Why:** a retained operation for one tournament must not prevent another funded field from reaching its own launch authority.
+**Verified:** YES, actual old-loop counterexample plus12new cases; affected engine suites5,409/359PASS, zero skips. **TypeScript:** PASS. No SQL or production event mutation. Source/served/real first-hand acceptance remains open. See docs/changelog/2026-09-14-mtt-scheduled-start-isolation.md.
+
 ## 2026-09-14: Keep MTT paid depth out of seat-first requests
 
 **File/lines:** server/src/services/TournamentRecurringService.ts original3381/4264; new SeatFirstCallerContract.test.ts and private fixture/runner.
@@ -17385,6 +17397,6 @@ Hand-for-hand retains synchronized/add-on break pauses, preserves their budgets 
 
 **TypeScript:** Not applicable, native SQL/Python rehearsal and evidence only. Full terminal and production gates remain open.
 
-## 2026-09-14: Encode the same blind presets with less repeated data
+## 2026-09-14: Qualify scheduled discovery under full CI initialization
 
-**File/lines:** src/config/blindStructures.ts original23–179; tests/unit/blindPresetEncoding.test.ts and immutable preimage fixture. **What existed:**135literal level objects repeated field names and computed big blinds. **What changed:**compact small-blind/ante tuples reconstruct identical objects, preserving the exported shape, allJSONbytes, duration/break and distinctrowidentity. **Why:** R23required build gate refused2601kBgz at2600; reduce repeated preset data without removing behavior. **Verified:**YES,303checks/10files; isolatedmoduleminified10855→3312bytes/gzip1397→867. **TypeScript:**26byte-identical existing client missing-native-package diagnostics, not a full pass. Full bundle/CI verification remains required; no gate ceiling changed.
+**Files:** server/src/engine/DirectEngineRecovery.guard.test.ts original176; server/src/tournament/ScheduledStartDiscoveryIsolation.test.ts. **Before:**shutdown inventory countedfourjobs; discovery case included pre-test import diagnostics. **After:**assert five supervised loops and scheduled-loop lifecycle fence; clear import-time error history before each operation. **Why:**actualCI34795506067 failed these two cases. **Verified:**87/7PASS with servicekeyunset and originalwarningretained inlog; **TypeScript:**PASS. No runtimebehavior orauthority changed; fullCI remainsrequired.

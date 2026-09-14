@@ -29,6 +29,7 @@ import {
   isInsideLastCall,
   leadMsFor,
   MAX_LEAD_MS,
+  UPCOMING_ROW_LIMIT,
 } from '../../src/components/tournament/tickerLeadWindow';
 
 const NOW = 1_800_000_000_000;
@@ -170,5 +171,54 @@ describe('and each event is held to its own window', () => {
     const turbo = startingSoonItem(upcoming({ buyIn: 2, buyInFee: 0 }));
     expect(major.windowMs).toBe(15 * 60_000);
     expect(turbo.windowMs).toBe(BASE_LEAD_MS);
+  });
+});
+
+describe('a major is not crowded off the rail by turbos it will outlive', () => {
+  /* SHIPPED IN #4575 AND FOUND AUDITING IT. The horizon widened to fifteen
+     minutes so one read could serve every rung of the ladder; the query still
+     took five rows ordered by start time. So Postgres returned the five
+     SOONEST events and the per-stake filter threw away every one of them that
+     was not yet inside its own last call - and the major that WAS inside its
+     call was never fetched.
+
+     This is the arithmetic of that, so the constant can never quietly drop
+     back to a number that cannot hold the widest horizon. */
+
+  /** What a busy club looks like inside the fifteen-minute horizon. */
+  const field = [
+    { minutesOut: 6, total: 2 },
+    { minutesOut: 7, total: 2 },
+    { minutesOut: 8, total: 2 },
+    { minutesOut: 9, total: 2 },
+    { minutesOut: 10, total: 2 },
+    { minutesOut: 12, total: 200 },
+  ];
+
+  /** Soonest-first, exactly as the query orders them. */
+  const takeSoonest = (rows: typeof field, limit: number) =>
+    [...rows].sort((a, b) => a.minutesOut - b.minutesOut).slice(0, limit);
+
+  const survives = (rows: typeof field) =>
+    rows.filter((r) => isInsideLastCall(NOW + r.minutesOut * 60_000, r.total, NOW));
+
+  it('is the regression: five rows lost the major entirely', () => {
+    expect(survives(takeSoonest(field, 5))).toHaveLength(0);
+  });
+
+  it('and the current limit keeps it', () => {
+    const kept = survives(takeSoonest(field, UPCOMING_ROW_LIMIT));
+    expect(kept).toHaveLength(1);
+    expect(kept[0].total).toBe(200);
+  });
+
+  it('takes enough rows to cover the widest horizon at one row a minute', () => {
+    /* The floor that matters: whatever the ladder's longest rung is, the take
+       has to be able to reach past a minute-by-minute field of cheap events. */
+    expect(UPCOMING_ROW_LIMIT).toBeGreaterThanOrEqual(MAX_LEAD_MS / 60_000);
+  });
+
+  it('stays bounded - this is a poll, not a report', () => {
+    expect(UPCOMING_ROW_LIMIT).toBeLessThanOrEqual(50);
   });
 });

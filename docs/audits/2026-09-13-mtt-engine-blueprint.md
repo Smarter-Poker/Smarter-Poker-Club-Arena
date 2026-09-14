@@ -347,6 +347,14 @@ R21 publication update00:43UTC: source b3790ff04e remains retained with no remot
 
 R23 installation01:03UTC: migration20260914005233 recorded as history20260914010322. New source hashes f1f0ec57f980e1df361abacfa9efa030 /79d841121011fb3fc55cb335ad8f3b21 /9b8471c860ac00afa814a6553135c95b match; trigger enabled and declared; existing creator source/owner/grants unchanged. Service access and browser denial verified. No historical tournament row was rewritten. Final native11groups/59vectors,111engine-focused/2files and112client/4files pass; full5421/350 and serverTypeScript retained. ClientTypeScript26diagnostics match the preexisting missing-native-package baseline byte for byte. Source/served acceptance remains open.
 
+## R24: due MTTs reach admission independently of unrelated funding
+
+The actual broad discovery method waits for horse top-ups before its next registering board read. A regression holds that real top-up pending and proves a different eligible MTT cannot reach admission through the old pass. The engine now supervises a separate five-second scheduled-start read, ordered by scheduled time, through the unchanged shared admission/lease/launch authority. It retains every pending operation and its capacity, all freeze/lifecycle checks, existing retries and one-minute pre-seat lead. Pagination includes the event beyond the gateway's first1,000rows before choosing the oldest due field.
+
+Twelve new cases and the full affected5,409tests/359files pass, with server TypeScript. No SQL, funding change, manual event status repair or deployment is included. At01:15UTC the live reader still reports84stalled runningMTTs/29overdue breaks and seven sampled01:00events await launch; serving remainsb97e1680. The particular live pending funding request has not been identified. This source repair is a reproduced dependency fix, not proof that it accounts for every live stall.
+
+R23 strict new-MTT ladder/stack validation is separately submitted asPR4560 and installed as database history20260914010322. R21 versioned prize support remains retained atb3790ff04e5fab7d3e3fa306a0e58980980ba414, blocked by the existing legacy-reconciler retirement guard; all creators still use version1. Those independent source, database and activation boundaries must not be conflated. See this task's current integration handoff and the R24 changelog for release/ownership limits. Full lifecycle, terminal, bounty, satellite and provider acceptance remains OPEN.
+
 ## R25: introduced seat-first caller regression identified and repaired
 
 Live satellite heads-up creation repeatedly failedSEAT_FIRST_CREATE_UNKNOWN_CONFIG_KEY. PR4533's paid-depth change incorrectly extended the heads-up/satellite atomic payload withpayout_percent. The unchanged database contract rejects it; this is an introduced regression, not a database defect. The engine now sends paid depth only for fields, preserving seat-first fixed payout/ticket contracts and strict unknown-key refusal.

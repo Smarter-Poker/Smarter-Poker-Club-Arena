@@ -75,3 +75,28 @@ export function isInsideLastCall(startsAtMs: number, totalBuyIn: number, now: nu
   const until = startsAtMs - now;
   return until <= leadMsFor(totalBuyIn) && until > -30_000;
 }
+
+/**
+ * How many upcoming rows the feed must ask for.
+ *
+ * THE BUG THIS FIXES, shipped in #4575 and found auditing it. The horizon
+ * widened from five minutes to fifteen so one read could serve every rung of
+ * the ladder, and the query still asked for five rows ordered by start time.
+ * Postgres therefore returned the five SOONEST events inside fifteen minutes,
+ * and the per-stake filter then threw away every one of them that was not yet
+ * inside its own last call.
+ *
+ *     five 2-chip turbos at +6, +7, +8, +9, +10 minutes
+ *     one 200-chip major  at +12 minutes
+ *
+ * The turbos take all five slots, all five fail `isInsideLastCall` because a
+ * cheap event is a five-minute call, and the major - which IS inside its
+ * fifteen-minute call and is the single most valuable seat the rail could be
+ * filling - was never fetched. The bar says nothing.
+ *
+ * Widening the horizon without widening the take is the whole defect: the
+ * filter moved to the client and the LIMIT did not follow it. Twenty-five is
+ * the same size the overlay query already asks for, it is bounded, and the
+ * lane caps at eight on screen regardless.
+ */
+export const UPCOMING_ROW_LIMIT = 25;

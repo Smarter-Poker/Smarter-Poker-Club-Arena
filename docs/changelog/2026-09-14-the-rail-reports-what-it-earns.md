@@ -143,7 +143,8 @@ one.
 
 - `tsc --noEmit` clean; ESLint clean on every touched file (0 errors).
 - `check:title-case` and `check:painted-text` both OK.
-- Full suite, 4 shards: **20,353 passed**. The single red —
+- Full suite, 4 shards: **20,353 tests — 20,351 passed, 1 skipped, 1 red**.
+  That red —
   `engine-release-seal.law.test.ts` — is `ModuleNotFoundError: No module named
 'tomllib'` on this machine's Python 3.9.6 (`tomllib` is 3.11+), and fails
   identically on a pristine `origin/main` worktree with none of this applied.

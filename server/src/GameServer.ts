@@ -5614,9 +5614,10 @@ export class GameServer {
           t.prize_pool_finalized !== true &&
           Date.parse(String(t.start_time)) > registeringReadAt &&
           Date.parse(String(t.start_time)) - registeringReadAt <= MTT_PRESTART_RAMP_MS;
-        const ticketTargets = registering.some(ticketEligible)
-          ? await this.readPendingSatelliteTicketTargets()
-          : null;
+        const ticketTargets =
+          this.directAdmissionIsCurrent(generation) && !isMaintenanceFrozen()
+            ? await this.readPendingSatelliteTicketTargets()
+            : null;
 
         for (const tournament of registering || []) {
           if (!this.directAdmissionIsCurrent(generation)) break;
@@ -5956,6 +5957,7 @@ export class GameServer {
         // Every top-up this pass launched finishes inside it: the next board
         // read must see what they seated, and none may outlive the walk.
         await Promise.allSettled([...pastStartTopUps]);
+        await this.recoverLateSatelliteTickets(ticketTargets, topUpPass, generation);
 
         /**
          * ── FULLY PAID BUT NEVER STARTED (2026-08-24 audit, P2-7) ──
@@ -6669,6 +6671,123 @@ export class GameServer {
     }
   }
 
+  private async recoverLateSatelliteTickets(
+    targets: Set<string> | null,
+    pass: HorseTopUpPass,
+    generation: number
+  ): Promise<void> {
+    if (!targets?.size || !this.directAdmissionIsCurrent(generation) || isMaintenanceFrozen())
+      return;
+    type Target = {
+      id: string;
+      name: string;
+      status: string;
+      tournament_type: string;
+      variant: string | null;
+      max_players: number;
+      prize_pool_finalized: boolean;
+    };
+    const pending = new Set<Promise<void>>();
+    try {
+      const ids = [...targets].sort();
+      const candidates: Target[] = [];
+      // A bounded IN list never asks the gateway to carry the whole fleet.
+      // Read every chunk before any eligibility or entry operation.
+      for (let offset = 0; offset < ids.length; offset += 100) {
+        const chunk = ids.slice(offset, offset + 100);
+        const latePage = await fetchAllRows<Target>(
+          (cursor, want) => {
+            let query = supabase
+              .from('tournaments')
+              .select(
+                'id, name, status, tournament_type, variant, max_players, prize_pool_finalized'
+              )
+              .in('id', chunk)
+              .eq('status', 'RUNNING')
+              .eq('prize_pool_finalized', false)
+              .order('id', { ascending: true })
+              .limit(want);
+            if (cursor) query = query.gt('id', cursor);
+            return query.then((result) =>
+              Array.isArray(result.data) || result.error
+                ? result
+                : { ...result, error: new Error('Late ticket target response has no row array') }
+            );
+          },
+          // One sentinel row beyond the IN-list size proves a full 100-row
+          // result is complete instead of reaching the pagination hard cap.
+          { label: 'GameServer.lateTicketTargets', maxRows: chunk.length + 1 }
+        );
+        if (!this.directAdmissionIsCurrent(generation) || isMaintenanceFrozen()) return;
+        if (
+          !latePage.complete ||
+          latePage.rows.some(
+            (row) =>
+              typeof row?.id !== 'string' ||
+              !chunk.includes(row.id) ||
+              typeof row.status !== 'string' ||
+              typeof row.prize_pool_finalized !== 'boolean' ||
+              !Number.isInteger(row.max_players)
+          ) ||
+          new Set(latePage.rows.map((row) => row.id)).size !== latePage.rows.length
+        ) {
+          throw new Error('Late-registration ticket targets are incomplete or malformed');
+        }
+        candidates.push(
+          ...latePage.rows.filter(
+            (row) =>
+              row.status === 'RUNNING' &&
+              row.prize_pool_finalized === false &&
+              ['MTT', 'SATELLITE', 'XMTT'].includes(row.tournament_type) &&
+              row.variant !== 'spin' &&
+              row.variant !== 'sng' &&
+              row.max_players > 2
+          )
+        );
+      }
+      candidates.sort(
+        (a, b) =>
+          (this.lastMttRampAt.get(a.id) ?? 0) - (this.lastMttRampAt.get(b.id) ?? 0) ||
+          a.id.localeCompare(b.id)
+      );
+      for (const target of candidates) {
+        if (Date.now() - (this.lastMttRampAt.get(target.id) ?? 0) < MTT_PRESTART_TICK_MS) continue;
+        while (pending.size >= PAST_START_TOP_UP_CONCURRENCY) await Promise.race(pending);
+        if (!this.directAdmissionIsCurrent(generation) || isMaintenanceFrozen()) break;
+        this.lastMttRampAt.set(target.id, Date.now());
+        const operation: Promise<void> = (async () => {
+          // This read avoids a locked entry request after the window closes.
+          // The unchanged atomic horse door rechecks eligibility before entry.
+          const { data: open, error } = await supabase.rpc('fn_tournament_late_registration_open', {
+            p_tournament_id: target.id,
+          });
+          if (error || typeof open !== 'boolean') {
+            throw new Error('Late-registration ticket eligibility is unreadable');
+          }
+          if (!open || !this.directAdmissionIsCurrent(generation) || isMaintenanceFrozen()) return;
+          await this.tournamentRecurring.topUpWithHorses(target.id, 0, {
+            pass,
+            redeemTickets: true,
+          });
+        })()
+          .catch((error) =>
+            reportError(error, 'GameServer.late_ticket_entry_failed', {
+              tournamentId: target.id,
+            })
+          )
+          .finally(() => {
+            pending.delete(operation);
+          });
+        pending.add(operation);
+      }
+    } catch (error) {
+      reportError(error, 'GameServer.late_ticket_targets_unreadable');
+    } finally {
+      // No timeout releases a live registration. Discovery retains every writer.
+      await Promise.allSettled([...pending]);
+    }
+  }
+
   private async readPendingSatelliteTicketTargets(): Promise<Set<string> | null> {
     try {
       const ticketPage = await fetchAllRows<{ id: string; source_tournament_id: string }>(
@@ -6683,7 +6802,11 @@ export class GameServer {
             .order('id', { ascending: true })
             .limit(want);
           if (cursor) query = query.gt('id', cursor);
-          return query;
+          return query.then((result) =>
+            Array.isArray(result.data) || result.error
+              ? result
+              : { ...result, error: new Error('Satellite ticket hint response has no row array') }
+          );
         },
         { label: 'GameServer.satelliteTicketTargets', maxRows: 50_000 }
       );

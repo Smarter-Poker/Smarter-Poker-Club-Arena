@@ -349,6 +349,8 @@ R23 installation01:03UTC: migration20260914005233 recorded as history20260914010
 
 ## R31: an awarded ticket survives a satisfied funding quota
 
+R33 extends this unmerged candidate through the actual late-registration window. A running target's ticket holder now reaches the existing atomic door after a complete target read and an exact true response from fn_tournament_late_registration_open. Existing throttle/concurrency/lifecycle boundaries remain; pending requests are never released by a timeout and wallet quota stays0. Affected5,785engine tests/371files and serverTypeScript/build pass. The217closed-target historical tickets remain outside this prospective entry repair.
+
 Both the prestart discovery caller and the recurring service previously stopped before ticket selection when the ordinary horse quota was full. Complete target hints now allow the existing throttled prestart pass to offer a bounded ticket-only recovery allowance through the unchanged atomic entry door, without increasing wallet funding. Malformed hints, maintenance and retired generations refuse new work; unresolved registrations retain lifecycle custody. The actual service and caller reproduced 12 failures on the old source. Affected engine suites pass 5,752 cases/369 files and server TypeScript/build pass.
 
 Read-only September14,11:37 evidence shows217issued direct tickets/16,860 tied to closed-entry targets and five future tickets/100. R31 does not rewrite historical awards. Current union ticket scope predicates are also inconsistent with issuance and require a separate repair. Protected CI, served redemption, exact historical reconciliation and full financial/provider acceptance remain OPEN.

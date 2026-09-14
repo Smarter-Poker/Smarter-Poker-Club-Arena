@@ -149,4 +149,10 @@ describe('existing prestart discovery continues ticket delivery after the fundin
     expect(await server.readPendingSatelliteTicketTargets()).toBeNull();
     expect(reportError).toHaveBeenCalled();
   });
+  it('does not treat a missing row array as an empty ticket board', async () => {
+    const { server, ticketRead } = harness();
+    ticketRead.mockReturnValue({ data: null, error: null } as never);
+    expect(await server.readPendingSatelliteTicketTargets()).toBeNull();
+    expect(reportError).toHaveBeenCalled();
+  });
 });

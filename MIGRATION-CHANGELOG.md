@@ -23,6 +23,8 @@
 
 ## 2026-09-14: Awarded tickets remain eligible after the funding quota
 
+R33 follow-up: GameServer's same retained discovery pass now reaches running direct-ticket targets while the database's actual late-registration function returns true. Complete bounded target reads, the existing45-second throttle and four-operation limit, unknown-response refusal and lifecycle retention apply; ordinary wallet quota remains0. The actual old running-only caller failed. Final affected5,785engine tests/371files and serverTypeScript/build pass. No SQL or historical entitlement change; see the same changelog for the sentinel-row correction and full evidence limits.
+
 **Files/lines:** server/src/GameServer.ts original5736; server/src/services/TournamentRecurringService.ts original5629/6278; actual caller/service tests and existing wiring guards.
 **What existed:** both discovery and top-up returned before ticket selection when the ordinary funding quota was full.
 **What changed:** one complete ticket-target hint read per existing pass, bounded prestart ticket recovery through the existing atomic horse door, no wallet fallback for hints, strict hint validation and retained lifecycle work.

@@ -11,7 +11,8 @@ import type {
   HorseDecisionWorkerResponse,
   LiveHorseDecisionSnapshot,
 } from './protocol.js';
-import { buildHorseDecisionKey } from './protocol.js';
+import { buildHorseDecisionKey, validatedHorsePolicySamplingKey } from './protocol.js';
+import { HORSE_REVIEW_SIGNAL_KEYS } from '../HorseReviewSignals.js';
 import {
   HorseDecisionWorkerRuntime,
   type HorseDecisionWorkerDependencies,
@@ -1400,6 +1401,41 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(balanced.decisionsAtRng[0]).not.toBe(aggressive.decisionsAtRng[0]);
   });
 
+  it('binds historical review evidence without letting it choose the policy RNG stream', async () => {
+    const clean = rekey({ ...fastRequest(), mods: { aggression: 1.1 } });
+    const observed = rekey({
+      ...clean,
+      mods: {
+        ...clean.mods,
+        leaks: { coldcall_stackoff: 50 },
+        leaksHands: 100,
+        leaksHoldem: { river_raise_war: 20 },
+        leaksHandsHoldem: 100,
+        leaksOmaha: { plo_naked_trips_stackoff: 30 },
+        leaksHandsOmaha: 100,
+        leaksTournament: { preflop_stackoff: 40 },
+        leaksHandsTournament: 100,
+      },
+    });
+    expect(observed.decisionKey).not.toBe(clean.decisionKey);
+    const a = harness();
+    const b = harness();
+    a.runtime.receive(clean);
+    b.runtime.receive(observed);
+    await Promise.all([a.runtime.drain(), b.runtime.drain()]);
+    expect(a.decisionsAtRng).toHaveLength(1);
+    expect(b.decisionsAtRng).toEqual(a.decisionsAtRng);
+
+    const tampered = harness();
+    tampered.runtime.receive({ ...observed, decisionKey: clean.decisionKey });
+    await tampered.runtime.drain();
+    expect(tampered.decisionsAtRng).toEqual([]);
+    expect(tampered.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'decisionKey does not bind the canonical decision snapshot',
+    });
+  });
+
   it('binds profile modifiers, live options and the decision-hour input', () => {
     const base = fastRequest(1);
     const baseKey = buildHorseDecisionKey(base);
@@ -1412,6 +1448,68 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(buildHorseDecisionKey({ ...base, decisionTimeMs: base.decisionTimeMs + 1 })).not.toBe(
       baseKey
     );
+  });
+
+  it.each(HORSE_REVIEW_SIGNAL_KEYS)(
+    'excludes only diagnostic %s from sampling, retaining full validation',
+    (key) => {
+      const clean = rekey({ ...fastRequest(), mods: { aggression: 1.1 } });
+      const observed = rekey({
+        ...clean,
+        mods: { ...clean.mods, [key]: key.includes('Hands') ? 100 : { coldcall_stackoff: 40 } },
+      });
+      expect(observed.decisionKey).not.toBe(clean.decisionKey);
+      expect(validatedHorsePolicySamplingKey(observed)).toBe(
+        validatedHorsePolicySamplingKey(clean)
+      );
+    }
+  );
+
+  it('normalizes empty bags and diagnostic options while preserving authored inputs', () => {
+    const clean = rekey({ ...fastRequest(), mods: undefined, opts: undefined });
+    const key = validatedHorsePolicySamplingKey(clean);
+    for (const mods of [undefined, {}, { leaks: {} }, { leaksHands: 0 }, { leaks: undefined }]) {
+      for (const opts of [undefined, {}, { v41Leaks: true }, { v41Leaks: false }]) {
+        expect(validatedHorsePolicySamplingKey(rekey({ ...clean, mods, opts }))).toBe(key);
+      }
+    }
+    for (const mods of [
+      { aggression: 1.2 },
+      { tightness: 1.1 },
+      { sizingMultiplier: 0.9 },
+      { bluffFreq: 1.1 },
+    ]) {
+      expect(validatedHorsePolicySamplingKey(rekey({ ...clean, mods }))).not.toBe(key);
+    }
+    expect(
+      validatedHorsePolicySamplingKey(rekey({ ...clean, opts: { v40Omaha: false } }))
+    ).not.toBe(key);
+    // Invalid diagnostics are still rejected by the full canonicalizer.
+    expect(() => rekey({ ...clean, mods: { leaksHands: Number.NaN } })).toThrow('non-finite');
+  });
+
+  it('replays the projected seed for a deep decision and restores the canonical stream', async () => {
+    const h = harness();
+    const request = rekey({
+      ...fastRequest(),
+      mods: { leaksHands: 100 },
+      opts: { v41Leaks: false },
+    });
+    h.runtime.receive(request);
+    await h.runtime.drain();
+    const fast = h.messages.find((m) => m.type === 'FAST_RESULT');
+    if (fast?.type !== 'FAST_RESULT') throw new Error('fast decision missing');
+    h.runtime.receive({
+      ...request,
+      type: 'DECIDE_DEEP',
+      requestId: 2,
+      rngBefore: fast.rngBefore,
+      deepEquity: 2,
+    });
+    await h.runtime.drain();
+    expect(h.messages.at(-1)).toMatchObject({ type: 'DEEP_RESULT' });
+    expect(h.decisionsAtRng).toEqual([fast.rngBefore, fast.rngBefore]);
+    expect(h.rng()).toBe(101);
   });
 
   it('rejects a changed snapshot carrying its old decision key', async () => {

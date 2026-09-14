@@ -183,6 +183,14 @@ export default defineConfig({
   },
   build: {
     outDir: NATIVE ? 'dist-native' : 'dist',
+    // Compress each emitted chunk without moving lazy modules into startup.
+    // Keep CI resource usage bounded; Rollup owns the unchanged module graph.
+    minify: 'terser',
+    terserOptions: {
+      maxWorkers: 2,
+      compress: { passes: 2 },
+      format: { comments: 'some' },
+    },
     // Web: hidden maps still upload to Sentry for readable stack traces.
     // Do not ship a sourceMappingURL in every chunk: the publisher removes
     // those maps after upload, so each browser reference points at a missing

@@ -1,6 +1,7 @@
 import type { HorseDecision } from '../../types.js';
 import { HORSE_POLICY_ORDER, type HorsePolicyAction } from '../HorsePolicyGraph.js';
 import { horsePolicyOwnershipMatches } from '../HorsePolicyRegistry.js';
+import type { GovernorSnapshot } from '../EquityLoadGovernor.js';
 
 const ACTIONS = ['fold', 'check', 'call', 'bet', 'raise', 'all_in'] as const;
 type RecordValue = Record<string, unknown>;
@@ -15,6 +16,46 @@ function exact(value: RecordValue, keys: readonly string[]): boolean {
 }
 function nonnegative(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+export function horseGovernorScaleIsValid(value: unknown): value is number {
+  return nonnegative(value) && value > 0 && value <= 1;
+}
+
+/** Only finite, complete worker-owned readings may enter readiness or health.
+ * A stale but well-formed reading stays explicitly stale; no replacement value
+ * is inferred here. The governor itself continues to own load adaptation. */
+export function horseGovernorSnapshotIsValid(value: unknown): value is GovernorSnapshot {
+  return (
+    record(value) &&
+    exact(value, [
+      'enabled',
+      'scale',
+      'p50Ms',
+      'p99Ms',
+      'sampledAt',
+      'throttledForS',
+      'stale',
+      'timerLateMs',
+    ]) &&
+    typeof value.enabled === 'boolean' &&
+    typeof value.stale === 'boolean' &&
+    horseGovernorScaleIsValid(value.scale) &&
+    ['p50Ms', 'p99Ms', 'sampledAt', 'throttledForS', 'timerLateMs'].every((key) =>
+      nonnegative(value[key])
+    )
+  );
+}
+
+export function horseSamplingStateIsValid(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 0xffffffff;
+}
+
+export function horseComputeMetadataIsValid(value: {
+  computeMs: unknown;
+  governorScale: unknown;
+}): boolean {
+  return nonnegative(value.computeMs) && horseGovernorScaleIsValid(value.governorScale);
 }
 function action(value: unknown): value is HorsePolicyAction {
   return (

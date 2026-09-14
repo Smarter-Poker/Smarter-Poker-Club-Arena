@@ -1,5 +1,0 @@
-## Required build gate and lossless preset encoding
-
-Required CI34794727041 built the app but refused whole-app2601kBgz against the unchanged2600kBceiling. Server/client shards, typechecking and accounting passed; skipped live/native jobs are not credited. The full release remains open.
-
-The existing client preset arrays now use compact small-blind/ante tuples and an import-free constructor. All135original levels preserve every field, key order, JSON serialization, duration and break; independent row identity is retained. The original data snapshot is recorded in tests/fixtures/mtt-blind-preset-preimage.json with its exact source hash. Existing Spin and payout exports are untouched. Isolated esbuildmodule measurement:10855→3312minifiedbytes,1397→867gzipbytes. This530bytegzip saving is not a full app gate pass.303client checks/10files pass; client typecheck diagnostics remain exactly the26existing missing-native-package baseline. Required proper-dependency CI must verify the full bundle.

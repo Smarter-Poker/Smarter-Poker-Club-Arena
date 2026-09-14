@@ -795,7 +795,6 @@ export function planOnlineGeometry(
     const draws: number[] = [];
     type Candidate = {
       moves: MoveInstruction[];
-      finalRosters: { tableId: string; players: BalancerPlayer[] }[];
       objective: number[];
     };
     let best: Candidate | null = null;
@@ -818,41 +817,41 @@ export function planOnlineGeometry(
       for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] - b[i];
       return 0;
     };
+    const tableById = new Map(tables.map((t) => [t.tableId, t]));
+    const playerById = new Map(tables.flatMap((t) => t.players.map((p) => [p.userId, p] as const)));
+    const sourceProjection = new Map<string, number>();
     const evaluate = (moves: MoveInstruction[]) => {
       tick();
-      const finalRosters = tables
-        .filter((_, i) => i !== broken)
-        .map((t) => ({
-          tableId: t.tableId,
-          players: t.players
-            .filter((p) => !moves.some((m) => m.playerId === p.userId))
-            .map((p) => ({ ...p })),
-        }));
+      const destinationSeats = new Map<string, number[]>();
       for (const m of moves) {
-        const original = tables
-          .find((t) => t.tableId === m.fromTableId)!
-          .players.find((p) => p.userId === m.playerId)!;
-        finalRosters
-          .find((t) => t.tableId === m.toTableId)!
-          .players.push({ ...original, seat: m.toSeat });
+        if (!destinationSeats.has(m.toTableId))
+          destinationSeats.set(
+            m.toTableId,
+            tableById.get(m.toTableId)!.players.map((p) => p.seat)
+          );
+        destinationSeats.get(m.toTableId)!.push(m.toSeat);
       }
       let sum = 0,
         max = 0,
         prior = 0;
       if (broken < 0)
         for (const m of moves) {
-          const source = tables.find((t) => t.tableId === m.fromTableId)!;
-          const destination = tables.find((t) => t.tableId === m.toTableId)!;
-          const roster = finalRosters.find((t) => t.tableId === m.toTableId)!;
-          const d = Math.abs(
-            projectedNaturalBB(
-              source.players.map((p) => p.seat),
-              source.buttonSeat!,
-              m.fromSeat,
-              source.lastBigBlindSeat
-            ) -
+          const source = tableById.get(m.fromTableId)!;
+          const destination = tableById.get(m.toTableId)!;
+          if (!sourceProjection.has(m.playerId))
+            sourceProjection.set(
+              m.playerId,
               projectedNaturalBB(
-                roster.players.map((p) => p.seat),
+                source.players.map((p) => p.seat),
+                source.buttonSeat!,
+                m.fromSeat,
+                source.lastBigBlindSeat
+              )
+            );
+          const d = Math.abs(
+            sourceProjection.get(m.playerId)! -
+              projectedNaturalBB(
+                destinationSeats.get(m.toTableId)!,
                 destination.buttonSeat!,
                 m.toSeat,
                 destination.lastBigBlindSeat
@@ -867,9 +866,9 @@ export function planOnlineGeometry(
       if (comparison > 0) return;
       if (comparison < 0) {
         ties = 1;
-        best = { moves: moves.map((m) => ({ ...m })), finalRosters, objective };
+        best = { moves: moves.map((m) => ({ ...m })), objective };
       } else if (randomBelow(++ties) === 0)
-        best = { moves: moves.map((m) => ({ ...m })), finalRosters, objective };
+        best = { moves: moves.map((m) => ({ ...m })), objective };
     };
     const assign = (
       moving: { table: number; player: BalancerPlayer }[],
@@ -956,12 +955,10 @@ export function planOnlineGeometry(
         consumedDraws: draws,
       };
     } else {
-      if (tables.length > 8) throw Error('balance_field_budget_exhausted');
       const low = Math.floor(users.size / tables.length),
         high = Math.ceil(users.size / tables.length);
       if (low < 2) throw Error('next_hand_roster_unknown');
       const targets: number[] = [];
-      const targetPlans: number[][] = [];
       const solveTargets = () => {
         const excess = tables.map((t, i) => Math.max(0, t.players.length - targets[i]));
         const deficits = tables.map((t, i) => Math.max(0, targets[i] - t.players.length));
@@ -992,37 +989,90 @@ export function planOnlineGeometry(
         };
         choose(0);
       };
-      const enumerate = (index: number, left: number) => {
-        tick();
-        if (index === tables.length) {
-          if (left === 0) targetPlans.push([...targets]);
-          return;
-        }
-        for (const n of new Set([low, high]))
-          if (n <= left && n <= tables[index].maxSeats - tables[index].reservedSeats.length) {
-            targets.push(n);
-            enumerate(index + 1, left - n);
-            targets.pop();
+      // Suffix DP proves the minimum movement count for the complete field.
+      // State h counts the less frequent floor/ceil target still required.
+      const highCount = users.size % tables.length;
+      const countHigh = highCount <= tables.length - highCount;
+      const remainder = Math.min(highCount, tables.length - highCount);
+      const counted = (n: number) => (high > low && (countHigh ? n === high : n === low) ? 1 : 0);
+      if ((tables.length + 1) * (remainder + 1) > 100_000) throw Error('search_budget_exhausted');
+      const dp: Float64Array[] = [];
+      for (let i = 0; i <= tables.length; i++) {
+        dp.push(new Float64Array(remainder + 1).fill(Infinity));
+      }
+      dp[tables.length][0] = 0;
+      for (let i = tables.length - 1; i >= 0; i--) {
+        const capacity = tables[i].maxSeats - tables[i].reservedSeats.length;
+        for (let h = 0; h <= remainder; h++) {
+          tick();
+          for (const n of new Set([low, high])) {
+            const remaining = h - counted(n);
+            if (n <= capacity && remaining >= 0)
+              dp[i][h] = Math.min(
+                dp[i][h],
+                Math.max(0, tables[i].players.length - n) + dp[i + 1][remaining]
+              );
           }
-      };
-      enumerate(0, users.size);
-      const moveCount = (target: number[]) =>
-        tables.reduce((sum, t, i) => sum + Math.max(0, t.players.length - target[i]), 0);
-      const minimumMoves = Math.min(...targetPlans.map(moveCount));
-      for (const plan of targetPlans)
-        if (moveCount(plan) === minimumMoves) {
-          targets.splice(0, targets.length, ...plan);
-          solveTargets();
         }
+      }
+      if (!Number.isFinite(dp[0][remainder])) throw Error('capacity_unavailable');
+      // Iterative traversal avoids call-stack depth proportional to field size.
+      // Every globally minimal target vector is solved; no partial best escapes
+      // if the shared proof budget is exhausted.
+      const stack: { index: number; highLeft: number; nextChoice: number }[] = [
+        { index: 0, highLeft: remainder, nextChoice: 0 },
+      ];
+      while (stack.length) {
+        tick();
+        const state = stack[stack.length - 1];
+        if (state.index === tables.length) {
+          solveTargets();
+          stack.pop();
+          targets.pop();
+          continue;
+        }
+        const options = high === low ? [low] : [low, high];
+        if (state.nextChoice === options.length) {
+          stack.pop();
+          if (state.index > 0) targets.pop();
+          continue;
+        }
+        const n = options[state.nextChoice++];
+        const i = state.index;
+        const h = state.highLeft - counted(n);
+        const capacity = tables[i].maxSeats - tables[i].reservedSeats.length;
+        if (
+          h >= 0 &&
+          n <= capacity &&
+          Math.max(0, tables[i].players.length - n) + dp[i + 1][h] === dp[i][state.highLeft]
+        ) {
+          targets.push(n);
+          stack.push({ index: i + 1, highLeft: h, nextChoice: 0 });
+        }
+      }
     }
     const proven = best as Candidate | null;
     if (!proven) throw Error('no_complete_plan');
+    const moved = new Set(proven.moves.map((m) => m.playerId));
+    const arrivals = new Map<string, BalancerPlayer[]>();
+    for (const m of proven.moves) {
+      if (!arrivals.has(m.toTableId)) arrivals.set(m.toTableId, []);
+      arrivals.get(m.toTableId)!.push({ ...playerById.get(m.playerId)!, seat: m.toSeat });
+    }
+    const finalRosters = tables.map((t) => ({
+      tableId: t.tableId,
+      players: [
+        ...t.players.filter((p) => !moved.has(p.userId)).map((p) => ({ ...p })),
+        ...(arrivals.get(t.tableId) || []),
+      ],
+    }));
     return {
       status: 'planned',
       policy: profile.policy,
       originalPlanId: profile.originalPlanId,
       rosterVersion: profile.rosterVersion,
       ...proven,
+      finalRosters,
       equallyRankedPlans: ties,
       consumedDraws: draws,
     };

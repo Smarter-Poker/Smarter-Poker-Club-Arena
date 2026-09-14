@@ -208,8 +208,45 @@ test('break supports complete hundred-table field and preserves all roster ident
       598
     );
   }
-  expect(planOnlineGeometry(ts, profile(ts))).toEqual({
-    status: 'pending',
-    reason: 'balance_field_budget_exhausted',
-  });
+  const balance = planOnlineGeometry(ts, profile(ts));
+  expect(balance.status).toBe('planned');
+  if (balance.status === 'planned') expect(balance.moves).toHaveLength(1);
+});
+
+for (const size of [9, 100, 2000]) {
+  for (const moves of [0, 1, 2]) {
+    test(`complete ${size}-table field proves ${moves} moves`, () => {
+      const ts = Array.from({ length: size }, (_, i) =>
+        table(
+          `t${i}:`,
+          Array.from({ length: i === 0 ? 6 + moves : i === 1 ? 6 - moves : 6 }, (_, j) => j + 1)
+        )
+      );
+      const before = JSON.stringify(ts);
+      const result = planOnlineGeometry(ts, profile(ts));
+      expect(result.status).toBe('planned');
+      if (result.status !== 'planned') return;
+      expect(result.moves).toHaveLength(moves);
+      expect(result.finalRosters).toHaveLength(size);
+      expect(result.finalRosters.every((t) => t.players.length === 6)).toBe(true);
+      expect(result.finalRosters.flatMap((t) => t.players.map((p) => p.userId)).sort()).toEqual(
+        ts.flatMap((t) => t.players.map((p) => p.userId)).sort()
+      );
+      expect(JSON.stringify(ts)).toBe(before);
+    });
+  }
+}
+test('nonzero ceil remainder retains every minimum target alternative', () => {
+  const ts = Array.from({ length: 9 }, (_, i) =>
+    table(
+      `t${i}:`,
+      Array.from({ length: i === 0 ? 4 : 6 }, (_, j) => j + 1)
+    )
+  );
+  const r = planOnlineGeometry(ts, profile(ts));
+  expect(r.status).toBe('planned');
+  if (r.status !== 'planned') return;
+  expect(r.moves).toHaveLength(1);
+  expect(r.finalRosters.filter((t) => t.players.length === 5)).toHaveLength(2);
+  expect(r.equallyRankedPlans).toBeGreaterThan(1);
 });

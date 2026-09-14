@@ -13,9 +13,9 @@ import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
 
 /**
- * Log rake collection — every chip documented.
- * Rake goes to union owner (if club is in a union) or club owner (standalone).
- * Union holds all rake and distributes 90% back to clubs weekly.
+ * Compatibility entry point for cash rake. The authoritative transaction owns
+ * routing, counters, journal and replay: union rake is retained; standalone
+ * rake is retired. BBJ remains a separately collected drop.
  */
 export async function logRakeCollection(
   tableId: string,
@@ -23,138 +23,22 @@ export async function logRakeCollection(
   handNumber: number,
   rakeAmount: number,
   potAmount: number,
-  // Round 42 fix: BBJ amount threaded through so club_wallets.period_bbj_contribution
-  // gets credited and chip_balance reflects the correct net (rake - bbj). Default
-  // 0 keeps backwards-compat for any caller that doesn't pass it yet.
   bbjAmount: number = 0,
-  // Round 43 fix: hand_history.id (UUID) for FK linking the
-  // club_wallet_transactions audit row back to the originating hand.
   handId: string | null = null
 ): Promise<void> {
   if (rakeAmount <= 0) return;
-
-  // Phase J: rake_history was a write-only legacy table. Verified no readers
-  // anywhere in the codebase (engine, workers, World Hub, frontend). The
-  // canonical hand-level rake ledger is rake_records (settler input + R73
-  // hand_id linkage). rake_history had grown to 1.37M rows / ~295 MB at
-  // ~1,128 rows/day with zero queriers. Insert removed — table will be
-  // dropped in a follow-up cleanup migration.
-
-  // Credit rake to the correct entity wallet:
-  // - Club NOT in a union → credit to CLUB wallet (clubs.chip_pool)
-  // - Club IN a union → credit to UNION wallet (union_wallets.rake_wallet)
-  // NEVER goes to a player's personal wallet.
-  //
-  // Round 42 fix: ALWAYS update club_wallets accumulators (period + lifetime
-  // rake/BBJ counters + audit transaction row) regardless of standalone vs
-  // union, because club_wallets is the canonical audit / dashboard counter.
-  // Pre-fix, club_wallets stayed at zero for every active club (verified
-  // live: Shark Club had $5,020 of 24h rake but club_wallets read $0).
-  try {
-    const { data: club, error: clubErr } = await supabase
-      .from('clubs')
-      .select('owner_id, union_id, name')
-      .eq('id', clubId)
-      .maybeSingle();
-
-    if (clubErr) {
-      console.warn(`[DB] Failed to look up club ${clubId} for rake credit:`, clubErr.message);
-      return;
-    }
-    if (!club) return;
-
-    // Round 42: update club_wallets accumulators + audit ledger BEFORE the
-    // entity-specific credit (union or chip_pool). Independent of where the
-    // chips actually settle — this is the rake-collected counter.
-    {
-      const { error: cwErr } = await supabase.rpc('credit_club_wallet_rake', {
-        p_club_id: clubId,
-        p_rake: rakeAmount,
-        p_bbj: bbjAmount,
-        p_hand_id: handId,
-        p_hand_number: handNumber,
-      });
-      if (cwErr) {
-        reportError(
-          new Error(`[logRakeCollection] club_wallets credit failed: ${cwErr.message}`),
-          'logRakeCollection.club_wallets_credit_failed'
-        );
-      }
-    }
-
-    if (club.union_id) {
-      // Club is in a union — ALL rake held by union wallet until weekly settlement
-      // FIX-232: Atomic increment via RPC — eliminates read-then-write race condition
-      /**
-       * ONE WRITE, NOT THREE (2026-09-09).
-       *
-       * This was a split write: the RPC moved union_wallets.rake_wallet, then
-       * a SECOND request read the new balance, then a THIRD inserted the
-       * union_wallet_transactions row. increment_union_wallet has been able to
-       * write that row atomically since migration 20260819162238 - it does so
-       * whenever the caller passes club or notes context - and this caller
-       * simply never passed any, so it took the split path instead.
-       *
-       * Both halves of the 2026-09-09 union rake drift came from exactly this
-       * shape, in opposite directions:
-       *
-       *   -71.00 on 2026-08-19 16:22:46.719, journal row b8399c84: the audit
-       *   INSERT landed and the wallet update did not. It is the ONLY row in
-       *   the whole 1.42M-row journal with a NULL balance_after, because the
-       *   separate read that feeds balance_after found nothing.
-       *
-       *   +25.39 across 2026-07-19 to 2026-07-24, about fifteen steps: the
-       *   wallet moved and the audit INSERT did not land.
-       *
-       * Neither write was error-checked, so neither failure was ever reported.
-       * The middle read is also wrong under concurrency: it reports whatever
-       * balance another hand's rake left behind, which is why the journal's
-       * balance_after chain is full of offsetting jumps.
-       *
-       * Passing the context makes it one atomic statement inside the RPC's own
-       * transaction, with balance_after taken from the UPSERT's own RETURNING
-       * clause. The error IS checked now, and a failure is reported.
-       */
-      const { error: uwErr } = await supabase.rpc('increment_union_wallet', {
-        p_union_id: club.union_id,
-        p_amount: rakeAmount,
-        p_club_id: clubId,
-        p_notes: `Cash game rake: hand #${handNumber} (${club.name || 'club'})`,
-      });
-      if (uwErr) {
-        reportError(
-          new Error(
-            `[logRakeCollection] Union wallet credit failed: ${uwErr.message}. The balance and its journal leg are one statement inside the RPC, so neither moved.`
-          ),
-          'logRakeCollection.Union_wallet_credit_failed'
-        );
-      }
-    } else {
-      // Standalone club — the rake chips settle into the club's OPERATIONAL BANK,
-      // clubs.chip_treasury (+ total_rake). This is NOT clubs.chip_pool, which is
-      // the separate mint-and-distribute ledger. The club_wallets accounting counter
-      // was already credited above (credit_club_wallet_rake) for every club
-      // regardless of where the chips settle.
-      // See .agent/architecture/CLUB-MONEY-LEDGERS-CANONICAL.md.
-      //
-      // 2026-08-15: renamed from increment_club_chip_pool, whose name claimed
-      // chip_pool while its body wrote chip_treasury. That naming trap caused the
-      // two ledgers to be read as duplicates and 174.89 of rake income to be folded
-      // into the mint ledger (reversed same day). The old name still exists as a
-      // deprecated delegate; do not use it.
-      const { error: cpErr } = await supabase.rpc('credit_club_rake_to_treasury', {
-        p_club_id: clubId,
-        p_amount: rakeAmount,
-      });
-      if (cpErr) {
-        reportError(
-          new Error(`[logRakeCollection] Club chip_pool credit failed: ${cpErr.message}`),
-          'logRakeCollection.Club_chip_pool_credit_failed'
-        );
-      }
-    }
-  } catch (e) {
-    console.warn(`[DB] Rake wallet credit failed for hand #${handNumber}:`, e);
+  const { error } = await supabase.rpc('atomic_distribute_rake', {
+    p_table_id: tableId,
+    p_club_id: clubId,
+    p_hand_id: handId,
+    p_hand_number: handNumber,
+    p_rake: rakeAmount,
+    p_bbj: bbjAmount,
+    p_pot: potAmount,
+  });
+  if (error) {
+    reportError(error, 'logRakeCollection.atomic_distribution_failed');
+    throw error;
   }
 }
 

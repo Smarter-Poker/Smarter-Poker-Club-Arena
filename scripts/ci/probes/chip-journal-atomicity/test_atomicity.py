@@ -516,7 +516,6 @@ cases={
  "bbj_delete":f"DELETE FROM bbj_pools WHERE id={b}",
  "player_wallet":f"UPDATE club_members SET chip_balance=chip_balance-5 WHERE id={c}",
  "post_leg":f"DO $op$ BEGIN UPDATE clubs SET chip_treasury=chip_treasury+5; PERFORM fn_ca_post_leg('rake','table_stack',{b},'club_treasury',{a},5,{a},'probe:leg','test'); END $op$",
- "treasury_credit":f"SELECT credit_club_rake_to_treasury({a},5)",
  "rake_distribution":f"SELECT * FROM atomic_distribute_rake({b},{a},NULL,1,5,0,50,2,NULL,NULL,NULL,'WEIGHTED_CONTRIBUTED')",
  "seat_funding":f"SELECT fn_horse_seat_from_treasury({b},{c},2,5,{op})",
  "reload_funding":f"SELECT fn_horse_fund_from_treasury({b},{u},5,{op})",
@@ -552,15 +551,14 @@ END $check$;
   passed+=1
  print(f"{mode}: {name}: {len(faults)} fault cases passed",flush=True)
 if mode=="fixed":
- expected_counts={"bbj_update":1,"bbj_insert":3,"bbj_delete":3,"player_wallet":1,"post_leg":1,"treasury_credit":1,"rake_distribution":1,"seat_funding":1,"reload_funding":1}
+ expected_counts={"bbj_update":1,"bbj_insert":3,"bbj_delete":3,"player_wallet":1,"post_leg":1,"rake_distribution":1,"seat_funding":1,"reload_funding":1}
  success_checks={
   "bbj_update":"(SELECT main_balance FROM bbj_pools)=100.25",
   "bbj_insert":"(SELECT sum(main_balance) FROM bbj_pools)=200",
   "bbj_delete":"NOT EXISTS(SELECT 1 FROM bbj_pools)",
   "player_wallet":"(SELECT chip_balance FROM club_members)=95",
   "post_leg":"(SELECT chip_treasury FROM clubs)=105",
-  "treasury_credit":"(SELECT chip_treasury FROM clubs)=105",
-  "rake_distribution":"(SELECT chip_treasury FROM clubs)=105 AND (SELECT period_rake_collected FROM club_wallets)=5",
+  "rake_distribution":"(SELECT chip_treasury FROM clubs)=100 AND (SELECT period_rake_collected FROM club_wallets)=5 AND EXISTS(SELECT 1 FROM chip_ledger WHERE to_type='chip_retirement' AND amount=5)",
   "seat_funding":"(SELECT chip_treasury FROM clubs)=95 AND (SELECT sum(stack) FROM table_seats)=15",
   "reload_funding":"(SELECT chip_treasury FROM clubs)=95 AND (SELECT sum(stack) FROM table_seats)=15",
  }

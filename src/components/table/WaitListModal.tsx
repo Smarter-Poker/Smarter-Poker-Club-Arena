@@ -176,7 +176,7 @@ export function WaitListModal({
   return (
     <div className="wl-overlay" onClick={onClose}>
       <div
-        className="wl-dialog"
+        className="wl-dialog sc-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="wl-title"

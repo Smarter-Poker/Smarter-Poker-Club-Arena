@@ -77,6 +77,10 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { SpadeConsole } from '../console/SpadeConsole';
+/* The inks (sc-ink--*) print here on their own; the class must resolve on
+   this route by contract (classNamesResolve), not by chunk luck. */
+import '../console/SpadeConsole.css';
 import './signUpDialog.css';
 import { WalletService } from '../../services/WalletService';
 import { formatBuyIn, money, totalBuyIn } from '../../utils/buyIn';
@@ -320,10 +324,27 @@ export function SignUpHost() {
   const startLabel = formatStart(o.startTime);
   const short = !usesTournamentTicket && balance !== null && balance < cost;
 
+  /* #ClubArenaConsole (2026-09-14): the sign-up wears the spade frame, the
+     kit's confirm sheet. Dan 2026-08-25 (binding) asked for the middle of the
+     screen, depth, and a 3D look: the overlay still centres it and the card
+     still tilts in on the X axis; the depth is the painted chassis now. Re-
+     rendered, not rewritten: the queue, the balance read from the club that
+     pays, the short gate, the Escape path, the focus trap and the hand-back
+     of focus are as they were. Cancel and Confirm sit on the two plates; the
+     confirm keeps the btn-confirm hook the open-effect focuses. Every row is
+     a flex row with a real gap, so "Entry Fee: 50" stays two words. */
+  const pill = usesTournamentTicket
+    ? 'Ticket'
+    : o.isPko
+      ? 'PKO'
+      : o.isMysteryBounty
+        ? 'Mystery'
+        : 'Chips';
+
   return (
     <div className="signup-overlay" onClick={() => settle(id, false)}>
       <div
-        className="signup-modal"
+        className="signup-modal sc-dialog"
         ref={cardRef}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
@@ -331,91 +352,101 @@ export function SignUpHost() {
         aria-modal="true"
         aria-labelledby={`signup-title-${id}`}
       >
-        <button
-          type="button"
-          className="modal-close"
-          onClick={() => settle(id, false)}
-          aria-label="Close"
+        <SpadeConsole
+          eyebrow="Tournament"
+          title={o.isLateRegistration ? 'Late Register' : 'Sign Up'}
+          titleId={`signup-title-${id}`}
+          pill={pill}
+          pillInk={usesTournamentTicket ? 'gold' : 'blue'}
+          plates={{
+            secondary: {
+              label: 'Cancel',
+              onClick: () => settle(id, false),
+            },
+            primary: {
+              label: 'Confirm',
+              ink: short ? 'muted' : 'white',
+              className: 'btn-confirm',
+              onClick: () => settle(id, true),
+              disabled: short,
+            },
+          }}
         >
-          ✕
-        </button>
-        <h2 id={`signup-title-${id}`}>{o.isLateRegistration ? 'Late Register' : 'Sign Up'}</h2>
+          <div className="signup-rows">
+            <div className="signup-row">
+              <span className="signup-label sc-ink--muted">Tournament:</span>
+              <span className="signup-value sc-ink--silver">{o.name}</span>
+            </div>
 
-        <div className="signup-row">
-          <span className="signup-label">Tournament:</span>
-          <span className="signup-value">{o.name}</span>
-        </div>
+            {usesTournamentTicket ? (
+              <div className="signup-row total">
+                <span className="signup-label sc-ink--muted">Entry:</span>
+                <span className="signup-value sc-ink--gold">Tournament Ticket</span>
+              </div>
+            ) : (
+              /* One line, not three. The player is deciding on the TOTAL; where it
+                 splits is the second question. See utils/buyIn formatBuyIn. */
+              <div className="signup-row total">
+                <span className="signup-label sc-ink--muted">Entry Fee:</span>
+                <span className="signup-value sc-ink--white">
+                  {formatBuyIn(o.buyInAmount, o.buyInFee ?? 0)}
+                </span>
+              </div>
+            )}
 
-        {usesTournamentTicket ? (
-          <div className="signup-row total">
-            <span className="signup-label">Entry:</span>
-            <span className="signup-value">Tournament Ticket</span>
+            {(o.bountyAmount ?? 0) > 0 && (
+              <div className="signup-row">
+                <span className="signup-label sc-ink--muted">Bounty:</span>
+                <span className="signup-value signup-value--bounty sc-ink--gold">
+                  {money(o.bountyAmount || 0)} Chips
+                  {o.isPko && ' (PKO)'}
+                  {o.isMysteryBounty && ' (Mystery)'}
+                </span>
+              </div>
+            )}
+
+            {startLabel && (
+              <div className="signup-row">
+                <span className="signup-label sc-ink--muted">Start Time:</span>
+                <span className="signup-value sc-ink--silver">{startLabel}</span>
+              </div>
+            )}
+
+            {o.userId && !usesTournamentTicket && (
+              <div className="signup-row">
+                <span className="signup-label sc-ink--muted">Your Balance:</span>
+                <span
+                  className={`signup-value ${
+                    balance === null
+                      ? 'sc-ink--silver'
+                      : short
+                        ? 'signup-value--short sc-ink--red'
+                        : 'signup-value--ok sc-ink--green'
+                  }`}
+                >
+                  {balance === null ? '--' : `${money(balance)} Chips`}
+                </span>
+              </div>
+            )}
           </div>
-        ) : (
-          /* One line, not three. The player is deciding on the TOTAL; where it
-             splits is the second question. See utils/buyIn formatBuyIn. */
-          <div className="signup-row total">
-            <span className="signup-label">Entry Fee:</span>
-            <span className="signup-value">{formatBuyIn(o.buyInAmount, o.buyInFee ?? 0)}</span>
-          </div>
-        )}
 
-        {(o.bountyAmount ?? 0) > 0 && (
-          <div className="signup-row">
-            <span className="signup-label">Bounty:</span>
-            <span className="signup-value signup-value--bounty">
-              {money(o.bountyAmount || 0)} Chips
-              {o.isPko && ' (PKO)'}
-              {o.isMysteryBounty && ' (Mystery)'}
-            </span>
-          </div>
-        )}
-
-        {startLabel && (
-          <div className="signup-row">
-            <span className="signup-label">Start Time:</span>
-            <span className="signup-value">{startLabel}</span>
-          </div>
-        )}
-
-        {o.userId && !usesTournamentTicket && (
-          <div className="signup-row">
-            <span className="signup-label">Your Balance:</span>
-            <span
-              className={`signup-value${
-                balance === null ? '' : short ? ' signup-value--short' : ' signup-value--ok'
-              }`}
+          {short && (
+            <p
+              className="signup-note signup-note--error sc-copy sc-copy--center sc-ink--red"
+              role="alert"
             >
-              {balance === null ? '--' : `${money(balance)} Chips`}
-            </span>
-          </div>
-        )}
-
-        {short && (
-          <p className="signup-note signup-note--error" role="alert">
-            Insufficient Balance. Please Add Chips Via Your Cashier.
-          </p>
-        )}
-        {/* Only true for a scheduled event you are entering BEFORE the off.
-            A late registration cannot be unregistered, and an SNG or Spin has
-            no scheduled boundary for the rule to describe. */}
-        {!o.isLateRegistration && !!startLabel && (
-          <p className="signup-note">You Can Unregister Any Time Before The Tournament Starts</p>
-        )}
-
-        <div className="signup-actions">
-          <button type="button" className="btn btn-cancel" onClick={() => settle(id, false)}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-confirm"
-            onClick={() => settle(id, true)}
-            disabled={short}
-          >
-            Confirm
-          </button>
-        </div>
+              Insufficient Balance. Please Add Chips Via Your Cashier.
+            </p>
+          )}
+          {/* Only true for a scheduled event you are entering BEFORE the off.
+              A late registration cannot be unregistered, and an SNG or Spin has
+              no scheduled boundary for the rule to describe. */}
+          {!o.isLateRegistration && !!startLabel && (
+            <p className="signup-note sc-copy sc-copy--center sc-ink--muted">
+              You Can Unregister Any Time Before The Tournament Starts
+            </p>
+          )}
+        </SpadeConsole>
       </div>
     </div>
   );

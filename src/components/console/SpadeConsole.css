@@ -179,6 +179,91 @@
   background-image: url('/assets/club-buttons/console/riveted-console-v1/bottom.png');
 }
 
+/* The riveted plates carry a rivet in each inner corner (x 82 and 305 of
+   the left face, 385 and 635 of the right, in the master's 729). The label
+   may use 84% of the plate: that stops 8px short of the rivets on either
+   side, where 70% left "Play It Out" at 9px on a 375px phone. */
+.sc--family-riveted .sc-plate__well {
+  width: 84%;
+}
+
+/* ── THE FOUR-BAY DECK (Dan 2026-09-09: the buy-in family's, nobody else's) ──
+   His shark four-bay master, cut so the header well IS the body: the head
+   carries the crest, the top of the well and its pill slot; the rails are a
+   median of well rows 238-276; the foot is the well's bottom edge, the four
+   bays and the two plates. Only a surface a player sits down or rebuys
+   through wears it. Zone maths in FOURBAY_CONSOLE. */
+.sc--family-fourbay {
+  --sc-max: 900px;
+}
+
+.sc--family-fourbay .sc__head {
+  aspect-ratio: 900 / 205;
+  background-image: url('/assets/club-buttons/console/fourbay-console-v1/top.png');
+}
+
+/* The body is the well itself: glass runs x 70-830 of 900, the title prints
+   from x 80. */
+.sc--family-fourbay .sc__body {
+  padding: 0 9% 3cqw;
+  background-image: url('/assets/club-buttons/console/fourbay-console-v1/mid.png');
+}
+
+.sc--family-fourbay .sc__foot,
+.sc--family-fourbay.sc--plates .sc__foot {
+  aspect-ratio: 900 / 568;
+  background-image: url('/assets/club-buttons/console/fourbay-console-v1/bottom.png');
+}
+
+/* The deck's plates are the narrowest in the kit (a third of the console
+   each, 32px tall at 375px) and a buy-in's labels are long and honest
+   ("Insufficient Balance", "Buy In With Diamonds" - pinned by tests, never
+   shortened). Two things follow. The label may use 92% of the plate, not
+   the 70% the spade plates allow: its zone already sits 15px inside the
+   painted face. And a label that would shrink under 72% on one line takes
+   two instead (the family opts in through useFitText's wrapBelow; the hook
+   marks the span data-fit-wrap). Two lines at 3cqw sit in 6.3cqw of an
+   8.7cqw face, centred on the paint. */
+.sc--family-fourbay .sc-plate__well {
+  width: 92%;
+}
+
+.sc-plate__text[data-fit-wrap] {
+  white-space: normal;
+  text-wrap: balance;
+  text-align: center;
+  font-size: calc(3cqw * var(--fit, 1));
+  line-height: 1.04;
+}
+
+.sc__bay-label {
+  justify-items: center;
+  font-size: 2.4cqw;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* A bay is 130 of 900 wide. "Min" and "In Blinds" fit its label zone on one
+   line; a receipt's "Total Charged" or "Wallet Balance" does not, and at the
+   half-size floor it was 4.5px tall and still clipped. The label wraps to two
+   lines instead (ZoneText wrapBelow), each a touch smaller and tight-leaded
+   so both sit inside the 44px zone above the bay. */
+.sc__bay-label > span[data-fit-wrap] {
+  white-space: normal;
+  text-wrap: balance;
+  text-align: center;
+  font-size: calc(0.9em * var(--fit, 1));
+  line-height: 1.04;
+}
+
+.sc__bay-value {
+  justify-items: center;
+  font-size: 4.6cqw;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Zones: absolute, centred, one line, fitted ───────────────────────── */
 
 .sc-zone {
@@ -302,7 +387,12 @@
   place-items: center;
   min-width: 0;
   margin: 0;
-  padding: 0 4%;
+  /* In cqw, not a percentage: the button is absolutely positioned, so a
+     percentage pads it by its containing block - the whole foot - and "4%"
+     took 30px off a 123px plate at 375px (measured 2026-09-14 on the
+     four-bay deck, where the labels then hit the floor and clipped). 1cqw of
+     the console is 10 canvas px on the spade master, 7 on the riveted. */
+  padding: 0 1cqw;
   border: 0;
   background: transparent;
   color: inherit;
@@ -346,6 +436,24 @@
 .sc-plate:focus-visible {
   outline: 0.6cqw solid #8fd4ff;
   outline-offset: -1.6cqw;
+}
+
+/* The dialog that carries a console is the console. metallic-popups.css
+   dresses every element whose class ends in "-dialog" (its [class$='-dialog']
+   inventory) in a card of its own - a #111823 shell, a 1px edge, 16px corners
+   and a 3px blue rail along the top, all !important at 0,0,0 - and that card
+   showed behind the art's chamfered corners as a second frame bolted on
+   (measured 2026-09-14 on the buy-in, the rail's #2d72d2 sitting outside the
+   chrome). Every console dialog wrapper carries sc-dialog beside its own
+   class; this switches the shell off longhand by longhand at 0,2,0. */
+.sc-dialog.sc-dialog {
+  isolation: auto;
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 /* Inside a dialog the global popup chassis (metallic-popups.css) bevels,

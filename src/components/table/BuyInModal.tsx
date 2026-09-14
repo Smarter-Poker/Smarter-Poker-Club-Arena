@@ -12,6 +12,8 @@
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { haptic, soundService } from '../../services/SoundService';
+import { SpadeConsole } from '../console/SpadeConsole';
+import type { ConsoleBay } from '../console/SpadeConsole';
 import './BuyInModal.css';
 import { reportError } from '../../utils/errorReporter';
 
@@ -280,236 +282,205 @@ export function BuyInModal({
 
   if (!isOpen) return null;
 
+  /* REBUILT ON THE FOUR-BAY DECK 2026-09-14 (#ClubArenaConsole). Dan
+     2026-09-09: the four-bay deck is the buy-in family's and nobody else's.
+     Re-rendered, not rewritten: everything above this line - the default to
+     max, the cent-exact clamp, the whole-Diamond rule, the reachable-max
+     slider grid, the count-up, the confirm guard and its error copy, the
+     recovery path, the Escape handler - is untouched. The amount and the
+     vertical slider print in the well; Min, Max, the chosen buy-in and its
+     size in blinds print in the four bays; Close and the confirm sit on the
+     two plates. The accessible names and literals the tests read are kept:
+     role="dialog", aria-modal="true", aria-labelledby="buy-in-modal-title",
+     id="buy-in-modal-title", "Buy-In Amount", "Close Buy-In", "( Account
+     Balance:", "Retry", "Buy Chips", "Buy In With Diamonds", "Insufficient
+     Balance", "Balance Unavailable", "Retry Original Buy-In". */
+  const primaryLabel = isProcessing
+    ? 'Joining...'
+    : recovery
+      ? 'Retry Original Buy-In'
+      : hasEnoughBalance
+        ? wholeDiamonds
+          ? 'Buy In With Diamonds'
+          : 'Buy Chips'
+        : balanceKnown
+          ? 'Insufficient Balance'
+          : 'Balance Unavailable';
+  const primaryDisabled = !canConfirm || isProcessing;
+  const bays: ConsoleBay[] = [
+    { label: 'Min', value: formatAmount(effectiveMinBuyIn, currency) },
+    { label: 'Max', value: formatAmount(maxBuyIn, currency) },
+    {
+      label: 'Buy-In',
+      value: formatAmount(clampedBuyIn, currency),
+      ink: recovery ? 'silver' : hasEnoughBalance ? 'green' : balanceKnown ? 'red' : 'muted',
+    },
+    { label: 'In Blinds', value: bigBlind > 0 ? `${Math.round(clampedBuyIn / bigBlind)}BB` : '' },
+  ];
+  const quick: { label: string; value: number }[] = [];
+  if (!recovery) {
+    quick.push({
+      label: `${Math.round(effectiveMinBuyIn / bigBlind)}BB`,
+      value: effectiveMinBuyIn,
+    });
+    if (maxBuyIn > effectiveMinBuyIn) {
+      const third = effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.33;
+      const twoThirds = effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.66;
+      if (Math.round(third / bigBlind) !== Math.round(effectiveMinBuyIn / bigBlind))
+        quick.push({ label: `${Math.round(third / bigBlind)}BB`, value: third });
+      if (Math.round(twoThirds / bigBlind) !== Math.round(maxBuyIn / bigBlind))
+        quick.push({ label: `${Math.round(twoThirds / bigBlind)}BB`, value: twoThirds });
+    }
+    quick.push({ label: 'MAX', value: maxBuyIn });
+  }
+
   return (
-    /**
-     * ACCESSIBILITY 2026-08-28. This is the modal every player passes through
-     * to sit down, and it had no dialog semantics at all: no role, no
-     * aria-modal, no accessible name, and no Escape handler — the backdrop
-     * click was the only way out, which is not reachable by keyboard. The
-     * overlay must not be aria-hidden: that would hide the dialog and its
-     * error messages from assistive technology too.
-     */
     <div
-      className="buy-in-modal__overlay"
+      className="bim-overlay"
       onClick={() => {
         if (!confirmInFlightRef.current) onClose();
       }}
     >
       <div
-        className="buy-in-modal"
+        className="bim-dialog sc-dialog"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="buy-in-modal-title"
       >
-        {/* Header */}
-        <div className="buy-in-modal__header">
-          {countdown !== undefined && (
-            <span className="buy-in-modal__countdown">{countdown}s (Close)</span>
-          )}
-          <h2 className="buy-in-modal__title" id="buy-in-modal-title">
-            BUY-IN
-          </h2>
-          <button
-            className="buy-in-modal__close"
-            disabled={isProcessing}
-            onClick={() => {
-              if (!confirmInFlightRef.current) onClose();
-            }}
-            aria-label="Close Buy-In"
-          >
-            <span aria-hidden="true">×</span>
-          </button>
-        </div>
-
-        {/* CHIP CONTINUITY (OPORD 1.3 section 6.1): when a rejoin floor applies
-            the minimum is simply higher. No notice, no paragraph about why. */}
-
-        {/**
-         * THE SLIDER GOES UP AND DOWN (Dan 2026-09-05)
-         *
-         * "THE SLIDER FOR ADJUSTING YOUR 'BUY IN' NEEDS TO GO UP AND DOWN, NOT
-         * SIDE TO SIDE. (SIDE TO SIDE SWIPES THE PAGE) REDESIGN THIS PLEASE."
-         *
-         * A horizontal drag inside a table is a table-switch gesture, so the
-         * one control a player MUST use to sit down was competing with the
-         * navigation for every touch - and losing, because a swipe that starts
-         * on a 6px-high track is a swipe long before it is a drag. Turning the
-         * track vertical takes the control out of that axis entirely, which is
-         * a fix by construction rather than by tuning a threshold.
-         *
-         * `touch-action: none` on the input (CSS) is the other half: it stops
-         * the browser handing the vertical drag to the sheet as a scroll.
-         *
-         * The min and max were labels either side of the amount and the words
-         * "Min"/"Max" under the track - four things saying two. They are the
-         * ends of the track now: max at the top where the thumb reaches it,
-         * min at the bottom. Nothing about the value, the step grid or the
-         * MAX-is-reachable fix above changes.
-         */}
-        <div className="buy-in-modal__stage">
-          <div className="buy-in-modal__current-amount">
-            <span className="buy-in-modal__amount-value">
-              {displayAmount.toLocaleString('en-US', {
-                minimumFractionDigits: wholeDiamonds ? 0 : 2,
-                maximumFractionDigits: wholeDiamonds ? 0 : 2,
-              })}
-            </span>
-          </div>
-
-          {!recovery && (
-            <div className="buy-in-modal__slider-container">
-              <span className="buy-in-modal__slider-cap">{formatAmount(maxBuyIn, currency)}</span>
-              <input
-                type="range"
-                className="buy-in-modal__slider"
-                min={effectiveMinBuyIn}
-                max={maxBuyIn}
-                value={clampedBuyIn}
-                onChange={handleSliderChange}
-                step={bigBlind}
-                aria-label="Buy-In Amount"
-                aria-orientation="vertical"
-                style={
-                  {
-                    '--slider-percent': `${sliderPercent}%`,
-                  } as React.CSSProperties
-                }
-              />
-              <span className="buy-in-modal__slider-cap">
-                {formatAmount(effectiveMinBuyIn, currency)}
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* Quick Amounts dynamically scale the interval between min and max */}
-        {!recovery && (
-          <div className="buy-in-modal__quick-amounts">
-            <button
-              className="buy-in-modal__quick-btn"
-              onClick={() => setBuyInAmount(effectiveMinBuyIn)}
-            >
-              {Math.round(effectiveMinBuyIn / bigBlind)}BB
-            </button>
-            {maxBuyIn > effectiveMinBuyIn && (
-              <>
-                {Math.round(
-                  (effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.33) / bigBlind
-                ) !== Math.round(effectiveMinBuyIn / bigBlind) && (
-                  <button
-                    className="buy-in-modal__quick-btn"
-                    onClick={() =>
-                      setBuyInAmount(effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.33)
-                    }
-                  >
-                    {Math.round(
-                      (effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.33) / bigBlind
-                    )}
-                    BB
-                  </button>
-                )}
-                {Math.round(
-                  (effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.66) / bigBlind
-                ) !== Math.round(maxBuyIn / bigBlind) && (
-                  <button
-                    className="buy-in-modal__quick-btn"
-                    onClick={() =>
-                      setBuyInAmount(effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.66)
-                    }
-                  >
-                    {Math.round(
-                      (effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.66) / bigBlind
-                    )}
-                    BB
-                  </button>
-                )}
-              </>
-            )}
-            <button
-              className="buy-in-modal__quick-btn buy-in-modal__quick-btn--max"
-              onClick={() => setBuyInAmount(maxBuyIn)}
-            >
-              MAX
-            </button>
-          </div>
-        )}
-
-        {recovery && !isProcessing && (
-          <p role="status">
-            Your {formatAmount(recovery.amount)} Chip Buy-In For Seat {recovery.seat} Needs
-            Confirmation. We Will Check It Before Retrying The Same Buy-In.
-          </p>
-        )}
-
-        {/* Balance Display */}
-        <div className="buy-in-modal__balance">
-          <span className="buy-in-modal__balance-label">
-            {wholeDiamonds ? '( Available Diamonds:' : '( Account Balance:'}
-          </span>
-          <span
-            className={`buy-in-modal__balance-value ${balanceKnown && !hasEnoughBalance ? 'buy-in-modal__balance-value--insufficient' : ''}`}
-          >
-            {balanceKnown ? formatAmount(accountBalance, currency) : 'Unavailable'}
-          </span>
-          <span className="buy-in-modal__balance-label">)</span>
-          {!balanceKnown && onRetryBalance && (
-            <button type="button" className="buy-in-modal__balance-retry" onClick={onRetryBalance}>
-              Retry
-            </button>
-          )}
-        </div>
-
-        {/* AUTO REBUY REMOVED 2026-08-20.
-            The checkbox told the player: "When your stack drops to 50% of the
-            initial buy-in, it will be automatically replenished." Nothing
-            implemented that. `atomic_table_buyin` writes `table_seats.auto_rebuy`
-            and NO code anywhere — SQL function, engine, or client — ever reads
-            the column back; verified in production, 0 of 38,390 seat rows had it
-            set. The one server-side auto-rebuy path is horse-only and its body is
-            an explicit no-op. The threshold was a hardcoded `50` whose setter had
-            no call sites.
-            So a player could tick it, bust, and sit at zero waiting for a top-up
-            that was never coming. Promising to protect someone's seat and then
-            not doing it is worse than not offering it. If this is wanted, it
-            needs a real server-side implementation and a product decision about
-            automatically spending a player's wallet while they are away. */}
-
-        {confirmError && !recovery && (
-          <p role="alert" className="buy-in-modal__balance-value--insufficient">
-            {confirmError}
-          </p>
-        )}
-
-        {/* Confirm Button */}
-        <button
-          className={`buy-in-modal__confirm ${!canConfirm ? 'buy-in-modal__confirm--disabled' : ''} ${isConfirmPulsing ? 'buy-in-modal__confirm--pulse' : ''} ${isProcessing ? 'buy-in-modal__confirm--processing' : ''}`}
-          onClick={handleConfirm}
-          disabled={!canConfirm || isProcessing}
+        {/* The dialog's name, as a literal the felt-reachability test reads. */}
+        <h2 id="buy-in-modal-title" className="bim-sr">
+          Buy-In
+        </h2>
+        <SpadeConsole
+          as="section"
+          family="fourbay"
+          eyebrow={tableName || (wholeDiamonds ? 'Diamond Seat' : 'Cash Game')}
+          title="Buy-In"
+          pill={countdown !== undefined ? `Closes ${countdown}s` : undefined}
+          pillInk={countdown !== undefined && countdown <= 10 ? 'red' : 'gold'}
+          bays={bays}
+          plates={{
+            secondary: {
+              label: 'Close',
+              ink: 'silver',
+              disabled: isProcessing,
+              'aria-label': 'Close Buy-In',
+              onClick: () => {
+                if (!confirmInFlightRef.current) onClose();
+              },
+            },
+            primary: {
+              label: primaryLabel,
+              ink: primaryDisabled ? 'muted' : 'white',
+              disabled: primaryDisabled,
+              onClick: handleConfirm,
+              className: isConfirmPulsing ? 'bim-plate--pulse' : undefined,
+            },
+          }}
         >
-          {isProcessing
-            ? 'Joining...'
-            : recovery
-              ? 'Retry Original Buy-In'
-              : hasEnoughBalance
-                ? wholeDiamonds
-                  ? 'Buy In With Diamonds'
-                  : 'Buy Chips'
-                : balanceKnown
-                  ? 'Insufficient Balance'
-                  : 'Balance Unavailable'}
-        </button>
+          {/* THE SLIDER GOES UP AND DOWN (Dan 2026-09-05): a horizontal drag inside
+              a table is the table-switch gesture. Max at the top, min at the
+              bottom, touch-action none so the sheet does not take the drag as a
+              scroll. The slider is the one drawn control here: the art paints
+              no slider. */}
+          <div className="bim-stage">
+            <div className="bim-amount">
+              <span className="sc-label sc-ink--blue">
+                {recovery ? 'Original Buy-In' : 'Buy In For'}
+              </span>
+              <span className="bim-amount__value sc-ink--silver">
+                {displayAmount.toLocaleString('en-US', {
+                  minimumFractionDigits: wholeDiamonds ? 0 : 2,
+                  maximumFractionDigits: wholeDiamonds ? 0 : 2,
+                })}
+              </span>
+              {!recovery && (
+                <div className="bim-quick" role="group" aria-label="Quick Amounts">
+                  {quick.map((q) => (
+                    <button
+                      key={q.label}
+                      type="button"
+                      className={`bim-quick__word ${clampedBuyIn === q.value ? 'sc-ink--white' : 'sc-ink--muted'}`}
+                      onClick={() => setBuyInAmount(q.value)}
+                    >
+                      {q.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {!recovery && (
+              <div className="bim-slider">
+                <span className="bim-slider__cap sc-ink--blue">
+                  {formatAmount(maxBuyIn, currency)}
+                </span>
+                <input
+                  type="range"
+                  className="bim-slider__input"
+                  min={effectiveMinBuyIn}
+                  max={maxBuyIn}
+                  value={clampedBuyIn}
+                  onChange={handleSliderChange}
+                  step={bigBlind}
+                  aria-label="Buy-In Amount"
+                  aria-orientation="vertical"
+                  style={
+                    {
+                      '--slider-percent': `${sliderPercent}%`,
+                    } as React.CSSProperties
+                  }
+                />
+                <span className="bim-slider__cap sc-ink--blue">
+                  {formatAmount(effectiveMinBuyIn, currency)}
+                </span>
+              </div>
+            )}
+          </div>
 
-        {/* Top Up Link.
-            2026-08-20: this had no onClick at all. It only renders when the
-            player has too little to sit down, so the single moment they need to
-            add funds was the one moment the button was inert — and the modal's
-            own container calls stopPropagation, so nothing bubbled either. */}
-        {!recovery && !hasEnoughBalance && onTopUp && (
-          <button className="buy-in-modal__top-up" onClick={onTopUp}>
-            Top Up Account
-          </button>
-        )}
+          {recovery && !isProcessing && (
+            <p role="status" className="sc-copy sc-ink--muted">
+              Your {formatAmount(recovery.amount)} Chip Buy-In For Seat {recovery.seat} Needs
+              Confirmation. We Will Check It Before Retrying The Same Buy-In.
+            </p>
+          )}
+
+          {/* Balance Display - the literals are the ones the tests read. */}
+          <div className="bim-balance">
+            <span className="bim-balance__label sc-ink--muted">
+              {wholeDiamonds ? '( Available Diamonds:' : '( Account Balance:'}
+            </span>
+            <span
+              className={`bim-balance__value ${balanceKnown && !hasEnoughBalance ? 'sc-ink--red' : 'sc-ink--silver'}`}
+            >
+              {balanceKnown ? formatAmount(accountBalance, currency) : 'Unavailable'}
+            </span>
+            <span className="bim-balance__label sc-ink--muted">)</span>
+            {!balanceKnown && onRetryBalance && (
+              <button type="button" className="bim-word sc-ink--blue" onClick={onRetryBalance}>
+                Retry
+              </button>
+            )}
+          </div>
+
+          {confirmError && !recovery && (
+            <p role="alert" className="sc-copy sc-copy--center sc-ink--red">
+              {confirmError}
+            </p>
+          )}
+
+          {/* Top Up: rendered only when the player cannot afford the buy-in, so it
+              is the one moment they need it. 2026-08-20: it used to have no onClick. */}
+          {!recovery && !hasEnoughBalance && onTopUp && (
+            <button
+              type="button"
+              className="bim-word bim-word--topup sc-ink--blue"
+              onClick={onTopUp}
+            >
+              Top Up Account
+            </button>
+          )}
+        </SpadeConsole>
       </div>
     </div>
   );

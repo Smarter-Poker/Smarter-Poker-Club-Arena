@@ -229,7 +229,10 @@ describe('Items 2 and 3 - exactly one, styled, buy-in confirmation', () => {
   it('the modal is actually styled, centered, and has depth', () => {
     const css = read(SIGNUP_CSS);
     expect(css).toMatch(/\.signup-overlay\s*\{/);
-    expect(css).toMatch(/align-items: center;/);
+    // `safe center` since 2026-08-26 (a short landscape phone can still reach
+    // the top of the card); the old bare `center;` matched only by accident,
+    // on a row rule the console rebuild of 2026-09-14 no longer has.
+    expect(css).toMatch(/align-items: (safe )?center;/);
     expect(css).toMatch(/justify-content: center;/);
     expect(css).toMatch(/perspective:/);
     expect(css).toMatch(/\.signup-modal\s*\{/);

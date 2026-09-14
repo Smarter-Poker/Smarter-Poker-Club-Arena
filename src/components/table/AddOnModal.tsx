@@ -14,6 +14,8 @@ import { haptic, soundService } from '../../services/SoundService';
 import { safeErrorMessage } from '../../utils/safeErrorMessage';
 // Whole-number tournament money (Dan 2026-08-20).
 import { money, moneyExact } from '../../utils/buyIn';
+import { SpadeConsole, type ConsoleBay } from '../console/SpadeConsole';
+import './AddOnModal.css';
 
 interface AddOnModalProps {
   isVisible: boolean;
@@ -170,235 +172,113 @@ export default function AddOnModal({
 
   if (!isVisible) return null;
 
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: 'rgba(0,0,0,0.7)',
-        backdropFilter: 'blur(4px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 9999,
-        padding: 16,
-      }}
-    >
-      <div
-        style={{
-          background: 'linear-gradient(145deg, #1a1a2e 0%, #16213e 100%)',
-          border: '1px solid rgba(63,185,80,0.3)',
-          borderRadius: 16,
-          padding: 24,
-          width: '100%',
-          maxWidth: 360,
-          textAlign: 'center',
-          boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
-        }}
-      >
-        {/* Header */}
-        <div style={{ fontSize: 18, fontWeight: 700, color: '#3fb950', marginBottom: 4 }}>
-          Add-On Available
-        </div>
-        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginBottom: 16 }}>
-          Re-Entry Period Has Ended
-        </div>
+  /* #ClubArenaConsole (2026-09-14): the add-on wears the four-bay deck. Dan
+     2026-09-09: the four-bay deck is the buy-in family's and nobody else's,
+     and an add-on is a buy-in. Re-rendered, not rewritten: the persisted
+     deadline, the once-only auto-decline, the total gate, the zero-price
+     refusal, the sound-after-guard accept and the honest outcome are as they
+     were. The clock prints as the pill, the chips as the figure on the glass,
+     the receipt - cost, fee, total, balance - in the four bays, Decline and
+     Accept on the two plates. Once a decision is in, the outcome prints on the
+     glass and the Decline plate reads Close: before, a failed add-on left a
+     sheet with no way out. The strings the tests read are kept: the bare
+     "<n>s" clock, "Accept For <total>", "Accept Add-On", "You Need <total>
+     Chips", "Price Unavailable", "Add-On Failed" as an alert, "Add-On
+     Accepted". */
+  const bays: ConsoleBay[] = [
+    { label: 'Add-On Cost', value: priceKnown ? moneyExact(addOnCost) : '-' },
+    { label: 'House Fee', value: priceKnown ? moneyExact(addOnFee) : '-' },
+    { label: 'Total Charged', value: priceKnown ? money(totalCost) : '-', ink: 'white' },
+    {
+      label: 'Your Balance',
+      value: walletBalance.toLocaleString(),
+      ink: !priceKnown ? 'silver' : canAfford ? 'silver' : 'red',
+    },
+  ];
+  const acceptLabel = processing
+    ? 'Processing...'
+    : priceKnown
+      ? `Accept For ${totalCost.toLocaleString()}`
+      : 'Accept Add-On';
 
-        {/* Countdown */}
-        <div
-          style={{
-            background: countdown <= 10 ? 'rgba(239,68,68,0.15)' : 'rgba(63,185,80,0.1)',
-            borderRadius: 12,
-            padding: '12px 0',
-            marginBottom: 16,
+  return (
+    <div className="aom-overlay">
+      <div
+        className="aom-dialog sc-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-on-modal-title"
+      >
+        <SpadeConsole
+          family="fourbay"
+          eyebrow="Re-Entry Period Has Ended"
+          title="Add-On"
+          titleId="add-on-modal-title"
+          pill={`${countdown}s`}
+          pillInk={countdown <= 10 ? 'red' : 'green'}
+          bays={bays}
+          plates={{
+            secondary: {
+              label: decided ? 'Close' : 'Decline',
+              onClick: decided ? onDecline : handleDecline,
+              disabled: processing,
+            },
+            primary: {
+              label: acceptLabel,
+              ink: canAccept && !decided ? 'white' : 'muted',
+              onClick: handleAccept,
+              disabled: !canAccept || processing || decided,
+            },
           }}
         >
-          <div
-            style={{
-              fontSize: 32,
-              fontWeight: 800,
-              color: countdown <= 10 ? '#ef4444' : '#3fb950',
-            }}
-          >
-            {countdown}s
-          </div>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>Time Remaining</div>
-        </div>
-
-        {/* Add-On Details */}
-        {!decided ? (
-          <>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                padding: '8px 16px',
-                marginBottom: 4,
-              }}
-            >
-              <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Add-On Cost</span>
-              <span style={{ color: '#fff', fontWeight: 600, fontSize: 14 }}>
-                {moneyExact(addOnCost)} Chips
-              </span>
-            </div>
-            {addOnFee > 0 && (
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  padding: '8px 16px',
-                  marginBottom: 4,
-                }}
-              >
-                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>House Fee</span>
-                <span style={{ color: '#fff', fontWeight: 600, fontSize: 14 }}>
-                  {moneyExact(addOnFee)} Chips
+          {!decided ? (
+            <div className="aom-stage">
+              <span className="sc-label sc-ink--blue">Chips Received</span>
+              <span className="aom-figure">
+                <span className="aom-figure__value sc-ink--green">
+                  +{addOnChips.toLocaleString()}
                 </span>
-              </div>
-            )}
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                padding: '8px 16px',
-                marginBottom: 4,
-                borderTop: '1px solid rgba(255,255,255,0.1)',
-                paddingTop: 12,
-              }}
-            >
-              <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Total Charged</span>
-              <span style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>
-                {money(totalCost)} Chips
+                <span className="aom-figure__unit sc-ink--muted">Chips</span>
               </span>
+              {!priceKnown && (
+                <p className="sc-copy sc-copy--center sc-ink--red aom-note">
+                  Add-On Price Unavailable - Cannot Purchase Right Now
+                </p>
+              )}
+              {priceKnown && !canAfford && (
+                <p className="sc-copy sc-copy--center sc-ink--red aom-note">
+                  Insufficient Balance - You Need {totalCost.toLocaleString()} Chips
+                </p>
+              )}
             </div>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                padding: '8px 16px',
-                marginBottom: 4,
-              }}
-            >
-              <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Chips Received</span>
-              <span style={{ color: '#3fb950', fontWeight: 600, fontSize: 14 }}>
-                +{addOnChips.toLocaleString()} Chips
-              </span>
-            </div>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                padding: '8px 16px',
-                marginBottom: 16,
-                borderTop: '1px solid rgba(255,255,255,0.1)',
-                paddingTop: 12,
-              }}
-            >
-              <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Your Balance</span>
-              <span
-                style={{ color: canAfford ? '#fbbf24' : '#ef4444', fontWeight: 600, fontSize: 14 }}
-              >
-                {walletBalance.toLocaleString()} Chips
-              </span>
-            </div>
-
-            {!priceKnown && (
-              <div style={{ color: '#ef4444', fontSize: 12, marginBottom: 12 }}>
-                Add-On Price Unavailable - Cannot Purchase Right Now
-              </div>
-            )}
-            {priceKnown && !canAfford && (
-              <div style={{ color: '#ef4444', fontSize: 12, marginBottom: 12 }}>
-                Insufficient Balance - You Need {totalCost.toLocaleString()} Chips
-              </div>
-            )}
-
-            {/* Buttons */}
-            <div style={{ display: 'flex', gap: 12 }}>
-              <button
-                type="button"
-                onClick={handleDecline}
-                style={{
-                  flex: 1,
-                  padding: '12px 0',
-                  borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  background: 'transparent',
-                  color: '#fff',
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  minHeight: 48,
-                }}
-              >
-                Decline
-              </button>
-              <button
-                type="button"
-                onClick={handleAccept}
-                disabled={!canAccept || processing}
-                style={{
-                  flex: 1,
-                  padding: '12px 0',
-                  borderRadius: 10,
-                  border: 'none',
-                  background: canAccept
-                    ? 'linear-gradient(135deg, #3fb950 0%, #2ea043 100%)'
-                    : '#374151',
-                  color: '#fff',
-                  fontSize: 14,
-                  fontWeight: 700,
-                  cursor: canAccept ? 'pointer' : 'not-allowed',
-                  opacity: processing ? 0.6 : 1,
-                  minHeight: 48,
-                }}
-              >
-                {processing
-                  ? 'Processing...'
-                  : priceKnown
-                    ? `Accept For ${totalCost.toLocaleString()}`
-                    : 'Accept Add-On'}
-              </button>
-            </div>
-          </>
-        ) : (
-          /* Result display */
-          <div style={{ padding: '16px 0' }}>
-            {result === 'accepted' && (
-              <div style={{ color: '#3fb950', fontSize: 16, fontWeight: 600 }}>
-                Add-On Accepted - +{addOnChips.toLocaleString()} Chips Added
-              </div>
-            )}
-            {result === 'declined' && (
-              <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 16, fontWeight: 600 }}>
-                Add-On Declined
-              </div>
-            )}
-            {result === 'insufficient' && (
-              <div style={{ color: '#ef4444', fontSize: 16, fontWeight: 600 }}>
-                Insufficient Balance - Add-On Denied
-              </div>
-            )}
-            {result === 'failed' && (
-              <div style={{ color: '#ef4444', fontSize: 15, fontWeight: 600 }} role="alert">
-                Add-On Failed
-                <div
-                  style={{
-                    color: 'rgba(255,255,255,0.65)',
-                    fontSize: 12,
-                    fontWeight: 500,
-                    marginTop: 6,
-                  }}
-                >
-                  {failureMessage}
+          ) : (
+            <div className="aom-stage aom-stage--result">
+              {result === 'accepted' && (
+                <p className="sc-copy sc-copy--center sc-ink--green aom-result">
+                  Add-On Accepted - +{addOnChips.toLocaleString()} Chips Added
+                </p>
+              )}
+              {result === 'declined' && (
+                <p className="sc-copy sc-copy--center sc-ink--muted aom-result">Add-On Declined</p>
+              )}
+              {result === 'insufficient' && (
+                <p className="sc-copy sc-copy--center sc-ink--red aom-result">
+                  Insufficient Balance - Add-On Denied
+                </p>
+              )}
+              {result === 'failed' && (
+                <div className="aom-result" role="alert">
+                  <p className="sc-copy sc-copy--center sc-ink--red">Add-On Failed</p>
+                  {failureMessage && (
+                    <p className="sc-copy sc-copy--center sc-ink--muted aom-result__detail">
+                      {failureMessage}
+                    </p>
+                  )}
                 </div>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          )}
+        </SpadeConsole>
       </div>
     </div>
   );

@@ -67,17 +67,20 @@ function renderModal(offerOver: Partial<InsuranceOffer> = {}, props: Record<stri
 }
 
 describe('clipped-buttons fix — actions pinned outside the scroll body', () => {
-  it('renders the action row as a SIBLING after the scrollable body, never inside it', () => {
-    const { container } = renderModal();
+  it('renders the decisions OUTSIDE the scrollable body, never inside it', () => {
+    const { container, getByRole } = renderModal();
     const modal = container.querySelector('.insurance-modal')!;
     const body = modal.querySelector('.insurance-modal__body')!;
-    const actions = modal.querySelector('.insurance-modal__actions')!;
     expect(body).toBeTruthy();
-    expect(actions).toBeTruthy();
-    // The buttons must NOT be descendants of the scroll container...
-    expect(body.contains(actions)).toBe(false);
-    // ...and must be direct children of the modal so flex pins them.
-    expect(actions.parentElement).toBe(modal);
+    // #ClubArenaConsole 2026-09-14: the decisions are the console's painted
+    // plates in its foot, below the body. The invariant is unchanged - the
+    // buttons must NOT be descendants of the scroll container - it is just
+    // no longer a `.insurance-modal__actions` row that carries them.
+    for (const name of ['No', 'Insure']) {
+      const button = getByRole('button', { name });
+      expect(modal.contains(button)).toBe(true);
+      expect(body.contains(button)).toBe(false);
+    }
   });
 
   it('both decisions are present: No (final decline) and Insure', () => {

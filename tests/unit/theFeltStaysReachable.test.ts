@@ -82,7 +82,10 @@ describe('BuyInModal is reachable and announced', () => {
   });
 
   it('names the close button for a screen reader', () => {
-    expect(src).toContain('aria-label="Close Buy-In"');
+    /* Since 2026-09-14 the close control is a painted plate handed to the
+       console as props, so the name is an object key rather than a JSX
+       attribute. Either spelling is the same accessible name at runtime. */
+    expect(src).toMatch(/aria-label="Close Buy-In"|'aria-label': 'Close Buy-In'/);
   });
 });
 

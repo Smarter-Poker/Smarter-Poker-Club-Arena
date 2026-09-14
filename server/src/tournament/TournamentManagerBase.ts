@@ -3536,6 +3536,14 @@ export abstract class TournamentManagerBase {
       let regCount: number | null = null;
       let spinRoster: Array<{ user_id?: string | null; table_id?: string | null }> | null = null;
       let playedSpinRecovery: PlayedSpinLaunchRecoveryProof | null = null;
+      /**
+       * The moment the first hand was dealt, when this launch is a recovery of
+       * a game that already played. It becomes the launch receipt's
+       * `started_at`, which is what lets the completion RPC's own proof pass on
+       * the truth rather than on the advertised start time. NULL on every
+       * ordinary launch. See `fn_prove_played_launch_from_board`.
+       */
+      let playedLaunchStartedAtIso: string | null = null;
 
       if (spinPaidGateWillRun) {
         /* THE GATE MUST NOT DISABLE ITSELF ON A FAILED READ (2026-08-28).
@@ -3636,6 +3644,73 @@ export abstract class TournamentManagerBase {
             this.running = false;
             return;
           }
+        }
+      }
+
+      /**
+       * A GAME THAT ALREADY PLAYED IS NOT AN UNDER-FILLED GAME (2026-09-12).
+       *
+       * The Spin block above is the same idea with a narrow door: it only opens
+       * for a paid Spin holding exactly two of its three. Forty games dealt on
+       * 2026-09-08 were stranded on the wrong side of it - a heads-up game
+       * holding one of two, an MTT holding two of four - and stood down here
+       * every five minutes for four days:
+       *
+       *     [Tournament:90c4d93f] Only 1 of 2 player(s) - standing down so the
+       *                           field can be filled (NOT cancelling)
+       *
+       * Standing down here is what stopped the launch receipt being written,
+       * and the completion RPC's generalised proof
+       * (`fn_prove_played_launch_recovery`, 2026-09-11) is reached only AFTER
+       * that receipt exists. So the proof written for exactly these games was
+       * never once called for them: `have_a_receipt = 0` on all forty, against
+       * 1,839 receipts written the same day by launches that cleared this gate.
+       * The chain was generalised at its end and left narrow in its middle.
+       *
+       * `fn_prove_played_launch_from_board` asks that same generalised proof,
+       * deriving the started_at it needs from the first hand in `hand_history`
+       * rather than from a receipt that does not exist yet. A game that dealt
+       * nothing is refused at its first line, so an under-filled FRESH launch
+       * can never pass through here.
+       *
+       * An unreadable answer stands the launch down, exactly as the Spin path
+       * does: UNKNOWN is never "it played".
+       */
+      if ((regCount || 0) < requiredField && playedSpinRecovery === null) {
+        const { data: rawBoard, error: boardErr } = await supabase.rpc(
+          'fn_prove_played_launch_from_board',
+          { p_tournament_id: this.tournamentId }
+        );
+        this.assertLifecycleCurrent(lifecycle);
+        if (boardErr) {
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Played launch recovery proof was unreadable (${boardErr.message}) - standing down, will retry`
+            ),
+            'Tournament.played_launch_recovery_unreadable'
+          );
+          this.running = false;
+          return;
+        }
+        const board = rawBoard as { ok?: unknown; started_at?: unknown } | null;
+        if (board?.ok === true) {
+          const startedAt = typeof board.started_at === 'string' ? board.started_at : '';
+          const startedMs = Date.parse(startedAt);
+          if (!Number.isFinite(startedMs)) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Played launch proof passed without a usable first-hand time - standing down rather than stamping a receipt nobody can check`
+              ),
+              'Tournament.played_launch_recovery_malformed'
+            );
+            this.running = false;
+            return;
+          }
+          playedLaunchStartedAtIso = new Date(startedMs).toISOString();
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] ${regCount} of ${requiredField} player(s), but this game already dealt - finishing it with the field it has (first hand ${playedLaunchStartedAtIso})`
+          );
+          requiredField = regCount || 0;
         }
       }
 
@@ -3793,11 +3868,17 @@ export abstract class TournamentManagerBase {
        */
       const scheduledStartMs = Date.parse(String(tournament.start_time ?? ''));
       const existingStartMs = Date.parse(String(tournament.started_at ?? ''));
-      const requestedStartedAtIso = Number.isFinite(existingStartMs)
-        ? new Date(existingStartMs).toISOString()
-        : Number.isFinite(scheduledStartMs)
-          ? new Date(scheduledStartMs).toISOString()
-          : null;
+      /* A played recovery stamps the moment the first hand was dealt. The
+         completion RPC re-derives that moment and refuses a receipt that
+         disagrees, so the advertised start time - which these rows still carry
+         and which is not when they began - would fail its own proof. */
+      const requestedStartedAtIso = playedLaunchStartedAtIso
+        ? playedLaunchStartedAtIso
+        : Number.isFinite(existingStartMs)
+          ? new Date(existingStartMs).toISOString()
+          : Number.isFinite(scheduledStartMs)
+            ? new Date(scheduledStartMs).toISOString()
+            : null;
       const requestedLaunchId = nodeCrypto.randomUUID();
       const launchClaim = await this.beginTournamentLaunch(
         lifecycle,

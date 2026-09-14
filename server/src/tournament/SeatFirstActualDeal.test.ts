@@ -171,6 +171,11 @@ function fixture(
   const rule_manifest = spinRuleManifest(1, stack);
   const tier = rule_manifest.tiers.find((candidate) => candidate.multiplier === 10)!;
   rpc.mockImplementation(async (name: string, args: any) => {
+    if (name === 'fn_prove_played_launch_from_board') {
+      // Nothing in this fixture has ever dealt a hand, so the played-launch
+      // door is shut. See the one-player Heads-Up case below, which pins it.
+      return { error: null, data: { ok: false, reason: 'no_hand_was_dealt' } };
+    }
     if (name === 'fn_begin_tournament_launch_atomic') {
       launchId = args.p_launch_id;
       admittedStart = args.p_started_at ?? admittedStart;
@@ -430,7 +435,17 @@ describe('actual manager launch reaches the first hand and action timer after th
     await settle();
     expectNoHand(f);
     expect(f.row.status).toBe('REGISTERING');
-    expect(rpc).not.toHaveBeenCalled();
+    // NO RECEIPT is the invariant this case is named for, so name the writes
+    // rather than asserting the module made no call at all: since 2026-09-12 a
+    // short field first asks whether the game already played, and that read is
+    // not a launch.
+    expect(rpc.mock.calls.map(([name]) => name)).not.toContain('fn_begin_tournament_launch_atomic');
+    expect(rpc.mock.calls.map(([name]) => name)).not.toContain(
+      'fn_complete_tournament_launch_atomic'
+    );
+    // And the door that was added for a played game stays shut for a fresh one:
+    // it was asked, and it refused.
+    expect(rpc.mock.calls.map(([name]) => name)).toContain('fn_prove_played_launch_from_board');
     expect(f.manager.startManagedTableEngine).not.toHaveBeenCalled();
     expect(f.blindStarts).toEqual([]);
   });

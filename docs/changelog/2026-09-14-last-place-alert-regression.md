@@ -1,0 +1,9 @@
+# A last-place remainder is not an unpaid prize
+
+A received historical alert reported that 23rd place was paid 7.91 against a flat percentage of 7.97. The actual 1,350-chip prize pool was distributed in full across 23 players. The first 22 payments leave precisely 7.91 for the last place, and that player's recorded obligation and wallet credit both equal 7.91. The original detector compared independent percentages and ignored the residual allocation rule.
+
+The root correction is already installed: the guarantee checker distinguishes an undistributed pool from a fully paid pool. These regression tests preserve the exact reported case. The engine test matches every actual payment in cents and verifies conservation of the whole pool. The PostgreSQL test runs the actual old repository checker, reproduces the six-cent false alert, then loads the corrected repository declaration and its guarded bounty-reader patch. Its canonical definition must match the captured production hash `7c57c1a27ae394f67010bf5f54cdab27`.
+
+Seventeen native checks cover alert clearing and replay, a genuinely unpaid last place, partial payment, foreign-tournament payments, refunds, and concurrent uncommitted/rolled-back/committed receipts. Twenty-one engine arithmetic checks pass, including the two new exact-event checks. Fixtures use synthetic identities and never connect to production or invoke a financial writer. Only the target function declaration and its one guarded patch block are extracted; surrounding historical migrations are never executed.
+
+This is regression protection for the specific remainder false alert. A fully distributed pool alone does not prove that every player received their entitlement; this case also has a complete exact payment-by-payment match. Broader entitlement and financial-repair qualification are separate. No SQL deployment or additional payment is introduced.

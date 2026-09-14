@@ -51,9 +51,11 @@
 //   node scripts/ci/pr-status.mjs --all           # every open PR, ranked
 //
 // EXIT CODES (branch on these, do not parse the prose)
-//   0  GREEN    every required check passed; other merge requirements still apply
+//   0  GREEN    every required job context reported success
+//   0  CHECKS_ACCEPTED  required conclusions accepted, some execution unverified
+//      Neither exit 0 state authorizes a merge or deployment.
 //   1  RED      at least one check failed - the job and step are named
-//   2  RUNNING  something is genuinely still in progress, nothing failed yet
+//   2  RUNNING  something is genuinely active, no required failure observed
 //   3  UNKNOWN  could not determine. NOT a synonym for pending. Read the note.
 //   4  DIRTY    the branch conflicts with main; CI state is moot until resolved
 //
@@ -116,7 +118,15 @@ const readGitHub = createGitHubReader();
 // "tell the human" instead of "silently pass".
 const GOOD = new Set(['success', 'skipped', 'neutral']);
 
-const EXIT = { GREEN: 0, RED: 1, RED_NON_BLOCKING: 1, RUNNING: 2, UNKNOWN: 3, DIRTY: 4 };
+const EXIT = {
+  GREEN: 0,
+  CHECKS_ACCEPTED: 0,
+  RED: 1,
+  RED_NON_BLOCKING: 1,
+  RUNNING: 2,
+  UNKNOWN: 3,
+  DIRTY: 4,
+};
 let approvingReviewMinimum = null;
 
 function reviewMinimumText() {
@@ -129,7 +139,19 @@ function reviewMinimumText() {
 
 function die(msg, code = EXIT.UNKNOWN) {
   if (JSON_OUT)
-    console.log(JSON.stringify({ state: 'UNKNOWN', reason: msg, approvingReviewMinimum }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          state: 'UNKNOWN',
+          reason: msg,
+          approvingReviewMinimum,
+          requiredCheckStatus: 'UNKNOWN',
+          requiredExecutionStatus: 'UNKNOWN',
+        },
+        null,
+        2
+      )
+    );
   else console.error(`\n  UNKNOWN - ${msg}\n  ${reviewMinimumText()}\n`);
   process.exit(code);
 }
@@ -332,9 +354,9 @@ async function requiredChecks() {
 
 /**
  * Name every required context for which this commit lacks a completed success.
- * A workflow-level success is not enough: a required job can be absent because
- * a path or job condition prevented it from being created, and GitHub will keep
- * the pull request blocked in exactly that state.
+ * These are execution gaps, not automatically merge blockers: GitHub accepts
+ * observed skipped/neutral conclusions, but neither proves successful execution.
+ * An absent job is different from an observed skipped job.
  */
 export function requiredContextProblems(required, jobs) {
   if (!(required instanceof Set)) return null;
@@ -359,15 +381,69 @@ export function requiredContextProblems(required, jobs) {
   return problems;
 }
 
-/** A green verdict is possible only with readable rules and zero context gaps. */
-export function stateForChecks({ failures, activeRuns, requiredProblems }) {
-  if (failures.some((failure) => failure.required)) return 'RED';
-  if (requiredProblems?.some((problem) => problem.state === 'not_successful')) return 'RED';
+/** GitHub accepts these observed conclusions; they are not execution proof. */
+function acceptedWithoutSuccess(problem) {
+  return (
+    problem.state === 'not_successful' &&
+    problem.conclusions.length > 0 &&
+    problem.conclusions.every((conclusion) => conclusion === 'skipped' || conclusion === 'neutral')
+  );
+}
+
+/** Conclusions observed through Actions, not a grant of merge/deploy authority. */
+export function requiredCheckEvidence({ failures, activeRuns, requiredProblems }) {
+  const failed =
+    failures.some((failure) => failure.required) ||
+    requiredProblems?.some(
+      (problem) => problem.state === 'not_successful' && !acceptedWithoutSuccess(problem)
+    );
+  const unresolved = requiredProblems?.some(
+    (problem) => problem.state === 'missing' || problem.state === 'running'
+  );
+  return {
+    requiredCheckStatus: failed
+      ? 'UNSATISFIED'
+      : requiredProblems === null
+        ? 'UNKNOWN'
+        : unresolved
+          ? activeRuns.length
+            ? 'RUNNING'
+            : 'UNKNOWN'
+          : 'SATISFIED',
+    requiredExecutionStatus:
+      requiredProblems === null
+        ? 'UNKNOWN'
+        : failed || requiredProblems.length
+          ? 'NOT_PROVEN'
+          : 'SUCCESSFUL',
+  };
+}
+
+/** GREEN requires successful required jobs; accepted skips have a distinct state. */
+export function stateForChecks(input) {
+  const { failures, activeRuns } = input;
+  const evidence = requiredCheckEvidence(input);
+  if (evidence.requiredCheckStatus === 'UNSATISFIED') return 'RED';
   if (activeRuns.length) return 'RUNNING';
-  if (requiredProblems === null) return 'UNKNOWN';
-  if (requiredProblems.length) return 'RED';
+  if (evidence.requiredCheckStatus === 'UNKNOWN') return 'UNKNOWN';
   if (failures.length) return 'RED_NON_BLOCKING';
+  if (evidence.requiredExecutionStatus === 'NOT_PROVEN') return 'CHECKS_ACCEPTED';
   return 'GREEN';
+}
+
+function requiredProblemText(problem) {
+  const detail =
+    problem.state === 'missing'
+      ? 'not observed'
+      : problem.state === 'running'
+        ? 'still running'
+        : `completed as ${problem.conclusions.join(', ') || 'unknown'}`;
+  const tag = acceptedWithoutSuccess(problem)
+    ? 'ACCEPTED, EXECUTION NOT PROVEN'
+    : problem.state === 'not_successful'
+      ? 'NOT ACCEPTED'
+      : 'UNRESOLVED';
+  return `[${tag}] ${problem.context} - ${detail}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -389,6 +465,8 @@ async function commitState(sha, required) {
       runs: [],
       failures: [],
       activeRuns: [],
+      requiredCheckStatus: 'UNKNOWN',
+      requiredExecutionStatus: 'UNKNOWN',
     };
   }
 
@@ -401,7 +479,6 @@ async function commitState(sha, required) {
   }
   const list = [...latest.values()];
 
-  const failedRuns = list.filter((r) => r.conclusion && !GOOD.has(r.conclusion));
   const activeRuns = list.filter((r) => r.status !== 'completed');
 
   // Required status checks are JOB contexts, not workflow names. Read every
@@ -421,10 +498,12 @@ async function commitState(sha, required) {
   // Name the job and the step. This is the part an agent actually needs, and
   // the part /commits/:sha/status could never give even if it worked.
   const failures = [];
-  for (const run of failedRuns) {
+  // A completed failed job is already evidence while sibling jobs keep its run active.
+  for (const run of list) {
     const runJobs = jobsByRun.get(run.id);
     const badJobs = runJobs.filter((j) => j.conclusion && !GOOD.has(j.conclusion));
     if (badJobs.length === 0) {
+      if (!run.conclusion || GOOD.has(run.conclusion)) continue;
       failures.push({
         workflow: run.name,
         job: '(run failed before any job started)',
@@ -455,13 +534,25 @@ async function commitState(sha, required) {
   }
 
   const requiredProblems = requiredContextProblems(required, allJobs);
+  const evidence = requiredCheckEvidence({ failures, activeRuns, requiredProblems });
   const state = stateForChecks({ failures, activeRuns, requiredProblems });
   const reason =
     state === 'UNKNOWN'
-      ? 'required status-check rules were unreadable or named no contexts; refusing to call this commit green.'
+      ? requiredProblems === null
+        ? 'required status-check rules were unreadable or named no contexts; refusing to call this commit green.'
+        : 'required contexts remain unproduced or unfinished with no observed active workflow; execution and required-check satisfaction are unknown.'
       : null;
 
-  return { state, runs: list, failures, activeRuns, required, requiredProblems, reason };
+  return {
+    state,
+    runs: list,
+    failures,
+    activeRuns,
+    required,
+    requiredProblems,
+    ...evidence,
+    reason,
+  };
 }
 
 /**
@@ -504,12 +595,6 @@ function render(pr, st) {
     return EXIT.DIRTY;
   }
 
-  if (st.state === 'UNKNOWN') {
-    line('  UNKNOWN - ' + st.reason.split('\n').join('\n  '));
-    line('');
-    return EXIT.UNKNOWN;
-  }
-
   for (const r of st.runs) {
     const tag =
       r.status !== 'completed'
@@ -540,38 +625,46 @@ function render(pr, st) {
     line('');
     line('  REQUIRED CHECKS NOT PROVEN SUCCESSFUL:');
     for (const problem of st.requiredProblems) {
-      const detail =
-        problem.state === 'missing'
-          ? 'not observed'
-          : problem.state === 'running'
-            ? 'still running'
-            : `completed as ${problem.conclusions.join(', ') || 'unknown'}`;
-      line(`    [BLOCKS MERGE] ${problem.context} - ${detail}`);
+      line('    ' + requiredProblemText(problem));
     }
   }
 
+  line('');
+  line(`  Required-check conclusions (Actions): ${st.requiredCheckStatus}.`);
+  line(`  Required-job successful execution: ${st.requiredExecutionStatus}.`);
+  line('  These observations do not authorize a merge or deployment.');
   quotaWarning(line);
   line('');
+  if (st.state === 'UNKNOWN') {
+    line('  UNKNOWN - ' + st.reason.split('\n').join('\n  '));
+    line('');
+    return EXIT.UNKNOWN;
+  }
+
   if (st.state === 'RED') {
-    line('  RED - one or more required checks are not proven successful. This will not merge.');
+    line('  RED - a required job has an unaccepted conclusion.');
     line('');
     return EXIT.RED;
   }
   if (st.state === 'RED_NON_BLOCKING') {
     line('  RED (non-blocking) - a check failed but the ruleset does not require it.');
-    line('  Autopilot can still merge this. Fix it anyway: CLAUDE.md 10.83 - a red');
-    line('  nobody is required to look at is how a gate rots for two days.');
+    line('  Other merge requirements still apply; this observation does not authorize a merge.');
     line('');
     return EXIT.RED;
   }
   if (st.state === 'RUNNING') {
-    line(`  RUNNING - ${st.activeRuns.length} run(s) in progress, nothing has failed yet.`);
+    line(`  RUNNING - ${st.activeRuns.length} run(s) in progress, no required failure observed.`);
     line('  agent-open-pr.yml creates the pull request; Autopilot queues protected auto-merge.');
     line('  Branch freshness and other GitHub merge requirements still apply.');
     line('');
     return EXIT.RUNNING;
   }
-  line('  GREEN - every required check passed.');
+  if (st.state === 'CHECKS_ACCEPTED') {
+    line('  CHECKS_ACCEPTED - required conclusions satisfy GitHub status-check rules.');
+    line('  Some required jobs were skipped or neutral; successful execution was not verified.');
+  } else {
+    line('  GREEN - every required job context reported success.');
+  }
   if (pr && mergeLabel(pr) === 'BLOCKED')
     line('  (GitHub still says "blocked". Auto-merge does not satisfy other merge requirements.)');
   if (pr && mergeLabel(pr) === 'UNCOMPUTED')
@@ -579,7 +672,7 @@ function render(pr, st) {
       '  (GitHub has not computed mergeability yet - that is not a problem, just not an answer.)'
     );
   line('');
-  return EXIT.GREEN;
+  return EXIT[st.state];
 }
 
 // ---------------------------------------------------------------------------
@@ -601,7 +694,15 @@ async function main() {
       const st = await commitState(pr.head.sha, required);
       rows.push({ pr, st, merge: mergeLabel(pr) });
     }
-    const rank = { DIRTY: -1, RED: 0, RED_NON_BLOCKING: 1, UNKNOWN: 2, RUNNING: 3, GREEN: 4 };
+    const rank = {
+      DIRTY: -1,
+      RED: 0,
+      RED_NON_BLOCKING: 1,
+      UNKNOWN: 2,
+      RUNNING: 3,
+      CHECKS_ACCEPTED: 4,
+      GREEN: 5,
+    };
     const stateOf = (r) => (r.merge === 'DIRTY' ? 'DIRTY' : r.st.state);
     rows.sort((a, b) => rank[stateOf(a)] - rank[stateOf(b)] || a.pr.number - b.pr.number);
     const states = rows.map(stateOf);
@@ -625,6 +726,8 @@ async function main() {
             approvingReviewMinimum,
             failures: st.failures,
             requiredProblems: st.requiredProblems,
+            requiredCheckStatus: st.requiredCheckStatus,
+            requiredExecutionStatus: st.requiredExecutionStatus,
           })),
           null,
           2
@@ -646,8 +749,12 @@ async function main() {
       for (const f of st.failures)
         console.log(`       ${f.required ? 'X' : '-'} ${f.job}${f.step ? ` :: ${f.step}` : ''}`);
       for (const problem of st.requiredProblems ?? [])
-        console.log(`       X ${problem.context} :: ${problem.state}`);
+        console.log('       ' + requiredProblemText(problem));
+      console.log(
+        `       Required-check conclusions: ${st.requiredCheckStatus}; required-job successful execution: ${st.requiredExecutionStatus}.`
+      );
     }
+    console.log('  These observations do not authorize a merge or deployment.');
     console.log('');
     const dirty = rows.filter((r) => stateOf(r) === 'DIRTY').length;
     const red = rows.filter((r) => stateOf(r) === 'RED').length;
@@ -723,6 +830,8 @@ async function main() {
           approvingReviewMinimum,
           failures: st.failures,
           requiredProblems: st.requiredProblems,
+          requiredCheckStatus: st.requiredCheckStatus,
+          requiredExecutionStatus: st.requiredExecutionStatus,
           reason: st.reason ?? null,
         },
         null,

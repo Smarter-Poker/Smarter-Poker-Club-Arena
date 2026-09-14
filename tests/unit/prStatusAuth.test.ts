@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createGitHubReader, GitHubReadError } from '../../scripts/ci/pr-status-http.mjs';
-import { approvingReviewMinimumFromRules } from '../../scripts/ci/pr-status.mjs';
+import {
+  approvingReviewMinimumFromRules,
+  requiredContextProblems,
+  requiredCheckEvidence,
+  stateForChecks,
+} from '../../scripts/ci/pr-status.mjs';
 
 const URL = 'https://api.github.com/repos/example/project/actions/runs?head_sha=abc&per_page=100';
 const CANARY = 'synthetic-private-diagnostic-canary';
@@ -243,6 +248,7 @@ function runStatus(scenario: string, json = true, all = false) {
     `#!${process.execPath}
 const scenario = process.env.SCENARIO;
 const endpoint = process.argv.at(-1);
+const active = scenario === 'queued' || scenario.startsWith('active-');
 if (scenario === 'no-auth') { console.error('${CANARY}'); process.exit(4); }
 if (scenario === 'network-error') { console.error('${CANARY}'); process.exit(1); }
 if (scenario === 'malformed-http') { console.log('${CANARY}'); process.exit(0); }
@@ -251,21 +257,29 @@ let body;
 const pr = { number:7, head:{sha:'abc',ref:'example'}, mergeable:true, mergeable_state:'blocked', html_url:'https://github.com/example/project/pull/7' };
 if (endpoint.includes('/rules/')) {
   body = [{ type: 'required_status_checks', parameters: { required_status_checks: [{context:'Build'}] }}];
+  if (scenario === 'active-skips') body[0].parameters.required_status_checks.push({context:'Aggregate'});
   if (scenario === 'minimum-zero') body.push({type:'pull_request',parameters:{required_approving_review_count:0}});
   if (scenario === 'minimum-positive') body.push({type:'pull_request',parameters:{required_approving_review_count:2}});
   if (scenario === 'minimum-malformed') body.push({type:'pull_request',parameters:{required_approving_review_count:'0'}});
-  if (scenario === 'unreadable-rules') { code = 403; body = {message:'${CANARY}'}; }
+  if (scenario === 'unreadable-rules' || scenario === 'active-unreadable-rules') { code = 403; body = {message:'${CANARY}'}; }
 } else if (endpoint.includes('/pulls?')) {
   body = [pr];
 } else if (endpoint.includes('/pulls/')) {
   body = pr;
 } else if (endpoint.includes('/actions/runs?')) {
-  body = { workflow_runs: scenario === 'no-runs' ? [] : [{id:123, name:'CI',status:scenario === 'queued'?'queued':'completed',conclusion:scenario === 'queued'?null:'success',created_at:'2026-09-14T00:00:00Z'}] };
+  body = { workflow_runs: scenario === 'no-runs' ? [] : [{id:123, name:'CI',status:active?'queued':'completed',conclusion:active?null:'success',created_at:'2026-09-14T00:00:00Z'}] };
   if (scenario === 'denied') { code = 403; body = {message:'${CANARY}'}; }
   if (scenario === 'rate-limit') { code = 429; body = {message:'${CANARY}'}; }
   if (scenario === 'malformed-json') body = null;
 } else if (endpoint.includes('/jobs?')) {
-  body = { jobs:[{name:'Build',status:scenario === 'queued'?'queued':'completed',conclusion:scenario === 'queued'?null:'success'}] };
+  body = { jobs:[{name:'Build',status:active?'queued':'completed',conclusion:active?null:'success'}] };
+  if (scenario === 'active-skips' || scenario === 'completed-skips') body.jobs = [{name:'Build',status:'completed',conclusion:'skipped'}];
+  if (scenario === 'completed-neutral') body.jobs = [{name:'Build',status:'completed',conclusion:'neutral'}];
+  if (scenario === 'terminal-missing' || scenario === 'active-missing') body.jobs = [];
+  if (scenario === 'terminal-unfinished') body.jobs = [{name:'Build',status:'queued',conclusion:null}];
+  if (scenario === 'active-required-failure' || scenario === 'terminal-required-failure') body.jobs = [{id:456,name:'Build',status:'completed',conclusion:'failure',steps:[{name:'Compile source',conclusion:'failure'}]}];
+  if (scenario === 'active-optional-failure') body.jobs = [{name:'Build',status:'completed',conclusion:'success'},{id:789,name:'Optional',status:'completed',conclusion:'failure',steps:[{name:'Optional test',conclusion:'failure'}]}];
+
 } else { process.exit(9); }
 console.log('HTTP/2.0 ' + code + ' Test');
 console.log('X-Ratelimit-Remaining: ' + (code === 429 ? '0' : '99'));
@@ -387,5 +401,115 @@ describe('approving-review minimum from already-read main branch rules', () => {
     expect(runStatus('minimum-positive', false, true).stdout).toContain(
       'Approving-review minimum (main branch rules): 2.'
     );
+  });
+});
+
+describe('required conclusions stay separate from successful execution', () => {
+  it.each([
+    ['active-skips', 2, 'RUNNING', 'RUNNING', 'NOT_PROVEN'],
+    ['active-missing', 2, 'RUNNING', 'RUNNING', 'NOT_PROVEN'],
+    ['active-unreadable-rules', 2, 'RUNNING', 'UNKNOWN', 'UNKNOWN'],
+    ['completed-skips', 0, 'CHECKS_ACCEPTED', 'SATISFIED', 'NOT_PROVEN'],
+    ['completed-neutral', 0, 'CHECKS_ACCEPTED', 'SATISFIED', 'NOT_PROVEN'],
+    ['green', 0, 'GREEN', 'SATISFIED', 'SUCCESSFUL'],
+    ['terminal-missing', 3, 'UNKNOWN', 'UNKNOWN', 'NOT_PROVEN'],
+    ['terminal-unfinished', 3, 'UNKNOWN', 'UNKNOWN', 'NOT_PROVEN'],
+    ['active-required-failure', 1, 'RED', 'UNSATISFIED', 'NOT_PROVEN'],
+    ['terminal-required-failure', 1, 'RED', 'UNSATISFIED', 'NOT_PROVEN'],
+    ['active-optional-failure', 2, 'RUNNING', 'SATISFIED', 'SUCCESSFUL'],
+    ['no-runs', 3, 'UNKNOWN', 'UNKNOWN', 'UNKNOWN'],
+    ['denied', 3, 'UNKNOWN', 'UNKNOWN', 'UNKNOWN'],
+  ])(
+    '%s preserves state, exit, and both evidence fields',
+    (scenario, code, state, check, execution) => {
+      const result = runStatus(scenario as string);
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(code);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        state,
+        requiredCheckStatus: check,
+        requiredExecutionStatus: execution,
+      });
+      expect(result.stdout + result.stderr).not.toContain(CANARY);
+    }
+  );
+
+  it('reproduces intentional UI skips beside an unproduced aggregate without false RED', () => {
+    const payload = JSON.parse(runStatus('active-skips').stdout);
+    expect(payload.failures).toEqual([]);
+    expect(payload.requiredProblems).toEqual([
+      { context: 'Aggregate', state: 'missing', conclusions: [] },
+      { context: 'Build', state: 'not_successful', conclusions: ['skipped'] },
+    ]);
+    const prose = runStatus('active-skips', false).stdout;
+    expect(prose).toContain('[ACCEPTED, EXECUTION NOT PROVEN] Build - completed as skipped');
+    expect(prose).toContain('[UNRESOLVED] Aggregate - not observed');
+    expect(prose).not.toContain('[BLOCKS MERGE] Build');
+    expect(prose).not.toContain('RED -');
+  });
+
+  it('names a real failed job and step before its parent workflow concludes', () => {
+    const payload = JSON.parse(runStatus('active-required-failure').stdout);
+    expect(payload.failures).toEqual([
+      expect.objectContaining({ job: 'Build', jobId: 456, step: 'Compile source', required: true }),
+    ]);
+    expect(runStatus('active-required-failure', false).stdout).toContain(
+      'failed step: Compile source'
+    );
+    const optional = runStatus('active-optional-failure', false).stdout;
+    expect(optional).toContain('Optional test');
+    expect(optional).not.toContain('nothing has failed yet');
+  });
+
+  it.each(['completed-skips', 'completed-neutral'])(
+    '%s is explicit in single and all-PR output',
+    (scenario) => {
+      for (const all of [false, true]) {
+        const result = runStatus(scenario, true, all);
+        expect(result.status).toBe(0);
+        const data = JSON.parse(result.stdout);
+        const payload = all ? data[0] : data;
+        expect(payload.state).toBe('CHECKS_ACCEPTED');
+        expect(payload.requiredProblems[0].conclusions).toEqual([
+          scenario === 'completed-skips' ? 'skipped' : 'neutral',
+        ]);
+        const prose = runStatus(scenario, false, all).stdout;
+        expect(prose).toContain('CHECKS_ACCEPTED');
+        expect(prose).toContain('EXECUTION NOT PROVEN');
+        expect(prose).toContain('do not authorize a merge or deployment');
+        expect(prose).not.toContain('GREEN -');
+        expect(prose).not.toContain('every required check passed');
+      }
+    }
+  );
+
+  it.each([
+    'failure',
+    'cancelled',
+    'timed_out',
+    'action_required',
+    'startup_failure',
+    'new_conclusion',
+    null,
+  ])('an unaccepted %s conclusion cannot be masked by active siblings', (conclusion) => {
+    const requiredProblems = requiredContextProblems(new Set(['Build']), [
+      { name: 'Build', status: 'completed', conclusion },
+    ]);
+    const input = { failures: [], activeRuns: [{ status: 'in_progress' }], requiredProblems };
+    expect(stateForChecks(input)).toBe('RED');
+    expect(requiredCheckEvidence(input).requiredCheckStatus).toBe('UNSATISFIED');
+  });
+
+  it('keeps skipped/neutral conclusions accepted but not successful with no active run', () => {
+    const requiredProblems = requiredContextProblems(new Set(['Build', 'Audit']), [
+      { name: 'Build', status: 'completed', conclusion: 'skipped' },
+      { name: 'Audit', status: 'completed', conclusion: 'neutral' },
+    ]);
+    const input = { failures: [], activeRuns: [], requiredProblems };
+    expect(stateForChecks(input)).toBe('CHECKS_ACCEPTED');
+    expect(requiredCheckEvidence(input)).toEqual({
+      requiredCheckStatus: 'SATISFIED',
+      requiredExecutionStatus: 'NOT_PROVEN',
+    });
   });
 });

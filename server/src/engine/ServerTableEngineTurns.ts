@@ -399,8 +399,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    */
   static secondLookVerdict(
     fast: { action: string; amount?: number },
-    deep: { action: string; amount?: number }
+    deep: { action: string; amount?: number; policyFallback?: HorseDecision['policyFallback'] }
   ): { action: string; amount?: number } | null {
+    if (deep.policyFallback !== undefined) return null;
     if (deep.action !== 'call' && deep.action !== 'fold' && deep.action !== 'all_in') return null;
     if (deep.action === fast.action) return null;
     return { action: deep.action, amount: deep.amount };
@@ -3321,6 +3322,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                   retireDecision(deepResult.decision);
                   return;
                 }
+                if (deepResult.decision.policyFallback === 'brain_exception') {
+                  retireDecision(deepResult.decision, 'brain_exception');
+                  noteFire('phase15_deep_brain_exception_retired');
+                  return;
+                }
                 const verdict = ServerTableEngineTurns.secondLookVerdict(
                   decision,
                   deepResult.decision
@@ -3538,25 +3544,51 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           const horseClockWasArmed = this.lastActionAcceptedAtMs;
           this.lastActionAcceptedAtMs = Date.now();
           const worker = getLiveHorseDecisionWorker();
-          worker.runWithDispatchBarrier(() => {
+          const attemptAction = (
+            attemptedAction: ActionType,
+            attemptedAmount: number | undefined,
+            origin: 'horse_policy' | 'horse_fallback'
+          ): boolean => {
+            const receiptsBefore = acceptedActions.length;
+            let returned = false;
             try {
-              applied = handControllerRef.performAction(
+              returned = handControllerRef.performAction(
                 seat,
-                action as any,
-                amount,
-                safeWorkerFallback ? 'horse_fallback' : 'horse_policy',
+                attemptedAction,
+                attemptedAmount,
+                origin,
                 ...acceptanceObserver
               );
-              intendedApplied = applied;
-              if (applied) {
-                executedAction = action as ActionType;
-                executedAmount = normalizedAmount;
-              }
             } catch (err) {
               reportError(err, 'ServerTableEngine.' + this.tableId + '.horse_action_threw');
             }
+            // The controller records acceptance before advancing the game.
+            // A later exception or contradictory return cannot undo that
+            // action and must never authorize another action for this turn.
+            return returned || acceptedActions.length > receiptsBefore;
+          };
+          worker.runWithDispatchBarrier(() => {
+            applied = attemptAction(
+              action as ActionType,
+              amount,
+              safeWorkerFallback ? 'horse_fallback' : 'horse_policy'
+            );
+            intendedApplied = applied;
+            if (applied) {
+              executedAction = action as ActionType;
+              executedAmount = normalizedAmount;
+            }
+            const acceptedWager = acceptedActions.length === 1 ? acceptedActions[0] : null;
+            const exactWagerAccepted =
+              !decision.executionWitness ||
+              (acceptedWager?.intended === true &&
+                acceptedWager.record.action === action &&
+                acceptedWager.record.amount === normalizedAmount &&
+                acceptedWager.record.action === decision.executionWitness.selected.action &&
+                acceptedWager.record.amount === decision.executionWitness.selected.amount);
             if (
               intendedApplied &&
+              exactWagerAccepted &&
               fastResult.effects.length > 0 &&
               (action === 'bet' || action === 'raise')
             ) {
@@ -3588,36 +3620,20 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                   seat +
                   ' - falling back to check/fold'
               );
-              try {
-                // Bible V8 §1.7.4 preferCheckOverFold. Re-arm: the rejected attempt
-                // above produced no broadcast, so the clock must start again for
-                // whichever of these two lands.
-                this.lastActionAcceptedAtMs = Date.now();
-                applied = handControllerRef.performAction(
-                  seat,
-                  'check' as any,
-                  undefined,
-                  'horse_fallback',
-                  ...acceptanceObserver
-                );
+              // Bible V8 §1.7.4 preferCheckOverFold. Re-arm: the rejected attempt
+              // above produced no broadcast, so the clock must start again for
+              // whichever of these two lands.
+              this.lastActionAcceptedAtMs = Date.now();
+              applied = attemptAction('check', undefined, 'horse_fallback');
+              if (applied) {
+                executedAction = 'check';
+                executedAmount = null;
+              } else {
+                applied = attemptAction('fold', undefined, 'horse_fallback');
                 if (applied) {
-                  executedAction = 'check';
+                  executedAction = 'fold';
                   executedAmount = null;
-                } else {
-                  applied = handControllerRef.performAction(
-                    seat,
-                    'fold' as any,
-                    undefined,
-                    'horse_fallback',
-                    ...acceptanceObserver
-                  );
-                  if (applied) {
-                    executedAction = 'fold';
-                    executedAmount = null;
-                  }
                 }
-              } catch {
-                /* Hand already resolved. */
               }
             }
             settleHorseExecutionWitness(decision.executionWitness, {

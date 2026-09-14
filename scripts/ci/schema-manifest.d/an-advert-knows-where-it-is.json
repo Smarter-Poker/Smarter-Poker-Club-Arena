@@ -1,0 +1,14 @@
+{
+  "_owner": "agent/cowork-ads11/feat/an-advert-knows-where-it-is. Migration 20260914011104: a sponsor flight carries a country list (null = everywhere), fn_resolve_ads takes p_country and never serves a gated flight to an unknown location, both sponsor submits take p_countries, both lists return countries.",
+  "functions": [
+    "fn_ad_countries_clean",
+    "fn_resolve_ads",
+    "fn_sponsor_ad_submit",
+    "fn_sponsor_campaign_create",
+    "fn_sponsor_campaign_list",
+    "fn_ad_campaign_list"
+  ],
+  "columns": {
+    "ad_campaign": ["countries"]
+  }
+}

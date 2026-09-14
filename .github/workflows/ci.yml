@@ -64,9 +64,33 @@ on:
 # be stranded by a check that will never speak again, which cost six of them.
 # ═══════════════════════════════════════════════════════════════════════════
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}-${{ github.event.pull_request.head.sha || github.sha }}
+  # 2026-09-14: keyed on the PR, not the PR+sha. Keyed on the sha, a new push never
+  # cancelled the previous commit's 15-job run; only 2-7 of 100-200 daily runs were
+  # ever cancelled. Now a superseded push is cancelled the moment the next one lands.
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+# ───────────────────────────────────────────────────────────────────────────
+# RUNNER ROUTING (restored 2026-09-14)
+#
+# 2026-09-01/02 cost audit: every credential-free job reads vars.CI_RUNNER
+# (repo variable, = estate-linux) and runs on the 33 self-hosted Hetzner
+# runners for free; unset, it is ubuntu-latest exactly as before.
+#
+# PR #4189 (2026-09-11) hard-coded ubuntu-latest on all of them, citing
+# untrusted PR input on persistent hosts. Effect, measured from the billing
+# API: ~3 billed minutes per CI run became ~70 (15 hosted jobs), $31/day
+# became $121/day (2026-09-12), while every estate runner sat online and idle.
+#
+# The concern #4189 raised is handled by SEPARATION, not by paying GitHub:
+#   - ci.yml references no secrets at all, so nothing on the estate-linux pool
+#     can be exfiltrated by pull-request code beyond a read-only GITHUB_TOKEN.
+#   - Credential-bearing publish jobs (publish-club-arena.yml build-and-store,
+#     publish-to-app, publish-to-origin) read vars.PUBLISH_RUNNER instead and
+#     do NOT share the pool with pull-request code (unset => ubuntu-latest).
+# Do not hard-code ubuntu-latest on a credential-free job again without
+# re-reading the September billing numbers.
+# ───────────────────────────────────────────────────────────────────────────
 jobs:
   # ───────────────────────────────────────────────────────────────────────────
   # WHICH CHECKS CAN THIS DIFF ACTUALLY BREAK?
@@ -94,7 +118,8 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   changes:
     name: What changed
-    runs-on: ubuntu-latest
+    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
     if: github.event_name == 'pull_request'
     permissions:
@@ -144,7 +169,8 @@ jobs:
   # it to be behind a gate that can hide it.
   source_windows:
     name: Source Windows Are Structural
-    runs-on: ubuntu-latest
+    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 6
     steps:
       - name: Checkout
@@ -190,7 +216,8 @@ jobs:
   stub_gate:
     if: github.event_name == 'pull_request'
     name: Stub Gate
-    runs-on: ubuntu-latest
+    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -227,7 +254,8 @@ jobs:
     name: TypeScript Check
     needs: [typecheck_compile, changes, fixture_native]
     if: always() && github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 2
     permissions:
       contents: read
@@ -256,8 +284,13 @@ jobs:
     # when it takes twenty seconds.
     if: github.event_name == 'pull_request'
     name: TypeScript compilation and repository checks
-    runs-on: ubuntu-latest
+    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
+
+    permissions:
+      contents: read
+      pull-requests: read
 
     steps:
       - name: Checkout
@@ -268,11 +301,21 @@ jobs:
           fetch-depth: 0
           filter: blob:none
 
+      # A stale head is a failed check, never an explained diff skip.
+      - name: Admit only the current PR head before heavy work
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/admit-current-pr-ci.mjs
+
       - name: Setup Node 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
+
+      - name: PR head admission preserves required-check truth
+        run: node --test tests/operations/pr-ci-admission.test.mjs
 
       - name: Native fixture gate rejects missing and skipped proof
         run: node --test tests/operations/fixture-required-ci.test.mjs
@@ -988,9 +1031,8 @@ jobs:
        (github.event_name == 'pull_request' &&
         (needs.changes.result != 'success' || needs.changes.outputs.src == 'true' || needs.changes.outputs.tests == 'true')))
     name: Client Unit Tests shard ${{ matrix.shard }}
-    # Every pull-request shard gets a fresh hosted image. A dependency or test
-    # from a branch cannot persist into any later credential-bearing job.
-    runs-on: ubuntu-latest
+    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
     # SHARDED 2026-09-06. Measured over 18 pull-request runs this was the
     # critical path by a distance - p50 264s, max 779s, against 236s for the
@@ -998,16 +1040,27 @@ jobs:
     # 2026-09-02 (publish-club-arena.yml `client-tests`); this is that, moved
     # one step earlier so the pull request feels it too.
     #
-    # fail-fast cancels the siblings the moment one shard fails, which is what
-    # a gate wants: the answer is already known.
+    # Admission refusal must not cancel a sibling that already started work.
+    # The required aggregate still fails unless every applicable shard passes.
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         shard: [1, 2, 3, 4]
+
+    permissions:
+      contents: read
+      pull-requests: read
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # A stale head is a failed check, never an explained diff skip.
+      - name: Admit only the current PR head before heavy work
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/admit-current-pr-ci.mjs
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -1063,7 +1116,8 @@ jobs:
     needs: unit_shards
     if: always()
     name: Client Unit Tests (vitest)
-    runs-on: ubuntu-latest
+    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
       - name: Every shard passed
@@ -1097,9 +1151,20 @@ jobs:
     name: Accounting transactions (PostgreSQL 17)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      # A stale head is a failed check, never an explained diff skip.
+      - name: Admit only the current PR head before heavy work
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/admit-current-pr-ci.mjs
+
       - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
@@ -1134,6 +1199,10 @@ jobs:
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
           sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17
+      - name: Spin prize audits require matching posted correction funding
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-spin-prize-overlay.py
       - name: BBJ bank replay identity and drift-safe installation
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
@@ -1146,6 +1215,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-horse-seat-touch-session.py
+      - name: Union integrity reports keep event and incident scope
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-union-integrity-scope.py
       - name: Tournament finish incidents retain their own event identity
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
@@ -1267,7 +1340,8 @@ jobs:
         (needs.changes.result != 'success' ||
          needs.changes.outputs.server == 'true')))
     name: Server Engine shard ${{ matrix.shard }}/4
-    runs-on: ubuntu-latest
+    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -1279,6 +1353,10 @@ jobs:
       run:
         working-directory: server
 
+    permissions:
+      contents: read
+      pull-requests: read
+
     steps:
       - name: Require successful real PostgreSQL accounting tests
         if: needs.accounting_postgres.result != 'success'
@@ -1288,6 +1366,13 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+
+      # A stale head is a failed check, never an explained diff skip.
+      - name: Admit only the current PR head before heavy work
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/admit-current-pr-ci.mjs
 
       - name: Setup Node 22
         uses: actions/setup-node@v4
@@ -1343,7 +1428,8 @@ jobs:
     needs: [changes, server_shards]
     if: always()
     name: Server Engine (typecheck + tests)
-    runs-on: ubuntu-latest
+    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 2
     steps:
       - name: Every shard passed
@@ -1385,7 +1471,8 @@ jobs:
   # surfaces in the run header without anyone thinking to open the logs.
   verdict:
     name: What this run verified
-    runs-on: ubuntu-latest
+    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 2
     if: always()
     needs: [changes, stub_gate, typecheck, typecheck_compile, fixture_native, unit, server]
@@ -1465,8 +1552,13 @@ jobs:
       always() && github.event_name == 'pull_request' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: Production Build
-    runs-on: ubuntu-latest
+    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
+
+    permissions:
+      contents: read
+      pull-requests: read
 
     steps:
       - name: Checkout
@@ -1476,6 +1568,13 @@ jobs:
           # can falsely appear behind even when main is its direct parent.
           fetch-depth: 0
           filter: blob:none
+
+      # A stale head is a failed check, never an explained diff skip.
+      - name: Admit only the current PR head before heavy work
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/admit-current-pr-ci.mjs
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -1628,7 +1727,16 @@ jobs:
       # BRANCHED ON THE RUNNER 2026-09-07, and this was the last unguarded
       - name: Install Performance Browser
         if: success()
-        run: npx playwright install --with-deps chromium
+        # --with-deps apt-gets browser libraries and needs root + the apt lock. The estate
+        # boxes carry those libraries (provision-ci-box.sh) and run many runners per host,
+        # so on self-hosted install the browser only. Keyed on runner.environment, NOT on
+        # vars.CI_RUNNER, so a job still pinned to ubuntu-latest keeps --with-deps.
+        run: |
+          if [ "${{ runner.environment }}" = "self-hosted" ]; then
+            npx playwright install chromium
+          else
+            npx playwright install --with-deps chromium
+          fi
 
       - name: Route Performance Budget
         if: success()
@@ -1668,7 +1776,8 @@ jobs:
     # that is the "is main actually green" net (see the schedule note).
     if: github.event_name == 'schedule' && github.event.schedule == '35 6 * * *'
     name: Live Production E2E
-    runs-on: ubuntu-latest
+    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 25
 
     steps:
@@ -1688,7 +1797,16 @@ jobs:
         run: npm ci
 
       - name: Install Playwright Browsers
-        run: npx playwright install --with-deps chromium
+        # --with-deps apt-gets browser libraries and needs root + the apt lock. The estate
+        # boxes carry those libraries (provision-ci-box.sh) and run many runners per host,
+        # so on self-hosted install the browser only. Keyed on runner.environment, NOT on
+        # vars.CI_RUNNER, so a job still pinned to ubuntu-latest keeps --with-deps.
+        run: |
+          if [ "${{ runner.environment }}" = "self-hosted" ]; then
+            npx playwright install chromium
+          else
+            npx playwright install --with-deps chromium
+          fi
 
       - name: Wait for Production Deploy
         run: |
@@ -1808,7 +1926,8 @@ jobs:
     # logic alive at 13 runs a day instead of 85.
     if: github.event_name == 'schedule'
     name: Post-Deploy Verification
-    runs-on: ubuntu-latest
+    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
 
     steps:
@@ -1913,8 +2032,13 @@ jobs:
       always() && github.event_name == 'pull_request' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: CSS Beat E2E (multi-table + animations)
-    runs-on: ubuntu-latest
+    # Credential-free job: estate runner when vars.CI_RUNNER is set (see RUNNER ROUTING above).
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 20
+
+    permissions:
+      contents: read
+      pull-requests: read
 
     steps:
       - name: Checkout
@@ -1924,6 +2048,13 @@ jobs:
           # can falsely appear behind even when main is its direct parent.
           fetch-depth: 0
           filter: blob:none
+
+      # A stale head is a failed check, never an explained diff skip.
+      - name: Admit only the current PR head before heavy work
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/admit-current-pr-ci.mjs
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -1977,7 +2108,16 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Install Chromium and WebKit
-        run: npx playwright install chromium webkit --with-deps
+        # --with-deps apt-gets browser libraries and needs root + the apt lock. The estate
+        # boxes carry those libraries (provision-ci-box.sh) and run many runners per host,
+        # so on self-hosted install the browser only. Keyed on runner.environment, NOT on
+        # vars.CI_RUNNER, so a job still pinned to ubuntu-latest keeps --with-deps.
+        run: |
+          if [ "${{ runner.environment }}" = "self-hosted" ]; then
+            npx playwright install chromium webkit
+          else
+            npx playwright install --with-deps chromium webkit
+          fi
 
       # Same content-addressed media cache as Production Build, same key, so
       # whichever of the two runs first warms it for the other.

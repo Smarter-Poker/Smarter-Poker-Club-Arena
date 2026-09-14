@@ -178,7 +178,9 @@ describe('Club Data reporting stays inside the authenticated query budget', () =
       /if \(showSpinner\) \{\s*playersSpinnerVersion\.current = myVersion;\s*setPlayersLoading\(true\);/
     );
     expect(page).toContain('if (manualRefreshingRef.current) return;');
-    expect(page).toContain('disabled={manualRefreshing || !clubUuid || isHydrating}');
+    // The Refresh action is a painted plate on the console (2026-09-14), so
+    // its guard is a PlateButton prop rather than a JSX attribute. Same guard.
+    expect(page).toMatch(/disabled[=:] ?\{?manualRefreshing \|\| !clubUuid \|\| isHydrating\}?/);
   });
 
   it('serves both reports from incrementally maintained daily facts', () => {

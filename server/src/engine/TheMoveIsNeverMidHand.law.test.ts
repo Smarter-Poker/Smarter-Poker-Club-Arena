@@ -84,7 +84,7 @@ describe("D1 - a read that FAILED changes nothing (the invariant, through main's
   it('a throwing read leaves every hold intact, prunes nothing and tells nobody', async () => {
     const engine = tableHoldingASwapSide();
     vi.spyOn(moves, 'pendingSeatMoves').mockRejectedValue(new Error('read failed'));
-    await expect(engine.announcePendingSeatMoves()).resolves.toBeUndefined();
+    await expect(engine.announcePendingSeatMoves()).resolves.toBe(false);
     expect([...engine.heldForSwap]).toEqual(['held-player']);
     expect([...engine.announcedSeatMoves]).toEqual(['announced-move']);
     expect(engine.hub.emitEvent).not.toHaveBeenCalled();

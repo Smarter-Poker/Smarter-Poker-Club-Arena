@@ -54,6 +54,8 @@ export interface GameLobbyPanelProps {
   onJoinTable: (tableId: string) => void;
   /** Why no seat can be taken on this whole board; see LobbyRowContext. */
   seatsClosedLabel?: string;
+  /** Why no tournament can be entered on this whole board; see LobbyRowContext. */
+  registrationClosedLabel?: string;
   onWaitlistToggle: (tableId: string, joining: boolean) => void;
   onRegister: (t: LobbyTournamentRow) => void;
   onUnregister: (t: LobbyTournamentRow) => void;
@@ -114,6 +116,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
     onClose,
     onJoinTable,
     seatsClosedLabel,
+    registrationClosedLabel,
     onWaitlistToggle,
     onRegister,
     onUnregister,
@@ -487,6 +490,15 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
     if (st === 'completed' || st === 'closed')
       return { label: 'Registration Closed', kind: 'disabled' as const };
     if (st === 'running') return { label: 'Registration Closed', kind: 'disabled' as const };
+    /* The whole board's door is shut (Diamond Phase 8): the event is listed
+       so it can be read, and every registration door refuses until the
+       arena's tournament switch is on. Say so rather than offer the button. */
+    if (registrationClosedLabel)
+      return {
+        label: registrationClosedLabel,
+        kind: 'disabled' as const,
+        note: 'Tournaments Are Listed So You Can Read Them. Registration Opens Later.',
+      };
     const full = entry.capacity > 0 && entry.players >= entry.capacity;
     if (full) return { label: 'Tournament Full', kind: 'disabled' as const };
     if (st === 'late_reg')
@@ -504,6 +516,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
     };
   }, [
     seatsClosedLabel,
+    registrationClosedLabel,
     entry,
     isCash,
     seated,

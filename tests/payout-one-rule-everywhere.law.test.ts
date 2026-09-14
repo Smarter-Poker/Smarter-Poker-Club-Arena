@@ -41,6 +41,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { computePlacePrize, prizePoolAvailableToPlaces } from '../src/lib/payoutMath';
+import { CHIP_UNIT_CENTS } from '../server/src/tournament/tournamentUnit';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 
@@ -158,7 +159,8 @@ describe('cash bubble protection comes from the prize pool', () => {
     const placePool = prizePoolAvailableToPlaces(1000, ladder, 4, true, 100);
     expect(placePool).toBe(900);
     const ladderCents = ladder.reduce(
-      (sum, row) => sum + Math.round(computePlacePrize(placePool!, ladder, row.place) * 100),
+      (sum, row) =>
+        sum + Math.round(computePlacePrize(placePool!, ladder, row.place, CHIP_UNIT_CENTS) * 100),
       0
     );
     expect(ladderCents).toBe(90000);
@@ -203,7 +205,7 @@ describe('the client prices exactly what the engine pays', () => {
         const pool = cents / 100;
         let sum = 0;
         for (let place = 1; place <= pcts.length; place++) {
-          sum += Math.round(computePlacePrize(pool, entries, place) * 100);
+          sum += Math.round(computePlacePrize(pool, entries, place, CHIP_UNIT_CENTS) * 100);
         }
         if (sum !== cents) {
           bad.push(`pool ${pool.toFixed(2)} -> ${(sum / 100).toFixed(2)}`);
@@ -219,9 +221,9 @@ describe('the client prices exactly what the engine pays', () => {
       place: i + 1,
       percentage,
     }));
-    expect(computePlacePrize(513, nine, 8)).toBe(17.96);
+    expect(computePlacePrize(513, nine, 8, CHIP_UNIT_CENTS)).toBe(17.96);
     const total = nine.reduce(
-      (s, e) => s + Math.round(computePlacePrize(513, nine, e.place) * 100),
+      (s, e) => s + Math.round(computePlacePrize(513, nine, e.place, CHIP_UNIT_CENTS) * 100),
       0
     );
     expect(total).toBe(51300);

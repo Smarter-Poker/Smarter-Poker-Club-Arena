@@ -17385,6 +17385,14 @@ Hand-for-hand retains synchronized/add-on break pauses, preserves their budgets 
 
 **TypeScript:** Not applicable, native SQL/Python rehearsal and evidence only. Full terminal and production gates remain open.
 
+## 2026-09-14: Keep blind publication out of the known maintenance freeze
+
+**Files/lines:** server/src/tournament/TournamentManagerBase.ts original6104/6184/6457; BlindLevelTransitionRecovery.test.ts and three existing clock harnesses.
+**What existed:** a due timer on a tournament without its own break flag submitted the atomic level RPC every second during global maintenance. The database refused each write as paused; the caller retried and reported failure.
+**What changed:** one lifecycle-owned local wake, no database work while the known freeze holds, followed by exact durable-clock resynchronization after thaw. Preserve playable remainder, immutable pending request and lost-response replay through the original fenced publisher. Do not persist a replacement clock during the hold.
+**Why:** prevent rejected maintenance writes at their caller without advancing early or dropping the level wake.
+**Verified:** YES; eight original failures,24focused tests and2,211tournament/maintenance tests across167files pass, zero skips. **TypeScript:** PASS. RequiredCI/served proof pending. No SQL or financial authority changed. See docs/changelog/2026-09-14-mtt-blind-maintenance-admission.md; it also records the separately verified prospective Turbo Tuesday schedule corrections.
+
 ## 2026-09-14: Qualify scheduled discovery under full CI initialization
 
 **Files:** server/src/engine/DirectEngineRecovery.guard.test.ts original176; server/src/tournament/ScheduledStartDiscoveryIsolation.test.ts. **Before:**shutdown inventory countedfourjobs; discovery case included pre-test import diagnostics. **After:**assert five supervised loops and scheduled-loop lifecycle fence; clear import-time error history before each operation. **Why:**actualCI34795506067 failed these two cases. **Verified:**87/7PASS with servicekeyunset and originalwarningretained inlog; **TypeScript:**PASS. No runtimebehavior orauthority changed; fullCI remainsrequired.

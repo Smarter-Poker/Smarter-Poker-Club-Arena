@@ -33,6 +33,50 @@
 import { test, expect, type Request } from '@playwright/test';
 import { assertRendered } from './routes/utils';
 
+/* `assertRendered` asserts on the CURRENT page - it does not navigate. Every
+   other caller in this suite goes to the route first, and the two that did not
+   were how 80 specs once ran green against a blank page. Relative, because
+   `baseURL` already carries /hub/club-arena/ (see playwright.config.ts). */
+const ARENA = './';
+
+/**
+ * Go to the arena, and say honestly whether there is an app to look at.
+ *
+ * Signed out, this route renders an EMPTY `#root` - not the /auth redirect
+ * `assertRendered` knows how to skip on - so the helper times out with "the app
+ * mounted but rendered nothing", which is a confusing way to say "no session".
+ * Every claim in this file is about the ticker, and a page with no app has no
+ * ticker, so a signed-out run must SKIP rather than fail. That is the
+ * convention 47 route specs in this suite already follow, and global-setup
+ * writes an empty storageState when SP_EMAIL/SP_PASS are absent precisely so
+ * they can.
+ */
+async function openArena(page: import('@playwright/test').Page): Promise<void> {
+  await page.goto(ARENA, { waitUntil: 'domcontentloaded' });
+
+  /* SETTLE FIRST. Signed out, the arena boots - `#root` really does get
+     children, measured - and then bounces to a sign-in surface that has no
+     `#root` at all. Asserting immediately catches the app mid-redirect and
+     reports "the SPA never mounted", which is the opposite of what happened.
+     Every other spec in this suite waits before it asserts (smoke.spec.ts 3s,
+     routes/admin.spec.ts 4s) and this is why. */
+  await page.waitForTimeout(4_000);
+
+  const mounted = await page
+    .locator('#root > *')
+    .first()
+    .waitFor({ state: 'attached', timeout: 10_000 })
+    .then(() => true)
+    .catch(() => false);
+
+  /* Every claim in this file is about the ticker, and a page with no app has no
+     ticker, so a signed-out run SKIPS rather than fails - the convention 47
+     route specs here already follow. global-setup writes an empty storageState
+     when SP_EMAIL/SP_PASS are absent precisely so they can. */
+  test.skip(!mounted, `no signed-in session at ${page.url()}: nothing to measure`);
+  await assertRendered(page, ARENA);
+}
+
 /** The old path's fingerprint: a REST read of `tournaments` scoped by a list. */
 const OLD_SWEEP = /\/rest\/v1\/tournaments\?[^\s]*club_id=in\./;
 /** The old registration read: 200 rows of tournament_players, per poll. */
@@ -42,18 +86,26 @@ const FEED_RPC = /\/rest\/v1\/rpc\/fn_get_ticker_feed/;
 
 test.describe('the ticker reads the server once', () => {
   test('sends no five-query sweep, and no club-id list', async ({ page }) => {
+    /* The default test timeout is THIRTY seconds and the bar's poll interval is
+       thirty, so this spec cannot make its point inside the default: it has to
+       sit through a tick. Raised here rather than globally - nothing else in
+       this suite needs it. */
+    test.setTimeout(120_000);
+
     const seen: string[] = [];
     const bodies: string[] = [];
     const record = (request: Request) => {
       seen.push(request.url());
       if (request.method() === 'POST') bodies.push(request.postData() ?? '');
     };
+    /* Attached BEFORE the navigation, or the first read - the one the bar makes
+       on mount, which is the interesting one - is never seen. */
     page.on('request', record);
 
-    await assertRendered(page, './');
+    await openArena(page);
 
-    /* The bar polls, so one paint is not enough to prove a poll tick is clean.
-       Sit through longer than the interval. */
+    /* One paint does not prove a poll TICK is clean. Sit through longer than
+       the interval so at least one refresh is in the sample. */
     await page.waitForTimeout(35_000);
     page.off('request', record);
 
@@ -82,13 +134,17 @@ test.describe('the ticker reads the server once', () => {
   });
 
   test('when the rail is on screen, the feed is what put it there', async ({ page }) => {
+    test.setTimeout(60_000);
+
     const feedCalls: string[] = [];
     page.on('request', (request) => {
       if (FEED_RPC.test(request.url())) feedCalls.push(request.url());
     });
 
-    await assertRendered(page, './');
-    await page.waitForTimeout(5_000);
+    await openArena(page);
+    /* Longer than the bar's first read and any retry behind it - the figure
+       tests/e2e/routes/admin.spec.ts settled on for the same wait. */
+    await page.waitForTimeout(8_000);
 
     const rail = page.locator('.mtt-ticker');
     if ((await rail.count()) === 0) {

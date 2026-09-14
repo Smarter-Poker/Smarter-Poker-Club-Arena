@@ -60,7 +60,12 @@ import {
 } from '../services/MysteryBountyService';
 // WHOLE-NUMBER TOURNAMENT MONEY (Dan 2026-08-20). Every buy-in / fee / prize
 // figure on this page renders through these, never as a raw column value.
+// A figure that is a TERM OF WHAT THE SERVER CHARGES (buy-in, rebuy, add-on,
+// bounty) stays exact; browsing figures - pools, stacks, prize previews - go
+// through compactChips, which is the lobby rule Dan set on 2026-09-08.
 import { formatBuyIn, money, totalBuyIn } from '../utils/buyIn';
+import { compactChips, ordinal } from '../utils/format';
+import { SpadeConsole, type ConsoleInk } from '../components/console/SpadeConsole';
 import { relayTournamentEvent } from '../services/tournamentEventBridge';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 import { uuid } from '../utils/uuid';
@@ -1136,587 +1141,605 @@ export default function TournamentPage() {
     [navigate]
   );
 
+  /* ── The master, and nothing drawn ─────────────────────────────────────
+     #ClubArenaConsole, 2026-09-08. This page was two columns of rounded
+     cards: a filter-chip strip, a card per tournament with a gradient
+     progress bar and an inline pill for the live level, then a details pane
+     built from a four-cell stat GRID, three bordered tables and a stack of
+     gradient buttons. It is Dan's approved spade master now - one console for
+     the lobby head, one per tournament, one for the details - and every figure
+     prints as a row on the black glass between the rails: label in the
+     master's lit blue on the left, value in silver on the right, an engraved
+     rule between rows.
+
+     Two defects went with it, both of them money on a forward-facing page:
+     the payout list and the final-standings podium printed
+     `Math.trunc(pool * pct) / 100`, i.e. a DECIMAL prize, and the podium's
+     top three places printed nothing at all where an emoji had once been
+     stripped out - so 1st, 2nd and 3rd were blank rows. */
+
+  const GAME_LABELS: Record<string, string> = {
+    NLH: 'NLH',
+    FLH: 'FLH',
+    PLO4: 'PLO4',
+    PLO5: 'PLO5',
+    PLO6: 'PLO6',
+    PLO8: 'PLO8',
+    PLO_HILO: 'PLO Hi-Lo',
+    SHORT_DECK: 'Short Deck',
+    PINEAPPLE: 'Crazy Pineapple',
+    MIXED: 'Mixed',
+    CRAZY_PINEAPPLE: 'Crazy Pine',
+    DOUBLE_BOARD: 'Double Board',
+  };
+
+  const gameLabel = (t: Tournament): string =>
+    GAME_LABELS[(t.game_type || t.variant || 'NLH').toUpperCase()] || t.game_type || 'NLH';
+
+  /** The state, as one short word for the well's painted pill slot. */
+  const statePill = (t: Tournament): { label: string; ink: ConsoleInk } => {
+    if (t.status === 'REGISTERING') return { label: 'Open', ink: 'green' };
+    if (t.status === 'RUNNING')
+      return isLateRegOpen(t)
+        ? { label: 'Late Reg', ink: 'gold' }
+        : { label: 'Running', ink: 'blue' };
+    if (t.status === 'COMPLETED') return { label: 'Done', ink: 'muted' };
+    if (t.status === 'CANCELLED') return { label: 'Off', ink: 'red' };
+    return { label: 'Soon', ink: 'muted' };
+  };
+
+  /** Blind and payout structures arrive as JSON, as a string, or as nothing. */
+  const asRows = (raw: unknown): any[] => {
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === 'string') {
+      try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  };
+
   if (isLoading) {
     return (
       <div className="tournament-page">
-        <div className="tournament-header">
-          <div className="header-left">
-            <h1> Tournaments</h1>
-          </div>
-        </div>
-        <div className="tournament-content">
-          <div className="tournament-list">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="tournament-skeleton-card">
-                <div className="skel-header" />
-                <div className="skel-body">
-                  <div className="skel-line" style={{ width: '60%' }} />
-                  <div className="skel-line" style={{ width: '40%' }} />
-                  <div className="skel-line" style={{ width: '75%' }} />
-                </div>
-              </div>
+        <SpadeConsole
+          as="div"
+          className="tournament-console"
+          eyebrow="Club Arena"
+          title="Tournaments"
+          foot="foot"
+        >
+          <div className="tourn-skeleton" aria-hidden="true">
+            {['60%', '40%', '75%', '55%'].map((w) => (
+              <div key={w} className="skel-line" style={{ width: w }} />
             ))}
           </div>
-        </div>
+        </SpadeConsole>
       </div>
     );
   }
 
+  const detailPlates = (() => {
+    const t = selectedTournament;
+    if (!t) return undefined;
+    const back = {
+      label: 'Back To List',
+      onClick: () => setSelectedTournament(null),
+      'aria-label': 'Back To The Tournament List',
+    };
+    if (t.status === 'REGISTERING' || t.status === 'ANNOUNCED') {
+      return {
+        secondary: back,
+        primary: isRegistered
+          ? { label: 'Unregister', ink: 'red' as const, onClick: handleUnregister }
+          : {
+              label: `Register (${money(totalBuyIn(t.buy_in_amount, t.buy_in_fee))})`,
+              ink: 'white' as const,
+              onClick: handleRegister,
+            },
+      };
+    }
+    if (t.status === 'RUNNING') {
+      /* Dan 2026-08-25 (binding): a running tournament must be watchable.
+         This was `disabled` with the label "Tournament in Progress" - a
+         literal greyed-out dead end, on the one screen a player lands on when
+         they tap a running game. It is a live action for everyone now:
+         `handleJoinTable` already falls back to the tournament's own tables
+         when the viewer holds no seat. */
+      return {
+        secondary: back,
+        primary: {
+          label: isRegistered ? 'Go To Table' : 'Watch',
+          ink: 'white' as const,
+          onClick: handleJoinTable,
+        },
+      };
+    }
+    return {
+      secondary: back,
+      primary: { label: statePill(t).label, ink: 'muted' as const, disabled: true },
+    };
+  })();
+
   return (
     <div className="tournament-page">
-      {/* Header */}
-      <div className="tournament-header">
-        <div className="header-left">
-          <h1> Tournaments</h1>
-        </div>
-        {isOwner && !isInUnion && (
-          <button className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
-            + Create Tournament
-          </button>
-        )}
-      </div>
+      {/* ── The lobby head: the filters, and the owner's one control ────── */}
+      <SpadeConsole
+        as="section"
+        className="tournament-console tourn-head"
+        eyebrow="Club Arena"
+        title="Tournaments"
+        subtitle="Upcoming And Live"
+        pill={`${filteredTournaments.length}`}
+        pillInk="blue"
+        foot="foot"
+      >
+        <nav className="tourn-filters" aria-label="Stake Filters">
+          {[
+            { value: 'all', label: 'All Stakes' },
+            { value: 'freeroll', label: 'Freerolls' },
+            { value: 'micro', label: 'Micro' },
+            { value: 'highroller', label: 'High Roller' },
+          ].map((f) => (
+            <button
+              key={f.value}
+              type="button"
+              aria-pressed={filter === f.value}
+              className={`tourn-filter ${filter === f.value ? 'is-active' : ''}`}
+              onClick={() => setFilter(f.value as TournFilter)}
+            >
+              {f.label}
+            </button>
+          ))}
+        </nav>
 
-      <div className="tournament-content">
-        {/* Tournament List */}
-        <div className="tournament-list">
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '1rem',
-            }}
-          >
-            <h2 style={{ margin: 0 }}>Upcoming</h2>
-            <div className="tourn-filter-chips">
-              {[
-                { value: 'all', label: 'All Stakes' },
-                { value: 'freeroll', label: 'Freerolls' },
-                { value: 'micro', label: 'Micro' },
-                { value: 'highroller', label: 'High Roller' },
-              ].map((f) => (
-                <button
-                  key={f.value}
-                  className={`tourn-filter-chip ${filter === f.value ? 'active' : ''}`}
-                  onClick={() => setFilter(f.value as TournFilter)}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          {filteredTournaments.length === 0 ? (
-            <div className="empty-state">
-              <p>No Tournaments Match Your Filters</p>
-            </div>
-          ) : (
-            filteredTournaments.map((tourn) => (
-              <div
-                key={tourn.id}
-                className={`tournament-card ${selectedTournament?.id === tourn.id ? 'selected' : ''} ${visibleTournaments.has(tourn.id) ? 'fadeInUp' : 'hidden'}`}
-                style={
-                  visibleTournaments.has(tourn.id)
-                    ? { cursor: 'pointer' }
-                    : { opacity: 0, transform: 'translateY(8px)', cursor: 'pointer' }
+        {/* ONE ACTION, SO NO PLATES: the foot paints both plates or neither,
+            and a painted plate with nothing on it reads as broken. */}
+        {isOwner && !isInUnion && (
+          <p className="tourn-words">
+            <button
+              type="button"
+              className="tourn-word sc-ink--blue"
+              onClick={() => setShowCreateModal(true)}
+            >
+              Create Tournament
+            </button>
+          </p>
+        )}
+      </SpadeConsole>
+
+      {/* ── The tournaments ──────────────────────────────────────────────── */}
+      {filteredTournaments.length === 0 ? (
+        <SpadeConsole
+          as="div"
+          className="tournament-console"
+          eyebrow="Club Arena"
+          title="No Tournaments"
+          foot="foot"
+        >
+          <p className="sc-copy sc-copy--center">No Tournaments Match Your Filters</p>
+        </SpadeConsole>
+      ) : (
+        filteredTournaments.map((tourn) => {
+          const pill = statePill(tourn);
+          return (
+            <SpadeConsole
+              key={tourn.id}
+              as="div"
+              className={`tournament-console tournament-card ${selectedTournament?.id === tourn.id ? 'selected' : ''} ${visibleTournaments.has(tourn.id) ? 'fadeInUp' : 'hidden'}`}
+              eyebrow={gameLabel(tourn)}
+              title={tourn.name}
+              pill={pill.label}
+              pillInk={pill.ink}
+              foot="foot"
+              style={
+                visibleTournaments.has(tourn.id)
+                  ? { cursor: 'pointer' }
+                  : { opacity: 0, transform: 'translateY(8px)', cursor: 'pointer' }
+              }
+              onClick={() => {
+                setSelectedTournament(tourn);
+                // On mobile, navigate to full detail page
+                if (window.innerWidth <= 768) {
+                  navigate(`/tournaments/${tourn.id}`);
                 }
-                onClick={() => {
-                  setSelectedTournament(tourn);
-                  // On mobile, navigate to full detail page
-                  if (window.innerWidth <= 768) {
-                    navigate(`/tournaments/${tourn.id}`);
-                  }
-                }}
-              >
-                <div className="tourn-header">
-                  <span className="tourn-name">{tourn.name}</span>
-                  <span className={`tourn-status ${tourn.status}`}>
-                    {tourn.status === 'REGISTERING'
-                      ? ' Open'
-                      : tourn.status === 'RUNNING'
-                        ? isLateRegOpen(tourn)
-                          ? ' Late Reg'
-                          : ' Running'
-                        : ' Soon'}
-                  </span>
-                </div>
-                <div className="tourn-info">
-                  <span className="tourn-type">
-                    {(
-                      {
-                        NLH: 'NLH',
-                        FLH: 'FLH',
-                        PLO4: 'PLO4',
-                        PLO5: 'PLO5',
-                        PLO6: 'PLO6',
-                        PLO8: 'PLO8',
-                        PLO_HILO: 'PLO Hi-Lo',
-                        SHORT_DECK: 'Short Deck',
-                        PINEAPPLE: 'Crazy Pineapple',
-                        MIXED: 'Mixed',
-                        CRAZY_PINEAPPLE: 'Crazy Pine',
-                        DOUBLE_BOARD: 'Double Board',
-                      } as Record<string, string>
-                    )[(tourn.game_type || tourn.variant || 'NLH').toUpperCase()] ||
-                      tourn.game_type ||
-                      'NLH'}
-                  </span>
-                  <span className="tourn-buyin">
+              }}
+            >
+              <div className="tourn-rows">
+                <div className="tourn-row">
+                  <span className="sc-label sc-ink--blue">Buy-In</span>
+                  {/* Whole chips, and EXACT: this is what the server charges. */}
+                  <span className="tourn-value sc-ink--silver">
                     {formatBuyIn(tourn.buy_in_amount, tourn.buy_in_fee)}
                   </span>
                 </div>
-                <div className="tourn-meta">
-                  <span>
-                    {' '}
-                    {tourn.current_players}/{tourn.max_players}
+                <div className="tourn-row">
+                  <span className="sc-label sc-ink--blue">Entries</span>
+                  <span className="tourn-value sc-ink--silver">
+                    {tourn.current_players}
+                    {tourn.max_players ? `/${tourn.max_players}` : ''}
                   </span>
-                  <span> {money(tourn.prize_pool)}</span>
                 </div>
-                {/* Registration Progress Bar (Initiative 2) */}
-                {(tourn.max_players ?? 0) > 0 && (
-                  <div className="tourn-progress-bar">
-                    <div
-                      className="tourn-progress-fill"
-                      style={{
-                        width: `${Math.min(100, (tourn.current_players / (tourn.max_players ?? 1)) * 100)}%`,
-                      }}
-                    />
-                  </div>
-                )}
-                {/* Countdown Timer (Initiative 2) */}
+                <div className="tourn-row">
+                  <span className="sc-label sc-ink--blue">Prize Pool</span>
+                  <span className="tourn-value sc-ink--gold">{compactChips(tourn.prize_pool)}</span>
+                </div>
                 {countdownStr[tourn.id] && (
-                  <div
-                    className={`tourn-countdown ${countdownStr[tourn.id] === 'Starting...' ? 'starting' : ''}`}
-                  >
-                    {countdownStr[tourn.id]}
+                  <div className="tourn-row">
+                    <span className="sc-label sc-ink--blue">Starts In</span>
+                    <span
+                      className={`tourn-value ${countdownStr[tourn.id] === 'Starting...' ? 'sc-ink--red' : 'sc-ink--silver'}`}
+                    >
+                      {countdownStr[tourn.id]}
+                    </span>
                   </div>
                 )}
                 {/* SWEEP #6: live blind level + countdown for RUNNING tournaments */}
                 {tourn.status === 'RUNNING' && levelChip[tourn.id] && (
-                  <div
-                    className="tourn-level-chip"
-                    style={{
-                      marginTop: 4,
-                      display: 'inline-block',
-                      padding: '2px 8px',
-                      borderRadius: 6,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      fontVariantNumeric: 'tabular-nums',
-                      background: 'rgba(79,195,247,0.14)',
-                      color: '#4fc3f7',
-                      border: '1px solid rgba(79,195,247,0.28)',
-                    }}
-                  >
-                    {levelChip[tourn.id]}
+                  <div className="tourn-row">
+                    <span className="sc-label sc-ink--blue">Level</span>
+                    <span className="tourn-value sc-ink--blue">{levelChip[tourn.id]}</span>
                   </div>
                 )}
               </div>
-            ))
-          )}
-        </div>
+            </SpadeConsole>
+          );
+        })
+      )}
 
-        {/* Tournament Details */}
-        <div className="tournament-details">
-          {selectedTournament ? (
-            <>
-              <div className="detail-header">
-                <h2>{selectedTournament.name}</h2>
-                {/* Dan 2026-08-21 (item 3): a RUNNING tournament that is still
-                    taking entries said "REGISTERING" — next to a live clock and
-                    real chip counts. That is what "it hasn't started yet" was
-                    reading off. Late registration and not-yet-started are two
-                    different things and now say so. */}
-                <span className={`status-badge ${selectedTournament.status}`}>
-                  {selectedTournament.status === 'RUNNING' && isLateRegOpen(selectedTournament)
-                    ? 'LATE REG'
-                    : selectedTournament.status}
+      {/* ── The selected tournament ──────────────────────────────────────── */}
+      {selectedTournament ? (
+        <SpadeConsole
+          as="section"
+          className="tournament-console tourn-detail"
+          eyebrow={gameLabel(selectedTournament)}
+          title={selectedTournament.name}
+          /* Dan 2026-08-21 (item 3): a RUNNING tournament that is still taking
+             entries said "REGISTERING" - next to a live clock and real chip
+             counts. That is what "it hasn't started yet" was reading off. Late
+             registration and not-yet-started are two different things and now
+             say so. */
+          pill={statePill(selectedTournament).label}
+          pillInk={statePill(selectedTournament).ink}
+          plates={detailPlates}
+        >
+          <div className="tourn-rows">
+            <div className="tourn-row">
+              <span className="sc-label sc-ink--blue">Buy-In</span>
+              <span className="tourn-value sc-ink--silver">
+                {formatBuyIn(selectedTournament.buy_in_amount, selectedTournament.buy_in_fee)}
+              </span>
+            </div>
+            <div className="tourn-row">
+              <span className="sc-label sc-ink--blue">Starting Stack</span>
+              <span className="tourn-value sc-ink--silver">
+                {selectedTournament.starting_chips
+                  ? compactChips(selectedTournament.starting_chips)
+                  : '-'}
+              </span>
+            </div>
+            <div className="tourn-row">
+              <span className="sc-label sc-ink--blue">Entries</span>
+              <span className="tourn-value sc-ink--silver">
+                {selectedTournament.current_players}
+                {selectedTournament.max_players ? `/${selectedTournament.max_players}` : ''}
+              </span>
+            </div>
+            <div className="tourn-row">
+              <span className="sc-label sc-ink--blue">Prize Pool</span>
+              <span className="tourn-value sc-ink--gold">
+                {compactChips(selectedTournament.prize_pool)}
+              </span>
+            </div>
+
+            {/* Bounty Info */}
+            {selectedTournament.is_bounty &&
+              !selectedTournament.is_pko &&
+              !selectedTournament.is_mystery_bounty && (
+                <div className="tourn-row">
+                  <span className="sc-label sc-ink--blue">Bounty</span>
+                  <span className="tourn-value sc-ink--silver">
+                    {money(selectedTournament.bounty_amount)} Chips
+                  </span>
+                </div>
+              )}
+
+            {/* PKO Info */}
+            {selectedTournament.is_pko && (
+              <div className="tourn-row">
+                <span className="sc-label sc-ink--blue">PKO</span>
+                <span className="tourn-value sc-ink--silver">
+                  {money(selectedTournament.bounty_amount)} Chips Starting Bounty
                 </span>
               </div>
-
-              <div className="detail-stats">
-                <div className="stat">
-                  <span className="stat-label">Buy-In</span>
-                  <span className="stat-value">
-                    {formatBuyIn(selectedTournament.buy_in_amount, selectedTournament.buy_in_fee)}
-                  </span>
-                </div>
-                <div className="stat">
-                  <span className="stat-label">Starting Stack</span>
-                  <span className="stat-value">
-                    {selectedTournament.starting_chips
-                      ? selectedTournament.starting_chips.toLocaleString()
-                      : '-'}
-                  </span>
-                </div>
-                <div className="stat">
-                  <span className="stat-label">Players</span>
-                  <span className="stat-value">
-                    {selectedTournament.current_players}
-                    {selectedTournament.max_players ? `/${selectedTournament.max_players}` : ''}
-                  </span>
-                </div>
-                <div className="stat highlight">
-                  <span className="stat-label">Prize Pool</span>
-                  <span className="stat-value gold">{money(selectedTournament.prize_pool)}</span>
-                </div>
-
-                {/* Bounty Info */}
-                {selectedTournament.is_bounty &&
-                  !selectedTournament.is_pko &&
-                  !selectedTournament.is_mystery_bounty && (
-                    <div className="stat">
-                      <span className="stat-label">Bounty</span>
-                      <span className="stat-value">
-                        {money(selectedTournament.bounty_amount)} Chips
-                      </span>
-                    </div>
-                  )}
-
-                {/* PKO Info */}
-                {selectedTournament.is_pko && (
-                  <div className="stat">
-                    <span className="stat-label">PKO</span>
-                    <span className="stat-value">
-                      {money(selectedTournament.bounty_amount)} Chips Starting Bounty
-                    </span>
-                  </div>
-                )}
-                {selectedTournament.is_pko && (
-                  <div className="stat">
-                    <span className="stat-label">PKO Payout</span>
-                    <span
-                      className="stat-value"
-                      style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)' }}
-                    >
-                      50% To Knocker / 50% Added To Your Bounty
-                    </span>
-                  </div>
-                )}
-
-                {/* MYSTERY BOUNTY (sections 10 and 73).
-                    This used to print `mystery_bounty_min` / `mystery_bounty_max`,
-                    a per-head range drawn at REGISTRATION time. The engine no
-                    longer reads either column: the draw happens once, when the
-                    mystery phase opens, and produces an inventory of real
-                    chests. What is advertised now is the biggest chest that
-                    exists, from fn_mystery_bounty_inventory. */}
-                {selectedIsMystery && (
-                  <>
-                    <div className="stat">
-                      <span className="stat-label">Top Mystery Bounty</span>
-                      <span className="stat-value">
-                        {topBountyCents(mysteryBounty.inventory) > 0
-                          ? formatCents(topBountyCents(mysteryBounty.inventory))
-                          : 'Drawn When The Mystery Phase Opens'}
-                      </span>
-                    </div>
-                    <div className="stat">
-                      <span className="stat-label">Mystery Status</span>
-                      <span className="stat-value">
-                        {activationStatusLine(mysteryBounty.inventory)}
-                      </span>
-                    </div>
-                  </>
-                )}
-
-                {/* Spin Info */}
-                {selectedTournament.variant === 'spin' && (
-                  <div className="stat">
-                    <span className="stat-label">Multiplier</span>
-                    <span className="stat-value">
-                      {spinMultiplierLabel(selectedTournament as any) ?? 'TBD'}
-                    </span>
-                  </div>
-                )}
+            )}
+            {selectedTournament.is_pko && (
+              <div className="tourn-row">
+                <span className="sc-label sc-ink--blue">PKO Payout</span>
+                <span className="tourn-value sc-ink--muted">
+                  50% To Knocker / 50% Added To Your Bounty
+                </span>
               </div>
+            )}
 
-              {/* Live pane, RUNNING only. Until now, opening a tournament
-                  that was actually in progress showed exactly what an
-                  unstarted one showed: a static blind chart and a payout
-                  list. No clock, no ranking, no idea which tables were
-                  running or how many players were left. */}
-              {selectedTournament.status === 'RUNNING' && (
-                <div className="tourney-live-pane">
-                  <TournamentClock tournamentId={selectedTournament.id} compact />
+            {/* MYSTERY BOUNTY (sections 10 and 73).
+                This used to print `mystery_bounty_min` / `mystery_bounty_max`,
+                a per-head range drawn at REGISTRATION time. The engine no
+                longer reads either column: the draw happens once, when the
+                mystery phase opens, and produces an inventory of real
+                chests. What is advertised now is the biggest chest that
+                exists, from fn_mystery_bounty_inventory. */}
+            {selectedIsMystery && (
+              <>
+                <div className="tourn-row">
+                  <span className="sc-label sc-ink--blue">Top Mystery Bounty</span>
+                  <span className="tourn-value sc-ink--gold">
+                    {topBountyCents(mysteryBounty.inventory) > 0
+                      ? formatCents(topBountyCents(mysteryBounty.inventory))
+                      : 'Drawn When The Mystery Phase Opens'}
+                  </span>
+                </div>
+                <div className="tourn-row">
+                  <span className="sc-label sc-ink--blue">Mystery Status</span>
+                  <span className="tourn-value sc-ink--silver">
+                    {activationStatusLine(mysteryBounty.inventory)}
+                  </span>
+                </div>
+              </>
+            )}
 
-                  <div className="tourney-live-section">
-                    <h3>Ranking</h3>
-                    {/* THREE STATES, NOT TWO. `RankingTab` prints "No Players
-                        Yet" for an empty list, which is a claim about the
-                        tournament - so an unanswered query must never reach it
-                        as an empty array. It is held back until the first read
-                        settles, and a read that failed says so instead. */}
-                    {entriesLoading && liveEntries.length === 0 ? (
-                      <p className="tourney-live-empty">Loading The Ranking.</p>
-                    ) : entriesFailed && liveEntries.length === 0 ? (
-                      <p className="tourney-live-empty" role="status">
-                        The Ranking Is Unavailable Right Now. Retrying.
+            {/* Spin Info */}
+            {selectedTournament.variant === 'spin' && (
+              <div className="tourn-row">
+                <span className="sc-label sc-ink--blue">Multiplier</span>
+                <span className="tourn-value sc-ink--gold">
+                  {spinMultiplierLabel(selectedTournament as any) ?? 'TBD'}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* The money actions that are not the main one. The foot paints
+              exactly two plates, so these are lit words on the glass. */}
+          {(canRebuyNow ||
+            canAddOnNow ||
+            (isOwner &&
+              (selectedTournament.status === 'REGISTERING' ||
+                selectedTournament.status === 'ANNOUNCED'))) && (
+            <p className="tourn-words">
+              {canRebuyNow && (
+                <button
+                  type="button"
+                  className="tourn-word sc-ink--gold"
+                  onClick={handleRebuy}
+                  disabled={isProcessingRebuy}
+                >
+                  {isProcessingRebuy
+                    ? 'Processing...'
+                    : /* Quote the price actually charged (base + fee),
+                         as whole chips, not the raw buy-in column. */
+                      `Rebuy (${money(
+                        tournamentService.quoteFromTournament(selectedTournament, 'rebuy').totalCost
+                      )})`}
+                </button>
+              )}
+              {canAddOnNow && (
+                <button
+                  type="button"
+                  className="tourn-word sc-ink--green"
+                  onClick={handleAddOn}
+                  disabled={isProcessingRebuy}
+                >
+                  {isProcessingRebuy
+                    ? 'Processing...'
+                    : /* Add-ons are not raked (Dan 2026-08-20), so the
+                         quote is the face value, in whole chips. */
+                      `Add-On (${money(
+                        tournamentService.quoteFromTournament(selectedTournament, 'addon').totalCost
+                      )})`}
+                </button>
+              )}
+              {isOwner &&
+                (selectedTournament.status === 'REGISTERING' ||
+                  selectedTournament.status === 'ANNOUNCED') && (
+                  <button
+                    type="button"
+                    className="tourn-word sc-ink--red"
+                    onClick={handleStart}
+                    /* TOURNEY-AUDIT 2026-07-24: minimum is 3 — the service
+                       AUTO-CANCELS at start with < 3 registered, so enabling
+                       this control at 2 players cancelled the tournament the
+                       moment the owner clicked Start. */
+                    disabled={selectedTournament.current_players < 3}
+                  >
+                    Start Tournament
+                  </button>
+                )}
+            </p>
+          )}
+
+          {/* Live pane, RUNNING only. Until now, opening a tournament
+              that was actually in progress showed exactly what an
+              unstarted one showed: a static blind chart and a payout
+              list. No clock, no ranking, no idea which tables were
+              running or how many players were left. */}
+          {selectedTournament.status === 'RUNNING' && (
+            <div className="tourney-live-pane">
+              <TournamentClock tournamentId={selectedTournament.id} compact />
+
+              <div className="tourney-live-section">
+                <h3 className="tourn-heading sc-ink--silver">Ranking</h3>
+                {/* THREE STATES, NOT TWO. `RankingTab` prints "No Players
+                    Yet" for an empty list, which is a claim about the
+                    tournament - so an unanswered query must never reach it
+                    as an empty array. It is held back until the first read
+                    settles, and a read that failed says so instead. */}
+                {entriesLoading && liveEntries.length === 0 ? (
+                  <p className="tourney-live-empty sc-copy sc-copy--center">Loading The Ranking.</p>
+                ) : entriesFailed && liveEntries.length === 0 ? (
+                  <p className="tourney-live-empty sc-copy sc-copy--center" role="status">
+                    The Ranking Is Unavailable Right Now. Retrying.
+                  </p>
+                ) : (
+                  <>
+                    {entriesFailed && (
+                      <p className="tourney-live-empty sc-copy sc-copy--center" role="status">
+                        The Ranking Has Stopped Updating. Retrying.
                       </p>
-                    ) : (
-                      <>
-                        {entriesFailed && (
-                          <p className="tourney-live-empty" role="status">
-                            The Ranking Has Stopped Updating. Retrying.
-                          </p>
-                        )}
-                        <RankingTab
-                          tournament={selectedTournament}
-                          entries={liveEntries}
-                          tables={rankingTables}
-                          blindLevels={rankingBlindLevels}
-                          currentUserId={user?.id}
-                          isRegistered={isRegistered}
-                          onWatchPlayer={watchPlayerTable}
-                        />
-                      </>
                     )}
-                  </div>
-
-                  <div className="tourney-live-section">
-                    <h3>Tables ({tourneyTables.length})</h3>
-                    {tourneyTables.length === 0 ? (
-                      <p className="tourney-live-empty">No Tables Running Yet.</p>
-                    ) : (
-                      <div className="tourney-table-list">
-                        {tourneyTables.map((tb) => (
-                          <div key={tb.id} className="tourney-table-row">
-                            <span className="tourney-table-name">{tb.name || 'Table'}</span>
-                            <span className="tourney-table-blinds">
-                              {tb.small_blind ?? 0}/{tb.big_blind ?? 0}
-                            </span>
-                            <span className="tourney-table-seats">
-                              {tb.current_players ?? 0}/{tb.max_players ?? 9}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Blind Structure */}
-              <div className="blind-structure">
-                <h3>Blind Structure</h3>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Level</th>
-                      <th>Blinds</th>
-                      <th>Ante</th>
-                      <th>Duration</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(() => {
-                      let blinds = selectedTournament.blind_structure;
-                      if (typeof blinds === 'string') {
-                        try {
-                          blinds = JSON.parse(blinds);
-                        } catch {
-                          blinds = [];
-                        }
-                      }
-                      if (!Array.isArray(blinds)) blinds = [];
-                      return blinds.slice(0, 5).map((level: any, i: number) => (
-                        <tr key={i}>
-                          <td>{level.level}</td>
-                          <td>
-                            {level.smallBlind || level.small_blind}/
-                            {level.bigBlind || level.big_blind}
-                          </td>
-                          <td>{level.ante || '-'}</td>
-                          <td>{level.durationMinutes || level.duration_minutes || 15} Min</td>
-                        </tr>
-                      ));
-                    })()}
-                    {(() => {
-                      let blinds = selectedTournament.blind_structure;
-                      if (typeof blinds === 'string') {
-                        try {
-                          blinds = JSON.parse(blinds);
-                        } catch {
-                          blinds = [];
-                        }
-                      }
-                      if (!Array.isArray(blinds)) blinds = [];
-                      return blinds.length > 5 ? (
-                        <tr className="more-row">
-                          <td colSpan={4}>+ {blinds.length - 5} More Levels</td>
-                        </tr>
-                      ) : null;
-                    })()}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* MYSTERY BOUNTY (sections 31 to 36, 41). The same three sections
-                  the tournament details page shows, on the other lobby surface,
-                  fed by the same page-level hook. */}
-              {selectedIsMystery && (
-                <MysteryBountyPanel
-                  tournamentId={selectedTournament.id}
-                  isMysteryBounty
-                  data={mysteryBounty}
-                  currentUserId={currentUser.id === 'guest' ? null : currentUser.id}
-                  isCompleted={selectedTournament.status === 'COMPLETED'}
-                />
-              )}
-
-              {/* Payout Structure */}
-              <div className="payout-structure">
-                <h3>Payouts</h3>
-                <div className="payout-list">
-                  {selectedPayouts.slice(0, 5).map((payout, i) => {
-                    const pos = payout.place;
-                    const amount =
-                      selectedPlaceLadderPool === null
-                        ? null
-                        : placePrize(selectedPlaceLadderPool, selectedPayouts, pos);
-                    return (
-                      <div key={i} className="payout-item">
-                        <span className="payout-place">
-                          {pos === 1 ? '' : pos === 2 ? '' : pos === 3 ? '' : `${pos}th`}
-                        </span>
-                        <span className="payout-percent">{payout.percentage}%</span>
-                        <span className="payout-amount">
-                          {amount === null
-                            ? '-'
-                            : amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div className="detail-actions">
-                {selectedTournament.status === 'REGISTERING' ||
-                selectedTournament.status === 'ANNOUNCED' ? (
-                  isRegistered ? (
-                    <button className="btn btn-danger btn-block" onClick={handleUnregister}>
-                      Unregister
-                    </button>
-                  ) : (
-                    <button className="btn btn-primary btn-block" onClick={handleRegister}>
-                      Register (
-                      {money(
-                        totalBuyIn(selectedTournament.buy_in_amount, selectedTournament.buy_in_fee)
-                      )}
-                      )
-                    </button>
-                  )
-                ) : selectedTournament.status === 'RUNNING' ? (
-                  <>
-                    {/* Dan 2026-08-25 (binding): a running tournament must be
-                        watchable. This was `disabled={!isRegistered}` with the
-                        label "Tournament in Progress" — a literal greyed-out
-                        dead end, on the one screen a player lands on when they
-                        tap a running game. It is a live button for everyone
-                        now: `handleJoinTable` already falls back to the
-                        tournament's own tables when the viewer holds no seat. */}
-                    <button className="btn btn-primary btn-block" onClick={handleJoinTable}>
-                      {isRegistered ? 'Go To Table' : 'Watch'}
-                    </button>
-
-                    {/* Rebuy Button */}
-                    {canRebuyNow && (
-                      <button
-                        className="btn btn-warning btn-block"
-                        style={{ marginTop: '0.5rem' }}
-                        onClick={handleRebuy}
-                        disabled={isProcessingRebuy}
-                      >
-                        {isProcessingRebuy
-                          ? ' Processing...'
-                          : /* Quote the price actually charged (base + fee),
-                               as whole chips, not the raw buy-in column. */
-                            ` Rebuy (${money(
-                              tournamentService.quoteFromTournament(selectedTournament, 'rebuy')
-                                .totalCost
-                            )})`}
-                      </button>
-                    )}
-
-                    {/* Add-On Button */}
-                    {canAddOnNow && (
-                      <button
-                        className="btn btn-success btn-block"
-                        style={{ marginTop: '0.5rem' }}
-                        onClick={handleAddOn}
-                        disabled={isProcessingRebuy}
-                      >
-                        {isProcessingRebuy
-                          ? ' Processing...'
-                          : /* Add-ons are not raked (Dan 2026-08-20), so the
-                               quote is the face value, in whole chips. */
-                            `Add-On (${money(
-                              tournamentService.quoteFromTournament(selectedTournament, 'addon')
-                                .totalCost
-                            )})`}
-                      </button>
-                    )}
+                    <RankingTab
+                      tournament={selectedTournament}
+                      entries={liveEntries}
+                      tables={rankingTables}
+                      blindLevels={rankingBlindLevels}
+                      currentUserId={user?.id}
+                      isRegistered={isRegistered}
+                      onWatchPlayer={watchPlayerTable}
+                    />
                   </>
-                ) : null}
-
-                {isOwner &&
-                  (selectedTournament.status === 'REGISTERING' ||
-                    selectedTournament.status === 'ANNOUNCED') && (
-                    <button
-                      className="btn btn-warning btn-block"
-                      style={{ marginTop: '1rem' }}
-                      onClick={handleStart}
-                      /* TOURNEY-AUDIT 2026-07-24: minimum is 3 — the service
-                         AUTO-CANCELS at start with < 3 registered, so enabling
-                         this button at 2 players cancelled the tournament the
-                         moment the owner clicked Start. */
-                      disabled={selectedTournament.current_players < 3}
-                    >
-                      Start Tournament
-                    </button>
-                  )}
+                )}
               </div>
 
-              {/* Tournament Results Overlay (Initiative 13) */}
-              {selectedTournament.status === 'COMPLETED' && (
-                <div className="tourn-results-overlay">
-                  <div className="results-header">Final Standings</div>
-                  <div className="results-podium">
-                    {selectedPayouts.slice(0, 3).map((p, i) => {
-                      const recorded = liveEntries.find(
-                        (entry) => entry.position === p.place
-                      )?.prize;
-                      const amount =
-                        recorded !== undefined && Number.isFinite(recorded)
-                          ? recorded
-                          : selectedPlaceLadderPool === null
-                            ? null
-                            : placePrize(selectedPlaceLadderPool, selectedPayouts, p.place);
-                      return (
-                        <div key={i} className={`podium-place podium-${i + 1}`}>
-                          <div className="podium-icon">{i === 0 ? '★' : i === 1 ? '☆' : '✧'}</div>
-                          <div className="podium-payout">
-                            {amount === null
-                              ? '-'
-                              : amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}
-                          </div>
-                        </div>
-                      );
-                    })}
+              <div className="tourney-live-section">
+                <h3 className="tourn-heading sc-ink--silver">Tables ({tourneyTables.length})</h3>
+                {tourneyTables.length === 0 ? (
+                  <p className="tourney-live-empty sc-copy sc-copy--center">
+                    No Tables Running Yet.
+                  </p>
+                ) : (
+                  <div className="tourn-rows">
+                    {tourneyTables.map((tb) => (
+                      <div key={tb.id} className="tourn-row tourn-row--triple">
+                        <span className="tourn-table-name sc-ink--silver">
+                          {tb.name || 'Table'}
+                        </span>
+                        <span className="tourn-value sc-ink--blue">
+                          {tb.small_blind ?? 0}/{tb.big_blind ?? 0}
+                        </span>
+                        <span className="tourn-value sc-ink--muted">
+                          {tb.current_players ?? 0}/{tb.max_players ?? 9}
+                        </span>
+                      </div>
+                    ))}
                   </div>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="empty-detail">
-              <div className="empty-icon">♛</div>
-              <h3>Select A Tournament</h3>
-              <p>Click On A Tournament To View Details And Register.</p>
+                )}
+              </div>
             </div>
           )}
-        </div>
-      </div>
+
+          {/* Blind Structure */}
+          <h3 className="tourn-heading sc-ink--silver">Blind Structure</h3>
+          <div className="tourn-rows">
+            {(() => {
+              const blinds = asRows(selectedTournament.blind_structure);
+              if (blinds.length === 0) {
+                return <p className="sc-copy sc-copy--center">No Blind Structure Recorded.</p>;
+              }
+              return (
+                <>
+                  {blinds.slice(0, 5).map((level: any, i: number) => (
+                    <div key={i} className="tourn-row tourn-row--triple">
+                      <span className="sc-label sc-ink--blue">Level {level.level}</span>
+                      <span className="tourn-value sc-ink--silver">
+                        {level.smallBlind || level.small_blind}/{level.bigBlind || level.big_blind}
+                      </span>
+                      <span className="tourn-value sc-ink--muted">
+                        {level.ante || '-'} /{' '}
+                        {level.durationMinutes || level.duration_minutes || 15} Min
+                      </span>
+                    </div>
+                  ))}
+                  {blinds.length > 5 && (
+                    <p className="sc-copy sc-copy--center">+ {blinds.length - 5} More Levels</p>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+
+          {/* Payout Structure */}
+          <h3 className="tourn-heading sc-ink--silver">Payouts</h3>
+          <div className="tourn-rows">
+            {selectedPayouts.slice(0, 5).map((payout, i) => {
+              const pos = payout.place;
+              /* The shared place calculation (residual rule, bubble reserve,
+                 satellite carve-out): a player is never shown one number and
+                 paid another. `-` while the durable field size is unknown. */
+              const amount =
+                selectedPlaceLadderPool === null
+                  ? null
+                  : placePrize(selectedPlaceLadderPool, selectedPayouts, pos);
+              return (
+                <div key={i} className="tourn-row tourn-row--triple">
+                  {/* The top three used to print NOTHING: an emoji had been
+                      stripped from each branch and the empty strings stayed. */}
+                  <span className="sc-label sc-ink--blue">{ordinal(pos)}</span>
+                  <span className="tourn-value sc-ink--muted">{payout.percentage}%</span>
+                  {/* Whole chips. This printed `Math.trunc(x * 100) / 100`,
+                      a decimal, on a forward-facing page. */}
+                  <span className="tourn-value sc-ink--silver">
+                    {amount === null ? '-' : compactChips(amount)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* MYSTERY BOUNTY (sections 31 to 36, 41). The same three sections
+              the tournament details page shows, on the other lobby surface,
+              fed by the same page-level hook. */}
+          {selectedIsMystery && (
+            <MysteryBountyPanel
+              tournamentId={selectedTournament.id}
+              isMysteryBounty
+              data={mysteryBounty}
+              currentUserId={currentUser.id === 'guest' ? null : currentUser.id}
+              isCompleted={selectedTournament.status === 'COMPLETED'}
+            />
+          )}
+
+          {/* Final standings (Initiative 13) */}
+          {selectedTournament.status === 'COMPLETED' && (
+            <>
+              <h3 className="tourn-heading sc-ink--silver">Final Standings</h3>
+              <div className="tourn-rows">
+                {selectedPayouts.slice(0, 3).map((p, i) => {
+                  /* The prize the engine actually recorded for that place wins;
+                     the shared ladder is only the preview when no row has it. */
+                  const recorded = liveEntries.find((entry) => entry.position === p.place)?.prize;
+                  const amount =
+                    recorded !== undefined && Number.isFinite(recorded)
+                      ? recorded
+                      : selectedPlaceLadderPool === null
+                        ? null
+                        : placePrize(selectedPlaceLadderPool, selectedPayouts, p.place);
+                  return (
+                    <div key={i} className="tourn-row">
+                      <span className="sc-label sc-ink--blue">{ordinal(p.place)}</span>
+                      <span className="tourn-value sc-ink--gold">
+                        {amount === null ? '-' : compactChips(amount)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </SpadeConsole>
+      ) : (
+        <SpadeConsole
+          as="div"
+          className="tournament-console"
+          eyebrow="Club Arena"
+          title="Select A Tournament"
+          foot="foot"
+        >
+          <p className="sc-copy sc-copy--center">Tap A Tournament To View Details And Register.</p>
+        </SpadeConsole>
+      )}
 
       {/* Create Modal */}
       {showCreateModal && clubId && (

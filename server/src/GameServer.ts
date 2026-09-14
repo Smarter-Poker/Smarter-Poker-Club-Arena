@@ -103,6 +103,8 @@ import {
   leaseRenewalLoopRunning,
   leaseRenewalLoopRelaunchesTotal,
 } from './observability/engineInstruments.js';
+import { processMemoryHealth } from './observability/processMemory.js';
+import { httpDispatcherReport } from './services/httpDispatcher.js';
 import { clientConnectionPrometheusLines } from './observability/ClientConnectionEvents.js';
 import {
   planTableReopens,
@@ -3418,6 +3420,18 @@ export class GameServer {
       // Still useful, but a different question: can the realtime table loop
       // service sockets, clocks, leases and state broadcasts without delay?
       mainEventLoopGovernor: equityGovernor.snapshot(),
+      // WHAT THE PROCESS WEIGHS (2026-09-14). The release train builds the
+      // next image on this same 3.8 GB host and refuses below 1.125 GiB free;
+      // it was refused 11 of 14 times overnight and nothing here could say
+      // whether the engine was the reason. Megabytes, rounded; nulls where
+      // /proc is unreadable. `nativeMainArenaMb` is [heap] virtual extent,
+      // not resident memory or TLS attribution (observability/processMemory.ts).
+      memory: processMemoryHealth(),
+      // Whether the process-wide fetch pool is bounded, and to what. The
+      // connection cap and longer keep-alive address measured churn; their
+      // effect on memory remains to be established. Failed installation is
+      // visible here (services/httpDispatcher.ts).
+      httpDispatcher: httpDispatcherReport(),
       // The one process-wide FIFO that owns live HorseLogic state. Queue depth
       // and phase distinguish worker pressure/failure from main-loop pressure;
       // solver store counts prove the worker reached an authoritative READY.
@@ -6686,52 +6700,55 @@ export class GameServer {
       this.tournamentResumeDistress = 0;
       let resumePassDistressed = resumeDistressSinceLastPass > 0;
       try {
-        /**
-         * ═══════════════════════════════════════════════════════════════════
-         *  THE LONGEST-WAITING TOURNAMENT IS ADOPTED FIRST (2026-09-09)
-         * ═══════════════════════════════════════════════════════════════════
-         *
-         * This read had no ORDER BY, so the resume order was whatever
-         * PostgREST happened to return - in practice stable, which is worse
-         * than random: the same events land at the end of the list on every
-         * single pass. Adoption is not free (a manager plus an engine per
-         * table, against a database where a single bounty-evidence read can
-         * take eight seconds), so when the fleet cannot all be adopted at once
-         * the tail is not merely late, it is ALWAYS the same tail.
-         *
-         * Measured on production 2026-09-09: after the 05:55 maintenance
-         * restart, tournaments dealing in the last ten minutes fell from 86 to
-         * EIGHT of 126 RUNNING, while THIRTEEN events had been stalled for more
-         * than an hour - across several hourly restarts, so they had lost the
-         * race every time. The oldest, `$100 Freeroll 6:00 AM`, had not dealt a
-         * hand in 903 minutes with players still seated in it.
-         *
-         * `started_at` ascending makes the order a queue instead of a lottery.
-         * It is the cheapest possible fix for starvation and it cannot make
-         * anything slower: the same set is adopted in the same number of
-         * passes, and the event that has been waiting longest is simply no
-         * longer the one that waits again. NULLS LAST because a row with no
-         * start time is not evidence of a long wait.
-         */
-        const { data: running, error: runningErr } = await supabase
-          .from('tournaments')
-          .select('id, name')
-          .eq('status', 'RUNNING')
-          .order('started_at', { ascending: true, nullsFirst: false });
+        // The gateway silently caps a SELECT at 1,000 rows. On 2026-09-14
+        // the exact RUNNING read returned 0-999/1283 and omitted an event whose
+        // lease expired during its break. Read every id page before settling
+        // cooldowns or spending admission capacity; partial is UNKNOWN.
+        const board = await fetchAllRows<{
+          id: string;
+          name: string;
+          started_at: string | null;
+        }>(
+          (cursor, want) => {
+            let query = supabase
+              .from('tournaments')
+              .select('id, name, started_at')
+              .eq('status', 'RUNNING')
+              .order('id', { ascending: true })
+              .limit(want);
+            if (cursor) query = query.gt('id', cursor);
+            return query;
+          },
+          { label: 'GameServer.runningResumes', maxRows: 50_000 }
+        );
+        if (!this.directAdmissionIsCurrent(generation)) break;
+        const runningErr =
+          !board.complete ||
+          board.rows.some(
+            (row) =>
+              typeof row?.id !== 'string' ||
+              !row.id.trim() ||
+              (row.started_at !== null &&
+                (typeof row.started_at !== 'string' ||
+                  !Number.isFinite(Date.parse(row.started_at))))
+          );
+        // Keyset order is only for complete enumeration. Admission still goes
+        // oldest first; a NULL start is not evidence of waiting longer.
+        const running = runningErr
+          ? []
+          : board.rows.sort((a, b) => {
+              const aStarted = a.started_at === null ? Infinity : Date.parse(a.started_at);
+              const bStarted = b.started_at === null ? Infinity : Date.parse(b.started_at);
+              return aStarted - bStarted || a.id.localeCompare(b.id);
+            });
         if (runningErr) {
-          // Same rule as the REGISTERING read: unreadable is UNKNOWN. Reading
-          // it as "nothing is running" silently stops every re-adoption.
           reportError(
-            new Error(`[GameServer] RUNNING board read failed: ${runningErr.message}`),
+            new Error('[GameServer] RUNNING board read failed: incomplete or malformed board'),
             'GameServer.running_board_read_failed'
           );
           resumePassDistressed = true;
         } else {
-          // A cooldown streak ends when its id gets a manager or leaves the
-          // RUNNING board. Only a board that was actually read can say so.
-          this.tournamentResumeCooldowns.settle(running || [], (id) =>
-            this.tournamentEngines.has(id)
-          );
+          this.tournamentResumeCooldowns.settle(running, (id) => this.tournamentEngines.has(id));
         }
 
         /**
@@ -6751,7 +6768,7 @@ export class GameServer {
          * younger event was ever adopted. See tournamentResumeBudget.ts.
          */
         const selectedAt = Date.now();
-        const resumes = selectRunningResumes(running || [], {
+        const resumes = selectRunningResumes(running, {
           hasManager: (id) => this.tournamentEngines.has(id),
           admissionInFlight: (id) =>
             this.tournamentManagerAdmissionOperations.has(id) ||
@@ -6778,6 +6795,7 @@ export class GameServer {
         for (const [index, tournament] of resumes.entries()) {
           if (!this.directAdmissionIsCurrent(generation)) break;
           if (index > 0) await this.sleep(TOURNAMENT_RESUME_STAGGER_MS);
+          if (!this.directAdmissionIsCurrent(generation)) break;
           // The stagger yields, so re-check: a retry may have admitted it.
           if (this.tournamentEngines.has(tournament.id)) continue;
 
@@ -8426,7 +8444,15 @@ export class GameServer {
     }
     if (!replaced) return false;
     if (!this.running) {
-      await replacement.stop().catch(() => undefined);
+      try {
+        await replacement.stop();
+      } catch (error) {
+        // Shutdown can win while the incumbent is draining. Its replacement
+        // is now the retained map owner: a failed stop must not hide it from
+        // the remaining ownership checks unless physical release is proven.
+        if (!replacement.hasReleasedProcessOwnership()) throw error;
+        reportError(error, 'GameServer.shutdown_replacement_cleanup_failed', { tableId });
+      }
       unregisterOwnedTournamentTableEngine(
         this.tableEngines,
         this.tournamentOwnedTables,

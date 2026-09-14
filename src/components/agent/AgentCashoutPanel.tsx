@@ -3,6 +3,33 @@
  *  AGENT CASHOUT PANEL — Manage Player Cashout Requests
  * ═══════════════════════════════════════════════════════════════════════════════
  * Component for agents to view and process pending cashout requests
+ *
+ * THE CONSOLE (#ClubArenaConsole). This was an 18px rounded navy panel with a
+ * blur and two shadows, a header bar, an orange gradient count pill, a rounded
+ * square refresh button, a 44px round avatar disc with an amber ring and a
+ * glow, a bordered card per request, a green gradient "Approve" lozenge, a
+ * red outlined "Reject" lozenge and a dashed amber notice box.
+ *
+ * It is now Dan's approved spade master: PENDING CASHOUTS is engraved in the
+ * header well, the queue length prints into the master's PAINTED pill slot
+ * (the orange gradient badge is gone, not restyled), each request is a ROW on
+ * the black glass with the player on the left and the amount in engraved
+ * silver on the right, and APPROVE / REJECT are lit words - white for the one
+ * that moves chips into the agent wallet, the master's red for the one that
+ * sends them back.
+ *
+ * NOT ONE MONEY PATH MOVED. `inFlightRef` still refuses the second tap on the
+ * SAME card synchronously, `opIdFor` still mints one id per cashout PER
+ * ACTION and holds it across a failure, the settlement-freeze check still runs
+ * before either decision and still fails open, the realtime filter is still
+ * built from a RESOLVED club uuid, and `cashout.amount.toLocaleString()` is
+ * still the exact figure - this is the amount about to move, so it is never
+ * abbreviated.
+ *
+ * EVERY ANIMATION STILL PLAYS (CLAUDE.md 10.6): the first-load skeleton keeps
+ * `animationsShimmerFade` and `animationsShimmerSlide` at their own durations
+ * and stagger, moved onto flat engraved bars instead of rounded ones, and the
+ * per-row stagger fade is unchanged.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -16,6 +43,7 @@ import { formatRelativeShort as formatTime } from '@/lib/date';
 import './AgentCashoutPanel.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 import { reportError } from '../../utils/errorReporter';
+import { SpadeConsole } from '../console/SpadeConsole';
 
 import { safeErrorMessage } from '../../utils/safeErrorMessage';
 interface AgentCashoutPanelProps {
@@ -272,62 +300,23 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
 
   if (loading) {
     return (
-      <div className="agent-cashout-panel">
-        <div className="panel-header">
-          <h3>Pending Cashouts</h3>
-        </div>
-        <div style={{ padding: '12px' }}>
+      <SpadeConsole
+        eyebrow="Agent Desk"
+        title="Pending Cashouts"
+        titleId="agent-cashout-title"
+        foot="foot"
+        className="acp"
+      >
+        {/* The first-load skeleton: three engraved rows carrying the SAME two
+            shimmer animations, at the same durations and the same stagger. */}
+        <div className="acp-skeleton" aria-hidden="true">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div
-              key={i}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '12px',
-                marginBottom: '8px',
-                borderRadius: '8px',
-                background: 'rgba(255,255,255,0.02)',
-                animation: `animationsShimmerFade 1.4s ease-in-out ${i * 0.1}s infinite`,
-              }}
-            >
-              <div
-                style={{
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: '50%',
-                  background:
-                    'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
-                  backgroundSize: '200px 100%',
-                  animation: 'animationsShimmerSlide 1.4s ease-in-out infinite',
-                  flexShrink: 0,
-                }}
-              />
-              <div style={{ flex: 1 }}>
-                <div
-                  style={{
-                    width: `${50 + ((i * 13) % 30)}%`,
-                    height: '12px',
-                    borderRadius: '4px',
-                    background:
-                      'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
-                    backgroundSize: '200px 100%',
-                    animation: 'animationsShimmerSlide 1.4s ease-in-out infinite',
-                    marginBottom: '6px',
-                  }}
-                />
-                <div
-                  style={{
-                    width: '40%',
-                    height: '10px',
-                    borderRadius: '4px',
-                    background:
-                      'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
-                    backgroundSize: '200px 100%',
-                    animation: 'animationsShimmerSlide 1.4s ease-in-out infinite',
-                  }}
-                />
-              </div>
+            <div key={i} className="acp-skeleton-row" style={{ animationDelay: `${i * 0.1}s` }}>
+              <span className="acp-skeleton-face" />
+              <span className="acp-skeleton-lines">
+                <span className="acp-skeleton-bar" style={{ width: `${50 + ((i * 13) % 30)}%` }} />
+                <span className="acp-skeleton-bar acp-skeleton-bar-short" />
+              </span>
             </div>
           ))}
         </div>
@@ -338,100 +327,115 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
             and were injected into the document on every render of the loading
             state for nothing. Deleted, not renamed: the real ones already
             exist. */}
-      </div>
+      </SpadeConsole>
     );
   }
 
   if (error && cashouts.length === 0) {
     return (
-      <div className="agent-cashout-panel">
-        <div className="panel-header">
-          <h3>Pending Cashouts</h3>
-        </div>
-        <div style={{ textAlign: 'center', padding: '24px 16px', color: '#94a3b8' }}>
-          <div style={{ fontSize: '24px', marginBottom: '8px' }}>⚠</div>
-          <p style={{ margin: '0 0 12px', fontSize: '13px' }}>Failed To Load Cashout Requests</p>
-          <button
-            onClick={loadCashouts}
-            style={{
-              padding: '8px 20px',
-              background: 'rgba(59,130,246,0.15)',
-              border: '1px solid rgba(59,130,246,0.3)',
-              borderRadius: '8px',
-              color: '#60a5fa',
-              fontSize: '13px',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
+      <SpadeConsole
+        eyebrow="Agent Desk"
+        title="Pending Cashouts"
+        titleId="agent-cashout-title"
+        foot="foot"
+        className="acp"
+      >
+        <div className="acp-state">
+          <span className="acp-state-mark" aria-hidden="true">
+            ⚠
+          </span>
+          <p className="acp-state-text sc-copy sc-copy--center">Failed To Load Cashout Requests</p>
+          <button type="button" className="acp-word acp-word-blue" onClick={loadCashouts}>
             ↻ Retry
           </button>
         </div>
-      </div>
+      </SpadeConsole>
     );
   }
 
   return (
-    <div className="agent-cashout-panel">
-      <div className="panel-header">
-        <h3>Pending Cashouts</h3>
-        <span className="count-badge">{cashouts.length}</span>
-        <button className="refresh-btn" onClick={loadCashouts} title="Refresh">
-          ↻
+    <SpadeConsole
+      eyebrow="Agent Desk"
+      title="Pending Cashouts"
+      titleId="agent-cashout-title"
+      pill={String(cashouts.length)}
+      foot="foot"
+      className="acp"
+    >
+      <div className="acp-tools">
+        <button
+          type="button"
+          className="acp-word acp-word-blue"
+          onClick={loadCashouts}
+          title="Refresh"
+        >
+          ↻ Refresh
         </button>
       </div>
 
-      {error && <div className="error-banner">{error}</div>}
+      {error && (
+        <div className="acp-error sc-ink--red" role="alert">
+          {error}
+        </div>
+      )}
 
       {cashouts.length === 0 ? (
-        <div className="empty-state">
-          <span className="empty-icon">◉</span>
-          <p>No Pending Cashout Requests</p>
+        <div className="acp-state">
+          <span className="acp-state-mark" aria-hidden="true">
+            ◉
+          </span>
+          <p className="acp-state-text sc-copy sc-copy--center">No Pending Cashout Requests</p>
         </div>
       ) : (
-        <div className="cashout-list">
+        <div className="acp-list">
           {cashouts.map((cashout, i) => (
             <div
               key={cashout.id}
-              className="cashout-card"
+              className="acp-item"
               style={{
                 opacity: visibleItems.has(i) ? 1 : 0,
                 transform: visibleItems.has(i) ? 'translateY(0)' : 'translateY(8px)',
                 transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
               }}
             >
-              <div className="cashout-header">
-                <div className="player-info">
+              <div className="acp-row">
+                <span className="acp-face" aria-hidden="true">
                   <img
                     loading="lazy"
                     decoding="async"
                     src={cashout.playerAvatar || generateDefaultAvatar()}
                     alt=""
-                    className="player-avatar"
+                    className="acp-face-img"
                   />
-                  <div className="player-details">
-                    <span className="player-name">{cashout.playerName || 'Player'}</span>
-                    <span className="request-time">{formatTime(cashout.createdAt)}</span>
-                  </div>
-                </div>
-                <div className="cashout-amount">
-                  <span className="amount-value">{cashout.amount.toLocaleString()}</span>
-                  <span className="amount-label">Chips</span>
-                </div>
+                </span>
+                <span className="acp-who">
+                  <span className="acp-name sc-ink--silver">{cashout.playerName || 'Player'}</span>
+                  <span className="acp-time">{formatTime(cashout.createdAt)}</span>
+                </span>
+                {/* The exact figure that is about to move between two wallets:
+                    separators, never an abbreviation. */}
+                <span className="acp-amount">
+                  <span className="acp-amount-value sc-ink--silver">
+                    {cashout.amount.toLocaleString()}
+                  </span>
+                  <span className="acp-amount-label sc-label sc-ink--blue">Chips</span>
+                </span>
               </div>
 
-              {cashout.playerNote && <div className="player-note">"{cashout.playerNote}"</div>}
+              {cashout.playerNote && <div className="acp-note">"{cashout.playerNote}"</div>}
 
-              <div className="cashout-actions">
+              <div className="acp-actions">
                 <button
-                  className="action-btn approve"
+                  type="button"
+                  className="acp-word acp-word-white"
                   onClick={() => handleApprove(cashout)}
                   disabled={processing === cashout.id}
                 >
                   {processing === cashout.id ? 'Approving...' : 'Approve & Complete'}
                 </button>
                 <button
-                  className="action-btn reject"
+                  type="button"
+                  className="acp-word acp-word-red"
                   onClick={() => handleReject(cashout, 'Request declined')}
                   disabled={processing === cashout.id}
                 >
@@ -439,7 +443,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
                 </button>
               </div>
 
-              <div className="escrow-notice">
+              <div className="acp-escrow sc-copy">
                 Chips Are Locked In Escrow. Approving Moves Them Into Your Agent Wallet. Rejecting
                 Returns Them To The Player.
               </div>
@@ -447,6 +451,6 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
           ))}
         </div>
       )}
-    </div>
+    </SpadeConsole>
   );
 }

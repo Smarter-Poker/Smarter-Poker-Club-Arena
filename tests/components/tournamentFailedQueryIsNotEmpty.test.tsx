@@ -378,7 +378,9 @@ describe('TournamentLobbyCard — numbers measured, not parsed back out of copy'
         <TournamentLobbyCard tournament={tournament} knownRegistration={false} />
       </MemoryRouter>
     );
-    await waitFor(() => expect(screen.getByText('Late Reg: 1 Lvl Left')).toBeTruthy());
+    await waitFor(() => {
+      expect(screen.getByText('1 Lvl Left').parentElement?.textContent).toContain('Late Reg');
+    });
     rerender(
       <MemoryRouter>
         <TournamentLobbyCard
@@ -387,7 +389,8 @@ describe('TournamentLobbyCard — numbers measured, not parsed back out of copy'
         />
       </MemoryRouter>
     );
-    await waitFor(() => expect(screen.queryByText('Late Reg: 1 Lvl Left')).toBeNull());
+    await waitFor(() => expect(screen.queryByText('1 Lvl Left')).toBeNull());
+    expect(screen.queryByText('Late Reg')).toBeNull();
     expect(screen.getByRole('button', { name: 'Watch' })).toBeTruthy();
   });
 

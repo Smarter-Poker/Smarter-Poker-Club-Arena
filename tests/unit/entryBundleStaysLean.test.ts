@@ -23,9 +23,52 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import ts from 'typescript';
 
 const ROOT = join(__dirname, '..', '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
+
+// Read actual module edges, including multiline declarations and re-exports.
+// A type-only edge is erased; every value or dynamic edge needs review here.
+const runtimeModuleEdges = (source: string): string[] => {
+  const file = ts.createSourceFile('entry.ts', source, ts.ScriptTarget.Latest, true);
+  const edges: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node)) {
+      const clause = node.importClause;
+      const named = clause?.namedBindings;
+      const erased =
+        clause?.isTypeOnly ||
+        (clause &&
+          !clause.name &&
+          named &&
+          ts.isNamedImports(named) &&
+          named.elements.length > 0 &&
+          named.elements.every((element) => element.isTypeOnly));
+      if (!erased) edges.push(node.moduleSpecifier.getText(file).slice(1, -1));
+    } else if (ts.isExportDeclaration(node) && node.moduleSpecifier) {
+      const named = node.exportClause;
+      const erased =
+        node.isTypeOnly ||
+        (named &&
+          ts.isNamedExports(named) &&
+          named.elements.length > 0 &&
+          named.elements.every((element) => element.isTypeOnly));
+      if (!erased) edges.push(node.moduleSpecifier.getText(file).slice(1, -1));
+    } else if (
+      ts.isCallExpression(node) &&
+      (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+        (ts.isIdentifier(node.expression) && node.expression.text === 'require'))
+    ) {
+      edges.push(node.getText(file));
+    } else if (ts.isImportEqualsDeclaration(node) && !node.isTypeOnly) {
+      edges.push(node.moduleReference.getText(file));
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return edges.sort();
+};
 
 describe('the eager app shell stays free of lazy-only code', () => {
   it('the root-mounted ticker reads the late-reg window without the lobby view-model', () => {
@@ -46,15 +89,43 @@ describe('the eager app shell stays free of lazy-only code', () => {
   });
 
   it('the extracted late-reg module does not drag the lobby back in at runtime', () => {
-    const extracted = read('src/components/lobby/lateRegWindow.ts');
-    const valueImports = extracted
-      .split('\n')
-      .filter((line) => line.startsWith('import ') && !line.startsWith('import type '));
+    // The display projection adds no dependencies. Pin the transitive graph,
+    // so moving a lobby import into one of these helpers cannot hide the leak.
+    const graph: Record<string, string[]> = {
+      'src/components/lobby/lateRegWindow.ts': [
+        '../../utils/tournamentEntryWindow',
+        './tournamentFigures',
+      ],
+      'src/components/lobby/tournamentFigures.ts': ['../../utils/parseJsonCached'],
+      'src/utils/tournamentEntryWindow.ts': [],
+      'src/utils/parseJsonCached.ts': [],
+    };
+    for (const [path, expected] of Object.entries(graph)) {
+      expect(runtimeModuleEdges(read(path)), path).toEqual(expected.sort());
+    }
+  });
 
-    // Only the blind-structure parser. Anything else here is the leak returning.
-    expect(valueImports).toEqual([
-      "import { blindLevelMinutes, parseBlindStructure } from './tournamentFigures';",
-    ]);
+  it('recognizes multiline, re-export and dynamic edges that would hide eager dependencies', () => {
+    expect(
+      runtimeModuleEdges(`
+      import {\n lobbyEntries\n } from './lobbyEntries';
+      export { gateway } from './operator';
+      import('./lazy');
+      require('./commonjs');
+    `)
+    ).toEqual(['./lobbyEntries', './operator', "import('./lazy')", "require('./commonjs')"]);
+  });
+
+  it('erases type-only edges but retains mixed value imports', () => {
+    expect(
+      runtimeModuleEdges(`
+      import type { LobbyRow } from './lobbyEntries';
+      import { type OtherRow } from './other';
+      export type { Row } from './rows';
+      export { type MoreRow } from './more';
+      import { type Row, value } from './value';
+    `)
+    ).toEqual(['./value']);
   });
 
   it('lobbyEntries still exports lateRegEndMs, so no existing caller changed', () => {

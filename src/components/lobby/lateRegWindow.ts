@@ -12,8 +12,8 @@
  * dependency tree into the initial bundle: measured at +12kB gzipped on the
  * entry chunk, paid by every visitor whether or not they ever open a lobby.
  *
- * The function itself depends only on the blind-structure parser, so it lives
- * here and both readers import it. lobbyEntries re-exports it so existing
+ * The function depends on the blind-structure parser and the dependency-free
+ * entry-window display projection. Both readers import this small module. lobbyEntries re-exports it so existing
  * callers are unchanged. The row type is imported type-only, which TypeScript
  * erases, so nothing at runtime crosses back.
  */

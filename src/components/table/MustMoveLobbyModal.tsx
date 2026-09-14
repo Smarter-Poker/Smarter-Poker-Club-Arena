@@ -41,6 +41,7 @@ import {
   isMainOne,
   joinCashGame,
   joinGameRefusalText,
+  leaveCashGameWaitlist,
   lobbyTableLabel,
   mustMoveListRows,
   pendingMoveNotice,
@@ -147,6 +148,26 @@ export function MustMoveLobbyModal({
       await load();
     } catch (err) {
       if (action.isCurrent()) toast.warning(seatChangeRefusalText(err));
+    } finally {
+      action.finish();
+    }
+  };
+
+  const leaveWaitlist = async () => {
+    if (!gameId) return;
+    const action = beginAction();
+    if (!action) return;
+    try {
+      const result = await leaveCashGameWaitlist(gameId);
+      if (!action.isCurrent()) return;
+      toast.info(
+        result.cancelled + result.released_offers > 0
+          ? 'You Have Left The Waiting List.'
+          : 'You Are Already Off The Waiting List.'
+      );
+      await load();
+    } catch {
+      if (action.isCurrent()) toast.warning('Could Not Leave The Waiting List. Please Try Again.');
     } finally {
       action.finish();
     }
@@ -358,6 +379,25 @@ export function MustMoveLobbyModal({
                       )}
                     </div>
                   )}
+                </section>
+              )}
+
+              {!me?.seated && me?.waitlist?.on_list && (
+                <section className="mml-me">
+                  <div className="mml-section-title">Your Waiting List Place</div>
+                  <div className="mml-me-line">
+                    {me.waitlist.position
+                      ? `You Are Number ${me.waitlist.position} On The Waiting List.`
+                      : 'You Are On The Waiting List.'}
+                  </div>
+                  <button
+                    type="button"
+                    className="mml-btn"
+                    disabled={busy}
+                    onClick={() => void leaveWaitlist()}
+                  >
+                    Leave Waiting List
+                  </button>
                 </section>
               )}
 

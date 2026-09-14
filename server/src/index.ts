@@ -21,6 +21,10 @@
  * Deploy to: Hetzner VPS (primary), or any Node.js host.
  */
 
+// FIRST, before any module that can fetch: bound the process-wide HTTP client
+// pool (2026-09-14). Imports evaluate in source order; keep this line on top.
+// See services/httpDispatcher.ts for the memory measurements behind it.
+import './services/httpDispatcher.install.js';
 import { AsyncResource } from 'node:async_hooks';
 import { horseAdaptiveJournalWorker } from './services/HorseAdaptiveJournalWorker.js';
 import { createEngineHttpServer } from './http/createEngineHttpServer.js';

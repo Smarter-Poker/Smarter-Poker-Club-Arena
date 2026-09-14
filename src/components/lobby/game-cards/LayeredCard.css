@@ -203,13 +203,13 @@
 }
 
 .agc-layered__status--red {
-  --status-glow: #ff4b52;
-  --status-ink: #ffc2c4;
+  --status-glow: #f02849;
+  --status-ink: #ff5b6e;
 }
 
 .agc-layered__status--gold {
-  --status-glow: #f1b83a;
-  --status-ink: #ffe9a8;
+  --status-glow: #ffd700;
+  --status-ink: #ffd700;
 }
 
 .agc-layered__status--neutral {
@@ -252,6 +252,15 @@
   color: #fff;
 }
 
+/* The face inside the rim: the label is fitted to this, never the rim. */
+.agc-layered__action-well {
+  display: grid;
+  justify-items: center;
+  width: 78%;
+  min-width: 0;
+  overflow: hidden;
+}
+
 .agc-layered__action-text {
   --size: 5.2cqw;
   font-weight: 800;
@@ -281,16 +290,16 @@
 }
 
 .agc-layered__action--red .agc-layered__action-text {
-  color: #ffd0d2;
+  color: #ff5b6e;
   text-shadow:
-    0 0 1cqw rgb(255 75 82 / 80%),
+    0 0 1cqw rgb(240 40 73 / 80%),
     0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
 
 .agc-layered__action--gold .agc-layered__action-text {
-  color: #ffeeb3;
+  color: #ffd700;
   text-shadow:
-    0 0 1cqw rgb(241 184 58 / 80%),
+    0 0 1cqw rgb(255 215 0 / 70%),
     0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
 

@@ -75,7 +75,8 @@ jobs:
   # A push is new work, and a recovery event carries one explicit
   # protected-main SHA to publish.
   publish-needed:
-    runs-on: ubuntu-latest
+    # Credential-free job: estate runner when vars.CI_RUNNER is set (see ci.yml RUNNER ROUTING).
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -234,7 +235,8 @@ jobs:
     # request head. See "Has this exact tree already passed" above - it compares
     # tree hashes, not merge lineage, and fails closed.
     if: needs.publish-needed.outputs.tests_proven != 'true'
-    runs-on: ubuntu-latest
+    # Credential-free job: estate runner when vars.CI_RUNNER is set (see ci.yml RUNNER ROUTING).
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -275,7 +277,10 @@ jobs:
 
   build-and-store:
     needs: publish-needed
-    runs-on: ubuntu-latest
+    # Carries secrets: stays OFF the shared estate-linux pool that runs pull-request code.
+    # vars.PUBLISH_RUNNER (unset today => ubuntu-latest) is the hook for a dedicated,
+    # credential-only runner label later.
+    runs-on: ${{ vars.PUBLISH_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:
       # read is enough now: this job uploads an artifact instead of pushing a
@@ -573,7 +578,10 @@ jobs:
       (needs.client-tests.result == 'success' ||
        (needs.client-tests.result == 'skipped' &&
         needs.publish-needed.outputs.tests_proven == 'true'))
-    runs-on: ubuntu-latest
+    # Carries secrets: stays OFF the shared estate-linux pool that runs pull-request code.
+    # vars.PUBLISH_RUNNER (unset today => ubuntu-latest) is the hook for a dedicated,
+    # credential-only runner label later.
+    runs-on: ${{ vars.PUBLISH_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -673,7 +681,10 @@ jobs:
       (needs.client-tests.result == 'success' ||
        (needs.client-tests.result == 'skipped' &&
         needs.publish-needed.outputs.tests_proven == 'true'))
-    runs-on: ubuntu-latest
+    # Carries secrets: stays OFF the shared estate-linux pool that runs pull-request code.
+    # vars.PUBLISH_RUNNER (unset today => ubuntu-latest) is the hook for a dedicated,
+    # credential-only runner label later.
+    runs-on: ${{ vars.PUBLISH_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 25
     permissions:
       contents: read

@@ -3783,6 +3783,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     tablesRef.current = tables;
   }, [tables]);
 
+  const gameEntryScope = useMemo(() => ({ active: false, busy: false }), [clubId, currentUserId]);
+  useEffect(() => {
+    gameEntryScope.active = true;
+    return () => {
+      gameEntryScope.active = false;
+    };
+  }, [gameEntryScope]);
+
   const handleJoinTable = useCallback(
     (tableId: string) => {
       haptic.medium();
@@ -3797,10 +3805,13 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          is still the table's own door. */
       const row = tablesRef.current.find((t) => t.id === tableId);
       if (row?.cluster_id && row.cluster_must_move !== false) {
+        if (!gameEntryScope.active || gameEntryScope.busy) return;
+        gameEntryScope.busy = true;
         const gameId = row.cluster_id;
         void (async () => {
           try {
             const r = await joinCashGame(gameId);
+            if (!gameEntryScope.active) return;
             if (r.action === 'waitlisted') {
               toast.info(waitlistedText(r));
               // Watch from Main 1 while the place is held; the Must Move box
@@ -3814,8 +3825,11 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             warmTable(dest);
             navigate(`/table/${dest}`);
           } catch (err) {
+            if (!gameEntryScope.active) return;
             reportError(err, 'ClubHomePage.joinCashGame', { gameId });
             toast.warning(joinGameRefusalText(err));
+          } finally {
+            gameEntryScope.busy = false;
           }
         })();
         return;
@@ -3844,7 +3858,22 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         });
       }, 0);
     },
-    [navigate, toast]
+    [navigate, toast, gameEntryScope]
+  );
+
+  const handleLobbyWaitlistToggle = useCallback(
+    (tableId: string, joining: boolean) => {
+      const row = tablesRef.current.find((table) => table.id === tableId);
+      if (joining && row?.cluster_id && row.cluster_must_move !== false) {
+        // A full Must-Move card still names Main 1. The game door, also used
+        // by Join Game, owns admission and the queue that opens its feeder.
+        handleJoinTable(tableId);
+        return;
+      }
+      // The installed table exit cancels the parent game queue when needed.
+      void handleWaitlistToggle(tableId, joining);
+    },
+    [handleJoinTable, handleWaitlistToggle]
   );
 
   const handleRegister = useCallback(
@@ -4193,7 +4222,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          succeed. The page already owns this flow for the panel; the card runs
          the same one rather than inventing a second. */
       onWaitlistToggle: (tableId: string, joining: boolean) =>
-        handleWaitlistToggle(tableId, joining),
+        handleLobbyWaitlistToggle(tableId, joining),
       /* Dan 2026-08-24: "VIEW TABLE SHOULD OPEN THE GAME AND LET YOU
                WATCH AS A SPECTATOR — IT CURRENTLY BRINGS YOU TO THE JOIN
                PAGE." It did, because it opened the pre-commit panel. The
@@ -4241,7 +4270,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       handleJoinTable,
       openEntry,
       navigate,
-      handleWaitlistToggle,
+      handleLobbyWaitlistToggle,
       openTournamentLobby,
       spinQuickJoin,
       actionBusy,
@@ -5586,7 +5615,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           onJoinTable={handleJoinTable}
           seatsClosedLabel={arenaSeatsClosedLabel}
           registrationClosedLabel={arenaRegistrationClosedLabel}
-          onWaitlistToggle={handleWaitlistToggle}
+          onWaitlistToggle={handleLobbyWaitlistToggle}
           onRegister={handleRegister}
           onUnregister={handleUnregister}
           onSpinJoin={(t, variant) => {

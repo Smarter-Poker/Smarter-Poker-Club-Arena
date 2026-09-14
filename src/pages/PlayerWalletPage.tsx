@@ -47,7 +47,12 @@ import DepositWithdrawModal from '../components/wallet/DepositWithdrawModal';
 import DisputeSubmitModal from '../components/wallet/DisputeSubmitModal';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import ChipStatement from '../components/wallet/ChipStatement';
-import { DiamondService, type DiamondLifetimeStats } from '../services/DiamondService';
+import {
+  DiamondService,
+  type DiamondLifetimeStats,
+  type DiamondWalletSummary,
+} from '../services/DiamondService';
+import { DIAMOND_ARENA_SLUG } from '../lib/constants';
 import { storeFetch } from './marketplace/marketplaceShared';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { formatPopupText } from '../utils/popupStyle';
@@ -306,10 +311,50 @@ function WalletPlate({
   );
 }
 
-function DiamondPlate({ diamonds, onBuy }: { diamonds: number; onBuy: () => void }) {
+/**
+ * THE DIAMONDS PLATE PRINTS THREE FIGURES AND OPENS THE ARENA (phase 2).
+ *
+ * THE DIAMOND ARENA IS DIAMONDS ONLY. NO CHIPS, EVER. (Dan, 2026-09-13.) The
+ * arena's figures are diamonds, so they belong on the diamonds plate - and
+ * "NOTHING CAN BE COPY PASTED OR OVERLAPPED" forbids a second copy of this
+ * plate for them. The bay keeps the one figure the artwork was drawn around,
+ * On Hand; the footer carries Sendable and In The Arena as the same
+ * label/value rows the chip plates use; the two doors sit beside each other.
+ *
+ * The summary has three outcomes and the plate shows all three: reading
+ * ("..."), failed ("Unavailable" - never a zero that means unknown), known.
+ * The arena door tells the truth about the arena: open (sit down), a seat
+ * already held (return to it), or closed (no live control, a plain sentence).
+ */
+export function DiamondPlate({
+  diamonds,
+  summary,
+  onBuy,
+  onArena,
+}: {
+  diamonds: number;
+  summary: DiamondWalletSummary | null | undefined;
+  onBuy: () => void;
+  onArena: () => void;
+}) {
   const animated = useAnimatedNumber(diamonds);
+  const animatedSendable = useAnimatedNumber(summary ? summary.sendable : diamonds);
+  const animatedInArena = useAnimatedNumber(summary ? summary.inArena : 0);
+  const figure = (value: number) =>
+    summary === undefined ? '...' : summary === null ? 'Unavailable' : fmtNum(value);
+  const arena = summary?.arena ?? null;
+  const arenaOpen = Boolean(arena && (arena.cashGamesEnabled || arena.tournamentsEnabled));
+  const seated = Boolean(summary && summary.inArena > 0);
+  const arenaLabel = seated
+    ? 'Return To The Diamond Arena'
+    : arenaOpen
+      ? 'Sit Down In The Diamond Arena'
+      : 'Diamond Arena Opens Soon';
   return (
-    <article className="wallet-plate diamonds" aria-label={`Diamonds: ${fmtNum(diamonds)}`}>
+    <article
+      className="wallet-plate diamonds"
+      aria-label={`Diamonds: ${fmtNum(diamonds)} On Hand, ${figure(summary?.sendable ?? diamonds)} Sendable, ${figure(summary?.inArena ?? 0)} In The Arena`}
+    >
       <div className="wallet-plate__frame">
         <img
           className="wallet-plate__art"
@@ -332,12 +377,39 @@ function DiamondPlate({ diamonds, onBuy }: { diamonds: number; onBuy: () => void
         </div>
       </div>
       <div className="wallet-plate__footer">
-        <button type="button" className="wallet-plate__cta" onClick={onBuy}>
-          Buy Diamonds
-        </button>
+        <div className="wallet-plate__row">
+          <div className="wallet-plate__stat">
+            <span className="wallet-plate__value available">{figure(animatedSendable)}</span>
+            <span className="wallet-plate__label">Sendable</span>
+          </div>
+          <div className="wallet-plate__stat">
+            <span className="wallet-plate__value locked">{figure(animatedInArena)}</span>
+            <span className="wallet-plate__label">In The Arena</span>
+          </div>
+        </div>
+        <div className="wallet-plate__doors">
+          <button type="button" className="wallet-plate__cta" onClick={onBuy}>
+            Buy Diamonds
+          </button>
+          {arena &&
+            (arenaOpen || seated ? (
+              <button type="button" className="wallet-plate__cta" onClick={onArena}>
+                {arenaLabel}
+              </button>
+            ) : (
+              /* Closed: a sentence, not a dead button. A control that never
+                 works teaches a player the page is broken. */
+              <span className="wallet-plate__door-note" role="status">
+                {arenaLabel}
+              </span>
+            ))}
+        </div>
         <div className="wallet-plate__desc">
-          Spend On VIP, Table Perks, Throwables And Club Shop Items. Send To Friends From The Send
-          Tab.
+          {summary?.collateral
+            ? `${fmtNum(summary.collateral)} Bought Recently Are Held Until The Refund Window Closes And Cannot Be Sent. `
+            : ''}
+          Diamonds Buy Your Seat In The Diamond Arena And Spend On VIP, Table Perks, Throwables And
+          Club Shop Items. Send To Friends From The Send Tab.
         </div>
       </div>
     </article>
@@ -1000,6 +1072,8 @@ export default function PlayerWalletPage() {
     else setShowWithdrawModal(true);
   };
   const goBuyDiamonds = () => navigate('/marketplace?tab=diamonds');
+  /* The arena is entered as the club it is (CarouselSection does the same). */
+  const goDiamondArena = () => navigate(`/clubs/${DIAMOND_ARENA_SLUG}`);
 
   const escrow = balances.PLAYER.locked;
 
@@ -1071,6 +1145,12 @@ export default function PlayerWalletPage() {
               <div className="vault-hero__meta-item escrow">
                 <dt>In Escrow</dt>
                 <dd>{escrow.toLocaleString()} Chips Secured At The Table</dd>
+              </div>
+            )}
+            {walletSummary && walletSummary.inArena > 0 && (
+              <div className="vault-hero__meta-item escrow">
+                <dt>In The Arena</dt>
+                <dd>{fmtNum(walletSummary.inArena)} Diamonds At Your Diamond Arena Seat</dd>
               </div>
             )}
           </dl>
@@ -1151,7 +1231,12 @@ export default function PlayerWalletPage() {
         {/* WALLETS */}
         {activeTab === 'overview' && (
           <div className="wallet-plates">
-            <DiamondPlate diamonds={diamonds} onBuy={goBuyDiamonds} />
+            <DiamondPlate
+              diamonds={diamonds}
+              summary={walletSummary}
+              onBuy={goBuyDiamonds}
+              onArena={goDiamondArena}
+            />
             {(Object.keys(WALLET_CONFIG) as WalletType[]).map((type) => (
               <WalletPlate
                 key={type}

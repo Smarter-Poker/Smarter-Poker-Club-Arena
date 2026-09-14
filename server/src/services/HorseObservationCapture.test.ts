@@ -209,3 +209,139 @@ describe('durable observation acquisition client', () => {
     expect(await prune()).toEqual({ status: 'unknown' });
   });
 });
+
+describe('sequential capture slices retain the original request', () => {
+  const install = (claimPatch: Record<string, unknown>, finishReply: Record<string, unknown>) => {
+    m.reply.mockImplementation(async (name, p) => ({
+      error: null,
+      data:
+        name === 'fn_claim_horse_observation_capture'
+          ? {
+              version: 1,
+              status: 'claimed',
+              requestKey: key,
+              leaseToken: p.p_lease_token,
+              ...request,
+              sliceFromMs: 1000,
+              sliceThroughMs: 1500,
+              ...claimPatch,
+            }
+          : { version: 1, requestKey: key, ...finishReply },
+    }));
+  };
+  const progress = {
+    ...batch,
+    status: 'continued',
+    sliceFromMs: 1000,
+    sliceThroughMs: 1500,
+    nextFromMs: 1500,
+    nextThroughMs: 2000,
+    segments: 1,
+    capturedObservations: 12,
+  };
+
+  it('reads only the claimed slice and acknowledges partial progress without completing the request', async () => {
+    install({}, progress);
+    expect(await processOne()).toEqual({ status: 'continued', requestKey: key });
+    expect(m.read).toHaveBeenCalledWith({ ...request, throughMs: 1500 });
+    expect(m.rpc.mock.calls[1][1].p_request_key).toBe(key);
+    expect(m.rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it('validates the final recovered request against the final exact batch', async () => {
+    install(
+      { sliceFromMs: 1500, sliceThroughMs: 2000 },
+      {
+        ...progress,
+        status: 'captured',
+        sliceFromMs: 1500,
+        sliceThroughMs: 2000,
+        nextFromMs: 2000,
+        nextThroughMs: 2000,
+        segments: 2,
+        capturedObservations: 24,
+      }
+    );
+    expect(await processOne()).toEqual({ status: 'captured', requestKey: key });
+  });
+
+  it.each([
+    { sliceFromMs: undefined },
+    { sliceThroughMs: undefined },
+    { sliceFromMs: 999 },
+    { sliceThroughMs: 2001 },
+    { sliceFromMs: 1500 },
+    { sliceFromMs: 1000.5 },
+  ])('refuses incomplete or escaped slice bounds before source I/O: %j', async (patch) => {
+    install(patch, progress);
+    expect((await processOne()).status).toBe('unavailable');
+    expect(m.read).not.toHaveBeenCalled();
+    expect(m.rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { status: 'admitted' },
+    { status: 'captured' },
+    { sliceFromMs: 1001 },
+    { nextFromMs: 1499 },
+    { nextThroughMs: 2001 },
+    { segments: 0 },
+    { segments: 2049 },
+    { capturedObservations: 11 },
+    { capturedObservations: 20001 },
+    { batchDigest: 'd'.repeat(64) },
+  ])('keeps contradictory slice acknowledgment unknown: %j', async (patch) => {
+    install({}, { ...progress, ...patch });
+    expect((await processOne()).status).toBe('unknown');
+  });
+
+  it('accepts refinement only for the exact midpoint of a confirmed source-budget failure', async () => {
+    install({}, { status: 'refined', nextFromMs: 1000, nextThroughMs: 1250 });
+    m.read.mockResolvedValue({ status: 'unavailable', reason: 'hand_budget_exceeded' });
+    expect((await processOne()).status).toBe('refined');
+    m.read.mockResolvedValue({ status: 'unavailable', reason: 'transport_error' });
+    expect((await processOne()).status).toBe('unknown');
+    m.read.mockResolvedValue({ status: 'unavailable', reason: 'hand_budget_exceeded' });
+    install({}, { status: 'refined', nextFromMs: 1001, nextThroughMs: 1250 });
+    expect((await processOne()).status).toBe('unknown');
+  });
+
+  it('refines an oversized encoded journal batch without declaring source corruption', async () => {
+    install({}, { status: 'refined', nextFromMs: 1000, nextThroughMs: 1250 });
+    m.prepare.mockReturnValue({ status: 'unavailable', reason: 'batch_budget_exceeded' });
+    expect((await processOne()).status).toBe('refined');
+    expect(m.rpc.mock.calls[1][1].p_reason).toBe('source_budget_exceeded');
+  });
+
+  it('recognizes the retained segment-budget gap and validates recovered admission receipts', async () => {
+    m.reply.mockResolvedValueOnce({
+      data: { version: 1, status: 'gap', requestKey: key, reason: 'segment_budget_exceeded' },
+      error: null,
+    });
+    expect((await processOne()).status).toBe('gap');
+    m.reply.mockResolvedValueOnce({
+      data: {
+        version: 1,
+        status: 'durable',
+        requestKey: key,
+        state: 'captured',
+        segments: 2,
+        capturedObservations: 24,
+      },
+      error: null,
+    });
+    expect((await admit(request)).status).toBe('durable');
+    m.reply.mockResolvedValueOnce({
+      data: {
+        version: 1,
+        status: 'durable',
+        requestKey: key,
+        state: 'captured',
+        segments: 1,
+        capturedObservations: 24,
+      },
+      error: null,
+    });
+    expect((await admit(request)).status).toBe('unknown');
+  });
+});

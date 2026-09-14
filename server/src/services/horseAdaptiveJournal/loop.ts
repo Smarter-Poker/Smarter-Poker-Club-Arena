@@ -49,7 +49,9 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
       d.completed(
         Object.freeze({ work: 'skipped', retention: 'skipped', acquisition: capture.status })
       );
-      const healthy = capture.status === 'idle' || capture.status === 'admitted';
+      const healthy = ['idle', 'admitted', 'continued', 'captured', 'refined'].includes(
+        capture.status
+      );
       captureFailures = healthy ? 0 : Math.min(captureFailures + 1, 6);
       const delay = healthy
         ? capture.status === 'idle'
@@ -80,7 +82,7 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
         const atLimit =
           r.status === 'pruned' &&
           ('requests' in r
-            ? r.requests === 100
+            ? r.requests === 100 || r.sliceReceipts === 1000
             : r.completedWork === 100 || r.batches === 100 || r.observations === 1000);
         nextPruneAt = d.now() + (atLimit ? 5000 : 60000);
       } catch {

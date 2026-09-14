@@ -29,6 +29,9 @@ export type JournalWorkerStatus = Readonly<{
   cycles: number;
   completed: number;
   capturesAdmitted: number;
+  captureSlicesContinued: number;
+  capturesRefined: number;
+  capturesRecovered: number;
   captureGaps: number;
   lastCapture: string | null;
   quarantined: number;
@@ -57,6 +60,9 @@ const retentionStates = new Set(['skipped', 'pruned', 'unavailable', 'unknown'])
 const captureStates = new Set([
   'idle',
   'admitted',
+  'continued',
+  'captured',
+  'refined',
   'gap',
   'deferred',
   'unknown',
@@ -79,6 +85,9 @@ export class HorseAdaptiveJournalWorker {
     cycles: 0,
     completed: 0,
     capturesAdmitted: 0,
+    captureSlicesContinued: 0,
+    capturesRefined: 0,
+    capturesRecovered: 0,
     captureGaps: 0,
     lastCapture: null,
     quarantined: 0,
@@ -252,6 +261,10 @@ export class HorseAdaptiveJournalWorker {
         cycles: this.summary.cycles + 1,
         completed: this.summary.completed + (r.work === 'completed' ? 1 : 0),
         capturesAdmitted: this.summary.capturesAdmitted + (r.acquisition === 'admitted' ? 1 : 0),
+        captureSlicesContinued:
+          this.summary.captureSlicesContinued + (r.acquisition === 'continued' ? 1 : 0),
+        capturesRefined: this.summary.capturesRefined + (r.acquisition === 'refined' ? 1 : 0),
+        capturesRecovered: this.summary.capturesRecovered + (r.acquisition === 'captured' ? 1 : 0),
         captureGaps: this.summary.captureGaps + (r.acquisition === 'gap' ? 1 : 0),
         lastCapture: typeof r.acquisition === 'string' ? r.acquisition : this.summary.lastCapture,
         quarantined: this.summary.quarantined + (r.work === 'quarantined' ? 1 : 0),

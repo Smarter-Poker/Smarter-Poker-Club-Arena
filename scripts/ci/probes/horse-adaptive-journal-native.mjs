@@ -9,6 +9,7 @@ import { exerciseRetention, oldEmptyBatch } from './horse-adaptive-retention-nat
 import { exerciseIsolatedWorker } from './horse-adaptive-worker-native.mjs';
 import { exerciseQueueHealth } from './horse-adaptive-queue-health-native.mjs';
 import { exerciseObservationCapture } from './horse-observation-capture-native.mjs';
+import { exerciseCaptureSlices } from './horse-capture-slices-native.mjs';
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const { Client } = createRequire(root + '/server/package.json')('pg');
 const pg = process.env.HORSE_PROOF_PG_BIN,
@@ -814,6 +815,37 @@ try {
       c,
       readHealth: (await bridge('HorseAdaptiveJournalQueueHealth')).readJournalQueueHealth,
     }))
+  );
+  results.push(
+    ...(await exerciseCaptureSlices({
+      root,
+      c,
+      otherConnection,
+      actor,
+      source,
+      readSource,
+      journal,
+      capture: await bridge('HorseObservationCapture'),
+      loseReply: (kind) => {
+        globalThis.horseJournalNative.loseCaptureReply = kind;
+      },
+    }))
+  );
+  results.push(
+    await exerciseIsolatedWorker({
+      root,
+      Client,
+      options,
+      c,
+      work: await bridge('HorseAdaptiveJournalWork'),
+      capture: await bridge('HorseObservationCapture'),
+      actor,
+      snapshot: {
+        ...source,
+        source: { ...source.source, sourceDigest: hash('real sliced worker') },
+      },
+      sliced: true,
+    })
   );
   proof = { results, sourceCalls: calls, productionPostgrestVerified: false };
 } finally {

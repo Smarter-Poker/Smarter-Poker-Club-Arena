@@ -16,6 +16,7 @@ export async function exerciseIsolatedWorker({
   snapshot,
   capture,
   actor,
+  sliced = false,
 }) {
   const connection = new Client(options);
   await connection.connect();
@@ -102,7 +103,7 @@ export async function exerciseIsolatedWorker({
     return child;
   });
   const until = async (predicate) => {
-    const deadline = Date.now() + 15000;
+    const deadline = Date.now() + (sliced ? 30000 : 15000);
     while (!predicate()) {
       if (Date.now() > deadline)
         throw Error('native worker deadline: ' + JSON.stringify(owner.status()));
@@ -113,7 +114,14 @@ export async function exerciseIsolatedWorker({
   const timer = setInterval(() => tickCount++, 10);
   try {
     await c.query('TRUNCATE horse_adaptive_journal_work');
-    await c.query('TRUNCATE horse_observation_capture_work');
+    const hasSlices = (
+      await c.query("SELECT to_regclass('public.horse_observation_capture_receipts') present")
+    ).rows[0].present;
+    await c.query(
+      hasSlices
+        ? 'TRUNCATE horse_observation_capture_receipts,horse_observation_capture_work'
+        : 'TRUNCATE horse_observation_capture_work'
+    );
     const acquisition = await capture.admitObservationCapture({
       actorId: actor,
       fromMs: snapshot.source.fromMs + 99,
@@ -122,6 +130,15 @@ export async function exerciseIsolatedWorker({
     assert.equal(acquisition.status, 'durable');
     const lostToken = randomUUID();
     await c.query('SELECT fn_claim_horse_observation_capture($1)', [lostToken]);
+    if (sliced) {
+      const refined = (
+        await c.query(
+          "SELECT fn_finish_horse_observation_capture($1,$2,NULL,'source_budget_exceeded') value",
+          [acquisition.requestKey, lostToken]
+        )
+      ).rows[0].value;
+      assert.equal(refined.status, 'refined');
+    }
     await c.query(
       "UPDATE horse_observation_capture_work SET lease_until=clock_timestamp()-interval '1 second'"
     );
@@ -151,20 +168,39 @@ export async function exerciseIsolatedWorker({
       ).rows[0].state,
       'completed'
     );
-    await until(() => owner.status().capturesAdmitted === 1 && owner.status().completed === 2);
+    if (sliced) {
+      await until(() => owner.status().captureSlicesContinued === 1);
+      const partial = (
+        await c.query(
+          'SELECT state,segments FROM horse_observation_capture_work WHERE request_key=$1',
+          [acquisition.requestKey]
+        )
+      ).rows[0];
+      assert.equal(partial.state, 'queued');
+      assert.equal(partial.segments, 1);
+      await children[0].terminate();
+      await until(() => children.length === 2 && owner.status().phase === 'ready');
+    }
+    await until(() =>
+      sliced
+        ? owner.status().capturesRecovered === 1 && owner.status().completed === 3
+        : owner.status().capturesAdmitted === 1 && owner.status().completed === 2
+    );
     const acquired = (
-      await c.query(
-        'SELECT state,lease_token,observations FROM horse_observation_capture_work WHERE request_key=$1',
-        [acquisition.requestKey]
-      )
+      await c.query('SELECT * FROM horse_observation_capture_work WHERE request_key=$1', [
+        acquisition.requestKey,
+      ])
     ).rows[0];
-    assert.equal(acquired.state, 'admitted');
+    assert.equal(acquired.state, sliced ? 'captured' : 'admitted');
     assert.notEqual(acquired.lease_token, lostToken);
-    assert.equal(acquired.observations, 12);
+    assert.equal(Number(sliced ? acquired.captured_observations : acquired.observations), 12);
+    if (sliced) assert.equal(owner.status().captureSlicesContinued, 1);
     assert.ok(calls.includes('fn_horse_committed_observation_snapshot'));
     // Kill the actual isolated runtime, then let the bounded owner recover it.
-    await children[0].terminate();
-    await until(() => children.length === 2 && owner.status().phase === 'ready');
+    if (!sliced) {
+      await children[0].terminate();
+      await until(() => children.length === 2 && owner.status().phase === 'ready');
+    }
     assert.equal(owner.status().restarts, 1);
     await owner.stop();
     assert.equal(owner.status().phase, 'stopped');
@@ -177,6 +213,10 @@ export async function exerciseIsolatedWorker({
       passed: true,
       completed: owner.status().completed,
       capturesAdmitted: owner.status().capturesAdmitted,
+      capturesRecovered: owner.status().capturesRecovered,
+      captureSlicesContinued: owner.status().captureSlicesContinued,
+      sliced,
+      restartedBetweenSlices: sliced,
       durableRequestResumedWithoutSourcePayload: true,
       restarts: owner.status().restarts,
       parentTimerTicks: tickCount,

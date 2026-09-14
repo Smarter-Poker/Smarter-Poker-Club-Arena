@@ -80,6 +80,11 @@ import {
   type MysteryBountyActivationMode,
   type MysteryBountyStage,
 } from './mysteryBountyActivation.js';
+import {
+  UNIT_CENTS_ASSET_NOT_READ,
+  tournamentUnitCents,
+  type TournamentUnitClubRow,
+} from './tournamentUnit.js';
 import { applySpinDrawPatch } from './spinDrawSync.js';
 import { proveSpinDrawWithParking } from './spinLaunchParking.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
@@ -444,6 +449,14 @@ export abstract class TournamentManagerBase {
   protected spinRevealEmittedTableIds = new Set<string>();
   // Tournament metadata cache
   protected tournamentCache: any = null;
+  /**
+   * The three club columns the unit rule joins (`fn_ca_tournament_unit_cents`
+   * on the SQL side, `tournamentUnitCents` here), read once alongside the
+   * tournament row. Three states, each with its own name (CLAUDE.md 10.86):
+   * `undefined` - not read yet, or the read failed; `null` - read, and the
+   * tournament has no club; a row - read. See `tournamentUnit()`.
+   */
+  protected tournamentClub: TournamentUnitClubRow | null | undefined = undefined;
   // FIX 151: ChipRaceEngine for denomination removal on level-up
   protected chipRaceEngine: ChipRaceEngine = new ChipRaceEngine((event) => {
     console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] ChipRace: ${event.type}`);
@@ -1797,6 +1810,49 @@ export abstract class TournamentManagerBase {
   }
 
   /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  WHAT UNIT DOES THIS TOURNAMENT PAY IN? (DIAMOND PHASE 8, 2026-09-14)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * Read the tournament's club - the same three columns
+   * `fn_ca_tournament_unit_cents` joins - so this manager can price a place in
+   * the unit the database will settle it in. Best effort, and stated as such:
+   * a read that fails leaves `tournamentClub` undefined and is reported, and
+   * `tournamentUnit()` answers null rather than a guess. Nothing here blocks a
+   * tournament from starting; the database ladder, not this cache, is the
+   * authority on what is paid (`fn_settle_tournament_places` stamps
+   * `tournament_players.prize` from its own unit-aware ladder).
+   */
+  protected async readTournamentClub(clubId: unknown): Promise<void> {
+    if (clubId == null) {
+      this.tournamentClub = null;
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('clubs')
+        .select('asset,is_platform,union_id')
+        .eq('id', clubId)
+        .maybeSingle();
+      if (error) throw error;
+      this.tournamentClub = (data as TournamentUnitClubRow | null) ?? null;
+    } catch (err) {
+      this.tournamentClub = undefined;
+      reportError(err, 'TournamentManagerBase.readTournamentClub');
+    }
+  }
+
+  /**
+   * The smallest amount this tournament can pay, in cents, or null when the
+   * club could not be read. Null is a distinct answer, not a cent: a caller
+   * that needs a number and gets null passes the named admission
+   * `UNIT_CENTS_ASSET_NOT_READ` and says so where it does.
+   */
+  protected tournamentUnit(): number | null {
+    return this.tournamentClub === undefined ? null : tournamentUnitCents(this.tournamentClub);
+  }
+
+  /**
    * Clear the persisted break flags. Split out of resumeFromBreak because a
    * tournament that ENDS on a break has to come off it too, and that path does
    * not resume anything.
@@ -2396,7 +2452,12 @@ export abstract class TournamentManagerBase {
         // knockouts. fn_mystery_bounty_seed subtracts this before checking
         // the inventory sum; not subtracting it here is what refused every
         // seed this platform has ever attempted. See mysteryPoolCents.
-        poolCentsFromNumeric(fresh.bounty_pool_paid ?? 0)
+        poolCentsFromNumeric(fresh.bounty_pool_paid ?? 0),
+        // This manager has not read the tournament's club, so it cannot say
+        // whether the event pays in cents or in whole Diamonds. The named
+        // constant is that admission; it is a cent because every tournament
+        // that can currently exist is a chip tournament. See tournamentUnit.ts.
+        UNIT_CENTS_ASSET_NOT_READ
       );
     } catch (err) {
       // A bounty pool that is not a whole number of cents means something
@@ -2457,7 +2518,9 @@ export abstract class TournamentManagerBase {
           poolCentsFromNumeric(fresh.bounty_pool),
           fresh.mystery_bounty_pool_percent,
           fresh.mystery_bounty_regular_pool_percent,
-          poolCentsFromNumeric(fresh.bounty_pool_paid ?? 0) + unrecordedCents
+          poolCentsFromNumeric(fresh.bounty_pool_paid ?? 0) + unrecordedCents,
+          // Same admission as the seed above: the club was never read here.
+          UNIT_CENTS_ASSET_NOT_READ
         );
       } catch (err) {
         reportError(err, 'Tournament.mystery_bounty_pool_not_in_cents');
@@ -3312,6 +3375,8 @@ export abstract class TournamentManagerBase {
       }
 
       this.tournamentCache = tournament;
+      await this.readTournamentClub(tournament.club_id);
+      this.assertLifecycleCurrent(lifecycle);
 
       this.prizePoolFinalized = tournament.prize_pool_finalized || false;
       this.tournamentEntryWindowClosed = this.prizePoolFinalized;
@@ -4463,6 +4528,8 @@ export abstract class TournamentManagerBase {
       }
 
       this.tournamentCache = tournament;
+      await this.readTournamentClub(tournament.club_id);
+      this.assertLifecycleCurrent(lifecycle);
       this.prizePoolFinalized = tournament.prize_pool_finalized || false;
       this.tournamentEntryWindowClosed = this.prizePoolFinalized;
       this.tournamentEntryCloseAnnounced = false;

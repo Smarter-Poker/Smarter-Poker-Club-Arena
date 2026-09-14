@@ -11,7 +11,7 @@
 
 import { supabase } from './client.js';
 import { parseTableArenaIdentity } from '../../domain/ArenaContext.js';
-import { assertDiamondCashTable } from '../../domain/DiamondCashBoundary.js';
+import { assertDiamondTable } from '../../domain/DiamondCashBoundary.js';
 import { reportError } from '../errorReporter.js';
 import { SEATED_PROFILE_SELECT } from './tableAvatar.js';
 
@@ -41,14 +41,23 @@ export async function loadTable(tableId: string) {
   if (!data) throw new Error(`Table ${tableId} not found`);
   const arena = parseTableArenaIdentity(data);
   if (arena.asset === 'diamonds') {
-    assertDiamondCashTable(data);
+    assertDiamondTable(data);
+    // Each kind of Diamond table has its own switch, read from the arena's
+    // one settings row, and a table is loaded only while its switch is on.
+    // The database refuses every door of a closed kind too; this is the
+    // engine saying the same thing before it deals a hand.
+    const tournamentTable = data.tournament_id != null || data.game_type === 'tournament';
     const settings = await supabase
       .from('ca_arena_settings')
-      .select('club_id, cash_games_enabled')
+      .select('club_id, cash_games_enabled, tournaments_enabled')
       .eq('id', 1)
       .eq('club_id', arena.id)
       .maybeSingle();
-    if (settings.error || settings.data?.cash_games_enabled !== true) {
+    if (tournamentTable) {
+      if (settings.error || settings.data?.tournaments_enabled !== true) {
+        throw new Error('Diamond Tournaments Are Not Open');
+      }
+    } else if (settings.error || settings.data?.cash_games_enabled !== true) {
       throw new Error('Diamond Cash Games Are Not Open');
     }
   }

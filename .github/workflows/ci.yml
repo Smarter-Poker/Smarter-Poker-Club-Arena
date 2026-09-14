@@ -1136,18 +1136,55 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-horse-identity-triggers.py
+      - name: Horse hand touches belong to the currently observed table
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-horse-seat-touch-session.py
+      - name: Tournament finish incidents retain their own event identity
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-tournament-incident-identity.py
       - name: New seat occupants cannot inherit another player's sit-out state
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-seat-turnover-sitout.py
+      - name: Profile referral codes remain unique across concurrent generators
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-profile-referral-code.py
+      - name: Player exports preserve standalone rake and horse visibility
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-club-player-export.py
       - name: Concurrent hands preserve shared F06 custody lanes
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-f06-shared-hand-lane.py
+        run: python3 scripts/ci/test-f06-zero-seat-hand-lane.py
       - name: Accepted hands and terminal operations obey one lock order
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-f06-terminal-lock-order.py
+      - name: Daily rake monitor respects the writer deadline and UTC boundaries
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-rake-rollup-due.py
+      - name: Video scrape history lookup stays indexed without blocking audit writers
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-video-scrape-status-index.py
+
+      - name: Native video inventory snapshot and service permissions
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-video-library-inventory.py
+      - name: Diamond health requires complete known comparisons
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-diamond-health-comparisons.py
+      - name: Chip statement pages retain tied entries and caller authority
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-chip-statement-cursor.py
       - name: Atomic departures, ownership, rollback and concurrency
         env:
           PGBIN: /usr/lib/postgresql/17/bin
@@ -1446,6 +1483,9 @@ jobs:
       - name: Install Dependencies
         if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci
+
+      - name: Verify production minifier execution and hidden maps
+        run: node --test tests/operations/client-chunk-execution.test.mjs
 
       # 2026-09-04: the optimized rasters are content-addressed, so this is
       # keyed on the media that feeds them plus the script that encodes them.
@@ -2096,7 +2136,7 @@ jobs:
         # above and torn down in an always() step below; all three suites share
         # it. See the note on "Serve one build to every suite".
         run: |
-          npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line --retries=1
+          npx playwright test tests/e2e/live-css-loader.spec.ts tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line --retries=1
 
       # Capture the failed fixture before a later suite can clear its output.
       # These tests use the local build and synthetic data, without a login.

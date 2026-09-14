@@ -1,0 +1,13 @@
+{
+  "_owner": "agent/cowork-ads7/feat/a-sponsor-is-quoted-a-price. Applied to production as migration a_sponsor_is_quoted_a_price_in_dollars (file 20260913235536): a sponsor pays twice the club diamond rate in whole dollars (1 diamond = 1 cent), the quote is frozen on the flight at submit, and both campaign lists return it.",
+  "functions": [
+    "fn_sponsor_ad_submit",
+    "fn_sponsor_campaign_create",
+    "fn_sponsor_campaign_list",
+    "fn_ad_campaign_list"
+  ],
+  "columns": {
+    "ad_rate_card": ["sponsor_cents_per_day"],
+    "ad_campaign": ["quoted_cents"]
+  }
+}

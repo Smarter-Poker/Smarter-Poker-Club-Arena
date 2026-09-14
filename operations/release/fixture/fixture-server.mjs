@@ -1,4 +1,5 @@
 import { configureFixtureSafeupdate } from './safeupdate-provider.mjs';
+import { qualifyPostAlignmentAuth } from './post-alignment-auth.mjs';
 import { captureFixtureServicePreimage } from './service-preimage.mjs';
 import { alignFixtureRoles } from './role-alignment.mjs';
 import { roleNativePostgresArguments, runRoleNativeFaultPhase, runRoleNativeAccessPhase } from './role-native-entry.mjs';
@@ -494,6 +495,7 @@ async function checkPackage() {
     await access(binary, constants.X_OK);
   for (const name of [
     'fixture-server.mjs',
+    'post-alignment-auth.mjs',
     'service-preimage.mjs',
     'role-alignment.mjs',
     'role-native-entry.mjs',
@@ -583,7 +585,7 @@ function serviceEnvironments(secrets) {
   };
 }
 
-async function start(args, preimageOnly = false, roleAlignment = false, roleNative = false, providerSemantics = false) {
+async function start(args, preimageOnly = false, roleAlignment = false, roleNative = false, providerSemantics = false, postAlignmentAuth = false) {
   // Native qualification stays inside the existing 180s outer preimage limit.
   // Includes genuine bootstrap, all catalogs and every phase; expiry is failure.
   const nativeDeadline = performance.now() + 150000;
@@ -621,7 +623,8 @@ async function start(args, preimageOnly = false, roleAlignment = false, roleNati
   const nativeTimer = roleNative ? setTimeout(() => supervisor.fail('native-role-total-deadline'),
     Math.max(1, nativeDeadline - performance.now())) : null;
   nativeTimer?.unref();
-  let db, gateway, actors, bridge;
+  let db, gateway, actors, bridge, authProof;
+  let startupFailed = false;
   let stage = 'archives';
   const stop = () => supervisor.fail('termination');
   process.once('SIGTERM', stop);
@@ -862,6 +865,20 @@ async function start(args, preimageOnly = false, roleAlignment = false, roleNati
             });
             supervisor.assertHealthy();
             process.stdout.write(JSON.stringify(providerProof) + '\n');
+            if (postAlignmentAuth) {
+              stage = 'post-alignment-auth';
+              const heldBackendPid = db.processID;
+              // Alignment's installer and all observers have physically closed.
+              // A new application connection now adopts the installed settings.
+              await supervisor.databaseOwner.end(db);
+              db = supervisor.databaseOwner.own(new pg.Client({ ...connection, database,
+                connectionTimeoutMillis: 3000, query_timeout: 5000 }));
+              await db.connect();
+              authProof = await qualifyPostAlignmentAuth({ db, heldBackendPid, supervisor,
+                authEnvironment: env.auth, secrets, roleProof, providerProof,
+                deadlineMs: roleNative ? Math.min(30000, nativeBudget()) : 30000 });
+              supervisor.assertHealthy();
+            }
           } catch (error) {
             if (error?.proof) process.stdout.write(JSON.stringify(error.proof) + '\n');
             throw error;
@@ -1059,6 +1076,7 @@ async function start(args, preimageOnly = false, roleAlignment = false, roleNati
     // Private service logs can include synthetic credentials. Public stderr
     // contains the bounded stage only, never child output or raw SQL/errors.
     process.stderr.write(`FIXTURE_FAILED:${stage}\n`);
+    startupFailed = true;
     if (preimageOnly) {
       process.stderr.write(
         JSON.stringify(nativeFailureDiagnostic('fixture-preimage-' + stage, error)) + '\n'
@@ -1074,6 +1092,11 @@ async function start(args, preimageOnly = false, roleAlignment = false, roleNati
         bridge,
         supervisor,
       });
+      // No service-phase success leaves the container until its real service
+      // children and database clients have closed. Outer Docker absence is
+      // independently required by the controller before native acceptance.
+      if (!startupFailed && authProof) process.stdout.write(JSON.stringify({ ...authProof,
+        status: 'passed', fixture_resources_closed: true }) + '\n');
     } catch (error) {
       if (preimageOnly) {
         process.stderr.write(
@@ -1117,6 +1140,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     else if (command === 'qualify-role-boundaries') await start(args, true, true, true);
     else if (command === 'qualify-providers') await start(args, true, true, false, true);
     else if (command === 'qualify-role-providers') await start(args, true, true, true, true);
+    else if (command === 'qualify-auth') await start(args, true, true, false, true, true);
+    else if (command === 'qualify-role-providers-auth') await start(args, true, true, true, true, true);
     else {
       assert.equal(args.length, 0);
       if (command === 'capabilities') {

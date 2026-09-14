@@ -374,6 +374,16 @@ const FALLBACK_VIP_PLANS: VipPlan[] = [
 interface StoreFetchOpts {
   method?: 'GET' | 'POST';
   body?: Record<string, unknown>;
+  /**
+   * Sent as `X-Idempotency-Key`. The money routes on the World Hub
+   * (`/api/store/diamond-transfer` since #1696, 2026-09-09) REFUSE a request
+   * without one - 400 "Invalid Transfer Request" - and the key is what lets a
+   * retry after a lost response replay the server's own answer instead of
+   * moving the money twice. Mint one per INTENT and reuse it on every retry of
+   * that intent (StoreTab.purchaseKeyRef is the pattern); rotate it only after
+   * a `definitive` refusal.
+   */
+  idempotencyKey?: string;
 }
 
 /**
@@ -393,6 +403,7 @@ export async function storeFetch<T = Record<string, unknown>>(
 
   const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
   if (opts.body) headers['Content-Type'] = 'application/json';
+  if (opts.idempotencyKey) headers['X-Idempotency-Key'] = opts.idempotencyKey;
 
   const res = await fetch(path, {
     method: opts.method || (opts.body ? 'POST' : 'GET'),

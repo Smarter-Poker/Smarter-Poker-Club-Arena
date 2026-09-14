@@ -179,13 +179,15 @@ class ProducerTests(unittest.TestCase):
         self.assertEqual((self.destination / "keep").read_text(), "existing owner")
         self.assertEqual(self.commands, [])
 
-    def test_stale_git_target_refuses_before_reference_install(self):
+    def test_uncontained_git_target_refuses_before_reference_install(self):
         real = self.fake_command
-        def stale(args, **kwargs):
-            return "0" * 40 if args[:2] == ["git", "log"] else real(args, **kwargs)
-        with self.assertRaisesRegex(RuntimeError, "STALE_TARGET"):
+        def uncontained(args, **kwargs):
+            if args[:4] == ["git", "merge-base", "--is-ancestor", self.target]:
+                raise RuntimeError("ENGINE_CI_PRODUCER_COMMAND_FAILED")
+            return real(args, **kwargs)
+        with self.assertRaisesRegex(RuntimeError, "COMMAND_FAILED"):
             producer.produce(self.target, self.destination, self.evidence, environment=self.env,
-                             platform="linux", run=stale, proof_module=self.proof(), bundle_module=bundle)
+                             platform="linux", run=uncontained, proof_module=self.proof(), bundle_module=bundle)
         self.assertFalse(any(args[0] == "npm" for args, _ in self.commands))
         self.assertFalse(self.destination.exists())
 

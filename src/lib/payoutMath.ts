@@ -52,9 +52,8 @@ export function computePlacePrize(
    * ═══════════════════════════════════════════════════════════════════════
    *
    * A cent for a chip tournament, which is every tournament that has ever
-   * run, and which is why this defaults to 1 and the chip ladder is unchanged
-   * BY CONSTRUCTION rather than by inspection: `Math.round(x / 1) * 1` is
-   * `Math.round(x)`.
+   * run, and which is why the chip ladder is unchanged BY CONSTRUCTION rather
+   * than by inspection: `Math.round(x / 1) * 1` is `Math.round(x)`.
    *
    * One hundred for a Diamond tournament, because a Diamond does not divide.
    * The comment above calls the single division at the end "the one place a
@@ -76,8 +75,23 @@ export function computePlacePrize(
    * read their table's unit rather than assuming a cent - arriving at the
    * prize ladder, which is the last place in the estate that still assumed
    * one.
+   *
+   * ─── IT IS REQUIRED, AND THAT IS THE POINT (2026-09-13) ──────────────────
+   *
+   * This was `unitCents = 1` for a day, and EVERY caller omitted it: both
+   * engine payout sites, the lobby's projected ladder, PayoutEngine and
+   * TournamentService. A defaulted unit is CLAUDE.md 10.86 rule 1 in one
+   * parameter - a signal that answers confidently when it cannot tell - and
+   * the answer it gave was indistinguishable from a caller that had read a
+   * chip club and knew.
+   *
+   * There is no default now, so a caller that does not know the unit cannot
+   * silently receive a cent. It passes `tournamentUnitCents(club)` when it has
+   * the club row, or the named `UNIT_CENTS_ASSET_NOT_READ` when it does not -
+   * both from `tournamentUnit.ts`, both greppable, both a statement rather
+   * than an omission.
    */
-  unitCents = 1
+  unitCents: number
 ): number {
   if (!Array.isArray(payouts) || payouts.length === 0) return 0;
   if (!Number.isFinite(place)) return 0;

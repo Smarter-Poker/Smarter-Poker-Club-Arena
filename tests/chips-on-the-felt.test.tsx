@@ -148,17 +148,22 @@ describe('a bet in front of a seat', () => {
 describe('the pot', () => {
   it('shows MULTIPLE chips, correctly representing a 21 pot', () => {
     // Dan 2026-08-24 (Update): "AND THE 'POT' ISN'T DISPLAYING MULTIPLE CHIPS AS IT SHOULD BE EITHER..."
+    //
+    // The ORDER is deliberately not asserted here any more - Dan 2026-09-14,
+    // the pot's chips "should appear 'in a pot' mixed together" rather than in
+    // number order. What must hold is the multiset: 21 = 4 x 5 + 1 x 1.
     const { container } = render(<PotDisplay mainPot={21} />);
     const colors = chipColors(container, POT_CHIP, '--pile-chip-color');
 
-    // 21 = 4 x 5 (red) + 1 x 1 (white)
-    expect(colors).toEqual([
-      byValue(5).color,
-      byValue(5).color,
-      byValue(5).color,
-      byValue(5).color,
-      byValue(1).color,
-    ]);
+    expect([...colors].sort()).toEqual(
+      [
+        byValue(5).color,
+        byValue(5).color,
+        byValue(5).color,
+        byValue(5).color,
+        byValue(1).color,
+      ].sort()
+    );
   });
 
   it('still reads the amount', () => {
@@ -241,10 +246,16 @@ describe('the pot', () => {
 // THE POT'S CHIPS ARE NOT ALL PAINTED IN ONE PLACE
 // ============================================================================
 
-describe('the pot pile is a tower, not a heap', () => {
+describe('the pot is a spread of chips, mixed, laid out horizontally', () => {
   /**
-   * Dan 2026-09-14: "BOMB POTS CHIPS DON'T UPDATE TO DISPLAY THE ACTUAL
-   * AMOUNT IN THE POTS... IT SHOULD SHOW MULTIPLE CHIPS AS WELL."
+   * Dan 2026-09-14, in order:
+   *
+   *   "BOMB POTS CHIPS DON'T UPDATE TO DISPLAY THE ACTUAL AMOUNT IN THE
+   *    POTS... IT SHOULD SHOW MULTIPLE CHIPS AS WELL."
+   *   "CHIPS SHOULD ALWAYS BE LAYING HORIZONTALLY UNDER THE POT, NEVER
+   *    STACKED VERTICALLY."
+   *   "AND SHOULDN'T ALWAYS APPEAR IN NUMBER ORDER HIGH TO LOW OR LOW TO
+   *    HIGH... THEY SHOULD APPEAR 'IN A POT' MIXED TOGETHER."
    *
    * Every test above this one was GREEN while the pot drew a single disc for
    * any amount, because every one of them asks the DOM what is there and the
@@ -255,12 +266,10 @@ describe('the pot pile is a tower, not a heap', () => {
    * (green 25 + red 5) showed one red chip; a 74 pot (2 green, 4 red, 4
    * white) showed one white chip.
    *
-   * jsdom does not lay out CSS, so this reads the stylesheet, exactly as the
-   * sub-1 oval-disc guard above does. It is the only layer that can fail
-   * here: the arithmetic has its own suite, and the markup has the ones above.
+   * jsdom does not lay out CSS, so the layout half of this reads the
+   * stylesheet, exactly as the sub-1 oval-disc guard above does.
    */
   const potCss = readSrc('src/components/table/PotDisplay.css');
-  const seatCss = readSrc('src/components/table/ChipPhysics.css');
 
   /** The declaration block of `selector`, matched as a WHOLE selector. */
   const rule = (css: string, selector: string) => {
@@ -274,26 +283,83 @@ describe('the pot pile is a tower, not a heap', () => {
     return m![1];
   };
 
-  it('spaces the discs by the shared chip slice, so every one of them shows', () => {
-    const stacked = rule(potCss, '.pot-display__pile-chip + .pot-display__pile-chip');
-    expect(stacked).toMatch(/margin-bottom:\s*var\(--cp-chip-overlap/);
-  });
+  const denomByColor = (color: string) => CHIP_DENOMINATIONS.find((d) => d.color === color)!.value;
 
-  it('uses the same overlap token the seat chips do, so the two cannot drift', () => {
-    // --cp-chip-overlap is `slice - size`, both derived from the ONE chip
-    // token in TableVisualHotfix.css. A pot that spaced itself by a number of
-    // its own would read differently from the bet that just swept into it.
-    const seat = rule(seatCss, '.cp-chip + .cp-chip');
-    expect(seat).toMatch(/margin-bottom:\s*var\(--cp-chip-overlap/);
-  });
-
-  it('never puts the discs back in one grid cell', () => {
-    // The exact shape of the regression. `grid-area: 1 / 1` on a chip or on
+  it('lays the discs along the row, and never back into one grid cell', () => {
+    // The exact shape of the regression: `grid-area: 1 / 1` on a chip or on
     // the stack means "every one of you occupies this single cell".
     expect(rule(potCss, '.pot-display__pile-chip')).not.toMatch(/grid-area/);
     expect(rule(potCss, '.pot-display__pile-stack')).not.toMatch(/grid-area/);
-    expect(rule(potCss, '.pot-display__pile-stack')).toMatch(/flex-direction:\s*column-reverse/);
-    expect(rule(potCss, '.pot-display__pile')).toMatch(/flex-direction:\s*column-reverse/);
+
+    const spaced = rule(potCss, '.pot-display__pile-chip + .pot-display__pile-chip');
+    expect(spaced).toMatch(/margin-left:\s*var\(--pd-pile-overlap\)/);
+    // A vertical stack is what Dan ruled out; margin-bottom is how one is built.
+    expect(spaced).not.toMatch(/margin-bottom/);
+  });
+
+  it('never stacks them vertically', () => {
+    expect(rule(potCss, '.pot-display__pile')).toMatch(/flex-direction:\s*row\s*;/);
+    expect(rule(potCss, '.pot-display__pile-stack')).toMatch(/flex-direction:\s*row\s*;/);
+    expect(rule(potCss, '.pot-display__pile')).not.toMatch(/column/);
+    expect(rule(potCss, '.pot-display__pile-stack')).not.toMatch(/column/);
+  });
+
+  it('derives the overlap from the one chip token, so the discs cannot drift', () => {
+    // --cp-chip-size is the single chip token (TableVisualHotfix.css). A pot
+    // that spaced itself by a number of its own would stop matching the chip
+    // it is spacing the moment the table changed width.
+    const pile = rule(potCss, '.pot-display__pile');
+    expect(pile).toMatch(/--pd-pile-show:\s*calc\(var\(--cp-chip-size/);
+    expect(pile).toMatch(
+      /--pd-pile-overlap:\s*calc\(var\(--pd-pile-show\)\s*-\s*var\(--cp-chip-size/
+    );
+  });
+
+  it('still adds up to the pot, whatever order it deals them in', () => {
+    for (const pot of [21, 30, 74, 144, 175]) {
+      const { container } = render(<PotDisplay mainPot={pot} />);
+      const drawn = chipColors(container, POT_CHIP, '--pile-chip-color');
+      expect(
+        drawn.reduce((n, c) => n + denomByColor(c), 0),
+        `pot ${pot}`
+      ).toBe(pot);
+      cleanup();
+    }
+  });
+
+  it('mixes the denominations instead of running them high to low', () => {
+    // A sorted pile has exactly one run per denomination. A mixed one has
+    // more. 74 is 2 green, 4 red and 4 white - three denominations.
+    for (const pot of [74, 144]) {
+      const { container } = render(<PotDisplay mainPot={pot} />);
+      const drawn = chipColors(container, POT_CHIP, '--pile-chip-color');
+      const runs = drawn.filter((c, i) => c !== drawn[i - 1]).length;
+      expect(new Set(drawn).size, `pot ${pot} should hold several denominations`).toBeGreaterThan(
+        2
+      );
+      expect(runs, `pot ${pot} is still in denomination order`).toBeGreaterThan(
+        new Set(drawn).size
+      );
+      cleanup();
+    }
+  });
+
+  it('deals the same pot the same way every time', () => {
+    // The mix is keyed on (denomination, ordinal), not on Math.random(), so a
+    // re-render for an unrelated prop cannot re-deal the chips on the felt.
+    const once = (() => {
+      const { container } = render(<PotDisplay mainPot={144} />);
+      const c = chipColors(container, POT_CHIP, '--pile-chip-color');
+      cleanup();
+      return c;
+    })();
+    const twice = (() => {
+      const { container } = render(<PotDisplay mainPot={144} />);
+      const c = chipColors(container, POT_CHIP, '--pile-chip-color');
+      cleanup();
+      return c;
+    })();
+    expect(twice).toEqual(once);
   });
 });
 
@@ -311,7 +377,9 @@ describe('the felt is internally consistent', () => {
     const pot = render(<PotDisplay mainPot={175} />);
     const potColors = chipColors(pot.container, POT_CHIP, '--pile-chip-color');
 
+    // Same chips, in whatever order the pot deals them - the seat's stack is
+    // ordered by denomination, the pot's spread is mixed on purpose.
     expect(potColors).toHaveLength(seatColors.length);
-    expect(seatColors[0]).toEqual(potColors[0]);
+    expect([...potColors].sort()).toEqual([...seatColors].sort());
   });
 });

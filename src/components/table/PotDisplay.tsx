@@ -167,6 +167,31 @@ function SidePotBadge({
 }
 
 /**
+ * A settled 0..1 for one disc, from its denomination and its ordinal within
+ * that denomination.
+ *
+ * Dan 2026-09-14: chips in the pot "SHOULDN'T ALWAYS APPEAR IN NUMBER ORDER
+ * HIGH TO LOW OR LOW TO HIGH... THEY SHOULD APPEAR 'IN A POT' MIXED TOGETHER."
+ *
+ * Keyed on (denomination, ordinal) rather than on a position in the finished
+ * pile, which is the whole point: the third red 5 gets the same key whatever
+ * else is in the pot, so a pot that grows does not re-deal the chips already
+ * lying in it - the new ones slot in among them and everything else stays
+ * where the player last saw it. Math.random() would reshuffle the entire pot
+ * on every render, including the ones React does for an unrelated prop.
+ *
+ * `salt` gives one chip several independent draws (order, and how far it
+ * lies off the centre line) without a second hash function.
+ */
+function chipJitter(denomValue: number, ordinal: number, salt: number): number {
+  let h = Math.imul(denomValue ^ 0x9e3779b1, 0x85ebca6b);
+  h = Math.imul(h ^ (ordinal + 0x165667b1), 0xc2b2ae35);
+  h = Math.imul(h ^ (salt * 0x27d4eb2f), 0x2545f491);
+  h ^= h >>> 15;
+  return (h >>> 0) / 4294967296;
+}
+
+/**
  * The pot, drawn as actual chips.
  *
  * Replaces MiniChipIcon, which drew three identical teal circles no matter
@@ -197,62 +222,88 @@ function PotChipPile({ amount, size }: { amount: number; size: 'pot' | 'street' 
     [amount, size]
   );
 
-  if (stacks.length === 0) return null;
-
-  // One column, highest denomination on the bottom. `stacks` is already
-  // highest-first and the column is reversed in CSS, so DOM order IS the
-  // ladder - see the tower note in PotDisplay.css.
+  // One horizontal spread, denominations MIXED - Dan 2026-09-14, "they should
+  // appear 'in a pot' mixed together". Every disc visualChipStacks returned is
+  // drawn; only the ORDER is re-dealt, by a key settled per (denomination,
+  // ordinal), so the pile is stable across renders and stable as the pot grows.
   //
   // `truncated` / `count` ride along per disc for the same reason they do on
-  // the seat chips: a group clamped for height prints its REAL number beside
-  // the tower, so a pot of 60,000 (twelve orange 5,000s, because Dan's ladder
-  // has nothing between 5,000 and 100,000) still adds up to 60,000 on screen.
-  const flattenedChips: {
-    denom: ChipDenomination;
-    partial: boolean;
-    isTopInDenom: boolean;
-    truncated: boolean;
-    count: number;
-  }[] = [];
-  stacks.forEach((stack) => {
-    for (let i = 0; i < stack.drawn; i++) {
-      flattenedChips.push({
-        denom: stack.denom,
-        partial: stack.partial,
-        isTopInDenom: i === stack.drawn - 1,
-        truncated: stack.truncated,
-        count: stack.count,
-      });
-    }
+  // the seat chips: a denomination clamped for width prints its REAL number
+  // above the spread, so a pot of 60,000 (twelve orange 5,000s, because Dan's
+  // ladder has nothing between 5,000 and 100,000) still adds up to 60,000.
+  const flattenedChips = useMemo(() => {
+    const flat: {
+      denom: ChipDenomination;
+      partial: boolean;
+      truncated: boolean;
+      count: number;
+      /** Where it lies, and how far off the centre line. */
+      order: number;
+      lift: number;
+    }[] = [];
+    stacks.forEach((stack) => {
+      for (let i = 0; i < stack.drawn; i++) {
+        flat.push({
+          denom: stack.denom,
+          partial: stack.partial,
+          truncated: stack.truncated,
+          count: stack.count,
+          order: chipJitter(stack.denom.value, i, 1),
+          // +/- 12% of a chip. Enough that the row reads as chips pushed into
+          // a pot rather than as a dealt-out fan; small enough that the spread
+          // still sits on one line under the pill.
+          lift: (chipJitter(stack.denom.value, i, 2) - 0.5) * 0.24,
+        });
+      }
+    });
+    flat.sort((a, b) => a.order - b.order);
+    return flat;
+  }, [stacks]);
+
+  // After the hooks, never before them: an early return above a useMemo is a
+  // conditional hook call (react-hooks/rules-of-hooks), and the flatten above
+  // already yields [] for a pot with no chips on the ladder.
+  if (flattenedChips.length === 0) return null;
+
+  // The count badge goes on the LAST disc of a clamped denomination, because a
+  // later sibling lies over an earlier one and would bury it. Mixed order means
+  // "last" is wherever the deal put it, not the top of a column.
+  const lastOfTruncated = new Map<number, number>();
+  flattenedChips.forEach((chip, i) => {
+    if (chip.truncated) lastOfTruncated.set(chip.denom.value, i);
   });
 
   return (
     /* aria-hidden: the amount is already announced by the pill's aria-label. */
     <div className={`pot-display__pile pot-display__pile--${size}`} aria-hidden="true">
       <div className="pot-display__pile-stack" style={{ '--pile-group': 0 } as React.CSSProperties}>
-        {flattenedChips.map((chip, index) => (
-          <span
-            key={index}
-            className={`pot-display__pile-chip${chip.partial ? ' pot-display__pile-chip--partial' : ''}`}
-            style={
-              {
-                '--pile-chip-color': chip.denom.color,
-                '--pile-chip-accent': chip.denom.accent,
-                transform: `translateX(${Math.sin(index * 23.45) * 1.5}px)`,
-              } as React.CSSProperties
-            }
-          >
-            {/* Multiplication sign, not a lowercase 'x' - check-title-case.mjs
-                rejects the letter on a forward-facing surface, and "twelve of
-                these" was never the letter anyway. */}
-            {chip.truncated && chip.isTopInDenom && (
-              <span className="pot-display__pile-multi">
-                {'\u00d7'}
-                {chip.count.toLocaleString()}
-              </span>
-            )}
-          </span>
-        ))}
+        {flattenedChips.map((chip, index) => {
+          const counted = lastOfTruncated.get(chip.denom.value) === index;
+          return (
+            <span
+              key={index}
+              className={`pot-display__pile-chip${chip.partial ? ' pot-display__pile-chip--partial' : ''}${counted ? ' pot-display__pile-chip--counted' : ''}`}
+              style={
+                {
+                  '--pile-chip-color': chip.denom.color,
+                  '--pile-chip-accent': chip.denom.accent,
+                  // In a chip size, so the scatter holds at every table width.
+                  transform: `translateY(calc(var(--cp-chip-size, 24px) * ${chip.lift.toFixed(3)}))`,
+                } as React.CSSProperties
+              }
+            >
+              {/* Multiplication sign, not a lowercase 'x' - check-title-case.mjs
+                  rejects the letter on a forward-facing surface, and "twelve of
+                  these" was never the letter anyway. */}
+              {counted && (
+                <span className="pot-display__pile-multi">
+                  {'\u00d7'}
+                  {chip.count.toLocaleString()}
+                </span>
+              )}
+            </span>
+          );
+        })}
       </div>
     </div>
   );

@@ -45,8 +45,27 @@ describe('CasinoControlIcon', () => {
       view.unmount();
     }
 
-    expect(CASINO_CONTROL_ICON_VARIANTS).toHaveLength(16);
+    expect(CASINO_CONTROL_ICON_VARIANTS).toHaveLength(19);
     expect(signatures.size).toBe(CASINO_CONTROL_ICON_VARIANTS.length);
+  });
+
+  it('gives Daily, Weekly, and Monthly their own animated physical mechanism', () => {
+    const variants = ['cycle-daily', 'cycle-weekly', 'cycle-monthly'] as const;
+    const signatures = variants.map((variant) => {
+      const view = render(<CasinoControlIcon variant={variant} state="active" />);
+      const mechanism = view.container.querySelector(
+        `[data-cycle-mechanism="${variant.slice(6)}"]`
+      );
+      expect(mechanism).toBeInTheDocument();
+      const signature = mechanism?.innerHTML ?? '';
+      view.unmount();
+      return signature;
+    });
+
+    expect(new Set(signatures).size).toBe(variants.length);
+    expect(controlCss).toContain("[data-variant='cycle-daily'] .cycleDial");
+    expect(controlCss).toContain("[data-variant='cycle-weekly'] .cycleWheel");
+    expect(controlCss).toContain("[data-variant='cycle-monthly'] .cycleSeal");
   });
 
   it.each(CASINO_CONTROL_ICON_STATES)('exposes the %s state to the visual system', (state) => {

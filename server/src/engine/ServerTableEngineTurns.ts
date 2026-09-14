@@ -736,7 +736,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     return false;
   }
 
-  protected startTurnTimer(userId: string, seat: number, durationSeconds: number): void {
+  protected startTurnTimer(
+    userId: string,
+    seat: number,
+    durationSeconds: number,
+    clockKind: 'primary' | 'time_bank' = 'primary'
+  ): void {
     // Deliberately does NOT call clearTurnTimer(). Now that clearTurnTimer
     // actually cancels every turn deadline on the table, calling it on each
     // re-arm would wipe the deadline this method is about to set — and
@@ -747,6 +752,16 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // NOTE: Do NOT reset timeBankActivatedThisTurn here — this method is also called
     // from activateTimeBank() to extend the timer. The flag is reset in handleTurnChange()
     // when a genuinely new turn begins.
+    // Every arm owns its matching turn state, including reconnect and recovery
+    // callers that bypass handleTurnChange. Leaving those clocks in `waiting`
+    // skipped primary-bank eligibility and made expiry report invalid transitions.
+    // A bank re-arm retains bank ownership; a refused expiry's replacement is a
+    // primary clock again. This does not reset the per-turn bank allowance.
+    const clockState = clockKind === 'time_bank' ? 'time_bank_active' : 'timer_running';
+    if (this.turnFSM.state !== clockState) {
+      if (this.turnFSM.canTransition(clockState)) this.turnFSM.transition(clockState);
+      else this.turnFSM.forceState(clockState);
+    }
     this.playerTurnStartTime = Date.now();
     this.playerTurnDuration = Math.max(0, durationSeconds);
 
@@ -881,6 +896,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                 'ServerTableEngine.' + this.tableId + '.timebank_auto_action_rejected'
               );
               this.forceArmTurnTimer(seat, this.tableInfo?.action_time_seconds || 15);
+              return; // The replacement clock is running; no action completed.
             }
 
             // Bible V8 §3.3: Turn FSM — processing → complete
@@ -951,7 +967,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             `[ServerTableEngine:${this.tableId}] Auto-activated time bank for ${userId} (${grantedSeconds}s granted, ${usesAfterActivation} uses left)`
           );
           // Restart turn timer with the granted time bank duration
-          this.startTurnTimer(userId, seat, grantedSeconds);
+          this.startTurnTimer(userId, seat, grantedSeconds, 'time_bank');
 
           // Broadcast time bank activation to other players
           try {
@@ -1027,6 +1043,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           'ServerTableEngine.' + this.tableId + '.auto_action_rejected'
         );
         this.forceArmTurnTimer(seat, this.tableInfo?.action_time_seconds || 15);
+        return; // Do not complete the new clock or announce an unaccepted action.
       }
 
       // Bible V8 §3.3: Turn FSM — processing → complete
@@ -1159,6 +1176,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         const tbToCall = tbPlayer ? Math.max(0, tbState.currentBet - (tbPlayer.bet ?? 0)) : 0;
         const tbCanCheck = tbToCall === 0;
 
+        this.turnFSM.transition('expired');
+        this.turnFSM.transition('processing');
         // performAction returns FALSE on an illegal action - it does not throw
         // (see the doc block on forceResolveSeat). The previous try/catch here
         // therefore never reached its fold fallback: a rejected `check` left the
@@ -1176,7 +1195,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             'ServerTableEngine.' + this.tableId + '.manual_timebank_auto_action_rejected'
           );
           this.forceArmTurnTimer(player.seat, this.tableInfo?.action_time_seconds || 15);
+          return;
         }
+        this.turnFSM.transition('complete');
 
         // FIX 149: Wire telemetry — manual time bank expiry
         this.engineTelemetry.recordTimerExpired(this.tableId);
@@ -1230,7 +1251,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       `[ServerTableEngine:${this.tableId}] Player ${userId} spent a time bank. Clock reset to ${bankSeconds}s.`
     );
 
-    this.startTurnTimer(userId, player.seat, newDuration);
+    this.startTurnTimer(userId, player.seat, newDuration, 'time_bank');
 
     // Broadcast time bank activation to other players
     try {

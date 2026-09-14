@@ -1639,30 +1639,49 @@ it.each(['plo5', 'plo6', 'plo8'] as const)(
 it.each(['short_deck', 'pineapple', 'flh', 'flo8'] as const)(
   'Phase 12 %s receipt survives the live worker boundary',
   async (variant) => {
-    const { remainingVariantSpot } =
-      await import('../../benchmark/RemainingVariantPolicyEvidence.js');
-    const h = harness(true);
-    const input = remainingVariantSpot(variant, 'preflop');
-    const request = {
-      type: 'DECIDE_FAST' as const,
-      requestId: 512,
-      ...structuredClone(snapshot),
-      style: 'balanced' as const,
-      mods: {},
-      opts: { mind: false, telemetry: false },
-      player: input.hero,
-      gameState: input.state,
-    };
-    request.decisionKey = buildHorseDecisionKey(request);
-    h.runtime.receive(request);
-    await h.runtime.drain();
-    const result = h.messages.find((m) => m.type === 'FAST_RESULT');
-    if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(h.messages));
-    expect(result.decision.remainingVariantPolicy?.mode).toBe('shadow');
-    expect(result.decision.remainingVariantPolicy?.eligible).toBe(true);
-    expect(result.decision.remainingVariantPolicy?.fired).toBe(true);
-    expect(structuredClone(result).decision.remainingVariantPolicy?.finalAction).toBe(
-      result.decision.action
-    );
+    // Same clock discipline as the Phase 11 sibling above, and for the same
+    // reason. This fixture proves the receipt reaches the worker result; it is
+    // not a budget test. evaluateRemainingVariantPolicy reads `now()` and marks
+    // the receipt `fired: false, reason: 'work_budget'` once the elapsed live
+    // budget is exceeded (RemainingVariantLivePolicy.ts), so on a contended box
+    // this asserted a timing race rather than the receipt boundary.
+    //
+    // 2026-09-14: observed failing exactly that way on the estate runners,
+    // which pack 12-18 runners per host and are therefore far more contended
+    // than a dedicated hosted VM. short_deck returned fired=false while the
+    // three other variants passed, and it passed on rerun. Phase 11 was already
+    // guarded; this one was written without the guard. The budget itself stays
+    // covered by the dedicated policy-budget tests and the actual-controller
+    // benchmark, which keep their time limits.
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+    try {
+      const { remainingVariantSpot } =
+        await import('../../benchmark/RemainingVariantPolicyEvidence.js');
+      const h = harness(true);
+      const input = remainingVariantSpot(variant, 'preflop');
+      const request = {
+        type: 'DECIDE_FAST' as const,
+        requestId: 512,
+        ...structuredClone(snapshot),
+        style: 'balanced' as const,
+        mods: {},
+        opts: { mind: false, telemetry: false },
+        player: input.hero,
+        gameState: input.state,
+      };
+      request.decisionKey = buildHorseDecisionKey(request);
+      h.runtime.receive(request);
+      await h.runtime.drain();
+      const result = h.messages.find((m) => m.type === 'FAST_RESULT');
+      if (result?.type !== 'FAST_RESULT') throw new Error(JSON.stringify(h.messages));
+      expect(result.decision.remainingVariantPolicy?.mode).toBe('shadow');
+      expect(result.decision.remainingVariantPolicy?.eligible).toBe(true);
+      expect(result.decision.remainingVariantPolicy?.fired).toBe(true);
+      expect(structuredClone(result).decision.remainingVariantPolicy?.finalAction).toBe(
+        result.decision.action
+      );
+    } finally {
+      clock.mockRestore();
+    }
   }
 );

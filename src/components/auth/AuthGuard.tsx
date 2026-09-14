@@ -58,6 +58,7 @@ function wasRecentlyAuthenticated(): boolean {
 
 interface AuthGuardProps {
   children: ReactNode;
+  loadingFallback?: ReactNode;
 }
 
 /**
@@ -121,7 +122,7 @@ function isDefinitelyAuthenticated(): boolean {
   return false;
 }
 
-export function AuthGuard({ children }: AuthGuardProps) {
+export function AuthGuard({ children, loadingFallback }: AuthGuardProps) {
   // CRITICAL: Check ALL evidence sources synchronously on mount.
   // This prevents the loading flash on navigation between protected routes.
   const initiallyAuthenticated = isDefinitelyAuthenticated();
@@ -308,6 +309,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
   // Show loading state
   if (isLoading) {
+    if (loadingFallback) return <>{loadingFallback}</>;
     return (
       <div
         style={{

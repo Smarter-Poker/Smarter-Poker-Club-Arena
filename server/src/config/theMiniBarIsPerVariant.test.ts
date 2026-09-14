@@ -56,3 +56,50 @@ describe("Dan's mini bars", () => {
     expect(hit('nlh', 2).miniRule).toBe('holdem_aces_full');
   });
 });
+
+/* ── WHAT THE TIGHTENED BAR TURNS AWAY ──────────────────────────────────────
+   Dan's PLO5 bar is Quad Tens. The hand it now refuses is quads BELOW that -
+   quad nines losing to quad aces - which paid the mini the day before. Without
+   a near-miss row the cost of the new bar is unmeasurable, which is the hole
+   bbj_near_misses exists to close. */
+import { detectMiniBBJNearMiss } from './RakeConfig.js';
+
+const near = (variant: string, loserRank: number, loserQuads = true) =>
+  detectMiniBBJNearMiss(
+    [
+      {
+        userId: 'L',
+        handRanking: loserQuads ? QUADS : 3,
+        handName: 'loser',
+        kickers: [loserRank, 5],
+        holeCards: [],
+      },
+      { userId: 'W', handRanking: QUADS, handName: 'winner', kickers: [14, 5], holeCards: [] },
+    ],
+    'W',
+    variant,
+    10_000,
+    1,
+    6
+  );
+
+describe('the tightened PLO5 bar is visible, not silent', () => {
+  it('quad nines under the Quad Tens bar is a near miss, and names the bar', () => {
+    const r = near('plo5', 9);
+    expect(r.nearMiss).toBe(true);
+    expect(r.reason).toBe('mini_loser_below_bar');
+    expect(r.message).toContain('Quad Tens Or Better');
+  });
+
+  it('an ORDINARY hand under the bar is still not a near miss', () => {
+    expect(near('plo5', 9, false).nearMiss).toBe(false);
+  });
+
+  it('a variant with no ranked bar is unchanged - PLO4 stays silent', () => {
+    expect(near('plo4', 9).nearMiss).toBe(false);
+  });
+
+  it('FLO5 behaves like PLO5 here too', () => {
+    expect(near('flo5', 9).reason).toBe('mini_loser_below_bar');
+  });
+});

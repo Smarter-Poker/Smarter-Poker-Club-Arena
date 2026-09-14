@@ -12,10 +12,14 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getAuthUser } from '../lib/supabase';
 import { useToast } from '../components/common/Toast';
-import { CasinoControlIcon, MissionInstrumentGlyph } from '../components/challenges';
+import {
+  CasinoControlIcon,
+  MissionInstrumentGlyph,
+  type CasinoControlIconVariant,
+} from '../components/challenges';
 import { motion, useReducedMotion } from 'framer-motion';
 import { masterBus } from '../core/MasterBus';
 import { triggerHaptic } from '../services/HapticService';
@@ -70,6 +74,8 @@ import {
   recordDailyMissionOperation,
 } from '../services/DailyMissionTelemetryService';
 import { signInUrl } from '../lib/signIn';
+import { useClubWorkspace } from '../contexts/ClubWorkspaceContext';
+import { withClubContext } from '../utils/clubScopedPath';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -93,33 +99,33 @@ const TIER_LABELS: Record<Tier, string> = {
 const TIER_COLORS: Record<Tier, string> = {
   daily: 'var(--realism-cyan, #55e8ff)',
   weekly: 'var(--realism-chrome, #b8c4c9)',
-  monthly: 'var(--realism-gold, #d3a855)',
+  monthly: 'var(--realism-gold, #ffc93c)',
 };
 
-const TIER_PRESENTATION: Record<
-  Tier,
-  { title: string; eyebrow: string; description: string; shortCode: string }
-> = {
+const TIER_CONTROL_ICONS: Record<Tier, CasinoControlIconVariant> = {
+  daily: 'cycle-daily',
+  weekly: 'cycle-weekly',
+  monthly: 'cycle-monthly',
+};
+
+const TIER_PRESENTATION: Record<Tier, { title: string; eyebrow: string; description: string }> = {
   daily: {
     title: 'Daily Challenges',
     eyebrow: 'Club Arena / Daily Challenge Vault',
     description:
       'Complete Live Poker Objectives, Protect Your Streak, And Collect Real Diamond Rewards At The Club Arena Rewards Desk.',
-    shortCode: 'D',
   },
   weekly: {
     title: 'Weekly Challenges',
     eyebrow: 'Club Arena / Weekly Challenge Circuit',
     description:
       'Build Momentum Across The Weekly Poker Circuit, Complete Larger Objectives, And Settle Premium Diamond Rewards.',
-    shortCode: 'W',
   },
   monthly: {
     title: 'Monthly Challenges',
     eyebrow: 'Club Arena / Monthly High-Roller Ledger',
     description:
       "Chase Long-Form Poker Milestones, Track Your Monthly Run, And Secure The Vault's Largest Diamond Rewards.",
-    shortCode: 'M',
   },
 };
 
@@ -171,9 +177,8 @@ function MissionHeroArtwork({ tier }: { tier: Tier }) {
         />
       </picture>
       <span className={styles.heroCycleAtmosphere} />
-      <span className={styles.heroCycleInstrument}>
-        <i />
-        <b>{TIER_PRESENTATION[tier].shortCode}</b>
+      <span className={styles.heroCycleInstrument} data-cycle-instrument={tier}>
+        <CasinoControlIcon variant={TIER_CONTROL_ICONS[tier]} state="active" size="lg" />
       </span>
     </div>
   );
@@ -557,7 +562,16 @@ function MissionLoadingState({ tier }: { tier: Tier }) {
           <div className={styles.loadingCardGrid}>
             {Array.from({ length: tier === 'daily' ? 5 : tier === 'weekly' ? 3 : 2 }).map(
               (_, index) => (
-                <div key={index} className={styles.loadingCard} />
+                <div key={index} className={styles.loadingCard} data-loading-mission-card="">
+                  <span className={styles.bevelFrame} />
+                  <span className={styles.loadingCardInstrument}>
+                    <CasinoControlIcon variant="sync" state="pending" size="lg" />
+                  </span>
+                  <span className={styles.loadingCardTitle} />
+                  <span className={styles.loadingCardCopy} />
+                  <span className={styles.loadingCardProgress} />
+                  <span className={styles.loadingCardAction} />
+                </div>
               )
             )}
           </div>
@@ -895,7 +909,9 @@ function useInertAppShell(active: boolean) {
 
 export default function DailyChallengesPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { cycle } = useParams<{ cycle?: string }>();
+  const { routeClubId } = useClubWorkspace();
   const isMountedRef = useIsMounted();
   const toast = useToast();
   const reduceMotion = useReducedMotion();
@@ -1006,8 +1022,10 @@ export default function DailyChallengesPage() {
       setConfirmingRerollId(null);
       return;
     }
-    navigate('/challenges', { replace: true });
-  }, [cycle, navigate]);
+    navigate(withClubContext(`/challenges${location.search}${location.hash}`, routeClubId), {
+      replace: true,
+    });
+  }, [cycle, location.hash, location.search, navigate, routeClubId]);
 
   // Escape always cancels the active reroll confirmation, even after focus
   // moves to another card. The inline control still owns the visible prompt,
@@ -1860,9 +1878,11 @@ export default function DailyChallengesPage() {
     (tier: Tier) => {
       setActiveTier(tier);
       setConfirmingRerollId(null);
-      navigate(`/challenges/${tier}`);
+      navigate(
+        withClubContext(`/challenges/${tier}${location.search}${location.hash}`, routeClubId)
+      );
     },
-    [navigate]
+    [location.hash, location.search, navigate, routeClubId]
   );
 
   const handleTierKeyDown = useCallback(
@@ -1888,9 +1908,9 @@ export default function DailyChallengesPage() {
       const action = getChallengeMissionAction(type);
       capture('daily_mission_cta_clicked', { mission_type: type, destination: action.path });
       recordDailyMissionOperation({ userId, event: 'mission_cta_opened', tier: activeTier });
-      navigate(action.path);
+      navigate(withClubContext(action.path, routeClubId));
     },
-    [activeTier, navigate, userId]
+    [activeTier, navigate, routeClubId, userId]
   );
 
   // ── Render ──
@@ -2010,7 +2030,11 @@ export default function DailyChallengesPage() {
                 <CasinoControlIcon variant="ledger" state="active" size="sm" />
                 View Challenge Ledger
               </button>
-              <button type="button" className={styles.backButton} onClick={() => navigate('/')}>
+              <button
+                type="button"
+                className={styles.backButton}
+                onClick={() => navigate(routeClubId ? `/clubs/${routeClubId}` : '/')}
+              >
                 <CasinoControlIcon variant="back" state="idle" size="sm" />
                 Back To Arena
               </button>
@@ -2295,7 +2319,7 @@ export default function DailyChallengesPage() {
                 }}
               >
                 <CasinoControlIcon
-                  variant="ledger"
+                  variant={TIER_CONTROL_ICONS[tier]}
                   state={activeTier === tier ? 'active' : 'idle'}
                   size="sm"
                 />
@@ -2385,7 +2409,11 @@ export default function DailyChallengesPage() {
               Challenges On The First.
             </p>
           </div>
-          <button type="button" className={styles.playButton} onClick={() => navigate('/')}>
+          <button
+            type="button"
+            className={styles.playButton}
+            onClick={() => navigate(routeClubId ? `/clubs/${routeClubId}` : '/')}
+          >
             <CasinoControlIcon variant="play" state="active" size="sm" />
             Browse Cash Games
           </button>

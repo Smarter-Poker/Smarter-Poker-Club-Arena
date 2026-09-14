@@ -1,0 +1,32 @@
+{
+  "_owner": "feat/diamond-wheel",
+  "tables": [
+    "ca_bridge_rate",
+    "ca_bridge_rate_history",
+    "wheel_segment_versions",
+    "wheel_segments",
+    "wheel_configs",
+    "wheel_config_history",
+    "wheel_pools",
+    "wheel_seed_commits",
+    "wheel_spins"
+  ],
+  "functions": [
+    "fn_ca_bridge_rate",
+    "fn_ca_bridge_rate_history",
+    "fn_wheel_append_only",
+    "fn_wheel_config_history",
+    "fn_wheel_segments_audit",
+    "fn_wheel_host",
+    "fn_wheel_can_operate",
+    "fn_wheel_commit",
+    "fn_wheel_purchased_available",
+    "fn_wheel_state",
+    "fn_wheel_spin_result",
+    "fn_wheel_spin",
+    "fn_wheel_history",
+    "fn_wheel_set_config",
+    "fn_wheel_activate_segments",
+    "fn_wheel_metrics"
+  ]
+}

@@ -5063,6 +5063,10 @@ function LiveTablePage({
    * a fine place to land; the union's treasury is not.
    */
   const lobbyClubIdRef = useRef<string | null>(null);
+  /* The same value as state, for the things that RENDER off it. A ref does not
+     re-render, and the diamonds-to-chips door on a buy-in modal has to appear
+     the moment the club resolves, not on whatever render happens next. */
+  const [lobbyClubId, setLobbyClubId] = useState<string | null>(null);
   const [actualClubIdLoaded, setActualClubIdLoaded] = useState(false); // Tracks when club_id is available
   const [actionTimeSeconds, setActionTimeSeconds] = useState(15);
   useEffect(() => {
@@ -12286,9 +12290,15 @@ function LiveTablePage({
           tableClubId: table.club_id || null,
         };
         const syncClub = resolveLobbyClubIdSync(lobbyClubArgs);
-        if (syncClub) lobbyClubIdRef.current = syncClub;
+        if (syncClub) {
+          lobbyClubIdRef.current = syncClub;
+          setLobbyClubId(syncClub);
+        }
         void resolveLobbyClubId(lobbyClubArgs).then((id) => {
-          if (id) lobbyClubIdRef.current = id;
+          if (id) {
+            lobbyClubIdRef.current = id;
+            setLobbyClubId(id);
+          }
         });
         setActionTimeSeconds(settings.time_bank_seconds || settings.action_time_seconds || 15);
 
@@ -25965,6 +25975,13 @@ function LiveTablePage({
         reason={maintenanceBreak.reason}
       />
       <TableModalsLayer
+        /* THE DIAMONDS-TO-CHIPS DOOR (Dan 2026-09-10). The club the player
+           came in through, never the union that hosts the table: membership,
+           and therefore the games' own admission check, is against that one.
+           Null until resolveLobbyClubId lands, and null means the door is
+           simply not offered rather than offered into nothing. */
+        diamondGamesClubId={lobbyClubId}
+        onPlayDiamonds={(path) => navigate(path)}
         tableId={tableId}
         userId={userId}
         username={username}

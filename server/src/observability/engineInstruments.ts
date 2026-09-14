@@ -576,6 +576,35 @@ for (const outcome of ['completed', 'threw', 'abandoned']) {
   leaseRenewalPassesTotal.inc(0, { outcome });
 }
 
+/**
+ * WHICH HALF OF AN ABANDONED PASS NEVER CAME BACK (2026-09-12).
+ *
+ * `performOwnedEngineLeaseProofRenewal` awaits two halves, and each half awaits
+ * exactly one RPC - the cash heartbeat and the tournament heartbeat. So this
+ * label names the call that hung, not merely the branch it was in, and a wedge
+ * that recurs answers its own question in one query:
+ *
+ *   sum by (half) (increase(poker_lease_renewal_outstanding_total[1h]))
+ *
+ * On 2026-09-12 that question cost hours. The loop stopped for four and a half
+ * hours and telling a hung pass from a departed loop took a hand-diff of
+ * pg_stat_statements against the container log, because the process itself said
+ * nothing either way.
+ *
+ * Both halves go through a client bounded at 15s with at most three attempts,
+ * so ANY increment here is already surprising and points at the bounded fetch
+ * rather than at the lease protocol.
+ */
+export const leaseRenewalOutstandingTotal: Counter = alwaysOnRegistry.counter(
+  'poker_lease_renewal_outstanding_total',
+  'Halves of an abandoned ownership lease renewal pass that had not settled (labels: half=cash|tournament)'
+);
+/* Zero-seeded: a rule on a name with no series is an empty vector, which reads
+   exactly like health. See anAlertCannotWaitForAFailureToExist. */
+for (const half of ['cash', 'tournament']) {
+  leaseRenewalOutstandingTotal.inc(0, { half });
+}
+
 /** 1 while the ownership lease renewal lifecycle is running, 0 once it leaves. */
 export const leaseRenewalLoopRunning: Gauge = alwaysOnRegistry.gauge(
   'poker_lease_renewal_loop_running',

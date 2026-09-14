@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, CSSProperties, ReactNode, Ref } from 'react';
+import type { ButtonHTMLAttributes, CSSProperties, HTMLAttributes, ReactNode, Ref } from 'react';
 import { useFitText } from '../lobby/game-cards/useFitText';
 import './SpadeConsole.css';
 
@@ -247,7 +247,16 @@ export function SpadeConsole({
   children?: ReactNode;
   className?: string;
   as?: 'section' | 'div' | 'article';
-} & Record<string, unknown>) {
+  /**
+   * DOM passthrough, NOT an escape hatch (2026-09-11). This was
+   * `& Record<string, unknown>`, which accepted any prop at all: on
+   * feat/diamond-games, ArenaAccessBoundary asked for `crest="diamond"` against
+   * a copy of this component that had no crest prop, and TypeScript said
+   * nothing while the panel rendered the spade and React was handed an unknown
+   * DOM attribute. A typed passthrough still carries aria-*, data-*, id and
+   * role, and refuses a prop this console does not have.
+   */
+} & Omit<HTMLAttributes<HTMLElement>, 'title'>) {
   const footKind = foot ?? (plates ? 'plates' : 'foot');
   const F = FAMILY[family];
   const W = F.W;

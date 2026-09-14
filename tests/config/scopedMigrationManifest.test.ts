@@ -14,6 +14,25 @@ const privateData = () => ({
   columns: { 'smarter_private.f06_operations': ['break_id', 'a"b'] },
 });
 describe('actual schema-aware migration parser', () => {
+  it('excludes only explicitly session-local objects from the persistent snapshot', () => {
+    const sql = `CREATE TABLE PG_TEMP.x(id int);
+      CREATE VIEW "pg_temp".v AS SELECT 1;
+      CREATE FUNCTION pg_temp.f() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;
+      ALTER TABLE pg_temp.x ADD COLUMN extra int;
+      DROP TABLE pg_temp.x; DROP VIEW pg_temp.v; DROP FUNCTION pg_temp.f();
+      CREATE TABLE public.pg_temp(id int);
+      CREATE TABLE public."pg_temp.x"(id int);`;
+    expect(declaredObjects(sql)).toEqual({
+      fns: [],
+      tables: ['pg_temp', 'pg_temp.x'],
+      columns: [],
+    });
+    expect(droppedObjects(sql)).toEqual({ fns: new Set(), tables: new Set() });
+    expect(() => declaredObjects('CREATE TABLE "PG_TEMP".x(id int);')).toThrow(
+      /Unsupported manifest schema/
+    );
+    expect(() => declaredObjects('CREATE TABLE pg_temp.other.x(id int);')).toThrow(/Unsupported/);
+  });
   it('keeps public names compatible and every other schema qualified', () =>
     expect(
       declaredObjects(

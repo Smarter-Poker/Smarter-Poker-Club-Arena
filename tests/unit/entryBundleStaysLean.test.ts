@@ -28,6 +28,17 @@ const ROOT = join(__dirname, '..', '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 
 describe('the eager app shell stays free of lazy-only code', () => {
+  it('keeps the complete Daily Challenges fallback graph behind its route', () => {
+    const app = read('src/App.tsx');
+    const route = read('src/components/challenges/DailyChallengesRoute.tsx');
+
+    expect(app).toContain("import('./components/challenges/DailyChallengesRoute')");
+    expect(app).not.toContain("from './components/challenges/DailyChallengesRouteFallback'");
+    expect(app).not.toContain("import('./pages/DailyChallengesPage')");
+    expect(route).toContain("from './DailyChallengesRouteFallback'");
+    expect(route).toContain("lazyWithRetry(() => import('../../pages/DailyChallengesPage'))");
+  });
+
   it('the root-mounted ticker reads the late-reg window without the lobby view-model', () => {
     const ticker = read('src/components/tournament/TournamentStartingTicker.tsx');
 

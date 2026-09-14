@@ -180,3 +180,58 @@
     display: none;
   }
 }
+
+/* Only the first interior cell uses the new render. The original chrome,
+   all other icons and the footer's measured geometry remain the master. */
+.diamondArtwork {
+  position: absolute;
+  inset: 0;
+  clip-path: inset(12% 80% 8% 5%);
+  pointer-events: none;
+}
+
+.diamondArtwork img {
+  position: absolute;
+  top: -93.28%;
+  left: -1.42%;
+  width: 102.79%;
+  height: 286.17%;
+  max-width: none;
+  user-select: none;
+}
+
+.diamondGlint {
+  position: absolute;
+  top: 24%;
+  left: 11.2%;
+  width: 1.2%;
+  aspect-ratio: 1;
+  background: radial-gradient(circle, #fff 0 9%, #b4eaffb3 19%, transparent 68%);
+  filter: drop-shadow(0 0 4px #42baff);
+  pointer-events: none;
+  animation: diamond-spins-glint 4.8s ease-in-out infinite;
+}
+
+@keyframes diamond-spins-glint {
+  0%,
+  40%,
+  100% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  52% {
+    opacity: 1;
+    transform: scale(1.7);
+  }
+  64% {
+    opacity: 0.3;
+    transform: scale(0.6);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .diamondGlint {
+    animation: none;
+    opacity: 0.55;
+  }
+}

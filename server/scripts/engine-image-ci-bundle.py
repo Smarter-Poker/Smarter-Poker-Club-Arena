@@ -309,6 +309,31 @@ def github_api(endpoint):
     return value
 
 
+def admit_bundle(directory, expected):
+    """Authenticate current production custody; this does not authorize a host load.
+
+    Shared by the existing CLI and the versioned request preparer. Metadata
+    still comes only from the fixed authenticated API, never a saved receipt.
+    """
+    validate_descriptor(validate_files(directory, expected), expected)
+    identity = expected["identity"]
+    run_id, attempt, artifact_id = identity["run_id"], identity["run_attempt"], expected["artifact_id"]
+    repository = github_api("repos/" + REPOSITORY)
+    run = github_api(f"repos/{REPOSITORY}/actions/runs/{run_id}/attempts/{attempt}")
+    artifact = github_api(f"repos/{REPOSITORY}/actions/artifacts/{artifact_id}")
+    jobs = github_api(f"repos/{REPOSITORY}/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100")
+    job_id = validate_github_metadata(repository, run, artifact, jobs, expected, os.environ)
+    # API checks can take time. Do not emit admission for bytes that changed
+    # during those reads. A future host loader still verifies its own inode.
+    validate_files(directory, expected)
+    return {"scope": "same-run-engine-image-admission", "status": "passed",
+                      "producer_job_id": job_id, "artifact_id": artifact_id,
+                      "identity": identity, "archive_sha256": expected["archive_sha256"],
+                      "archive_bytes": expected["archive_bytes"],
+                      "descriptor_sha256": expected["descriptor_sha256"],
+                      "host_import_qualified": False, "deployment_authorized": False}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--directory", required=True)
@@ -319,23 +344,7 @@ def main():
     require(path.is_absolute(), "EXPECTED_PATH")
     _, raw = read_regular(path, 16384, retain=True)
     expected = decode(raw)
-    validate_descriptor(validate_files(args.directory, expected), expected)
-    identity = expected["identity"]
-    run_id, attempt, artifact_id = identity["run_id"], identity["run_attempt"], expected["artifact_id"]
-    repository = github_api("repos/" + REPOSITORY)
-    run = github_api(f"repos/{REPOSITORY}/actions/runs/{run_id}/attempts/{attempt}")
-    artifact = github_api(f"repos/{REPOSITORY}/actions/artifacts/{artifact_id}")
-    jobs = github_api(f"repos/{REPOSITORY}/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100")
-    job_id = validate_github_metadata(repository, run, artifact, jobs, expected, os.environ)
-    # API checks can take time. Do not emit admission for bytes that changed
-    # during those reads. A future host loader still verifies its own inode.
-    validate_files(args.directory, expected)
-    print(json.dumps({"scope": "same-run-engine-image-admission", "status": "passed",
-                      "producer_job_id": job_id, "artifact_id": artifact_id,
-                      "identity": identity, "archive_sha256": expected["archive_sha256"],
-                      "archive_bytes": expected["archive_bytes"],
-                      "descriptor_sha256": expected["descriptor_sha256"],
-                      "host_import_qualified": False, "deployment_authorized": False}))
+    print(json.dumps(admit_bundle(args.directory, expected)))
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ import { NOTE_COLORS, PLAYER_TAGS } from '../../services/PlayerNotesService';
 import { showDiamondTopUp } from '../common/DiamondTopUpToast';
 import { useToast } from '../common/Toast';
 import styles from './PlayerNotesPanel.module.css';
+import { SpadeConsole } from '../console/SpadeConsole';
 import { reportError } from '../../utils/errorReporter';
 import {
   playerDisplayName,
@@ -270,27 +271,15 @@ export default function PlayerNotesPanel({
 
   // Single note editor mode
   if (targetUserId) {
-    return (
-      <div className={`${styles.panel} ${compact ? styles.compact : ''}`}>
-        <div className={styles.header}>
-          <div className={styles.targetInfo}>
-            <div className={styles.avatar}>
-              {targetAvatar ? (
-                <img loading="lazy" decoding="async" src={targetAvatar} alt="" />
-              ) : (
-                ''
-              )}
-            </div>
-            <span>{targetName || 'Player'}</span>
-          </div>
-          {onClose && (
-            <button className={styles.closeBtn} onClick={onClose}>
-              ✕
-            </button>
-          )}
-        </div>
-
+    const saveLabel = saving ? 'Saving...' : 'Save Note';
+    const saveDisabled = saving || !currentNote.trim();
+    const body = (
+      <>
+        <label className={styles.srOnly} htmlFor="player-note-input">
+          Notes About This Player
+        </label>
         <textarea
+          id="player-note-input"
           className={styles.noteInput}
           placeholder="Add Notes About This Player..."
           value={currentNote}
@@ -298,54 +287,97 @@ export default function PlayerNotesPanel({
           rows={compact ? 3 : 5}
         />
 
-        <div className={styles.tags}>
-          {PRESET_TAGS.map((tag) => (
-            <button
-              key={tag}
-              className={`${styles.tag} ${selectedTags.includes(tag) ? styles.selected : ''}`}
-              onClick={() => toggleTag(tag)}
-            >
-              {tag}
-            </button>
-          ))}
+        <div className={styles.section}>
+          <span className={`${styles.sectionTitle} sc-label sc-ink--blue`}>Tags</span>
+          <div className={styles.tags} role="group" aria-label="Player Tags">
+            {PRESET_TAGS.map((tag) => {
+              const on = selectedTags.includes(tag);
+              return (
+                <button
+                  key={tag}
+                  type="button"
+                  className={`${styles.word} ${styles.tag} ${on ? `${styles.selected} sc-ink--white` : 'sc-ink--muted'}`}
+                  aria-pressed={on}
+                  onClick={() => toggleTag(tag)}
+                >
+                  {tag}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        <div className={styles.colors}>
-          {NOTE_COLORS.map((color) => (
-            <button
-              key={color.value}
-              className={`${styles.colorBtn} ${selectedColor === color.value ? styles.selected : ''}`}
-              style={{ backgroundColor: color.hex }}
-              onClick={() => setSelectedColor(color.value)}
-              title={color.name}
-            />
-          ))}
+        <div className={styles.section}>
+          <span className={`${styles.sectionTitle} sc-label sc-ink--blue`}>Color Label</span>
+          <div className={styles.colors} role="group" aria-label="Note Color">
+            {NOTE_COLORS.map((color) => (
+              <button
+                key={color.value}
+                type="button"
+                className={`${styles.colorBtn} ${selectedColor === color.value ? styles.selected : ''}`}
+                style={{ backgroundColor: color.hex }}
+                onClick={() => setSelectedColor(color.value)}
+                title={color.name}
+                aria-label={color.name}
+                aria-pressed={selectedColor === color.value}
+              />
+            ))}
+          </div>
         </div>
-
-        <button
-          className={styles.saveBtn}
-          onClick={saveNote}
-          disabled={saving || !currentNote.trim()}
+      </>
+    );
+    /* TWO ACTIONS OR NONE on the painted plates: with a caller to hand the
+       panel back to, Cancel and Save Note take the two plates; without one
+       the foot closes flat and Save Note is a lit word on the glass. */
+    if (onClose) {
+      return (
+        <SpadeConsole
+          className={`${styles.console} ${compact ? styles.compact : ''}`}
+          eyebrow="Player Notes"
+          title={targetName || 'Player'}
+          pill={loading ? 'Reading' : noteLoadFailed ? 'Unread' : 'Note'}
+          pillInk={noteLoadFailed ? 'red' : 'blue'}
+          plates={{
+            secondary: { label: 'Cancel', onClick: onClose },
+            primary: { label: saveLabel, ink: 'white', onClick: saveNote, disabled: saveDisabled },
+          }}
         >
-          {saving ? 'Saving...' : 'Save Note'}
-        </button>
-      </div>
+          {body}
+        </SpadeConsole>
+      );
+    }
+    return (
+      <SpadeConsole
+        className={`${styles.console} ${compact ? styles.compact : ''}`}
+        eyebrow="Player Notes"
+        title={targetName || 'Player'}
+        pill={loading ? 'Reading' : noteLoadFailed ? 'Unread' : 'Note'}
+        pillInk={noteLoadFailed ? 'red' : 'blue'}
+        foot="foot"
+      >
+        {body}
+        <div className={styles.actions}>
+          <button
+            type="button"
+            className={`${styles.word} ${styles.saveBtn} sc-ink--white`}
+            onClick={saveNote}
+            disabled={saveDisabled}
+          >
+            {saveLabel}
+          </button>
+        </div>
+      </SpadeConsole>
     );
   }
 
   // Notes library mode
-  return (
-    <div className={styles.panel}>
-      <div className={styles.header}>
-        <h3> Player Notes</h3>
-        {onClose && (
-          <button className={styles.closeBtn} onClick={onClose}>
-            ✕
-          </button>
-        )}
-      </div>
-
+  const library = (
+    <>
+      <label className={styles.srOnly} htmlFor="player-notes-search">
+        Search Notes
+      </label>
       <input
+        id="player-notes-search"
         type="text"
         className={styles.searchInput}
         placeholder="Search Notes..."
@@ -355,21 +387,21 @@ export default function PlayerNotesPanel({
 
       <div className={styles.notesList}>
         {loading ? (
-          <div className={styles.loading}>Loading Notes...</div>
+          <div className={`${styles.empty} sc-ink--muted`}>Loading Notes...</div>
         ) : filteredNotes.length === 0 ? (
-          <div className={styles.empty}>{searchQuery ? 'No Matching Notes' : 'No Notes Yet'}</div>
+          <div className={`${styles.empty} sc-ink--muted`}>
+            {searchQuery ? 'No Matching Notes' : 'No Notes Yet'}
+          </div>
         ) : (
           filteredNotes.map((note, idx) => (
-            <div
-              key={note.id}
-              className={styles.noteCard}
-              style={{
-                borderLeftColor: note.color,
-                ...staggerStyle(idx),
-              }}
-            >
+            <div key={note.id} className={styles.noteCard} style={staggerStyle(idx)}>
               <div className={styles.noteHeader}>
                 <div className={styles.targetInfo}>
+                  <span
+                    className={styles.swatch}
+                    style={{ backgroundColor: note.color }}
+                    aria-hidden="true"
+                  />
                   <div className={styles.avatar}>
                     {note.targetAvatar ? (
                       <img loading="lazy" decoding="async" src={note.targetAvatar} alt="" />
@@ -377,27 +409,65 @@ export default function PlayerNotesPanel({
                       ''
                     )}
                   </div>
-                  <span>{note.targetName}</span>
+                  <span className={`${styles.targetName} sc-ink--silver`}>{note.targetName}</span>
                 </div>
-                <span className={styles.noteDate}>{formatDate(note.lastUpdated)}</span>
+                <span className={`${styles.noteDate} sc-ink--muted`}>
+                  {formatDate(note.lastUpdated)}
+                </span>
               </div>
-              <p className={styles.noteText}>{note.note}</p>
-              {note.tags.length > 0 && (
-                <div className={styles.noteTags}>
-                  {note.tags.map((tag) => (
-                    <span key={tag} className={styles.noteTag}>
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              )}
-              <button className={styles.deleteBtn} onClick={() => deleteNote(note.id)}>
-                ×
-              </button>
+              <p className={`${styles.noteText} sc-copy`}>{note.note}</p>
+              <div className={styles.noteFoot}>
+                {note.tags.length > 0 && (
+                  <div className={styles.noteTags}>
+                    {note.tags.map((tag) => (
+                      <span key={tag} className={`${styles.noteTag} sc-ink--blue`}>
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className={`${styles.word} ${styles.deleteBtn} sc-ink--red`}
+                  onClick={() => deleteNote(note.id)}
+                  aria-label={`Delete Note On ${note.targetName}`}
+                >
+                  Delete
+                </button>
+              </div>
             </div>
           ))
         )}
       </div>
-    </div>
+    </>
+  );
+  if (onClose) {
+    return (
+      <SpadeConsole
+        className={styles.console}
+        eyebrow="Player Notes"
+        title="Notes Library"
+        pill={loading ? 'Reading' : `${notes.length.toLocaleString()} Notes`}
+        foot="foot"
+      >
+        {library}
+        <div className={styles.actions}>
+          <button type="button" className={`${styles.word} sc-ink--white`} onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </SpadeConsole>
+    );
+  }
+  return (
+    <SpadeConsole
+      className={styles.console}
+      eyebrow="Player Notes"
+      title="Notes Library"
+      pill={loading ? 'Reading' : `${notes.length.toLocaleString()} Notes`}
+      foot="foot"
+    >
+      {library}
+    </SpadeConsole>
   );
 }

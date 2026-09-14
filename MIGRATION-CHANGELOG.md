@@ -5,12 +5,35 @@
 **What changed:** execute the actual tracked preimage, guarded retry restoration and current insertion in an isolated PostgreSQL17 cluster. Real deadlock and timeout boundaries prove retry, one settlement credit, failed-attempt rollback, bounded exhaustion, permanent refusal, exact replay and service-only access. Financial callees are explicit local transaction recorders; accounting formulas and Diamond behavior remain outside this narrow fixture.
 **Verified:** current body matches production0e7baa1bfeb2a2d0fed749a52f32d520; historical24-chip settlement has all3players attributed. No production writes or new migration. Protected CI and publication remain separate.
 
+## 2026-09-14: Settled bounty replay precedes pending payment order
+
+**Files:** migration20260914122903; captured native replay fixture and runner; bounty recipient/order audit.
+**What existed:** fn_collect_bounty checked the PKO watermark before the exact settled receipt, rejecting retries of 1,129 currently complete receipts once later hands paid.
+**What changed:** moved the original pending-order block after exact settled-marker replay. No new payment, head, generation, lane, denomination or privilege behavior; metadata and body guards protect the replacement.
+**Verified:** 103 native assertions including 20 original rejection witnesses and five concurrent repaired retries; 664 engine accounting cases/38 files; server TypeScript/build pass. Applied once as history20260914123347; exact postimage/metadata verified12:34:09UTC. Original funding/provider, historical missing heads and cross-table causal order remain open. See docs/changelog/2026-09-14-settled-bounty-replay.md.
+
+## 2026-09-14: Spin prize audits recognize matching posted correction funding
+
+**Files:** migration20260914120920; native spin-prize-overlay fixture/runner; required accounting CI step.
+**What existed:** a house-funded 1.40 correction above a 10-chip Spin draw was still reported as excess despite matching posted journal and escrow evidence.
+**What changed:** recognize only positive finite overlays whose escrow and posted house-funding sums agree for the exact tournament and prize destination; avoid counting an overlay twice when the displayed pool already includes it. No financial writes or historical alert edits.
+**Verified:** 40 native PostgreSQL17 checks cover the exact original counterexample, real excess, funding identity/mismatch, non-finite values, concurrent visibility, browser denial, read-only execution, replay and drift refusal. Required CI, merge, guarded installation and live caller readback remain separate. See docs/changelog/2026-09-14-spin-prize-funded-overlay.md.
+
 ## 2026-09-14: Concurrent waitlist offers share seat and player claims
 
 **Files:** migration20260914104113; scripts/ci/test-waitlist-offer-concurrency.py and captured native fixtures; required accounting CI step.
 **What existed:** two real PostgreSQL sessions could promise the last chair twice or give one player two automatic holds despite a configured cap of one. Separate queue-row locks did not serialize those allowances.
 **What changed:** the existing table admission key and actual open-seat reader protect capacity; a nonblocking player claim and fresh allowance check protect concurrent automatic offers. Original legacy hold expiry, configured caps, horse eligibility and notification transaction semantics are preserved. Busy claims keep queue entries for the existing callers and sweep.
 **Verified:** 46 native PostgreSQL17 checks pass, including both unchanged-live counterexamples, actual direct-join/sweep callers, rollback, notification failure, pending moves, stale cached counts, legacy holds, ACL and drift refusal. No production financial or notification test was performed. Installation, protected CI and natural production evidence remain separate.
+
+## 2026-09-14: Running MTT recovery reads every gateway page
+
+**Shared reader follow-up:** `fetchAllRows` now requires an actual array before treating a successful page as complete. It retains original errors and the existing bounded read retries. Eleven old-source failures include actual recovery cooldown loss;45focused checks and12,316full-engine checks pass, serverbuild passes. The separate157database cases pass through their private runner; all12,473discovered cases executed. No SQL or live malformed-response claim.
+
+**Files/previous lines:** server/src/GameServer.ts:6716 and6779; actual discovery tests and its existing ordering/budget guards.
+**What existed:** the RUNNING recovery scan read a single gateway-limited response and used its missing tail to settle retry history. A lifecycle check preceded, but did not follow, the asynchronous stagger. Production11:14 returned only1000/1283 events, excluding Union Morning Classic after its lease expired during a break.
+**What changed:** bounded keyset enumeration with the existing fetchAllRows reader, complete/valid-board checks, oldest-first admission with deterministic ties and null starts last, lifecycle checks after reading and after staggering. Existing coalesced admission, retry capacity, owner/provider and financial contracts are unchanged.
+**Verified:** YES. Ten pre-fix actual-method counterexamples;5,747engine tests/369files andserverTypeScript pass. Final focused71tests/5files cover the bounded ceiling and final-page retirement. Read-only production pagination11:17 returned1000+298rows and included the excluded event. This is reader evidence, not deployment or tournament recovery certification. No production write/DDL.
 
 ## 2026-09-14: Current status gates tournament resume
 
@@ -17438,3 +17461,10 @@ Hand-for-hand retains synchronized/add-on break pauses, preserves their budgets 
 ## 2026-09-14: Qualify scheduled discovery under full CI initialization
 
 **Files:** server/src/engine/DirectEngineRecovery.guard.test.ts original176; server/src/tournament/ScheduledStartDiscoveryIsolation.test.ts. **Before:**shutdown inventory countedfourjobs; discovery case included pre-test import diagnostics. **After:**assert five supervised loops and scheduled-loop lifecycle fence; clear import-time error history before each operation. **Why:**actualCI34795506067 failed these two cases. **Verified:**87/7PASS with servicekeyunset and originalwarningretained inlog; **TypeScript:**PASS. No runtimebehavior orauthority changed; fullCI remainsrequired.
+
+## 2026-09-14: Union integrity observations and incidents retain union scope
+
+**Files:** migration20260914110900; native PostgreSQL runner and captured fixtures; required accounting CI step.
+**What existed:** the integrity report returned foreign-union transfers to an authorized owner, attributed their warning to the wrong union and suppressed the correct union through global source-only deduplication.
+**What changed:** observations use actual table/tournament/club identity; host clubs and legitimate own-union signals remain included. Incident claims and the 20-hour window are scoped per union. Existing financial writers, caller authorization and response keys are preserved.
+**Verified:** 43 native PostgreSQL17 checks, three original counterexamples, real concurrency, rollback, insert-trigger refusal, positive and adversarial scope, ACL and drift refusal. Required CI, installation and live verification remain separate.

@@ -32,9 +32,11 @@ interface DiamondsTabProps {
   clubId: string;
   wallet: WalletInfo;
   packages: DiamondPackage[];
+  /** Where to offer the player onward after a successful purchase (phase 3). */
+  nextPath?: string | null;
 }
 
-export default function DiamondsTab({ clubId, wallet, packages }: DiamondsTabProps) {
+export default function DiamondsTab({ clubId, wallet, packages, nextPath }: DiamondsTabProps) {
   const toast = useToast();
   const [redirecting, setRedirecting] = useState<string | null>(null);
   const checkoutInFlightRef = useRef(false);
@@ -50,7 +52,7 @@ export default function DiamondsTab({ clubId, wallet, packages }: DiamondsTabPro
       await startCheckout(
         'diamonds',
         [{ packageId: pkg.id, quantity: 1 }],
-        `club=${encodeURIComponent(clubId)}&tab=diamonds`,
+        `club=${encodeURIComponent(clubId)}&tab=diamonds${nextPath ? `&next=${encodeURIComponent(nextPath)}` : ''}`,
         checkoutKeyRef.current
       );
       // startCheckout navigates away on success — the line below only runs on error.

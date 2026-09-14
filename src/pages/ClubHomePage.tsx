@@ -115,6 +115,8 @@ import MaintenanceBreakBanner from '../components/common/MaintenanceBreakBanner'
 import HouseAdRotator from '../components/ads/HouseAdRotator';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
 import { ClubIdentityCard } from '../components/club-buttons';
+import DiamondBustPrompt from '../components/games/DiamondBustPrompt';
+import DiamondsToChipsButton from '../components/games/DiamondsToChipsButton';
 import { playerDisplayName } from '../utils/playerDisplayName';
 import ClubEntryMessage from '../components/club/ClubEntryMessage';
 import AdvancedFilters, {
@@ -2743,7 +2745,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       const tableQuery = supabase
         .from('tables')
         .select(
-          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, union_id, is_private, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands, cluster_id, role, main_index, lifecycle, cluster:cash_games!tables_cluster_id_fkey(template_name, must_move, state, enabled)'
+          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, big_blind_ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, union_id, is_private, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands, cluster_id, role, main_index, lifecycle, cluster:cash_games!tables_cluster_id_fkey(template_name, must_move, state, enabled)'
         );
       // ONE rule, applied. Union clubs see the UNION's tables plus their OWN
       // private games; another club's private game is never visible.
@@ -5322,6 +5324,32 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           slot="lobby_strip"
           clubId={resolvedClubId || club.id}
           onNavigate={(path) => {
+            haptic.selection();
+            navigate(path);
+          }}
+        />
+
+        {/* ═══════════════════════════════════════════════════════════════════
+          THE DIAMOND GAMES, WHERE A PLAYER ACTUALLY IS (Dan 2026-09-09).
+          The wheel, the board and the curve had exactly one door: a banner on
+          the Promotions page. Three finished games behind a link most players
+          never open. This is the second door, in the lobby, on the painted
+          action shell rather than drawn in CSS. The games page itself still
+          decides what is open here; this only gets the player to it.
+      ═══════════════════════════════════════════════════════════════════ */}
+        {/* Dan 2026-09-10: "there also needs to be a button for this inside
+          the club lobby." It was a plain link to the games; it is now the door
+          itself, printing what the player actually holds and what those
+          diamonds are worth in chips, and saying so when today's free spin is
+          still there. `alwaysShow` keeps the club's own door in its place
+          while the read lands and even when the player has nothing yet. */}
+        <DiamondBustPrompt clubId={resolvedClubId || club.id} />
+        <DiamondsToChipsButton
+          clubId={clubId ?? null}
+          alwaysShow
+          size="large"
+          className="lobby-diamond-games"
+          onGo={(path) => {
             haptic.selection();
             navigate(path);
           }}

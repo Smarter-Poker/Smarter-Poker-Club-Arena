@@ -367,6 +367,12 @@ Actual blind advancement submitted an atomic publication every second while glob
 
 R20/R25 are now ancestors of served engine d28993d9. New seat-first creation and real hands are observed, while the six recent satellite terminal deliveries remain unproven. The two future Turbo Tuesday PKO templates were atomically corrected at10:00UTC after actual engine payload checks; their existing15total, custom22kstack and other booked terms remain unchanged. R23/R24 passed earlierCI and were updated normally for newer main/document conflicts; successor qualification and release remain separate. The per-event evidence and all open financial/provider boundaries remain in the task handoff.
 
+## R32: union ticket redemption matches issuance scope
+
+Three installed ticket functions required both host equality and membership in union_clubs, while existing issuance and the shared resolver correctly accept the union host or a listed member club. Exact read-only evidence shows137issued union tickets/11,000 affected by these predicates, split54member-club and83host-club tickets. The guarded migration changes only these scope predicates, preserving membership, exact ticket/target/value proof and all financial operations. Six old-source failures and24native PostgreSQL17groups verify the actual selectors and admission up to its unchanged financial prelock.
+
+All222issued direct tickets/16,960have matching issue receipts and posted escrow at11:39UTC. Of these217/16,860target closed-entry events and remain a separate historical entitlement issue. Installed once at11:48UTC/history20260914114821; exact readback and both original selector/hint counterexamples pass. Existing engine65/5 and ticket laws30/4 pass. No ticket remapping, cash conversion, funded-entry certificate or full lifecycle completion is claimed.
+
 ## R27: mystery settings commit before publication
 
 Manual creation used a second settings request and silently accepted default terms when it failed. Its request builder and the scheduled, recurring, union and repeat engine paths also dropped selected metadata. One shared engine decoder now supplies original inserts and the authenticated creation transaction. Six canonical columns persist before the creation response; any failed, skipped or changed write rolls back the event. The client checks the exact receipt and no longer races a follow-up settings request against registration. A common row guard protects activated settings even when the retained legacy setter first reads pending status.

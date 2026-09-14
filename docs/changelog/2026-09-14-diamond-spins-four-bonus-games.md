@@ -28,9 +28,13 @@ The earning guide reads the existing catalog and current allowance (110 regular 
 - 5,000 single-diamond Plinko drops settled atomically in the maximum Double Down entry.
 - 393px, 820px, and 1440px renders of all four games, footer, earning guide, bust prompt, and owner terms, with no horizontal overflow or page errors.
 - Browser proof checks backed by saved local PostgreSQL vectors, plus negative tests for altered receipts, leaked boards, and rewritten chip prizes.
-- Full local suite: 20,577 passed, one outdated recovery fixture failed, one unrelated existing test skipped. The fixture was corrected to use a complete PostgreSQL receipt; its focused rerun and the affected report tests passed (56 tests). TypeScript and the optimized application build passed.
+- Full local suite: 1,518 files / 20,734 tests passed, one existing test skipped. An initial uncapped run hit seven process timeouts; those 85 affected checks passed at bounded concurrency and the full bounded run then passed. TypeScript and the optimized application build passed.
+- Live self-aborting PostgreSQL proof completed all four games at a standalone club and a union-affiliated club. Both diamond transfer legs, exact retry identity, sealed reveals, daily spending, chip journal sums, and the Union receipt issuer reconciled. All probe transfers, config edits, agreement receipts, game entries, invoice messages and notifications rolled back.
+- Live shortfall proof verified Promo Wallet first, the appropriate Main Bank for only the deficit, the two balanced journal legs, and atomic refusal when their combined cover is insufficient. Both host types passed.
 
-Production installation, protected CI, publisher completion, and public-route verification must be recorded separately. Local evidence is not a production release claim.
+The live proof exposed and repaired two inherited integration boundaries: the profile guard now recognizes the private shared bonus transfer, and game accounting receipts resolve the Union behind a physical wallet account. New prizes also carry their own ledger categories. Each forward migration pins its live predecessor; applied migrations are unchanged. All changes are installed; the new game doors remain closed and no real owner agreement was created.
+
+Protected CI, publisher completion, and public-route verification must be recorded separately. Database and local evidence are not a frontend release claim.
 
 ## Next Wheel Phase
 

@@ -45,13 +45,13 @@ export function useDiamondGamesEntry(clubId: string | null | undefined, enabled 
     read();
     const off = [
       masterBus.subscribe('BALANCE_UPDATED', (event) => {
-        if (typeof event.userId === 'string' && event.userId !== user?.id) return;
-        if (typeof event.clubId === 'string' && event.clubId !== clubId) return;
+        if (typeof event.payload.userId === 'string' && event.payload.userId !== user?.id) return;
+        if (typeof event.payload.clubId === 'string' && event.payload.clubId !== clubId) return;
         read();
       }),
       masterBus.subscribe('DIAMOND_BALANCE_CHANGED', read),
       masterBus.subscribe('TABLE_LEFT', (event) => {
-        if (!event.userId || event.userId === user?.id) read();
+        if (!event.payload.userId || event.payload.userId === user?.id) read();
       }),
     ];
     window.addEventListener('focus', read);

@@ -84,8 +84,9 @@ RUN test "$(dpkg --print-architecture)" = amd64 \
 
 WORKDIR /opt/qualification
 # These are trusted, reviewed runtime files, never supplied by a candidate archive.
-COPY fixture-server.mjs runtime-files.mjs gateway.mjs auth-fixture.mjs auth-bootstrap-proof.mjs service-role-boundary.mjs actors.mjs financial-route-phase.mjs seed-fixture.mjs native-smoke.mjs observation-bridge.mjs cron-provider.mjs safeupdate-provider.mjs service-preimage.mjs role-alignment.mjs role-alignment-render.mjs role-alignment-installer.sql role-alignment-native.json role-alignment-aligned.json role-alignment-graph.sql role-alignment-membership.sql /opt/qualification/runtime/
+COPY fixture-server.mjs runtime-files.mjs gateway.mjs auth-fixture.mjs auth-bootstrap-proof.mjs service-role-boundary.mjs actors.mjs financial-route-phase.mjs seed-fixture.mjs native-smoke.mjs observation-bridge.mjs cron-provider.mjs safeupdate-provider.mjs service-preimage.mjs role-alignment.mjs provider-semantics.mjs provider-semantic-sql.mjs provider-probe-peer.mjs role-native-entry.mjs role-native-protocol.mjs role-native-faults.mjs role-native-access.mjs role-alignment-render.mjs role-alignment-installer.sql role-alignment-native.json role-alignment-aligned.json role-alignment-graph.sql role-alignment-membership.sql /opt/qualification/runtime/
 RUN node --input-type=module -e "import {adaptRealtimeLauncher,adaptRealtimeConfiguration} from '/opt/qualification/runtime/fixture-server.mjs'; await adaptRealtimeLauncher(); await adaptRealtimeConfiguration();" \
+    && node --input-type=module -e "import {writeFileSync} from 'node:fs'; import {providerKeyLauncher} from '/opt/qualification/runtime/provider-semantics.mjs'; writeFileSync('/usr/local/bin/fixture-provider-getkey',providerKeyLauncher,{flag:'wx',mode:0o555});" \
     && printf '#!/bin/sh\nexec /usr/local/bin/node /opt/qualification/runtime/fixture-server.mjs "$@"\n' > /usr/local/bin/fixture-server \
     && chmod 0555 /usr/local/bin/fixture-server \
     && chmod -R a+rX /opt/qualification/runtime

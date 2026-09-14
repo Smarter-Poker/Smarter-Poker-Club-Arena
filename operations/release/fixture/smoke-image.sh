@@ -132,6 +132,8 @@ docker logs "$name"
 
 # A fresh invocation of the actual fixture bootstrap supplies its exact
 # pre-application catalog. The smoke's synthetic schema is not this preimage.
+# The same container then qualifies the five real providers after full-role
+# alignment. Existing independent service smoke and preimage remain mandatory.
 # No application archive, browser, user signup, engine or external network.
 smoke_step=preimage-start
 docker run --detach --name "$preimage" --network "$network" --read-only --user 1000:1000 \
@@ -141,7 +143,7 @@ docker run --detach --name "$preimage" --network "$network" --read-only --user 1
   --tmpfs /tmp:rw,nosuid,mode=1777,uid=1000,gid=1000,size=2g \
   --tmpfs /run:rw,nosuid,mode=0755,uid=1000,gid=1000,size=2g \
   --tmpfs /var/lib/postgresql:rw,nosuid,mode=0700,uid=1000,gid=1000,size=4g \
-  "$image_id" fixture-server align-roles >/dev/null
+  "$image_id" fixture-server qualify-role-providers >/dev/null
 smoke_step=preimage-ready
 deadline=$((SECONDS + 180))
 while ! docker exec "$preimage" test -f /run/club-arena-qualification/service-preimage.ready; do

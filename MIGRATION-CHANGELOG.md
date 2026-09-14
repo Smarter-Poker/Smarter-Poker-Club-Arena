@@ -1,3 +1,10 @@
+## 2026-09-14: Spin prize audits recognize matching posted correction funding
+
+**Files:** migration20260914120920; native spin-prize-overlay fixture/runner; required accounting CI step.
+**What existed:** a house-funded 1.40 correction above a 10-chip Spin draw was still reported as excess despite matching posted journal and escrow evidence.
+**What changed:** recognize only positive finite overlays whose escrow and posted house-funding sums agree for the exact tournament and prize destination; avoid counting an overlay twice when the displayed pool already includes it. No financial writes or historical alert edits.
+**Verified:** 40 native PostgreSQL17 checks cover the exact original counterexample, real excess, funding identity/mismatch, non-finite values, concurrent visibility, browser denial, read-only execution, replay and drift refusal. Required CI, merge, guarded installation and live caller readback remain separate. See docs/changelog/2026-09-14-spin-prize-funded-overlay.md.
+
 ## 2026-09-14: Concurrent waitlist offers share seat and player claims
 
 **Files:** migration20260914104113; scripts/ci/test-waitlist-offer-concurrency.py and captured native fixtures; required accounting CI step.

@@ -22,6 +22,7 @@ import {
 } from '../src/components/lobby/game-cards/arenaGameCardRegistry';
 import type { LobbyRowContext } from '../src/components/lobby/lobbyCardContext';
 import { SpadePloCard } from '../src/components/lobby/game-cards/SpadePloCard';
+import { BUY_IN_ASSETS } from '../src/components/table/BuyInModal';
 
 const ROOT = resolve(__dirname, '..');
 const CARD_CSS = readFileSync(
@@ -137,6 +138,16 @@ function lobbyContext(overrides: Partial<LobbyRowContext> = {}): LobbyRowContext
 }
 
 describe('Arena game-card creation', () => {
+  it('keeps the replacement buy-in reference off its already-published URL', () => {
+    const asset = 'assets/club-buttons/popups/buy-in-v1/source/approved-reference-37716019dbbf.png';
+    expect(BUY_IN_ASSETS.reference).toBe(`${import.meta.env.BASE_URL}${asset}`);
+    expect(
+      createHash('sha256')
+        .update(readFileSync(resolve(ROOT, 'public', asset)))
+        .digest('hex')
+    ).toBe('37716019dbbf81c2e82e74cb91d6f566e78cf4339a52df4cd4dcf3a2593715af');
+  });
+
   it('preserves the PLO chassis bytes already served under the original permanent URL', () => {
     const bytes = readFileSync(
       resolve(ROOT, 'public/assets/club-buttons/game-cards/plo/spade-plo-premium-v1/chassis.png')

@@ -103,6 +103,8 @@ import {
   leaseRenewalLoopRunning,
   leaseRenewalLoopRelaunchesTotal,
 } from './observability/engineInstruments.js';
+import { processMemoryHealth } from './observability/processMemory.js';
+import { httpDispatcherReport } from './services/httpDispatcher.js';
 import { clientConnectionPrometheusLines } from './observability/ClientConnectionEvents.js';
 import {
   planTableReopens,
@@ -3405,6 +3407,18 @@ export class GameServer {
       // Still useful, but a different question: can the realtime table loop
       // service sockets, clocks, leases and state broadcasts without delay?
       mainEventLoopGovernor: equityGovernor.snapshot(),
+      // WHAT THE PROCESS WEIGHS (2026-09-14). The release train builds the
+      // next image on this same 3.8 GB host and refuses below 1.125 GiB free;
+      // it was refused 11 of 14 times overnight and nothing here could say
+      // whether the engine was the reason. Megabytes, rounded; nulls where
+      // /proc is unreadable. `nativeMainArenaMb` is glibc's brk arena, the
+      // number that actually moved (see observability/processMemory.ts).
+      memory: processMemoryHealth(),
+      // Whether the process-wide fetch pool is bounded, and to what. The
+      // unbounded default (no connection cap, 4 s keep-alive) is what fed the
+      // arena above; a boot that could not install the bound says so here
+      // rather than silently running on the default (services/httpDispatcher.ts).
+      httpDispatcher: httpDispatcherReport(),
       // The one process-wide FIFO that owns live HorseLogic state. Queue depth
       // and phase distinguish worker pressure/failure from main-loop pressure;
       // solver store counts prove the worker reached an authoritative READY.

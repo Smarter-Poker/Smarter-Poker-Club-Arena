@@ -1142,6 +1142,112 @@ groups:
             seat gets the same engine - but the room is playing worse than it
             was built to). Capacity, not a bug.
 
+  # ── ENGINE MEMORY (2026-09-14) ─────────────────────────────────────────
+  # The engine runs on a 3819 MiB host and the release train builds the next
+  # image ON THAT HOST, refusing below 1179648 KiB available (1152 MiB:
+  # BUILD_MEMORY_BYTES/1024 + BUILD_RESERVE_KIB in
+  # server/scripts/build-engine-image.sh). Measured 2026-09-14 10:27 UTC:
+  #   - the engine process was 2097 MiB RSS at 92 minutes uptime (1640 MiB
+  #     at 60), with 663 MiB available; the box's other residents (dockerd,
+  #     prometheus, grafana, fail2ban, alertmanager, kernel) hold ~1060 MiB,
+  #     so a build fits only while the engine is under ~1600 MiB;
+  #   - 631 of the last 1438 minutes (44%) were below the build requirement,
+  #     and 11 of 14 overnight engine deploys were refused for it;
+  #   - 83 minutes of the last 24 hours were below 256 MiB available, the
+  #     floor at 04:08 UTC was 80 MiB, and on 2026-09-12 06:21:57 UTC the
+  #     kernel OOM-killed the engine outright (pid 1159833, no drain, every
+  #     table gone mid-hand);
+  #   - none of it was on /metrics: the engine published 1,134 lines and not
+  #     one said how much memory it used. poker_engine_process_rss_bytes and
+  #     its neighbours (server/src/observability/engineInstruments.ts) are
+  #     the fix for that; these rules read them.
+  # The V8 heap was NOT the growth (400-800 MB across GC cycles while RSS
+  # climbed); glibc's main arena was. Hence
+  # poker_engine_native_main_arena_bytes beside the heap gauges: when
+  # EngineProcessMemoryHigh fires, that series says whether it is JavaScript
+  # or native memory, which is the first question and used to need an SSH.
+  #
+  # No maintenance-break guard on any of these: the break parks tables and
+  # does not change the process's weight, and the restart inside it LOWERS
+  # memory pressure rather than raising it.
+  - name: engine-memory
+    interval: 15s
+    rules:
+      # The host is about to pick the largest process and kill it, and the
+      # largest process is the engine. 256 MiB is above the 80 MiB floor
+      # actually reached and below the 1152 MiB the build needs, so a fire
+      # means "the next allocation burst reaches zero" (measured bursts:
+      # +111 MB in seven minutes during a tournament re-admission storm),
+      # not "a build might be refused". Two minutes, not ten: at burst rate
+      # ten minutes is the whole runway.
+      - alert: EngineHostNearOOM
+        expr: |
+          node_memory_MemAvailable_bytes{host="engine-01"} < 268435456
+        for: 2m
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: 'engine-01 has {{ $value | humanize1024 }}B available - the kernel OOM-killer takes the engine next'
+          description: |
+            MemAvailable on the engine host has been under 256 MiB for two
+            minutes. On 2026-09-12 06:21:57 UTC this ended with the kernel
+            killing the engine process (no SIGTERM, no drainHands, every
+            table lost mid-hand). Read poker_engine_process_rss_bytes: if
+            the engine is the weight, poker_engine_native_main_arena_bytes
+            versus poker_engine_heap_used_bytes says whether the growth is
+            native (TLS/connection state, the 2026-09-14 finding) or the V8
+            heap. A restart inside the next :55 break clears it; an OOM kill
+            does not wait for one.
+          runbook: 'docs/runbooks/engine-memory.md'
+
+      # The exact number the release train's on-host build refuses below.
+      # Thirty minutes because a build is refused at one instant and the
+      # deploy retries on the next engine-affecting merge; a dip that clears
+      # itself in twenty minutes costs one attempt, a plateau costs the day.
+      - alert: EngineBuildHeadroomLost
+        expr: |
+          node_memory_MemAvailable_bytes{host="engine-01"} < 1207959552
+        for: 30m
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: 'engine-01 has {{ $value | humanize1024 }}B available - under the 1152 MiB the engine image build refuses below'
+          description: |
+            server/scripts/build-engine-image.sh needs 1179648 KiB free and
+            has had less for thirty minutes, so the next engine release will
+            be refused on this host (it was, 11 of 14 times on the night of
+            2026-09-13). If EngineProcessMemoryHigh is also firing the engine
+            is the weight; if it is not, look at what else is resident
+            (a stuck buildkit container, dockerd, page cache that will not
+            reclaim) before touching the engine.
+          runbook: 'docs/runbooks/engine-memory.md'
+
+      # The most the engine can weigh while a build still fits beside it,
+      # derived above (3819 total - ~1060 other residents - 1152 build).
+      # Fifteen minutes: a boot loads ~1,700 tables and legitimately passes
+      # 1 GiB in the first hour; this is for the plateau after that.
+      - alert: EngineProcessMemoryHigh
+        expr: |
+          poker_engine_process_rss_bytes > 1717986918
+        for: 15m
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: 'Engine process RSS {{ $value | humanize1024 }}B - above the 1.6 GiB that leaves room for an image build'
+          description: |
+            The engine process has weighed more than 1.6 GiB for fifteen
+            minutes. Compare poker_engine_heap_used_bytes (V8) with
+            poker_engine_native_main_arena_bytes (glibc brk, native memory on
+            the main thread): on 2026-09-14 the heap was flat at 400-800 MB
+            while the arena climbed 378 to 501 MB in an hour, tracking
+            HTTPS connection churn to Supabase (3,800 TIME-WAIT sockets in
+            one storm). poker_engine_threads rising with it means worker
+            isolates; poker_engine_external_bytes rising means Buffers.
+          runbook: 'docs/runbooks/engine-memory.md'
+
   # ── BOUNDED TOURNAMENT WORK LANES (2026-09-07) ────────────────────────
   # The old design opened one five-second elimination timer per tournament.
   # The replacement has four physical work slots and one process-wide queue.

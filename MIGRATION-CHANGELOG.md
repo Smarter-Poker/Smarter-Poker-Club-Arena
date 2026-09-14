@@ -1,3 +1,10 @@
+## 2026-09-14: Guard returned Spin draws against unpaid-prize regressions
+
+**Files:** scripts/ci/test-spin-return-detector.py; required accounting CI; docs/changelog/2026-09-14-returned-spin-alert-regression.md.
+**What existed:** the historical unpaid detector ignored the draw returned on cancellation; the later installed view already contains its root correction.
+**What changed:** required native regression coverage loads the actual old and current repository view declarations and verifies the exact current definition. No SQL installation or financial write is introduced.
+**Verified:** 24 native PostgreSQL17 checks, including the original false shortage, partial-return residual, actual transaction commit/rollback visibility, event identity and reporting grace. The exact received event has all three refunds completed and its full reserve draw returned. Full payout, negative summary and general escrow qualification are separate.
+
 ## 2026-09-14: Concurrent waitlist offers share seat and player claims
 
 **Files:** migration20260914104113; scripts/ci/test-waitlist-offer-concurrency.py and captured native fixtures; required accounting CI step.

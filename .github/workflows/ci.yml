@@ -1143,7 +1143,7 @@ jobs:
       - name: Concurrent hands preserve shared F06 custody lanes
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-f06-shared-hand-lane.py
+        run: python3 scripts/ci/test-f06-zero-seat-hand-lane.py
       - name: Accepted hands and terminal operations obey one lock order
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

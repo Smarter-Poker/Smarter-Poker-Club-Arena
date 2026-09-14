@@ -1,22 +1,38 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  FINANCIAL ALERTS PAGE — Admin Ops Dashboard for Critical Financial Errors
+ *  FINANCIAL ALERTS PAGE - Admin Ops Dashboard for Critical Financial Errors
+ *  (#ClubArenaConsole)
  * ═══════════════════════════════════════════════════════════════════════════════
- * Shows unresolved financial alerts with severity badges, one-click resolve,
+ * Shows unresolved financial alerts with severity inks, one-click resolve,
  * and auto-refresh via Supabase real-time subscription on `financial_alerts`.
+ *
+ * One flow, one console: the severity filters as lit words, every alert a
+ * row on the black glass between engraved rules with its "Mark Resolved" as
+ * a lit word, and the two painted plates carrying Export CSV and Resolve All.
+ * Every loader guard, realtime channel, bus listener and handler of the
+ * generic page is kept; only the paint changed.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { FinancialAlertService, FinancialAlert } from '../services/FinancialAlertService';
 import { FinancialExportService } from '../services/FinancialExportService';
 import { useAuthUser } from '../hooks/useAuthUser';
+import { SpadeConsole } from '../components/console/SpadeConsole';
 import './FinancialAlertsPage.css';
-import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useToast } from '../components/common/Toast';
 import { reportError } from '../utils/errorReporter';
+import { titleCase, enumToTitleCase } from '../utils/titleCase';
+
+type Filter = 'all' | 'critical' | 'warning' | 'info';
+const FILTERS: Filter[] = ['all', 'critical', 'warning', 'info'];
+
+const SEVERITY_INK: Record<FinancialAlert['severity'], string> = {
+  critical: 'sc-ink--red',
+  warning: 'sc-ink--gold',
+  info: 'sc-ink--blue',
+};
 
 export default function FinancialAlertsPage() {
   const { user } = useAuthUser();
@@ -27,7 +43,7 @@ export default function FinancialAlertsPage() {
   const [resolving, setResolving] = useState<string | null>(null);
   const [bulkResolving, setBulkResolving] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [filter, setFilter] = useState<'all' | 'critical' | 'warning' | 'info'>('all');
+  const [filter, setFilter] = useState<Filter>('all');
   /**
    * The TRUE unresolved counts, not the counts of what happened to load.
    * The tabs used to count the rows in `alerts`, which is a capped page, so
@@ -145,6 +161,7 @@ export default function FinancialAlertsPage() {
       setAlerts((prev) => prev.filter((a) => !toResolve.find((r) => r.id === a.id)));
       toast.success(`Resolved ${toResolve.length} alert(s)`);
     } catch (err) {
+      reportError(err, 'FinancialAlertsPage.Bulk_resolve_failed');
       toast.error('Bulk resolve failed');
     }
     setBulkResolving(false);
@@ -184,167 +201,156 @@ export default function FinancialAlertsPage() {
   const warningCount = counts?.warning ?? alerts.filter((a) => a.severity === 'warning').length;
   const infoCount = counts?.info ?? alerts.filter((a) => a.severity === 'info').length;
   const notShown = Math.max(totalCount - alerts.length, 0);
+  const filterCount: Record<Filter, number> = {
+    all: totalCount,
+    critical: criticalCount,
+    warning: warningCount,
+    info: infoCount,
+  };
 
   if (loading && alerts.length === 0) {
     return (
       <div className="financial-alerts-page">
-        <div className="alerts-header">
-          <h2>Financial Alerts</h2>
-        </div>
-        <div className="loading-state">
-          <PageSkeleton variant="financial" />
-          <p>Loading Alerts...</p>
-        </div>
+        <SpadeConsole
+          className="fap__console"
+          eyebrow="Financial Admin"
+          title="Financial Alerts"
+          titleId="financial-alerts-title"
+          pill="Loading"
+          pillInk="muted"
+          foot="foot"
+        >
+          <p className="sc-copy sc-copy--center fap__state" aria-busy="true">
+            Loading Alerts...
+          </p>
+        </SpadeConsole>
       </div>
     );
   }
 
+  const pill =
+    criticalCount > 0
+      ? `${criticalCount} Critical`
+      : warningCount > 0
+        ? `${warningCount} Warning`
+        : alerts.length === 0
+          ? 'All Clear'
+          : `${infoCount} Info`;
+  const pillInk =
+    criticalCount > 0 ? 'red' : warningCount > 0 ? 'gold' : alerts.length === 0 ? 'green' : 'blue';
+
   return (
     <div className="financial-alerts-page">
-      <div className="alerts-header">
-        <h2>Financial Alerts</h2>
-        <div className="alert-stats">
-          {criticalCount > 0 && <span className="stat critical"> {criticalCount} Critical</span>}
-          {warningCount > 0 && <span className="stat warning"> {warningCount} Warning</span>}
-          {infoCount > 0 && (
-            <span
-              className="stat"
-              style={{ background: 'rgba(99,102,241,0.15)', color: '#818cf8' }}
-            >
-              ℹ {infoCount} Info
-            </span>
-          )}
-          {alerts.length === 0 && <span className="stat clear">All Clear</span>}
-        </div>
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-          {loading && alerts.length > 0 && (
-            <span
-              style={{
-                fontSize: '0.7rem',
-                color: '#10b981',
-                animation: 'animationsPulse 1.5s infinite',
-              }}
-            >
-              Syncing...
-            </span>
-          )}
-          <button className="refresh-btn" onClick={() => loadAlerts()} title="Refresh">
-            ↻
-          </button>
-          <button
-            className="refresh-btn"
-            onClick={handleExport}
-            disabled={exporting || alerts.length === 0}
-            title="Export CSV"
-            style={{ fontSize: '0.9rem' }}
-          >
-            {exporting ? '...' : '↓'}
-          </button>
-        </div>
-      </div>
-
-      {/* Filter Tabs */}
-      <div className="filter-tabs">
-        <button
-          className={`filter-tab ${filter === 'all' ? 'active' : ''}`}
-          onClick={() => setFilter('all')}
-        >
-          All ({totalCount})
-        </button>
-        <button
-          className={`filter-tab critical ${filter === 'critical' ? 'active' : ''}`}
-          onClick={() => setFilter('critical')}
-        >
-          Critical ({criticalCount})
-        </button>
-        <button
-          className={`filter-tab warning ${filter === 'warning' ? 'active' : ''}`}
-          onClick={() => setFilter('warning')}
-        >
-          Warning ({warningCount})
-        </button>
-        <button
-          className={`filter-tab ${filter === 'info' ? 'active' : ''}`}
-          onClick={() => setFilter('info')}
-          style={
-            filter === 'info'
-              ? {
-                  background: 'rgba(99,102,241,0.12)',
-                  color: '#818cf8',
-                  borderColor: 'rgba(99,102,241,0.25)',
-                }
-              : {}
-          }
-        >
-          Info ({infoCount})
-        </button>
-      </div>
-
-      {/* Bulk Actions */}
-      {filteredAlerts.length > 1 && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px' }}>
-          <button
-            className="resolve-btn"
-            onClick={handleBulkResolve}
-            disabled={bulkResolving}
-            style={{ fontSize: '0.78rem' }}
-          >
-            {bulkResolving
+      <SpadeConsole
+        className="fap__console"
+        eyebrow="Financial Admin"
+        title="Financial Alerts"
+        titleId="financial-alerts-title"
+        pill={pill}
+        pillInk={pillInk}
+        plates={{
+          secondary: {
+            label: exporting ? 'Exporting...' : 'Export CSV',
+            onClick: handleExport,
+            disabled: exporting || alerts.length === 0,
+            title: 'Export CSV',
+          },
+          primary: {
+            label: bulkResolving
               ? 'Resolving...'
-              : `✓ Resolve All ${filteredAlerts.length} ${filter !== 'all' ? filter : ''} Alerts`}
-          </button>
+              : titleCase(`Resolve All ${filteredAlerts.length} ${filter !== 'all' ? filter : ''}`),
+            ink: 'white',
+            onClick: handleBulkResolve,
+            disabled: bulkResolving || filteredAlerts.length < 2,
+          },
+        }}
+      >
+        <div className="fap__toolbar">
+          <div className="fap__filters" role="group" aria-label="Filter Alerts By Severity">
+            {FILTERS.map((f) => (
+              <button
+                key={f}
+                type="button"
+                className={`fap-word fap__filter ${filter === f ? 'sc-ink--white' : 'sc-ink--muted'}`}
+                aria-pressed={filter === f}
+                onClick={() => setFilter(f)}
+              >
+                {titleCase(f)}
+                <span className="fap__filter-count sc-ink--blue">{filterCount[f]}</span>
+              </button>
+            ))}
+          </div>
+          <div className="fap__sync">
+            {loading && alerts.length > 0 && (
+              <span className="fap__syncing sc-ink--green">Syncing...</span>
+            )}
+            <button
+              type="button"
+              className="fap-word sc-ink--white"
+              onClick={() => loadAlerts()}
+              title="Refresh"
+            >
+              Refresh
+            </button>
+          </div>
         </div>
-      )}
 
-      {/*
-        Say plainly when the page is not showing everything. Every CRITICAL is
-        always loaded (see FinancialAlertService.getUnresolved); it is warnings
-        and info that get cut, and an operator who is not told that will read
-        an empty-looking list as "nothing left to do".
-      */}
-      {notShown > 0 && (
-        <div className="alerts-truncated-note" style={{ fontSize: '0.78rem', opacity: 0.75 }}>
-          Showing {alerts.length} Of {totalCount} Unresolved. Every Critical Is Shown.
-        </div>
-      )}
+        {/*
+          Say plainly when the page is not showing everything. Every CRITICAL is
+          always loaded (see FinancialAlertService.getUnresolved); it is warnings
+          and info that get cut, and an operator who is not told that will read
+          an empty-looking list as "nothing left to do".
+        */}
+        {notShown > 0 && (
+          <p className="sc-copy fap__note sc-ink--muted">
+            Showing {alerts.length} Of {totalCount} Unresolved. Every Critical Is Shown.
+          </p>
+        )}
 
-      {/* Alert List */}
-      {filteredAlerts.length === 0 ? (
-        <div className="empty-state">
-          <span className="empty-icon">◉</span>
-          <p>{filter === 'all' ? 'No Unresolved Alerts' : `No ${filter} Alerts`}</p>
-        </div>
-      ) : (
-        <div className="alert-list">
-          {filteredAlerts.map((alert) => (
-            <div key={alert.id} className={`alert-card severity-${alert.severity}`}>
-              <div className="alert-header">
-                <span className={`severity-badge ${alert.severity}`}>
-                  {alert.severity === 'critical' ? '●' : '◐'} {alert.severity.toUpperCase()}
-                </span>
-                <span className="alert-source">{alert.source}</span>
-                <span className="alert-time">{new Date(alert.createdAt).toLocaleString()}</span>
-              </div>
-              <p className="alert-message">{alert.message}</p>
-              {alert.context && Object.keys(alert.context).length > 0 && (
-                <details className="alert-context">
-                  <summary>Context Details</summary>
-                  <pre>{JSON.stringify(alert.context, null, 2)}</pre>
-                </details>
-              )}
-              <div className="alert-actions">
-                <button
-                  className="resolve-btn"
-                  onClick={() => alert.id && handleResolve(alert.id)}
-                  disabled={resolving === alert.id}
-                >
-                  {resolving === alert.id ? 'Resolving...' : '✓ Mark Resolved'}
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+        {/* Alert List */}
+        {filteredAlerts.length === 0 ? (
+          <p className="sc-copy sc-copy--center fap__state">
+            {filter === 'all' ? 'No Unresolved Alerts' : titleCase(`No ${filter} Alerts`)}
+          </p>
+        ) : (
+          <ul className="fap__list">
+            {filteredAlerts.map((alert) => (
+              <li key={alert.id} className="fap__alert">
+                <div className="fap__alert-head">
+                  <span className={`fap__severity ${SEVERITY_INK[alert.severity]}`}>
+                    {alert.severity.toUpperCase()}
+                  </span>
+                  <span className="fap__source sc-ink--blue">{enumToTitleCase(alert.source)}</span>
+                  <span className="fap__time sc-ink--muted">
+                    {new Date(alert.createdAt).toLocaleString()}
+                  </span>
+                </div>
+                <p className="sc-copy fap__message">{titleCase(alert.message)}</p>
+                {alert.context && Object.keys(alert.context).length > 0 && (
+                  <details className="fap__context">
+                    <summary className="fap__context-summary sc-ink--muted">
+                      Context Details
+                    </summary>
+                    <pre className="fap__context-body">
+                      {JSON.stringify(alert.context, null, 2)}
+                    </pre>
+                  </details>
+                )}
+                <div className="fap__alert-actions">
+                  <button
+                    type="button"
+                    className="fap-word sc-ink--green"
+                    onClick={() => alert.id && handleResolve(alert.id)}
+                    disabled={resolving === alert.id}
+                  >
+                    {resolving === alert.id ? 'Resolving...' : 'Mark Resolved'}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </SpadeConsole>
     </div>
   );
 }

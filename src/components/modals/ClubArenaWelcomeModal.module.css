@@ -1,255 +1,193 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  CLUB ARENA WELCOME MODAL — Styles
- *  Using Facebook Color Scheme: #1877F2 primary, #166FE5 hover
- * ═══════════════════════════════════════════════════════════════════════════════
- */
+/* ═══════════════════════════════════════════════════════════════════════════
+   CLUB ARENA WELCOME - on the spade console (#ClubArenaConsole)
+
+   The frame, the crest, the header well, the pill slot and the flat closing
+   cap come from SpadeConsole.css. This sheet only places that picture on the
+   backdrop, switches off the global popup chassis, and types the
+   acknowledgments on the black glass between the rails.
+
+   THE CHASSIS HAS TO BE SWITCHED OFF LONGHAND BY LONGHAND. metallic-popups.css
+   matches this container on `[class*='_modal_']` and paints it with a 16px
+   radius, a machined border and a six-layer shadow at !important, and it
+   bevels every `button` inside a dialog the same way. The console brings its
+   own paint, so each of those declarations is restated here at a specificity
+   the shorthand cannot outrank.
+
+   NOTHING HERE DRAWS A CONTROL. The gradient header bar, the bordered notice
+   hero, the barred disclaimer block, the list markers, the tinted info box,
+   the hand-drawn checkmark square and the blue gradient button are gone with
+   the markup that carried them. No :hover.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.9);
+  z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
-  /* 2026-08-23 (live mobile audit): the tournament STARTING SOON strip is
-     fixed at z-index 9400 and was drawing straight across this modal's text.
-     House convention (TournamentStartingTicker.css): dialogs live at 9600+. */
-  z-index: 9600;
-  padding: 1rem;
+  padding: 12px;
+  /* Black, not grey: the console floats on the same black as the page. */
+  background: rgb(0 0 0 / 93%);
 }
 
 .modal {
-  width: 100%;
-  max-width: 480px;
-  max-height: calc(100vh - 2rem);
-  max-height: calc(
-    100dvh - 2rem
-  ); /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   display: flex;
   flex-direction: column;
-  background: linear-gradient(180deg, #1a1a2e 0%, #0a0a1a 100%);
-  border-radius: 1rem;
-  border: 1px solid rgba(24, 119, 242, 0.3);
-  overflow: hidden;
-  backdrop-filter: blur(10px) saturate(1.2);
-  -webkit-backdrop-filter: blur(10px) saturate(1.2);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.04),
-    0 8px 32px rgba(24, 119, 242, 0.15);
-}
-
-.header {
-  padding: 1.25rem 1.5rem;
-  text-align: center;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(24, 119, 242, 0.1);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.header h2 {
-  margin: 0;
-  font-size: 1.4rem;
-  font-weight: 700;
-  color: #1877f2;
-  text-shadow: 0 0 12px rgba(24, 119, 242, 0.2);
-}
-
-.content {
-  padding: 1.25rem 1.5rem;
-  flex: 1;
-  overflow-y: auto;
+  width: min(100%, 560px);
+  max-height: 100%;
   min-height: 0;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
 }
 
-.heroSection {
-  text-align: center;
-  margin-bottom: 1.25rem;
+.scroller {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
-.heroIcon {
-  display: none;
-  /* No emojis per design guidelines */
-}
-
-.heroSection h3 {
-  margin: 0;
-  font-size: 1.1rem;
-  color: #fff;
-  font-weight: 600;
-}
-
-.disclaimer {
-  background: rgba(24, 119, 242, 0.15);
-  border: 1px solid rgba(24, 119, 242, 0.4);
-  border-radius: 0.5rem;
-  padding: 0.875rem 1rem;
-  margin-bottom: 1.25rem;
-  text-align: center;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.disclaimer p {
-  margin: 0;
-  color: #fff;
-  font-size: 0.9rem;
-  line-height: 1.5;
-}
-
-.disclaimer strong {
-  color: #60a5fa;
-}
-
-.rules {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 0.5rem;
-  padding: 1rem 1.25rem;
-  margin-bottom: 1.25rem;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.rules h4 {
-  margin: 0 0 0.875rem;
-  color: #fff;
-  font-size: 0.9rem;
-  font-weight: 600;
-}
-
-.rules ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.rules li {
-  display: block;
-  padding: 0.5rem 0;
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 0.85rem;
-  line-height: 1.6;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.rules li:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-
-.rules li:first-child {
-  padding-top: 0;
-}
-
-.bullet {
-  display: none;
-  /* Removed bullets for cleaner look */
-}
-
-.rules li strong {
-  color: #1877f2;
-  font-weight: 600;
-}
-
-.infoBox {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
-  background: rgba(24, 119, 242, 0.1);
-  border: 1px solid rgba(24, 119, 242, 0.2);
-  border-radius: 0.5rem;
-}
-
-.infoIcon {
-  display: none;
-  /* No emojis per design guidelines */
-}
-
-.infoBox p {
-  margin: 0;
-  font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.infoBox a {
-  color: #1877f2;
-  text-decoration: none;
-  font-weight: 500;
-}
-
-.footer {
-  padding: 1.25rem 1.5rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  flex-shrink: 0;
-  background: rgba(0, 0, 0, 0.2);
-}
-
-.checkbox {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  cursor: pointer;
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 0.875rem;
-}
-
-.checkbox input {
-  display: none;
-}
-
-.checkmark {
-  width: 20px;
-  height: 20px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-radius: 4px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s;
-  background: transparent;
-}
-
-.checkbox input:checked + .checkmark {
-  background: #1877f2;
-  border-color: #1877f2;
-  box-shadow: 0 0 12px rgba(24, 119, 242, 0.4);
-}
-
-.checkbox input:checked + .checkmark::after {
-  content: '';
-  width: 6px;
-  height: 10px;
-  border: solid #fff;
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
-  margin-bottom: 2px;
-}
-
-.enterButton {
+.console {
   width: 100%;
-  padding: 0.875rem 1rem;
-  background: rgba(255, 255, 255, 0.1);
-  border: none;
-  border-radius: 0.5rem;
-  color: rgba(255, 255, 255, 0.4);
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: not-allowed;
-  transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s;
 }
 
-.enterButton:not(:disabled) {
-  background: #1877f2;
-  color: #fff;
+.lead {
+  margin: 0;
+  padding: 1cqw 1cqw 0;
+  font-weight: 700;
+}
+
+.sectionLabel {
+  align-self: start;
+  padding-top: 1cqw;
+}
+
+/* ── The acknowledgments: rows on the glass ───────────────────────────── */
+
+.acknowledgements {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The engraved rule the master uses between its own rows: a black hairline
+   with one pixel of highlight beneath it. Never a marker disc - a bullet is
+   a shape drawn in CSS. */
+.acknowledgement {
+  padding: 2.4cqw 0;
+  overflow-wrap: anywhere;
+}
+
+.acknowledgement + .acknowledgement {
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.acknowledgement strong {
+  color: #e4e7ec;
+  font-weight: 800;
+}
+
+.support {
+  margin: 0;
+  padding: 2cqw 1cqw 0;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.supportLink {
+  text-decoration: underline;
+  text-underline-offset: 0.25em;
+}
+
+.supportLink:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -0.2cqw;
+}
+
+/* ── The agreement and the one door: lit words on the glass ───────────── */
+
+/* Doubled so it outranks metallic-popups.css, which bevels every `button`
+   inside a dialog with !important. */
+.agree.agree,
+.enter.enter {
+  appearance: none;
+  display: block;
+  width: 100%;
+  margin: 0;
+  /* 44px minimum tap target on a phone. */
+  min-height: 44px;
+  padding: 2.2cqw 1cqw;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  transform: none !important;
   cursor: pointer;
-  box-shadow:
-    0 0 20px rgba(24, 119, 242, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  touch-action: manipulation;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.agree.agree {
+  border-top: 1px solid #000 !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
+  font:
+    700 3.2cqw/1.3 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.12em;
+}
+
+.enter.enter {
+  border-top: 1px solid #000 !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
+  font:
+    800 4.4cqw/1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.16em;
+}
+
+.agree.agree:active,
+.enter.enter:active:not(:disabled) {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
+  transform: none !important;
+  filter: brightness(1.3);
+}
+
+.enter.enter:disabled {
+  cursor: not-allowed;
+}
+
+.agree.agree:focus-visible,
+.enter.enter:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -0.6cqw;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal {
+    transition: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .lead,
+  .acknowledgement,
+  .support {
+    color: #fff;
+  }
 }

@@ -46,7 +46,14 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { formatDate } from '../utils/format';
-import { AdCampaignService, POSTER_SHAPE, formatDollars } from '../services/AdCampaignService';
+import {
+  AdCampaignService,
+  POSTER_SHAPE,
+  billingLabel,
+  countriesLabel,
+  formatDollars,
+  parseCountries,
+} from '../services/AdCampaignService';
 import type {
   AdCampaign,
   AdCampaignDay,
@@ -121,6 +128,7 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
   const [headline, setHeadline] = useState('');
   const [destination, setDestination] = useState('lobby');
   const [externalUrl, setExternalUrl] = useState('');
+  const [countriesText, setCountriesText] = useState('');
   const [days, setDays] = useState(7);
   const [scope, setScope] = useState<'platform' | 'own_club'>('platform');
   const [file, setFile] = useState<File | null>(null);
@@ -332,6 +340,7 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
           externalUrl: externalUrl.trim(),
           startsAt: new Date(),
           days,
+          countries: parseCountries(countriesText) ?? null,
         });
         if (!res.ok) {
           const why: Record<string, string> = {
@@ -495,6 +504,7 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
 
   const headlineOk = headline.trim().length > 0 && headline.trim().length <= 120;
   const destinationOk = sponsorMode ? isHttpsAddress(externalUrl) : true;
+  const countriesOk = sponsorMode ? parseCountries(countriesText) !== undefined : true;
   const advertiserOk = sponsorMode ? Boolean(advertiser && advertiser.status === 'active') : true;
   const canSubmit = Boolean(
     rate &&
@@ -502,6 +512,7 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
     poster &&
     headlineOk &&
     destinationOk &&
+    countriesOk &&
     advertiserOk &&
     !busy &&
     canAfford &&
@@ -724,22 +735,41 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
             </small>
           </label>
           {sponsorMode ? (
-            <label className="club-advertise__field">
-              <span>The Button Sends Players To</span>
-              <input
-                type="url"
-                maxLength={500}
-                value={externalUrl}
-                onChange={(e) => setExternalUrl(e.target.value)}
-                placeholder="https://acme.example/poker"
-                disabled={busy}
-                inputMode="url"
-              />
-              <small>
-                A Full HTTPS Address On Your Own Site. It Opens In A New Tab And Never Leaves A
-                Player Signed Out.
-              </small>
-            </label>
+            <>
+              <label className="club-advertise__field">
+                <span>The Button Sends Players To</span>
+                <input
+                  type="url"
+                  maxLength={500}
+                  value={externalUrl}
+                  onChange={(e) => setExternalUrl(e.target.value)}
+                  placeholder="https://acme.example/poker"
+                  disabled={busy}
+                  inputMode="url"
+                />
+                <small>
+                  A Full HTTPS Address On Your Own Site. It Opens In A New Tab And Never Leaves A
+                  Player Signed Out.
+                </small>
+              </label>
+              <label className="club-advertise__field">
+                <span>Countries (Optional)</span>
+                <input
+                  type="text"
+                  maxLength={200}
+                  value={countriesText}
+                  onChange={(e) => setCountriesText(e.target.value)}
+                  placeholder="Leave Empty For Everywhere, Or US, CA, GB"
+                  disabled={busy}
+                  autoCapitalize="characters"
+                />
+                <small>
+                  {countriesOk
+                    ? `Shown ${countriesLabel(parseCountries(countriesText))}. A Player Whose Location Is Unknown Never Sees A Country-Limited Advert.`
+                    : 'Two-Letter Country Codes Only, Separated By Commas: US, CA, GB.'}
+                </small>
+              </label>
+            </>
           ) : (
             <label className="club-advertise__field">
               <span>Tapping It Opens</span>
@@ -862,8 +892,13 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
                       c.quotedCents != null ? (
                         <>
                           {' '}
-                          {'·'} {formatDollars(c.quotedCents)}
-                          {c.status === 'approved' ? ' Invoiced' : ' Quoted'}
+                          {'·'} {formatDollars(c.quotedCents)} {billingLabel(c)}
+                          {c.countries ? (
+                            <>
+                              {' '}
+                              {'·'} {countriesLabel(c.countries)}
+                            </>
+                          ) : null}
                         </>
                       ) : null
                     ) : (

@@ -395,6 +395,7 @@ exit 1
     );
     expect(candidate.status, candidate.stderr).toBe(0);
     expect(readFileSync(runLog, 'utf8')).toContain('--restart no');
+    expect(readFileSync(runLog, 'utf8')).toContain('--stop-timeout 45');
     expect(readFileSync(runLog, 'utf8')).toContain(
       `--mount type=bind,source=${join(sandbox, 'engine-alerts')},target=/var/lib/club-arena/engine-alerts`
     );
@@ -406,6 +407,7 @@ exit 1
     });
     expect(desired.status, desired.stderr).toBe(0);
     expect(readFileSync(runLog, 'utf8')).toContain('--restart always');
+    expect(readFileSync(runLog, 'utf8')).toContain('--stop-timeout 45');
     expect(readFileSync(runLog, 'utf8')).toContain(
       'ENGINE_ALERT_JOURNAL_DIR=/var/lib/club-arena/engine-alerts'
     );

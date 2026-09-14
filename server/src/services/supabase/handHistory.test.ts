@@ -10,7 +10,9 @@ interface Call {
 const calls: Call[] = [];
 const rpcCalls: { fn: string; args: Record<string, unknown> }[] = [];
 /** Ordered replies for the accepted-hand transaction. */
-let atomicRpcResults: Array<{ data: unknown; error: unknown }> = [];
+let atomicRpcResults: Array<
+  { data: unknown; error: unknown } | Promise<{ data: unknown; error: unknown }>
+> = [];
 
 vi.mock('./client.js', () => ({
   supabase: {
@@ -467,6 +469,54 @@ describe('logHandHistory - worker-owned completed-hand observation', () => {
 });
 
 describe('logHandHistory - accepted-hand transaction', () => {
+  it('reports a pending commit without pretending it returned, and omits diagnostics from the payload', async () => {
+    let resolve!: (value: { data: unknown; error: unknown }) => void;
+    atomicRpcResults = [
+      new Promise((yes) => {
+        resolve = yes;
+      }),
+    ];
+    const progress: string[] = [];
+    const base = atomicParams();
+    const pending = logHandHistory({
+      ...base,
+      atomicCommit: {
+        ...base.atomicCommit,
+        observeCommitProgress: (stage) => {
+          progress.push(stage);
+        },
+      },
+    });
+    expect(progress).toEqual(['rpc_request:1']);
+    expect(mockWakeHandProjection).not.toHaveBeenCalled();
+    expect(JSON.stringify(rpcCalls[0].args)).not.toContain('observeCommitProgress');
+    resolve({
+      data: { success: true, atomic_hand_commit: true, history_id: historyId },
+      error: null,
+    });
+    await expect(pending).resolves.toMatchObject({ settlementCommitted: true, handId: historyId });
+    expect(progress).toEqual(['rpc_request:1', 'rpc_response:1', 'receipt_accepted:1']);
+  });
+
+  it('a broken diagnostic observer cannot change the accepted receipt or retry the write', async () => {
+    atomicRpcResults = [
+      { data: { success: true, atomic_hand_commit: true, history_id: historyId }, error: null },
+    ];
+    const base = atomicParams();
+    await expect(
+      logHandHistory({
+        ...base,
+        atomicCommit: {
+          ...base.atomicCommit,
+          observeCommitProgress: () => {
+            throw new Error('diagnostic only');
+          },
+        },
+      })
+    ).resolves.toMatchObject({ settlementCommitted: true, handId: historyId });
+    expect(rpcCalls).toHaveLength(1);
+  });
+
   it('uses the one authoritative RPC and wakes projection only after its receipt is proved', async () => {
     atomicRpcResults = [
       {

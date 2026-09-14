@@ -583,6 +583,30 @@
   outline-offset: 2px;
 }
 
+/* Two doors on the diamonds plate: Buy Diamonds and the Diamond Arena. They
+   wrap at 375px rather than shrink; a door is a tap target, not a label. */
+.wallet-plate__doors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* The arena is closed: a sentence in the plate's own muted ink, no chrome, so
+   nobody reads a dead button as a broken one. */
+.wallet-plate__door-note {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 4px;
+  color: var(--vault-muted);
+  font-family: var(--vault-font-label);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 /* ── Panels (send / receive / earn / ledger) ────────────────────────── */
 
 .wallet-grid {

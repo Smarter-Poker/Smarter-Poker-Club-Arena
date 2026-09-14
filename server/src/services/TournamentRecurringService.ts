@@ -1,3 +1,4 @@
+import { validateMttBlindStructure } from '../domain/tournamentBlindContract.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * TOURNAMENT RECURRING SERVICE — 24/7 Automated Tournament Schedule
@@ -38,6 +39,10 @@ import { bankrollPolicyFor, canEnterTournament } from './HorseBankroll.js';
 import { bankrollEvent } from './HorseBankrollTelemetry.js';
 import { buildLadder } from '../tournament/blindLadder.js';
 import { mttBountyAmount } from '../tournament/mttBountyAllocation.js';
+import {
+  mysteryBountyCreationColumns,
+  type MysteryBountyCreationInput,
+} from '../domain/mysteryBountyCreation.js';
 import {
   MTT_BLIND_PRESETS,
   mttSpeedColumns,
@@ -100,7 +105,7 @@ function buyInColumns(
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-interface TournamentConfig {
+interface TournamentConfig extends MysteryBountyCreationInput {
   name: string;
   type: 'mtt' | 'bounty' | 'progressive_bounty' | 'mystery_bounty';
   gameVariant: string;
@@ -171,7 +176,7 @@ interface AtomicSeatFirstCreation {
   tableId: string;
 }
 
-interface XMTTConfig {
+interface XMTTConfig extends MysteryBountyCreationInput {
   name: string;
   type: 'mtt' | 'bounty' | 'progressive_bounty' | 'mystery_bounty';
   gameVariant: string;
@@ -3784,6 +3789,7 @@ export class TournamentRecurringService {
       // entrants) and this event needs 56 to cover its guarantee.
       const startTime = new Date(Date.now() + MTT_PUBLISH_LEAD_MS);
       const dbGameType = dbGameTypeFor(config.gameVariant, 'createXMTT');
+      validateMttBlindStructure(config.blindStructure, config.startingStack);
 
       const isBountyType =
         config.type === 'bounty' ||
@@ -3872,6 +3878,7 @@ export class TournamentRecurringService {
             is_bounty: isBountyType,
             is_pko: config.type === 'progressive_bounty',
             is_mystery_bounty: config.type === 'mystery_bounty',
+            ...(config.type === 'mystery_bounty' ? mysteryBountyCreationColumns(config) : {}),
             bounty_amount: bountyAmount,
             mystery_bounty_min: mysteryMin,
             mystery_bounty_max: mysteryMax,
@@ -4020,6 +4027,7 @@ export class TournamentRecurringService {
       // registration under-funded and paying overlay. See MTT_PUBLISH_LEAD_MS.
       const startTime = new Date(Date.now() + MTT_PUBLISH_LEAD_MS);
       const dbGameType = dbGameTypeFor(config.gameVariant, 'createMTT');
+      validateMttBlindStructure(config.blindStructure, config.startingStack);
 
       const isBountyType =
         config.type === 'bounty' ||
@@ -4108,6 +4116,7 @@ export class TournamentRecurringService {
             is_bounty: isBountyType,
             is_pko: config.type === 'progressive_bounty',
             is_mystery_bounty: config.type === 'mystery_bounty',
+            ...(config.type === 'mystery_bounty' ? mysteryBountyCreationColumns(config) : {}),
             bounty_amount: bountyAmount,
             mystery_bounty_min: mysteryMin,
             mystery_bounty_max: mysteryMax,

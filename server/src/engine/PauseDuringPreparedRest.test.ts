@@ -37,7 +37,7 @@ function loopAtRest(arm: (engine: any) => void) {
   engine.adoptMovedPresence = vi.fn();
   engine.restoreSitOutsFromSeats = vi.fn();
   engine.evictExpiredSitOuts = vi.fn(async () => {});
-  engine.announcePendingSeatMoves = vi.fn(async () => {});
+  engine.announcePendingSeatMoves = vi.fn(async () => true);
   engine.persistPresenceForRestart = vi.fn(async () => {});
   engine.hasOpenBountyReveal = () => false;
   engine.awaitNextHandRest = vi.fn(async () => arm(engine));

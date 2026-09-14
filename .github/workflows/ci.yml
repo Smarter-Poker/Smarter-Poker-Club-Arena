@@ -288,6 +288,10 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
 
+    permissions:
+      contents: read
+      pull-requests: read
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -297,11 +301,21 @@ jobs:
           fetch-depth: 0
           filter: blob:none
 
+      # A stale head is a failed check, never an explained diff skip.
+      - name: Admit only the current PR head before heavy work
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/admit-current-pr-ci.mjs
+
       - name: Setup Node 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
+
+      - name: PR head admission preserves required-check truth
+        run: node --test tests/operations/pr-ci-admission.test.mjs
 
       - name: Native fixture gate rejects missing and skipped proof
         run: node --test tests/operations/fixture-required-ci.test.mjs
@@ -1026,16 +1040,27 @@ jobs:
     # 2026-09-02 (publish-club-arena.yml `client-tests`); this is that, moved
     # one step earlier so the pull request feels it too.
     #
-    # fail-fast cancels the siblings the moment one shard fails, which is what
-    # a gate wants: the answer is already known.
+    # Admission refusal must not cancel a sibling that already started work.
+    # The required aggregate still fails unless every applicable shard passes.
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         shard: [1, 2, 3, 4]
+
+    permissions:
+      contents: read
+      pull-requests: read
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # A stale head is a failed check, never an explained diff skip.
+      - name: Admit only the current PR head before heavy work
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/admit-current-pr-ci.mjs
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -1126,9 +1151,20 @@ jobs:
     name: Accounting transactions (PostgreSQL 17)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      # A stale head is a failed check, never an explained diff skip.
+      - name: Admit only the current PR head before heavy work
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/admit-current-pr-ci.mjs
+
       - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
@@ -1308,6 +1344,10 @@ jobs:
       run:
         working-directory: server
 
+    permissions:
+      contents: read
+      pull-requests: read
+
     steps:
       - name: Require successful real PostgreSQL accounting tests
         if: needs.accounting_postgres.result != 'success'
@@ -1317,6 +1357,13 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+
+      # A stale head is a failed check, never an explained diff skip.
+      - name: Admit only the current PR head before heavy work
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/admit-current-pr-ci.mjs
 
       - name: Setup Node 22
         uses: actions/setup-node@v4
@@ -1500,6 +1547,10 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
 
+    permissions:
+      contents: read
+      pull-requests: read
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -1508,6 +1559,13 @@ jobs:
           # can falsely appear behind even when main is its direct parent.
           fetch-depth: 0
           filter: blob:none
+
+      # A stale head is a failed check, never an explained diff skip.
+      - name: Admit only the current PR head before heavy work
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/admit-current-pr-ci.mjs
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -1969,6 +2027,10 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 20
 
+    permissions:
+      contents: read
+      pull-requests: read
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -1977,6 +2039,13 @@ jobs:
           # can falsely appear behind even when main is its direct parent.
           fetch-depth: 0
           filter: blob:none
+
+      # A stale head is a failed check, never an explained diff skip.
+      - name: Admit only the current PR head before heavy work
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/admit-current-pr-ci.mjs
 
       - name: Setup Node 20
         uses: actions/setup-node@v4

@@ -26,6 +26,41 @@ afterEach(async () => {
 });
 const ready = (c: Child) => c.emit('message', { type: 'READY' });
 describe('journal worker lifecycle owner', () => {
+  it('counts source admissions separately from journal completions and retains explicit gaps', () => {
+    service.start();
+    ready(children[0]);
+    for (const acquisition of ['admitted', 'gap', 'unknown']) {
+      children[0].emit('message', { type: 'CYCLE_STARTED' });
+      children[0].emit('message', {
+        type: 'CYCLE_COMPLETED',
+        work: 'skipped',
+        retention: 'skipped',
+        acquisition,
+        actorId: 'must-not-leave-worker',
+      });
+    }
+    expect(service.status()).toMatchObject({
+      completed: 0,
+      capturesAdmitted: 1,
+      captureGaps: 1,
+      uncertain: 1,
+      lastCapture: 'unknown',
+    });
+    expect(JSON.stringify(service.status())).not.toContain('must-not-leave-worker');
+  });
+  it('rejects an acquisition result mislabeled as journal completion', () => {
+    service.start();
+    ready(children[0]);
+    children[0].emit('message', { type: 'CYCLE_STARTED' });
+    children[0].emit('message', {
+      type: 'CYCLE_COMPLETED',
+      work: 'completed',
+      retention: 'skipped',
+      acquisition: 'admitted',
+    });
+    expect(service.status().completed).toBe(0);
+    expect(service.status().phase).not.toBe('ready');
+  });
   it('reports only validated queue aggregates and expires stale samples while the worker stays responsive', async () => {
     service.start();
     ready(children[0]);
@@ -48,8 +83,26 @@ describe('journal worker lifecycle owner', () => {
         payload: 'private',
       },
     });
+    children[0].emit('message', {
+      type: 'CAPTURE_HEALTH',
+      value: {
+        version: 1,
+        status: 'snapshot',
+        sampledAtMs: Date.now(),
+        unfinished: 1,
+        queued: 0,
+        leased: 0,
+        gaps: 1,
+        ready: 0,
+        expiredLeases: 0,
+        oldestWorkAgeMs: 1000,
+        maxAttempts: 1,
+        actorId: 'private-capture-identity',
+      },
+    });
     children[0].emit('message', { type: 'CYCLE_COMPLETED', work: 'idle', retention: 'pruned' });
     expect(service.status().queueHealth.status).toBe('snapshot');
+    expect(service.status().captureQueueHealth).toMatchObject({ status: 'snapshot', gaps: 1 });
     expect(JSON.stringify(service.status())).not.toContain('private');
     for (let n = 0; n < 16; n++) {
       children[0].emit('message', { type: 'HEARTBEAT' });
@@ -57,6 +110,7 @@ describe('journal worker lifecycle owner', () => {
     }
     expect(service.status().phase).toBe('ready');
     expect(service.status().queueHealth).toEqual({ status: 'unknown' });
+    expect(service.status().captureQueueHealth).toEqual({ status: 'unknown' });
   });
   it('starts one generation and exposes only validated aggregate status', async () => {
     expect(service.start()).toBe(true);

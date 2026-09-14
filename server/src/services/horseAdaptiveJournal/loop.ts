@@ -1,14 +1,21 @@
 import type { AdaptiveJournalWorkResult } from '../HorseAdaptiveJournalWork.js';
 import type { pruneAdaptiveJournal } from '../HorseAdaptiveJournalRetention.js';
 import type { JournalQueueHealth } from './queueHealth.js';
+import type {
+  ObservationCaptureResult,
+  pruneObservationCaptures,
+} from '../HorseObservationCapture.js';
 
 export type JournalCycle = Readonly<{
-  work: AdaptiveJournalWorkResult['status'];
+  work: AdaptiveJournalWorkResult['status'] | 'skipped';
   retention: 'skipped' | Awaited<ReturnType<typeof pruneAdaptiveJournal>>['status'];
+  acquisition?: ObservationCaptureResult['status'];
 }>;
 type Dependencies = {
   processWork: () => Promise<AdaptiveJournalWorkResult>;
+  processCapture?: () => Promise<ObservationCaptureResult>;
   prune: typeof pruneAdaptiveJournal;
+  pruneCaptures?: typeof pruneObservationCaptures;
   now: () => number;
   wait: (ms: number, signal: AbortSignal) => Promise<void>;
   started: () => void;
@@ -23,8 +30,39 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
   let nextPruneAt = 0;
   let nextHealthAt = 0;
   let failures = 0;
+  let captureFailures = 0;
+  let captureNext = false;
+  let pruneCapturesNext = false;
   while (!signal.aborted) {
     d.started();
+    if (captureNext && d.processCapture) {
+      // Acquisition has up to three bounded RPCs. Keep maintenance/health in
+      // ordinary journal cycles so this cycle remains below the watchdog.
+      captureNext = false;
+      let capture: ObservationCaptureResult;
+      try {
+        capture = await d.processCapture();
+      } catch {
+        capture = { status: 'unavailable', reason: 'capture_unavailable' };
+      }
+      if (signal.aborted) return;
+      d.completed(
+        Object.freeze({ work: 'skipped', retention: 'skipped', acquisition: capture.status })
+      );
+      const healthy = capture.status === 'idle' || capture.status === 'admitted';
+      captureFailures = healthy ? 0 : Math.min(captureFailures + 1, 6);
+      const delay = healthy
+        ? capture.status === 'idle'
+          ? 5000
+          : 1000
+        : Math.min(60000, 1000 * 2 ** captureFailures);
+      try {
+        await d.wait(delay, signal);
+      } catch (error) {
+        if (!signal.aborted) throw error;
+      }
+      continue;
+    }
     let result: AdaptiveJournalWorkResult;
     try {
       result = await d.processWork();
@@ -35,11 +73,15 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
     let retention: JournalCycle['retention'] = 'skipped';
     if (d.now() >= nextPruneAt) {
       try {
-        const r = await d.prune();
+        const pruneCaptures = pruneCapturesNext && d.pruneCaptures;
+        if (d.pruneCaptures) pruneCapturesNext = !pruneCapturesNext;
+        const r = pruneCaptures ? await pruneCaptures() : await d.prune();
         retention = r.status;
         const atLimit =
           r.status === 'pruned' &&
-          (r.completedWork === 100 || r.batches === 100 || r.observations === 1000);
+          ('requests' in r
+            ? r.requests === 100
+            : r.completedWork === 100 || r.batches === 100 || r.observations === 1000);
         nextPruneAt = d.now() + (atLimit ? 5000 : 60000);
       } catch {
         retention = 'unknown';
@@ -59,11 +101,14 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
       d.queueHealth?.(health);
     }
     d.completed(Object.freeze({ work: result.status, retention }));
+    captureNext = result.status === 'idle' && Boolean(d.processCapture);
     const healthy = result.status === 'completed' || result.status === 'idle';
     failures = healthy ? 0 : Math.min(failures + 1, 6);
     const delay = healthy
       ? result.status === 'idle'
-        ? 5000
+        ? captureNext
+          ? 1000
+          : 5000
         : 1000
       : Math.min(60000, 1000 * 2 ** failures);
     try {

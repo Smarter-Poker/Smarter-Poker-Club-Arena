@@ -814,6 +814,13 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   // TABLES. What the services compile and where it goes.
   // ─────────────────────────────────────────────────────────────────────────
   table(
+    'horse_observation_capture_work',
+    'minute',
+    'HorseObservationCapture via fn_claim_horse_observation_capture; HorseLearningQueueHealth via fn_horse_learning_work_health',
+    'private durable actor/window acquisition requests; fenced queue acknowledgment and retained gaps; not source coverage or model activation',
+    'Phase14'
+  ),
+  table(
     'horse_mind_stats',
     'boot',
     'HorseMindPersistence (load at boot, save on a timer)',

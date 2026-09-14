@@ -8,6 +8,7 @@ import { exerciseJournalWork } from './horse-adaptive-work-native.mjs';
 import { exerciseRetention, oldEmptyBatch } from './horse-adaptive-retention-native.mjs';
 import { exerciseIsolatedWorker } from './horse-adaptive-worker-native.mjs';
 import { exerciseQueueHealth } from './horse-adaptive-queue-health-native.mjs';
+import { exerciseObservationCapture } from './horse-observation-capture-native.mjs';
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const { Client } = createRequire(root + '/server/package.json')('pg');
 const pg = process.env.HORSE_PROOF_PG_BIN,
@@ -94,6 +95,12 @@ try {
     (await c.query('SELECT fn_queue_horse_adaptive_batch($1) value', [expiredAdmission.payload]))
       .rows[0].value.reason,
     'source_expired'
+  );
+  await c.query(
+    readFileSync(
+      root + '/supabase/migrations/20260914012249_durable_horse_observation_acquisition.sql',
+      'utf8'
+    )
   );
   results.push({
     case: 'pre-change source-expired admission reproduced; forward migration refuses it without affecting accepted durable work',
@@ -255,8 +262,23 @@ try {
               } else if (name === 'fn_horse_adaptive_journal_work_health') {
                 query = 'SELECT fn_horse_adaptive_journal_work_health() value';
                 params = [];
+              } else if (name === 'fn_horse_learning_work_health') {
+                query = 'SELECT fn_horse_learning_work_health() value';
+                params = [];
               } else if (name === 'fn_prune_horse_adaptive_journal') {
                 query = 'SELECT fn_prune_horse_adaptive_journal() value';
+                params = [];
+              } else if (name === 'fn_admit_horse_observation_capture') {
+                query = 'SELECT fn_admit_horse_observation_capture($1,$2,$3) value';
+                params = [p.p_actor, p.p_from_ms, p.p_through_ms];
+              } else if (name === 'fn_claim_horse_observation_capture') {
+                query = 'SELECT fn_claim_horse_observation_capture($1) value';
+                params = [p.p_lease_token];
+              } else if (name === 'fn_finish_horse_observation_capture') {
+                query = 'SELECT fn_finish_horse_observation_capture($1,$2,$3,$4) value';
+                params = [p.p_request_key, p.p_lease_token, p.p_payload, p.p_reason];
+              } else if (name === 'fn_prune_horse_observation_captures') {
+                query = 'SELECT fn_prune_horse_observation_captures() value';
                 params = [];
               } else if (name === 'fn_horse_adaptive_journal_snapshot') {
                 query = 'SELECT public.fn_horse_adaptive_journal_snapshot($1,$2,$3,$4,$5,$6) value';
@@ -270,6 +292,11 @@ try {
                 ];
               } else throw Error('Unexpected RPC');
               const result = await c.query(query, params);
+              const lostCapture = globalThis.horseJournalNative.loseCaptureReply;
+              if (lostCapture && name === `fn_${lostCapture}_horse_observation_capture`) {
+                globalThis.horseJournalNative.loseCaptureReply = null;
+                throw Error('lost committed capture reply');
+              }
               if (
                 globalThis.horseJournalNative.losePruneReply &&
                 name === 'fn_prune_horse_adaptive_journal'
@@ -308,6 +335,10 @@ try {
         /import\s*\{([^}]+)\}\s*from\s*'\.\/HorseAdaptiveObservationJournal\.js';/,
         'const {$1}=globalThis.horseJournalNative.journal;'
       )
+      .replace(
+        /import\s*\{([^}]+)\}\s*from\s*'\.\/HorseCommittedObservationSnapshot\.js';/,
+        'const {$1}=globalThis.horseJournalNative.source;'
+      )
       .replace(/from '([^']+)'/g, (whole, path) =>
         path.startsWith('.')
           ? "from '" +
@@ -322,6 +353,7 @@ try {
   );
   const journal = await bridge('HorseAdaptiveObservationJournal');
   globalThis.horseJournalNative.journal = journal;
+  globalThis.horseJournalNative.source = { readCommittedObservationSnapshot: readSource };
   const {
     prepareAdaptiveJournalBatch: prepare,
     persistAdaptiveJournalSnapshot: persist,
@@ -507,6 +539,9 @@ try {
   );
   // The next process receives only a durable batch key. Even the synthetic
   // source history has gone; re-querying it cannot reproduce the submitted batch.
+  const originalSourceRows = (
+    await c.query('SELECT * FROM hand_history WHERE id=ANY($1::uuid[])', [[id(1), id(2), id(3)]])
+  ).rows;
   await c.query('DELETE FROM hand_history WHERE id=ANY($1::uuid[])', [[id(1), id(2), id(3)]]);
   const recoveredAfterRestart = JSON.parse(
     execFileSync(
@@ -721,6 +756,34 @@ try {
     recoveryMs,
     limitation: 'One isolated sample; not a production latency certification.',
   });
+  // Restore these three original synthetic controller hands after proving
+  // source-loss recovery above; acquisition must now exercise real source I/O.
+  for (const row of originalSourceRows)
+    await c.query(
+      'INSERT INTO hand_history(table_id,hand_number,id,created_at,players,actions) OVERRIDING SYSTEM VALUE VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb)',
+      [
+        row.table_id,
+        row.hand_number,
+        row.id,
+        row.created_at,
+        JSON.stringify(row.players),
+        JSON.stringify(row.actions),
+      ]
+    );
+  results.push(
+    ...(await exerciseObservationCapture({
+      c,
+      otherConnection,
+      actor,
+      source,
+      readSource,
+      journal,
+      capture: await bridge('HorseObservationCapture'),
+      loseReply: (kind) => {
+        globalThis.horseJournalNative.loseCaptureReply = kind;
+      },
+    }))
+  );
   results.push(
     await exerciseIsolatedWorker({
       root,
@@ -728,6 +791,8 @@ try {
       options,
       c,
       work: await bridge('HorseAdaptiveJournalWork'),
+      capture: await bridge('HorseObservationCapture'),
+      actor,
       snapshot: {
         ...source,
         source: { ...source.source, sourceDigest: hash('real isolated worker') },

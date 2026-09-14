@@ -39,6 +39,11 @@ export type JournalWorkerStatus = Readonly<{
   capturesRecovered: number;
   captureGaps: number;
   lastCapture: string | null;
+  modelsRecorded: number;
+  modelsRefused: number;
+  modelUncertain: number;
+  lastModel: string | null;
+  lastModelAt: number | null;
   lastDiscovery: DiscoveryReceipt;
   discoveryReceivedAt: number | null;
   quarantined: number;
@@ -98,6 +103,11 @@ export class HorseAdaptiveJournalWorker {
     capturesRecovered: 0,
     captureGaps: 0,
     lastCapture: null,
+    modelsRecorded: 0,
+    modelsRefused: 0,
+    modelUncertain: 0,
+    lastModel: null,
+    lastModelAt: null,
     lastDiscovery: unknownDiscovery(),
     discoveryReceivedAt: null,
     quarantined: 0,
@@ -261,14 +271,29 @@ export class HorseAdaptiveJournalWorker {
       workStates.has(r.work) &&
       typeof r.retention === 'string' &&
       retentionStates.has(r.retention) &&
-      (r.discovery !== undefined
-        ? r.work === 'skipped' && r.retention === 'skipped' && r.acquisition === undefined
-        : r.acquisition === undefined
-          ? r.work !== 'skipped'
-          : r.work === 'skipped' &&
-            r.retention === 'skipped' &&
-            typeof r.acquisition === 'string' &&
-            captureStates.has(r.acquisition))
+      (r.model !== undefined
+        ? r.work === 'skipped' &&
+          r.retention === 'skipped' &&
+          r.acquisition === undefined &&
+          r.discovery === undefined &&
+          typeof r.model === 'string' &&
+          [
+            'recorded',
+            'refused',
+            'idle',
+            'unknown',
+            'lease_lost',
+            'capacity_full',
+            'disabled',
+          ].includes(String(r.model))
+        : r.discovery !== undefined
+          ? r.work === 'skipped' && r.retention === 'skipped' && r.acquisition === undefined
+          : r.acquisition === undefined
+            ? r.work !== 'skipped'
+            : r.work === 'skipped' &&
+              r.retention === 'skipped' &&
+              typeof r.acquisition === 'string' &&
+              captureStates.has(r.acquisition))
     ) {
       owner.activeAt = null;
       this.update({
@@ -281,6 +306,14 @@ export class HorseAdaptiveJournalWorker {
         capturesRecovered: this.summary.capturesRecovered + (r.acquisition === 'captured' ? 1 : 0),
         captureGaps: this.summary.captureGaps + (r.acquisition === 'gap' ? 1 : 0),
         lastCapture: typeof r.acquisition === 'string' ? r.acquisition : this.summary.lastCapture,
+        modelsRecorded: this.summary.modelsRecorded + (r.model === 'recorded' ? 1 : 0),
+        modelsRefused:
+          this.summary.modelsRefused +
+          (r.model === 'refused' || r.model === 'capacity_full' ? 1 : 0),
+        modelUncertain:
+          this.summary.modelUncertain + (r.model === 'unknown' || r.model === 'lease_lost' ? 1 : 0),
+        lastModel: typeof r.model === 'string' ? r.model : this.summary.lastModel,
+        lastModelAt: typeof r.model === 'string' ? Date.now() : this.summary.lastModelAt,
         lastDiscovery:
           r.discovery !== undefined
             ? parseDiscoveryReceipt(r.discovery)

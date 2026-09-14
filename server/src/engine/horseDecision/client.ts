@@ -24,6 +24,12 @@ import type {
   HorseDecisionWorkerStatusResult,
 } from './protocol.js';
 import { horseDecisionSolverStoresAreValid } from './protocol.js';
+import {
+  horseDecisionReceiptIsValid,
+  horseGovernorSnapshotIsValid,
+  horseComputeMetadataIsValid,
+  horseSamplingStateIsValid,
+} from './responseValidation.js';
 import type { HorseMindDecisionEffect } from '../HorseMind.js';
 
 export interface WorkerLike {
@@ -665,6 +671,15 @@ export class LiveHorseDecisionWorkerClient {
   }
 
   private onMessage(message: HorseDecisionWorkerResponse): void {
+    if (
+      !message ||
+      typeof message !== 'object' ||
+      Array.isArray(message) ||
+      typeof message.type !== 'string'
+    ) {
+      this.fail(new Error('horse decision worker returned an invalid response envelope'));
+      return;
+    }
     if (message.type === 'READY') {
       if (this.phase !== 'starting' && this.phase !== 'stopping') {
         this.fail(new Error(`unexpected READY while worker is ${this.phase}`));
@@ -672,6 +687,10 @@ export class LiveHorseDecisionWorkerClient {
       }
       if (!horseDecisionSolverStoresAreValid(message.solverStores)) {
         this.fail(new Error('live horse decision worker returned invalid solver-store identity'));
+        return;
+      }
+      if (!horseGovernorSnapshotIsValid(message.governor)) {
+        this.fail(new Error('live horse decision worker returned invalid governor'));
         return;
       }
       this.readyAt = Date.now();
@@ -790,10 +809,63 @@ export class LiveHorseDecisionWorkerClient {
       }
     }
 
+    // Validate while the active promise is still owned by the FIFO. Removing
+    // STATUS before validation stranded that promise when fail() drained only
+    // its successors. No malformed result may count as completed work.
+    if (message.type === 'STATUS_RESULT') {
+      if (!horseDecisionSolverStoresAreValid(message.solverStores)) {
+        this.fail(new Error('live horse decision worker status lost solver-store identity'));
+        return;
+      }
+      if (!horseGovernorSnapshotIsValid(message.governor)) {
+        this.fail(new Error('live horse decision worker status returned invalid governor'));
+        return;
+      }
+    }
+    if (
+      message.type === 'FAST_RESULT' ||
+      message.type === 'DEEP_RESULT' ||
+      message.type === 'DISCARD_RESULT'
+    ) {
+      if (!horseComputeMetadataIsValid(message)) {
+        this.fail(new Error('horse decision worker returned invalid compute metadata'));
+        return;
+      }
+    }
+    if (
+      message.type === 'FAST_RESULT' &&
+      (!horseSamplingStateIsValid(message.rngBefore) ||
+        !horseSamplingStateIsValid(message.rngAfter))
+    ) {
+      this.fail(new Error('horse decision worker returned invalid sampling state'));
+      return;
+    }
+    if (
+      message.type === 'DISCARD_RESULT' &&
+      (!Number.isInteger(message.cardIndex) || message.cardIndex < 0 || message.cardIndex > 2)
+    ) {
+      this.fail(new Error('horse decision worker returned invalid discard index'));
+      return;
+    }
+
     if (
       (message.type === 'FAST_RESULT' && active.request.type === 'DECIDE_FAST') ||
       (message.type === 'DEEP_RESULT' && active.request.type === 'DECIDE_DEEP')
     ) {
+      if (
+        !message.decision ||
+        typeof message.decision !== 'object' ||
+        Array.isArray(message.decision) ||
+        (message.decision.policyFallback !== undefined &&
+          message.decision.policyFallback !== 'brain_exception')
+      ) {
+        this.fail(new Error('horse decision worker returned invalid fallback provenance'));
+        return;
+      }
+      if (!horseDecisionReceiptIsValid(message.decision, active.request.gameState.gameVariant)) {
+        this.fail(new Error('horse decision worker returned invalid policy receipt'));
+        return;
+      }
       const witness = createHorseExecutionWitness(active.request, message.decision, {
         requestId: message.requestId,
         lane: message.type === 'FAST_RESULT' ? 'fast' : 'deep',
@@ -817,10 +889,6 @@ export class LiveHorseDecisionWorkerClient {
       this.lastComputeMs = message.computeMs;
       if (this.governor) this.governor = { ...this.governor, scale: message.governorScale };
     } else if (message.type === 'STATUS_RESULT') {
-      if (!horseDecisionSolverStoresAreValid(message.solverStores)) {
-        this.fail(new Error('live horse decision worker status lost solver-store identity'));
-        return;
-      }
       this.solverStores = structuredClone(message.solverStores);
       this.solverPolicyArtifact = structuredClone(message.solverPolicyArtifact);
       this.governor = { ...message.governor };

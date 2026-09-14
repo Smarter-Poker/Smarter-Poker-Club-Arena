@@ -802,8 +802,8 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   table(
     'horse_observation_capture_receipts',
     'minute',
-    'HorseObservationCapture via fn_finish_horse_observation_capture; fn_prune_horse_observation_captures',
-    'private immutable accepted-slice acknowledgments; exact retry after a newer lease, atomic journal admission and cursor advance; unfinished gap evidence is retained',
+    'HorseObservationCapture via fn_finish_horse_observation_capture_witness and legacy fn_finish_horse_observation_capture; fn_prune_horse_observation_captures',
+    'private immutable accepted-slice acknowledgments; negotiated exact source-read witnesses commit with journal admission and cursor advance; legacy missing witnesses stay missing and unfinished gap evidence is retained',
     'Phase14'
   ),
   table(

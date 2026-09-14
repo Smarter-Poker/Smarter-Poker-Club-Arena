@@ -5,6 +5,7 @@ import {
   type CommittedObservationRequest,
 } from './HorseCommittedObservationSnapshot.js';
 import { prepareAdaptiveJournalBatch } from './HorseAdaptiveObservationJournal.js';
+import { prepareObservationSourceWitness } from './HorseObservationSourceWitness.js';
 
 const uuid = (v: unknown): v is string =>
   typeof v === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(v);
@@ -118,7 +119,12 @@ export async function processObservationCapture(): Promise<ObservationCaptureRes
     if (data.status === 'idle') return Object.freeze({ status: 'idle' });
     if (data.status === 'gap' && sha(data.requestKey) && gapReasons.has(data.reason))
       return Object.freeze({ status: 'gap', requestKey: data.requestKey });
-    if (data.status !== 'claimed' || data.leaseToken !== token || !sha(data.requestKey))
+    if (
+      data.status !== 'claimed' ||
+      data.leaseToken !== token ||
+      !sha(data.requestKey) ||
+      (data.sourceWitnessVersion !== undefined && data.sourceWitnessVersion !== 1)
+    )
       return unavailable('invalid_claim');
     claim = data;
   } catch {
@@ -142,6 +148,9 @@ export async function processObservationCapture(): Promise<ObservationCaptureRes
   if (!requestValid(slice) || slice.fromMs < request.fromMs || slice.throughMs > request.throughMs)
     return unavailable('invalid_claim');
   const requestKey = claim.requestKey as string;
+  // Older claims have no witness capability. They retain acquisition semantics,
+  // but cannot retroactively establish source provenance or complete coverage.
+  const witnessed = claim.sourceWitnessVersion === 1;
   const result = (
     status:
       | 'admitted'
@@ -155,6 +164,7 @@ export async function processObservationCapture(): Promise<ObservationCaptureRes
   ) => Object.freeze({ status, requestKey });
   let payload: string | null = null,
     reason = 'source_unavailable';
+  let witness: ReturnType<typeof prepareObservationSourceWitness> = null;
   let expected: Readonly<{ batchKey: string; batchDigest: string; observations: number }> | null =
     null;
   try {
@@ -162,12 +172,16 @@ export async function processObservationCapture(): Promise<ObservationCaptureRes
     if (source.status === 'snapshot') {
       const batch = prepareAdaptiveJournalBatch(source);
       if (batch.status === 'prepared') {
-        payload = batch.payload;
-        expected = {
-          batchKey: batch.batchKey,
-          batchDigest: batch.batchDigest,
-          observations: batch.observations,
-        };
+        witness = witnessed ? prepareObservationSourceWitness(source) : null;
+        if (witnessed && !witness) reason = 'source_unavailable';
+        else {
+          payload = batch.payload;
+          expected = {
+            batchKey: batch.batchKey,
+            batchDigest: batch.batchDigest,
+            observations: batch.observations,
+          };
+        }
       } else
         reason =
           batch.reason === 'batch_budget_exceeded' ? 'source_budget_exceeded' : 'invalid_source';
@@ -186,17 +200,24 @@ export async function processObservationCapture(): Promise<ObservationCaptureRes
     // A local/transport exception is not evidence that source data is corrupt.
   }
   try {
-    const { data, error } = await rpc('fn_finish_horse_observation_capture', {
-      p_request_key: requestKey,
-      p_lease_token: token,
-      p_payload: payload,
-      p_reason: payload === null ? reason : null,
-    });
+    const { data, error } = await rpc(
+      witnessed
+        ? 'fn_finish_horse_observation_capture_witness'
+        : 'fn_finish_horse_observation_capture',
+      {
+        p_request_key: requestKey,
+        p_lease_token: token,
+        p_payload: payload,
+        p_reason: payload === null ? reason : null,
+        ...(witnessed ? { p_source_witness: payload === null ? null : witness!.payload } : {}),
+      }
+    );
     if (error || data?.version !== 1 || data.requestKey !== requestKey) return result('unknown');
     if (data.status === 'lease_lost') return result('lease_lost');
     if (
       ['admitted', 'continued', 'captured'].includes(data.status) &&
       expected &&
+      (!witnessed || (witness && data.sourceWitnessDigest === witness.digest)) &&
       data.batchKey === expected.batchKey &&
       data.batchDigest === expected.batchDigest &&
       data.observations === expected.observations

@@ -17,6 +17,7 @@ export async function exerciseIsolatedWorker({
   capture,
   actor,
   sliced = false,
+  witnessed = false,
 }) {
   const connection = new Client(options);
   await connection.connect();
@@ -67,6 +68,15 @@ export async function exerciseIsolatedWorker({
       } else if (name === 'fn_finish_horse_observation_capture') {
         sql = 'SELECT fn_finish_horse_observation_capture($1,$2,$3,$4) value';
         params = [args.p_request_key, args.p_lease_token, args.p_payload, args.p_reason];
+      } else if (name === 'fn_finish_horse_observation_capture_witness') {
+        sql = 'SELECT fn_finish_horse_observation_capture_witness($1,$2,$3,$4,$5) value';
+        params = [
+          args.p_request_key,
+          args.p_lease_token,
+          args.p_payload,
+          args.p_reason,
+          args.p_source_witness,
+        ];
       } else if (name === 'fn_prune_horse_observation_captures') {
         sql = 'SELECT fn_prune_horse_observation_captures() value';
         params = [];
@@ -195,6 +205,27 @@ export async function exerciseIsolatedWorker({
     assert.notEqual(acquired.lease_token, lostToken);
     assert.equal(Number(sliced ? acquired.captured_observations : acquired.observations), 12);
     if (sliced) assert.equal(owner.status().captureSlicesContinued, 1);
+    if (witnessed) {
+      const receipts = (
+        await c.query(
+          'SELECT source_witness,source_witness_digest,acknowledgment FROM horse_observation_capture_receipts WHERE request_key=$1',
+          [acquisition.requestKey]
+        )
+      ).rows;
+      assert.equal(receipts.length, 2);
+      for (const r of receipts) {
+        assert.ok(r.source_witness && r.source_witness_digest);
+        assert.equal(r.acknowledgment.sourceWitnessDigest, r.source_witness_digest);
+        const w = JSON.parse(r.source_witness);
+        assert.equal(w.length, 11);
+        assert.equal(w[0], 1);
+        assert.equal(w[9], 'retained_committed_roster_rows');
+      }
+      assert.equal(
+        calls.filter((n) => n === 'fn_finish_horse_observation_capture_witness').length,
+        2
+      );
+    }
     assert.ok(calls.includes('fn_horse_committed_observation_snapshot'));
     // Kill the actual isolated runtime, then let the bounded owner recover it.
     if (!sliced) {
@@ -216,6 +247,7 @@ export async function exerciseIsolatedWorker({
       capturesRecovered: owner.status().capturesRecovered,
       captureSlicesContinued: owner.status().captureSlicesContinued,
       sliced,
+      sourceWitnessesRecorded: witnessed,
       restartedBetweenSlices: sliced,
       durableRequestResumedWithoutSourcePayload: true,
       restarts: owner.status().restarts,

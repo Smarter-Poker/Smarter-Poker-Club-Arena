@@ -10,6 +10,7 @@ import { exerciseIsolatedWorker } from './horse-adaptive-worker-native.mjs';
 import { exerciseQueueHealth } from './horse-adaptive-queue-health-native.mjs';
 import { exerciseObservationCapture } from './horse-observation-capture-native.mjs';
 import { exerciseCaptureSlices } from './horse-capture-slices-native.mjs';
+import { exerciseSourceWitnesses } from './horse-source-witness-native.mjs';
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const { Client } = createRequire(root + '/server/package.json')('pg');
 const pg = process.env.HORSE_PROOF_PG_BIN,
@@ -278,6 +279,15 @@ try {
               } else if (name === 'fn_finish_horse_observation_capture') {
                 query = 'SELECT fn_finish_horse_observation_capture($1,$2,$3,$4) value';
                 params = [p.p_request_key, p.p_lease_token, p.p_payload, p.p_reason];
+              } else if (name === 'fn_finish_horse_observation_capture_witness') {
+                query = 'SELECT fn_finish_horse_observation_capture_witness($1,$2,$3,$4,$5) value';
+                params = [
+                  p.p_request_key,
+                  p.p_lease_token,
+                  p.p_payload,
+                  p.p_reason,
+                  p.p_source_witness,
+                ];
               } else if (name === 'fn_prune_horse_observation_captures') {
                 query = 'SELECT fn_prune_horse_observation_captures() value';
                 params = [];
@@ -294,7 +304,12 @@ try {
               } else throw Error('Unexpected RPC');
               const result = await c.query(query, params);
               const lostCapture = globalThis.horseJournalNative.loseCaptureReply;
-              if (lostCapture && name === `fn_${lostCapture}_horse_observation_capture`) {
+              if (
+                lostCapture &&
+                (name === `fn_${lostCapture}_horse_observation_capture` ||
+                  (lostCapture === 'finish' &&
+                    name === 'fn_finish_horse_observation_capture_witness'))
+              ) {
                 globalThis.horseJournalNative.loseCaptureReply = null;
                 throw Error('lost committed capture reply');
               }
@@ -845,6 +860,39 @@ try {
         source: { ...source.source, sourceDigest: hash('real sliced worker') },
       },
       sliced: true,
+    })
+  );
+  results.push(
+    ...(await exerciseSourceWitnesses({
+      root,
+      c,
+      otherConnection,
+      actor,
+      source,
+      readSource,
+      journal,
+      capture: await bridge('HorseObservationCapture'),
+      witness: await bridge('HorseObservationSourceWitness'),
+      loseReply: () => {
+        globalThis.horseJournalNative.loseCaptureReply = 'finish';
+      },
+    }))
+  );
+  results.push(
+    await exerciseIsolatedWorker({
+      root,
+      Client,
+      options,
+      c,
+      actor,
+      work: await bridge('HorseAdaptiveJournalWork'),
+      capture: await bridge('HorseObservationCapture'),
+      snapshot: {
+        ...source,
+        source: { ...source.source, sourceDigest: hash('real witnessed worker') },
+      },
+      sliced: true,
+      witnessed: true,
     })
   );
   proof = { results, sourceCalls: calls, productionPostgrestVerified: false };

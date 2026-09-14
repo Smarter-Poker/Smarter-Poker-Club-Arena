@@ -3,6 +3,44 @@
  *  ACHIEVEMENTS PAGE — Player Achievements & Badges with Real-Time Unlocks
  * ═══════════════════════════════════════════════════════════════════════════════
  * Display unlocked achievements, progress, and badges
+ *
+ * ── THE CONSOLE (#ClubArenaConsole) ──────────────────────────────────────────
+ *
+ * Everything between the Rewards Circuit header and the badge grid used to be
+ * drawn inline: a rounded navy streak panel with a 16px radius and a cyan
+ * hairline, THREE MILESTONE BOXES side by side, a bordered summary card
+ * repeating a number the header already prints, rounded "next up" cards with
+ * their own gradient and blur, a row of gradient pill chips and a rounded
+ * select. Roughly two hundred lines of `style={{ borderRadius, background:
+ * linear-gradient, boxShadow }}` making things look like controls.
+ *
+ * It is printed on the spade master now. Each section is one console: the head
+ * carries the section name, the body prints on the black glass, and every list
+ * is ROWS - label in the master's lit blue on the left, value in silver on the
+ * right, an engraved rule cut between them.
+ *
+ * THE THREE MILESTONE BOXES ARE GONE (Dan 2026-09-09: "I DON'T LIKE THE 4
+ * BOXES, AND THE WAY IT STICKS OUT ON THE SIDES"). Day 7, Day 30 and Day 100
+ * are three rows, and a reward already earned prints in the console's green
+ * rather than in a green-tinted tile.
+ *
+ * WHAT IS DELIBERATELY NOT ON THE CONSOLE. `RewardsSurfaceHeader` is this route
+ * family's approved visual anchor and is pinned by
+ * tests/unit/cinematicRouteFamilies.test.ts, so it stays exactly as it is. And
+ * the badge grid renders BELOW the archive console, on the page's own black
+ * ground, because `AchievementBadge` is a bordered, glowing card of its own -
+ * putting that grid inside a console body would be a frame sitting on a frame,
+ * which Dan's law forbids outright. The console holds the controls and the
+ * states; the badges are the badge component's own surface.
+ *
+ * THE ONE THING STILL DRAWN is the progress meter, because the master paints no
+ * meter and a "next up" list with no sense of how close you are is a worse
+ * surface. It is cut as a groove in the glass - a black line with a light lip
+ * and a solid lit-blue fill - not a rounded bar with a gradient.
+ *
+ * Every handler, ref, timer and subscription below is untouched: the realtime
+ * unlock channel, the 5s auto-hide, the HAND_COMPLETED debounce, the SWR cache,
+ * the haptic and the achievement fanfare all behave exactly as before.
  */
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
@@ -24,12 +62,26 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
+import { SpadeConsole, type ConsoleInk } from '../components/console/SpadeConsole';
 import { reportError } from '../utils/errorReporter';
 import { ErrorState } from '../components/common/EmptyState';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 
 type SortMode = 'default' | 'rarity' | 'progress' | 'recent';
 const RARITY_ORDER: Record<string, number> = { legendary: 0, epic: 1, rare: 2, common: 3 };
+
+/**
+ * Rarity in the master's own inks (§3.4 of the standard) rather than the
+ * orange and purple the page used to reach for - Dan: "ALWAYS USE
+ * SMARTER.POKER COLOR SCHEMA COLORS, NO BROWNS OR PINKS". Four ranks, four
+ * distinct inks, all of them already on the console.
+ */
+const RARITY_INK: Record<string, ConsoleInk> = {
+  legendary: 'gold',
+  epic: 'white',
+  rare: 'blue',
+  common: 'muted',
+};
 
 /** Animated count-up hook */
 function useAnimatedCount(target: number, duration = 600) {
@@ -74,6 +126,15 @@ function setCachedAch(userId: string, data: Achievement[]) {
 }
 
 type AchievementCategory = 'all' | 'poker' | 'social' | 'financial' | 'tournament';
+
+/** One label per category, so nothing ever prints a raw lowercase enum. */
+const CATEGORY_LABEL: Record<AchievementCategory, string> = {
+  all: 'All',
+  poker: 'Poker',
+  social: 'Social',
+  financial: 'Financial',
+  tournament: 'Tournament',
+};
 
 interface Achievement {
   id: string;
@@ -572,18 +633,13 @@ export default function AchievementsPage() {
     return () => timers.forEach((t) => clearTimeout(t));
   }, [filteredAchievements.length]);
 
-  const getRarityColor = (rarity: string): string => {
-    switch (rarity) {
-      case 'legendary':
-        return '#ff9800';
-      case 'epic':
-        return '#9c27b0';
-      case 'rare':
-        return '#2196f3';
-      default:
-        return '#9e9e9e';
-    }
-  };
+  const milestones = [
+    { day: 7, reward: '1K Chips', unlocked: dailyStreak >= 7 },
+    { day: 30, reward: '100 Diamonds', unlocked: dailyStreak >= 30 },
+    { day: 100, reward: 'Exclusive Badge', unlocked: dailyStreak >= 100 },
+  ];
+
+  const hasBadges = !loading && !loadError && filteredAchievements.length > 0;
 
   return (
     <StandardContentLayout className="achievements-page">
@@ -599,95 +655,36 @@ export default function AchievementsPage() {
           { label: 'Login Streak', value: `${dailyStreak} days`, tone: 'attention' },
         ]}
       />
-      {/* ═══════════════════════════════════════════════════════════════════════
-                 STREAK & ACTIVITY HEADER (Initiative 14)
-          ═══════════════════════════════════════════════════════════════════════ */}
-      <div
-        className="streak-activity-header"
-        style={{
-          background: 'linear-gradient(145deg, rgba(8, 20, 40, 0.7), rgba(5, 12, 28, 0.9))',
-          border: '1px solid rgba(0, 212, 255, 0.1)',
-          borderRadius: '16px',
-          padding: '1.5rem',
-          marginBottom: '1.5rem',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '1.5rem',
-        }}
+
+      {/* ── The streak: one console, three milestone ROWS, and the heatmap ── */}
+      <SpadeConsole
+        className="ach-console"
+        eyebrow="Rewards Circuit"
+        title="Daily Login Streak"
+        pill={`${dailyStreak} Days`}
+        pillInk={dailyStreak > 0 ? 'gold' : 'muted'}
+        foot="foot"
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h2
-              style={{
-                margin: 0,
-                fontSize: '1.25rem',
-                color: '#fff',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-              }}
-            >
-              Daily Login Streak
-            </h2>
-            <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              Log In Every Day To Claim Milestone Rewards!
-            </p>
-          </div>
+        <p className="sc-copy">Log In Every Day To Claim Milestone Rewards!</p>
+
+        <div className="ach-streak">
           <StreakFire streakCount={dailyStreak} size="lg" showLabel />
         </div>
 
-        {/* Milestone Rewards */}
-        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'space-between' }}>
-          {[
-            { day: 7, reward: '1K Chips', unlocked: dailyStreak >= 7, icon: '☆' },
-            { day: 30, reward: '100 Diamonds', unlocked: dailyStreak >= 30, icon: '☆' },
-            { day: 100, reward: 'Exclusive Badge', unlocked: dailyStreak >= 100, icon: '★' },
-          ].map((m) => (
-            <div
-              key={m.day}
-              style={{
-                flex: 1,
-                background: m.unlocked ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255,255,255,0.03)',
-                border: `1px solid ${m.unlocked ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255,255,255,0.05)'}`,
-                borderRadius: '12px',
-                padding: '0.75rem',
-                textAlign: 'center',
-                opacity: m.unlocked ? 1 : 0.6,
-              }}
-            >
-              <div
-                style={{
-                  fontSize: '1.5rem',
-                  filter: m.unlocked
-                    ? 'drop-shadow(0 0 10px rgba(16,185,129,0.5))'
-                    : 'grayscale(1)',
-                }}
+        <div className="ach-rows">
+          {milestones.map((m) => (
+            <div className="ach-row" key={m.day}>
+              <span className="ach-row__label sc-label sc-ink--blue">{m.day} Days</span>
+              <span
+                className={`ach-row__value ${m.unlocked ? 'sc-ink--green' : 'sc-ink--muted'}`.trim()}
               >
-                {m.icon}
-              </div>
-              <div
-                style={{
-                  fontSize: '0.7rem',
-                  fontWeight: 600,
-                  color: m.unlocked ? '#10b981' : '#cbd5e1',
-                  marginTop: '0.25rem',
-                }}
-              >
-                {m.day} DAYS
-              </div>
-              <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{m.reward}</div>
+                {m.reward}
+              </span>
             </div>
           ))}
         </div>
 
-        {/* Heatmap */}
-        <div
-          style={{
-            paddingTop: '1rem',
-            borderTop: '1px solid rgba(255,255,255,0.05)',
-            overflowX: 'auto',
-          }}
-        >
+        <div className="ach-heatmap">
           <ActivityHeatmap
             data={heatmapData}
             label="Achievement Activity"
@@ -695,140 +692,85 @@ export default function AchievementsPage() {
             weeks={18}
           />
           {heatmapData.length === 0 && (
-            <p
-              style={{
-                textAlign: 'center',
-                color: 'rgba(255,255,255,0.3)',
-                fontSize: '0.8rem',
-                margin: '0.5rem 0 0',
-                fontStyle: 'italic',
-              }}
-            >
-              Start Playing To Light Up Your Activity Grid!
-            </p>
+            <p className="sc-copy sc-copy--center">Start Playing To Light Up Your Activity Grid!</p>
           )}
         </div>
-      </div>
+      </SpadeConsole>
 
-      {/* Progress Summary — Animated Counter */}
-      <div className="progress-summary">
-        <div className="summary-stat">
-          <span className="stat-value">
-            {animatedUnlocked}/{animatedTotal}
-          </span>
-          <span className="stat-label">Unlocked</span>
-        </div>
-      </div>
-
-      {/* Next Up Section */}
+      {/* ── Next up: the three closest, as rows with an engraved meter ── */}
       {nextUp.length > 0 && category === 'all' && (
-        <div className="next-up-section">
-          <h3
-            className="section-title"
-            style={{
-              fontSize: '1rem',
-              color: '#00d4ff',
-              marginBottom: '1rem',
-              fontFamily: 'Rajdhani, sans-serif',
-            }}
-          >
-            Next Up
-          </h3>
-          <div className="next-up-list">
-            {nextUp.map((achievement, index) => (
-              <div
-                key={achievement.id}
-                className="next-up-card"
-                style={{ animationDelay: `${index * 100}ms` }}
-              >
-                <div className="next-up-icon">{achievement.icon}</div>
-                <div className="next-up-info">
-                  <h4>{achievement.name}</h4>
-                  <div className="next-up-progress-bar">
-                    <div
-                      className="next-up-progress-fill"
-                      style={{ width: `${Math.max(5, achievement.progress)}%` }}
-                    ></div>
-                  </div>
-                  <p className="next-up-motivational">
-                    {100 - achievement.progress}% Remaining For {achievement.name}!
-                  </p>
-                </div>
+        <SpadeConsole
+          className="ach-console"
+          eyebrow="Rewards Circuit"
+          title="Next Up"
+          pill={`${unlockedCount}/${achievements.length}`}
+          foot="foot"
+        >
+          {nextUp.map((achievement) => (
+            <div className="ach-next" key={achievement.id}>
+              <div className="ach-row ach-row--flush">
+                <span className="ach-row__label sc-label sc-ink--blue">{achievement.name}</span>
+                <span className="ach-row__value sc-ink--silver">{achievement.progress}%</span>
               </div>
-            ))}
-          </div>
-        </div>
+              {/* A groove in the glass, not a bar: the master paints no meter,
+                  and a "next up" list has to show how close you are. */}
+              <div
+                className="ach-meter"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={achievement.progress}
+                aria-label={`${achievement.name} Progress`}
+              >
+                <div
+                  className="ach-meter__fill"
+                  style={{ width: `${Math.max(5, achievement.progress)}%` }}
+                />
+              </div>
+              <p className="ach-next__note sc-label sc-ink--muted">
+                {100 - achievement.progress}% Remaining For {achievement.name}
+              </p>
+            </div>
+          ))}
+        </SpadeConsole>
       )}
 
-      {/* Category Filter — Pill Chips with Counts */}
-      <div className="category-filter ach-chip-bar">
-        {(['all', 'poker', 'social', 'financial', 'tournament'] as AchievementCategory[]).map(
-          (cat) => {
-            const label =
-              cat === 'all'
-                ? 'All'
-                : cat === 'poker'
-                  ? 'Poker'
-                  : cat === 'social'
-                    ? 'Social'
-                    : cat === 'financial'
-                      ? 'Financial'
-                      : 'Tournament';
-            return (
-              <button
-                key={cat}
-                className={`ach-filter-chip ${category === cat ? 'active' : ''}`}
-                onClick={() => setCategory(cat)}
-              >
-                {label}
-                <span
-                  style={{
-                    marginLeft: '4px',
-                    fontSize: '0.7rem',
-                    opacity: 0.7,
-                    fontWeight: 400,
-                  }}
-                >
-                  ({getCatCount(cat)})
-                </span>
-              </button>
-            );
-          }
-        )}
-      </div>
-
-      {/* Sort Dropdown */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'flex-end',
-          marginBottom: '0.75rem',
-          paddingRight: '0.25rem',
-        }}
+      {/* ── The archive: filters, order, and whatever state the list is in ── */}
+      <SpadeConsole
+        className="ach-console"
+        eyebrow="Rewards Circuit"
+        title="Your Badges"
+        subtitle={CATEGORY_LABEL[category]}
+        pill={`${unlockedCount}/${achievements.length}`}
+        foot="foot"
       >
-        <select
-          value={sortMode}
-          onChange={(e) => setSortMode(e.target.value as SortMode)}
-          style={{
-            background: 'rgba(255,255,255,0.05)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: '8px',
-            color: '#cbd5e1',
-            padding: '6px 12px',
-            fontSize: '0.8rem',
-            cursor: 'pointer',
-            outline: 'none',
-          }}
-        >
-          <option value="default">Default Order</option>
-          <option value="rarity">Rarity ↓</option>
-          <option value="progress">Progress ↓</option>
-          <option value="recent">Recently Unlocked</option>
-        </select>
-      </div>
+        {/* Five lit words on the glass. These were gradient pill chips with a
+            cyan glow; nothing here has a fill, a rim or a radius, and the
+            chosen one is simply lit. */}
+        <div className="ach-filter" role="group" aria-label="Achievement Category">
+          {(Object.keys(CATEGORY_LABEL) as AchievementCategory[]).map((cat) => (
+            <button
+              key={cat}
+              type="button"
+              className={category === cat ? 'ach-word sc-ink--blue' : 'ach-word sc-ink--muted'}
+              aria-pressed={category === cat}
+              onClick={() => setCategory(cat)}
+            >
+              {CATEGORY_LABEL[cat]} ({getCatCount(cat)})
+            </button>
+          ))}
+        </div>
 
-      {/* Achievements Grid */}
-      <AchievementGrid>
+        <label className="ach-sort">
+          <span className="ach-sort__label sc-label sc-ink--blue">Order</span>
+          <select value={sortMode} onChange={(e) => setSortMode(e.target.value as SortMode)}>
+            <option value="default">Default Order</option>
+            <option value="rarity">Rarity</option>
+            <option value="progress">Progress</option>
+            <option value="recent">Recently Unlocked</option>
+          </select>
+        </label>
+
         {loading ? (
           <div className="ach-skeleton-grid">
             {Array.from({ length: 8 }).map((_, i) => (
@@ -838,34 +780,44 @@ export default function AchievementsPage() {
         ) : loadError ? (
           <ErrorState message={loadError} onRetry={() => void loadAchievements()} />
         ) : filteredAchievements.length === 0 ? (
-          <div className="empty-state" style={{ textAlign: 'center', padding: '2.5rem 1.5rem' }}>
-            <span
-              style={{
-                fontSize: '2.5rem',
-                display: 'block',
-                marginBottom: '0.75rem',
-                opacity: 0.5,
-              }}
-            >
-              ★
-            </span>
-            <p style={{ fontSize: '1.05rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
+          <div className="ach-empty">
+            <span className="sc-label sc-ink--blue">
               {category === 'all'
                 ? 'No Achievements Yet'
-                : `No ${category.charAt(0).toUpperCase() + category.slice(1)} Achievements`}
-            </p>
-            <p style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
+                : `No ${CATEGORY_LABEL[category]} Achievements`}
+            </span>
+            <p className="sc-copy sc-copy--center">
               {category === 'all'
                 ? 'Start Playing To Unlock Your First Badge!'
-                : `Play More To Unlock ${category} Achievements.`}
+                : `Play More To Unlock ${CATEGORY_LABEL[category]} Achievements.`}
             </p>
           </div>
-        ) : (
-          filteredAchievements.map((achievement, index) => (
+        ) : null}
+      </SpadeConsole>
+
+      {/* The badges are the badge component's own surface: each one is already
+          a bordered, glowing card, so they render on the page's black ground
+          rather than inside a console. A frame never sits on a frame. */}
+      {hasBadges && (
+        <AchievementGrid>
+          {filteredAchievements.map((achievement, index) => (
+            /* A DEFECT FIXED ON THE WAY: this was a bare clickable <div>, so a
+               keyboard could never open an achievement's detail sheet. It
+               reports itself as a button and answers Enter and Space now. The
+               badge inside declares no handler of its own, so nothing nests. */
             <div
               key={achievement.id}
+              role="button"
+              tabIndex={0}
+              aria-label={`Open ${achievement.name}`}
               className={`ach-card-wrap ${achievement.rarity ? `rarity-${achievement.rarity}` : ''}`}
               onClick={() => setSelectedAchievement(achievement)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setSelectedAchievement(achievement);
+                }
+              }}
               style={{
                 opacity: visibleBadges.has(index) ? 1 : 0,
                 transform: visibleBadges.has(index) ? 'scale(1)' : 'scale(0.85)',
@@ -877,7 +829,7 @@ export default function AchievementsPage() {
               {achievement.unlocked &&
                 achievement.unlockedAt &&
                 Date.now() - new Date(achievement.unlockedAt).getTime() < 86400000 && (
-                  <span className="ach-new-badge">NEW</span>
+                  <span className="ach-new-badge sc-ink--green">New</span>
                 )}
               <AchievementBadge
                 icon={achievement.icon}
@@ -889,9 +841,9 @@ export default function AchievementsPage() {
                 unlockedAt={achievement.unlockedAt}
               />
             </div>
-          ))
-        )}
-      </AchievementGrid>
+          ))}
+        </AchievementGrid>
+      )}
 
       {/* Achievement Detail Bottom Sheet */}
       <BottomSheet
@@ -900,74 +852,53 @@ export default function AchievementsPage() {
         detent="half"
       >
         {selectedAchievement && (
-          <div className="achievement-detail-view" style={{ textAlign: 'center', padding: '1rem' }}>
-            <div
-              style={{
-                fontSize: '4rem',
-                filter: `drop-shadow(0 0 20px ${getRarityColor(selectedAchievement.rarity)}88)`,
-              }}
-            >
+          <div className="ach-detail">
+            <span className={`ach-detail__icon sc-ink--${RARITY_INK[selectedAchievement.rarity]}`}>
               {selectedAchievement.icon}
-            </div>
-            <h2
-              style={{
-                fontSize: '1.5rem',
-                color: '#fff',
-                margin: '1rem 0 0.5rem',
-                fontFamily: 'Rajdhani, sans-serif',
-              }}
-            >
-              {selectedAchievement.name}
-            </h2>
-            <p style={{ color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
-              {selectedAchievement.description}
-            </p>
-
-            <div className="next-up-progress-bar" style={{ marginBottom: '1rem' }}>
-              <div
-                className="next-up-progress-fill"
-                style={{
-                  width: `${selectedAchievement.progress}%`,
-                  background: getRarityColor(selectedAchievement.rarity),
-                }}
-              ></div>
-            </div>
+            </span>
+            <h2 className="ach-detail__name sc-ink--silver">{selectedAchievement.name}</h2>
+            <p className="sc-copy sc-copy--center">{selectedAchievement.description}</p>
 
             <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                color: '#cbd5e1',
-                fontSize: '0.85rem',
-                marginBottom: '2rem',
-              }}
+              className="ach-meter"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(selectedAchievement.progress)}
+              aria-label="Achievement Progress"
             >
-              <span>{Math.round(selectedAchievement.progress)}% Complete</span>
-              <span style={{ textTransform: 'capitalize' }}>{selectedAchievement.requirement}</span>
+              <div
+                className="ach-meter__fill"
+                style={{ width: `${selectedAchievement.progress}%` }}
+              />
             </div>
+
+            <div className="ach-row ach-row--flush">
+              <span className="ach-row__label sc-label sc-ink--blue">
+                {Math.round(selectedAchievement.progress)}% Complete
+              </span>
+              <span className={`ach-row__value sc-ink--${RARITY_INK[selectedAchievement.rarity]}`}>
+                {selectedAchievement.requirement}
+              </span>
+            </div>
+
             {!selectedAchievement.unlocked && selectedAchievement.progress > 0 && (
-              <p
-                style={{
-                  color: '#00d4ff',
-                  fontSize: '0.8rem',
-                  marginBottom: '1rem',
-                  background: 'rgba(0, 212, 255, 0.06)',
-                  padding: '0.6rem 1rem',
-                  borderRadius: '8px',
-                  border: '1px solid rgba(0, 212, 255, 0.1)',
-                }}
-              >
-                Almost There - {100 - Math.round(selectedAchievement.progress)}% Remaining!
+              <p className="ach-detail__note sc-label sc-ink--blue">
+                Almost There. {100 - Math.round(selectedAchievement.progress)}% Remaining!
               </p>
             )}
 
             {selectedAchievement.unlocked ? (
               <>
-                <p style={{ color: '#10b981', fontSize: '0.8rem', marginBottom: '1rem' }}>
+                <p className="ach-detail__note sc-label sc-ink--green">
                   Unlocked On{' '}
                   {new Date(selectedAchievement.unlockedAt || Date.now()).toLocaleDateString()}
                 </p>
+                {/* One action, so it is a lit word on the glass: the console
+                    foot paints BOTH plates and a lone one reads broken. */}
                 <button
+                  type="button"
+                  className="ach-word sc-ink--white"
                   onClick={async () => {
                     const ach = selectedAchievement;
                     const shareText = `I just unlocked "${ach.name}" on Club Arena! ${ach.description}`;
@@ -988,33 +919,12 @@ export default function AchievementsPage() {
                       setTimeout(() => setSharingAchievement(ach), 300);
                     }
                   }}
-                  style={{
-                    width: '100%',
-                    padding: '0.85rem',
-                    borderRadius: '12px',
-                    background: 'linear-gradient(135deg, #00d4ff 0%, #0066aa 100%)',
-                    border: 'none',
-                    color: '#fff',
-                    fontWeight: 700,
-                    fontSize: '1rem',
-                    cursor: 'pointer',
-                    boxShadow: '0 4px 15px rgba(0, 212, 255, 0.4)',
-                  }}
                 >
                   Share Achievement
                 </button>
               </>
             ) : (
-              <p
-                style={{
-                  color: '#ef4444',
-                  fontSize: '0.85rem',
-                  fontStyle: 'italic',
-                  padding: '1rem',
-                  background: 'rgba(239, 68, 68, 0.1)',
-                  borderRadius: '8px',
-                }}
-              >
+              <p className="ach-detail__note sc-label sc-ink--red">
                 Keep Playing To Unlock This Badge!
               </p>
             )}
@@ -1025,15 +935,22 @@ export default function AchievementsPage() {
       {/* New Achievement Unlock Popup + Confetti */}
       <ConfettiEffect active={!!newUnlock} />
       {newUnlock && (
-        <div className="unlock-popup">
+        <div className="unlock-popup" role="status" aria-live="polite">
           <div className="unlock-content">
-            <div className="unlock-icon">{newUnlock.icon}</div>
-            <div className="unlock-text">
-              <span className="unlock-label">Achievement Unlocked!</span>
-              <span className="unlock-name">{newUnlock.name}</span>
-            </div>
+            <span className={`unlock-icon sc-ink--${RARITY_INK[newUnlock.rarity]}`}>
+              {newUnlock.icon}
+            </span>
+            <span className="unlock-text">
+              <span className="unlock-label sc-label sc-ink--gold">Achievement Unlocked!</span>
+              <span className="unlock-name sc-ink--silver">{newUnlock.name}</span>
+            </span>
           </div>
-          <button className="unlock-dismiss" onClick={() => setNewUnlock(null)}>
+          <button
+            type="button"
+            className="unlock-dismiss sc-ink--muted"
+            aria-label="Dismiss"
+            onClick={() => setNewUnlock(null)}
+          >
             ✕
           </button>
         </div>

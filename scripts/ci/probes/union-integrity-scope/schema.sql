@@ -1,0 +1,15 @@
+CREATE SCHEMA auth; CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
+    CREATE TABLE unions(id uuid PRIMARY KEY,owner_id uuid NOT NULL);
+    CREATE TABLE union_admins(union_id uuid NOT NULL,user_id uuid NOT NULL);
+    CREATE TABLE clubs(id uuid PRIMARY KEY,owner_id uuid,is_union boolean);
+    CREATE TABLE union_clubs(union_id uuid NOT NULL REFERENCES unions(id),club_id uuid NOT NULL REFERENCES clubs(id));
+    CREATE TABLE club_members(club_id uuid NOT NULL REFERENCES clubs(id),user_id uuid NOT NULL,role text,status text,agent_id uuid);
+    CREATE TABLE profiles(id uuid PRIMARY KEY,is_horse boolean);
+    CREATE TABLE tables(id uuid PRIMARY KEY,union_id uuid,club_id uuid);
+    CREATE TABLE tournaments(id uuid PRIMARY KEY,union_id uuid,club_id uuid);
+    CREATE TABLE table_seats(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),table_id uuid NOT NULL REFERENCES tables(id),user_id uuid,joined_at timestamptz);
+    CREATE TABLE wallet_transactions(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),user_id uuid NOT NULL,amount numeric NOT NULL,type text NOT NULL,category text NOT NULL,created_at timestamptz,table_id uuid,related_entity_id uuid);
+    CREATE TABLE rake_records(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),rake_amount numeric NOT NULL,player_contributions jsonb,created_at timestamptz,club_id uuid,table_id uuid,tournament_id uuid);
+    CREATE TABLE agents(user_id uuid NOT NULL,club_id uuid NOT NULL);
+    CREATE TABLE chip_transactions(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),club_id uuid NOT NULL REFERENCES clubs(id),from_user_id uuid,to_user_id uuid,amount numeric NOT NULL,transaction_type text NOT NULL,created_at timestamptz);
+    CREATE TABLE financial_alerts(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),severity text NOT NULL,source text NOT NULL,message text NOT NULL,context jsonb,created_at timestamptz NOT NULL DEFAULT now());

@@ -9,7 +9,7 @@ description: >
   Club Arena, or asks for before/after screenshots of a Club Arena surface.
   Every agent or subagent doing the work must read this file in full and pass it
   to any subagent it spawns.
-version: 1.1.0
+version: 1.2.0
 ---
 
 # #ClubArenaConsole — The Painted-Chassis Standard
@@ -118,17 +118,52 @@ public/assets/club-buttons/console/spade-console-v1/
     mid.png            1000 x 8     the side rails, averaged; repeats down the body
     bottom-foot.png    1000 x 72    flat closing cap (rails + 4 corner chamfers)
     bottom-plates.png  1000 x 277   two painted action plates + the flat cap
-public/assets/club-buttons/popups/buy-in-v1/
-    deck.png           1000 x 627   four bays + two plates + the flat cap
     source/approved-reference.png   THE MASTER. Never edit. Always re-derive from it.
+public/assets/club-buttons/console/shark-console-v1/
+    top.png             733 x 154   shark crest, header well, pill slot
+    mid.png             733 x 8     rails
+    bottom-plate.png    733 x 172   ONE wide plate + the cap
+public/assets/club-buttons/console/riveted-console-v1/
+    top.png             729 x 209   riveted head, pill slot
+    mid.png             729 x 8     rails
+    bottom.png          729 x 333   two plates + the cap
+public/assets/club-buttons/console/fourbay-console-v1/
+    top.png             900 x 205   shark crest, header well, pill slot
+    mid.png             900 x 8     rails
+    bottom.png          900 x 568   four bays + two plates + the cap
 ```
 
-Every slice is 1000 px wide. **All zone maths is in master pixels.**
+Each family's slices are that master's own width, and **all zone maths is in
+that master's pixels** (`FAMILY[family].W`, `TOP_H`, `FOOT_H`).
+
+### 3.1.5 The four families
+
+Dan 2026-09-13: "I do not want every single card to look exactly the same,
+they should not all have the same frame with the same spade at the top middle
+... each one should be dynamic and custom for the page it's on." So the kit
+carries four approved masters, each cut into the same head / rail / foot
+chassis. Structure varies BETWEEN families, never within one.
+
+| `family`  | Master | Plates | Wears                                                              |
+| --------- | ------ | ------ | ------------------------------------------------------------------ |
+| `spade`   | 1000   | 2      | The default: rules, settings, staff pages, confirms, admin         |
+| `shark`   | 733    | 1      | A queue or list with one action: `WaitListModal`; tournament/lobby |
+| `riveted` | 729    | 2      | Money moving: `TimeBankStoreModal`, `CashierModal`, insurance      |
+| `fourbay` | 900    | 2      | The buy-in family ONLY: `BuyInModal`, then the rebuy               |
+
+The `--sc-max` of each family is its master's width; a surface may sit
+narrower (the felt modals cap their dialog at 560px) but never wider. A new
+family is cut from an approved master with the §5 method (profile the chassis
+rows by luminance, find the rail band with a glass centre, median it to an 8px
+`mid.png`, slice head and foot at the glass gaps, measure the zones on a
+gridded 2x render) and wired into the `FAMILY` table; spins has no stable
+rail band and no glass seam and stays a card.
 
 ### 3.2 Component API
 
 ```tsx
 <SpadeConsole
+  family="spade"                // spade | shark | riveted | fourbay (§3.1.5)
   eyebrow="Shark Club"          // lit blue caps, top left of the well
   title="Club Rules"            // engraved silver, the big one
   titleId="…"                   // for aria-labelledby
@@ -137,10 +172,15 @@ Every slice is 1000 px wide. **All zone maths is in master pixels.**
   pillInk="blue"                // silver | white | blue | green | red | gold | muted
   foot="plates"                 // 'plates' | 'foot'   (defaults from `plates`)
   plates={{ secondary: {...}, primary: {...} }}   // PlateButtonProps each
+  bays={[{ label: 'Min', value: '40' }, …]}       // fourbay only: up to four
 >
   …body, printed on the black glass between the rails…
 </SpadeConsole>
 ```
+
+The shark has one plate: pass `plates={{ primary }}` and it takes the wide
+face. The four-bay deck prints `bays` - `{ label, value, ink? }` - across its
+foot, label in lit blue over the bay, value in the master's ink inside it.
 
 `PlateButton` is a transparent button laid over a painted plate: it paints
 nothing and adds only the label. `ZoneText` is one fitted line inside a measured
@@ -155,10 +195,14 @@ SPADE_CONSOLE_TOP_H = 348      SPADE_CONSOLE_PLATES_H = 277
 SPADE_CONSOLE_FOOT_H = 72
 SPADE_CONSOLE_ZONES = { eyebrow, title, titleBesidePill, subtitle, pill,
                         plateSecondary, platePrimary }
-// from BuyInModal, for four-bay surfaces:
-BUY_IN_DECK_H = 627
-BUY_IN_ZONES  = { bays: [4 x {label, value}], secondaryAction, primaryAction }
-BayLabel, BayValue
+SHARK_CONSOLE_W = 733     SHARK_CONSOLE_TOP_H = 154    SHARK_CONSOLE_FOOT_H = 172
+SHARK_CONSOLE_ZONES = { …head zones…, plate }
+RIVETED_CONSOLE_W = 729   RIVETED_CONSOLE_TOP_H = 209  RIVETED_CONSOLE_FOOT_H = 333
+RIVETED_CONSOLE_ZONES = { …head zones…, plateSecondary, platePrimary }
+FOURBAY_CONSOLE_W = 900   FOURBAY_CONSOLE_TOP_H = 205  FOURBAY_CONSOLE_FOOT_H = 568
+FOURBAY_CONSOLE_ZONES = { …head zones…, bays: [4 x { label, value }],
+                          plateSecondary, platePrimary }
+type ConsoleFamily, type ConsoleBay
 ```
 
 ### 3.3 The three mechanics you must get right
@@ -203,6 +247,20 @@ the span against its box and writes a `--fit` scale:
 
 Labels fit the plate's **face** (~70–80 % of the zone), never the whole zone, so
 a long word shrinks before it can touch the chrome rim.
+
+A plate label is one line. The exception is a family whose plates are too
+narrow for its honest labels: the four-bay deck's are a third of the console
+each, and "Buy In With Diamonds" is pinned by tests. That family opts in with
+`plateWrapBelow: 0.72` in the `FAMILY` table (`PlateButton`'s `wrapBelow`,
+`useFitText`'s `wrapBelow`): a label that would shrink under 72% on one line
+takes two, at its own smaller base, and only when the two-line face renders
+larger. Never shorten a label the tests read to dodge this; never wrap on the
+spade, shark or riveted plates - Dan approved those on one line.
+
+Mind percentage padding on a plate. `.sc-plate` is absolutely positioned, so
+`padding: 0 4%` resolves against the FOOT, not the plate: 30px off a 123px
+plate at 375px. The four-bay family pads in `cqw` for that reason; a new
+family with narrow plates should too.
 
 `useFitText` verifies its own result. Rendered width is not proportional to
 font-size (hinting and per-glyph letter-spacing both round), so a ratio from one
@@ -371,13 +429,16 @@ you, and rebuilding on a stale copy silently reverts somebody's fix.
 
 ### Step 4 — Choose the chassis
 
-| Surface shape                                     | Chassis                                              |
-| ------------------------------------------------- | ---------------------------------------------------- |
-| A message and two actions                         | `SpadeConsole` + `plates`                            |
-| A page of content and two staff actions           | `SpadeConsole` + `plates`                            |
-| A page of content, no actions                     | `SpadeConsole` with `foot="foot"`                    |
-| Sitting down or rebuying (the buy-in family ONLY) | the Buy-In deck: `BUY_IN_ZONES` + `BUY_IN_DECK_H`    |
-| A list of tables/games                            | the lobby's own `ArenaGameCard` — never invent a row |
+| Surface shape                                     | Chassis                                                |
+| ------------------------------------------------- | ------------------------------------------------------ |
+| A message and two actions                         | `SpadeConsole` + `plates`                              |
+| A page of content and two staff actions           | `SpadeConsole` + `plates`                              |
+| A page of content, no actions                     | `SpadeConsole` with `foot="foot"`                      |
+| A queue or list with one action                   | `SpadeConsole family="shark"` + `plates={{ primary }}` |
+| Money moving: cashier, time bank, insurance       | `SpadeConsole family="riveted"` + `plates`             |
+| Sitting down or rebuying (the buy-in family ONLY) | `SpadeConsole family="fourbay"` + `bays` + `plates`    |
+| A list of tables/games                            | the lobby's own `ArenaGameCard` — never invent a row   |
+| A club's identity                                 | `ClubIdentityCard` (the Kingfish banner) as the header |
 
 **One master per surface.** Never assemble a surface out of a rail from here, a
 plate from there and a CSS pill. That single mistake is what produced three

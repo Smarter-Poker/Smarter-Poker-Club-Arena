@@ -243,6 +243,19 @@
   text-transform: uppercase;
 }
 
+/* A bay is 130 of 900 wide. "Min" and "In Blinds" fit its label zone on one
+   line; a receipt's "Total Charged" or "Wallet Balance" does not, and at the
+   half-size floor it was 4.5px tall and still clipped. The label wraps to two
+   lines instead (ZoneText wrapBelow), each a touch smaller and tight-leaded
+   so both sit inside the 44px zone above the bay. */
+.sc__bay-label > span[data-fit-wrap] {
+  white-space: normal;
+  text-wrap: balance;
+  text-align: center;
+  font-size: calc(0.9em * var(--fit, 1));
+  line-height: 1.04;
+}
+
 .sc__bay-value {
   justify-items: center;
   font-size: 4.6cqw;

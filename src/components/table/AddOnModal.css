@@ -1,14 +1,14 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   REBUY - on the four-bay deck (#ClubArenaConsole, 2026-09-14)
+   ADD-ON - on the four-bay deck (#ClubArenaConsole, 2026-09-14)
 
    Dan 2026-09-09: the four-bay deck is the buy-in family's and nobody else's,
-   and a tournament rebuy is a buy-in. The frame is painted (SpadeConsole
+   and a tournament add-on is a buy-in. The frame is painted (SpadeConsole
    family="fourbay"); the receipt prints in the bays; this sheet owns the
    scrim, the centring and the figure on the glass. Every colour is a schema
    colour. No :hover.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-.rbm-overlay {
+.aom-overlay {
   position: fixed;
   inset: 0;
   z-index: 9999;
@@ -22,7 +22,7 @@
   -webkit-backdrop-filter: blur(6px);
 }
 
-.rbm-dialog {
+.aom-dialog {
   position: relative;
   container-type: inline-size;
   width: min(100%, 560px);
@@ -30,9 +30,9 @@
   filter: drop-shadow(0 18px 34px rgb(0 0 0 / 85%));
 }
 
-/* ── The figure on the glass: what a rebuy costs, and what it returns ── */
+/* ── The figure on the glass: what the add-on returns, and the clock ──── */
 
-.rbm-stage {
+.aom-stage {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -41,7 +41,12 @@
   text-align: center;
 }
 
-.rbm-figure {
+.aom-stage--result {
+  justify-content: center;
+  min-height: 18cqw;
+}
+
+.aom-figure {
   display: flex;
   align-items: baseline;
   justify-content: center;
@@ -49,7 +54,7 @@
   min-width: 0;
 }
 
-.rbm-figure__value {
+.aom-figure__value {
   font:
     800 12cqw/1 'Roboto Condensed',
     Inter,
@@ -60,26 +65,25 @@
   white-space: nowrap;
 }
 
-.rbm-figure__unit {
+.aom-figure__unit {
   font-size: 3.4cqw;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
-.rbm-offer {
-  font-size: 3.4cqw;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-}
-
-.rbm-offer strong {
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-}
-
-.rbm-warning {
+.aom-note {
+  width: 100%;
   padding-top: 2cqw;
   border-top: 1px solid #000;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.aom-result {
+  width: 100%;
+}
+
+.aom-result__detail {
+  padding-top: 1cqw;
+  font-size: 3.2cqw;
 }

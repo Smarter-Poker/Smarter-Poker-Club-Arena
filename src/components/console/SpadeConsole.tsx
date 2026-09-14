@@ -253,6 +253,7 @@ export function ZoneText({
   id,
   minRatio = 0.5,
   headroom = 1,
+  wrapBelow,
   style,
 }: {
   text: string;
@@ -271,9 +272,16 @@ export function ZoneText({
    * this only makes the line smaller than its zone allows.
    */
   headroom?: number;
+  /**
+   * Let the line take a second line instead of shrinking under this ratio
+   * (useFitText's wrapBelow). Off by default: a zone is one line. The bay
+   * labels on the four-bay deck opt in, because a receipt's honest labels
+   * ("Total Charged", "Wallet Balance") do not fit a bay's width on one.
+   */
+  wrapBelow?: number;
   style?: CSSProperties;
 }) {
-  const ref = useFitText<HTMLSpanElement>(text, headroom, minRatio);
+  const ref = useFitText<HTMLSpanElement>(text, headroom, minRatio, { wrapBelow });
   return (
     <Tag className={`sc-zone ${className}`.trim()} id={id} style={style}>
       <span ref={ref}>{text}</span>
@@ -379,6 +387,7 @@ export function SpadeConsole({
               <ZoneText
                 text={bay.label}
                 className="sc__bay-label sc-ink--blue"
+                wrapBelow={0.8}
                 style={zonePct(FOURBAY_CONSOLE_ZONES.bays[i].label, W, F.FOOT_H)}
               />
               <ZoneText

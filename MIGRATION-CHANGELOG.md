@@ -1,3 +1,10 @@
+## 2026-09-14: The last-place remainder alert has native regression protection
+
+**Files:** PayoutRemainderAlertRegression.test.ts; scripts/ci/test-payout-remainder-alert.py; required accounting CI; docs/changelog/2026-09-14-last-place-alert-regression.md.
+**What existed:** a historical alert compared23rd place's7.91 residual with a7.97flat share of the1350pool. All23actual payouts and that player's obligation match the residual rule exactly. The installed checker already contains the detector correction.
+**What changed:** native coverage reproduces the old false alert and runs the actual corrected function and guarded patch; engine coverage matches all23actual payments in cents. No new migration or money movement.
+**Verified:**17native checks and21engine arithmetic checks pass, including partial, foreign, refund and concurrent receipt evidence. Normal CI/source publication remains pending.
+
 ## 2026-09-14: Concurrent waitlist offers share seat and player claims
 
 **Files:** migration20260914104113; scripts/ci/test-waitlist-offer-concurrency.py and captured native fixtures; required accounting CI step.

@@ -1,0 +1,11 @@
+# Record standing-board equity before multi-board settlement
+
+Production equity coverage alerts included completed two- and three-board hands with no equity in `ca_hand_facts`. Four sampled missing hands had accepted RIT and no subsequent betting. The RIT entry point launched worker pricing without joining it, then dealt and settled synchronously. `HAND_COMPLETE` consumed the empty fact cache; the later worker answer was correctly refused because its board generation had changed.
+
+Both mandatory and player-choice RIT now pass the existing pricing promise into the terminal resolver. That resolver owns the hand while it waits, then rechecks lifecycle, controller and hand number before dealing. The existing worker caller deadline bounds queue plus computation at 2.5 seconds by default. Worker failure still permits the ordinary RIT settlement with unknown equity; it never supplies a guessed value, retries a payout, or runs a solver on the main thread. The same promise is reused when no-insurance pricing began earlier. The existing payout mutation fence and stale visual-result guard remain in place.
+
+The regression drives the real all-in entry point, controller, RIT settlement, unsubscribed `TableStateHub` capture and fact writer with a delayed worker and recorded database output. It covers mandatory two/three boards, accepted player choice, missing worker results, concurrent resolver refusal and four stale-generation cases. The old implementation finalized before the deferred answer in all three entry paths. The existing offer harness now explicitly supplies the process-ownership boundary that GameServer normally registers.
+
+Validation: 105 tests across 14 files passed, including money conservation, side pots, Diamond RIT, consent, Pineapple, recorded boards, worker deadlines and terminal failure handling. Server typecheck passed after adding the required seat identity to the test's action records. Production deployment and post-release samples are still required.
+
+This change addresses the RIT recording race. Historical missing values are not reconstructed. Process-local cache durability, existing side-pot EV approximation and the independent audit classification of earlier all-ins followed by later betting remain separate open investigations; the seven-day coverage alert is not declared repaired by these source tests.

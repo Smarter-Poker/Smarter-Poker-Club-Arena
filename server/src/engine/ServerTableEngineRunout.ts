@@ -946,11 +946,17 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     const insuranceEnabled = this.insuranceEngine.isEnabled(this.tableId) && !doubleBoardHand;
     const insuranceCanPriceStandingBoard =
       insuranceEnabled && board.length < 5 && allInPlayers.length >= 2;
-    let standaloneEquityRequested = false;
+    let standaloneEquity: Promise<void> | undefined;
     const requestStandaloneEquity = () => {
-      if (standaloneEquityRequested || allInPlayers.length < 2) return;
-      standaloneEquityRequested = true;
-      void this.broadcastAllInEquity(allInPlayers, board, pot, this.liveExtraBoards());
+      if (!standaloneEquity && allInPlayers.length >= 2) {
+        standaloneEquity = this.broadcastAllInEquity(
+          allInPlayers,
+          board,
+          pot,
+          this.liveExtraBoards()
+        );
+      }
+      return standaloneEquity;
     };
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -1128,8 +1134,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
             pot,
             runs: forcedRuns,
           });
-          requestStandaloneEquity();
-          void this.dealAndResolveRIT(allInPlayers);
+          void this.dealAndResolveRIT(allInPlayers, requestStandaloneEquity());
           return;
         }
 
@@ -1181,8 +1186,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
             // Each pot is split across boards (half/half or third/third/third).
             // Each board is evaluated independently for each pot.
             // ═══════════════════════════════════════════════════════════════
-            requestStandaloneEquity();
-            void this.dealAndResolveRIT(allInPlayers);
+            void this.dealAndResolveRIT(allInPlayers, requestStandaloneEquity());
           } else if (this.handController) {
             // Declined or unanswered — the hand runs ONCE.
             this.emitRitSingleRun('no_agreement');
@@ -1759,10 +1763,12 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * Bible V8 §4.20: Rake applies ONCE (not per board).
    */
   protected async dealAndResolveRIT(
-    allInPlayers: import('../types.js').SeatPlayer[]
+    allInPlayers: import('../types.js').SeatPlayer[],
+    standingBoardEquity?: Promise<void>
   ): Promise<void> {
     const controller = this.handController;
     if (!controller) return;
+    const handNumber = this.handCount;
     const captureRollbackState = () => ({
       ritBoards: this.currentHandRitBoards,
       ritBaseBoardCount: this.currentHandRitBaseBoardCount,
@@ -1808,6 +1814,23 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           handCompleteObserved = true;
         }
       });
+      // RIT can deal and finalize synchronously. Previously its optional
+      // worker was still pricing the standing board when HAND_COMPLETE
+      // consumed the fact cache; the late result was then correctly dropped
+      // by the visual board fence. Join the same bounded worker operation
+      // before advancing the board. A worker timeout omits equity and resolves
+      // normally; it never authorizes a different payout or a local solver.
+      if (standingBoardEquity) {
+        await standingBoardEquity;
+        if (
+          !this.lifecycleCanMutate() ||
+          this.handController !== controller ||
+          this.handCount !== handNumber
+        ) {
+          if (this.ritResolutionOwner === controller) this.ritResolutionOwner = null;
+          return;
+        }
+      }
       await this.dealAndResolveRITUnchecked(allInPlayers, controller);
       if (this.runoutPayoutMutationUnsafe && !handCompleteObserved) {
         throw new Error('RIT payout mutation completed without HAND_COMPLETE proof');

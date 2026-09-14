@@ -70,6 +70,8 @@ function atAllIn(stacks = [500, 500]) {
 
   const e = new ServerTableEngine(TABLE) as unknown as Record<string, any>;
   e.running = true;
+  // GameServer normally registers ownership; this isolated offer harness does not boot it.
+  e.isCurrentEngine = vi.fn(() => true);
   e.handCount = 1;
   e.handController = hc;
   e.tableInfo = { game_variant: 'nlh', big_blind: 10, tournament_id: null, game_type: 'cash' };

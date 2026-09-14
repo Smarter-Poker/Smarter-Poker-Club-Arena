@@ -9,6 +9,10 @@
       "pct": 2.8,
       "reason": "Artwork. This one CONVERGES (2.8% then 0.1%), which is why convergence alone is not the test. The before/after picture shows the head's dark outline broken on the upper right and lower left and the shoulder bevel chewed off the left edge. Same silver-on-transparent problem as its sibling above. Reverted on 2026-09-10."
     },
+    "public/assets/club-buttons/console/riveted-console-v1/mid.png": {
+      "pct": 1.5,
+      "reason": "Artwork, inspected as the shipped 729x8 tiling rail. The detector removes 88 pixels: 11 complete silver rail columns at x54-56,60-61,664-669, all eight rows, making transparent slits through the console sides. The removed pixels are opaque brushed grey (RGB125-144), matching the visible side rails. An in-memory second pass reads 0%, so convergence alone would wrongly approve the damaged rails. Source SHA2563a167b0f63161ba133e795184233c6c281609e96b70a5e1aa0b02adce1e73d50 is unchanged. The new family omitted this measured entry in PR4573; the real-asset test also adds a white strip in memory and requires the gate to refuse it."
+    },
     "public/assets/club-buttons/console/spade-console-v1/mid.png": {
       "pct": 4.2,
       "reason": "Artwork, and the measurement is unambiguous: this is a 1000x8 horizontal TILING rail, and cleaning removes 40 pixels that are 5 complete columns - 5 in every one of the 8 rows. Tiled across a console that is five transparent slits through the rail. The pixels it wants are the light brushed band in the rail, which is smooth and neutral by design."
@@ -26,5 +30,5 @@
       "reason": "Sits exactly on the floor and under the cleaner's own threshold, so clean-shell-matte.py writes nothing for it. Recorded so the number is pinned rather than left one rounding tick away from failing the build."
     }
   },
-  "generated": "2026-09-11"
+  "generated": "2026-09-14"
 }

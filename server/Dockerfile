@@ -26,6 +26,10 @@ RUN npm prune --omit=dev --no-audit --no-fund
 
 # Run
 ENV NODE_ENV=production
+ENV ENGINE_ALERT_JOURNAL_DIR=/var/lib/club-arena/engine-alerts
+# The release seal requires this image's journal to live on the durable host
+# bind mount, including when the canonical recovery path starts the image.
+LABEL sp.alert-journal.schema=1
 # 2026-08-30: Node tried IPv6 first to Supabase on a host with no IPv6 route,
 # burning ~40s per fresh connection while the client's deadline was 15s —
 # every request on a new socket aborted as supabase_timeout and the platform

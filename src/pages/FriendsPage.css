@@ -471,7 +471,7 @@
 }
 
 .friend-actions button.is-danger {
-  border-color: #51323a;
+  border-color: rgb(255 71 87 / 55%);
   color: #e997a2;
   background: #11090b;
 }

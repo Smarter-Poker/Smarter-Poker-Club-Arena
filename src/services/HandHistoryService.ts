@@ -236,10 +236,11 @@ export interface HandRecord {
   winners: HandWinner[];
   /**
    * WHO WON EACH RUN (2026-09-04, column hand_history.winners_by_board). One
-   * entry per (board, winner): the board index (1-based), the pre-rake share
-   * and the hand name ON THAT BOARD. Empty on single-board hands and on rows
-   * that predate the column, in which case the surfaces fall back to the
-   * aggregate `winners` and say so.
+   * entry per (board, winner, half): the board index (1-based), the POST-RAKE
+   * share the pot paid (written post-rake since 2026-09-04) and the hand name
+   * ON THAT BOARD. Empty on single-board hands and on rows that predate the
+   * column, in which case the surfaces fall back to the aggregate `winners`
+   * and say so.
    */
   winners_by_board: {
     board: number;
@@ -248,6 +249,8 @@ export interface HandRecord {
     hand_name?: string;
     /** HI-LO: the entry for the low half of a split pot (PLO8 / FLO8). */
     low?: boolean;
+    /** 2026-09-13: which pot(s) this share came out of, main pot first, summing to amount. */
+    pots?: Array<{ index: number; amount: number }>;
   }[];
   /** Rake taken from the pot, and the jackpot drop. Shown, not hidden. */
   rake: number;
@@ -884,13 +887,21 @@ class HandHistoryServiceClass {
       winners_by_board: Array.isArray((row as any).winners_by_board)
         ? ((row as any).winners_by_board as any[])
             .filter((w) => w && typeof w === 'object' && w.userId)
-            .map((w) => ({
-              board: Number(w.board) || 1,
-              user_id: String(w.userId),
-              amount: Number(w.amount) || 0,
-              hand_name: typeof w.handName === 'string' ? w.handName : undefined,
-              low: w.low === true,
-            }))
+            .map((w) => {
+              const pots = Array.isArray(w.pots)
+                ? (w.pots as any[])
+                    .filter((p) => p && typeof p === 'object')
+                    .map((p) => ({ index: Number(p.index) || 0, amount: Number(p.amount) || 0 }))
+                : [];
+              return {
+                board: Number(w.board) || 1,
+                user_id: String(w.userId),
+                amount: Number(w.amount) || 0,
+                hand_name: typeof w.handName === 'string' ? w.handName : undefined,
+                low: w.low === true,
+                ...(pots.length ? { pots } : {}),
+              };
+            })
         : [],
       rake: Number(row.rake_amount) || 0,
       bbj_fee: Number((row as any).bbj_amount) || 0,

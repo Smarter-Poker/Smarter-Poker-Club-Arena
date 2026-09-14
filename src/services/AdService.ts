@@ -61,6 +61,13 @@ export interface HouseAd {
    */
   advertiserKind: 'house' | 'club' | 'sponsor';
   advertiserName: string | null;
+  /**
+   * The picture the full-screen popup shows when the advert is tapped (Dan
+   * 2026-09-13). A 3:4 poster where the campaign has one; otherwise the
+   * resolver falls back to the surface creative, so this is never null when
+   * imageUrl is not. Same-origin, same three locks.
+   */
+  posterUrl: string | null;
 }
 
 /** Only these labels exist; an unknown kind from the wire is treated as a sponsor, never as the house. */
@@ -199,6 +206,7 @@ export const AdService = {
         placementId: r.placement_id == null ? null : String(r.placement_id),
         advertiserKind: readAdvertiserKind(r.advertiser_kind),
         advertiserName: r.advertiser_name == null ? null : String(r.advertiser_name),
+        posterUrl: r.poster_url == null ? null : String(r.poster_url),
       }));
     } catch (e) {
       reportError(e, 'AdService.resolve', { slot });

@@ -9,7 +9,7 @@ image_tag=${1:-club-arena-component-fixture:local}
 [[ "$image_tag" =~ ^[a-z0-9][a-z0-9._/-]*:[a-z0-9._-]+$ ]] || { echo 'Invalid local image tag' >&2; exit 2; }
 [[ $(uname -s) == Linux && $(uname -m) == x86_64 ]] || { echo 'Requires an admitted Linux amd64 Docker runner' >&2; exit 2; }
 [[ $(docker info --format '{{.OSType}}/{{.Architecture}}') == linux/x86_64 ]] || { echo 'Requires native Linux amd64 Docker' >&2; exit 2; }
-files=(Dockerfile package.json package-lock.json fixture-server.mjs runtime-files.mjs gateway.mjs auth-fixture.mjs auth-bootstrap-proof.mjs service-role-boundary.mjs actors.mjs financial-route-phase.mjs seed-fixture.mjs native-smoke.mjs observation-bridge.mjs cron-provider.mjs safeupdate-provider.mjs service-preimage.mjs)
+files=(Dockerfile package.json package-lock.json fixture-server.mjs post-alignment-auth.mjs runtime-files.mjs gateway.mjs auth-fixture.mjs auth-bootstrap-proof.mjs service-role-boundary.mjs actors.mjs financial-route-phase.mjs seed-fixture.mjs native-smoke.mjs observation-bridge.mjs cron-provider.mjs safeupdate-provider.mjs service-preimage.mjs role-alignment.mjs provider-semantics.mjs provider-semantic-sql.mjs provider-probe-peer.mjs role-native-entry.mjs role-native-protocol.mjs role-native-faults.mjs role-native-access.mjs role-alignment-render.mjs role-alignment-installer.sql role-alignment-native.json role-alignment-aligned.json role-alignment-graph.sql role-alignment-membership.sql)
 for file in "${files[@]}"; do
   git -C "$repo_dir" ls-files --error-unmatch "operations/release/fixture/$file" >/dev/null
   [[ -f "$fixture_dir/$file" && ! -L "$fixture_dir/$file" ]] || { echo "Missing reviewed runtime file: $file" >&2; exit 2; }

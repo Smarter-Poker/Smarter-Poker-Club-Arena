@@ -9,6 +9,7 @@ import {
 import { buildInventory, poolCentsFromNumeric } from './mysteryBountyPool.js';
 import { shuffleChests } from './mysteryBountyDraw.js';
 import { mysteryPoolCents, shouldActivateMysteryBounty } from './mysteryBountyActivation.js';
+import { UNIT_CENTS_ASSET_NOT_READ } from './tournamentUnit.js';
 
 // Execute the production method and production inventory/predicate helpers.
 // The database transport is controlled; this is not a PostgreSQL funding proof.
@@ -84,6 +85,10 @@ function fixture(
     'DEFAULT_TOP_BOUNTY_PERCENT',
     'buildInventory',
     'shuffleChests',
+    // 2026-09-13: `mysteryPoolCents`'s unit is a required argument now, so both
+    // seed sites name the unit they are asking for and this free identifier is
+    // injected by name like every other one above.
+    'UNIT_CENTS_ASSET_NOT_READ',
     compiled
   )(
     { from: vi.fn(() => query), rpc },
@@ -95,7 +100,8 @@ function fixture(
     resolveMysteryBountyProfile,
     DEFAULT_TOP_BOUNTY_PERCENT,
     buildInventory,
-    shuffleChests
+    shuffleChests,
+    UNIT_CENTS_ASSET_NOT_READ
   );
   const subject = Object.assign(new Subject(), {
     tournamentId: 'activation-fixture',

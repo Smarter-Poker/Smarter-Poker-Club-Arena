@@ -11,9 +11,9 @@ import subprocess
 import sys
 import uuid
 
-FILES = ('Dockerfile', 'package.json', 'package-lock.json', 'fixture-server.mjs',
+FILES = ('Dockerfile', 'package.json', 'package-lock.json', 'fixture-server.mjs', 'post-alignment-auth.mjs',
          'runtime-files.mjs', 'gateway.mjs', 'auth-fixture.mjs', 'auth-bootstrap-proof.mjs',
-         'service-role-boundary.mjs', 'cron-provider.mjs', 'safeupdate-provider.mjs', 'service-preimage.mjs', 'actors.mjs', 'financial-route-phase.mjs',
+         'service-role-boundary.mjs', 'cron-provider.mjs', 'safeupdate-provider.mjs', 'service-preimage.mjs', 'role-alignment.mjs', 'provider-semantics.mjs', 'provider-semantic-sql.mjs', 'provider-probe-peer.mjs', 'role-native-entry.mjs', 'role-native-protocol.mjs', 'role-native-faults.mjs', 'role-native-access.mjs', 'role-alignment-render.mjs', 'role-alignment-installer.sql', 'role-alignment-native.json', 'role-alignment-aligned.json', 'role-alignment-graph.sql', 'role-alignment-membership.sql', 'actors.mjs', 'financial-route-phase.mjs',
          'seed-fixture.mjs', 'native-smoke.mjs', 'observation-bridge.mjs', 'build-image.sh', 'smoke-image.sh')
 PREFIX = 'operations/release/fixture/'
 CONTROL_FILES = tuple('operations/release/native/' + name for name in (
@@ -54,9 +54,12 @@ NATIVE_STAGES = frozenset((
         'preimage-ack', 'preimage-shutdown', 'cleanup')),
     *( 'fixture-preimage-' + step for step in (
         'arguments', 'package', 'directories', 'cookie', 'postgres-socket', 'archives',
-        'postgresql', 'postgresql-native-cron-install', 'postgresql-safeupdate-configure',
+        'postgresql', 'postgresql-provider-key', 'postgresql-start', 'postgresql-ready',
+        'postgresql-bootstrap-connect', 'postgresql-bootstrap-configuration',
+        'postgresql-bootstrap-owner', 'postgresql-bootstrap-roles',
+        'postgresql-native-cron-install', 'postgresql-safeupdate-configure',
         'genuine-auth-migrations', 'genuine-realtime-migrations',
-        'managed-postgres-event-trigger-boundary', 'post-service-catalog-preimage', 'cleanup'))))
+        'managed-postgres-event-trigger-boundary', 'post-service-catalog-preimage', 'full-role-alignment', 'native-role-fault-matrix', 'native-role-access-defaults', 'five-provider-semantics', 'post-alignment-auth', 'cleanup'))))
 NATIVE_ERROR_NAMES = frozenset(('Error', 'AssertionError', 'TypeError', 'RangeError',
                                 'SyntaxError', 'TimeoutError', 'AggregateError', 'error'))
 NATIVE_PG_ROUTINES = frozenset((
@@ -189,6 +192,8 @@ class NativeSmokeFailure(RuntimeError):
     def __init__(self, output, exit_code=None):
         super().__init__('native_fixture_services_failed')
         self.diagnostics = native_failures(output)
+        self.role_fault_failure = role_fault_failure(output)
+        self.provider_failure = provider_failure_record(output)
         self.exit_code = exit_code if type(exit_code) is int and 1 <= exit_code <= 255 else None
 
 
@@ -288,6 +293,258 @@ def smoke_records(output):
     require(rows.count(observer) == 1 and rows.count(services) == 1 and rows.count(peer) == 1)
     require('Native service smoke and container/network cleanup passed (not a product certificate).' in output.splitlines())
     return [observer, services, peer]
+
+
+def role_alignment_record(output):
+    records = []
+    def unique_object(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result)
+            result[key] = value
+        return result
+    for line in output.splitlines():
+        if not line.startswith('{') or len(line) > 4096:
+            continue
+        try:
+            item = json.loads(line, object_pairs_hook=unique_object)
+        except ValueError:
+            continue
+        if isinstance(item, dict) and item.get('scope') == 'native-full-role-installer':
+            records.append(item)
+    require(len(records) == 1)
+    result = records[0]
+    expected = {
+        'scope': 'native-full-role-installer', 'status': 'passed', 'stage': 'complete',
+        'template_sha256': '75de4863de9a9276e701526389a6fbe0a033589d60844b71dd42eb44fbdf31db',
+        'install_submitted': True, 'commit_acknowledged': True, 'catalog_outcome': 'committed',
+        'rollback_acknowledged': False, 'separate_read_only_observers': 4,
+        'graph_assertion': True, 'membership_assertion': True,
+        'actual_login_and_default_acl_tests': False, 'post_alignment_services': False,
+        'full_schema_ready': False, 'funded_or_production_complete': False,
+        'installer_backend_absent': True, 'all_driver_clients_closed': True,
+    }
+    hashes = {'original_catalog_sha256', 'aligned_catalog_sha256'}
+    require(set(result) == set(expected) | hashes)
+    for key, value in expected.items():
+        require(type(result[key]) is type(value) and result[key] == value)
+    for key in hashes:
+        require(isinstance(result[key], str) and re.fullmatch('[0-9a-f]{64}', result[key]))
+    return result
+
+
+def provider_failure_record(output):
+    # Retain bounded failure observations only. This record cannot admit a
+    # fixture and never includes SQL, error messages, keys or service output.
+    records = []
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('duplicate provider field')
+            result[key] = value
+        return result
+    for line in output.splitlines():
+        if not line.startswith('{') or len(line) > 4096:
+            continue
+        try:
+            item = json.loads(line, object_pairs_hook=unique)
+        except ValueError:
+            continue
+        if isinstance(item, dict) and item.get('scope') == 'native-five-provider-semantics':
+            records.append(item)
+    if len(records) != 1:
+        return None
+    item = records[0]
+    completed = ('genuine_symbols', 'role_acl_catalog', 'actual_anon_vault_denial',
+        'postgis_geometry_geography_gist', 'http_private_response', 'pg_net_worker_identity',
+        'pg_net_commit_only', 'pg_net_rollback_absent', 'vault_encrypt_update_rollback',
+        'plpgsql_valid_invalid', 'dummy_objects_removed', 'all_probe_clients_closed', 'private_http_closed')
+    unqualified = ('production_binary_parity', 'complete_catalog_parity',
+        'actual_login_and_default_acl_tests', 'post_alignment_services', 'full_schema_ready', 'funded_or_production_complete')
+    expected = set(completed + unqualified) | {'scope', 'status', 'stage', 'versions',
+        'build_sha256', 'catalog_sha256', 'failure_type', 'sqlstate'}
+    if (set(item) != expected or item['status'] != 'failed'
+            or not isinstance(item['stage'], str) or item['stage'] not in {
+                'identity', 'install', 'postgis', 'plpgsql-check', 'vault', 'private-http', 'pg-net', 'cleanup'}
+            or not isinstance(item['failure_type'], str) or item['failure_type'] not in {
+                'Error', 'AssertionError', 'TypeError', 'RangeError', 'error'}
+            or (item['sqlstate'] is not None and (not isinstance(item['sqlstate'], str)
+                or not re.fullmatch('[0-9A-Z]{5}', item['sqlstate'])))
+            or any(type(item[k]) is not bool for k in completed)
+            or any(item[k] is not False for k in unqualified)
+            or item['versions'] != {'http': '1.6', 'pg_net': '0.19.5', 'plpgsql_check': '2.7',
+                'postgis': '3.3.7', 'supabase_vault': '0.3.1'}
+            or not isinstance(item['build_sha256'], str) or not re.fullmatch('[0-9a-f]{64}', item['build_sha256'])
+            or (item['catalog_sha256'] is not None and (not isinstance(item['catalog_sha256'], str)
+                or not re.fullmatch('[0-9a-f]{64}', item['catalog_sha256'])))):
+        return None
+    return {'scope': 'native-five-provider-semantics-failure', 'status': 'failed',
+        **{k: item[k] for k in ('stage', 'failure_type', 'sqlstate')},
+        'observations': {k: item[k] for k in completed}}
+
+
+def provider_semantic_record(output):
+    records = []
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result)
+            result[key] = value
+        return result
+    for line in output.splitlines():
+        if not line.startswith('{') or len(line) > 4096:
+            continue
+        try:
+            item = json.loads(line, object_pairs_hook=unique)
+        except ValueError:
+            continue
+        if isinstance(item, dict) and item.get('scope') == 'native-five-provider-semantics':
+            records.append(item)
+    require(len(records) == 1)
+    result = records[0]
+    expected = {
+        'scope': 'native-five-provider-semantics', 'status': 'passed', 'stage': 'complete',
+        'versions': {'http': '1.6', 'pg_net': '0.19.5', 'plpgsql_check': '2.7', 'postgis': '3.3.7', 'supabase_vault': '0.3.1'},
+        **{key: True for key in ('genuine_symbols', 'role_acl_catalog', 'actual_anon_vault_denial',
+            'postgis_geometry_geography_gist', 'http_private_response', 'pg_net_worker_identity',
+            'pg_net_commit_only', 'pg_net_rollback_absent', 'vault_encrypt_update_rollback',
+            'plpgsql_valid_invalid', 'dummy_objects_removed', 'all_probe_clients_closed', 'private_http_closed')},
+        **{key: False for key in ('production_binary_parity', 'complete_catalog_parity',
+            'actual_login_and_default_acl_tests', 'post_alignment_services', 'full_schema_ready', 'funded_or_production_complete')},
+    }
+    require(set(result) == set(expected) | {'build_sha256', 'catalog_sha256'})
+    for key, value in expected.items():
+        require(type(result[key]) is type(value) and result[key] == value)
+    for key in ('build_sha256', 'catalog_sha256'):
+        require(isinstance(result[key], str) and re.fullmatch('[0-9a-f]{64}', result[key]))
+    return result
+
+
+ROLE_FAULT_NAMES = tuple(
+    [stage + '-' + fault for stage in ('entry', 'final') for fault in
+     ('extra-role', 'flags', 'settings', 'membership', 'schema-owner', 'schema-acl', 'default-acl', 'extension-version', 'extension-owner')]
+    + [stage + '-statement-error' for stage in ('middle', 'late')]
+    + [stage + '-' + fault for stage in ('entry', 'final') for fault in
+     ('absent', 'replacement', 'extra-client', 'idle-transaction', 'active', 'other-database', 'prepared', 'cron-job')])
+ROLE_LOGIN_NAMES = ('authenticator', 'pgbouncer', 'postgres', 'supabase_auth_admin',
+    'supabase_backup_admin', 'supabase_etl_admin', 'supabase_functions_admin',
+    'supabase_read_only_user', 'supabase_replication_admin', 'supabase_storage_admin')
+ROLE_DEFAULT_GROUPS = (('postgres', 'public'), ('postgres', 'storage'), ('supabase_admin', 'cron'),
+    ('supabase_admin', 'extensions'), ('supabase_admin', 'graphql'), ('supabase_admin', 'graphql_public'),
+    ('supabase_admin', 'public'), ('supabase_admin', 'realtime'), ('supabase_auth_admin', 'auth'))
+ROLE_FAULT_STEPS = frozenset(('source', 'connect-application', 'native-preimage',
+    'connect-installer', 'password-before', 'bind-application', 'render-installer', 'install-prefix',
+    'fault-injection', 'expected-refusal', 'rollback', 'cancel-active', 'close-case', 'rollback-prepared',
+    'backends-absent', 'catalog-restored', 'password-restored', 'close-observer', 'close-all', 'unobserved'))
+
+
+def role_fault_failure(output):
+    """Retain a bounded failed stage, never raw SQL/service errors or a pass."""
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('duplicate key')
+            result[key] = value
+        return result
+    rows = []
+    for line in output.splitlines():
+        if not line.startswith('{') or len(line) > 20000:
+            continue
+        try:
+            row = json.loads(line, object_pairs_hook=unique)
+        except (ValueError, RecursionError):
+            continue
+        if isinstance(row, dict) and row.get('scope') == 'native-role-fault-matrix':
+            rows.append(row)
+    if len(rows) != 1:
+        return None
+    row = rows[0]
+    keys = {'scope', 'status', 'stage', 'cases', 'all_clients_closed', 'production_or_funded',
+            'commit_transport_faults_qualified', 'failure_step', 'failure_type', 'sqlstate'}
+    if (set(row) != keys or row['status'] != 'failed'
+            or row['production_or_funded'] is not False or row['commit_transport_faults_qualified'] is not False
+            or type(row['all_clients_closed']) is not bool
+            or not isinstance(row['failure_step'], str) or row['failure_step'] not in ROLE_FAULT_STEPS
+            or row['failure_type'] not in ('Error', 'AssertionError', 'TypeError', 'RangeError',
+                                          'AbortError', 'TimeoutError', 'error', 'unknown')
+            or (row['sqlstate'] is not None and (not isinstance(row['sqlstate'], str)
+                or not re.fullmatch('[0-9A-Z]{5}', row['sqlstate'])))
+            or not isinstance(row['cases'], list) or len(row['cases']) > len(ROLE_FAULT_NAMES)):
+        return None
+    count = len(row['cases'])
+    stage = ROLE_FAULT_NAMES[min(count, len(ROLE_FAULT_NAMES) - 1)]
+    if row['stage'] != stage and not (count == 0 and row['stage'] == 'source'):
+        return None
+    for observed, name in zip(row['cases'], ROLE_FAULT_NAMES):
+        if (not isinstance(observed, dict) or set(observed) != {'name', 'expected_refusal',
+                'rollback_acknowledged', 'original_catalog_sha256', 'password_catalog_restored', 'backends_absent'}
+                or observed['name'] != name
+                or any(observed[flag] is not True for flag in ('expected_refusal',
+                    'rollback_acknowledged', 'password_catalog_restored', 'backends_absent'))
+                or not isinstance(observed['original_catalog_sha256'], str)
+                or not re.fullmatch('[a-f0-9]{64}', observed['original_catalog_sha256'])):
+            return None
+    return dict(scope='native-role-fault-matrix-failure', status='failed', stage=row['stage'],
+        failure_step=row['failure_step'], failure_type=row['failure_type'], sqlstate=row['sqlstate'],
+        completed_cases=count, all_clients_closed=row['all_clients_closed'])
+
+
+def role_native_record(output, kind):
+    require(kind in ('faults', 'access'))
+    scope = 'native-role-fault-matrix' if kind == 'faults' else 'native-role-access-defaults'
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result)
+            result[key] = value
+        return result
+    rows = []
+    for line in output.splitlines():
+        if not line.startswith('{') or len(line) > 20000:
+            continue
+        try:
+            item = json.loads(line, object_pairs_hook=unique)
+        except ValueError:
+            continue
+        if isinstance(item, dict) and item.get('scope') == scope:
+            rows.append(item)
+    require(len(rows) == 1)
+    row = rows[0]
+    expected = dict(scope=scope, status='passed', stage='complete', all_clients_closed=True,
+                    production_or_funded=False)
+    if kind == 'faults':
+        expected['commit_transport_faults_qualified'] = False
+        require(set(row) == set(expected) | {'cases'})
+        require(isinstance(row['cases'], list) and len(row['cases']) == len(ROLE_FAULT_NAMES))
+        for observed, name in zip(row['cases'], ROLE_FAULT_NAMES):
+            require(isinstance(observed, dict) and set(observed) == {'name', 'expected_refusal',
+                'rollback_acknowledged', 'original_catalog_sha256', 'password_catalog_restored', 'backends_absent'})
+            require(observed['name'] == name)
+            for flag in ('expected_refusal', 'rollback_acknowledged', 'password_catalog_restored', 'backends_absent'):
+                require(observed[flag] is True)
+            require(isinstance(observed['original_catalog_sha256'], str)
+                    and re.fullmatch('[a-f0-9]{64}', observed['original_catalog_sha256']))
+    else:
+        expected.update(set_role_pairs=250, administrative_denials=5, expired_cli_scram_denied=True,
+            wrong_password_denied=True, read_only_write_denied=True, ordinary_creations=24,
+            instrumented_default_materializations=3, storage_create_denials=3,
+            temporary_schema_grants_restored=True, failure_cleanup_observed=False,
+            privilege_checks=1080, actual_object_reads=270, all_objects_removed=True,
+            original_aligned_catalog_restored=True, post_alignment_services=False, full_schema_ready=False)
+        require(set(row) == set(expected) | {'login_roles', 'future_objects'})
+        require(row['login_roles'] == [dict(name=name, authentication='peer' if name == 'postgres' else 'scram-sha-256') for name in ROLE_LOGIN_NAMES])
+        require(isinstance(row['future_objects'], list) and len(row['future_objects']) == 27)
+        for observed, (creator, schema, kind_type) in zip(row['future_objects'],
+                [(creator, schema, kind_type) for creator, schema in ROLE_DEFAULT_GROUPS for kind_type in ('S','f','r')]):
+            require(isinstance(observed, dict) and set(observed) == {'creator','schema','type','creation','direct_acl_sha256'})
+            require(observed['creator'] == creator and observed['schema'] == schema and observed['type'] == kind_type)
+            require(observed['creation'] == ('instrumented-latent-default' if creator == 'postgres' and schema == 'storage' else 'ordinary'))
+            require(isinstance(observed['direct_acl_sha256'], str) and re.fullmatch('[a-f0-9]{64}', observed['direct_acl_sha256']))
+    for key, value in expected.items():
+        require(type(row[key]) is type(value) and row[key] == value)
+    return row
 
 
 def service_preimage(output, path):
@@ -412,6 +669,45 @@ def service_preimage(output, path):
     return proof, raw
 
 
+def post_alignment_auth_record(output, alignment, providers):
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result)
+            result[key] = value
+        return result
+    rows = []
+    for line in output.splitlines():
+        if not line.startswith('{') or len(line) > 4096:
+            continue
+        try:
+            row = json.loads(line, object_pairs_hook=unique)
+        except ValueError:
+            continue
+        if isinstance(row, dict) and row.get('scope') == 'native-post-alignment-auth':
+            rows.append(row)
+    require(len(rows) == 1)
+    row = rows[0]
+    expected = dict(scope='native-post-alignment-auth', status='passed',
+        database='club_arena_qualification',
+        aligned_catalog_sha256=alignment['aligned_catalog_sha256'],
+        provider_build_sha256=providers['build_sha256'],
+        provider_catalog_sha256=providers['catalog_sha256'],
+        fresh_application_client=True, auth_role='supabase_auth_admin',
+        genuine_users=3, signed_in_sessions=3, persisted_aal1_sessions=2,
+        persisted_aal2_sessions=1, persisted_verified_totp_factors=1,
+        application_owner_boundary=True, auth_helper_boundary=True, genuine_migration_set=True,
+        retries=0, post_alignment_auth=True, post_alignment_services=False,
+        full_schema_ready=False, production_or_funded=False, fixture_resources_closed=True)
+    require(set(row) == set(expected) | {'postmaster_started_at'})
+    for key, value in expected.items():
+        require(type(row[key]) is type(value) and row[key] == value)
+    require(isinstance(row['postmaster_started_at'], str) and
+        re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,6})?\+00',
+                     row['postmaster_started_at']))
+    return row
+
+
 def execute(repo, output, expected, run=command):
     receipt = {'version': 1, 'scope': 'pull-request-native-service-smoke',
                'product_certificate': False, 'status': 'failed',
@@ -458,6 +754,12 @@ def execute(repo, output, expected, run=command):
         receipt['stage'] = 'native-services-and-browser'
         result = run(['bash', PREFIX + 'smoke-image.sh', image_id], repo, env, timeout=420)
         receipt['observations'] = smoke_records(result)
+        receipt['role_alignment'] = role_alignment_record(result)
+        receipt['role_native_faults'] = role_native_record(result, 'faults')
+        receipt['role_native_access'] = role_native_record(result, 'access')
+        receipt['provider_semantics'] = provider_semantic_record(result)
+        receipt['post_alignment_auth'] = post_alignment_auth_record(
+            result, receipt['role_alignment'], receipt['provider_semantics'])
         proof, catalog_bytes = service_preimage(result, private_preimage)
         receipt['service_preimage'] = proof
         (output / 'native-service-preimage.json').write_bytes(catalog_bytes)
@@ -465,6 +767,10 @@ def execute(repo, output, expected, run=command):
         # Never serialize command output, environment, service logs, or tokens.
         if isinstance(error, NativeSmokeFailure):
             receipt['native_failures'] = error.diagnostics
+            if error.role_fault_failure is not None:
+                receipt['role_native_fault_failure'] = error.role_fault_failure
+            if error.provider_failure is not None:
+                receipt['provider_semantic_failure'] = error.provider_failure
             if error.exit_code is not None:
                 receipt['native_command_exit_code'] = error.exit_code
         failed = True

@@ -36,6 +36,7 @@ import {
 } from '../engine/HorseTournamentPreflop.js';
 import { selectInChunks } from './supabase/chunkedIn.js';
 import { recoveryFeeCents, tournamentFeeRatio, unitFloorCents } from '../tournament/recoveryFee.js';
+import { UNIT_CENTS_ASSET_NOT_READ, normalizeUnitCents } from '../tournament/tournamentUnit.js';
 import { horseRebuyAllowance } from './FreeBuy.js';
 
 export type TournamentFormat = 'mtt' | 'sng' | 'spin' | 'hu_sng';
@@ -1262,10 +1263,22 @@ function tournamentPurchaseQuote(row: TournamentRowLite): TournamentPurchaseQuot
      * The cap is floored too: a cap that is not on the grid is not a cap the
      * fee can honour. Mirrors fn_ca_recovery_fee_cents.
      */
+    /**
+     * ONE RULE FOR THE UNIT TOO (2026-09-13). This normalisation was written
+     * out here - `Number.isSafeInteger(...) && ... >= 1 ? ... : 1` - which made
+     * it a FOURTH spelling of the unit rule beside `computePlacePrize`'s,
+     * `unitFloorCents`'s and the SQL's, in exactly the shape this phase spent
+     * two migrations collapsing. It reads `tournamentUnit.ts` now.
+     *
+     * An ABSENT `unit_cents` is not the same thing as a chip tournament, so it
+     * is named rather than folded into the normaliser's fallback: no select
+     * populates the column yet, which the recovery-fee changelog records as
+     * "the one wire left" and leaves to the work that opens the Diamond
+     * tournament door, because reading it means joining clubs into the
+     * tournament read.
+     */
     const unitCents =
-      Number.isSafeInteger(Number(row.unit_cents)) && Number(row.unit_cents) >= 1
-        ? Number(row.unit_cents)
-        : 1;
+      row.unit_cents == null ? UNIT_CENTS_ASSET_NOT_READ : normalizeUnitCents(row.unit_cents);
     const floorToUnit = (cents: number) => unitFloorCents(cents, unitCents);
     const feeCents = recoveryFeeCents(recoveryCostCents, feeRatio, unitCents);
     const netCents = Math.max(0, recoveryCostCents - feeCents);

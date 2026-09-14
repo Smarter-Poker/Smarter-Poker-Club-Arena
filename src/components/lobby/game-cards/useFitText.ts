@@ -16,6 +16,17 @@ import { useLayoutEffect, useRef } from 'react';
  *
  * `scaleX` is the horizontal stretch the stylesheet applies via transform
  * (transforms do not affect scrollWidth, so they must be accounted for here).
+ *
+ * WHY THIS ITERATES. Rendered width is not proportional to font-size: glyph
+ * hinting and per-glyph letter-spacing both round, so a ratio derived from one
+ * measurement of the full-size text lands a few per cent wide. Measured on the
+ * console plates 2026-09-13: an 82.8px face needed 0.601, which predicted
+ * 82.98px and actually rendered 87.09px - 4.3px over, with the last letter of
+ * "Save Changes" sitting on the painted rim, which is the one thing the fit
+ * exists to prevent. Callers had begun passing an inflated `scaleX` as a
+ * private safety margin to compensate. So instead of trusting the estimate,
+ * apply it, measure what really happened, and correct - which converges in two
+ * passes and needs no per-caller fudge.
  */
 export function useFitText<T extends HTMLElement = HTMLElement>(
   text: string,
@@ -32,11 +43,28 @@ export function useFitText<T extends HTMLElement = HTMLElement>(
 
     const fit = () => {
       el.style.setProperty('--fit', '1');
-      const available = zone.clientWidth;
+      /* clientWidth is an integer, so on an 82.8px face it reports 83 and
+         licenses 0.2px of overflow. Take the fractional box where there is no
+         border to subtract, and the integer content box where there is. */
+      const available = Math.min(zone.clientWidth, zone.getBoundingClientRect().width);
       const needed = el.scrollWidth * scaleX;
       if (!available || !needed) return;
-      const ratio = Math.min(1, Math.max(minRatio, available / needed));
-      el.style.setProperty('--fit', ratio < 0.995 ? ratio.toFixed(3) : '1');
+      /* Already fits at its designed size: never grow it. */
+      if (needed <= available) {
+        el.style.setProperty('--fit', '1');
+        return;
+      }
+
+      let ratio = Math.max(minRatio, available / needed);
+      for (let pass = 0; pass < 4; pass += 1) {
+        el.style.setProperty('--fit', ratio.toFixed(4));
+        const actual = el.scrollWidth * scaleX;
+        if (actual <= available || ratio <= minRatio) break;
+        const corrected = Math.max(minRatio, ratio * (available / actual));
+        if (ratio - corrected < 0.0005) break;
+        ratio = corrected;
+      }
+      el.style.setProperty('--fit', ratio >= 0.995 ? '1' : ratio.toFixed(4));
     };
 
     fit();

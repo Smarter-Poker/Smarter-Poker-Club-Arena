@@ -191,12 +191,14 @@ export function ZoneText({
   id?: string;
   minRatio?: number;
   /**
-   * Width safety factor. useFitText derives its ratio from ONE measurement of
-   * the unscaled text, so the scaled result lands a couple of percent wide -
-   * hinting at the smaller size, and the trailing letter-space. Measured on the
-   * header 2026-09-09: a 185px zone got a 190px title, and the zone (which hides
-   * its overflow) ate the last letter. Inflating `needed` shrinks the ratio by
-   * the same margin, so the line lands inside its zone with air.
+   * Horizontal stretch this zone's stylesheet applies via `transform: scaleX()`,
+   * which is invisible to scrollWidth and so has to be declared here. Leave it
+   * at 1 unless the zone really is stretched.
+   *
+   * It is NOT a safety margin. It was used as one until 2026-09-13, because
+   * useFitText trusted a single measurement and landed a few per cent wide;
+   * the hook now measures what it actually rendered and corrects, so inflating
+   * this only makes the line smaller than its zone allows.
    */
   headroom?: number;
   style?: CSSProperties;
@@ -277,7 +279,6 @@ export function SpadeConsole({
              thing the fit exists to prevent. The floor drops for titles only;
              every other zone keeps the default. */
           minRatio={0.44}
-          headroom={1.06}
           style={zonePct(pill ? Z.titleBesidePill : Z.title, W, TOP_H)}
         />
         {subtitle && (
@@ -291,7 +292,6 @@ export function SpadeConsole({
           <ZoneText
             text={pill}
             className={`sc__pill sc-ink--${pillInk}`}
-            headroom={1.06}
             style={zonePct(Z.pill, W, TOP_H)}
           />
         )}

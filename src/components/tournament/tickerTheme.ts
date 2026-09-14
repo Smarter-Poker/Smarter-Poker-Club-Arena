@@ -172,7 +172,14 @@ export function railGlow(accent: string): string {
   return `0 10px 22px -14px ${withAlpha(base, 0.55)}`;
 }
 
-/** `#rrggbb` at an alpha, as `rgba()`. */
+/**
+ * `#rrggbb` at an alpha, as `rgba()`.
+ *
+ * Not dead, though a grep that excludes this file will say so: `railGlow`
+ * above is its consumer. It stopped being used from TickerRail when the rail's
+ * border became gunmetal rather than a tinted accent, which is what made it
+ * look unreferenced.
+ */
 export function withAlpha(hex: string, alpha: number): string {
   const base = safeHex(hex, DEFAULT_ACCENT);
   const a = Math.max(0, Math.min(1, Number(alpha) || 0));

@@ -1,6 +1,12 @@
 {
   "_owner": "agent/cowork-ads10/feat/a-sponsors-flight-is-billed. Migration 20260914004548: staff record a sponsor invoice as sent / paid on the flight, both campaign lists return the marks, a phone-opened sponsor is handed to the account that logs in as it, and staff see their sponsor roster.",
-  "functions": ["fn_sponsor_campaign_bill", "fn_sponsor_advertiser_handoff", "fn_sponsor_advertiser_list", "fn_sponsor_campaign_list", "fn_ad_campaign_list"],
+  "functions": [
+    "fn_sponsor_campaign_bill",
+    "fn_sponsor_advertiser_handoff",
+    "fn_sponsor_advertiser_list",
+    "fn_sponsor_campaign_list",
+    "fn_ad_campaign_list"
+  ],
   "columns": {
     "ad_campaign": ["invoiced_at", "paid_at", "billed_by"]
   }

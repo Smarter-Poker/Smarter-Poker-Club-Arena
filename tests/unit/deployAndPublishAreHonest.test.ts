@@ -228,13 +228,23 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
       expect(match, `${name} declares runs-on`).not.toBeNull();
       const runner = match![1];
       if (/secrets\./.test(body)) {
-        expect(runner, `${name} holds a secret and must not read vars.CI_RUNNER`).not.toContain('CI_RUNNER');
-        expect(runner, `${name} holds a secret and must run on a hosted or credential-only runner`).toMatch(hosted);
+        expect(runner, `${name} holds a secret and must not read vars.CI_RUNNER`).not.toContain(
+          'CI_RUNNER'
+        );
+        expect(
+          runner,
+          `${name} holds a secret and must run on a hosted or credential-only runner`
+        ).toMatch(hosted);
       }
-      expect(runner, `${name} must never name a self-hosted label directly`).not.toContain('self-hosted');
+      expect(runner, `${name} must never name a self-hosted label directly`).not.toContain(
+        'self-hosted'
+      );
     }
     for (const name of ['build-and-store', 'publish-to-app', 'publish-to-origin']) {
-      expect(job(publishCode, name), `${name} is the secret-bearing job this law exists for`).toMatch(/secrets\./);
+      expect(
+        job(publishCode, name),
+        `${name} is the secret-bearing job this law exists for`
+      ).toMatch(/secrets\./);
     }
   });
 

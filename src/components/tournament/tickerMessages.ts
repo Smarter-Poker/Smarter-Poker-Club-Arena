@@ -56,6 +56,7 @@ import { formatPopupText } from '../../utils/popupStyle';
 import { formatBuyInShort } from '../../utils/buyIn';
 import { overlayMessage, type OverlayAnnouncement } from '../../utils/overlayAnnouncements';
 import type { TickerTone } from './tickerTheme';
+import { leadMsFor } from './tickerLeadWindow';
 
 export type TickerKind =
   | 'overlays'
@@ -200,6 +201,13 @@ export interface UpcomingTournament {
   buyInFee: number;
   registered: number;
   isRegistered: boolean;
+  /**
+   * The club this event belongs to, when it is NOT the club whose rail this
+   * is. See startingSoonItem: the feed is scoped to every club the player
+   * belongs to and the rail's colours come from the club they are standing in,
+   * so an announcement can be about somewhere else entirely.
+   */
+  foreignClubName?: string | null;
 }
 
 /**
@@ -224,21 +232,49 @@ export function startingSoonItem(t: UpcomingTournament): TickerItem {
      field name in front of it. */
   const cost = formatBuyInShort(t.buyIn, t.buyInFee);
   const costField = /^\d/.test(cost) ? `buy-in ${cost}` : cost;
+
+  /* ── A PLAYER WHO ALREADY PAID IS NOT A PROSPECT ───────────────────────
+     `isRegistered` was computed on every poll and read by nothing except the
+     two personal toasts, so a player who had bought in read the same sales
+     line as a stranger: "Starts In 3:30 - Buy-In 11 - 24 Entered". The price
+     is the one field that is certainly irrelevant to them - they have paid it
+     - and the field is the one that is not. What they need is the clock and
+     the confidence that their seat exists. */
+  const parts = t.isRegistered
+    ? [
+        copy(`you are in ${formatGameTitle(t.name)}`),
+        copy(`starts in ${CLOCK_TOKEN}`),
+        copy(`${t.registered.toLocaleString()} entered`),
+      ]
+    : [
+        copy(`${formatGameTitle(t.name)} starts in ${CLOCK_TOKEN}`),
+        copy(costField),
+        copy(`${t.registered.toLocaleString()} entered`),
+      ];
+
+  /* ── WHICH CLUB IS THIS, THOUGH ────────────────────────────────────────
+     The feed is scoped to every club the player belongs to; the rail's colours
+     and its source switches come from the club they are standing in. So the
+     bar can announce club B's tournament, painted in club A's brand, on club
+     A's table. Naming the other club is the smallest honest fix: it does not
+     decide whether cross-club selling is allowed - that is a product call -
+     it stops the player being unable to tell. */
+  if (t.foreignClubName) parts.splice(1, 0, copy(`at ${t.foreignClubName}`));
+
   return item({
     id: `soon-${t.id}`,
     kind: 'starting_soon',
     lane: LANE.starting_soon,
     tone: TONE.starting_soon,
-    flag: 'STARTING SOON',
-    flagShort: 'SOON',
+    flag: t.isRegistered ? 'YOU ARE IN' : 'STARTING SOON',
+    flagShort: t.isRegistered ? 'SEATED' : 'SOON',
     severity: SEVERITY.starting_soon,
-    parts: [
-      copy(`${formatGameTitle(t.name)} starts in ${CLOCK_TOKEN}`),
-      copy(costField),
-      copy(`${t.registered.toLocaleString()} entered`),
-    ],
+    parts,
     deadlineMs: t.startsAt,
-    windowMs: 5 * 60_000,
+    /* Its OWN last call, not a flat five minutes - see tickerLeadWindow. The
+       drain under the strip reads this, so a 15-minute call drains across
+       fifteen minutes rather than emptying in the first third. */
+    windowMs: leadMsFor(t.buyIn + t.buyInFee),
     subject: formatGameTitle(t.name),
     registeredByViewer: t.isRegistered,
     // Matches the window the render used to filter on: an event stays on the

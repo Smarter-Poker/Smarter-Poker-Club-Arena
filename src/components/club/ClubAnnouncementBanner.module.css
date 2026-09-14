@@ -1,41 +1,35 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- * 📣 CLUB ANNOUNCEMENT BANNER — Premium Dark Theme CSS
- * ═══════════════════════════════════════════════════════════════════════════════
+/*
+ * CLUB ANNOUNCEMENT BANNER - #ClubArenaConsole (2026-09-14)
+ *
+ * A BANNER IS NOT A CARD. Nothing here is a frame: no border, no radius, no
+ * fill, no plate. The announcement is inked straight onto the black glass -
+ * the kind as a lit word, the title in engraved silver, the copy in Inter,
+ * the author muted - and closed by one engraved rule. Prev / Next / Dismiss
+ * are lit words on the glass. The inks are the console's own (sc-ink--*,
+ * SpadeConsole.css). Sizes are in cqw against the banner so a 320px phone and
+ * a 430px phone get the same picture.
  */
 
 .banner {
+  container-type: inline-size;
   display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 12px 20px;
-  border-radius: 10px;
+  flex-direction: column;
+  gap: 2cqw;
+  padding: 2.5cqw 4cqw 3cqw;
   margin-bottom: 16px;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
-  transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-.banner.info {
-  background: rgba(59, 130, 246, 0.15);
-  border: 1px solid rgba(59, 130, 246, 0.3);
-}
-
-.banner.warning {
-  background: rgba(251, 191, 36, 0.15);
-  border: 1px solid rgba(251, 191, 36, 0.3);
+  border: 0;
+  background: none;
+  /* The engraved rule that closes the banner: a black line with a hairline
+     of light under it, the same rule the console body uses between rows. */
+  border-bottom: 1px solid #000;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 8%);
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
 }
 
-.banner.success {
-  background: rgba(16, 185, 129, 0.15);
-  border: 1px solid rgba(16, 185, 129, 0.3);
-}
-
+/* An urgent announcement breathes. The pulse is an animation and it plays
+   every time (animations always play); it only moves opacity. */
 .banner.urgent {
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.3);
   animation: clubAnnouncementBannerPulse 2s infinite;
-  box-shadow: 0 0 20px rgba(239, 68, 68, 0.2);
 }
 
 @keyframes clubAnnouncementBannerPulse {
@@ -51,96 +45,89 @@
 
 .content {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  flex: 1;
-}
-
-.icon {
-  font-size: 20px;
-  flex-shrink: 0;
-}
-
-.text {
-  display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1cqw;
+  min-width: 0;
+}
+
+.kind {
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 2.9cqw;
 }
 
 .title {
-  font-size: 14px;
-  font-weight: 600;
-  color: white;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 5cqw;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
 }
 
 .message {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.8);
-  line-height: 1.4;
-}
-
-.meta {
-  flex-shrink: 0;
+  margin: 0;
+  color: #d7dee7;
+  font:
+    500 3.6cqw/1.45 Inter,
+    system-ui,
+    sans-serif;
+  text-shadow: 0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+  overflow-wrap: anywhere;
 }
 
 .author {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
-  font-style: italic;
+  font-size: 3cqw;
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }
 
 .actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: flex-end;
+  gap: 4cqw;
+  flex-wrap: wrap;
 }
 
 .pagination {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2.5cqw;
 }
 
-.pagination button {
-  width: 24px;
-  height: 24px;
-  background: rgba(255, 255, 255, 0.1);
-  border: none;
-  border-radius: 4px;
-  color: white;
+.count {
+  font-size: 3cqw;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The lit word: an action printed on the glass, no plate and no box. A 44px
+   tap target is kept by the padding, not by a drawn button. */
+.word {
+  min-height: 44px;
+  margin: 0;
+  padding: 0 2cqw;
+  border: 0;
+  background: none;
+  font:
+    800 3.4cqw/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   cursor: pointer;
 }
 
-.pagination span {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
-  padding: 0 4px;
+.word:active {
+  filter: brightness(1.3);
+}
+
+.word:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 2px;
 }
 
 .dismissBtn {
-  width: 28px;
-  height: 28px;
-  background: rgba(255, 255, 255, 0.1);
-  border: none;
-  border-radius: 6px;
-  color: rgba(255, 255, 255, 0.6);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-/* Mobile */
-@media (max-width: 600px) {
-  .banner {
-    flex-wrap: wrap;
-    gap: 12px;
-  }
-
-  .meta {
-    width: 100%;
-    order: 3;
-  }
-
-  .actions {
-    margin-left: auto;
-  }
+  padding-right: 0;
 }

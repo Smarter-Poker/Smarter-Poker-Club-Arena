@@ -428,6 +428,7 @@ export interface CashFeatureSource {
   bomb_pot_ante_multiplier?: number | null;
   bomb_pot_ante_fixed?: number | null;
   ante_enabled?: boolean | null;
+  big_blind_ante_enabled?: boolean | null;
   ante?: number | null;
   seven_deuce_enabled?: boolean | null;
   seven_deuce_amount?: number | null;
@@ -596,11 +597,25 @@ export function cashRuleMedallions(row: CashFeatureSource): RuleMedallion[] {
 
   if (col(row.ante_enabled) ?? on(s, 'ante_enabled')) {
     const amt = Number(row.ante) || num(s, 'ante_amount') || 0;
+    // The engine reads this column, not the table name or legacy settings.
+    // A narrow/cached row may omit it until the full table read arrives; an
+    // absent mode cannot promise that every player pays a Madness ante.
+    const bigBlindAnte = row.big_blind_ante_enabled;
+    const perPlayerAnte = bigBlindAnte === false || bigBlindAnte === null;
     rules.push({
       key: 'ante',
-      label: 'ANTE',
+      label: bigBlindAnte === true ? 'BIG BLIND ANTE' : 'ANTE',
       detail: amt > 0 ? amt.toLocaleString() : undefined,
-      tip: amt > 0 ? `Every player antes ${amt.toLocaleString()} a hand` : 'Antes are in play',
+      tip:
+        bigBlindAnte === true
+          ? amt > 0
+            ? `The player in the big blind antes ${amt.toLocaleString()} a hand`
+            : 'The player in the big blind pays the ante'
+          : amt > 0
+            ? perPlayerAnte
+              ? `Every player antes ${amt.toLocaleString()} a hand`
+              : `An ante of ${amt.toLocaleString()} is in play`
+            : 'Antes are in play',
     });
   }
 

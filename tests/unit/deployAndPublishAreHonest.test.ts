@@ -203,12 +203,49 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     expect(origin).not.toContain('StrictHostKeyChecking=accept-new');
   });
 
-  it('runs every release job on a fresh hosted runner', () => {
-    const runners = [...publish.matchAll(/^\s+runs-on:\s*(.+)$/gm)].map((match) => match[1].trim());
-    expect(runners.length).toBeGreaterThanOrEqual(4);
-    expect(new Set(runners)).toEqual(new Set(['ubuntu-latest']));
-    expect(publish).not.toContain('vars.CI_RUNNER');
-    expect(publish).not.toContain('self-hosted');
+  it('keeps every secret-bearing release job off the shared pull-request runner pool', () => {
+    // 2026-09-14. The shared estate-linux pool (vars.CI_RUNNER) runs pull-request
+    // code, so a job that holds a secret must never be scheduled on it. That is
+    // the whole of the concern #4189 raised - and #4189 answered it by pinning
+    // EVERY job, secret or not, to ubuntu-latest, which billed ~70 hosted minutes
+    // per CI run ($121 on 2026-09-12) while 33 estate runners sat idle.
+    //
+    // The law is separation, not hosting: jobs with secrets read
+    // vars.PUBLISH_RUNNER (unset => ubuntu-latest, later a credential-only label
+    // that shares no host with pull-request code); jobs without secrets may use
+    // the pull-request pool. A job that gains a secret must also change its
+    // runs-on, and this test is what makes that pairing mandatory.
+    const hosted = /^(ubuntu-latest|\$\{\{ vars\.PUBLISH_RUNNER \|\| 'ubuntu-latest' \}\})$/;
+    // Only keys under `jobs:` are jobs; `on:` has two-space keys of its own.
+    const jobsStart = publishCode.search(/^jobs:\s*$/m);
+    expect(jobsStart, 'publish workflow declares jobs').toBeGreaterThan(-1);
+    const jobsSection = publishCode.slice(jobsStart);
+    const jobs = [...jobsSection.matchAll(/^ {2}([A-Za-z0-9_-]+):\s*$/gm)].map((m) => m[1]);
+    expect(jobs.length).toBeGreaterThanOrEqual(4);
+    for (const name of jobs) {
+      const body = job(jobsSection, name);
+      const match = body.match(/^\s+runs-on:\s*(.+?)\s*$/m);
+      expect(match, `${name} declares runs-on`).not.toBeNull();
+      const runner = match![1];
+      if (/secrets\./.test(body)) {
+        expect(runner, `${name} holds a secret and must not read vars.CI_RUNNER`).not.toContain(
+          'CI_RUNNER'
+        );
+        expect(
+          runner,
+          `${name} holds a secret and must run on a hosted or credential-only runner`
+        ).toMatch(hosted);
+      }
+      expect(runner, `${name} must never name a self-hosted label directly`).not.toContain(
+        'self-hosted'
+      );
+    }
+    for (const name of ['build-and-store', 'publish-to-app', 'publish-to-origin']) {
+      expect(
+        job(publishCode, name),
+        `${name} is the secret-bearing job this law exists for`
+      ).toMatch(/secrets\./);
+    }
   });
 
   it('requires both the built artifact and the test verdict before publishing', () => {

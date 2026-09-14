@@ -1,0 +1,15 @@
+{
+  "case": "D9-sealed-satellite-completion",
+  "sha256": {
+    "current-functions-acls.sql": "0ff50d38a49f38f608da9ac8fd5e750841971999ac349beb2c065ceccfe53d2a",
+    "current-functions.sql": "4520263782e5c5d228458896747e04bdcb95d6619b990ec90fffa6a214a5c377",
+    "integration.sql": "537b9076099a68561783a7a9714acb4c86f99543a9fc976332490e7d2ecfa133",
+    "live-three-target-support.json": "6384670963fd15573b288d49da04f39d963985722f35936266d9b8385db193dd",
+    "original-contracts.json": "1da10ab022dcfc0bedf2f47f1c3138a8fd916edaaec8bf3a6ca8f1f7c248aca4",
+    "remainders-schema.sql": "9c504302f8c76b43e719436dfbd860873f33fe75567398eea043669843b5a019",
+    "seed-targets.py": "6a628259fe7eb118f2acced17c417cc58e35015b0b5c5cbe8e3f49cdfb77d785",
+    "test-satellite-prerequisites.py": "2a167ac52de6b2e42933687b26e2423863e54950439d01e62e71c57f397f9c09",
+    "test-satellites.py": "d618d0eefaa16ac9291ddc2a3eb4d4a3a917bdd216b74433b5188b2004d1af21"
+  },
+  "productionWrites": 0
+}

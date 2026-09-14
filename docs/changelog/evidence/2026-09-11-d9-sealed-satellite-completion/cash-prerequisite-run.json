@@ -1,0 +1,17 @@
+{
+  "status": "passed",
+  "case": "D9-cash-completion",
+  "runtime": "/tmp/ca-e2-owned-3b2pmgbw/rehearsal",
+  "modernRuntime": "/tmp/ca-e2-owned-3b2pmgbw/modern-regression",
+  "manifestSha256": "4423d1943c08ce14c9af0a19ff3da0ef52f4eed5f43cad8914323ad1ec176169",
+  "cashCompleted": 21,
+  "cohort28Remaining": 7,
+  "satelliteHistoricalEconomicsOutstanding": 3,
+  "revivalRefusals": 3,
+  "chipMismatchRefusals": 1,
+  "broaderCohortAdditionalUnfinished": 11,
+  "broaderCohortAdditionalPaidHistory": 1,
+  "productionWrites": 0,
+  "privateAclDriftRefused": true,
+  "placePayerAclDriftRefused": true
+}

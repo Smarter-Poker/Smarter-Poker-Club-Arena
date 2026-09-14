@@ -1,0 +1,65 @@
+[
+  {
+    "acl": ["postgres=X/postgres"],
+    "owner": "postgres",
+    "config": ["search_path=public, pg_temp"],
+    "identity": "trg_capture_satellite_economics_on_start()",
+    "source_md5": "601f58995000547ab9e11c58368bb230",
+    "definition_md5": "c6b7bd7898decba8ab291205f71af1c0",
+    "security_definer": true
+  },
+  {
+    "acl": ["postgres=X/postgres"],
+    "owner": "postgres",
+    "config": ["search_path=pg_catalog, public, pg_temp", "TimeZone=UTC", "statement_timeout=45s"],
+    "identity": "fn_ca_complete_legacy_tournament(uuid,text)",
+    "source_md5": "745a49a8c5374080204cc64c75f80690",
+    "definition_md5": "cb7c8deb1695a53eef0fabe8e078c05d",
+    "security_definer": true
+  },
+  {
+    "acl": ["postgres=X/postgres"],
+    "owner": "postgres",
+    "config": ["search_path=public", "statement_timeout=30s"],
+    "identity": "fn_ca_satellite_settlement_receipt(uuid,uuid)",
+    "source_md5": "381b3e0691a2b9303693653f5110d568",
+    "definition_md5": "706ce8ee53b87a2a5547443b460ceb93",
+    "security_definer": true
+  },
+  {
+    "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+    "owner": "postgres",
+    "config": ["search_path=public, pg_temp", "statement_timeout=30s"],
+    "identity": "fn_settle_satellite_tournament(uuid,uuid)",
+    "source_md5": "486d0e6729de8d518d7faf0c253b65d3",
+    "definition_md5": "5537ad0729a9a2cd9d14c961de5fcee2",
+    "security_definer": true
+  },
+  {
+    "acl": ["postgres=X/postgres"],
+    "owner": "postgres",
+    "config": ["search_path=public", "statement_timeout=30s"],
+    "identity": "fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid)",
+    "source_md5": "27ba48e50a46fefa2dfcc305429163c9",
+    "definition_md5": "91807b62232502c56b16f3c6d41bcef0",
+    "security_definer": true
+  },
+  {
+    "acl": ["postgres=X/postgres"],
+    "owner": "postgres",
+    "config": ["search_path=pg_catalog, public, pg_temp", "TimeZone=UTC"],
+    "identity": "fn_ca_legacy_satellite_contract_proof(uuid)",
+    "source_md5": "bd3f9193668ed45c24b3a61edcda5bf4",
+    "definition_md5": "6c51b2a49367fbfbc95d060fb0e2cfa5",
+    "security_definer": true
+  },
+  {
+    "acl": ["postgres=X/postgres"],
+    "owner": "postgres",
+    "config": ["search_path=public", "statement_timeout=30s"],
+    "identity": "fn_ca_legacy_satellite_receipt_check(uuid,uuid,boolean)",
+    "source_md5": "93739b8d2813d367d1cdac710a70ce97",
+    "definition_md5": "d7cfe74115dda5fabddec21f19828ece",
+    "security_definer": true
+  }
+]

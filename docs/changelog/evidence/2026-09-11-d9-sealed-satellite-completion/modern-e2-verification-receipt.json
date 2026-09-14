@@ -1,0 +1,178 @@
+{
+  "verifiedAt": "2026-09-11T19:46:21.705783+00:00",
+  "eventId": "bee519fa-ff07-438c-9542-d386fc821908",
+  "mode": "D12-all-seven-guards-enabled-plus-D9-no-legacy-seal",
+  "resequencingToggles": 0,
+  "hypotheticalFutureBusts": 11,
+  "historicalEliminatedRows": 155,
+  "historicalPositionsCorrected": 148,
+  "nativePaidRangeBustsCreatePlaceObligations": false,
+  "expectedOrderAll167Matches": true,
+  "historicalStatusTimeSequenceChipsUnchanged": true,
+  "financialProof": {
+    "escrow": {
+      "fee_out": 0.0,
+      "enforced": true,
+      "gross_in": 54,
+      "bounty_in": 0,
+      "closed_at": "2026-09-11T19:46:21.036791+00:00",
+      "opened_at": "2026-09-09T22:26:12.421653+00:00",
+      "prize_out": 304.0,
+      "bounty_out": 0,
+      "close_note": "terminal receipt: exact zero",
+      "overlay_in": 250,
+      "refund_fee": 0,
+      "reserve_in": 0,
+      "updated_at": "2026-09-11T19:46:21.036791+00:00",
+      "fee_balance": 0.0,
+      "opened_from": "shadow at first sight (overlay)",
+      "reserve_out": 0,
+      "refund_prize": 0,
+      "satellite_in": 0,
+      "prize_balance": 0.0,
+      "refund_bounty": 0,
+      "tournament_id": "bee519fa-ff07-438c-9542-d386fc821908",
+      "bounty_balance": 0.0,
+      "fee_entries_in": 0,
+      "satellite_fee_in": 0,
+      "terminal_closed_at": "2026-09-11T19:46:21.036791+00:00"
+    },
+    "status": "COMPLETED",
+    "active_seats": 0,
+    "payout_cents": 30400,
+    "closed_tables": 19,
+    "new_ledger_cents": 30400,
+    "obligation_cents": 30400,
+    "terminal_receipts": 1,
+    "trigger_execution": "origin",
+    "member_credit_cents": 30400,
+    "new_wallet_receipt_cents": 30400,
+    "original_ledger_unchanged": true,
+    "original_payouts_unchanged": true,
+    "original_wallet_terminal_markers_added": 54,
+    "original_wallet_terminal_markers_correct": true,
+    "original_wallet_financial_fields_unchanged": true
+  },
+  "payouts": [
+    {
+      "place": 1,
+      "userId": "8327a08a-77e7-4f33-be45-e086a718c9e2",
+      "cents": 6870
+    },
+    {
+      "place": 2,
+      "userId": "91dfbccd-e521-4821-9cdc-3d058a0060e4",
+      "cents": 3946
+    },
+    {
+      "place": 3,
+      "userId": "d4d3e2b3-1520-4a01-aada-8d6d1b2364b6",
+      "cents": 2852
+    },
+    {
+      "place": 4,
+      "userId": "2e1b3f30-cfaa-4aba-8af8-0f9dae8020ee",
+      "cents": 2265
+    },
+    {
+      "place": 5,
+      "userId": "7a74d9fe-baef-4224-b20e-cea476853795",
+      "cents": 1897
+    },
+    {
+      "place": 6,
+      "userId": "66417bd4-c8e5-4666-af6f-3d85a43593d9",
+      "cents": 1639
+    },
+    {
+      "place": 7,
+      "userId": "781b24c7-12da-412e-a76a-91d3eb4227c3",
+      "cents": 1447
+    },
+    {
+      "place": 8,
+      "userId": "049c89ca-8c3a-4ffa-9f68-38849f956f07",
+      "cents": 1301
+    },
+    {
+      "place": 9,
+      "userId": "d7c8507a-84fc-41d8-9725-d651813bbacb",
+      "cents": 1186
+    },
+    {
+      "place": 10,
+      "userId": "e4ea354f-7a17-45c9-b6a7-d9e10e6450f1",
+      "cents": 1088
+    },
+    {
+      "place": 11,
+      "userId": "205f86f2-41be-4621-ab0c-f0a94074147e",
+      "cents": 1009
+    },
+    {
+      "place": 12,
+      "userId": "1f44c9c6-18e5-46f4-bf7e-2ed57071f689",
+      "cents": 939
+    },
+    {
+      "place": 13,
+      "userId": "62c2fc6c-e6e2-4a6a-9b47-e038bcc5a5db",
+      "cents": 882
+    },
+    {
+      "place": 14,
+      "userId": "161a15e0-f5d8-4f11-995a-20e73c5ee9ed",
+      "cents": 833
+    },
+    {
+      "place": 15,
+      "userId": "631a3049-dbb7-4668-8d52-c36efdb395d5",
+      "cents": 787
+    },
+    {
+      "place": 16,
+      "userId": "a0dbce6c-9df7-468c-b1ba-bfae2e31e774",
+      "cents": 748
+    },
+    {
+      "place": 17,
+      "userId": "4f0bbf2a-7a7e-43f1-bc19-c0f937419388",
+      "cents": 711
+    }
+  ],
+  "idempotentTerminalReplay": {
+    "unchanged": true,
+    "beforeHashes": {
+      "tournament_players": "7e10c131614b313a4458941fef91d73e",
+      "tournament_payouts": "dca6cc977ff058b89abff07e593f3332",
+      "tournament_obligations": "d160f889b2d95f00a0c5cadda097e31e",
+      "tournament_terminal_settlements": "3511ce99df10968de9362e069f8c4632",
+      "tournament_escrow": "248a75bf84bf55b03dbc0f0dd4b2b575",
+      "chip_ledger": "c375f25cfb4063bbec722b716856fe47",
+      "wallet_transactions": "dffc1a33e706a388c07d8ad3f1e9ae48",
+      "club_members": "e5266aa49ae15e90c27b6184cd21069d",
+      "tables": "da2eaed4576eb511771841dfce6228c2",
+      "table_seats": "c49cf7bfe09ada12a80d631251f1b7c1"
+    },
+    "afterHashes": {
+      "tournament_players": "7e10c131614b313a4458941fef91d73e",
+      "tournament_payouts": "dca6cc977ff058b89abff07e593f3332",
+      "tournament_obligations": "d160f889b2d95f00a0c5cadda097e31e",
+      "tournament_terminal_settlements": "3511ce99df10968de9362e069f8c4632",
+      "tournament_escrow": "248a75bf84bf55b03dbc0f0dd4b2b575",
+      "chip_ledger": "c375f25cfb4063bbec722b716856fe47",
+      "wallet_transactions": "dffc1a33e706a388c07d8ad3f1e9ae48",
+      "club_members": "e5266aa49ae15e90c27b6184cd21069d",
+      "tables": "da2eaed4576eb511771841dfce6228c2",
+      "table_seats": "c49cf7bfe09ada12a80d631251f1b7c1"
+    }
+  },
+  "satelliteMigrationInstalledBeforeFutureFinishes": "537b9076099a68561783a7a9714acb4c86f99543a9fc976332490e7d2ecfa133",
+  "beforeOrdinaryFinish": {
+    "status": "RUNNING",
+    "payouts": 0,
+    "survivors": 12,
+    "legacy_seals": 0
+  },
+  "legacySealsAfterOrdinaryFinish": 0
+}

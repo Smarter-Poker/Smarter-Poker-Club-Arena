@@ -123,6 +123,9 @@ AS $function$
   FROM m;
 $function$;
 
+REVOKE ALL ON FUNCTION public.fn_tournament_conservation_delta(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_tournament_conservation_delta(uuid) TO service_role;
+
 DO $verify$
 BEGIN
   IF md5(pg_get_functiondef('public.fn_tournament_conservation_delta(uuid)'::regprocedure)) <> '435c8f7eabc7d5b78b893885c91c738a' THEN

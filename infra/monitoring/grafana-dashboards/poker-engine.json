@@ -78,6 +78,37 @@
         }
       ],
       "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 } }
+    },
+    {
+      "id": 6,
+      "title": "Engine process memory (what the engine itself weighs)",
+      "description": "Added 2026-09-14. The host panel above cannot say whether growth is the engine, a worker or the page cache; these can. rss is the whole process. heap used/total is the V8 main isolate. The legacy native-main-arena series is current [heap] virtual extent, not resident memory or allocation ownership. The incident recorded RSS growth with a stable main-isolate heap band; TLS allocation is a hypothesis, not established by this graph. See docs/runbooks/engine-memory.md.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        { "expr": "poker_engine_process_rss_bytes", "legendFormat": "rss" },
+        { "expr": "poker_engine_heap_used_bytes", "legendFormat": "heap used" },
+        { "expr": "poker_engine_heap_total_bytes", "legendFormat": "heap total" },
+        { "expr": "poker_engine_native_main_arena_bytes", "legendFormat": "heap virtual extent" },
+        { "expr": "poker_engine_external_bytes", "legendFormat": "external" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "bytes", "min": 0 } }
+    },
+    {
+      "id": 7,
+      "title": "Build headroom (engine-01)",
+      "description": "Added 2026-09-14. The release train builds the next engine image on this host and refuses below 1179648 KiB available (server/scripts/build-engine-image.sh). Available below the line means the next engine deploy is refused; it was, 11 of 14 times on the night of 2026-09-13. Alerts: EngineBuildHeadroomLost, EngineHostNearOOM.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "expr": "node_memory_MemAvailable_bytes{host=\"engine-01\"}",
+          "legendFormat": "available"
+        },
+        { "expr": "vector(1207959552)", "legendFormat": "image build needs" },
+        { "expr": "vector(268435456)", "legendFormat": "near OOM" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "bytes", "min": 0 } }
     }
   ],
   "refresh": "10s",

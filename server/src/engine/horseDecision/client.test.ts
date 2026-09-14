@@ -193,6 +193,114 @@ const fastResult = (requestId: number, fence: string): FastHorseDecisionResult =
 });
 
 describe('LiveHorseDecisionWorkerClient', () => {
+  it.each([10, 11])(
+    'accepts plans only for the original reference wager (final amount %s)',
+    async (amount) => {
+      const worker = new FakeWorker();
+      const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+      worker.emitMessage(ready);
+      const input = snapshot('effect-reference');
+      input.gameState.stage = 'flop';
+      input.gameState.actionHistory = [
+        {
+          timestamp: 12,
+          userId: 'poster',
+          stage: 'preflop',
+          seat: 2,
+          action: 'post_bb',
+          amount: 2,
+        } as any,
+      ];
+      input.decisionKey = buildHorseDecisionKey(input);
+      const pending = client.decideFast(input);
+      void pending.catch(() => undefined);
+      const reply = fastResult(1, input.fence);
+      const graph = new HorsePolicyGraph(() => 0);
+      let value: typeof reply.decision | null = null;
+      for (const node of HORSE_POLICY_ORDER)
+        value = graph.run(node, value, () => ({
+          decision: {
+            action: 'bet' as const,
+            amount: node === 'reference' ? 10 : amount,
+            thinkTime: 0,
+          },
+        })).decision;
+      reply.decision = graph.finish(value!);
+      reply.effects = [
+        { type: 'plan', handKey: '12:poster', userId: 'horse-1', barrelIntent: true },
+      ];
+      worker.emitMessage(reply);
+      if (amount === 10) {
+        expect(await pending).toMatchObject({
+          effects: reply.effects,
+          decision: { action: 'bet', amount: 10 },
+        });
+        const stopping = client.stop();
+        worker.emitMessage({ type: 'STOPPED' });
+        await stopping;
+      } else {
+        expect(client.status().phase).toBe('failed');
+        await expect(pending).rejects.toThrow('invalid decision effects');
+      }
+    }
+  );
+  it.each([
+    'other_horse',
+    'other_hand',
+    'other_street',
+    'missing',
+    'malformed',
+    'brain_fallback',
+  ] as const)(
+    'refuses speculative effects with %s provenance before table execution',
+    async (fault) => {
+      const worker = new FakeWorker();
+      const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+      worker.emitMessage(ready);
+      const input = snapshot('effect-owner');
+      input.gameState.stage = 'flop';
+      input.gameState.actionHistory = [
+        {
+          timestamp: 12,
+          userId: 'poster',
+          stage: 'preflop',
+          seat: 2,
+          action: 'post_bb',
+          amount: 2,
+        } as any,
+      ];
+      input.decisionKey = buildHorseDecisionKey(input);
+      const pending = client.decideFast(input);
+      void pending.catch(() => undefined);
+      const reply = fastResult(1, input.fence);
+      const originGraph = new HorsePolicyGraph(() => 0);
+      let originDecision: typeof reply.decision | null = null;
+      for (const node of HORSE_POLICY_ORDER)
+        originDecision = originGraph.run(node, originDecision, () => ({
+          decision: { action: 'bet' as const, amount: 10, thinkTime: 0 },
+        })).decision;
+      reply.decision = originGraph.finish(originDecision!);
+      reply.effects = [
+        {
+          type: 'raise_plan',
+          handKey: '12:poster',
+          userId: 'horse-1',
+          street: 'flop',
+          plan: 'callOnce',
+        },
+      ];
+      if (fault === 'other_horse') reply.effects[0].userId = 'horse-2';
+      if (fault === 'other_hand') reply.effects[0].handKey = '13:poster';
+      if (fault === 'other_street') (reply.effects[0] as any).street = 'turn';
+      if (fault === 'missing') reply.effects = undefined as any;
+      if (fault === 'malformed') reply.effects.push(null as any);
+      if (fault === 'brain_fallback') reply.decision.policyFallback = 'brain_exception';
+      worker.emitMessage(reply);
+      expect(client.status().phase).toBe('failed');
+      await expect(pending).rejects.toThrow('invalid decision effects');
+      expect(client.status().completedJobs).toBe(0);
+    }
+  );
   it.each([null, undefined, 3, 'FAST_RESULT', [], {}])(
     'contains a malformed response envelope: %j',
     async (message) => {

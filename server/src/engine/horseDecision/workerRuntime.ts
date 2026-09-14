@@ -2,6 +2,10 @@ import { performance } from 'node:perf_hooks';
 
 import { HorseLogic } from '../HorseLogic.js';
 import { HorseMind } from '../HorseMind.js';
+import {
+  horseDecisionEffectsAreValid,
+  horseReferenceWagerWasRetained,
+} from '../HorseDecisionEffects.js';
 import { prepareTournamentFutureHandFacts } from '../HorseTournamentFutureHand.js';
 import type { CapturedHorseMindDecision, HorseMindDecisionEffect } from '../HorseMind.js';
 import { restoreFastRandom, saveFastRandom } from '../HorseEval.js';
@@ -412,8 +416,8 @@ export class HorseDecisionWorkerRuntime {
       throw new Error('rngBefore must be an unsigned 32-bit integer');
     }
     if (request.type === 'COMMIT_DECISION_EFFECTS') {
-      if (!Array.isArray(request.effects) || request.effects.length > 16) {
-        throw new Error('decision effects must be an array of at most 16 entries');
+      if (!horseDecisionEffectsAreValid(request.effects)) {
+        throw new Error('invalid decision effects: expected at most 16 bounded plan records');
       }
     }
     if (request.type === 'DECIDE_DISCARD') {
@@ -1059,6 +1063,13 @@ export class HorseDecisionWorkerRuntime {
     } finally {
       this.deps.restoreRng(canonicalRng);
     }
+    if (!horseDecisionEffectsAreValid(captured.effects)) {
+      throw new Error('Horse decision captured invalid plan effects');
+    }
+    const effects = horseReferenceWagerWasRetained(captured.value) ? captured.effects : [];
+    if (captured.effects.length > 0 && effects.length === 0) {
+      this.deps.noteFeature('phase15_reference_plans_retired');
+    }
     const computeMs = Math.max(0, this.deps.now() - startedAt);
     const governorScale = this.deps.governorScale();
     this.deps.noteDecision(request.gameState.gameVariant || 'nlh', computeMs);
@@ -1072,10 +1083,9 @@ export class HorseDecisionWorkerRuntime {
       rngAfter,
       computeMs,
       governorScale,
-      // A caught policy failure may have prepared plans before degrading to
-      // check/fold. Those plans do not belong to the fallback action and must
-      // never reach the later authoritative effect-commit path.
-      effects: captured.value.policyFallback === 'brain_exception' ? [] : captured.effects,
+      // Retain intent only when the reference wager survived every later
+      // policy owner. The client separately binds its hand, horse and street.
+      effects,
     });
   }
 

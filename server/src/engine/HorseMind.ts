@@ -36,6 +36,7 @@
 import type { Card, SeatPlayer, ActionRecord } from '../types.js';
 import { RANK_VALUES } from './PokerEngine.js';
 import type { OppPostflopRead } from './HorseEval.js';
+import { horseDecisionEffectsAreValid, horseMindHandKey } from './HorseDecisionEffects.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OPPONENT STATS
@@ -626,8 +627,7 @@ export class HorseMind {
 
   /** Stable per-hand key shared by observe(), plans, and callers. */
   static handKeyOf(history: ActionRecord[] | undefined): string | null {
-    if (!history || history.length === 0) return null;
-    return `${history[0].timestamp}:${history[0].userId}`;
+    return horseMindHandKey(history);
   }
 
   /** Read-only access for diagnostics/tests. */
@@ -972,6 +972,9 @@ export class HorseMind {
 
   /** Apply one accepted decision's idempotent intent writes in FIFO order. */
   static applyDecisionEffects(effects: readonly HorseMindDecisionEffect[]): void {
+    if (!horseDecisionEffectsAreValid(effects)) {
+      throw new Error('HorseMind.applyDecisionEffects: invalid decision effects');
+    }
     if (this.decisionEffectSink) {
       throw new Error('HorseMind.applyDecisionEffects: cannot commit during capture');
     }

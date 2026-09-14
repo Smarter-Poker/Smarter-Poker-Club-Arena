@@ -72,7 +72,7 @@ describe('live horse decisions stay outside the table event loop', () => {
     expect(workerRuntime).toContain('this.deps.captureDecisionEffects(() =>');
     expect(workerRuntime).toContain('decision: captured.value');
     expect(workerRuntime).toContain(
-      "effects: captured.value.policyFallback === 'brain_exception' ? [] : captured.effects"
+      'horseReferenceWagerWasRetained(captured.value) ? captured.effects : []'
     );
     expect(workerRuntime).toContain('this.deps.applyDecisionEffects(request.effects)');
     expect(schedule).toContain('worker.runWithDispatchBarrier(() =>');

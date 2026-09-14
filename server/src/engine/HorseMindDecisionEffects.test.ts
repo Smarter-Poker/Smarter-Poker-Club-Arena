@@ -3,6 +3,25 @@ import { describe, expect, it } from 'vitest';
 import { HorseMind } from './HorseMind.js';
 
 describe('HorseMind speculative decision effects', () => {
+  it('rejects an entire malformed batch before any plan becomes visible', () => {
+    const handKey = `atomic-effects-${Date.now()}`;
+    HorseMind.runInSandbox(HorseMind.createSandbox(), () => {
+      expect(() =>
+        HorseMind.applyDecisionEffects([
+          { type: 'plan', handKey, userId: 'horse-effects', barrelIntent: true },
+          {
+            type: 'outlook',
+            handKey,
+            userId: 'horse-effects',
+            street: 'flop',
+            good: null,
+            scare: [],
+          } as any,
+        ])
+      ).toThrow();
+      expect(HorseMind.getPlan(handKey, 'horse-effects')).toBeUndefined();
+    });
+  });
   it('keeps plan writes invisible until the authoritative action commits them', () => {
     const handKey = `effects-${Date.now()}-${Math.random()}`;
     const captured = HorseMind.captureDecisionEffects(() => {

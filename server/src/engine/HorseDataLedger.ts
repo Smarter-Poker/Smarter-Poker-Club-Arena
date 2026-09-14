@@ -2195,6 +2195,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase15'
   ),
   receipt(
+    'phase15_reference_plans_retired',
+    'HorseDecisionWorkerRuntime.executeFast',
+    'reference-layer future-street plans were discarded because their exact wager did not survive the final policy selection',
+    'Phase15'
+  ),
+  receipt(
     'phase15_policy_*',
     'HorseLogic.decide',
     'finite registered variant outcomes: reference, disabled, computed, outside_domain or unavailable; unregistered input refuses before policy execution',

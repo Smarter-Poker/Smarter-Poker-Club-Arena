@@ -1326,12 +1326,54 @@ describe('HorseDecisionWorkerRuntime', () => {
     });
     await h.runtime.drain();
 
-    expect(h.messages[1]).toMatchObject({ type: 'FAST_RESULT', effects });
+    // The fixture returns a call, so its speculative wager plans are retired;
+    // only the separately admitted explicit commit applies the valid batch.
+    expect(h.messages[1]).toMatchObject({ type: 'FAST_RESULT', effects: [] });
     expect(h.appliedEffects).toEqual([effects]);
     expect(h.messages[2]).toMatchObject({
       type: 'ACK',
       operation: 'COMMIT_DECISION_EFFECTS',
     });
+  });
+
+  it('retires captured wager plans when the final policy returned a call', async () => {
+    const h = harness();
+    h.setCapturedEffects([
+      { type: 'plan', handKey: 'table:hand', userId: 'horse-2', barrelIntent: true },
+    ]);
+    h.runtime.receive(fastRequest(1));
+    await h.runtime.drain();
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'FAST_RESULT',
+      decision: { action: 'call' },
+      effects: [],
+    });
+  });
+
+  it('refuses a malformed commit before applying any effect and keeps the next request usable', async () => {
+    const h = harness();
+    h.runtime.receive({
+      type: 'COMMIT_DECISION_EFFECTS',
+      requestId: 1,
+      generation: 4,
+      fence: 'table:hand:turn',
+      effects: [
+        { type: 'plan', handKey: 'table:hand', userId: 'horse-2', barrelIntent: true },
+        {
+          type: 'outlook',
+          handKey: 'table:hand',
+          userId: 'horse-2',
+          street: 'flop',
+          good: null,
+          scare: [],
+        } as any,
+      ],
+    });
+    h.runtime.receive(fastRequest(2));
+    await h.runtime.drain();
+    expect(h.appliedEffects).toEqual([]);
+    expect(h.messages[1]).toMatchObject({ type: 'ERROR', requestId: 1, recoverable: true });
+    expect(h.messages[2]).toMatchObject({ type: 'FAST_RESULT', requestId: 2 });
   });
 
   it('returns dynamic worker-owned solver and governor status through the FIFO', async () => {

@@ -1,4 +1,8 @@
 import { Worker } from 'node:worker_threads';
+import {
+  horseDecisionEffectsMatchRequest,
+  horseReferenceWagerWasRetained,
+} from '../HorseDecisionEffects.js';
 
 import {
   createHorseExecutionWitness,
@@ -845,6 +849,22 @@ export class LiveHorseDecisionWorkerClient {
       (!Number.isInteger(message.cardIndex) || message.cardIndex < 0 || message.cardIndex > 2)
     ) {
       this.fail(new Error('horse decision worker returned invalid discard index'));
+      return;
+    }
+
+    if (
+      message.type === 'FAST_RESULT' &&
+      active.request.type === 'DECIDE_FAST' &&
+      (!horseDecisionEffectsMatchRequest(message.effects, {
+        userId: active.request.player.user_id,
+        history: active.request.gameState.actionHistory,
+        street: active.request.gameState.stage,
+        brainFallback: message.decision?.policyFallback === 'brain_exception',
+      }) ||
+        (message.effects.length > 0 &&
+          (!message.decision || !horseReferenceWagerWasRetained(message.decision))))
+    ) {
+      this.fail(new Error('horse decision worker returned invalid decision effects'));
       return;
     }
 

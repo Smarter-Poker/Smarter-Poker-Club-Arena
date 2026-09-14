@@ -1,27 +1,41 @@
-/* Maintenance break lobby banner. Mobile first (375px). No :hover -
-   tests/no-hover-effects.law.test.ts forbids it platform-wide. */
+/* ═══════════════════════════════════════════════════════════════════════════
+   MAINTENANCE BREAK LOBBY BANNER - brand-inked (#ClubArenaConsole)
+
+   A banner, not a dialog: one line of copy in the lobby, so it carries no
+   console head or foot. It is printed the way the console prints a row on
+   its glass - no fill, no drawn edge, an engraved rule (a black cut with a
+   lit edge above it) above and below, the dot and the copy in the master's
+   own inks (sc-ink--blue, the console's copy grey). Nothing is drawn.
+   Mobile first (375px). No :hover (tests/no-hover-effects.law.test.ts).
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .maintenance-banner {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 9px 14px;
   margin: 8px 10px;
-  border-radius: 10px;
-  background: linear-gradient(160deg, #12203a 0%, #0c1526 100%);
-  border: 1px solid rgba(96, 154, 255, 0.4);
-  color: #dce7fb;
+  padding: 9px 4px;
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 8%),
+    0 1px 0 rgb(255 255 255 / 8%);
+  color: #d7dee7;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
   font-size: 12.5px;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 0.04em;
   line-height: 1.35;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 80%);
 }
 
+/* The lit dot: a typographic bullet in the console's blue, pulsing while
+   the break is live. Reduced motion collapses motion, never meaning
+   (CLAUDE.md 10.6): the text and countdown stay; only the pulse stops. */
 .maintenance-banner__dot {
   flex: 0 0 auto;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #4f9dff;
+  font-size: 18px;
+  line-height: 1;
   animation: maintenanceBannerPulse 1.6s ease-in-out infinite;
 }
 
@@ -40,8 +54,6 @@
   }
 }
 
-/* Reduced motion collapses motion, never meaning (CLAUDE.md 10.6): the text
-   and countdown stay; only the pulse stops. */
 @media (prefers-reduced-motion: reduce) {
   .maintenance-banner__dot {
     animation: none;
@@ -49,10 +61,9 @@
 }
 
 /* The :50-:55 heads-up: quieter than the live break - informational, not
-   urgent - so the dot does not pulse and the border dims. */
+   urgent - so the dot does not pulse and the copy sits muted. */
 .maintenance-banner--upcoming {
-  border-color: rgba(96, 154, 255, 0.22);
-  background: linear-gradient(160deg, #101a2e 0%, #0b1322 100%);
+  color: #9aa5b3;
 }
 
 .maintenance-banner--upcoming .maintenance-banner__dot {

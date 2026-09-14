@@ -690,6 +690,12 @@ root `node_modules` (the sandbox's Linux rollup binary is useless on the Mac).
 poll the log in later calls. `nohup … & disown` is not enough. `setsid` does not
 exist on macOS, and a `launchctl submit` job cannot read the working directory.
 
+**7.11b The harness must load the fonts.** The Mac has neither Roboto
+Condensed nor Inter installed; `index.html` loads them from Google Fonts and
+so does `harness/card-harness.html` (since 2026-09-13). Without them every
+fitted label measures wrong and the render lies. `useFitText` measures on
+mount, so shoot after `document.fonts.ready`.
+
 **7.12 Merged is not landed.** Autopilot can squash-merge in under two minutes.
 A follow-up push to a merged branch exits 0 and reaches nobody. If the PR has
 merged, start a **new branch off current `main`**; the `guard-merged-branch.sh`

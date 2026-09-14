@@ -751,7 +751,8 @@ describe('a CSS beat that cannot read the bundle says so, and measures nothing',
     expect(lib).toMatch(/const MIN_BYTES = 2_000;/);
     expect(lib).toMatch(/bytes < MIN_BYTES/);
     expect(lib).toMatch(/export function skipUnlessLiveCss/);
-    expect(lib).toMatch(/UNKNOWN - could not read the CSS bundle/);
+    expect(lib).toMatch(/UNKNOWN - could not read the complete CSS bundle/);
+    expect(lib).toContain('if (load.sheets === 0 && process.env.CI) throw new Error(reason);');
   });
 });
 

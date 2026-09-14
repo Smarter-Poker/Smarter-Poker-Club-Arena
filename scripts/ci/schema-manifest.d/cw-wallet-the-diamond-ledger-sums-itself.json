@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/cw-wallet2/audit/the-wallet-line-by-line (the diamond ledger sums itself, 2026-09-13). Applied as 20260913171905.",
+  "functions": ["fn_diamond_lifetime_totals"]
+}

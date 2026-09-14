@@ -37,10 +37,10 @@ the only Omaha straight branch stayed silent. It is now the first case in
 Seven days to 2026-09-12, Omaha showdown losses of 20bb or more on a board with
 three or more of one suit:
 
-| measure | hands |
-| --- | --- |
-| big Omaha losses, 5-card board | 40,837 |
-| of those, on a three-flush board | 17,190 |
+| measure                                                 | hands               |
+| ------------------------------------------------------- | ------------------- |
+| big Omaha losses, 5-card board                          | 40,837              |
+| of those, on a three-flush board                        | 17,190              |
 | of those, carrying none of the four nut-discipline tags | 10,951 (-487,675bb) |
 
 Not every untagged hand is a straight. The straight subset was invisible.

@@ -9,7 +9,9 @@ description: >
   Club Arena, or asks for before/after screenshots of a Club Arena surface.
   Every agent or subagent doing the work must read this file in full and pass it
   to any subagent it spawns.
-version: 1.1.0
+  The Smarter.Poker colour schema in section 3.4 is binding and machine-enforced:
+  a console surface that paints anything outside it fails the build.
+version: 1.2.0
 ---
 
 # #ClubArenaConsole — The Painted-Chassis Standard
@@ -43,31 +45,34 @@ Find its pixel coordinates and print into them.
 Quoted verbatim, with what each one means at the keyboard. These were paid for
 one review round at a time. Do not relitigate them.
 
-| Dan                                                                                                                                                                                                     | In practice                                                                                                                                                                                                                                                               |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| "CLEAN FRAMES"                                                                                                                                                                                          | One frame per surface. Nothing partial, nothing cut off, nothing incomplete at any edge.                                                                                                                                                                                  |
-| "CLEAN CONSISTENT BACKGROUNDS (INSIDE THE CARD, BUTTON OR ICON AND OUTSIDE IT)"                                                                                                                         | One tone inside a well and outside it. An inpaint band that is lighter than the glass beside it is a defect.                                                                                                                                                              |
-| "NOTHING CAN BE COPY PASTED OR OVERLAPPED"                                                                                                                                                              | Never repeat a plate PNG twice on one surface, never overlay art on art.                                                                                                                                                                                                  |
-| "ALL FONTS AND BUTTONS MUST BE CENTERED INSIDE THEIR FRAMES"                                                                                                                                            | Text is centred in the painted **face**, not in the zone box.                                                                                                                                                                                                             |
-| "FRAMES SHOULD NEVER SIT ON TOP OF FRAMES"                                                                                                                                                              | No CSS card around a painted card. The art is the frame.                                                                                                                                                                                                                  |
-| "EVERYTHING MUST BE CLEAN AND CRISP"                                                                                                                                                                    | Native resolution, native ratio. Never stretch, never 9-slice across a feature.                                                                                                                                                                                           |
-| "ALL ICONS SHOULD FEEL ORGANIC, AND BUILT INTO THE FRAMES"                                                                                                                                              | An emblem is part of the render or it is not there. Never a glyph stuck on top.                                                                                                                                                                                           |
-| "ALL BACKGROUNDS ON EVERYTHING MUST ALWAYS BE REMOVED"                                                                                                                                                  | Transparent PNGs on black. No panel fills.                                                                                                                                                                                                                                |
-| "ALL FONTS MUST FEEL ORGANIC AND NATURAL AND MATCH THE LOOK AND FEEL OF THE DYNAMIC IMAGE THEY ARE INSIDE OF"                                                                                           | Use the master's own inks (see §3.4), Roboto Condensed for chrome type, Inter for copy.                                                                                                                                                                                   |
-| "YOU CAN NEVER JUST COPY AND PASTE A BUTTON, CARD OR ANYTHING EVER, YOU MUST CREATE IT"                                                                                                                 | Derive new art from the master by surgery (§5), never by duplicating a component.                                                                                                                                                                                         |
-| "NEVER USE DECIMAL POINTS ON ANY FORWARD FACING PAGE"                                                                                                                                                   | `compactChips()`. Whole numbers under 1,000.                                                                                                                                                                                                                              |
-| "ONCE SOMETHING HITS OVER 1,000 USE 1K, IF ITS 1200 USE 1.2K, IF ITS 10,000 USE 10K"                                                                                                                    | One decimal above 1K, **always rounded down**, `.0` stripped. Never overstate.                                                                                                                                                                                            |
-| "ALWAYS USE SMARTER.POKER COLOR SCHEMA COLORS, NO BROWNS OR PINKS"                                                                                                                                      | §3.4 only.                                                                                                                                                                                                                                                                |
-| "MAKE SURE FONT SIZES NEVER GO OVER THE EDGES OF THE FRAME"                                                                                                                                             | Every printed string is fitted (§3.3), and fits the face, not the rim.                                                                                                                                                                                                    |
-| "THE SLIDER NEEDS TO GO UP AND DOWN, NOT SIDE TO SIDE (SIDE TO SIDE SWIPES THE PAGE)"                                                                                                                   | Vertical range inputs at the felt; a horizontal drag is the table-switch gesture.                                                                                                                                                                                         |
-| "THEY SHOULD JUST BE STAND ALONE IMAGES WITH FRAMES AROUND THEM"                                                                                                                                        | Nothing paints outside the frame. See the tiling trap, §7.1.                                                                                                                                                                                                              |
-| "I PREFER IT WITH ONLY AN ICON AT THE TOP ... IT SHOULD BE A FLAT BOTTOM"                                                                                                                               | Crest at the top, flat closing cap at the bottom, no chip.                                                                                                                                                                                                                |
-| "I DON'T WANT EVERY SINGLE FRAME AND BUTTON TO BE 100% EXACTLY THE SAME, JUST THE SAME STYLE"                                                                                                           | Dress may vary (emblem / no emblem). Structure may not.                                                                                                                                                                                                                   |
-| "I DO NOT WANT EVERY SINGLE CARD TO LOOK EXACTLY THE SAME, THEY SHOULD NOT ALL HAVE THE SAME FRAME, WITH THE SAME SPADE AT THE TOP MIDDLE ... NOT ALL THE SAME BORING COOKIE CUTTER STYLE" (2026-09-13) | One chassis with five badges is not variety. Frame FAMILIES are cut from the master by surgery (§5) and assigned by section; each family has its own crests and ink. This supersedes "structure may not vary" above: structure varies BETWEEN families, never within one. |
-| "THE 'SPADE' ICON IS PERFECT, HIGH DEFINITION DYNAMIC ICON WITH DEPTH AND THE 3D LOOK AND FEEL ... THE REST ARE ALL CHEAP LOOKING, FLAT AND BORING" (2026-09-13)                                        | Every crest matches the spade: a polished-chrome catch on the emblem, a quilted body, a blue LED at its base, and the rails MITRED INTO the housing. The club, diamond and crown crests fail all four and are to be repainted (§3.6).                                     |
-| "YOU MUST STICK TO THE SMARTER.POKER COLOR SCHEMA" (2026-09-13)                                                                                                                                         | Every colour on a surface is a token the schema already owns. Never a derived tone, not even a darkened one: 24 "shadow" stops computed from the browns they replaced were rejected on sight. See §3.4.                                                                   |
-| Rates keep one decimal (2026-09-13)                                                                                                                                                                     | The no-decimals rule is for chip counts. A percentage RATE (rakeback, commission, VPIP) keeps one decimal, because rounding 32.5% to 33% misstates a number a club owner is paid on, and the same law says never overstate.                                               |
-| The desktop ceiling (2026-09-13)                                                                                                                                                                        | A console stops growing at the master's own width (1000px) and centres. The art is never asked for more pixels than it has; a wide screen gets black margin, not a bigger phone. `--sc-max` may narrow it, never raise it.                                                |
+| Dan                                                                                                                                                                                                     | In practice                                                                                                                                                                                                                                                                  |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "CLEAN FRAMES"                                                                                                                                                                                          | One frame per surface. Nothing partial, nothing cut off, nothing incomplete at any edge.                                                                                                                                                                                     |
+| "CLEAN CONSISTENT BACKGROUNDS (INSIDE THE CARD, BUTTON OR ICON AND OUTSIDE IT)"                                                                                                                         | One tone inside a well and outside it. An inpaint band that is lighter than the glass beside it is a defect.                                                                                                                                                                 |
+| "NOTHING CAN BE COPY PASTED OR OVERLAPPED"                                                                                                                                                              | Never repeat a plate PNG twice on one surface, never overlay art on art.                                                                                                                                                                                                     |
+| "ALL FONTS AND BUTTONS MUST BE CENTERED INSIDE THEIR FRAMES"                                                                                                                                            | Text is centred in the painted **face**, not in the zone box.                                                                                                                                                                                                                |
+| "FRAMES SHOULD NEVER SIT ON TOP OF FRAMES"                                                                                                                                                              | No CSS card around a painted card. The art is the frame.                                                                                                                                                                                                                     |
+| "EVERYTHING MUST BE CLEAN AND CRISP"                                                                                                                                                                    | Native resolution, native ratio. Never stretch, never 9-slice across a feature.                                                                                                                                                                                              |
+| "ALL ICONS SHOULD FEEL ORGANIC, AND BUILT INTO THE FRAMES"                                                                                                                                              | An emblem is part of the render or it is not there. Never a glyph stuck on top.                                                                                                                                                                                              |
+| "ALL BACKGROUNDS ON EVERYTHING MUST ALWAYS BE REMOVED"                                                                                                                                                  | Transparent PNGs on black. No panel fills.                                                                                                                                                                                                                                   |
+| "ALL FONTS MUST FEEL ORGANIC AND NATURAL AND MATCH THE LOOK AND FEEL OF THE DYNAMIC IMAGE THEY ARE INSIDE OF"                                                                                           | Use the master's own inks (see §3.4), Roboto Condensed for chrome type, Inter for copy.                                                                                                                                                                                      |
+| "YOU CAN NEVER JUST COPY AND PASTE A BUTTON, CARD OR ANYTHING EVER, YOU MUST CREATE IT"                                                                                                                 | Derive new art from the master by surgery (§5), never by duplicating a component.                                                                                                                                                                                            |
+| "NEVER USE DECIMAL POINTS ON ANY FORWARD FACING PAGE"                                                                                                                                                   | `compactChips()`. Whole numbers under 1,000.                                                                                                                                                                                                                                 |
+| "ONCE SOMETHING HITS OVER 1,000 USE 1K, IF ITS 1200 USE 1.2K, IF ITS 10,000 USE 10K"                                                                                                                    | One decimal above 1K, **always rounded down**, `.0` stripped. Never overstate.                                                                                                                                                                                               |
+| "ALWAYS USE SMARTER.POKER COLOR SCHEMA COLORS, NO BROWNS OR PINKS"                                                                                                                                      | §3.4 only.                                                                                                                                                                                                                                                                   |
+| "MAKE SURE FONT SIZES NEVER GO OVER THE EDGES OF THE FRAME"                                                                                                                                             | Every printed string is fitted (§3.3), and fits the face, not the rim.                                                                                                                                                                                                       |
+| "THE SLIDER NEEDS TO GO UP AND DOWN, NOT SIDE TO SIDE (SIDE TO SIDE SWIPES THE PAGE)"                                                                                                                   | Vertical range inputs at the felt; a horizontal drag is the table-switch gesture.                                                                                                                                                                                            |
+| "THEY SHOULD JUST BE STAND ALONE IMAGES WITH FRAMES AROUND THEM"                                                                                                                                        | Nothing paints outside the frame. See the tiling trap, §7.1.                                                                                                                                                                                                                 |
+| "I PREFER IT WITH ONLY AN ICON AT THE TOP ... IT SHOULD BE A FLAT BOTTOM"                                                                                                                               | Crest at the top, flat closing cap at the bottom, no chip.                                                                                                                                                                                                                   |
+| "I DON'T WANT EVERY SINGLE FRAME AND BUTTON TO BE 100% EXACTLY THE SAME, JUST THE SAME STYLE"                                                                                                           | Dress may vary (emblem / no emblem). Structure may not.                                                                                                                                                                                                                      |
+| "I DO NOT WANT EVERY SINGLE CARD TO LOOK EXACTLY THE SAME, THEY SHOULD NOT ALL HAVE THE SAME FRAME, WITH THE SAME SPADE AT THE TOP MIDDLE ... NOT ALL THE SAME BORING COOKIE CUTTER STYLE" (2026-09-13) | One chassis with five badges is not variety. Frame FAMILIES are cut from the master by surgery (§5) and assigned by section; each family has its own crests and ink. This supersedes "structure may not vary" above: structure varies BETWEEN families, never within one.    |
+| "THE 'SPADE' ICON IS PERFECT, HIGH DEFINITION DYNAMIC ICON WITH DEPTH AND THE 3D LOOK AND FEEL ... THE REST ARE ALL CHEAP LOOKING, FLAT AND BORING" (2026-09-13)                                        | Every crest matches the spade: a polished-chrome catch on the emblem, a quilted body, a blue LED at its base, and the rails MITRED INTO the housing. The club, diamond and crown crests fail all four and are to be repainted (§3.6).                                        |
+| "YOU MUST STICK TO THE SMARTER.POKER COLOR SCHEMA" (2026-09-13)                                                                                                                                         | Every colour on a surface is a token the schema already owns. Never a derived tone, not even a darkened one: 24 "shadow" stops computed from the browns they replaced were rejected on sight. See §3.4.                                                                      |
+| "PRIMARY COLOR SCHEMA IS BLACK, BLUE, TEAL, SILVER, WHITE, AND COLORS USED INSIDE THE CLUB ARENA" (2026-09-14)                                                                                          | Those five carry every surface. Gold, green and red are restricted to one job each; orange, purple, pink and brown have none at all. Enforced as an ALLOWLIST by `tests/the-console-prints-only-schema-colours.law.test.ts` — an unlisted literal fails the build. See §3.4. |
+| "FELT IS NOT GREEN BY DEFAULT, ITS BLACK BY DEFAULT (IT CAN BE CHANGED BY THE USER)" (2026-09-14)                                                                                                       | The felt is a player preference. Never assume green anywhere — not a backdrop behind a table card, not a lobby thumbnail, not a screenshot you treat as canonical. See §3.4.                                                                                                 |
+| "FACEBOOK COLOR SCHEMA FOR THE SOCIAL MEDIA PAGES IS EXCLUDED FROM ANY AND ALL COLOR SCHEMAS. THATS ITS OWN INDIVIDUALLY OWNED COLOR SCHEMA" (2026-09-14)                                               | `src/components/social/**` runs its own schema. `--fb-blue #1877f2` is CORRECT there and BANNED here. Never carry a colour across that line in either direction, and never "harmonise" a social surface onto this one. See §3.4.                                             |
+| Rates keep one decimal (2026-09-13)                                                                                                                                                                     | The no-decimals rule is for chip counts. A percentage RATE (rakeback, commission, VPIP) keeps one decimal, because rounding 32.5% to 33% misstates a number a club owner is paid on, and the same law says never overstate.                                                  |
+| The desktop ceiling (2026-09-13)                                                                                                                                                                        | A console stops growing at the master's own width (1000px) and centres. The art is never asked for more pixels than it has; a wide screen gets black margin, not a bigger phone. `--sc-max` may narrow it, never raise it.                                                   |
 
 **When Dan corrects something, fix it in the master or the kit — not in the one
 surface he happened to point at.** Every surface drawn from that art inherits
@@ -215,6 +220,19 @@ and it only makes a label smaller than its face allows. `scaleX` is for a real
 
 ### 3.4 Ink — the master's own colours, and nothing else
 
+**The schema is BLACK · BLUE · TEAL · SILVER · WHITE.** Dan, 2026-09-14:
+_"PRIMARY COLOR SCHEMA IS BLACK, BLUE, TEAL, SILVER, WHITE, AND COLORS USED
+INSIDE THE CLUB ARENA."_ Those five carry every console surface. Everything
+else is **restricted**: it has exactly one job, listed below, and it is never
+decoration, never a mood, never a highlight you liked the look of.
+
+Enforced by `tests/the-console-prints-only-schema-colours.law.test.ts`, which
+is an **allowlist** — a literal that is not in it fails the build, and the
+failure names the colour and points back here. You do not add a colour to that
+list to make a design you already wrote pass. A new literal means a new token,
+and the schema is Dan's: get the ruling, put it in this section, then add it
+to the test with the job it does.
+
 | Class            | Colour                                  | Use                        |
 | ---------------- | --------------------------------------- | -------------------------- |
 | `sc-ink--silver` | `#e4e7ec` + bevel shadow                | titles, values             |
@@ -225,15 +243,45 @@ and it only makes a label smaller than its face allows. `scaleX` is for a real
 | `sc-ink--gold`   | `--accent-gold #ffd700`                 | held / pinned / top up     |
 | `sc-ink--muted`  | `#9aa5b3`                               | secondary meta             |
 
-Brand: `--fb-blue #1877f2`, `--accent-red #f02849`, `--accent-gold #ffd700`,
-green `#31a24c`. **No browns, no pinks, no cream-on-amber.**
+The LED glows are `#8fd4ff` blue and `#65d9ff` teal; the console's own bevels
+fall to `#050607` (`#050709` on the rewards header). Silver has three stops in
+the kit — `#e4e7ec`, `#e6e9ee`, `#d7dee7` — plus `#6d747c` for muted ink on a
+lit plate. That is the whole palette. Seventeen literals, measured across the
+kit on 2026-09-14.
 
-**The warm accent is brass, gold is for gold things (Dan 2026-09-13).** Two
-tokens with jobs, not five accidental golds: `#d6ad52` brass is the warm accent
-wherever `tests/rewards-are-diamonds-and-the-schema-has-no-yellow.law.test.ts`
-already requires it (it BANS `#ffd700` on the account surfaces and names brass
-as sanctioned), and brand gold `#ffd700` is for something that genuinely is
-gold: VIP, winnings, top-up.
+**What is restricted, and to what.** Dan, 2026-09-14:
+
+- _"YELLOW AND ORANGE ARE NOT REALLY USED, OR ARE USED IN LIMITED CAPACITY."_
+  Gold `#ffd700` is for something that genuinely **is** gold — VIP, winnings,
+  top-up. There is no orange on a console surface. `#ff8c00` and the ambers
+  (`#f59e0b`, `#fbbf24`) are banned outright.
+- _"PURPLES, PINKS, REDS, AREN'T USED OFTEN AND SHOULD BE ONLY USED WHEN
+  ABSOLUTELY REQUIRED."_ Red is the destructive and insufficient state and
+  nothing else. Purple and pink have no job at all: `#9d4edd`, `#ff00ff` and
+  `#ec4899` are retired.
+- **No browns.** `#d6ad52` brass is the sanctioned warm accent on the _account_
+  surfaces, where `tests/rewards-are-diamonds-and-the-schema-has-no-yellow.law.test.ts`
+  names it. It is not a console ink and the console guard rejects it.
+
+**The Facebook schema is excluded, and it is not a mistake to be fixed.**
+Dan, 2026-09-14: _"FACEBOOK COLOR SCHEMA FOR THE SOCIAL MEDIA PAGES IS EXCLUDED
+FROM ANY AND ALL COLOR SCHEMAS. THATS ITS OWN INDIVIDUALLY OWNED COLOR SCHEMA
+BASED OFF 'FACEBOOK COLOR SCHEMA'."_ `--fb-blue #1877f2` and the Facebook greys
+are **correct** on `src/components/social/**` and **banned** on a console
+surface. Never carry a colour across that line in either direction, and never
+"harmonise" a social surface onto this schema — that is a different product
+decision that is already settled the other way. The console guard asserts the
+exclusion structurally so it cannot be quietly widened onto those files.
+
+**The felt is black by default.** Dan, 2026-09-14: _"FELT IS NOT GREEN BY
+DEFAULT, ITS BLACK BY DEFAULT (IT CAN BE CHANGED BY THE USER)."_ A felt is a
+player preference with its own preset list, so nothing you build may assume
+green — not a hardcoded backdrop behind a table card, not a lobby thumbnail,
+not a screenshot you treat as canonical. Note for whoever picks this up:
+`src/styles/design-tokens.css` still ships `--felt-color: #0f5132` as the
+default preset, which contradicts the ruling. Changing it is a gameplay-surface
+change, not a console one; it is **not** in scope for a #ClubArenaConsole pass
+and needs its own branch.
 
 **Every colour is a schema colour, and the live schema is `club-engine.css`.**
 `design-system.css` and `globals.css` are NOT imported by `main.tsx`, so a
@@ -241,12 +289,15 @@ token defined only there does not exist at runtime. What is live: the gold ramp
 is `--gradient-gold` (`#ffd700` into `#ffa500`), the console's own bevels fall
 to `#050607`, and a warm border is brass at reduced alpha over black, the same
 technique the engraved rules use. A gold ramp's dark end is one of those. It is
-never a darkened copy of a brown, and never a colour you computed.
+never a darkened copy of a brown, and **never a colour you computed** — 24
+"shadow" stops derived from the browns they replaced were rejected on sight
+(Dan, 2026-09-13).
 
 Sixteen of the finished surfaces build gold as a ramp into a brown dark stop
 (`--market-brass`, `--hha-brass`, `--mission-gold-deep`, `--iv-gold-lo`) and
 two use a mauve border; the mapping by role is in
-`docs/audits/2026-09-13-club-arena-console-sweep.md` §7.
+`docs/audits/2026-09-13-club-arena-console-sweep.md` §7. Those are the backlog
+this schema exists to retire, not precedent to copy.
 
 Engraved silver is a **solid colour plus a `text-shadow` bevel**. Never
 `background-clip: text` — a clipped gradient reads as a cheap sticker and breaks
@@ -754,6 +805,7 @@ to a shared file, that is the repo's biggest source of merge conflicts.
 - [ ] One background inside a well and outside it. No frame on a frame.
 - [ ] Every printed string is fitted and centred **in the face**, never touching a rim.
 - [ ] Brand colours only. Silver is solid ink plus a bevel, never a clipped gradient.
+- [ ] Every colour literal is on the schema allowlist — `npx vitest run tests/the-console-prints-only-schema-colours.law.test.ts` green. Nothing computed, nothing borrowed from a social surface.
 - [ ] No decimals forward-facing; `compactChips` everywhere outside the felt.
 - [ ] Title Case, no em dashes, no `:hover`, no unstyled class hooks, no unread errors.
 - [ ] Every handler, guard, timer, focus trap and test-pinned literal survived.

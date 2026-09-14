@@ -83,6 +83,29 @@ function harness(rows: ReturnType<typeof row>[]) {
 }
 
 describe('actual RUNNING discovery reads the complete recovery board', () => {
+  it.each([false, true])(
+    'retains recovery history when a null page has no error, later=%s',
+    async (later) => {
+      const { server, response, admitted } = harness([]);
+      server.tournamentResumeCooldowns.recordFailure('still-unresolved', Date.now());
+      const settle = vi.spyOn(server.tournamentResumeCooldowns, 'settle');
+      response.mockImplementation((cursor) => ({
+        data: (later && !cursor ? firstPage() : null) as any,
+        error: null,
+      }));
+      await server.discoverRunningResumes();
+      expect(admitted()).toEqual([]);
+      expect(settle).not.toHaveBeenCalled();
+      expect(server.tournamentResumeCooldowns.coolingDown('still-unresolved', Date.now())).toBe(
+        true
+      );
+      expect(reportError).toHaveBeenCalledWith(
+        expect.any(Error),
+        'GameServer.running_board_read_failed'
+      );
+    }
+  );
+
   it('offers the managerless tail beyond the first 1000 rows to the same admission authority', async () => {
     const first = firstPage();
     const { server, pages, admitted } = harness([...first, row('z-union', '2026-09-14T10:36:46Z')]);

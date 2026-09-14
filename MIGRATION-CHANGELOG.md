@@ -7,6 +7,8 @@
 
 ## 2026-09-14: Running MTT recovery reads every gateway page
 
+**Shared reader follow-up:** `fetchAllRows` now requires an actual array before treating a successful page as complete. It retains original errors and the existing bounded read retries. Eleven old-source failures include actual recovery cooldown loss;45focused checks and12,316full-engine checks pass, serverbuild passes. The separate157database cases pass through their private runner; all12,473discovered cases executed. No SQL or live malformed-response claim.
+
 **Files/previous lines:** server/src/GameServer.ts:6716 and6779; actual discovery tests and its existing ordering/budget guards.
 **What existed:** the RUNNING recovery scan read a single gateway-limited response and used its missing tail to settle retry history. A lifecycle check preceded, but did not follow, the asynchronous stagger. Production11:14 returned only1000/1283 events, excluding Union Morning Classic after its lease expired during a break.
 **What changed:** bounded keyset enumeration with the existing fetchAllRows reader, complete/valid-board checks, oldest-first admission with deterministic ties and null starts last, lifecycle checks after reading and after staggering. Existing coalesced admission, retry capacity, owner/provider and financial contracts are unchanged.

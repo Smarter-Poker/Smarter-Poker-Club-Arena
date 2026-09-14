@@ -33,7 +33,9 @@ const MANAGER_BASE = read('../tournament/TournamentManagerBase.ts');
 
 /** The body of `catch (err) {` inside the post-commit obligations retry loop. */
 function obligationsRetryCatch(): string {
-  const start = SETTLEMENT.indexOf('const outcome = await processHandPostCommitObligations');
+  // Include the complete retry loop regardless of the observation wrapper
+  // around its awaited processor. The financial-alert prohibition is intact.
+  const start = SETTLEMENT.indexOf('while (!obligationsApplied && mayStillDrain())');
   expect(start, 'the post-commit obligations retry loop has moved').toBeGreaterThan(-1);
   const end = SETTLEMENT.indexOf('postCommitStateCanReflect = this.lifecycleCanMutate();', start);
   expect(end, 'the end of the obligations loop has moved').toBeGreaterThan(start);

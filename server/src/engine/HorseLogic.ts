@@ -1,3 +1,4 @@
+import { HorsePolicyGraph } from './HorsePolicyGraph.js';
 import { hasHorseReviewSignals } from './HorseReviewSignals.js';
 import { evaluateJointLivePolicy } from './multiway/JointLivePolicy.js';
 import { horseVariantRulesFor } from './VariantRules.js';
@@ -2538,486 +2539,514 @@ export class HorseLogic {
         if (gs.tournament.m?.schemaVersion === 1) noteFire('phase6_m_engine');
       }
     }
-    let decision: HorseDecision;
-    if (gs.stage === 'preflop') {
-      if (tele && (opts.v7Preflop ?? v7)) noteFire('preflop_v7');
-      decision =
-        (opts.v7Preflop ?? v7)
-          ? this.decidePreflopV7Glue(player, gs, vi, params, opts)
-          : this.decidePreflop(player, gs, vi, params);
-    } else {
-      decision = this.decidePostflop(
-        player,
-        gs,
-        vi,
-        params,
-        opts.mind !== false,
-        opts.streetIQ !== false,
-        opts.handReading !== false,
-        v7,
-        opts
-      );
-    }
+    const graph = new HorsePolicyGraph();
+    let decision = graph.run('reference', null, () => {
+      let decision: HorseDecision;
+      if (gs.stage === 'preflop') {
+        if (tele && (opts.v7Preflop ?? v7)) noteFire('preflop_v7');
+        decision =
+          (opts.v7Preflop ?? v7)
+            ? this.decidePreflopV7Glue(player, gs, vi, params, opts)
+            : this.decidePreflop(player, gs, vi, params);
+      } else {
+        decision = this.decidePostflop(
+          player,
+          gs,
+          vi,
+          params,
+          opts.mind !== false,
+          opts.streetIQ !== false,
+          opts.handReading !== false,
+          v7,
+          opts
+        );
+      }
+      return { decision };
+    }).decision;
 
     // Legalize the heuristic/solver proposal first so its exact legal size is
     // one of Phase 7's candidates. Phase 7 then runs LAST: no mood, style,
     // threshold, chart or global ICM multiplier is allowed to overwrite its
     // action-specific tournament utility choice.
-    decision = this.legalize(decision, player, gs, vi);
+    decision = graph.run('reference_legality', decision, () => ({
+      decision: this.legalize(decision, player, gs, vi),
+    })).decision;
     const beforePhase10 = decision;
-    const phase10 =
-      gs.gameVariant === 'plo4' && opts.phase10Plo4 !== 'off'
-        ? evaluatePlo4LivePolicy(
-            player,
-            gs,
-            decision,
-            phase10EquityEvidence,
-            opts.phase10Plo4 ?? 'shadow',
-            opts.phase10EvidenceMode && !tele ? () => 0 : undefined
-          )
-        : null;
-    if (phase10) decision = this.legalize(phase10.decision, player, gs, vi);
-    const phase11 =
-      isOmahaPolicyVariant(gs.gameVariant) && opts.phase11Omaha !== 'off'
-        ? evaluateOmahaVariantPolicy(
-            player,
-            gs,
-            decision,
-            null,
-            opts.phase11Omaha ?? 'shadow',
-            opts.phase11EvidenceMode && !tele ? () => 0 : undefined,
-            phase11DecisionEquityCeiling ?? 1
-          )
-        : null;
-    if (phase11) decision = this.legalize(phase11.decision, player, gs, vi);
-    const phase12 =
-      isRemainingPolicyVariant(gs.gameVariant) && opts.phase12Remaining !== 'off'
-        ? evaluateRemainingVariantPolicy(
-            player,
-            gs,
-            decision,
-            null,
-            opts.phase12Remaining ?? 'shadow',
-            opts.phase12EvidenceMode && !tele ? () => 0 : undefined,
-            phase12DecisionEquityCeiling ?? 1
-          )
-        : null;
-    if (phase12) decision = this.legalize(phase12.decision, player, gs, vi);
+    const variants = graph.run('variant_policy', decision, () => {
+      const phase10 =
+        gs.gameVariant === 'plo4' && opts.phase10Plo4 !== 'off'
+          ? evaluatePlo4LivePolicy(
+              player,
+              gs,
+              decision,
+              phase10EquityEvidence,
+              opts.phase10Plo4 ?? 'shadow',
+              opts.phase10EvidenceMode && !tele ? () => 0 : undefined
+            )
+          : null;
+      if (phase10) decision = this.legalize(phase10.decision, player, gs, vi);
+      const phase11 =
+        isOmahaPolicyVariant(gs.gameVariant) && opts.phase11Omaha !== 'off'
+          ? evaluateOmahaVariantPolicy(
+              player,
+              gs,
+              decision,
+              null,
+              opts.phase11Omaha ?? 'shadow',
+              opts.phase11EvidenceMode && !tele ? () => 0 : undefined,
+              phase11DecisionEquityCeiling ?? 1
+            )
+          : null;
+      if (phase11) decision = this.legalize(phase11.decision, player, gs, vi);
+      const phase12 =
+        isRemainingPolicyVariant(gs.gameVariant) && opts.phase12Remaining !== 'off'
+          ? evaluateRemainingVariantPolicy(
+              player,
+              gs,
+              decision,
+              null,
+              opts.phase12Remaining ?? 'shadow',
+              opts.phase12EvidenceMode && !tele ? () => 0 : undefined,
+              phase12DecisionEquityCeiling ?? 1
+            )
+          : null;
+      if (phase12) decision = this.legalize(phase12.decision, player, gs, vi);
+      return { decision, phase10, phase11, phase12 };
+    });
+    decision = variants.decision;
+    const { phase10, phase11, phase12 } = variants;
     const variantPolicy = phase10 ?? phase11 ?? phase12;
 
-    let phase8UtilityInput: TournamentUtilityInput | null = null;
-    let phase8ReuseUtility: TournamentContinuationRunner | undefined;
-    if (
-      (opts.phase7Utility ?? true) !== false &&
-      isTournamentMode(gs) &&
-      gs.tournament?.schemaVersion === 1
-    ) {
-      const tournament = trustedTournamentContext(gs);
-      const evidence7 = currentPhase7Equity();
-      if (!tournament) {
-        if (tele) noteFire('phase7_utility_skip_incomplete');
-      } else if (
-        gs.stateSchemaVersion === 1 &&
-        Array.isArray(gs.legalActions) &&
-        gs.legalActions.some((action) => action !== 'discard') &&
-        Array.isArray(gs.pots) &&
-        // Round 1 requires one coherent joint showdown sample per utility
-        // branch.  The existing multi-board strategy still prices those
-        // hands, but Phase 7 must not consume the independent per-board
-        // samples as though they came from one shared-deck deal.  Keep the
-        // baseline and expose the unavailable receipt until the later depth
-        // pass supplies that sampler.  Guard here as well as at capture time:
-        // preflop fixtures and restored hands can already carry extra boards.
-        !(Array.isArray(gs.communityCards2) && gs.communityCards2.length > 0) &&
-        !(Array.isArray(gs.communityCards3) && gs.communityCards3.length > 0) &&
-        (gs.boardCount ?? 1) <= 1 &&
-        evidence7
-      ) {
-        try {
-          phase8UtilityInput = buildPhase7UtilityInput(
-            gs,
-            player,
-            decision,
-            vi,
-            tournament,
-            evidence7
-          );
-          const evaluation = evaluateTournamentUtilityDetailed(phase8UtilityInput);
-          if (variantPolicy) {
-            if (variantPolicy.receipt.mode === 'shadow' && variantPolicy.receipt.fired) {
-              const shadowStart = performance.now();
-              const shadow = evaluateTournamentUtilityDetailed({
-                ...phase8UtilityInput,
-                baseline: this.legalize(variantPolicy.proposal, player, gs, vi),
-                showdownSamples: phase8UtilityInput.showdownSamples.slice(0, 32),
-                withinBudget:
-                  (opts.phase10EvidenceMode ||
-                    opts.phase11EvidenceMode ||
-                    opts.phase12EvidenceMode) &&
-                  !tele
-                    ? () => true
-                    : () => performance.now() - shadowStart < 4,
-              });
-              variantPolicy.receipt.utilityLatencyMs = performance.now() - shadowStart;
-              variantPolicy.receipt.utilityOwner = shadow.result
-                ? 'phase7_evaluated'
-                : 'phase7_unavailable';
-              if (shadow.result) variantPolicy.receipt.shadowUtility = shadow.result.ledger;
-              else
-                variantPolicy.receipt.utilityUnavailableReason =
-                  shadow.unavailableReason ?? 'unknown';
-            } else {
-              variantPolicy.receipt.utilityOwner = evaluation.result
-                ? 'phase7_evaluated'
-                : 'phase7_unavailable';
-              if (!evaluation.result)
-                variantPolicy.receipt.utilityUnavailableReason =
-                  evaluation.unavailableReason ?? 'unknown';
-            }
-          }
-          phase8ReuseUtility = evaluation.continuePostflop;
-          const result = evaluation.result;
-          if (result) {
-            const selected = this.legalize(result.decision, player, gs, vi);
-            const selectedAmount =
-              typeof selected.amount === 'number' && Number.isFinite(selected.amount)
-                ? selected.amount
-                : null;
-            if (
-              selected.action !== result.ledger.selectedAction ||
-              selectedAmount !== result.ledger.selectedAmount
-            ) {
-              // A utility receipt may never be relabeled as a different legal
-              // action. Keep the already-legal baseline if this invariant is
-              // ever violated and make the skipped arbiter observable.
-              if (tele) {
-                noteFire('phase7_utility_unavailable');
-                noteFire('phase7_unavailable_legalizer_mismatch');
-              }
-            } else {
-              decision = { ...selected, tournamentUtility: result.ledger };
-              if (tele) {
-                noteFire('phase7_tournament_utility');
-                noteFire(`phase7_objective_${result.ledger.objective}`);
-                noteFire(`phase7_icm_${result.ledger.icmMethod}`);
-                if (result.ledger.overrodeBaseline) noteFire('phase7_utility_override');
-                if (result.ledger.sidePotCount > 1) noteFire('phase7_side_pot');
-                if (result.ledger.playersBehind.length > 0) noteFire('phase7_players_behind');
-                if (result.ledger.objective === 'pko') noteFire('phase7_bounty_utility');
-              }
-            }
-          } else if (tele) {
-            noteFire('phase7_utility_unavailable');
-            noteFire(`phase7_unavailable_${evaluation.unavailableReason ?? 'unknown'}`);
-          }
-        } catch (error) {
-          reportError(error, 'HorseLogic.phase7_tournament_utility');
-          if (variantPolicy) variantPolicy.receipt.utilityUnavailableReason = 'exception';
-          if (tele) {
-            noteFire('phase7_utility_unavailable');
-            noteFire('phase7_unavailable_exception');
-          }
-        }
-      } else if (tele && gs.legalActions?.some((action) => action !== 'discard')) {
-        noteFire('phase7_utility_unavailable');
-        const multiBoardUnavailable =
-          (Array.isArray(gs.communityCards2) && gs.communityCards2.length > 0) ||
-          (Array.isArray(gs.communityCards3) && gs.communityCards3.length > 0) ||
-          (gs.boardCount ?? 1) > 1;
-        noteFire(
-          multiBoardUnavailable
-            ? 'phase7_unavailable_multi_board'
-            : evidence7
-              ? 'phase7_unavailable_state_contract'
-              : 'phase7_unavailable_equity_evidence'
-        );
-      }
-    }
-    if (
-      (opts.phase8Postflop ?? 'shadow') !== 'off' &&
-      isTournamentMode(gs) &&
-      gs.stage !== 'preflop'
-    ) {
-      const disabledReason = tele ? liveHorsePhase8Safety.disabledReason : null;
-      const phase8 = evaluateTournamentPostflop(
-        player,
-        gs,
-        decision,
-        disabledReason ? null : phase8UtilityInput,
-        opts.phase8Postflop === 'candidate' ? 'candidate' : 'shadow',
-        () => performance.now(),
-        phase8ReuseUtility
-      );
-      if (disabledReason) phase8.ledger.reason = `disabled_${disabledReason}`;
-      const proposed = this.legalize(phase8.decision, player, gs, vi);
+    const arbitration = graph.run('tournament_utility', decision, () => {
+      let phase8UtilityInput: TournamentUtilityInput | null = null;
+      let phase8ReuseUtility: TournamentContinuationRunner | undefined;
       if (
-        proposed.action !== phase8.decision.action ||
-        proposed.amount !== phase8.decision.amount
+        (opts.phase7Utility ?? true) !== false &&
+        isTournamentMode(gs) &&
+        gs.tournament?.schemaVersion === 1
       ) {
-        phase8.ledger.applied = false;
-        phase8.ledger.reason = 'illegal_candidate';
-      } else decision = phase8.decision;
-      decision = { ...decision, tournamentPostflop: phase8.ledger };
-      if (tele) {
-        liveHorsePhase8Safety.observe(phase8.ledger);
-        noteFire('phase8_seen');
-        noteDecisionMs('phase8', phase8.ledger.latencyMs);
-        noteFire(`phase8_format_${gs.format ?? 'unknown'}`);
-        noteFire(`phase8_reason_${phase8.ledger.reason}`);
-        if (phase8.ledger.eligible) noteFire('phase8_eligible');
-        if (phase8.ledger.fired) {
-          noteFire('phase8_fired');
-          noteFire(`phase8_objective_${phase8.ledger.objective}`);
-        }
-        if (phase8.ledger.changed) noteFire('phase8_shadow_changed');
-        if (phase8.ledger.applied) noteFire('phase8_applied');
-        else noteFire('phase8_baseline_retained');
-        for (const reason of phase8.ledger.reasons) noteFire(`phase8_feature_${reason}`);
-      }
-    }
-    if (phase10) {
-      if (isTournamentMode(gs) && phase10.receipt.utilityOwner !== 'phase7_evaluated') {
-        phase10.receipt.utilityOwner = 'phase7_unavailable';
-        phase10.receipt.utilityUnavailableReason ??= 'context_or_equity_evidence_unavailable';
-        if (phase10.receipt.mode === 'candidate') {
-          decision = beforePhase10;
-          phase10.receipt.applied = false;
-        }
-      }
-      phase10.receipt.finalAction = decision.action;
-      phase10.receipt.finalAmount = decision.amount ?? null;
-      decision = { ...decision, plo4Policy: phase10.receipt };
-      if (tele) {
-        noteFire('phase10_seen');
-        noteDecisionMs('phase10', phase10.receipt.latencyMs);
-        noteFire(`phase10_reason_${phase10.receipt.reason}`);
-        if (phase10.receipt.eligible) noteFire('phase10_eligible');
-        if (phase10.receipt.fired) {
-          noteFire('phase10_fired');
-          noteFire(`phase10_street_${gs.stage}`);
-        }
-        if (phase10.receipt.changed) noteFire('phase10_shadow_changed');
-        if (phase10.receipt.applied) noteFire('phase10_applied');
-        else noteFire('phase10_baseline_retained');
-        noteFire(`phase10_utility_${phase10.receipt.utilityOwner}`);
-        if (phase10.receipt.utilityUnavailableReason)
-          noteFire(`phase10_unavailable_utility_${phase10.receipt.utilityUnavailableReason}`);
-      }
-    }
-    if (phase11) {
-      if (isTournamentMode(gs) && phase11.receipt.utilityOwner !== 'phase7_evaluated') {
-        phase11.receipt.utilityOwner = 'phase7_unavailable';
-        phase11.receipt.utilityUnavailableReason ??= 'context_or_equity_evidence_unavailable';
-        if (phase11.receipt.mode === 'candidate') {
-          decision = beforePhase10;
-          phase11.receipt.applied = false;
-        }
-      }
-      phase11.receipt.finalAction = decision.action;
-      phase11.receipt.finalAmount = decision.amount ?? null;
-      decision = { ...decision, omahaVariantPolicy: phase11.receipt };
-      if (tele) {
-        noteFire('phase11_seen');
-        noteFire(`phase11_variant_${phase11.receipt.variant}`);
-        noteDecisionMs('phase11', phase11.receipt.latencyMs);
-        noteDecisionMs(`phase11_${phase11.receipt.variant}`, phase11.receipt.latencyMs);
-        noteFire(`phase11_${phase11.receipt.variant}_reason_${phase11.receipt.reason}`);
-        if (phase11.receipt.eligible) noteFire(`phase11_${phase11.receipt.variant}_eligible`);
-        if (phase11.receipt.fired) noteFire(`phase11_${phase11.receipt.variant}_fired`);
-        noteFire(`phase11_reason_${phase11.receipt.reason}`);
-        if (phase11.receipt.eligible) noteFire('phase11_eligible');
-        if (phase11.receipt.fired) {
-          noteFire('phase11_fired');
-          noteFire(`phase11_street_${gs.stage}`);
-        }
-        if (phase11.receipt.changed) noteFire('phase11_shadow_changed');
-        if (phase11.receipt.applied) noteFire('phase11_applied');
-        else noteFire('phase11_baseline_retained');
-        noteFire(`phase11_utility_${phase11.receipt.utilityOwner}`);
-        if (phase11.receipt.utilityUnavailableReason)
-          noteFire(`phase11_unavailable_utility_${phase11.receipt.utilityUnavailableReason}`);
-      }
-    }
-    if (phase12) {
-      if (isTournamentMode(gs) && phase12.receipt.utilityOwner !== 'phase7_evaluated') {
-        phase12.receipt.utilityOwner = 'phase7_unavailable';
-        phase12.receipt.utilityUnavailableReason ??= 'context_or_equity_evidence_unavailable';
-        if (phase12.receipt.mode === 'candidate') {
-          decision = beforePhase10;
-          phase12.receipt.applied = false;
-        }
-      }
-      phase12.receipt.finalAction = decision.action;
-      phase12.receipt.finalAmount = decision.amount ?? null;
-      decision = { ...decision, remainingVariantPolicy: phase12.receipt };
-      if (tele) {
-        noteFire('phase12_seen');
-        noteFire(`phase12_variant_${phase12.receipt.variant}`);
-        noteDecisionMs('phase12', phase12.receipt.latencyMs);
-        noteDecisionMs(`phase12_${phase12.receipt.variant}`, phase12.receipt.latencyMs);
-        noteFire(`phase12_${phase12.receipt.variant}_reason_${phase12.receipt.reason}`);
-        if (phase12.receipt.eligible) noteFire(`phase12_${phase12.receipt.variant}_eligible`);
-        if (phase12.receipt.fired) noteFire(`phase12_${phase12.receipt.variant}_fired`);
-        noteFire(`phase12_reason_${phase12.receipt.reason}`);
-        if (phase12.receipt.eligible) noteFire('phase12_eligible');
-        if (phase12.receipt.fired) {
-          noteFire('phase12_fired');
-          noteFire(`phase12_street_${gs.stage}`);
-        }
-        if (phase12.receipt.changed) noteFire('phase12_shadow_changed');
-        if (phase12.receipt.applied) noteFire('phase12_applied');
-        else noteFire('phase12_baseline_retained');
-        noteFire(`phase12_utility_${phase12.receipt.utilityOwner}`);
-        if (phase12.receipt.utilityUnavailableReason)
-          noteFire(`phase12_unavailable_utility_${phase12.receipt.utilityUnavailableReason}`);
-      }
-    }
-    if (decision.action === 'fold' && beforePhase10.continuationGuard)
-      decision = { ...decision, continuationGuard: beforePhase10.continuationGuard };
-    const beforePhase13 = decision;
-    const jointPolicy =
-      opts.phase13Joint === 'off'
-        ? null
-        : evaluateJointLivePolicy(
-            player,
-            gs,
-            decision,
-            opts.phase13Joint ?? 'shadow',
-            opts.phase13EvidenceMode && !tele ? () => 0 : undefined
-          );
-    if (jointPolicy) {
-      let proposal = this.legalize(jointPolicy.proposal, player, gs, vi);
-      if (isTournamentMode(gs)) {
         const tournament = trustedTournamentContext(gs);
-        const joint = jointPolicy.jointEvidence;
-        if (jointPolicy.receipt.fired && joint && tournament) {
-          const utilityStarted = performance.now();
+        const evidence7 = currentPhase7Equity();
+        if (!tournament) {
+          if (tele) noteFire('phase7_utility_skip_incomplete');
+        } else if (
+          gs.stateSchemaVersion === 1 &&
+          Array.isArray(gs.legalActions) &&
+          gs.legalActions.some((action) => action !== 'discard') &&
+          Array.isArray(gs.pots) &&
+          // Round 1 requires one coherent joint showdown sample per utility
+          // branch.  The existing multi-board strategy still prices those
+          // hands, but Phase 7 must not consume the independent per-board
+          // samples as though they came from one shared-deck deal.  Keep the
+          // baseline and expose the unavailable receipt until the later depth
+          // pass supplies that sampler.  Guard here as well as at capture time:
+          // preflop fixtures and restored hands can already carry extra boards.
+          !(Array.isArray(gs.communityCards2) && gs.communityCards2.length > 0) &&
+          !(Array.isArray(gs.communityCards3) && gs.communityCards3.length > 0) &&
+          (gs.boardCount ?? 1) <= 1 &&
+          evidence7
+        ) {
           try {
-            const behind = new Set(jointPlayersBehind(player, gs));
-            const moments = tournamentSampleEquity({
-              hero: player,
-              sampledOpponentIds: joint.opponentIds,
-              showdownSamples: joint.samples,
-            });
-            const evidence: Phase7EquityEvidence = {
-              ...moments,
-              sampledOpponentIds: joint.opponentIds,
-              showdownSamples: joint.samples,
-              // The actual public-line distributions are in joint.ranges and
-              // the scored samples; no invented calibrated percentile band.
-              opponents: joint.opponentIds.map((userId) => ({
-                userId,
-                range: null,
-                foldMul: 1,
-                actsAfterHero: behind.has(userId),
-              })),
-            };
-            const input = buildPhase7UtilityInput(gs, player, proposal, vi, tournament, evidence);
-            input.settlement = {
-              chipUnit: 1,
-              dealerSeat: gs.dealerSeat!,
-              splitLow: horseVariantRulesFor(gs.gameVariant).splitLow8OrBetter,
-            };
-            input.withinBudget =
-              opts.phase13EvidenceMode && !tele
-                ? () => true
-                : () => performance.now() - utilityStarted < 4;
-            const evaluated = evaluateTournamentUtilityDetailed(input);
-            if (evaluated.result) {
-              const selected = this.legalize(evaluated.result.decision, player, gs, vi);
+            phase8UtilityInput = buildPhase7UtilityInput(
+              gs,
+              player,
+              decision,
+              vi,
+              tournament,
+              evidence7
+            );
+            const evaluation = evaluateTournamentUtilityDetailed(phase8UtilityInput);
+            if (variantPolicy) {
+              if (variantPolicy.receipt.mode === 'shadow' && variantPolicy.receipt.fired) {
+                const shadowStart = performance.now();
+                const shadow = evaluateTournamentUtilityDetailed({
+                  ...phase8UtilityInput,
+                  baseline: this.legalize(variantPolicy.proposal, player, gs, vi),
+                  showdownSamples: phase8UtilityInput.showdownSamples.slice(0, 32),
+                  withinBudget:
+                    (opts.phase10EvidenceMode ||
+                      opts.phase11EvidenceMode ||
+                      opts.phase12EvidenceMode) &&
+                    !tele
+                      ? () => true
+                      : () => performance.now() - shadowStart < 4,
+                });
+                variantPolicy.receipt.utilityLatencyMs = performance.now() - shadowStart;
+                variantPolicy.receipt.utilityOwner = shadow.result
+                  ? 'phase7_evaluated'
+                  : 'phase7_unavailable';
+                if (shadow.result) variantPolicy.receipt.shadowUtility = shadow.result.ledger;
+                else
+                  variantPolicy.receipt.utilityUnavailableReason =
+                    shadow.unavailableReason ?? 'unknown';
+              } else {
+                variantPolicy.receipt.utilityOwner = evaluation.result
+                  ? 'phase7_evaluated'
+                  : 'phase7_unavailable';
+                if (!evaluation.result)
+                  variantPolicy.receipt.utilityUnavailableReason =
+                    evaluation.unavailableReason ?? 'unknown';
+              }
+            }
+            phase8ReuseUtility = evaluation.continuePostflop;
+            const result = evaluation.result;
+            if (result) {
+              const selected = this.legalize(result.decision, player, gs, vi);
+              const selectedAmount =
+                typeof selected.amount === 'number' && Number.isFinite(selected.amount)
+                  ? selected.amount
+                  : null;
               if (
-                selected.action === evaluated.result.ledger.selectedAction &&
-                (selected.amount ?? null) === evaluated.result.ledger.selectedAmount
+                selected.action !== result.ledger.selectedAction ||
+                selectedAmount !== result.ledger.selectedAmount
               ) {
-                proposal = selected;
-                jointPolicy.receipt.shadowUtility = evaluated.result.ledger;
-                jointPolicy.receipt.utilityOwner = 'phase7_evaluated';
-                if (jointPolicy.receipt.mode === 'candidate')
-                  decision = {
-                    ...beforePhase13,
-                    ...selected,
-                    tournamentUtility: evaluated.result.ledger,
-                  };
+                // A utility receipt may never be relabeled as a different legal
+                // action. Keep the already-legal baseline if this invariant is
+                // ever violated and make the skipped arbiter observable.
+                if (tele) {
+                  noteFire('phase7_utility_unavailable');
+                  noteFire('phase7_unavailable_legalizer_mismatch');
+                }
+              } else {
+                decision = { ...selected, tournamentUtility: result.ledger };
+                if (tele) {
+                  noteFire('phase7_tournament_utility');
+                  noteFire(`phase7_objective_${result.ledger.objective}`);
+                  noteFire(`phase7_icm_${result.ledger.icmMethod}`);
+                  if (result.ledger.overrodeBaseline) noteFire('phase7_utility_override');
+                  if (result.ledger.sidePotCount > 1) noteFire('phase7_side_pot');
+                  if (result.ledger.playersBehind.length > 0) noteFire('phase7_players_behind');
+                  if (result.ledger.objective === 'pko') noteFire('phase7_bounty_utility');
+                }
+              }
+            } else if (tele) {
+              noteFire('phase7_utility_unavailable');
+              noteFire(`phase7_unavailable_${evaluation.unavailableReason ?? 'unknown'}`);
+            }
+          } catch (error) {
+            reportError(error, 'HorseLogic.phase7_tournament_utility');
+            if (variantPolicy) variantPolicy.receipt.utilityUnavailableReason = 'exception';
+            if (tele) {
+              noteFire('phase7_utility_unavailable');
+              noteFire('phase7_unavailable_exception');
+            }
+          }
+        } else if (tele && gs.legalActions?.some((action) => action !== 'discard')) {
+          noteFire('phase7_utility_unavailable');
+          const multiBoardUnavailable =
+            (Array.isArray(gs.communityCards2) && gs.communityCards2.length > 0) ||
+            (Array.isArray(gs.communityCards3) && gs.communityCards3.length > 0) ||
+            (gs.boardCount ?? 1) > 1;
+          noteFire(
+            multiBoardUnavailable
+              ? 'phase7_unavailable_multi_board'
+              : evidence7
+                ? 'phase7_unavailable_state_contract'
+                : 'phase7_unavailable_equity_evidence'
+          );
+        }
+      }
+      return { decision, phase8UtilityInput, phase8ReuseUtility };
+    });
+    decision = arbitration.decision;
+    const { phase8UtilityInput, phase8ReuseUtility } = arbitration;
+    decision = graph.run('tournament_continuation', decision, () => {
+      if (
+        (opts.phase8Postflop ?? 'shadow') !== 'off' &&
+        isTournamentMode(gs) &&
+        gs.stage !== 'preflop'
+      ) {
+        const disabledReason = tele ? liveHorsePhase8Safety.disabledReason : null;
+        const phase8 = evaluateTournamentPostflop(
+          player,
+          gs,
+          decision,
+          disabledReason ? null : phase8UtilityInput,
+          opts.phase8Postflop === 'candidate' ? 'candidate' : 'shadow',
+          () => performance.now(),
+          phase8ReuseUtility
+        );
+        if (disabledReason) phase8.ledger.reason = `disabled_${disabledReason}`;
+        const proposed = this.legalize(phase8.decision, player, gs, vi);
+        if (
+          proposed.action !== phase8.decision.action ||
+          proposed.amount !== phase8.decision.amount
+        ) {
+          phase8.ledger.applied = false;
+          phase8.ledger.reason = 'illegal_candidate';
+        } else decision = phase8.decision;
+        decision = { ...decision, tournamentPostflop: phase8.ledger };
+        if (tele) {
+          liveHorsePhase8Safety.observe(phase8.ledger);
+          noteFire('phase8_seen');
+          noteDecisionMs('phase8', phase8.ledger.latencyMs);
+          noteFire(`phase8_format_${gs.format ?? 'unknown'}`);
+          noteFire(`phase8_reason_${phase8.ledger.reason}`);
+          if (phase8.ledger.eligible) noteFire('phase8_eligible');
+          if (phase8.ledger.fired) {
+            noteFire('phase8_fired');
+            noteFire(`phase8_objective_${phase8.ledger.objective}`);
+          }
+          if (phase8.ledger.changed) noteFire('phase8_shadow_changed');
+          if (phase8.ledger.applied) noteFire('phase8_applied');
+          else noteFire('phase8_baseline_retained');
+          for (const reason of phase8.ledger.reasons) noteFire(`phase8_feature_${reason}`);
+        }
+      }
+      return { decision };
+    }).decision;
+    decision = graph.run('variant_utility_guard', decision, () => {
+      if (phase10) {
+        if (isTournamentMode(gs) && phase10.receipt.utilityOwner !== 'phase7_evaluated') {
+          phase10.receipt.utilityOwner = 'phase7_unavailable';
+          phase10.receipt.utilityUnavailableReason ??= 'context_or_equity_evidence_unavailable';
+          if (phase10.receipt.mode === 'candidate') {
+            decision = beforePhase10;
+            phase10.receipt.applied = false;
+          }
+        }
+        phase10.receipt.finalAction = decision.action;
+        phase10.receipt.finalAmount = decision.amount ?? null;
+        decision = { ...decision, plo4Policy: phase10.receipt };
+        if (tele) {
+          noteFire('phase10_seen');
+          noteDecisionMs('phase10', phase10.receipt.latencyMs);
+          noteFire(`phase10_reason_${phase10.receipt.reason}`);
+          if (phase10.receipt.eligible) noteFire('phase10_eligible');
+          if (phase10.receipt.fired) {
+            noteFire('phase10_fired');
+            noteFire(`phase10_street_${gs.stage}`);
+          }
+          if (phase10.receipt.changed) noteFire('phase10_shadow_changed');
+          if (phase10.receipt.applied) noteFire('phase10_applied');
+          else noteFire('phase10_baseline_retained');
+          noteFire(`phase10_utility_${phase10.receipt.utilityOwner}`);
+          if (phase10.receipt.utilityUnavailableReason)
+            noteFire(`phase10_unavailable_utility_${phase10.receipt.utilityUnavailableReason}`);
+        }
+      }
+      if (phase11) {
+        if (isTournamentMode(gs) && phase11.receipt.utilityOwner !== 'phase7_evaluated') {
+          phase11.receipt.utilityOwner = 'phase7_unavailable';
+          phase11.receipt.utilityUnavailableReason ??= 'context_or_equity_evidence_unavailable';
+          if (phase11.receipt.mode === 'candidate') {
+            decision = beforePhase10;
+            phase11.receipt.applied = false;
+          }
+        }
+        phase11.receipt.finalAction = decision.action;
+        phase11.receipt.finalAmount = decision.amount ?? null;
+        decision = { ...decision, omahaVariantPolicy: phase11.receipt };
+        if (tele) {
+          noteFire('phase11_seen');
+          noteFire(`phase11_variant_${phase11.receipt.variant}`);
+          noteDecisionMs('phase11', phase11.receipt.latencyMs);
+          noteDecisionMs(`phase11_${phase11.receipt.variant}`, phase11.receipt.latencyMs);
+          noteFire(`phase11_${phase11.receipt.variant}_reason_${phase11.receipt.reason}`);
+          if (phase11.receipt.eligible) noteFire(`phase11_${phase11.receipt.variant}_eligible`);
+          if (phase11.receipt.fired) noteFire(`phase11_${phase11.receipt.variant}_fired`);
+          noteFire(`phase11_reason_${phase11.receipt.reason}`);
+          if (phase11.receipt.eligible) noteFire('phase11_eligible');
+          if (phase11.receipt.fired) {
+            noteFire('phase11_fired');
+            noteFire(`phase11_street_${gs.stage}`);
+          }
+          if (phase11.receipt.changed) noteFire('phase11_shadow_changed');
+          if (phase11.receipt.applied) noteFire('phase11_applied');
+          else noteFire('phase11_baseline_retained');
+          noteFire(`phase11_utility_${phase11.receipt.utilityOwner}`);
+          if (phase11.receipt.utilityUnavailableReason)
+            noteFire(`phase11_unavailable_utility_${phase11.receipt.utilityUnavailableReason}`);
+        }
+      }
+      if (phase12) {
+        if (isTournamentMode(gs) && phase12.receipt.utilityOwner !== 'phase7_evaluated') {
+          phase12.receipt.utilityOwner = 'phase7_unavailable';
+          phase12.receipt.utilityUnavailableReason ??= 'context_or_equity_evidence_unavailable';
+          if (phase12.receipt.mode === 'candidate') {
+            decision = beforePhase10;
+            phase12.receipt.applied = false;
+          }
+        }
+        phase12.receipt.finalAction = decision.action;
+        phase12.receipt.finalAmount = decision.amount ?? null;
+        decision = { ...decision, remainingVariantPolicy: phase12.receipt };
+        if (tele) {
+          noteFire('phase12_seen');
+          noteFire(`phase12_variant_${phase12.receipt.variant}`);
+          noteDecisionMs('phase12', phase12.receipt.latencyMs);
+          noteDecisionMs(`phase12_${phase12.receipt.variant}`, phase12.receipt.latencyMs);
+          noteFire(`phase12_${phase12.receipt.variant}_reason_${phase12.receipt.reason}`);
+          if (phase12.receipt.eligible) noteFire(`phase12_${phase12.receipt.variant}_eligible`);
+          if (phase12.receipt.fired) noteFire(`phase12_${phase12.receipt.variant}_fired`);
+          noteFire(`phase12_reason_${phase12.receipt.reason}`);
+          if (phase12.receipt.eligible) noteFire('phase12_eligible');
+          if (phase12.receipt.fired) {
+            noteFire('phase12_fired');
+            noteFire(`phase12_street_${gs.stage}`);
+          }
+          if (phase12.receipt.changed) noteFire('phase12_shadow_changed');
+          if (phase12.receipt.applied) noteFire('phase12_applied');
+          else noteFire('phase12_baseline_retained');
+          noteFire(`phase12_utility_${phase12.receipt.utilityOwner}`);
+          if (phase12.receipt.utilityUnavailableReason)
+            noteFire(`phase12_unavailable_utility_${phase12.receipt.utilityUnavailableReason}`);
+        }
+      }
+      if (decision.action === 'fold' && beforePhase10.continuationGuard)
+        decision = { ...decision, continuationGuard: beforePhase10.continuationGuard };
+      return { decision };
+    }).decision;
+    decision = graph.run('joint_policy', decision, () => {
+      const beforePhase13 = decision;
+      const jointPolicy =
+        opts.phase13Joint === 'off'
+          ? null
+          : evaluateJointLivePolicy(
+              player,
+              gs,
+              decision,
+              opts.phase13Joint ?? 'shadow',
+              opts.phase13EvidenceMode && !tele ? () => 0 : undefined
+            );
+      if (jointPolicy) {
+        let proposal = this.legalize(jointPolicy.proposal, player, gs, vi);
+        if (isTournamentMode(gs)) {
+          const tournament = trustedTournamentContext(gs);
+          const joint = jointPolicy.jointEvidence;
+          if (jointPolicy.receipt.fired && joint && tournament) {
+            const utilityStarted = performance.now();
+            try {
+              const behind = new Set(jointPlayersBehind(player, gs));
+              const moments = tournamentSampleEquity({
+                hero: player,
+                sampledOpponentIds: joint.opponentIds,
+                showdownSamples: joint.samples,
+              });
+              const evidence: Phase7EquityEvidence = {
+                ...moments,
+                sampledOpponentIds: joint.opponentIds,
+                showdownSamples: joint.samples,
+                // The actual public-line distributions are in joint.ranges and
+                // the scored samples; no invented calibrated percentile band.
+                opponents: joint.opponentIds.map((userId) => ({
+                  userId,
+                  range: null,
+                  foldMul: 1,
+                  actsAfterHero: behind.has(userId),
+                })),
+              };
+              const input = buildPhase7UtilityInput(gs, player, proposal, vi, tournament, evidence);
+              input.settlement = {
+                chipUnit: 1,
+                dealerSeat: gs.dealerSeat!,
+                splitLow: horseVariantRulesFor(gs.gameVariant).splitLow8OrBetter,
+              };
+              input.withinBudget =
+                opts.phase13EvidenceMode && !tele
+                  ? () => true
+                  : () => performance.now() - utilityStarted < 4;
+              const evaluated = evaluateTournamentUtilityDetailed(input);
+              if (evaluated.result) {
+                const selected = this.legalize(evaluated.result.decision, player, gs, vi);
+                if (
+                  selected.action === evaluated.result.ledger.selectedAction &&
+                  (selected.amount ?? null) === evaluated.result.ledger.selectedAmount
+                ) {
+                  proposal = selected;
+                  jointPolicy.receipt.shadowUtility = evaluated.result.ledger;
+                  jointPolicy.receipt.utilityOwner = 'phase7_evaluated';
+                  if (jointPolicy.receipt.mode === 'candidate')
+                    decision = {
+                      ...beforePhase13,
+                      ...selected,
+                      tournamentUtility: evaluated.result.ledger,
+                    };
+                } else {
+                  jointPolicy.receipt.utilityOwner = 'phase7_unavailable';
+                  jointPolicy.receipt.utilityUnavailableReason = 'legalizer_mismatch';
+                }
               } else {
                 jointPolicy.receipt.utilityOwner = 'phase7_unavailable';
-                jointPolicy.receipt.utilityUnavailableReason = 'legalizer_mismatch';
+                jointPolicy.receipt.utilityUnavailableReason =
+                  evaluated.unavailableReason ?? 'no_result';
               }
-            } else {
+            } catch {
               jointPolicy.receipt.utilityOwner = 'phase7_unavailable';
-              jointPolicy.receipt.utilityUnavailableReason =
-                evaluated.unavailableReason ?? 'no_result';
+              jointPolicy.receipt.utilityUnavailableReason = 'numerical_error';
             }
-          } catch {
+            jointPolicy.receipt.utilityLatencyMs = performance.now() - utilityStarted;
+          } else {
             jointPolicy.receipt.utilityOwner = 'phase7_unavailable';
-            jointPolicy.receipt.utilityUnavailableReason = 'numerical_error';
+            jointPolicy.receipt.utilityUnavailableReason = 'context_or_joint_samples_unavailable';
           }
-          jointPolicy.receipt.utilityLatencyMs = performance.now() - utilityStarted;
-        } else {
-          jointPolicy.receipt.utilityOwner = 'phase7_unavailable';
-          jointPolicy.receipt.utilityUnavailableReason = 'context_or_joint_samples_unavailable';
+          if (jointPolicy.receipt.utilityOwner !== 'phase7_evaluated') proposal = beforePhase13;
+        } else if (jointPolicy.receipt.mode === 'candidate' && jointPolicy.receipt.fired)
+          decision = { ...beforePhase13, ...proposal };
+        if (beforePhase13.action === 'fold' && beforePhase13.continuationGuard) {
+          proposal = beforePhase13;
+          decision = beforePhase13;
+          jointPolicy.receipt.reason = 'protected_' + beforePhase13.continuationGuard;
         }
-        if (jointPolicy.receipt.utilityOwner !== 'phase7_evaluated') proposal = beforePhase13;
-      } else if (jointPolicy.receipt.mode === 'candidate' && jointPolicy.receipt.fired)
-        decision = { ...beforePhase13, ...proposal };
-      if (beforePhase13.action === 'fold' && beforePhase13.continuationGuard) {
-        proposal = beforePhase13;
-        decision = beforePhase13;
-        jointPolicy.receipt.reason = 'protected_' + beforePhase13.continuationGuard;
+        const sameAction = (a: HorseDecision, b: HorseDecision) =>
+          a.action === b.action && (!['bet', 'raise'].includes(a.action) || a.amount === b.amount);
+        const receipt = jointPolicy.receipt;
+        receipt.proposalAction = proposal.action;
+        receipt.proposalAmount = proposal.amount ?? null;
+        receipt.changed = !sameAction(proposal, beforePhase13);
+        receipt.applied = !sameAction(decision, beforePhase13);
+        receipt.finalAction = decision.action;
+        receipt.finalAmount = decision.amount ?? null;
+        for (const prior of [
+          decision.plo4Policy,
+          decision.omahaVariantPolicy,
+          decision.remainingVariantPolicy,
+        ])
+          if (prior) {
+            prior.finalAction = decision.action;
+            prior.finalAmount = decision.amount ?? null;
+          }
+        decision = { ...decision, jointPolicy: receipt };
+        if (tele) {
+          noteFire('phase13_seen');
+          noteFire(`phase13_variant_${receipt.variant}`);
+          noteFire(`phase13_board_${receipt.boardCount}`);
+          noteFire(`phase13_reason_${receipt.reason}`);
+          noteFire(`phase13_${receipt.variant}_reason_${receipt.reason}`);
+          if (receipt.utilityUnavailableReason)
+            noteFire(`phase13_unavailable_utility_${receipt.utilityUnavailableReason}`);
+          noteDecisionMs('phase13', receipt.latencyMs);
+          noteDecisionMs(`phase13_${receipt.variant}`, receipt.latencyMs);
+          if (receipt.utilityLatencyMs !== undefined)
+            noteDecisionMs('phase13_utility', receipt.utilityLatencyMs);
+          if (receipt.eligible) {
+            noteFire('phase13_eligible');
+            noteFire(`phase13_${receipt.variant}_eligible`);
+          }
+          if (receipt.fired) {
+            noteFire('phase13_fired');
+            noteFire(`phase13_${receipt.variant}_fired`);
+            noteFire(`phase13_street_${gs.stage}`);
+          }
+          if (receipt.changed) noteFire('phase13_shadow_changed');
+          noteFire(receipt.applied ? 'phase13_applied' : 'phase13_baseline_retained');
+          noteFire(`phase13_utility_${receipt.utilityOwner}`);
+        }
       }
-      const sameAction = (a: HorseDecision, b: HorseDecision) =>
-        a.action === b.action && (!['bet', 'raise'].includes(a.action) || a.amount === b.amount);
-      const receipt = jointPolicy.receipt;
-      receipt.proposalAction = proposal.action;
-      receipt.proposalAmount = proposal.amount ?? null;
-      receipt.changed = !sameAction(proposal, beforePhase13);
-      receipt.applied = !sameAction(decision, beforePhase13);
-      receipt.finalAction = decision.action;
-      receipt.finalAmount = decision.amount ?? null;
-      for (const prior of [
-        decision.plo4Policy,
-        decision.omahaVariantPolicy,
-        decision.remainingVariantPolicy,
-      ])
-        if (prior) {
-          prior.finalAction = decision.action;
-          prior.finalAmount = decision.amount ?? null;
-        }
-      decision = { ...decision, jointPolicy: receipt };
-      if (tele) {
-        noteFire('phase13_seen');
-        noteFire(`phase13_variant_${receipt.variant}`);
-        noteFire(`phase13_board_${receipt.boardCount}`);
-        noteFire(`phase13_reason_${receipt.reason}`);
-        noteFire(`phase13_${receipt.variant}_reason_${receipt.reason}`);
-        if (receipt.utilityUnavailableReason)
-          noteFire(`phase13_unavailable_utility_${receipt.utilityUnavailableReason}`);
-        noteDecisionMs('phase13', receipt.latencyMs);
-        noteDecisionMs(`phase13_${receipt.variant}`, receipt.latencyMs);
-        if (receipt.utilityLatencyMs !== undefined)
-          noteDecisionMs('phase13_utility', receipt.utilityLatencyMs);
-        if (receipt.eligible) {
-          noteFire('phase13_eligible');
-          noteFire(`phase13_${receipt.variant}_eligible`);
-        }
-        if (receipt.fired) {
-          noteFire('phase13_fired');
-          noteFire(`phase13_${receipt.variant}_fired`);
-          noteFire(`phase13_street_${gs.stage}`);
-        }
-        if (receipt.changed) noteFire('phase13_shadow_changed');
-        noteFire(receipt.applied ? 'phase13_applied' : 'phase13_baseline_retained');
-        noteFire(`phase13_utility_${receipt.utilityOwner}`);
-      }
-    }
-    decision.thinkTime = this.computeThinkTime(
-      decision,
-      gs,
-      params,
-      toCall,
-      (opts.v9Timing ?? opts.v9) !== false,
-      player.user_id
-    );
-    return decision;
+      return { decision };
+    }).decision;
+    decision = graph.run('timing', decision, () => {
+      decision.thinkTime = this.computeThinkTime(
+        decision,
+        gs,
+        params,
+        toCall,
+        (opts.v9Timing ?? opts.v9) !== false,
+        player.user_id
+      );
+      return { decision };
+    }).decision;
+    return graph.finish(decision);
   }
 
   // ─────────────────────────────────────────────────────────────────────

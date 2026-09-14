@@ -42,6 +42,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Link } from 'react-router-dom';
 import { isSafeAdImage } from '../../services/AdService';
 import type { HouseAd } from '../../services/AdService';
 import './AdInterstitial.css';
@@ -163,6 +164,12 @@ export default function AdInterstitial({
             ) : null}
           </button>
         ) : null}
+        {/* The sponsor's door (2026-09-13). Everybody who sees an advert is a
+            prospective advertiser, so the popup is where the door is. Closing
+            first is a dismiss: the player did not click the advert. */}
+        <Link className="ad-interstitial__advertise" to="/advertise" onClick={onClose}>
+          Advertise With Us
+        </Link>
       </div>
     </div>,
     document.body

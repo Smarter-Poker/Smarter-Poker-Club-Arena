@@ -77,10 +77,6 @@ const ALLOWED_ORPHANS: Record<string, string> = {
     "a hand's own address - Copy Link on the replay writes it, and a player bookmarks it; " +
     'reads hand_history, so it is for the people who played the hand',
   'clubs/create': 'legacy redirect to /?create=club, kept so old links resolve',
-  advertise:
-    "the outside sponsor's door (2026-09-13): an advertiser is not a player, and the link is " +
-    'handed to them by whoever sold the flight. Whether players are shown an "Advertise With ' +
-    "Us\" link (on the ad popup, say) is Dan's call, not a test's",
 
   // ── Developer and diagnostic surfaces, never advertised to players ───────
   replay:

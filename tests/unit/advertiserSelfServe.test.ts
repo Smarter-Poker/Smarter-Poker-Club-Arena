@@ -174,12 +174,15 @@ describe('one page, two modes, one dress', () => {
     expect(APP).toMatch(/path="clubs\/:clubId\/advertise"[\s\S]*?<ClubAdvertisePage \/>/);
   });
 
-  it('sponsor mode never spends diamonds and never invents a price', () => {
+  it('sponsor mode never spends diamonds, and shows the price the database will freeze', () => {
     expect(PAGE).toMatch(
       /const canAfford = sponsorMode \|\| balance === null \? true : balance >= cost;/
     );
-    expect(PAGE).toMatch(/Priced On Request/);
-    expect(PAGE).toMatch(/Invoiced By Smarter\.Poker After Review\. Nothing Is Charged Here\./);
+    expect(PAGE).toMatch(/const quoteCents = rate \? rate\.sponsorCentsPerDay \* days : 0;/);
+    expect(PAGE).toMatch(/\{formatDollars\(r\.sponsorCentsPerDay\)\} Per Day/);
+    expect(PAGE).toMatch(/Invoiced By Smarter\.Poker Once Approved\. Nothing Is Charged Here\./);
+    // A surface with no sponsor price is not offered.
+    expect(PAGE).toMatch(/r\.sponsorCentsPerDay > 0/);
     // The sponsor's address is checked the way the RPC checks it before it is sent.
     expect(PAGE).toMatch(/\/\^https:\\\/\\\/\[a-zA-Z0-9\]\/\.test\(s\)/);
     // The one surface nothing renders is not offered to a sponsor.
@@ -191,5 +194,57 @@ describe('one page, two modes, one dress', () => {
     expect(PAGE).toMatch(/The Day By Day Numbers Could Not Be Read/);
     expect(PAGE).toMatch(/className="club-advertise__days"/);
     expect(PAGE_CSS).toMatch(/\.club-advertise__days \{/);
+  });
+});
+
+describe('a sponsor is quoted a price in dollars (2026-09-13)', () => {
+  const PRICE = read(
+    'supabase/migrations/20260913235536_a_sponsor_is_quoted_a_price_in_dollars.sql'
+  );
+
+  it('the price is derived, whole dollars, twice the club rate, and the migration proves it', () => {
+    expect(PRICE).toMatch(
+      /add column if not exists sponsor_cents_per_day integer not null default 0/
+    );
+    expect(PRICE).toMatch(/\('lobby_strip',\s+1000\)/);
+    expect(PRICE).toMatch(/\('session_summary',\s+800\)/);
+    expect(PRICE).toMatch(/\('hub_promotions',\s+600\)/);
+    expect(PRICE).toMatch(/\('empty_state',\s+500\)/);
+    expect(PRICE).toMatch(/sponsor_cents_per_day % 100 <> 0/);
+    expect(PRICE).toMatch(/sponsor_cents_per_day <> 2 \* diamonds_per_day/);
+  });
+
+  it('the quote is frozen on the flight at submit, and a zero price is not for sale', () => {
+    expect(PRICE).toMatch(/add column if not exists quoted_cents integer/);
+    expect(PRICE).toMatch(/v_quote := v_rate\.sponsor_cents_per_day \* p_days;/);
+    expect(PRICE).toMatch(/if v_rate\.sponsor_cents_per_day <= 0 then[\s\S]*?surface_not_for_sale/);
+    // Both sponsor paths write it; both lists return it.
+    expect(PRICE.match(/quoted_cents\)\n\s+values/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    expect(PRICE).toMatch(/drop function if exists public\.fn_sponsor_campaign_list\(\);/);
+    expect(PRICE).toMatch(/drop function if exists public\.fn_ad_campaign_list\(uuid\);/);
+    expect(SERVICE).toMatch(
+      /quotedCents: r\.quoted_cents == null \? null : Number\(r\.quoted_cents\)/
+    );
+    expect(SERVICE).toMatch(/sponsor_cents_per_day'/);
+  });
+
+  it('a dollar figure on a forward-facing page has no decimals', () => {
+    expect(SERVICE).toMatch(/return `\$\$\{Math\.floor\(cents \/ 100\)\.toLocaleString\(\)\}`;/);
+    // Staff see what to invoice, in the same figure.
+    expect(QUEUE).toMatch(/\$\{formatDollars\(c\.quotedCents \?\? 0\)\} To Invoice/);
+  });
+});
+
+describe("the ad popup carries the sponsor's door (2026-09-13)", () => {
+  it('Advertise With Us is a router link that closes the popup, and the route is no longer an orphan', () => {
+    const popup = read('src/components/ads/AdInterstitial.tsx');
+    expect(popup).toMatch(
+      /<Link className="ad-interstitial__advertise" to="\/advertise" onClick=\{onClose\}>/
+    );
+    expect(popup).toMatch(/Advertise With Us/);
+    expect(read('src/components/ads/AdInterstitial.css')).toMatch(
+      /\.ad-interstitial__advertise \{/
+    );
+    expect(read('tests/unit/everyRouteIsReachableLaw.test.ts')).not.toMatch(/^\s+advertise:/m);
   });
 });

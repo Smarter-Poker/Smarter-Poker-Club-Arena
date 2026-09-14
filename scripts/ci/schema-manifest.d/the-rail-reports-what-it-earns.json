@@ -1,0 +1,16 @@
+{
+  "_owner": "fix/the-rail-reports-what-it-earns. Phase 5 of the ticker programme. The message rail carries eight sources, each with an operator switch, and nothing had ever measured any of them, so every decision about the bar's content since it was built was taste. Applied to kuklfnapbkmacvwxktbh on 2026-09-14 as 20260914095526 (ledger version 20260914110425): ca_ticker_usage_daily counts shown/opened/dismissed per source per player per day, and fn_record_ticker_usage(jsonb) is the only way in - SECURITY DEFINER, pinned to auth.uid() inside, additive ON CONFLICT, unknown source keys ignored rather than raised so a client one deploy ahead of the database cannot throw inside a fire-and-forget metric on a poker table. A daily rollup and not events, the same shape as public.card_slide_usage, because an impression fires on every seated player inside a last call and a row each would out-write hand_history for a number only ever read as a ratio. No SELECT policy for authenticated at all: another player's reading habits are not theirs to read.",
+  "tables": ["ca_ticker_usage_daily"],
+  "functions": ["fn_record_ticker_usage"],
+  "columns": {
+    "ca_ticker_usage_daily": [
+      "day",
+      "user_id",
+      "source",
+      "shown",
+      "opened",
+      "dismissed",
+      "updated_at"
+    ]
+  }
+}

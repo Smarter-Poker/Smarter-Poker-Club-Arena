@@ -375,6 +375,52 @@ export function assertInventory(
   }
 }
 
+/**
+ * Build the inventory at the tournament's own unit (Diamond Phase 9).
+ *
+ * `buildInventory` above works in cents and is exact to the cent, which is
+ * what a chip event needs. A Diamond does not divide: every chest in a
+ * Diamond event must be a whole number of Diamonds (100 cents), and the
+ * database seed (`fn_mystery_bounty_seed`) refuses a chest that is not on
+ * the unit. So the ladder is built in UNITS - the pool in Diamonds, each
+ * chest in Diamonds, the same tier arithmetic and the same readable
+ * rounding (`cleanDownCents` reads 1,247 Diamonds down to 1,200 exactly as
+ * it reads $1,247 down to $1,200) - and scaled back to cents at the end.
+ *
+ * At a chip unit (1) this is `buildInventory` to the cent, by construction.
+ * The unit is required: a caller that has not read the tournament's club
+ * cannot say what a chest may hold, and must not seed (see
+ * `TournamentManagerBase.maybeActivateMysteryBounty`).
+ */
+export function buildInventoryAtUnit(
+  poolCents: number,
+  drawCount: number,
+  profile: MysteryBountyProfileName,
+  topPercent: number | null | undefined,
+  unitCents: number
+): MysteryChest[] {
+  if (!Number.isInteger(unitCents) || unitCents <= 0) {
+    throw new Error(
+      `mystery bounty unit must be a positive whole number of cents (got ${unitCents})`
+    );
+  }
+  if (!Number.isInteger(poolCents) || poolCents <= 0 || poolCents % unitCents !== 0) {
+    throw new Error(
+      `mystery bounty pool must be a positive whole number of units of ${unitCents}c (got ${poolCents}c)`
+    );
+  }
+  if (unitCents === 1) return buildInventory(poolCents, drawCount, profile, topPercent);
+  const units = buildInventory(poolCents / unitCents, drawCount, profile, topPercent);
+  const chests = units.map((c) => ({ ...c, amountCents: c.amountCents * unitCents }));
+  assertInventory(chests, poolCents, drawCount);
+  for (const c of chests) {
+    if (c.amountCents % unitCents !== 0) {
+      throw new Error(`mystery chest ${c.amountCents}c is not on the ${unitCents}c unit`);
+    }
+  }
+  return chests;
+}
+
 /** Convenience for the lobby and the tests: collapse an inventory to tier rows. */
 export function summariseInventory(
   chests: readonly MysteryChest[]

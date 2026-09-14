@@ -147,6 +147,8 @@ const ClubWheelOperationsPage = lazyWithRetry(() => import('./pages/club/ClubWhe
 const DiamondGamesPage = lazyWithRetry(() => import('./pages/DiamondGamesPage'));
 const DiamondPlinkoPage = lazyWithRetry(() => import('./pages/DiamondPlinkoPage'));
 const DiamondCrashPage = lazyWithRetry(() => import('./pages/DiamondCrashPage'));
+const DiamondChoicePage = lazyWithRetry(() => import('./pages/DiamondChoicePage'));
+const DiamondEarnPage = lazyWithRetry(() => import('./pages/DiamondEarnPage'));
 const ClubDiamondGamesOperationsPage = lazyWithRetry(
   () => import('./pages/club/ClubDiamondGamesOperationsPage')
 );
@@ -1494,6 +1496,42 @@ function FullApp() {
                       <ClubMemberGuard>
                         <PageErrorBoundary pageName="Diamond Crash">
                           <DiamondCrashPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/crossing"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Donkey Crossing">
+                          <DiamondChoicePage key="crossing" game="crossing" />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/mines"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Diamond Mines">
+                          <DiamondChoicePage key="mines" game="mines" />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/earn-diamonds"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Earn Diamonds">
+                          <DiamondEarnPage />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
                     </AuthGuard>

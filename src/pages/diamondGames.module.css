@@ -353,3 +353,58 @@
     filter: none;
   }
 }
+
+.proofHash {
+  overflow-wrap: anywhere;
+  font-family: monospace;
+  font-size: 0.8rem;
+}
+
+.bonusToggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  color: #dbe9f2;
+  font-size: 15px;
+}
+.bonusToggle input {
+  width: 22px;
+  height: 22px;
+  accent-color: #00a5ff;
+  flex-shrink: 0;
+}
+.bonusLinks {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+}
+.bonusLinks button {
+  min-height: 44px;
+}
+.spinsTabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+.spinsTabs a {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+}
+.spinsTabs a[aria-current='page'] {
+  color: #eefaff;
+  text-shadow: 0 0 12px #178ad9;
+}
+
+.spinsTabs .back {
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  padding: 8px 0;
+  min-width: 0;
+}

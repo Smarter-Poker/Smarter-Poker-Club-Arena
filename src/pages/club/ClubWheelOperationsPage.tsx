@@ -37,6 +37,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import DiamondSpinsOwnerTerms from '../../components/games/DiamondSpinsOwnerTerms';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useToast } from '../../components/common/Toast';
 import { ErrorState, LoadingState } from '../../components/common/EmptyState';
@@ -386,6 +387,8 @@ export default function ClubWheelOperationsPage() {
         ‹ Operations
       </button>
 
+      <DiamondSpinsOwnerTerms clubId={clubUuid} />
+
       <SpadeConsole
         eyebrow="Operations"
         title="Diamond Wheel"
@@ -429,11 +432,6 @@ export default function ClubWheelOperationsPage() {
             value={chips(metrics?.exposure_chips)}
             ink={(metrics?.exposure_chips ?? 0) > 0 ? 'gold' : 'silver'}
             meta={`Room ${chips(metrics?.exposure_headroom_chips)}`}
-          />
-          <Row
-            label="Return"
-            value={pct(metrics?.realized_rtp_lifetime)}
-            meta={`${compactChips(pool?.spins ?? 0)} Spins Against 80%`}
           />
           <Row
             label="House Take"
@@ -519,13 +517,13 @@ export default function ClubWheelOperationsPage() {
         </div>
       </SpadeConsole>
 
-      <SpadeConsole eyebrow="Against The 80% Spec" title="Realised Return" foot="foot">
+      <SpadeConsole eyebrow="Settled Play" title="Game Activity" foot="foot">
         <div className={styles.rows}>
           <div className={`${styles.grid4} ${styles.grid4Head}`}>
             <span className="sc-label sc-ink--blue">Window</span>
             <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Spins</span>
-            <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Return</span>
-            <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Z</span>
+            <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Chips Paid</span>
+            <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Review</span>
           </div>
           {(metrics?.windows ?? []).map((w) => (
             <div key={w.window} className={styles.grid4}>
@@ -542,43 +540,20 @@ export default function ClubWheelOperationsPage() {
               <span
                 className={`${styles.cell} ${styles.cellRight} ${w.drift ? 'sc-ink--red' : 'sc-ink--silver'}`}
               >
-                {pct(w.realized_rtp)}
+                {chips(w.paid_chips)}
               </span>
               <span
                 className={`${styles.cell} ${styles.cellRight} ${w.drift ? 'sc-ink--red' : 'sc-ink--muted'}`}
               >
-                {w.z === null ? 'N/A' : w.z.toFixed(1)}
+                {w.drift ? 'Review' : 'Clear'}
               </span>
             </div>
           ))}
         </div>
         <p className="sc-copy">
-          Z Is The Realised Return Against 80% In Standard Errors Of The Prize Table. Under 2,000
-          Spins It Is Noise; Past 2,000, Z Of 4 Or More Either Way Flags Drift And Prints The Window
-          In Red.
+          Review Highlights Activity That Needs An Operator Check. Intake And Paid Chips Come From
+          The Settled Game Records.
         </p>
-        {metrics?.audit ? (
-          <div className={`${styles.rows} ${styles.rowsCompact}`}>
-            <Row
-              label="Prize Table Returns"
-              value={pct(metrics.audit.spec_rtp)}
-              meta={`Table ${cfg?.segment_version ?? ''}`}
-            />
-            <Row
-              label="Paid In Chips"
-              value={pct(metrics.audit.chip_share)}
-              ink="gold"
-              meta="Of Intake"
-            />
-            <Row
-              label="Paid In Diamonds"
-              value={pct(metrics.audit.diamond_share)}
-              ink="blue"
-              meta="Of Intake"
-            />
-            <Row label="The House Keeps" value={pct(metrics.audit.house_share)} meta="Of Intake" />
-          </div>
-        ) : null}
       </SpadeConsole>
 
       <SpadeConsole

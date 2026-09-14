@@ -9,7 +9,11 @@
     "plinko_drops",
     "crash_rounds",
     "wheel_free_segments",
-    "wheel_free_spins"
+    "wheel_free_spins",
+    "diamond_choice_rounds",
+    "diamond_bonus_entries",
+    "diamond_game_round_book",
+    "diamond_spins_owner_consents"
   ],
   "functions": [
     "fn_diamond_game_append_only",
@@ -54,7 +58,29 @@
     "fn_diamond_game_pnl",
     "fn_diamond_game_room",
     "fn_diamond_game_players",
-    "fn_diamond_games_spent_today"
+    "fn_diamond_games_spent_today",
+    "fn_choice_choose",
+    "fn_choice_ladder",
+    "fn_choice_prizes",
+    "fn_choice_board",
+    "fn_choice_result",
+    "fn_choice_start",
+    "fn_choice_act",
+    "fn_choice_state",
+    "fn_choice_immutable",
+    "fn_diamond_game_reserved_cover_guard",
+    "fn_diamond_round_chip_cents",
+    "fn_plinko_bonus_run",
+    "fn_diamond_bonus_start",
+    "fn_diamond_bonus_latest",
+    "fn_diamond_bonus_state",
+    "fn_diamond_spins_earn_guide",
+    "fn_diamond_bonus_immutable",
+    "fn_ca_diamond_engine_of",
+    "fn_diamond_game_quote_max",
+    "fn_diamond_spins_owner_agreed",
+    "fn_diamond_spins_owner_terms",
+    "fn_diamond_spins_consent_immutable"
   ],
   "columns": {
     "wheel_configs": [

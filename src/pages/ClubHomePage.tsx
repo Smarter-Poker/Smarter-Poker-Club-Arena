@@ -115,6 +115,7 @@ import MaintenanceBreakBanner from '../components/common/MaintenanceBreakBanner'
 import HouseAdRotator from '../components/ads/HouseAdRotator';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
 import { ClubIdentityCard } from '../components/club-buttons';
+import DiamondBustPrompt from '../components/games/DiamondBustPrompt';
 import DiamondsToChipsButton from '../components/games/DiamondsToChipsButton';
 import { playerDisplayName } from '../utils/playerDisplayName';
 import ClubEntryMessage from '../components/club/ClubEntryMessage';
@@ -5313,6 +5314,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           diamonds are worth in chips, and saying so when today's free spin is
           still there. `alwaysShow` keeps the club's own door in its place
           while the read lands and even when the player has nothing yet. */}
+        <DiamondBustPrompt clubId={resolvedClubId || club.id} />
         <DiamondsToChipsButton
           clubId={clubId ?? null}
           alwaysShow

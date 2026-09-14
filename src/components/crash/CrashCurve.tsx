@@ -1,301 +1,274 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  CRASH CURVE - the multiplier climbing on the server's clock
- * ═══════════════════════════════════════════════════════════════════════════════
- *
- * The curve is e^(k t) from the round's started_at, k the host's growth
- * constant, t taken from the server's clock (the page keeps an offset from
- * server_now, so the picture agrees with fn_crash_settle's reading to within
- * the round trip). This canvas only DRAWS the multiplier; it never decides
- * anything. When the server says the round crashed the line stops dead at the
- * crash point in red; when it says cashed, the cash-out point is marked in
- * green and the curve keeps a ghost trace of where it went afterwards.
- *
- * Runs on requestAnimationFrame while the round is open; under reduced motion
- * the readout still updates (meaning) but the sweep is redrawn at a lower
- * cadence rather than every frame.
- */
-
-import { useEffect, useRef } from 'react';
-import { prefersReducedMotion } from '../../utils/animationSpeed';
-import { crashMultiplierCents, multiplierLabel } from '../../utils/diamondGamesFairness';
+/** A rendered flight follows the server clock, then reveals the sealed crash. */
+import { useEffect, useRef, useState } from 'react';
+import * as THREE from 'three';
+import { gameRenderer, metal, solid } from '../games/sceneKit';
+import { prefersReducedMotion, getAnimationSpeed } from '../../utils/animationSpeed';
+import { crashMultiplierCents } from '../../utils/diamondGamesFairness';
+import { reportError } from '../../utils/errorReporter';
 import styles from './CrashCurve.module.css';
-
 export type CrashPhase = 'idle' | 'open' | 'cashed' | 'crashed';
-
 export interface CrashCurveProps {
   phase: CrashPhase;
   growthK: number;
   capCents: number;
-  /** Server started_at in ms, already translated into the client's clock. */
   startedAtLocalMs: number | null;
-  /** Where the round ended (cents), for cashed / crashed. */
   finalCents: number | null;
-  /** The point the player cashed at, when cashed. */
   cashoutCents: number | null;
+  crashCents?: number | null;
   autoCashoutCents: number | null;
   width?: number;
   height?: number;
-  /** Called every frame with the multiplier the curve currently shows. */
   onTick?: (cents: number) => void;
 }
-
-const PAD_L = 12;
-const PAD_R = 14;
-const PAD_T = 18;
-const PAD_B = 24;
-
-export default function CrashCurve({
-  phase,
-  growthK,
-  capCents,
-  startedAtLocalMs,
-  finalCents,
-  cashoutCents,
-  autoCashoutCents,
-  width = 360,
-  height = 250,
-  onTick,
-}: CrashCurveProps) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const rafRef = useRef<number | null>(null);
-  const tickRef = useRef(onTick);
-  tickRef.current = onTick;
-
+function jet() {
+  const group = new THREE.Group();
+  const chrome = metal(0xd4dde5, 0.13),
+    blue = metal(0x1877f2, 0.14),
+    dark = metal(0x111b2b, 0.15);
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.33, 2.6, 28), chrome);
+  body.rotation.z = -Math.PI / 2;
+  group.add(body);
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.8, 28), chrome);
+  nose.rotation.z = -Math.PI / 2;
+  nose.position.x = 1.7;
+  group.add(nose);
+  const glass = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), dark);
+  glass.scale.set(0.7, 0.22, 0.22);
+  glass.position.set(0.65, 0.2, 0);
+  group.add(glass);
+  for (const side of [-1, 1]) {
+    const shape = new THREE.Shape();
+    shape.moveTo(0.55, 0);
+    shape.lineTo(-0.8, side * 1.65);
+    shape.lineTo(-1.02, side * 1.52);
+    shape.lineTo(-0.65, 0);
+    shape.closePath();
+    const wing = new THREE.Mesh(
+      new THREE.ExtrudeGeometry(shape, {
+        depth: 0.06,
+        bevelEnabled: true,
+        bevelThickness: 0.02,
+        bevelSize: 0.025,
+        bevelSegments: 2,
+        steps: 1,
+      }),
+      chrome
+    );
+    wing.rotation.x = Math.PI / 2;
+    group.add(wing);
+    solid(group, blue, [0.7, 0.08, 0.55], [-1, 0.12, side * 0.35], 0.03);
+  }
+  solid(group, blue, [0.45, 0.72, 0.06], [-1.05, 0.4, 0], 0.03).rotation.z = 0.25;
+  const exhaust = new THREE.Mesh(
+    new THREE.ConeGeometry(0.21, 1.45, 20),
+    new THREE.MeshBasicMaterial({
+      color: 0x39b6ff,
+      transparent: true,
+      opacity: 0.65,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    })
+  );
+  exhaust.rotation.z = Math.PI / 2;
+  exhaust.position.x = -1.95;
+  group.add(exhaust);
+  group.traverse((o) => {
+    if (o instanceof THREE.Mesh) o.castShadow = true;
+  });
+  return { group, exhaust };
+}
+export default function CrashCurve(props: CrashCurveProps) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const [failed, setFailed] = useState(false);
+  const latest = useRef(props);
+  latest.current = props;
+  const width = props.width ?? 360;
+  const height = props.height ?? 300;
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const dpr = Math.min(3, window.devicePixelRatio || 1);
-    canvas.width = Math.round(width * dpr);
-    canvas.height = Math.round(height * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (!canvas.current) return;
+    let kit: ReturnType<typeof gameRenderer>;
+    try {
+      kit = gameRenderer(canvas.current, width, height);
+      setFailed(false);
+    } catch (e) {
+      setFailed(true);
+      reportError(e, 'CrashCurve.renderer');
+      return;
+    }
+    const { scene, camera, renderer } = kit;
+    const surface = renderer.domElement;
+    const lost = (event: Event) => {
+      event.preventDefault();
+      setFailed(true);
+    };
+    const restored = () => setFailed(false);
+    surface.addEventListener('webglcontextlost', lost);
+    surface.addEventListener('webglcontextrestored', restored);
+    camera.position.set(0, 3.5, 12);
+    camera.lookAt(0, 0, 0);
+    scene.fog = new THREE.FogExp2(0x070b10, 0.025);
+    const points = new Float32Array(240 * 3);
+    for (let i = 0; i < 240; i++) {
+      points[i * 3] = ((i * 37.13) % 42) - 21;
+      points[i * 3 + 1] = ((i * 11.71) % 24) - 9;
+      points[i * 3 + 2] = -((i * 19.3) % 60) - 6;
+    }
+    const starsGeometry = new THREE.BufferGeometry();
+    starsGeometry.setAttribute('position', new THREE.BufferAttribute(points, 3));
+    const stars = new THREE.Points(
+      starsGeometry,
+      new THREE.PointsMaterial({ color: 0x92c8ff, size: 0.07, transparent: true, opacity: 0.7 })
+    );
+    scene.add(stars);
+    const grid = new THREE.GridHelper(60, 30, 0x1877f2, 0x102644);
+    grid.position.y = -3.2;
+    scene.add(grid);
+    const orbit = new THREE.Mesh(new THREE.TorusGeometry(4.5, 0.035, 8, 100), metal(0x1877f2));
+    orbit.position.set(1, 1, -8);
+    orbit.rotation.x = 0.35;
+    scene.add(orbit);
+    const flight = jet();
+    scene.add(flight.group);
+    flight.group.scale.setScalar(0.83);
+    const trailGeo = new THREE.BufferGeometry();
+    trailGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(96 * 3), 3));
+    const trailMat = new THREE.LineBasicMaterial({
+      color: 0x39b6ff,
+      transparent: true,
+      opacity: 0.85,
+    });
+    const trail = new THREE.Line(trailGeo, trailMat);
+    scene.add(trail);
+    const marker = new THREE.Mesh(
+      new THREE.TorusGeometry(0.22, 0.035, 8, 24),
+      new THREE.MeshBasicMaterial({ color: 0x5df2a0 })
+    );
+    scene.add(marker);
+    marker.visible = false;
+    const burstGeometry = new THREE.BufferGeometry();
+    burstGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(80 * 3), 3));
+    const burst = new THREE.Points(
+      burstGeometry,
+      new THREE.PointsMaterial({ color: 0xff6c52, size: 0.08, transparent: true, opacity: 0.9 })
+    );
+    scene.add(burst);
+    burst.visible = false;
+    let raf = 0,
+      last = 0,
+      previousPhase: CrashPhase = 'idle',
+      revealAt = 0;
     const reduced = prefersReducedMotion();
-    const plotW = width - PAD_L - PAD_R;
-    const plotH = height - PAD_T - PAD_B;
-
-    const draw = (nowCents: number, elapsedMs: number) => {
-      ctx.clearRect(0, 0, width, height);
-      const ground = ctx.createLinearGradient(0, 0, 0, height);
-      ground.addColorStop(0, '#05070a');
-      ground.addColorStop(1, '#0b1017');
-      ctx.fillStyle = ground;
-      ctx.fillRect(0, 0, width, height);
-
-      // Axes scale: time grows with the round, the multiplier axis leads the line.
-      const tMax = Math.max(6000, elapsedMs * 1.15);
-      // At rest the axis also makes room for the player's auto target, so the
-      // gold line they set is on the glass before they bet; once the round is
-      // running the axis leads the line and nothing else.
-      const mMax = Math.max(
-        2,
-        (nowCents / 100) * 1.25,
-        phase === 'idle' && autoCashoutCents ? (autoCashoutCents / 100) * 1.15 : 0
+    const speed = getAnimationSpeed();
+    const point = (v: number) => new THREE.Vector3(-3.8 + v * 7.1, -1.55 + v * v * 3.5, 0);
+    const draw = (now: number) => {
+      raf = requestAnimationFrame(draw);
+      if (document.hidden || now - last < (reduced ? 180 : 30)) return;
+      last = now;
+      const p = latest.current;
+      if (p.phase !== previousPhase) {
+        previousPhase = p.phase;
+        revealAt = now;
+      }
+      const elapsed =
+        p.startedAtLocalMs === null ? 0 : Math.max(0, performance.now() - p.startedAtLocalMs);
+      const current =
+        p.phase === 'open'
+          ? crashMultiplierCents(p.growthK, elapsed, p.capCents)
+          : (p.finalCents ?? 100);
+      if (p.phase === 'open') p.onTick?.(current);
+      const target =
+        p.phase === 'cashed' ? (p.crashCents ?? p.finalCents ?? 100) : (p.finalCents ?? current);
+      const replay =
+        p.phase === 'cashed'
+          ? reduced
+            ? 1
+            : Math.max(0, Math.min(1, (now - revealAt - 800) / (2600 * speed)))
+          : 0;
+      const shown =
+        p.phase === 'cashed'
+          ? Math.exp(
+              THREE.MathUtils.lerp(
+                Math.log(Math.max(100, p.cashoutCents ?? 100)),
+                Math.log(Math.max(100, target)),
+                replay
+              )
+            )
+          : current;
+      const maxLog = Math.max(Math.log(4), Math.log(Math.max(shown, target) / 100) * 1.12);
+      const progress =
+        p.phase === 'idle' ? 0.14 : Math.min(0.92, Math.log(Math.max(100, shown) / 100) / maxLog);
+      const head = point(progress);
+      flight.group.position.copy(head);
+      flight.group.rotation.set(
+        0.08,
+        0.08,
+        Math.atan(progress * 0.85) +
+          (p.phase === 'idle' && !reduced ? Math.sin(now / 900) * 0.035 : 0)
       );
-      const xOf = (ms: number) => PAD_L + (ms / tMax) * plotW;
-      const yOf = (m: number) => PAD_T + plotH - ((m - 1) / (mMax - 1)) * plotH;
-
-      // grid
-      ctx.strokeStyle = 'rgba(255,255,255,0.05)';
-      ctx.lineWidth = 1;
-      ctx.font = '600 10px Inter, "Roboto Condensed", sans-serif';
-      ctx.fillStyle = '#5f6d7e';
-      ctx.textAlign = 'right';
-      ctx.textBaseline = 'middle';
-      const mSteps = niceSteps(1, mMax, 4);
-      for (const m of mSteps) {
-        const y = yOf(m);
-        ctx.beginPath();
-        ctx.moveTo(PAD_L, y);
-        ctx.lineTo(width - PAD_R, y);
-        ctx.stroke();
-        ctx.fillText(`${m.toFixed(m >= 10 ? 0 : 1)}x`, width - PAD_R - 2, y - 7);
+      flight.exhaust.scale.y = reduced ? 1 : 0.8 + Math.sin(now / 75) * 0.2;
+      const finished = p.phase === 'crashed' || (p.phase === 'cashed' && replay === 1);
+      flight.group.visible = !finished;
+      burst.visible = finished;
+      const values = trailGeo.attributes.position.array as Float32Array;
+      for (let i = 0; i < 96; i++) {
+        const v = point((progress * i) / 95);
+        values.set([v.x, v.y, v.z], i * 3);
       }
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      const tSteps = niceSteps(0, tMax / 1000, 5);
-      for (const sec of tSteps) {
-        if (sec === 0) continue;
-        const x = xOf(sec * 1000);
-        ctx.beginPath();
-        ctx.moveTo(x, PAD_T);
-        ctx.lineTo(x, PAD_T + plotH);
-        ctx.stroke();
-        ctx.fillText(`${sec}s`, x, PAD_T + plotH + 6);
-      }
-
-      // auto cash-out line
-      if (autoCashoutCents && autoCashoutCents / 100 <= mMax) {
-        const y = yOf(autoCashoutCents / 100);
-        ctx.setLineDash([4, 4]);
-        ctx.strokeStyle = 'rgba(255,214,120,0.55)';
-        ctx.beginPath();
-        ctx.moveTo(PAD_L, y);
-        ctx.lineTo(width - PAD_R, y);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.fillStyle = '#ffd76a';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'bottom';
-        ctx.fillText(`Auto ${multiplierLabel(autoCashoutCents)}`, PAD_L + 4, y - 2);
-      }
-
-      // At rest the glass is not blank: the climb this round WOULD take, drawn
-      // dim, so a player sees the shape of the game before they bet.
-      if (phase === 'idle') {
-        ctx.setLineDash([5, 5]);
-        ctx.strokeStyle = 'rgba(57,182,255,0.30)';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        for (let i = 0; i <= 90; i++) {
-          const ms = (tMax * i) / 90;
-          const m = Math.exp(growthK * (ms / 1000));
-          if (m > mMax) break;
-          const x = xOf(ms);
-          const y = yOf(m);
-          if (i === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
+      trailGeo.attributes.position.needsUpdate = true;
+      trailMat.color.setHex(finished ? 0xff6152 : 0x39b6ff);
+      marker.visible = p.phase === 'cashed';
+      if (marker.visible)
+        marker.position.copy(
+          point(Math.min(0.92, Math.log(Math.max(100, p.cashoutCents ?? 100) / 100) / maxLog))
+        );
+      if (finished) {
+        const positions = burstGeometry.attributes.position.array as Float32Array;
+        const t = reduced ? 0.55 : Math.min(1, (now - revealAt) / (1200 * speed));
+        for (let i = 0; i < 80; i++) {
+          const angle = i * 2.39996;
+          const radius = (0.2 + (i % 9) * 0.1) * t;
+          positions.set(
+            [
+              head.x + Math.cos(angle) * radius,
+              head.y + Math.sin(angle) * radius,
+              Math.sin(i) * radius,
+            ],
+            i * 3
+          );
         }
-        ctx.stroke();
-        ctx.setLineDash([]);
-        return;
+        burstGeometry.attributes.position.needsUpdate = true;
       }
-
-      // the curve up to elapsedMs
-      const color = phase === 'crashed' ? '#ff5f5f' : phase === 'cashed' ? '#5df2a0' : '#39b6ff';
-      const colorSoft =
-        phase === 'crashed'
-          ? 'rgba(255,95,95,0.28)'
-          : phase === 'cashed'
-            ? 'rgba(93,242,160,0.26)'
-            : 'rgba(57,182,255,0.28)';
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 14;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 3;
-      ctx.lineJoin = 'round';
-      ctx.beginPath();
-      const steps = 120;
-      for (let i = 0; i <= steps; i++) {
-        const ms = (elapsedMs * i) / steps;
-        const m = Math.min(nowCents / 100, Math.exp(growthK * (ms / 1000)));
-        const x = xOf(ms);
-        const y = yOf(Math.min(m, mMax));
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
+      if (!reduced) {
+        stars.position.z = (now / 300) % 6;
+        orbit.rotation.z = now / 16000;
+        grid.position.z = (now / 650) % 2;
       }
-      ctx.stroke();
-      // area under
-      ctx.shadowBlur = 0;
-      ctx.lineTo(xOf(elapsedMs), PAD_T + plotH);
-      ctx.lineTo(PAD_L, PAD_T + plotH);
-      ctx.closePath();
-      const fill = ctx.createLinearGradient(0, PAD_T, 0, PAD_T + plotH);
-      fill.addColorStop(0, colorSoft);
-      fill.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = fill;
-      ctx.fill();
-
-      // the head
-      const hx = xOf(elapsedMs);
-      const hy = yOf(Math.min(nowCents / 100, mMax));
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 18;
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(hx, hy, phase === 'open' ? 5 : 6, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.shadowBlur = 0;
-
-      if (phase === 'cashed' && cashoutCents) {
-        ctx.fillStyle = '#5df2a0';
-        ctx.font = '800 12px "Roboto Condensed", Inter, sans-serif';
-        ctx.textAlign = hx > width * 0.6 ? 'right' : 'left';
-        ctx.textBaseline = 'bottom';
-        ctx.fillText(
-          `Cashed Out ${multiplierLabel(cashoutCents)}`,
-          hx + (hx > width * 0.6 ? -10 : 10),
-          hy - 8
-        );
-      }
-      if (phase === 'crashed') {
-        ctx.fillStyle = '#ff5f5f';
-        ctx.font = '800 12px "Roboto Condensed", Inter, sans-serif';
-        ctx.textAlign = hx > width * 0.6 ? 'right' : 'left';
-        ctx.textBaseline = 'bottom';
-        ctx.fillText(
-          `Crashed At ${multiplierLabel(nowCents)}`,
-          hx + (hx > width * 0.6 ? -10 : 10),
-          hy - 8
-        );
-      }
+      renderer.render(scene, camera);
     };
-
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-
-    if (phase === 'idle' || startedAtLocalMs === null) {
-      draw(100, 0);
-      return;
-    }
-
-    if (phase !== 'open') {
-      const cents = finalCents ?? 100;
-      const elapsed = (Math.log(Math.max(1, cents / 100)) / growthK) * 1000;
-      draw(cents, elapsed);
-      tickRef.current?.(cents);
-      return;
-    }
-
-    let last = 0;
-    const frame = (now: number) => {
-      const elapsed = Math.max(0, performance.now() - startedAtLocalMs);
-      const cents = crashMultiplierCents(growthK, elapsed, capCents);
-      if (!reduced || now - last > 250) {
-        last = now;
-        draw(cents, elapsed);
-        tickRef.current?.(cents);
-      }
-      rafRef.current = requestAnimationFrame(frame);
-    };
-    rafRef.current = requestAnimationFrame(frame);
+    raf = requestAnimationFrame(draw);
     return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      cancelAnimationFrame(raf);
+      grid.geometry.dispose();
+      (grid.material as THREE.Material).dispose();
+      surface.removeEventListener('webglcontextlost', lost);
+      surface.removeEventListener('webglcontextrestored', restored);
+      kit.cleanup();
     };
-  }, [
-    phase,
-    growthK,
-    capCents,
-    startedAtLocalMs,
-    finalCents,
-    cashoutCents,
-    autoCashoutCents,
-    width,
-    height,
-  ]);
-
+  }, [width, height]);
   return (
     <div className={styles.wrap} data-motion="keep">
+      {failed ? (
+        <p className="sc-copy">
+          The 3D Scene Is Unavailable. Your Live Multiplier And Cash Out Controls Still Work.
+        </p>
+      ) : null}
       <canvas
-        ref={canvasRef}
+        ref={canvas}
         className={styles.canvas}
-        style={{ width, height }}
+        style={{ width, height, display: failed ? 'none' : undefined }}
         role="img"
         aria-label="Crash Curve"
       />
     </div>
   );
-}
-
-function niceSteps(min: number, max: number, count: number): number[] {
-  const span = max - min;
-  if (span <= 0) return [min];
-  const raw = span / count;
-  const pow = Math.pow(10, Math.floor(Math.log10(raw)));
-  const candidates = [1, 2, 2.5, 5, 10].map((c) => c * pow);
-  const step = candidates.find((c) => c >= raw) ?? candidates[candidates.length - 1];
-  const out: number[] = [];
-  for (let v = Math.ceil(min / step) * step; v <= max + 1e-9; v += step)
-    out.push(Number(v.toFixed(6)));
-  return out;
 }

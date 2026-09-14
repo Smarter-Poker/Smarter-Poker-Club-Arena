@@ -44,14 +44,21 @@ describe('the day is one figure, from one definition', () => {
     );
   });
 
-  it('it counts all three games, because a player has one wallet', () => {
+  it('it counts the wheel and the shared book of all four bonus games', () => {
     expect(SPENT).toContain('FROM public.wheel_spins s');
-    expect(SPENT).toContain('FROM public.plinko_drops d');
-    expect(SPENT).toContain('FROM public.crash_rounds c');
+    expect(SPENT).toContain('FROM public.diamond_game_round_book r');
+    const sql = inForce('fn_diamond_games_spent_today').sql;
+    for (const table of [
+      'plinko_drops',
+      'crash_rounds',
+      'diamond_choice_rounds',
+      'diamond_bonus_entries',
+    ])
+      expect(sql).toContain(`FROM public.${table}`);
   });
 
   it('on the same day the caps are counted on, so both turn together', () => {
-    expect(SPENT.match(/AT TIME ZONE 'America\/Chicago'\)::date/g)?.length).toBe(6);
+    expect(SPENT.match(/AT TIME ZONE 'America\/Chicago'\)::date/g)?.length).toBe(4);
     expect(body(inForce('fn_wheel_spin_core').sql, 'fn_wheel_spin_core')).toContain(
       "AT TIME ZONE 'America/Chicago')::date"
     );
@@ -64,9 +71,9 @@ describe('the day is one figure, from one definition', () => {
   it('an OPEN crash round counts, which is the opposite of what the P and L does', () => {
     // Deliberate: the operator's profit is not real until the round decides,
     // and the player's money is gone the moment they bet it.
-    expect(SPENT).not.toContain("c.status <> 'open'");
+    expect(SPENT).not.toContain("r.status<>'open'");
     expect(body(inForce('fn_diamond_game_pnl').sql, 'fn_diamond_game_pnl')).toContain(
-      "c.status <> 'open'"
+      "r.status<>'open'"
     );
   });
 
@@ -112,22 +119,36 @@ describe('one line, three pages', () => {
 });
 
 describe('the one blocker with a way out', () => {
-  it.each(PAGES)('%s names the shortage once and derives the door from it', (page) => {
-    const s = src(page);
-    expect(s).toContain('const SHORT_OF_DIAMONDS =');
-    expect(s).toContain('const shortOfDiamonds = blocker === SHORT_OF_DIAMONDS;');
-    // The string may appear only in the constant, never again as a literal.
-    const lit = /'Not Enough Diamonds For (That Bet|A Spin)'/g;
-    expect(s.match(lit)?.length).toBe(1);
+  it('Plinko and the new games keep Buy More in their shared entry setup', () => {
+    const setup = src('src/components/games/BonusSetup.tsx');
+    expect(setup).toContain("navigate('/marketplace?tab=diamonds')");
+    expect(setup).toContain('Buy More');
+    expect(setup).toContain('disabled={disabled}');
+    for (const page of ['src/pages/DiamondPlinkoPage.tsx', 'src/pages/DiamondChoicePage.tsx'])
+      expect(src(page)).toContain('<BonusSetup');
   });
+  it.each(PAGES.filter((p) => !p.includes('Plinko')))(
+    '%s names the shortage once and derives the door from it',
+    (page) => {
+      const s = src(page);
+      expect(s).toContain('const SHORT_OF_DIAMONDS =');
+      expect(s).toContain('const shortOfDiamonds = blocker === SHORT_OF_DIAMONDS;');
+      // The string may appear only in the constant, never again as a literal.
+      const lit = /'Not Enough Diamonds For (That Bet|A Spin)'/g;
+      expect(s.match(lit)?.length).toBe(1);
+    }
+  );
 
-  it.each(PAGES)('%s turns the plate into the door rather than leaving it dead', (page) => {
-    const s = src(page);
-    expect(s).toContain("const BUY_DIAMONDS = '/marketplace?tab=diamonds';");
-    expect(s).toContain(
-      "{ label: 'Get Diamonds', ink: 'gold', onClick: () => navigate(BUY_DIAMONDS) }"
-    );
-  });
+  it.each(PAGES.filter((p) => !p.includes('Plinko')))(
+    '%s turns the plate into the door rather than leaving it dead',
+    (page) => {
+      const s = src(page);
+      expect(s).toContain("const BUY_DIAMONDS = '/marketplace?tab=diamonds';");
+      expect(s).toContain(
+        "{ label: 'Get Diamonds', ink: 'gold', onClick: () => navigate(BUY_DIAMONDS) }"
+      );
+    }
+  );
 
   it('an open crash round keeps its cash-out plate whatever the wallet says', () => {
     const s = src('src/pages/DiamondCrashPage.tsx');

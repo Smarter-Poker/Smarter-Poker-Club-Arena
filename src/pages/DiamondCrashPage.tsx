@@ -1,3 +1,6 @@
+import { pendingBonus } from '../services/diamondBonusRecovery';
+import { useBonusBudget } from '../hooks/useBonusBudget';
+import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  DIAMOND CRASH - the player's page, on the console
@@ -47,19 +50,24 @@ import CrashCurve, { type CrashPhase } from '../components/crash/CrashCurve';
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import { DeckConsole } from '../components/console/DeckConsole';
 import { useMeasuredWidth } from '../hooks/useMeasuredWidth';
+import BonusSetup from '../components/games/BonusSetup';
+import { bonusTotal, validSpinAmount } from '../utils/bonusGameBudget';
+import { DiamondBonusService, BonusRefusal } from '../services/DiamondBonusService';
 import DiamondGamesService, {
+  normaliseCrash,
   type CrashRound,
   type GameState,
 } from '../services/DiamondGamesService';
 import { randomClientSeed } from '../utils/wheelFairness';
 import {
-  crashSecondsToReach,
   multiplierLabel,
   verifyCrashRound,
   type CrashFairnessVerdict,
 } from '../utils/diamondGamesFairness';
 import { compactChips } from '../utils/format';
 import TodayLine from '../components/games/TodayLine';
+import SealedPrize from '../components/games/SealedPrize';
+import { sealedChipPrize } from '../utils/sealedChipPrize';
 import { autoRunVerdict, cycleRunSize, type AutoRun } from '../utils/autoRun';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
@@ -75,17 +83,12 @@ const POLL_MS = 320;
 /** The pause between a settled round and the next of a run, so the result can be read. */
 const AUTO_PAUSE_MS = 1500;
 /** The odds table's rows and the auto cash-out presets, in cents. 0 is Off. */
-const TARGETS = [150, 200, 300, 500, 1000, 2000, 5000, 10000, 100000] as const;
+
 const AUTO_PRESETS = [0, 150, 200, 300, 500, 1000, 2000, 5000] as const;
 
 /** Chips as the player reads them: whole figures compact, a fractional prize exact (it IS the prize). */
 function chipsLabel(v: number): string {
   return Number.isInteger(v) ? compactChips(v) : v.toFixed(2);
-}
-
-function reachChance(cents: number): string {
-  const pct = 80 / (cents / 100);
-  return `${pct.toFixed(pct < 1 ? 2 : pct < 10 ? 1 : 0)}%`;
 }
 
 /**
@@ -100,6 +103,11 @@ const SHORT_OF_DIAMONDS = 'Not Enough Diamonds For That Bet';
 const BUY_DIAMONDS = '/marketplace?tab=diamonds';
 
 export default function DiamondCrashPage() {
+  const { user } = useAuthUser();
+  const { clubId } = useParams();
+  return <DiamondCrashGame key={`${user?.id ?? ''}:${clubId ?? ''}`} />;
+}
+function DiamondCrashGame() {
   const { clubId: routeClubId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuthUser();
@@ -113,7 +121,12 @@ export default function DiamondCrashPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [commit, setCommit] = useState<{ id: string; hash: string } | null>(null);
   const [clientSeed, setClientSeed] = useState<string>(() => randomClientSeed());
-  const [bet, setBet] = useState<number>(100);
+  const [budget, setBudget] = useBonusBudget(routeClubId, 'crash');
+  const bet = bonusTotal(budget);
+  const budgetRef = useRef(budget);
+  budgetRef.current = budget;
+  const [uncertain, setUncertain] = useState(false);
+  const heldStart = useRef<Parameters<typeof DiamondBonusService.start>[0] | null>(null);
   const [autoCents, setAutoCents] = useState<number>(200);
   const [round, setRound] = useState<CrashRound | null>(null);
   const [phase, setPhase] = useState<CrashPhase>('idle');
@@ -139,7 +152,7 @@ export default function DiamondCrashPage() {
 
   const loadState = useCallback(
     async (uuid: string) => {
-      const next = await DiamondGamesService.getState(uuid, 'crash');
+      const next = await DiamondGamesService.getState(uuid, 'crash', bonusTotal(budgetRef.current));
       if (!live()) return next;
       setState(next);
       setWaitSeconds(next.player?.seconds_until_next ?? 0);
@@ -248,14 +261,18 @@ export default function DiamondCrashPage() {
         const uuid = await resolveClubUUID(routeClubId);
         if (cancelled || !live()) return;
         setClubUuid(uuid);
+        const pending = pendingBonus(user?.id ?? '', uuid, 'crash');
+        if (pending) {
+          heldStart.current = pending;
+          setBudget(pending.budget);
+          setUncertain(true);
+        }
         const next = await loadState(uuid);
         if (cancelled || !live()) return;
-        if (next.bets.length && !next.bets.some((b) => b.bet_diamonds === bet)) {
-          setBet(next.bets[0].bet_diamonds);
-        }
-        if (next.available) await freshCommit();
+        if (next.available && !pending) await freshCommit();
         void loadHistory(uuid);
-        if (next.open_round && next.open_round.status === 'open') adopt(next.open_round);
+        if (!pending && next.open_round && next.open_round.status === 'open')
+          adopt(next.open_round);
       } catch (err) {
         reportError(err, 'DiamondCrashPage.load');
         if (!cancelled && live()) setLoadError('Crash Could Not Be Loaded');
@@ -281,7 +298,6 @@ export default function DiamondCrashPage() {
   const bets = useMemo(() => state?.bets ?? [], [state]);
   const betOption = useMemo(() => bets.find((b) => b.bet_diamonds === bet) ?? bets[0], [bets, bet]);
   const rate = cfg?.diamonds_per_chip ?? 100;
-  const betChips = betOption?.bet_chips ?? bet / rate;
   const capCents = betOption?.cap_cents ?? cfg?.max_multiplier_cents ?? 100000;
   const growthK = cfg?.growth_k ?? 0.12;
   const autoPresets = useMemo(
@@ -314,15 +330,20 @@ export default function DiamondCrashPage() {
   /** The only blocker a player can do something about, so the plate becomes the door. */
   const shortOfDiamonds = blocker === SHORT_OF_DIAMONDS;
   const canStart = Boolean(
-    clubUuid && commit && !open && !starting && !blocker && waitSeconds <= 0
+    clubUuid &&
+    commit &&
+    validSpinAmount(budget.base) &&
+    !uncertain &&
+    !open &&
+    !starting &&
+    !blocker &&
+    waitSeconds <= 0
   );
 
-  const cycleBet = useCallback(() => {
-    if (open || starting || running || bets.length < 2) return;
-    const i = bets.findIndex((b) => b.bet_diamonds === bet);
-    setBet(bets[(i + 1) % bets.length].bet_diamonds);
-    triggerHaptic('light');
-  }, [open, starting, running, bets, bet]);
+  useEffect(() => {
+    if (clubUuid && validSpinAmount(budget.base) && !open && !starting)
+      void loadState(clubUuid).catch((e) => reportError(e, 'DiamondCrashPage.entryQuote'));
+  }, [clubUuid, budget.base, budget.doubled, open, starting, loadState]);
 
   const cycleAuto = useCallback(() => {
     if (open || starting || running) return;
@@ -348,7 +369,15 @@ export default function DiamondCrashPage() {
   );
 
   const handleStart = useCallback(async () => {
-    if (!clubUuid || !commit || busyRef.current || open) return;
+    if (
+      !clubUuid ||
+      !commit ||
+      busyRef.current ||
+      open ||
+      uncertain ||
+      !validSpinAmount(budget.base)
+    )
+      return;
     busyRef.current = true;
     setStarting(true);
     setVerdict(null);
@@ -356,13 +385,20 @@ export default function DiamondCrashPage() {
     triggerHaptic('medium');
     try {
       const seed = clientSeed.trim().slice(0, MAX_CLIENT_SEED) || randomClientSeed();
-      const result = await DiamondGamesService.crashStart(
-        clubUuid,
-        commit.id,
+      const request = {
+        clubId: clubUuid,
+        game: 'crash' as const,
+        budget: { ...budget },
+        commitId: commit.id,
         seed,
-        bet,
-        autoTarget
+        autoCashoutCents: autoTarget,
+      };
+      heldStart.current = request;
+      const result = normaliseCrash(
+        (await DiamondBonusService.start(request, user?.id ?? '')) as Record<string, unknown>
       );
+      heldStart.current = null;
+      setUncertain(false);
       if (!live()) return;
       if (!result.ok) {
         toast.error(result.error || 'The Round Was Refused');
@@ -378,19 +414,26 @@ export default function DiamondCrashPage() {
       adopt(result);
     } catch (err) {
       reportError(err, 'DiamondCrashPage.start');
-      if (live()) toast.error('The Round Did Not Start. Nothing Was Charged');
+      if (live()) {
+        setUncertain(!(err instanceof BonusRefusal));
+        toast.error(
+          err instanceof BonusRefusal ? err.message : 'Check Your Round Before Starting Another.'
+        );
+      }
+      if (err instanceof BonusRefusal) heldStart.current = null;
       endRun(autoRunRef.current ? 'Auto Play Stopped' : null);
-      await freshCommit();
     } finally {
       busyRef.current = false;
       if (live()) setStarting(false);
     }
   }, [
     clubUuid,
+    user?.id,
     commit,
     open,
     clientSeed,
-    bet,
+    budget,
+    uncertain,
     autoTarget,
     live,
     toast,
@@ -400,6 +443,38 @@ export default function DiamondCrashPage() {
     adopt,
     endRun,
   ]);
+
+  const checkStart = async () => {
+    if (!heldStart.current || busyRef.current) return;
+    busyRef.current = true;
+    setStarting(true);
+    try {
+      const result = normaliseCrash(
+        (await DiamondBonusService.start(heldStart.current, user?.id ?? '')) as Record<
+          string,
+          unknown
+        >
+      );
+      if (!live()) return;
+      heldStart.current = null;
+      setUncertain(false);
+      if (result.status === 'open') adopt(result);
+      else finish(result);
+    } catch (err) {
+      reportError(err, 'DiamondCrashPage.checkStart');
+      if (live())
+        toast.error(
+          err instanceof BonusRefusal ? err.message : 'Your Round Could Not Be Checked. Try Again.'
+        );
+      if (err instanceof BonusRefusal) {
+        heldStart.current = null;
+        setUncertain(false);
+      }
+    } finally {
+      busyRef.current = false;
+      if (live()) setStarting(false);
+    }
+  };
 
   const startRun = useCallback(() => {
     if (!autoSize || running || open || starting) return;
@@ -481,6 +556,20 @@ export default function DiamondCrashPage() {
           roll: r.fairness.roll,
           crashCents: r.fairness.crash_cents,
         });
+        if (r.status === 'cashed' && r.outcome?.cashout_cents) {
+          const prize = await sealedChipPrize({
+            serverSeed: r.fairness.server_seed,
+            clientSeed: r.fairness.client_seed,
+            nonce: r.fairness.nonce,
+            betChips: r.bet_chips,
+            multiplierCents: r.outcome.cashout_cents,
+            roundingStep: r.outcome.cashout_cents,
+          });
+          v.fair =
+            v.fair &&
+            prize === r.outcome.payout_chips &&
+            r.outcome.cashout_cents <= Math.min(r.cap_cents, r.fairness.crash_cents);
+        } else if (r.status === 'crashed') v.fair = v.fair && r.outcome?.payout_chips === 0;
         if (!live()) return;
         setVerdict(v);
         if (v.fair) toast.success('This Round Verifies');
@@ -556,11 +645,21 @@ export default function DiamondCrashPage() {
         className={styles.back}
         onClick={() => navigate(`/clubs/${routeClubId}/diamond-games`)}
       >
-        ‹ Diamond Games
+        ‹ Diamond Spins
       </button>
 
+      <DiamondSpinsTabs clubId={routeClubId ?? ''} />
+      {!open && (
+        <BonusSetup
+          budget={budget}
+          onChange={setBudget}
+          diamonds={player?.spendable ?? null}
+          disabled={starting || running || uncertain}
+          clubId={routeClubId ?? ''}
+        />
+      )}
       <DeckConsole
-        eyebrow="Diamond Games"
+        eyebrow="Diamond Spins"
         title="Diamond Crash"
         titleId="diamond-crash-title"
         pill={pill}
@@ -571,9 +670,7 @@ export default function DiamondCrashPage() {
             label: 'Bet',
             value: open && round ? compactChips(round.bet_diamonds) : compactChips(bet),
             ink: betOption && !betOption.playable ? 'red' : 'white',
-            onPress: cycleBet,
-            pressLabel: 'Change Bet',
-            disabled: open || starting || running || bets.length < 2,
+            disabled: true,
           },
           {
             label: 'Auto',
@@ -606,20 +703,22 @@ export default function DiamondCrashPage() {
           // A round that is OPEN keeps its cash-out plate whatever the wallet
           // says: the money is already on the table and getting it back is not
           // something a shortage may stand in front of.
-          open
-            ? {
-                label: cashing ? 'Cashing Out' : `Cash Out ${multiplierLabel(liveCents)}`,
-                ink: 'green',
-                onClick: handleCashOut,
-                disabled: cashing,
-              }
-            : shortOfDiamonds
-              ? { label: 'Get Diamonds', ink: 'gold', onClick: () => navigate(BUY_DIAMONDS) }
-              : running
-                ? { label: startLabel, ink: 'gold', disabled: true }
-                : autoSize
-                  ? { label: startLabel, ink: 'gold', onClick: startRun, disabled: !canStart }
-                  : { label: startLabel, ink: 'white', onClick: handleStart, disabled: !canStart }
+          uncertain
+            ? { label: 'Check Round', onClick: () => void checkStart(), disabled: starting }
+            : open
+              ? {
+                  label: cashing ? 'Booking Win' : 'Book The Win',
+                  ink: 'green',
+                  onClick: handleCashOut,
+                  disabled: cashing,
+                }
+              : shortOfDiamonds
+                ? { label: 'Get Diamonds', ink: 'gold', onClick: () => navigate(BUY_DIAMONDS) }
+                : running
+                  ? { label: startLabel, ink: 'gold', disabled: true }
+                  : autoSize
+                    ? { label: startLabel, ink: 'gold', onClick: startRun, disabled: !canStart }
+                    : { label: startLabel, ink: 'white', onClick: handleStart, disabled: !canStart }
         }
       >
         <TodayLine
@@ -637,10 +736,11 @@ export default function DiamondCrashPage() {
               capCents={round?.cap_cents ?? capCents}
               startedAtLocalMs={startedAtLocal}
               finalCents={finalCents}
+              crashCents={settledRound?.outcome?.crash_cents ?? null}
               cashoutCents={settledRound?.outcome?.cashout_cents ?? null}
               autoCashoutCents={open ? roundAuto : autoTarget}
               width={chartWidth}
-              height={Math.round(chartWidth * 0.58)}
+              height={Math.round(chartWidth * 0.85)}
               onTick={setLiveCents}
             />
           </div>
@@ -660,51 +760,43 @@ export default function DiamondCrashPage() {
                       ? autoTarget
                         ? `Auto Play Runs ${autoSize} Rounds At ${compactChips(bet)} Diamonds Each, Cashing Out At ${multiplierLabel(autoTarget)} Every Time, And Stops On Its Own If A Round Is Refused. Tap Run To Change It.`
                         : 'Auto Play Needs An Auto Cash Out: Tap Auto To Set One, Or It Cannot Cash Out For You.'
-                      : `Up To ${multiplierLabel(capCents)} On This Bet. Tap Bet Or Auto To Change Them.`}
+                      : `Up To ${multiplierLabel(capCents)} On This Bet. Set Your Entry Above. Tap Auto To Change Your Target.`}
               {autoRun && !open ? ` Auto Play ${autoRun.done} Of ${autoRun.total}.` : ''}
             </span>
+            {settledRound?.status === 'cashed' ? (
+              <span className="sc-copy sc-ink--silver">
+                Would Have Crashed At {multiplierLabel(settledRound.outcome?.crash_cents ?? 100)}.
+                {settledRound.outcome && settledRound.outcome.crash_cents > settledRound.cap_cents
+                  ? ` This Round Would Have Booked At Its ${multiplierLabel(settledRound.cap_cents)} Limit First.`
+                  : ''}{' '}
+                {settledRound.fairness.server_seed && settledRound.outcome ? (
+                  <SealedPrize
+                    serverSeed={settledRound.fairness.server_seed}
+                    clientSeed={settledRound.fairness.client_seed}
+                    nonce={settledRound.fairness.nonce}
+                    betChips={settledRound.bet_chips}
+                    multiplierCents={Math.min(
+                      settledRound.cap_cents,
+                      settledRound.outcome.crash_cents
+                    )}
+                    roundingStep={Math.min(
+                      settledRound.cap_cents,
+                      settledRound.outcome.crash_cents
+                    )}
+                  />
+                ) : null}
+              </span>
+            ) : null}
           </div>
         </div>
       </DeckConsole>
 
       <div>
-        <SpadeConsole eyebrow="How It Pays" title="The Odds" foot="foot">
-          <div className={styles.rows}>
-            <div className={`${styles.grid4} ${styles.grid4Head}`}>
-              <span className="sc-label sc-ink--blue">Cash Out</span>
-              <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Chance</span>
-              <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>After</span>
-              <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Bet Pays</span>
-            </div>
-            {TARGETS.filter((t) => t <= (cfg?.max_multiplier_cents ?? 100000)).map((t) => (
-              <div key={t} className={styles.grid4}>
-                <span
-                  className={`${styles.cell} ${t > capCents ? 'sc-ink--muted' : 'sc-ink--silver'}`}
-                >
-                  {multiplierLabel(t)}
-                </span>
-                <span className={`${styles.cell} ${styles.cellRight} sc-ink--silver`}>
-                  {reachChance(t)}
-                </span>
-                <span className={`${styles.cell} ${styles.cellRight} sc-ink--silver`}>
-                  {crashSecondsToReach(growthK, t).toFixed(1)}s
-                </span>
-                <span
-                  className={`${styles.cell} ${styles.cellRight} ${t > capCents ? 'sc-ink--muted' : 'sc-ink--gold'}`}
-                >
-                  {t > capCents ? 'Over Cap' : chipsLabel((betChips * t) / 100)}
-                </span>
-              </div>
-            ))}
-          </div>
+        <SpadeConsole eyebrow="Your Game" title="How To Play" foot="foot">
           <p className="sc-copy">
-            The Chance Of Reaching Any Multiplier Is 80% Divided By That Multiplier, So Every Cash
-            Out Target Returns 80% Over Time. About One Round In Five Crashes At 1x Straight Away
-            And Pays Nothing. The Largest Multiplier A Round Can Reach Is What The Pool Can Cover On
-            Your Bet; It Is Shown Before You Start. Crash Never Pays Out More Than It Has Taken In.
-            {state.pool && state.pool.rounds > 0 && state.pool.realized_rtp !== null
-              ? ` Realised Return So Far: ${(state.pool.realized_rtp * 100).toFixed(0)}% Over ${compactChips(state.pool.rounds)} Rounds.`
-              : ''}
+            Cash Out Before The Crash To Collect Your Chip Prize. A Round Can Crash Immediately And
+            Pay Nothing. Your Round Limit Is Shown Before You Start. An Auto Cash Out Target Is
+            Saved With The Round And Remains Active If You Disconnect.
           </p>
         </SpadeConsole>
       </div>
@@ -728,9 +820,8 @@ export default function DiamondCrashPage() {
       >
         <p className="sc-copy">
           Before You Bet, The Server Commits To A Secret Seed By Showing You Its SHA-256 Hash. The
-          Round Reveals The Seed Once It Is Settled. The Crash Point Is Floor(80 Times 2^48 Divided
-          By (Roll + 1)) Cents, The Roll Being The First 48 Bits Of HMAC-SHA256(Server Seed, Your
-          Seed:Nonce). Nothing About The Point Changes After The Bet Is Placed.
+          Round Reveals The Seed Once It Is Settled. Verify Round Checks The Saved Outcome. Nothing
+          About The Crash Point Changes After The Bet Is Placed.
         </p>
         <label className={styles.seedField}>
           <span className="sc-label sc-ink--blue">Your Client Seed</span>

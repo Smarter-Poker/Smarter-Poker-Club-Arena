@@ -1,3 +1,4 @@
+import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  DIAMOND WHEEL - the player's page, on the console
@@ -527,12 +528,13 @@ export default function DiamondWheelPage() {
         className={styles.back}
         onClick={() => navigate(`/clubs/${routeClubId}/diamond-games`)}
       >
-        ‹ Diamond Games
+        ‹ Diamond Spins
       </button>
 
+      <DiamondSpinsTabs clubId={routeClubId ?? ''} />
       <DeckConsole
         eyebrow="Diamond Games"
-        title="Diamond Wheel"
+        title="Diamond Spins"
         titleId="diamond-wheel-title"
         pill={pill}
         pillInk={pillInk}
@@ -615,7 +617,7 @@ export default function DiamondWheelPage() {
                 ? blocker
                 : welcomeMode
                   ? `Your Welcome Spin, On The Club. A ${price.toLocaleString()} Diamond Spin On The Same Wheel, For Nothing, Once.`
-                  : `Every Spin Is ${price.toLocaleString()} Diamonds. Eleven Prizes, ${cfg ? (cfg.hit_rate * 100).toFixed(0) : '76'}% Of Spins Pay, 80% Returned Over Time.${welcomeNote}`}
+                  : `Every Spin Is ${price.toLocaleString()} Diamonds. Explore The Prizes Below.${welcomeNote}`}
             </p>
           )}
         </div>
@@ -667,12 +669,8 @@ export default function DiamondWheelPage() {
             </p>
           ) : (
             <p className="sc-copy">
-              The Wheel Returns 80% Of Everything It Takes In Over Time And Never Pays Out More Than
-              It Has Taken In. Every Prize Is Paid By The Club Itself, Out Of Its Promo Wallet. A
-              Locked Prize Is One The Club Cannot Cover Right Now; It Unlocks When It Can.
-              {state.pool && state.pool.spins > 0 && state.pool.realized_rtp !== null
-                ? ` Realised Return So Far: ${(state.pool.realized_rtp * 100).toFixed(0)}% Over ${compactChips(state.pool.spins)} Spins.`
-                : ''}
+              Every Prize Is Paid By The Club Itself, Out Of Its Promo Wallet. A Locked Prize Is One
+              The Club Cannot Cover Right Now; It Unlocks When It Can.
             </p>
           )}
         </SpadeConsole>

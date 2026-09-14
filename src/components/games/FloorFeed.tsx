@@ -26,6 +26,8 @@ const GAME_WORD: Record<FloorWin['game'], string> = {
   wheel: 'Diamond Wheel',
   plinko: 'Diamond Plinko',
   crash: 'Diamond Crash',
+  crossing: 'Donkey Crossing',
+  mines: 'Diamond Mines',
 };
 
 /** Chips as the player reads them: whole figures compact, a fractional prize exact (it IS the prize). */

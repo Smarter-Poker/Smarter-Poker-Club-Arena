@@ -96,12 +96,14 @@ describe('the net is money that actually moved', () => {
     expect(PNL).toContain("'welcome_chips'");
   });
 
-  it('excludes fixtures from all three games', () => {
-    expect(PNL.match(/NOT COALESCE\((s|d|c)\.is_fixture, false\)/g)?.length).toBe(3);
+  it('excludes wheel fixtures and all fixtures in the shared bonus book', () => {
+    expect(PNL).toContain('NOT COALESCE(s.is_fixture, false)');
+    expect(PNL).toContain('NOT r.is_fixture');
+    expect(PNL).toContain('FROM public.diamond_game_round_book r');
   });
 
   it('excludes a crash round that has not decided yet', () => {
-    expect(PNL).toContain("c.status <> 'open'");
+    expect(PNL).toContain("r.status<>'open'");
   });
 
   it('never asks whether a player is a horse (CLAUDE.md 10.5)', () => {
@@ -147,8 +149,9 @@ describe('who is playing counts the day the caps are counted on', () => {
     expect(PLAYERS).toContain(
       "'at_spin_cap', COALESCE(v_spin_cap, 0) > 0 AND a.spins >= v_spin_cap"
     );
+    expect(PLAYERS).toContain("'at_round_cap', EXISTS");
     expect(PLAYERS).toContain(
-      "'at_round_cap', COALESCE(v_round_cap, 0) > 0 AND a.rounds >= v_round_cap"
+      'GROUP BY e.game,c.max_rounds_per_player_per_day HAVING count(*)>=c.max_rounds_per_player_per_day'
     );
   });
 

@@ -62,7 +62,13 @@ function money(v: number | null | undefined, rate: number): string {
   const perChip = rate > 0 ? rate : 100;
   return `${Math.round(n * perChip)} \u25C6`;
 }
-const GAME_WORD: Record<string, string> = { wheel: 'Wheel', plinko: 'Plinko', crash: 'Crash' };
+const GAME_WORD: Record<string, string> = {
+  wheel: 'Wheel',
+  plinko: 'Plinko',
+  crash: 'Crash',
+  crossing: 'Donkey Crossing',
+  mines: 'Mines',
+};
 const gameWord = (g: string) => GAME_WORD[g] ?? g;
 
 const STATE_INK: Record<GameRoomState, ConsoleInk> = {

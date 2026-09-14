@@ -45,6 +45,7 @@ import { compactChips } from '../../utils/format';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
 import DiamondGamesMoney from '../../components/club/DiamondGamesMoney';
+import DiamondSpinsOwnerTerms from '../../components/games/DiamondSpinsOwnerTerms';
 import { uuid } from '../../utils/uuid';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import styles from '../diamondGames.module.css';
@@ -70,21 +71,26 @@ interface Draft {
 function draftFrom(m: GameMetrics | null): Draft {
   const c = m?.config;
   return {
-    bet_options: (c?.bet_options ?? [100, 200, 500, 1000]).join(', '),
-    min_bet_diamonds: String(c?.min_bet_diamonds ?? 100),
-    max_bet_diamonds: String(c?.max_bet_diamonds ?? 1000),
+    bet_options: (c?.bet_options ?? [25, 50, 100, 250, 500, 1000, 2500, 5000]).join(', '),
+    min_bet_diamonds: String(c?.min_bet_diamonds ?? 25),
+    max_bet_diamonds: String(c?.max_bet_diamonds ?? 5000),
     exposure_allowance_chips: String(c?.exposure_allowance_chips ?? 1250),
     cap_fraction: String(c?.cap_fraction ?? 0.95),
     max_multiplier: String((c?.max_multiplier_cents ?? 100000) / 100),
     growth_k: String(c?.growth_k ?? 0.12),
     max_rounds_per_player_per_day: String(c?.max_rounds_per_player_per_day ?? 500),
     min_seconds_between_rounds: String(c?.min_seconds_between_rounds ?? 2),
-    purchased_only: c?.purchased_only ?? true,
+    purchased_only: false,
     allow_fixture_accounts: c?.allow_fixture_accounts ?? false,
   };
 }
 
-const GAME_WORD: Record<DiamondGame, string> = { plinko: 'Plinko', crash: 'Crash' };
+const GAME_WORD: Record<DiamondGame, string> = {
+  plinko: 'Plinko',
+  crash: 'Crash',
+  crossing: 'Donkey Crossing',
+  mines: 'Mines',
+};
 
 function Row({
   label,
@@ -290,8 +296,8 @@ export default function ClubDiamondGamesOperationsPage() {
       .map(Number);
     if (!bets.length || bets.some((b) => !Number.isInteger(b) || b <= 0))
       return toast.error('Bet Sizes Must Be Whole Numbers Of Diamonds');
-    const minBet = Number(draft.min_bet_diamonds);
-    const maxBet = Number(draft.max_bet_diamonds);
+    const minBet = 25;
+    const maxBet = 5000;
     const allowance = Number(draft.exposure_allowance_chips);
     const capFraction = Number(draft.cap_fraction);
     const maxMult = Number(draft.max_multiplier);
@@ -322,7 +328,7 @@ export default function ClubDiamondGamesOperationsPage() {
         growth_k: Math.round(growthK * 10000) / 10000,
         max_rounds_per_player_per_day: rounds,
         min_seconds_between_rounds: gap,
-        purchased_only: draft.purchased_only,
+        purchased_only: false,
         allow_fixture_accounts: draft.allow_fixture_accounts,
       },
       `${GAME_WORD[game]} Settings Saved`
@@ -340,7 +346,7 @@ export default function ClubDiamondGamesOperationsPage() {
 
   const cfg = metrics?.config;
   const pool = metrics?.pool;
-  const enabled = Boolean(cfg?.enabled);
+  const enabled = Boolean(cfg?.enabled) && metrics?.owner_agreed === true;
   const word = GAME_WORD[game];
   const hostWord = metrics?.host_kind === 'union' ? 'Union' : 'Club';
   const promoDry = (metrics?.promo_chips ?? 0) <= 0;
@@ -356,6 +362,8 @@ export default function ClubDiamondGamesOperationsPage() {
         ‹ Operations
       </button>
 
+      <DiamondSpinsOwnerTerms clubId={clubUuid} onAccepted={() => void load(game)} />
+
       <SpadeConsole
         eyebrow="Operations"
         title={`Diamond ${word}`}
@@ -365,18 +373,20 @@ export default function ClubDiamondGamesOperationsPage() {
         aria-labelledby="diamond-games-ops-title"
         plates={{
           secondary: {
-            label: 'Plinko',
-            ink: game === 'plinko' ? 'white' : 'muted',
-            onClick: () => setGame('plinko'),
-            disabled: loading,
-            'aria-pressed': game === 'plinko',
+            label: 'Previous Game',
+            onClick: () => {
+              const games = Object.keys(GAME_WORD) as DiamondGame[];
+              setGame(games[(games.indexOf(game) + games.length - 1) % games.length]);
+            },
+            disabled: loading || saving,
           },
           primary: {
-            label: 'Crash',
-            ink: game === 'crash' ? 'white' : 'muted',
-            onClick: () => setGame('crash'),
-            disabled: loading,
-            'aria-pressed': game === 'crash',
+            label: 'Next Game',
+            onClick: () => {
+              const games = Object.keys(GAME_WORD) as DiamondGame[];
+              setGame(games[(games.indexOf(game) + 1) % games.length]);
+            },
+            disabled: loading || saving,
           },
         }}
       >
@@ -414,11 +424,6 @@ export default function ClubDiamondGamesOperationsPage() {
             value={chips(metrics?.exposure_chips)}
             ink={(metrics?.exposure_chips ?? 0) > 0 ? 'gold' : 'silver'}
             meta={`Room ${chips(metrics?.exposure_headroom_chips)}`}
-          />
-          <Row
-            label="Return"
-            value={pct(metrics?.realized_rtp_lifetime)}
-            meta={`${compactChips(pool?.rounds ?? 0)} Rounds Against 80%`}
           />
           <Row
             label="House Take"
@@ -469,9 +474,9 @@ export default function ClubDiamondGamesOperationsPage() {
         }}
       >
         <p className="sc-copy">
-          Every Payout Leaves The Promo Wallet First. When It Runs Dry The {hostWord} Bank Pays The
-          Rest, So The Games Never Stop; The Journal Names Which Wallet Paid Which Part. Keep The
-          Float Here And The Bank Stays A Backstop Rather Than A Habit.
+          BBJ Funding Feeds The Promo Wallet. Every Chip Prize Uses It First. The {hostWord} Bank
+          Pays The Shortfall When Funds Are Available; The Journal Names Which Wallet Paid Which
+          Part. Keep The Promo Wallet Funded For Upcoming Prizes.
         </p>
         <div className={styles.fields}>
           <Field
@@ -485,13 +490,13 @@ export default function ClubDiamondGamesOperationsPage() {
 
       <DiamondGamesMoney clubId={clubUuid} />
 
-      <SpadeConsole eyebrow="Against The 80% Spec" title="Realised Return" foot="foot">
+      <SpadeConsole eyebrow="Settled Play" title="Game Activity" foot="foot">
         <div className={styles.rows}>
           <div className={`${styles.grid4} ${styles.grid4Head}`}>
             <span className="sc-label sc-ink--blue">Window</span>
             <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Rounds</span>
-            <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Return</span>
-            <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Z</span>
+            <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Chips Paid</span>
+            <span className={`sc-label sc-ink--blue ${styles.cellRight}`}>Review</span>
           </div>
           {(metrics?.windows ?? []).map((w) => (
             <div key={w.window} className={styles.grid4}>
@@ -511,22 +516,19 @@ export default function ClubDiamondGamesOperationsPage() {
               <span
                 className={`${styles.cell} ${styles.cellRight} ${w.drift ? 'sc-ink--red' : 'sc-ink--silver'}`}
               >
-                {pct(w.realized_rtp)}
+                {chips(w.paid_chips)}
               </span>
               <span
                 className={`${styles.cell} ${styles.cellRight} ${w.drift ? 'sc-ink--red' : 'sc-ink--muted'}`}
               >
-                {w.z === null ? 'N/A' : w.z.toFixed(1)}
+                {w.drift === null ? 'N/A' : w.drift ? 'Review' : 'Clear'}
               </span>
             </div>
           ))}
         </div>
         <p className="sc-copy">
-          Z Is The Realised Return Against 80% In Standard Errors. Under 2,000 Rounds It Is Noise;
-          Past 2,000, Z Of 4 Or More Either Way Flags Drift And Prints The Window In Red.
-          {game === 'crash'
-            ? ' A Crashed Round Is Scored At Its Own Crash Point, The Most It Could Have Asked For, So Z Runs Conservative.'
-            : ''}
+          Review Highlights Activity That Needs An Operator Check. Intake And Paid Chips Come From
+          The Settled Game Records.
         </p>
         {game === 'plinko' && metrics?.tables?.length ? (
           <div className={`${styles.rows} ${styles.rowsCompact}`}>
@@ -536,7 +538,7 @@ export default function ClubDiamondGamesOperationsPage() {
                 label={t.name}
                 value={multiplierLabel(t.max_multiplier_cents)}
                 ink={t.activated_at ? 'gold' : 'muted'}
-                meta={`Returns ${pct(t.spec_rtp)}, Pays ${pct(t.hit_rate)} Of Drops${t.activated_at ? '' : ', Not Yet Live'}`}
+                meta={t.activated_at ? 'Active Table' : 'Not Yet Live'}
               />
             ))}
           </div>
@@ -573,7 +575,7 @@ export default function ClubDiamondGamesOperationsPage() {
             mode="text"
             value={draft.bet_options}
             onChange={set('bet_options')}
-            hint="Whole Chips Only: Multiples Of 100 Diamonds."
+            hint="25 To 2,500 Diamonds. A Doubled Entry May Reach 5,000."
           />
           <Field
             label="Exposure Allowance (Chips)"
@@ -581,18 +583,10 @@ export default function ClubDiamondGamesOperationsPage() {
             onChange={set('exposure_allowance_chips')}
             hint={`The Most ${word} May Pay Beyond What It Has Taken In.`}
           />
-          <Field
-            label="Minimum Bet (Diamonds)"
-            mode="numeric"
-            value={draft.min_bet_diamonds}
-            onChange={set('min_bet_diamonds')}
-          />
-          <Field
-            label="Maximum Bet (Diamonds)"
-            mode="numeric"
-            value={draft.max_bet_diamonds}
-            onChange={set('max_bet_diamonds')}
-          />
+          <p className="sc-copy">
+            Entries Are 25 To 2,500 Diamonds. One Equal Double Down Can Bring The Bonus Total To
+            5,000. Earned And Purchased Diamonds Are Accepted.
+          </p>
           <Field
             label="Cap Fraction"
             value={draft.cap_fraction}
@@ -630,12 +624,6 @@ export default function ClubDiamondGamesOperationsPage() {
             onChange={set('min_seconds_between_rounds')}
           />
           <Toggle
-            label="Purchased Diamonds Only"
-            hint="Promotional And Earned Diamonds Cannot Be Played Into Chips."
-            on={draft.purchased_only}
-            onToggle={() => setDraft((d) => ({ ...d, purchased_only: !d.purchased_only }))}
-          />
-          <Toggle
             label="Allow Certification Accounts"
             hint="For Burn-In Only. Their Rounds Are Kept Out Of The Fairness Statistics."
             on={draft.allow_fixture_accounts}
@@ -665,7 +653,13 @@ export default function ClubDiamondGamesOperationsPage() {
                does not own, which these are not. */
             onClick: () =>
               navigate(
-                game === 'plinko' ? `/clubs/${routeClubId}/plinko` : `/clubs/${routeClubId}/crash`
+                game === 'plinko'
+                  ? `/clubs/${routeClubId}/plinko`
+                  : game === 'crossing'
+                    ? `/clubs/${routeClubId}/crossing`
+                    : game === 'mines'
+                      ? `/clubs/${routeClubId}/mines`
+                      : `/clubs/${routeClubId}/crash`
               ),
           },
         }}

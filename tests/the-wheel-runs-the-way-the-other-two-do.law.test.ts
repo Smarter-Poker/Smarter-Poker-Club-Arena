@@ -32,13 +32,11 @@ const ROOT = resolve(__dirname, '..');
 const src = (p: string) => readFileSync(resolve(ROOT, p), 'utf8');
 
 const WHEEL = src('src/pages/DiamondWheelPage.tsx');
-const PLINKO = src('src/pages/DiamondPlinkoPage.tsx');
 const CRASH = src('src/pages/DiamondCrashPage.tsx');
 
-describe('there is one runner, and all three games use it', () => {
+describe('the wheel and crash share their repeat-round runner', () => {
   it.each([
     ['wheel', WHEEL],
-    ['plinko', PLINKO],
     ['crash', CRASH],
   ])('%s asks autoRunVerdict rather than deciding for itself', (_n, page) => {
     expect(page).toContain("from '../utils/autoRun'");
@@ -170,8 +168,6 @@ describe('a welcome spin is never auto-played', () => {
 describe('the wheel turns before the spin is counted', () => {
   it('busy covers the landing animation, not just the request', () => {
     expect(WHEEL).toContain('busy: spinning || pending !== null');
-    // Plinko and Crash finish at the server and have no five second landing.
-    expect(PLINKO).toContain('busy: dropping');
   });
 
   it('the count moves on landing, where the result finally belongs to the player', () => {
@@ -180,9 +176,8 @@ describe('the wheel turns before the spin is counted', () => {
     expect(block).toContain('setAutoRun((r) => (r ? { ...r, done: r.done + 1 } : r));');
   });
 
-  it('the pause is the wheel own, longer than Plinko and shorter than Crash', () => {
+  it('the wheel pause remains shorter than Crash', () => {
     expect(WHEEL).toContain('const AUTO_PAUSE_MS = 1200;');
-    expect(PLINKO).toContain('const AUTO_PAUSE_MS = 700;');
     expect(CRASH).toContain('const AUTO_PAUSE_MS = 1500;');
   });
 });

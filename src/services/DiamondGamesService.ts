@@ -16,7 +16,7 @@
 
 import { supabase } from '../lib/supabase';
 
-export type DiamondGame = 'plinko' | 'crash';
+export type DiamondGame = 'plinko' | 'crash' | 'crossing' | 'mines';
 
 const num = (v: unknown): number => {
   if (v === null || v === undefined) return 0;
@@ -279,10 +279,11 @@ export interface GameMetricsWindow {
   z: number | null;
   constrained: number;
   instant_crashes?: number;
-  drift: boolean;
+  drift: boolean | null;
 }
 
 export interface GameMetrics {
+  owner_agreed: boolean;
   ok: boolean;
   error?: string;
   configured: boolean;
@@ -331,7 +332,7 @@ export interface GameMetrics {
 
 /** One win on the club's floor: who, which game, what it paid. Never a user id. */
 export interface FloorWin {
-  game: 'wheel' | 'plinko' | 'crash';
+  game: 'wheel' | DiamondGame;
   at: string;
   kind: 'chips' | 'diamonds';
   amount: number;
@@ -361,7 +362,7 @@ export interface DiamondGamesEntry {
   error?: string;
   host_kind: 'union' | 'club';
   diamonds_per_chip: number;
-  games: { wheel: boolean; plinko: boolean; crash: boolean };
+  games: { wheel: boolean; plinko: boolean; crash: boolean; crossing?: boolean; mines?: boolean };
   /** The host has at least one game switched on. */
   open: boolean;
   /** Open, this player is a member, and the platform is not on its break. */
@@ -375,6 +376,7 @@ export interface DiamondGamesEntry {
   chips_from_diamonds: number;
   is_member: boolean;
   member_chips: number | null;
+  bust_prompt?: boolean;
   /**
    * This member still has their one free welcome spin here (2026-09-11). The
    * server answers under both names while the older one is still on the wire;
@@ -440,7 +442,7 @@ function normaliseTable(raw: Record<string, unknown>): PlinkoTable {
   };
 }
 
-function normaliseCrash(raw: Record<string, unknown>): CrashRound {
+export function normaliseCrash(raw: Record<string, unknown>): CrashRound {
   const outcome = raw.outcome ? rec(raw.outcome) : null;
   const fairness = rec(raw.fairness);
   const balances = rec(raw.balances);
@@ -603,7 +605,15 @@ function normaliseState(raw: Record<string, unknown>): GameState {
 }
 
 const DiamondGamesService = {
-  async getState(clubId: string, game: DiamondGame): Promise<GameState> {
+  async getState(clubId: string, game: DiamondGame, total?: number): Promise<GameState> {
+    if (total !== undefined) {
+      const { data, error } = await supabase.rpc(
+        'fn_diamond_bonus_state' as never,
+        { p_club_id: clubId, p_game: game, p_total: total } as never
+      );
+      if (error) throw error;
+      return normaliseState(rec(data));
+    }
     const { data, error } = await supabase.rpc('fn_diamond_game_state', {
       p_club_id: clubId,
       p_game: game,
@@ -709,6 +719,7 @@ const DiamondGamesService = {
       ok: Boolean(raw.ok),
       error: raw.error ? String(raw.error) : undefined,
       configured: Boolean(raw.configured),
+      owner_agreed: raw.owner_agreed === true,
       game: (raw.game as DiamondGame) ?? game,
       host_id: String(raw.host_id ?? ''),
       host_kind: (raw.host_kind as 'union' | 'club') ?? 'club',
@@ -763,7 +774,7 @@ const DiamondGamesService = {
             z: numOrNull(w.z),
             constrained: num(w.constrained),
             instant_crashes: w.instant_crashes === undefined ? undefined : num(w.instant_crashes),
-            drift: Boolean(w.drift),
+            drift: typeof w.drift === 'boolean' ? w.drift : null,
           }))
         : [],
       tables: Array.isArray(raw.tables)
@@ -826,15 +837,30 @@ const DiamondGamesService = {
     if (error) throw error;
     const raw = rec(data);
     const games = rec(raw.games);
+    if (
+      raw.ok === true &&
+      (typeof raw.diamonds !== 'number' ||
+        !Number.isFinite(raw.diamonds) ||
+        raw.diamonds < 0 ||
+        (raw.member_chips !== null &&
+          (typeof raw.member_chips !== 'number' ||
+            !Number.isFinite(raw.member_chips) ||
+            raw.member_chips < 0)) ||
+        typeof raw.available !== 'boolean' ||
+        typeof raw.is_member !== 'boolean')
+    )
+      throw new Error('The Diamond Spins Entry Could Not Be Verified');
     return {
-      ok: Boolean(raw.ok),
+      ok: raw.ok === true,
       error: raw.error ? String(raw.error) : undefined,
       host_kind: (raw.host_kind as 'union' | 'club') ?? 'club',
       diamonds_per_chip: num(raw.diamonds_per_chip) || 100,
       games: {
         wheel: Boolean(games.wheel),
         plinko: Boolean(games.plinko),
-        crash: Boolean(games.crash),
+        crash: games.crash === true,
+        crossing: games.crossing === true,
+        mines: games.mines === true,
       },
       open: Boolean(raw.open),
       available: Boolean(raw.available),
@@ -846,6 +872,7 @@ const DiamondGamesService = {
       is_member: Boolean(raw.is_member),
       member_chips:
         raw.member_chips === null || raw.member_chips === undefined ? null : num(raw.member_chips),
+      bust_prompt: raw.bust_prompt === true,
       welcome_spin_ready: Boolean(raw.welcome_spin_ready ?? raw.free_spin_ready),
       frozen: Boolean(raw.frozen),
     };

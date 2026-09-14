@@ -27,11 +27,6 @@ import { useDiamondGamesEntry } from '../../hooks/useDiamondGamesEntry';
 import { compactChips } from '../../utils/format';
 import type { DiamondGamesEntry } from '../../services/DiamondGamesService';
 
-/** Whole chips print compact; a fraction prints exact, because it IS the amount. */
-function chipsLabel(v: number): string {
-  return Number.isInteger(v) ? compactChips(v) : v.toFixed(2);
-}
-
 export function entrySublabel(entry: DiamondGamesEntry | null): string {
   if (!entry) return 'Turn Diamonds Into Chips';
   if (entry.diamonds <= 0) return 'Win Diamonds, Then Turn Them Into Chips';
@@ -39,7 +34,7 @@ export function entrySublabel(entry: DiamondGamesEntry | null): string {
   // not have enough" without a number is a dead end rather than a next step.
   if (entry.entry_diamonds !== null && entry.diamonds < entry.entry_diamonds)
     return `${compactChips(entry.diamonds)} Diamonds. ${compactChips(entry.entry_diamonds)} Gets You In`;
-  return `${compactChips(entry.diamonds)} Diamonds, Up To ${chipsLabel(entry.chips_from_diamonds)} Chips`;
+  return `${compactChips(entry.diamonds)} Diamonds Ready To Play`;
 }
 
 /** The player can get in: a game is open to them and they hold the cheapest way in. */
@@ -71,7 +66,7 @@ export default function DiamondsToChipsButton({
   onGo,
   enabled = true,
   alwaysShow = false,
-  label = 'Diamonds To Chips',
+  label = 'Diamond Spins',
   size = 'regular',
   className,
 }: DiamondsToChipsButtonProps) {
@@ -86,7 +81,7 @@ export default function DiamondsToChipsButton({
         sublabel={entrySublabel(entry)}
         size={size}
         value={entry ? compactChips(entry.diamonds) : undefined}
-        onClick={() => onGo(`/clubs/${clubId}/diamond-games`)}
+        onClick={() => onGo(`/clubs/${clubId}/wheel`)}
       />
     </ClubButtonsSurface>
   );

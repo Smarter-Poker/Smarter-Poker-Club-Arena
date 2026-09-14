@@ -1,3 +1,4 @@
+import DiamondSpinsTabs from '../components/games/DiamondSpinsTabs';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  DIAMOND GAMES - the lobby: Wheel, Plinko, Crash, on the console
@@ -34,9 +35,10 @@ import FloorFeed, { BiggestWins } from '../components/games/FloorFeed';
 import { useGameFloor } from '../hooks/useGameFloor';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
+import { DiamondChoiceService, type ChoiceState } from '../services/DiamondChoiceService';
 import styles from './diamondGames.module.css';
 
-type GameKey = 'wheel' | 'plinko' | 'crash';
+type GameKey = 'wheel' | 'plinko' | 'crash' | 'crossing' | 'mines';
 
 function pillFor(
   available: boolean | undefined,
@@ -85,6 +87,8 @@ export default function DiamondGamesPage() {
   const [wheelWelcome, setWheelWelcome] = useState<WheelWelcomeState | null>(null);
   const [plinko, setPlinko] = useState<GameState | null>(null);
   const [crash, setCrash] = useState<GameState | null>(null);
+  const [crossing, setCrossing] = useState<ChoiceState | null>(null);
+  const [mines, setMines] = useState<ChoiceState | null>(null);
   const [explained, setExplained] = useState<GameKey | null>(null);
   const [clubUuid, setClubUuid] = useState<string | null>(null);
   const { floor } = useGameFloor(clubUuid, 20);
@@ -99,7 +103,7 @@ export default function DiamondGamesPage() {
         const uuid = await resolveClubUUID(routeClubId);
         if (cancelled || !live()) return;
         setClubUuid(uuid);
-        const [w, wf, p, c] = await Promise.all([
+        const [w, wf, p, c, road, mine] = await Promise.all([
           DiamondWheelService.getState(uuid).catch((err) => {
             reportError(err, 'DiamondGamesPage.wheel');
             return null;
@@ -116,12 +120,22 @@ export default function DiamondGamesPage() {
             reportError(err, 'DiamondGamesPage.crash');
             return null;
           }),
+          DiamondChoiceService.state(uuid, 'crossing', 'steady', 100).catch((err) => {
+            reportError(err, 'DiamondGamesPage.crossing');
+            return null;
+          }),
+          DiamondChoiceService.state(uuid, 'mines', '5', 100).catch((err) => {
+            reportError(err, 'DiamondGamesPage.mines');
+            return null;
+          }),
         ]);
         if (cancelled || !live()) return;
         setWheel(w);
         setWheelWelcome(wf);
         setPlinko(p);
         setCrash(c);
+        setCrossing(road);
+        setMines(mine);
         if (!w && !p && !c) setLoadError('The Diamond Games Could Not Be Loaded');
       } catch (err) {
         reportError(err, 'DiamondGamesPage.load');
@@ -169,7 +183,7 @@ export default function DiamondGamesPage() {
       ? welcomeReady
         ? { value: 'Ready', ink: 'gold' }
         : wheelWelcome.reason === 'used'
-          ? { value: 'Tomorrow', ink: 'muted' }
+          ? { value: 'Used', ink: 'muted' }
           : wheelWelcome.reason === 'pot_empty'
             ? { value: 'Gone For Today', ink: 'muted' }
             : null
@@ -188,9 +202,10 @@ export default function DiamondGamesPage() {
         ‹ Promotions
       </button>
 
+      <DiamondSpinsTabs clubId={routeClubId ?? ''} />
       <SpadeConsole
         eyebrow="Rewards Circuit"
-        title="Diamond Games"
+        title="Diamond Spins"
         titleId="diamond-games-title"
         subtitle={`${compactChips(rate)} Diamonds Make One Chip`}
         foot="foot"
@@ -213,8 +228,7 @@ export default function DiamondGamesPage() {
           />
         </div>
         <p className="sc-copy">
-          Turn Diamonds Into Club Chips. Every Game Returns 80% Over Time, Is Provably Fair, And
-          Never Pays Out More Than It Has Taken In.
+          Turn Diamonds Into Club Chips. Choose Your Game, Set Your Bet, And Check Every Result.
         </p>
       </SpadeConsole>
 
@@ -222,7 +236,7 @@ export default function DiamondGamesPage() {
 
       <SpadeConsole
         eyebrow="Spin"
-        title="Diamond Wheel"
+        title="Diamond Spins"
         pill={wheelPill.pill}
         pillInk={wheelPill.ink}
         plates={{
@@ -241,7 +255,7 @@ export default function DiamondGamesPage() {
               label="Welcome Spin"
               value={welcomeRow.value}
               ink={welcomeRow.ink}
-              meta="One A Day, On The House"
+              meta="One Welcome Spin, Ever"
             />
           ) : null}
           <Row
@@ -251,11 +265,6 @@ export default function DiamondGamesPage() {
             meta="Diamonds"
           />
           <Row label="Top Prize" value={compactChips(topWheel)} ink="gold" meta="Chips" />
-          <Row
-            label="Spins That Pay"
-            value={wheel?.config ? `${Math.round(wheel.config.hit_rate * 100)}%` : 'Most'}
-            ink="silver"
-          />
         </div>
         {explained === 'wheel' ? (
           <p className="sc-copy">
@@ -333,11 +342,61 @@ export default function DiamondGamesPage() {
         </div>
         {explained === 'crash' ? (
           <p className="sc-copy">
-            The Multiplier Climbs Until It Crashes. Cash Out First, By Hand Or On Auto. The Chance
-            Of Reaching Any Multiplier Is 80% Divided By That Multiplier.
+            The Multiplier Climbs Until It Crashes. Cash Out First, By Hand Or On Auto. A Crash Ends
+            The Round And Pays Nothing.
           </p>
         ) : null}
       </SpadeConsole>
+
+      {(
+        [
+          {
+            key: 'crossing',
+            title: 'Donkey Crossing',
+            state: crossing,
+            verb: 'Cross',
+            description:
+              'Guide The Donkey Across The Road. Each Safe Street Raises Your Prize. Book The Win And Reveal How Far It Would Have Gone.',
+          },
+          {
+            key: 'mines',
+            title: 'Diamond Mines',
+            state: mines,
+            verb: 'Reveal',
+            description:
+              'Find Gems On A Raised Board. Avoid The Mines And Book The Win. Every Remaining Mine Is Revealed When Your Round Ends.',
+          },
+        ] as const
+      ).map((item) => (
+        <SpadeConsole
+          key={item.key}
+          title={item.title}
+          eyebrow={item.verb}
+          pill={item.state?.available ? 'Open' : item.state ? 'Closed' : 'Offline'}
+          plates={{
+            secondary: { label: 'How It Plays', onClick: () => explain(item.key) },
+            primary: {
+              label: item.verb,
+              onClick: () => {
+                if (item.key === 'crossing') navigate(`/clubs/${routeClubId}/crossing`);
+                else navigate(`/clubs/${routeClubId}/mines`);
+              },
+              disabled: !item.state?.available,
+            },
+          }}
+        >
+          <div className={styles.rows}>
+            <Row
+              label="Bets From"
+              value={compactChips(item.state?.bets[0] ?? 100)}
+              meta="Diamonds"
+              ink="white"
+            />
+            <Row label="Book The Win" value="Your Choice" ink="gold" />
+          </div>
+          {explained === item.key ? <p className="sc-copy">{item.description}</p> : null}
+        </SpadeConsole>
+      ))}
 
       <FloorFeed wins={floor?.wins ?? []} limit={8} />
     </div>

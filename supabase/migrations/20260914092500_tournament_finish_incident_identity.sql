@@ -130,3 +130,10 @@ EXCEPTION WHEN OTHERS THEN
   RETURN NEW;
 END $function$
 ;
+
+DO $declaration$
+BEGIN
+  PERFORM public.fn_ca_declare_guard_redefinition(
+    'fn_ca_financial_alert_to_incident',
+    'migration 20260914092500_tournament_finish_incident_identity');
+END $declaration$;

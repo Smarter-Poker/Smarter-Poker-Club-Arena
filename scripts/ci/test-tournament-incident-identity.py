@@ -72,6 +72,7 @@ try:
     cmd([pg / 'pg_ctl', '-D', cluster / 'data', '-l', cluster / 'server.log', '-o', f"-k {sock} -p 55770 -c listen_addresses='' -c timezone=UTC -c shared_buffers=16MB -c max_connections=10 -c statement_timeout=10000", '-w', 'start'])
     run((fixture / 'schema.sql').read_text())
     run((fixture / 'dependencies.sql').read_text())
+    run((fixture / 'guard-declaration.sql').read_text())
     baseline = (fixture / 'baseline.sql').read_text()
     run(baseline)
     run('''CREATE TRIGGER financial_incident AFTER INSERT ON financial_alerts FOR EACH ROW EXECUTE FUNCTION fn_ca_financial_alert_to_incident();
@@ -81,6 +82,7 @@ try:
       REVOKE ALL ON FUNCTION fn_ca_financial_alert_to_incident() FROM PUBLIC,anon,authenticated,service_role;''')
     digest_sql = "SELECT md5(pg_get_functiondef('fn_ca_financial_alert_to_incident()'::regprocedure))"
     check('exact-live-trigger', run(digest_sql) == '591d71ae6e8a7572640e531d247b13bc')
+    run("SELECT fn_ca_declare_guard_redefinition('fn_ca_financial_alert_to_incident','native baseline')")
     old_a, old_b = alert(101), alert(102)
     before = incidents()
     check('baseline-folds-distinct-tournaments', len(before) == 1 and before[0]['occurrences'] == 2)
@@ -88,8 +90,13 @@ try:
     run('UPDATE financial_alerts SET resolved=true,resolution=\'native source closure\',resolved_at=now() WHERE id=' + quote(old_b))
     check('baseline-latest-alert-closes-other-entity', incidents()[0]['status'] == 'resolved')
     run('TRUNCATE financial_alerts,ca_incident_events,ca_drift_incidents,ca_detector_registry,ca_incident_file_failures RESTART IDENTITY CASCADE;')
-    run(installer)
+    run('BEGIN;' + installer + 'COMMIT;')
     candidate_md5 = run(digest_sql)
+    guard_sql = "SELECT def_hash,declared_ref FROM ca_guard_defs WHERE proname='fn_ca_financial_alert_to_incident'"
+    candidate_guard = candidate_md5 + '|migration 20260914092500_tournament_finish_incident_identity'
+    check('declaration-records-installed-body-and-migration', run(guard_sql) == candidate_guard)
+    history_sql = "SELECT count(*) FROM ca_guard_def_history WHERE proname='fn_ca_financial_alert_to_incident' AND def_hash=" + quote(candidate_md5)
+    check('declaration-preserves-exact-definition-history', run(history_sql + " AND def_text=pg_get_functiondef('fn_ca_financial_alert_to_incident()'::regprocedure)") == '1')
     (out / 'candidate-md5.txt').write_text(candidate_md5 + '\n')
     new_a, new_b = alert(101), alert(102)
     current = incidents()
@@ -134,13 +141,15 @@ try:
     check('no-notification-failures', run("SELECT count(*) FROM ca_incident_events WHERE kind='notify_failed'") == '0')
     check('service-does-not-gain-direct-table-writes', run("SELECT NOT has_table_privilege('service_role','financial_alerts','INSERT')") == 't')
     check('trigger-acl-stays-closed', run("SELECT NOT has_function_privilege('anon','fn_ca_financial_alert_to_incident()','EXECUTE') AND NOT has_function_privilege('authenticated','fn_ca_financial_alert_to_incident()','EXECUTE')") == 't')
-    run(installer)
+    run('BEGIN;' + installer + 'COMMIT;')
     check('migration-replay-preserves-candidate', run(digest_sql) == candidate_md5)
+    check('replay-keeps-one-history-row-and-declared-baseline', run(history_sql) == '1' and run(guard_sql) == candidate_guard)
     drift = baseline.replace('v_shape text;', 'v_shape text; -- unreviewed drift')
     run(drift)
     result = subprocess.run(psql, input='BEGIN;' + installer + 'COMMIT;', text=True, capture_output=True, env=env, timeout=10)
     check('migration-refuses-unreviewed-trigger', result.returncode != 0 and 'definition drift' in result.stderr)
     check('refusal-leaves-body-unchanged', run(digest_sql) not in ('591d71ae6e8a7572640e531d247b13bc', candidate_md5))
+    check('refusal-does-not-declare-unreviewed-drift', run(guard_sql) == candidate_guard and run(history_sql) == '1')
     results = {'passed': True, 'checks': checks, 'baseline': before, 'candidate_md5': candidate_md5, 'scope': 'Actual incident trigger, raiser, source alert writer, scope, normalization, zero-discrepancy notification-withheld branch and resolution propagation. Isolated schema snapshots include actual columns and constraints. Other production triggers and financial execution are outside this reporting qualification; no external notification or production request.'}
     (out / 'RESULTS.json').write_text(json.dumps(results, indent=2) + '\n')
     print(json.dumps({'passed': True, 'checks': len(checks), 'candidate_md5': candidate_md5}))

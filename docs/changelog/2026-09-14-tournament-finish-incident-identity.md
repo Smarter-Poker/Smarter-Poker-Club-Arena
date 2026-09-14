@@ -7,3 +7,5 @@ The financial alert trigger now includes the tournament ID in the key for `Tourn
 Required accounting CI runs a native PostgreSQL 17 proof with the actual incident trigger, raiser, source writer, scope resolver, normalizers, resolution propagation and zero-discrepancy notification branch. Actual table columns and constraints are captured in isolated fixtures. The test reproduces cross-event metadata replacement and resolution, then verifies separate tournaments, repeated causes, concurrent reports, case-normalized IDs, missing identities, original alert retention and drift-safe installation.
 
 This change fixes incident attribution. It does not settle a tournament, infer a missing elimination sequence, move chips or certify historical payout correctness. The existing storm cap remains; original financial alerts are still retained individually.
+
+The migration records its guard redefinition in the same transaction. Native tests use the actual declaration function and watchlist to verify the stored hash, exact definition history, replay behavior and unchanged baseline after a refused drifted installation.

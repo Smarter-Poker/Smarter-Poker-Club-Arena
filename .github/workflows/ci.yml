@@ -1297,6 +1297,11 @@ jobs:
           POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/probe-causal-pko-predecessors-pg17.sh
 
+      - name: Tournament residuals require complete bounty candidate coverage
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/probe-terminal-bounty-candidate-coverage-pg17.sh
+
       - name: Certified V31 PostgreSQL 17 behavior gate
         if: >-
           github.event_name == 'schedule' ||

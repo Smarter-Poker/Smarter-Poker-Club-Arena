@@ -1,3 +1,10 @@
+## 2026-09-14: Terminal bounty residual requires complete candidate coverage
+
+**Files:** migration20260914135625; terminal-bounty-candidate-coverage native fixture/runner; accounting CI step; bountyPoolConservation.guard.test.ts.
+**What existed:** ordinary/mystery finalizers only inspected existing obligations/awards, allowing an accepted missing head to be absorbed by the champion. The structural lock test required an inline lock although the installed root delegates to the canonical global lane helper.
+**What changed:** private complete candidate/obligation anti-join and exact accepted witness before any new residual/reveal/pay/void, after immutable replay and existing locks. Missing/unknown debt refuses; common unsettled predicate and all payer bodies remain. The lock test verifies the actual helper's two canonical locks and their order before event read.
+**Verified:**100 private native assertions plus source/metadata/role/replay guards;2209 tournament tests/164files and app/server TypeScript pass. Exact original roots, claim/collector/marker and documented wallet stand-in. Installed history20260914140327; three postimages plus five unchanged dependency definitions/metadata verified14:03:40UTC. R37 explicit ACL contract installed history20260914140322. Full provider, Diamond/rebuy, top-level native terminal and protected release remain open. See docs/changelog/2026-09-14-terminal-bounty-candidate-coverage.md.
+
 ## 2026-09-14: PKO heads follow accepted knockout dependencies
 
 **Explicit privilege contract:** migration20260914135834 repeats the already-verified private claim and service-only collector REVOKEs, guarded by exact installed body/ACL/owner/path/security preconditions and postconditions. The applied20260914133503 bytes remain unchanged. The unchanged four source authorization checks now recognize the same privileges across the two migrations; native qualification also proves all five original caller-role refusals. This follow-up has no financial writes and no new grant. Installation of the explicit contract is recorded separately.

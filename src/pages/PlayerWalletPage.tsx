@@ -47,12 +47,15 @@ import DepositWithdrawModal from '../components/wallet/DepositWithdrawModal';
 import DisputeSubmitModal from '../components/wallet/DisputeSubmitModal';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import ChipStatement from '../components/wallet/ChipStatement';
+import DiamondArenaStatement from '../components/wallet/DiamondArenaStatement';
+import DiamondFlowPanel from '../components/wallet/DiamondFlowPanel';
 import {
   DiamondService,
   type DiamondLifetimeStats,
   type DiamondWalletSummary,
 } from '../services/DiamondService';
 import { DIAMOND_ARENA_SLUG } from '../lib/constants';
+import { useDiamondFreerollCountdown } from '../hooks/useNextDiamondFreeroll';
 import { storeFetch } from './marketplace/marketplaceShared';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { formatPopupText } from '../utils/popupStyle';
@@ -325,16 +328,38 @@ function WalletPlate({
  * ("..."), failed ("Unavailable" - never a zero that means unknown), known.
  * The arena door tells the truth about the arena: open (sit down), a seat
  * already held (return to it), or closed (no live control, a plain sentence).
+ *
+ * SIT DOWN FROM THE WALLET (phase 3). The door is a funnel, decided by three
+ * facts the summary carries: is the arena open, does the player hold a seat,
+ * and can they afford the cheapest eligible seat (fn_poker_diamond_buyin's
+ * own predicate, so the number is never a seat that function would refuse).
+ *
+ *   seated              -> Return To The Diamond Arena      (the lobby)
+ *   open, can afford    -> Sit Down In The Diamond Arena    (the lobby)
+ *   open, short by N    -> Buy Diamonds To Sit Down, N More (the store,
+ *                          with next=/clubs/diamond-arena so the store offers
+ *                          the way back once the diamonds land)
+ *   closed              -> a sentence, and the next freeroll countdown when
+ *                          one is scheduled (a freeroll costs nothing)
  */
 export function DiamondPlate({
   diamonds,
   summary,
+  nextFreerollAt,
   onBuy,
+  onBuyToSitDown,
   onArena,
 }: {
   diamonds: number;
   summary: DiamondWalletSummary | null | undefined;
+  /**
+   * Test seam for the freeroll clock: a number or null fixes the start and
+   * issues no read; omitted, the plate reads the next freeroll itself while
+   * it is mounted (the Overview tab), and only when the arena exists.
+   */
+  nextFreerollAt?: number | null;
   onBuy: () => void;
+  onBuyToSitDown: () => void;
   onArena: () => void;
 }) {
   const animated = useAnimatedNumber(diamonds);
@@ -345,11 +370,22 @@ export function DiamondPlate({
   const arena = summary?.arena ?? null;
   const arenaOpen = Boolean(arena && (arena.cashGamesEnabled || arena.tournamentsEnabled));
   const seated = Boolean(summary && summary.inArena > 0);
+  const minSeat = arena?.minCashBuyIn ?? null;
+  const short =
+    arenaOpen && !seated && minSeat !== null && diamonds < minSeat ? minSeat - diamonds : 0;
   const arenaLabel = seated
     ? 'Return To The Diamond Arena'
-    : arenaOpen
-      ? 'Sit Down In The Diamond Arena'
-      : 'Diamond Arena Opens Soon';
+    : short > 0
+      ? `Buy Diamonds To Sit Down, ${fmtNum(short)} More`
+      : arenaOpen
+        ? 'Sit Down In The Diamond Arena'
+        : 'Diamond Arena Opens Soon';
+  /* One database read a minute, one tick a second, a re-read when the clock
+     runs out - the same countdown the Home card runs. */
+  const freeroll = useDiamondFreerollCountdown(
+    nextFreerollAt !== undefined ? nextFreerollAt : arena ? undefined : null
+  );
+  const freerollIn = freeroll.startsAt == null ? null : freeroll.text;
   return (
     <article
       className="wallet-plate diamonds"
@@ -393,7 +429,11 @@ export function DiamondPlate({
           </button>
           {arena &&
             (arenaOpen || seated ? (
-              <button type="button" className="wallet-plate__cta" onClick={onArena}>
+              <button
+                type="button"
+                className="wallet-plate__cta"
+                onClick={short > 0 ? onBuyToSitDown : onArena}
+              >
                 {arenaLabel}
               </button>
             ) : (
@@ -404,6 +444,17 @@ export function DiamondPlate({
               </span>
             ))}
         </div>
+        {arena && !arenaOpen && !seated && freerollIn !== null && (
+          <div className="wallet-plate__desc" role="status">
+            Next Diamond Freeroll In {freerollIn}. A Freeroll Costs Nothing To Enter.
+          </div>
+        )}
+        {arena && arenaOpen && minSeat !== null && short === 0 && !seated && (
+          <div className="wallet-plate__desc">
+            The Cheapest Seat Is {fmtNum(minSeat)} Diamonds
+            {arena.cheapestTable ? ` (${arena.cheapestTable.name})` : ''}. You Can Sit Down Now.
+          </div>
+        )}
         <div className="wallet-plate__desc">
           {summary?.collateral
             ? `${fmtNum(summary.collateral)} Bought Recently Are Held Until The Refund Window Closes And Cannot Be Sent. `
@@ -1074,6 +1125,13 @@ export default function PlayerWalletPage() {
   const goBuyDiamonds = () => navigate('/marketplace?tab=diamonds');
   /* The arena is entered as the club it is (CarouselSection does the same). */
   const goDiamondArena = () => navigate(`/clubs/${DIAMOND_ARENA_SLUG}`);
+  /* Short of the cheapest seat: the store, carrying the way back. The
+     marketplace validates `next` with safeInAppRedirect and offers
+     "Continue To The Diamond Arena" once the diamonds land. */
+  const goBuyDiamondsToSitDown = () =>
+    navigate(
+      `/marketplace?tab=diamonds&next=${encodeURIComponent(`/clubs/${DIAMOND_ARENA_SLUG}`)}`
+    );
 
   const escrow = balances.PLAYER.locked;
 
@@ -1235,6 +1293,7 @@ export default function PlayerWalletPage() {
               diamonds={diamonds}
               summary={walletSummary}
               onBuy={goBuyDiamonds}
+              onBuyToSitDown={goBuyDiamondsToSitDown}
               onArena={goDiamondArena}
             />
             {(Object.keys(WALLET_CONFIG) as WalletType[]).map((type) => (
@@ -1805,6 +1864,20 @@ export default function PlayerWalletPage() {
               )}
             </section>
 
+            {/* Phase 5: the split behind Earned and Spent - every diamond by
+                what it bought and by where it came from, summed in SQL over
+                the whole ledger. DIAMONDS ONLY. */}
+            <section className="vault-panel span2" aria-labelledby="flow-title">
+              <h3 id="flow-title" className="vault-panel__title">
+                Where Your Diamonds Go
+              </h3>
+              <p className="vault-panel__sub">
+                Every Diamond You Spent, By What It Bought. Every Diamond You Earned, By Where It
+                Came From. Summed From Your Whole Ledger.
+              </p>
+              <DiamondFlowPanel userId={user?.id} />
+            </section>
+
             <section className="vault-panel span2" aria-labelledby="earn-more-title">
               <h3 id="earn-more-title" className="vault-panel__title">
                 More Ways To Earn
@@ -1866,6 +1939,19 @@ export default function PlayerWalletPage() {
                 Chip Statement
               </h3>
               <ChipStatement scope="player" />
+            </section>
+            {/* Phase 4: the Diamond Arena's own statement - every session,
+                every buy-in and cash-out, and that each one reconciles. Read
+                only; the live paths are atomic. DIAMONDS ONLY. */}
+            <section className="vault-panel" aria-labelledby="arena-statement-title">
+              <h3 id="arena-statement-title" className="vault-panel__title">
+                Diamond Arena Statement
+              </h3>
+              <p className="vault-panel__sub">
+                Every Buy-In And Cash-Out At Your Diamond Arena Seats, And Whether Each One
+                Reconciles With Your Wallet.
+              </p>
+              <DiamondArenaStatement userId={user.id} />
             </section>
           </div>
         )}

@@ -1,170 +1,166 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   IDENTITY MODAL - on the spade console (#ClubArenaConsole)
+
+   PAINT WHAT NEVER CHANGES. PRINT WHAT DOES. The chassis is Dan's approved
+   spade master (components/console/SpadeConsole.css); this file only lays
+   the three rows on the black glass between the rails, an engraved rule (a
+   black cut with a lit edge above it) between each. The switch is a lit
+   word, not a drawn track: the art paints no toggle and nothing may be
+   drawn. The alias field is the one control the art cannot paint. The two
+   painted plates in the console's foot are the dialog's actions. Sizes are
+   cqw against the console. No :hover (tests/no-hover-effects.law.test.ts).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 .identity-modal-overlay {
+  --idc-rule: 1px solid #000;
+  --idc-rule-lit: inset 0 1px 0 rgb(255 255 255 / 8%);
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  inset: 0;
   z-index: 10000;
-  backdrop-filter: blur(4px);
-}
-.identity-modal-content {
-  background: var(--surface-2, #1f232a);
-  border: 1px solid var(--border-color, #333);
-  border-radius: 12px;
-  width: 300px;
-  max-width: 90vw;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   display: flex;
-  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  padding: max(10px, env(safe-area-inset-top)) 8px max(10px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: rgb(2 4 7 / 88%);
+  color: #e6e9ee;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  color-scheme: dark;
 }
-.identity-modal-header {
+
+/* The dialog is the console and nothing else; its name is deliberately not
+   one metallic-popups.css paints a steel shell on. */
+.idc {
+  width: min(100%, 560px);
+  min-width: 0;
+  margin: auto 0;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: 0;
+}
+
+.idc__console {
+  filter: drop-shadow(0 18px 34px rgb(0 0 0 / 85%));
+}
+
+.idc .sc__title,
+.idc .sc__eyebrow,
+.idc .sc__pill {
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+}
+
+/* ── Rows on the glass ──────────────────────────────────────────────────── */
+
+.idc__row {
   display: flex;
-  justify-content: space-between;
+  gap: 3cqw;
   align-items: center;
-  padding: 16px;
-  border-bottom: 1px solid var(--border-color, #333);
-}
-.identity-modal-header h2 {
-  margin: 0;
-  font-size: 16px;
-  color: var(--text-primary, #fff);
-}
-.identity-modal-close {
-  background: none;
-  border: none;
-  color: var(--text-secondary, #aaa);
-  font-size: 24px;
-  cursor: pointer;
-}
-.identity-modal-body {
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.identity-modal-row {
-  display: flex;
   justify-content: space-between;
-  align-items: center;
+  min-height: 44px;
 }
-.identity-modal-row label {
-  color: var(--text-primary, #ccc);
-  font-size: 14px;
+
+.idc__row + .idc__row,
+.idc__preview {
+  padding-top: 2.6cqw;
+  border-top: var(--idc-rule);
+  box-shadow: var(--idc-rule-lit);
 }
+
+.idc__row .sc-label {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* The one control the art does not paint. */
 .identity-alias-input {
-  background: var(--surface-1, #121418);
-  border: 1px solid var(--border-color, #333);
-  color: #fff;
-  padding: 8px 12px;
-  border-radius: 6px;
-  width: 140px;
+  flex: 0 1 40cqw;
+  width: 40cqw;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 3cqw;
+  border: 1px solid rgb(94 116 134 / 52%);
+  color: #f4f7fb;
+  background-color: #05080c;
+  font-size: 16px;
+  font-family: Inter, system-ui, sans-serif;
 }
-/* ── The row that explains the other two (audit 2026-08-25) ────────────────
-   "Alias on, alias empty" is a setting that looks applied and changes nothing,
-   because TablePage's hero-name derivation is `use_alias && table_alias`. This
-   states the name that will actually appear on the felt. */
-.identity-modal-preview {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: var(--surface-1, #121418);
-  border: 1px solid var(--border-color, #333);
+
+.identity-alias-input:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 2px;
 }
-.identity-modal-preview__label {
-  font-size: 11px;
-  letter-spacing: 0.06em;
+
+/* ── The switch: a lit word. ON burns green, OFF sits muted ─────────────── */
+
+.idc-word {
+  appearance: none;
+  flex: 0 0 auto;
+  min-width: 14cqw;
+  min-height: 44px;
+  margin: 0;
+  padding: 1.6cqw 0;
+  border: 0;
+  background: transparent;
+  font:
+    800 4cqw/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.16em;
+  text-align: right;
   text-transform: uppercase;
-  color: var(--text-secondary, #8b949e);
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
 }
-.identity-modal-preview__value {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text-primary, #fff);
-  /* A 20-char alias in a 300px dialog must never push the box wider. */
+
+.idc-word:active {
+  filter: brightness(1.25);
+}
+
+.idc-word:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: 0.6cqw;
+}
+
+/* metallic-popups.css bevels every button inside a dialog with !important
+   at 0,0,1. A lit word paints nothing: the longhands are restated at 0,3,0
+   (SpadeConsole.css does the same for its plates). */
+[role='dialog'] .idc-word.idc-word {
+  min-width: 14cqw;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+/* ── The row that explains the other two (audit 2026-08-25) ─────────────
+   "Alias on, alias empty" is a setting that looks applied and changes
+   nothing, because TablePage's hero-name derivation is
+   `use_alias && table_alias`. This states the name that will actually appear
+   on the felt. */
+.idc__preview {
+  display: grid;
+  gap: 1.2cqw;
+}
+
+.idc__preview-value {
+  font-size: 5cqw;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  /* A 20-char alias must never push the console wider. */
   overflow-wrap: anywhere;
 }
-.identity-modal-preview__hint {
-  font-size: 11px;
-  line-height: 1.35;
-  color: var(--warning, #f0b429);
-}
 
-.identity-save-btn {
-  margin-top: 8px;
-  background: var(--primary-color, #3fb950);
-  color: #000;
-  border: none;
-  padding: 10px;
-  border-radius: 6px;
-  font-weight: bold;
-  cursor: pointer;
-}
-
-/* ── ALIAS TOGGLE ────────────────────────────────────────────────────────────
-   This modal was built, imported by nobody, and wired up on 2026-08-26 when the
-   hamburger's Alias item was found to be a dead tap. It borrows the `tsp-`
-   toggle markup from TableSettingsPanel, and that stylesheet only loads when
-   the settings panel does - so on the route that actually renders THIS modal
-   the switch had no CSS at all and painted as two bare spans.
-
-   Redeclared here rather than importing TableSettingsPanel.css, because pulling
-   a whole panel's stylesheet in for one control is how a page ends up with
-   rules it cannot account for. The values are copied verbatim from
-   TableSettingsPanel.css lines 118-164; if that switch is restyled, restyle it
-   here in the same commit or the two drift apart. The real answer is one shared
-   Switch component - src/components/ui grew a canonical one this week - and
-   moving both onto it is worth doing, but that is a refactor and this is a
-   repair. */
-.tsp-toggle {
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.tsp-toggle__track {
-  display: flex;
-  align-items: center;
-  width: 44px;
-  height: 24px;
-  border-radius: 12px;
-  padding: 2px;
-  transition:
-    background-color 0.25s ease,
-    border-color 0.25s ease;
-}
-
-.tsp-toggle--on .tsp-toggle__track {
-  background-color: #3fb950;
-  border: 2px solid #4dc660;
-}
-
-.tsp-toggle--off .tsp-toggle__track {
-  background-color: #374151;
-  border: 2px solid #6b7280;
-}
-
-.tsp-toggle__thumb {
-  display: block;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background-color: white;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  transition: transform 0.25s ease;
-}
-
-.tsp-toggle--on .tsp-toggle__thumb {
-  transform: translateX(20px);
-}
-
-.tsp-toggle--off .tsp-toggle__thumb {
-  transform: translateX(0);
+.idc__preview-hint {
+  font:
+    600 3.1cqw/1.4 Inter,
+    system-ui,
+    sans-serif;
 }

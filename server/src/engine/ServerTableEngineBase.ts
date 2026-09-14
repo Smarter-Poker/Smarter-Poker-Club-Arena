@@ -832,6 +832,7 @@ export abstract class ServerTableEngineBase {
       (this.engineLeaseTournamentId ?? '').toLowerCase() !==
         (authority.scope === 'tournament' ? authority.tournamentId : '').toLowerCase() ||
       this.engineLeaseAuthorityExpired ||
+      !this.hasCurrentEngineLeaseAuthority() ||
       !Number.isFinite(authority.proofDeadlineMonotonicMs) ||
       leaseMonotonicNow() >= authority.proofDeadlineMonotonicMs
     ) {
@@ -3573,7 +3574,15 @@ export abstract class ServerTableEngineBase {
       console.log(
         `[ServerTableEngine:${this.tableId}] cluster table is ${row.lifecycle ?? row.status} and empty - stopping the engine`
       );
-      await this.stop();
+      // This also runs inside dealingLoop(), which stop() must join before
+      // releasing ownership. Publish its synchronous fence, then let this
+      // caller return so the captured loop can finish. The cached teardown
+      // promise still owns every writer and remains joinable by the map owner.
+      void this.stop().catch((error) =>
+        reportError(error, 'ServerTableEngine.cluster_closed_stop_failed', {
+          tableId: this.tableId,
+        })
+      );
     }
   }
 

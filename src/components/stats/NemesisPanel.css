@@ -1,259 +1,273 @@
-/**
- * NemesisPanel — two hero cards (nemesis red, target green) over an expandable
- * table. Mobile-first: cards stack at 375px, sit side by side from 480px.
- */
+/* ═══════════════════════════════════════════════════════════════════════════
+   NEMESIS PANEL - on the spade console (#ClubArenaConsole)
+
+   PAINT WHAT NEVER CHANGES. PRINT WHAT DOES. The chassis is Dan's approved
+   spade master (components/console/SpadeConsole.css); this file lays the
+   two rivals side by side on the black glass - the kind as a lit word, the
+   player in silver, the net in green or red from its VALUE - and the full
+   list as rows under engraved rules. Nothing is drawn: no card, no tile, no
+   button face. Sizes are cqw against the console. No :hover.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .nemesis-panel {
-  margin: 0 0.75rem 1rem;
-  padding: 1rem;
-  border-radius: 16px;
-  background: linear-gradient(145deg, rgba(0, 212, 255, 0.05) 0%, rgba(139, 92, 246, 0.035) 100%);
-  border: 1px solid rgba(0, 212, 255, 0.14);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
-  box-shadow:
-    0 0 30px rgba(0, 212, 255, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --nem-rule: 1px solid #000;
+  --nem-rule-lit: inset 0 1px 0 rgb(255 255 255 / 8%);
+  --sc-max: 720px;
+  margin: 0 0 1rem;
 }
 
-.nemesis-title {
+.nemesis-sub,
+.nemesis-empty-text,
+.nemesis-note {
   margin: 0;
-  font-size: 1rem;
-  font-weight: 700;
-  color: #e8f4ff;
 }
 
-.nemesis-sub {
-  margin: 0.3rem 0 0;
-  font-size: 0.74rem;
-  line-height: 1.45;
-  color: rgba(200, 224, 245, 0.6);
+.nemesis-note {
+  padding-top: 2.4cqw;
+  border-top: var(--nem-rule);
+  box-shadow: var(--nem-rule-lit);
 }
 
-/* ── Hero cards ────────────────────────────────────────────────────────── */
+/* ── The two rivals: two columns on the glass ───────────────────────────── */
 
 .nemesis-cards {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 0.6rem;
-  margin-top: 0.85rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 4cqw;
+  border-top: var(--nem-rule);
+  box-shadow: var(--nem-rule-lit);
 }
 
 .nemesis-card {
+  appearance: none;
   display: grid;
-  grid-template-areas:
-    'kind kind'
-    'identity amount'
-    'meta meta';
-  grid-template-columns: 1fr auto;
-  gap: 0.35rem 0.6rem;
-  align-items: center;
-  padding: 0.75rem;
-  border-radius: 12px;
+  gap: 1cqw;
+  justify-items: start;
+  min-width: 0;
+  min-height: 44px;
+  margin: 0;
+  padding: 2.4cqw 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
   text-align: left;
   cursor: pointer;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.03);
-  transition:
-    transform 0.16s ease,
-    border-color 0.16s ease;
+  touch-action: manipulation;
 }
+
+.nemesis-card:active {
+  filter: brightness(1.25);
+}
+
 .nemesis-card:focus-visible {
-  outline: 2px solid #00d4ff;
-  outline-offset: 2px;
-}
-
-.nemesis-card.is-nemesis {
-  border-color: rgba(239, 68, 68, 0.28);
-  background: linear-gradient(145deg, rgba(239, 68, 68, 0.09), rgba(239, 68, 68, 0.02));
-}
-
-.nemesis-card.is-target {
-  border-color: rgba(34, 197, 94, 0.28);
-  background: linear-gradient(145deg, rgba(34, 197, 94, 0.09), rgba(34, 197, 94, 0.02));
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: 0.4cqw;
 }
 
 .nemesis-kind {
-  grid-area: kind;
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-size: 2.7cqw;
+  font-weight: 800;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: rgba(200, 224, 245, 0.55);
 }
 
 .nemesis-identity {
-  grid-area: identity;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 2cqw;
   min-width: 0;
+  max-width: 100%;
 }
 
 .nemesis-name {
-  font-size: 0.88rem;
-  font-weight: 700;
-  color: #e8f4ff;
+  min-width: 0;
   overflow: hidden;
+  font-size: 3.8cqw;
+  font-weight: 800;
+  letter-spacing: 0.02em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .nemesis-amount {
-  grid-area: amount;
-  font-size: 1.05rem;
+  font-size: 5cqw;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .nemesis-meta {
-  grid-area: meta;
-  font-size: 0.68rem;
-  color: rgba(200, 224, 245, 0.5);
-}
-
-.is-up {
-  color: #22c55e;
-}
-
-.is-down {
-  color: #ef4444;
-}
-
-/* ── Avatars ───────────────────────────────────────────────────────────── */
-
-.nemesis-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  object-fit: cover;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-}
-
-.nemesis-avatar-fallback {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 212, 255, 0.14);
-  color: #00d4ff;
-  font-size: 0.62rem;
+  font-size: 2.7cqw;
   font-weight: 700;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-}
-
-/* ── Expand + table ────────────────────────────────────────────────────── */
-
-.nemesis-expand {
-  width: 100%;
-  margin-top: 0.7rem;
-  padding: 0.5rem;
-  border-radius: 10px;
-  border: 1px solid rgba(0, 212, 255, 0.22);
-  background: rgba(0, 212, 255, 0.07);
-  color: #e8f4ff;
-  font-size: 0.74rem;
-  font-weight: 600;
-  cursor: pointer;
-  min-height: 40px;
-}
-
-.nemesis-expand:focus-visible {
-  outline: 2px solid #00d4ff;
-  outline-offset: 2px;
-}
-
-.nemesis-table {
-  width: 100%;
-  margin-top: 0.6rem;
-  border-collapse: collapse;
-  font-size: 0.74rem;
   font-variant-numeric: tabular-nums;
 }
 
-.nemesis-table thead th {
-  padding: 0.3rem 0.4rem;
-  text-align: right;
-  font-size: 0.64rem;
-  font-weight: 600;
-  color: rgba(200, 224, 245, 0.5);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+/* The master's own green and red inks (SpadeConsole.css), on the value. */
+.is-up {
+  color: #c8ffd2;
+  -webkit-text-fill-color: #c8ffd2;
+  text-shadow:
+    0 0 1cqw rgb(53 217 90 / 80%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
 
-.nemesis-table thead th:first-child {
+.is-down {
+  color: #ff5b6e;
+  -webkit-text-fill-color: #ff5b6e;
+  text-shadow:
+    0 0 1cqw rgb(240 40 73 / 80%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+.nemesis-avatar {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 8cqw;
+  height: 8cqw;
+  overflow: hidden;
+  background: #000;
+  object-fit: cover;
+}
+
+.nemesis-avatar-fallback {
+  color: #e4e7ec;
+  font-size: 3cqw;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+/* ── Lit words ──────────────────────────────────────────────────────────── */
+
+.nemesis-actions {
+  display: flex;
+  justify-content: center;
+  padding-top: 2cqw;
+  border-top: var(--nem-rule);
+  box-shadow: var(--nem-rule-lit);
+}
+
+.nemesis-word {
+  appearance: none;
+  min-height: 44px;
+  margin: 0;
+  padding: 1.6cqw 3cqw;
+  border: 0;
+  background: transparent;
+  font:
+    800 3.4cqw/1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.nemesis-expand {
+  width: 100%;
+}
+
+.nemesis-word:active {
+  filter: brightness(1.25);
+}
+
+.nemesis-word:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: 0.6cqw;
+}
+
+/* ── The full list: rows on the glass ───────────────────────────────────── */
+
+.nemesis-table {
+  width: 100%;
+  /* club-engine.css turns every table into a nowrap scroll box on a phone;
+     on the glass the rows wrap and fit the frame instead. */
+  display: table;
+  overflow: visible;
+  white-space: normal;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.nemesis-col {
+  padding: 1.4cqw 0;
+  border-top: var(--nem-rule);
+  box-shadow: var(--nem-rule-lit);
+  font-size: 2.7cqw;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.nemesis-col:first-child {
   text-align: left;
 }
 
 .nemesis-table tbody tr {
   cursor: pointer;
-  transition: background 0.15s ease;
+}
+
+.nemesis-table tbody tr:active {
+  filter: brightness(1.25);
+}
+
+.nemesis-table tbody tr:focus-visible {
+  outline: 0.6cqw solid #8fd4ff;
+  outline-offset: -0.6cqw;
 }
 
 .nemesis-table tbody th[scope='row'] {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
-  padding: 0.4rem;
+  gap: 2cqw;
+  min-width: 0;
+  padding: 1.6cqw 0;
+  border-top: var(--nem-rule);
+  box-shadow: var(--nem-rule-lit);
+  font-weight: 800;
   text-align: left;
-  font-weight: 600;
-  color: #e8f4ff;
 }
 
 .nemesis-row-name {
+  min-width: 0;
   overflow: hidden;
+  font-size: 3.6cqw;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 10rem;
+}
+
+.nemesis-hands {
+  font-weight: 700;
 }
 
 .nemesis-table tbody td {
-  padding: 0.4rem;
+  padding: 1.6cqw 0 1.6cqw 2cqw;
+  border-top: var(--nem-rule);
+  box-shadow: var(--nem-rule-lit);
+  font-size: 3.6cqw;
+  font-weight: 800;
   text-align: right;
-  color: rgba(220, 238, 255, 0.8);
+  white-space: nowrap;
 }
 
-.nemesis-note {
-  margin: 0.6rem 0 0;
-  font-size: 0.66rem;
-  line-height: 1.5;
-  color: rgba(200, 224, 245, 0.45);
-}
-
-/* ── Loading / empty ───────────────────────────────────────────────────── */
+/* ── While the rivals are being read ────────────────────────────────────── */
 
 .nemesis-skeleton {
-  height: 130px;
-  border-radius: 12px;
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.03) 25%,
-    rgba(255, 255, 255, 0.07) 50%,
-    rgba(255, 255, 255, 0.03) 75%
-  );
-  background-size: 200% 100%;
+  height: 24cqw;
+  background: rgb(255 255 255 / 8%);
   animation: nemesisShimmer 1.4s ease-in-out infinite;
 }
 
 @keyframes nemesisShimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
-}
-
-.nemesis-empty-text {
-  margin: 0.6rem 0 0;
-  font-size: 0.78rem;
-  line-height: 1.55;
-  color: rgba(200, 224, 245, 0.6);
-}
-
-@media (min-width: 480px) {
-  .nemesis-cards {
-    grid-template-columns: 1fr 1fr;
+  50% {
+    opacity: 0.45;
   }
 }
 
@@ -261,20 +275,4 @@
   .nemesis-skeleton {
     animation: none;
   }
-
-  .nemesis-card,
-  .nemesis-table tbody tr {
-    transition: none;
-  }
-}
-
-/* --- orphan-modifier rules (added 2026-08-21 audit) --- */
-/* These were applied in TSX with no rule defined anywhere, so the empty
-   states rendered inconsistently - only .pos-radar-empty was centred. */
-
-.nemesis-empty {
-  text-align: center;
-}
-.nemesis-head {
-  text-align: left;
 }

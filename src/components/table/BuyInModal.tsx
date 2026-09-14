@@ -12,8 +12,20 @@
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { haptic, soundService } from '../../services/SoundService';
+import {
+  type ConsoleInk,
+  PlateButton,
+  SPADE_CONSOLE_TOP_H,
+  SPADE_CONSOLE_W,
+  SPADE_CONSOLE_ZONES,
+  ZoneText,
+  zonePct,
+} from '../console/SpadeConsole';
+import { useFitText } from '../lobby/game-cards/useFitText';
+import { moneyExact } from '../../utils/buyIn';
 import './BuyInModal.css';
 import { reportError } from '../../utils/errorReporter';
+import DiamondsToChipsButton from '../games/DiamondsToChipsButton';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -45,18 +57,29 @@ export interface BuyInModalProps {
   cashoutRestriction?: number;
   /** Takes the player to the cashier. Without it the "Top Up Account" button is not rendered. */
   onTopUp?: () => void;
+  /**
+   * The club whose host runs the Diamond Games (Dan 2026-09-10). Omitted, the
+   * diamonds-to-chips door is not offered.
+   */
+  diamondGamesClubId?: string | null;
+  onPlayDiamonds?: (path: string) => void;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// EXACT precision — no abbreviations, no rounding
 function formatAmount(amount: number, currency: string = ''): string {
-  if (Math.abs(amount - Math.round(amount)) < 0.005) {
-    return Math.round(amount).toLocaleString('en-US');
-  }
-  return amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  /* A TERM of the buy-in prints exactly (2026-09-13): the live amount, the
+     minimum and the maximum are what the confirm will charge, so a 46.07
+     chip buy-in reads 46.07 and never a compacted 46 - `clampedBuyIn` is
+     already snapped to the cent, and this only prints it. Whole figures stay
+     whole (no trailing .00). A Diamond does not divide, so in Diamonds every
+     figure is a whole count. The balance prints the same way, because it sits
+     in the bay beside MAX and goes red against the amount: a 137.50 balance
+     compacted to 137 under a 137.50 buy-in reads as short when it is not. */
+  if (currency === 'diamonds') return Math.round(amount).toLocaleString('en-US');
+  return moneyExact(amount);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -78,6 +101,8 @@ export function BuyInModal({
   countdown,
   cashoutRestriction,
   onTopUp,
+  diamondGamesClubId,
+  onPlayDiamonds,
   onRetryBalance,
 }: BuyInModalProps) {
   // State
@@ -280,14 +305,42 @@ export function BuyInModal({
 
   if (!isOpen) return null;
 
+  const minPressed = !recovery && Math.abs(clampedBuyIn - effectiveMinBuyIn) < 0.005;
+  const maxPressed = !recovery && Math.abs(clampedBuyIn - maxBuyIn) < 0.005;
+  const bigBlinds = bigBlind > 0 ? Math.round(clampedBuyIn / bigBlind) : 0;
+  const primaryLabel = isProcessing
+    ? 'Joining'
+    : recovery
+      ? 'Retry Original Buy-In'
+      : hasEnoughBalance
+        ? wholeDiamonds
+          ? 'Buy In With Diamonds'
+          : 'Buy Chips'
+        : balanceKnown
+          ? 'Insufficient Balance'
+          : 'Balance Unavailable';
+
   return (
     /**
      * ACCESSIBILITY 2026-08-28. This is the modal every player passes through
      * to sit down, and it had no dialog semantics at all: no role, no
-     * aria-modal, no accessible name, and no Escape handler — the backdrop
+     * aria-modal, no accessible name, and no Escape handler - the backdrop
      * click was the only way out, which is not reachable by keyboard. The
      * overlay must not be aria-hidden: that would hide the dialog and its
      * error messages from assistive technology too.
+     *
+     * THE MASTER (2026-09-04, approved 2026-09-08). The sheet is Dan's spade
+     * PLO master - the render every Omaha card on a phone is drawn from - cut
+     * into its head (crest, header well, pill slot), a stage on the rails, and
+     * its deck (the four bays, the two plates, the chip). Table name and
+     * BUY-IN sit in the header well, the countdown in the well's painted pill
+     * slot; the stage holds the one control the master does not paint - the
+     * slider, which goes UP AND DOWN (Dan 2026-09-05: a side-to-side drag is
+     * the table-switch gesture) - beside the live amount; the bays print
+     * MIN / BB / MAX / BALANCE (MIN and MAX snap the amount when tapped); and
+     * CLOSE / BUY CHIPS are the plates painted into the foot. Nothing else is
+     * drawn or stuck on. Every figure prints exactly (46.07, 1,234.56): they
+     * are the terms of the buy-in and the balance they are judged against.
      */
     <div
       className="buy-in-modal__overlay"
@@ -296,222 +349,283 @@ export function BuyInModal({
       }}
     >
       <div
-        className="buy-in-modal"
+        className="buy-in-modal ac-popup"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="buy-in-modal-title"
       >
-        {/* Header */}
-        <div className="buy-in-modal__header">
-          {countdown !== undefined && (
-            <span className="buy-in-modal__countdown">{countdown}s (Close)</span>
-          )}
-          <h2 className="buy-in-modal__title" id="buy-in-modal-title">
-            BUY-IN
-          </h2>
-          <button
-            className="buy-in-modal__close"
-            disabled={isProcessing}
-            onClick={() => {
-              if (!confirmInFlightRef.current) onClose();
-            }}
-            aria-label="Close Buy-In"
-          >
-            <span aria-hidden="true">×</span>
-          </button>
-        </div>
-
-        {/* CHIP CONTINUITY (OPORD 1.3 section 6.1): when a rejoin floor applies
-            the minimum is simply higher. No notice, no paragraph about why. */}
-
-        {/**
-         * THE SLIDER GOES UP AND DOWN (Dan 2026-09-05)
-         *
-         * "THE SLIDER FOR ADJUSTING YOUR 'BUY IN' NEEDS TO GO UP AND DOWN, NOT
-         * SIDE TO SIDE. (SIDE TO SIDE SWIPES THE PAGE) REDESIGN THIS PLEASE."
-         *
-         * A horizontal drag inside a table is a table-switch gesture, so the
-         * one control a player MUST use to sit down was competing with the
-         * navigation for every touch - and losing, because a swipe that starts
-         * on a 6px-high track is a swipe long before it is a drag. Turning the
-         * track vertical takes the control out of that axis entirely, which is
-         * a fix by construction rather than by tuning a threshold.
-         *
-         * `touch-action: none` on the input (CSS) is the other half: it stops
-         * the browser handing the vertical drag to the sheet as a scroll.
-         *
-         * The min and max were labels either side of the amount and the words
-         * "Min"/"Max" under the track - four things saying two. They are the
-         * ends of the track now: max at the top where the thumb reaches it,
-         * min at the bottom. Nothing about the value, the step grid or the
-         * MAX-is-reachable fix above changes.
-         */}
-        <div className="buy-in-modal__stage">
-          <div className="buy-in-modal__current-amount">
-            <span className="buy-in-modal__amount-value">
-              {displayAmount.toLocaleString('en-US', {
-                minimumFractionDigits: wholeDiamonds ? 0 : 2,
-                maximumFractionDigits: wholeDiamonds ? 0 : 2,
-              })}
-            </span>
-          </div>
-
-          {!recovery && (
-            <div className="buy-in-modal__slider-container">
-              <span className="buy-in-modal__slider-cap">{formatAmount(maxBuyIn, currency)}</span>
-              <input
-                type="range"
-                className="buy-in-modal__slider"
-                min={effectiveMinBuyIn}
-                max={maxBuyIn}
-                value={clampedBuyIn}
-                onChange={handleSliderChange}
-                step={bigBlind}
-                aria-label="Buy-In Amount"
-                aria-orientation="vertical"
-                style={
-                  {
-                    '--slider-percent': `${sliderPercent}%`,
-                  } as React.CSSProperties
-                }
+        <div className="buy-in-modal__master">
+          {/* ── Head: the master's header well ─────────────────────────── */}
+          <div className="buy-in-modal__head">
+            <ZoneText
+              text={tableName || 'Take Your Seat'}
+              className="sc__eyebrow sc-ink--blue"
+              style={zonePct(SPADE_CONSOLE_ZONES.eyebrow, SPADE_CONSOLE_W, SPADE_CONSOLE_TOP_H)}
+            />
+            <h2
+              id="buy-in-modal-title"
+              className="sc-zone sc__title sc-ink--silver buy-in-modal__title"
+              style={zonePct(SPADE_CONSOLE_ZONES.title, SPADE_CONSOLE_W, SPADE_CONSOLE_TOP_H)}
+            >
+              <span>Buy-In</span>
+            </h2>
+            {countdown !== undefined && (
+              <ZoneText
+                text={`${countdown}s`}
+                className={`sc__pill buy-in-modal__countdown ${countdown <= 10 ? 'sc-ink--red' : 'sc-ink--gold'}`}
+                style={zonePct(SPADE_CONSOLE_ZONES.pill, SPADE_CONSOLE_W, SPADE_CONSOLE_TOP_H)}
               />
-              <span className="buy-in-modal__slider-cap">
-                {formatAmount(effectiveMinBuyIn, currency)}
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* Quick Amounts dynamically scale the interval between min and max */}
-        {!recovery && (
-          <div className="buy-in-modal__quick-amounts">
-            <button
-              className="buy-in-modal__quick-btn"
-              onClick={() => setBuyInAmount(effectiveMinBuyIn)}
-            >
-              {Math.round(effectiveMinBuyIn / bigBlind)}BB
-            </button>
-            {maxBuyIn > effectiveMinBuyIn && (
-              <>
-                {Math.round(
-                  (effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.33) / bigBlind
-                ) !== Math.round(effectiveMinBuyIn / bigBlind) && (
-                  <button
-                    className="buy-in-modal__quick-btn"
-                    onClick={() =>
-                      setBuyInAmount(effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.33)
-                    }
-                  >
-                    {Math.round(
-                      (effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.33) / bigBlind
-                    )}
-                    BB
-                  </button>
-                )}
-                {Math.round(
-                  (effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.66) / bigBlind
-                ) !== Math.round(maxBuyIn / bigBlind) && (
-                  <button
-                    className="buy-in-modal__quick-btn"
-                    onClick={() =>
-                      setBuyInAmount(effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.66)
-                    }
-                  >
-                    {Math.round(
-                      (effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.66) / bigBlind
-                    )}
-                    BB
-                  </button>
-                )}
-              </>
             )}
-            <button
-              className="buy-in-modal__quick-btn buy-in-modal__quick-btn--max"
-              onClick={() => setBuyInAmount(maxBuyIn)}
-            >
-              MAX
-            </button>
           </div>
-        )}
 
-        {recovery && !isProcessing && (
-          <p role="status">
-            Your {formatAmount(recovery.amount)} Chip Buy-In For Seat {recovery.seat} Needs
-            Confirmation. We Will Check It Before Retrying The Same Buy-In.
-          </p>
-        )}
+          {/* ── Stage: the vertical slider beside the live amount ──────── */}
+          <div className="buy-in-modal__stage">
+            {!recovery && (
+              <div className="buy-in-modal__slider-container">
+                <input
+                  type="range"
+                  className="buy-in-modal__slider"
+                  min={effectiveMinBuyIn}
+                  max={maxBuyIn}
+                  value={clampedBuyIn}
+                  onChange={handleSliderChange}
+                  step={bigBlind}
+                  aria-label="Buy-In Amount"
+                  aria-orientation="vertical"
+                  style={
+                    {
+                      '--slider-percent': `${sliderPercent}%`,
+                    } as React.CSSProperties
+                  }
+                />
+              </div>
+            )}
+            <div className="buy-in-modal__current-amount">
+              <span className="sc-label sc-ink--blue">
+                {recovery ? 'Original Buy-In' : wholeDiamonds ? 'Diamonds' : 'Chips'}
+              </span>
+              <span className="buy-in-modal__amount-value sc-ink--silver" aria-live="polite">
+                {formatAmount(displayAmount, currency)}
+              </span>
+              {recovery && !isProcessing && (
+                <p role="status" className="sc-copy sc-copy--center buy-in-modal__recovery">
+                  Your {formatAmount(recovery.amount, currency)} Chip Buy-In For Seat{' '}
+                  {recovery.seat} Needs Confirmation. We Will Check It Before Retrying The Same
+                  Buy-In.
+                </p>
+              )}
+              {confirmError && !recovery && (
+                <p role="alert" className="sc-copy sc-copy--center sc-ink--red buy-in-modal__error">
+                  {confirmError}
+                </p>
+              )}
+              {!balanceKnown && onRetryBalance && (
+                <button
+                  type="button"
+                  className="buy-in-modal__balance-retry sc-ink--blue"
+                  onClick={onRetryBalance}
+                >
+                  Retry
+                </button>
+              )}
+            </div>
+            {!recovery && !hasEnoughBalance && balanceKnown && onPlayDiamonds && (
+              <div className="buy-in-modal__diamonds-door">
+                <DiamondsToChipsButton
+                  clubId={diamondGamesClubId}
+                  enabled={isOpen && !isProcessing}
+                  size="compact"
+                  onGo={onPlayDiamonds}
+                />
+              </div>
+            )}
+          </div>
 
-        {/* Balance Display */}
-        <div className="buy-in-modal__balance">
-          <span className="buy-in-modal__balance-label">
-            {wholeDiamonds ? '( Available Diamonds:' : '( Account Balance:'}
-          </span>
-          <span
-            className={`buy-in-modal__balance-value ${balanceKnown && !hasEnoughBalance ? 'buy-in-modal__balance-value--insufficient' : ''}`}
-          >
-            {balanceKnown ? formatAmount(accountBalance, currency) : 'Unavailable'}
-          </span>
-          <span className="buy-in-modal__balance-label">)</span>
-          {!balanceKnown && onRetryBalance && (
-            <button type="button" className="buy-in-modal__balance-retry" onClick={onRetryBalance}>
-              Retry
-            </button>
-          )}
+          {/* ── Deck: the four bays, the two plates, the chip ──────────── */}
+          <div className="buy-in-modal__deck">
+            <BayLabel zone={BUY_IN_ZONES.bays[0].label} text="Min" />
+            <BayLabel zone={BUY_IN_ZONES.bays[1].label} text="BB" />
+            <BayLabel zone={BUY_IN_ZONES.bays[2].label} text="Max" />
+            <BayLabel zone={BUY_IN_ZONES.bays[3].label} text="Balance" />
+            <BayButton
+              zone={BUY_IN_ZONES.bays[0].value}
+              text={formatAmount(effectiveMinBuyIn, currency)}
+              ink={minPressed ? 'white' : 'silver'}
+              label="Buy In For The Minimum"
+              pressed={minPressed}
+              onClick={() => setBuyInAmount(effectiveMinBuyIn)}
+              disabled={!!recovery}
+            />
+            <BayValue
+              zone={BUY_IN_ZONES.bays[1].value}
+              text={bigBlinds > 0 ? `${bigBlinds}BB` : '0'}
+              ink="silver"
+            />
+            <BayButton
+              zone={BUY_IN_ZONES.bays[2].value}
+              text={formatAmount(maxBuyIn, currency)}
+              ink={maxPressed ? 'white' : 'silver'}
+              label="Buy In For The Maximum"
+              pressed={maxPressed}
+              onClick={() => setBuyInAmount(maxBuyIn)}
+              disabled={!!recovery}
+            />
+            <BayValue
+              zone={BUY_IN_ZONES.bays[3].value}
+              text={balanceKnown ? formatAmount(accountBalance, currency) : 'Unavailable'}
+              ink={!balanceKnown ? 'muted' : hasEnoughBalance ? 'silver' : 'red'}
+              className={`buy-in-modal__balance-value ${balanceKnown && !hasEnoughBalance ? 'buy-in-modal__balance-value--insufficient' : ''}`}
+            />
+
+            {/* AUTO REBUY REMOVED 2026-08-20.
+                The checkbox told the player: "When your stack drops to 50% of the
+                initial buy-in, it will be automatically replenished." Nothing
+                implemented that. `atomic_table_buyin` writes `table_seats.auto_rebuy`
+                and NO code anywhere - SQL function, engine, or client - ever reads
+                the column back; verified in production, 0 of 38,390 seat rows had it
+                set. The one server-side auto-rebuy path is horse-only and its body is
+                an explicit no-op. The threshold was a hardcoded `50` whose setter had
+                no call sites.
+                So a player could tick it, bust, and sit at zero waiting for a top-up
+                that was never coming. Promising to protect someone's seat and then
+                not doing it is worse than not offering it. If this is wanted, it
+                needs a real server-side implementation and a product decision about
+                automatically spending a player's wallet while they are away. */}
+
+            {/* The plates painted into the foot: CLOSE on steel; BUY CHIPS (or
+                the retry, or the reason it cannot proceed) on the blue glass. */}
+            {!recovery && !hasEnoughBalance && balanceKnown && onTopUp ? (
+              <PlateButton
+                zone={BUY_IN_ZONES.secondaryAction}
+                canvasH={BUY_IN_DECK_H}
+                label="Top Up"
+                ink="gold"
+                disabled={isProcessing}
+                onClick={onTopUp}
+                aria-label="Top Up Account"
+              />
+            ) : (
+              <PlateButton
+                zone={BUY_IN_ZONES.secondaryAction}
+                canvasH={BUY_IN_DECK_H}
+                label="Close"
+                disabled={isProcessing}
+                onClick={() => {
+                  if (!confirmInFlightRef.current) onClose();
+                }}
+                aria-label="Close Buy-In"
+              />
+            )}
+            <PlateButton
+              zone={BUY_IN_ZONES.primaryAction}
+              canvasH={BUY_IN_DECK_H}
+              label={primaryLabel}
+              ink={canConfirm ? 'white' : 'red'}
+              className={`buy-in-modal__confirm ${primaryLabel.length > 12 ? 'buy-in-modal__confirm--long' : ''} ${!canConfirm ? 'buy-in-modal__confirm--disabled' : ''} ${isConfirmPulsing ? 'buy-in-modal__confirm--pulse' : ''} ${isProcessing ? 'buy-in-modal__confirm--processing' : ''}`}
+              onClick={handleConfirm}
+              disabled={!canConfirm || isProcessing}
+            />
+          </div>
         </div>
-
-        {/* AUTO REBUY REMOVED 2026-08-20.
-            The checkbox told the player: "When your stack drops to 50% of the
-            initial buy-in, it will be automatically replenished." Nothing
-            implemented that. `atomic_table_buyin` writes `table_seats.auto_rebuy`
-            and NO code anywhere — SQL function, engine, or client — ever reads
-            the column back; verified in production, 0 of 38,390 seat rows had it
-            set. The one server-side auto-rebuy path is horse-only and its body is
-            an explicit no-op. The threshold was a hardcoded `50` whose setter had
-            no call sites.
-            So a player could tick it, bust, and sit at zero waiting for a top-up
-            that was never coming. Promising to protect someone's seat and then
-            not doing it is worse than not offering it. If this is wanted, it
-            needs a real server-side implementation and a product decision about
-            automatically spending a player's wallet while they are away. */}
-
-        {confirmError && !recovery && (
-          <p role="alert" className="buy-in-modal__balance-value--insufficient">
-            {confirmError}
-          </p>
-        )}
-
-        {/* Confirm Button */}
-        <button
-          className={`buy-in-modal__confirm ${!canConfirm ? 'buy-in-modal__confirm--disabled' : ''} ${isConfirmPulsing ? 'buy-in-modal__confirm--pulse' : ''} ${isProcessing ? 'buy-in-modal__confirm--processing' : ''}`}
-          onClick={handleConfirm}
-          disabled={!canConfirm || isProcessing}
-        >
-          {isProcessing
-            ? 'Joining...'
-            : recovery
-              ? 'Retry Original Buy-In'
-              : hasEnoughBalance
-                ? wholeDiamonds
-                  ? 'Buy In With Diamonds'
-                  : 'Buy Chips'
-                : balanceKnown
-                  ? 'Insufficient Balance'
-                  : 'Balance Unavailable'}
-        </button>
-
-        {/* Top Up Link.
-            2026-08-20: this had no onClick at all. It only renders when the
-            player has too little to sit down, so the single moment they need to
-            add funds was the one moment the button was inert — and the modal's
-            own container calls stopPropagation, so nothing bubbled either. */}
-        {!recovery && !hasEnoughBalance && onTopUp && (
-          <button className="buy-in-modal__top-up" onClick={onTopUp}>
-            Top Up Account
-          </button>
-        )}
       </div>
     </div>
+  );
+}
+
+/* ── The master's deck and its zones (pixels on the 1000-wide master) ──── */
+
+const BUY_IN_ASSET_ROOT = `${import.meta.env.BASE_URL}assets/club-buttons/popups/buy-in-v1`;
+export const BUY_IN_ASSETS = {
+  /* The master's rows 350-1135: the four bays (labels lifted), the plates,
+     the chip. The head is the console's own top slice. */
+  deck: `${BUY_IN_ASSET_ROOT}/deck.png`,
+  reference: `${BUY_IN_ASSET_ROOT}/source/approved-reference.png`,
+} as const;
+export const BUY_IN_DECK_H = 627;
+const DECK_Y = 350;
+
+const bay = (x: number) => ({
+  label: { x, y: 418 - DECK_Y, width: 129, height: 40 },
+  value: { x: x - 8, y: 501 - DECK_Y, width: 145, height: 136 },
+});
+
+export const BUY_IN_ZONES = {
+  bays: [bay(127), bay(335), bay(539), bay(743)],
+  secondaryAction: { x: 100, y: 746 - DECK_Y, width: 381, height: 129 },
+  primaryAction: { x: 520, y: 746 - DECK_Y, width: 381, height: 129 },
+} as const;
+
+type BuyInZone = { x: number; y: number; width: number; height: number };
+
+export function BayLabel({ zone, text }: { zone: BuyInZone; text: string }) {
+  return (
+    <ZoneText
+      text={text}
+      className="buy-in-modal__bay-label sc-ink--blue"
+      style={zonePct(zone, SPADE_CONSOLE_W, BUY_IN_DECK_H)}
+    />
+  );
+}
+
+export function BayValue({
+  zone,
+  text,
+  ink,
+  className = '',
+}: {
+  zone: BuyInZone;
+  text: string;
+  ink: ConsoleInk;
+  className?: string;
+}) {
+  return (
+    <ZoneText
+      as="strong"
+      text={text}
+      className={`buy-in-modal__bay-value sc-ink--${ink} ${className}`.trim()}
+      style={zonePct(zone, SPADE_CONSOLE_W, BUY_IN_DECK_H)}
+      minRatio={0.4}
+    />
+  );
+}
+
+/* A bay that is also a button. It paints nothing over the master; its
+   state is the ink. */
+function BayButton({
+  zone,
+  text,
+  ink,
+  pressed,
+  label,
+  className = '',
+  onClick,
+  disabled,
+}: {
+  zone: BuyInZone;
+  text: string;
+  ink: 'silver' | 'white' | 'red' | 'muted';
+  pressed?: boolean;
+  label: string;
+  className?: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  const ref = useFitText<HTMLSpanElement>(text, 1, 0.4);
+  return (
+    <button
+      type="button"
+      className={`buy-in-modal__bay-button ${className}`.trim()}
+      style={zonePct(zone, SPADE_CONSOLE_W, BUY_IN_DECK_H)}
+      aria-label={label}
+      aria-pressed={pressed}
+      onClick={onClick}
+      disabled={disabled}
+    >
+      <span ref={ref} className={`buy-in-modal__bay-value sc-ink--${ink}`}>
+        {text}
+      </span>
+    </button>
   );
 }
 

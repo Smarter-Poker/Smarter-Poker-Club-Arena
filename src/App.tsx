@@ -104,7 +104,12 @@ const TournamentResultsPage = lazyWithRetry(
 );
 const TablePage = lazyWithRetry(() => import('./pages/TablePage'));
 const ProfilePage = lazyWithRetry(() => import('./pages/ProfilePage'));
-const DailyChallengesPage = lazyWithRetry(() => import('./pages/DailyChallengesPage'));
+// Keep the complete Daily Challenges presentation graph behind its route.
+// Auth/loading/crash paint is deliberately owned by the lazy route module so
+// players who never open Challenges do not pay for its artwork or instruments.
+const DailyChallengesRoute = lazyWithRetry(
+  () => import('./components/challenges/DailyChallengesRoute')
+);
 const SettingsPage = lazyWithRetry(() => import('./pages/SettingsPage'));
 const UnionsPage = lazyWithRetry(() => import('./pages/UnionsPage'));
 const UnionDetailPage = lazyWithRetry(() => import('./pages/UnionDetailPage'));
@@ -142,6 +147,16 @@ const ClubMembersPage = lazyWithRetry(() => import('./pages/ClubMembersPage'));
 const MemberManagementPage = lazyWithRetry(() => import('./pages/MemberManagementPage'));
 const PlayerStatisticsPage = lazyWithRetry(() => import('./pages/PlayerStatisticsPage'));
 const PromoVaultPage = lazyWithRetry(() => import('./pages/PromoVaultPage'));
+const DiamondWheelPage = lazyWithRetry(() => import('./pages/DiamondWheelPage'));
+const ClubWheelOperationsPage = lazyWithRetry(() => import('./pages/club/ClubWheelOperationsPage'));
+const DiamondGamesPage = lazyWithRetry(() => import('./pages/DiamondGamesPage'));
+const DiamondPlinkoPage = lazyWithRetry(() => import('./pages/DiamondPlinkoPage'));
+const DiamondCrashPage = lazyWithRetry(() => import('./pages/DiamondCrashPage'));
+const DiamondChoicePage = lazyWithRetry(() => import('./pages/DiamondChoicePage'));
+const DiamondEarnPage = lazyWithRetry(() => import('./pages/DiamondEarnPage'));
+const ClubDiamondGamesOperationsPage = lazyWithRetry(
+  () => import('./pages/club/ClubDiamondGamesOperationsPage')
+);
 const FriendsPage = lazyWithRetry(() => import('./pages/FriendsPage'));
 const RakebackPage = lazyWithRetry(() => import('./pages/RakebackPage'));
 const BadBeatJackpotPage = lazyWithRetry(() => import('./pages/BadBeatJackpotPage'));
@@ -1104,16 +1119,7 @@ function FullApp() {
                 />
 
                 {/* User */}
-                <Route
-                  path="challenges/:cycle?"
-                  element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Daily Challenges">
-                        <DailyChallengesPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
-                  }
-                />
+                <Route path="challenges/:cycle?" element={<DailyChallengesRoute />} />
                 <Route
                   path="profile"
                   element={
@@ -1417,6 +1423,123 @@ function FullApp() {
                       <ClubMemberGuard>
                         <PageErrorBoundary pageName="Club Members">
                           <ClubMembersPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                {/* THE DIAMOND WHEEL (Dan 2026-09-07). A member spins diamonds for
+                    chips, diamonds or nothing at 80 percent return; the wheel never
+                    pays more than it takes in. Player route here, operator console
+                    at wheel-operations (finance access in the operations registry).
+                    docs/changelog/2026-09-07-diamond-wheel.md */}
+                <Route
+                  path="clubs/:clubId/wheel"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Diamond Wheel">
+                          <DiamondWheelPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/wheel-operations"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Diamond Wheel Operations">
+                          <ClubWheelOperationsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                {/* THE DIAMOND GAMES (Dan 2026-09-08): the lobby for the three
+                    diamond-to-chip games, Plinko and Crash beside the wheel, and one
+                    operator console for the two new games (finance access).
+                    docs/changelog/2026-09-08-diamond-plinko-and-crash.md */}
+                <Route
+                  path="clubs/:clubId/diamond-games"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Diamond Games">
+                          <DiamondGamesPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/plinko"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Diamond Plinko">
+                          <DiamondPlinkoPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/crash"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Diamond Crash">
+                          <DiamondCrashPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/crossing"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Donkey Crossing">
+                          <DiamondChoicePage key="crossing" game="crossing" />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/mines"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Diamond Mines">
+                          <DiamondChoicePage key="mines" game="mines" />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/earn-diamonds"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Earn Diamonds">
+                          <DiamondEarnPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/diamond-games-operations"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Diamond Games Operations">
+                          <ClubDiamondGamesOperationsPage />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
                     </AuthGuard>

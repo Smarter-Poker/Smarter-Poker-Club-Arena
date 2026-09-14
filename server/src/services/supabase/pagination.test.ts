@@ -57,6 +57,55 @@ function fakeTable(total: number, opts: { cap?: number; mutate?: (rows: Row[]) =
 
 beforeEach(() => mockReportError.mockReset());
 
+describe('a successful page proves an array', () => {
+  for (const [label, payload] of [
+    ['null', null],
+    ['missing', undefined],
+    ['object', {}],
+    ['string', ''],
+  ] as const) {
+    it.each([false, true])(`refuses ${label} with earlier page=%s`, async (later) => {
+      const first = Array.from({ length: POSTGREST_PAGE }, (_, i) => ({ id: mkId(i) }));
+      const read = vi.fn(async (cursor: string | null) => ({
+        data: (later && !cursor ? first : payload) as Row[] | null,
+        error: null,
+      }));
+      const result = await fetchAllRows<Row>(read, { label: 'array-proof', pageAttempts: 1 });
+      expect(result).toEqual({ rows: later ? first : [], complete: false });
+      expect(read).toHaveBeenCalledTimes(later ? 2 : 1);
+      expect(mockReportError).toHaveBeenCalledTimes(1);
+      expect(mockReportError).toHaveBeenCalledWith(expect.any(Error), 'array-proof.page_failed');
+    });
+  }
+
+  it('retries malformed reads at the same cursor and accepts a real empty page', async () => {
+    const read = vi
+      .fn()
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({ data: [], error: null });
+    expect(await fetchAllRows<Row>(read, { label: 'array-proof' })).toEqual({
+      rows: [],
+      complete: true,
+    });
+    expect(read.mock.calls).toEqual([
+      [null, POSTGREST_PAGE],
+      [null, POSTGREST_PAGE],
+    ]);
+    expect(mockReportError).not.toHaveBeenCalled();
+  });
+
+  it('retains the actual server error when its failed response also has no array', async () => {
+    const error = new Error('original database refusal');
+    expect(
+      await fetchAllRows<Row>(async () => ({ data: null, error }), {
+        label: 'array-proof',
+        pageAttempts: 1,
+      })
+    ).toEqual({ rows: [], complete: false });
+    expect(mockReportError).toHaveBeenCalledWith(error, 'array-proof.page_failed');
+  });
+});
+
 describe('fetchAllRows', () => {
   it('returns EVERY row when the result exceeds one PostgREST page', async () => {
     // The exact production shape: 1,428 open seats against a 1,000 cap.

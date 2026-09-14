@@ -99,7 +99,15 @@ export type RITEventType = 'RIT_OFFERED' | 'RIT_ACCEPTED' | 'RIT_DECLINED' | 'RI
  * RIT_DECLINED carried no way to tell them apart, so a forwarder could not
  * announce the expiry without also mislabelling every human decline.
  */
-export type RITDeclineReason = 'player' | 'timeout';
+/**
+ * 2026-09-14: `chooser` is the third way an offer ends in one board - the
+ * chooser picked 1. It used to set the state and emit NOTHING, which was fine
+ * while the host polled the state every 250 ms and is not fine now that the
+ * host listens for the event instead (ServerTableEngineRunout.
+ * waitForRITResponse). The felt notice for it is still announced by
+ * respondToRIT (`chooser_chose_one`); the forwarder ignores this reason.
+ */
+export type RITDeclineReason = 'player' | 'timeout' | 'chooser';
 
 export interface RITEvent {
   type: RITEventType;
@@ -557,6 +565,14 @@ export class RunItTwiceEngine {
       state.status = 'declined';
       // Phase 1.2 PR-G-real: cancel pending expiry deadline.
       this.scheduler.cancel(tableId, RunItTwiceEngine.OFFER_EVENT_ID);
+      // The offer is over, and the host's wait is listening (2026-09-14).
+      this.emitEvent({
+        type: 'RIT_DECLINED',
+        tableId,
+        handId: state.handId,
+        declinedBy: userId,
+        reason: 'chooser',
+      });
       return;
     }
     // If every responder had already accepted while waiting on the chooser,

@@ -17,6 +17,9 @@
 import React, { useEffect, useState } from 'react';
 import { useMaintenanceBreak } from '../../hooks/useMaintenanceBreak';
 import { serverNow } from '../../utils/serverClock';
+/* The banner prints in the console's own inks, so it loads the console's sheet
+   itself rather than trusting the chunk to carry it. */
+import '../console/SpadeConsole.css';
 import './MaintenanceBreakBanner.css';
 
 function formatTime(totalSeconds: number): string {
@@ -59,7 +62,9 @@ export function MaintenanceBreakBanner() {
     if (minuteOfHour >= 50 && minuteOfHour < 55) {
       return (
         <div className="maintenance-banner maintenance-banner--upcoming" role="status">
-          <span className="maintenance-banner__dot" aria-hidden="true" />
+          <span className="maintenance-banner__dot sc-ink--blue" aria-hidden="true">
+            &bull;
+          </span>
           <span className="maintenance-banner__text">
             Hourly Break At :55. All Tables Pause For Five Minutes And Resume On The Hour.
           </span>
@@ -71,7 +76,9 @@ export function MaintenanceBreakBanner() {
 
   return (
     <div className="maintenance-banner" role="status">
-      <span className="maintenance-banner__dot" aria-hidden="true" />
+      <span className="maintenance-banner__dot sc-ink--blue" aria-hidden="true">
+        &bull;
+      </span>
       <span className="maintenance-banner__text">
         {countingDown
           ? `Maintenance Break In Progress. All Tables Resume In ${formatTime(remaining)}. Seats And Chips Are Safe.`

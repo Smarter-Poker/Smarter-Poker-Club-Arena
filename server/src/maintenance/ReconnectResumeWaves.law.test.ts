@@ -49,6 +49,7 @@ describe('maintenance resume waves preserve the remaining reconnect allowance', 
           pauseForMaintenance() {},
           isParkedBetweenHands: () => true,
           isBetweenHands: () => true,
+          hasSettlementInFlight: () => false,
           isRunning: () => true,
           resumeFromMaintenance() {
             // A real turn immediately consumes the clock at the resume boundary.

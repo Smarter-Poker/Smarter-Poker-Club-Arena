@@ -225,7 +225,42 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // carries its own budget, so a slow database produces a NAMED, retried
         // step instead of an anonymous kill and a fleet-wide rebuild storm.
         const previousSeatedIds = new Set(this.seatedPlayers.map((p) => p.user_id));
-        this.seatedPlayers = await this.prepareNextHand();
+        const previousOccupancies = new Map(
+          this.seatedPlayers.map((p) => [p.user_id, p.occupancy_id])
+        );
+        const nextRoster = await this.prepareNextHand();
+        if (!this.lifecycleCanMutate()) return;
+        this.seatedPlayers = nextRoster;
+        // A leave and rejoin can both commit between reads. User identity is
+        // unchanged, but entry debt, button eligibility and presence belonged
+        // to the old stay. Retire those mirrors before adopting the new seat.
+        if (!this.isTournamentTable()) {
+          for (const p of this.seatedPlayers) {
+            if (
+              !previousOccupancies.has(p.user_id) ||
+              previousOccupancies.get(p.user_id) === p.occupancy_id
+            )
+              continue;
+            previousSeatedIds.delete(p.user_id);
+            this.knownPlayerIds.delete(p.user_id);
+            this.waitingForBB.delete(p.user_id);
+            this.postingBBToEnter.delete(p.user_id);
+            this.postBBWhenClear.delete(p.user_id);
+            this.pendingPostToEnter.delete(p.user_id);
+            this.mustPostBB.delete(p.user_id);
+            this.returningFromSitout.delete(p.user_id);
+            this.heldForSwap.delete(p.user_id);
+            this.dealtInUserIds.delete(p.user_id);
+            this.pendingSitOut.delete(p.user_id);
+            this.leaveHeldByClock.delete(p.user_id);
+            this.horseRebuys.delete(p.user_id);
+            this.disconnectEngine.unregisterPlayer(this.tableId, p.user_id);
+            this.timeBankEngine.removePlayer(this.tableId, p.user_id);
+            this.straddleEngine.removePlayer(this.tableId, p.user_id);
+            this.preActionEngine.removePlayer(this.tableId, p.user_id);
+            this.chipContinuity.forget(p.user_id);
+          }
+        }
         // Restart fidelity: apply persisted is_sitting_out to seats the engine
         // has not seen yet. The start-up loop calls this too, but it breaks the
         // moment enough players are seated and never runs again — so a player

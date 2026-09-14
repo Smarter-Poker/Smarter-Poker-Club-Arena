@@ -73,7 +73,7 @@ import {
   DEFAULT_TOP_BOUNTY_PERCENT,
   resolveMysteryBountyProfile,
 } from '../config/mysteryBountySpec.js';
-import { buildInventory, poolCentsFromNumeric } from './mysteryBountyPool.js';
+import { buildInventoryAtUnit, poolCentsFromNumeric } from './mysteryBountyPool.js';
 import { shuffleChests } from './mysteryBountyDraw.js';
 import {
   mysteryPoolCents,
@@ -81,11 +81,7 @@ import {
   type MysteryBountyActivationMode,
   type MysteryBountyStage,
 } from './mysteryBountyActivation.js';
-import {
-  UNIT_CENTS_ASSET_NOT_READ,
-  tournamentUnitCents,
-  type TournamentUnitClubRow,
-} from './tournamentUnit.js';
+import { tournamentUnitCents, type TournamentUnitClubRow } from './tournamentUnit.js';
 import { applySpinDrawPatch } from './spinDrawSync.js';
 import { proveSpinDrawWithParking } from './spinLaunchParking.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
@@ -687,6 +683,7 @@ export abstract class TournamentManagerBase {
       this.tournamentLeaseAuthorityExpired ||
       this.stopFenceApplied ||
       (!this.running && !this.shutdownDrainFenceApplied) ||
+      !this.hasCurrentTournamentLeaseAuthority() ||
       !Number.isFinite(proofDeadlineMonotonicMs) ||
       tournamentLeaseMonotonicNow() >= proofDeadlineMonotonicMs
     ) {
@@ -2510,6 +2507,24 @@ export abstract class TournamentManagerBase {
       return;
     }
 
+    /* DIAMOND PHASE 9: the unit this event pays in - a cent for a chip
+       event, a whole Diamond for a Diamond event - read from the club beside
+       the tournament row at start (tournamentUnit). A club that could not be
+       read is not a cent: an inventory built at the wrong unit would be
+       refused by the seed (chest_not_on_unit / inventory_mismatch) and the
+       chests would never open, so a manager that does not know its unit
+       does not seed; the next sweep reads again. */
+    const unitCents = this.tournamentUnit();
+    if (unitCents == null) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] mystery bounty not seeded: the tournament's club was not read, so its unit is unknown`
+        ),
+        'Tournament.mystery_bounty_unit_unknown'
+      );
+      return;
+    }
+
     let poolCents = 0;
     try {
       poolCents = mysteryPoolCents(
@@ -2521,11 +2536,7 @@ export abstract class TournamentManagerBase {
         // the inventory sum; not subtracting it here is what refused every
         // seed this platform has ever attempted. See mysteryPoolCents.
         poolCentsFromNumeric(fresh.bounty_pool_paid ?? 0),
-        // This manager has not read the tournament's club, so it cannot say
-        // whether the event pays in cents or in whole Diamonds. The named
-        // constant is that admission; it is a cent because every tournament
-        // that can currently exist is a chip tournament. See tournamentUnit.ts.
-        UNIT_CENTS_ASSET_NOT_READ
+        unitCents
       );
     } catch (err) {
       // A bounty pool that is not a whole number of cents means something
@@ -2587,8 +2598,7 @@ export abstract class TournamentManagerBase {
           fresh.mystery_bounty_pool_percent,
           fresh.mystery_bounty_regular_pool_percent,
           poolCentsFromNumeric(fresh.bounty_pool_paid ?? 0) + unrecordedCents,
-          // Same admission as the seed above: the club was never read here.
-          UNIT_CENTS_ASSET_NOT_READ
+          unitCents
         );
       } catch (err) {
         reportError(err, 'Tournament.mystery_bounty_pool_not_in_cents');
@@ -2609,7 +2619,7 @@ export abstract class TournamentManagerBase {
           ? DEFAULT_TOP_BOUNTY_PERCENT
           : Number(fresh.mystery_bounty_top_percent);
       const chests = shuffleChests(
-        buildInventory(poolCents, decision.drawCount, profile, topPercent)
+        buildInventoryAtUnit(poolCents, decision.drawCount, profile, topPercent, unitCents)
       ).map((c) => ({ tier: c.tier, amount_cents: c.amountCents, seq: c.seq }));
 
       const { data: seeded, error: seedErr } = await supabase.rpc('fn_mystery_bounty_seed', {
@@ -4575,14 +4585,25 @@ export abstract class TournamentManagerBase {
     console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] Resuming...`);
 
     try {
-      const { data: tournament } = await supabase
+      const { data: tournament, error: tournamentError } = await supabase
         .from('tournaments')
         .select('*')
         .eq('id', this.tournamentId)
         .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
       this.assertLifecycleCurrent(lifecycle);
 
-      if (!tournament) throw new Error('Tournament not found');
+      if (tournamentError)
+        throw new Error(`Tournament resume read failed: ${tournamentError.message}`);
+      if (!tournament || tournament.id !== this.tournamentId)
+        throw new Error('Tournament resume did not identify the admitted event');
+      // Discovery may have read RUNNING before the previous manager committed
+      // completion. The fresh row owns gameplay eligibility. Return through
+      // GameServer's existing exact-manager teardown; never await our own
+      // lifecycle operation or infer a payment receipt from this status.
+      if (tournament.status !== 'RUNNING') {
+        this.running = false;
+        return;
+      }
 
       if (typeof tournament.blind_structure === 'string') {
         try {
@@ -6170,9 +6191,21 @@ export abstract class TournamentManagerBase {
   } | null = null;
   private blindTransitionInFlight = false;
   private blindClockNeedsThawResync = false;
+  private blindClockTerminalCommitted = false;
+
+  /** Stop level work once a verified terminal receipt exists, even while
+   * physical table cleanup still owns this manager and its lease. */
+  protected retireBlindClockAfterCommittedTerminal(): void {
+    this.blindClockTerminalCommitted = true;
+    if (this.blindTimer) this.clearLifecycleTimeout(this.blindTimer);
+    this.blindTimer = null;
+    this.pendingBlindTransition = null;
+    this.blindClockNeedsThawResync = false;
+  }
 
   /** A local wake must never rewrite the durable level clock. */
   private scheduleBlindLevelWake(blindStructure: any[], delayMs: number): void {
+    if (this.blindClockTerminalCommitted) return;
     if (this.blindTimer) this.clearLifecycleTimeout(this.blindTimer);
     this.blindTimer = this.setLifecycleTimeout(() => {
       this.blindTimer = null;
@@ -6185,6 +6218,7 @@ export abstract class TournamentManagerBase {
   }
 
   protected startBlindTimer(blindStructure: any[], remainingOverrideMs?: number): void {
+    if (this.blindClockTerminalCommitted) return;
     if (blindStructure.length === 0) return;
     // Never leave two level clocks running for the same tournament. Callers
     // normally arrive with blindTimer already null (it has just fired, or
@@ -6247,7 +6281,12 @@ export abstract class TournamentManagerBase {
    */
   protected async advanceBlindLevel(blindStructure: any[]): Promise<void> {
     const lifecycle = this.lifecycleEpoch.current();
-    if (!this.lifecycleIsCurrent(lifecycle) || this.blindTransitionInFlight) return;
+    if (
+      !this.lifecycleIsCurrent(lifecycle) ||
+      this.blindTransitionInFlight ||
+      this.blindClockTerminalCommitted
+    )
+      return;
     this.blindTransitionInFlight = true;
     let committed: { level: any; startedAt: number } | null = null;
     let deferredWakeMs: number | undefined;
@@ -6314,7 +6353,7 @@ export abstract class TournamentManagerBase {
           .select('id,status,current_level,level_started_at')
           .eq('id', this.tournamentId)
           .maybeSingle();
-        if (!this.lifecycleIsCurrent(lifecycle)) return;
+        if (!this.lifecycleIsCurrent(lifecycle) || this.blindClockTerminalCommitted) return;
         if (this.isOnBreak() || isMaintenanceFrozen()) return;
         const anchor =
           typeof clock?.level_started_at === 'string' ? Date.parse(clock.level_started_at) : NaN;
@@ -6439,7 +6478,7 @@ export abstract class TournamentManagerBase {
           p_ante: ante,
         }
       );
-      if (!this.lifecycleIsCurrent(lifecycle)) return;
+      if (!this.lifecycleIsCurrent(lifecycle) || this.blindClockTerminalCommitted) return;
       if (levelErr) throw new Error(`Blind publication failed: ${levelErr.message}`);
       const state = receipt?.blind_level_state;
       const levelStartedAt =
@@ -6453,8 +6492,19 @@ export abstract class TournamentManagerBase {
         state.big_blind !== bigBlind ||
         state.ante !== ante ||
         !Number.isFinite(levelStartedAt)
-      )
-        throw new Error('Blind publication did not return a matching committed level');
+      ) {
+        const reason =
+          receipt?.ok === false &&
+          (receipt.reason === 'paused' || receipt.reason === 'tournament_not_running')
+            ? receipt.reason
+            : 'unverified_receipt';
+        // Preserve a bounded cause and exact tournament in host logs. Arbitrary
+        // response bodies are not diagnostic text and must never be copied here.
+        throw new Error(
+          `Blind publication did not return a matching committed level: ${reason}; ` +
+            `tournament=${this.tournamentId}; attemptedLevel=${nextLevel}`
+        );
+      }
       this.currentLevel = nextLevel;
       this.blindTimerStartedAt = levelStartedAt;
       if (this.tournamentCache) {
@@ -6513,7 +6563,7 @@ export abstract class TournamentManagerBase {
               .select('user_id, stack')
               .eq('table_id', tableId)
               .is('left_at', null);
-            if (!this.lifecycleIsCurrent(lifecycle)) return;
+            if (!this.lifecycleIsCurrent(lifecycle) || this.blindClockTerminalCommitted) return;
             for (const seat of seats || []) {
               if (seat.stack > 0) playerStacks.set(seat.user_id, seat.stack);
             }
@@ -6535,14 +6585,14 @@ export abstract class TournamentManagerBase {
                 .update({ stack: newStack })
                 .eq('user_id', userId)
                 .is('left_at', null);
-              if (!this.lifecycleIsCurrent(lifecycle)) return;
+              if (!this.lifecycleIsCurrent(lifecycle) || this.blindClockTerminalCommitted) return;
             }
             await this.broadcast('chip_race', {
               removedDenomination: prevSmallBlind,
               newSmallestDenomination: level.smallBlind,
               playersAffected: result.players.filter((p) => p.chipsAwarded > 0).length,
             });
-            if (!this.lifecycleIsCurrent(lifecycle)) return;
+            if (!this.lifecycleIsCurrent(lifecycle) || this.blindClockTerminalCommitted) return;
           }
         } catch (crErr) {
           reportError(crErr, `Tournament.${this.tournamentId.slice(0, 8)}.chip_race_error`);
@@ -6557,16 +6607,16 @@ export abstract class TournamentManagerBase {
         bigBlind: level.bigBlind,
         ante: level.ante || 0,
       });
-      if (!this.lifecycleIsCurrent(lifecycle)) return;
+      if (!this.lifecycleIsCurrent(lifecycle) || this.blindClockTerminalCommitted) return;
 
       // Entry closure is one database decision for level and minute windows.
       // On a level event this call observes the current_level write above;
       // on a minutes-only event it simply confirms the still-open window and
       // leaves the one DB-relative lifecycle timer armed.
       await this.reconcileTournamentEntryWindow('engine.level_change');
-      if (!this.lifecycleIsCurrent(lifecycle)) return;
+      if (!this.lifecycleIsCurrent(lifecycle) || this.blindClockTerminalCommitted) return;
     } catch (error) {
-      if (!this.lifecycleIsCurrent(lifecycle)) return;
+      if (!this.lifecycleIsCurrent(lifecycle) || this.blindClockTerminalCommitted) return;
       reportError(error, 'Tournament.blind_transition_failed', {
         tournamentId: this.tournamentId,
         pendingLevel: this.pendingBlindTransition?.nextLevel ?? null,
@@ -6576,7 +6626,7 @@ export abstract class TournamentManagerBase {
       if (committed) this.requestUrgentEliminationSweepAfter(1000);
     } finally {
       this.blindTransitionInFlight = false;
-      if (this.lifecycleIsCurrent(lifecycle)) {
+      if (this.lifecycleIsCurrent(lifecycle) && !this.blindClockTerminalCommitted) {
         if (committed) {
           const { level, startedAt: levelStartedAt } = committed;
           // A notification failure cannot consume the only next-level wake.

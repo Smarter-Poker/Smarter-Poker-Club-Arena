@@ -321,6 +321,8 @@ import { useDialogEscape } from '../hooks/useDialogEscape';
 import { isSpinTournament, type SpinRevealSubject } from '../utils/spinReveal';
 // RealtimeChannelService imported if needed for future use
 import {
+  seatFirstBuyInReasonIsKnown,
+  seatFirstBuyInRefusalText,
   tournamentService,
   tournamentUnregisterSuccessText,
   tournamentUnregisterWasAlreadyStarted,
@@ -5061,6 +5063,10 @@ function LiveTablePage({
    * a fine place to land; the union's treasury is not.
    */
   const lobbyClubIdRef = useRef<string | null>(null);
+  /* The same value as state, for the things that RENDER off it. A ref does not
+     re-render, and the diamonds-to-chips door on a buy-in modal has to appear
+     the moment the club resolves, not on whatever render happens next. */
+  const [lobbyClubId, setLobbyClubId] = useState<string | null>(null);
   const [actualClubIdLoaded, setActualClubIdLoaded] = useState(false); // Tracks when club_id is available
   const [actionTimeSeconds, setActionTimeSeconds] = useState(15);
   useEffect(() => {
@@ -10805,6 +10811,12 @@ function LiveTablePage({
         ritPanelOpenTimerRef.current = setTimeout(() => {
           ritPanelOpenTimerRef.current = null;
           setShowRIT(true);
+          // A timed decision with money on it, opened for the all-in seats
+          // only (the guard above): the same attention cue "your turn" and
+          // the insurance offer use, so a multi-tabling player who is looking
+          // at another table hears the question before the clock is half
+          // gone (2026-09-14). Nothing new to mute: it is the turn cue.
+          playTurnAlert();
         }, 1500 * getAnimationSpeed());
         return;
       }
@@ -12278,9 +12290,15 @@ function LiveTablePage({
           tableClubId: table.club_id || null,
         };
         const syncClub = resolveLobbyClubIdSync(lobbyClubArgs);
-        if (syncClub) lobbyClubIdRef.current = syncClub;
+        if (syncClub) {
+          lobbyClubIdRef.current = syncClub;
+          setLobbyClubId(syncClub);
+        }
         void resolveLobbyClubId(lobbyClubArgs).then((id) => {
-          if (id) lobbyClubIdRef.current = id;
+          if (id) {
+            lobbyClubIdRef.current = id;
+            setLobbyClubId(id);
+          }
         });
         setActionTimeSeconds(settings.time_bank_seconds || settings.action_time_seconds || 15);
 
@@ -19458,6 +19476,9 @@ function LiveTablePage({
           seats_taken?: number;
           seats_needed?: number;
           starts_now?: boolean;
+          cost?: number;
+          asset?: string;
+          diamonds_after?: number | null;
         };
 
         if (error || !res.ok) {
@@ -19536,10 +19557,7 @@ function LiveTablePage({
              anywhere. The toast stays generic for the player, but the RAW
              reason now reaches error reporting, so the next unknown refusal
              is a searchable event instead of a dead end. */
-          const mappedReason =
-            /seat_taken|insufficient|already_started|game_already_started|tournament_full|not_a_seat_first_game|table_limit_reached|FOUR TABLE LIMIT/.test(
-              reason
-            );
+          const mappedReason = seatFirstBuyInReasonIsKnown(reason);
           if (!mappedReason) {
             reportError(
               new Error(`seat_first_buy_in refused: ${reason || 'no_reason_given'}`),
@@ -19547,25 +19565,25 @@ function LiveTablePage({
               { tableId, seatNumber, reason }
             );
           }
-          toast?.error?.(
-            /seat_taken/.test(reason)
-              ? 'That Seat Was Just Taken'
-              : /insufficient/.test(reason)
-                ? 'Not Enough Chips For This Buy In'
-                : /already_started|game_already_started/.test(reason)
-                  ? 'This Game Has Already Started'
-                  : /tournament_full/.test(reason)
-                    ? 'This Game Is Full'
-                    : /not_a_seat_first_game/.test(reason)
-                      ? 'Seats Are Not For Sale At This Table'
-                      : /table_limit_reached|FOUR TABLE LIMIT/.test(reason)
-                        ? 'You Are Already In Four Games, Leave One To Join Another'
-                        : 'Could Not Take That Seat, Please Try Again'
-          );
+          /* Diamond Phase 8: a Diamond seat purchase answers with the Diamond
+             reasons; the text lives beside the lobby door's so both say the
+             same thing. */
+          toast?.error?.(seatFirstBuyInRefusalText(reason));
           return;
         }
 
         // Paid. The seat is ours — paint it and close the sheet.
+        /* Diamond Phase 8: a Diamond seat left the Diamond wallet, not a club
+           chip wallet, and no engine pushes that balance; the receipt carries
+           it (asset + diamonds_after), exactly as the lobby register receipt
+           does. Absent on the idempotent already_seated answer. */
+        if (res.asset === 'diamonds' && typeof res.diamonds_after === 'number') {
+          masterBus.emit('DIAMOND_BALANCE_CHANGED', {
+            newBalance: res.diamonds_after,
+            delta: -Number(res.cost ?? 0),
+            source: 'tournament_seat_first_buy_in',
+          });
+        }
         const mySeat = res.seat_number ?? seatNumber;
         heroSeatRef.current = mySeat;
         // Taking a seat is the one thing that clears the left-seat latch.
@@ -21839,9 +21857,15 @@ function LiveTablePage({
 
   // Handle opening waitlist modal and loading data
   const handleOpenWaitlist = useCallback(() => {
+    // A Must-Move game's entry queue belongs to the whole game. The legacy
+    // table list is read-only here and cannot join that queue.
+    if (tableState.clusterId) {
+      setShowMustMoveLobby(true);
+      return;
+    }
     loadWaitlist();
     setShowWaitList(true);
-  }, [loadWaitlist]);
+  }, [loadWaitlist, tableState.clusterId]);
 
   /**
    * ── IS THERE ACTUALLY A SEAT AT THIS TABLE? (Dan 2026-09-07, item 9) ──────
@@ -25951,6 +25975,13 @@ function LiveTablePage({
         reason={maintenanceBreak.reason}
       />
       <TableModalsLayer
+        /* THE DIAMONDS-TO-CHIPS DOOR (Dan 2026-09-10). The club the player
+           came in through, never the union that hosts the table: membership,
+           and therefore the games' own admission check, is against that one.
+           Null until resolveLobbyClubId lands, and null means the door is
+           simply not offered rather than offered into nothing. */
+        diamondGamesClubId={lobbyClubId}
+        onPlayDiamonds={(path) => navigate(path)}
         tableId={tableId}
         userId={userId}
         username={username}

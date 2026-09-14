@@ -1,0 +1,215 @@
+{
+  "localFixtureOnly": true,
+  "generatedBy": "Local PostgreSQL candidate migration; no production currency or seeds",
+  "receipts": {
+    "plinko": {
+      "id": "04e23775-3995-4c99-905d-a0baa72bf242",
+      "ok": true,
+      "game": "plinko",
+      "bonus": {
+        "id": "04e23775-3995-4c99-905d-a0baa72bf242",
+        "base_diamonds": 25,
+        "added_diamonds": 25,
+        "total_diamonds": 50
+      },
+      "drops": [
+        {
+          "slot": 6,
+          "index": 0,
+          "path_bits": 38925,
+          "payout_chips": 0.05,
+          "multiplier_cents": 100
+        },
+        {
+          "slot": 11,
+          "index": 1,
+          "path_bits": 63430,
+          "payout_chips": 0.06,
+          "multiplier_cents": 105
+        },
+        {
+          "slot": 8,
+          "index": 2,
+          "path_bits": 2919,
+          "payout_chips": 0,
+          "multiplier_cents": 0
+        },
+        {
+          "slot": 8,
+          "index": 3,
+          "path_bits": 33273,
+          "payout_chips": 0,
+          "multiplier_cents": 0
+        },
+        {
+          "slot": 4,
+          "index": 4,
+          "path_bits": 5250,
+          "payout_chips": 0.1,
+          "multiplier_cents": 200
+        },
+        {
+          "slot": 11,
+          "index": 5,
+          "path_bits": 31931,
+          "payout_chips": 0.05,
+          "multiplier_cents": 105
+        },
+        {
+          "slot": 5,
+          "index": 6,
+          "path_bits": 8594,
+          "payout_chips": 0.05,
+          "multiplier_cents": 105
+        },
+        {
+          "slot": 5,
+          "index": 7,
+          "path_bits": 18584,
+          "payout_chips": 0.05,
+          "multiplier_cents": 105
+        },
+        {
+          "slot": 9,
+          "index": 8,
+          "path_bits": 21627,
+          "payout_chips": 0.02,
+          "multiplier_cents": 50
+        },
+        {
+          "slot": 9,
+          "index": 9,
+          "path_bits": 58014,
+          "payout_chips": 0.02,
+          "multiplier_cents": 50
+        }
+      ],
+      "nonce": 7,
+      "club_id": "00000000-0000-0000-0000-000000000003",
+      "commit_id": "a00bcc31-b656-47e6-9b63-17ad07db48a5",
+      "table_name": "Bold",
+      "client_seed": "d2491ff64f2f35aa81e8f0f7d714f91d",
+      "server_seed": "476e02884d8c535b45bdbe3066452d50964a99334cc788a498eaa90b6e0ee550",
+      "bet_diamonds": 50,
+      "payout_chips": 0.4,
+      "table_version": 2,
+      "server_seed_hash": "7e3cc0771df0f59689e0a12353581d6e97674ac835eebea512b45551d8731ffc",
+      "diamonds_per_chip": 100,
+      "diamonds_per_drop": 5,
+      "multipliers_cents": [
+        13000, 4000, 995, 410, 200, 105, 100, 50, 0, 50, 100, 105, 200, 410, 995, 4000, 13000
+      ]
+    },
+    "crossing": {
+      "id": "55360e42-3edd-4335-96c8-2ad0c4284b01",
+      "ok": true,
+      "game": "crossing",
+      "mode": "steady",
+      "nonce": 1,
+      "proof": {
+        "game": "crossing",
+        "mines": 0,
+        "nonce": 1,
+        "road_roll": "146177743584806",
+        "mine_cells": [],
+        "client_seed": "1961c74d471cc1c6fded01c760e257a9",
+        "server_seed": "5751b4d773b75c0c4a2fa025634f4186275c8acfe5f75ece0329c9c566aef0c6",
+        "server_seed_hash": "f6c584df21690781409015f24acdc8a952efddb3b392f6925d59782130aa2ca8"
+      },
+      "picked": [0],
+      "prizes": [1.1, 1.35, 1.7, 2.15, 2.75, 3.55, 4.6, 6, 8, 11, 16, 24],
+      "status": "cashed",
+      "club_id": "00000000-0000-0000-0000-000000000003",
+      "bet_chips": 1,
+      "commit_id": "1714b053-e672-49fe-b960-93b59d4c3719",
+      "max_steps": 12,
+      "client_seed": "1961c74d471cc1c6fded01c760e257a9",
+      "bet_diamonds": 100,
+      "payout_chips": 1.1,
+      "server_seed_hash": "f6c584df21690781409015f24acdc8a952efddb3b392f6925d59782130aa2ca8",
+      "diamonds_per_chip": 100
+    },
+    "mines": {
+      "id": "14b00ef4-292c-4672-9017-fe12f71b3e26",
+      "ok": true,
+      "game": "mines",
+      "mode": "5",
+      "nonce": 1,
+      "proof": {
+        "game": "mines",
+        "mines": 5,
+        "nonce": 1,
+        "road_roll": "0",
+        "mine_cells": [5, 7, 16, 23, 24],
+        "client_seed": "94c947de9b9a0c6c5bfb8efd2b67f38a",
+        "server_seed": "b380e407c675b6ea1a052f200c4191415b514e4ef999dbbd9cecedce31859506",
+        "server_seed_hash": "db34833c0956859ece844f21673c32bf1e05b6ee1f7224f241bc5841c630cd70"
+      },
+      "picked": [0],
+      "prizes": [
+        1, 1.263157894736842, 1.6140350877192982, 2.08875128998968, 2.7414860681114552,
+        3.65531475748194, 4.96078431372549, 6.868778280542986, 9.73076923076923, 14.153846153846153,
+        21.23076923076923, 33.02564102564103, 53.666666666666664, 92, 168.66666666666666
+      ],
+      "status": "cashed",
+      "club_id": "00000000-0000-0000-0000-000000000003",
+      "bet_chips": 1,
+      "commit_id": "1cc4fe1a-c9f5-4be7-990c-2f8fdcaa1517",
+      "max_steps": 15,
+      "client_seed": "94c947de9b9a0c6c5bfb8efd2b67f38a",
+      "bet_diamonds": 100,
+      "payout_chips": 1,
+      "server_seed_hash": "db34833c0956859ece844f21673c32bf1e05b6ee1f7224f241bc5841c630cd70",
+      "diamonds_per_chip": 100
+    },
+    "crash": {
+      "ok": true,
+      "game": "crash",
+      "pool": {
+        "chips_paid": 1.28
+      },
+      "bonus": {
+        "id": "af4245cc-cfe9-4467-bc39-edeffdb073dc",
+        "base_diamonds": 100,
+        "added_diamonds": 0,
+        "total_diamonds": 100
+      },
+      "status": "cashed",
+      "club_id": "00000000-0000-0000-0000-000000000003",
+      "host_id": "00000000-0000-0000-0000-000000000003",
+      "outcome": {
+        "status": "cashed",
+        "settled_at": "2026-09-14T06:43:55.439763-05:00",
+        "settled_by": "player",
+        "crash_cents": 232,
+        "payout_chips": 1.28,
+        "cashout_cents": 128
+      },
+      "balances": {
+        "diamonds": 99150,
+        "member_chips": 5.58
+      },
+      "fairness": {
+        "roll": 96823525308138,
+        "nonce": 2,
+        "commit_id": "b35cdea2-3989-404d-9d2b-6a19c04bd52c",
+        "client_seed": "cec1bf120c617987c48d4308748cb10c",
+        "crash_cents": 232,
+        "server_seed": "e6e8065835ce30c2b9d768a3726e867be8e26ea3e9ec161b7bb4c06e85d140ca",
+        "server_seed_hash": "d543edc294b5aeef57495e1c70661b0c37fe466ea3840112b3e8ec126ee4e3e5"
+      },
+      "growth_k": 0.12,
+      "round_id": "c6e5f0b8-a4a9-420c-a846-c95e0351e443",
+      "bet_chips": 1,
+      "cap_cents": 100000,
+      "created_at": "2026-09-14T06:43:53.332086-05:00",
+      "elapsed_ms": 2100,
+      "server_now": "2026-09-14T06:46:56.692824-05:00",
+      "started_at": "2026-09-14T06:43:53.335127-05:00",
+      "bet_diamonds": 100,
+      "diamonds_per_chip": 100,
+      "auto_cashout_cents": 200,
+      "multiplier_now_cents": null
+    }
+  }
+}

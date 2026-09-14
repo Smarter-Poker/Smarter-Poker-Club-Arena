@@ -443,3 +443,75 @@ describe('DailyBonusSheet', () => {
     expect(screen.getByText(/One Shield Held/)).toBeTruthy();
   });
 });
+
+it('requires a tenth-day bonus spin to be claimed before the club chooser appears', async () => {
+  const offered = tile({
+    slot: 7,
+    kind: 'free_spin',
+    label: '100 Diamond Bonus Spin',
+    quantity: 1,
+    base_diamonds: 0,
+    diamonds: 0,
+  });
+  mocks.getStatus.mockResolvedValue({
+    ...status,
+    streak: 10,
+    tiles: [offered],
+    unclaimed: 1,
+    bonus_spins_held: 0,
+  });
+  mocks.claim.mockResolvedValue({
+    success: true,
+    slot: 7,
+    streak: 10,
+    granted: {
+      kind: 'free_spin',
+      quantity: 1,
+      diamonds: 0,
+      entry_diamonds: 100,
+      funded_by: 'mint',
+      ticket_id: '10000000-0000-0000-0000-000000000001',
+      balance_after: 0,
+    },
+  });
+  render(<DailyBonusSheet mode="inline" />);
+  await screen.findByText('100 Diamond Bonus Spin');
+  expect(screen.queryByRole('button', { name: 'Use Bonus Spin' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Claim' }));
+  await screen.findByRole('button', { name: 'Use Bonus Spin' });
+  expect(mocks.claim).toHaveBeenCalledWith('2026-09-08', 7);
+  expect(screen.getByText('100 Diamond Bonus Spin Claimed')).toBeTruthy();
+});
+
+it('keeps previously claimed bonus spins accessible on a later ordinary day', async () => {
+  mocks.getStatus.mockResolvedValue({ ...status, streak: 11, bonus_spins_held: 1 });
+  render(<DailyBonusSheet mode="inline" />);
+  await screen.findByRole('button', { name: 'Use Bonus Spin' });
+  expect(screen.getByText(/Your Welcome Spin Stays Separate/)).toBeTruthy();
+});
+
+it('does not offer a consumed spin merely because its reward was claimed today', async () => {
+  mocks.getStatus.mockResolvedValue({
+    ...status,
+    streak: 10,
+    bonus_spins_held: 0,
+    tiles: [
+      tile({
+        slot: 7,
+        kind: 'free_spin',
+        label: '100 Diamond Bonus Spin',
+        claimed: true,
+        granted: {
+          kind: 'free_spin',
+          quantity: 1,
+          diamonds: 0,
+          balance_after: 0,
+          ticket_id: '10000000-0000-0000-0000-000000000001',
+        },
+      }),
+    ],
+  });
+  render(<DailyBonusSheet mode="inline" />);
+  await screen.findByText('100 Diamond Bonus Spin');
+  expect(screen.queryByRole('button', { name: 'Use Bonus Spin' })).toBeNull();
+});

@@ -17,15 +17,15 @@ recommendation text says why, in as many words:
 > ranking: a loss-only total ranks situations by how often they occur in big
 > pots.
 
-The spike detector *is* that loss-only total. On 2026-09-13 it produced three
+The spike detector _is_ that loss-only total. On 2026-09-13 it produced three
 warnings and **every one of them was wrong**. Measured on the live seven-day
 window:
 
-| tag | mirrored EV | hands | win rate |
-| --- | --- | --- | --- |
-| `straight_into_flush_stackoff` | **+18.27** bb/hand | 2342 | 69.0% |
-| `nonnut_straight_stackoff` | **+27.18** bb/hand | 2080 | 78.9% |
-| `straight_into_flush_stackoff_won` | (the WIN side of the first pair) | | |
+| tag                                | mirrored EV                      | hands | win rate |
+| ---------------------------------- | -------------------------------- | ----- | -------- |
+| `straight_into_flush_stackoff`     | **+18.27** bb/hand               | 2342  | 69.0%    |
+| `nonnut_straight_stackoff`         | **+27.18** bb/hand               | 2080  | 78.9%    |
+| `straight_into_flush_stackoff_won` | (the WIN side of the first pair) |       |          |
 
 Those are two of the fleet's most profitable situations, and the third finding
 warned that **winning was happening more often than usual**. An agent following

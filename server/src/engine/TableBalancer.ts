@@ -1,3 +1,4 @@
+import { headsUpButtonSeat } from './headsUpButton.js';
 import { reportError } from '../services/errorReporter.js';
 
 /**
@@ -30,6 +31,8 @@ export interface BalancerTable {
    * the smallest stack. Omit / 0 to fall back to the stack-based heuristic.
    */
   buttonSeat?: number;
+  /** Actual prior natural BB required for an online heads-up projection. */
+  lastBigBlindSeat?: number;
   /**
    * 2026-09-12: chairs this table's tournament roster still holds that have no
    * live seat row. An unrecorded bust keeps its `tournament_players` chair
@@ -204,6 +207,13 @@ export function hopsToBigBlind(ringSeats: readonly number[], bbSeat: number, sea
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export class TableBalancer {
+  planOnlineBalance(
+    tables: readonly BalancerTable[],
+    profile: OnlineGeometryProfile
+  ): OnlineGeometryResult {
+    return planOnlineGeometry(tables, profile);
+  }
+
   private onEvent?: (event: TableBalancerEvent) => void;
 
   constructor(onEvent?: (event: TableBalancerEvent) => void) {
@@ -628,5 +638,519 @@ export class TableBalancer {
         reportError(err, 'TableBalancer.eventHandler');
       }
     }
+  }
+}
+
+/** Explicit opt-in pure planning. No receipt, financial permission or persistence. */
+export interface OnlineGeometryProfile {
+  policy: 'CLUB_ARENA_ONLINE_MTT_V1';
+  format: 'nlh' | 'plo4';
+  originalPlanId: string;
+  rosterVersion: string;
+  /** Original unbiased uint32 draws supplied/captured by the owning planner. */
+  randomDraws: readonly number[];
+  priorMoveCounts: Readonly<Record<string, number>>;
+  sourceRevision: 2;
+  /** Canonical complete active set, supplied by owner at a quiescent boundary. */
+  activeTableIds: readonly string[];
+}
+export type OnlineGeometryResult =
+  | { status: 'pending'; reason: string }
+  | {
+      status: 'planned';
+      policy: string;
+      originalPlanId: string;
+      rosterVersion: string;
+      moves: MoveInstruction[];
+      finalRosters: { tableId: string; players: BalancerPlayer[] }[];
+      objective: number[];
+      equallyRankedPlans: number | null;
+      completeAssignmentCount?: string;
+      sampling?: 'uniform_ordered_chairs';
+      consumedDraws: number[];
+    };
+
+/** Zero means BB on the next eligible hand, using the complete fixed roster. */
+export function projectedNaturalBB(
+  seats: readonly number[],
+  lastButton: number,
+  playerSeat: number,
+  lastBigBlindSeat?: number
+): number {
+  const ring = [...seats].sort((a, b) => a - b);
+  if (
+    ring.length < 2 ||
+    new Set(ring).size !== ring.length ||
+    !ring.includes(playerSeat) ||
+    !Number.isInteger(lastButton) ||
+    lastButton < 1
+  )
+    throw Error('projection_unknown');
+  if (ring.length === 2 && (!Number.isInteger(lastBigBlindSeat) || lastBigBlindSeat! < 1))
+    throw Error('heads_up_history_unknown');
+  let previousBB = lastBigBlindSeat;
+  let button = lastButton;
+  for (let hand = 0; hand < ring.length; hand++) {
+    button =
+      ring.length === 2
+        ? headsUpButtonSeat(ring, previousBB!)!
+        : (ring.find((s) => s > button) ?? ring[0]);
+    const index = ring.indexOf(button);
+    const bb = ring[(index + (ring.length === 2 ? 1 : 2)) % ring.length];
+    if (bb === playerSeat) return hand;
+    previousBB = bb;
+  }
+  throw Error('projection_unknown');
+}
+
+/** Exhaustive bounded optimizer. Exhaustion returns pending, never a best-so-far
+ * plan mislabeled optimal. Legacy methods above remain entirely unchanged. */
+export function planOnlineGeometry(
+  input: readonly BalancerTable[],
+  profile: OnlineGeometryProfile,
+  breakTableId?: string
+): OnlineGeometryResult {
+  try {
+    if (
+      profile.sourceRevision !== 2 ||
+      profile.policy !== 'CLUB_ARENA_ONLINE_MTT_V1' ||
+      !['nlh', 'plo4'].includes(profile.format) ||
+      !profile.originalPlanId ||
+      !profile.rosterVersion
+    )
+      throw Error('profile_required');
+    if (input.some((t) => t.players.length > 10 || (t.reservedSeats?.length ?? 0) > 10))
+      throw Error('field_input_budget_exhausted');
+    if (input.length > 2000) throw Error('field_input_budget_exhausted');
+    const tables = input
+      .map((t) => ({
+        ...t,
+        players: t.players.map((p) => ({ ...p })),
+        reservedSeats: [...(t.reservedSeats ?? [])],
+      }))
+      .sort((a, b) => a.tableId.localeCompare(b.tableId));
+    if (
+      !tables.length ||
+      tables.length > 2000 ||
+      new Set(tables.map((t) => t.tableId)).size !== tables.length
+    )
+      throw Error('roster_unknown');
+    const users = new Set<string>();
+    let historyTotal = 0n;
+    for (const t of tables) {
+      if (
+        !t.tableId ||
+        !Number.isInteger(t.maxSeats) ||
+        t.maxSeats < 2 ||
+        t.maxSeats > 10 ||
+        t.playerCount !== t.players.length ||
+        !Number.isInteger(t.buttonSeat) ||
+        t.buttonSeat! < 1 ||
+        t.buttonSeat! > t.maxSeats
+      )
+        throw Error('roster_unknown');
+      if (
+        t.lastBigBlindSeat !== undefined &&
+        (!Number.isInteger(t.lastBigBlindSeat) ||
+          t.lastBigBlindSeat < 1 ||
+          t.lastBigBlindSeat > t.maxSeats)
+      )
+        throw Error('prior_bb_out_of_domain');
+      const occupied = [...t.players.map((p) => p.seat), ...t.reservedSeats];
+      if (
+        new Set(occupied).size !== occupied.length ||
+        occupied.some((s) => !Number.isInteger(s) || s < 1 || s > t.maxSeats)
+      )
+        throw Error('occupancy_unknown');
+      for (const p of t.players) {
+        if (
+          !p.userId ||
+          users.has(p.userId) ||
+          !Number.isFinite(p.stack) ||
+          p.stack <= 0 ||
+          !Number.isSafeInteger(profile.priorMoveCounts[p.userId]) ||
+          profile.priorMoveCounts[p.userId] < 0
+        )
+          throw Error('player_history_unknown');
+        historyTotal += BigInt(profile.priorMoveCounts[p.userId]);
+        if (historyTotal > BigInt(Number.MAX_SAFE_INTEGER))
+          throw Error('aggregate_history_out_of_domain');
+        users.add(p.userId);
+      }
+    }
+    const activeIds = new Set(profile.activeTableIds);
+    const activeTables = tables.filter((t) => t.tableId !== breakTableId);
+    if (
+      activeIds.size !== profile.activeTableIds.length ||
+      profile.activeTableIds.length !== activeTables.length ||
+      activeTables.some((t) => !activeIds.has(t.tableId))
+    )
+      throw Error('active_set_mismatch');
+    const broken =
+      breakTableId === undefined ? -1 : tables.findIndex((t) => t.tableId === breakTableId);
+    if (breakTableId !== undefined && broken < 0) throw Error('source_unknown');
+    let visited = 0,
+      drawIndex = 0,
+      ties = 0;
+    const draws: number[] = [];
+    type Candidate = {
+      moves: MoveInstruction[];
+      objective: number[];
+    };
+    let best: Candidate | null = null;
+    const tick = () => {
+      if (++visited > 100_000) throw Error('search_budget_exhausted');
+    };
+    const randomBelow = (n: number) => {
+      if (n === 1) return 0;
+      const limit = Math.floor(0x100000000 / n) * n;
+      for (;;) {
+        tick();
+        const x = profile.randomDraws[drawIndex++];
+        if (!Number.isInteger(x) || x < 0 || x >= 0x100000000)
+          throw Error('random_input_exhausted_or_invalid');
+        draws.push(x);
+        if (x < limit) return x % n;
+      }
+    };
+    const compare = (a: number[], b: number[]) => {
+      for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] - b[i];
+      return 0;
+    };
+    const tableById = new Map(tables.map((t) => [t.tableId, t]));
+    const playerById = new Map(tables.flatMap((t) => t.players.map((p) => [p.userId, p] as const)));
+    const sourceProjection = new Map<string, number>();
+    const evaluate = (moves: MoveInstruction[]) => {
+      tick();
+      const destinationSeats = new Map<string, number[]>();
+      for (const m of moves) {
+        if (!destinationSeats.has(m.toTableId))
+          destinationSeats.set(
+            m.toTableId,
+            tableById.get(m.toTableId)!.players.map((p) => p.seat)
+          );
+        destinationSeats.get(m.toTableId)!.push(m.toSeat);
+      }
+      let sum = 0,
+        max = 0,
+        prior = 0;
+      if (broken < 0)
+        for (const m of moves) {
+          const source = tableById.get(m.fromTableId)!;
+          const destination = tableById.get(m.toTableId)!;
+          if (!sourceProjection.has(m.playerId))
+            sourceProjection.set(
+              m.playerId,
+              projectedNaturalBB(
+                source.players.map((p) => p.seat),
+                source.buttonSeat!,
+                m.fromSeat,
+                source.lastBigBlindSeat
+              )
+            );
+          const d = Math.abs(
+            sourceProjection.get(m.playerId)! -
+              projectedNaturalBB(
+                destinationSeats.get(m.toTableId)!,
+                destination.buttonSeat!,
+                m.toSeat,
+                destination.lastBigBlindSeat
+              )
+          );
+          sum += d;
+          max = Math.max(max, d);
+          prior += profile.priorMoveCounts[m.playerId];
+        }
+      const objective = broken < 0 ? [moves.length, sum, max, prior] : [moves.length];
+      const comparison = best ? compare(objective, best.objective) : -1;
+      if (comparison > 0) return;
+      if (comparison < 0) {
+        ties = 1;
+        best = { moves: moves.map((m) => ({ ...m })), objective };
+      } else if (randomBelow(++ties) === 0)
+        best = { moves: moves.map((m) => ({ ...m })), objective };
+    };
+    const assign = (
+      moving: { table: number; player: BalancerPlayer }[],
+      deficits: number[],
+      moves: MoveInstruction[]
+    ) => {
+      tick();
+      if (moves.length === moving.length) {
+        evaluate(moves);
+        return;
+      }
+      const current = moving[moves.length];
+      for (let i = 0; i < tables.length; i++) {
+        if (i === broken || deficits[i] <= 0) continue;
+        const t = tables[i];
+        for (let seat = 1; seat <= t.maxSeats; seat++) {
+          if (
+            t.players.some((p) => p.seat === seat) ||
+            t.reservedSeats.includes(seat) ||
+            moves.some((m) => m.toTableId === t.tableId && m.toSeat === seat)
+          )
+            continue;
+          deficits[i]--;
+          moves.push({
+            playerId: current.player.userId,
+            fromTableId: tables[current.table].tableId,
+            fromSeat: current.player.seat,
+            toTableId: t.tableId,
+            toSeat: seat,
+            reason: 'CLUB_ARENA_ONLINE_MTT_V1:' + (broken < 0 ? 'balance' : 'break'),
+          });
+          assign(moving, deficits, moves);
+          moves.pop();
+          deficits[i]++;
+        }
+      }
+    };
+    if (broken >= 0) {
+      const moving = tables[broken].players
+        .slice()
+        .sort((a, b) => a.userId.localeCompare(b.userId));
+      const chairs: { tableId: string; seat: number }[] = [];
+      const finalRosters = tables
+        .filter((_, i) => i !== broken)
+        .map((t) => ({
+          tableId: t.tableId,
+          players: t.players.map((p) => ({ ...p })),
+        }));
+      const destinations = new Map(finalRosters.map((t) => [t.tableId, t]));
+      for (const t of activeTables)
+        for (let seat = 1; seat <= t.maxSeats; seat++) {
+          tick();
+          if (!t.players.some((p) => p.seat === seat) && !t.reservedSeats.includes(seat))
+            chairs.push({ tableId: t.tableId, seat });
+        }
+      if (chairs.length < moving.length) throw Error('capacity_unavailable');
+      let count = 1n;
+      const moves: MoveInstruction[] = [];
+      for (let i = 0; i < moving.length; i++) {
+        tick();
+        count *= BigInt(chairs.length - i);
+        const pick = i + randomBelow(chairs.length - i);
+        [chairs[i], chairs[pick]] = [chairs[pick], chairs[i]];
+        const chair = chairs[i],
+          player = moving[i];
+        moves.push({
+          playerId: player.userId,
+          fromTableId: tables[broken].tableId,
+          fromSeat: player.seat,
+          toTableId: chair.tableId,
+          toSeat: chair.seat,
+          reason: 'CLUB_ARENA_ONLINE_MTT_V1:break',
+        });
+        destinations.get(chair.tableId)!.players.push({ ...player, seat: chair.seat });
+      }
+      return {
+        status: 'planned',
+        policy: profile.policy,
+        originalPlanId: profile.originalPlanId,
+        rosterVersion: profile.rosterVersion,
+        moves,
+        finalRosters,
+        objective: [moves.length],
+        equallyRankedPlans: count <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(count) : null,
+        completeAssignmentCount: count.toString(),
+        sampling: 'uniform_ordered_chairs',
+        consumedDraws: draws,
+      };
+    } else {
+      const low = Math.floor(users.size / tables.length),
+        high = Math.ceil(users.size / tables.length);
+      if (low < 2) throw Error('next_hand_roster_unknown');
+      // The validated original rosters already achieve the floor/ceil target.
+      // Zero moves is the unique minimum; it needs no target DP or random draw.
+      if (tables.every((t) => t.players.length >= low && t.players.length <= high)) {
+        return {
+          status: 'planned',
+          policy: profile.policy,
+          originalPlanId: profile.originalPlanId,
+          rosterVersion: profile.rosterVersion,
+          moves: [],
+          finalRosters: tables.map((t) => ({
+            tableId: t.tableId,
+            players: t.players,
+          })),
+          objective: [0, 0, 0, 0],
+          equallyRankedPlans: 1,
+          consumedDraws: [],
+        };
+      }
+      const targets: number[] = [];
+      const solveTargets = () => {
+        const excess = tables.map((t, i) => Math.max(0, t.players.length - targets[i]));
+        const deficits = tables.map((t, i) => Math.max(0, targets[i] - t.players.length));
+        const candidates = tables
+          .flatMap((t, i) =>
+            t.players
+              .slice()
+              .sort((a, b) => a.userId.localeCompare(b.userId))
+              .map((player) => ({ table: i, player }))
+          )
+          .filter((p) => excess[p.table] > 0);
+        const chosen: typeof candidates = [];
+        const choose = (index: number) => {
+          tick();
+          if (index === candidates.length) {
+            if (excess.every((x) => x === 0)) assign(chosen, deficits, []);
+            return;
+          }
+          choose(index + 1);
+          const x = candidates[index];
+          if (excess[x.table] > 0) {
+            excess[x.table]--;
+            chosen.push(x);
+            choose(index + 1);
+            chosen.pop();
+            excess[x.table]++;
+          }
+        };
+        choose(0);
+      };
+      // A high target reduces outgoing movement cost by exactly one iff
+      // this table is above low. All other high choices have zero benefit.
+      // Thus exact minimum movement uses as many beneficial highs as possible.
+      const highCount = users.size % tables.length;
+      const category = tables.map((t) => {
+        tick();
+        const capacity = t.maxSeats - t.reservedSeats.length;
+        if (capacity < low) throw Error('capacity_unavailable');
+        return high > low && capacity >= high ? (t.players.length > low ? 1 : 0) : -1;
+      });
+      const beneficial = new Int32Array(tables.length + 1);
+      const neutral = new Int32Array(tables.length + 1);
+      for (let i = tables.length - 1; i >= 0; i--) {
+        beneficial[i] = beneficial[i + 1] + (category[i] === 1 ? 1 : 0);
+        neutral[i] = neutral[i + 1] + (category[i] === 0 ? 1 : 0);
+      }
+      const wantedBeneficial = Math.min(highCount, beneficial[0]);
+      const wantedNeutral = highCount - wantedBeneficial;
+      if (wantedNeutral > neutral[0]) throw Error('capacity_unavailable');
+      const minimumMoves =
+        tables.reduce((sum, t) => sum + Math.max(0, t.players.length - low), 0) - wantedBeneficial;
+      if (minimumMoves === 1) {
+        // Every complete one-move plan changes only its source and destination.
+        // An unbalanced field has an outlier, so at least one side is fixed;
+        // this avoids enumerating equivalent whole-field target vectors.
+        const above = tables
+          .map((t, i) => (t.players.length > high ? i : -1))
+          .filter((i) => i >= 0);
+        const below = tables.map((t, i) => (t.players.length < low ? i : -1)).filter((i) => i >= 0);
+        const donors = tables
+          .map((t, i) => i)
+          .filter(
+            (i) =>
+              tables[i].players.length - 1 >= low &&
+              tables[i].players.length - 1 <= high &&
+              (above.length === 0 || (above.length === 1 && above[0] === i))
+          );
+        const receivers = tables
+          .map((t, i) => i)
+          .filter(
+            (i) =>
+              tables[i].players.length + 1 >= low &&
+              tables[i].players.length + 1 <= high &&
+              tables[i].players.length + 1 <= tables[i].maxSeats - tables[i].reservedSeats.length &&
+              (below.length === 0 || (below.length === 1 && below[0] === i))
+          );
+        for (const from of donors) {
+          tick();
+          const source = tables[from];
+          for (const player of source.players
+            .slice()
+            .sort((a, b) => a.userId.localeCompare(b.userId)))
+            for (const to of receivers) {
+              if (from === to) continue;
+              const destination = tables[to];
+              for (let seat = 1; seat <= destination.maxSeats; seat++) {
+                if (
+                  destination.players.some((p) => p.seat === seat) ||
+                  destination.reservedSeats.includes(seat)
+                )
+                  continue;
+                evaluate([
+                  {
+                    playerId: player.userId,
+                    fromTableId: source.tableId,
+                    fromSeat: player.seat,
+                    toTableId: destination.tableId,
+                    toSeat: seat,
+                    reason: 'CLUB_ARENA_ONLINE_MTT_V1:balance',
+                  },
+                ]);
+              }
+            }
+        }
+      } else {
+        // Enumerate every target meeting BOTH exact quotas, in canonical
+        // low-before-high order. Remaining suffix counts prune only impossibility.
+        const stack: {
+          index: number;
+          beneficialLeft: number;
+          neutralLeft: number;
+          nextChoice: number;
+        }[] = [
+          { index: 0, beneficialLeft: wantedBeneficial, neutralLeft: wantedNeutral, nextChoice: 0 },
+        ];
+        while (stack.length) {
+          tick();
+          const state = stack[stack.length - 1];
+          if (state.index === tables.length) {
+            solveTargets();
+            stack.pop();
+            targets.pop();
+            continue;
+          }
+          const options = high === low ? [low] : [low, high];
+          if (state.nextChoice === options.length) {
+            stack.pop();
+            if (state.index > 0) targets.pop();
+            continue;
+          }
+          const n = options[state.nextChoice++],
+            i = state.index;
+          if (n > low && category[i] === -1) continue;
+          const b = state.beneficialLeft - (n > low && category[i] === 1 ? 1 : 0);
+          const z = state.neutralLeft - (n > low && category[i] === 0 ? 1 : 0);
+          if (b >= 0 && z >= 0 && b <= beneficial[i + 1] && z <= neutral[i + 1]) {
+            targets.push(n);
+            stack.push({ index: i + 1, beneficialLeft: b, neutralLeft: z, nextChoice: 0 });
+          }
+        }
+      }
+    }
+    const proven = best as Candidate | null;
+    if (!proven) throw Error('no_complete_plan');
+    const moved = new Set(proven.moves.map((m) => m.playerId));
+    const arrivals = new Map<string, BalancerPlayer[]>();
+    for (const m of proven.moves) {
+      if (!arrivals.has(m.toTableId)) arrivals.set(m.toTableId, []);
+      arrivals.get(m.toTableId)!.push({ ...playerById.get(m.playerId)!, seat: m.toSeat });
+    }
+    const finalRosters = tables.map((t) => ({
+      tableId: t.tableId,
+      players: [
+        ...t.players.filter((p) => !moved.has(p.userId)).map((p) => ({ ...p })),
+        ...(arrivals.get(t.tableId) || []),
+      ],
+    }));
+    return {
+      status: 'planned',
+      policy: profile.policy,
+      originalPlanId: profile.originalPlanId,
+      rosterVersion: profile.rosterVersion,
+      ...proven,
+      finalRosters,
+      equallyRankedPlans: ties,
+      consumedDraws: draws,
+    };
+  } catch (error) {
+    return {
+      status: 'pending',
+      reason: error instanceof Error ? error.message : 'planning_unknown',
+    };
   }
 }

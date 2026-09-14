@@ -1443,7 +1443,7 @@ jobs:
         if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci
 
-      - name: Verify lazy chunk execution and cyclic bindings
+      - name: Verify production minifier execution and hidden maps
         run: node --test tests/operations/client-chunk-execution.test.mjs
 
       # 2026-09-04: the optimized rasters are content-addressed, so this is

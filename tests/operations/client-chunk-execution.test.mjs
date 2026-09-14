@@ -4,10 +4,20 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { rollup } from 'rollup';
+import { build, loadConfigFromFile } from 'vite';
+import { resolve } from 'node:path';
 
-// Real generated modules exercise the observable risk of chunk merging:
-// eagerly running lazy entries, reordering side effects, or breaking cycles.
+const loaded = await loadConfigFromFile(
+  { command: 'build', mode: 'production' },
+  resolve('vite.config.ts')
+);
+assert.ok(loaded);
+const configured = loaded.config.build;
+assert.equal(configured.minify, 'terser');
+assert.equal(configured.rollupOptions.output.experimentalMinChunkSize, undefined);
+
+// Real Vite-generated modules compare the configured production minifier with
+// an unminified control: lazy execution, cycles, caching and license retention.
 // This is a small disposable module graph, never an application build/install.
 const modules = {
   entry: `import {events} from 'state';
@@ -15,7 +25,7 @@ const modules = {
     export const loadA = () => import('a');
     export const loadB = () => import('b');`,
   state: 'export const events = [];',
-  shared: `export const meaning = () => 42;`,
+  shared: `/*! @license owned-regression-fixture */ export const meaning = () => 42;`,
   a: `import {events} from 'state'; import {meaning} from 'shared';
     import {left} from 'left'; events.push('a');
     export const value = meaning() + left();`,
@@ -27,35 +37,58 @@ const modules = {
     export const right = () => name.length;`,
 };
 
-async function execute(size, order) {
+async function execute(minified, order) {
   const directory = await mkdtemp(join(tmpdir(), 'ca-chunk-order-'));
-  let bundle;
   try {
-    bundle = await rollup({
-      input: 'entry',
+    const { output } = await build({
+      configFile: false,
+      root: resolve('.'),
+      envFile: false,
+      base: './',
+      logLevel: 'silent',
+      esbuild: loaded.config.esbuild,
+      define: loaded.config.define,
       plugins: [
         {
           name: 'owned-virtual-graph',
           resolveId(id) {
-            return Object.hasOwn(modules, id) ? id : null;
+            return Object.hasOwn(modules, id) ? '\0' + id : null;
           },
           load(id) {
-            return modules[id];
+            return modules[id.slice(1)];
           },
         },
       ],
-      onwarn(warning) {
-        if (warning.code !== 'CIRCULAR_DEPENDENCY') throw new Error(warning.code);
+      build: {
+        minify: minified ? configured.minify : false,
+        terserOptions: configured.terserOptions,
+        modulePreload: false,
+        sourcemap: 'hidden',
+        write: false,
+        rollupOptions: {
+          input: 'entry',
+          preserveEntrySignatures: 'strict',
+          onwarn(warning) {
+            if (warning.code !== 'CIRCULAR_DEPENDENCY') throw new Error(warning.code);
+          },
+          output: {
+            format: 'es',
+            entryFileNames: 'entry.mjs',
+            chunkFileNames: '[name]-[hash].mjs',
+          },
+        },
       },
     });
-    const { output } = await bundle.generate({
-      format: 'es',
-      entryFileNames: 'entry.mjs',
-      chunkFileNames: '[name]-[hash].mjs',
-      experimentalMinChunkSize: size,
-    });
+    assert.ok(output.some((chunk) => chunk.type === 'asset' && chunk.fileName.endsWith('.map')));
+    assert.ok(
+      output.some(
+        (chunk) =>
+          chunk.type === 'chunk' && chunk.code.includes('@license owned-regression-fixture')
+      )
+    );
     for (const chunk of output) {
-      assert.equal(chunk.type, 'chunk');
+      if (chunk.type !== 'chunk') continue;
+      assert.ok(!chunk.code.includes('sourceMappingURL='));
       assert.match(chunk.fileName, /^[A-Za-z0-9_-]+\.mjs$/);
       await writeFile(join(directory, chunk.fileName), chunk.code, { flag: 'wx' });
     }
@@ -67,7 +100,6 @@ async function execute(size, order) {
     }
     return observed;
   } finally {
-    await bundle?.close();
     await rm(directory, { recursive: true, force: true });
   }
 }
@@ -76,9 +108,9 @@ for (const order of [
   ['a', 'b', 'a'],
   ['b', 'a', 'b'],
 ]) {
-  test(`small chunks preserve lazy side effects, live cycle bindings and cached imports: ${order}`, async () => {
-    const original = await execute(1, order);
-    const combined = await execute(4096, order);
+  test(`configured minifier preserves lazy execution, cycles, cached imports, license and hidden maps: ${order}`, async () => {
+    const original = await execute(false, order);
+    const combined = await execute(true, order);
     assert.deepEqual(combined, original);
     assert.deepEqual(combined[0], { events: ['entry'] });
     assert.deepEqual(combined[1].events, ['entry', order[0]]);

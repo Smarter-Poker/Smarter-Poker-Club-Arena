@@ -1,0 +1,9 @@
+# Mystery creation contract fixture
+
+Run `python3 scripts/dev/probe-mystery-creation-pg17.py` with an existing PostgreSQL 17 installation. `POKER_AUDIT_PG_BIN` can identify its binary directory. The runner creates one private Unix-socket cluster, never accepts a database URL, stops the cluster and removes its database directory in `finally`. It preserves only the small result/log directory printed on completion.
+
+`baseline.json` captures the installed authenticated creator, separate mystery setter and registered-contract guard observed September 14, 2026, at 10:20 UTC. `managed-contract.sql` is the installed contract-document projection. `managed-lifecycle.sql` captures the additional existing lifecycle guard at 10:33 UTC. `candidate.sql` is the exact expected creator definition after the actual migration. `source-contract.json` binds its original and replacement function-body fingerprints; the migration refuses an unreviewed original body.
+
+The fixture reproduces the original silent loss of selected settings, then executes the actual migration twice. It tests exact default/custom terms and decimal complements, malformed contracts, failed/skipped/replaced/AFTER-trigger writes, authorization and anonymous denial, ordinary paid depth, registered contract protection and metadata immutability after activation. Two real database sessions demonstrate the legacy setter observing pending status, waiting on the exact tournament row, then refusing after activation commits.
+
+The tournament table is intentionally minimal. Authentication, club authorization and delegated creation are explicit stand-ins. The installed outer creator, registered/lifecycle guards, legacy setter and candidate migration execute unchanged. This does **not** exercise the entire production trigger graph, funded entry ledger, dealer, payout provider, HTTP retry path or production tournament. Eleven passing groups are scoped database evidence, never full MTT certification.

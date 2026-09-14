@@ -37,6 +37,7 @@ import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
 import { buyInFor, freeBuyColumns, rakeRateFor, wholeChips } from '../config/buyIn.js';
 import { mttBountyAmount } from '../tournament/mttBountyAllocation.js';
+import { mysteryBountyCreationColumns } from '../domain/mysteryBountyCreation.js';
 import { TournamentRecurringService, MTT_PUBLISH_LEAD_MS } from './TournamentRecurringService.js';
 import {
   MTT_BLIND_PRESETS,
@@ -1196,6 +1197,7 @@ export class ScheduledTournamentService {
       is_bounty: isBountyType,
       is_pko: type === 'progressive_bounty',
       is_mystery_bounty: type === 'mystery_bounty',
+      ...(type === 'mystery_bounty' ? mysteryBountyCreationColumns(cfg) : {}),
       bounty_amount: bountyAmount,
       mystery_bounty_min: mysteryMin,
       mystery_bounty_max: mysteryMax,
@@ -1382,6 +1384,12 @@ export class ScheduledTournamentService {
     'is_mystery_bounty',
     'mystery_bounty_min',
     'mystery_bounty_max',
+    'mystery_bounty_profile',
+    'mystery_bounty_activation',
+    'mystery_bounty_activation_value',
+    'mystery_bounty_pool_percent',
+    'mystery_bounty_regular_pool_percent',
+    'mystery_bounty_top_percent',
     'spin_type',
     'satellite_target_id',
     'satellite_seats',

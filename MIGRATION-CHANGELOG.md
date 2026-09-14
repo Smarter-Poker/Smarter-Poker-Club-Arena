@@ -1,3 +1,7 @@
+## 2026-09-14: Mystery settings commit with original creation
+
+**Files/lines:** TournamentService original1018/1287–1320; ScheduledTournamentService original1200/1382; TournamentRecurringService original3874/4110; shared mystery creation decoder; migration20260914102150; caller/native fixtures. **What existed:** manual creation silently accepted a failed second configuration request; scheduled/recurring/repeat paths lost selected mystery settings. **What changed:** one validated creation contract, same-transaction persistence and exact receipt, six columns on original engine inserts and repeat copies, and a row guard that rejects post-activation settings races. Existing funding, payouts, authority and defaults remain intact. **Why:** selected terms must be durable before players can enter. **Verified:** YES, source reread, 23original counterexamples, 5,614engine/363files, 167client/7files and11native groups pass. **TypeScript:** serverPASS; local application blocked by missing mobile packages, requiredCI pending. No production installation or full MTT certification claimed. See docs/changelog/2026-09-14-atomic-mystery-creation.md.
+
 ## 2026-09-14: Scheduled MTT starts do not wait for unrelated funding
 
 **Files/lines:** server/src/GameServer.ts original2442/7626; server/src/tournament/ScheduledStartDiscoveryIsolation.test.ts; server/src/tournament/SpinStartsInOneSecondAndPlaysInFull.test.ts original99.

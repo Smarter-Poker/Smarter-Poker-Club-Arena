@@ -301,6 +301,15 @@ export interface CashGameJoinResult {
 export async function joinCashGame(gameId: string): Promise<CashGameJoinResult> {
   const { data, error } = await supabase.rpc('fn_cash_game_join', { p_game_id: gameId });
   if (error) throw error;
+  if (data?.ok !== true) {
+    throw new Error(String(data?.reason ?? data?.action ?? 'Game admission was not confirmed'));
+  }
+  if (
+    !['seat', 'seated', 'waitlisted'].includes(data.action) ||
+    (data.action !== 'waitlisted' && (typeof data.table_id !== 'string' || !data.table_id.trim()))
+  ) {
+    throw new Error('Game admission did not name a destination or queue place');
+  }
   return data as CashGameJoinResult;
 }
 

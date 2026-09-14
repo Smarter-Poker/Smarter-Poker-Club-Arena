@@ -1,6 +1,7 @@
 {
   "_owner": "Horse Brain Phase 14 tuner audit boundary",
-  "tables": {
+  "tables": ["horse_tuner_write_receipts"],
+  "columns": {
     "horse_tuner_write_receipts": [
       "horse_id",
       "run_date",

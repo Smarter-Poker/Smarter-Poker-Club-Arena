@@ -49,6 +49,73 @@ beforeEach(() => {
   m.prepare.mockReturnValue(batch);
 });
 describe('durable observation acquisition client', () => {
+  it.each(['matched', 'missing', 'wrong'])(
+    'requires the negotiated source witness receipt: %s',
+    async (receipt) => {
+      const original = m.reply.getMockImplementation()!;
+      m.read.mockResolvedValue({
+        status: 'snapshot',
+        version: 1,
+        actorKey: 'a'.repeat(64),
+        observations: [],
+        rejected: {},
+        source: {
+          coverage: 'retained_committed_roster_rows',
+          acceptance: 'atomic_hand_receipts',
+          fromMs: 1000,
+          throughMs: 2000,
+          readAtMs: 3000,
+          snapshotId: '100:102:101',
+          hands: 2,
+          sourceBytes: 42,
+          sourceDigest: 'b'.repeat(64),
+        },
+      });
+      m.reply.mockImplementation(async (name, p) => {
+        const r = await original(name, p);
+        if (name.includes('claim')) r.data.sourceWitnessVersion = 1;
+        else if (name.includes('finish'))
+          r.data.sourceWitnessDigest =
+            receipt === 'matched'
+              ? createHash('sha256').update(p.p_source_witness).digest('hex')
+              : receipt === 'wrong'
+                ? 'd'.repeat(64)
+                : undefined;
+        return r;
+      });
+      expect((await processOne()).status).toBe(receipt === 'matched' ? 'admitted' : 'unknown');
+      expect(m.rpc.mock.calls[1][0]).toBe('fn_finish_horse_observation_capture_witness');
+      expect(JSON.parse(m.rpc.mock.calls[1][1].p_source_witness)[5]).toBe('100:102:101');
+    }
+  );
+  it('defers unavailable source provenance without sending an unwitnessed payload', async () => {
+    const original = m.reply.getMockImplementation()!;
+    m.reply.mockImplementation(async (name, p) => {
+      if (name.includes('claim')) {
+        const r = await original(name, p);
+        r.data.sourceWitnessVersion = 1;
+        return r;
+      }
+      expect(p.p_payload).toBeNull();
+      expect(p.p_source_witness).toBeNull();
+      expect(p.p_reason).toBe('source_unavailable');
+      return {
+        data: { version: 1, status: 'deferred', requestKey: key, reason: 'source_unavailable' },
+        error: null,
+      };
+    });
+    expect((await processOne()).status).toBe('deferred');
+  });
+  it('refuses an unknown witness capability before source access', async () => {
+    const original = m.reply.getMockImplementation()!;
+    m.reply.mockImplementation(async (name, p) => {
+      const r = await original(name, p);
+      r.data.sourceWitnessVersion = 2;
+      return r;
+    });
+    expect((await processOne()).status).toBe('unavailable');
+    expect(m.read).not.toHaveBeenCalled();
+  });
   it('durably admits before any source read and freezes its returned identity', async () => {
     const r = await admit(request);
     expect(r).toEqual({ status: 'durable', requestKey: key, state: 'queued' });

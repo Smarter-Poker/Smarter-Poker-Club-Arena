@@ -17376,3 +17376,7 @@ Hand-for-hand retains synchronized/add-on break pauses, preserves their budgets 
 **Why:** Establish current concurrent conservation and immutable replay without treating historical wrapper evidence as current or leaving temporary schema changes behind. Three960fixture events remain as approved; no production or resource-cleanup actions.
 
 **TypeScript:** Not applicable, native SQL/Python rehearsal and evidence only. Full terminal and production gates remain open.
+
+## 2026-09-14: Encode the same blind presets with less repeated data
+
+**File/lines:** src/config/blindStructures.ts original23–179; tests/unit/blindPresetEncoding.test.ts and immutable preimage fixture. **What existed:**135literal level objects repeated field names and computed big blinds. **What changed:**compact small-blind/ante tuples reconstruct identical objects, preserving the exported shape, allJSONbytes, duration/break and distinctrowidentity. **Why:** R23required build gate refused2601kBgz at2600; reduce repeated preset data without removing behavior. **Verified:**YES,303checks/10files; isolatedmoduleminified10855→3312bytes/gzip1397→867. **TypeScript:**26byte-identical existing client missing-native-package diagnostics, not a full pass. Full bundle/CI verification remains required; no gate ceiling changed.

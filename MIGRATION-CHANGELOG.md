@@ -1,3 +1,10 @@
+## 2026-09-14: Preview actual MTT rules before Save or Start
+
+**Files:** TableConfigPage, MttCreationStructurePreview and rendered preview tests.
+**What existed:** the form selected a Standard/Slow ramp independently from its three-minute clock and1000-chip stack without showing the effective50-BB Turbo structure.
+**What changed:** preview the actual creation mapper payload through the engine structure description; live speed, clock and BB depth remain independent, including satellite and restored drafts. No new request, timer or rule mutation.
+**Verified:**53client cases/3files and appTypeScript pass. Fullbrowser, protectedCI and serving remain open. See docs/changelog/2026-09-14-mtt-creation-structure-preview.md.
+
 ## 2026-09-14: MTT clock speed and starting depth share engine facts
 
 **Files:** server tournament mttStructureDescription/mttStructurePolicy; overview, satellite mapper, tournament lobby page/card and main lobby entries; their focused tests and card clock wrapping.

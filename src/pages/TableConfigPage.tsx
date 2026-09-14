@@ -46,6 +46,7 @@ import { HelpPopover } from '../components/common/HelpPopover';
 import { Toggle, Slider, NumberField } from '../components/table-config/controls';
 import CashGameCreateFlow from '../components/cash/CashGameCreateFlow';
 import { SpadeConsole } from '../components/console/SpadeConsole';
+import { MttCreationStructurePreview } from '../components/tournament/MttCreationStructurePreview';
 import {
   FREE_BUY_ADDON_COST,
   FREE_BUY_HELPER,
@@ -1366,6 +1367,8 @@ export default function TableConfigPage({
               max={15}
               suffix=" min"
             />
+
+            <MttCreationStructurePreview config={config} gameType={gameType} />
 
             <Toggle
               label="Big Blind Ante"

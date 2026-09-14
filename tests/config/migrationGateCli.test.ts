@@ -22,6 +22,112 @@ function put(p: string, text: string) {
 }
 const cases = [
   {
+    name: 'unsupported_changed_drop_still_fails_closed',
+    prior: '-- baseline',
+    now: 'DROP TABLE other.x;',
+    tables: [],
+    columns: {},
+    expected: 2,
+  },
+  {
+    name: 'older_declaration_retired_by_a_migration_already_on_main',
+    prior: '-- baseline',
+    now: 'CREATE FUNCTION public.old_game() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;',
+    history: { '20260913000000_retire.sql': 'DROP FUNCTION public.old_game();' },
+    tables: [],
+    functions: [],
+    columns: {},
+    expected: 0,
+  },
+  {
+    name: 'older_column_renamed_by_a_migration_already_on_main',
+    prior: '-- baseline',
+    now: 'ALTER TABLE public.config ADD COLUMN free_spin boolean;',
+    history: {
+      '20260913000000_rename.sql':
+        'ALTER TABLE public.config RENAME COLUMN free_spin TO welcome_spin;',
+    },
+    tables: ['config'],
+    columns: { config: ['welcome_spin'] },
+    expected: 0,
+  },
+  {
+    name: 'earlier_drop_cannot_hide_new_missing_function',
+    prior: '-- baseline',
+    now: 'CREATE FUNCTION public.game() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;',
+    history: { '20260911000000_retire.sql': 'DROP FUNCTION public.game();' },
+    tables: [],
+    functions: [],
+    columns: {},
+    expected: 1,
+  },
+  {
+    name: 'later_recreation_still_requires_the_function_to_exist',
+    prior: '-- baseline',
+    now: 'CREATE FUNCTION public.game() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;',
+    history: {
+      '20260913000000_recreate.sql':
+        'DROP FUNCTION public.game(); CREATE FUNCTION public.game() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;',
+    },
+    tables: [],
+    functions: [],
+    columns: {},
+    expected: 1,
+  },
+  {
+    name: 'historical_retirement_does_not_hide_a_different_missing_function',
+    prior: '-- baseline',
+    now: 'CREATE FUNCTION public.new_game() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;',
+    history: {
+      '20260913000000_retire.sql':
+        'DROP FUNCTION public.old_game(); CREATE TABLE other.outside_scope(id int);',
+    },
+    tables: [],
+    functions: [],
+    columns: {},
+    expected: 1,
+  },
+  {
+    name: 'commented_retirement_does_not_hide_missing_function',
+    prior: '-- baseline',
+    now: 'CREATE FUNCTION public.game() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;',
+    history: { '20260913000000_comment.sql': '-- DROP FUNCTION public.game();' },
+    tables: [],
+    functions: [],
+    columns: {},
+    expected: 1,
+  },
+  {
+    name: 'temporary_helper_is_not_a_persistent_manifest_object',
+    prior: '-- baseline',
+    now: `CREATE FUNCTION pg_temp.patch() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;
+          DROP FUNCTION pg_temp.patch();
+          CREATE FUNCTION public.game() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;`,
+    tables: [],
+    functions: ['game'],
+    columns: {},
+    expected: 0,
+  },
+  {
+    name: 'temporary_drop_does_not_hide_missing_persistent_function',
+    prior: '-- baseline',
+    now: `CREATE FUNCTION pg_temp.game() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;
+          DROP FUNCTION pg_temp.game();
+          CREATE FUNCTION public.game() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;`,
+    tables: [],
+    functions: [],
+    columns: {},
+    expected: 1,
+  },
+  {
+    name: 'temporary_objects_do_not_disable_other_schema_rejection',
+    prior: '-- baseline',
+    now: 'CREATE TABLE pg_temp.x(id int); CREATE TABLE other.x(id int);',
+    tables: [],
+    columns: {},
+    expected: 2,
+  },
+  {
     name: 'unicode_upper_function_missing',
     prior: '-- baseline',
     now: 'CREATE FUNCTION smarter_private.CAFÉ() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;',
@@ -168,6 +274,9 @@ for (const c of cases)
     try {
       const migration = path.join(dir, 'supabase/migrations/20260912000000_probe.sql');
       put(migration, c.prior);
+      if ('history' in c && c.history)
+        for (const [name, sql] of Object.entries(c.history))
+          put(path.join(dir, 'supabase/migrations', name), sql as string);
       put(
         path.join(dir, 'scripts/ci/supabase-schema-manifest.json'),
         JSON.stringify({

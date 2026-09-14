@@ -36,6 +36,8 @@ The live proof exposed and repaired two inherited integration boundaries: the pr
 
 Protected CI, publisher completion, and public-route verification must be recorded separately. Database and local evidence are not a frontend release claim.
 
+The first protected CI run exposed two migration-checker errors: session-local `pg_temp` patch helpers were treated as persistent objects, and the checker ignored a later retirement migration already on main. The checker now excludes only explicit temporary-schema objects and follows later drops, recreations and column renames in migration order. The live catalog confirmed the old free-spin functions were retired and `welcome_spin_enabled` replaced `free_spin_enabled`; no missing object was added to the manifest to silence the check. All 26 branch migrations pass, with 79 parser, command-line and manifest regression checks covering the failure and negative controls.
+
 ## Next Wheel Phase
 
 The user reserved the final wheel design and reward instructions for the next phase. This change does not invent its segment weights, item costs, VIP eligibility grants, or prepaid wheel-to-bonus ticket contract. The existing wheel remains while those instructions are pending; the 25–2,500 entry control in this change belongs to the four bonus games. A prepaid wheel ticket must replace that game's base debit, never charge the same base twice.

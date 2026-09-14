@@ -176,7 +176,7 @@ describe('sit down from the wallet (phase 3)', () => {
 
   it('a short player is sent to the store carrying a validated way back', () => {
     expect(page).toContain(
-      'navigate(`/marketplace?tab=diamonds&next=${encodeURIComponent(`/clubs/${DIAMOND_ARENA_SLUG}`)}`)'
+      '`/marketplace?tab=diamonds&next=${encodeURIComponent(`/clubs/${DIAMOND_ARENA_SLUG}`)}`'
     );
     expect(page).toContain('onClick={short > 0 ? onBuyToSitDown : onArena}');
     expect(market).toContain("import { safeInAppRedirect } from '../lib/signIn';");
@@ -199,9 +199,16 @@ describe('sit down from the wallet (phase 3)', () => {
     expect(onward).not.toMatch(/window\.location/);
   });
 
-  it('the freeroll countdown reads only while the plates are on screen and the arena exists', () => {
+  it("the freeroll countdown is the Home card's own clock, read only while the plate is mounted", () => {
     expect(page).toContain(
-      "useNextDiamondFreeroll(activeTab === 'overview' && Boolean(walletSummary?.arena))"
+      "import { useDiamondFreerollCountdown } from '../hooks/useNextDiamondFreeroll';"
     );
+    expect(page).toContain(
+      'nextFreerollAt !== undefined ? nextFreerollAt : arena ? undefined : null'
+    );
+    // No component cross-import: DiamondArenaCard carries ClubCardPanel.css,
+    // which must not reach the wallet bundle.
+    expect(page).not.toContain('components/club/DiamondArenaCard');
+    expect(page).not.toContain('function useCountdown');
   });
 });

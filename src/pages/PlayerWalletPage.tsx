@@ -53,8 +53,7 @@ import {
   type DiamondWalletSummary,
 } from '../services/DiamondService';
 import { DIAMOND_ARENA_SLUG } from '../lib/constants';
-import { useNextDiamondFreeroll } from '../hooks/useNextDiamondFreeroll';
-import { formatFreerollCountdown } from '../components/club/DiamondArenaCard';
+import { useDiamondFreerollCountdown } from '../hooks/useNextDiamondFreeroll';
 import { storeFetch } from './marketplace/marketplaceShared';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { formatPopupText } from '../utils/popupStyle';
@@ -192,22 +191,6 @@ function useAnimatedNumber(target: number, duration = 800) {
   }, [safeTarget, duration]);
 
   return display;
-}
-
-/**
- * A once-a-second countdown to an epoch instant, formatted like the Diamond
- * Arena card's freeroll timer. Null when there is nothing to count to, and
- * "0:00" the moment it arrives (the freeroll hook re-reads then).
- */
-function useCountdown(target: number | null): string | null {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (target === null) return;
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, [target]);
-  if (target === null) return null;
-  return formatFreerollCountdown(Math.max(0, Math.floor((target - now) / 1000)));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -367,8 +350,12 @@ export function DiamondPlate({
 }: {
   diamonds: number;
   summary: DiamondWalletSummary | null | undefined;
-  /** Epoch ms of the next Diamond Arena freeroll, or null when none. */
-  nextFreerollAt: number | null;
+  /**
+   * Test seam for the freeroll clock: a number or null fixes the start and
+   * issues no read; omitted, the plate reads the next freeroll itself while
+   * it is mounted (the Overview tab), and only when the arena exists.
+   */
+  nextFreerollAt?: number | null;
   onBuy: () => void;
   onBuyToSitDown: () => void;
   onArena: () => void;
@@ -391,7 +378,12 @@ export function DiamondPlate({
       : arenaOpen
         ? 'Sit Down In The Diamond Arena'
         : 'Diamond Arena Opens Soon';
-  const freerollIn = useCountdown(nextFreerollAt);
+  /* One database read a minute, one tick a second, a re-read when the clock
+     runs out - the same countdown the Home card runs. */
+  const freeroll = useDiamondFreerollCountdown(
+    nextFreerollAt !== undefined ? nextFreerollAt : arena ? undefined : null
+  );
+  const freerollIn = freeroll.startsAt == null ? null : freeroll.text;
   return (
     <article
       className="wallet-plate diamonds"
@@ -1138,11 +1130,6 @@ export default function PlayerWalletPage() {
     navigate(
       `/marketplace?tab=diamonds&next=${encodeURIComponent(`/clubs/${DIAMOND_ARENA_SLUG}`)}`
     );
-  /* The next freeroll is the one free way in; read only while the plates are
-     on screen and the arena is known to exist. */
-  const freeroll = useNextDiamondFreeroll(
-    activeTab === 'overview' && Boolean(walletSummary?.arena)
-  );
 
   const escrow = balances.PLAYER.locked;
 
@@ -1303,7 +1290,6 @@ export default function PlayerWalletPage() {
             <DiamondPlate
               diamonds={diamonds}
               summary={walletSummary}
-              nextFreerollAt={freeroll.startsAt}
               onBuy={goBuyDiamonds}
               onBuyToSitDown={goBuyDiamondsToSitDown}
               onArena={goDiamondArena}

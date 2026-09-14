@@ -206,7 +206,7 @@ const sqlTag = (key: string, consumer: string, note: string, since: string): Led
 });
 
 export const TAG_CONSUMERS: LedgerEntry[] = [
-  // Omaha stack-offs -> V40 pressure cap (PLO_STACKOFF_TAGS) + tuner dials
+  // Omaha stack-off diagnostics; proposals do not authorize policy adjustments.
   tag(
     'nonnut_flush_stackoff',
     'HorseLogic.ploStackoffLoad / nlhStackoffLoad; HorseSelfTuner (stackoff gate)',
@@ -243,7 +243,7 @@ export const TAG_CONSUMERS: LedgerEntry[] = [
     'top pair no redraw, 100bb+',
     'V38'
   ),
-  // hold em stack-offs -> V41 heat into the V20 cap (NLH_STACKOFF_TAGS)
+  // Hold em stack-off diagnostics (NLH_STACKOFF_TAGS).
   tag(
     'top_pair_weak_kicker_stackoff',
     'HorseLogic.nlhStackoffLoad / tourneyStackoffLoad',
@@ -269,7 +269,7 @@ export const TAG_CONSUMERS: LedgerEntry[] = [
     'V21'
   ),
   tag('underfull_stackoff', 'HorseLogic.nlhStackoffLoad', 'bottom boat', 'V21'),
-  // river wars -> V41 respect + war gate (RIVER_WAR_TAGS)
+  // River escalation diagnostics (RIVER_WAR_TAGS).
   tag(
     'river_raise_war',
     'HorseLogic.riverWarLoad',
@@ -282,9 +282,9 @@ export const TAG_CONSUMERS: LedgerEntry[] = [
     'bet the river, called a raise, lost',
     'V23'
   ),
-  // limped pots -> V41 limped-pot cap (LIMP_BLOAT_TAGS)
+  // Limped-pot diagnostics (LIMP_BLOAT_TAGS).
   tag('limped_pot_bloat', 'HorseLogic.limpBloatLoad', 'entered for one blind, lost 40bb+', 'V23'),
-  // preflop -> tuner tightness + V41 tournament premium
+  // Preflop audit proposals, including the historical tournament premium.
   tag(
     'preflop_stackoff',
     'HorseSelfTuner (preflop gate); HorseLogic.tourneyStackoffLoad',
@@ -580,7 +580,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   flag(
     'v41Leaks',
-    'the rest of the tag table reaches a decision: hold em stack-off load, river-war load, limp-bloat load, by variant family',
+    'diagnostic telemetry for ignored historical review fields; never authorizes policy or sampling changes',
     'V41'
   ),
 
@@ -598,17 +598,6 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
       ['thinkRange', 'think-time band for V9 timing'],
       ['callRespect', 'variant call respect offset (HorseVariantProfile)'],
       ['familyBias', 'V18 sizing family hashed from the horse id'],
-      [
-        'ploStackoffLoad',
-        'V40: this horse own Omaha stack-off tag rate (profile leaks / leaksHands)',
-      ],
-      ['nlhStackoffLoad', 'V41: this horse own hold em stack-off tag rate (leaksHoldem)'],
-      ['riverWarLoad', 'V41: river raise-war / paid-off tag rate for this hand family'],
-      ['limpBloatLoad', 'V41: limped-pot bloat tag rate for this hand family'],
-      [
-        'tourneyLeakPremium',
-        'V41: extra ICM survival premium for a horse tagged for event stack-offs (leaksTournament)',
-      ],
     ] as const
   ).map(
     ([key, note]): LedgerEntry => ({
@@ -618,17 +607,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
       cadence: 'per_action',
       consumer: 'HorseLogic.decide / HorsePreflop.decidePreflopV7',
       note,
-      since:
-        key === 'ploStackoffLoad'
-          ? 'V40'
-          : key === 'nlhStackoffLoad' ||
-              key === 'riverWarLoad' ||
-              key === 'limpBloatLoad' ||
-              key === 'tourneyLeakPremium'
-            ? 'V41'
-            : key === 'familyBias'
-              ? 'V18'
-              : 'V2',
+      since: key === 'familyBias' ? 'V18' : 'V2',
     })
   ),
 
@@ -676,7 +655,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
         key === 'persona'
           ? 'HorsePersona.resolvePersona (ServerTableEngineDealing straddle round); HorseLogic.followsSolver (the GTO consult)'
           : key.startsWith('leaks')
-            ? 'HorseLogic.leakLoad'
+            ? 'HorseLogic.leakLoad (diagnostic only); HorseLogic.decide (ignored-evidence receipt)'
             : 'HorseLogic.decide',
       note,
       since,
@@ -848,7 +827,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   table(
     'horse_review_rollup',
     'nightly',
-    'HorseSelfTuner (leak counts -> dials and the V40 leak profile)',
+    'HorseSelfTuner (unapplied review proposals); HorseTunerObservationalAudit (preserved profile)',
     'per horse/day/variant tag counts',
     'V18',
     { dayColumn: 'day', freshnessDays: 2 }
@@ -1544,23 +1523,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'decide_omaha',
     0.0001
   ),
+
   receipt(
-    'v40_leak_profile_read',
-    'HorseLogic (V40)',
-    'the horse own review tags changed a decision; needs tuner-written leaks',
-    'V40'
-  ),
-  receipt(
-    'v41_nlh_leak_read',
-    'HorseLogic (V41)',
-    'a hold em horse tagged for stack-offs read a single big bet as pressure; needs tuner-written leaksHoldem',
-    'V41'
-  ),
-  receipt(
-    'v41_river_war_read',
-    'HorseLogic (V41)',
-    'a horse tagged for river raise wars gave a river raise more respect; needs tuner-written leaks',
-    'V41'
+    'phase14_review_signal_ignored',
+    'HorseLogic.decide',
+    'historical review fields were present and excluded from decision adjustments; diagnostic only',
+    'Phase14'
   ),
   receipt(
     'phase5_canonical_state',
@@ -2247,18 +2215,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'a river big bet was priced by its tempo; needs a player with five snap or tank showdowns',
     'V43'
   ),
-  receipt(
-    'v41_tourney_leak_read',
-    'HorseLogic (V41)',
-    'a horse tagged for event stack-offs paid extra ICM premium; tournament volume only, needs tuner-written leaksTournament',
-    'V41'
-  ),
-  receipt(
-    'v41_limp_bloat_*',
-    'HorseLogic (V41)',
-    'read / cap: a horse tagged for limped-pot bloat, in a limped pot, facing a big bet; needs tuner-written leaks',
-    'V41'
-  ),
+
   // TAGS. Every leak tag the review system emits, with its reader.
   ...TAG_CONSUMERS,
 ];

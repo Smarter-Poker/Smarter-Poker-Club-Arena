@@ -225,19 +225,19 @@ describe('HorseDataLedger - the contract holds against the source', () => {
         `resolveHorseStyle parses horse_profile.${k} but the ledger has no profile row`
       ).toBe(true);
     }
-    // what the tuner writes
+    // What the tuner proposes; persistence authorization is tested at the actual writer.
     const tuner = read('services/HorseSelfTuner.ts');
     const wStart = tuner.indexOf('const newProfile = {');
     const wEnd = tuner.indexOf('};', wStart);
     const written = tuner.slice(wStart, wEnd);
     for (const key of ['leaks', 'leaksHands']) {
-      expect(written.includes(key), `the tuner no longer writes ${key}`).toBe(true);
+      expect(written.includes(key), `the tuner no longer proposes ${key}`).toBe(true);
       expect(
         parsed.has(key),
-        `the tuner writes ${key} but resolveHorseStyle does not parse it`
+        `the tuner proposes ${key} but resolveHorseStyle does not parse it`
       ).toBe(true);
     }
-    // the dials the tuner writes through `mods`
+    // The proposal dials are parsed through `mods`.
     for (const key of ['tightness', 'aggression', 'bluffFreq']) {
       expect(parsed.has(key), `dial ${key} is not parsed`).toBe(true);
       expect(registered.has(key)).toBe(true);

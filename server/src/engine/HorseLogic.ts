@@ -1,3 +1,4 @@
+import { hasHorseReviewSignals } from './HorseReviewSignals.js';
 import { evaluateJointLivePolicy } from './multiway/JointLivePolicy.js';
 import { horseVariantRulesFor } from './VariantRules.js';
 import { jointPlayersBehind } from './multiway/JointActionModel.js';
@@ -311,18 +312,6 @@ interface StyleParams {
   /** V35: variant call-down adjustment added to `respect` (fixed limit calls
    *  lighter — the pot always lays the price). 0 = none. */
   callRespect?: number;
-  /** V40: this horse's Omaha stack-off tag rate per reviewed hand (0 = none
-   *  or no profile). Tightens the V40 pressure cap and the third-barrel
-   *  restraint for a horse the review system keeps tagging. */
-  ploStackoffLoad?: number;
-  /** V41: hold'em stack-off tag rate; the V20 pressure cap reads it. */
-  nlhStackoffLoad?: number;
-  /** V41: river raise-war / paid-off rate for this variant family. */
-  riverWarLoad?: number;
-  /** V41: limped-pot bloat rate for this variant family. */
-  limpBloatLoad?: number;
-  /** V41: extra ICM survival premium for a horse tagged for event stack-offs. */
-  tourneyLeakPremium?: number;
   /** V48: the authored persona's solver adherence, 0.5..1 (1 = always). */
   gtoAdherence?: number;
 }
@@ -381,27 +370,16 @@ export interface HorseProfileMods {
   tightness?: number;
   bluffFreq?: number;
   sizingMultiplier?: number;
-  /** V40 (Dan 2026-09-04): THIS horse's own leak-tag counts over the
-   *  self-tuner's study window, written nightly from horse_review_rollup.
-   *  The brain reads them at decision time (see leakLoad40 in decide), so
-   *  a tag the review system keeps putting on a horse changes what that
-   *  horse does in the same spot tomorrow - not just a dial. */
+  /** Historical review counts; diagnostic only, never causal policy authority. */
   leaks?: Record<string, number>;
   /** V40: reviewed hands the leak counts were taken over (the denominator). */
   leaksHands?: number;
-  /** V41 (2026-09-05): the same counts split by VARIANT FAMILY, so an NLH
-   *  non-nut-flush tag cannot inflate a horse's Omaha load and vice versa.
-   *  Written by the tuner alongside `leaks`; a load reads its own family
-   *  first and falls back to the pooled map for a profile written before
-   *  the split. */
+  /** Historical variant-family counts and reviewed-hand denominators. */
   leaksOmaha?: Record<string, number>;
   leaksHandsOmaha?: number;
   leaksHoldem?: Record<string, number>;
   leaksHandsHoldem?: number;
-  /** V41 (2026-09-05): the tournament-FORMAT share, from
-   *  fn_horse_tournament_leaks (the rollup has no format column). Read by
-   *  the ICM premium: a horse the tagger keeps catching stacking off in
-   *  events pays a little more survival premium. */
+  /** Historical tournament counts, retained independently of cash reports. */
   leaksTournament?: Record<string, number>;
   leaksHandsTournament?: number;
   /**
@@ -413,11 +391,7 @@ export interface HorseProfileMods {
   persona?: HorsePersonaV2;
 }
 
-/**
- * V40: the Omaha stack-off tags, read as a rate per reviewed hand. The
- * review system's verdict on this horse's own Omaha discipline: every tag
- * here is "stacked off with a hand the line beat". 0 with no profile.
- */
+/** Omaha stack-off review categories. Diagnostic classifications, not policy authority. */
 export const PLO_STACKOFF_TAGS = [
   'plo_naked_trips_stackoff',
   'plo_toppair_no_redraw_stackoff',
@@ -427,12 +401,7 @@ export const PLO_STACKOFF_TAGS = [
   'second_nut_flush_stackoff',
 ] as const;
 
-/**
- * V41 (2026-09-05): a tag load is `sum(counts of these tags) / reviewed
- * hands`, read from the variant FAMILY's own map when the tuner has written
- * one and from the pooled map otherwise. Under 40 reviewed hands it is 0: a
- * rate on a handful of hands is noise, and noise must never move a decision.
- */
+/** Diagnostic rates use their variant family and a 40-reviewed-hand floor. */
 export type LeakFamily = 'omaha' | 'holdem' | 'tournament';
 
 export function leakLoad(
@@ -468,13 +437,7 @@ export function ploStackoffLoad(mods: HorseProfileMods | undefined): number {
   return leakLoad(mods, PLO_STACKOFF_TAGS, 'omaha');
 }
 
-/**
- * V41: the hold'em stack-off tags - every one is "lost 20bb+ at showdown
- * with a hand the board or the kicker ladder demotes". 3,423 of them in the
- * week to 2026-09-05 at -58 to -101bb each, and until today none reached a
- * decision. Read by the V20 pressure cap: a horse the tagger keeps catching
- * treats a single pot-sized bet as pressure and its class ceiling sits lower.
- */
+/** Hold em stack-off review categories; outcome labels do not establish action EV. */
 export const NLH_STACKOFF_TAGS = [
   'top_pair_weak_kicker_stackoff',
   'weak_kicker_trips_stackoff',
@@ -489,38 +452,21 @@ export function nlhStackoffLoad(mods: HorseProfileMods | undefined): number {
   return leakLoad(mods, NLH_STACKOFF_TAGS, 'holdem');
 }
 
-/**
- * V41: river escalation the horse lost - it bet the river, got raised, and
- * either re-raised (river_raise_war, -95.9bb average) or paid the raise off
- * (river_raise_paidoff, -59.9bb). Read where a river raise is faced: a tagged
- * horse gives the raise more respect and never re-raises without the nuts.
- * Family-pooled by design: the line is the leak, not the card count.
- */
+/** Historical river escalation reports, partitioned by variant family. */
 export const RIVER_WAR_TAGS = ['river_raise_war', 'river_raise_paidoff'] as const;
 
 export function riverWarLoad(mods: HorseProfileMods | undefined, family: LeakFamily): number {
   return leakLoad(mods, RIVER_WAR_TAGS, family);
 }
 
-/**
- * V41: entered for one big blind and lost 40bb+ (limped_pot_bloat, -77.8bb
- * average, 4,592 in the week). Read postflop in a pot nobody raised
- * preflop: a tagged horse's one-pair and two-pair hands are capped against a
- * big bet, because a limped pot that grows a stack is the pattern itself.
- */
+/** Historical limped-pot reports. They cannot authorize a decision adjustment. */
 export const LIMP_BLOAT_TAGS = ['limped_pot_bloat'] as const;
 
 export function limpBloatLoad(mods: HorseProfileMods | undefined, family: LeakFamily): number {
   return leakLoad(mods, LIMP_BLOAT_TAGS, family);
 }
 
-/**
- * V41: the stack-off tags a tournament horse can earn, either family. 61,955
- * tournament review rows a week (23,921 tagged) reached nothing before this;
- * the cash-only tuner never read them. Read by the ICM premium: a tagged
- * horse pays up to 0.03 more survival premium - it calls off less, jams less
- * light, and bluffs less - in exactly the format where the verdicts came from.
- */
+/** Tournament review categories. Observational losses do not establish a survival premium. */
 export const TOURNEY_STACKOFF_TAGS = [
   'preflop_stackoff',
   'coldcall_stackoff',
@@ -537,7 +483,7 @@ export function tourneyStackoffLoad(mods: HorseProfileMods | undefined): number 
   return leakLoad(mods, TOURNEY_STACKOFF_TAGS, 'tournament');
 }
 
-/** V41: the survival premium a tagged tournament horse adds (0 untagged). */
+/** Legacy premium proposal for audit comparisons ONLY; never read by live ICM. */
 export function tourneyLeakPremium(mods: HorseProfileMods | undefined): number {
   const load = tourneyStackoffLoad(mods);
   return load >= LEAK_LOAD_TAGGED ? Math.min(0.03, load * 0.25) : 0;
@@ -1421,19 +1367,6 @@ function icmRisk(
   gs: HorseGameStateV2,
   stackBB: number,
   useV16Icm: boolean = true,
-  useV23End: boolean = true,
-  /** V41: the horse's own event verdicts, as extra premium (0 untagged). */
-  leakPremium: number = 0
-): number {
-  const base = icmRiskBase(gs, stackBB, useV16Icm, useV23End);
-  if (leakPremium > 0 && isTournamentMode(gs)) return base + leakPremium;
-  return base;
-}
-
-function icmRiskBase(
-  gs: HorseGameStateV2,
-  stackBB: number,
-  useV16Icm: boolean = true,
   useV23End: boolean = true
 ): number {
   lastIcmPath = 'legacy';
@@ -1866,11 +1799,7 @@ export interface HorseDecideOpts {
    *  board, and non-nut made hands stop firing pot on the turn and river.
    *  Disable to ablate (default: enabled). */
   v40Omaha?: boolean;
-  /** V41 (2026-09-05): the rest of the tag table reaches a decision - the
-   *  hold'em stack-off load into the V20 pressure cap, the river-war load
-   *  into the raise-facing respect and the V21 war gate, the limp-bloat
-   *  load into a cap for limped pots. Disable to ablate (default: enabled).
-   *  A horse with no leak profile is byte-identical either way. */
+  /** Legacy switch for review-signal diagnostic telemetry only. Never changes policy. */
   v41Leaks?: boolean;
   /** V43 (2026-09-05): tempo reads - a river big bet priced by how fast it
    *  was made against what this player's bets at that tempo have shown down
@@ -2480,8 +2409,10 @@ export class HorseLogic {
       aggression: base.aggression * (mods.aggression ?? 1),
       sizingMultiplier: base.sizingMultiplier * (mods.sizingMultiplier ?? 1),
     };
-    // V40: the review system's verdict on this horse, read every decision.
-    params.ploStackoffLoad = ploStackoffLoad(mods);
+    // Observational reports remain visible, without changing prices, gates or RNG.
+    if (opts.v41Leaks !== false && telemetryOn(opts) && hasHorseReviewSignals(mods)) {
+      noteFire('phase14_review_signal_ignored');
+    }
 
     const compiledVariant = variantInfo(gs.gameVariant);
     // Phase 5 live requests carry explicit rules and the worker proves they
@@ -2507,21 +2438,8 @@ export class HorseLogic {
               : compiledVariant.isFixedLimit,
         }
       : compiledVariant;
-    // V41: the rest of the verdict, by this hand's variant family.
-    {
-      const fam41: LeakFamily = vi.isOmaha ? 'omaha' : 'holdem';
-      params.nlhStackoffLoad = nlhStackoffLoad(mods);
-      params.riverWarLoad = riverWarLoad(mods, fam41);
-      params.limpBloatLoad = limpBloatLoad(mods, fam41);
-      params.tourneyLeakPremium = (opts.v41Leaks ?? true) !== false ? tourneyLeakPremium(mods) : 0;
-      // V48: the authored persona reaches the solver consult.
-      params.gtoAdherence = mods.persona?.gtoAdherence ?? 1;
-      // PROOF OF RECEIPT: once per decision, preflop or postflop, only where
-      // the premium can reach a price (a tournament).
-      if (telemetryOn(opts) && params.tourneyLeakPremium > 0 && isTournamentMode(gs)) {
-        noteFire('v41_tourney_leak_read');
-      }
-    }
+    // V48: the authored persona still reaches the solver consult.
+    params.gtoAdherence = mods.persona?.gtoAdherence ?? 1;
     const toCall = Math.max(0, gs.currentBet - player.bet);
 
     // V8: per-variant style overlays. The five styles were tuned on NLH;
@@ -3640,13 +3558,7 @@ export class HorseLogic {
             false
           );
           const pot38 = Math.max(0.01, contestablePot);
-          const riskAdd38 = icmRisk(
-            gs,
-            stackBB,
-            opts.v16Icm !== false,
-            opts.v23Endgame !== false,
-            params.tourneyLeakPremium ?? 0
-          );
+          const riskAdd38 = icmRisk(gs, stackBB, opts.v16Icm !== false, opts.v23Endgame !== false);
           const share38 = Math.min(1, effCall38 / Math.max(1, player.stack));
           const rake38 =
             (opts.v10Rake ?? opts.v10) !== false && !isTournamentMode(gs)
@@ -3743,13 +3655,7 @@ export class HorseLogic {
       sizingMultiplier: params.sizingMultiplier,
       isOmaha: vi.isOmaha,
       isPotLimit: vi.isPotLimit,
-      riskAdd: icmRisk(
-        gs,
-        stackBB,
-        opts.v16Icm !== false,
-        opts.v23Endgame !== false,
-        params.tourneyLeakPremium ?? 0
-      ),
+      riskAdd: icmRisk(gs, stackBB, opts.v16Icm !== false, opts.v23Endgame !== false),
       // NLH only: widening the iso range vs limpers is an NLH edge; PLO limped
       // pots play multiway/postflop where a wide iso bloats pots out of line.
       isoWiden: (opts.v10Iso ?? opts.v10) !== false && !vi.isOmaha ? 0.06 : 0,
@@ -4611,8 +4517,7 @@ export class HorseLogic {
           gs,
           gs.bigBlind > 0 ? stack / gs.bigBlind : 100,
           opts.v16Icm !== false,
-          opts.v23Endgame !== false,
-          params.tourneyLeakPremium ?? 0
+          opts.v23Endgame !== false
         )
       : 0;
     if (tele15 && useV7 && isTournamentMode(gs)) noteFire(`icm_${lastIcmPath}`);
@@ -4765,35 +4670,6 @@ export class HorseLogic {
     // the classifier for pair / two pair / trips: which two pair, on what
     // board, and whether a pot-sized line beats it.
     const useV40 = (opts.v40Omaha ?? true) !== false;
-    // ═══ V41 (2026-09-05): THE REST OF THE TAG TABLE REACHES A DECISION ═══
-    const useV41 = (opts.v41Leaks ?? true) !== false;
-    const nlhLoad41 = params.nlhStackoffLoad ?? 0;
-    const warLoad41 = params.riverWarLoad ?? 0;
-    const limpLoad41 = params.limpBloatLoad ?? 0;
-    const taggedNlh41 = useV41 && nlhLoad41 >= LEAK_LOAD_TAGGED;
-    const taggedWar41 = useV41 && warLoad41 >= LEAK_LOAD_TAGGED_LINE;
-    const taggedLimp41 = useV41 && limpLoad41 >= LEAK_LOAD_TAGGED_LINE;
-    // A LIMPED POT: nobody raised preflop. The limped_pot_bloat tag is
-    // exactly "entered for one blind, lost a stack", so the read is the
-    // preflop history, not hero's own entry.
-    let limped41 = false;
-    if (taggedLimp41 && gs.actionHistory) {
-      let sawPre = false;
-      let raisedPre = false;
-      for (const a of gs.actionHistory) {
-        if (a.stage !== 'preflop') continue;
-        sawPre = true;
-        if (
-          a.action === 'bet' ||
-          a.action === 'raise' ||
-          (a.action === 'all_in' && a.isFullRaise === true)
-        ) {
-          raisedPre = true;
-          break;
-        }
-      }
-      limped41 = sawPre && !raisedPre;
-    }
     let made40: OmahaMadeInfo | null = null;
     if (useV40 && vi.isOmaha && cat >= 1 && cat <= 4) {
       try {
@@ -6376,20 +6252,12 @@ export class HorseLogic {
     // two on a brick are not capped: folding range-tops to pressure is the
     // worse leak.
     if (useV40 && vi.isOmaha && made40 != null && made40.weak) {
-      // The horse's OWN review verdicts: a horse the tagger keeps catching
-      // stacking off in Omaha reads the same line as one notch hotter and
-      // its class ceiling a few points lower. This is the tag table reaching
-      // a live decision - the loop Dan asked to see closed.
-      const load40 = params.ploStackoffLoad ?? 0;
-      const tagged40 = load40 >= 0.08;
-      if (tele15 && tagged40) noteFire('v40_leak_profile_read');
       const heat40 =
         barrels40 +
         (potFrac >= 0.85 ? 1 : 0) +
         pressure20 +
         (raisedAfterAggr ? 1 : 0) +
-        (oppCount >= 2 ? 1 : 0) +
-        (tagged40 ? 1 : 0);
+        (oppCount >= 2 ? 1 : 0);
       if (heat40 >= 1 || potFrac >= 0.6) {
         let cap40: number;
         switch (made40.cls) {
@@ -6420,7 +6288,6 @@ export class HorseLogic {
         }
         if (cap40 !== Infinity) {
           cap40 -= 0.05 * Math.max(0, Math.min(4, heat40) - 1);
-          if (tagged40) cap40 -= Math.min(0.06, load40 * 0.3);
           if (!isRiver) cap40 += street === 'flop' ? 0.1 : 0.04;
           // A nut draw alongside the made hand is real equity the cap
           // must not erase (top two with the nut flush draw stacks off).
@@ -6440,55 +6307,23 @@ export class HorseLogic {
     // is on, the equity USED for the decision is capped by hand class.
     // Sets, straights and better are untouched — folding range-top hands to
     // pressure is a worse leak than the one this fixes.
-    // ═══ V41 HOLD'EM LEAK HEAT ═══ pressure20 reads ONE street: a raise, a
-    // hero-bet-got-raised, a second all-in. The 3,423 tagged hold'em
-    // stack-offs were mostly the OTHER shape - bet, call, bet, call, bet,
-    // call - which never registers on it. A horse the tagger keeps catching
-    // reads the line the way V40 reads it in Omaha: every earlier barrel by
-    // this bettor, a pot-sized bet, and the tag itself each add a degree of
-    // heat, and the heat picks the V20 tier. An untagged horse is untouched.
-    let heat41 = pressure20;
-    if (taggedNlh41 && !vi.isOmaha && facingBet && potFrac >= 0.5 && cat >= 1 && cat <= 4) {
-      heat41 = Math.min(3, pressure20 + barrels40 + (potFrac >= 0.85 ? 1 : 0) + 1);
-      if (tele15) noteFire('v41_nlh_leak_read');
-    }
-    if (useV20 && !vi.isOmaha && heat41 >= 1 && cat >= 1 && cat <= 4) {
+    if (useV20 && !vi.isOmaha && pressure20 >= 1 && cat >= 1 && cat <= 4) {
       const isSet20 =
         cat === 4 && player.cards.length === 2 && player.cards[0].rank === player.cards[1].rank;
       if (!isSet20) {
         const weakTrips = cat === 4; // trips via the board's pair
         let cap20 = Infinity;
-        if (heat41 >= 3) cap20 = weakTrips ? 0.42 : cat === 3 ? 0.34 : 0.3;
-        else if (heat41 === 2) cap20 = weakTrips ? 0.5 : cat === 3 ? 0.44 : 0.4;
+        if (pressure20 >= 3) cap20 = weakTrips ? 0.42 : cat === 3 ? 0.34 : 0.3;
+        else if (pressure20 === 2) cap20 = weakTrips ? 0.5 : cat === 3 ? 0.44 : 0.4;
         else if (potFrac >= 0.6 || seriousAllIns20 >= 1)
           cap20 = weakTrips ? 0.62 : cat === 3 ? 0.56 : 0.52;
         if (cap20 !== Infinity) {
-          // V41: the horse's own verdicts lower its ceiling a few points.
-          if (taggedNlh41 && heat41 > pressure20) cap20 -= Math.min(0.06, nlhLoad41 * 0.3);
           if (!isRiver) cap20 += 0.08; // outs to boats/better two pair remain
           eq15 = Math.min(eq15, Math.max(0.05, cap20));
           if (tele15 && eq15 < equity) noteFire('v20_pressure_cap');
         }
       }
     }
-    // ═══ V41 LIMPED-POT CAP ═══ in a pot nobody raised, a tagged horse's
-    // one-pair and two-pair hands are capped against a big bet: 4,592
-    // limped_pot_bloat hands in a week at -77.8bb each, and every one was
-    // a pair or two pair that kept calling in a pot that was meant to stay
-    // small. Sets and better are untouched.
-    if (limped41 && facingBet && potFrac >= 0.5 && cat >= 1 && cat <= 3) {
-      const cap41 =
-        (cat === 3 ? 0.5 : 0.4) - Math.min(0.06, limpLoad41 * 0.5) + (isRiver ? 0 : 0.08);
-      const before41 = eq15;
-      eq15 = Math.min(eq15, Math.max(0.05, cap41));
-      if (tele15) noteFire('v41_limp_bloat_read');
-      if (tele15 && eq15 < before41) noteFire('v41_limp_bloat_cap');
-    }
-    // V41: a tagged river-war horse never re-raises a river raise below a
-    // full house (either family); the capped equity decides call vs fold.
-    // Read here so the committed branch below honours it too.
-    const warGate41 = taggedWar41 && isRiver && raisedAfterAggr && cat <= 6;
-
     // ═══ V21 CAP FOR BOARD-DOMINATED "BIG" HANDS ═══ the V20 cap stopped at
     // cat 4 because straights and better looked like range-tops. The review
     // table says otherwise when the BOARD demotes them: a straight on a
@@ -6683,9 +6518,7 @@ export class HorseLogic {
         const preferFlat15 =
           (useV15 && vi.isOmaha && nuts15 != null && !nutClass15) ||
           (useV21 && dominated21) ||
-          planCallOnly23 ||
-          warGate41;
-        if (tele15 && warGate41) noteFire('v41_river_war_read');
+          planCallOnly23;
         return toCall >= stack || preferFlat15
           ? { action: 'call', amount: toCall, thinkTime: 0 }
           : { action: 'all_in', thinkTime: 0 };
@@ -6755,14 +6588,12 @@ export class HorseLogic {
       const dryTop21 = ns21 != null && !ns21.flushPossible && ns21.maxStraightTop === 0;
       if (
         planCallOnly23 ||
-        warGate41 ||
         (useV21 &&
           !vi.isOmaha &&
           (dominated21 || (raisedAfterAggr && (cat <= 3 || (cat === 4 && !(set21 && dryTop21))))))
       ) {
         if (planCallOnly23 || isRiver || raisedAfterAggr || pressure20 >= 2) {
           if (tele15) noteFire('v21_war_gate');
-          if (tele15 && warGate41) noteFire('v41_river_war_read');
           return { action: 'call', amount: toCall, thinkTime: 0 };
         }
       }
@@ -6886,13 +6717,6 @@ export class HorseLogic {
     // V35: fixed limit calls lighter — the pot always lays the price.
     let respect = 2 - exploit.callDownMod + (params.callRespect ?? 0); // maniac 0.8, neutral 1, passive 1.15
     if (dangered) respect += 0.15;
-    // V41: a horse whose river bets keep getting raised and paid off gives
-    // the next river raise more respect. Only where the tag was earned:
-    // river, after hero's own aggression was raised.
-    if (taggedWar41 && isRiver && raisedAfterAggr) {
-      respect += Math.min(0.12, warLoad41 * 0.6);
-      if (tele15) noteFire('v41_river_war_read');
-    }
     // V12 ANTI-EXPLOIT: when the CURRENT street's bettor has been hunting
     // this horse specifically, their bets carry less real strength than the
     // line suggests — call down lighter until the hunt stops paying.

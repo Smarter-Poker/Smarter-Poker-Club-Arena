@@ -4,6 +4,8 @@ import { supabase } from './supabase.js';
 export type HorseTunerWriteRequest = Readonly<{
   horseId: string;
   runDate: string;
+  /** Explicit audit-only requests may never change the stored profile. */
+  intent?: 'observational_only';
   expectedProfile: unknown;
   nextProfile: unknown;
   audit: Readonly<{
@@ -44,6 +46,7 @@ export async function recordHorseTunerUpdate(
       const reasons = new Set([
         'invalid_request',
         'invalid_modifiers',
+        'causal_permission_missing',
         'authored_profile_change',
         'writer_busy',
         'run_conflict',

@@ -1,0 +1,5 @@
+{
+  "_owner": "operational-alert-routing/chip-statement-page-cursor",
+  "_comment": "New read-only RPC applied via Supabase and exact native-qualified definition/ACL read back 2026-09-14 06:03:29 UTC. Legacy refusal is sequenced after verified component release.",
+  "functions": ["fn_ca_chip_statement_page"]
+}

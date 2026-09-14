@@ -551,6 +551,7 @@ jobs:
             tests/e2e/mobile-input-zoom.spec.ts \
             tests/e2e/mobile-chrome-occlusion.spec.ts \
             tests/e2e/showdown-beats.spec.ts \
+            tests/e2e/live-css-loader.spec.ts \
             tests/e2e/card-squeeze-visual-regression.spec.ts \
             tests/e2e/card-squeeze-mobile.spec.ts \
             tests/e2e/river-squeeze-interactive.spec.ts \

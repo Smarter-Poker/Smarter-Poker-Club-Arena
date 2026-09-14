@@ -1,0 +1,42 @@
+# Diamond Phases 1 Through 8 Recheck
+
+Status: Phase 8 Built And Published Behind Its Switch, September 14, 2026. Both Diamond switches are off (`cash_games_enabled` false, `tournaments_enabled` false); no funded Diamond game or tournament has run in public.
+
+## Scope And Result
+
+After finishing Phase 8 (four production migrations, the engine boundary and the client doors, all merged and published as 6f734856b38f69cfb21c5950ce680f1518433a88 through PR 4583), the whole Diamond estate from Phase 1 to Phase 8 was rechecked for bugs, gaps, stubs, regressions and wiring against production, the merged source and the live release. Everything found was fixed in the same pass; what could not be fixed is listed below by name. This is a scoped acceptance result on the state of September 14, not a guarantee that no future defect can exist.
+
+## What Was Rechecked, And How
+
+- **The money identity, live.** `fn_ca_diamond_register_vs_supply()`: register 4,363,983, players + house + custody 4,363,983, difference 0. The Diamond trial balance reads 0 on `player_diamonds`, `diamond_house` and `register`. Open Diamond custody: 0 rows. Diamond tournament ledger: 0 rows. Diamond tournaments: 0. No Diamond incident raised since the applies beyond the routine trial-balance summaries. No open Diamond financial alert.
+- **The guard watchlist, live.** 58 watched guards, every baseline equal to its live text (0 mismatches). Fourteen were added today: the ten Diamond tournament money doors, the profile wallet guard and the arena structure guard (both of which Phase 8 taught new names), and the two chip readers Phase 8 routes by asset. A live redefinition of any of them now raises unless declared.
+- **Every payer, by callers.** Only `fn_credit_and_log` (Diamond-aware) and `credit_player_wallet` (chip purchase only) call the chip credit; only `fn_credit_and_log`, `fn_award_satellite_seat` and the satellite settlement write `tournament_payouts`, and a Diamond satellite cannot exist (the create door refuses the format by name, and the terminal refuses a satellite). The payout sweep, the reconcile and the bubble line all route through `fn_credit_and_log` and therefore through the Diamond leg. The final-table deal is unit-aware since September 12.
+- **Every Diamond door, by grant.** No Phase 8 function is reachable without an account; the settlement steps are owner-only (the service role included); the creation door is platform-staff-only and consults the caller.
+- **The engine, by test.** Server suite 800 files / 11,832 tests green; root suite 1,484 files green; both typechecks clean. The new boundary is tested directly: a Diamond tournament table is admitted in tournament shape, refused in cash shape, loaded only while the tournament switch is on, dealt under the no-deduction rule, and priced in whole Diamonds.
+- **The release, live.** `ca-static.smarter.poker/build-info.json` and `smarter.poker/hub/club-arena/build-info.json` both report `ca_sha` 6f734856b38f69cfb21c5950ce680f1518433a88. The sealed engine release for the same commit was dispatched by `stage-engine-release.yml` and is recorded in the changelog once it reports.
+
+## Found And Fixed In This Pass
+
+1. **The deferred entry guard would have refused every Diamond terminal at commit.** P0814 (an entry holds exactly its movements) is a deferred constraint trigger and presents each row version as it stood at its event against the movements as they stand at commit; a custody row drained twice in one settlement (the fee, then a prize) failed it. Not visible to a single-transaction rehearsal until a commit boundary was simulated by firing the guard after every door; proved on a negative run. The drain now writes the movement before the balance and checks P0814 per statement.
+2. **A Diamond refund is not proportional.** The chip escrow shadow splits a refund across banks by proportion; a Diamond refund returns an entry's own parts, and once an add-on carried no fee the two disagreed by two Diamonds. The shadow now opens from the Diamond ledger with exact parts and refuses to open on disagreement.
+3. **The fee belonged to the wrong player in the register.** The first fee drain took the fee from the oldest rows; one player's register history would have shown them spending everybody's fee. The drain now takes one bank at a time, and the fee bank of a row is exactly that player's fee part.
+4. **The engine refused every Diamond tournament table** at four gates (`loadTable`, `HandController`, the seat's add-funds and the top-up sweep, the rules refresh). A Diamond tournament table is now a tournament table.
+5. **The client would have thrown after a Diamond refund was paid** (chip-shaped receipt parser); Diamond refusals were raises the client treated as lost responses and retried; the Diamond balance on screen waited out a thirty-second freshness window; the arena lobby offered Register on events the server refuses. All four repaired (migration 20260914034708 plus the client).
+6. **Three re-created chip functions carried no grant statement in the repo** (`fn_ca_entry_scope_ok`, `fn_ca_escrow_can_pay`, `fn_register_horse_for_tournament`); the definer-authorization gate blocked the push. Migration 20260914040416 states the live grants (a no-op against production).
+7. **`fn_poker_diamond_play_state_columns` had a role-mutable search path** (security linter). Pinned by 20260914041635.
+8. **`poker_diamond_tournament_ledger.arena_id` had no index behind its foreign key into clubs**, which the post-deploy club-FK gate caught on the first main run. Index built by 20260914043752 (zero rows) and shipped in PR 4585.
+
+## Found And Not Fixed, By Name
+
+- **The lobby's projected ladder and the sign-up dialog speak chips for a Diamond event.** `TournamentService.calculatePayout` is display-only and reads no club (it passes the named `UNIT_CENTS_ASSET_NOT_READ`). No player can reach a Diamond event while the switch is off; this is the first client item to do before the switch is scheduled to open.
+- **No isolated SQL fixture runner exists for the tournament lifecycle** (the cash doors have `tests/sql/run-diamond-*.py` runners on the local Phase 6 fixture). The evidence for the tournament doors is three rolled-back production rehearsals through the real client doors, the negative run, and the law tests that pin every migration's text. Building the runner means carrying the chip tournament estate into the isolated fixture; it is the right next investment before the switch opens.
+- **The ruling path prices in cents**: `fn_prepare_tournament_place_obligations`, `fn_normalize_tournament_final_standings` and `fn_settle_tournament_places_by_ruling` have no caller in the engine and are pinned by a chip law test. A Diamond event adjudicated by ruling would need them to learn the unit first. Phase 9 or the first adjudication, whichever comes first.
+- **`TournamentBrainContext.unit_cents` is never populated** (the horse brain). Horses are refused in Diamond tournaments by name, so nothing reads it.
+- **The Money Trigger Recovery workflow is skipped on every pull request** until the repository variable `MONEY_TRIGGER_REPORTER_APP_ID` and its environment secret are set. The workflow says so itself; an agent must not set either.
+- **1,821 open chip-estate financial alerts** predate this work and belong to the chip board; none concerns the Diamond arena.
+- **The `Source Windows Are Structural` CI job is red on main** for an art asset from PR 4573 (a console button reads 1.5% matte against its recorded 0.4%); `fix/riveted-rail-matte-baseline` is in flight from its author. Not a required check; not Diamond.
+- **The programme's Phase 8 exit says "all funded tournament lifecycles close exactly"**: proved in rehearsal, not yet in a public funded event, because the switch is off by design. The first funded Diamond tournament belongs to the release phase, on fixture accounts, with the board watching the identity.
+
+## Production Database Verification
+
+Migrations applied once each, stored statement text byte-identical to the repo file: 20260914024241 (entry is custody), 20260914032315 (pays from its own custody), 20260914034708 (doors answer the client), 20260914040416 (grants stated), 20260914041258 (money doors watched), 20260914041635 (search path pinned), 20260914043752 (ledger arena index). `tournaments_enabled` false throughout; zero `tournament_entry` custody rows ever committed; every watched guard on its baseline.

@@ -146,14 +146,30 @@ export function titleCase(input: string | null | undefined): string {
          hero line ("3rd Of 128"). A token that begins with a digit is an
          ordinal, a stake or a seat count ("6max", "2x"); its letters are a
          suffix and are never title-cased. */
-      return part.replace(/[A-Za-z0-9][A-Za-z0-9'’]*/g, (word, offset, whole) => {
-        if (/^[0-9]/.test(word)) return word;
+      /* ── ASCII CLASSES DO NOT SKIP NON-ASCII WORDS, THEY CUT THEM UP ──
+         `[A-Za-z0-9]` did not merely fail to capitalise an accented word, it
+         matched the ASCII RUN INSIDE it and capitalised that:
+
+             "événement du soir"  ->  "éVéNement Du Soir"
+             "año nuevo"          ->  "AñO Nuevo"
+             "ırmak kulübü"       ->  "ıRmak KulüBü"
+
+         Every one of those is a name an operator can type into a club, a
+         tournament or a ticker message. `\p{L}` and `\p{N}` are letters and
+         numbers in any script; ASCII is a subset, so English is untouched. */
+      return part.replace(/[\p{L}\p{N}][\p{L}\p{N}'’]*/gu, (word, offset, whole) => {
+        if (/^\p{Nd}/u.test(word)) return word;
+        /* INVARIANT lower for the LOOKUPS, deliberately. The acronym set is
+           English and a locale-aware fold would break it on a Turkish runtime:
+           "VIP".toLocaleLowerCase('tr') is "vıp", which is not in the set, and
+           the badge would stop shouting. Only the DISPLAY casing below is
+           locale-aware. */
         const lower = word.toLowerCase();
         if (whole[offset - 1] === '(' && (lower === 's' || lower === 'es')) return lower;
         if (ACRONYMS.has(lower)) return lower.toUpperCase();
         // Already shouting (LIVE, GTD, a name in caps) - leave it alone.
-        if (word.length > 1 && word === word.toUpperCase()) return word;
-        return word.charAt(0).toUpperCase() + word.slice(1);
+        if (word.length > 1 && word === word.toLocaleUpperCase()) return word;
+        return word.charAt(0).toLocaleUpperCase() + word.slice(1);
       });
     })
     .join('');

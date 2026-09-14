@@ -10,13 +10,13 @@
  * "connects" - which in six-card Omaha is every hand - so a pot bet
  * (33% to call) was always a call.
  *
- * These tests pin the three corrections and the tag loop:
+ * These tests pin the three structural corrections and the diagnostic boundary:
  *   1. the sampler tiers an aggressor's hand by his LINE (omahaQuickCategory
  *      + omahaTierRequirement), so the river reads single digits;
  *   2. pair / two pair / trips get a pressure cap keyed on WHICH two pair
  *      on WHAT board (omahaMadeClass) and on the barrel count;
  *   3. a weak-class made hand plays small ball and fires no third barrel;
- *   4. the horse's own review tags reach the decision (ploStackoffLoad).
+ *   4. the horse's review tags remain diagnostic and cannot alter its decision.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
@@ -401,7 +401,7 @@ describe('V40 small ball - no third barrel with a weak-class made hand', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // 6. The tag loop: the horse's own review verdicts reach the decision
 // ─────────────────────────────────────────────────────────────────────────────
-describe('V40 leak profile - the review tags are read at decision time', () => {
+describe('V40 historical leak profile - diagnostic only', () => {
   it('resolveHorseStyle carries the leak counts and denominator', () => {
     const { mods } = resolveHorseStyle(
       {
@@ -420,7 +420,7 @@ describe('V40 leak profile - the review tags are read at decision time', () => {
     expect(ploStackoffLoad(undefined)).toBe(0);
     expect(ploStackoffLoad({ leaks: { coldcall_stackoff: 5 }, leaksHands: 10 })).toBe(0);
   });
-  it('a horse the tagger keeps catching folds the marginal turn spot more often', () => {
+  it('historical review tags leave the marginal turn fold frequency unchanged', () => {
     // A softer spot than the paired turn: top two with a live straight on an
     // unpaired turn, facing a pot-sized second barrel.
     const make = () => {
@@ -433,7 +433,7 @@ describe('V40 leak profile - the review tags are read at decision time', () => {
       leaks: { plo_naked_trips_stackoff: 8, coldcall_stackoff: 6, dominated_straight_stackoff: 4 },
       leaksHands: 120,
     });
-    expect(tagged).toBeGreaterThanOrEqual(clean);
+    expect(tagged).toBe(clean);
   });
 });
 

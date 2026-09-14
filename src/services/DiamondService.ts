@@ -25,6 +25,11 @@ export interface DiamondPackage {
   bestValue?: boolean;
 }
 
+export interface DiamondLifetimeStats {
+  lifetimeEarned: number;
+  lifetimeSpent: number;
+}
+
 export interface DiamondWallet {
   balance: number;
   lifetimeEarned: number;
@@ -124,32 +129,36 @@ export const DiamondService = {
   },
 
   /**
-   * Lifetime earned / spent from `diamond_transactions`, the one ledger that
-   * records diamonds. Sign decides the bucket: a positive row is money in, a
-   * negative row is money out. Best-effort: a failed read reports zeros.
+   * Lifetime earned / spent, summed IN SQL over the whole `diamond_transactions`
+   * ledger by `fn_diamond_lifetime_totals` (migration 20260913171905,
+   * SECURITY INVOKER so RLS still scopes it to the caller).
+   *
+   * Until 2026-09-13 this read up to 5,000 rows into the browser and added them
+   * up here, and a failed read returned `{ 0, 0 }` - a figure indistinguishable
+   * from a brand-new account, presented as a lifetime. CLAUDE.md 10.86: "I could
+   * not tell" is its own outcome. So a failed read now returns `null`, and the
+   * surface says Unavailable and offers a retry instead of printing a zero.
    */
-  async getLifetimeStats(
-    userId: string
-  ): Promise<{ lifetimeEarned: number; lifetimeSpent: number }> {
+  async getLifetimeStats(userId: string): Promise<DiamondLifetimeStats | null> {
     try {
-      const { data, error } = await supabase
-        .from('diamond_transactions')
-        .select('amount')
-        .eq('user_id', userId)
-        .limit(5000);
+      const { data, error } = await supabase.rpc('fn_diamond_lifetime_totals', {
+        p_user_id: userId,
+      });
       if (error) throw error;
-      let lifetimeEarned = 0;
-      let lifetimeSpent = 0;
-      for (const row of data || []) {
-        const n = Number(row.amount || 0);
-        if (!Number.isFinite(n)) continue;
-        if (n > 0) lifetimeEarned += n;
-        else lifetimeSpent += -n;
+      // RETURNS TABLE: one row, or none if the function somehow yields nothing.
+      const row = (Array.isArray(data) ? data[0] : data) as
+        | { lifetime_earned: number | string; lifetime_spent: number | string }
+        | undefined;
+      if (!row) throw new Error('fn_diamond_lifetime_totals returned no row');
+      const lifetimeEarned = Number(row.lifetime_earned);
+      const lifetimeSpent = Number(row.lifetime_spent);
+      if (!Number.isFinite(lifetimeEarned) || !Number.isFinite(lifetimeSpent)) {
+        throw new Error('fn_diamond_lifetime_totals returned a non-numeric total');
       }
       return { lifetimeEarned, lifetimeSpent };
     } catch (err) {
       reportError(err, 'DiamondService.getLifetimeStats', { userId });
-      return { lifetimeEarned: 0, lifetimeSpent: 0 };
+      return null;
     }
   },
 

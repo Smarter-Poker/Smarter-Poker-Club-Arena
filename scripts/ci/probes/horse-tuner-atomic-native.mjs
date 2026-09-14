@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import { exerciseObservationalTuner } from './horse-tuner-observational-native.mjs';
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const { Client } = createRequire(root + '/server/package.json')('pg');
 const pg = process.env.HORSE_PROOF_PG_BIN,
@@ -541,6 +542,25 @@ try {
     case: 'bounded indexed progress accepts 2048 receipt identities and refuses the 2049th instead of truncating',
     passed: true,
   });
+  results.push(
+    ...(await exerciseObservationalTuner({
+      root,
+      c,
+      actor,
+      day,
+      initial,
+      request,
+      record,
+      reset,
+      state,
+      loseReply: () => {
+        loseReply = true;
+      },
+      prepare,
+      complete,
+      progress,
+    }))
+  );
   proof = { results, calls, productionPostgrestVerified: false, productionDataWritten: false };
 } finally {
   if (c) await c.end();

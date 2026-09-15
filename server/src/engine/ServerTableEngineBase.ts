@@ -5758,6 +5758,26 @@ export abstract class ServerTableEngineBase {
    * Get rake config from the AUTHORITATIVE rake schedule (server/src/config/RakeConfig.ts).
    * Uses Dan's official schedule with exact SB/BB match, tier fallback, and BBJ support.
    */
+  /**
+   * The table's SEAT COUNT, as the rake ladder means it: `tables.max_players`.
+   *
+   * Dan 2026-09-14: "3 HANDED GAMES 75% MAX RAKE (ON 75% RAKE REDUCTION ON
+   * 9HANDED GAMES ONLY). ONCE ANY 6-8 HANDED GAME REACHES 3+ PLAYERS FULL
+   * RAKE + BBJ IS APPLIED." The three-handed discount therefore depends on
+   * how many seats the table HAS, not on how many are sitting - the latter is
+   * `playersDealt`, which `calculateRake` already receives.
+   *
+   * Returns null when the column is missing or not a positive number rather
+   * than guessing a size: `capsByPlayersDealt` reads null as "no table in
+   * hand" and gives the nine-max ladder, which is the published one and the
+   * behaviour every table had before this rule. A short-handed table whose
+   * row failed to load is then priced as it always was, never higher.
+   */
+  protected tableSeatCount(): number | null {
+    const seats = Number(this.tableInfo?.max_players);
+    return Number.isFinite(seats) && seats > 0 ? seats : null;
+  }
+
   protected getRakeConfig(sb: number, bb: number): RakeConfig {
     const variant = this.tableInfo?.game_variant || 'nlh';
     const fullConfig = getFullRakeConfig(sb, bb, variant, this.getRakeOverride());
@@ -5765,8 +5785,9 @@ export abstract class ServerTableEngineBase {
       percent: fullConfig.rakePercent,
       cap: fullConfig.rakeCap,
       noFlopNoDrop: true,
-      // FIX 166: Bible V8 §7.19 — player-count-based rake caps
-      playerCountCaps: getPlayerCountCaps(fullConfig.rakeCap),
+      // FIX 166: Bible V8 §7.19 — player-count-based rake caps. The seat
+      // count gates the three-handed rung (Dan 2026-09-14, nine-max only).
+      playerCountCaps: getPlayerCountCaps(fullConfig.rakeCap, this.tableSeatCount()),
     };
   }
 
@@ -6285,8 +6306,10 @@ export abstract class ServerTableEngineBase {
             percent: fullRakeConfig.rakePercent,
             cap: fullRakeConfig.rakeCap,
             noFlopNoDrop: true,
-            // FIX 166: Bible V8 §7.19 — player-count-based rake caps (heads-up = 50%, 3-handed = 67%)
-            playerCountCaps: getPlayerCountCaps(fullRakeConfig.rakeCap),
+            // FIX 166: Bible V8 §7.19 — player-count-based rake caps
+            // (heads-up = 50% everywhere; 3-handed = 75% on a nine-max table
+            // and the full cap on a 6/7/8-max one, Dan 2026-09-14).
+            playerCountCaps: getPlayerCountCaps(fullRakeConfig.rakeCap, this.tableSeatCount()),
           },
       bbjConfig: {
         enabled:

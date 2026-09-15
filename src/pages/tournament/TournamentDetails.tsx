@@ -77,6 +77,7 @@ import type {
 import { TABS, normaliseTabId } from '../../components/tournament/details/types';
 import { blindLevelMinutes } from '../../components/lobby/tournamentFigures';
 import { reportError } from '../../utils/errorReporter';
+import { relayTournamentEvent } from '../../services/tournamentEventBridge';
 import { formatBuyIn } from '../../utils/buyIn';
 import { useTournamentRegistration, isLateStatus } from '../../hooks/useTournamentRegistration';
 import { useMysteryBounty } from '../../hooks/useMysteryBounty';
@@ -781,6 +782,40 @@ export default function TournamentDetails({
       300
     );
 
+    /**
+     * ── THE BREAK CHANNEL, WHICH THIS PAGE NEVER JOINED (2026-09-09) ─────────
+     *
+     * The two subscriptions below have been here since the bridge was written,
+     * and neither had ever fired on this page. `TOURNAMENT_BREAK` and
+     * `TOURNAMENT_BREAK_END` reach MasterBus only through
+     * `relayTournamentEvent`, and only a page that has JOINED the engine's
+     * `t-break-<id>` broadcast channel can call it. TournamentPage and
+     * TournamentLobbyPage both do; this page - the one a registered player sits
+     * on to watch their event - did not, so it heard nothing and the two toasts
+     * were unreachable code. tournamentEventBridge's own header names
+     * TournamentDetails as one of the two handlers it exists to make run, and
+     * says "Every consumer of the channel calls it"; the missing half was that
+     * this page was not a consumer of the channel at all.
+     *
+     * A SECOND channel object, deliberately. The postgres_changes channel above
+     * carries a per-mount suffix because those bindings must land pre-join; a
+     * BROADCAST binding has no such constraint, so this one uses the shared
+     * `t-break-<id>` key that every other consumer uses and MasterBus refcounts.
+     * Released with `removeRegisteredChannel`, never `unsubscribe()`, or the
+     * table in the same event goes deaf (MasterBus.ts:1325-1340).
+     */
+    const breakChannelKey = `t-break-${tournamentId}`;
+    const breakChannel = masterBus.getOrCreateChannel(breakChannelKey);
+    breakChannel
+      .on('broadcast', { event: 'tournament_event' }, (payload) => {
+        relayTournamentEvent(tournamentId, payload.payload);
+      })
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR' && err) {
+          reportError(err?.message || err, 'TournamentDetails.break_channel_error');
+        }
+      });
+
     // ── Tournament break notifications ──
     const unsubBreak = masterBus.subscribeDebounced(
       'TOURNAMENT_BREAK',
@@ -802,6 +837,7 @@ export default function TournamentDetails({
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
+      masterBus.removeRegisteredChannel(breakChannelKey);
       unsubElim();
       unsubBlind();
       unsubBreak();

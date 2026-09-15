@@ -5,7 +5,7 @@
  * Central hub for discovering and joining tournaments across all clubs
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { readClubContextParam } from '../../utils/clubScopedPath';
 import { supabase } from '../../lib/supabase';
@@ -191,12 +191,32 @@ export default function TournamentLobbyPage() {
     };
   }, [clubId]);
 
+  /**
+   * WHICH EVENTS ARE LIVE — a stable dep for the broadcast effect below.
+   *
+   * That effect used to depend on `[tournaments]`, and its own broadcast handler
+   * calls `setTournaments((prev) => prev.map(...))`, which ALLOCATES A NEW ARRAY
+   * every time whether or not any row changed. So every single `tournament_event`
+   * re-ran the effect: full teardown of every `t-break-<id>` channel, then a
+   * rebuild. What the effect actually cares about is which events are running, so
+   * that is what it depends on now — a sorted id string that changes only when
+   * the set does.
+   */
+  const runningTournamentKey = useMemo(
+    () =>
+      tournaments
+        .filter((t) => ['ANNOUNCED', 'REGISTERING', 'RUNNING'].includes(t.status))
+        .map((t) => t.id)
+        .sort()
+        .join(','),
+    [tournaments]
+  );
+
   // ── Broadcast: Subscribe to tournament events for all running tournaments ──
   useEffect(() => {
-    // Get all running tournament IDs from current tournaments
-    const runningTournamentIds = tournamentsRef.current
-      .filter((t) => ['ANNOUNCED', 'REGISTERING', 'RUNNING'].includes(t.status))
-      .map((t) => t.id);
+    // Derived from the dep itself, so the channel set and the dep can never
+    // disagree about which tournaments are running.
+    const runningTournamentIds = runningTournamentKey ? runningTournamentKey.split(',') : [];
 
     // Cleanup old channels for tournaments no longer running
     const channelMap = channelRefsRef.current;
@@ -282,19 +302,24 @@ export default function TournamentLobbyPage() {
     });
 
     return () => {
-      // Cleanup all channels on unmount
-      for (const [, channel] of channelRefsRef.current.entries()) {
-        // Unsubscribe the channel properly
-        if (channel?.unsubscribe) {
-          channel.unsubscribe();
-        }
-      }
+      /* RELEASE, NEVER UNSUBSCRIBE (2026-09-09).
+         `getOrCreateChannel` hands the SAME Supabase channel to every consumer
+         of a key and MasterBus refcounts it; this cleanup called
+         `channel.unsubscribe()` on it directly, which kills the socket for
+         everyone regardless of the count. MasterBus.ts:1325-1340 names this
+         exact failure: a player with the lobby open beside a table in the same
+         event closes the lobby, and the table stops receiving `t-break-<id>`
+         break countdowns, add-on windows and bounty reveals for the rest of
+         the event, with no error anywhere. A bounty reveal that never arrives
+         is an animation owed and never played (CLAUDE.md 10.6).
+         `removeRegisteredChannel` IS the whole cleanup: it drops this page's
+         reference and tears the channel down only on the last release. */
       for (const [tourneyId] of channelRefsRef.current.entries()) {
         masterBus.removeRegisteredChannel(`t-break-${tourneyId}`);
       }
       channelRefsRef.current.clear();
     };
-  }, [tournaments]);
+  }, [runningTournamentKey]);
 
   const loadTournaments = async () => {
     loadTournamentsRef.current = loadTournaments;

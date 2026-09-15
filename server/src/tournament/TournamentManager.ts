@@ -997,6 +997,27 @@ export class TournamentManager extends TournamentManagerEliminations {
 
   private async executePlayerMovesOwned(moves: MoveInstruction[]): Promise<number> {
     let moved = 0;
+    /**
+     * EVERY BREAK AND REBALANCE USED TO LEAVE THE OPERATOR COUNTS WRONG.
+     *
+     * Nothing here touched `tables.current_players`, so after a table break the
+     * source table still advertised the roster it no longer had and every
+     * destination under-reported by however many arrived - what the club
+     * operator reads (src/components/club/TableOperationsPanel.tsx) and what
+     * the admin heat map colours its tiles by. The balancer itself was never
+     * fooled: it counts live `table_seats` rows (loadBalancerTables above),
+     * which is exactly why nothing caught this.
+     *
+     * FIXED IN THE MOVE TRANSACTION, NOT AFTER IT (main, #4395 and the
+     * stage-B contraction). `fn_move_tournament_player` now recounts both
+     * tables - `UPDATE public.tables SET current_players=(SELECT count(*) ...)
+     * WHERE id IN (source, destination)` - in the same transaction that writes
+     * the two seat rows and the roster row, and asserts its row counts. A
+     * recount bolted on after the loop is the compensating write 10.12
+     * forbids: it can fail on its own and leave exactly the drift it exists to
+     * remove. The roster's `seat_number` is written there too, for the same
+     * reason.
+     */
     const batch = moves.slice(0, TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
     if (moves.length > batch.length) {
       this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);

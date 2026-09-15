@@ -49,26 +49,48 @@ const TABLE_PAGE = strip(readRaw('src/pages/TablePage.tsx'));
 const VIBRATION_GATE = strip(readRaw('src/utils/vibrationGate.ts'));
 
 describe('sound and haptics have one owner: the gates', () => {
-  it('the in-table switches seed from the gate, not from one of its two keys', () => {
+  it('the in-table switches read the shared store, not one of the gate keys', () => {
     /* Seeding sound state from `ca_sound_enabled` alone made the badge read ON
        for a player muted in Settings, and the mount effects then fought each
        other so the FIRST press muted something already muted. Two presses to
-       get sound back, with the switch lying throughout. */
-    expect(TABLE_SOUND).toMatch(/useState<boolean>\(\(\) => isSoundAllowed\(\)\)/);
-    /* Haptics must consider BOTH keys for the same reason. UPDATED 2026-08-29
-       (second pass): this used to pin the two hand-rolled `readBool` calls that
-       did it here. They were a third copy of the gate's own rule and are gone —
-       `isVibrationPreferred` is that rule, living in the gate beside the fail-
-       closed logic it belongs to. Same property, one owner. */
-    expect(TABLE_SOUND).toMatch(/isVibrationPreferred\(\)/);
+       get sound back, with the switch lying throughout.
+
+       MOVED TO THE NEW MECHANISM 2026-09-09, NOT WEAKENED. This used to pin
+       `useState<boolean>(() => isSoundAllowed())` and a call to
+       `isVibrationPreferred()` in useTableSound. Seeding from the gate was
+       right about WHICH value and wrong about WHEN: a `useState` initialiser
+       runs once, PersistentTableLayer keeps every TablePage mounted for the
+       session, and so a mute from the hamburger menu or the Settings panel
+       never reached these two again - the badge read ON while the app was
+       silent, and the toggle call sites computed `!stale` so the player still
+       had to press twice. The same defect, arriving through the other door.
+
+       The store is the value now. It is not a third copy: `reconcileWithGates`
+       adopts BOTH gates on first read (pinned below), `applyGateChanges` pushes
+       every change back to them (pinned below), and `useSyncExternalStore`
+       makes it live. Property pinned here is unchanged - useTableSound must
+       hold no private copy and must honour both keys - plus the seed-once shape
+       is now explicitly forbidden so it cannot come back. */
+    expect(TABLE_SOUND).toMatch(/const \{ settings \} = useTableSettings\(\)/);
+    expect(TABLE_SOUND).toMatch(/isSoundEnabled = settings\.isSoundEnabled/);
+    expect(TABLE_SOUND).toMatch(/isVibrationEnabled = settings\.isHapticEnabled/);
+    expect(TABLE_SOUND).not.toMatch(/useState<boolean>\(\(\) => isSoundAllowed\(\)\)/);
+    expect(TABLE_SOUND).not.toMatch(/useState<boolean>\(\(\) =>\s*isVibrationPreferred/);
   });
 
   it('the in-table haptic switch persists through the gate, which writes both keys', () => {
     /* Writing only `ca_vibration_enabled` was the haptic twin of the sound bug,
        and it survived the sweep that fixed the sound side: turning vibration ON
        at the table could not clear a mute set in Settings, because the gate
-       fails closed on either key. */
-    expect(TABLE_SOUND).toMatch(/setVibrationAllowed\(isVibrationEnabled\)/);
+       fails closed on either key.
+
+       MOVED 2026-09-09: the write used to live in a `useEffect` keyed on the
+       local state (`setVibrationAllowed(isVibrationEnabled)`). The local state
+       is gone (see the test above), so the write moved into the setter itself,
+       where it happens on the same tick as the user's press. Same property -
+       the switch persists through the GATE, which writes both keys - and it no
+       longer depends on a render to do it. */
+    expect(TABLE_SOUND).toMatch(/setVibrationAllowed\(v\)/);
     expect(TABLE_SOUND).not.toMatch(/setItem\(STORAGE_VIBRATION/);
   });
 
@@ -294,10 +316,19 @@ describe('the boot hole, closed 2026-08-29 (second pass)', () => {
   it('the haptics switch reads the PREFERENCE, not "can this device buzz"', () => {
     /* `isVibrationAllowed` returns false on a desktop with no vibrate API,
        which is correct for firing a buzz and wrong for painting a switch — it
-       tells a desktop player they turned something off that they did not. */
+       tells a desktop player they turned something off that they did not.
+
+       MOVED 2026-09-09: useTableSound reads `settings.isHapticEnabled` now
+       rather than calling the gate itself, and the store's own boot
+       reconciliation is what derives that from `isVibrationPreferred()` — the
+       assertion directly above this one pins exactly that. So the property is
+       still enforced end to end, and what is pinned HERE is the half that
+       belongs here: the in-table switch must never reach for the
+       device-capability answer. */
     const gate = strip(readRaw('src/utils/vibrationGate.ts'));
     expect(gate).toMatch(/export function isVibrationPreferred/);
-    expect(TABLE_SOUND).toMatch(/isVibrationPreferred\(\)\s*\)?;?/);
+    expect(TABLE_SOUND).toMatch(/settings\.isHapticEnabled/);
+    expect(TABLE_SOUND).not.toMatch(/isVibrationAllowed\(/);
   });
 
   it('useTableSound keeps no private copy of the gate rule', () => {

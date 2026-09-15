@@ -61,12 +61,36 @@ const MAINTENANCE_WINDOW_MS = 7 * 60 * 1000;
 // identical RPCs at the same instant on every mount and every 4404.
 // ───────────────────────────────────────────────────────────────────────────
 
-let inFlight: Promise<MaintenanceBreakState> | null = null;
+/**
+ * THREE ANSWERS, NOT TWO (2026-09-09).
+ *
+ * `ACTIVE` a break is running. `IDLE` the database says none is.
+ * `UNKNOWN` the question could not be asked.
+ *
+ * The third one used to be folded into the second, and the comment in the catch
+ * said that was safe because "the client behaves exactly as it did before this
+ * feature existed". It is not safe, and this file's own header says why: source
+ * 3 exists for a browser that loaded DURING the outage, and the outage is
+ * exactly when this RPC is most likely to fail. "Exactly as before" IS the dead
+ * felt and the "This Table Is No Longer Running" toast that source 3 was written
+ * to prevent - so the failure mode was aimed at the one case the feature is for.
+ *
+ * Worse, the answer was CACHED: `lastResult = IDLE; lastFetchedAt = now` served
+ * one failed read as "no break is running" to every mounted TablePage for the
+ * whole TTL, and MultiTablePage keeps four of them. A single blip decided for
+ * four tables at once, for five seconds, and looked exactly like a real answer.
+ *
+ * Nothing is written to the cache on a failure now: the next caller asks again.
+ */
+export type MaintenanceBreakVerdict = 'active' | 'idle' | 'unknown';
+
+let inFlight: Promise<MaintenanceBreakState | null> | null = null;
 let lastFetchedAt = 0;
 let lastResult: MaintenanceBreakState = IDLE;
 const FETCH_TTL_MS = 5000;
 
-async function fetchBreakState(): Promise<MaintenanceBreakState> {
+/** Resolves to the state, or `null` meaning "could not tell". */
+async function fetchBreakState(): Promise<MaintenanceBreakState | null> {
   const now = Date.now();
   if (now - lastFetchedAt < FETCH_TTL_MS) return lastResult;
   if (inFlight) return inFlight;
@@ -92,16 +116,18 @@ async function fetchBreakState(): Promise<MaintenanceBreakState> {
           reason: (row.reason as string) || 'Scheduled Engine Maintenance',
         };
       }
+      lastFetchedAt = Date.now();
+      inFlight = null;
+      return lastResult;
     } catch {
-      // Fail QUIET and fail OPEN. This runs on every 4404, including the
-      // ordinary "this table really is gone" one, so a noisy failure here
-      // would log on a completely healthy path. No break state simply means
-      // the client behaves exactly as it did before this feature existed.
-      lastResult = IDLE;
+      /* Still QUIET - this runs on every 4404, including the ordinary "this
+         table really is gone" one, so a noisy failure would log on a healthy
+         path. But no longer silently NEGATIVE, and deliberately NOT cached:
+         `lastResult` and `lastFetchedAt` are left exactly as they were, so the
+         next caller asks the database again instead of being served a guess. */
+      inFlight = null;
+      return null;
     }
-    lastFetchedAt = Date.now();
-    inFlight = null;
-    return lastResult;
   })();
 
   return inFlight;
@@ -155,13 +181,26 @@ export function useMaintenanceBreak() {
    * whenever the table refuses a connection, which is the case this exists
    * for: a 4404 during the restart is a break, and a 4404 at any other time
    * is a table that has genuinely closed.
+   *
+   * RETURNS ITS VERDICT (2026-09-09), so a caller deciding something as final
+   * as "this table has closed" can tell an answer from a failure to get one.
+   * `'unknown'` means the RPC could not be reached - which is most likely
+   * during the very outage this is asked about - and it changes NO state here:
+   * a break already showing keeps counting on its own absolute clock, and a
+   * table with no break is not told there is one.
+   *
+   * The 4404 handler announces closure only after an 'idle' verdict and a
+   * second live-state check. An unknown or active result releases its claimed
+   * toast slot, so a later connection failure can ask again.
    */
-  const refreshFromDb = useCallback(async () => {
+  const refreshFromDb = useCallback(async (): Promise<MaintenanceBreakVerdict> => {
     const fetched = await fetchBreakState();
+    if (fetched === null) return 'unknown';
     // Never let a slower database read overwrite a live engine event. The
     // socket is more current by definition, and the RPC is cached for 5s.
-    if (stateRef.current.active && !fetched.active) return;
+    if (stateRef.current.active && !fetched.active) return 'active';
     setState(fetched);
+    return fetched.active ? 'active' : 'idle';
   }, []);
 
   useEffect(() => {

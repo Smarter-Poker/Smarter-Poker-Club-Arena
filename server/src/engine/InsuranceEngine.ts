@@ -196,6 +196,17 @@ export class InsuranceEngine {
   }
 
   /**
+   * The window a player is given to answer an offer, in seconds. Exposed
+   * 2026-09-09 so the horse's "reading the dialog" pause is sampled from the
+   * SAME number the offer deadline is built from (10.5 - the test is "is it
+   * identical"), rather than from a second copy of 25 written down somewhere
+   * else that a per-table `configure()` would leave behind.
+   */
+  offerTimeoutSeconds(tableId: string): number {
+    return (this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG).offerTimeoutSeconds;
+  }
+
+  /**
    * Create insurance offers for all-in players.
    * Called by ServerTableEngine when an all-in runout is pending.
    *

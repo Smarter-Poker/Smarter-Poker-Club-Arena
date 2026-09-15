@@ -18,7 +18,6 @@
   --z-header: 100;
   --z-action-panel: 100;
   --z-overlay: 200;
-  --z-side-menu: 300;
   --z-modal-backdrop: 400;
   --z-modal: 500;
   --z-toast: 600;
@@ -2654,114 +2653,6 @@
 /* ActionPanel.css handles its own button styling */
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   SIDE MENU
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.menu-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  z-index: var(--z-modal-backdrop);
-  animation: fadeIn 0.2s ease;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
-.side-menu {
-  position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: 280px;
-  background: #161b22;
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
-  z-index: var(--z-modal);
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  animation: tableSlideIn 0.25s ease;
-}
-
-@keyframes tableSlideIn {
-  from {
-    transform: translateX(-100%);
-  }
-
-  to {
-    transform: translateX(0);
-  }
-}
-
-.menu-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 20px;
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  color: #e4e6eb;
-  font-size: 0.9375rem;
-  text-align: left;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.menu-item.exit {
-  margin-top: auto;
-}
-
-.menu-item-icon {
-  font-size: 1.25rem;
-  width: 28px;
-  text-align: center;
-  color: var(--sp-warn);
-}
-
-.menu-item-label {
-  flex: 1;
-}
-
-.menu-item-arrow {
-  color: #6e7681;
-  font-size: 1.25rem;
-}
-
-.menu-item-toggle {
-  padding: 4px 10px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  border-radius: 12px;
-  text-transform: uppercase;
-}
-
-.menu-item-toggle.on {
-  background: #3fb950;
-  color: #0a0a0f;
-}
-
-.menu-item-toggle.off {
-  background: #6e7681;
-  color: #ffffff;
-}
-
-.menu-footer {
-  padding: 20px;
-  font-size: 0.75rem;
-  color: #6e7681;
-  text-align: center;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
    OBSERVING INDICATOR
    ═══════════════════════════════════════════════════════════════════════════════ */
 
@@ -2841,11 +2732,6 @@
 
   .jackpot-label {
     font-size: 0.5rem;
-  }
-
-  .side-menu {
-    width: 100%;
-    max-width: 320px;
   }
 
   /* Dan 2026-08-25 (item 8): the mobile .dealer-button block is gone. A puck
@@ -4301,24 +4187,6 @@ button.post-bb-overlay-button {
   opacity: 0.72;
   font-weight: 500;
   white-space: nowrap;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   SIDE-MENU EMBEDDED CONTROL
-   For rows that host a real control (StraddleToggle) rather than a button.
-   Added 2026-08-20: StraddleToggle was imported by TablePage and never
-   rendered, so a player had no way to turn straddling on at all.
-   ═══════════════════════════════════════════════════════════════════════════ */
-.menu-item--embed {
-  cursor: default;
-  padding: 10px 20px;
-}
-
-/* Disabled menu rows (e.g. Tip Dealer while not seated) must read as
-   unavailable rather than silently doing nothing when tapped. */
-.menu-item:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

@@ -548,10 +548,12 @@ async function services() {
       PGRST_JWT_SECRET: secrets.jwtSecret,
       PGRST_SERVER_HOST: '127.0.0.1',
       PGRST_SERVER_PORT: '3000',
+      PGRST_ADMIN_SERVER_HOST: '127.0.0.1',
+      PGRST_ADMIN_SERVER_PORT: '3001',
       PGRST_LOG_LEVEL: 'error',
     });
     stage = 'postgrest-server-ready';
-    await eventually(() => healthy('http://127.0.0.1:3000/'));
+    await eventually(() => healthy('http://127.0.0.1:3001/ready'));
     stage = 'postgrest-safeupdate-native-http';
     const safeupdate = await assertFixtureSafeupdateHttp(db, user.session.access_token);
     stage = 'gotrue-platform-helper-http';
